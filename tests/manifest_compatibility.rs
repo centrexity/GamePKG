@@ -11,7 +11,12 @@ fn legacy_defaults_and_explicit_engine_requirements_are_checked() {
     let legacy = Manifest::parse(source().as_bytes()).unwrap();
     assert_eq!(legacy.engine_version, "^0.1.0");
     assert_eq!(legacy.save_schema, 1);
-    for requirement in ["=0.1.0", "^0.1", "*", ">=0.1.0, <0.2.0"] {
+    for requirement in [
+        format!("={}", env!("CARGO_PKG_VERSION")),
+        "^0.1".into(),
+        "*".into(),
+        ">=0.1.0, <0.2.0".into(),
+    ] {
         let text = format!(
             "engine_version = \"{requirement}\"\nsave_schema = 2\n{}",
             source()

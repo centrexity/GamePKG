@@ -4,8 +4,8 @@ This archive contains the GamePKG command-line program and desktop library. It d
 
 These builds target Ubuntu 24.04 or a compatible system with glibc 2.39 or newer. The desktop requires a working X11 or Wayland display, OpenGL, and ALSA. The exact builder libc version and executable hashes are recorded in BUILD.json. Dependency license expressions and original notices are included in DEPENDENCIES.json and third-party-licenses/. Original resolved dependency source archives are preserved as directories in third-party-sources/, including notices embedded in source and bundled fonts.
 
-1. Check the downloaded archive against its .sha256 file with `sha256sum -c gamepkg-0.1.0-linux-x86_64.tar.gz.sha256`.
-2. Extract it into a folder you control with `tar -xzf gamepkg-0.1.0-linux-x86_64.tar.gz`.
+1. Check the downloaded archive against its .sha256 file with `sha256sum -c gamepkg-0.1.1-linux-x86_64.tar.gz.sha256`.
+2. Extract it into a folder you control with `tar -xzf gamepkg-0.1.1-linux-x86_64.tar.gz`.
 3. Enter the extracted folder. Run `./bin/gamepkg --help` for the CLI or `./bin/gamepkg-gui` for the desktop.
 
 On Ubuntu 24.04, install the runtime tools needed for isolated builds, downloads, previews, and audio:

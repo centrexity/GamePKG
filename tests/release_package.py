@@ -46,6 +46,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-release-test-') as directory:
     game_id = tomllib.loads((distribution / 'examples/good/byteorder-game/manifest.toml').read_text())['id']
     run('build', game_id)
     run('run', game_id, '--frames', '3')
+    assert 'compiled game verified' in run('integrity-check', game_id)
     display = start_display(env)
     app = subprocess.Popen([str(distribution / 'bin' / 'gamepkg-gui'), '--play', game_id], cwd=distribution, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     try:
