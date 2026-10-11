@@ -22,6 +22,7 @@ pub struct App {
     updates: crate::updates::Monitor,
     source: String,
     rom_path: String,
+    rom_game: Option<String>,
     additional_rom_paths: Vec<String>,
     show_settings: bool,
     settings_draft: crate::settings::Settings,
@@ -634,8 +635,20 @@ impl eframe::App for App {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.heading("GamePKG Library");
             ui.label("Games — catalog entries download only when you choose");
-            ui.horizontal(|ui| { ui.label("Your ROM file (for games that require one)"); ui.text_edit_singleline(&mut self.rom_path); });
-            for (index,path) in self.additional_rom_paths.iter_mut().enumerate() { ui.horizontal(|ui| {ui.label(format!("ROM {}",index+2)); ui.text_edit_singleline(path);}); }
+            if self.installed.iter().any(|m|m.requires_rom) {
+                let previous=self.rom_game.clone();
+                egui::ComboBox::from_label("ROM files for").selected_text(self.rom_game.as_deref().unwrap_or("Choose a game")).show_ui(ui,|ui| {
+                    for m in self.installed.iter().filter(|m|m.requires_rom) {ui.selectable_value(&mut self.rom_game,Some(m.id.clone()),&m.id);}
+                });
+                if previous!=self.rom_game {
+                    self.rom_path.clear();
+                    let count=self.installed.iter().find(|m|Some(&m.id)==self.rom_game.as_ref()).map_or(0,|m|m.required_rom_count());
+                    self.additional_rom_paths=vec![String::new();count.saturating_sub(1)];
+                }
+            }
+            let rom_titles=self.installed.iter().find(|m|Some(&m.id)==self.rom_game.as_ref()).map(|m|m.roms.iter().map(|r|r.title.clone()).collect::<Vec<_>>()).unwrap_or_default();
+            ui.horizontal(|ui| { ui.label(rom_titles.first().map(String::as_str).unwrap_or("Your ROM file (for games that require one)")); ui.text_edit_singleline(&mut self.rom_path); });
+            for (index,path) in self.additional_rom_paths.iter_mut().enumerate() { ui.horizontal(|ui| {ui.label(rom_titles.get(index+1).cloned().unwrap_or_else(||format!("ROM {}",index+2))); ui.text_edit_singleline(path);}); }
             ui.horizontal(|ui| {if self.additional_rom_paths.len()<7 && ui.button("Add ROM file").clicked() {self.additional_rom_paths.push(String::new());}
             if !self.additional_rom_paths.is_empty() && ui.button("Remove last ROM").clicked() {self.additional_rom_paths.pop();}});
             ui.label("Files are shared read-only in manifest order for this play session.");
@@ -675,7 +688,7 @@ impl eframe::App for App {
                             if ui.add_enabled(self.result.is_none(), egui::Button::new("Check integrity")).clicked() { integrity = Some((m.id.clone(),false)); }
                             if ui.add_enabled(self.result.is_none(), egui::Button::new("Fix / rebuild")).clicked() { integrity = Some((m.id.clone(),true)); }
                             if ui.add_enabled(self.result.is_none(),egui::Button::new("Details")).clicked() { inspect = Some(m.id.clone()); }
-                            if ui.add_enabled(built && self.result.is_none() && (m.required_rom_count()==0 || (!self.rom_path.trim().is_empty() && self.additional_rom_paths.len()+1==m.required_rom_count() && self.additional_rom_paths.iter().all(|p| !p.trim().is_empty()))), egui::Button::new("Play")).on_hover_text("Play this built game. ROM games need your file path above.").clicked() { play = Some(m.id.clone()); }
+                            if ui.add_enabled(built && self.result.is_none() && (m.required_rom_count()==0 || (self.rom_game.as_deref()==Some(m.id.as_str()) && !self.rom_path.trim().is_empty() && self.additional_rom_paths.len()+1==m.required_rom_count() && self.additional_rom_paths.iter().all(|p| !p.trim().is_empty()))), egui::Button::new("Play")).on_hover_text("Play this built game. ROM games need your file path above.").clicked() { play = Some(m.id.clone()); }
                             if ui.add_enabled(self.result.is_none(), egui::Button::new(if built { "Rebuild" } else { "Build" })).clicked() { build = Some(m.id.clone()); }
                         });
                         ui.vertical(|ui| {
@@ -704,6 +717,12 @@ impl eframe::App for App {
                 self.begin_work(move || { let root=crate::registry::default_root()?; Ok(Work::Message(if fix {crate::integrity::fix(&root,&id)?} else {crate::integrity::check(&root,&id)?})) });
             }
             if let Some(id) = inspect {
+                if let Some(game)=self.installed.iter().find(|m|m.id==id && m.requires_rom) {
+                    if self.rom_game.as_deref()!=Some(id.as_str()) {
+                        self.rom_game=Some(id.clone()); self.rom_path.clear();
+                        self.additional_rom_paths=vec![String::new();game.required_rom_count().saturating_sub(1)];
+                    }
+                }
                 self.pending = None;
                 self.begin(move || {
                     let root = crate::registry::default_root()?;
@@ -819,7 +838,8 @@ impl eframe::App for App {
                 egui::ScrollArea::vertical().id_salt("game-details").max_height((ui.available_height() - 35.0).max(100.0)).show(ui, |ui| {
                 ui.separator(); ui.heading(&m.id); ui.label(format!("Version: {}", m.version));
                 ui.label(format!("Memory: {:.1} MiB recommended • {:.1} MiB hard limit", m.limits.recommended_memory_bytes() as f64 / 1048576.0, m.limits.hard_memory_bytes as f64 / 1048576.0));
-                ui.label(if m.requires_rom { "Requires a ROM supplied by you. It is not included in this package." } else { "No user ROM required." });
+                ui.label(if m.requires_rom { format!("Requires {} ROM file(s) supplied by you. They are not included in this package.",m.required_rom_count()) } else { "No user ROM required.".into() });
+                for (index,rom) in m.roms.iter().enumerate() {ui.label(format!("ROM {}: {} ({})",index+1,rom.title,rom.id));}
                 let package_size = self.pending.as_ref().and_then(|file| file.as_file().metadata().ok()).map(|m|m.len()).or_else(||self.usage.get(&m.id).map(|u|u.package_bytes));
                 ui.label(format!("Storage: {} package; {} expected after building", package_size.map(crate::storage::bytes).unwrap_or_else(||"Unknown".into()), m.limits.recommended_storage_bytes.map(|v|v.max(package_size.unwrap_or(0))).map(crate::storage::bytes).unwrap_or_else(||"Unknown (no creator estimate)".into())));
                 ui.label(format!("Creator fingerprint: {}", crate::verify::digest(&hex::decode(&m.creator_key).unwrap_or_default())));

@@ -733,3 +733,19 @@ Supply each file with repeated `--rom` options, or use **Add ROM file** in the l
 Use `gamepkg integrity-check GAME_ID` or **Check integrity** to verify the signed archive, shared blob hashes, play history format and compiled Wasm checksum. `gamepkg integrity-fix GAME_ID` or **Fix / rebuild** rebuilds from verified source under the existing compiler isolation. Older builds without checksums need a rebuild before playback. Checksums detect accidental changes; they do not authenticate the host against someone who can modify both a build and its receipt.
 
 Repairs never rewrite signatures, invent missing shared blobs, reset saves, or erase play history. Installation and successful checks retain a verified local recovery copy. Repair can restore a damaged archive from that copy; a damaged recovery copy is rejected. Missing recovery copies or shared blobs require verified replacement originals. Recovery copies add one archive’s size to library storage. Shader caches retain their existing validation on playback; this check currently covers the Wasm build, not every shader backend cache.
+
+### Hindsight IndexedDB browser library
+
+Available in current source builds; this browser interface is not included in the 0.1.1 download.
+
+The host now includes `gamepkg web-library --indexeddb-package /path/to/Hindsight4/Compiler/packages/Database/IndexedDB`. Open the printed local session link in a browser. The default port is 39173; use `--port` to change it. Keep the port stable to retain the browser origin’s stored information.
+
+This uses the actual Hindsight `Database/IndexedDB` package, whose native desktop backend reports unavailable. The browser adapter uses its worker-backed public operations to persist installed game metadata, predownloaded catalog entries, settings, play history, achievements and space usage. Connections are scoped to the host library directory. Refreshes save a complete snapshot; failed refreshes preserve prior data and label it as cached metadata. Writes wait for actual completion and are not retried because an operation is still pending.
+
+The browser interface currently displays stored library information. Use the native desktop or CLI for package approval, installation, builds, gameplay and repairs. Signed packages and runtime state remain validated by the host; browser metadata never authorizes a package. No substitute database is used.
+
+The local server listens only on IPv4 loopback, requires the session’s authorization for metadata, rejects foreign origins and host headers, and serves the cross-origin isolation headers required by Hindsight. It makes no external requests. The package JavaScript is read from the supplied Hindsight directory and checked against the locally verified SHA-256 revision `602b55aa4610aa47b3216f2c2299191730ce6bc847db1b2a81ef183a3b25129b`; it is not redistributed inside this repository.
+
+Run `python3 tests/hindsight_storage.py --indexeddb-package PATH` and `python3 tests/web_library.py --indexeddb-package PATH` with Chromium, chromedriver and Selenium installed. These exercise real browser persistence, browser restart, library separation, the running host, unauthorized requests, and cached display. Browser quotas and eviction still apply; retain the native host library for recovery.
+
+Desktop ROM selections now belong to the chosen game. Select the game under **ROM files for**, or open its **Details**, to see signed ROM titles in manifest order. Switching games clears the selected file paths. Play stays disabled until every required file is supplied.

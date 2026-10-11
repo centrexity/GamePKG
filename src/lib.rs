@@ -46,3 +46,5 @@ pub mod progress;
 pub mod storage;
 
 pub mod integrity;
+
+pub mod web_library;

@@ -12,6 +12,13 @@ struct Cli {
 }
 #[derive(Subcommand)]
 enum Command {
+    /// Open a local browser metadata library using Hindsight Database/IndexedDB.
+    WebLibrary {
+        #[arg(long)]
+        indexeddb_package: PathBuf,
+        #[arg(long, default_value_t = 39173)]
+        port: u16,
+    },
     /// Verify installed signed contents, shared assets and compiled game checksums.
     IntegrityCheck { id: String },
     /// Rebuild compiled files from verified source; never alter signatures or player data.
@@ -140,6 +147,14 @@ fn key(s: &str) -> Result<[u8; 32]> {
 }
 fn main() -> Result<()> {
     match Cli::parse().command {
+        Command::WebLibrary {
+            indexeddb_package,
+            port,
+        } => gamepkg::web_library::serve(
+            &gamepkg::registry::default_root()?,
+            &indexeddb_package,
+            port,
+        )?,
         Command::IntegrityCheck { id } => println!(
             "{}",
             gamepkg::integrity::check(&gamepkg::registry::default_root()?, &id)?

@@ -1,0 +1,157 @@
+//! Local browser metadata library backed by the user's Hindsight IndexedDB package.
+use anyhow::{bail, Context, Result};
+use std::{
+    fs,
+    io::{Read, Write},
+    net::{TcpListener, TcpStream},
+    path::Path,
+    time::Duration,
+};
+const PACKAGE_SHA: &str = "602b55aa4610aa47b3216f2c2299191730ce6bc847db1b2a81ef183a3b25129b";
+fn snapshot(root: &Path) -> Result<Vec<u8>> {
+    let report = crate::registry::inspect_library(root)?;
+    let games=report.games.into_iter().map(|m| {
+        let history=crate::progress::load(root,&m.id,&m.creator_key).ok();
+        let usage=crate::storage::usage(root,&m).ok();
+        serde_json::json!({"manifest":m,"history":history,"used_bytes":usage.as_ref().map(|u|u.used_bytes()),"storage_breakdown":usage.map(|u|u.breakdown())})
+    }).collect::<Vec<_>>();
+    let data = serde_json::to_vec(
+        &serde_json::json!({"format_version":1,"scope":crate::verify::digest(fs::canonicalize(root)?.to_string_lossy().as_bytes()),"games":games,"catalog":crate::catalog::entries(root)?,"settings":crate::settings::load()?,"rejected":report.rejected}),
+    )?;
+    if data.len() > 8 * 1024 * 1024 {
+        bail!("browser library metadata exceeds 8 MiB");
+    }
+    Ok(data)
+}
+fn respond(stream: &mut TcpStream, status: &str, kind: &str, body: &[u8]) -> Result<()> {
+    write!(stream,"HTTP/1.1 {status}\r\nContent-Type: {kind}\r\nContent-Length: {}\r\nConnection: close\r\nCache-Control: no-store\r\nCross-Origin-Opener-Policy: same-origin\r\nCross-Origin-Embedder-Policy: require-corp\r\nX-Content-Type-Options: nosniff\r\nContent-Security-Policy: default-src 'self'; script-src 'self'; worker-src 'self' blob:; connect-src 'self'; style-src 'self'; frame-ancestors 'none'; base-uri 'none'\r\n\r\n",body.len())?;
+    stream.write_all(body)?;
+    Ok(())
+}
+fn request(
+    stream: &mut TcpStream,
+    root: &Path,
+    host: &str,
+    token: &str,
+    package: &[u8],
+) -> Result<()> {
+    stream.set_read_timeout(Some(Duration::from_secs(2)))?;
+    stream.set_write_timeout(Some(Duration::from_secs(2)))?;
+    let mut bytes = Vec::new();
+    let mut chunk = [0u8; 1024];
+    while !bytes.windows(4).any(|w| w == b"\r\n\r\n") {
+        let count = stream.read(&mut chunk)?;
+        if count == 0 {
+            return Ok(());
+        }
+        bytes.extend_from_slice(&chunk[..count]);
+        if bytes.len() > 16384 {
+            return respond(
+                stream,
+                "431 Request Header Fields Too Large",
+                "text/plain",
+                b"Request too large",
+            );
+        }
+    }
+    let text = std::str::from_utf8(&bytes)?;
+    let mut lines = text.split("\r\n");
+    let first = lines.next().context("missing request")?;
+    let parts = first.split_whitespace().collect::<Vec<_>>();
+    if parts.len() != 3 || parts[0] != "GET" || parts[2] != "HTTP/1.1" {
+        return respond(stream, "405 Method Not Allowed", "text/plain", b"GET only");
+    }
+    let headers = lines
+        .filter(|l| !l.is_empty())
+        .map(|line| line.split_once(':').context("invalid header"))
+        .collect::<Result<Vec<_>>>()?;
+    let values = |key: &str| {
+        headers
+            .iter()
+            .filter(|(k, _)| k.eq_ignore_ascii_case(key))
+            .map(|(_, v)| v.trim())
+            .collect::<Vec<_>>()
+    };
+    if values("host") != vec![host]
+        || values("origin")
+            .iter()
+            .any(|v| *v != format!("http://{host}"))
+    {
+        return respond(stream, "403 Forbidden", "text/plain", b"Wrong origin");
+    }
+    match parts[1] {
+        "/" => respond(
+            stream,
+            "200 OK",
+            "text/html; charset=utf-8",
+            include_bytes!("../html/library/index.html"),
+        ),
+        "/storage.js" => respond(
+            stream,
+            "200 OK",
+            "text/javascript",
+            include_bytes!("../html/library/storage.js"),
+        ),
+        "/library.js" => respond(
+            stream,
+            "200 OK",
+            "text/javascript",
+            include_bytes!("../html/library/library.js"),
+        ),
+        "/style.css" => respond(
+            stream,
+            "200 OK",
+            "text/css",
+            include_bytes!("../html/library/style.css"),
+        ),
+        "/hindsight.js" => respond(stream, "200 OK", "text/javascript", package),
+        "/api/library" => {
+            if values("authorization") != vec![format!("Bearer {token}").as_str()] {
+                return respond(
+                    stream,
+                    "403 Forbidden",
+                    "text/plain",
+                    b"Session authorization required",
+                );
+            }
+            match snapshot(root) {
+                Ok(data) => respond(stream, "200 OK", "application/json", &data),
+                Err(error) => respond(
+                    stream,
+                    "500 Internal Server Error",
+                    "text/plain",
+                    error.to_string().as_bytes(),
+                ),
+            }
+        }
+        _ => respond(stream, "404 Not Found", "text/plain", b"Not found"),
+    }
+}
+pub fn serve(root: &Path, package: &Path, port: u16) -> Result<()> {
+    let path = package.join("code_langs/js.js");
+    let metadata = fs::symlink_metadata(&path)?;
+    if !metadata.is_file() || metadata.len() > 512 * 1024 {
+        bail!("invalid Hindsight IndexedDB package source");
+    }
+    let source = fs::read(path)?;
+    if crate::verify::digest(&source) != PACKAGE_SHA {
+        bail!("Hindsight IndexedDB source differs from the verified package revision");
+    }
+    fs::create_dir_all(root)?;
+    let listener = TcpListener::bind(("127.0.0.1", port))?;
+    let host = listener.local_addr()?.to_string();
+    let mut secret = [0u8; 32];
+    getrandom::fill(&mut secret)
+        .map_err(|e| anyhow::anyhow!("session randomness unavailable: {e}"))?;
+    let token = hex::encode(secret);
+    let scope = crate::verify::digest(fs::canonicalize(root)?.to_string_lossy().as_bytes());
+    println!("Open http://{host}/#{token}:{scope}");
+    std::io::stdout().flush()?;
+    for stream in listener.incoming() {
+        let mut stream = stream?;
+        if let Err(error) = request(&mut stream, root, &host, &token, &source) {
+            eprintln!("Browser request failed: {error}");
+        }
+    }
+    Ok(())
+}

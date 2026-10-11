@@ -539,7 +539,7 @@ impl Game {
             .context("build integrity unavailable or damaged; rebuild this game")?;
         if rom_paths.len() != manifest.required_rom_count() {
             bail!(
-                "this game requires {} user-selected ROM files, but {} were supplied",
+                "this game requires {} ROM files selected by you, but {} were supplied",
                 manifest.required_rom_count(),
                 rom_paths.len()
             );
