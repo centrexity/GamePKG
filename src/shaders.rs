@@ -130,8 +130,16 @@ pub fn compile(
             bail!("invalid shader compiler output");
         }
         let metadata = read_output(&stage.path().join(&reflection))?;
-        let _: serde_json::Value =
+        let reflected: serde_json::Value =
             serde_json::from_slice(&metadata).context("invalid shader reflection")?;
+        if shader.stage == "fragment"
+            && matches!(settings.shader_backend.as_str(), "glsl" | "spirv" | "wgsl")
+        {
+            validate_fragment_reflection(&reflected, &shader.entry)?;
+            if settings.shader_backend != "glsl" {
+                fragment_source(&bytes, &settings.shader_backend)?;
+            }
+        }
         artifacts.push((binary, bytes));
         artifacts.push((reflection, metadata));
     }

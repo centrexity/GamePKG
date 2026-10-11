@@ -58,9 +58,23 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-shaders-') as directory:
     env['GAMEPKG_DXC_ROOT'] = str(modified.parent)
     assert 'DXC library checksum mismatch' in run('build','com.gamepkg.collect-stars',success=False)
     env['GAMEPKG_DXC_ROOT'] = pinned_dxc
+    config.write_text('shader_backend = "wgsl"\n')
+    manifest = source/'manifest.toml'
+    manifest.write_text(manifest.read_text().replace('version = "0.1.0"','version = "0.2.0"'))
+    (source/'shaders/main.slang').write_text('uniform float4 tint; [shader("fragment")] float4 fragmentMain() : SV_Target { return tint; }\n')
+    unsupported=root/'resources.gamepkg'
+    run('pack',source,'-o',unsupported,'--key',key)
+    run('install',unsupported)
+    previous_shaders=set((library/'shader-builds').glob('*'))
+    previous_wasm=set((library/'builds').glob('*/game.wasm'))
+    for backend in ['glsl', 'spirv', 'wgsl']:
+        config.write_text(f'shader_backend = "{backend}"\n')
+        assert 'resource bindings' in run('build','com.gamepkg.collect-stars',success=False)
+        assert set((library/'shader-builds').glob('*')) == previous_shaders
+        assert set((library/'builds').glob('*/game.wasm')) == previous_wasm
     config.write_text('shader_backend = "spirv"\n')
     manifest = source / 'manifest.toml'
-    manifest.write_text(manifest.read_text().replace('version = "0.1.0"', 'version = "0.2.0"'))
+    manifest.write_text(manifest.read_text().replace('version = "0.2.0"', 'version = "0.3.0"'))
     (source / 'shaders/main.slang').write_text('#include "/etc/passwd"\n')
     bad = root / 'bad.gamepkg'
     run('pack', source, '-o', bad, '--key', key)
@@ -69,4 +83,4 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-shaders-') as directory:
     assert 'isolated shader build failed' in run('build', 'com.gamepkg.collect-stars', success=False)
     assert set((library / 'shader-builds').glob('*')) == caches
     assert len(list((library / 'builds').glob('*/game.wasm'))) == 1
-    print('Shaders passed: SPIR-V, WGSL, Metal, DXIL, reflection, rebuild caching and host include denial.')
+    print('Shaders passed: SPIR-V, WGSL, Metal, DXIL, reflection, unsupported resource rejection before cache publication, rebuild caching and host include denial.')
