@@ -1,0 +1,49 @@
+
+/// Read a chunk from a virtual path relative to the package's assets folder.
+/// Errors (missing asset, invalid path, or invalid offset) return None.
+pub mod gamepkg {
+    #[link(wasm_import_module = "gamepkg")]
+    unsafe extern "C" {
+        #[link_name = "save_size"]
+        fn host_save_size() -> i32;
+        #[link_name = "save_read"]
+        fn host_save_read(offset: i32, output: *mut u8, length: i32) -> i32;
+        #[link_name = "save_write"]
+        fn host_save_write(input: *const u8, length: i32) -> i32;
+        #[link_name = "rom_size"]
+        fn host_rom_size() -> i32;
+        #[link_name = "rom_read"]
+        fn host_rom_read(offset: i32, output: *mut u8, length: i32) -> i32;
+        #[link_name = "asset_read"]
+        fn host_asset_read(path: *const u8, path_len: i32, offset: i32, output: *mut u8, output_len: i32) -> i32;
+    }
+    pub fn asset_read(path: &str, offset: u32, output: &mut [u8]) -> Option<usize> {
+        if path.len() > 1024 || output.len() > 65536 || offset > i32::MAX as u32 { return None; }
+        let result = unsafe { host_asset_read(path.as_ptr(), path.len() as i32, offset as i32, output.as_mut_ptr(), output.len() as i32) };
+        if result < 0 { None } else { Some(result as usize) }
+    }
+    /// Size of the ROM explicitly selected by the player, if available.
+    pub fn rom_size() -> Option<usize> {
+        let size = unsafe { host_rom_size() };
+        if size < 0 { None } else { Some(size as usize) }
+    }
+    /// Read only the selected ROM; no host path is exposed to the game.
+    pub fn rom_read(offset: u32, output: &mut [u8]) -> Option<usize> {
+        if offset > i32::MAX as u32 || output.len() > 65536 { return None; }
+        let count = unsafe { host_rom_read(offset as i32, output.as_mut_ptr(), output.len() as i32) };
+        if count < 0 { None } else { Some(count as usize) }
+    }
+    pub fn save_size() -> Option<usize> {
+        let size = unsafe { host_save_size() }; if size < 0 { None } else { Some(size as usize) }
+    }
+    pub fn save_read(offset: u32, output: &mut [u8]) -> Option<usize> {
+        if offset > i32::MAX as u32 || output.len() > 65536 { return None; }
+        let result = unsafe { host_save_read(offset as i32, output.as_mut_ptr(), output.len() as i32) };
+        if result < 0 { None } else { Some(result as usize) }
+    }
+    /// Replace the game's save blob; persisted only when the tick completes successfully.
+    pub fn save_write(bytes: &[u8]) -> bool {
+        if bytes.len() > 1048576 { return false; }
+        unsafe { host_save_write(bytes.as_ptr(), bytes.len() as i32) == 0 }
+    }
+}

@@ -1,0 +1,423 @@
+use eframe::egui;
+use std::{
+    collections::{HashMap, HashSet},
+    path::PathBuf,
+    sync::mpsc,
+};
+enum Work {
+    Game(Box<crate::runtime::Game>),
+    Package(crate::manifest::Manifest),
+    Update(crate::manifest::Manifest, tempfile::NamedTempFile),
+    Message(String),
+}
+#[derive(Default)]
+pub struct App {
+    source: String,
+    rom_path: String,
+    show_settings: bool,
+    settings_draft: crate::settings::Settings,
+    player: Option<Box<crate::runtime::Game>>,
+    status: String,
+    result: Option<mpsc::Receiver<Result<Work, String>>>,
+    manifest: Option<crate::manifest::Manifest>,
+    pending: Option<tempfile::NamedTempFile>,
+    installed: Vec<crate::manifest::Manifest>,
+    catalog: Vec<crate::catalog::Entry>,
+    loaded: bool,
+    icons: HashMap<String, egui::TextureHandle>,
+    built: HashSet<String>,
+}
+impl App {
+    pub fn new(play: Option<String>) -> Self {
+        let mut app = Self::default();
+        match crate::settings::load() {
+            Ok(settings) => app.settings_draft = settings,
+            Err(e) => app.status = format!("Unable to load settings: {e:#}"),
+        }
+        if let Some(id) = play {
+            app.begin_work(move || {
+                Ok(Work::Game(Box::new(crate::runtime::Game::load(
+                    &crate::registry::default_root()?,
+                    &id,
+                )?)))
+            });
+        }
+        app
+    }
+    fn refresh(&mut self, ctx: &egui::Context) {
+        match crate::registry::default_root().and_then(|r| crate::catalog::entries(&r)) {
+            Ok(entries) => self.catalog = entries,
+            Err(e) => self.status = format!("Unable to read catalog: {e:#}"),
+        }
+        match crate::registry::default_root().and_then(|root| crate::registry::list(&root)) {
+            Ok(games) => {
+                self.icons.clear();
+                self.built.clear();
+                if let Ok(root) = crate::registry::default_root() {
+                    for m in &games {
+                        if crate::build::is_built(&root, &m.id).unwrap_or(false) {
+                            self.built.insert(m.id.clone());
+                        }
+                        let decoded = (|| -> anyhow::Result<_> {
+                            let mut pkg = crate::archive::Package::open(
+                                &root.join(format!("{}.gamepkg", m.id)),
+                            )?;
+                            let bytes = pkg.read("thumbnail.png")?;
+                            let mut reader = image::ImageReader::with_format(
+                                std::io::Cursor::new(bytes),
+                                image::ImageFormat::Png,
+                            );
+                            let mut limits = image::Limits::default();
+                            limits.max_image_width = Some(512);
+                            limits.max_image_height = Some(512);
+                            limits.max_alloc = Some(4 * 1024 * 1024);
+                            reader.limits(limits);
+                            let icon = reader.decode()?.to_rgba8();
+                            Ok(egui::ColorImage::from_rgba_unmultiplied(
+                                [icon.width() as usize, icon.height() as usize],
+                                icon.as_raw(),
+                            ))
+                        })();
+                        if let Ok(icon) = decoded {
+                            self.icons.insert(
+                                m.id.clone(),
+                                ctx.load_texture(&m.id, icon, egui::TextureOptions::LINEAR),
+                            );
+                        }
+                    }
+                }
+                self.installed = games;
+            }
+            Err(e) => self.status = format!("Unable to read installed library: {e:#}"),
+        }
+    }
+    fn begin(
+        &mut self,
+        task: impl FnOnce() -> anyhow::Result<crate::manifest::Manifest> + Send + 'static,
+    ) {
+        self.begin_work(move || task().map(Work::Package));
+    }
+    fn begin_work(&mut self, task: impl FnOnce() -> anyhow::Result<Work> + Send + 'static) {
+        let (tx, rx) = mpsc::channel();
+        self.result = Some(rx);
+        self.status = "Working…".into();
+        std::thread::spawn(move || {
+            let _ = tx.send(task().map_err(|e| format!("{e:#}")));
+        });
+    }
+}
+impl eframe::App for App {
+    fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
+        if !self.loaded {
+            self.loaded = true;
+            ctx.set_visuals(if self.settings_draft.dark_mode {
+                egui::Visuals::dark()
+            } else {
+                egui::Visuals::light()
+            });
+            self.refresh(ctx);
+        }
+        if let Some(rx) = &self.result {
+            match rx.try_recv() {
+                Ok(result) => {
+                    self.result = None;
+                    match result {
+                        Ok(Work::Game(game)) => {
+                            self.player = Some(game);
+                        }
+                        Ok(Work::Package(m)) => {
+                            self.status = format!("Verified {} {}", m.id, m.version);
+                            self.manifest = Some(m);
+                            self.refresh(ctx);
+                        }
+                        Ok(Work::Update(m, file)) => {
+                            self.status = format!(
+                                "Package ready: {} {}. Review and install below.",
+                                m.id, m.version
+                            );
+                            self.manifest = Some(m);
+                            self.pending = Some(file);
+                        }
+                        Ok(Work::Message(message)) => {
+                            self.status = message;
+                            self.refresh(ctx);
+                        }
+                        Err(e) => {
+                            self.status = format!("Failed: {e}");
+                            self.manifest = None;
+                        }
+                    }
+                }
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    self.status = "Worker stopped.".into();
+                    self.result = None;
+                }
+                Err(mpsc::TryRecvError::Empty) => {
+                    ctx.request_repaint_after(std::time::Duration::from_millis(100))
+                }
+            }
+        }
+        if let Some(game) = self.player.as_mut() {
+            let mut close = false;
+            let mut failure = None;
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.heading(&game.id);
+                    if ui.button("Back to library").clicked() {
+                        close = true;
+                    }
+                    if ui.button("Restart").clicked() {
+                        game.state = 0;
+                    }
+                });
+                let input = ctx.input(|i| {
+                    u32::from(i.key_pressed(egui::Key::ArrowLeft) || i.key_pressed(egui::Key::A))
+                        | (u32::from(
+                            i.key_pressed(egui::Key::ArrowRight) || i.key_pressed(egui::Key::D),
+                        ) << 1)
+                        | (u32::from(
+                            i.key_pressed(egui::Key::ArrowUp) || i.key_pressed(egui::Key::W),
+                        ) << 2)
+                        | (u32::from(
+                            i.key_pressed(egui::Key::ArrowDown) || i.key_pressed(egui::Key::S),
+                        ) << 3)
+                });
+                if let Err(e) = game.step(input) {
+                    failure = Some(format!("Game stopped: {e:#}"));
+                }
+                ui.label(format!(
+                    "Score: {} — Arrows or WASD to move. Collect the yellow stars.",
+                    game.score()
+                ));
+                let size = ui
+                    .available_width()
+                    .min(ui.available_height())
+                    .clamp(160.0, 640.0);
+                let (rect, _) =
+                    ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
+                let painter = ui.painter_at(rect);
+                let cell = size / 16.0;
+                painter.rect_filled(rect, 0.0, egui::Color32::from_rgb(16, 23, 29));
+                for n in 0..=16 {
+                    let v = n as f32 * cell;
+                    painter.line_segment(
+                        [
+                            rect.min + egui::vec2(v, 0.0),
+                            rect.min + egui::vec2(v, size),
+                        ],
+                        egui::Stroke::new(1.0, egui::Color32::from_gray(45)),
+                    );
+                    painter.line_segment(
+                        [
+                            rect.min + egui::vec2(0.0, v),
+                            rect.min + egui::vec2(size, v),
+                        ],
+                        egui::Stroke::new(1.0, egui::Color32::from_gray(45)),
+                    );
+                }
+                let position = |(x, y): (u8, u8)| {
+                    rect.min
+                        + egui::vec2(
+                            (x.min(15) as f32 + 0.5) * cell,
+                            (y.min(15) as f32 + 0.5) * cell,
+                        )
+                };
+                painter.circle_filled(position(game.target()), cell * 0.28, egui::Color32::YELLOW);
+                painter.circle_filled(
+                    position(game.player()),
+                    cell * 0.35,
+                    egui::Color32::from_rgb(100, 220, 180),
+                );
+            });
+            ctx.request_repaint_after(std::time::Duration::from_millis(16));
+            if close || failure.is_some() {
+                self.player = None;
+            }
+            if let Some(e) = failure {
+                self.status = e;
+            }
+            return;
+        }
+        egui::TopBottomPanel::top("navigation").show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                if ui
+                    .selectable_label(!self.show_settings, "Library")
+                    .clicked()
+                {
+                    self.show_settings = false;
+                }
+                if ui
+                    .add_enabled(self.result.is_none(), egui::Button::new("Settings"))
+                    .clicked()
+                {
+                    self.show_settings = true;
+                    match crate::settings::load() {
+                        Ok(settings) => self.settings_draft = settings,
+                        Err(e) => self.status = format!("Unable to load settings: {e:#}"),
+                    }
+                }
+            });
+        });
+        if self.show_settings {
+            egui::CentralPanel::default().show(ctx,|ui| {
+                ui.heading("Settings");
+                egui::ScrollArea::vertical().show(ui,|ui| {
+                    ui.heading("Library");
+                    ui.label("Library folder (absolute path; leave empty for the default)");
+                    ui.text_edit_singleline(&mut self.settings_draft.library_directory);
+                    ui.label("Changing the folder opens another library. Existing games are not moved.");
+                    if std::env::var_os("GAMEPKG_HOME").is_some() { ui.label("The current launch uses a library override. The saved folder applies when launched without that override."); }
+                    if let Ok(root) = crate::registry::default_root() { ui.label(format!("Current library: {}",root.display())); }
+                    ui.separator();ui.heading("Tor downloads");
+                    ui.label("Local SOCKS proxy (IP:port)");ui.text_edit_singleline(&mut self.settings_draft.tor_proxy);
+                    ui.label("Run Tor separately. Onion downloads never fall back to a direct connection.");
+                    if std::env::var_os("GAMEPKG_TOR_PROXY").is_some() { ui.label("GAMEPKG_TOR_PROXY overrides this setting for the current launch."); }
+                    ui.separator();ui.heading("Game resource ceilings");
+                    ui.horizontal(|ui| { ui.label("Memory ceiling (MiB)");ui.add(egui::DragValue::new(&mut self.settings_draft.memory_ceiling_mib).range(1..=512)); });
+                    ui.horizontal(|ui| { ui.label("Fuel ceiling per tick");ui.add(egui::DragValue::new(&mut self.settings_draft.fuel_ceiling).range(1..=100000000).speed(1000)); });
+                    ui.horizontal(|ui| { ui.label("Tick deadline (ms)");ui.add(egui::Slider::new(&mut self.settings_draft.tick_deadline_ms,10..=100).step_by(10.0)); });
+                    ui.label("Memory and fuel use the lower of your ceiling and the signed game limit. These settings cannot raise a game's hard limit. Changes apply the next time you launch a game.");
+                    ui.separator();ui.heading("Builds and appearance");
+                    ui.checkbox(&mut self.settings_draft.optimize_builds,"Optimize new builds");
+                    ui.label("Applies on Build/Rebuild; existing compiled games are kept.");
+                    ui.checkbox(&mut self.settings_draft.dark_mode,"Dark appearance");
+                    ui.separator();
+                    ui.horizontal(|ui| {
+                        if ui.button("Save settings").clicked() {
+                            let result=crate::settings::path().and_then(|path|self.settings_draft.save(&path));
+                            match result {
+                                Ok(()) => {
+                                    ctx.set_visuals(if self.settings_draft.dark_mode { egui::Visuals::dark() } else { egui::Visuals::light() });
+                                    self.pending=None;self.manifest=None;self.installed.clear();self.catalog.clear();self.status="Settings saved.".into();self.refresh(ctx);
+                                }
+                                Err(e) => self.status=format!("Settings not saved: {e:#}"),
+                            }
+                        }
+                        if ui.button("Cancel edits").clicked() { match crate::settings::load() { Ok(s) => {self.settings_draft=s;self.show_settings=false;} Err(e)=>self.status=format!("Unable to reload settings: {e:#}") } }
+                        if ui.button("Reset form to defaults").clicked() {self.settings_draft=crate::settings::Settings::default();self.status="Defaults restored in the form. Save to apply.".into();}
+                    });
+                    ui.label(&self.status);
+                });
+            });
+            return;
+        }
+        egui::CentralPanel::default().show(ctx, |ui| {
+            ui.heading("GamePKG Library");
+            ui.label("Games — catalog entries download only when you choose");
+            ui.horizontal(|ui| { ui.label("Your ROM file (for games that require one)"); ui.text_edit_singleline(&mut self.rom_path); });
+            ui.label("Only the selected file is shared read-only for this play session.");
+            let mut update = None;
+            let mut build = None;
+            let mut download = None;
+            let mut play = None;
+            egui::ScrollArea::both().max_height(350.0).show(ui, |ui| {
+                egui::Grid::new("installed_games").striped(true).min_col_width(70.0).show(ui, |ui| {
+                    for label in ["Icon", "Game", "Version", "ROM", "State", "Actions", "Updates"] { ui.strong(label); }
+                    ui.end_row();
+                    for entry in &self.catalog {
+                        if self.installed.iter().any(|m| m.id == entry.id) { continue; }
+                        ui.label("🎮");
+                        ui.label(format!("{}\n{}",entry.title,entry.id)).on_hover_text("Catalog information is unverified until the package is downloaded");
+                        ui.label(entry.version.as_deref().unwrap_or("Unknown")).on_hover_text("Version claimed by the catalog");
+                        ui.label(match entry.requires_rom { Some(true) => "User ROM required", Some(false) => "Not required", None => "Unknown" });
+                        ui.label("Not downloaded");
+                        if ui.add_enabled(self.result.is_none(),egui::Button::new("Download / inspect")).clicked() { download = Some(entry.id.clone()); }
+                        ui.label("Download first"); ui.end_row();
+                    }
+                    for m in &self.installed {
+                        if let Some(icon) = self.icons.get(&m.id) { ui.add(egui::Image::new(icon).fit_to_exact_size(egui::vec2(40.0,40.0))); }
+                        else { ui.label("🎮").on_hover_text("Thumbnail unavailable or invalid"); }
+                        ui.label(&m.id); ui.label(&m.version);
+                        ui.label(if m.requires_rom { "User ROM required" } else { "Not required" });
+                        let built = self.built.contains(&m.id);
+                        ui.label(if built { "Built" } else { "Not built" }).on_hover_text(format!("Memory: {:.1} MiB recommended; {:.1} MiB hard limit", m.limits.recommended_memory_bytes() as f64 / 1048576.0, m.limits.hard_memory_bytes as f64 / 1048576.0));
+                        ui.horizontal(|ui| {
+                            if ui.add_enabled(built && self.result.is_none() && (!m.requires_rom || !self.rom_path.trim().is_empty()), egui::Button::new("Play")).on_hover_text("Play the experimental grid-v1 profile. ROM games need your file path above.").clicked() { play = Some(m.id.clone()); }
+                            if ui.add_enabled(self.result.is_none(), egui::Button::new(if built { "Rebuild" } else { "Build" })).clicked() { build = Some(m.id.clone()); }
+                        });
+                        if ui.add_enabled(self.result.is_none() && m.update_url.is_some(), egui::Button::new("Check for updates")).on_hover_text("Inspect the signed update without installing it").clicked() { update = Some(m.id.clone()); }
+                        ui.end_row();
+                    }
+                });
+            });
+            if self.installed.is_empty() && self.catalog.is_empty() { ui.label("No games yet. Import a game list or install a package."); }
+            if ui.add_enabled(self.result.is_none(), egui::Button::new("Refresh library")).clicked() { self.refresh(ctx); }
+            if let Some(id) = play {
+                let rom = self.installed.iter().find(|m| m.id == id).filter(|m| m.requires_rom).map(|_| PathBuf::from(self.rom_path.trim()));
+                self.begin_work(move || Ok(Work::Game(Box::new(crate::runtime::Game::load_with_rom(&crate::registry::default_root()?, &id, rom.as_deref())?))));
+            }
+            if let Some(id) = download {
+                self.pending = None; self.manifest = None;
+                self.begin_work(move || {
+                    let (m,file) = crate::catalog::fetch(&crate::registry::default_root()?, &id)?;
+                    Ok(Work::Update(m,file))
+                });
+            }
+            if let Some(id) = build {
+                self.begin_work(move || { crate::build::compile(&crate::registry::default_root()?, &id)?; Ok(Work::Message(format!("Built {id}. Ready to play if this package implements grid-v1."))) });
+            }
+            if let Some(id) = update {
+                self.pending = None; self.manifest = None;
+                self.begin_work(move || match crate::registry::check_update(&crate::registry::default_root()?, &id)? {
+                    Some((m,file)) => Ok(Work::Update(m,file)),
+                    None => Ok(Work::Message(format!("{id} is up to date."))),
+                });
+            }
+            ui.separator();
+            ui.label("Local .gamepkg path, HTTPS URL, or Tor onion URL");
+            ui.text_edit_singleline(&mut self.source);
+            if ui.add_enabled(self.result.is_none(),egui::Button::new("Import .gamepkglist (no game downloads)")).clicked() {
+                let source = self.source.trim().to_owned();
+                self.begin_work(move || {
+                    let downloaded;
+                    let path = if source.contains("://") { downloaded = crate::registry::download(&source)?; downloaded.path() } else { std::path::Path::new(&source) };
+                    let count = crate::catalog::import(&crate::registry::default_root()?, path)?;
+                    Ok(Work::Message(format!("Added {count} games to the catalog. No game packages downloaded.")))
+                });
+            }
+            if ui.add_enabled(self.result.is_none(), egui::Button::new("Download / inspect")).clicked() {
+                self.manifest = None;
+                self.pending = None;
+                let source = self.source.trim().to_owned();
+                // A private staging file holds the verified download until approval.
+                match tempfile::NamedTempFile::new() {
+                    Ok(stage) => {
+                        let path = stage.path().to_owned(); self.pending = Some(stage);
+                        self.begin(move || {
+                            if source.contains("://") {
+                                let download = crate::registry::download(&source)?;
+                                std::fs::copy(download.path(), &path)?;
+                            } else {
+                                use std::io::Read;
+                                let mut input = std::fs::File::open(PathBuf::from(source))?.take(crate::archive::MAX_TOTAL + 1);
+                                let mut output = std::fs::File::create(&path)?;
+                                if std::io::copy(&mut input, &mut output)? > crate::archive::MAX_TOTAL { anyhow::bail!("package too large"); }
+                            }
+                            crate::verify::verify_embedded(&mut crate::archive::Package::open(&path)?)
+                        });
+                    }
+                    Err(e) => self.status = format!("Unable to stage package: {e}"),
+                }
+            }
+            ui.label(&self.status);
+            if let Some(m) = &self.manifest {
+                ui.separator(); ui.heading(&m.id); ui.label(format!("Version: {}", m.version));
+                ui.label(format!("Memory: {:.1} MiB recommended • {:.1} MiB hard limit", m.limits.recommended_memory_bytes() as f64 / 1048576.0, m.limits.hard_memory_bytes as f64 / 1048576.0));
+                ui.label(if m.requires_rom { "Requires a ROM supplied by you. It is not included in this package." } else { "No user ROM required." });
+                ui.label(format!("Creator fingerprint: {}", crate::verify::digest(&hex::decode(&m.creator_key).unwrap_or_default())));
+                ui.label("A valid signature proves key ownership, not a real-world identity. Confirm the creator before first installation.");
+                ui.label(format!("Permissions: input={}, audio={}, save={}, network={}", m.permissions.input, m.permissions.audio, m.permissions.save, m.permissions.network));
+                if let Some(url) = &m.update_url { ui.label(format!("Updates: {url}")); }
+                let already = self.installed.iter().any(|old| old.id == m.id);
+                let label = if already { "Install verified update" } else { "Trust this creator and install" };
+                if ui.add_enabled(self.result.is_none() && self.pending.is_some(), egui::Button::new(label)).clicked() {
+                    if let Some(stage) = self.pending.take() {
+                        self.begin(move || crate::registry::install(&crate::registry::default_root()?, stage.path(), true));
+                    }
+                }
+            }
+            ui.separator(); ui.label("Experimental grid-v1 games are playable. Asset and selected ROM reads work. Scoped saves work. WIT, Slang rendering and audio are pending.");
+            ui.hyperlink_to("GamePKG • Apache 2.0", "https://gamepkg.com");
+        });
+    }
+}

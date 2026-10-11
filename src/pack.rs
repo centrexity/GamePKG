@@ -61,6 +61,7 @@ pub fn pack(dir: &Path, out: &Path, seed: &[u8; 32]) -> Result<()> {
     let result = (|| -> Result<()> {
         let mut zip = ZipWriter::new(file);
         let mut total = 0u64;
+        let key = SigningKey::from_bytes(seed);
         for name in files {
             let input = fs::File::open(root.join(&name))?;
             if input.metadata()?.len() > crate::archive::MAX_FILE {
@@ -70,6 +71,15 @@ pub fn pack(dir: &Path, out: &Path, seed: &[u8; 32]) -> Result<()> {
             input
                 .take(crate::archive::MAX_FILE + 1)
                 .read_to_end(&mut data)?;
+            if name == "manifest.toml" {
+                let mut manifest = crate::manifest::Manifest::parse(&data)?;
+                let public = hex::encode(key.verifying_key().as_bytes());
+                if !manifest.creator_key.is_empty() && manifest.creator_key != public {
+                    bail!("manifest creator key does not match signing key");
+                }
+                manifest.creator_key = public;
+                data = toml::to_string(&manifest)?.into_bytes();
+            }
             total += data.len() as u64;
             if data.len() as u64 > crate::archive::MAX_FILE || total > crate::archive::MAX_TOTAL {
                 bail!("package too large");

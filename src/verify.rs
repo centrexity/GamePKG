@@ -74,6 +74,9 @@ pub fn verify(pkg: &mut Package, trusted: &[u8; 32]) -> Result<Manifest> {
         }
     }
     let env: Envelope = toml::from_str(std::str::from_utf8(&pkg.read("signature.toml")?)?)?;
+    if m.creator_key.is_empty() || decode_key(&m.creator_key)? != *trusted {
+        bail!("manifest creator key does not match trusted signer");
+    }
     if hex::decode(env.public_key)? != trusted {
         bail!("signer is not trusted");
     }
@@ -83,4 +86,14 @@ pub fn verify(pkg: &mut Package, trusted: &[u8; 32]) -> Result<Manifest> {
         .context("invalid package signature")?;
     crate::source::scan(pkg)?;
     Ok(m)
+}
+
+pub fn decode_key(s: &str) -> Result<[u8; 32]> {
+    hex::decode(s.trim())?
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("public key must be 32 bytes"))
+}
+pub fn verify_embedded(pkg: &mut Package) -> Result<Manifest> {
+    let m = Manifest::parse(&pkg.read("manifest.toml")?)?;
+    verify(pkg, &decode_key(&m.creator_key)?)
 }

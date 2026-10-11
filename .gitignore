@@ -2,3 +2,5 @@
 *.gamepkg
 *.partial
 *.key
+
+/.demo-library/

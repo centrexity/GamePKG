@@ -1,0 +1,216 @@
+use gamepkg::{archive::Package, pack::pack, registry, verify::verify_embedded};
+use std::{fs, path::Path};
+fn copy(from: &Path, to: &Path) {
+    fs::create_dir_all(to).unwrap();
+    for e in fs::read_dir(from).unwrap() {
+        let e = e.unwrap();
+        if e.file_type().unwrap().is_dir() {
+            copy(&e.path(), &to.join(e.file_name()));
+        } else {
+            fs::copy(e.path(), to.join(e.file_name())).unwrap();
+        }
+    }
+}
+fn package(temp: &Path, name: &str, version: &str, seed: &[u8; 32]) -> std::path::PathBuf {
+    let dir = temp.join(name);
+    copy(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/minimal"),
+        &dir,
+    );
+    let manifest = dir.join("manifest.toml");
+    let source = fs::read_to_string(&manifest)
+        .unwrap()
+        .replace("version = \"0.1.0\"", &format!("version = \"{version}\""));
+    fs::write(&manifest, source).unwrap();
+    let out = temp.join(format!("{name}.gamepkg"));
+    pack(&dir, &out, seed).unwrap();
+    out
+}
+#[test]
+fn embedded_key_install_list_and_update_continuity() {
+    let t = tempfile::tempdir().unwrap();
+    let root = t.path().join("installed");
+    let original = package(t.path(), "original", "0.1.0", &[5; 32]);
+    let m = verify_embedded(&mut Package::open(&original).unwrap()).unwrap();
+    assert_eq!(
+        m.creator_key,
+        hex::encode(
+            ed25519_dalek::SigningKey::from_bytes(&[5; 32])
+                .verifying_key()
+                .as_bytes()
+        )
+    );
+    assert!(registry::install(&root, &original, false)
+        .unwrap_err()
+        .to_string()
+        .contains("approval"));
+    assert!(registry::list(&root).unwrap().is_empty());
+    registry::install(&root, &original, true).unwrap();
+    assert_eq!(registry::list(&root).unwrap()[0].version, "0.1.0");
+    assert!(registry::install(&root, &original, true)
+        .unwrap_err()
+        .to_string()
+        .contains("higher version"));
+    let imposter = package(t.path(), "imposter", "9.0.0", &[6; 32]);
+    assert!(registry::install(&root, &imposter, true)
+        .unwrap_err()
+        .to_string()
+        .contains("creator key differs"));
+    let next = package(t.path(), "next", "0.2.0", &[5; 32]);
+    registry::install(&root, &next, false).unwrap();
+    assert_eq!(registry::list(&root).unwrap()[0].version, "0.2.0");
+    assert!(registry::install(&root, &original, true).is_err());
+    assert_eq!(registry::list(&root).unwrap()[0].version, "0.2.0");
+    assert!(!root.join(".install-lock").exists());
+    assert!(registry::update(&root, "com.gamepkg.minimal")
+        .unwrap_err()
+        .to_string()
+        .contains("no update URL"));
+}
+#[test]
+fn manifest_key_mismatch_and_unsafe_urls_are_rejected() {
+    for url in [
+        "http://example.com/game.gamepkg",
+        "file:///etc/passwd",
+        "https://",
+        "https://user:pass@example.com/game.gamepkg",
+        "https://example.com/ bad",
+    ] {
+        assert!(registry::validate_url(url).is_err());
+        assert!(registry::download(url).is_err());
+    }
+    assert!(registry::validate_url("https://example.com/latest.gamepkg").is_ok());
+    let t = tempfile::tempdir().unwrap();
+    let dir = t.path().join("input");
+    copy(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/minimal"),
+        &dir,
+    );
+    let p = dir.join("manifest.toml");
+    let source = fs::read_to_string(&p).unwrap();
+    fs::write(
+        &p,
+        format!("creator_key = \"{}\"\n{source}", hex::encode([1; 32])),
+    )
+    .unwrap();
+    assert!(pack(&dir, &t.path().join("bad.gamepkg"), &[5; 32])
+        .unwrap_err()
+        .to_string()
+        .contains("does not match"));
+    fs::write(
+        &p,
+        format!("update_url = \"http://example.com/latest.gamepkg\"\n{source}"),
+    )
+    .unwrap();
+    assert!(pack(&dir, &t.path().join("bad.gamepkg"), &[5; 32]).is_err());
+}
+#[test]
+fn cli_installs_and_lists_without_public_key_entry() {
+    use std::process::Command;
+    let t = tempfile::tempdir().unwrap();
+    let root = t.path().join("library");
+    let path = package(t.path(), "cli", "0.1.0", &[5; 32]);
+    let exe = env!("CARGO_BIN_EXE_gamepkg");
+    assert!(Command::new(exe)
+        .arg("verify")
+        .arg(&path)
+        .output()
+        .unwrap()
+        .status
+        .success());
+    assert!(!Command::new(exe)
+        .env("GAMEPKG_HOME", &root)
+        .arg("install")
+        .arg(&path)
+        .output()
+        .unwrap()
+        .status
+        .success());
+    assert!(Command::new(exe)
+        .env("GAMEPKG_HOME", &root)
+        .arg("install")
+        .arg(&path)
+        .arg("--trust-creator")
+        .output()
+        .unwrap()
+        .status
+        .success());
+    let listed = Command::new(exe)
+        .env("GAMEPKG_HOME", &root)
+        .arg("list")
+        .output()
+        .unwrap();
+    assert!(listed.status.success());
+    assert!(String::from_utf8_lossy(&listed.stdout).contains("com.gamepkg.minimal 0.1.0"));
+}
+
+#[test]
+fn rom_requirement_is_signed_and_build_cache_tracks_exact_package() {
+    let t = tempfile::tempdir().unwrap();
+    let dir = t.path().join("rom-game");
+    copy(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/minimal"),
+        &dir,
+    );
+    let p = dir.join("manifest.toml");
+    let original = fs::read_to_string(&p).unwrap();
+    fs::write(&p, format!("requires_rom = true\n{original}")).unwrap();
+    let archive = t.path().join("rom.gamepkg");
+    pack(&dir, &archive, &[5; 32]).unwrap();
+    let root = t.path().join("library");
+    let m = registry::install(&root, &archive, true).unwrap();
+    assert!(m.requires_rom);
+    assert!(!gamepkg::build::is_built(&root, &m.id).unwrap());
+    let cache = root
+        .join("builds")
+        .join(gamepkg::verify::digest(&fs::read(&archive).unwrap()));
+    fs::create_dir_all(&cache).unwrap();
+    fs::write(cache.join("game.wasm"), b"bad").unwrap();
+    assert!(!gamepkg::build::is_built(&root, &m.id).unwrap());
+    fs::write(cache.join("game.wasm"), b"\0asm\x01\0\0\0").unwrap();
+    assert!(gamepkg::build::is_built(&root, &m.id).unwrap());
+    fs::write(
+        &p,
+        format!(
+            "requires_rom = true\n{}",
+            original.replace("version = \"0.1.0\"", "version = \"0.2.0\"")
+        ),
+    )
+    .unwrap();
+    let next = t.path().join("next.gamepkg");
+    pack(&dir, &next, &[5; 32]).unwrap();
+    registry::install(&root, &next, false).unwrap();
+    assert!(!gamepkg::build::is_built(&root, &m.id).unwrap());
+}
+
+#[cfg(feature = "gui")]
+#[test]
+fn example_thumbnail_decodes_for_the_library_table() {
+    let bytes =
+        fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/minimal/thumbnail.png"))
+            .unwrap();
+    image::load_from_memory_with_format(&bytes, image::ImageFormat::Png).unwrap();
+}
+
+#[test]
+fn onion_urls_allow_http_only_for_v3_onion_hosts() {
+    let service = "a".repeat(56);
+    for value in [
+        format!("http://{service}.onion/latest.gamepkg"),
+        format!("https://{service}.onion/latest.gamepkg"),
+        format!("http://{service}.onion./latest.gamepkg"),
+        format!("http://assets.{service}.onion/latest.gamepkg"),
+    ] {
+        registry::validate_url(&value).unwrap();
+    }
+    for value in [
+        "http://example.com/latest.gamepkg",
+        "http://short.onion/latest.gamepkg",
+        "ftp://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.onion/file",
+        "http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1.onion/file",
+        "http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.onion.evil.test/file",
+        "https://user@example.com/file",
+    ] {
+        assert!(registry::validate_url(value).is_err(), "accepted {value}");
+    }
+}

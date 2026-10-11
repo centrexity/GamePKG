@@ -1,8 +1,39 @@
-# GamePKG
+# GamePKG — Play games safely
 
-GamePKG is a source-first game package format: Rust source, Slang shaders, and assets in one signed, random-access ZIP archive.
+**Know what you run. Control what it can access.** GamePKG is building a safer way to share and play games: inspectable source, creator-signed packages, isolated compilation, and a host that is designed to grant only the capabilities a game needs.
 
-This repository implements the **package foundation**, not a playable host yet. It provides strict manifest parsing, bounded archive reads without extraction, Ed25519 signatures with explicit signer trust, SHA-256 tree and lockfile integrity, a conservative Rust source policy, and a CLI for packing, verifying, and reading assets.
+**Current status:** this is a development preview. Package verification, catalog import, installation, update checks, and isolated single-file Wasm builds on Linux work today. The experimental grid-v1 profile now plays in the GUI and terminal under Wasmtime with scoped asset reads, fuel, memory limits, and epoch deadlines. The broader WIT/Slang/audio API remains pending; this is not a guarantee that a package is harmless.
+
+## Why distribute GamePKG instead of an opaque executable?
+
+A conventional game executable can be difficult to inspect, and launching it without a sandbox may give it the permissions of your user account. That can include reading personal files, making network connections, or starting other programs. Signed binaries and separately sandboxed applications can also provide protections; the benefit of GamePKG is making source visibility, package verification, restricted builds, and declared capabilities part of one distribution workflow.
+
+A `.gamepkg` contains Rust source, Slang shader source, assets, and a signed manifest. You can inspect the code and declared permissions before choosing to install it. The host checks the package, compiles its supported source profile into Wasm, and keeps game assets in the archive. The intended runtime will expose a small game API rather than the operating system's full set of interfaces.
+
+| Protection | What it changes | Available today? |
+| --- | --- | --- |
+| Inspectable source | Games ship source rather than a bundled native executable; review is possible before building. Source visibility alone does not prove safety. | Yes |
+| Signed identity and updates | The manifest and package contents are signed. Updates must keep the installed creator key and package ID, with a higher version. | Yes; first creator approval is still required |
+| Restricted package contents | Rejects traversal paths, duplicate entries, symlinks, oversized archive contents, unsupported shaders, and source outside the initial policy. | Yes |
+| Isolated compilation | Supported Linux builds run inside bubblewrap with a private work area, no network, and no access to your home directory. | Yes; single-file, dependency-free profile |
+| Limited game access | Games will receive only host-approved asset, input, rendering, audio, and save operations. | grid-v1 supports scoped asset reads; broader host APIs planned |
+| Runtime resource limits | Memory caps, execution fuel, and deadlines will constrain running games. | Enforced for grid-v1 Wasmtime execution |
+
+## Build locally, improve over time
+
+Building on demand on your own machine creates opportunities to optimize games for the supported platform and runtime instead of relying on a single prebuilt executable. Shipping source also lets the host rebuild games as compiler tooling and optimization settings improve. Creators can release signed source updates, and the host can check periodically for newer versions while preserving creator-key continuity.
+
+These are opportunities, not a promise that every local build will be faster. GamePKG currently supports manual isolated Wasm builds, manual rebuilds, and user-requested update checks. Platform-specific performance tuning and automatic periodic update checks are planned. Wasm builds must stay within their supported target and sandbox; local compilation does not grant games extra access to your machine.
+
+## What can a GamePKG do—and what can it access?
+
+Today, importing a `.gamepkglist` adds catalog entries without fetching games or trusting creators. Downloading fetches the package you select. Installation verifies and stores it; it runs no game code or package-provided install scripts. Update checks stage a signed candidate for review. Supported builds compile the verified Rust source to Wasm inside an isolated Linux process.
+
+The initial package policy allows one Rust source file and no dependencies. It rejects build scripts, proc-macro configuration, compile-time file includes, unsafe blocks, foreign declarations, and filesystem, network, process, or environment paths detected by the source scanner. Shader files must be Slang source. The scanner is a policy filter, not a substitute for compiler isolation or a runtime sandbox.
+
+The runtime design starts with **no ambient filesystem or network access**. A game will request specific capabilities such as input, audio, or saving through the host. Asset access will use virtual paths inside its own archive; save access will be scoped by the host rather than exposing your folders. A game requiring a ROM declares that requirement, and the player supplies it. ROM bytes are shared read-only only for the selected play session.
+
+Guest networking is currently unsupported: manifests must declare `network = "none"`. User-requested host downloads over HTTPS or Tor are separate from game permissions. A signed update URL does not give the game permission to browse the internet. Signatures establish integrity and continuity with a creator key, not a creator's real-world identity or a promise that their code is safe.
 
 ## Try it
 
@@ -17,11 +48,11 @@ A complete package input is in `examples/minimal`. Generate a private signing se
 
 ```sh
 cargo run -- pack examples/minimal -o minimal.gamepkg --key /path/to/signing.key
-cargo run -- verify minimal.gamepkg --trusted-key PUBLIC_KEY_HEX
-cargo run -- asset minimal.gamepkg hello.txt --trusted-key PUBLIC_KEY_HEX -o hello.txt
+cargo run -- verify minimal.gamepkg
+cargo run -- asset minimal.gamepkg hello.txt -o hello.txt
 ```
 
-Packing validates before publishing and refuses to overwrite files. The output must be outside the input directory. Signing keys are never stored in packages. Trust must come from a separately obtained public key; an archive's embedded key is not automatically trusted.
+Packing validates before publishing and refuses to overwrite files. The output must be outside the input directory. Signing keys are never stored in packages. The public key is inserted into the signed manifest during packing. Verification checks the embedded signature automatically; first installation requires a creator trust decision. An embedded key establishes signature integrity, not independent real-world identity.
 
 ## Initial policy
 
@@ -33,7 +64,7 @@ Packing validates before publishing and refuses to overwrite files. The output m
 - Only one Rust source file, no dependencies, `package.build = false`, and restricted Cargo fields. Includes, attributes, external modules, unsafe blocks, foreign declarations, and filesystem/network/process/environment paths are rejected.
 - Optional previews are rejected until codec and keyframe validation exists. PNG validation currently checks the magic bytes only.
 
-The source scanner is an early policy filter, **not a security boundary**. Rust macros and compiler behavior require an OS-isolated build process, followed by a Wasm capability sandbox. This implementation never invokes untrusted builds or executes game code. Do not relax the source profile before those boundaries exist.
+The source scanner is an early policy filter, **not a security boundary**. Rust macros and compiler behavior require an OS-isolated build process, followed by a Wasm capability sandbox. Linux builds now invoke the verified single-file compiler inside bubblewrap; game code executes only through the Wasmtime runtime when Play/run is requested. Do not relax the source profile before those boundaries exist.
 
 ## Roadmap
 
@@ -41,9 +72,9 @@ The source scanner is an early policy filter, **not a security boundary**. Rust 
 2. OS-isolated offline Cargo wrapper with pinned compiler and approved dependency closures.
 3. Wasmtime fuel, memory and epoch limits, minimal WIT host API, asset/input/save access.
 4. Pinned Slang compilation and shader reflection validation.
-5. Build/install/run CLI and transactional local package registry.
+5. Install/list/update CLI and local package registry implemented; isolated single-file Wasm build implemented; grid-v1 game run implemented.
 6. Broader bypass fixtures and preview decoding checks.
-7. Thin feature-gated GUI.
+7. Feature-gated GUI verification, installed library, URL download and installation implemented; grid-v1 playback implemented; broader runtime APIs remain pending.
 8. Shared asset pool and store tooling.
 
 See [the format notes](html/spec/index.md) and [security design](html/guide/security.md). The original design brief is preserved in `DESIGN.md`. No site has been deployed.
@@ -52,10 +83,172 @@ See [the format notes](html/spec/index.md) and [security design](html/guide/secu
 
 Creators sign their `.gamepkg` files with their own Ed25519 private keys. Verification proves the package was signed by the holder of a trusted key and that its signed contents have not changed. A signature alone does not prove a person's real-world identity: the public key must first be associated with the creator through a trusted channel.
 
-The planned installer will pin the creator's public key to the package ID on first approved installation. Updates must keep the same ID, verify against that pinned key, and have a strictly higher semantic version. A different key must never silently take ownership of an existing ID. Key rotation needs authorization from the old key and an explicit trust transition; recovery after losing a key needs a separate approval flow. Installation, version ordering, rotation, and recovery are not implemented yet. The current `verify` command already requires an explicitly trusted public key.
+The installer pins the creator key to the installed package ID. Updates must keep that ID, use the same key, and have a strictly higher semantic version. Key changes are rejected even with `--trust-creator`. Rotation and lost-key recovery remain pending. `verify` checks the embedded key by default; `--trusted-key` remains available for advanced callers who require a separately known signer.
+
 
 ## License and attribution
 
 GamePKG and its minimal example are licensed under [Apache 2.0](LICENSE). [NOTICE](NOTICE) identifies the project and links to https://gamepkg.com. When redistributing covered code or derivative works, preserve applicable copyright and attribution notices, include the license, and mark modified files as required by its terms. NOTICE attribution may appear in distributed notices, source/documentation, or the appropriate notice display; the license does not mandate a clickable or prominently displayed backlink on every website.
 
 Creators choose their own licenses for their games and assets. Using the GamePKG format or host does not automatically license a game under Apache 2.0. The package verifier accepts an optional top-level `NOTICE`, includes it in the signed tree, and does not require it for independently authored games.
+
+## CLI and desktop GUI
+
+Build both entry points locally:
+
+```sh
+cargo build --locked --release --features gui --bins
+cargo test --locked --all-features
+```
+
+The executables are `target/release/gamepkg` and `target/release/gamepkg-gui` (with `.exe` on Windows). Launch the GUI with `cargo run --locked --features gui --bin gamepkg-gui`. It lists installed packages and accepts a local package path or HTTPS URL. Inspection runs in a background worker and displays the verified creator fingerprint and permissions before installation. New creators require approval; updates use the installed creator key automatically. It can compile the supported single-file profile on Linux; game grid-v1 playback implemented; broader runtime APIs remain pending. A desktop display is required to launch it.
+
+The CLI remains available without desktop dependencies: `cargo build --locked --release --bin gamepkg`. See [examples](examples/README.md) for valid and deliberately rejected packages. Local integration tests exercise the actual CLI binary, every example, and signed archive tampering.
+
+## Install, download, and update
+
+```sh
+gamepkg verify game.gamepkg
+gamepkg install game.gamepkg --trust-creator
+gamepkg install https://creator.example/game.gamepkg --trust-creator
+gamepkg list
+gamepkg update com.creator.game
+```
+
+Without `--trust-creator`, a first CLI install reports the creator fingerprint and waits for an explicit re-run accepting that creator. The GUI has a “Trust this creator and install” button. Existing packages need no new trust approval. Neither an embedded key nor a URL certifies a creator's name; obtain the first package from a source you trust.
+
+Creators may set `update_url = "https://creator.example/latest.gamepkg"` at the top level of their input manifest. It points directly to the newest signed `.gamepkg`, not a JSON feed. The host downloads it only when the user requests an update; the downloaded ID, signer, and version must pass continuity checks. Packing inserts `creator_key` automatically; if supplied, it must match the signing key. The private signing key never goes inside the archive.
+
+Downloads require the `curl` executable, enforce HTTPS for ordinary hosts, Tor-only routing for onion hosts, certificate verification for HTTPS, connection/transfer timeouts, and a 256 MiB transfer limit. No game code runs during installation. Host downloads are separate from guest network permissions, which remain `none`.
+
+Installed archives reside under `GAMEPKG_HOME` when set, otherwise `$XDG_DATA_HOME/gamepkg`, `%LOCALAPPDATA%/gamepkg`, or `$HOME/.local/share/gamepkg`. Installation snapshots and verifies the bytes before replacement, uses an install lock, and leaves the old version intact on validation failure. An interrupted process may leave `.install-lock`; remove it only after confirming no install process is active.
+
+For a local HTTPS end-to-end test (requires Python 3, OpenSSL, and curl), run `python3 tests/https_download.py` after the release build. It creates temporary certificates and packages, verifies URL installation and updates, and checks signer and ID substitution rejection. The server and temporary keys are cleaned up afterward.
+
+## Library table, build actions, and ROM requirements
+
+The desktop library shows each installed package's thumbnail, ID, version, ROM requirement, build status, and actions. Build becomes Rebuild once the exact installed package has a cached Wasm output. Installing a new package version resets that status. Play is enabled for built packages; ROM games require a file path in the library’s ROM field. The package must implement the grid-v1 entry point; packages without it report a clear runtime error and need a playable source implementation. Thumbnails decode with bounded dimensions and allocation; invalid icons show a fallback.
+
+Set `requires_rom = true` at the top level of the manifest for a game requiring a ROM supplied by the end user. It defaults to false for existing packages and is covered by the creator signature. The host displays the requirement during inspection and in the library. No ROM is downloaded, uploaded, or included automatically. ROM selection and guest delivery will be implemented with the runtime.
+
+`gamepkg build <id>` uses the same build action as the GUI. This initial build profile compiles the verified, dependency-free `source/src/lib.rs` directly to `wasm32-unknown-unknown` under Linux bubblewrap, without Cargo build scripts. It requires `bwrap`, `timeout`, Rust, and `rustup target add wasm32-unknown-unknown`. The compiler has a private working directory, an isolated network namespace, access to system tools and its toolchain, and a 60-second deadline. It has no access to the user's home directory. Failed sandbox setup stops the build; there is no native or unsandboxed fallback. Compiler memory caps, dependency support, WIT bindings and Slang integration remain pending.
+
+`gamepkg check-updates <id>` checks the signed URL without changing the installed game. In the GUI, a newer update opens for review and explicit installation. Matching versions report up-to-date; older versions and changed IDs/keys are rejected. `gamepkg update <id>` remains the explicit download-and-install command.
+
+After building the host, run `python3 tests/isolated_build.py` on a Linux machine with bubblewrap support to verify isolated compilation and rebuilding.
+
+## Tor onion downloads and updates
+
+`update_url` and the download field accept `http://<v3-address>.onion/latest.gamepkg` and HTTPS onion URLs. Ordinary hosts still require HTTPS. HTTP onion transport is permitted because onion-service connections are protected by Tor; package signatures and creator continuity checks still apply.
+
+Run a local Tor SOCKS service on `127.0.0.1:9050`, or set `GAMEPKG_TOR_PROXY=127.0.0.1:9150` for a different local listener. This variable accepts a loopback IP and port, not a URL. The CLI and GUI both use it. GamePKG does not bundle or start Tor.
+
+Onion downloads explicitly use `socks5h`, so the proxy resolves onion names. `NO_PROXY` cannot bypass this route; proxy failure stops the download with no direct fallback. Redirects are validated individually, and onion-to-ordinary-host redirects are rejected. Automatic curl configuration files are ignored. HTTPS onion URLs retain certificate verification.
+
+Run `python3 tests/tor_download.py` after building to test remote DNS, Tor proxy routing despite `NO_PROXY=*`, signed installs/updates, and redirect rejection with a mock SOCKS5 server. This test does not contact or certify connectivity to the live Tor network.
+
+## Bulk game lists and the not-downloaded state
+
+A `.gamepkglist` is a UTF-8 TOML catalog, not an archive. Import adds game metadata to the library without downloading game packages, thumbnails, ROMs, or granting creator trust. Remote imports download only the list itself. See [starter.gamepkglist](examples/lists/starter.gamepkglist) for a complete example with placeholder URLs.
+
+```toml
+format_version = 1
+
+[[games]]
+id = "com.creator.game"
+title = "Example Game"
+download_url = "https://creator.example/game.gamepkg"
+version = "1.0.0"     # optional catalog claim
+requires_rom = false # optional catalog claim
+```
+
+```sh
+gamepkg import-list starter.gamepkglist
+gamepkg import-list https://creator.example/games.gamepkglist
+gamepkg list
+gamepkg download com.creator.game --trust-creator
+```
+
+The GUI's shared path/URL field has an **Import .gamepkglist** action. Imported games appear in the table as **Not downloaded**, with a placeholder icon and **Download / inspect** action. Version and ROM claims from the catalog are unverified; the signed manifest becomes authoritative after downloading. The package ID must match the requested catalog ID, and creator approval is still required before first installation. Existing installed packages appear only once and retain their verified metadata and signer continuity rules.
+
+Lists support the same HTTPS and Tor onion URLs as packages, have a 4 MiB/10,000-game limit, reject unknown fields and duplicate IDs, and are imported atomically. Reimporting identical entries is harmless. Conflicting metadata for existing catalog IDs rejects the entire import rather than silently replacing download sources. Catalog metadata persists in `catalog.gamepkglist` under the library directory; it contains no game binaries or creator trust approvals. A crashed import may leave `.catalog-lock`; remove it only after confirming no import process is active.
+
+## Play the first game
+
+After building both release binaries, run `./play-demo.sh`. It signs the bundled example with a temporary local demo key, installs it in `.demo-library`, builds it in isolation, and opens the desktop player. The private demo key is deleted; this separate demo library does not change your normal installed games.
+
+`examples/good/collect-stars` is a playable guest whose movement and scoring run inside Wasmtime. Pack and install it using your creator key, then build and play:
+
+```sh
+gamepkg pack examples/good/collect-stars -o collect-stars.gamepkg --key /path/to/creator.key
+gamepkg install collect-stars.gamepkg --trust-creator
+gamepkg build com.gamepkg.collect-stars
+gamepkg run com.gamepkg.collect-stars
+```
+
+In the terminal, enter W/A/S/D to move and Q to quit. In the GUI, click Play and use arrows or WASD; collect yellow targets to increase your score. Restart resets the game; Back to library unloads it. The desktop executable also accepts `--library <directory> --play com.gamepkg.collect-stars`.
+
+The experimental grid-v1 ABI uses core Wasm, not the planned WIT component API. Guest source defines `pub fn game_tick(input: u32, state: u64) -> u64`; the host compiler appends the exported wrapper, so guest export attributes are unnecessary. State packs player x/y and target x/y into four bytes, followed by a 32-bit score. Input bits are left=1, right=2, up=4, down=8. Coordinates use a 16×16 grid. Guests receive zero input unless the signed manifest grants input.
+
+Runtime modules can import only the scoped GamePKG asset and ROM APIs; WASI, filesystem and socket imports are rejected. Wasmtime enforces memory, fuel and epoch limits. A trap ends gameplay. Shader rendering and audio remain pending.
+
+For a game declaring `requires_rom = true`, use `gamepkg run <id> --rom /path/to/file` or enter your ROM path above the desktop library table. ROM files must be regular files of 1 byte to 64 MiB and are read into a session snapshot. Guests use `gamepkg::rom_size()` and `gamepkg::rom_read(offset, &mut buffer)`, never a host path. Reads are capped at 64 KiB and consume fuel. No ROM is downloaded, installed or bundled automatically. `examples/good/rom-required` is a playable data-driven example; `python3 tests/runtime_rom.py` tests the signed build and runtime path.
+
+Run `python3 tests/playable.py` after the release build to test the complete signed-package, isolated-build, movement and scoring path. Runtime tests separately exercise forbidden imports, missing exports, input permission denial, excessive memory, infinite loops and epoch interruption.
+
+## Recommended memory and hard memory limit
+
+Creators set both values in the signed manifest:
+
+```toml
+[limits]
+recommended_memory_bytes = 8388608 # 8 MiB, advisory
+hard_memory_bytes = 16777216       # 16 MiB, enforced
+fuel = 1000000
+```
+
+Recommended memory describes the creator's suggested budget; it neither reserves memory nor stops a game from using more. Wasmtime enforces the hard limit on guest linear memory, including initial allocation and growth. It is not a cap on the entire host process, compiler, or JIT memory. The GUI displays both values during inspection and in the installed-state tooltip.
+
+Recommended memory is optional and defaults to the hard limit. When supplied, it must be positive and no greater than the hard limit. The hard limit must be positive and at most 512 MiB. Existing `memory_bytes` remains accepted as an alias for `hard_memory_bytes`; supplying both is rejected, and newly packed manifests use the canonical hard-limit field.
+
+## Desktop settings
+
+Open **Settings** from the desktop library navigation. Save applies validated preferences; Cancel discards form changes, and Reset restores defaults in the form until you save.
+
+- Library folder: choose an absolute path or leave empty for the default. Switching libraries does not move existing packages.
+- Tor proxy: local loopback IP and SOCKS port; Tor remains a separately running service.
+- Game ceilings: memory (1–512 MiB), fuel (1–100 million per tick), and tick deadline (10–100 ms). Memory/fuel use the lower of the saved ceiling and the signed game limit. New sessions use the settings; current games are unaffected.
+- Optimize builds: enables Rust `opt-level=2` for subsequent Build/Rebuild; existing artifacts remain available.
+- Appearance: dark or light theme, applied after saving.
+
+Settings persist in `$XDG_CONFIG_HOME/gamepkg/settings.toml`, `%APPDATA%/gamepkg/settings.toml`, or `$HOME/.config/gamepkg/settings.toml`. Set `GAMEPKG_CONFIG` to override the config file. `GAMEPKG_HOME` (including GUI `--library`) and `GAMEPKG_TOR_PROXY` override the saved library and proxy respectively. The CLI shares library, proxy, build and runtime settings. Invalid configuration is reported rather than silently weakening restrictions.
+
+## Guest asset reads
+
+The isolated compiler supplies `gamepkg::asset_read(path, offset, &mut buffer)`.
+Paths are relative to `assets/` in the signed archive. The function returns
+`Some(bytes_read)`, including zero at EOF, or `None` for invalid paths, offsets,
+or missing assets. Reads are limited to 64 KiB per call; archive work consumes
+runtime fuel. The guest receives only the requested bytes and cannot open host
+files. This core-Wasm API is experimental; the component/WIT interface remains
+pending. Rebuild existing games to use the new wrapper.
+
+Run `python3 tests/runtime_assets.py` after building the release CLI to verify
+asset reads and path rejection through signing, isolated compilation and play.
+
+## Scoped saves
+
+Games declaring `permissions.save = true` can use `gamepkg::save_size()`,
+`gamepkg::save_read(offset, &mut buffer)` and `gamepkg::save_write(&bytes)`.
+The host keeps one blob of at most 1 MiB under the library’s `saves` folder,
+scoped by the signed game ID and creator key. Same-creator updates retain the
+blob; another game or creator cannot select it. Reads are capped at 64 KiB.
+Denied permissions return `None` or `false` without opening save storage.
+Writes consume fuel and replace the blob atomically only after a successful
+tick. A trapped tick discards its pending save. Concurrent sessions use the
+last successfully committed write. The version-one blob format belongs to the
+game; creators should handle migration when changing their save layout.
+
+`examples/good/save-counter` keeps its tick count across sessions. After a
+release build, `python3 tests/runtime_saves.py` verifies persistence, updates,
+permission denial and trap rollback.

@@ -1,0 +1,14 @@
+format_version = 1
+
+[[games]]
+id = "com.gamepkg.counter"
+title = "Counter Demo"
+version = "0.1.0"
+download_url = "https://example.invalid/counter.gamepkg"
+requires_rom = false
+
+[[games]]
+id = "com.gamepkg.rom-demo"
+title = "ROM Demo"
+download_url = "https://example.invalid/rom-demo.gamepkg"
+requires_rom = true

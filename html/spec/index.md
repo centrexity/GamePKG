@@ -6,7 +6,7 @@ The manifest example in `examples/minimal/manifest.toml` is authoritative for cu
 
 ## Signature encoding
 
-`signature.toml` has `public_key` (32 bytes in hexadecimal) and `signature` (64 bytes in hexadecimal). Verification requires the public key to match an external trusted key.
+`signature.toml` has `public_key` (32 bytes in hexadecimal) and `signature` (64 bytes in hexadecimal). The manifest includes `creator_key` (32 bytes in hexadecimal), which must match the signature envelope key. Verification checks that embedded key; advanced callers may additionally supply an externally trusted key. An optional `update_url` is an HTTPS or Tor onion URL pointing directly to the latest signed package.
 
 The signed message is a SHA-256 tree digest. Initialize SHA-256 with UTF-8 bytes `GamePKG tree v1` and one NUL byte. Sort every file except `signature.toml` lexicographically by its UTF-8 name. For each, hash: name byte length as a little-endian u64, name bytes, content byte length as a little-endian u64, then the raw 32-byte SHA-256 of its contents. Ed25519 signs the resulting 32-byte digest. This includes the manifest, shaders, source, assets, and license. ZIP timestamps, entry order and compression are not signed.
 
@@ -14,6 +14,18 @@ This is an experimental profile; runtime ABI and compatibility policy are pendin
 
 An optional top-level `NOTICE` carries license attribution and is included in the signed tree. Creators choose the license in their package's `LICENSE`; the host's Apache 2.0 license does not dictate the license of independently authored games.
 
-## Creator identity and update continuity (planned installer policy)
+## Creator identity and update continuity
 
-A creator's trusted public key identifies the signing authority. The installer will bind that key to the package ID after the user's initial trust decision. An update must have the same ID, a strictly higher semantic version, and a valid signature from the pinned creator key. Unrelated keys cannot replace a package merely by claiming its ID. Key rotation requires authorization from the previously trusted key and a deliberate trust transition. The current tools verify individual signatures only; installer state, update ordering, and rotation remain unimplemented.
+A creator's trusted public key identifies the signing authority. The installer binds that key to the package ID after the user's initial trust decision. An update must have the same ID, a strictly higher semantic version, and a valid signature from the pinned creator key. Unrelated keys cannot replace a package merely by claiming its ID. Key rotation requires authorization from the previously trusted key and a deliberate trust transition. The installed archive records the trusted key; install and update enforce same-ID/same-key continuity and increasing semantic versions. Key rotation remains unimplemented and key changes are rejected.
+
+`requires_rom` is an optional top-level boolean, defaulting to false. True declares that a ROM must be supplied by the end user. It is signed metadata; the host never infers permission to fetch or redistribute a ROM. ROM selection and delivery are pending runtime integration.
+
+Update URLs support HTTP/HTTPS v3 `.onion` services through a local Tor SOCKS proxy. Ordinary hosts require HTTPS. Onion redirects cannot leave onion hosts, and missing Tor connectivity never triggers a direct fallback.
+
+## Game list format
+
+`.gamepkglist` is a UTF-8 TOML document with `format_version = 1` and a `games` array written as `[[games]]` tables. Each entry requires `id`, `title`, and `download_url`; `version` (semantic version) and `requires_rom` (boolean) are optional unverified claims. Unknown fields, duplicate IDs, unsafe URLs, inputs exceeding 4 MiB, and more than 10,000 games are rejected.
+
+Import saves metadata only, with no package/thumbnail downloads and no creator trust. Games remain in a Not downloaded state until selected for download. A fetched package must verify and match the catalog ID; first installation requires creator approval. Installed signed manifest metadata takes precedence over catalog claims. Identical reimports merge without duplication; conflicting existing IDs reject the import atomically.
+
+The `[limits]` table accepts `hard_memory_bytes` (required, positive, at most 512 MiB) and `recommended_memory_bytes` (optional, positive, no greater than the hard limit). The recommendation defaults to the hard limit and is advisory; the runtime enforces the hard limit on guest linear memory. Legacy `memory_bytes` is an alias for `hard_memory_bytes`, and both names cannot appear together.
