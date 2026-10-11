@@ -226,7 +226,9 @@ pub fn decode(name: &str, bytes: &[u8]) -> Result<Vec<Vec<u8>>> {
         bail!("invalid decoded preview frame data");
     }
     Ok(bytes
-        .chunks_exact(FRAME)
+        .as_chunks::<FRAME>()
+        .0
+        .iter()
         .map(|frame| frame.to_vec())
         .collect())
 }

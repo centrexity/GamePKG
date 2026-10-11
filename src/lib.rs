@@ -34,3 +34,5 @@ mod compiler;
 pub mod creator;
 
 pub mod previews;
+
+pub mod pool;

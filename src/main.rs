@@ -12,6 +12,16 @@ struct Cli {
 }
 #[derive(Subcommand)]
 enum Command {
+    /// Add verified package assets to the shared content-addressed store.
+    PoolImport { package: PathBuf },
+    /// Verify a shared blob and copy it to a new output file.
+    PoolRead {
+        sha256: String,
+        #[arg(long)]
+        size: u64,
+        #[arg(short, long)]
+        output: PathBuf,
+    },
     /// Validate and decode a package preview without running its game.
     Preview {
         package: PathBuf,
@@ -85,6 +95,27 @@ fn key(s: &str) -> Result<[u8; 32]> {
 }
 fn main() -> Result<()> {
     match Cli::parse().command {
+        Command::PoolImport { package } => {
+            let pool = gamepkg::pool::Pool::open(&gamepkg::registry::default_root()?)?;
+            let references = pool.import_package(&package)?;
+            for (path, reference) in references {
+                println!("{} {} {}", reference.sha256, reference.size, path);
+            }
+        }
+        Command::PoolRead {
+            sha256,
+            size,
+            output,
+        } => {
+            let pool = gamepkg::pool::Pool::open(&gamepkg::registry::default_root()?)?;
+            let bytes = pool.read(&gamepkg::pool::Reference { sha256, size })?;
+            use std::io::Write;
+            fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(output)?
+                .write_all(&bytes)?;
+        }
         Command::Preview { package, theora } => {
             let mut pkg = gamepkg::archive::Package::open(&package)?;
             gamepkg::verify::verify_embedded(&mut pkg)?;

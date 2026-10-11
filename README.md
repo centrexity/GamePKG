@@ -490,3 +490,21 @@ verification, decoding, and rejected malformed videos.
 `python3 tests/previews_gui.py` uses a private Xvfb display to verify that
 AV1 frames advance, the explicit Theora fallback renders, and preview playback
 leaves the game unbuilt. It requires Xvfb, xdotool, ImageMagick, and Pillow.
+
+## Shared asset store tooling
+
+`gamepkg pool-import game.gamepkg` verifies a signed, self-contained package
+and adds its assets to the library's `asset-pool` directory. Identical content
+from different games occupies one blob named by its SHA-256. Imports do not
+install games, approve creators, or run game code. Original packages remain
+self-contained and keep their signatures.
+
+The command prints `sha256 size virtual-path` for each asset. Use
+`gamepkg pool-read <sha256> --size <bytes> -o output.bin` to verify and copy a
+blob. Every read checks the exact size and content hash. Writes publish without
+replacing existing blobs; a corrupted blob causes an error. Symlinked blobs and
+pool folders are rejected. Individual blobs are limited to 64 MiB.
+
+This is the storage foundation for store packages. Signed external asset
+references and runtime integration are still being implemented; ordinary games
+continue reading their assets directly from their own archives.
