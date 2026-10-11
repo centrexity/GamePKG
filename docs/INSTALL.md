@@ -4,8 +4,8 @@ This archive contains the GamePKG command-line program and desktop library. It d
 
 These builds target Ubuntu 24.04 or a compatible system with glibc 2.39 or newer. The desktop requires a working X11 or Wayland display, OpenGL, and ALSA. The exact builder libc version and executable hashes are recorded in BUILD.json. Dependency license expressions and original notices are included in DEPENDENCIES.json and third-party-licenses/. Original resolved dependency source archives are preserved as directories in third-party-sources/, including notices embedded in source and bundled fonts.
 
-1. Check the downloaded archive against its .sha256 file with `sha256sum -c gamepkg-0.1.1-linux-x86_64.tar.gz.sha256`.
-2. Extract it into a folder you control with `tar -xzf gamepkg-0.1.1-linux-x86_64.tar.gz`.
+1. Check the downloaded archive against its .sha256 file with `sha256sum -c gamepkg-0.1.2-linux-x86_64.tar.gz.sha256`.
+2. Extract it into a folder you control with `tar -xzf gamepkg-0.1.2-linux-x86_64.tar.gz`.
 3. Enter the extracted folder. Run `./bin/gamepkg --help` for the CLI or `./bin/gamepkg-gui` for the desktop.
 
 On Ubuntu 24.04, install the runtime tools needed for isolated builds, downloads, previews, and audio:
@@ -36,3 +36,7 @@ To try an included example, generate your own private creator key outside the ex
 ```
 
 Keep private creator keys private. Players do not need a key to install or play games; the signed manifest carries the public creator key. Checksums detect download corruption; they do not establish an independent publisher identity.
+
+The browser library is included in this preview. Run `./bin/gamepkg web-library --indexeddb-package /path/to/Hindsight4/Compiler/packages/Database/IndexedDB` and open its printed session link. Hindsight’s package is supplied separately. The browser stores library information and icons in IndexedDB; use the desktop or CLI for installation, builds, gameplay and repairs.
+
+For games with multiple ROMs, select the game and supply every named file in manifest order. To repair damaged shared assets, enter the original local `.gamepkgstore` path in the desktop package field and choose **Repair assets**, or run `./bin/gamepkg integrity-fix GAME_ID --store original.gamepkgstore`.

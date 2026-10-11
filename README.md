@@ -4,7 +4,7 @@
 
 **Current status:** this is a development preview. Package verification, catalog import, installation, update checks, and isolated Cargo Wasm and Slang shader builds on Linux work today. The experimental grid-v1 profile now plays in the GUI and terminal under Wasmtime with scoped asset reads, fuel, memory limits, and epoch deadlines. Resource-free Slang GLSL, SPIR-V, and WGSL fragment passes now render in the OpenGL GUI; versioned WIT components are supported alongside the legacy core profile; broader rendering remains pending; this is not a guarantee that a package is harmless.
 
-Download the [Linux CLI and desktop preview](https://github.com/centrexity/GamePKG/releases/tag/v0.1.1), including its checksum file. Host distributions can also be prepared with `python3 tools/package_release.py /tmp/gamepkg-distribution` after building both release entry points. The archive includes CLI/GUI executables, setup tools, examples, original resolved dependency sources and notices, and integrity hashes. See [installation instructions](docs/INSTALL.md). The public repository's **Package Linux preview** workflow produces the same artifact on Ubuntu 24.04.
+Download the [Linux CLI and desktop preview](https://github.com/centrexity/GamePKG/releases/tag/v0.1.2), including its checksum file. Host distributions can also be prepared with `python3 tools/package_release.py /tmp/gamepkg-distribution` after building both release entry points. The archive includes CLI/GUI executables, setup tools, examples, original resolved dependency sources and notices, and integrity hashes. See [installation instructions](docs/INSTALL.md). The public repository's **Package Linux preview** workflow produces the same artifact on Ubuntu 24.04.
 
 
 ## Why distribute GamePKG instead of an opaque executable?
@@ -736,7 +736,7 @@ Repairs never rewrite signatures, invent missing shared blobs, reset saves, or e
 
 ### Hindsight IndexedDB browser library
 
-Available in current source builds; this browser interface is not included in the 0.1.1 download.
+Included in the 0.1.2 Linux preview. Supply the Hindsight package directory separately as described below.
 
 The host now includes `gamepkg web-library --indexeddb-package /path/to/Hindsight4/Compiler/packages/Database/IndexedDB`. Open the printed local session link in a browser. The default port is 39173; use `--port` to change it. Keep the port stable to retain the browser origin’s stored information.
 

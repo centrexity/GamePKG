@@ -1,6 +1,6 @@
 use clap::Parser;
 #[derive(Parser)]
-#[command(about = "GamePKG desktop library and game player")]
+#[command(version, about = "GamePKG desktop library and game player")]
 struct Args {
     #[arg(long)]
     library: Option<std::path::PathBuf>,
