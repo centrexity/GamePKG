@@ -1,6 +1,6 @@
 """Desktop store imports require review, survive source removal, and allow cancellation."""
 from pathlib import Path
-import os, shutil, subprocess, tempfile, time
+import csv, io, os, shutil, subprocess, tempfile, time
 from gui_test_support import start_display
 project = Path(__file__).resolve().parents[1]
 cli = project/'target/release/gamepkg'
@@ -31,18 +31,37 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-store-gui-') as directory:
         def click(x,y):
             subprocess.run(['xdotool','mousemove','--window',window,str(x),str(y),'click','1'],env=env,check=True)
             time.sleep(.3)
+        def screen(name):
+            path=root/name
+            subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(path)],env=env,check=True)
+            shutil.copy2(path,project/'target'/name)
+            result=subprocess.run(['tesseract',str(path),'stdout','--psm','6','tsv'],check=True,capture_output=True,text=True).stdout
+            return [w for w in csv.DictReader(io.StringIO(result),delimiter='\t') if w['text'].strip()]
+        def wait_word(label,name):
+            deadline=time.monotonic()+30
+            while True:
+                if app.poll() is not None:raise RuntimeError(app.stderr.read().decode())
+                words=screen(name)
+                found=next((w for w in words if w['text'].strip('[]()|').casefold()==label.casefold()),None)
+                if found:return found
+                assert time.monotonic()<deadline,'Missing control '+label+': '+' '.join(w['text'] for w in words)
+                time.sleep(.2)
+        def click_label(label,name):
+            w=wait_word(label,name)
+            click(int(w['left'])+int(w['width'])//2,int(w['top'])+int(w['height'])//2)
         subprocess.run(['xdotool','windowfocus',window],env=env,check=True)
-        click(80,203)
+        label=wait_word('Local','store-before.png')
+        click(100,int(label['top'])+int(label['height'])+12)
         subprocess.run(['xdotool','type','--clearmodifiers',str(bundle)],env=env,check=True)
-        click(80,225);time.sleep(1)
+        click_label('Inspect','store-before.png')
+        wait_word('Cancel','store-review.png')
         assert not (root/'library/com.gamepkg.minimal.gamepkg').exists(), 'inspection installed a game without approval'
-        subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(project/'target/store-review.png')],env=env,check=True)
-        # Review actions are below the signed identity list.
-        click(330,368)
+        click_label('Cancel','store-review.png')
         assert not (root/'library/com.gamepkg.minimal.gamepkg').exists(), 'cancellation installed a game'
-        click(80,225);time.sleep(1)
+        click_label('Inspect','store-cancelled.png')
+        wait_word('Cancel','store-review.png')
         bundle.unlink()
-        click(120,368)
+        click_label('Trust','store-review.png')
         installed=root/'library/com.gamepkg.minimal.gamepkg'
         for _ in range(100):
             if installed.exists():break

@@ -65,7 +65,8 @@ pub fn verify_build(path: &Path, bytes: &[u8]) -> Result<()> {
 }
 pub fn check(root: &Path, id: &str) -> Result<String> {
     // Validate the identifier through the verified registry before constructing paths.
-    let manifest = crate::registry::list(root)?
+    let manifest = crate::registry::inspect_library(root)?
+        .games
         .into_iter()
         .find(|m| m.id == id)
         .context("verified installed package not found")?;

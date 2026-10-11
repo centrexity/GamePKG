@@ -32,6 +32,8 @@ fn play_history_achievements_and_storage_survive_sessions() {
     let good=wat::parse_str("(module (import \"gamepkg\" \"achievement_unlock\" (func $unlock (param i32) (result i32))) (func (export \"gamepkg_tick\") (param i32 i64) (result i64) i32.const -1 call $unlock drop i32.const 0 call $unlock drop i64.const 0))").unwrap();
     fs::write(&cache, &good).unwrap();
     gamepkg::integrity::record_build(&cache, &good).unwrap();
+    fs::write(root.join("unrelated-broken.gamepkg"), b"damaged").unwrap();
+    gamepkg::integrity::check(&root, &manifest.id).unwrap();
     {
         let mut game = Game::load(&root, &manifest.id).unwrap();
         game.step(0).unwrap();

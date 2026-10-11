@@ -517,7 +517,8 @@ impl Game {
         Self::load_with_roms(root, id, &paths)
     }
     pub fn load_with_roms(root: &Path, id: &str, rom_paths: &[std::path::PathBuf]) -> Result<Self> {
-        crate::registry::list(root)?
+        crate::registry::inspect_library(root)?
+            .games
             .into_iter()
             .find(|m| m.id == id)
             .context("game is not installed")?;

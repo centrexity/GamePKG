@@ -11,7 +11,8 @@ use std::{
 };
 
 fn installed(root: &Path, id: &str) -> Result<PathBuf> {
-    registry::list(root)?
+    registry::inspect_library(root)?
+        .games
         .into_iter()
         .find(|m| m.id == id)
         .context("package is not installed")?;

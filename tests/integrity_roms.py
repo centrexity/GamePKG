@@ -28,7 +28,9 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-integrity-roms-') as directory:
             return result.stdout+result.stderr
         key=home/'creator.key';run('keygen','-o',key)
         package=home/'game.gamepkg';run('pack',source,'-o',package,'--key',key)
-        run('install',package,'--trust-creator');run('build','com.gamepkg.minimal')
+        run('install',package,'--trust-creator')
+        (home/'library/unrelated-broken.gamepkg').write_bytes(b'damaged unrelated package')
+        run('build','com.gamepkg.minimal')
         a=home/'program.rom';a.write_bytes(b'ROM');b=home/'data.rom';b.write_bytes(b'DATA')
         run('run','com.gamepkg.minimal','--frames','1','--rom',a,good=False)
         run('run','com.gamepkg.minimal','--frames','1','--rom',a,'--rom',b)
