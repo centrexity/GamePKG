@@ -19,7 +19,9 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-worker-test-') as directory:
  before=store.read_bytes();run('prepare-build-worker','com.gamepkg.shader-switch',store,good=False);assert store.read_bytes()==before
  missing=root/'missing.gamepkgstore';run('prepare-build-worker','unknown',missing,good=False);assert not missing.exists()
  output=root/'output'
- run('build-worker',store,output)
+ saved_path=env['PATH'];env['PATH']='/usr/bin:/bin'
+ try:run('build-worker',store,output)
+ finally:env['PATH']=saved_path
  info=json.loads((output/'exchange.json').read_text());assert info['package_digest']==hashlib.sha256(package.read_bytes()).hexdigest();assert info['id']=='com.gamepkg.shader-switch' and info['backend']=='glsl'
  assert {p.name for p in output.iterdir()}=={'exchange.json','builds','shader-builds'}
  assert not list(output.rglob('*.key')) and not (output/'progress').exists() and not (output/'saves').exists()
@@ -65,4 +67,4 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-worker-test-') as directory:
  dep_store=root/'dependency.gamepkgstore';run('store-export',dependency,'-o',dep_store)
  denied=run('build-worker',dep_store,root/'dependency-output','--no-approved-crates',good=False)
  assert 'do not approve' in denied and not (root/'dependency-output').exists(),denied
- print('Worker exchange passed: verified shared assets, isolated compilation, package binding, transferred shader/Wasm playback without a compiler, no player data, and atomic failure checks.')
+ print('Worker exchange passed: verified shared assets, compilation without a login PATH, package binding, transferred shader/Wasm playback without a compiler, no player data, and atomic failure checks.')

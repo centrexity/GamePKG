@@ -7,9 +7,6 @@ curl --proto '=https' --tlsv1.2 --fail --silent --show-error https://sh.rustup.r
 sh /tmp/gamepkg-rustup-init.sh -y --profile minimal --default-toolchain 1.89.0
 export PATH="$HOME/.cargo/bin:$PATH"
 rustup target add wasm32-unknown-unknown
-# Native wsl --exec does not load the user's interactive shell profile.
-ln -sf "$HOME/.cargo/bin/rustc" /usr/local/bin/rustc
-ln -sf "$HOME/.cargo/bin/cargo" /usr/local/bin/cargo
 python3 "$project/tools/install_slang.py" /opt/gamepkg-slang
 mkdir -p /opt/gamepkg/bin "$HOME/.config/gamepkg"
 cp "$project/native-exchange-fixture/gamepkg-linux" /opt/gamepkg/bin/gamepkg

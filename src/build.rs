@@ -270,12 +270,23 @@ pub(crate) fn compile_with_settings(
     fs::write(stage.path().join("Cargo.lock"), toml::to_string(&locked)?)?;
     let crate_name = cargo["package"]["name"].as_str().unwrap().replace('-', "_");
 
-    let rustc = crate::compiler::run(
-        crate::compiler::command(32 * 1024 * 1024).args(["rustup", "which", "rustc"]),
-    )
-    .context("Rust toolchain is required")?;
+    // Desktop/WSL launches do not necessarily load Rustup's shell PATH setup.
+    let rustup = std::env::var_os("CARGO_HOME")
+        .map(PathBuf::from)
+        .into_iter()
+        .chain(std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".cargo")))
+        .map(|home| home.join("bin/rustup"))
+        .find(|candidate| candidate.is_absolute() && candidate.is_file())
+        .unwrap_or_else(|| PathBuf::from("rustup"));
+    let mut rustc_command = crate::compiler::command(32 * 1024 * 1024);
+    rustc_command.arg(rustup).args(["which", "rustc"]);
+    let rustc = crate::compiler::run(&mut rustc_command).context("Rust toolchain is required")?;
     if !rustc.status.success() {
-        bail!("unable to locate Rust compiler");
+        bail!(
+            "unable to locate Rust compiler: {}{}",
+            rustc.stdout,
+            rustc.stderr
+        );
     }
     let compiler = fs::canonicalize(rustc.stdout.trim())?;
     let toolchain = compiler
