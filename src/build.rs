@@ -10,6 +10,52 @@ use std::{
     path::{Path, PathBuf},
 };
 
+pub(crate) struct BuildChange(fs::File);
+impl BuildChange {
+    pub(crate) fn acquire(root: &Path, id: &str) -> Result<Self> {
+        Self::lock(root, id, false)
+    }
+    pub(crate) fn read(root: &Path, id: &str) -> Result<Self> {
+        Self::lock(root, id, true)
+    }
+    fn lock(root: &Path, id: &str, shared: bool) -> Result<Self> {
+        let directory = root.join("build-locks");
+        if directory
+            .symlink_metadata()
+            .is_ok_and(|m| m.file_type().is_symlink() || !m.is_dir())
+        {
+            bail!("build lock folder must be a real directory");
+        }
+        fs::create_dir_all(&directory)?;
+        let path = directory.join(format!("{}.lock", digest(id.as_bytes())));
+        if path
+            .symlink_metadata()
+            .is_ok_and(|m| !m.is_file() || m.file_type().is_symlink())
+        {
+            bail!("build lock must be a regular file");
+        }
+        let mut options = fs::OpenOptions::new();
+        options.create(true).truncate(false).read(true).write(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+        }
+        let file = options.open(path)?;
+        (if shared {
+            file.try_lock_shared()
+        } else {
+            file.try_lock()
+        })
+        .map_err(|e| anyhow::anyhow!("another build or game load is active: {e}"))?;
+        Ok(Self(file))
+    }
+}
+impl Drop for BuildChange {
+    fn drop(&mut self) {
+        let _ = self.0.unlock();
+    }
+}
 fn installed(root: &Path, id: &str) -> Result<PathBuf> {
     registry::installed_manifest(root, id)?;
     Ok(root.join(format!("{id}.gamepkg")))
@@ -112,6 +158,7 @@ pub fn compile(root: &Path, id: &str) -> Result<()> {
         bail!("isolated builds currently require Linux and bubblewrap");
     }
     let archive = installed(root, id)?;
+    let _build_lock = BuildChange::acquire(root, id)?;
     let bytes = fs::read(archive)?;
     let cache = root.join("builds").join(digest(&bytes)).join("game.wasm");
     let mut snapshot = tempfile::NamedTempFile::new()?;
@@ -334,6 +381,21 @@ pub fn package(directory: &Path, output: &Path, seed: &[u8; 32]) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::artifact_has_tick;
+    #[test]
+    fn game_build_locks_are_exclusive_and_release_on_drop() {
+        let root = tempfile::tempdir().unwrap();
+        let first = super::BuildChange::acquire(root.path(), "one").unwrap();
+        assert!(super::BuildChange::acquire(root.path(), "one").is_err());
+        let other = super::BuildChange::acquire(root.path(), "two").unwrap();
+        drop(other);
+        drop(first);
+        let reader = super::BuildChange::read(root.path(), "one").unwrap();
+        let second_reader = super::BuildChange::read(root.path(), "one").unwrap();
+        assert!(super::BuildChange::acquire(root.path(), "one").is_err());
+        drop(reader);
+        drop(second_reader);
+        super::BuildChange::acquire(root.path(), "one").unwrap();
+    }
     #[test]
     fn readiness_requires_a_valid_root_tick_export() {
         assert!(!artifact_has_tick(&wat::parse_str("(module)").unwrap()));

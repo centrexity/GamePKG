@@ -332,29 +332,33 @@ pub fn list(root: &Path) -> Result<Vec<Manifest>> {
     }
     Ok(report.games)
 }
+pub(crate) struct LibraryChange {
+    path: PathBuf,
+    handle: Option<fs::File>,
+}
+impl LibraryChange {
+    pub(crate) fn acquire(root: &Path) -> Result<Self> {
+        fs::create_dir_all(root)?;
+        let path = root.join(".install-lock");
+        let handle = fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&path)
+            .context("another library change is active; if interrupted, remove .install-lock")?;
+        Ok(Self {
+            path,
+            handle: Some(handle),
+        })
+    }
+}
+impl Drop for LibraryChange {
+    fn drop(&mut self) {
+        self.handle.take();
+        let _ = fs::remove_file(&self.path);
+    }
+}
 pub fn install(root: &Path, path: &Path, approve_creator: bool) -> Result<Manifest> {
-    fs::create_dir_all(root)?;
-    // Serialize registry mutations across CLI and GUI processes.
-    let lock = root.join(".install-lock");
-    let handle = fs::OpenOptions::new()
-        .create_new(true)
-        .write(true)
-        .open(&lock)
-        .context("another install is active; if interrupted, remove .install-lock")?;
-    struct Lock {
-        path: PathBuf,
-        handle: Option<fs::File>,
-    }
-    impl Drop for Lock {
-        fn drop(&mut self) {
-            self.handle.take();
-            let _ = fs::remove_file(&self.path);
-        }
-    }
-    let _lock = Lock {
-        path: lock,
-        handle: Some(handle),
-    };
+    let _lock = LibraryChange::acquire(root)?;
     // Snapshot bytes so verification and publication operate on the same file.
     let mut snapshot = tempfile::NamedTempFile::new_in(root)?;
     let copied = std::io::copy(

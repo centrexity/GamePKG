@@ -6,7 +6,7 @@ use std::{
     path::Path,
 };
 
-pub fn retain_package(
+pub(crate) fn retain_package(
     root: &Path,
     manifest: &crate::manifest::Manifest,
     source: &Path,
@@ -64,8 +64,13 @@ pub fn verify_build(path: &Path, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 pub fn check(root: &Path, id: &str) -> Result<String> {
+    let _lock = crate::registry::LibraryChange::acquire(root)?;
+    check_locked(root, id)
+}
+fn check_locked(root: &Path, id: &str) -> Result<String> {
     // Validate the identifier through the verified registry before constructing paths.
     let manifest = crate::registry::installed_manifest(root, id)?;
+    let _build_read = crate::build::BuildChange::read(root, id)?;
     let mut package = crate::archive::Package::open(&root.join(format!("{id}.gamepkg")))?;
     crate::verify::verify_embedded(&mut package)?;
     package.resolve_shared_assets(root)?;
@@ -91,6 +96,7 @@ pub fn check(root: &Path, id: &str) -> Result<String> {
     ))
 }
 pub fn fix(root: &Path, id: &str) -> Result<String> {
+    let _lock = crate::registry::LibraryChange::acquire(root)?;
     // Compilation rechecks signatures and shared blob hashes before running the isolated compiler.
     // Damaged archives can use the host-retained verified original; external blobs must remain valid.
     if id.is_empty()
@@ -132,7 +138,7 @@ pub fn fix(root: &Path, id: &str) -> Result<String> {
         file.persist(target).map_err(|e| e.error)?;
     }
     crate::build::compile(root, id)?;
-    check(root, id)
+    check_locked(root, id)
 }
 #[cfg(test)]
 mod tests {

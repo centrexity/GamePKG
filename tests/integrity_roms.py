@@ -1,5 +1,5 @@
 """Compile both profiles, verify indexed ROMs, detect tampering, repair from signed source."""
-import os, shutil, subprocess, tempfile
+import os, shutil, subprocess, tempfile, hashlib, sys
 from pathlib import Path
 PROJECT=Path(__file__).resolve().parents[1]
 CLI=PROJECT/'target/release/gamepkg'
@@ -35,6 +35,24 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-integrity-roms-') as directory:
         run('run','com.gamepkg.minimal','--frames','1','--rom',a,good=False)
         run('run','com.gamepkg.minimal','--frames','1','--rom',a,'--rom',b)
         run('integrity-check','com.gamepkg.minimal')
+        library=home/'library';lock=library/'.install-lock';lock.write_bytes(b'')
+        archive_before=(library/'com.gamepkg.minimal.gamepkg').read_bytes()
+        recovery_before=(library/'verified-packages/com.gamepkg.minimal.gamepkg').read_bytes()
+        for command in ['integrity-check','integrity-fix']:
+            assert 'another library change is active' in run(command,'com.gamepkg.minimal',good=False)
+        assert 'another library change is active' in run('install',package,good=False)
+        assert (library/'com.gamepkg.minimal.gamepkg').read_bytes()==archive_before
+        assert (library/'verified-packages/com.gamepkg.minimal.gamepkg').read_bytes()==recovery_before
+        lock.unlink()
+        build_lock=library/'build-locks'/ (hashlib.sha256(b'com.gamepkg.minimal').hexdigest()+'.lock')
+        holder=subprocess.Popen([sys.executable,'-c',"import fcntl,sys,time; f=open(sys.argv[1],'a+'); fcntl.flock(f,fcntl.LOCK_EX); print('locked',flush=True); time.sleep(60)",str(build_lock)],stdout=subprocess.PIPE,text=True)
+        try:
+            assert holder.stdout.readline().strip()=='locked'
+            assert 'another build or game load is active' in run('build','com.gamepkg.minimal',good=False)
+            assert 'another build or game load is active' in run('integrity-check','com.gamepkg.minimal',good=False)
+            assert 'another build or game load is active' in run('run','com.gamepkg.minimal','--frames','1','--rom',a,'--rom',b,good=False)
+        finally:
+            holder.kill();holder.wait(timeout=10)
         build=next((home/'library/builds').glob('*/game.wasm'));original=build.read_bytes()
         build.write_bytes(original+b'damaged')
         run('integrity-check','com.gamepkg.minimal',good=False)
@@ -50,4 +68,4 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-integrity-roms-') as directory:
         before=build.read_bytes()
         run('integrity-fix','com.gamepkg.minimal',good=False)
         assert installed.read_bytes()==b'damaged package' and build.read_bytes()==before
-        print(profile+': multiple ROMs, missing ROM rejection, integrity detection, verified rebuild and damaged-source refusal passed')
+        print(profile+': multiple ROMs, missing ROM rejection, integrity detection, cross-process lock exclusion/release, verified rebuild and damaged-source refusal passed')

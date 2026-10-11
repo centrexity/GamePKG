@@ -518,6 +518,7 @@ impl Game {
     }
     pub fn load_with_roms(root: &Path, id: &str, rom_paths: &[std::path::PathBuf]) -> Result<Self> {
         crate::registry::installed_manifest(root, id)?;
+        let _build_read = crate::build::BuildChange::read(root, id)?;
         let archive = std::fs::read(root.join(format!("{id}.gamepkg")))?;
         let mut snapshot = tempfile::NamedTempFile::new()?;
         use std::io::Write;
