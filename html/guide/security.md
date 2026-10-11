@@ -45,7 +45,8 @@ SPIR-V, WGSL, Metal, and DXIL outputs are tested. DXIL additionally requires
 checksum-pinned DXC 1.9.2609 libraries, selected through Settings or
 `GAMEPKG_DXC_ROOT`. Missing or modified libraries stop the build. Compilation
 support does not imply that every output backend can render in the desktop
-player; current shader playback uses GLSL resource-free fragment passes.
+player; current shader playback uses resource-free GLSL passes or validated SPIR-V
+translated to GLSL for the OpenGL player.
 
 Portable `.gamepkgstore` imports verify every contained signature and shared
 blob before showing creator identities for approval. Inspection runs no game

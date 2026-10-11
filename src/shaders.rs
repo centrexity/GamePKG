@@ -307,8 +307,8 @@ pub fn load_fragment_sources(
     manifest: &Manifest,
     settings: &Settings,
 ) -> Result<Vec<String>> {
-    if settings.shader_backend != "glsl" {
-        bail!("this desktop shader renderer requires GLSL; select it in Settings and rebuild");
+    if !matches!(settings.shader_backend.as_str(), "glsl" | "spirv") {
+        bail!("this desktop shader renderer requires GLSL or SPIR-V; select one in Settings and rebuild");
     }
     let (_, cache) = compiler_cache(root, archive, settings)?;
     let stages: Vec<&str> = if manifest.shaders.is_empty() {
@@ -332,9 +332,87 @@ pub fn load_fragment_sources(
         {
             bail!("desktop fragment passes currently require no external resource bindings");
         }
-        sources.push(String::from_utf8(read_output(
-            &cache.join(format!("{index}.shader")),
-        )?)?);
+        let bytes = read_output(&cache.join(format!("{index}.shader")))?;
+        sources.push(if settings.shader_backend == "spirv" {
+            spirv_fragment_source(&bytes)?
+        } else {
+            String::from_utf8(bytes)?
+        });
     }
     Ok(sources)
+}
+
+struct ShaderText(String);
+impl std::fmt::Write for ShaderText {
+    fn write_str(&mut self, text: &str) -> std::fmt::Result {
+        if self.0.len().saturating_add(text.len()) > 16 * 1024 * 1024 {
+            return Err(std::fmt::Error);
+        }
+        self.0.push_str(text);
+        Ok(())
+    }
+}
+fn spirv_fragment_source(bytes: &[u8]) -> Result<String> {
+    if bytes.len() > 16 * 1024 * 1024 {
+        bail!("SPIR-V shader exceeds size limit");
+    }
+    let module = naga::front::spv::parse_u8_slice(
+        bytes,
+        &naga::front::spv::Options {
+            strict_capabilities: true,
+            ..Default::default()
+        },
+    )
+    .context("invalid desktop SPIR-V shader")?;
+    if module.entry_points.len() != 1
+        || module.entry_points[0].stage != naga::ShaderStage::Fragment
+        || module
+            .global_variables
+            .iter()
+            .any(|(_, variable)| variable.binding.is_some())
+    {
+        bail!("desktop SPIR-V requires one resource-free fragment entry");
+    }
+    let info = naga::valid::Validator::new(
+        naga::valid::ValidationFlags::all(),
+        naga::valid::Capabilities::empty(),
+    )
+    .validate(&module)
+    .context("SPIR-V validation failed")?;
+    let options = naga::back::glsl::Options {
+        version: naga::back::glsl::Version::Desktop(330),
+        ..Default::default()
+    };
+    let pipeline = naga::back::glsl::PipelineOptions {
+        shader_stage: naga::ShaderStage::Fragment,
+        entry_point: module.entry_points[0].name.clone(),
+        multiview: None,
+    };
+    let mut source = ShaderText(String::new());
+    let reflected = naga::back::glsl::Writer::new(
+        &mut source,
+        &module,
+        &info,
+        &options,
+        &pipeline,
+        Default::default(),
+    )?
+    .write()?;
+    if !reflected.texture_mapping.is_empty() || !reflected.uniforms.is_empty() {
+        bail!("SPIR-V translation introduced resource bindings");
+    }
+    Ok(source.0)
+}
+
+#[cfg(test)]
+mod translation_tests {
+    #[test]
+    fn translated_text_stops_at_the_output_budget() {
+        use std::fmt::Write;
+        let mut output = super::ShaderText("x".repeat(16 * 1024 * 1024));
+        assert!(output.write_str("").is_ok());
+        assert!(output.write_str("x").is_err());
+        assert_eq!(output.0.len(), 16 * 1024 * 1024);
+        assert!(super::spirv_fragment_source(b"invalid").is_err());
+    }
 }

@@ -2,13 +2,14 @@ from gui_test_support import start_display
 import os, subprocess, tempfile, time, argparse, shutil
 from pathlib import Path
 from PIL import Image
-parser=argparse.ArgumentParser();parser.add_argument('--component',action='store_true');args=parser.parse_args()
+parser=argparse.ArgumentParser();parser.add_argument('--component',action='store_true');parser.add_argument('--backend',choices=['glsl','spirv']);args=parser.parse_args()
 project=Path(__file__).resolve().parents[1]
 os.chdir(project)
 with tempfile.TemporaryDirectory(prefix='gamepkg-shader-ui-') as directory:
  root=Path(directory)
  env=dict(os.environ,DISPLAY=':97',LIBGL_ALWAYS_SOFTWARE='1',GAMEPKG_CONFIG=str(root/'settings.toml'),GAMEPKG_HOME=str(root/'library'),GAMEPKG_SLANG_ROOT=os.environ.get('GAMEPKG_SLANG_ROOT',''));env.pop('WAYLAND_DISPLAY',None)
- # No backend setting: first-launch defaults must support desktop playback.
+ # No backend setting by default: first-launch defaults must support desktop playback.
+ if args.backend: (root/'settings.toml').write_text(f'shader_backend = "{args.backend}"\n')
  def run(*args):
   result=subprocess.run(['target/release/gamepkg',*map(str,args)],env=env,capture_output=True,text=True,timeout=140)
   assert result.returncode==0,result.stderr
@@ -64,3 +65,11 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-shader-ui-') as directory:
   assert result.returncode!=0 and ('resource' in result.stderr or 'reflection' in result.stderr), result.stderr
  metadata.write_bytes(original)
  print('External resources and missing shader reflection rejected before playback.')
+
+ if args.backend == 'spirv':
+  binary=metadata.with_name('0.shader');original_binary=binary.read_bytes()
+  binary.write_bytes(b'not SPIR-V')
+  result=subprocess.run(['target/release/gamepkg','run','com.gamepkg.shader-switch','--frames','1'],env=env,capture_output=True,text=True)
+  assert result.returncode!=0 and 'SPIR-V' in result.stderr, result.stderr
+  binary.write_bytes(original_binary)
+  print('Malformed cached SPIR-V rejected before playback.')

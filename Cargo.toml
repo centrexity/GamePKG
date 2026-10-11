@@ -26,6 +26,7 @@ cpal = { version = "0.18.2", optional = true }
 wit-component = "=0.236.1"
 wit-parser = "=0.236.1"
 wasmparser = "=0.236.1"
+naga = { version = "=24.0.0", features = ["spv-in", "glsl-out"] }
 wasmtime = { version = "36.0.17", default-features = false, features = ["cranelift", "runtime", "std", "component-model"] }
 image = { version = "0.25", optional = true, default-features = false, features = ["png"] }
 eframe = { version = "0.31", optional = true, default-features = false, features = ["default_fonts", "glow", "x11", "wayland"] }

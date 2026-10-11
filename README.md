@@ -2,7 +2,7 @@
 
 **Know what you run. Control what it can access.** GamePKG is building a safer way to share and play games: inspectable source, creator-signed packages, isolated compilation, and a host that is designed to grant only the capabilities a game needs.
 
-**Current status:** this is a development preview. Package verification, catalog import, installation, update checks, and isolated Cargo Wasm and Slang shader builds on Linux work today. The experimental grid-v1 profile now plays in the GUI and terminal under Wasmtime with scoped asset reads, fuel, memory limits, and epoch deadlines. Resource-free Slang fragment passes now render in the OpenGL GUI; versioned WIT components are supported alongside the legacy core profile; broader rendering remains pending; this is not a guarantee that a package is harmless.
+**Current status:** this is a development preview. Package verification, catalog import, installation, update checks, and isolated Cargo Wasm and Slang shader builds on Linux work today. The experimental grid-v1 profile now plays in the GUI and terminal under Wasmtime with scoped asset reads, fuel, memory limits, and epoch deadlines. Resource-free Slang GLSL and SPIR-V fragment passes now render in the OpenGL GUI; versioned WIT components are supported alongside the legacy core profile; broader rendering remains pending; this is not a guarantee that a package is harmless.
 
 ## Why distribute GamePKG instead of an opaque executable?
 
@@ -282,8 +282,10 @@ export GAMEPKG_DXC_ROOT=/absolute/path/gamepkg-dxc
 The installer verifies the official release archive checksum. The host checks
 both DXC library hashes before compilation, mounts them read-only inside the
 build sandbox, and includes the pinned DXC identity in the shader cache key.
-Missing or modified libraries fail the build. No backend fallback occurs. Select GLSL and rebuild to use resource-free fragment passes in
-the OpenGL desktop player. SPIR-V, WGSL, Metal and DXIL rendering integration remains pending.
+Missing or modified libraries fail the build. No backend fallback occurs. Select GLSL or SPIR-V and rebuild to use resource-free
+fragment passes in the OpenGL desktop player. SPIR-V is parsed and validated by
+pinned Naga 24.0.0, then translated to host-owned GLSL 330 before graphics setup.
+WGSL, Metal and DXIL rendering integration remains pending.
 
 Legacy manifests default to `shaders/main.slang`, `fragmentMain`, fragment
 stage. Declare multiple entry points explicitly using signed manifest entries:
@@ -328,7 +330,7 @@ verify rendering and held-key movement. The latter requires Xvfb, xdotool,
 ImageMagick and Pillow. Set `GAMEPKG_SLANG_ROOT` for both tests.
 
 The host also exposes `gamepkg::draw_shader(index)`, which draws a full viewport
-pass using the signed manifest's fragment entry at that index. Select GLSL in
+pass using the signed manifest's fragment entry at that index. Select GLSL or SPIR-V in
 Settings and rebuild. The host checks reflected resources and active uniforms,
 keeps graphics handles private, and bounds the per-tick command queue. Guest
 Wasm fuel does not meter GPU shader execution; GPU drivers and shader compilation
@@ -665,3 +667,5 @@ With `-o` and `--key`, `build` signs a temporary candidate, verifies it, and com
 Creator directory-build outputs must be outside the source tree, including when their parent folder is a symlink. The destination parent must already exist. Existing files and symlinks are refused before compilation; publication still uses an atomic no-overwrite operation after successful compilation.
 
 Existing explicitly saved shader backends remain selected. For desktop shader playback, choose GLSL and rebuild if an older configuration selected another backend. New installations and Reset form to defaults use GLSL so supported shader games can be built and played without an extra configuration step.
+
+SPIR-V desktop playback accepts a single resource-free fragment entry per cached shader. The host bounds binary input and translated output to 16 MiB, checks Slang reflection, validates SPIR-V capabilities and module structure, rejects resource bindings, and checks translated uniform/texture reflection before OpenGL setup. `tests/shader_gui.py --backend spirv` and `--backend spirv --component` verify actual shader pixels, held input, and malformed-cache rejection. This adds SPIR-V fragment playback; textures, vertex/compute pipelines, and other native rendering backends remain unfinished.
