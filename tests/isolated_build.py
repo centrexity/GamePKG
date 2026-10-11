@@ -15,7 +15,9 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-build-') as directory:
     key.write_text('05' * 32)
     archive = root / 'demo.gamepkg'
     library = root / 'library'
-    env = dict(os.environ, GAMEPKG_HOME=str(library))
+    config = root / "settings.toml"
+    config.write_text("automatic_update_checks = false\n")
+    env = dict(os.environ, GAMEPKG_HOME=str(library), GAMEPKG_CONFIG=str(config))
     def run(*args):
         p = subprocess.run([str(CLI), *map(str, args)], env=env, capture_output=True, text=True, timeout=75)
         assert p.returncode == 0, p.stderr
