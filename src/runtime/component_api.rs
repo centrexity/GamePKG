@@ -23,19 +23,24 @@ pub(super) fn linker(engine: &Engine) -> Result<Linker<Data>> {
             if path.len() > 1024 || !crate::archive::valid_path(&path) || length > 65536 {
                 return Ok((None::<Vec<u8>>,));
             }
-            let size = store
-                .data()
-                .package
-                .as_ref()
-                .and_then(|p| p.entries.get(&format!("assets/{path}")).copied());
-            let Some(size) = size else {
+            let cost = store.data_mut().package.as_mut().and_then(|p| {
+                p.asset_chunk_cost(&path, u64::from(offset), length as usize)
+                    .ok()
+            });
+            let Some(cost) = cost else {
                 return Ok((None,));
             };
-            if !charge(&mut store, size.saturating_add(1024))? {
+            if !charge(&mut store, cost)? {
                 return Ok((None,));
             }
-            let bytes = store.data_mut().package.as_mut().unwrap().asset(&path).ok();
-            Ok((chunk(bytes.as_deref(), offset, length),))
+            let bytes = store
+                .data_mut()
+                .package
+                .as_mut()
+                .unwrap()
+                .asset_chunk(&path, u64::from(offset), length as usize)
+                .ok();
+            Ok((bytes,))
         },
     )?;
     host.func_wrap("rom-size", |store: StoreContextMut<'_, Data>, (): ()| {

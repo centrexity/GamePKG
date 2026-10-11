@@ -446,16 +446,14 @@ fn asset_read(
     if end > memory.data_size(&caller) {
         return -1;
     }
-    let size = caller
-        .data()
-        .package
-        .as_ref()
-        .and_then(|p| p.entries.get(&format!("assets/{name}")).copied());
-    let Some(size) = size else {
+    let cost = caller.data_mut().package.as_mut().and_then(|p| {
+        p.asset_chunk_cost(name, offset as u64, output_len as usize)
+            .ok()
+    });
+    let Some(cost) = cost else {
         return -1;
     };
-    // Charge archive work against fuel as host calls are outside Wasm metering.
-    let cost = size.saturating_add(1024);
+    // Compressed ranges also pay for decoding the prefix before their offset.
     let Ok(fuel) = caller.get_fuel() else {
         return -1;
     };
@@ -469,13 +467,10 @@ fn asset_read(
     let Some(package) = caller.data_mut().package.as_mut() else {
         return -1;
     };
-    let Ok(bytes) = package.asset(name) else {
+    let Ok(bytes) = package.asset_chunk(name, offset as u64, output_len as usize) else {
         return -1;
     };
-    let Some(bytes) = bytes.get(offset as usize..) else {
-        return -1;
-    };
-    let length = bytes.len().min(output_len as usize);
+    let length = bytes.len();
     if memory
         .write(&mut caller, output as usize, &bytes[..length])
         .is_err()

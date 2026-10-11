@@ -42,6 +42,7 @@ fn signed_roundtrip_and_asset_access() {
         pkg.asset("hello.txt").unwrap(),
         b"Hello from an archived asset!\n"
     );
+    assert_eq!(pkg.asset_chunk("hello.txt", 6, 4).unwrap(), b"from");
     assert!(pkg.asset("../manifest.toml").is_err());
     assert!(verify(
         &mut pkg,
@@ -266,4 +267,32 @@ fn ordinary_macros_and_literal_text_remain_accepted() {
     fs::write(root.join("source/src/lib.rs"),r#"macro_rules! add { ($x:expr) => { $x + 1 }; }
         pub fn game_tick(_: u32,state:u64)->u64 { assert_eq!("unsafe std::fs include_bytes mod #", "unsafe std::fs include_bytes mod #"); add!(state) }"#).unwrap();
     pack(&root, &temp.path().join("ordinary.gamepkg"), &SEED).unwrap();
+}
+
+#[test]
+fn rejects_understated_or_overstated_decoded_entry_sizes() {
+    for method in [zip::CompressionMethod::Stored, zip::CompressionMethod::Zstd] {
+        for declared in [0u32, 2, 100] {
+            let temp = tempfile::tempdir().unwrap();
+            let path = temp.path().join("size.zip");
+            let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+            writer
+                .start_file(
+                    "assets/a",
+                    zip::write::SimpleFileOptions::default().compression_method(method),
+                )
+                .unwrap();
+            writer.write_all(b"content").unwrap();
+            let mut bytes = writer.finish().unwrap().into_inner();
+            let central = bytes.windows(4).position(|w| w == b"PK\x01\x02").unwrap();
+            bytes[central + 24..central + 28].copy_from_slice(&declared.to_le_bytes());
+            fs::write(&path, bytes).unwrap();
+            if let Ok(mut package) = Package::open(&path) {
+                assert!(
+                    package.asset("a").is_err(),
+                    "accepted {method:?} declared={declared}"
+                );
+            }
+        }
+    }
 }

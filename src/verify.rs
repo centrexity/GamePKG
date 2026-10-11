@@ -95,6 +95,7 @@ pub fn verify(pkg: &mut Package, trusted: &[u8; 32]) -> Result<Manifest> {
         .verify_strict(&tree_hash(pkg)?, &sig)
         .context("invalid package signature")?;
     crate::source::scan(pkg)?;
+    pkg.mark_verified();
     Ok(m)
 }
 

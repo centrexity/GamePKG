@@ -444,7 +444,8 @@ impl eframe::App for App {
         if self.show_settings {
             egui::CentralPanel::default().show(ctx,|ui| {
                 ui.heading("Settings");
-                egui::ScrollArea::vertical().show(ui,|ui| {
+                ui.label("Choose how GamePKG stores, builds, and runs your games.");
+                egui::ScrollArea::vertical().max_height((ui.available_height() - 110.0).max(100.0)).show(ui,|ui| {
                     ui.heading("Library");
                     ui.label("Library folder (absolute path; leave empty for the default)");
                     ui.text_edit_singleline(&mut self.settings_draft.library_directory);
@@ -478,9 +479,14 @@ impl eframe::App for App {
                     ui.checkbox(&mut self.settings_draft.automatic_update_checks,"Check for game updates automatically");
                     ui.add(egui::Slider::new(&mut self.settings_draft.update_interval_hours,1..=168).text("Hours between checks"));
                     ui.label("Checks run while the library is open and idle. They download signed packages to verify updates, then discard the download. Review and install updates yourself. Turning checks off stops new requests; an active request may finish.");
+                });
                     ui.separator();
+                    let validation = self.settings_draft.validate();
+                    if let Err(error) = &validation {
+                        ui.colored_label(egui::Color32::from_rgb(240, 130, 100), error.to_string());
+                    }
                     ui.horizontal(|ui| {
-                        if ui.button("Save settings").clicked() {
+                        if ui.add_enabled(validation.is_ok(), egui::Button::new("Save settings")).clicked() {
                             let result=crate::settings::path().and_then(|path|self.settings_draft.save(&path));
                             match result {
                                 Ok(()) => {
@@ -495,7 +501,6 @@ impl eframe::App for App {
                         if ui.button("Reset form to defaults").clicked() {self.settings_draft=crate::settings::Settings::default();self.status="Defaults restored in the form. Save to apply.".into();}
                     });
                     ui.label(&self.status);
-                });
             });
             return;
         }

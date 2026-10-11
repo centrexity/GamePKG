@@ -229,7 +229,9 @@ The isolated compiler supplies `gamepkg::asset_read(path, offset, &mut buffer)`.
 Paths are relative to `assets/` in the signed archive. The function returns
 `Some(bytes_read)`, including zero at EOF, or `None` for invalid paths, offsets,
 or missing assets. Reads are limited to 64 KiB per call; archive work consumes
-runtime fuel. The guest receives only the requested bytes and cannot open host
+runtime fuel. Verified stored assets use direct archive offsets; compressed assets
+stream through the prefix without allocating the entire file. Fuel charges cover
+the requested bytes plus any decoded prefix. The guest receives only the requested bytes and cannot open host
 files. The same safe Rust wrappers are available in the versioned WIT component
 profile. Rebuild existing games to use the new wrapper.
 
