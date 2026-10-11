@@ -672,3 +672,5 @@ WGSL fragment outputs also render through the pinned Naga validation and bounded
 Desktop shader loading also requires reflection to describe exactly one entry point whose name matches the signed manifest request. Missing or mismatched entry metadata fails before playback, alongside resource-binding checks. The GUI shader tests exercise these rejection cases as well as valid rendered frames.
 
 Fragment builds for the desktop GLSL, SPIR-V, and WGSL backends validate reflected entry points and reject unsupported resource bindings before publishing shader or game caches. SPIR-V and WGSL builds also validate their translation to the desktop renderer. A failed rebuild preserves earlier compiled artifacts.
+
+The static site includes browser-readable [format notes](html/spec/index.html), [security model](html/guide/security.html), and [library policy](html/guide/allowlist.html). After editing the specification or security Markdown sources, run `python3 tools/render_site_docs.py` (requires Python-Markdown, packaged as `python3-markdown` on Debian/Ubuntu) and commit the generated HTML. The site serves directly from `html/` without a server-side renderer.

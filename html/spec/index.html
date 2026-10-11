@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Format specification — GamePKG</title>
+  <meta name="description" content="GamePKG package signatures, runtime profiles, limits, catalogs, and portable stores.">
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #10171d; color: #e8eef1; line-height: 1.6; }
+    body { margin: 0; } main { max-width: 780px; margin: auto; padding: 36px 24px 60px; }
+    a { color: #91dfc7; } h1 { line-height: 1.15; font-size: clamp(2rem, 6vw, 3.5rem); }
+    h2 { margin-top: 2rem; } li { margin: .6rem 0; } pre { overflow-x: auto; padding: 16px; background: #1b2931; border-radius: 8px; }
+    .notice { padding: 16px; border-left: 3px solid #91dfc7; background: #17232b; } code { font-size: .95em; }
+    footer { margin-top: 36px; border-top: 1px solid #40535e; padding-top: 18px; }
+  </style>
+</head>
+<body><main>
+<nav aria-label="Main"><a href="../index.html">← GamePKG</a> · <a href="../guide/index.html">Start playing</a></nav>
+<h1>GamePKG format: foundation profile</h1>
+<p>The ZIP contains <code>manifest.toml</code>, <code>signature.toml</code>, <code>thumbnail.png</code>, <code>LICENSE</code>, <code>CREDITS.md</code>, <code>source/Cargo.toml</code>, <code>source/Cargo.lock</code>, <code>source/src/lib.rs</code>, optional <code>shaders/*.slang</code>, and <code>assets/**</code>. All paths are relative UTF-8 paths with forward slashes. Directory entries are omitted. Compression methods are store and zstd; the packer currently writes store for every file.</p>
+<p>The manifest example in <code>examples/minimal/manifest.toml</code> is authoritative for currently supported fields. Unknown fields fail validation. <code>lockfile_sha256</code> is the SHA-256 of raw Cargo.lock bytes; it is lockfile integrity, not a complete SBOM.</p>
+<h2>Signature encoding</h2>
+<p><code>signature.toml</code> has <code>public_key</code> (32 bytes in hexadecimal) and <code>signature</code> (64 bytes in hexadecimal). The manifest includes <code>creator_key</code> (32 bytes in hexadecimal), which must match the signature envelope key. Verification checks that embedded key; advanced callers may additionally supply an externally trusted key. An optional <code>update_url</code> is an HTTPS or Tor onion URL pointing directly to the latest signed package.</p>
+<p>The signed message is a SHA-256 tree digest. Initialize SHA-256 with UTF-8 bytes <code>GamePKG tree v1</code> and one NUL byte. Sort every file except <code>signature.toml</code> lexicographically by its UTF-8 name. For each, hash: name byte length as a little-endian u64, name bytes, content byte length as a little-endian u64, then the raw 32-byte SHA-256 of its contents. Ed25519 signs the resulting 32-byte digest. This includes the manifest, shaders, source, assets, and license. ZIP timestamps, entry order and compression are not signed.</p>
+<h2>Runtime and compatibility</h2>
+<p><code>runtime_profile</code> is <code>core-v1</code> (the legacy default) or <code>component-v1</code>.
+<code>entry_world</code> must be <code>game</code> for compilation and play. Source must expose a
+callable <code>game_tick(input: u32, state: u64) -&gt; u64</code>; root re-exports from checked
+modules are supported. The host generates the export wrapper. Builds require
+a valid root tick export before publishing their cache.</p>
+<p>Component games use the versioned <code>gamepkg:engine@0.1.0</code> world in
+<code>wit/game.wit</code>. Both profiles receive scoped assets, input, draw commands,
+audio, saves, and explicitly selected ROM reads. They receive no WASI or
+ambient filesystem/network imports. <code>engine_version</code> is a semantic-version
+requirement checked against the host during verification and loading.
+<code>save_schema</code> is a positive integer; changing it selects a separate save
+namespace without deleting or converting earlier saves.</p>
+<p>This remains an experimental runtime. Broader GPU resource support and
+non-Linux isolated builds are unfinished.</p>
+<p>An optional top-level <code>NOTICE</code> carries license attribution and is included in the signed tree. Creators choose the license in their package's <code>LICENSE</code>; the host's Apache 2.0 license does not dictate the license of independently authored games.</p>
+<h2>Creator identity and update continuity</h2>
+<p>A creator's trusted public key identifies the signing authority. The installer binds that key to the package ID after the user's initial trust decision. An update must have the same ID, a strictly higher semantic version, and a valid signature from the pinned creator key. Unrelated keys cannot replace a package merely by claiming its ID. Key rotation requires authorization from the previously trusted key and a deliberate trust transition. The installed archive records the trusted key; install and update enforce same-ID/same-key continuity and increasing semantic versions. Key rotation remains unimplemented and key changes are rejected.</p>
+<p><code>requires_rom</code> is an optional top-level boolean, defaulting to false. True declares that a ROM must be supplied by the end user. It is signed metadata; the host never infers permission to fetch or redistribute a ROM. The CLI accepts <code>run &lt;id&gt; --rom &lt;file&gt;</code> and the desktop library accepts an explicit ROM file path. Launching a ROM-required game without a file fails. The host shares a bounded read-only session snapshot through scoped ROM operations; no folder access is granted.</p>
+<p>Update URLs support HTTP/HTTPS v3 <code>.onion</code> services through a local Tor SOCKS proxy. Ordinary hosts require HTTPS. Onion redirects cannot leave onion hosts, and missing Tor connectivity never triggers a direct fallback.</p>
+<h2>Game list format</h2>
+<p><code>.gamepkglist</code> is a UTF-8 TOML document with <code>format_version = 1</code> and a <code>games</code> array written as <code>[[games]]</code> tables. Each entry requires <code>id</code>, <code>title</code>, and <code>download_url</code>; <code>version</code> (semantic version) and <code>requires_rom</code> (boolean) are optional unverified claims. Unknown fields, duplicate IDs, unsafe URLs, inputs exceeding 4 MiB, and more than 10,000 games are rejected.</p>
+<p>Import saves metadata only, with no package/thumbnail downloads and no creator trust. Games remain in a Not downloaded state until selected for download. A fetched package must verify and match the catalog ID; first installation requires creator approval. Installed signed manifest metadata takes precedence over catalog claims. Identical reimports merge without duplication; conflicting existing IDs reject the import atomically.</p>
+<p>The <code>[limits]</code> table accepts <code>hard_memory_bytes</code> (required, positive, at most 512 MiB) and <code>recommended_memory_bytes</code> (optional, positive, no greater than the hard limit). The recommendation defaults to the hard limit and is advisory; the runtime enforces the hard limit on guest linear memory. Legacy <code>memory_bytes</code> is an alias for <code>hard_memory_bytes</code>, and both names cannot appear together.</p>
+<h2>Shared store assets</h2>
+<p>A signed manifest may contain <code>shared_assets</code>, mapping asset-relative paths to
+<code>sha256</code> (64 lowercase hexadecimal characters) and <code>size</code> (bytes, at most
+64 MiB). Referenced paths cannot also be embedded under <code>assets/</code>. Logical
+contents remain limited to 256 MiB. Reusing a digest requires the same size.</p>
+<p>The host verifies signed references offline, then requires matching local pool
+blobs before installation, builds, or play. It does not download blobs
+automatically. Gameplay uses private verified snapshots through the existing
+scoped asset API. <code>pack --shared-assets</code> creates store packages; ordinary
+packages retain their embedded assets for self-contained sideloading.</p>
+<h2>Portable store bundle</h2>
+<p><code>.gamepkgstore</code> is a bounded ZIP containing <code>store.toml</code> with
+<code>format_version = 1</code>, <code>packages/&lt;id&gt;.gamepkg</code>, and referenced shared blobs at
+<code>blobs/&lt;sha256&gt;.blob</code>. All package signatures and referenced blob hashes/sizes
+are checked before import. Unknown files, missing or unreferenced blobs,
+duplicate entries, and conflicting identities or sizes are rejected. Limits:
+10,000 entries, 64 MiB per entry, 256 MiB total. Packages retain their own
+creator identities; importing new creators requires approval. Inspection does
+not install or execute games.</p>
+<footer><a href="../guide/allowlist.html">Approved game libraries</a> · <a href="https://github.com/centrexity/GamePKG/blob/main/html/spec/index.md">Documentation source</a> · GamePKG · Apache 2.0</footer>
+</main></body></html>
