@@ -35,6 +35,7 @@ fn settings_validate_bounds_and_reject_unknown_or_large_files() {
         assert!(s.validate().is_err());
     }
     defaults.validate().unwrap();
+    assert_eq!(defaults.shader_backend, "glsl");
     for approved in [
         vec!["unknown".into()],
         vec!["byteorder-lite".into(), "byteorder-lite".into()],

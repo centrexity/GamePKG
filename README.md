@@ -269,8 +269,9 @@ export GAMEPKG_SLANG_ROOT=/absolute/path/gamepkg-slang
 
 The installer downloads the official Slang 2026.19 Linux x86-64 release and
 checks a pinned SHA-256 before unpacking it. Alternatively set the installation
-folder and backend in the desktop Settings page. The default backend is
-SPIR-V; WGSL, Metal, and DXIL outputs are also tested. DXIL requires the pinned
+folder and backend in the desktop Settings page. New configurations default to
+GLSL for shader playback in the OpenGL desktop player. SPIR-V, WGSL, Metal,
+and DXIL compilation outputs are also tested. DXIL requires the pinned
 DXC 1.9.2609 Linux x86-64 distribution:
 
 ```sh
@@ -662,3 +663,5 @@ gamepkg build examples/good/collect-stars -o /tmp/collect-stars.gamepkg --key cr
 With `-o` and `--key`, `build` signs a temporary candidate, verifies it, and compiles its Rust and Slang source using the same isolated toolchain as installed games. Only a successful build publishes the signed source `.gamepkg`. The package retains source and assets; it does not embed the temporary Wasm or shader cache. This workflow does not install into your library. Missing signing keys, existing output files, or compilation failures leave no new output; existing files are never overwritten. Install the result and Build/Play it as usual. Without `-o`, `gamepkg build <id>` continues to compile an installed game. `pack` remains available to sign and validate source without requiring the compiler toolchain.
 
 Creator directory-build outputs must be outside the source tree, including when their parent folder is a symlink. The destination parent must already exist. Existing files and symlinks are refused before compilation; publication still uses an atomic no-overwrite operation after successful compilation.
+
+Existing explicitly saved shader backends remain selected. For desktop shader playback, choose GLSL and rebuild if an older configuration selected another backend. New installations and Reset form to defaults use GLSL so supported shader games can be built and played without an extra configuration step.

@@ -8,7 +8,7 @@ os.chdir(project)
 with tempfile.TemporaryDirectory(prefix='gamepkg-shader-ui-') as directory:
  root=Path(directory)
  env=dict(os.environ,DISPLAY=':97',LIBGL_ALWAYS_SOFTWARE='1',GAMEPKG_CONFIG=str(root/'settings.toml'),GAMEPKG_HOME=str(root/'library'),GAMEPKG_SLANG_ROOT=os.environ.get('GAMEPKG_SLANG_ROOT',''));env.pop('WAYLAND_DISPLAY',None)
- (root/'settings.toml').write_text('shader_backend = "glsl"\n')
+ # No backend setting: first-launch defaults must support desktop playback.
  def run(*args):
   result=subprocess.run(['target/release/gamepkg',*map(str,args)],env=env,capture_output=True,text=True,timeout=140)
   assert result.returncode==0,result.stderr
@@ -36,12 +36,17 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-shader-ui-') as directory:
    def dominant(path, channel):
     image=Image.open(path).convert('RGB')
     points=sum(1 for rgb in (image.getpixel((x,y)) for y in range(image.height) for x in range(image.width)) if rgb[channel]>150 and rgb[channel]>2*rgb[1 if channel==2 else 2])
-    assert points>20000, f'Package shader pixels missing: {points}'
-   dominant(before,2)
+    return points>20000
+   deadline=time.monotonic()+15
+   while not dominant(before,2):
+    assert time.monotonic()<deadline, 'Package blue shader pixels did not appear'
+    if app.poll() is not None:raise RuntimeError(app.stderr.read().decode())
+    time.sleep(.1)
+    subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(before)],env=env,check=True)
    subprocess.run(['xdotool','keydown','Right'],env=env,check=True);time.sleep(.5)
    after=project/'target/shader-player.png'
    subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(after)],env=env,check=True)
-   dominant(after,1)
+   assert dominant(after,1), 'Package green shader pixels missing'
    subprocess.run(['xdotool','keyup','Right'],env=env,check=True)
    print('Compiled package fragment passes rendered; held input switched actual blue/green screen pixels.')
   finally:

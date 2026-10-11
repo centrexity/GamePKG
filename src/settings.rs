@@ -39,7 +39,7 @@ impl Default for Settings {
             dark_mode: true,
             slang_directory: String::new(),
             dxc_directory: String::new(),
-            shader_backend: "spirv".into(),
+            shader_backend: "glsl".into(),
             mute_audio: false,
             audio_volume: 50,
             automatic_update_checks: true,
