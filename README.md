@@ -131,7 +131,7 @@ The desktop library shows each installed package's thumbnail, ID, version, ROM r
 
 Set `requires_rom = true` at the top level of the manifest for a game requiring a ROM supplied by the end user. It defaults to false for existing packages and is covered by the creator signature. The host displays the requirement during inspection and in the library. No ROM is downloaded, uploaded, or included automatically. Select a local ROM path when launching; the guest receives bounded read-only bytes for that session.
 
-`gamepkg build <id>` uses the same build action as the GUI. This initial build profile compiles the verified, dependency-free `source/src/lib.rs` directly to `wasm32-unknown-unknown` under Linux bubblewrap, without Cargo build scripts. It requires `bwrap`, `timeout`, Rust, `rustup target add wasm32-unknown-unknown`, and the pinned Slang installation described below. The compiler has a private working directory, an isolated network namespace, access to system tools and its toolchain, and a 60-second deadline. It has no access to the user's home directory. Failed sandbox setup stops the build; there is no native or unsandboxed fallback. Compiler memory caps, approved dependency support and broader GPU rendering remain pending.
+`gamepkg build <id>` uses the same build action as the GUI. This initial build profile compiles the verified, dependency-free `source/src/lib.rs` directly to `wasm32-unknown-unknown` under Linux bubblewrap, without Cargo build scripts. It requires `bwrap`, `timeout`, `prlimit`, Rust, `rustup target add wasm32-unknown-unknown`, and the pinned Slang installation described below. The compiler has a private working directory, an isolated network namespace, access to system tools and its toolchain, and a 60-second deadline. It has no access to the user's home directory. Failed sandbox setup stops the build; there is no native or unsandboxed fallback. Compiler processes have a 2 GiB virtual address-space ceiling, core dumps disabled, output-file limits (32 MiB for Rust, 16 MiB for Slang), and bounded diagnostics (1 MiB per stream). These are per-process limits rather than a total process-tree memory budget. Approved dependency support and broader GPU rendering remain pending.
 
 `gamepkg check-updates <id>` checks the signed URL without changing the installed game. In the GUI, a newer update opens for review and explicit installation. Matching versions report up-to-date; older versions and changed IDs/keys are rejected. `gamepkg update <id>` remains the explicit download-and-install command.
 
@@ -443,3 +443,22 @@ runs after the desktop app closes. Restarting the app starts a fresh check cycle
 `tests/updates_gui.py` uses a local HTTPS server and isolated display to verify
 that a signed update notice renders, the installed archive stays unchanged,
 no early repeat request occurs, and disabled checks make no requests.
+
+
+## Compiler resource and source-policy checks
+
+Compiler discovery and version probes also use the process deadline and bounded
+capture. Compiler stdout/stderr are drained after the capture limit so verbose
+errors do not deadlock a build or grow the host's diagnostic buffer indefinitely.
+No truncated or oversized artifact is published, and component encoding is checked
+against the final 32 MiB artifact limit. A failed rebuild leaves earlier compiled
+output intact. `tests/compiler_limits.py` exercises an oversized real Rust artifact;
+ordinary Rust, component and Slang build integrations verify successful builds.
+
+The source scanner checks identifiers inside macro token groups and import aliases,
+including raw identifiers. Hidden includes, unsafe/foreign code, restricted OS
+names, attributes and module declarations inside macros are refused. This initial
+policy is conservative: the reserved identifiers are rejected even when used as
+ordinary variable names; string literal text is allowed. Normal expression macros
+remain supported. Scanning supplements compiler isolation and Wasm linking; it is
+not a proof that source code is harmless.

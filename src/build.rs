@@ -8,7 +8,6 @@ use anyhow::{bail, Context, Result};
 use std::{
     fs,
     path::{Path, PathBuf},
-    process::Command,
 };
 
 fn installed(root: &Path, id: &str) -> Result<PathBuf> {
@@ -69,14 +68,14 @@ pub fn compile(root: &Path, id: &str) -> Result<()> {
         include_str!("guest_api.rs.txt")
     });
     fs::write(stage.path().join("lib.rs"), source)?;
-    let rustc = Command::new("rustup")
-        .args(["which", "rustc"])
-        .output()
-        .context("Rust toolchain is required")?;
+    let rustc = crate::compiler::run(
+        crate::compiler::command(32 * 1024 * 1024).args(["rustup", "which", "rustc"]),
+    )
+    .context("Rust toolchain is required")?;
     if !rustc.status.success() {
         bail!("unable to locate Rust compiler");
     }
-    let compiler = fs::canonicalize(std::str::from_utf8(&rustc.stdout)?.trim())?;
+    let compiler = fs::canonicalize(rustc.stdout.trim())?;
     let toolchain = compiler
         .parent()
         .and_then(Path::parent)
@@ -89,9 +88,8 @@ pub fn compile(root: &Path, id: &str) -> Result<()> {
     }
     let settings = crate::settings::load()?;
     crate::shaders::compile(root, &bytes, &mut pkg, &manifest, &settings)?;
-    let mut cmd = Command::new("timeout");
+    let mut cmd = crate::compiler::command(32 * 1024 * 1024);
     cmd.args([
-        "60",
         "bwrap",
         "--unshare-all",
         "--die-with-parent",
@@ -142,14 +140,9 @@ pub fn compile(root: &Path, id: &str) -> Result<()> {
             "opt-level=0"
         },
     ]);
-    let output = cmd
-        .output()
-        .context("isolated builds require timeout and bubblewrap")?;
+    let output = crate::compiler::run(&mut cmd)?;
     if !output.status.success() {
-        bail!(
-            "isolated Wasm build failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
+        bail!("isolated Wasm build failed: {}", output.stderr);
     }
     let artifact = fs::read(stage.path().join("game.wasm"))?;
     let installed_now = fs::read(installed(root, id)?)?;
@@ -164,6 +157,9 @@ pub fn compile(root: &Path, id: &str) -> Result<()> {
     } else {
         artifact
     };
+    if artifact.len() > 32 * 1024 * 1024 {
+        bail!("compiled Wasm exceeds 32 MiB build limit");
+    }
     let parent = cache.parent().context("invalid build cache")?;
     fs::create_dir_all(parent)?;
     let mut temp = tempfile::NamedTempFile::new_in(parent)?;

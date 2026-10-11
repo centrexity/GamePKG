@@ -28,3 +28,5 @@ pub mod gpu;
 pub mod hostapi;
 
 pub mod updates;
+
+mod compiler;

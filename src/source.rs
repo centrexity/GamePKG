@@ -4,8 +4,49 @@ use syn::visit::Visit;
 struct Scanner {
     rejected: bool,
 }
+fn reserved(name: &str) -> bool {
+    matches!(
+        name.strip_prefix("r#").unwrap_or(name),
+        "include"
+            | "include_bytes"
+            | "include_str"
+            | "unsafe"
+            | "extern"
+            | "fs"
+            | "net"
+            | "process"
+            | "env"
+            | "libc"
+    )
+}
+fn forbidden_tokens(tokens: proc_macro2::TokenStream, macro_context: bool) -> bool {
+    let mut pending = vec![tokens];
+    while let Some(tokens) = pending.pop() {
+        for token in tokens {
+            match token {
+                proc_macro2::TokenTree::Group(group) => pending.push(group.stream()),
+                proc_macro2::TokenTree::Ident(name)
+                    if reserved(&name.to_string()) || (macro_context && name == "mod") =>
+                {
+                    return true
+                }
+                proc_macro2::TokenTree::Punct(punct) if macro_context && punct.as_char() == '#' => {
+                    return true
+                }
+                _ => {}
+            }
+        }
+    }
+    false
+}
 impl<'ast> Visit<'ast> for Scanner {
+    fn visit_ident(&mut self, node: &'ast syn::Ident) {
+        if reserved(&node.to_string()) {
+            self.rejected = true;
+        }
+    }
     fn visit_macro(&mut self, node: &'ast syn::Macro) {
+        self.rejected |= forbidden_tokens(node.tokens.clone(), true);
         if node.path.segments.iter().any(|s| {
             matches!(
                 s.ident.to_string().as_str(),
@@ -94,7 +135,14 @@ pub fn scan(pkg: &mut Package) -> Result<()> {
             bail!("initial source profile permits only src/lib.rs");
         }
         let data = pkg.read(&name)?;
-        let ast = syn::parse_file(std::str::from_utf8(&data)?)?;
+        let text = std::str::from_utf8(&data)?;
+        let tokens = text
+            .parse::<proc_macro2::TokenStream>()
+            .map_err(|error| anyhow::anyhow!("invalid source tokens: {error}"))?;
+        if forbidden_tokens(tokens, false) {
+            bail!("source uses a forbidden construct");
+        }
+        let ast = syn::parse_file(text)?;
         let mut scanner = Scanner { rejected: false };
         scanner.visit_file(&ast);
         if scanner.rejected {

@@ -10,7 +10,6 @@ use std::{
     fs,
     io::Write,
     path::{Path, PathBuf},
-    process::Command,
 };
 pub const SLANG_VERSION: &str = "2026.19";
 pub fn compile(
@@ -55,9 +54,8 @@ pub fn compile(
         }
         let binary = format!("{index}.shader");
         let reflection = format!("{index}.reflection.json");
-        let mut command = Command::new("timeout");
+        let mut command = crate::compiler::command(16 * 1024 * 1024);
         command.args([
-            "60",
             "bwrap",
             "--unshare-all",
             "--die-with-parent",
@@ -112,14 +110,9 @@ pub fn compile(
         if settings.shader_backend == "dxil" {
             command.args(["-profile", "sm_6_0"]);
         }
-        let output = command
-            .output()
-            .context("shader builds require timeout and bubblewrap")?;
+        let output = crate::compiler::run(&mut command)?;
         if !output.status.success() {
-            bail!(
-                "isolated shader build failed: {}",
-                String::from_utf8_lossy(&output.stderr)
-            );
+            bail!("isolated shader build failed: {}", output.stderr);
         }
         let bytes = read_output(&stage.path().join(&binary))?;
         if bytes.is_empty()
@@ -232,18 +225,14 @@ fn compiler_cache(root: &Path, archive: &[u8], settings: &Settings) -> Result<(P
         .context("install Slang 2026.19 and set its folder in Settings or GAMEPKG_SLANG_ROOT")?;
     let compiler = fs::canonicalize(compiler)?;
     let exe = compiler.join("bin/slangc");
-    let version = Command::new(&exe)
-        .arg("-version")
-        .output()
-        .context("unable to run Slang compiler")?;
+    let version = crate::compiler::run(
+        crate::compiler::command(16 * 1024 * 1024)
+            .arg(&exe)
+            .arg("-version"),
+    )
+    .context("unable to run Slang compiler")?;
     if !version.status.success()
-        || format!(
-            "{}{}",
-            String::from_utf8_lossy(&version.stdout),
-            String::from_utf8_lossy(&version.stderr)
-        )
-        .trim()
-            != SLANG_VERSION
+        || format!("{}{}", version.stdout, version.stderr).trim() != SLANG_VERSION
     {
         bail!("Slang version must be exactly {SLANG_VERSION}");
     }

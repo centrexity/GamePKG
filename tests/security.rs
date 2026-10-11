@@ -59,9 +59,21 @@ fn rejects_source_bypasses() {
         "pub const X: &str = include_str!(\"x\");",
         "include!(\"x.rs\");",
         "pub fn x() { unsafe {} }",
+        "pub unsafe fn x() {}",
+        "pub extern \"C\" fn x() {}",
         "#[path = \"outside.rs\"] mod x;",
         "extern \"C\" { fn x(); }",
         "mod outside;",
+        "use std::include_bytes as bytes; pub const X: &[u8] = bytes!(\"x\");",
+        "use std::fs as files; pub fn x() { let _ = files::read(\"x\"); }",
+        "pub fn x() { let _ = std::r#fs::read(\"x\"); }",
+        "macro_rules! hidden { () => { include_bytes!(\"x\") }; }",
+        "macro_rules! hidden { () => { unsafe { } }; }",
+        "macro_rules! hidden { () => { #[path=\"outside.rs\"] mod x; }; }",
+        "macro_rules! hidden { () => { extern \"C\" { fn x(); } }; }",
+        "macro_rules! hidden { () => { std::fs::read(\"x\") }; }",
+        "macro_rules! hidden { () => { mod outside; }; }",
+        "macro_rules! hidden { ($name:ident) => { $name!(\"x\") }; } pub const X: &[u8] = hidden!(include_bytes);",
     ] {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path().join("game");
@@ -244,4 +256,14 @@ fn rejects_shader_assembly_and_macro_injection_without_publishing() {
         assert!(pack(&root, &output, &SEED).is_err(), "accepted {source}");
         assert_eq!(fs::read(output).unwrap(), b"previous package");
     }
+}
+
+#[test]
+fn ordinary_macros_and_literal_text_remain_accepted() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("game");
+    fixture(&root);
+    fs::write(root.join("source/src/lib.rs"),r#"macro_rules! add { ($x:expr) => { $x + 1 }; }
+        pub fn game_tick(_: u32,state:u64)->u64 { assert_eq!("unsafe std::fs include_bytes mod #", "unsafe std::fs include_bytes mod #"); add!(state) }"#).unwrap();
+    pack(&root, &temp.path().join("ordinary.gamepkg"), &SEED).unwrap();
 }
