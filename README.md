@@ -4,7 +4,7 @@
 
 **Current status:** this is a development preview. Package verification, catalog import, installation, update checks, and isolated Cargo Wasm and Slang shader builds on Linux work today. The experimental grid-v1 profile now plays in the GUI and terminal under Wasmtime with scoped asset reads, fuel, memory limits, and epoch deadlines. Resource-free Slang GLSL, SPIR-V, and WGSL fragment passes now render in the OpenGL GUI; versioned WIT components are supported alongside the legacy core profile; broader rendering remains pending; this is not a guarantee that a package is harmless.
 
-Download the [Linux CLI and desktop preview](https://github.com/centrexity/GamePKG/releases/tag/v0.1.2), including its checksum file. Host distributions can also be prepared with `python3 tools/package_release.py /tmp/gamepkg-distribution` after building both release entry points. The archive includes CLI/GUI executables, setup tools, examples, original resolved dependency sources and notices, and integrity hashes. See [installation instructions](docs/INSTALL.md). The public repository's **Package Linux preview** workflow produces the same artifact on Ubuntu 24.04.
+Download the [Linux CLI and desktop preview](https://github.com/centrexity/GamePKG/releases/tag/v0.1.3), including its checksum file. Host distributions can also be prepared with `python3 tools/package_release.py /tmp/gamepkg-distribution` after building both release entry points. The archive includes CLI/GUI executables, setup tools, examples, original resolved dependency sources and notices, and integrity hashes. See [installation instructions](docs/INSTALL.md). The public repository's **Package Linux preview** workflow produces the same artifact on Ubuntu 24.04.
 
 Try the [signed demo catalog](https://github.com/centrexity/GamePKG/releases/download/v0.1.2/demos.gamepkglist) with **Import .gamepkglist** in the desktop library. It adds Collect Stars, Shape Playground and PNG Sprite Playground as **Not downloaded**. Choose a game to download, approve its creator on first installation, then **Build** and **Play**. No ROM or signing key is needed. The [portable demo store](https://github.com/centrexity/GamePKG/releases/download/v0.1.2/demos.gamepkgstore) includes all three signed games for offline import. Compare downloads against [demo checksums](https://github.com/centrexity/GamePKG/releases/download/v0.1.2/demo-packages.sha256).
 
@@ -738,7 +738,7 @@ Repairs never rewrite signatures, invent missing shared blobs, reset saves, or e
 
 ### Hindsight IndexedDB browser library
 
-Included in the 0.1.2 Linux preview. Supply the Hindsight package directory separately as described below.
+Included in the 0.1.3 Linux preview. Supply the Hindsight package directory separately as described below.
 
 The host now includes `gamepkg web-library --indexeddb-package /path/to/Hindsight4/Compiler/packages/Database/IndexedDB`. Open the printed local session link in a browser. The default port is 39173; use `--port` to change it. Keep the port stable to retain the browser origin’s stored information.
 
@@ -746,7 +746,7 @@ This uses the actual Hindsight `Database/IndexedDB` package, whose native deskto
 
 The browser interface currently displays stored library information. Use the native desktop or CLI for package approval, installation, builds, gameplay and repairs. Signed packages and runtime state remain validated by the host; browser metadata never authorizes a package. No substitute database is used.
 
-The local server listens only on IPv4 loopback, requires the session’s authorization for metadata, rejects foreign origins and host headers, and serves the cross-origin isolation headers required by Hindsight. It makes no external requests. The package JavaScript is read from the supplied Hindsight directory and checked against the locally verified SHA-256 revisions `602b55aa4610aa47b3216f2c2299191730ce6bc847db1b2a81ef183a3b25129b` and `b6fc9ff6b00a415d72b39e8fe936542f1cad7caf063752183d5ff81cef5bb097` in current source builds (the 0.1.2 download accepts the first revision); it is not redistributed inside this repository.
+The local server listens only on IPv4 loopback, requires the session’s authorization for metadata, rejects foreign origins and host headers, and serves the cross-origin isolation headers required by Hindsight. It makes no external requests. The package JavaScript is read from the supplied Hindsight directory and checked against the locally verified SHA-256 revisions `602b55aa4610aa47b3216f2c2299191730ce6bc847db1b2a81ef183a3b25129b` and `b6fc9ff6b00a415d72b39e8fe936542f1cad7caf063752183d5ff81cef5bb097` in source builds and the 0.1.3 download (the earlier 0.1.2 download accepts the first revision); it is not redistributed inside this repository.
 
 Run `python3 tests/hindsight_storage.py --indexeddb-package PATH` and `python3 tests/web_library.py --indexeddb-package PATH` with Chromium, chromedriver and Selenium installed. These exercise real browser persistence, browser restart, library separation, the running host, unauthorized requests, and cached display. Browser quotas and eviction still apply; retain the native host library for recovery.
 
