@@ -75,3 +75,44 @@ fn canonical_abi_rejects_out_of_bounds_guest_strings() {
     let mut game = Game::from_bytes(&bytes, &manifest()).unwrap();
     assert!(game.step(0).is_err());
 }
+
+#[test]
+fn component_recommended_memory_is_advisory_and_hard_limit_stops_growth() {
+    let mut manifest = manifest();
+    manifest.limits.hard_memory_bytes = 2 * 65536;
+    manifest.limits.recommended_memory_bytes = Some(65536);
+    let bytes = component(
+        r#"(module (memory (export "memory") 2)
+      (func (export "tick") (param i32 i64) (result i64) i64.const 42))"#,
+    );
+    let mut game = Game::from_bytes(&bytes, &manifest).unwrap();
+    assert_eq!(game.step(0).unwrap(), 42);
+    let growing = component(
+        r#"(module (memory (export "memory") 2)
+      (func (export "tick") (param i32 i64) (result i64)
+        i32.const 1 memory.grow drop i64.const 0))"#,
+    );
+    let mut game = Game::from_bytes(&growing, &manifest).unwrap();
+    assert!(game.step(0).is_err());
+}
+
+#[test]
+fn component_user_memory_ceiling_tightens_the_signed_limit() {
+    let mut manifest = manifest();
+    manifest.limits.hard_memory_bytes = 2 * 1024 * 1024;
+    let settings = gamepkg::settings::Settings {
+        memory_ceiling_mib: 1,
+        ..Default::default()
+    };
+    let bytes = component(
+        r#"(module (memory (export "memory") 32)
+      (func (export "tick") (param i32 i64) (result i64) i64.const 42))"#,
+    );
+    assert!(Game::with_settings(&bytes, &manifest, &settings).is_err());
+    let bytes = component(
+        r#"(module (memory (export "memory") 16)
+      (func (export "tick") (param i32 i64) (result i64) i64.const 42))"#,
+    );
+    let mut game = Game::with_settings(&bytes, &manifest, &settings).unwrap();
+    assert_eq!(game.step(0).unwrap(), 42);
+}
