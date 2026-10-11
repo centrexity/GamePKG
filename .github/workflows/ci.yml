@@ -31,6 +31,9 @@ jobs:
       - name: Local HTTPS integration
         if: matrix.features == '--all-features'
         run: python3 tests/https_download.py
+      - name: GitHub project download and signed update integration
+        if: matrix.features == '--all-features'
+        run: python3 tests/github_download.py
       - name: Tor routing integration
         if: matrix.features == '--all-features'
         run: python3 tests/tor_download.py

@@ -693,3 +693,5 @@ Translated texture passes validate one non-arrayed, non-multisampled float 2D im
 The CLI and desktop download field, catalog `download_url`, and signed manifest `update_url` also accept `https://github.com/owner/repository` or `/releases/latest`. The project must publish exactly one `.gamepkg` asset in its latest stable GitHub release. `/releases/tag/v1.2.3` selects a specific published release, including a prerelease. Projects with multiple game assets must provide a direct release asset URL. Source archives and repository code are never built just from a project link.
 
 Public release discovery uses GitHub's anonymous API and may encounter its rate limits. Downloaded packages still undergo signature verification, first-creator approval, and update ID, version, and creator continuity checks. A GitHub account name does not establish a package creator's identity.
+
+Run `python3 tests/github_download.py` after building the CLI to exercise GitHub release discovery with local fixtures, catalog predownload state, creator approval, signed updates, and signer/ID substitution rejection without relying on a GitHub account or API availability.
