@@ -5,6 +5,7 @@ use std::{
     sync::mpsc,
 };
 enum Work {
+    Store(crate::store::Bundle),
     Preview(Vec<Vec<u8>>),
     Game(Box<crate::runtime::Game>),
     Package(crate::manifest::Manifest),
@@ -30,6 +31,7 @@ pub struct App {
     result: Option<mpsc::Receiver<Result<Work, String>>>,
     manifest: Option<crate::manifest::Manifest>,
     pending: Option<tempfile::NamedTempFile>,
+    pending_store: Option<crate::store::Bundle>,
     installed: Vec<crate::manifest::Manifest>,
     catalog: Vec<crate::catalog::Entry>,
     loaded: bool,
@@ -114,6 +116,7 @@ impl App {
         self.begin_work(move || task().map(Work::Package));
     }
     fn begin_work(&mut self, task: impl FnOnce() -> anyhow::Result<Work> + Send + 'static) {
+        self.pending_store = None;
         let (tx, rx) = mpsc::channel();
         self.result = Some(rx);
         self.status = "Working…".into();
@@ -138,6 +141,16 @@ impl eframe::App for App {
                 Ok(result) => {
                     self.result = None;
                     match result {
+                        Ok(Work::Store(bundle)) => {
+                            self.preview = None;
+                            self.manifest = None;
+                            self.pending = None;
+                            self.status = format!(
+                                "Verified store: {} games. Review creators before installing.",
+                                bundle.games().len()
+                            );
+                            self.pending_store = Some(bundle);
+                        }
                         Ok(Work::Preview(frames)) => {
                             let texture = ctx.load_texture(
                                 "game-preview",
@@ -508,7 +521,7 @@ impl eframe::App for App {
                                 Ok(()) => {
                                     ctx.set_visuals(if self.settings_draft.dark_mode { egui::Visuals::dark() } else { egui::Visuals::light() });
                                     self.applied_settings=Some(self.settings_draft.clone());
-                                    self.pending=None;self.manifest=None;self.installed.clear();self.catalog.clear();self.status="Settings saved.".into();self.refresh(ctx);
+                                    self.pending=None;self.pending_store=None;self.manifest=None;self.installed.clear();self.catalog.clear();self.status="Settings saved.".into();self.refresh(ctx);
                                 }
                                 Err(e) => self.status=format!("Settings not saved: {e:#}"),
                             }
@@ -602,8 +615,24 @@ impl eframe::App for App {
                 });
             }
             ui.separator();
-            ui.label("Local .gamepkg path, HTTPS URL, or Tor onion URL");
+            ui.label("Local package, game list, or store bundle path; HTTPS or Tor onion URL");
             ui.text_edit_singleline(&mut self.source);
+            ui.horizontal(|ui| {
+            if ui.add_enabled(self.result.is_none(), egui::Button::new("Inspect .gamepkgstore bundle")).clicked() {
+                self.pending_store = None;
+                self.pending = None;
+                self.manifest = None;
+                self.preview = None;
+                let source = self.source.trim().to_owned();
+                self.begin_work(move || {
+                    let downloaded;
+                    let path = if source.contains("://") {
+                        downloaded = crate::registry::download(&source)?;
+                        downloaded.path()
+                    } else { std::path::Path::new(&source) };
+                    Ok(Work::Store(crate::store::Bundle::open(path)?))
+                });
+            }
             if ui.add_enabled(self.result.is_none(),egui::Button::new("Import .gamepkglist (no game downloads)")).clicked() {
                 let source = self.source.trim().to_owned();
                 self.begin_work(move || {
@@ -613,6 +642,7 @@ impl eframe::App for App {
                     Ok(Work::Message(format!("Added {count} games to the catalog. No game packages downloaded.")))
                 });
             }
+            });
             if ui.add_enabled(self.result.is_none(), egui::Button::new("Download / inspect")).clicked() {
                 self.manifest = None;
                 self.pending = None;
@@ -638,6 +668,35 @@ impl eframe::App for App {
                 }
             }
             ui.label(&self.status);
+            if let Some(bundle) = &self.pending_store {
+                ui.separator();
+                ui.heading("Verified store bundle");
+                ui.label("Signatures prove creator-key ownership. Confirm these creators before approving first installations. Existing games retain their creator keys.");
+                egui::ScrollArea::vertical().id_salt("store-review").max_height(220.0).show(ui, |ui| {
+                    for game in bundle.games() {
+                        ui.label(format!("{} — {}{}", game.id, game.version, if game.requires_rom { " • User ROM required" } else { "" }));
+                        ui.label(format!("Creator key: {}", game.creator_key));
+                    }
+                });
+                let mut install = false;
+                let mut cancel = false;
+                ui.horizontal(|ui| {
+                    install = ui.add_enabled(self.result.is_none(), egui::Button::new("Trust listed creators and install store")).clicked();
+                    cancel = ui.add_enabled(self.result.is_none(), egui::Button::new("Cancel store import")).clicked();
+                });
+                if install {
+                    if let Some(bundle) = self.pending_store.take() {
+                        let root = crate::registry::default_root();
+                        self.begin_work(move || {
+                            let count = bundle.install(&root?, true)?;
+                            Ok(Work::Message(format!("Installed {count} store games. Build a game to play.")))
+                        });
+                    }
+                } else if cancel {
+                    self.pending_store = None;
+                    self.status = "Store import cancelled. No games installed.".into();
+                }
+            }
             if let Some(m) = self.manifest.clone() {
                 egui::ScrollArea::vertical().id_salt("game-details").max_height((ui.available_height() - 35.0).max(100.0)).show(ui, |ui| {
                 ui.separator(); ui.heading(&m.id); ui.label(format!("Version: {}", m.version));

@@ -625,3 +625,7 @@ asset-catalog examples now provide playable entry points.
 `tests/build_entrypoints.py` covers successful core/WIT launches, reexports,
 wrong/missing entry points, unsupported worlds, and preservation of earlier
 caches after failed builds.
+
+### Import portable stores in the desktop library
+
+Enter a local `.gamepkgstore` path, HTTPS URL, or Tor onion URL in the Library source field, then choose **Inspect .gamepkgstore bundle**. GamePKG verifies every package signature and shared blob before showing the game versions, ROM requirements, and creator keys. Inspection does not install games. Choose **Trust listed creators and install store** to approve first installations, or **Cancel store import** to discard the review. Existing creator-key and version protections still apply. Installation uses a private verified snapshot, so changes to the original file cannot replace reviewed content. Imported games appear in the table and can be built and played.

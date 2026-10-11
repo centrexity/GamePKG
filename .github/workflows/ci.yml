@@ -92,6 +92,8 @@ jobs:
       - name: Install virtual display tools
         if: matrix.features == '--all-features'
         run: sudo apt-get install -y xvfb xdotool imagemagick python3-pil libxkbcommon-x11-0 libgl1-mesa-dri
+      - name: Verify desktop store import review and approval
+        run: python3 tests/store_gui.py
       - name: Verify video previews and Theora fallback in the GUI
         if: matrix.features == '--all-features'
         run: sudo env PATH="$PATH" /usr/bin/python3 tests/previews_gui.py
