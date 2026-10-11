@@ -764,4 +764,6 @@ For an end-to-end example check on Linux, configure the pinned Slang compiler an
 
 With the compiler installed, add `--play` to `tests/web_library.py` to verify actual signed gameplay, achievement unlocks and measured play time flowing into Hindsight, including a browser restart without a valid host session token. Unverified changes to the supplied Hindsight package remain rejected.
 
+Run `python3 tests/progress_gui.py --indexeddb-package /path/to/Hindsight4/Compiler/packages/Database/IndexedDB` with the compiler and virtual-display tools installed to verify normal keyboard gameplay: collect a star, return to Library, persist the achievement and play time through Hindsight, then restart the browser without host authorization and check its cached record. Omitting the package argument runs the desktop-only regression.
+
 For an opt-in live Tor network test with a locally supplied Tor binary, run `python3 tests/tor_live.py --tor /path/to/tor`. It starts a temporary local onion service, verifies signed installation and a same-creator update, then stops Tor and removes its private test state. This requires network access and is separate from the deterministic routing test.
