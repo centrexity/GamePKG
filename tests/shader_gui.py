@@ -59,12 +59,15 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-shader-ui-') as directory:
  import json
  metadata=next((root/'library/shader-builds').glob('*/0.reflection.json'))
  original=metadata.read_bytes()
- for reflection in [{'parameters':[{'name':'untrustedTexture'}]}, {}]:
+ parsed=json.loads(original)
+ mismatched=dict(parsed,entryPoints=[{'name':'not-the-signed-entry'}])
+ missing_entries=dict(parsed);missing_entries.pop('entryPoints',None)
+ for reflection in [{'parameters':[{'name':'untrustedTexture'}]}, {}, mismatched, missing_entries]:
   metadata.write_text(json.dumps(reflection))
   result=subprocess.run(['target/release/gamepkg','run','com.gamepkg.shader-switch','--frames','1'],env=env,capture_output=True,text=True)
   assert result.returncode!=0 and ('resource' in result.stderr or 'reflection' in result.stderr), result.stderr
  metadata.write_bytes(original)
- print('External resources and missing shader reflection rejected before playback.')
+ print('External resources, missing reflection, and entry-point mismatches rejected before playback.')
 
  if args.backend in ('spirv','wgsl'):
   binary=metadata.with_name('0.shader');original_binary=binary.read_bytes()

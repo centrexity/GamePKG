@@ -324,14 +324,11 @@ pub fn load_fragment_sources(
         let metadata: serde_json::Value = serde_json::from_slice(&read_output(
             &cache.join(format!("{index}.reflection.json")),
         )?)?;
-        if !metadata
-            .get("parameters")
-            .and_then(|v| v.as_array())
-            .context("shader reflection must declare its resource parameters")?
-            .is_empty()
-        {
-            bail!("desktop fragment passes currently require no external resource bindings");
-        }
+        let entry = manifest
+            .shaders
+            .get(index)
+            .map_or("fragmentMain", |shader| shader.entry.as_str());
+        validate_fragment_reflection(&metadata, entry)?;
         let bytes = read_output(&cache.join(format!("{index}.shader")))?;
         sources.push(if settings.shader_backend != "glsl" {
             fragment_source(&bytes, &settings.shader_backend)?
@@ -340,6 +337,25 @@ pub fn load_fragment_sources(
         });
     }
     Ok(sources)
+}
+
+fn validate_fragment_reflection(metadata: &serde_json::Value, entry: &str) -> Result<()> {
+    let parameters = metadata
+        .get("parameters")
+        .and_then(|value| value.as_array())
+        .context("shader reflection must declare its resource parameters")?;
+    if !parameters.is_empty() {
+        bail!("desktop fragment passes currently require no external resource bindings");
+    }
+    let entries = metadata
+        .get("entryPoints")
+        .and_then(|value| value.as_array())
+        .context("shader reflection must declare its entry points")?;
+    if entries.len() != 1 || entries[0].get("name").and_then(|value| value.as_str()) != Some(entry)
+    {
+        bail!("shader reflection entry point does not match the signed manifest");
+    }
+    Ok(())
 }
 
 struct ShaderText(String);
@@ -436,5 +452,22 @@ mod wgsl_tests {
         let valid = "@fragment fn main() -> @location(0) vec4<f32> { return vec4<f32>(1.0); }";
         let output = super::fragment_source(valid.as_bytes(), "wgsl").unwrap();
         assert!(output.contains("#version 330 core"));
+    }
+}
+
+#[cfg(test)]
+mod reflection_tests {
+    #[test]
+    fn reflected_entry_must_match_the_signed_request() {
+        let valid = serde_json::json!({"parameters":[], "entryPoints":[{"name":"blueMain"}]});
+        super::validate_fragment_reflection(&valid, "blueMain").unwrap();
+        assert!(super::validate_fragment_reflection(&valid, "greenMain").is_err());
+        for value in [
+            serde_json::json!({"parameters":[]}),
+            serde_json::json!({"parameters":[],"entryPoints":[]}),
+            serde_json::json!({"parameters":[],"entryPoints":[{"name":"blueMain"},{"name":"greenMain"}]}),
+        ] {
+            assert!(super::validate_fragment_reflection(&value, "blueMain").is_err());
+        }
     }
 }
