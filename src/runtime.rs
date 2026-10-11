@@ -548,11 +548,16 @@ impl Game {
         }
         let mut snapshots = Vec::new();
         let mut total = 0usize;
-        for path in rom_paths {
+        for (index, path) in rom_paths.iter().enumerate() {
+            let title = manifest
+                .roms
+                .get(index)
+                .map(|r| r.title.as_str())
+                .unwrap_or("Your ROM file");
             let bytes = crate::files::read_regular(path, 64 * 1024 * 1024, true)
-                .context("unable to open selected ROM")?;
+                .with_context(||format!("unable to open selected ROM {} ({title}); ROM must be 1 byte to 64 MiB and a regular file",index+1))?;
             if bytes.is_empty() || bytes.len() > 64 * 1024 * 1024 {
-                bail!("ROM must be 1 byte to 64 MiB");
+                bail!("ROM {} ({title}) must be 1 byte to 64 MiB", index + 1);
             }
             total = total.saturating_add(bytes.len());
             if total > 128 * 1024 * 1024 {
