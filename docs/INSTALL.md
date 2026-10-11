@@ -25,7 +25,15 @@ Enter that Slang folder in the desktop Settings page, or set GAMEPKG_SLANG_ROOT 
 
 Install a signed package from a file or HTTPS URL in the desktop library. Review its creator fingerprint and permissions, approve installation, choose Build, then Play. A game that requires a ROM needs a file you supply explicitly. Importing a .gamepkglist only adds catalog entries; it does not download games.
 
-To try an included example, generate your own private creator key outside the example directory:
+To try a ready-to-install game, paste this catalog URL into the desktop library and choose **Import .gamepkglist**:
+
+```text
+https://github.com/centrexity/GamePKG/releases/download/v0.1.2/demos.gamepkglist
+```
+
+The catalog adds three games without downloading them. Choose **Download / inspect** for Collect Stars, review and approve its creator, then **Build** and **Play**. None of these demos requires a ROM. For offline use, download the [demo store](https://github.com/centrexity/GamePKG/releases/download/v0.1.2/demos.gamepkgstore), then inspect and import that local file. [Demo checksums](https://github.com/centrexity/GamePKG/releases/download/v0.1.2/demo-packages.sha256) cover the packages, catalog and store.
+
+To create your own signed package from an included example, generate a private creator key outside the example directory:
 
 ```sh
 ./bin/gamepkg keygen -o /tmp/gamepkg-example.key
