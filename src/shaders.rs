@@ -307,8 +307,8 @@ pub fn load_fragment_sources(
     manifest: &Manifest,
     settings: &Settings,
 ) -> Result<Vec<String>> {
-    if !matches!(settings.shader_backend.as_str(), "glsl" | "spirv") {
-        bail!("this desktop shader renderer requires GLSL or SPIR-V; select one in Settings and rebuild");
+    if !matches!(settings.shader_backend.as_str(), "glsl" | "spirv" | "wgsl") {
+        bail!("this desktop shader renderer requires GLSL, SPIR-V, or WGSL; select one in Settings and rebuild");
     }
     let (_, cache) = compiler_cache(root, archive, settings)?;
     let stages: Vec<&str> = if manifest.shaders.is_empty() {
@@ -333,8 +333,8 @@ pub fn load_fragment_sources(
             bail!("desktop fragment passes currently require no external resource bindings");
         }
         let bytes = read_output(&cache.join(format!("{index}.shader")))?;
-        sources.push(if settings.shader_backend == "spirv" {
-            spirv_fragment_source(&bytes)?
+        sources.push(if settings.shader_backend != "glsl" {
+            fragment_source(&bytes, &settings.shader_backend)?
         } else {
             String::from_utf8(bytes)?
         });
@@ -352,18 +352,23 @@ impl std::fmt::Write for ShaderText {
         Ok(())
     }
 }
-fn spirv_fragment_source(bytes: &[u8]) -> Result<String> {
+fn fragment_source(bytes: &[u8], backend: &str) -> Result<String> {
     if bytes.len() > 16 * 1024 * 1024 {
-        bail!("SPIR-V shader exceeds size limit");
+        bail!("shader exceeds size limit");
     }
-    let module = naga::front::spv::parse_u8_slice(
-        bytes,
-        &naga::front::spv::Options {
-            strict_capabilities: true,
-            ..Default::default()
-        },
-    )
-    .context("invalid desktop SPIR-V shader")?;
+    let module = match backend {
+        "spirv" => naga::front::spv::parse_u8_slice(
+            bytes,
+            &naga::front::spv::Options {
+                strict_capabilities: true,
+                ..Default::default()
+            },
+        )
+        .context("invalid desktop SPIR-V shader")?,
+        "wgsl" => naga::front::wgsl::parse_str(std::str::from_utf8(bytes)?)
+            .context("invalid desktop WGSL shader")?,
+        _ => bail!("unsupported shader translation backend"),
+    };
     if module.entry_points.len() != 1
         || module.entry_points[0].stage != naga::ShaderStage::Fragment
         || module
@@ -371,14 +376,14 @@ fn spirv_fragment_source(bytes: &[u8]) -> Result<String> {
             .iter()
             .any(|(_, variable)| variable.binding.is_some())
     {
-        bail!("desktop SPIR-V requires one resource-free fragment entry");
+        bail!("desktop translated shader requires one resource-free fragment entry");
     }
     let info = naga::valid::Validator::new(
         naga::valid::ValidationFlags::all(),
         naga::valid::Capabilities::empty(),
     )
     .validate(&module)
-    .context("SPIR-V validation failed")?;
+    .context("shader validation failed")?;
     let options = naga::back::glsl::Options {
         version: naga::back::glsl::Version::Desktop(330),
         ..Default::default()
@@ -399,7 +404,7 @@ fn spirv_fragment_source(bytes: &[u8]) -> Result<String> {
     )?
     .write()?;
     if !reflected.texture_mapping.is_empty() || !reflected.uniforms.is_empty() {
-        bail!("SPIR-V translation introduced resource bindings");
+        bail!("shader translation introduced resource bindings");
     }
     Ok(source.0)
 }
@@ -413,6 +418,23 @@ mod translation_tests {
         assert!(output.write_str("").is_ok());
         assert!(output.write_str("x").is_err());
         assert_eq!(output.0.len(), 16 * 1024 * 1024);
-        assert!(super::spirv_fragment_source(b"invalid").is_err());
+        assert!(super::fragment_source(b"invalid", "spirv").is_err());
+        assert!(super::fragment_source(b"invalid", "wgsl").is_err());
+    }
+}
+
+#[cfg(test)]
+mod wgsl_tests {
+    #[test]
+    fn desktop_translation_rejects_bindings_and_other_stages() {
+        for source in [
+            "@group(0) @binding(0) var<uniform> value: vec4<f32>; @fragment fn main() -> @location(0) vec4<f32> { return value; }",
+            "@compute @workgroup_size(1) fn main() {}",
+        ] {
+            assert!(super::fragment_source(source.as_bytes(), "wgsl").is_err());
+        }
+        let valid = "@fragment fn main() -> @location(0) vec4<f32> { return vec4<f32>(1.0); }";
+        let output = super::fragment_source(valid.as_bytes(), "wgsl").unwrap();
+        assert!(output.contains("#version 330 core"));
     }
 }

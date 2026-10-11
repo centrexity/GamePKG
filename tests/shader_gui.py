@@ -2,7 +2,7 @@ from gui_test_support import start_display
 import os, subprocess, tempfile, time, argparse, shutil
 from pathlib import Path
 from PIL import Image
-parser=argparse.ArgumentParser();parser.add_argument('--component',action='store_true');parser.add_argument('--backend',choices=['glsl','spirv']);args=parser.parse_args()
+parser=argparse.ArgumentParser();parser.add_argument('--component',action='store_true');parser.add_argument('--backend',choices=['glsl','spirv','wgsl']);args=parser.parse_args()
 project=Path(__file__).resolve().parents[1]
 os.chdir(project)
 with tempfile.TemporaryDirectory(prefix='gamepkg-shader-ui-') as directory:
@@ -66,10 +66,10 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-shader-ui-') as directory:
  metadata.write_bytes(original)
  print('External resources and missing shader reflection rejected before playback.')
 
- if args.backend == 'spirv':
+ if args.backend in ('spirv','wgsl'):
   binary=metadata.with_name('0.shader');original_binary=binary.read_bytes()
   binary.write_bytes(b'not SPIR-V')
   result=subprocess.run(['target/release/gamepkg','run','com.gamepkg.shader-switch','--frames','1'],env=env,capture_output=True,text=True)
-  assert result.returncode!=0 and 'SPIR-V' in result.stderr, result.stderr
+  assert result.returncode!=0 and ('SPIR-V' in result.stderr or 'WGSL' in result.stderr), result.stderr
   binary.write_bytes(original_binary)
-  print('Malformed cached SPIR-V rejected before playback.')
+  print('Malformed cached '+args.backend+' rejected before playback.')

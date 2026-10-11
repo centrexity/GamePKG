@@ -507,7 +507,7 @@ impl eframe::App for App {
                     egui::ComboBox::from_label("Shader backend").selected_text(&self.settings_draft.shader_backend).show_ui(ui, |ui| {
                         for backend in ["spirv", "wgsl", "metal", "dxil", "glsl"] { ui.selectable_value(&mut self.settings_draft.shader_backend, backend.to_string(), backend); }
                     });
-                    ui.label("GLSL and SPIR-V support resource-free fragment passes in this desktop player. Other backends compile and cache shaders.");
+                    ui.label("GLSL, SPIR-V, and WGSL support resource-free fragment passes in this desktop player. Other backends compile and cache shaders.");
                     if self.settings_draft.shader_backend == "dxil" {
                         ui.label("DXC 1.9.2609 installation folder");
                         ui.text_edit_singleline(&mut self.settings_draft.dxc_directory);
