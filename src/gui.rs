@@ -14,6 +14,8 @@ enum Work {
 pub struct App {
     gl: Option<std::sync::Arc<eframe::glow::Context>>,
     gpu: Option<std::sync::Arc<crate::gpu::Renderer>>,
+    applied_settings: Option<crate::settings::Settings>,
+    updates: crate::updates::Monitor,
     source: String,
     rom_path: String,
     show_settings: bool,
@@ -40,7 +42,10 @@ impl App {
             ..Self::default()
         };
         match crate::settings::load() {
-            Ok(settings) => app.settings_draft = settings,
+            Ok(settings) => {
+                app.applied_settings = Some(settings.clone());
+                app.settings_draft = settings;
+            }
             Err(e) => app.status = format!("Unable to load settings: {e:#}"),
         }
         if let Some(id) = play {
@@ -207,6 +212,22 @@ impl eframe::App for App {
                 Err(mpsc::TryRecvError::Empty) => {
                     ctx.request_repaint_after(std::time::Duration::from_millis(100))
                 }
+            }
+        }
+        if self.player.is_none() && self.result.is_none() && !self.show_settings {
+            if let (Some(settings), Ok(root)) =
+                (&self.applied_settings, crate::registry::default_root())
+            {
+                self.updates.tick(
+                    &root,
+                    &self.installed,
+                    settings.automatic_update_checks,
+                    settings.update_interval_hours,
+                    std::time::Instant::now(),
+                );
+                ctx.request_repaint_after(std::time::Duration::from_secs(
+                    if self.updates.checking() { 1 } else { 60 },
+                ));
             }
         }
         if let Some(game) = self.player.as_mut() {
@@ -453,6 +474,10 @@ impl eframe::App for App {
                     ui.checkbox(&mut self.settings_draft.mute_audio,"Mute game audio");
                     ui.add(egui::Slider::new(&mut self.settings_draft.audio_volume,0..=100).text("Volume"));
                     ui.label("Applies when you next play a game. Only games with audio permission can submit sound.");
+                    ui.separator(); ui.heading("Updates");
+                    ui.checkbox(&mut self.settings_draft.automatic_update_checks,"Check for game updates automatically");
+                    ui.add(egui::Slider::new(&mut self.settings_draft.update_interval_hours,1..=168).text("Hours between checks"));
+                    ui.label("Checks run while the library is open and idle. They download signed packages to verify updates, then discard the download. Review and install updates yourself. Turning checks off stops new requests; an active request may finish.");
                     ui.separator();
                     ui.horizontal(|ui| {
                         if ui.button("Save settings").clicked() {
@@ -460,6 +485,7 @@ impl eframe::App for App {
                             match result {
                                 Ok(()) => {
                                     ctx.set_visuals(if self.settings_draft.dark_mode { egui::Visuals::dark() } else { egui::Visuals::light() });
+                                    self.applied_settings=Some(self.settings_draft.clone());
                                     self.pending=None;self.manifest=None;self.installed.clear();self.catalog.clear();self.status="Settings saved.".into();self.refresh(ctx);
                                 }
                                 Err(e) => self.status=format!("Settings not saved: {e:#}"),
@@ -509,7 +535,16 @@ impl eframe::App for App {
                             if ui.add_enabled(built && self.result.is_none() && (!m.requires_rom || !self.rom_path.trim().is_empty()), egui::Button::new("Play")).on_hover_text("Play the experimental grid-v1 profile. ROM games need your file path above.").clicked() { play = Some(m.id.clone()); }
                             if ui.add_enabled(self.result.is_none(), egui::Button::new(if built { "Rebuild" } else { "Build" })).clicked() { build = Some(m.id.clone()); }
                         });
+                        ui.vertical(|ui| {
+                        if let Some(notice) = self.updates.notices.get(&m.id) {
+                            match notice {
+                                crate::updates::Notice::Available(version) => { ui.colored_label(egui::Color32::GREEN,format!("Update {version} available")); }
+                                crate::updates::Notice::Current => { ui.label("Up to date"); }
+                                crate::updates::Notice::Failed(error) => { ui.label("Automatic check failed").on_hover_text(error); }
+                            }
+                        }
                         if ui.add_enabled(self.result.is_none() && m.update_url.is_some(), egui::Button::new("Check for updates")).on_hover_text("Inspect the signed update without installing it").clicked() { update = Some(m.id.clone()); }
+                        });
                         ui.end_row();
                     }
                 });

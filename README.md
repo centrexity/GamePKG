@@ -422,3 +422,24 @@ Run `tests/components_game.py` for signed build, typed list transfers, permissio
 denial and save rollback, and `tests/component_gui.py` for rendering and held
 movement verified from actual screen pixels. The GUI test requires the same
 virtual display tools as the drawing test.
+
+
+## Periodic update checks
+
+The desktop library checks installed games with signed update URLs automatically
+at startup and every 24 hours while the library remains open and idle. Settings
+can disable these checks or change the interval to 1–168 hours. Catalog entries
+that have not been downloaded are excluded. Checks use the same HTTPS and Tor
+transport, signature verification and creator/ID continuity as manual checks.
+
+One request runs at a time. Each check downloads the complete package to verify
+it, then discards that download; it never installs, builds or replaces a game.
+An available version appears in the library table. Use **Check for updates** to
+fetch it again for review and explicit installation. Failures appear in the table
+and wait until the next interval rather than retrying continuously. Turning checks
+off prevents new requests; a request already running may finish. No update service
+runs after the desktop app closes. Restarting the app starts a fresh check cycle.
+
+`tests/updates_gui.py` uses a local HTTPS server and isolated display to verify
+that a signed update notice renders, the installed archive stays unchanged,
+no early repeat request occurs, and disabled checks make no requests.

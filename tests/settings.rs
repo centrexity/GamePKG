@@ -13,6 +13,8 @@ fn settings_persist_and_failed_saves_preserve_previous_values() {
     settings.dark_mode = false;
     settings.mute_audio = true;
     settings.audio_volume = 20;
+    settings.automatic_update_checks = false;
+    settings.update_interval_hours = 12;
     settings.save(&path).unwrap();
     assert_eq!(Settings::read(&path).unwrap(), settings);
     let before = std::fs::read(&path).unwrap();
@@ -23,6 +25,13 @@ fn settings_persist_and_failed_saves_preserve_previous_values() {
 #[test]
 fn settings_validate_bounds_and_reject_unknown_or_large_files() {
     let defaults = Settings::default();
+    for hours in [0, 169] {
+        let s = Settings {
+            update_interval_hours: hours,
+            ..Default::default()
+        };
+        assert!(s.validate().is_err());
+    }
     defaults.validate().unwrap();
     for memory in [0, 513] {
         let mut s = defaults.clone();

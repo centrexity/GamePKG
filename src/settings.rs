@@ -20,6 +20,8 @@ pub struct Settings {
     pub shader_backend: String,
     pub mute_audio: bool,
     pub audio_volume: u8,
+    pub automatic_update_checks: bool,
+    pub update_interval_hours: u64,
 }
 impl Default for Settings {
     fn default() -> Self {
@@ -36,6 +38,8 @@ impl Default for Settings {
             shader_backend: "spirv".into(),
             mute_audio: false,
             audio_volume: 50,
+            automatic_update_checks: true,
+            update_interval_hours: 24,
         }
     }
 }
@@ -61,6 +65,9 @@ impl Settings {
         }
         if self.audio_volume > 100 {
             bail!("audio volume must be 0–100");
+        }
+        if !(1..=168).contains(&self.update_interval_hours) {
+            bail!("update interval must be 1–168 hours");
         }
         validate_proxy(&self.tor_proxy)?;
         if !(1..=512).contains(&self.memory_ceiling_mib) {

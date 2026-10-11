@@ -45,3 +45,23 @@ fn creator_identity_is_canonical_and_ids_are_bounded() {
     let too_long = source().replace("com.gamepkg.minimal", &"x".repeat(201));
     assert!(Manifest::parse(too_long.as_bytes()).is_err());
 }
+
+#[test]
+fn update_versions_and_world_labels_are_bounded() {
+    let version = format!("0.1.0-{}", "a".repeat(256));
+    assert!(Manifest::parse(
+        source()
+            .replace("version = \"0.1.0\"", &format!("version = \"{version}\""))
+            .as_bytes()
+    )
+    .is_err());
+    assert!(Manifest::parse(
+        source()
+            .replace(
+                "entry_world = \"game\"",
+                &format!("entry_world = \"{}\"", "a".repeat(129))
+            )
+            .as_bytes()
+    )
+    .is_err());
+}

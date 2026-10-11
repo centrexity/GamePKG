@@ -105,6 +105,9 @@ impl Manifest {
         {
             bail!("invalid package id");
         }
+        if m.version.len() > 256 || m.entry_world.len() > 128 {
+            bail!("version or entry world is too long");
+        }
         semver::Version::parse(&m.version)?;
         m.ensure_engine_compatible()?;
         if !matches!(m.runtime_profile.as_str(), "core-v1" | "component-v1") {

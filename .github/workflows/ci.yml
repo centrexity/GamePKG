@@ -75,6 +75,9 @@ jobs:
       - name: Install virtual display tools
         if: matrix.features == '--all-features'
         run: sudo apt-get install -y xvfb xdotool imagemagick python3-pil libxkbcommon-x11-0 libgl1-mesa-dri
+      - name: Verify periodic signed update checks in the GUI
+        if: matrix.features == '--all-features'
+        run: sudo env PATH="$PATH" /usr/bin/python3 tests/updates_gui.py
       - name: Verify guest drawing in the GUI
         if: matrix.features == '--all-features'
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" /usr/bin/python3 tests/drawing_gui.py
