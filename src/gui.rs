@@ -1,4 +1,5 @@
 use eframe::egui;
+mod sprites;
 use std::{
     collections::{HashMap, HashSet},
     path::PathBuf,
@@ -16,7 +17,7 @@ enum Work {
 pub struct App {
     gl: Option<std::sync::Arc<eframe::glow::Context>>,
     gpu: Option<std::sync::Arc<crate::gpu::Renderer>>,
-    sprite_textures: Vec<egui::TextureHandle>,
+    sprite_textures: sprites::Cache,
     applied_settings: Option<crate::settings::Settings>,
     updates: crate::updates::Monitor,
     source: String,
@@ -269,9 +270,12 @@ impl eframe::App for App {
                 ));
             }
         }
-        self.sprite_textures.clear();
+        if self.player.is_none() {
+            self.sprite_textures.finish(0);
+        }
         if let Some(game) = self.player.as_mut() {
             let mut close = false;
+            let mut image_count = 0;
             let mut failure = None;
             egui::CentralPanel::default().show(ctx, |ui| {
                 ui.horizontal(|ui| {
@@ -377,16 +381,10 @@ impl eframe::App for App {
                                 height,
                                 ref image,
                             } => {
-                                let texture = ctx.load_texture(
-                                    "game-sprite",
-                                    egui::ColorImage::from_rgba_unmultiplied(
-                                        image.size(),
-                                        image.pixels(),
-                                    ),
-                                    egui::TextureOptions::NEAREST,
-                                );
+                                let texture = self.sprite_textures.texture(ctx, image_count, image);
+                                image_count += 1;
                                 painter.image(
-                                    texture.id(),
+                                    texture,
                                     egui::Rect::from_min_size(
                                         rect.min + egui::vec2(x * scale, y * scale),
                                         egui::vec2(width * scale, height * scale),
@@ -397,7 +395,6 @@ impl eframe::App for App {
                                     ),
                                     egui::Color32::WHITE,
                                 );
-                                self.sprite_textures.push(texture);
                             }
                             crate::drawing::Command::Shader { index } => {
                                 if let Some(renderer) = &self.gpu {
@@ -479,6 +476,7 @@ impl eframe::App for App {
                     egui::Color32::from_rgb(100, 220, 180),
                 );
             });
+            self.sprite_textures.finish(image_count);
             ctx.request_repaint_after(std::time::Duration::from_millis(16));
             if close || failure.is_some() {
                 self.player = None;

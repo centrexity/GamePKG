@@ -6,9 +6,10 @@ import os, shutil, subprocess, tempfile, time
 project=Path(__file__).resolve().parents[1]
 with tempfile.TemporaryDirectory(prefix='gamepkg-sprites-') as directory:
  root=Path(directory);source=root/'source';shutil.copytree(project/'examples/minimal',source)
- (source/'source/src/lib.rs').write_text('''pub fn game_tick(_:u32,state:u64)->u64 {
+ (source/'source/src/lib.rs').write_text('''pub fn game_tick(input:u32,state:u64)->u64 {
      assert!(gamepkg::draw_clear(0x10171dff));
-     let pixels=[255,0,0,255, 0,255,0,255, 0,0,255,255, 255,255,255,0];
+     let mut pixels=[255,0,0,255, 0,255,0,255, 0,0,255,255, 255,255,255,0];
+     if input & gamepkg::HELD_RIGHT != 0 { pixels[1]=255; }
      assert!(gamepkg::draw_image(64.0,64.0,512.0,352.0,2,2,&pixels));
      state
  }''')
@@ -47,6 +48,17 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-sprites-') as directory:
      break
     assert time.monotonic()<deadline,counts
     time.sleep(.1)
-   print(profile+': signed source built and played; RGB sprite quadrants and transparent pixels verified.',flush=True)
+   subprocess.run(['xdotool','windowfocus',window,'keydown','Right'],env=env,check=True)
+   deadline=time.monotonic()+10
+   changed=project/'target'/f'sprites-changed-{profile}.png'
+   while True:
+    subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(changed)],env=env,check=True)
+    with Image.open(changed) as image:
+     counts={color:count for count,color in image.convert('RGB').getcolors(image.width*image.height)}
+    if counts.get((255,255,0),0)>15000 and counts.get((255,0,0),0)<1000:break
+    assert time.monotonic()<deadline,'Changed sprite pixels did not reach the texture'
+    time.sleep(.1)
+   subprocess.run(['xdotool','keyup','Right'],env=env,check=True)
+   print(profile+': signed source built and played; RGB quadrants, transparency, and changed texture pixels verified.',flush=True)
   finally:
    app.terminate();app.wait(timeout=10);display.terminate();display.wait(timeout=10)
