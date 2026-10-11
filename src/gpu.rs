@@ -1,4 +1,4 @@
-//! Host-owned OpenGL programs for compiled, resource-free fragment passes.
+//! Host-owned OpenGL programs for compiled fragment passes with an optional bounded image.
 use anyhow::{bail, Context, Result};
 use eframe::{glow, glow::HasContext};
 use std::sync::Arc;
@@ -6,14 +6,25 @@ pub struct Renderer {
     gl: Arc<glow::Context>,
     programs: Vec<glow::Program>,
     vao: glow::VertexArray,
+    texture: glow::Texture,
 }
 impl Renderer {
     pub fn new(gl: Arc<glow::Context>, sources: &[String]) -> Result<Self> {
         let vao = unsafe { gl.create_vertex_array().map_err(anyhow::Error::msg)? };
+        let texture = match unsafe { gl.create_texture() } {
+            Ok(t) => t,
+            Err(e) => {
+                unsafe {
+                    gl.delete_vertex_array(vao);
+                }
+                return Err(anyhow::anyhow!(e));
+            }
+        };
         let mut renderer = Self {
             gl,
             programs: Vec::new(),
             vao,
+            texture,
         };
         for source in sources {
             renderer.programs.push(renderer.program(source)?);
@@ -55,10 +66,17 @@ impl Renderer {
                     let error = self.gl.get_program_info_log(program);
                     self.gl.detach_shader(program, vertex);
                     self.gl.detach_shader(program, fragment);
-                    if linked && self.gl.get_active_uniforms(program) > 0 {
+                    let allowed = (0..self.gl.get_active_uniforms(program)).all(|i| {
+                        self.gl.get_active_uniform(program, i).is_some_and(|u| {
+                            u.name == "gamepkgTexture_0"
+                                && u.utype == glow::SAMPLER_2D
+                                && u.size == 1
+                        })
+                    });
+                    if linked && !allowed {
                         self.gl.delete_program(program);
                         Err(anyhow::anyhow!(
-                            "package fragment passes cannot access uniforms or texture bindings"
+                            "package fragment passes permit only the host-owned gamepkgTexture sampler"
                         ))
                     } else if linked {
                         Ok(program)
@@ -75,11 +93,54 @@ impl Renderer {
         }
     }
     pub fn paint(&self, index: usize) {
+        self.paint_image(index, None);
+    }
+    pub fn paint_image(&self, index: usize, image: Option<&crate::drawing::image::Image>) {
         if let Some(program) = self.programs.get(index) {
             unsafe {
                 self.gl.use_program(Some(*program));
+                if let Some(location) = self.gl.get_uniform_location(*program, "gamepkgTexture_0") {
+                    self.gl.active_texture(glow::TEXTURE0);
+                    self.gl.bind_texture(glow::TEXTURE_2D, Some(self.texture));
+                    let fallback = [0u8; 4];
+                    let (size, pixels) =
+                        image.map_or(([1, 1], fallback.as_slice()), |i| (i.size(), i.pixels()));
+                    self.gl.tex_image_2d(
+                        glow::TEXTURE_2D,
+                        0,
+                        glow::RGBA8 as i32,
+                        size[0] as i32,
+                        size[1] as i32,
+                        0,
+                        glow::RGBA,
+                        glow::UNSIGNED_BYTE,
+                        glow::PixelUnpackData::Slice(Some(pixels)),
+                    );
+                    self.gl.tex_parameter_i32(
+                        glow::TEXTURE_2D,
+                        glow::TEXTURE_MIN_FILTER,
+                        glow::NEAREST as i32,
+                    );
+                    self.gl.tex_parameter_i32(
+                        glow::TEXTURE_2D,
+                        glow::TEXTURE_MAG_FILTER,
+                        glow::NEAREST as i32,
+                    );
+                    self.gl.tex_parameter_i32(
+                        glow::TEXTURE_2D,
+                        glow::TEXTURE_WRAP_S,
+                        glow::CLAMP_TO_EDGE as i32,
+                    );
+                    self.gl.tex_parameter_i32(
+                        glow::TEXTURE_2D,
+                        glow::TEXTURE_WRAP_T,
+                        glow::CLAMP_TO_EDGE as i32,
+                    );
+                    self.gl.uniform_1_i32(Some(&location), 0);
+                }
                 self.gl.bind_vertex_array(Some(self.vao));
                 self.gl.draw_arrays(glow::TRIANGLES, 0, 3);
+                self.gl.bind_texture(glow::TEXTURE_2D, None);
                 self.gl.bind_vertex_array(None);
                 self.gl.use_program(None);
             }
@@ -93,6 +154,7 @@ impl Drop for Renderer {
                 self.gl.delete_program(*program);
             }
             self.gl.delete_vertex_array(self.vao);
+            self.gl.delete_texture(self.texture);
         }
     }
 }

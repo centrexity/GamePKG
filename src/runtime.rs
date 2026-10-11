@@ -116,6 +116,7 @@ impl Game {
                             | "draw_clear"
                             | "draw_asset_image"
                             | "draw_image"
+                            | "draw_shader_image"
                             | "draw_rect"
                             | "draw_circle"
                             | "draw_shader"
@@ -124,7 +125,9 @@ impl Game {
             }) {
                 bail!("games cannot import functions outside the scoped GamePKG API");
             }
-            let uses_shaders = module.imports().any(|i| i.name() == "draw_shader");
+            let uses_shaders = module
+                .imports()
+                .any(|i| matches!(i.name(), "draw_shader" | "draw_shader_image"));
             let custom_renderer = module.imports().any(|i| i.name().starts_with("draw_"));
             (uses_shaders, custom_renderer)
         } else {
@@ -138,7 +141,8 @@ impl Game {
             {
                 if let wasmtime::component::types::ComponentItem::ComponentInstance(instance) = item
                 {
-                    uses_shaders |= instance.get_export(&engine, "draw-shader").is_some();
+                    uses_shaders |= instance.get_export(&engine, "draw-shader").is_some()
+                        || instance.get_export(&engine, "draw-shader-image").is_some();
                     custom_renderer |= instance
                         .exports(&engine)
                         .any(|(name, _)| name.starts_with("draw-"));
@@ -290,6 +294,66 @@ impl Game {
                         return -1;
                     };
                     if caller.data_mut().frame.image(x, y, w, h, image) {
+                        0
+                    } else {
+                        -1
+                    }
+                },
+            )?;
+            linker.func_wrap(
+                "gamepkg",
+                "draw_shader_image",
+                |mut caller: Caller<'_, Data>,
+                 index: i32,
+                 pw: u32,
+                 ph: u32,
+                 pointer: i32,
+                 length: i32|
+                 -> i32 {
+                    let (x, y, w, h) = (0.0, 0.0, 640.0, 480.0);
+                    if index < 0 || index as usize >= caller.data().shader_count {
+                        return -1;
+                    }
+                    let Some(bytes) = crate::drawing::image::Image::byte_length(pw, ph) else {
+                        return -1;
+                    };
+                    if pointer < 0
+                        || length < 0
+                        || length as usize != bytes
+                        || !caller.data().frame.can_image(x, y, w, h, bytes)
+                    {
+                        return -1;
+                    }
+                    let Some(memory) = caller.get_export("memory").and_then(|e| e.into_memory())
+                    else {
+                        return -1;
+                    };
+                    let Some(end) = (pointer as usize).checked_add(bytes) else {
+                        return -1;
+                    };
+                    if end > memory.data_size(&caller) {
+                        return -1;
+                    }
+                    let Ok(fuel) = caller.get_fuel() else {
+                        return -1;
+                    };
+                    let cost = bytes as u64 + 64;
+                    if fuel < cost {
+                        let _ = caller.set_fuel(0);
+                        return -1;
+                    }
+                    if caller.set_fuel(fuel - cost).is_err() {
+                        return -1;
+                    }
+                    let Some(image) = crate::drawing::image::Image::new(
+                        pw,
+                        ph,
+                        &memory.data(&caller)[pointer as usize..end],
+                    ) else {
+                        return -1;
+                    };
+                    let count = caller.data().shader_count;
+                    if caller.data_mut().frame.shader_image(index, count, image) {
                         0
                     } else {
                         -1

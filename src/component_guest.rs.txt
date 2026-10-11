@@ -2,6 +2,7 @@
 pub mod gamepkg {
     #[link(wasm_import_module = "gamepkg:engine/host@0.1.0")]
     unsafe extern "C" {
+        #[link_name="draw-shader-image"] fn host_shader_image(index:u32,pw:u32,ph:u32,pixels:*const u8,length:usize)->i32;
         #[link_name="draw-asset-image"] fn host_asset_image(path:*const u8,length:usize,x:f32,y:f32,w:f32,h:f32)->i32;
         #[link_name = "draw-image"] fn host_image(x:f32,y:f32,w:f32,h:f32,pw:u32,ph:u32,pixels:*const u8,length:usize) -> i32;
         #[link_name = "asset-read"] fn asset(path: *const u8, n: usize, offset: u32, length: u32, result: *mut u32);
@@ -65,6 +66,10 @@ pub mod gamepkg {
     pub fn draw_image(x:f32,y:f32,w:f32,h:f32,pw:u32,ph:u32,pixels:&[u8]) -> bool {
         if pw==0 || ph==0 || pw>512 || ph>512 || pixels.len()!=pw as usize*ph as usize*4 { return false; }
         unsafe { host_image(x,y,w,h,pw,ph,pixels.as_ptr(),pixels.len()) != 0 }
+    }
+    pub fn draw_shader_image(index:u32,pw:u32,ph:u32,pixels:&[u8])->bool {
+        if index > i32::MAX as u32 || pw == 0 || ph == 0 || pw > 512 || ph > 512 || pixels.len() != pw as usize * ph as usize * 4 { return false; }
+        unsafe { host_shader_image(index,pw,ph,pixels.as_ptr(),pixels.len()) != 0 }
     }
     pub fn draw_shader(index: u32) -> bool { unsafe { shader(index) != 0 } }
     pub fn audio_submit(samples: &[i16]) -> bool { samples.len() <= 1600 && unsafe { audio(samples.as_ptr(),samples.len()) != 0 } }

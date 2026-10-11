@@ -352,8 +352,19 @@ fn validate_fragment_reflection(metadata: &serde_json::Value, entry: &str) -> Re
         .get("parameters")
         .and_then(|value| value.as_array())
         .context("shader reflection must declare its resource parameters")?;
-    if !parameters.is_empty() {
-        bail!("desktop fragment passes currently require no external resource bindings");
+    let texture = parameters.len() == 1
+        && parameters[0]["name"] == "gamepkgTexture"
+        && parameters[0]["binding"]["kind"] == "descriptorTableSlot"
+        && parameters[0]["binding"]["index"] == 0
+        && parameters[0]["type"]["kind"] == "resource"
+        && parameters[0]["type"]["baseShape"] == "texture2D"
+        && parameters[0]["type"]["combined"] == true
+        && parameters[0]["type"]["resultType"]
+            == serde_json::json!({"kind":"vector","elementCount":4,"elementType":{"kind":"scalar","scalarType":"float32"}})
+        && parameters[0]["type"]["sizes"]
+            == serde_json::json!([{"kind":"descriptorTableSlot","value":1}]);
+    if !parameters.is_empty() && !texture {
+        bail!("desktop fragment passes reject unsupported resource bindings; only gamepkgTexture is allowed");
     }
     let entries = metadata
         .get("entryPoints")
@@ -467,6 +478,39 @@ mod wgsl_tests {
 
 #[cfg(test)]
 mod reflection_tests {
+    #[test]
+    fn texture_reflection_allows_only_one_combined_float_sampler_at_slot_zero() {
+        let valid = serde_json::json!({"parameters":[{"name":"gamepkgTexture","binding":{"kind":"descriptorTableSlot","index":0},"type":{"kind":"resource","baseShape":"texture2D","combined":true,"resultType":{"kind":"vector","elementCount":4,"elementType":{"kind":"scalar","scalarType":"float32"}},"sizes":[{"kind":"descriptorTableSlot","value":1}]}}],"entryPoints":[{"name":"main","stage":"fragment"}]});
+        super::validate_fragment_reflection(&valid, "main").unwrap();
+        for (pointer, value) in [
+            ("/parameters/0/name", serde_json::json!("other")),
+            ("/parameters/0/binding/index", serde_json::json!(1)),
+            ("/parameters/0/type/combined", serde_json::json!(false)),
+            (
+                "/parameters/0/type/baseShape",
+                serde_json::json!("texture3D"),
+            ),
+            ("/parameters/0/type/kind", serde_json::json!("array")),
+            (
+                "/parameters/0/type/resultType/elementType/scalarType",
+                serde_json::json!("uint32"),
+            ),
+            ("/parameters/0/type/sizes/0/value", serde_json::json!(2)),
+        ] {
+            let mut invalid = valid.clone();
+            *invalid.pointer_mut(pointer).unwrap() = value;
+            assert!(
+                super::validate_fragment_reflection(&invalid, "main").is_err(),
+                "{pointer}"
+            );
+        }
+        let mut duplicate = valid.clone();
+        duplicate["parameters"]
+            .as_array_mut()
+            .unwrap()
+            .push(valid["parameters"][0].clone());
+        assert!(super::validate_fragment_reflection(&duplicate, "main").is_err());
+    }
     #[test]
     fn reflected_entry_must_match_the_signed_request() {
         let valid = serde_json::json!({"parameters":[], "entryPoints":[{"name":"blueMain", "stage":"fragment"}]});

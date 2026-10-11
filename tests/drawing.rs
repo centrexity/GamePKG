@@ -174,3 +174,20 @@ fn core_sprites_snapshot_pixels_and_reject_invalid_guest_ranges() {
         }
     }
 }
+
+#[test]
+fn shader_images_share_the_sprite_budget_and_validate_indices() {
+    use gamepkg::drawing::image::Image;
+    let image = Image::new(512, 512, &vec![255; 512 * 512 * 4]).unwrap();
+    let mut frame = Frame::default();
+    assert!(!frame.shader_image(-1, 1, image.clone()));
+    assert!(!frame.shader_image(1, 1, image.clone()));
+    for _ in 0..4 {
+        assert!(frame.shader_image(0, 1, image.clone()));
+        assert!(frame.image(0.0, 0.0, 1.0, 1.0, image.clone()));
+    }
+    assert!(!frame.shader_image(0, 1, image.clone()));
+    assert!(!frame.image(0.0, 0.0, 1.0, 1.0, image.clone()));
+    frame.reset();
+    assert!(frame.shader_image(0, 1, image));
+}

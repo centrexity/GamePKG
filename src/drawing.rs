@@ -11,6 +11,10 @@ pub enum Command {
         height: f32,
         image: std::sync::Arc<image::Image>,
     },
+    ShaderImage {
+        index: usize,
+        image: std::sync::Arc<image::Image>,
+    },
     Shader {
         index: usize,
     },
@@ -60,6 +64,20 @@ impl Frame {
             y,
             width,
             height,
+            image: std::sync::Arc::new(image),
+        });
+        true
+    }
+    pub fn shader_image(&mut self, index: i32, count: usize, image: image::Image) -> bool {
+        if index < 0
+            || index as usize >= count
+            || !self.can_image(0.0, 0.0, 640.0, 480.0, image.pixels().len())
+        {
+            return false;
+        }
+        self.image_bytes += image.pixels().len();
+        self.commands.push(Command::ShaderImage {
+            index: index as usize,
             image: std::sync::Arc::new(image),
         });
         true

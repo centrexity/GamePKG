@@ -19,6 +19,7 @@ fn good_examples_are_signed_and_verified() {
         "good/component-playground",
         "good/sprite-playground",
         "good/png-sprite-playground",
+        "good/shader-texture",
     ] {
         let temp = tempfile::tempdir().unwrap();
         let out = temp.path().join("example.gamepkg");

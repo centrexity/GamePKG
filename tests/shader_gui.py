@@ -2,7 +2,7 @@ from gui_test_support import start_display
 import os, subprocess, tempfile, time, argparse, shutil
 from pathlib import Path
 from PIL import Image
-parser=argparse.ArgumentParser();parser.add_argument('--component',action='store_true');parser.add_argument('--backend',choices=['glsl','spirv','wgsl']);args=parser.parse_args()
+parser=argparse.ArgumentParser();parser.add_argument('--component',action='store_true');parser.add_argument('--texture',action='store_true');parser.add_argument('--backend',choices=['glsl','spirv','wgsl']);args=parser.parse_args()
 project=Path(__file__).resolve().parents[1]
 os.chdir(project)
 with tempfile.TemporaryDirectory(prefix='gamepkg-shader-ui-') as directory:
@@ -15,9 +15,13 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-shader-ui-') as directory:
   assert result.returncode==0,result.stderr
  key=root/'key';key.write_text(os.urandom(32).hex())
  source=project/'examples/good/shader-switch'
- if args.component:
+ if args.component or args.texture:
   source=root/'source';shutil.copytree(project/'examples/good/shader-switch',source)
-  manifest=source/'manifest.toml';manifest.write_text('runtime_profile = "component-v1"\n'+manifest.read_text())
+  if args.component:
+   manifest=source/'manifest.toml';manifest.write_text('runtime_profile = "component-v1"\n'+manifest.read_text())
+ if args.texture:
+  (source/'source/src/lib.rs').write_text('pub fn game_tick(input:u32,state:u64)->u64 { if input & gamepkg::HELD_DOWN != 0 { assert!(gamepkg::draw_shader(0)); return state+1; } let pixels=if input & gamepkg::HELD_RIGHT != 0 { [0,255,0,255] } else { [0,0,255,255] }; assert!(!gamepkg::draw_shader_image(99,1,1,&pixels)); assert!(!gamepkg::draw_shader_image(0,513,1,&pixels)); assert!(!gamepkg::draw_shader_image(0,1,1,&pixels[..3])); assert!(gamepkg::draw_shader_image(0,1,1,&pixels)); state+1 }')
+  (source/'shaders/main.slang').write_text('Sampler2D gamepkgTexture; [shader("fragment")] float4 blueMain(float4 p:SV_Position):SV_Target { return gamepkgTexture.Sample(p.xy / float2(640,480)); } [shader("fragment")] float4 greenMain(float4 p:SV_Position):SV_Target { return gamepkgTexture.Sample(p.xy / float2(640,480)); }')
  run('pack',source,'-o',root/'game.gamepkg','--key',key)
  run('install',root/'game.gamepkg','--trust-creator');run('build','com.gamepkg.shader-switch')
  display=start_display(env)
@@ -49,6 +53,11 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-shader-ui-') as directory:
    subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(after)],env=env,check=True)
    assert dominant(after,1), 'Package green shader pixels missing'
    subprocess.run(['xdotool','keyup','Right'],env=env,check=True)
+   if args.texture:
+    subprocess.run(['xdotool','keydown','Down'],env=env,check=True);time.sleep(.5)
+    subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(after)],env=env,check=True)
+    assert not dominant(after,1) and not dominant(after,2), 'Plain shader reused previously supplied image'
+    subprocess.run(['xdotool','keyup','Down'],env=env,check=True)
    print('Compiled package fragment passes rendered; held input switched actual blue/green screen pixels.')
   finally:
    app.terminate();app.wait(timeout=5)

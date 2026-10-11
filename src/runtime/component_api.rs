@@ -155,6 +155,35 @@ pub(super) fn linker(engine: &Engine) -> Result<Linker<Data>> {
         },
     )?;
     host.func_wrap(
+        "draw-shader-image",
+        |mut store: StoreContextMut<'_, Data>,
+         (index, pw, ph, pixels): (u32, u32, u32, WasmList<u8>)| {
+            let (x, y, w, h) = (0.0, 0.0, 640.0, 480.0);
+            let count = store.data().shader_count;
+            if index > i32::MAX as u32 || index as usize >= count {
+                return Ok((false,));
+            }
+            let Some(bytes) = crate::drawing::image::Image::byte_length(pw, ph) else {
+                return Ok((false,));
+            };
+            if pixels.len() != bytes
+                || !store.data().frame.can_image(x, y, w, h, bytes)
+                || !charge(&mut store, bytes as u64 + 64)?
+            {
+                return Ok((false,));
+            }
+            let Some(image) =
+                crate::drawing::image::Image::new(pw, ph, pixels.as_le_slice(store.as_context()))
+            else {
+                return Ok((false,));
+            };
+            Ok((store
+                .data_mut()
+                .frame
+                .shader_image(index as i32, count, image),))
+        },
+    )?;
+    host.func_wrap(
         "draw-shader",
         |mut store: StoreContextMut<'_, Data>, (index,): (u32,)| {
             if index > i32::MAX as u32 || !charge(&mut store, 64)? {

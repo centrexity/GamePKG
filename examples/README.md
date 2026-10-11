@@ -22,11 +22,14 @@ The desktop library provides Build and Play for installed games. Graphics games 
 | component-playground | Draw using the WIT component host API |
 | shape-playground | Draw rectangles and circles from guest commands |
 | shader-switch | Switch between two compiled Slang fragment passes |
+| shader-texture | Supply bounded RGBA pixels to a Slang texture sampler |
+| sprite-playground | Draw RGBA sprites with input-driven movement |
+| png-sprite-playground | Draw PNG sprites from verified assets |
 | tone-pad | Submit bounded audio samples with pitch controls |
 | save-counter | Persist the tick count across play sessions |
 | rom-required | Read a ROM file explicitly supplied by the player |
 
-`tests/good_examples.py` signs, verifies, installs, builds, and runs all 14 examples, checking representative scores and required-ROM rejection. It uses temporary keys and an isolated library; no private creator keys are included. Dedicated GUI tests check rendered graphics and audio behavior.
+`tests/good_examples.py` signs, verifies, installs, builds, and runs all 15 examples, checking representative scores and required-ROM rejection. It uses temporary keys and an isolated library; no private creator keys are included. Dedicated GUI tests check rendered graphics and audio behavior.
 
 Every `bad/` directory is a complete, deliberately rejected package input:
 
@@ -45,3 +48,5 @@ Packing these examples must fail. The security suite also modifies already signe
 `sprite-playground` demonstrates bounded RGBA sprites, alpha transparency, and held-arrow movement through the host drawing API.
 
 `png-sprite-playground` loads its sprite from a verified packaged PNG asset and moves it with held arrows.
+
+`good/shader-texture` supplies bounded RGBA pixels to the host-owned `gamepkgTexture` sampler. Hold Right to change blue to green. This example requires the desktop GLSL backend.
