@@ -10,7 +10,9 @@ The source policy rejects build scripts, procedural macros, binary includes,
 source path overrides, unsafe guest code, and filesystem/network/process
 paths. The pinned guest crate allowlist currently contains byteorder-lite 0.1.0
 with default features disabled. The signed lockfile must match its approved
-graph and registry checksum. Source scanning is a policy filter; compilation
+graph and registry checksum. The host supplies the source offline. Local
+approval can be revoked or restored through `allowlist remove/add` or desktop
+Settings; unknown crates cannot be added to the bundled catalog. Source scanning is a policy filter; compilation
 and runtime isolation enforce the remaining boundaries.
 
 Linux builds use offline, locked Cargo inside bubblewrap, with an isolated
@@ -37,3 +39,15 @@ general guarantee that a package cannot cause harm.
 Packaged source modules are supported. Every Rust file is scanned, including
 unused modules; declarations must resolve unambiguously within the package.
 Only checked source files are staged for compilation.
+
+Slang 2026.19 compiles the signed shader source inside the build sandbox.
+SPIR-V, WGSL, Metal, and DXIL outputs are tested. DXIL additionally requires
+checksum-pinned DXC 1.9.2609 libraries, selected through Settings or
+`GAMEPKG_DXC_ROOT`. Missing or modified libraries stop the build. Compilation
+support does not imply that every output backend can render in the desktop
+player; current shader playback uses GLSL resource-free fragment passes.
+
+Portable `.gamepkgstore` imports verify every contained signature and shared
+blob before showing creator identities for approval. Inspection runs no game
+code and installs nothing. Rejected library files are shown as unavailable
+without hiding other verified games; installation checks remain strict.

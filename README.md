@@ -603,8 +603,8 @@ No registry access or dependency downloads occur during gameplay builds.
 
 `examples/good/byteorder-game` is playable and reads a big-endian score from an
 archived asset. `tests/approved_crate_game.py` builds, runs and rebuilds it under
-both core and WIT profiles. The approval list is currently shipped with the
-host; configurable crate approval remains pending.
+both core and WIT profiles. The catalog ships with the host; local approval
+is configurable through `allowlist add/remove` and desktop Settings.
 
 ## Game source modules
 

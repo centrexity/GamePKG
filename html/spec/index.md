@@ -10,7 +10,24 @@ The manifest example in `examples/minimal/manifest.toml` is authoritative for cu
 
 The signed message is a SHA-256 tree digest. Initialize SHA-256 with UTF-8 bytes `GamePKG tree v1` and one NUL byte. Sort every file except `signature.toml` lexicographically by its UTF-8 name. For each, hash: name byte length as a little-endian u64, name bytes, content byte length as a little-endian u64, then the raw 32-byte SHA-256 of its contents. Ed25519 signs the resulting 32-byte digest. This includes the manifest, shaders, source, assets, and license. ZIP timestamps, entry order and compression are not signed.
 
-This is an experimental profile; runtime ABI and compatibility policy are pending.
+## Runtime and compatibility
+
+`runtime_profile` is `core-v1` (the legacy default) or `component-v1`.
+`entry_world` must be `game` for compilation and play. Source must expose a
+callable `game_tick(input: u32, state: u64) -> u64`; root re-exports from checked
+modules are supported. The host generates the export wrapper. Builds require
+a valid root tick export before publishing their cache.
+
+Component games use the versioned `gamepkg:engine@0.1.0` world in
+`wit/game.wit`. Both profiles receive scoped assets, input, draw commands,
+audio, saves, and explicitly selected ROM reads. They receive no WASI or
+ambient filesystem/network imports. `engine_version` is a semantic-version
+requirement checked against the host during verification and loading.
+`save_schema` is a positive integer; changing it selects a separate save
+namespace without deleting or converting earlier saves.
+
+This remains an experimental runtime. Broader GPU resource support and
+non-Linux isolated builds are unfinished.
 
 An optional top-level `NOTICE` carries license attribution and is included in the signed tree. Creators choose the license in their package's `LICENSE`; the host's Apache 2.0 license does not dictate the license of independently authored games.
 
@@ -18,7 +35,7 @@ An optional top-level `NOTICE` carries license attribution and is included in th
 
 A creator's trusted public key identifies the signing authority. The installer binds that key to the package ID after the user's initial trust decision. An update must have the same ID, a strictly higher semantic version, and a valid signature from the pinned creator key. Unrelated keys cannot replace a package merely by claiming its ID. Key rotation requires authorization from the previously trusted key and a deliberate trust transition. The installed archive records the trusted key; install and update enforce same-ID/same-key continuity and increasing semantic versions. Key rotation remains unimplemented and key changes are rejected.
 
-`requires_rom` is an optional top-level boolean, defaulting to false. True declares that a ROM must be supplied by the end user. It is signed metadata; the host never infers permission to fetch or redistribute a ROM. ROM selection and delivery are pending runtime integration.
+`requires_rom` is an optional top-level boolean, defaulting to false. True declares that a ROM must be supplied by the end user. It is signed metadata; the host never infers permission to fetch or redistribute a ROM. The CLI accepts `run <id> --rom <file>` and the desktop library accepts an explicit ROM file path. Launching a ROM-required game without a file fails. The host shares a bounded read-only session snapshot through scoped ROM operations; no folder access is granted.
 
 Update URLs support HTTP/HTTPS v3 `.onion` services through a local Tor SOCKS proxy. Ordinary hosts require HTTPS. Onion redirects cannot leave onion hosts, and missing Tor connectivity never triggers a direct fallback.
 

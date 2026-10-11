@@ -79,10 +79,10 @@
     <section aria-labelledby="local-builds"><h2 id="local-builds">Build here. Improve over time.</h2>
       <p>Building games on demand on your own machine creates opportunities to optimize for the supported platform and runtime. Shipping source lets the host rebuild as compiler tooling and optimization settings improve, while creators can deliver signed source updates.</p>
       <p>The host can also check periodically for newer versions while preserving continuity with the creator key you approved. Local compilation and updates remain subject to the same package restrictions and sandbox boundaries.</p>
-      <p><strong>Today:</strong> manual isolated Wasm builds, rebuilds, and user-requested update checks. Platform-specific performance tuning and automatic periodic checks are planned. Local builds are not guaranteed to outperform prebuilt games.</p>
+      <p><strong>Today:</strong> isolated Wasm builds, rebuilds, user-requested update checks, and configurable periodic checks while the desktop library is idle. Broader platform-specific performance tuning remains planned. Local builds are not guaranteed to outperform prebuilt games.</p>
     </section>
     <section aria-labelledby="access"><h2 id="access">What can a game access?</h2>
-      <p>The runtime design starts with <strong>no ambient filesystem or network access</strong>. Games will request specific capabilities through a small host API. The host will decide what to expose and how to scope it.</p>
+      <p>The runtime design starts with <strong>no ambient filesystem or network access</strong>. Games receive specific operations through a small host API. The host scopes those operations to the signed package permissions and explicit user selections.</p>
       <ul>
         <li><strong>Assets:</strong> virtual paths inside the game's archive, rather than unrestricted access to your folders.</li>
         <li><strong>Input, rendering, and audio:</strong> explicit game operations exposed by the host.</li>
@@ -94,6 +94,7 @@
     </section>
     <section aria-labelledby="library"><h2 id="library">Build your library at your own pace.</h2>
       <p>The desktop library periodically checks installed games for verified updates. Settings controls the interval or disables checks. Available updates stay ready for your review; installation is always your choice.</p>
+      <p>Import a portable <code>.gamepkgstore</code> bundle to bring games and their shared assets into your library. Inspect the verified games and creator keys first, then approve installation. Settings also controls approval of bundled game libraries.</p>
       <p>Import a <code>.gamepkglist</code> to add many games without downloading them. Entries stay <strong>Not downloaded</strong> until you choose one. Catalog claims are unverified; the downloaded, signed package supplies the authoritative identity and permissions.</p>
       <p>User-requested downloads support HTTPS and Tor onion URLs. Onion downloads go through a local Tor SOCKS proxy with remote DNS and no direct fallback. Host downloads and update checks do not grant game code network access.</p>
       <p>Updates keep continuity with the creator key approved at installation. A signature proves integrity and key ownership, not a creator's real-world identity or the safety of their code.</p>
