@@ -652,3 +652,11 @@ Desktop Settings provides the same policy under **Approved game libraries**. Cha
 The desktop library and `gamepkg list` inspect installed files independently. A damaged archive, mismatched filename, or package rejected by current host policy appears as **Unavailable** with its filename and verification error; other verified games remain visible. Rejected files do not supply trusted game metadata or Play controls. Installation and store conflict checks continue to use strict verification and fail when the existing library cannot be verified.
 
 If the library folder becomes unreadable, refreshing the desktop library clears stale rows and shows the folder error. `tests/library_gui.py` checks the actual rendered screen for a verified game beside a rejected archive, then verifies that no old rows remain after the folder becomes unreadable. The virtual-desktop test uses Tesseract to read the displayed labels.
+
+### Build a creator source directory
+
+```sh
+gamepkg build examples/good/collect-stars -o /tmp/collect-stars.gamepkg --key creator.key
+```
+
+With `-o` and `--key`, `build` signs a temporary candidate, verifies it, and compiles its Rust and Slang source using the same isolated toolchain as installed games. Only a successful build publishes the signed source `.gamepkg`. The package retains source and assets; it does not embed the temporary Wasm or shader cache. This workflow does not install into your library. Missing signing keys, existing output files, or compilation failures leave no new output; existing files are never overwritten. Install the result and Build/Play it as usual. Without `-o`, `gamepkg build <id>` continues to compile an installed game. `pack` remains available to sign and validate source without requiring the compiler toolchain.

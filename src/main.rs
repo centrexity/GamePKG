@@ -73,7 +73,14 @@ enum Command {
         trust_creator: bool,
     },
     /// Compile an installed game to Wasm under Linux bubblewrap isolation.
-    Build { id: String },
+    Build {
+        id: String,
+        /// Build a source directory into a signed package after isolated compilation succeeds.
+        #[arg(short, long, requires = "key")]
+        output: Option<PathBuf>,
+        #[arg(long, requires = "output")]
+        key: Option<PathBuf>,
+    },
     /// Inspect a signed update without installing it.
     CheckUpdates { id: String },
     /// List installed packages.
@@ -362,9 +369,18 @@ fn main() -> Result<()> {
             let m = gamepkg::registry::install(&root, file.path(), trust_creator)?;
             println!("Installed {} {}", m.id, m.version);
         }
-        Command::Build { id } => {
-            gamepkg::build::compile(&gamepkg::registry::default_root()?, &id)?;
-            println!("Built {id}");
+        Command::Build { id, output, key } => {
+            if let (Some(output), Some(key)) = (output, key) {
+                gamepkg::build::package(
+                    std::path::Path::new(&id),
+                    &output,
+                    &gamepkg::creator::read_seed(&key)?,
+                )?;
+                println!("Built and verified source package: {}", output.display());
+            } else {
+                gamepkg::build::compile(&gamepkg::registry::default_root()?, &id)?;
+                println!("Built {id}");
+            }
         }
         Command::CheckUpdates { id } => {
             match gamepkg::registry::check_update(&gamepkg::registry::default_root()?, &id)? {

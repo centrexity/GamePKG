@@ -295,6 +295,30 @@ pub fn compile(root: &Path, id: &str) -> Result<()> {
     Ok(())
 }
 
+/// Creator workflow: publish a signed source archive only after a real isolated build.
+pub fn package(directory: &Path, output: &Path, seed: &[u8; 32]) -> Result<()> {
+    if output.exists() {
+        bail!("output package already exists");
+    }
+    let stage = tempfile::tempdir()?;
+    let candidate = stage.path().join("candidate.gamepkg");
+    crate::pack::pack(directory, &candidate, seed)?;
+    let library = stage.path().join("library");
+    let manifest = crate::registry::install(&library, &candidate, true)?;
+    compile(&library, &manifest.id)?;
+    let parent = output
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let mut published = tempfile::NamedTempFile::new_in(parent)?;
+    std::io::copy(&mut fs::File::open(&candidate)?, &mut published)?;
+    published.as_file().sync_all()?;
+    published
+        .persist_noclobber(output)
+        .map_err(|error| error.error)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::artifact_has_tick;
