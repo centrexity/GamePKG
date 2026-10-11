@@ -26,6 +26,10 @@ if url == 'https://api.github.com/repos/creator/game/releases/latest':
     out.write_bytes((root / 'release.json').read_bytes())
 elif url == 'https://github.com/creator/game/releases/download/v1/game.gamepkg':
     out.write_bytes((root / 'latest.gamepkg').read_bytes())
+elif url == 'https://github.com/creator/game/releases/download/v1/games.gamepkglist':
+    out.write_bytes((root / 'games.gamepkglist').read_bytes())
+elif url == 'https://github.com/creator/game/releases/download/v1/games.gamepkgstore':
+    out.write_bytes((root / 'games.gamepkgstore').read_bytes())
 else:
     sys.exit(23)
 print('200', end='')
@@ -66,9 +70,25 @@ print('200', end='')
     run('install', URL, success=False)
     catalog = root / 'games.gamepkglist'
     catalog.write_text(f'format_version=1\n[[games]]\nid="com.gamepkg.minimal"\ntitle="GitHub game"\ndownload_url="{URL}"\n')
-    run('import-list', catalog)
+    release = json.loads((root / 'release.json').read_text())
+    release['assets'].append({'name': 'games.gamepkglist', 'size': catalog.stat().st_size,
+                              'browser_download_url': URL + '/releases/download/v1/games.gamepkglist'})
+    (root / 'release.json').write_text(json.dumps(release))
+    run('import-list', URL)
     assert 'Not downloaded' in run('list').stdout
     assert not list((root / 'library').glob('*.gamepkg'))
+    bundle = root / 'games.gamepkgstore'
+    run('store-export', root / 'latest.gamepkg', '-o', bundle)
+    release['assets'].append({'name': 'games.gamepkgstore', 'size': bundle.stat().st_size,
+                              'browser_download_url': URL + '/releases/download/v1/games.gamepkgstore'})
+    (root / 'release.json').write_text(json.dumps(release))
+    assert 'com.gamepkg.minimal' in run('store-inspect', URL).stdout
+    library = env['GAMEPKG_HOME']
+    env['GAMEPKG_HOME'] = str(root / 'store-library')
+    run('store-import', URL, success=False)
+    run('store-import', URL, '--trust-creators')
+    assert 'com.gamepkg.minimal' in run('list').stdout
+    env['GAMEPKG_HOME'] = library
     run('download', 'com.gamepkg.minimal', '--trust-creator')
     assert '0.1.0' in run('list').stdout
     publish('0.2.0')

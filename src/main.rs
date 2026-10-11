@@ -172,7 +172,7 @@ fn main() -> Result<()> {
         Command::StoreInspect { source } => {
             let downloaded;
             let path = if source.contains("://") {
-                downloaded = gamepkg::registry::download(&source)?;
+                downloaded = gamepkg::registry::download_store(&source)?;
                 downloaded.path()
             } else {
                 std::path::Path::new(&source)
@@ -194,7 +194,7 @@ fn main() -> Result<()> {
         } => {
             let downloaded;
             let path = if source.contains("://") {
-                downloaded = gamepkg::registry::download(&source)?;
+                downloaded = gamepkg::registry::download_store(&source)?;
                 downloaded.path()
             } else {
                 std::path::Path::new(&source)
@@ -355,7 +355,7 @@ fn main() -> Result<()> {
         Command::ImportList { source } => {
             let downloaded;
             let path = if source.contains("://") {
-                downloaded = gamepkg::registry::download(&source)?;
+                downloaded = gamepkg::registry::download_catalog(&source)?;
                 downloaded.path()
             } else {
                 std::path::Path::new(&source)

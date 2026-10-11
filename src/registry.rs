@@ -71,15 +71,24 @@ fn tor_proxy() -> Result<String> {
     Ok(format!("socks5h://{address}"))
 }
 pub fn download(value: &str) -> Result<tempfile::NamedTempFile> {
+    download_kind(value, ".gamepkg", crate::archive::MAX_TOTAL)
+}
+pub fn download_catalog(value: &str) -> Result<tempfile::NamedTempFile> {
+    download_kind(value, ".gamepkglist", 4 * 1024 * 1024)
+}
+pub fn download_store(value: &str) -> Result<tempfile::NamedTempFile> {
+    download_kind(value, ".gamepkgstore", crate::archive::MAX_TOTAL)
+}
+fn download_kind(value: &str, extension: &str, limit: u64) -> Result<tempfile::NamedTempFile> {
     let url = parsed_url(value)?;
     if let Some(api) = github_release_api(&url)? {
         let metadata = download_direct(api.as_str(), 4 * 1024 * 1024)?;
         let release: serde_json::Value = serde_json::from_reader(metadata.as_file())
             .context("invalid GitHub release metadata")?;
-        let asset = github_package_asset(&release)?;
-        return download_direct(&asset, crate::archive::MAX_TOTAL);
+        let asset = github_release_asset(&release, extension, limit)?;
+        return download_direct(&asset, limit);
     }
-    download_direct(value, crate::archive::MAX_TOTAL)
+    download_direct(value, limit)
 }
 
 // Repository links select the latest published release; explicit tags stay pinned.
@@ -123,7 +132,11 @@ fn github_release_api(url: &url::Url) -> Result<Option<url::Url>> {
     ))?))
 }
 
-fn github_package_asset(release: &serde_json::Value) -> Result<String> {
+fn github_release_asset(
+    release: &serde_json::Value,
+    extension: &str,
+    limit: u64,
+) -> Result<String> {
     if release.get("draft").and_then(|v| v.as_bool()) != Some(false) {
         bail!("GitHub release must be published");
     }
@@ -136,19 +149,19 @@ fn github_package_asset(release: &serde_json::Value) -> Result<String> {
         .filter(|a| {
             a.get("name")
                 .and_then(|v| v.as_str())
-                .is_some_and(|n| n.ends_with(".gamepkg"))
+                .is_some_and(|n| n.ends_with(extension))
         })
         .collect();
     if packages.len() != 1 {
-        bail!("GitHub release must contain exactly one .gamepkg asset; use a direct asset URL when there are multiple games");
+        bail!("GitHub release must contain exactly one {extension} asset; use a direct asset URL when there are multiple matching assets");
     }
     let asset = packages[0];
     let size = asset
         .get("size")
         .and_then(|v| v.as_u64())
         .context("GitHub asset has no size")?;
-    if size == 0 || size > crate::archive::MAX_TOTAL {
-        bail!("GitHub package asset exceeds size limit or is empty");
+    if size == 0 || size > limit {
+        bail!("GitHub release asset exceeds size limit or is empty");
     }
     let value = asset
         .get("browser_download_url")
@@ -437,18 +450,18 @@ mod github_tests {
     #[test]
     fn published_single_bounded_package_required() {
         let mut release = serde_json::json!({"draft": false, "assets": [{"name": "game.gamepkg", "size": 123, "browser_download_url": "https://github.com/creator/game/releases/download/v1/game.gamepkg"}, {"name": "README.txt"}]});
-        assert!(github_package_asset(&release).is_ok());
+        assert!(github_release_asset(&release, ".gamepkg", crate::archive::MAX_TOTAL).is_ok());
         release["assets"][0]["size"] = serde_json::json!(crate::archive::MAX_TOTAL + 1);
-        assert!(github_package_asset(&release).is_err());
+        assert!(github_release_asset(&release, ".gamepkg", crate::archive::MAX_TOTAL).is_err());
         release["assets"][0]["size"] = serde_json::json!(123);
         release["assets"][0]["browser_download_url"] =
             serde_json::json!("https://evil.test/game.gamepkg");
-        assert!(github_package_asset(&release).is_err());
+        assert!(github_release_asset(&release, ".gamepkg", crate::archive::MAX_TOTAL).is_err());
         release["assets"] = serde_json::json!([]);
-        assert!(github_package_asset(&release).is_err());
+        assert!(github_release_asset(&release, ".gamepkg", crate::archive::MAX_TOTAL).is_err());
         release["assets"] = serde_json::json!([{"name":"a.gamepkg"}, {"name":"b.gamepkg"}]);
-        assert!(github_package_asset(&release).is_err());
+        assert!(github_release_asset(&release, ".gamepkg", crate::archive::MAX_TOTAL).is_err());
         release["draft"] = serde_json::json!(true);
-        assert!(github_package_asset(&release).is_err());
+        assert!(github_release_asset(&release, ".gamepkg", crate::archive::MAX_TOTAL).is_err());
     }
 }

@@ -704,7 +704,7 @@ impl eframe::App for App {
                 self.begin_work(move || {
                     let downloaded;
                     let path = if source.contains("://") {
-                        downloaded = crate::registry::download(&source)?;
+                        downloaded = crate::registry::download_store(&source)?;
                         downloaded.path()
                     } else { std::path::Path::new(&source) };
                     Ok(Work::Store(crate::store::Bundle::open(path)?))
@@ -714,7 +714,7 @@ impl eframe::App for App {
                 let source = self.source.trim().to_owned();
                 self.begin_work(move || {
                     let downloaded;
-                    let path = if source.contains("://") { downloaded = crate::registry::download(&source)?; downloaded.path() } else { std::path::Path::new(&source) };
+                    let path = if source.contains("://") { downloaded = crate::registry::download_catalog(&source)?; downloaded.path() } else { std::path::Path::new(&source) };
                     let count = crate::catalog::import(&crate::registry::default_root()?, path)?;
                     Ok(Work::Message(format!("Added {count} games to the catalog. No game packages downloaded.")))
                 });

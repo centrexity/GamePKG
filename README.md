@@ -695,3 +695,5 @@ The CLI and desktop download field, catalog `download_url`, and signed manifest 
 Public release discovery uses GitHub's anonymous API and may encounter its rate limits. Downloaded packages still undergo signature verification, first-creator approval, and update ID, version, and creator continuity checks. A GitHub account name does not establish a package creator's identity.
 
 Run `python3 tests/github_download.py` after building the CLI to exercise GitHub release discovery with local fixtures, catalog predownload state, creator approval, signed updates, and signer/ID substitution rejection without relying on a GitHub account or API availability.
+
+GitHub project links also work with **Import .gamepkglist** and store inspection/import. Each action selects exactly one matching `.gamepkglist` or `.gamepkgstore` release asset, independently of game assets. Catalog downloads are limited to 4 MiB before parsing; importing a project-hosted list does not download its games.

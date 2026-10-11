@@ -46,7 +46,7 @@
 ./target/release/gamepkg build examples/good/collect-stars \
   -o /tmp/collect-stars.gamepkg --key creator.key</code></pre>
   <p>Inspect <code>/tmp/collect-stars.gamepkg</code> in the desktop library, then follow the install, build, and play steps above. The creator build checks compilation before publishing the package; it does not install it automatically.</p>
-  <section><h2>Download from a GitHub project</h2><p>Enter <code>https://github.com/owner/repository</code> to download its latest published stable release. The release must contain exactly one <code>.gamepkg</code> file. A <code>/releases/tag/version</code> link selects a specific release; use a direct asset link when the project distributes multiple games. GitHub project links also work in game catalogs and signed update URLs. Package signatures, creator approval, and update checks still apply.</p></section>
+  <section><h2>Download from a GitHub project</h2><p>Enter <code>https://github.com/owner/repository</code> to download its latest published stable release. The release must contain exactly one <code>.gamepkg</code> file. A <code>/releases/tag/version</code> link selects a specific release; use a direct asset link when the project distributes multiple games. GitHub project links also work in game catalogs and signed update URLs. For list or store imports, the app selects one matching <code>.gamepkglist</code> or <code>.gamepkgstore</code> release file. Package signatures, creator approval, and update checks still apply.</p></section>
   <footer><a href="allowlist.html">Approved game libraries</a> · <a href="security.html">Security model</a> · <a href="../spec/index.html">Format specification</a> · GamePKG · Apache 2.0</footer>
 
 </main></body>
