@@ -59,6 +59,20 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-library-play-') as directory:
         click_word(words,'Rebuild')
         wait_screen(lambda text:'Built com.gamepkg.minimal' in text,'library-rebuilt.png')
         assert len(list((library/'builds').glob('*/game.wasm')))==1
-        print('Desktop workflow passed: unbuilt row, Build, Rebuild state, Play, return, and rebuild without duplicate caches.')
+        text,words=read_screen('library-before-catalog.png')
+        catalog=root/'games.gamepkglist'
+        catalog.write_text("format_version = 1\n[[games]]\nid = 'com.example.offline'\ntitle = 'Offline Catalog Game'\nversion = '2.0.0'\ndownload_url = 'https://unreachable.invalid/game.gamepkg'\nrequires_rom = true\n")
+        label=next(word for word in words if word['text']=='Local')
+        subprocess.run(['xdotool','windowfocus',window],env=env,check=True)
+        subprocess.run(['xdotool','mousemove','--window',window,'100',str(int(label['top'])+int(label['height'])+12),'click','1'],env=env,check=True)
+        time.sleep(.2)
+        subprocess.run(['xdotool','type','--clearmodifiers',str(catalog)],env=env,check=True)
+        time.sleep(.2)
+        click_word(words,'Import')
+        wait_screen(lambda text:'Not downloaded' in text and 'No game packages downloaded' in text,'library-catalog-imported.png',20)
+        assert 'com.example.offline' in (library/'catalog.gamepkglist').read_text()
+        assert list(library.glob('*.gamepkg')) == [library/'com.gamepkg.minimal.gamepkg']
+        assert not (library/'com.example.offline.gamepkg').exists()
+        print('Desktop workflow passed: Build, Play, return, Rebuild, and offline catalog import without downloading packages.')
     finally:
         app.terminate();app.wait(timeout=10);display.terminate();display.wait(timeout=10)
