@@ -1,4 +1,4 @@
-"""Bundle locally built Linux host programs, setup tools, examples, and license notices."""
+"""Bundle locally built Linux or Windows host programs and dependency notices."""
 import argparse
 import gzip
 import hashlib
@@ -11,6 +11,7 @@ import subprocess
 import tarfile
 import tempfile
 import tomllib
+import zipfile
 
 PROJECT = Path(__file__).resolve().parents[1]
 
@@ -26,25 +27,36 @@ def is_elf(path):
 
 
 def package(output_directory, binary_directory):
-    if platform.system() != 'Linux' or platform.machine() not in ('x86_64', 'amd64'):
-        raise ValueError('release packaging currently supports Linux x86-64')
+    system = platform.system()
+    if system not in ('Linux', 'Windows') or platform.machine().lower() not in ('x86_64', 'amd64'):
+        raise ValueError('release packaging supports Linux or Windows x86-64')
+    windows = system == 'Windows'
+    host = 'windows-x86_64' if windows else 'linux-x86_64'
+    target = 'x86_64-pc-windows-msvc' if windows else 'x86_64-unknown-linux-gnu'
     version = tomllib.loads((PROJECT / 'Cargo.toml').read_text())['package']['version']
-    name = f'gamepkg-{version}-linux-x86_64'
+    name = f'gamepkg-{version}-{host}'
     output_directory.mkdir(parents=True, exist_ok=True)
-    destination = output_directory / f'{name}.tar.gz'
+    destination = output_directory / (name + ('.zip' if windows else '.tar.gz'))
     if destination.exists() or destination.is_symlink():
         raise FileExistsError(destination)
     metadata = json.loads(subprocess.check_output(
-        ['cargo', 'metadata', '--locked', '--offline', '--all-features', '--filter-platform', 'x86_64-unknown-linux-gnu', '--format-version', '1'], cwd=PROJECT))
+        ['cargo', 'metadata', '--locked', '--offline', '--all-features', '--filter-platform', target, '--format-version', '1'], cwd=PROJECT))
     resolved = {node['id'] for node in metadata['resolve']['nodes']}
     with tempfile.TemporaryDirectory(prefix='gamepkg-distribution-') as directory:
         root = Path(directory) / name
         (root / 'bin').mkdir(parents=True)
         binaries = {}
-        for executable in ['gamepkg', 'gamepkg-gui']:
+        for base in ['gamepkg', 'gamepkg-gui']:
+            executable = base + ('.exe' if windows else '')
             source = binary_directory / executable
-            if not source.is_file() or source.is_symlink() or not is_elf(source):
-                raise ValueError(f'{executable} must be a regular ELF release executable')
+            if not source.is_file() or source.is_symlink():
+                raise ValueError(f'{executable} must be a regular executable')
+            if windows:
+                with source.open('rb') as binary:
+                    if binary.read(2) != b'MZ':
+                        raise ValueError(f'{executable} must be a Windows executable')
+            elif not is_elf(source):
+                raise ValueError(f'{executable} must be an ELF executable')
             shutil.copyfile(source, root / 'bin' / executable)
             (root / 'bin' / executable).chmod(0o755)
             binaries[executable] = sha256(source)
@@ -54,7 +66,7 @@ def package(output_directory, binary_directory):
         for filename in ['install_slang.py', 'install_dxc.py']:
             shutil.copyfile(PROJECT / 'tools' / filename, root / 'tools' / filename)
         shutil.copytree(PROJECT / 'examples', root / 'examples', ignore=shutil.ignore_patterns('__pycache__', 'target'))
-        shutil.copyfile(PROJECT / 'docs' / 'INSTALL.md', root / 'INSTALL.md')
+        shutil.copyfile(PROJECT / 'docs' / ('INSTALL_WINDOWS.md' if windows else 'INSTALL.md'), root / 'INSTALL.md')
         notices = []
         for dependency in sorted(metadata['packages'], key=lambda p: p['id']):
             if dependency['id'] in metadata['workspace_members'] or dependency['id'] not in resolved:
@@ -73,21 +85,27 @@ def package(output_directory, binary_directory):
                 shutil.copyfile(document, target / relative)
             notices.append({'name': dependency['name'], 'version': dependency['version'], 'license': dependency.get('license'), 'source': dependency.get('source'), 'notices': [str(p.relative_to(source)) for p in sorted(documents)]})
         (root / 'DEPENDENCIES.json').write_text(json.dumps(notices, indent=2) + '\n')
-        (root / 'BUILD.json').write_text(json.dumps({'version': version, 'platform': 'linux-x86_64', 'libc': platform.libc_ver(), 'executables_sha256': binaries, 'cargo_lock_sha256': sha256(PROJECT / 'Cargo.lock')}, indent=2) + '\n')
+        (root / 'BUILD.json').write_text(json.dumps({'version': version, 'platform': host, 'binary_profile': binary_directory.name, 'libc': platform.libc_ver(), 'executables_sha256': binaries, 'cargo_lock_sha256': sha256(PROJECT / 'Cargo.lock')}, indent=2) + '\n')
         with tempfile.NamedTemporaryFile(dir=output_directory, prefix='.release-', delete=False) as temporary:
             temporary_path = Path(temporary.name)
         try:
-            with temporary_path.open('wb') as raw, gzip.GzipFile(filename='', fileobj=raw, mode='wb', mtime=0) as compressed, tarfile.open(fileobj=compressed, mode='w') as archive:
-                for path in [root, *sorted(root.rglob('*'))]:
-                    info = archive.gettarinfo(str(path), arcname=str(path.relative_to(root.parent)))
-                    info.uid = info.gid = 0
-                    info.uname = info.gname = ''
-                    info.mtime = 0
-                    if path.is_file():
-                        with path.open('rb') as data:
-                            archive.addfile(info, data)
-                    else:
-                        archive.addfile(info)
+            if windows:
+                with zipfile.ZipFile(temporary_path, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+                    for path in sorted(root.rglob('*')):
+                        if path.is_file():
+                            archive.write(path, path.relative_to(root.parent).as_posix())
+            else:
+                with temporary_path.open('wb') as raw, gzip.GzipFile(filename='', fileobj=raw, mode='wb', mtime=0) as compressed, tarfile.open(fileobj=compressed, mode='w') as archive:
+                    for path in [root, *sorted(root.rglob('*'))]:
+                        info = archive.gettarinfo(str(path), arcname=str(path.relative_to(root.parent)))
+                        info.uid = info.gid = 0
+                        info.uname = info.gname = ''
+                        info.mtime = 0
+                        if path.is_file():
+                            with path.open('rb') as data:
+                                archive.addfile(info, data)
+                        else:
+                            archive.addfile(info)
             os.link(temporary_path, destination)
         finally:
             temporary_path.unlink(missing_ok=True)

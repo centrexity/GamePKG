@@ -23,8 +23,22 @@ jobs:
       - name: Select Rust
         run: rustup default stable
       - name: Build CLI and desktop entry points
-        run: cargo build --locked --all-features --bins
+        run: cargo build --locked --release --all-features --bins
       - name: Exercise verification, runtime, and portable host behavior
         run: cargo test --locked --all-features
       - name: Check portable implementation warnings
         run: cargo clippy --locked --all-features --all-targets -- -D warnings
+      - name: Package Windows host distribution
+        if: runner.os == 'Windows'
+        run: |
+          python tools/package_release.py "$env:RUNNER_TEMP/gamepkg-windows"
+          $version = python -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["version"])'
+          python tests/windows_package.py "$env:RUNNER_TEMP/gamepkg-windows/gamepkg-$version-windows-x86_64.zip"
+      - name: Preserve verified Windows distribution
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: verified-gamepkg-windows-x86_64
+          path: ${{ runner.temp }}/gamepkg-windows/*
+          retention-days: 7
+          if-no-files-found: error
