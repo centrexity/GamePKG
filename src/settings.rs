@@ -17,6 +17,7 @@ pub struct Settings {
     pub optimize_builds: bool,
     pub dark_mode: bool,
     pub slang_directory: String,
+    pub dxc_directory: String,
     pub shader_backend: String,
     pub mute_audio: bool,
     pub audio_volume: u8,
@@ -35,6 +36,7 @@ impl Default for Settings {
             optimize_builds: true,
             dark_mode: true,
             slang_directory: String::new(),
+            dxc_directory: String::new(),
             shader_backend: "spirv".into(),
             mute_audio: false,
             audio_volume: 50,
@@ -56,6 +58,12 @@ impl Settings {
         }
         if !self.slang_directory.is_empty() && !Path::new(&self.slang_directory).is_absolute() {
             bail!("Slang folder must be an absolute path");
+        }
+        if !self.dxc_directory.is_empty()
+            && (!Path::new(&self.dxc_directory).is_absolute()
+                || self.dxc_directory.chars().any(char::is_control))
+        {
+            bail!("DXC folder must be an absolute path or empty");
         }
         if !matches!(
             self.shader_backend.as_str(),

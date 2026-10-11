@@ -497,6 +497,12 @@ impl eframe::App for App {
                         for backend in ["spirv", "wgsl", "metal", "dxil", "glsl"] { ui.selectable_value(&mut self.settings_draft.shader_backend, backend.to_string(), backend); }
                     });
                     ui.label("GLSL supports resource-free fragment passes in this desktop player. Other backends compile and cache shaders.");
+                    if self.settings_draft.shader_backend == "dxil" {
+                        ui.label("DXC 1.9.2609 installation folder");
+                        ui.text_edit_singleline(&mut self.settings_draft.dxc_directory);
+                        ui.label("Choose the pinned DXC installation. GamePKG verifies its compiler libraries before each build.");
+                        if std::env::var_os("GAMEPKG_DXC_ROOT").is_some() { ui.label("GAMEPKG_DXC_ROOT overrides this folder for the current launch."); }
+                    }
                     ui.checkbox(&mut self.settings_draft.optimize_builds,"Optimize new builds");
                     ui.label("Applies on Build/Rebuild; existing compiled games are kept.");
                     ui.checkbox(&mut self.settings_draft.dark_mode,"Dark appearance");

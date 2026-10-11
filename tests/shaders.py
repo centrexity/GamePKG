@@ -51,6 +51,13 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-shaders-') as directory:
     assert 'DXC library checksum mismatch' in run('build','com.gamepkg.collect-stars',success=False)
     assert set((library/'shader-builds').glob('*')) == caches
     env['GAMEPKG_DXC_ROOT'] = pinned_dxc
+    env.pop('GAMEPKG_DXC_ROOT')
+    config.write_text(f'shader_backend = "dxil"\ndxc_directory = {json.dumps(pinned_dxc)}\n')
+    run('build','com.gamepkg.collect-stars')
+    assert set((library/'shader-builds').glob('*')) == caches
+    env['GAMEPKG_DXC_ROOT'] = str(modified.parent)
+    assert 'DXC library checksum mismatch' in run('build','com.gamepkg.collect-stars',success=False)
+    env['GAMEPKG_DXC_ROOT'] = pinned_dxc
     config.write_text('shader_backend = "spirv"\n')
     manifest = source / 'manifest.toml'
     manifest.write_text(manifest.read_text().replace('version = "0.1.0"', 'version = "0.2.0"'))

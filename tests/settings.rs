@@ -4,6 +4,7 @@ fn settings_persist_and_failed_saves_preserve_previous_values() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("config/settings.toml");
     let mut settings = Settings::read(&path).unwrap();
+    settings.dxc_directory = temp.path().join("dxc").to_string_lossy().into_owned();
     settings.library_directory = temp.path().join("library").to_string_lossy().into_owned();
     settings.tor_proxy = "127.0.0.1:9150".into();
     settings.memory_ceiling_mib = 64;
@@ -53,6 +54,11 @@ fn settings_validate_bounds_and_reject_unknown_or_large_files() {
     assert!(s.validate().is_err());
     for proxy in ["example.com:9050", "127.0.0.1:0", "192.168.1.2:9050"] {
         assert!(gamepkg::settings::validate_proxy(proxy).is_err());
+    }
+    for directory in ["relative", "/tmp/dxc\ninvalid"] {
+        let mut s = defaults.clone();
+        s.dxc_directory = directory.into();
+        assert!(s.validate().is_err());
     }
     let mut s = defaults.clone();
     s.audio_volume = 101;

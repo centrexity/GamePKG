@@ -24,7 +24,7 @@ pub fn compile(
     }
     settings.validate()?;
     let (compiler, cache) = compiler_cache(root, archive, settings)?;
-    let dxc = dxc_root(&settings.shader_backend)?;
+    let dxc = dxc_root(settings)?;
     let defaults = vec![Shader {
         source: "shaders/main.slang".into(),
         entry: "fragmentMain".into(),
@@ -225,12 +225,15 @@ pub fn validate_source(bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
-fn dxc_root(backend: &str) -> Result<Option<PathBuf>> {
-    if backend != "dxil" {
+fn dxc_root(settings: &Settings) -> Result<Option<PathBuf>> {
+    if settings.shader_backend != "dxil" {
         return Ok(None);
     }
     let root = std::env::var_os("GAMEPKG_DXC_ROOT")
         .map(PathBuf::from)
+        .or_else(|| {
+            (!settings.dxc_directory.is_empty()).then(|| PathBuf::from(&settings.dxc_directory))
+        })
         .context(
             "DXIL requires pinned DXC 1.9.2609; run tools/install_dxc.py and set GAMEPKG_DXC_ROOT",
         )?;
@@ -280,7 +283,7 @@ fn compiler_cache(root: &Path, archive: &[u8], settings: &Settings) -> Result<(P
     {
         bail!("Slang version must be exactly {SLANG_VERSION}");
     }
-    let dxc_identity = if dxc_root(&settings.shader_backend)?.is_some() {
+    let dxc_identity = if dxc_root(settings)?.is_some() {
         ":dxc-1.9.2609"
     } else {
         ""
