@@ -50,6 +50,17 @@ fn cli_pack_verify_and_asset_roundtrip() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
+    let mut signed = gamepkg::archive::Package::open(&package).unwrap();
+    let manifest = gamepkg::verify::verify_embedded(&mut signed).unwrap();
+    assert_eq!(manifest.creator_key, public);
+    assert!(!signed.entries.contains_key("creator.key"));
+    assert!(Command::new(exe)
+        .arg("verify")
+        .arg(&package)
+        .output()
+        .unwrap()
+        .status
+        .success());
     assert!(Command::new(exe)
         .arg("verify")
         .arg(&package)
