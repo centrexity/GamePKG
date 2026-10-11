@@ -600,6 +600,15 @@ impl eframe::App for App {
                     ui.horizontal(|ui| { ui.label("Tick deadline (ms)");ui.add(egui::Slider::new(&mut self.settings_draft.tick_deadline_ms,10..=100).step_by(10.0)); });
                     ui.label("Memory and fuel use the lower of your ceiling and the signed game limit. These settings cannot raise a game's hard limit. Changes apply the next time you launch a game.");
                     ui.separator();ui.heading("Builds and appearance");
+                    #[cfg(windows)]
+                    {
+                        ui.heading("Windows compiler");
+                        ui.label("WSL 2 distribution name (leave both fields empty to disable)");
+                        ui.text_edit_singleline(&mut self.settings_draft.windows_compiler_distribution);
+                        ui.label("GamePKG compiler executable inside Linux");
+                        ui.text_edit_singleline(&mut self.settings_draft.windows_compiler_executable);
+                        ui.label("Use a configured Linux compiler with the same GamePKG version. Games still run in this Windows app after their build is verified.");
+                    }
                     ui.label("Slang 2026.19 installation folder");
                     ui.text_edit_singleline(&mut self.settings_draft.slang_directory);
                     egui::ComboBox::from_label("Shader backend").selected_text(&self.settings_draft.shader_backend).show_ui(ui, |ui| {

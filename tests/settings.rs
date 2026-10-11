@@ -123,3 +123,29 @@ fn saved_library_and_environment_override_are_used_by_cli() {
     assert!(output.status.success());
     assert!(other.join("catalog.gamepkglist").exists());
 }
+
+#[test]
+fn windows_compiler_configuration_is_explicit_and_preserved() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("settings.toml");
+    let mut settings = Settings {
+        windows_compiler_distribution: "GamePKG-Ubuntu-24.04".into(),
+        ..Default::default()
+    };
+    assert!(settings.validate().is_err());
+    settings.windows_compiler_executable = "/opt/gamepkg/bin/gamepkg".into();
+    settings.save(&path).unwrap();
+    assert_eq!(Settings::read(&path).unwrap(), settings);
+    for invalid in ["--exec", "Ubuntu\n", "Ubuntu;other", "Ubuntu/other"] {
+        let mut changed = settings.clone();
+        changed.windows_compiler_distribution = invalid.into();
+        assert!(changed.save(&path).is_err());
+        assert_eq!(Settings::read(&path).unwrap(), settings);
+    }
+    for invalid in ["relative/gamepkg", "C:\\gamepkg.exe", "/bin/gamepkg\n"] {
+        let mut changed = settings.clone();
+        changed.windows_compiler_executable = invalid.into();
+        assert!(changed.save(&path).is_err());
+        assert_eq!(Settings::read(&path).unwrap(), settings);
+    }
+}

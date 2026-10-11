@@ -66,9 +66,82 @@ pub fn run(command: &mut Command) -> Result<Output> {
         stderr,
     })
 }
+/// Bound launcher execution and pipe draining independently of guest timeouts.
+#[cfg(any(windows, test))]
+pub(crate) fn run_timed(command: &mut Command, limit: std::time::Duration) -> Result<Output> {
+    let deadline = std::time::Instant::now() + limit;
+    let mut child = command
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    let (send, receive) = std::sync::mpsc::channel();
+    let out_send = send.clone();
+    let stdout = child.stdout.take().unwrap();
+    let stderr = child.stderr.take().unwrap();
+    thread::spawn(move || {
+        let _ = out_send.send((true, drain(stdout)));
+    });
+    thread::spawn(move || {
+        let _ = send.send((false, drain(stderr)));
+    });
+    let status = loop {
+        if let Some(status) = child.try_wait()? {
+            break status;
+        }
+        if std::time::Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            anyhow::bail!("compiler launcher exceeded its time limit");
+        }
+        thread::sleep(std::time::Duration::from_millis(20));
+    };
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let mut truncated = false;
+    for _ in 0..2 {
+        let (is_stdout, result) = receive
+            .recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
+            .context("compiler output exceeded its time limit")?;
+        let (bytes, cut) = result?;
+        truncated |= cut;
+        if is_stdout {
+            stdout = bytes;
+        } else {
+            stderr = bytes;
+        }
+    }
+    let mut stderr = String::from_utf8_lossy(&stderr).into_owned();
+    if truncated {
+        stderr.push_str("\n[compiler diagnostics truncated at 1 MiB per stream]");
+    }
+    Ok(Output {
+        status,
+        stdout: String::from_utf8_lossy(&stdout).into_owned(),
+        stderr,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
+    #[test]
+    fn launcher_and_inherited_pipes_have_a_deadline() {
+        use std::time::{Duration, Instant};
+        for script in ["sleep 2", "sleep 2 & exit 0"] {
+            let start = Instant::now();
+            let mut command = Command::new("sh");
+            command.args(["-c", script]);
+            assert!(run_timed(&mut command, Duration::from_millis(80)).is_err());
+            assert!(start.elapsed() < Duration::from_secs(1));
+        }
+        let mut command = Command::new("sh");
+        command.args(["-c", "printf complete; printf diagnostic >&2"]);
+        let output = run_timed(&mut command, Duration::from_secs(1)).unwrap();
+        assert!(output.status.success());
+        assert_eq!(output.stdout, "complete");
+        assert_eq!(output.stderr, "diagnostic");
+    }
     #[test]
     fn excessive_diagnostics_are_drained_but_not_retained() {
         let input = vec![b'x'; DIAGNOSTICS * 3];

@@ -19,6 +19,8 @@ pub struct Settings {
     pub dark_mode: bool,
     pub slang_directory: String,
     pub dxc_directory: String,
+    pub windows_compiler_distribution: String,
+    pub windows_compiler_executable: String,
     pub shader_backend: String,
     pub mute_audio: bool,
     pub audio_volume: u8,
@@ -39,6 +41,8 @@ impl Default for Settings {
             dark_mode: true,
             slang_directory: String::new(),
             dxc_directory: String::new(),
+            windows_compiler_distribution: String::new(),
+            windows_compiler_executable: String::new(),
             shader_backend: "glsl".into(),
             mute_audio: false,
             audio_volume: 50,
@@ -49,6 +53,30 @@ impl Default for Settings {
 }
 impl Settings {
     pub fn validate(&self) -> Result<()> {
+        let distribution = &self.windows_compiler_distribution;
+        let executable = &self.windows_compiler_executable;
+        if distribution.is_empty() != executable.is_empty() {
+            bail!(
+                "Windows compiler settings need both a WSL distribution and Linux executable path"
+            );
+        }
+        if !distribution.is_empty()
+            && (distribution.len() > 128
+                || !distribution
+                    .bytes()
+                    .all(|c| c.is_ascii_alphanumeric() || b"._-".contains(&c))
+                || distribution.starts_with('-'))
+        {
+            bail!("WSL distribution must be a name of at most 128 letters, digits, dots, underscores or hyphens");
+        }
+        if !executable.is_empty()
+            && (executable.len() > 4096
+                || !executable.starts_with('/')
+                || executable.contains('\\')
+                || executable.chars().any(char::is_control))
+        {
+            bail!("Windows compiler executable must be an absolute Linux path without control characters");
+        }
         if self.approved_crates.len() > 1
             || self
                 .approved_crates

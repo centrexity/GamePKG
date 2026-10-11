@@ -52,3 +52,6 @@ pub mod web_library;
 mod files;
 
 pub mod build_worker;
+
+#[cfg(any(windows, test))]
+mod windows_build;
