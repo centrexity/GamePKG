@@ -7,7 +7,7 @@ continuity. First installation requires creator approval; it does not identify
 a real-world person or guarantee harmless code.
 
 The source policy rejects build scripts, procedural macros, binary includes,
-external source modules, unsafe guest code, and filesystem/network/process
+source path overrides, unsafe guest code, and filesystem/network/process
 paths. The pinned guest crate allowlist currently contains byteorder-lite 0.1.0
 with default features disabled. The signed lockfile must match its approved
 graph and registry checksum. Source scanning is a policy filter; compilation
@@ -33,3 +33,7 @@ OpenGL player; broader GPU resource support is still under development. GPU
 drivers and the host runtime remain trusted components, and GPU work is not
 metered by Wasm fuel. These restrictions reduce access and do not establish a
 general guarantee that a package cannot cause harm.
+
+Packaged source modules are supported. Every Rust file is scanned, including
+unused modules; declarations must resolve unambiguously within the package.
+Only checked source files are staged for compilation.

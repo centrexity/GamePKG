@@ -2,7 +2,7 @@
 
 **Know what you run. Control what it can access.** GamePKG is building a safer way to share and play games: inspectable source, creator-signed packages, isolated compilation, and a host that is designed to grant only the capabilities a game needs.
 
-**Current status:** this is a development preview. Package verification, catalog import, installation, update checks, and isolated single-file Wasm and Slang shader builds on Linux work today. The experimental grid-v1 profile now plays in the GUI and terminal under Wasmtime with scoped asset reads, fuel, memory limits, and epoch deadlines. Resource-free Slang fragment passes now render in the OpenGL GUI; versioned WIT components are supported alongside the legacy core profile; broader rendering remains pending; this is not a guarantee that a package is harmless.
+**Current status:** this is a development preview. Package verification, catalog import, installation, update checks, and isolated Cargo Wasm and Slang shader builds on Linux work today. The experimental grid-v1 profile now plays in the GUI and terminal under Wasmtime with scoped asset reads, fuel, memory limits, and epoch deadlines. Resource-free Slang fragment passes now render in the OpenGL GUI; versioned WIT components are supported alongside the legacy core profile; broader rendering remains pending; this is not a guarantee that a package is harmless.
 
 ## Why distribute GamePKG instead of an opaque executable?
 
@@ -15,7 +15,7 @@ A `.gamepkg` contains Rust source, Slang shader source, assets, and a signed man
 | Inspectable source | Games ship source rather than a bundled native executable; review is possible before building. Source visibility alone does not prove safety. | Yes |
 | Signed identity and updates | The manifest and package contents are signed. Updates must keep the installed creator key and package ID, with a higher version. | Yes; first creator approval is still required |
 | Restricted package contents | Rejects traversal paths, duplicate entries, symlinks, oversized archive contents, unsupported shaders, and source outside the initial policy. | Yes |
-| Isolated compilation | Supported Linux builds run inside bubblewrap with a private work area, no network, and no access to your home directory. | Yes; single-file source with a pinned dependency allowlist |
+| Isolated compilation | Supported Linux builds run inside bubblewrap with a private work area, no network, and no access to your home directory. | Yes; checked source modules with a pinned dependency allowlist |
 | Limited game access | Games will receive only host-approved asset, input, rendering, audio, and save operations. | grid-v1 supports scoped asset reads; broader host APIs planned |
 | Runtime resource limits | Memory caps, execution fuel, and deadlines will constrain running games. | Enforced for grid-v1 Wasmtime execution |
 
@@ -62,10 +62,10 @@ Packing validates before publishing and refuses to overwrite files. The output m
 - At most 10,000 entries, 64 MiB per file, 256 MiB uncompressed total; stored and zstd entries only.
 - No absolute paths, traversal, backslashes, duplicate paths, directory entries, or symlinks.
 - Only UTF-8 `.slang` files under `shaders/`. Inline SPIR-V, target-code injection and macro token pasting are rejected in every shader file, including unused sources. The conservative check also inspects comments and strings; it supplements the isolated compiler and does not prove GPU code is harmless.
-- Only one Rust source file, pinned allowlisted dependencies only, `package.build = false`, and restricted Cargo fields. Includes, attributes, external modules, unsafe blocks, foreign declarations, and filesystem/network/process/environment paths are rejected.
+- Rust source files under `source/src/`, pinned allowlisted dependencies only, `package.build = false`, and restricted Cargo fields. Includes, attributes, unsafe blocks, foreign declarations, and filesystem/network/process/environment paths are rejected.
 - Optional AV1/WebM and Theora/Ogg previews undergo isolated codec, size, duration, frame-count, and initial-keyframe validation. PNG package validation checks magic bytes; GUI image decoding is bounded.
 
-The source scanner is an early policy filter, **not a security boundary**. Rust macros and compiler behavior require an OS-isolated build process, followed by a Wasm capability sandbox. Linux builds now invoke the verified single-file compiler inside bubblewrap; game code executes only through the Wasmtime runtime when Play/run is requested. Do not relax the source profile before those boundaries exist.
+The source scanner is an early policy filter, **not a security boundary**. Rust macros and compiler behavior require an OS-isolated build process, followed by a Wasm capability sandbox. Linux builds now invoke the verified Cargo compiler inside bubblewrap; game code executes only through the Wasmtime runtime when Play/run is requested. Do not relax the source profile before those boundaries exist.
 
 ## Roadmap
 
@@ -73,7 +73,7 @@ The source scanner is an early policy filter, **not a security boundary**. Rust 
 2. OS-isolated offline Cargo wrapper with pinned compiler and approved dependency closures.
 3. Wasmtime fuel, memory and epoch limits, minimal WIT host API, asset/input/save access.
 4. Pinned Slang compilation and shader reflection validation.
-5. Install/list/update CLI and local package registry implemented; isolated single-file Wasm build implemented; grid-v1 game run implemented.
+5. Install/list/update CLI and local package registry implemented; isolated Cargo Wasm build implemented; grid-v1 game run implemented.
 6. Broader bypass fixtures and preview decoding checks.
 7. Feature-gated GUI verification, installed library, URL download and installation implemented; grid-v1 playback implemented; broader runtime APIs remain pending.
 8. Shared asset pool and store tooling.
@@ -102,7 +102,7 @@ cargo build --locked --release --features gui --bins
 cargo test --locked --all-features
 ```
 
-The executables are `target/release/gamepkg` and `target/release/gamepkg-gui` (with `.exe` on Windows). Launch the GUI with `cargo run --locked --features gui --bin gamepkg-gui`. It lists installed packages and accepts a local package path or HTTPS URL. Inspection runs in a background worker and displays the verified creator fingerprint and permissions before installation. New creators require approval; updates use the installed creator key automatically. It can compile the supported single-file profile on Linux; game grid-v1 playback implemented; broader runtime APIs remain pending. A desktop display is required to launch it.
+The executables are `target/release/gamepkg` and `target/release/gamepkg-gui` (with `.exe` on Windows). Launch the GUI with `cargo run --locked --features gui --bin gamepkg-gui`. It lists installed packages and accepts a local package path or HTTPS URL. Inspection runs in a background worker and displays the verified creator fingerprint and permissions before installation. New creators require approval; updates use the installed creator key automatically. It can compile the supported source profile on Linux; game grid-v1 playback implemented; broader runtime APIs remain pending. A desktop display is required to launch it.
 
 The CLI remains available without desktop dependencies: `cargo build --locked --release --bin gamepkg`. See [examples](examples/README.md) for valid and deliberately rejected packages. Local integration tests exercise the actual CLI binary, every example, and signed archive tampering.
 
@@ -595,4 +595,22 @@ No registry access or dependency downloads occur during gameplay builds.
 `examples/good/byteorder-game` is playable and reads a big-endian score from an
 archived asset. `tests/approved_crate_game.py` builds, runs and rebuilds it under
 both core and WIT profiles. The approval list is currently shipped with the
-host; configurable crate approval and multi-file guest source remain pending.
+host; configurable crate approval remains pending.
+
+## Game source modules
+
+Games may organize source under `source/src/` using ordinary `mod name;`,
+`name.rs`, `name/mod.rs`, and inline modules with separate child files. Define
+`game_tick` in the root `src/lib.rs`; it can delegate to module functions. The
+host appends its trusted API and export wrapper only to that root file.
+
+Every packaged Rust file is checked, including unused files. Module declarations
+must resolve to exactly one packaged file. `#[path]` and other guest attributes,
+macro-generated module declarations, includes, build scripts, and non-Rust
+source files are rejected. Source paths are limited to 1,024 bytes and 32
+segments. Only checked files enter the private offline Cargo workspace.
+
+`examples/good/modular-game` splits a playable game into movement, nested score
+reading, and constants modules. `tests/approved_crate_game.py` builds and plays
+it under both runtime profiles; `tests/modules.rs` checks missing/ambiguous
+modules, path redirection, forbidden unused files, and malformed source.

@@ -58,7 +58,7 @@ impl<'ast> Visit<'ast> for Scanner {
         syn::visit::visit_macro(self, node);
     }
     fn visit_item_mod(&mut self, node: &'ast syn::ItemMod) {
-        if node.content.is_none() || !node.attrs.is_empty() {
+        if !node.attrs.is_empty() {
             self.rejected = true;
         }
         syn::visit::visit_item_mod(self, node);
@@ -82,6 +82,27 @@ impl<'ast> Visit<'ast> for Scanner {
             self.rejected = true;
         }
         syn::visit::visit_path(self, node);
+    }
+}
+struct Modules<'a> {
+    base: String,
+    entries: &'a std::collections::BTreeMap<String, u64>,
+    rejected: bool,
+}
+impl<'ast> Visit<'ast> for Modules<'_> {
+    fn visit_item_mod(&mut self, node: &'ast syn::ItemMod) {
+        let name = node.ident.to_string();
+        let name = name.strip_prefix("r#").unwrap_or(&name);
+        let base = format!("{}/{name}", self.base);
+        if node.content.is_none() {
+            let file = self.entries.contains_key(&format!("{base}.rs"));
+            let directory = self.entries.contains_key(&format!("{base}/mod.rs"));
+            self.rejected |= file == directory;
+        } else {
+            let previous = std::mem::replace(&mut self.base, base);
+            syn::visit::visit_item_mod(self, node);
+            self.base = previous;
+        }
     }
 }
 pub fn scan(pkg: &mut Package) -> Result<()> {
@@ -127,8 +148,13 @@ pub fn scan(pkg: &mut Package) -> Result<()> {
         if name == "source/Cargo.toml" || name == "source/Cargo.lock" {
             continue;
         }
-        if name != "source/src/lib.rs" {
-            bail!("initial source profile permits only src/lib.rs");
+        if !name.starts_with("source/src/")
+            || !name.ends_with(".rs")
+            || name.ends_with("/build.rs")
+            || name.len() > 1024
+            || name.split('/').count() > 32
+        {
+            bail!("source profile permits only Rust source files under src/");
         }
         let data = pkg.read(&name)?;
         let text = std::str::from_utf8(&data)?;
@@ -141,6 +167,20 @@ pub fn scan(pkg: &mut Package) -> Result<()> {
         let ast = syn::parse_file(text)?;
         let mut scanner = Scanner { rejected: false };
         scanner.visit_file(&ast);
+        let parent = name.rsplit_once('/').unwrap().0;
+        let file = name.rsplit_once('/').unwrap().1;
+        let base = if name == "source/src/lib.rs" || file == "mod.rs" {
+            parent.to_owned()
+        } else {
+            format!("{parent}/{}", file.strip_suffix(".rs").unwrap())
+        };
+        let mut modules = Modules {
+            base,
+            entries: &pkg.entries,
+            rejected: false,
+        };
+        modules.visit_file(&ast);
+        scanner.rejected |= modules.rejected;
         if scanner.rejected {
             bail!("source uses a forbidden construct");
         }

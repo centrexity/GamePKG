@@ -63,13 +63,24 @@ pub fn compile(root: &Path, id: &str) -> Result<()> {
     } else {
         include_str!("guest_api.rs.txt")
     });
-    fs::write(stage.path().join("lib.rs"), source)?;
+    for name in pkg
+        .entries
+        .keys()
+        .filter(|name| name.starts_with("source/src/"))
+        .cloned()
+        .collect::<Vec<_>>()
+    {
+        let destination = stage.path().join(name.strip_prefix("source/").unwrap());
+        fs::create_dir_all(destination.parent().unwrap())?;
+        fs::write(destination, pkg.read(&name)?)?;
+    }
+    fs::write(stage.path().join("src/lib.rs"), source)?;
     let mut staged = cargo.clone();
     let table = staged.as_table_mut().unwrap();
     table.insert(
         "lib".into(),
         toml::Value::Table(toml::map::Map::from_iter([
-            ("path".into(), toml::Value::String("lib.rs".into())),
+            ("path".into(), toml::Value::String("src/lib.rs".into())),
             (
                 "crate-type".into(),
                 toml::Value::Array(vec![toml::Value::String("cdylib".into())]),
