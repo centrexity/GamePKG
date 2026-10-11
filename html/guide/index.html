@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Start playing — GamePKG</title>
+  <meta name="description" content="Install GamePKG, inspect a signed game, build it locally, and play with scoped access to assets and your selected ROM.">
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #10171d; color: #e8eef1; line-height: 1.6; }
+    body { margin: 0; } main { max-width: 780px; margin: auto; padding: 36px 24px 60px; }
+    a { color: #91dfc7; } h1 { line-height: 1.15; font-size: clamp(2rem, 6vw, 3.5rem); }
+    h2 { margin-top: 2rem; } li { margin: .6rem 0; } pre { overflow-x: auto; padding: 16px; background: #1b2931; border-radius: 8px; }
+    .notice { padding: 16px; border-left: 3px solid #91dfc7; background: #17232b; } code { font-size: .95em; }
+    footer { margin-top: 36px; border-top: 1px solid #40535e; padding-top: 18px; }
+  </style>
+</head>
+<body><main>
+  <nav aria-label="Main"><a href="../index.html">← GamePKG</a> · <a href="https://github.com/centrexity/GamePKG">Source and downloads</a></nav>
+  <h1>Start playing with GamePKG.</h1>
+  <p>Inspect the creator and permissions, build the game on your machine, then play through the host’s scoped runtime.</p>
+  <p class="notice"><strong>Development preview.</strong> Local builds currently require Linux and the tools below. Supported games play in the desktop library; broader graphics and builds on other operating systems remain unfinished.</p>
+  <h2>Set up the host</h2>
+  <p>Get the <a href="https://github.com/centrexity/GamePKG#readme">repository and installation prerequisites</a>. Install Rust with the Wasm target, the Linux isolation tools, audio development headers, and the pinned Slang compiler. The repository’s README has the full setup commands.</p>
+  <pre><code>cargo build --locked --release --all-features --bins
+./target/release/gamepkg-gui</code></pre>
+  <p>In <strong>Settings</strong>, enter your Slang 2026.19 installation folder. New configurations use GLSL so supported shader games can render in the desktop player. Set your library folder, memory ceiling, sound volume, and update-check interval, then choose <strong>Save settings</strong>.</p>
+  <h2>Inspect, install, build, play</h2>
+  <ol>
+    <li>In Library, enter a local <code>.gamepkg</code> path or a creator’s HTTPS download URL. Choose <strong>Download / inspect</strong>.</li>
+    <li>Review the verified creator fingerprint, version, permissions, resource limits, and ROM requirement. You do not need to enter a signing key. Confirm the creator before choosing <strong>Trust this creator and install</strong>.</li>
+    <li>Choose <strong>Build</strong> in the game’s row. Compilation runs in an isolated environment. A failed initial build leaves the game unbuilt and displays an error. A failed rebuild preserves the earlier build.</li>
+    <li>Choose <strong>Play</strong> when the build succeeds. Use <strong>Rebuild</strong> after changing build options or shader backend.</li>
+  </ol>
+  <p>A signature proves key ownership and integrity; it does not prove the creator’s real-world identity or guarantee harmless code. Games receive scoped host operations, not general access to your folders or network.</p>
+  <h2>Games that need your ROM</h2>
+  <p>Enter the path to your own ROM file in the Library ROM field before playing a game marked <strong>User ROM required</strong>. Only that file’s read-only session snapshot is shared. The host does not fetch a ROM or grant folder access.</p>
+  <h2>Add several games</h2>
+  <p>Import a <code>.gamepkglist</code> to add catalog entries without downloading games. Choose a game’s <strong>Download / inspect</strong> action when ready. Catalog claims remain unverified until its package is checked.</p>
+  <p>For a <code>.gamepkgstore</code>, choose <strong>Inspect .gamepkgstore bundle</strong>, review the listed games and creator keys, then approve installation. A store bundle includes its required shared assets. Inspection and cancellation install nothing.</p>
+  <h2>Updates and Tor</h2>
+  <p>Use <strong>Check for updates</strong> or enable periodic checks in Settings. Checks verify candidate updates while the library is idle; updates require your installation choice and must keep the game’s approved creator key.</p>
+  <p>For onion URLs, run Tor separately and enter its loopback SOCKS proxy in Settings. DNS resolves through the proxy. Missing Tor connectivity fails the download; it never falls back to a direct connection.</p>
+  <h2>Try a source example</h2>
+  <p>Creators can build a local example into a signed source package. Keep the private key private; players need no key entry.</p>
+  <pre><code>./target/release/gamepkg keygen -o creator.key
+./target/release/gamepkg build examples/good/collect-stars \
+  -o /tmp/collect-stars.gamepkg --key creator.key</code></pre>
+  <p>Inspect <code>/tmp/collect-stars.gamepkg</code> in the desktop library, then follow the install, build, and play steps above. The creator build checks compilation before publishing the package; it does not install it automatically.</p>
+  <footer><a href="https://github.com/centrexity/GamePKG/blob/main/html/guide/security.md">Security model</a> · <a href="https://github.com/centrexity/GamePKG/blob/main/html/spec/index.md">Format specification</a> · GamePKG · Apache 2.0</footer>
+</main></body>
+</html>

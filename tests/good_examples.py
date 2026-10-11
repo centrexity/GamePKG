@@ -6,7 +6,7 @@ cli = project/'target/release/gamepkg'
 with tempfile.TemporaryDirectory(prefix='gamepkg-examples-') as directory:
     root = Path(directory)
     env = dict(os.environ, GAMEPKG_HOME=str(root/'library'), GAMEPKG_CONFIG=str(root/'settings.toml'))
-    (root/'settings.toml').write_text('shader_backend = "glsl"\nautomatic_update_checks = false\n')
+    (root/'settings.toml').write_text('automatic_update_checks = false\n')
     def run(*args, success=True):
         result = subprocess.run([str(cli), *map(str,args)],env=env,capture_output=True,text=True,timeout=150)
         assert (result.returncode == 0) == success, f'{args}: {result.stderr}'
