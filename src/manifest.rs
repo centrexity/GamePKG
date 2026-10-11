@@ -5,6 +5,10 @@ use serde::{Deserialize, Serialize};
 #[serde(deny_unknown_fields)]
 pub struct Manifest {
     pub format_version: u32,
+    #[serde(default = "default_engine_version")]
+    pub engine_version: String,
+    #[serde(default = "default_save_schema")]
+    pub save_schema: u32,
     pub id: String,
     pub version: String,
     pub entry_world: String,
@@ -70,12 +74,28 @@ pub struct Permissions {
     pub network: String,
 }
 impl Manifest {
+    pub fn ensure_engine_compatible(&self) -> Result<()> {
+        if self.engine_version.trim().is_empty() || self.engine_version.len() > 256 {
+            bail!("invalid engine version requirement");
+        }
+        let requirement = semver::VersionReq::parse(&self.engine_version)?;
+        let engine = semver::Version::parse(env!("CARGO_PKG_VERSION"))?;
+        if !requirement.matches(&engine) {
+            bail!(
+                "game requires engine {}, but this host provides {}",
+                self.engine_version,
+                engine
+            );
+        }
+        Ok(())
+    }
     pub fn parse(bytes: &[u8]) -> Result<Self> {
-        let m: Self = toml::from_str(std::str::from_utf8(bytes)?)?;
+        let mut m: Self = toml::from_str(std::str::from_utf8(bytes)?)?;
         if m.format_version != 1 {
             bail!("unsupported format version");
         }
         if m.id.is_empty()
+            || m.id.len() > 200
             || !m
                 .id
                 .bytes()
@@ -84,8 +104,12 @@ impl Manifest {
             bail!("invalid package id");
         }
         semver::Version::parse(&m.version)?;
+        m.ensure_engine_compatible()?;
+        if m.save_schema == 0 {
+            bail!("save schema must be positive");
+        }
         if !m.creator_key.is_empty() {
-            crate::verify::decode_key(&m.creator_key)?;
+            m.creator_key = hex::encode(crate::verify::decode_key(&m.creator_key)?);
         }
         if let Some(url) = &m.update_url {
             crate::registry::validate_url(url)?;
@@ -133,4 +157,11 @@ impl Limits {
         self.recommended_memory_bytes
             .unwrap_or(self.hard_memory_bytes)
     }
+}
+
+fn default_engine_version() -> String {
+    "^0.1.0".into()
+}
+fn default_save_schema() -> u32 {
+    1
 }

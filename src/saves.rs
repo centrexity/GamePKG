@@ -11,9 +11,16 @@ pub(crate) struct Save {
     path: PathBuf,
 }
 impl Save {
-    pub fn open(root: &Path, id: &str, creator: &str) -> Result<Self> {
-        let identity =
-            crate::verify::digest(format!("GamePKG save v1\0{id}\0{creator}").as_bytes());
+    pub fn open(root: &Path, id: &str, creator: &str, schema: u32) -> Result<Self> {
+        if schema == 0 {
+            bail!("save schema must be positive");
+        }
+        let scope = if schema == 1 {
+            format!("GamePKG save v1\0{id}\0{creator}")
+        } else {
+            format!("GamePKG save v1\0{id}\0{creator}\0schema={schema}")
+        };
+        let identity = crate::verify::digest(scope.as_bytes());
         let directory = root.join("saves");
         if directory
             .symlink_metadata()
@@ -65,36 +72,48 @@ mod tests {
     #[test]
     fn save_identity_is_scoped_and_oversized_files_are_rejected() {
         let root = tempfile::tempdir().unwrap();
-        let mut save = Save::open(root.path(), "game.one", "creator-one").unwrap();
+        let mut save = Save::open(root.path(), "game.one", "creator-one", 1).unwrap();
         save.bytes = b"progress".to_vec();
         save.dirty = true;
         save.commit().unwrap();
         assert_eq!(
-            Save::open(root.path(), "game.one", "creator-one")
+            Save::open(root.path(), "game.one", "creator-one", 1)
                 .unwrap()
                 .bytes,
             b"progress"
         );
-        assert!(Save::open(root.path(), "game.two", "creator-one")
+        assert!(Save::open(root.path(), "game.two", "creator-one", 1)
             .unwrap()
             .bytes
             .is_empty());
-        assert!(Save::open(root.path(), "game.one", "creator-two")
+        assert!(Save::open(root.path(), "game.one", "creator-two", 1)
             .unwrap()
             .bytes
             .is_empty());
+        let mut new_schema = Save::open(root.path(), "game.one", "creator-one", 2).unwrap();
+        assert!(new_schema.bytes.is_empty());
+        new_schema.bytes = b"different format".to_vec();
+        new_schema.dirty = true;
+        new_schema.commit().unwrap();
+        assert_eq!(
+            Save::open(root.path(), "game.one", "creator-one", 1)
+                .unwrap()
+                .bytes,
+            b"progress"
+        );
+        assert!(Save::open(root.path(), "game.one", "creator-one", 0).is_err());
         std::fs::write(&save.path, vec![0; MAX_SAVE + 1]).unwrap();
-        assert!(Save::open(root.path(), "game.one", "creator-one").is_err());
+        assert!(Save::open(root.path(), "game.one", "creator-one", 1).is_err());
     }
     #[cfg(unix)]
     #[test]
     fn save_symlinks_do_not_expose_other_files() {
         let root = tempfile::tempdir().unwrap();
-        let save = Save::open(root.path(), "one", "key").unwrap();
+        let save = Save::open(root.path(), "one", "key", 1).unwrap();
         let outside = root.path().join("private");
         std::fs::write(&outside, b"private").unwrap();
         std::os::unix::fs::symlink(&outside, &save.path).unwrap();
-        assert!(Save::open(root.path(), "one", "key").is_err());
+        assert!(Save::open(root.path(), "one", "key", 1).is_err());
         assert_eq!(std::fs::read(outside).unwrap(), b"private");
     }
 }

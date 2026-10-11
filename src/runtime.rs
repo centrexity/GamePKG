@@ -59,6 +59,7 @@ impl Game {
         save: Option<crate::saves::Save>,
     ) -> Result<Self> {
         settings.validate()?;
+        manifest.ensure_engine_compatible()?;
         if manifest.requires_rom && rom.is_none() {
             bail!("ROM delivery requires a file selected by you");
         }
@@ -266,6 +267,7 @@ impl Game {
                     root,
                     &manifest.id,
                     &manifest.creator_key,
+                    manifest.save_schema,
                 )?)
             } else {
                 None
@@ -559,7 +561,9 @@ fn audio_submit(mut caller: Caller<'_, Data>, pointer: i32, count: i32) -> i32 {
     }
     caller.data_mut().audio.extend(
         bytes
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|b| i16::from_le_bytes([b[0], b[1]])),
     );
     0

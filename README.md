@@ -354,3 +354,32 @@ ALSA_CONFIG_PATH=/tmp/gamepkg-null-alsa.conf cargo test --all-features audio_out
 
 Hosted privileged build fixtures stage toolchains under `/tmp` so namespace
 root can traverse the compiler paths without access to runner home folders.
+
+## Engine compatibility and save schemas
+
+Signed manifests may declare `engine_version` as a semantic-version requirement
+and `save_schema` as a positive integer. Existing manifests default to
+`engine_version = "^0.1.0"` and `save_schema = 1`.
+
+```toml
+engine_version = ">=0.1.0, <0.2.0"
+save_schema = 1
+```
+
+Verification and runtime loading reject unsupported engine requirements with
+a message showing the required and provided versions. Engine compatibility
+is also checked before installation, so an incompatible update cannot replace
+a working game.
+
+Saves are scoped to the creator, game ID and declared schema. Schema 1 retains
+the existing storage path. Changing schemas opens a fresh blob and preserves
+previous-schema bytes; switching back restores that namespace. No conversion
+or deletion happens automatically. Keep the same schema when the game can
+read its existing save layout; use a new schema for a deliberately separate
+format. Automatic migration between namespaces remains pending.
+
+The library’s **Details** button verifies an installed package and shows its
+engine requirement, save schema, permissions, creator fingerprint, ROM
+requirement and signed lockfile inventory hash. It does not stage a download
+or install anything. Creator keys normalize to their byte identity so hex
+letter case cannot create different trust or save identities.

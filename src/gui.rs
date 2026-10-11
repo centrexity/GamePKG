@@ -442,6 +442,7 @@ impl eframe::App for App {
             ui.label("Games — catalog entries download only when you choose");
             ui.horizontal(|ui| { ui.label("Your ROM file (for games that require one)"); ui.text_edit_singleline(&mut self.rom_path); });
             ui.label("Only the selected file is shared read-only for this play session.");
+            let mut inspect = None;
             let mut update = None;
             let mut build = None;
             let mut download = None;
@@ -468,6 +469,7 @@ impl eframe::App for App {
                         let built = self.built.contains(&m.id);
                         ui.label(if built { "Built" } else { "Not built" }).on_hover_text(format!("Memory: {:.1} MiB recommended; {:.1} MiB hard limit", m.limits.recommended_memory_bytes() as f64 / 1048576.0, m.limits.hard_memory_bytes as f64 / 1048576.0));
                         ui.horizontal(|ui| {
+                            if ui.add_enabled(self.result.is_none(),egui::Button::new("Details")).clicked() { inspect = Some(m.id.clone()); }
                             if ui.add_enabled(built && self.result.is_none() && (!m.requires_rom || !self.rom_path.trim().is_empty()), egui::Button::new("Play")).on_hover_text("Play the experimental grid-v1 profile. ROM games need your file path above.").clicked() { play = Some(m.id.clone()); }
                             if ui.add_enabled(self.result.is_none(), egui::Button::new(if built { "Rebuild" } else { "Build" })).clicked() { build = Some(m.id.clone()); }
                         });
@@ -478,6 +480,13 @@ impl eframe::App for App {
             });
             if self.installed.is_empty() && self.catalog.is_empty() { ui.label("No games yet. Import a game list or install a package."); }
             if ui.add_enabled(self.result.is_none(), egui::Button::new("Refresh library")).clicked() { self.refresh(ctx); }
+            if let Some(id) = inspect {
+                self.pending = None;
+                self.begin(move || {
+                    let root = crate::registry::default_root()?;
+                    crate::verify::verify_embedded(&mut crate::archive::Package::open(&root.join(format!("{id}.gamepkg")))?)
+                });
+            }
             if let Some(id) = play {
                 let rom = self.installed.iter().find(|m| m.id == id).filter(|m| m.requires_rom).map(|_| PathBuf::from(self.rom_path.trim()));
                 self.begin_work(move || Ok(Work::Game(Box::new(crate::runtime::Game::load_with_rom(&crate::registry::default_root()?, &id, rom.as_deref())?))));
@@ -542,11 +551,16 @@ impl eframe::App for App {
                 ui.label(if m.requires_rom { "Requires a ROM supplied by you. It is not included in this package." } else { "No user ROM required." });
                 ui.label(format!("Creator fingerprint: {}", crate::verify::digest(&hex::decode(&m.creator_key).unwrap_or_default())));
                 ui.label("A valid signature proves key ownership, not a real-world identity. Confirm the creator before first installation.");
+                ui.label(format!("Engine requirement: {} • Save schema: {}",m.engine_version,m.save_schema));
+                if self.pending.is_some() && self.installed.iter().any(|old| old.id == m.id && old.save_schema != m.save_schema) {
+                    ui.label("This update uses a different save format. A separate save starts; your earlier save is kept.");
+                }
+                ui.label(format!("Lockfile / dependency inventory SHA-256: {}",m.lockfile_sha256));
                 ui.label(format!("Permissions: input={}, audio={}, save={}, network={}", m.permissions.input, m.permissions.audio, m.permissions.save, m.permissions.network));
                 if let Some(url) = &m.update_url { ui.label(format!("Updates: {url}")); }
                 let already = self.installed.iter().any(|old| old.id == m.id);
                 let label = if already { "Install verified update" } else { "Trust this creator and install" };
-                if ui.add_enabled(self.result.is_none() && self.pending.is_some(), egui::Button::new(label)).clicked() {
+                if self.pending.is_some() && ui.add_enabled(self.result.is_none(), egui::Button::new(label)).clicked() {
                     if let Some(stage) = self.pending.take() {
                         self.begin(move || crate::registry::install(&crate::registry::default_root()?, stage.path(), true));
                     }

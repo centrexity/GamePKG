@@ -25,7 +25,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-saves-') as directory:
         manifest = source / 'manifest.toml'
         text = manifest.read_text()
         import re
-        text = re.sub(r'version = "0\.\d+\.0"', f'version = "0.{version}.0"', text)
+        text = re.sub(r'^version = "0\.\d+\.0"', f'version = "0.{version}.0"', text, flags=re.MULTILINE)
         manifest.write_text(text)
         package = root / f'game-{version}.gamepkg'
         run('pack', source, '-o', package, '--key', key)
@@ -59,4 +59,17 @@ pub fn game_tick(_: u32, _: u64) -> u64 {
     publish()
     assert 'score: 7' in run('run', 'com.gamepkg.save-counter', '--frames', '1')
     assert blobs[0].read_bytes() == before
-    print('Saves passed: persistence, signed update continuity, trap rollback, permission denial.')
+    # New schemas retain old bytes but start with an independent blob.
+    original = (PROJECT / 'examples/good/save-counter/source/src/lib.rs').read_text()
+    (source / 'source/src/lib.rs').write_text(original)
+    text = (source / 'manifest.toml').read_text().replace('save = false', 'save = true')
+    (source / 'manifest.toml').write_text('save_schema = 2\n' + text)
+    publish()
+    assert 'score: 1' in run('run', 'com.gamepkg.save-counter', '--frames', '1')
+    assert blobs[0].read_bytes() == before
+    assert len(list((library / 'saves').glob('*.blob'))) == 2
+    text = (source / 'manifest.toml').read_text().replace('save_schema = 2', 'save_schema = 1')
+    (source / 'manifest.toml').write_text(text)
+    publish()
+    assert 'score: 4' in run('run', 'com.gamepkg.save-counter', '--frames', '1')
+    print('Saves passed: persistence, updates, rollback, permission denial, schema isolation and old-format continuity.')
