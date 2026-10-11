@@ -144,7 +144,7 @@ pub fn fix_with_store(root: &Path, id: &str, store: Option<&Path>) -> Result<Str
         let mut package = crate::archive::Package::open(&target)?;
         restored = store.repair_assets(root, &mut package)?;
     }
-    crate::build::compile(root, id)?;
+    crate::build::compile_for_repair(root, id, &_lock)?;
     let result = check_locked(root, id)?;
     Ok(if store.is_some() {
         format!("{result}; restored {restored} shared assets")

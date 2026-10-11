@@ -12,7 +12,15 @@ struct Exchange {
     compiler_host_version: String,
 }
 pub fn prepare(root: &Path, id: &str, output: &Path) -> Result<()> {
-    let _library = crate::registry::LibraryChange::acquire(root)?;
+    let library = crate::registry::LibraryChange::acquire(root)?;
+    prepare_with_guard(root, id, output, &library)
+}
+pub(crate) fn prepare_with_guard(
+    root: &Path,
+    id: &str,
+    output: &Path,
+    _library: &crate::registry::LibraryChange,
+) -> Result<()> {
     let manifest = crate::registry::installed_manifest(root, id)?;
     let bytes = crate::files::read_regular(
         &root.join(format!("{id}.gamepkg")),
@@ -92,6 +100,40 @@ pub fn compile(
     publish_output(stage.path(), output)?;
     Ok(())
 }
+/// Transfer only a completed private exchange to a host-owned workspace.
+/// Callers accept it only after this operation exits successfully and validates it.
+pub fn compile_transport(
+    store: &Path,
+    output: &Path,
+    backend: &str,
+    optimize: bool,
+    approved_crates: bool,
+) -> Result<()> {
+    if !cfg!(target_os = "linux") {
+        bail!("the isolated compiler worker currently requires Linux");
+    }
+    if fs::symlink_metadata(output).is_ok() {
+        bail!("compiler exchange output must not already exist");
+    }
+    let private = tempfile::tempdir()?;
+    let complete = private.path().join("complete");
+    compile(store, &complete, backend, optimize, approved_crates)?;
+    // Exclusive directory creation preserves even an empty target appearing mid-build.
+    fs::create_dir(output)?;
+    let mut total = 0;
+    for name in ["builds", "shader-builds"] {
+        copy_outputs(&complete.join(name), &output.join(name), &mut total)?;
+    }
+    let bytes = crate::files::read_regular(&complete.join("exchange.json"), 4096, false)?;
+    let mut info = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(output.join("exchange.json"))?;
+    info.write_all(&bytes)?;
+    info.sync_all()?;
+    Ok(())
+}
+
 fn copy_outputs(source: &Path, destination: &Path, total: &mut u64) -> Result<()> {
     copy_outputs_inner(source, destination, total, 0, &mut 0)
 }
@@ -190,7 +232,15 @@ mod tests {
 
 /// Accept only a private worker response for the currently installed signed source.
 pub fn accept(root: &Path, id: &str, exchange: &Path) -> Result<()> {
-    let _library = crate::registry::LibraryChange::acquire(root)?;
+    let library = crate::registry::LibraryChange::acquire(root)?;
+    accept_with_guard(root, id, exchange, &library)
+}
+pub(crate) fn accept_with_guard(
+    root: &Path,
+    id: &str,
+    exchange: &Path,
+    _library: &crate::registry::LibraryChange,
+) -> Result<()> {
     let manifest = crate::registry::installed_manifest(root, id)?;
     let _build = crate::build::BuildChange::acquire(root, id)?;
     let installed = root.join(format!("{id}.gamepkg"));

@@ -147,7 +147,7 @@ pub(crate) fn artifact_has_tick(bytes: &[u8]) -> bool {
 pub fn compile(root: &Path, id: &str) -> Result<()> {
     #[cfg(windows)]
     {
-        crate::windows_build::compile(root, id)
+        crate::windows_build::compile(root, id, None)
     }
     #[cfg(not(windows))]
     {
@@ -155,6 +155,20 @@ pub fn compile(root: &Path, id: &str) -> Result<()> {
             bail!("isolated builds currently require Linux and bubblewrap");
         }
         compile_with_settings(root, id, &crate::settings::load()?)
+    }
+}
+pub(crate) fn compile_for_repair(
+    root: &Path,
+    id: &str,
+    _guard: &crate::registry::LibraryChange,
+) -> Result<()> {
+    #[cfg(windows)]
+    {
+        crate::windows_build::compile(root, id, Some(_guard))
+    }
+    #[cfg(not(windows))]
+    {
+        compile(root, id)
     }
 }
 pub(crate) fn compile_with_settings(

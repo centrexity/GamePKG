@@ -28,6 +28,8 @@ enum Command {
         no_optimize: bool,
         #[arg(long)]
         no_approved_crates: bool,
+        #[arg(long)]
+        copy_output: bool,
     },
     /// Open a local browser metadata library using Hindsight Database/IndexedDB.
     WebLibrary {
@@ -181,8 +183,14 @@ fn main() -> Result<()> {
             shader_backend,
             no_optimize,
             no_approved_crates,
+            copy_output,
         } => {
-            gamepkg::build_worker::compile(
+            let compile = if copy_output {
+                gamepkg::build_worker::compile_transport
+            } else {
+                gamepkg::build_worker::compile
+            };
+            compile(
                 &store,
                 &output,
                 &shader_backend,

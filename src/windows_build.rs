@@ -23,7 +23,11 @@ fn require_wsl2(list: &str, distribution: &str) -> Result<()> {
 }
 
 #[cfg(windows)]
-pub(crate) fn compile(root: &std::path::Path, id: &str) -> Result<()> {
+pub(crate) fn compile(
+    root: &std::path::Path,
+    id: &str,
+    held: Option<&crate::registry::LibraryChange>,
+) -> Result<()> {
     use std::{
         path::{Path, PathBuf},
         process::Command,
@@ -34,6 +38,14 @@ pub(crate) fn compile(root: &std::path::Path, id: &str) -> Result<()> {
     if settings.windows_compiler_distribution.is_empty() {
         bail!("Windows builds require an explicitly configured WSL 2 compiler; isolated builds currently require Linux and bubblewrap");
     }
+    let owned = if held.is_none() {
+        Some(crate::registry::LibraryChange::acquire(root)?)
+    } else {
+        None
+    };
+    let guard = held
+        .or(owned.as_ref())
+        .context("compiler requires a library change guard")?;
     let wsl = PathBuf::from(
         std::env::var_os("SystemRoot").context("Windows system folder is unavailable")?,
     )
@@ -66,7 +78,7 @@ pub(crate) fn compile(root: &std::path::Path, id: &str) -> Result<()> {
     let workspace = tempfile::tempdir()?;
     let request = workspace.path().join("request.gamepkgstore");
     let response = workspace.path().join("response");
-    crate::build_worker::prepare(root, id, &request)?;
+    crate::build_worker::prepare_with_guard(root, id, &request, guard)?;
     let translate = |path: &Path| -> Result<String> {
         let windows = path
             .to_str()
@@ -103,6 +115,7 @@ pub(crate) fn compile(root: &std::path::Path, id: &str) -> Result<()> {
         &linux_response,
         "--shader-backend",
         &settings.shader_backend,
+        "--copy-output",
     ];
     if !settings.optimize_builds {
         arguments.push("--no-optimize");
@@ -114,7 +127,7 @@ pub(crate) fn compile(root: &std::path::Path, id: &str) -> Result<()> {
     if crate::settings::load()? != settings {
         bail!("settings changed during compilation; compiler response was not published");
     }
-    crate::build_worker::accept(root, id, &response)
+    crate::build_worker::accept_with_guard(root, id, &response, guard)
 }
 
 #[cfg(test)]

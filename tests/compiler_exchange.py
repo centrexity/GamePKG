@@ -25,7 +25,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-native-exchange-') as temporary
    run('pack',PROJECT/'examples/good'/example,'-o',package,'--key',key,'--shared-assets')
    if backend=='glsl':run('install',package,'--trust-creator')
    run('prepare-build-worker',game_id,folder/'game.gamepkgstore')
-   run('build-worker',folder/'game.gamepkgstore',folder/'exchange','--shader-backend',backend)
+   run('build-worker',folder/'game.gamepkgstore',folder/'exchange','--shader-backend',backend,'--copy-output')
    assert not list(folder.rglob('*.key'))
   else:
    run('store-import',folder/'game.gamepkgstore','--trust-creators')

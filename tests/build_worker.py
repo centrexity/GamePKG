@@ -49,6 +49,10 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-worker-test-') as directory:
   path=next(candidate.rglob('game.wasm'));path.unlink();path.symlink_to(package)
  reject(linked)
  run('accept-build-worker','com.gamepkg.shader-switch',output)
+ transport=root/'transport';run('build-worker',store,transport,'--copy-output')
+ run('accept-build-worker','com.gamepkg.shader-switch',transport)
+ run('build-worker',store,transport,'--copy-output',good=False)
+ assert (transport/'exchange.json').exists()
  # Loading the transferred cache needs no compiler or private worker library.
  env.pop('GAMEPKG_SLANG_ROOT',None)
  run('run','com.gamepkg.shader-switch','--frames','3')

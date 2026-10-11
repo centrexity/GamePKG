@@ -8,6 +8,8 @@ The public repository is [centrexity/GamePKG](https://github.com/centrexity/Game
 
 Locally, the final 0.1.3 archive passed `tests/release_package.py`: archive hashes, original dependency sources, both executable versions, a bundled dependency game compiled in isolation, CLI gameplay, integrity verification, and actual desktop gameplay. GitHub's recorded SHA-256 digests matched both local host artifacts and all seven demo artifacts.
 
+The native Windows development preview at source commit `1dcf3d9` passed build, all-feature Rust tests, Clippy, ZIP packaging and `tests/windows_package.py` on Windows in [run 38177469252](https://github.com/centrexity/GamePKG/actions/runs/38177469252). Its extracted archive was independently checked locally: 84,276,827 bytes, SHA-256 `a256e48b5517f52eda75724f44f5c404be4700c9abecc7cf3b174b3c788ce043`, matching both executable hashes in `BUILD.json`. This preview predates the experimental WSL connection and does not prove native desktop GPU gameplay. macOS build, tests and Clippy passed in the same run.
+
 ## Requested behavior and evidence
 
 | Requirement | Implemented behavior | Verification sources |
@@ -37,7 +39,7 @@ The 0.1.3 source passed `cargo test --locked --all-features`, formatting and all
 
 ## Remaining scope and limits
 
-- Isolated source compilation is implemented for Linux. Windows/macOS automated checks cover host compilation and portable verification/runtime tests; they do not prove isolated source builds or native desktop GPU playback there.
+- Isolated source compilation is verified for Linux. Current source has an experimental opt-in Windows WSL 2 connection with verified private request/response stores, settings validation and launcher deadlines. The real connection and Windows desktop GPU gameplay remain unverified; `tests/windows_wsl.py` exercises normal source Build, playback and integrity repair on a configured Windows machine. Cross-platform fixture tests cover core/component output and GLSL/SPIR-V/WGSL transfer, but are not evidence of the WSL connection itself.
 - Desktop rendering supports sprites and the documented fragment shader paths through OpenGL, including translated SPIR-V/WGSL and bounded texture binding. Native Metal/DXIL playback and broader vertex/compute/resource support are unfinished.
 - Hindsight is supplied separately; the tested package is not redistributed. Its native desktop backend reports unavailable, so IndexedDB persistence is in the browser library. Installation, builds, gameplay and repairs use the desktop or CLI.
 - A temporary live v3 onion service passed signed installation and same-creator updates using Tor 0.4.9.11, including NO_PROXY override. The custom gamepkg.com domain remains unverified. The static website is deployed at https://centrexity.github.io/GamePKG/; GitHub deployment run 38175133082 succeeded and all five public pages returned HTTP 200 with current release links.
