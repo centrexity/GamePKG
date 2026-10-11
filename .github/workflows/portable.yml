@@ -28,6 +28,11 @@ jobs:
         run: cargo test --locked --all-features
       - name: Check portable implementation warnings
         run: cargo clippy --locked --all-features --all-targets -- -D warnings
+      - name: Select packaging Python
+        if: runner.os == 'Windows'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - name: Package Windows host distribution
         if: runner.os == 'Windows'
         run: |
