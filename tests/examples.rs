@@ -13,6 +13,7 @@ fn good_examples_are_signed_and_verified() {
         "good/save-counter",
         "good/shape-playground",
         "good/tone-pad",
+        "good/shader-switch",
     ] {
         let temp = tempfile::tempdir().unwrap();
         let out = temp.path().join("example.gamepkg");

@@ -97,3 +97,31 @@ fn malicious_guest_cannot_exceed_host_draw_queue() {
     assert_eq!(game.step(0).unwrap(), 1);
     assert_eq!(game.frame().commands.len(), MAX_COMMANDS);
 }
+
+#[test]
+fn shader_indices_and_command_budget_are_checked() {
+    let mut frame = Frame::default();
+    assert!(!frame.shader(-1, 2));
+    assert!(!frame.shader(2, 2));
+    assert!(!frame.shader(0, 0));
+    for _ in 0..MAX_COMMANDS {
+        assert!(frame.shader(1, 2));
+    }
+    assert!(!frame.shader(0, 2));
+    frame.reset();
+    assert!(frame.shader(0, 2));
+    assert_eq!(frame.commands, vec![Command::Shader { index: 0 }]);
+}
+#[test]
+fn raw_guest_cannot_draw_unprepared_shader() {
+    let wasm = wat::parse_str(
+        r#"(module
+      (import "gamepkg" "draw_shader" (func $shader (param i32) (result i32)))
+      (func (export "gamepkg_tick") (param i32 i64) (result i64)
+        i32.const 0 call $shader i64.extend_i32_s))"#,
+    )
+    .unwrap();
+    let mut game = Game::from_bytes(&wasm, &manifest()).unwrap();
+    assert_eq!(game.step(0).unwrap(), u64::MAX);
+    assert!(game.frame().commands.is_empty());
+}

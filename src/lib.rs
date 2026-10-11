@@ -21,3 +21,6 @@ pub mod drawing;
 
 #[cfg(feature = "audio")]
 pub mod audio;
+
+#[cfg(feature = "gui")]
+pub mod gpu;

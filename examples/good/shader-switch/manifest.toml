@@ -1,0 +1,27 @@
+format_version = 1
+id = "com.gamepkg.shader-switch"
+version = "0.1.0"
+entry_world = "game"
+lockfile_sha256 = "feb1cd2aa507aa5d63e786f997088f1401f4b894975ce6c3a9b8feaddc56caf9"
+shader_profile = "slang"
+
+[limits]
+recommended_memory_bytes = 8388608
+hard_memory_bytes = 16777216
+fuel = 1000000
+
+[permissions]
+input = true
+audio = false
+save = false
+network = "none"
+
+[[shaders]]
+source = "shaders/main.slang"
+entry = "blueMain"
+stage = "fragment"
+
+[[shaders]]
+source = "shaders/main.slang"
+entry = "greenMain"
+stage = "fragment"

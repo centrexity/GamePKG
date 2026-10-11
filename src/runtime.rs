@@ -21,6 +21,7 @@ struct Data {
     frame: crate::drawing::Frame,
     audio: Vec<i16>,
     audio_allowed: bool,
+    shader_count: usize,
 }
 pub struct Game {
     store: Store<Data>,
@@ -32,6 +33,8 @@ pub struct Game {
     pub id: String,
     input_allowed: bool,
     pub custom_renderer: bool,
+    pub shader_sources: Vec<String>,
+    uses_shaders: bool,
     pub audio_allowed: bool,
 }
 impl Drop for Game {
@@ -90,11 +93,13 @@ impl Game {
                         | "draw_clear"
                         | "draw_rect"
                         | "draw_circle"
+                        | "draw_shader"
                         | "audio_submit"
                 )
         }) {
             bail!("games cannot import functions outside the scoped GamePKG API");
         }
+        let uses_shaders = module.imports().any(|i| i.name() == "draw_shader");
         let custom_renderer = module.imports().any(|i| i.name().starts_with("draw_"));
         let memory = manifest
             .limits
@@ -120,6 +125,7 @@ impl Game {
                 frame: crate::drawing::Frame::default(),
                 audio: Vec::new(),
                 audio_allowed: manifest.permissions.audio,
+                shader_count: 0,
             },
         );
         store.limiter(|s| &mut s.limits);
@@ -178,6 +184,21 @@ impl Game {
                     }
                 },
             )?;
+            linker.func_wrap(
+                "gamepkg",
+                "draw_shader",
+                |mut caller: Caller<'_, Data>, index: i32| -> i32 {
+                    if !draw_fuel(&mut caller) {
+                        return -1;
+                    }
+                    let count = caller.data().shader_count;
+                    if caller.data_mut().frame.shader(index, count) {
+                        0
+                    } else {
+                        -1
+                    }
+                },
+            )?;
             linker.func_wrap("gamepkg", "rom_read", rom_read)?;
             linker.func_wrap("gamepkg", "save_read", save_read)?;
             linker.func_wrap("gamepkg", "save_write", save_write)?;
@@ -214,6 +235,8 @@ impl Game {
             id: manifest.id.clone(),
             input_allowed: manifest.permissions.input,
             custom_renderer,
+            shader_sources: Vec::new(),
+            uses_shaders,
             audio_allowed: manifest.permissions.audio,
         })
     }
@@ -256,10 +279,11 @@ impl Game {
             }
             None => None,
         };
-        Self::with_package(
+        let settings = crate::settings::load()?;
+        let mut game = Self::with_package(
             &bytes,
             &manifest,
-            &crate::settings::load()?,
+            &settings,
             Some(package),
             rom,
             if manifest.permissions.save {
@@ -272,7 +296,13 @@ impl Game {
             } else {
                 None
             },
-        )
+        )?;
+        if game.uses_shaders {
+            game.shader_sources =
+                crate::shaders::load_fragment_sources(root, &archive, &manifest, &settings)?;
+            game.store.data_mut().shader_count = game.shader_sources.len();
+        }
+        Ok(game)
     }
     pub fn audio_frame(&self) -> &[i16] {
         &self.store.data().audio

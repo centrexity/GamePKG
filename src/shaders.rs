@@ -24,40 +24,7 @@ pub fn compile(
         bail!("isolated shader builds currently require Linux");
     }
     settings.validate()?;
-    let compiler = std::env::var_os("GAMEPKG_SLANG_ROOT")
-        .map(PathBuf::from)
-        .or_else(|| {
-            (!settings.slang_directory.is_empty()).then(|| PathBuf::from(&settings.slang_directory))
-        })
-        .context("install Slang 2026.19 and set its folder in Settings or GAMEPKG_SLANG_ROOT")?;
-    let compiler = fs::canonicalize(compiler)?;
-    let exe = compiler.join("bin/slangc");
-    let version = Command::new(&exe)
-        .arg("-version")
-        .output()
-        .context("unable to run Slang compiler")?;
-    if !version.status.success()
-        || format!(
-            "{}{}",
-            String::from_utf8_lossy(&version.stdout),
-            String::from_utf8_lossy(&version.stderr)
-        )
-        .trim()
-            != SLANG_VERSION
-    {
-        bail!("Slang version must be exactly {SLANG_VERSION}");
-    }
-    let identity = digest(
-        format!(
-            "{}:{SLANG_VERSION}:{}:{}:{}",
-            digest(archive),
-            settings.shader_backend,
-            digest(&fs::read(&exe)?),
-            digest(&fs::read(compiler.join("lib/libslang-compiler.so"))?)
-        )
-        .as_bytes(),
-    );
-    let cache = root.join("shader-builds").join(identity);
+    let (compiler, cache) = compiler_cache(root, archive, settings)?;
     let defaults = vec![Shader {
         source: "shaders/main.slang".into(),
         entry: "fragmentMain".into(),
@@ -138,6 +105,9 @@ pub fn compile(
             ]);
         if settings.shader_backend == "spirv" {
             command.args(["-profile", "glsl_450"]);
+        }
+        if settings.shader_backend == "glsl" {
+            command.args(["-profile", "glsl_330"]);
         }
         if settings.shader_backend == "dxil" {
             command.args(["-profile", "sm_6_0"]);
@@ -251,4 +221,79 @@ pub fn validate_source(bytes: &[u8]) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn compiler_cache(root: &Path, archive: &[u8], settings: &Settings) -> Result<(PathBuf, PathBuf)> {
+    let compiler = std::env::var_os("GAMEPKG_SLANG_ROOT")
+        .map(PathBuf::from)
+        .or_else(|| {
+            (!settings.slang_directory.is_empty()).then(|| PathBuf::from(&settings.slang_directory))
+        })
+        .context("install Slang 2026.19 and set its folder in Settings or GAMEPKG_SLANG_ROOT")?;
+    let compiler = fs::canonicalize(compiler)?;
+    let exe = compiler.join("bin/slangc");
+    let version = Command::new(&exe)
+        .arg("-version")
+        .output()
+        .context("unable to run Slang compiler")?;
+    if !version.status.success()
+        || format!(
+            "{}{}",
+            String::from_utf8_lossy(&version.stdout),
+            String::from_utf8_lossy(&version.stderr)
+        )
+        .trim()
+            != SLANG_VERSION
+    {
+        bail!("Slang version must be exactly {SLANG_VERSION}");
+    }
+    let identity = digest(
+        format!(
+            "{}:{SLANG_VERSION}:{}:{}:{}",
+            digest(archive),
+            settings.shader_backend,
+            digest(&fs::read(&exe)?),
+            digest(&fs::read(compiler.join("lib/libslang-compiler.so"))?)
+        )
+        .as_bytes(),
+    );
+    Ok((compiler, root.join("shader-builds").join(identity)))
+}
+
+pub fn load_fragment_sources(
+    root: &Path,
+    archive: &[u8],
+    manifest: &Manifest,
+    settings: &Settings,
+) -> Result<Vec<String>> {
+    if settings.shader_backend != "glsl" {
+        bail!("this desktop shader renderer requires GLSL; select it in Settings and rebuild");
+    }
+    let (_, cache) = compiler_cache(root, archive, settings)?;
+    let stages: Vec<&str> = if manifest.shaders.is_empty() {
+        vec!["fragment"]
+    } else {
+        manifest.shaders.iter().map(|s| s.stage.as_str()).collect()
+    };
+    let mut sources = Vec::new();
+    for (index, stage) in stages.iter().enumerate() {
+        if *stage != "fragment" {
+            bail!("desktop shader passes currently require fragment entries");
+        }
+        let metadata: serde_json::Value = serde_json::from_slice(&read_output(
+            &cache.join(format!("{index}.reflection.json")),
+        )?)?;
+        if !metadata
+            .get("parameters")
+            .and_then(|v| v.as_array())
+            .context("shader reflection must declare its resource parameters")?
+            .is_empty()
+        {
+            bail!("desktop fragment passes currently require no external resource bindings");
+        }
+        sources.push(String::from_utf8(read_output(
+            &cache.join(format!("{index}.shader")),
+        )?)?);
+    }
+    Ok(sources)
 }

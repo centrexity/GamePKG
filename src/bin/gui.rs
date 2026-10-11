@@ -15,6 +15,6 @@ fn main() -> eframe::Result {
     eframe::run_native(
         "GamePKG",
         eframe::NativeOptions::default(),
-        Box::new(move |_| Ok(Box::new(gamepkg::gui::App::new(args.play)))),
+        Box::new(move |cc| Ok(Box::new(gamepkg::gui::App::new(args.play, cc.gl.clone())))),
     )
 }

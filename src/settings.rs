@@ -55,7 +55,7 @@ impl Settings {
         }
         if !matches!(
             self.shader_backend.as_str(),
-            "spirv" | "wgsl" | "metal" | "dxil"
+            "spirv" | "wgsl" | "metal" | "dxil" | "glsl"
         ) {
             bail!("unsupported shader backend");
         }

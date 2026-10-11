@@ -2,6 +2,9 @@
 pub const MAX_COMMANDS: usize = 1024;
 #[derive(Debug, Clone, PartialEq)]
 pub enum Command {
+    Shader {
+        index: usize,
+    },
     Rect {
         x: f32,
         y: f32,
@@ -25,6 +28,15 @@ impl Frame {
     pub fn reset(&mut self) {
         self.background = None;
         self.commands.clear();
+    }
+    pub fn shader(&mut self, index: i32, count: usize) -> bool {
+        if index < 0 || index as usize >= count || self.commands.len() >= MAX_COMMANDS {
+            return false;
+        }
+        self.commands.push(Command::Shader {
+            index: index as usize,
+        });
+        true
     }
     pub fn rect(&mut self, x: f32, y: f32, width: f32, height: f32, rgba: u32) -> bool {
         if !valid_position(x, y)

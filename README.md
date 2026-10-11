@@ -2,7 +2,7 @@
 
 **Know what you run. Control what it can access.** GamePKG is building a safer way to share and play games: inspectable source, creator-signed packages, isolated compilation, and a host that is designed to grant only the capabilities a game needs.
 
-**Current status:** this is a development preview. Package verification, catalog import, installation, update checks, and isolated single-file Wasm and Slang shader builds on Linux work today. The experimental grid-v1 profile now plays in the GUI and terminal under Wasmtime with scoped asset reads, fuel, memory limits, and epoch deadlines. The broader WIT/custom-shader API remains pending; this is not a guarantee that a package is harmless.
+**Current status:** this is a development preview. Package verification, catalog import, installation, update checks, and isolated single-file Wasm and Slang shader builds on Linux work today. The experimental grid-v1 profile now plays in the GUI and terminal under Wasmtime with scoped asset reads, fuel, memory limits, and epoch deadlines. Resource-free Slang fragment passes now render in the OpenGL GUI; the broader WIT/rendering API remains pending; this is not a guarantee that a package is harmless.
 
 ## Why distribute GamePKG instead of an opaque executable?
 
@@ -190,7 +190,7 @@ In the terminal, enter W/A/S/D to move and Q to quit. In the GUI, click Play and
 
 The experimental grid-v1 ABI uses core Wasm, not the planned WIT component API. Guest source defines `pub fn game_tick(input: u32, state: u64) -> u64`; the host compiler appends the exported wrapper, so guest export attributes are unnecessary. State packs player x/y and target x/y into four bytes, followed by a 32-bit score. Input bits are left=1, right=2, up=4, down=8. Coordinates use a 16×16 grid. Guests receive zero input unless the signed manifest grants input.
 
-Runtime modules can import only the scoped GamePKG asset, ROM and save APIs; WASI, filesystem and socket imports are rejected. Wasmtime enforces memory, fuel and epoch limits. A trap ends gameplay. Slang compilation is available; Custom GPU shader rendering remains pending.
+Runtime modules can import only the scoped GamePKG asset, ROM and save APIs; WASI, filesystem and socket imports are rejected. Wasmtime enforces memory, fuel and epoch limits. A trap ends gameplay. Slang compilation is available; Resource-free GLSL fragment passes render in the desktop player.
 
 For a game declaring `requires_rom = true`, use `gamepkg run <id> --rom /path/to/file` or enter your ROM path above the desktop library table. ROM files must be regular files of 1 byte to 64 MiB and are read into a session snapshot. Guests use `gamepkg::rom_size()` and `gamepkg::rom_read(offset, &mut buffer)`, never a host path. Reads are capped at 64 KiB and consume fuel. No ROM is downloaded, installed or bundled automatically. `examples/good/rom-required` is a playable data-driven example; `python3 tests/runtime_rom.py` tests the signed build and runtime path.
 
@@ -269,8 +269,8 @@ checks a pinned SHA-256 before unpacking it. Alternatively set the installation
 folder and backend in the desktop Settings page. The default backend is
 SPIR-V; WGSL and Metal source outputs are also tested. DXIL requires a suitable
 downstream DXC installation and reports an error if unavailable. No backend
-fallback occurs. This step compiles shaders and stores reflection; using those
-outputs for GPU rendering remains pending.
+fallback occurs. Select GLSL and rebuild to use resource-free fragment passes in
+the OpenGL desktop player. SPIR-V, WGSL, Metal and DXIL rendering integration remains pending.
 
 Legacy manifests default to `shaders/main.slang`, `fragmentMain`, fragment
 stage. Declare multiple entry points explicitly using signed manifest entries:
@@ -314,9 +314,18 @@ with held arrows/WASD. Play it through the GUI or run it headlessly using
 verify rendering and held-key movement. The latter requires Xvfb, xdotool,
 ImageMagick and Pillow. Set `GAMEPKG_SLANG_ROOT` for both tests.
 
-This draw API uses the host renderer. Running a package's compiled Slang
-shaders on the GPU, textures and the broader WIT component API are
-still pending.
+The host also exposes `gamepkg::draw_shader(index)`, which draws a full viewport
+pass using the signed manifest's fragment entry at that index. Select GLSL in
+Settings and rebuild. The host checks reflected resources and active uniforms,
+keeps graphics handles private, and bounds the per-tick command queue. Guest
+Wasm fuel does not meter GPU shader execution; GPU drivers and shader compilation
+remain part of the trusted computing base. This does not guarantee that an
+arbitrary shader cannot stall or crash a driver.
+
+`examples/good/shader-switch` switches two compiled fragment passes with held
+Right input. `tests/shader_gui.py` verifies the actual blue and green pixels in
+an isolated display. Textures, external bindings, vertex/compute pipelines,
+other rendering backends and the broader WIT component API remain pending.
 
 Hosted Linux build integrations run controlled fixtures with elevated namespace
 setup privileges because the runner rejects unprivileged network namespace

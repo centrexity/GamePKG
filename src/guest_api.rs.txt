@@ -6,6 +6,8 @@ pub mod gamepkg {
     unsafe extern "C" {
         #[link_name = "audio_submit"]
         fn host_audio_submit(samples: *const i16, count: i32) -> i32;
+        #[link_name = "draw_shader"]
+        fn host_draw_shader(index: i32) -> i32;
         #[link_name = "draw_clear"]
         fn host_draw_clear(rgba: u32) -> i32;
         #[link_name = "draw_rect"]
@@ -61,6 +63,11 @@ pub mod gamepkg {
     }
     pub fn draw_circle(x: f32, y: f32, radius: f32, rgba: u32) -> bool {
         unsafe { host_draw_circle(x,y,radius,rgba) == 0 }
+    }
+    /// Draw a compiled manifest fragment entry over the game viewport.
+    pub fn draw_shader(index: u32) -> bool {
+        if index > i32::MAX as u32 { return false; }
+        unsafe { host_draw_shader(index as i32) == 0 }
     }
     pub const HELD_LEFT: u32 = 1 << 8;
     pub const HELD_RIGHT: u32 = 1 << 9;

@@ -12,6 +12,8 @@ enum Work {
 }
 #[derive(Default)]
 pub struct App {
+    gl: Option<std::sync::Arc<eframe::glow::Context>>,
+    gpu: Option<std::sync::Arc<crate::gpu::Renderer>>,
     source: String,
     rom_path: String,
     show_settings: bool,
@@ -32,8 +34,11 @@ pub struct App {
     built: HashSet<String>,
 }
 impl App {
-    pub fn new(play: Option<String>) -> Self {
-        let mut app = Self::default();
+    pub fn new(play: Option<String>, gl: Option<std::sync::Arc<eframe::glow::Context>>) -> Self {
+        let mut app = Self {
+            gl,
+            ..Self::default()
+        };
         match crate::settings::load() {
             Ok(settings) => app.settings_draft = settings,
             Err(e) => app.status = format!("Unable to load settings: {e:#}"),
@@ -127,6 +132,23 @@ impl eframe::App for App {
                     self.result = None;
                     match result {
                         Ok(Work::Game(game)) => {
+                            self.gpu = None;
+                            if !game.shader_sources.is_empty() {
+                                let renderer = self
+                                    .gl
+                                    .clone()
+                                    .ok_or_else(|| anyhow::anyhow!("OpenGL renderer unavailable"))
+                                    .and_then(|gl| {
+                                        crate::gpu::Renderer::new(gl, &game.shader_sources)
+                                    });
+                                match renderer {
+                                    Ok(renderer) => self.gpu = Some(std::sync::Arc::new(renderer)),
+                                    Err(error) => {
+                                        self.status = format!("Unable to play: {error:#}");
+                                        return;
+                                    }
+                                }
+                            }
                             self.next_frame = None;
                             if let Some(audio) = &self.audio_player {
                                 audio.clear();
@@ -287,6 +309,19 @@ impl eframe::App for App {
                     );
                     for command in &game.frame().commands {
                         match *command {
+                            crate::drawing::Command::Shader { index } => {
+                                if let Some(renderer) = &self.gpu {
+                                    let renderer = renderer.clone();
+                                    painter.add(egui::PaintCallback {
+                                        rect,
+                                        callback: std::sync::Arc::new(
+                                            eframe::egui_glow::CallbackFn::new(move |_, _| {
+                                                renderer.paint(index)
+                                            }),
+                                        ),
+                                    });
+                                }
+                            }
                             crate::drawing::Command::Rect {
                                 x,
                                 y,
@@ -357,6 +392,7 @@ impl eframe::App for App {
             ctx.request_repaint_after(std::time::Duration::from_millis(16));
             if close || failure.is_some() {
                 self.player = None;
+                self.gpu = None;
                 self.audio_player = None;
             }
             if let Some(e) = failure {
@@ -407,9 +443,9 @@ impl eframe::App for App {
                     ui.label("Slang 2026.19 installation folder");
                     ui.text_edit_singleline(&mut self.settings_draft.slang_directory);
                     egui::ComboBox::from_label("Shader backend").selected_text(&self.settings_draft.shader_backend).show_ui(ui, |ui| {
-                        for backend in ["spirv", "wgsl", "metal", "dxil"] { ui.selectable_value(&mut self.settings_draft.shader_backend, backend.to_string(), backend); }
+                        for backend in ["spirv", "wgsl", "metal", "dxil", "glsl"] { ui.selectable_value(&mut self.settings_draft.shader_backend, backend.to_string(), backend); }
                     });
-                    ui.label("Shader compilation is isolated. GPU rendering integration is still pending.");
+                    ui.label("GLSL supports resource-free fragment passes in this desktop player. Other backends compile and cache shaders.");
                     ui.checkbox(&mut self.settings_draft.optimize_builds,"Optimize new builds");
                     ui.label("Applies on Build/Rebuild; existing compiled games are kept.");
                     ui.checkbox(&mut self.settings_draft.dark_mode,"Dark appearance");
