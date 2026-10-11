@@ -20,10 +20,13 @@
   <p>Inspect the creator and permissions, build the game on your machine, then play through the host’s scoped runtime.</p>
   <p class="notice"><strong>Development preview.</strong> Local builds currently require Linux and the tools below. Supported games play in the desktop library; broader graphics and builds on other operating systems remain unfinished.</p>
   <h2>Set up the host</h2>
-  <p>Get the <a href="https://github.com/centrexity/GamePKG#readme">repository and installation prerequisites</a>. Install Rust with the Wasm target, the Linux isolation tools, audio development headers, and the pinned Slang compiler. The repository’s README has the full setup commands.</p>
-  <pre><code>cargo build --locked --release --all-features --bins
-./target/release/gamepkg-gui</code></pre>
+  <p>Download the <a href="https://github.com/centrexity/GamePKG/releases/tag/v0.1.3">Linux CLI and desktop preview</a>, verify its checksum and extract it. Follow the <a href="https://github.com/centrexity/GamePKG/blob/main/docs/INSTALL.md">installation instructions</a> to install Rust, the Wasm target, isolation tools and the pinned Slang compiler.</p>
+  <pre><code>./bin/gamepkg-gui</code></pre>
+  <p>To build the host from source instead, follow the <a href="https://github.com/centrexity/GamePKG#readme">repository build instructions</a>.</p>
   <p>In <strong>Settings</strong>, enter your Slang 2026.19 installation folder. New configurations use GLSL so supported shader games can render in the desktop player. Set your library folder, memory ceiling, sound volume, and update-check interval, then choose <strong>Save settings</strong>.</p>
+  <h2>Try the signed demos</h2>
+  <p>Enter the <a href="https://github.com/centrexity/GamePKG/releases/download/v0.1.3/demos.gamepkglist">demo catalog URL</a> in Library and choose <strong>Import .gamepkglist</strong>. It adds Collect Stars, Shape Playground and PNG Sprite Playground as <strong>Not downloaded</strong>. Select a game, approve its creator, then Build and Play. No ROM or signing key is needed. The <a href="https://github.com/centrexity/GamePKG/releases/download/v0.1.3/demos.gamepkgstore">portable demo store</a> includes all three signed games for offline import.</p>
+  <p>Use arrows or WASD in Collect Stars to reach the yellow target. Hold Left or Right to move the square or PNG sprite in the other demos. Choose <strong>Back to library</strong> to return. The signed demo manifests include working update URLs.</p>
   <h2>Inspect, install, build, play</h2>
   <ol>
     <li>In Library, enter a local <code>.gamepkg</code> path or a creator’s HTTPS download URL. Choose <strong>Download / inspect</strong>.</li>
@@ -33,7 +36,7 @@
   </ol>
   <p>A signature proves key ownership and integrity; it does not prove the creator’s real-world identity or guarantee harmless code. Games receive scoped host operations, not general access to your folders or network.</p>
   <h2>Games that need your ROM</h2>
-  <p>Enter the path to your own ROM file in the Library ROM field before playing a game marked <strong>User ROM required</strong>. Only that file’s read-only session snapshot is shared. The host does not fetch a ROM or grant folder access.</p>
+  <p>Select a game and add each named ROM file in manifest order using <strong>Add ROM file</strong>. Games can require up to eight files. Only read-only session snapshots are shared; the host does not fetch ROMs or grant folder access. Changing the package revision, creator or library clears the previous file selections. In the CLI, repeat <code>--rom FILE</code> for each required file.</p>
   <h2>Add several games</h2>
   <p>Import a <code>.gamepkglist</code> to add catalog entries without downloading games. Choose a game’s <strong>Download / inspect</strong> action when ready. Catalog claims remain unverified until its package is checked.</p>
   <p>For a <code>.gamepkgstore</code>, choose <strong>Inspect .gamepkgstore bundle</strong>, review the listed games and creator keys, then approve installation. A store bundle includes its required shared assets. Inspection and cancellation install nothing.</p>
@@ -47,7 +50,12 @@
   -o /tmp/collect-stars.gamepkg --key creator.key</code></pre>
   <p>Inspect <code>/tmp/collect-stars.gamepkg</code> in the desktop library, then follow the install, build, and play steps above. The creator build checks compilation before publishing the package; it does not install it automatically.</p>
   <section><h2>Download from a GitHub project</h2><p>Enter <code>https://github.com/owner/repository</code> to download its latest published stable release. The release must contain exactly one <code>.gamepkg</code> file. A <code>/releases/tag/version</code> link selects a specific release; use a direct asset link when the project distributes multiple games. GitHub project links also work in game catalogs and signed update URLs. For list or store imports, the app selects one matching <code>.gamepkglist</code> or <code>.gamepkgstore</code> release file. Package signatures, creator approval, and update checks still apply.</p></section>
+  <section>
+    <h2>Integrity checks and repair</h2>
+    <p>Use <strong>Check integrity</strong> in Library to verify signed package contents, shared assets and compiled game checksums. <strong>Fix / rebuild</strong> recompiles verified source. Damaged archives can be restored from the verified local recovery copy. If that copy is missing or damaged, supply a verified replacement original. Player saves and history are preserved.</p>
+    <p>For missing or damaged shared assets, enter the original local <code>.gamepkgstore</code> path in the package field and choose <strong>Repair assets</strong>. The host requires the exact signed package before restoring its blobs. The CLI equivalent is <code>gamepkg integrity-fix GAME_ID --store original.gamepkgstore</code>.</p>
+  </section>
   <footer><a href="allowlist.html">Approved game libraries</a> · <a href="security.html">Security model</a> · <a href="../spec/index.html">Format specification</a> · GamePKG · Apache 2.0</footer>
 
-</main><section><h2>Integrity checks and repair</h2><p>Use Check integrity in the library, or <code>gamepkg integrity-check GAME_ID</code>, to check signed package contents, shared assets and compiled game checksums. Fix / rebuild recompiles verified source; damaged archives can be restored from the verified local recovery copy. Missing or damaged recovery copies require a verified replacement original. Player saves and history are preserved.</p><h2>Multiple ROM files</h2><p>Games can declare up to eight player-provided ROMs. Add each file in manifest order using Add ROM file, or repeat <code>--rom FILE</code> in the CLI. Files are shared as read-only snapshots without exposing their host paths.</p></section></body>
+</main></body>
 </html>
