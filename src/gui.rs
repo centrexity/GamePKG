@@ -692,7 +692,7 @@ impl eframe::App for App {
                 });
             }
             ui.separator();
-            ui.label("Local package, game list, or store bundle path; HTTPS or Tor onion URL");
+            ui.label("Local package, game list, or store bundle path; HTTPS, GitHub project, or Tor URL");
             ui.text_edit_singleline(&mut self.source);
             ui.horizontal(|ui| {
             if ui.add_enabled(self.result.is_none(), egui::Button::new("Inspect .gamepkgstore bundle")).clicked() {

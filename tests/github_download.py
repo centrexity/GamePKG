@@ -87,3 +87,81 @@ print('200', end='')
     run('check-updates', 'com.gamepkg.minimal', success=False)
     assert '0.2.0' in run('list').stdout
     print('GitHub catalogs, creator approval, update discovery/install, and signer/ID/ambiguous asset rejection passed.')
+
+    if '--gui' in __import__('sys').argv:
+        import csv
+        import io
+        import time
+        from gui_test_support import start_display
+        publish('0.1.0')
+        shutil.rmtree(root / 'library')
+        (root / 'settings.toml').write_text('automatic_update_checks = false\n')
+        env['LIBGL_ALWAYS_SOFTWARE'] = '1'
+        env.pop('WAYLAND_DISPLAY', None)
+        display = start_display(env, 1600, 1100)
+        app = subprocess.Popen([str(PROJECT / 'target/release/gamepkg-gui')],
+                               env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            for _ in range(100):
+                result = subprocess.run(['xdotool', 'search', '--onlyvisible', '--name', '^GamePKG$'],
+                                        env=env, capture_output=True, text=True)
+                if result.returncode == 0:
+                    window = result.stdout.splitlines()[0]
+                    break
+                if app.poll() is not None:
+                    raise RuntimeError(app.stderr.read().decode())
+                time.sleep(.1)
+            else:
+                raise AssertionError('GUI did not open')
+            subprocess.run(['xdotool', 'windowsize', window, '1500', '1050'], env=env, check=True)
+            time.sleep(.5)
+
+            def screen():
+                screenshot = PROJECT / 'target/github-download-gui.png'
+                subprocess.run(['import', '-display', env['DISPLAY'], '-window', window, str(screenshot)],
+                               env=env, check=True)
+                tsv = subprocess.run(['tesseract', str(screenshot), 'stdout', '--psm', '6', 'tsv'],
+                                     capture_output=True, text=True, check=True).stdout
+                words = [w for w in csv.DictReader(io.StringIO(tsv), delimiter='\t') if w['text'].strip()]
+                return ' '.join(w['text'] for w in words), words
+
+            def click(word, dy=0):
+                subprocess.run(['xdotool', 'mousemove', '--window', window,
+                                str(int(word['left']) + int(word['width']) // 2),
+                                str(int(word['top']) + int(word['height']) // 2 + dy), 'click', '1'],
+                               env=env, check=True)
+
+            text, words = screen()
+            label = next(w for w in words if w['text'] == 'Local')
+            subprocess.run(['xdotool', 'windowfocus', '--sync', window], env=env, check=True)
+            click(label, 20)
+            subprocess.run(['xdotool', 'type', '--clearmodifiers', '--delay', '20', URL], env=env, check=True)
+            time.sleep(.2)
+            text, words = screen()
+            assert 'github.com/creator/' in text, 'URL was not entered: ' + text
+            click(next(w for w in words if w['text'] == 'Download'))
+            for _ in range(30):
+                text, words = screen()
+                if 'Trust this creator and install' in text:
+                    break
+                time.sleep(.1)
+            else:
+                raise AssertionError('Verified package review did not appear: ' + text)
+            assert 'com.gamepkg.minimal' in text and 'creator fingerprint:' in text.lower(), text
+            assert not list((root / 'library').glob('*.gamepkg')), 'Inspection installed without approval'
+            click(next(w for w in words if w['text'] == 'Trust'))
+            installed = root / 'library/com.gamepkg.minimal.gamepkg'
+            for _ in range(50):
+                if installed.exists():
+                    break
+                time.sleep(.1)
+            assert installed.exists(), 'Approved GUI install did not publish the package'
+            time.sleep(.3)
+            text, _ = screen()
+            assert 'com.gamepkg.minimal' in text and '0.1.0' in text, text
+            print('GitHub desktop download passed: project URL, verified creator review, explicit install, and library row.')
+        finally:
+            app.terminate()
+            app.wait(timeout=10)
+            display.terminate()
+            display.wait(timeout=10)

@@ -106,6 +106,9 @@ jobs:
       - name: Install virtual display tools
         if: matrix.features == '--all-features'
         run: sudo apt-get install -y xvfb xdotool imagemagick tesseract-ocr python3-pil libxkbcommon-x11-0 libgl1-mesa-dri
+      - name: Verify GitHub project downloads in the desktop library
+        if: matrix.features == '--all-features'
+        run: python3 tests/github_download.py --gui
       - name: Verify library rejection notices and unreadable-folder recovery
         if: matrix.features == '--all-features'
         run: python3 tests/library_gui.py
