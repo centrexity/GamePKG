@@ -65,7 +65,7 @@ jobs:
       - name: Signed preview validation and decoding
         if: matrix.features == '--all-features'
         run: sudo env PATH="$PATH" python3 tests/previews.py
-      - name: Shared asset source integration
+      - name: Shared assets and HTTPS store transfer
         if: matrix.features == '--all-features'
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/shared_assets_game.py
       - name: Guest asset integration

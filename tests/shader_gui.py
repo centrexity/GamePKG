@@ -1,3 +1,4 @@
+from gui_test_support import start_display
 import os, subprocess, tempfile, time, argparse, shutil
 from pathlib import Path
 from PIL import Image
@@ -18,9 +19,8 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-shader-ui-') as directory:
   manifest=source/'manifest.toml';manifest.write_text('runtime_profile = "component-v1"\n'+manifest.read_text())
  run('pack',source,'-o',root/'game.gamepkg','--key',key)
  run('install',root/'game.gamepkg','--trust-creator');run('build','com.gamepkg.shader-switch')
- display=subprocess.Popen(['Xvfb',':97','-screen','0','1024x900x24','-ac'],stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
+ display=start_display(env)
  try:
-  time.sleep(1)
   app=subprocess.Popen(['target/release/gamepkg-gui','--play','com.gamepkg.shader-switch'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
   try:
    for _ in range(100):
@@ -32,7 +32,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-shader-ui-') as directory:
    subprocess.run(['xdotool','windowfocus',window],env=env,check=True)
    time.sleep(.5)
    before=root/'before.png'
-   subprocess.run(['import','-display',':97','-window',window,str(before)],env=env,check=True)
+   subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(before)],env=env,check=True)
    def dominant(path, channel):
     image=Image.open(path).convert('RGB')
     points=sum(1 for rgb in (image.getpixel((x,y)) for y in range(image.height) for x in range(image.width)) if rgb[channel]>150 and rgb[channel]>2*rgb[1 if channel==2 else 2])
@@ -40,7 +40,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-shader-ui-') as directory:
    dominant(before,2)
    subprocess.run(['xdotool','keydown','Right'],env=env,check=True);time.sleep(.5)
    after=project/'target/shader-player.png'
-   subprocess.run(['import','-display',':97','-window',window,str(after)],env=env,check=True)
+   subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(after)],env=env,check=True)
    dominant(after,1)
    subprocess.run(['xdotool','keyup','Right'],env=env,check=True)
    print('Compiled package fragment passes rendered; held input switched actual blue/green screen pixels.')

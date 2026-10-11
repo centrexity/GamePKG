@@ -12,6 +12,21 @@ struct Cli {
 }
 #[derive(Subcommand)]
 enum Command {
+    /// Bundle signed packages and their shared blobs for portable distribution.
+    StoreExport {
+        #[arg(required = true)]
+        packages: Vec<PathBuf>,
+        #[arg(short, long)]
+        output: PathBuf,
+    },
+    /// Verify a complete store bundle and list its creator identities.
+    StoreInspect { source: String },
+    /// Import a verified store bundle from a file, HTTPS, or Tor URL.
+    StoreImport {
+        source: String,
+        #[arg(long)]
+        trust_creators: bool,
+    },
     /// Add one local asset blob to the shared store and print its hash and size.
     PoolPut { file: PathBuf },
     /// Add verified package assets to the shared content-addressed store.
@@ -100,6 +115,44 @@ fn key(s: &str) -> Result<[u8; 32]> {
 }
 fn main() -> Result<()> {
     match Cli::parse().command {
+        Command::StoreExport { packages, output } => {
+            gamepkg::store::export(&gamepkg::registry::default_root()?, &packages, &output)?;
+            println!("Created {}", output.display());
+        }
+        Command::StoreInspect { source } => {
+            let downloaded;
+            let path = if source.contains("://") {
+                downloaded = gamepkg::registry::download(&source)?;
+                downloaded.path()
+            } else {
+                std::path::Path::new(&source)
+            };
+            let bundle = gamepkg::store::Bundle::open(path)?;
+            for game in bundle.games() {
+                println!(
+                    "{} {} — creator {}",
+                    game.id, game.version, game.creator_key
+                );
+            }
+            println!(
+                "Review creator identities, then use store-import --trust-creators to install."
+            );
+        }
+        Command::StoreImport {
+            source,
+            trust_creators,
+        } => {
+            let downloaded;
+            let path = if source.contains("://") {
+                downloaded = gamepkg::registry::download(&source)?;
+                downloaded.path()
+            } else {
+                std::path::Path::new(&source)
+            };
+            let bundle = gamepkg::store::Bundle::open(path)?;
+            let count = bundle.install(&gamepkg::registry::default_root()?, trust_creators)?;
+            println!("Installed {count} store games");
+        }
         Command::PoolPut { file } => {
             use std::io::Read;
             let input = fs::File::open(file)?;

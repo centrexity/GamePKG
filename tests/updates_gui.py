@@ -1,3 +1,4 @@
+from gui_test_support import start_display
 """Local HTTPS download/update integration check. Requires curl and openssl.
 Run after building: python3 tests/https_download.py
 """
@@ -67,9 +68,8 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-https-') as directory:
         installed=root/'library/com.gamepkg.minimal.gamepkg'
         original_installed=installed.read_bytes()
         publish('0.2.0')
-        display=subprocess.Popen(['Xvfb',':97','-screen','0','1600x900x24','-ac'],stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
-        time.sleep(1)
-        env.update(DISPLAY=':97',LIBGL_ALWAYS_SOFTWARE='1');env.pop('WAYLAND_DISPLAY',None)
+        display=start_display(env,1600,900)
+        env.update(LIBGL_ALWAYS_SOFTWARE='1');env.pop('WAYLAND_DISPLAY',None)
         for enabled in [True,False]:
             (root/'settings.toml').write_text(f'automatic_update_checks = {str(enabled).lower()}\nupdate_interval_hours = 1\n')
             requests.clear()
@@ -86,7 +86,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-https-') as directory:
                 subprocess.run(['xdotool','windowsize',window,'1500','850'],env=env,check=True)
                 screenshot=PROJECT/('target/automatic-updates.png' if enabled else 'target/automatic-updates-disabled.png')
                 def green_notice():
-                    subprocess.run(['import','-display',':97','-window',window,str(screenshot)],env=env,check=True)
+                    subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(screenshot)],env=env,check=True)
                     image=Image.open(screenshot).convert('RGB')
                     return sum(1 for y in range(min(250,image.height)) for x in range(image.width) if (lambda c:c[0]<50 and c[1]>200 and c[2]<50)(image.getpixel((x,y))))>10
                 if enabled:

@@ -1,3 +1,4 @@
+from gui_test_support import start_display
 """Verify AV1 frame progression and explicit Theora fallback in a virtual GUI."""
 from pathlib import Path
 import os, shutil, subprocess, tempfile, time
@@ -9,7 +10,7 @@ subprocess.run([str(cli),'keygen','-o',str(key)],check=True,capture_output=True)
 for name,codec,color in [('preview.av1.webm','libaom-av1','red'),('preview.ogv','libtheora','blue')]:
  subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i',f'color=c={color}:s=64x64:r=5','-t','4','-an','-vf',"drawbox=color=lime:t=fill:enable='gte(t,2)'" if codec=='libaom-av1' else 'null','-c:v',codec,'-threads','1',str(source/name)],check=True)
 package=root/'sample.gamepkg';subprocess.run([str(cli),'pack',str(source),'-o',str(package),'--key',str(key)],env=env,check=True,capture_output=True);subprocess.run([str(cli),'install',str(package),'--trust-creator'],env=env,check=True,capture_output=True)
-display=subprocess.Popen(['Xvfb',':98','-screen','0','1600x1000x24','-ac'],stdout=subprocess.DEVNULL,stderr=subprocess.PIPE);time.sleep(1)
+display=start_display(env,1600,1000)
 app=subprocess.Popen([str(project/'target/release/gamepkg-gui')],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
 try:
  for i in range(100):
@@ -18,13 +19,13 @@ try:
   if app.poll() is not None: raise RuntimeError(app.stderr.read().decode())
   time.sleep(.1)
  window=state.stdout.strip().splitlines()[0];subprocess.run(['xdotool','windowsize',window,'1500','950'],env=env,check=True);time.sleep(.5)
- subprocess.run(['import','-display',':98','-window',window,str(project/'target/preview-library.png')],env=env,check=True)
+ subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(project/'target/preview-library.png')],env=env,check=True)
  print('window='+window,flush=True)
  subprocess.run(['xdotool','mousemove','--window',window,'478','150','click','1'],env=env,check=True);time.sleep(1)
- subprocess.run(['import','-display',':98','-window',window,str(project/'target/preview-details.png')],env=env,check=True)
+ subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(project/'target/preview-details.png')],env=env,check=True)
  from PIL import Image
  def count_color(color, screenshot):
-  subprocess.run(['import','-display',':98','-window',window,str(screenshot)],env=env,check=True)
+  subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(screenshot)],env=env,check=True)
   data=Image.open(screenshot).convert('RGB').tobytes()
   pixels=zip(data[0::3],data[1::3],data[2::3])
   return sum(1 for r,g,b in pixels if (r>200 and g<60 and b<60 if color=='red' else g>200 and r<60 and b<60 if color=='green' else b>200 and r<60 and g<60))

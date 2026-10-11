@@ -36,3 +36,5 @@ pub mod creator;
 pub mod previews;
 
 pub mod pool;
+
+pub mod store;

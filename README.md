@@ -532,5 +532,39 @@ invalid paths, and assets declared both embedded and shared are rejected.
 
 Run `python3 tests/shared_assets_game.py` to verify both core and WIT source
 games using signed store packages, missing-blob refusal, deduplication, and
-small reads from large shared assets. Remote store distribution and pool
-garbage collection remain future work.
+small reads from large shared assets. Portable store bundles support remote distribution as described below. Pool
+garbage collection remains future work.
+
+## Portable store bundles
+
+A `.gamepkgstore` ZIP transports signed games and their shared assets together.
+Each game retains its original creator signature, and identical shared content
+is included once. The bundle contains `store.toml` (`format_version = 1`),
+`packages/<signed-id>.gamepkg`, and `blobs/<sha256>.blob`. Creator approval
+applies to the individual enclosed games.
+
+```sh
+gamepkg store-export first.gamepkg second.gamepkg -o games.gamepkgstore
+gamepkg store-inspect games.gamepkgstore
+gamepkg store-import games.gamepkgstore --trust-creators
+```
+
+Export reads shared blobs from your current library and refuses to overwrite
+files. Inspect verifies every package and blob and lists creator keys without
+installing anything. Import also accepts HTTPS and Tor onion URLs. First
+installs require `--trust-creators`; existing games enforce the same signer and
+a higher version, and an identical package is skipped. No game is built or run
+during import.
+
+All contents are staged and verified, and creator/version conflicts are checked
+across the whole batch before library publication. Malformed packages,
+unreferenced/missing/corrupt blobs, unexpected files, and unsupported versions
+are rejected. Bounds are 10,000 entries, 64 MiB per entry, and 256 MiB per
+bundle. Individual blobs and games publish atomically; an I/O failure or
+concurrent library mutation can interrupt a batch after some games install.
+Reimporting the same bundle safely skips completed games.
+
+`tests/shared_assets_game.py` additionally transfers a bundle over local HTTPS
+to a fresh recipient library, then builds and plays both enclosed runtime
+profiles. `tests/store.rs` checks deduplication, approval, repeat imports,
+conflicts, and deliberately malformed bundles.

@@ -42,3 +42,14 @@ blobs before installation, builds, or play. It does not download blobs
 automatically. Gameplay uses private verified snapshots through the existing
 scoped asset API. `pack --shared-assets` creates store packages; ordinary
 packages retain their embedded assets for self-contained sideloading.
+
+## Portable store bundle
+
+`.gamepkgstore` is a bounded ZIP containing `store.toml` with
+`format_version = 1`, `packages/<id>.gamepkg`, and referenced shared blobs at
+`blobs/<sha256>.blob`. All package signatures and referenced blob hashes/sizes
+are checked before import. Unknown files, missing or unreferenced blobs,
+duplicate entries, and conflicting identities or sizes are rejected. Limits:
+10,000 entries, 64 MiB per entry, 256 MiB total. Packages retain their own
+creator identities; importing new creators requires approval. Inspection does
+not install or execute games.

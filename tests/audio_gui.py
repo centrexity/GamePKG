@@ -1,3 +1,4 @@
+from gui_test_support import start_display
 import os, subprocess, tempfile, time, sys
 from pathlib import Path
 from PIL import Image
@@ -16,9 +17,8 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-draw-ui-') as directory:
  key=root/'key';key.write_text(os.urandom(32).hex())
  run('pack','examples/good/tone-pad','-o',root/'game.gamepkg','--key',key)
  run('install',root/'game.gamepkg','--trust-creator');run('build','com.gamepkg.tone-pad')
- display=subprocess.Popen(['Xvfb',':97','-screen','0','1024x900x24','-ac'],stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
+ display=start_display(env)
  try:
-  time.sleep(1)
   app=subprocess.Popen(['target/release/gamepkg-gui','--play','com.gamepkg.tone-pad'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
   try:
    for _ in range(100):
@@ -30,7 +30,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-draw-ui-') as directory:
    subprocess.run(['xdotool','windowfocus',window],env=env,check=True)
    time.sleep(.5)
    before=project/('target/audio-before-muted.png' if muted else 'target/audio-before.png')
-   subprocess.run(['import','-display',':97','-window',window,str(before)],env=env,check=True)
+   subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(before)],env=env,check=True)
    def green_x(path):
     image=Image.open(path).convert('RGB')
     points=[x for y in range(image.height) for x in range(image.width) if image.getpixel((x,y))==(100,220,180)]
@@ -42,7 +42,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-draw-ui-') as directory:
    assert active != muted, 'Sound activity did not match the mute setting'
    subprocess.run(['xdotool','keydown','Down'],env=env,check=True);time.sleep(.5)
    after=project/('target/audio-player-muted.png' if muted else 'target/audio-player.png')
-   subprocess.run(['import','-display',':97','-window',window,str(after)],env=env,check=True)
+   subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(after)],env=env,check=True)
    subprocess.run(['xdotool','keyup','Down'],env=env,check=True)
    assert green_x(after)<x-20,'Held input did not select the lower pitch'
    print('GUI audio '+('muted by settings' if muted else 'active through a null output device')+'; held pitch selection verified from pixels.')
