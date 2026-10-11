@@ -1,0 +1,25 @@
+name: Native host portability
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, macos-14]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        run: rustup update stable
+      - name: Select Rust
+        run: rustup default stable
+      - name: Build CLI and desktop entry points
+        run: cargo build --locked --all-features --bins
+      - name: Exercise verification, runtime, and portable host behavior
+        run: cargo test --locked --all-features
+      - name: Check portable implementation warnings
+        run: cargo clippy --locked --all-features --all-targets -- -D warnings
