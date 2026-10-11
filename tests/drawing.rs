@@ -125,3 +125,52 @@ fn raw_guest_cannot_draw_unprepared_shader() {
     assert_eq!(game.step(0).unwrap(), u64::MAX);
     assert!(game.frame().commands.is_empty());
 }
+
+#[test]
+fn sprite_queue_bounds_memory_and_resets_with_the_frame() {
+    use gamepkg::drawing::image::Image;
+    let mut frame = Frame::default();
+    let pixels = vec![255; 512 * 512 * 4];
+    for _ in 0..8 {
+        assert!(frame.image(
+            0.0,
+            0.0,
+            512.0,
+            512.0,
+            Image::new(512, 512, &pixels).unwrap()
+        ));
+    }
+    assert!(!frame.image(0.0, 0.0, 1.0, 1.0, Image::new(1, 1, &[0; 4]).unwrap()));
+    frame.reset();
+    assert!(!frame.can_image(f32::NAN, 0.0, 1.0, 1.0, 4));
+    assert!(!frame.can_image(0.0, 0.0, -1.0, 1.0, 4));
+    assert!(frame.image(0.0, 0.0, 1.0, 1.0, Image::new(1, 1, &[0; 4]).unwrap()));
+}
+
+#[test]
+fn core_sprites_snapshot_pixels_and_reject_invalid_guest_ranges() {
+    for (pointer, length, expected) in [(0, 4, 0), (65535, 4, -1), (-1, 4, -1), (0, 5, -1)] {
+        let wasm = wat::parse_str(format!(r#"(module
+          (import "gamepkg" "draw_image" (func $image (param f32 f32 f32 f32 i32 i32 i32 i32) (result i32)))
+          (memory (export "memory") 1) (data (i32.const 0) "\ff\00\00\ff")
+          (func (export "gamepkg_tick") (param i32 i64) (result i64)
+            f32.const 0 f32.const 0 f32.const 100 f32.const 100
+            i32.const 1 i32.const 1 i32.const {pointer} i32.const {length} call $image
+            i32.const 0 i32.const 0 i32.store
+            local.get 0 if unreachable end
+            i64.extend_i32_s))"#)).unwrap();
+        let mut game = Game::from_bytes(&wasm, &manifest()).unwrap();
+        assert!(game.custom_renderer);
+        assert_eq!(game.step(0).unwrap(), expected as u64);
+        if expected == 0 {
+            let Command::Image { image, .. } = &game.frame().commands[0] else {
+                panic!("sprite missing")
+            };
+            assert_eq!(image.pixels(), &[255, 0, 0, 255]);
+            assert!(game.step(1).is_err());
+            assert!(game.frame().commands.is_empty());
+        } else {
+            assert!(game.frame().commands.is_empty());
+        }
+    }
+}

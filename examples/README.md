@@ -26,7 +26,7 @@ The desktop library provides Build and Play for installed games. Graphics games 
 | save-counter | Persist the tick count across play sessions |
 | rom-required | Read a ROM file explicitly supplied by the player |
 
-`tests/good_examples.py` signs, verifies, installs, builds, and runs all 12 examples, checking representative scores and required-ROM rejection. It uses temporary keys and an isolated library; no private creator keys are included. Dedicated GUI tests check rendered graphics and audio behavior.
+`tests/good_examples.py` signs, verifies, installs, builds, and runs all 13 examples, checking representative scores and required-ROM rejection. It uses temporary keys and an isolated library; no private creator keys are included. Dedicated GUI tests check rendered graphics and audio behavior.
 
 Every `bad/` directory is a complete, deliberately rejected package input:
 
@@ -41,3 +41,5 @@ Every `bad/` directory is a complete, deliberately rejected package input:
 | non-slang | Opaque shader binary |
 
 Packing these examples must fail. The security suite also modifies already signed archives to test tampering rejection, and tests malformed module layouts, hidden forbidden source, memory limits, shader restrictions, and archive bounds.
+
+`sprite-playground` demonstrates bounded RGBA sprites, alpha transparency, and held-arrow movement through the host drawing API.

@@ -4,6 +4,7 @@
 pub mod gamepkg {
     #[link(wasm_import_module = "gamepkg")]
     unsafe extern "C" {
+        #[link_name = "draw_image"] fn host_image(x:f32,y:f32,w:f32,h:f32,pw:u32,ph:u32,pixels:*const u8,length:usize) -> i32;
         #[link_name = "audio_submit"]
         fn host_audio_submit(samples: *const i16, count: i32) -> i32;
         #[link_name = "draw_shader"]
@@ -65,6 +66,11 @@ pub mod gamepkg {
         unsafe { host_draw_circle(x,y,radius,rgba) == 0 }
     }
     /// Draw a compiled manifest fragment entry over the game viewport.
+    /// Draw raw RGBA pixels (at most 512 by 512) on the virtual canvas.
+    pub fn draw_image(x:f32,y:f32,w:f32,h:f32,pw:u32,ph:u32,pixels:&[u8]) -> bool {
+        if pw==0 || ph==0 || pw>512 || ph>512 || pixels.len()!=pw as usize*ph as usize*4 { return false; }
+        unsafe { host_image(x,y,w,h,pw,ph,pixels.as_ptr(),pixels.len()) == 0 }
+    }
     pub fn draw_shader(index: u32) -> bool {
         if index > i32::MAX as u32 { return false; }
         unsafe { host_draw_shader(index as i32) == 0 }

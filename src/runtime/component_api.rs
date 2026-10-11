@@ -1,7 +1,10 @@
 //! Versioned typed WIT imports. No WASI or ambient host interfaces are linked.
 use super::Data;
 use anyhow::Result;
-use wasmtime::{component::Linker, Engine, StoreContextMut};
+use wasmtime::{
+    component::{Linker, WasmList},
+    AsContext, Engine, StoreContextMut,
+};
 fn charge(store: &mut StoreContextMut<'_, Data>, cost: u64) -> Result<bool> {
     let fuel = store.get_fuel()?;
     store.set_fuel(fuel.saturating_sub(cost))?;
@@ -113,6 +116,27 @@ pub(super) fn linker(engine: &Engine) -> Result<Linker<Data>> {
                 return Ok((false,));
             }
             Ok((store.data_mut().frame.circle(x, y, r, rgba),))
+        },
+    )?;
+    host.func_wrap(
+        "draw-image",
+        |mut store: StoreContextMut<'_, Data>,
+         (x, y, w, h, pw, ph, pixels): (f32, f32, f32, f32, u32, u32, WasmList<u8>)| {
+            let Some(bytes) = crate::drawing::image::Image::byte_length(pw, ph) else {
+                return Ok((false,));
+            };
+            if pixels.len() != bytes
+                || !store.data().frame.can_image(x, y, w, h, bytes)
+                || !charge(&mut store, bytes as u64 + 64)?
+            {
+                return Ok((false,));
+            }
+            let Some(image) =
+                crate::drawing::image::Image::new(pw, ph, pixels.as_le_slice(store.as_context()))
+            else {
+                return Ok((false,));
+            };
+            Ok((store.data_mut().frame.image(x, y, w, h, image),))
         },
     )?;
     host.func_wrap(

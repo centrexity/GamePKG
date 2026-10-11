@@ -52,3 +52,5 @@ Portable `.gamepkgstore` imports verify every contained signature and shared
 blob before showing creator identities for approval. Inspection runs no game
 code and installs nothing. Rejected library files are shown as unavailable
 without hiding other verified games; installation checks remain strict.
+
+RGBA sprite drawing accepts images up to 512×512 pixels, with exact byte counts and at most 8 MiB of queued image bytes per frame. The host validates guest memory ranges, charges fuel, snapshots accepted pixels, and discards queued images after trapped ticks. Component pixel lists are length-checked through lazy guest-memory views before a host copy. Sprites draw through the host; package shaders still cannot access external texture bindings.

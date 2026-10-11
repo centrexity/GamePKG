@@ -114,6 +114,7 @@ impl Game {
                             | "save_write"
                             | "save_size"
                             | "draw_clear"
+                            | "draw_image"
                             | "draw_rect"
                             | "draw_circle"
                             | "draw_shader"
@@ -194,6 +195,64 @@ impl Game {
             let mut linker = Linker::new(&engine);
             linker.func_wrap("gamepkg", "asset_read", asset_read)?;
             linker.func_wrap("gamepkg", "audio_submit", audio_submit)?;
+            linker.func_wrap(
+                "gamepkg",
+                "draw_image",
+                |mut caller: Caller<'_, Data>,
+                 x: f32,
+                 y: f32,
+                 w: f32,
+                 h: f32,
+                 pw: u32,
+                 ph: u32,
+                 pointer: i32,
+                 length: i32|
+                 -> i32 {
+                    let Some(bytes) = crate::drawing::image::Image::byte_length(pw, ph) else {
+                        return -1;
+                    };
+                    if pointer < 0
+                        || length < 0
+                        || length as usize != bytes
+                        || !caller.data().frame.can_image(x, y, w, h, bytes)
+                    {
+                        return -1;
+                    }
+                    let Some(memory) = caller.get_export("memory").and_then(|e| e.into_memory())
+                    else {
+                        return -1;
+                    };
+                    let Some(end) = (pointer as usize).checked_add(bytes) else {
+                        return -1;
+                    };
+                    if end > memory.data_size(&caller) {
+                        return -1;
+                    }
+                    let Ok(fuel) = caller.get_fuel() else {
+                        return -1;
+                    };
+                    let cost = bytes as u64 + 64;
+                    if fuel < cost {
+                        let _ = caller.set_fuel(0);
+                        return -1;
+                    }
+                    if caller.set_fuel(fuel - cost).is_err() {
+                        return -1;
+                    }
+                    let Some(image) = crate::drawing::image::Image::new(
+                        pw,
+                        ph,
+                        &memory.data(&caller)[pointer as usize..end],
+                    ) else {
+                        return -1;
+                    };
+                    if caller.data_mut().frame.image(x, y, w, h, image) {
+                        0
+                    } else {
+                        -1
+                    }
+                },
+            )?;
             linker.func_wrap(
                 "gamepkg",
                 "draw_clear",

@@ -16,6 +16,7 @@ enum Work {
 pub struct App {
     gl: Option<std::sync::Arc<eframe::glow::Context>>,
     gpu: Option<std::sync::Arc<crate::gpu::Renderer>>,
+    sprite_textures: Vec<egui::TextureHandle>,
     applied_settings: Option<crate::settings::Settings>,
     updates: crate::updates::Monitor,
     source: String,
@@ -268,6 +269,7 @@ impl eframe::App for App {
                 ));
             }
         }
+        self.sprite_textures.clear();
         if let Some(game) = self.player.as_mut() {
             let mut close = false;
             let mut failure = None;
@@ -368,6 +370,35 @@ impl eframe::App for App {
                     );
                     for command in &game.frame().commands {
                         match *command {
+                            crate::drawing::Command::Image {
+                                x,
+                                y,
+                                width,
+                                height,
+                                ref image,
+                            } => {
+                                let texture = ctx.load_texture(
+                                    "game-sprite",
+                                    egui::ColorImage::from_rgba_unmultiplied(
+                                        image.size(),
+                                        image.pixels(),
+                                    ),
+                                    egui::TextureOptions::NEAREST,
+                                );
+                                painter.image(
+                                    texture.id(),
+                                    egui::Rect::from_min_size(
+                                        rect.min + egui::vec2(x * scale, y * scale),
+                                        egui::vec2(width * scale, height * scale),
+                                    ),
+                                    egui::Rect::from_min_max(
+                                        egui::Pos2::ZERO,
+                                        egui::pos2(1.0, 1.0),
+                                    ),
+                                    egui::Color32::WHITE,
+                                );
+                                self.sprite_textures.push(texture);
+                            }
                             crate::drawing::Command::Shader { index } => {
                                 if let Some(renderer) = &self.gpu {
                                     let renderer = renderer.clone();

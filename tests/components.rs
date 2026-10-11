@@ -116,3 +116,38 @@ fn component_user_memory_ceiling_tightens_the_signed_limit() {
     let mut game = Game::with_settings(&bytes, &manifest, &settings).unwrap();
     assert_eq!(game.step(0).unwrap(), 42);
 }
+
+#[test]
+fn component_sprites_use_the_canonical_pixel_list() {
+    let bytes = component(
+        r#"(module
+      (import "gamepkg:engine/host@0.1.0" "draw-image" (func $image (param f32 f32 f32 f32 i32 i32 i32 i32) (result i32)))
+      (memory (export "memory") 1) (data (i32.const 0) "\ff\00\00\ff")
+      (func (export "tick") (param i32 i64) (result i64)
+        f32.const 0 f32.const 0 f32.const 100 f32.const 100
+        i32.const 1 i32.const 1 i32.const 0 i32.const 4 call $image
+        i64.extend_i32_u))"#,
+    );
+    let mut game = Game::from_bytes(&bytes, &manifest()).unwrap();
+    assert_eq!(game.step(0).unwrap(), 1);
+    let gamepkg::drawing::Command::Image { image, .. } = &game.frame().commands[0] else {
+        panic!("sprite missing")
+    };
+    assert_eq!(image.pixels(), &[255, 0, 0, 255]);
+}
+
+#[test]
+fn component_sprite_lists_are_bounded_before_host_copy() {
+    let bytes = component(
+        r#"(module
+      (import "gamepkg:engine/host@0.1.0" "draw-image" (func $image (param f32 f32 f32 f32 i32 i32 i32 i32) (result i32)))
+      (memory (export "memory") 17)
+      (func (export "tick") (param i32 i64) (result i64)
+        f32.const 0 f32.const 0 f32.const 100 f32.const 100
+        i32.const 512 i32.const 512 i32.const 0 i32.const 1048577 call $image
+        i64.extend_i32_u))"#,
+    );
+    let mut game = Game::from_bytes(&bytes, &manifest()).unwrap();
+    assert_eq!(game.step(0).unwrap(), 0);
+    assert!(game.frame().commands.is_empty());
+}

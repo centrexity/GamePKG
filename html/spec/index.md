@@ -70,3 +70,7 @@ duplicate entries, and conflicting identities or sizes are rejected. Limits:
 10,000 entries, 64 MiB per entry, 256 MiB total. Packages retain their own
 creator identities; importing new creators requires approval. Inspection does
 not install or execute games.
+
+## RGBA sprite drawing
+
+The host API includes `draw-image(x, y, width, height, pixel-width, pixel-height, pixels)`. Coordinates use the 640×480 virtual canvas; the last argument is a row-major RGBA byte list with exactly four bytes per pixel. Each pixel dimension is 1–512. Image bytes count toward a per-frame 8 MiB budget and the existing 1,024-command budget. The host copies accepted pixels into a private frame snapshot, charges fuel, and validates finite display coordinates and dimensions. The desktop uses nearest-neighbor sampling and alpha transparency. Sprites are scoped host draw commands; this API does not expose arbitrary GPU bindings.
