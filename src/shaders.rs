@@ -110,7 +110,7 @@ pub fn compile(
                 &reflection,
             ]);
         if settings.shader_backend == "spirv" {
-            command.args(["-profile", "glsl_450"]);
+            command.args(["-profile", "glsl_450", "-DGAMEPKG_SEPARATE_SAMPLER=1"]);
         }
         if settings.shader_backend == "glsl" {
             command.args(["-profile", "glsl_330"]);
@@ -296,9 +296,14 @@ fn compiler_cache(root: &Path, archive: &[u8], settings: &Settings) -> Result<(P
     } else {
         ""
     };
+    let sampler_identity = if settings.shader_backend == "spirv" {
+        ":separate-sampler-v1"
+    } else {
+        ""
+    };
     let identity = digest(
         format!(
-            "{}:{SLANG_VERSION}:{}:{}:{}{dxc_identity}",
+            "{}:{SLANG_VERSION}:{}:{}:{}{dxc_identity}{sampler_identity}",
             digest(archive),
             settings.shader_backend,
             digest(&fs::read(&exe)?),
@@ -361,9 +366,31 @@ fn validate_fragment_reflection(metadata: &serde_json::Value, entry: &str) -> Re
         && parameters[0]["type"]["combined"] == true
         && parameters[0]["type"]["resultType"]
             == serde_json::json!({"kind":"vector","elementCount":4,"elementType":{"kind":"scalar","scalarType":"float32"}})
+        && ((parameters[0]["type"]["sizes"]
+            == serde_json::json!([{"kind":"descriptorTableSlot","value":1}])
+            && (parameters[0]["binding"].get("count").is_none()
+                || parameters[0]["binding"]["count"] == 1))
+            || (parameters[0]["type"]["sizes"]
+                == serde_json::json!([{"kind":"descriptorTableSlot","value":2}])
+                && parameters[0]["binding"]["count"] == 2));
+    let separate = parameters.len() == 2
+        && parameters[0]["name"] == "gamepkgTexture"
+        && parameters[0]["binding"]["kind"] == "descriptorTableSlot"
+        && parameters[0]["binding"]["index"] == 0
+        && parameters[0]["type"]["kind"] == "resource"
+        && parameters[0]["type"]["baseShape"] == "texture2D"
+        && parameters[0]["type"].get("combined").is_none()
+        && parameters[0]["type"]["resultType"]
+            == serde_json::json!({"kind":"vector","elementCount":4,"elementType":{"kind":"scalar","scalarType":"float32"}})
         && parameters[0]["type"]["sizes"]
+            == serde_json::json!([{"kind":"descriptorTableSlot","value":1}])
+        && parameters[1]["name"] == "gamepkgSampler"
+        && parameters[1]["binding"]["kind"] == "descriptorTableSlot"
+        && parameters[1]["binding"]["index"] == 1
+        && parameters[1]["type"]["kind"] == "samplerState"
+        && parameters[1]["type"]["sizes"]
             == serde_json::json!([{"kind":"descriptorTableSlot","value":1}]);
-    if !parameters.is_empty() && !texture {
+    if !parameters.is_empty() && !texture && !separate {
         bail!("desktop fragment passes reject unsupported resource bindings; only gamepkgTexture is allowed");
     }
     let entries = metadata
@@ -406,14 +433,53 @@ fn fragment_source(bytes: &[u8], backend: &str) -> Result<String> {
             .context("invalid desktop WGSL shader")?,
         _ => bail!("unsupported shader translation backend"),
     };
-    if module.entry_points.len() != 1
-        || module.entry_points[0].stage != naga::ShaderStage::Fragment
-        || module
-            .global_variables
-            .iter()
-            .any(|(_, variable)| variable.binding.is_some())
+    if module.entry_points.len() != 1 || module.entry_points[0].stage != naga::ShaderStage::Fragment
     {
-        bail!("desktop translated shader requires one resource-free fragment entry");
+        bail!("desktop translated shader requires one fragment entry");
+    }
+    let mut texture = None;
+    let mut sampler = None;
+    for (handle, variable) in module.global_variables.iter() {
+        if variable.binding.is_none()
+            && !matches!(
+                variable.space,
+                naga::AddressSpace::Handle
+                    | naga::AddressSpace::Uniform
+                    | naga::AddressSpace::Storage { .. }
+                    | naga::AddressSpace::PushConstant
+            )
+        {
+            continue;
+        }
+        let Some(binding) = &variable.binding else {
+            bail!("unbound shader resource");
+        };
+        if binding.group != 0 || variable.space != naga::AddressSpace::Handle {
+            bail!("unsupported shader resource bindings");
+        }
+        match module.types[variable.ty].inner {
+            naga::TypeInner::Image {
+                dim: naga::ImageDimension::D2,
+                arrayed: false,
+                class:
+                    naga::ImageClass::Sampled {
+                        kind: naga::ScalarKind::Float,
+                        multi: false,
+                    },
+            } if binding.binding == 0 && texture.is_none() => texture = Some(handle),
+            naga::TypeInner::Sampler { comparison: false }
+                if binding.binding == 1 && sampler.is_none() =>
+            {
+                sampler = Some(handle)
+            }
+            _ => bail!(
+                "unsupported shader resource bindings: {:?}",
+                variable.binding
+            ),
+        }
+    }
+    if texture.is_some() != sampler.is_some() {
+        bail!("shader texture requires its single sampler");
     }
     let info = naga::valid::Validator::new(
         naga::valid::ValidationFlags::all(),
@@ -440,14 +506,62 @@ fn fragment_source(bytes: &[u8], backend: &str) -> Result<String> {
         Default::default(),
     )?
     .write()?;
-    if !reflected.texture_mapping.is_empty() || !reflected.uniforms.is_empty() {
-        bail!("shader translation introduced resource bindings");
+    if !reflected.uniforms.is_empty() || !reflected.push_constant_items.is_empty() {
+        bail!("shader translation introduced uniform bindings");
     }
-    Ok(source.0)
+    if let (Some(texture), Some(sampler)) = (texture, sampler) {
+        if reflected.texture_mapping.len() != 1 {
+            bail!("shader requires one translated texture");
+        }
+        let (name, mapping) = reflected.texture_mapping.iter().next().unwrap();
+        if mapping.texture != texture
+            || mapping.sampler != Some(sampler)
+            || name != "_group_0_binding_0_fs"
+        {
+            bail!("shader texture mapping mismatch");
+        }
+        // The translator owns this identifier; replacement is shorter, so the output budget remains intact.
+        Ok(rename_texture(&source.0, name))
+    } else {
+        if !reflected.texture_mapping.is_empty() {
+            bail!("shader translation introduced texture bindings");
+        }
+        Ok(source.0)
+    }
+}
+
+fn rename_texture(source: &str, name: &str) -> String {
+    let mut output = String::with_capacity(source.len());
+    let mut previous = 0;
+    for (start, _) in source.match_indices(name) {
+        let end = start + name.len();
+        let identifier = |byte: u8| byte.is_ascii_alphanumeric() || byte == b'_';
+        if (start > 0 && identifier(source.as_bytes()[start - 1]))
+            || (end < source.len() && identifier(source.as_bytes()[end]))
+        {
+            continue;
+        }
+        output.push_str(&source[previous..start]);
+        output.push_str("gamepkgTexture_0");
+        previous = end;
+    }
+    output.push_str(&source[previous..]);
+    output
 }
 
 #[cfg(test)]
 mod translation_tests {
+    #[test]
+    fn texture_identifier_renaming_preserves_other_identifiers() {
+        let name = "_group_0_binding_0_fs";
+        assert_eq!(
+            super::rename_texture(
+                "_group_0_binding_0_fs + _group_0_binding_0_fs_extra + x_group_0_binding_0_fs",
+                name
+            ),
+            "gamepkgTexture_0 + _group_0_binding_0_fs_extra + x_group_0_binding_0_fs"
+        );
+    }
     #[test]
     fn translated_text_stops_at_the_output_budget() {
         use std::fmt::Write;
@@ -462,6 +576,17 @@ mod translation_tests {
 
 #[cfg(test)]
 mod wgsl_tests {
+    #[test]
+    fn translated_texture_rejects_extra_slots_storage_depth_and_array_images() {
+        let prefix="@group(0) @binding(0) var image: texture_2d<f32>; @group(0) @binding(1) var filtering: sampler; ";
+        let suffix="@fragment fn main() -> @location(0) vec4<f32> { return textureSample(image, filtering, vec2<f32>(0.5)); }";
+        let source = format!("{prefix}{suffix}");
+        let output = super::fragment_source(source.as_bytes(), "wgsl").unwrap();
+        assert!(output.contains("uniform sampler2D gamepkgTexture_0"));
+        for invalid in [source.replace("@binding(1)","@binding(2)"),source.replace("@group(0)","@group(1)"),source.replace("texture_2d<f32>","texture_2d_array<f32>"),source.replace("texture_2d<f32>","texture_depth_2d"), format!("{prefix}@group(0) @binding(2) var<uniform> extra: vec4<f32>; {suffix}"),format!("{prefix}@group(0) @binding(2) var storage: texture_storage_2d<rgba8unorm,write>; {suffix}")] {
+            assert!(super::fragment_source(invalid.as_bytes(),"wgsl").is_err());
+        }
+    }
     #[test]
     fn desktop_translation_rejects_bindings_and_other_stages() {
         for source in [
@@ -510,6 +635,38 @@ mod reflection_tests {
             .unwrap()
             .push(valid["parameters"][0].clone());
         assert!(super::validate_fragment_reflection(&duplicate, "main").is_err());
+    }
+    #[test]
+    fn split_sampler_reflection_requires_the_exact_texture_and_sampler_pair() {
+        let mut valid = serde_json::json!({"parameters":[{"name":"gamepkgTexture","binding":{"kind":"descriptorTableSlot","index":0},"type":{"kind":"resource","baseShape":"texture2D","resultType":{"kind":"vector","elementCount":4,"elementType":{"kind":"scalar","scalarType":"float32"}},"sizes":[{"kind":"descriptorTableSlot","value":1}]}},{"name":"gamepkgSampler","binding":{"kind":"descriptorTableSlot","index":1},"type":{"kind":"samplerState","sizes":[{"kind":"descriptorTableSlot","value":1}]}}],"entryPoints":[{"name":"main","stage":"fragment"}]});
+        super::validate_fragment_reflection(&valid, "main").unwrap();
+        for (pointer, value) in [
+            ("/parameters/1/name", serde_json::json!("other")),
+            ("/parameters/1/binding/index", serde_json::json!(2)),
+            (
+                "/parameters/1/type/kind",
+                serde_json::json!("samplerComparisonState"),
+            ),
+            (
+                "/parameters/0/type/baseShape",
+                serde_json::json!("texture3D"),
+            ),
+            ("/parameters/1/type/sizes/0/value", serde_json::json!(2)),
+        ] {
+            let mut invalid = valid.clone();
+            *invalid.pointer_mut(pointer).unwrap() = value;
+            assert!(
+                super::validate_fragment_reflection(&invalid, "main").is_err(),
+                "{pointer}"
+            );
+        }
+        valid["parameters"].as_array_mut().unwrap().pop();
+        valid["parameters"][0]["type"]["combined"] = serde_json::json!(true);
+        valid["parameters"][0]["type"]["sizes"][0]["value"] = serde_json::json!(2);
+        valid["parameters"][0]["binding"]["count"] = serde_json::json!(2);
+        super::validate_fragment_reflection(&valid, "main").unwrap();
+        valid["parameters"][0]["binding"]["count"] = serde_json::json!(3);
+        assert!(super::validate_fragment_reflection(&valid, "main").is_err());
     }
     #[test]
     fn reflected_entry_must_match_the_signed_request() {

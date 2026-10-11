@@ -49,4 +49,4 @@ Packing these examples must fail. The security suite also modifies already signe
 
 `png-sprite-playground` loads its sprite from a verified packaged PNG asset and moves it with held arrows.
 
-`good/shader-texture` supplies bounded RGBA pixels to the host-owned `gamepkgTexture` sampler. Hold Right to change blue to green. This example requires the desktop GLSL backend.
+`good/shader-texture` supplies bounded RGBA pixels to the host-owned `gamepkgTexture` sampler. Hold Right to change blue to green. This example supports GLSL, SPIR-V, and WGSL; its SPIR-V branch uses the host-defined `GAMEPKG_SEPARATE_SAMPLER` compiler symbol.

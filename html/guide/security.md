@@ -45,7 +45,7 @@ SPIR-V, WGSL, Metal, and DXIL outputs are tested. DXIL additionally requires
 checksum-pinned DXC 1.9.2609 libraries, selected through Settings or
 `GAMEPKG_DXC_ROOT`. Missing or modified libraries stop the build. Compilation
 support does not imply that every output backend can render in the desktop
-player; current shader playback uses bounded-texture GLSL passes or validated resource-free SPIR-V/WGSL
+player; current shader playback uses bounded-texture GLSL passes or validated SPIR-V/WGSL
 translated to GLSL for the OpenGL player.
 
 Portable `.gamepkgstore` imports verify every contained signature and shared
@@ -57,4 +57,4 @@ RGBA sprite drawing accepts images up to 512×512 pixels, with exact byte counts
 
 PNG sprite loading uses bounded verified archive ranges rather than host filesystem paths. Encoded files are limited to 2 MiB, decoded dimensions to 512×512, and decoder allocations to 8 MiB. The host charges archive decompression prefixes and reserves decoding fuel before reading the full file. These renderer budgets are separate from guest linear-memory limits.
 
-GLSL fragment passes may use one host-owned combined `Sampler2D gamepkgTexture` at binding 0 via `draw_shader_image(index, pixel_width, pixel_height, rgba)`. Pixels are snapshotted and fuel-charged before queueing, bounded to 512×512 and included in the shared 8 MiB frame image budget. Additional shader resources are rejected. Core and WIT runtimes support this API; textured SPIR-V/WGSL playback remains unfinished.
+GLSL fragment passes may use one host-owned combined `Sampler2D gamepkgTexture` at binding 0 via `draw_shader_image(index, pixel_width, pixel_height, rgba)`. Pixels are snapshotted and fuel-charged before queueing, bounded to 512×512 and included in the shared 8 MiB frame image budget. Additional shader resources are rejected. Core and WIT runtimes support this API. Textured SPIR-V/WGSL playback validates one float 2D image and one non-comparison sampler at group 0 bindings 0 and 1 before translating to GLSL. SPIR-V builds define `GAMEPKG_SEPARATE_SAMPLER=1`; use the example’s explicit texture/sampler branch.
