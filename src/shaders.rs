@@ -12,6 +12,64 @@ use std::{
     path::{Path, PathBuf},
 };
 pub const SLANG_VERSION: &str = "2026.19";
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CacheReceipt {
+    format_version: u32,
+    package_digest: String,
+    backend: String,
+    cache_digest: String,
+    files: std::collections::BTreeMap<String, String>,
+}
+fn receipt_path(root: &Path, archive: &[u8], backend: &str) -> PathBuf {
+    root.join("builds")
+        .join(digest(archive))
+        .join(format!("shaders-{backend}.json"))
+}
+fn publish_receipt(
+    root: &Path,
+    archive: &[u8],
+    settings: &Settings,
+    receipt: &CacheReceipt,
+) -> Result<()> {
+    let path = receipt_path(root, archive, &settings.shader_backend);
+    fs::create_dir_all(path.parent().unwrap())?;
+    let mut output = tempfile::NamedTempFile::new_in(path.parent().unwrap())?;
+    output.write_all(&serde_json::to_vec(receipt)?)?;
+    output.as_file().sync_all()?;
+    output.persist(path)?;
+    Ok(())
+}
+fn playback_cache(
+    root: &Path,
+    archive: &[u8],
+    settings: &Settings,
+    count: usize,
+) -> Result<(PathBuf, std::collections::BTreeMap<String, String>)> {
+    settings.validate()?;
+    let path = receipt_path(root, archive, &settings.shader_backend);
+    if !path.try_exists()? {
+        // Older builds require the installed compiler to locate their original cache.
+        return Ok((
+            compiler_cache(root, archive, settings)?.1,
+            Default::default(),
+        ));
+    }
+    let receipt: CacheReceipt =
+        serde_json::from_slice(&crate::files::read_regular(&path, 64 * 1024, false)?)?;
+    if receipt.format_version != 1
+        || receipt.package_digest != digest(archive)
+        || receipt.backend != settings.shader_backend
+        || receipt.files.len() != count * 2
+        || receipt.cache_digest.len() != 64
+        || !receipt.cache_digest.bytes().all(|c| c.is_ascii_hexdigit())
+    {
+        bail!("shader cache receipt does not match the signed package and backend");
+    }
+    let cache = root.join("shader-builds").join(&receipt.cache_digest);
+    Ok((cache, receipt.files))
+}
+
 pub fn compile(
     root: &Path,
     archive: &[u8],
@@ -146,6 +204,16 @@ pub fn compile(
     // Cache publication follows complete compilation; a failed shader cannot publish partial output.
     fs::create_dir_all(root.join("shader-builds"))?;
     let destination = tempfile::tempdir_in(root.join("shader-builds"))?;
+    let receipt = CacheReceipt {
+        format_version: 1,
+        package_digest: digest(archive),
+        backend: settings.shader_backend.clone(),
+        cache_digest: cache.file_name().unwrap().to_str().unwrap().to_owned(),
+        files: artifacts
+            .iter()
+            .map(|(name, bytes)| (name.clone(), digest(bytes)))
+            .collect(),
+    };
     let mut cache_matches = cache.is_dir();
     for (name, bytes) in artifacts {
         cache_matches &= crate::files::read_regular(&cache.join(&name), 16 * 1024 * 1024, false)
@@ -165,24 +233,16 @@ pub fn compile(
                 cache.display()
             );
         }
+        publish_receipt(root, archive, settings, &receipt)?;
         return Ok(cache);
     }
     fs::rename(destination.path(), &cache)?;
+    publish_receipt(root, archive, settings, &receipt)?;
     Ok(cache)
 }
 fn read_output(path: &Path) -> Result<Vec<u8>> {
-    use std::io::Read;
-    if fs::metadata(path)?.len() > 16 * 1024 * 1024 {
-        bail!("shader output exceeds 16 MiB");
-    }
-    let mut bytes = Vec::new();
-    fs::File::open(path)?
-        .take(16 * 1024 * 1024 + 1)
-        .read_to_end(&mut bytes)?;
-    if bytes.len() > 16 * 1024 * 1024 {
-        bail!("shader output exceeds 16 MiB");
-    }
-    Ok(bytes)
+    crate::files::read_regular(path, 16 * 1024 * 1024, false)
+        .context("shader output must be a regular file of at most 16 MiB")
 }
 
 /// Conservative source policy, not a replacement for compiler isolation or GPU validation.
@@ -324,7 +384,7 @@ pub fn load_fragment_sources(
     if !matches!(settings.shader_backend.as_str(), "glsl" | "spirv" | "wgsl") {
         bail!("this desktop shader renderer requires GLSL, SPIR-V, or WGSL; select one in Settings and rebuild");
     }
-    let (_, cache) = compiler_cache(root, archive, settings)?;
+    let (cache, expected) = playback_cache(root, archive, settings, manifest.shaders.len().max(1))?;
     let stages: Vec<&str> = if manifest.shaders.is_empty() {
         vec!["fragment"]
     } else {
@@ -335,15 +395,22 @@ pub fn load_fragment_sources(
         if *stage != "fragment" {
             bail!("desktop shader passes currently require fragment entries");
         }
-        let metadata: serde_json::Value = serde_json::from_slice(&read_output(
-            &cache.join(format!("{index}.reflection.json")),
-        )?)?;
+        let reflection_name = format!("{index}.reflection.json");
+        let reflection = read_output(&cache.join(&reflection_name))?;
+        if !expected.is_empty() && expected.get(&reflection_name) != Some(&digest(&reflection)) {
+            bail!("shader cache checksum mismatch; rebuild verified source");
+        }
+        let metadata: serde_json::Value = serde_json::from_slice(&reflection)?;
         let entry = manifest
             .shaders
             .get(index)
             .map_or("fragmentMain", |shader| shader.entry.as_str());
         validate_fragment_reflection(&metadata, entry)?;
-        let bytes = read_output(&cache.join(format!("{index}.shader")))?;
+        let binary_name = format!("{index}.shader");
+        let bytes = read_output(&cache.join(&binary_name))?;
+        if !expected.is_empty() && expected.get(&binary_name) != Some(&digest(&bytes)) {
+            bail!("shader cache checksum mismatch; rebuild verified source");
+        }
         sources.push(if settings.shader_backend != "glsl" {
             fragment_source(&bytes, &settings.shader_backend)?
         } else {

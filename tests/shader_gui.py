@@ -1,8 +1,8 @@
 from gui_test_support import start_display
-import os, subprocess, tempfile, time, argparse, shutil
+import os, subprocess, tempfile, time, argparse, shutil, hashlib, json
 from pathlib import Path
 from PIL import Image
-parser=argparse.ArgumentParser();parser.add_argument('--component',action='store_true');parser.add_argument('--texture',action='store_true');parser.add_argument('--backend',choices=['glsl','spirv','wgsl']);args=parser.parse_args()
+parser=argparse.ArgumentParser();parser.add_argument('--component',action='store_true');parser.add_argument('--texture',action='store_true');parser.add_argument('--backend',choices=['glsl','spirv','wgsl']);parser.add_argument('--without-compiler',action='store_true');args=parser.parse_args()
 project=Path(__file__).resolve().parents[1]
 os.chdir(project)
 with tempfile.TemporaryDirectory(prefix='gamepkg-shader-ui-') as directory:
@@ -26,7 +26,9 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-shader-ui-') as directory:
  run('install',root/'game.gamepkg','--trust-creator');run('build','com.gamepkg.shader-switch')
  display=start_display(env)
  try:
-  app=subprocess.Popen(['target/release/gamepkg-gui','--play','com.gamepkg.shader-switch'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+  player_env=dict(env)
+  if args.without_compiler:player_env.pop('GAMEPKG_SLANG_ROOT',None)
+  app=subprocess.Popen(['target/release/gamepkg-gui','--play','com.gamepkg.shader-switch'],env=player_env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
   try:
    for _ in range(100):
     if app.poll() is not None:raise RuntimeError(app.stderr.read().decode())
@@ -66,9 +68,19 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-shader-ui-') as directory:
   display.terminate();display.wait(timeout=5)
 
  # Resource declarations and missing reflection must fail before graphics setup.
- import json
  metadata=next((root/'library/shader-builds').glob('*/0.reflection.json'))
  original=metadata.read_bytes()
+ receipt=next((root/'library/builds').glob('*/shaders-*.json'))
+ original_receipt=receipt.read_bytes()
+ for changes in [{'format_version':2},{'package_digest':'0'*64},{'backend':'wrong'},{'cache_digest':'../escape'},{'unexpected':True}]:
+  record=dict(json.loads(original_receipt),**changes);receipt.write_text(json.dumps(record))
+  result=subprocess.run(['target/release/gamepkg','run','com.gamepkg.shader-switch','--frames','1'],env=env,capture_output=True,text=True,timeout=10)
+  assert result.returncode!=0,result.stdout
+ receipt.write_bytes(original_receipt)
+
+ def update_receipt(path):
+  record=json.loads(receipt.read_text());record['files'][path.name]=hashlib.sha256(path.read_bytes()).hexdigest();receipt.write_text(json.dumps(record))
+
  parsed=json.loads(original)
  mismatched=dict(parsed,entryPoints=[{'name':'not-the-signed-entry'}])
  missing_entries=dict(parsed);missing_entries.pop('entryPoints',None)
@@ -77,14 +89,18 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-shader-ui-') as directory:
  for reflection in [{'parameters':[{'name':'untrustedTexture'}]}, {}, mismatched, missing_entries, wrong_stage, missing_stage]:
   metadata.write_text(json.dumps(reflection))
   result=subprocess.run(['target/release/gamepkg','run','com.gamepkg.shader-switch','--frames','1'],env=env,capture_output=True,text=True)
+  assert result.returncode!=0 and 'checksum mismatch' in result.stderr,result.stderr
+  update_receipt(metadata)
+
+  result=subprocess.run(['target/release/gamepkg','run','com.gamepkg.shader-switch','--frames','1'],env=env,capture_output=True,text=True)
   assert result.returncode!=0 and ('resource' in result.stderr or 'reflection' in result.stderr), result.stderr
- metadata.write_bytes(original)
+ metadata.write_bytes(original);receipt.write_bytes(original_receipt)
  print('External resources, missing reflection, and entry-point and stage mismatches rejected before playback.')
 
  if args.backend in ('spirv','wgsl'):
   binary=metadata.with_name('0.shader');original_binary=binary.read_bytes()
-  binary.write_bytes(b'not SPIR-V')
+  binary.write_bytes(b'not SPIR-V');update_receipt(binary)
   result=subprocess.run(['target/release/gamepkg','run','com.gamepkg.shader-switch','--frames','1'],env=env,capture_output=True,text=True)
   assert result.returncode!=0 and ('SPIR-V' in result.stderr or 'WGSL' in result.stderr), result.stderr
-  binary.write_bytes(original_binary)
+  binary.write_bytes(original_binary);receipt.write_bytes(original_receipt)
   print('Malformed cached '+args.backend+' rejected before playback.')
