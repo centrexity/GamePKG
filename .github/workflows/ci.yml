@@ -197,7 +197,8 @@ jobs:
         run: |
           cargo fetch --locked
           python3 tools/package_release.py "$RUNNER_TEMP/gamepkg-distribution"
-          sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" /usr/bin/python3 tests/release_package.py "$RUNNER_TEMP/gamepkg-distribution/gamepkg-0.1.0-linux-x86_64.tar.gz"
+          gamepkg_release_version="$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["version"])')"
+          sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" /usr/bin/python3 tests/release_package.py "$RUNNER_TEMP/gamepkg-distribution/gamepkg-${gamepkg_release_version}-linux-x86_64.tar.gz"
       - uses: actions/upload-artifact@v4
         if: matrix.features == '--all-features'
         with:

@@ -17,11 +17,13 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-github-') as directory:
     tools.mkdir()
     curl = tools / 'curl'
     curl.write_text('''#!/usr/bin/env python3
-import os, pathlib, sys
+import json, os, pathlib, sys
 args = sys.argv[1:]
 url = args[args.index('--url') + 1]
 out = pathlib.Path(args[args.index('--output') + 1])
 root = pathlib.Path(os.environ['GITHUB_FIXTURE'])
+with (root / 'requests.jsonl').open('a') as requests:
+    requests.write(json.dumps(url) + '\\n')
 if url == 'https://api.github.com/repos/creator/game/releases/latest':
     out.write_bytes((root / 'release.json').read_bytes())
 elif url == 'https://github.com/creator/game/releases/download/v1/game.gamepkg':
@@ -115,6 +117,7 @@ print('200', end='')
         import time
         from gui_test_support import start_display
         publish('0.1.0')
+        (root / 'requests.jsonl').write_text('')
         shutil.rmtree(root / 'library')
         (root / 'settings.toml').write_text('automatic_update_checks = false\n')
         env['LIBGL_ALWAYS_SOFTWARE'] = '1'
@@ -141,9 +144,17 @@ print('200', end='')
                 screenshot = PROJECT / 'target/github-download-gui.png'
                 subprocess.run(['import', '-display', env['DISPLAY'], '-window', window, str(screenshot)],
                                env=env, check=True)
-                tsv = subprocess.run(['tesseract', str(screenshot), 'stdout', '--psm', '6', 'tsv'],
-                                     capture_output=True, text=True, check=True).stdout
-                words = [w for w in csv.DictReader(io.StringIO(tsv), delimiter='\t') if w['text'].strip()]
+                words = []
+                # Plain text and low-contrast buttons need different recognition inputs.
+                for name, filters in [('plain', []), ('controls', ['-colorspace', 'Gray', '-negate', '-threshold', '55%'])]:
+                    enlarged = root / f'ocr-{name}.png'
+                    subprocess.run(['convert', str(screenshot), *filters, '-resize', '300%', str(enlarged)], env=env, check=True)
+                    tsv = subprocess.run(['tesseract', str(enlarged), 'stdout', '--psm', '11', 'tsv'],
+                                         capture_output=True, text=True, check=True).stdout
+                    words.extend(w for w in csv.DictReader(io.StringIO(tsv), delimiter='\t') if w['text'].strip())
+                for word in words:
+                    for field in ['left', 'top', 'width', 'height']:
+                        word[field] = str(int(word[field]) // 3)
                 return ' '.join(w['text'] for w in words), words
 
             def click(word, dy=0):
@@ -159,7 +170,6 @@ print('200', end='')
             subprocess.run(['xdotool', 'type', '--clearmodifiers', '--delay', '20', URL], env=env, check=True)
             time.sleep(.2)
             text, words = screen()
-            assert 'github.com/creator/' in text, 'URL was not entered: ' + text
             click(next(w for w in words if w['text'] == 'Download'))
             for _ in range(30):
                 text, words = screen()
@@ -168,6 +178,8 @@ print('200', end='')
                 time.sleep(.1)
             else:
                 raise AssertionError('Verified package review did not appear: ' + text)
+            requests = [json.loads(line) for line in (root / 'requests.jsonl').read_text().splitlines()]
+            assert requests == ['https://api.github.com/repos/creator/game/releases/latest', URL + '/releases/download/v1/game.gamepkg'], requests
             assert 'com.gamepkg.minimal' in text and 'creator fingerprint:' in text.lower(), text
             assert not list((root / 'library').glob('*.gamepkg')), 'Inspection installed without approval'
             click(next(w for w in words if w['text'] == 'Trust'))
