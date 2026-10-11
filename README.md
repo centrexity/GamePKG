@@ -660,3 +660,5 @@ gamepkg build examples/good/collect-stars -o /tmp/collect-stars.gamepkg --key cr
 ```
 
 With `-o` and `--key`, `build` signs a temporary candidate, verifies it, and compiles its Rust and Slang source using the same isolated toolchain as installed games. Only a successful build publishes the signed source `.gamepkg`. The package retains source and assets; it does not embed the temporary Wasm or shader cache. This workflow does not install into your library. Missing signing keys, existing output files, or compilation failures leave no new output; existing files are never overwritten. Install the result and Build/Play it as usual. Without `-o`, `gamepkg build <id>` continues to compile an installed game. `pack` remains available to sign and validate source without requiring the compiler toolchain.
+
+Creator directory-build outputs must be outside the source tree, including when their parent folder is a symlink. The destination parent must already exist. Existing files and symlinks are refused before compilation; publication still uses an atomic no-overwrite operation after successful compilation.

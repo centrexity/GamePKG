@@ -11,6 +11,13 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-creator-build-') as directory:
         assert (result.returncode==0)==success,result.stderr
         return result.stdout
     key=root/'creator.key';run('keygen','-o',key)
+    alias=root/'source-alias';alias.symlink_to(source,target_is_directory=True)
+    dangling=root/'existing-symlink.gamepkg';dangling.symlink_to(root/'missing-target')
+    for output in [source/'inside.gamepkg',alias/'inside.gamepkg',root/'missing-parent/game.gamepkg',dangling]:
+        run('build',source,'-o',output,'--key',key,success=False)
+        assert not output.exists()
+    assert dangling.is_symlink(), 'existing symlink was replaced'
+    assert not (source/'inside.gamepkg').exists(), 'source directory was polluted'
     original=(source/'manifest.toml').read_text()
     for profile in ['core-v1','component-v1']:
         (source/'manifest.toml').write_text(f'runtime_profile = "{profile}"\n'+original)

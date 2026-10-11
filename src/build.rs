@@ -297,8 +297,25 @@ pub fn compile(root: &Path, id: &str) -> Result<()> {
 
 /// Creator workflow: publish a signed source archive only after a real isolated build.
 pub fn package(directory: &Path, output: &Path, seed: &[u8; 32]) -> Result<()> {
-    if output.exists() {
-        bail!("output package already exists");
+    let root = fs::canonicalize(directory)?;
+    let parent = fs::canonicalize(
+        output
+            .parent()
+            .filter(|path| !path.as_os_str().is_empty())
+            .unwrap_or(Path::new(".")),
+    )?;
+    if parent.starts_with(&root) {
+        bail!("output must be outside package directory");
+    }
+    let output = parent.join(
+        output
+            .file_name()
+            .context("output must name a package file")?,
+    );
+    match fs::symlink_metadata(&output) {
+        Ok(_) => bail!("output package already exists"),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
     }
     let stage = tempfile::tempdir()?;
     let candidate = stage.path().join("candidate.gamepkg");
@@ -306,11 +323,7 @@ pub fn package(directory: &Path, output: &Path, seed: &[u8; 32]) -> Result<()> {
     let library = stage.path().join("library");
     let manifest = crate::registry::install(&library, &candidate, true)?;
     compile(&library, &manifest.id)?;
-    let parent = output
-        .parent()
-        .filter(|path| !path.as_os_str().is_empty())
-        .unwrap_or(Path::new("."));
-    let mut published = tempfile::NamedTempFile::new_in(parent)?;
+    let mut published = tempfile::NamedTempFile::new_in(&parent)?;
     std::io::copy(&mut fs::File::open(&candidate)?, &mut published)?;
     published.as_file().sync_all()?;
     published
