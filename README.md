@@ -1,5 +1,7 @@
 # GamePKG — Play games safely
 
+[Website and player guide](https://centrexity.github.io/GamePKG/)
+
 **Know what you run. Control what it can access.** GamePKG is building a safer way to share and play games: inspectable source, creator-signed packages, isolated compilation, and a host that is designed to grant only the capabilities a game needs.
 
 **Current status:** this is a development preview. Package verification, catalog import, installation, update checks, and isolated Cargo Wasm and Slang shader builds on Linux work today. The experimental grid-v1 profile now plays in the GUI and terminal under Wasmtime with scoped asset reads, fuel, memory limits, and epoch deadlines. Resource-free Slang GLSL, SPIR-V, and WGSL fragment passes now render in the OpenGL GUI; versioned WIT components are supported alongside the legacy core profile; broader rendering remains pending; this is not a guarantee that a package is harmless.
