@@ -61,7 +61,7 @@ fn installed(root: &Path, id: &str) -> Result<PathBuf> {
     Ok(root.join(format!("{id}.gamepkg")))
 }
 pub fn cache_path(root: &Path, id: &str) -> Result<PathBuf> {
-    let bytes = fs::read(installed(root, id)?)?;
+    let bytes = crate::files::read_regular(&installed(root, id)?, 256 * 1024 * 1024, false)?;
     Ok(root.join("builds").join(digest(&bytes)).join("game.wasm"))
 }
 pub fn is_built(root: &Path, id: &str) -> Result<bool> {
@@ -150,7 +150,7 @@ pub fn compile(root: &Path, id: &str) -> Result<()> {
     }
     let archive = installed(root, id)?;
     let _build_lock = BuildChange::acquire(root, id)?;
-    let bytes = fs::read(archive)?;
+    let bytes = crate::files::read_regular(&archive, 256 * 1024 * 1024, false)?;
     let cache = root.join("builds").join(digest(&bytes)).join("game.wasm");
     let mut snapshot = tempfile::NamedTempFile::new()?;
     snapshot.write_all(&bytes)?;
@@ -300,10 +300,15 @@ pub fn compile(root: &Path, id: &str) -> Result<()> {
     if !output.status.success() {
         bail!("isolated Wasm build failed: {}", output.stderr);
     }
-    let artifact = fs::read(stage.path().join(format!(
-        "target/wasm32-unknown-unknown/release/{crate_name}.wasm"
-    )))?;
-    let installed_now = fs::read(installed(root, id)?)?;
+    let artifact = crate::files::read_regular(
+        &stage.path().join(format!(
+            "target/wasm32-unknown-unknown/release/{crate_name}.wasm"
+        )),
+        32 * 1024 * 1024,
+        false,
+    )?;
+    let installed_now =
+        crate::files::read_regular(&installed(root, id)?, 256 * 1024 * 1024, false)?;
     if digest(&installed_now) != digest(&bytes) {
         bail!("installed package changed during build; rebuild the new version");
     }

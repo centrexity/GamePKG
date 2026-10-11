@@ -148,7 +148,8 @@ pub fn compile(
     let destination = tempfile::tempdir_in(root.join("shader-builds"))?;
     let mut cache_matches = cache.is_dir();
     for (name, bytes) in artifacts {
-        cache_matches &= fs::read(cache.join(&name)).is_ok_and(|previous| previous == bytes);
+        cache_matches &= crate::files::read_regular(&cache.join(&name), 16 * 1024 * 1024, false)
+            .is_ok_and(|previous| previous == bytes);
         let mut file = fs::File::create(destination.path().join(name))?;
         file.write_all(&bytes)?;
         file.sync_all()?;
