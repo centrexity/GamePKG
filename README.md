@@ -60,7 +60,7 @@ Packing validates before publishing and refuses to overwrite files. The output m
 - Required manifest, PNG-signature thumbnail, license, credits, Cargo manifest/lockfile, and `source/src/lib.rs`.
 - At most 10,000 entries, 64 MiB per file, 256 MiB uncompressed total; stored and zstd entries only.
 - No absolute paths, traversal, backslashes, duplicate paths, directory entries, or symlinks.
-- Only `.slang` files under `shaders/`.
+- Only UTF-8 `.slang` files under `shaders/`. Inline SPIR-V, target-code injection and macro token pasting are rejected in every shader file, including unused sources. The conservative check also inspects comments and strings; it supplements the isolated compiler and does not prove GPU code is harmless.
 - Only one Rust source file, no dependencies, `package.build = false`, and restricted Cargo fields. Includes, attributes, external modules, unsafe blocks, foreign declarations, and filesystem/network/process/environment paths are rejected.
 - Optional previews are rejected until codec and keyframe validation exists. PNG validation currently checks the magic bytes only.
 

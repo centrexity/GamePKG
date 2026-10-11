@@ -221,3 +221,27 @@ fn rejects_network_grants_and_preserves_existing_output() {
     assert!(pack(&root, &out, &SEED).is_err());
     assert_eq!(fs::read(&out).unwrap(), b"keep this");
 }
+
+#[test]
+fn rejects_shader_assembly_and_macro_injection_without_publishing() {
+    for source in [
+        "float x() { return spirv_asm { result: $float = OpUndef; }; }",
+        "#define ASM spirv_asm\nfloat x() { return ASM {}; }",
+        "#define JOIN(a,b) a ## b\nJOIN(spirv_,asm)",
+        "#define JOIN(a,b) a #/**/# b\nJOIN(spirv_,asm)",
+        "spirv_\\\nasm {}",
+        "spirv_\\\r\nasm {}",
+        "void x() { __intrinsic_asm \"arbitrary code\"; }",
+        "__requirePrelude(\"arbitrary code\")",
+        "__target_intrinsic(glsl, \"arbitrary code\")",
+    ] {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("game");
+        fixture(&root);
+        fs::write(root.join("shaders/unused.slang"), source).unwrap();
+        let output = temp.path().join("bad.gamepkg");
+        fs::write(&output, b"previous package").unwrap();
+        assert!(pack(&root, &output, &SEED).is_err(), "accepted {source}");
+        assert_eq!(fs::read(output).unwrap(), b"previous package");
+    }
+}

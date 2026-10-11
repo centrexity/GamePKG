@@ -203,3 +203,52 @@ fn read_output(path: &Path) -> Result<Vec<u8>> {
     }
     Ok(bytes)
 }
+
+/// Conservative source policy, not a replacement for compiler isolation or GPU validation.
+/// Inspect comments and strings too so preprocessing cannot hide forbidden constructs.
+pub fn validate_source(bytes: &[u8]) -> Result<()> {
+    let source = std::str::from_utf8(bytes).context("Slang sources must be UTF-8")?;
+    let source = source.replace("\\\r\n", "").replace("\\\n", "");
+    // Token pasting can manufacture a forbidden identifier after this scan.
+    // Reject every pair of hash tokens, including pairs separated by comments.
+    let bytes = source.as_bytes();
+    let mut previous = 0;
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i..].starts_with(b"/*") {
+            i += 2;
+            while i < bytes.len() && !bytes[i..].starts_with(b"*/") {
+                i += 1;
+            }
+            i = (i + 2).min(bytes.len());
+            continue;
+        }
+        if bytes[i..].starts_with(b"//") {
+            while i < bytes.len() && bytes[i] != b'\n' {
+                i += 1;
+            }
+            continue;
+        }
+        if !bytes[i].is_ascii_whitespace() {
+            if previous == b'#' && bytes[i] == b'#' {
+                bail!("shader macro token pasting is not allowed");
+            }
+            previous = bytes[i];
+        }
+        i += 1;
+    }
+    for token in source.split(|c: char| !c.is_ascii_alphanumeric() && c != '_') {
+        if matches!(
+            token,
+            "spirv_asm"
+                | "__intrinsic_asm"
+                | "__require_prelude"
+                | "__requirePrelude"
+                | "__target_intrinsic"
+                | "__spirv_instruction"
+        ) {
+            bail!("shader target-code injection is not allowed: {token}");
+        }
+    }
+    Ok(())
+}

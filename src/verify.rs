@@ -73,6 +73,16 @@ pub fn verify(pkg: &mut Package, trusted: &[u8; 32]) -> Result<Manifest> {
             bail!("unexpected package file: {name}");
         }
     }
+    for name in pkg
+        .entries
+        .keys()
+        .filter(|name| name.starts_with("shaders/"))
+        .cloned()
+        .collect::<Vec<_>>()
+    {
+        crate::shaders::validate_source(&pkg.read(&name)?)
+            .with_context(|| format!("invalid shader source: {name}"))?;
+    }
     let env: Envelope = toml::from_str(std::str::from_utf8(&pkg.read("signature.toml")?)?)?;
     if m.creator_key.is_empty() || decode_key(&m.creator_key)? != *trusted {
         bail!("manifest creator key does not match trusted signer");
