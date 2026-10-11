@@ -16,7 +16,8 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-native-exchange-') as temporary
   key=root/'creator.key';package=root/'game.gamepkg'
   run('keygen','-o',key)
   run('pack',PROJECT/'examples/good/shader-switch','-o',package,'--key',key,'--shared-assets')
-  run('store-export',package,'-o',fixture/'game.gamepkgstore')
+  run('install',package,'--trust-creator')
+  run('prepare-build-worker','com.gamepkg.shader-switch',fixture/'game.gamepkgstore')
   run('build-worker',fixture/'game.gamepkgstore',fixture/'exchange')
   assert not list(fixture.rglob('*.key'))
  else:

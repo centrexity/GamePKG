@@ -9,7 +9,16 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-worker-test-') as directory:
   r=subprocess.run([str(CLI),*map(str,args)],env=env,capture_output=True,text=True,timeout=180);assert (r.returncode==0)==good,r.stdout+r.stderr;return r.stdout+r.stderr
  key=root/'key';run('keygen','-o',key);package=root/'game.gamepkg';store=root/'game.gamepkgstore'
  run('pack',PROJECT/'examples/good/shader-switch','-o',package,'--key',key,'--shared-assets')
- run('store-export',package,'-o',store);output=root/'output'
+ run('install',package,'--trust-creator')
+ (home/'saves').mkdir();(home/'saves/private').write_text('private save')
+ (home/'progress').mkdir();(home/'progress/private').write_text('private history')
+ run('prepare-build-worker','com.gamepkg.shader-switch',store)
+ import zipfile
+ with zipfile.ZipFile(store) as bundle:
+  assert all(name=='store.toml' or name.startswith(('packages/','blobs/')) for name in bundle.namelist())
+ before=store.read_bytes();run('prepare-build-worker','com.gamepkg.shader-switch',store,good=False);assert store.read_bytes()==before
+ missing=root/'missing.gamepkgstore';run('prepare-build-worker','unknown',missing,good=False);assert not missing.exists()
+ output=root/'output'
  run('build-worker',store,output)
  info=json.loads((output/'exchange.json').read_text());assert info['package_digest']==hashlib.sha256(package.read_bytes()).hexdigest();assert info['id']=='com.gamepkg.shader-switch' and info['backend']=='glsl'
  assert {p.name for p in output.iterdir()}=={'exchange.json','builds','shader-builds'}

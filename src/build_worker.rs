@@ -11,6 +11,24 @@ struct Exchange {
     backend: String,
     compiler_host_version: String,
 }
+pub fn prepare(root: &Path, id: &str, output: &Path) -> Result<()> {
+    let _library = crate::registry::LibraryChange::acquire(root)?;
+    let manifest = crate::registry::installed_manifest(root, id)?;
+    let bytes = crate::files::read_regular(
+        &root.join(format!("{id}.gamepkg")),
+        256 * 1024 * 1024,
+        false,
+    )?;
+    let snapshot = tempfile::tempdir()?;
+    let package = snapshot.path().join("source.gamepkg");
+    fs::write(&package, &bytes)?;
+    let verified = crate::verify::verify_embedded(&mut crate::archive::Package::open(&package)?)?;
+    if toml::to_string(&verified)? != toml::to_string(&manifest)? {
+        bail!("installed package changed while preparing the compiler request");
+    }
+    crate::store::export(root, &[package], output)
+}
+
 pub fn compile(
     store: &Path,
     output: &Path,
