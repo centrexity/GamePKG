@@ -12,11 +12,14 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-assets-') as directory:
     shutil.copytree(PROJECT / 'examples/minimal', source)
     manifest = source / 'manifest.toml'
     manifest.write_text('runtime_profile = "component-v1"\nrequires_rom = true\n' + manifest.read_text().replace('audio = false','audio = true').replace('save = false','save = true'))
+    manifest.write_text(manifest.read_text() + '\n[[achievements]]\nid="component_started"\ntitle="Component started"\ndescription="Play a WIT game"\n')
     rom = root / 'selected.rom'; rom.write_bytes(b'ROM')
     (source / 'assets').mkdir(exist_ok=True)
     (source / 'assets/message.txt').write_bytes(b'ABC')
     (source / 'source/src/lib.rs').write_text('''
 pub fn game_tick(_: u32, _: u64) -> u64 {
+    assert!(gamepkg::achievement_unlock(0));
+    assert!(!gamepkg::achievement_unlock(9999));
     let mut buffer = [0; 8];
     assert_eq!(gamepkg::asset_read("message.txt", 1, &mut buffer), Some(2));
     assert_eq!(&buffer[..2], b"BC");
@@ -82,4 +85,7 @@ pub fn game_tick(_: u32, _: u64) -> u64 {
     run('pack',source,'-o',package,'--key',key); run('install',package,'--trust-creator'); run('build','com.gamepkg.minimal')
     run('run','com.gamepkg.minimal','--frames','1','--rom',rom)
     assert save_path.read_bytes() == b'saved'
+    import json
+    histories=list((root/'library/progress').glob('*.json'))
+    assert len(histories)==1 and 'component_started' in json.loads(histories[0].read_text())['unlocked']
     print('WIT save rollback and signed audio/save permission denial passed.')

@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 #[serde(deny_unknown_fields)]
 pub struct Manifest {
     pub format_version: u32,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub achievements: Vec<Achievement>,
     #[serde(default = "default_engine_version")]
     pub engine_version: String,
     #[serde(default = "default_save_schema")]
@@ -28,6 +30,13 @@ pub struct Manifest {
     pub requires_rom: bool,
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub shared_assets: std::collections::BTreeMap<String, crate::pool::Reference>,
+}
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Achievement {
+    pub id: String,
+    pub title: String,
+    pub description: String,
 }
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -66,6 +75,8 @@ pub struct Limits {
     #[serde(alias = "memory_bytes")]
     pub hard_memory_bytes: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recommended_storage_bytes: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recommended_memory_bytes: Option<u64>,
     pub fuel: u64,
 }
@@ -95,6 +106,24 @@ impl Manifest {
     }
     pub fn parse(bytes: &[u8]) -> Result<Self> {
         let mut m: Self = toml::from_str(std::str::from_utf8(bytes)?)?;
+        if m.achievements.len() > 128 {
+            bail!("at most 128 achievements may be declared");
+        }
+        let mut ids = std::collections::HashSet::new();
+        for a in &m.achievements {
+            if !crate::progress::valid_id(&a.id)
+                || !ids.insert(&a.id)
+                || a.title.trim().is_empty()
+                || a.title.len() > 128
+                || a.description.len() > 512
+                || a.title
+                    .chars()
+                    .chain(a.description.chars())
+                    .any(char::is_control)
+            {
+                bail!("invalid or duplicate achievement declaration");
+            }
+        }
         if m.format_version != 1 {
             bail!("unsupported format version");
         }
@@ -135,6 +164,9 @@ impl Manifest {
             || m.limits.fuel == 0
         {
             bail!("invalid resource limits");
+        }
+        if m.limits.recommended_storage_bytes == Some(0) {
+            bail!("recommended storage must be positive");
         }
         if let Some(recommended) = m.limits.recommended_memory_bytes {
             if recommended == 0 || recommended > m.limits.hard_memory_bytes {

@@ -11,7 +11,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-library-play-') as directory:
     def run(*args):
         return subprocess.run([str(project/'target/release/gamepkg'),*map(str,args)],env=env,check=True,capture_output=True,text=True,timeout=60)
     key=root/'key';package=root/'game.gamepkg'
-    run('keygen','-o',key);run('pack',project/'examples/minimal','-o',package,'--key',key)
+    run('keygen','-o',key);run('pack',project/'examples/good/collect-stars','-o',package,'--key',key)
     display=start_display(env,1600,1000)
     app=subprocess.Popen([str(project/'target/release/gamepkg-gui')],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
     try:
@@ -57,20 +57,30 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-library-play-') as directory:
         enter_source(words,package)
         click_word(words,'Download')
         text,words=wait_screen(lambda text:'creator fingerprint:' in text.lower() and 'Trust this creator and install' in text,'library-inspected.png',20)
-        assert not (library/'com.gamepkg.minimal.gamepkg').exists(), 'inspection installed a package'
+        assert not (library/'com.gamepkg.collect-stars.gamepkg').exists(), 'inspection installed a package'
         click_word(words,'Trust')
-        text,words=wait_screen(lambda text:'com.gamepkg.minimal' in text and 'Not built' in text,'library-before-build.png')
+        text,words=wait_screen(lambda text:'com.gamepkg.collect-stars' in text and 'Not built' in text,'library-before-build.png')
         assert 'Rebuild' not in text, text
         click_word(words,'Build')
         text,words=wait_screen(lambda text:'Rebuild' in text,'library-after-build.png')
         assert len(list((library/'builds').glob('*/game.wasm')))==1
         click_word(words,'Play')
         text,words=wait_screen(lambda text:'Score:' in text,'library-click-play.png',20)
-        assert 'com.gamepkg.minimal' in text, text
+        assert 'com.gamepkg.collect-stars' in text, text
+        time.sleep(1.5)
         click_word(words,'Back')
         text,words=wait_screen(lambda text:'Rebuild' in text and 'Score:' not in text,'library-returned.png',20)
+        assert 'Storage' in text and 'Played' in text, text
+        crop=project/'target/library-history-storage.png'
+        Image.open(project/'target/library-returned.png').crop((0,100,1100,180)).resize((3300,240)).save(crop)
+        row=subprocess.run(['tesseract',str(crop),'stdout','--psm','6'],check=True,capture_output=True,text=True).stdout
+        assert 'unlocked' in row and 'expected' in row and 'used' in row, row
+        import json
+        records=list((library/'progress').glob('*.json'))
+        assert len(records)==1
+        assert json.loads(records[0].read_text())['played_ms'] >= 1000
         click_word(words,'Rebuild')
-        wait_screen(lambda text:'Built com.gamepkg.minimal' in text,'library-rebuilt.png')
+        wait_screen(lambda text:'Built com.gamepkg.collect-stars' in text,'library-rebuilt.png')
         assert len(list((library/'builds').glob('*/game.wasm')))==1
         text,words=read_screen('library-before-catalog.png')
         catalog=root/'games.gamepkglist'
@@ -79,7 +89,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-library-play-') as directory:
         click_word(words,'Import')
         wait_screen(lambda text:'Not downloaded' in text and 'No game packages downloaded' in text,'library-catalog-imported.png',20)
         assert 'com.example.offline' in (library/'catalog.gamepkglist').read_text()
-        assert list(library.glob('*.gamepkg')) == [library/'com.gamepkg.minimal.gamepkg']
+        assert list(library.glob('*.gamepkg')) == [library/'com.gamepkg.collect-stars.gamepkg']
         assert not (library/'com.example.offline.gamepkg').exists()
         print('Desktop workflow passed: inspect, creator approval, install, Build, Play, return, Rebuild, and offline catalog import without downloading packages.')
     finally:

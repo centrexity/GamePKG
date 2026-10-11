@@ -6,6 +6,7 @@ lockfile_sha256 = "28385a27f421a8cc8b417127fdbd67aef322b4394d8d26ad6f8556da0552d
 shader_profile = "slang"
 
 [limits]
+recommended_storage_bytes = 1048576
 recommended_memory_bytes = 8388608
 hard_memory_bytes = 16777216
 fuel = 1000000
@@ -15,3 +16,13 @@ input = true
 audio = false
 save = false
 network = "none"
+
+[[achievements]]
+id = "first_star"
+title = "First star"
+description = "Collect your first star."
+
+[[achievements]]
+id = "ten_stars"
+title = "Star collector"
+description = "Collect ten stars in one session."

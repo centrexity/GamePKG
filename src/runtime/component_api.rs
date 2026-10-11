@@ -46,6 +46,21 @@ pub(super) fn linker(engine: &Engine) -> Result<Linker<Data>> {
             Ok((bytes,))
         },
     )?;
+    host.func_wrap(
+        "achievement-unlock",
+        |mut store: StoreContextMut<'_, Data>, (index,): (u32,)| {
+            let Some(id) = store.data().achievements.get(index as usize).cloned() else {
+                return Ok((false,));
+            };
+            if !charge(&mut store, 64)? {
+                return Ok((false,));
+            }
+            if !store.data().pending_achievements.contains(&id) {
+                store.data_mut().pending_achievements.push(id);
+            }
+            Ok((true,))
+        },
+    )?;
     host.func_wrap("rom-size", |store: StoreContextMut<'_, Data>, (): ()| {
         Ok((store.data().rom.as_ref().map(|v| v.len() as u32),))
     })?;

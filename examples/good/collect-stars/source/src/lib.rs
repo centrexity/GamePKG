@@ -17,5 +17,7 @@ pub fn game_tick(input: u32, state: u64) -> u64 {
         ty = ((score.wrapping_mul(11).wrapping_add(5)) % 16) as u8;
         if tx == x && ty == y { tx = (tx + 1) % 16; }
     }
+    if score >= 1 { gamepkg::achievement_unlock(0); }
+    if score >= 10 { gamepkg::achievement_unlock(1); }
     (x as u64) | ((y as u64) << 8) | ((tx as u64) << 16) | ((ty as u64) << 24) | ((score as u64) << 32)
 }

@@ -697,3 +697,20 @@ Public release discovery uses GitHub's anonymous API and may encounter its rate 
 Run `python3 tests/github_download.py` after building the CLI to exercise GitHub release discovery with local fixtures, catalog predownload state, creator approval, signed updates, and signer/ID substitution rejection without relying on a GitHub account or API availability.
 
 GitHub project links also work with **Import .gamepkglist** and store inspection/import. Each action selects exactly one matching `.gamepkglist` or `.gamepkgstore` release asset, independently of game assets. Catalog downloads are limited to 4 MiB before parsing; importing a project-hosted list does not download its games.
+
+### Play history, achievements, and storage
+
+The desktop table and `gamepkg list` show time played and achievement progress. History belongs to the signed game ID and creator key, survives updates and restarts, and is kept separately from game saves. Time measures real elapsed play sessions, including time waiting for terminal input; headless frames do not simulate extra play time. The host checkpoints every ten seconds and saves on normal exit or return to the library. A crash can lose time since the last checkpoint.
+
+Creators can declare up to 128 achievements in the signed manifest:
+
+```toml
+[[achievements]]
+id = "first_star"
+title = "First star"
+description = "Collect your first star."
+```
+
+Both core and WIT guests call `gamepkg::achievement_unlock(0)` with the declaration's zero-based index. Invalid indices return false. Unlocks commit only after a successful tick, remain unlocked on repeat calls, and retain their first unlock timestamp. Keep IDs stable across updates. Achievement reports come from the game; they are local progress records rather than an anti-cheat service. Collect Stars demonstrates first-star and ten-star achievements. Hover over the table's achievement count for descriptions and status; the CLI lists each achievement.
+
+Storage shows measured current package and Wasm build file bytes plus an optional creator estimate. Set `recommended_storage_bytes` under `[limits]` to estimate the total space needed after building. Estimates do not limit disk usage or guarantee the final size. The library total also includes shader caches, older builds, shared assets, saves, and play history. External compilers, user ROMs, and filesystem allocation overhead are excluded. Catalog sizes remain unknown until download; game estimates remain unknown unless the creator supplies one.

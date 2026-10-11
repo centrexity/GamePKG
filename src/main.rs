@@ -351,6 +351,7 @@ fn main() -> Result<()> {
                     }
                 }
             }
+            game.finish()?;
         }
         Command::ImportList { source } => {
             let downloaded;
@@ -405,6 +406,35 @@ fn main() -> Result<()> {
                 }
             }
             for m in installed {
+                let progress = gamepkg::progress::load(&root, &m.id, &m.creator_key)?;
+                let usage = gamepkg::storage::usage(&root, &m)?;
+                println!(
+                    "Played: {}; achievements: {}/{}; package: {}; build: {}; expected storage: {}",
+                    gamepkg::progress::duration(progress.played_ms),
+                    m.achievements
+                        .iter()
+                        .filter(|a| progress.unlocked.contains_key(&a.id))
+                        .count(),
+                    m.achievements.len(),
+                    gamepkg::storage::bytes(usage.package_bytes),
+                    gamepkg::storage::bytes(usage.built_bytes),
+                    usage
+                        .estimated_bytes
+                        .map(gamepkg::storage::bytes)
+                        .unwrap_or_else(|| "unknown until built".into())
+                );
+                for a in &m.achievements {
+                    println!(
+                        "  [{}] {} — {}",
+                        if progress.unlocked.contains_key(&a.id) {
+                            "Unlocked"
+                        } else {
+                            "Locked"
+                        },
+                        a.title,
+                        a.description
+                    );
+                }
                 println!(
                     "{} {} (ROM: {})",
                     m.id,

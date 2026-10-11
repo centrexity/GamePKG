@@ -20,6 +20,8 @@ enum Tick {
     Component(wasmtime::component::TypedFunc<(u32, u64), (u64,)>),
 }
 struct Data {
+    achievements: Vec<String>,
+    pending_achievements: Vec<String>,
     limits: StoreLimits,
     package: Option<crate::archive::Package>,
     rom: Option<Vec<u8>>,
@@ -30,6 +32,7 @@ struct Data {
     shader_count: usize,
 }
 pub struct Game {
+    progress: Option<crate::progress::Session>,
     store: Store<Data>,
     tick: Tick,
     fuel: u64,
@@ -120,6 +123,7 @@ impl Game {
                             | "draw_rect"
                             | "draw_circle"
                             | "draw_shader"
+                            | "achievement_unlock"
                             | "audio_submit"
                     )
             }) {
@@ -167,6 +171,8 @@ impl Game {
         let mut store = Store::new(
             &engine,
             Data {
+                achievements: manifest.achievements.iter().map(|a| a.id.clone()).collect(),
+                pending_achievements: Vec::new(),
                 limits,
                 package,
                 rom,
@@ -198,6 +204,27 @@ impl Game {
                 return Ok(Tick::Component(tick));
             }
             let mut linker = Linker::new(&engine);
+            linker.func_wrap(
+                "gamepkg",
+                "achievement_unlock",
+                |mut caller: Caller<'_, Data>, index: i32| -> i32 {
+                    let Some(id) = caller.data().achievements.get(index as usize).cloned() else {
+                        return 0;
+                    };
+                    let fuel = caller.get_fuel().unwrap_or(0);
+                    if fuel < 64 {
+                        return 0;
+                    }
+                    if caller.set_fuel(fuel - 64).is_err() {
+                        return 0;
+                    }
+                    if !caller.data().pending_achievements.contains(&id) {
+                        caller.data_mut().pending_achievements.push(id);
+                    }
+                    1
+                },
+            )?;
+
             linker.func_wrap("gamepkg", "asset_read", asset_read)?;
             linker.func_wrap("gamepkg", "audio_submit", audio_submit)?;
             linker.func_wrap(
@@ -442,6 +469,7 @@ impl Game {
             }
         };
         Ok(Self {
+            progress: None,
             store,
             tick,
             fuel,
@@ -519,7 +547,18 @@ impl Game {
                 crate::shaders::load_fragment_sources(root, &archive, &manifest, &settings)?;
             game.store.data_mut().shader_count = game.shader_sources.len();
         }
+        game.progress = Some(crate::progress::Session::open(
+            root,
+            &manifest.id,
+            &manifest.creator_key,
+        )?);
         Ok(game)
+    }
+    pub fn finish(&mut self) -> Result<()> {
+        if let Some(progress) = &mut self.progress {
+            progress.finish()?;
+        }
+        Ok(())
     }
     pub fn audio_frame(&self) -> &[i16] {
         &self.store.data().audio
@@ -528,6 +567,10 @@ impl Game {
         &self.store.data().frame
     }
     pub fn step(&mut self, input: u32) -> Result<u64> {
+        if let Some(progress) = &mut self.progress {
+            progress.start();
+        }
+        self.store.data_mut().pending_achievements.clear();
         self.store.data_mut().frame.reset();
         self.store.data_mut().audio.clear();
         self.store.set_fuel(self.fuel)?;
@@ -563,6 +606,9 @@ impl Game {
         };
         if let Some(save) = self.store.data_mut().save.as_mut() {
             save.commit().context("unable to persist game save")?;
+        }
+        if let Some(progress) = &mut self.progress {
+            progress.tick(&self.store.data().pending_achievements)?;
         }
         Ok(self.state)
     }

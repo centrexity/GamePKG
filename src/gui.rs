@@ -40,6 +40,9 @@ pub struct App {
     loaded: bool,
     icons: HashMap<String, egui::TextureHandle>,
     built: HashSet<String>,
+    history: HashMap<String, crate::progress::Record>,
+    usage: HashMap<String, crate::storage::Usage>,
+    library_bytes: Option<u64>,
     preview: Option<(Vec<Vec<u8>>, std::time::Instant, egui::TextureHandle)>,
 }
 impl App {
@@ -79,7 +82,19 @@ impl App {
                 self.icons.clear();
                 self.built.clear();
                 if let Ok(root) = crate::registry::default_root() {
+                    self.history.clear();
+                    self.usage.clear();
+                    self.library_bytes = crate::storage::total(&root).ok();
                     for m in &games {
+                        match crate::progress::load(&root, &m.id, &m.creator_key) {
+                            Ok(record) => {
+                                self.history.insert(m.id.clone(), record);
+                            }
+                            Err(e) => self.status = format!("Unable to read play history: {e}"),
+                        }
+                        if let Ok(usage) = crate::storage::usage(&root, m) {
+                            self.usage.insert(m.id.clone(), usage);
+                        }
                         if crate::build::is_built(&root, &m.id).unwrap_or(false) {
                             self.built.insert(m.id.clone());
                         }
@@ -115,6 +130,9 @@ impl App {
             }
             Err(e) => {
                 self.installed.clear();
+                self.history.clear();
+                self.usage.clear();
+                self.library_bytes = None;
                 self.rejected.clear();
                 self.icons.clear();
                 self.built.clear();
@@ -493,7 +511,13 @@ impl eframe::App for App {
             self.sprite_textures.finish(image_count);
             ctx.request_repaint_after(std::time::Duration::from_millis(16));
             if close || failure.is_some() {
+                if let Some(game) = &mut self.player {
+                    if let Err(e) = game.finish() {
+                        self.status = format!("Unable to save play history: {e}");
+                    }
+                }
                 self.player = None;
+                self.loaded = false;
                 self.gpu = None;
                 self.audio_player = None;
             }
@@ -618,7 +642,7 @@ impl eframe::App for App {
             let mut play = None;
             egui::ScrollArea::both().max_height(350.0).show(ui, |ui| {
                 egui::Grid::new("installed_games").striped(true).min_col_width(70.0).show(ui, |ui| {
-                    for label in ["Icon", "Game", "Version", "ROM", "State", "Actions", "Updates"] { ui.strong(label); }
+                    for label in ["Icon", "Game", "Version", "ROM", "State", "Played / achievements", "Storage", "Actions", "Updates"] { ui.strong(label); }
                     ui.end_row();
                     for entry in &self.catalog {
                         if self.installed.iter().any(|m| m.id == entry.id) { continue; }
@@ -627,6 +651,7 @@ impl eframe::App for App {
                         ui.label(entry.version.as_deref().unwrap_or("Unknown")).on_hover_text("Version claimed by the catalog");
                         ui.label(match entry.requires_rom { Some(true) => "User ROM required", Some(false) => "Not required", None => "Unknown" });
                         ui.label("Not downloaded");
+                        ui.label("Not played"); ui.label("Size unknown");
                         if ui.add_enabled(self.result.is_none(),egui::Button::new("Download / inspect")).clicked() { download = Some(entry.id.clone()); }
                         ui.label("Download first"); ui.end_row();
                     }
@@ -637,6 +662,9 @@ impl eframe::App for App {
                         ui.label(if m.requires_rom { "User ROM required" } else { "Not required" });
                         let built = self.built.contains(&m.id);
                         ui.label(if built { "Built" } else { "Not built" }).on_hover_text(format!("Memory: {:.1} MiB recommended; {:.1} MiB hard limit", m.limits.recommended_memory_bytes() as f64 / 1048576.0, m.limits.hard_memory_bytes as f64 / 1048576.0));
+                        let record=self.history.get(&m.id).cloned().unwrap_or_default();
+                        ui.label(format!("{}\n{}/{} unlocked", crate::progress::duration(record.played_ms), m.achievements.iter().filter(|a|record.unlocked.contains_key(&a.id)).count(), m.achievements.len())).on_hover_text(m.achievements.iter().map(|a|format!("{}: {} — {}", if record.unlocked.contains_key(&a.id) {"Unlocked"} else {"Locked"}, a.title, a.description)).collect::<Vec<_>>().join("\n"));
+                        if let Some(usage)=self.usage.get(&m.id) { ui.label(format!("{} used\n{} expected", crate::storage::bytes(usage.package_bytes.saturating_add(usage.built_bytes)), usage.estimated_bytes.map(crate::storage::bytes).unwrap_or_else(||"Unknown".into()))).on_hover_text("Current package and Wasm build file bytes. Expected size is a creator estimate. Shared assets, shader caches, saves and history are included in the library total."); } else { ui.label("Unavailable"); }
                         ui.horizontal(|ui| {
                             if ui.add_enabled(self.result.is_none(),egui::Button::new("Details")).clicked() { inspect = Some(m.id.clone()); }
                             if ui.add_enabled(built && self.result.is_none() && (!m.requires_rom || !self.rom_path.trim().is_empty()), egui::Button::new("Play")).on_hover_text("Play this built game. ROM games need your file path above.").clicked() { play = Some(m.id.clone()); }
@@ -691,6 +719,7 @@ impl eframe::App for App {
                     None => Ok(Work::Message(format!("{id} is up to date."))),
                 });
             }
+            ui.label(format!("Library storage used: {} (file bytes, including shared assets, caches, saves and play history)", self.library_bytes.map(crate::storage::bytes).unwrap_or_else(||"Unavailable".into())));
             ui.separator();
             ui.label("Local package, game list, or store bundle path; HTTPS, GitHub project, or Tor URL");
             ui.text_edit_singleline(&mut self.source);
@@ -779,6 +808,8 @@ impl eframe::App for App {
                 ui.separator(); ui.heading(&m.id); ui.label(format!("Version: {}", m.version));
                 ui.label(format!("Memory: {:.1} MiB recommended • {:.1} MiB hard limit", m.limits.recommended_memory_bytes() as f64 / 1048576.0, m.limits.hard_memory_bytes as f64 / 1048576.0));
                 ui.label(if m.requires_rom { "Requires a ROM supplied by you. It is not included in this package." } else { "No user ROM required." });
+                let package_size = self.pending.as_ref().and_then(|file| file.as_file().metadata().ok()).map(|m|m.len()).or_else(||self.usage.get(&m.id).map(|u|u.package_bytes));
+                ui.label(format!("Storage: {} package; {} expected after building", package_size.map(crate::storage::bytes).unwrap_or_else(||"Unknown".into()), m.limits.recommended_storage_bytes.map(|v|v.max(package_size.unwrap_or(0))).map(crate::storage::bytes).unwrap_or_else(||"Unknown (no creator estimate)".into())));
                 ui.label(format!("Creator fingerprint: {}", crate::verify::digest(&hex::decode(&m.creator_key).unwrap_or_default())));
                 ui.label("A valid signature proves key ownership, not a real-world identity. Confirm the creator before first installation.");
                 if !m.shared_assets.is_empty() { ui.label(format!("Shared store assets: {} (must be available locally to install and play)", m.shared_assets.len())); }
