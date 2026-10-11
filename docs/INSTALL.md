@@ -31,7 +31,7 @@ To try a ready-to-install game, paste this catalog URL into the desktop library 
 https://github.com/centrexity/GamePKG/releases/download/v0.1.2/demos.gamepkglist
 ```
 
-The catalog adds three games without downloading them. Choose **Download / inspect** for Collect Stars, review and approve its creator, then **Build** and **Play**. None of these demos requires a ROM. For offline use, download the [demo store](https://github.com/centrexity/GamePKG/releases/download/v0.1.2/demos.gamepkgstore), then inspect and import that local file. [Demo checksums](https://github.com/centrexity/GamePKG/releases/download/v0.1.2/demo-packages.sha256) cover the packages, catalog and store.
+The catalog adds three games without downloading them. Choose **Download / inspect** for Collect Stars, review and approve its creator, then **Build** and **Play**. None of these demos requires a ROM. In Collect Stars, use the arrow keys or WASD to move toward the yellow target; collecting stars increases your score and unlocks achievements. In Shape Playground and PNG Sprite Playground, hold Left or Right to move the square or sprite. Use **Back to library** to return to your games. For offline use, download the [demo store](https://github.com/centrexity/GamePKG/releases/download/v0.1.2/demos.gamepkgstore), then inspect and import that local file. [Demo checksums](https://github.com/centrexity/GamePKG/releases/download/v0.1.2/demo-packages.sha256) cover the packages, catalog and store.
 
 To create your own signed package from an included example, generate a private creator key outside the example directory:
 
