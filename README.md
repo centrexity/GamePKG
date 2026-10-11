@@ -270,9 +270,18 @@ export GAMEPKG_SLANG_ROOT=/absolute/path/gamepkg-slang
 The installer downloads the official Slang 2026.19 Linux x86-64 release and
 checks a pinned SHA-256 before unpacking it. Alternatively set the installation
 folder and backend in the desktop Settings page. The default backend is
-SPIR-V; WGSL and Metal source outputs are also tested. DXIL requires a suitable
-downstream DXC installation and reports an error if unavailable. No backend
-fallback occurs. Select GLSL and rebuild to use resource-free fragment passes in
+SPIR-V; WGSL, Metal, and DXIL outputs are also tested. DXIL requires the pinned
+DXC 1.9.2609 Linux x86-64 distribution:
+
+```sh
+python3 tools/install_dxc.py /absolute/path/gamepkg-dxc
+export GAMEPKG_DXC_ROOT=/absolute/path/gamepkg-dxc
+```
+
+The installer verifies the official release archive checksum. The host checks
+both DXC library hashes before compilation, mounts them read-only inside the
+build sandbox, and includes the pinned DXC identity in the shader cache key.
+Missing or modified libraries fail the build. No backend fallback occurs. Select GLSL and rebuild to use resource-free fragment passes in
 the OpenGL desktop player. SPIR-V, WGSL, Metal and DXIL rendering integration remains pending.
 
 Legacy manifests default to `shaders/main.slang`, `fragmentMain`, fragment

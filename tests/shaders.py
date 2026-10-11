@@ -24,7 +24,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-shaders-') as directory:
     package = root / 'good.gamepkg'
     run('pack', source, '-o', package, '--key', key)
     run('install', package, '--trust-creator')
-    for backend in ['spirv', 'wgsl', 'metal']:
+    for backend in ['spirv', 'wgsl', 'metal', 'dxil']:
         config.write_text(f'shader_backend = "{backend}"\n')
         previous = set((library / 'shader-builds').glob('*'))
         run('build', 'com.gamepkg.collect-stars')
@@ -34,10 +34,23 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-shaders-') as directory:
         binary = (cache / '0.shader').read_bytes()
         assert binary
         if backend == 'spirv': assert binary[:4] == bytes([3,2,35,7])
+        if backend == 'dxil': assert binary[:4] == b'DXBC'
         reflection = json.loads((cache / '0.reflection.json').read_text())
         assert reflection['entryPoints'][0]['name'] == 'fragmentMain', reflection
         run('build', 'com.gamepkg.collect-stars')
         assert len(list((library / 'shader-builds').glob('*'))) == len(previous) + 1
+    config.write_text('shader_backend = "dxil"\n')
+    caches = set((library/'shader-builds').glob('*'))
+    pinned_dxc = env.pop('GAMEPKG_DXC_ROOT')
+    assert 'DXIL requires pinned DXC' in run('build','com.gamepkg.collect-stars',success=False)
+    modified = root/'modified-dxc/lib'
+    modified.mkdir(parents=True)
+    shutil.copyfile(Path(pinned_dxc)/'lib/libdxcompiler.so',modified/'libdxcompiler.so')
+    (modified/'libdxil.so').write_bytes(b'not-the-approved-library')
+    env['GAMEPKG_DXC_ROOT'] = str(modified.parent)
+    assert 'DXC library checksum mismatch' in run('build','com.gamepkg.collect-stars',success=False)
+    assert set((library/'shader-builds').glob('*')) == caches
+    env['GAMEPKG_DXC_ROOT'] = pinned_dxc
     config.write_text('shader_backend = "spirv"\n')
     manifest = source / 'manifest.toml'
     manifest.write_text(manifest.read_text().replace('version = "0.1.0"', 'version = "0.2.0"'))
@@ -49,4 +62,4 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-shaders-') as directory:
     assert 'isolated shader build failed' in run('build', 'com.gamepkg.collect-stars', success=False)
     assert set((library / 'shader-builds').glob('*')) == caches
     assert len(list((library / 'builds').glob('*/game.wasm'))) == 1
-    print('Shaders passed: SPIR-V, WGSL, Metal, reflection, rebuild caching and host include denial.')
+    print('Shaders passed: SPIR-V, WGSL, Metal, DXIL, reflection, rebuild caching and host include denial.')

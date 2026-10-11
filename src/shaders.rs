@@ -24,6 +24,7 @@ pub fn compile(
     }
     settings.validate()?;
     let (compiler, cache) = compiler_cache(root, archive, settings)?;
+    let dxc = dxc_root(&settings.shader_backend)?;
     let defaults = vec![Shader {
         source: "shaders/main.slang".into(),
         entry: "fragmentMain".into(),
@@ -70,6 +71,9 @@ pub fn compile(
                 command.args(["--ro-bind", path, path]);
             }
         }
+        if let Some(dxc) = &dxc {
+            command.arg("--ro-bind").arg(dxc.join("lib")).arg("/dxc");
+        }
         command
             .arg("--ro-bind")
             .arg(&compiler)
@@ -84,7 +88,11 @@ pub fn compile(
                 "/work",
                 "--setenv",
                 "LD_LIBRARY_PATH",
-                "/compiler/lib",
+                if dxc.is_some() {
+                    "/dxc:/compiler/lib"
+                } else {
+                    "/compiler/lib"
+                },
                 "--",
                 "/compiler/bin/slangc",
             ])
@@ -117,6 +125,7 @@ pub fn compile(
         let bytes = read_output(&stage.path().join(&binary))?;
         if bytes.is_empty()
             || (settings.shader_backend == "spirv" && !bytes.starts_with(&[3, 2, 35, 7]))
+            || (settings.shader_backend == "dxil" && !bytes.starts_with(b"DXBC"))
         {
             bail!("invalid shader compiler output");
         }
@@ -216,6 +225,41 @@ pub fn validate_source(bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
+fn dxc_root(backend: &str) -> Result<Option<PathBuf>> {
+    if backend != "dxil" {
+        return Ok(None);
+    }
+    let root = std::env::var_os("GAMEPKG_DXC_ROOT")
+        .map(PathBuf::from)
+        .context(
+            "DXIL requires pinned DXC 1.9.2609; run tools/install_dxc.py and set GAMEPKG_DXC_ROOT",
+        )?;
+    let root = fs::canonicalize(root)?;
+    for (name, expected) in [
+        (
+            "libdxcompiler.so",
+            "d40e4a7b3b46490313f4bfd08101946483a673831b3ea65c93d746de1c2f9216",
+        ),
+        (
+            "libdxil.so",
+            "730b31420ea0c38f711c1eb581613bfd0797c53371a55f721838b29d10881c8c",
+        ),
+    ] {
+        let mut bytes = Vec::new();
+        use std::io::Read;
+        fs::File::open(root.join("lib").join(name))?
+            .take(64 * 1024 * 1024 + 1)
+            .read_to_end(&mut bytes)?;
+        if bytes.len() > 64 * 1024 * 1024 {
+            bail!("DXC library exceeds size limit");
+        }
+        if digest(&bytes) != expected {
+            bail!("DXC library checksum mismatch: {name}");
+        }
+    }
+    Ok(Some(root))
+}
+
 fn compiler_cache(root: &Path, archive: &[u8], settings: &Settings) -> Result<(PathBuf, PathBuf)> {
     let compiler = std::env::var_os("GAMEPKG_SLANG_ROOT")
         .map(PathBuf::from)
@@ -236,9 +280,14 @@ fn compiler_cache(root: &Path, archive: &[u8], settings: &Settings) -> Result<(P
     {
         bail!("Slang version must be exactly {SLANG_VERSION}");
     }
+    let dxc_identity = if dxc_root(&settings.shader_backend)?.is_some() {
+        ":dxc-1.9.2609"
+    } else {
+        ""
+    };
     let identity = digest(
         format!(
-            "{}:{SLANG_VERSION}:{}:{}:{}",
+            "{}:{SLANG_VERSION}:{}:{}:{}{dxc_identity}",
             digest(archive),
             settings.shader_backend,
             digest(&fs::read(&exe)?),

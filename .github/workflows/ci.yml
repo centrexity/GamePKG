@@ -42,6 +42,11 @@ jobs:
         run: |
           python3 tools/install_slang.py "/tmp/gamepkg-slang"
           echo "GAMEPKG_SLANG_ROOT=/tmp/gamepkg-slang" >> "$GITHUB_ENV"
+      - name: Install pinned DXC for DXIL shaders
+        if: matrix.features == '--all-features'
+        run: |
+          python3 tools/install_dxc.py "/tmp/gamepkg-dxc"
+          echo "GAMEPKG_DXC_ROOT=/tmp/gamepkg-dxc" >> "$GITHUB_ENV"
       - name: Stage compiler for privileged namespace tests
         if: matrix.features == '--all-features'
         run: |
@@ -88,7 +93,7 @@ jobs:
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/runtime_saves.py
       - name: Pinned shader integration
         if: matrix.features == '--all-features'
-        run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/shaders.py
+        run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" GAMEPKG_DXC_ROOT="$GAMEPKG_DXC_ROOT" python3 tests/shaders.py
       - name: Guest drawing integration
         if: matrix.features == '--all-features'
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/drawing_game.py
