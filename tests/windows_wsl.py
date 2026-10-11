@@ -33,6 +33,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-wsl-test-') as directory:
   run('integrity-check',game_id)
   assert 'Ran 3 frames' in run('run',game_id,'--frames','3')
   assert not (home/'.install-lock').exists()
+  print('Windows WSL build, CLI playback and repair passed:',profile,flush=True)
   if args.gui:
    from windows_gui_support import verify_shader_input
    verify_shader_input(PROJECT,env,game_id,profile)

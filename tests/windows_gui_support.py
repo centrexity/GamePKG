@@ -17,7 +17,7 @@ def verify_shader_input(project,env,game_id,label):
  gdi.CreateDIBSection.argtypes=[W.HDC,ctypes.POINTER(Info),W.UINT,ctypes.POINTER(ctypes.c_void_p),W.HANDLE,W.DWORD];gdi.CreateDIBSection.restype=W.HBITMAP
  def capture(window):
   rectangle=W.RECT();assert user.GetClientRect(window,ctypes.byref(rectangle))
-  width,height=rectangle.right,rectangle.bottom;assert 1<=width<=4096 and 1<=height<=4096
+  width,height=rectangle.right,rectangle.bottom;assert 1<=width<=4096 and 1<=height<=4096,f'Unexpected native client area: {width}x{height}'
   dc=user.GetDC(window);memory=gdi.CreateCompatibleDC(dc);assert dc and memory
   info=Info();info.header=Header(ctypes.sizeof(Header),width,-height,1,32,0,0,0,0,0,0)
   pixels=ctypes.c_void_p();bitmap=gdi.CreateDIBSection(dc,ctypes.byref(info),0,ctypes.byref(pixels),None,0);assert bitmap and pixels.value
@@ -40,10 +40,15 @@ def verify_shader_input(project,env,game_id,label):
     @callback_type
     def visit(handle,_):
      pid=W.DWORD();user.GetWindowThreadProcessId(handle,ctypes.byref(pid))
-     if pid.value==app.pid and user.IsWindowVisible(handle):found.append(handle)
+     if pid.value==app.pid and user.IsWindowVisible(handle):
+      rectangle=W.RECT()
+      if user.GetClientRect(handle,ctypes.byref(rectangle)):
+       width,height=rectangle.right,rectangle.bottom
+       # Skip small transient windows created during graphics initialization.
+       if 320<=width<=4096 and 240<=height<=4096:found.append((width*height,handle))
      return True
     user.EnumWindows(visit,0)
-    if found:window=found[0];break
+    if found:window=max(found)[1];break
     assert time.monotonic()<deadline,'Native GamePKG window did not appear';time.sleep(.1)
    user.SetForegroundWindow(window)
    def require_color(channel,name):
