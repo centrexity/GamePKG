@@ -503,6 +503,19 @@ impl eframe::App for App {
                         ui.label("Choose the pinned DXC installation. GamePKG verifies its compiler libraries before each build.");
                         if std::env::var_os("GAMEPKG_DXC_ROOT").is_some() { ui.label("GAMEPKG_DXC_ROOT overrides this folder for the current launch."); }
                     }
+                    ui.separator();
+                    ui.heading("Approved game libraries");
+                    let mut approved = self.settings_draft.approved_crates.iter().any(|name| name == crate::allowlist::NAME);
+                    if ui.checkbox(&mut approved, "Allow bundled byteorder-lite 0.1.0").changed() {
+                        self.settings_draft.approved_crates.clear();
+                        if approved { self.settings_draft.approved_crates.push(crate::allowlist::NAME.into()); }
+                    }
+                    ui.label("Some games need this reviewed library. Turning it off blocks their verification, installation, builds, and new play sessions after saving.");
+                    ui.collapsing("Pinned library details", |ui| {
+                        ui.label(format!("Archive SHA-256: {}", crate::allowlist::CHECKSUM));
+                        ui.label("The host supplies the approved source. Games cannot change its version, enable extra features, or download other libraries.");
+                    });
+                    ui.separator();
                     ui.checkbox(&mut self.settings_draft.optimize_builds,"Optimize new builds");
                     ui.label("Applies on Build/Rebuild; existing compiled games are kept.");
                     ui.checkbox(&mut self.settings_draft.dark_mode,"Dark appearance");

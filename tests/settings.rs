@@ -10,6 +10,7 @@ fn settings_persist_and_failed_saves_preserve_previous_values() {
     settings.memory_ceiling_mib = 64;
     settings.fuel_ceiling = 10000;
     settings.tick_deadline_ms = 50;
+    settings.approved_crates.clear();
     settings.optimize_builds = false;
     settings.dark_mode = false;
     settings.mute_audio = true;
