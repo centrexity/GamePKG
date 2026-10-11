@@ -305,6 +305,7 @@ impl Game {
         snapshot.flush()?;
         let mut package = crate::archive::Package::open(snapshot.path())?;
         let manifest = crate::verify::verify_embedded(&mut package)?;
+        package.resolve_shared_assets(root)?;
         let cache = root
             .join("builds")
             .join(crate::verify::digest(&archive))

@@ -12,6 +12,8 @@ struct Cli {
 }
 #[derive(Subcommand)]
 enum Command {
+    /// Add one local asset blob to the shared store and print its hash and size.
+    PoolPut { file: PathBuf },
     /// Add verified package assets to the shared content-addressed store.
     PoolImport { package: PathBuf },
     /// Verify a shared blob and copy it to a new output file.
@@ -71,6 +73,9 @@ enum Command {
         output: PathBuf,
         #[arg(long)]
         key: PathBuf,
+        /// Keep assets in the shared store and sign their references in the manifest.
+        #[arg(long)]
+        shared_assets: bool,
     },
     /// Verify the embedded creator signature; optionally require a known public key.
     Verify {
@@ -95,6 +100,20 @@ fn key(s: &str) -> Result<[u8; 32]> {
 }
 fn main() -> Result<()> {
     match Cli::parse().command {
+        Command::PoolPut { file } => {
+            use std::io::Read;
+            let input = fs::File::open(file)?;
+            if !input.metadata()?.is_file() {
+                anyhow::bail!("asset must be a regular file");
+            }
+            let mut bytes = Vec::new();
+            input
+                .take(gamepkg::archive::MAX_FILE + 1)
+                .read_to_end(&mut bytes)?;
+            let reference =
+                gamepkg::pool::Pool::open(&gamepkg::registry::default_root()?)?.put(&bytes)?;
+            println!("{} {}", reference.sha256, reference.size);
+        }
         Command::PoolImport { package } => {
             let pool = gamepkg::pool::Pool::open(&gamepkg::registry::default_root()?)?;
             let references = pool.import_package(&package)?;
@@ -308,8 +327,19 @@ fn main() -> Result<()> {
             dir,
             output,
             key: path,
+            shared_assets,
         } => {
-            gamepkg::pack::pack(&dir, &output, &gamepkg::creator::read_seed(&path)?)?;
+            let seed = gamepkg::creator::read_seed(&path)?;
+            if shared_assets {
+                gamepkg::pack::pack_shared(
+                    &dir,
+                    &output,
+                    &seed,
+                    &gamepkg::registry::default_root()?,
+                )?;
+            } else {
+                gamepkg::pack::pack(&dir, &output, &seed)?;
+            }
             println!("Created {}", output.display());
         }
         Command::Verify {
@@ -337,6 +367,9 @@ fn main() -> Result<()> {
                 None => {
                     gamepkg::verify::verify_embedded(&mut pkg)?;
                 }
+            }
+            if pkg.has_shared_assets() {
+                pkg.resolve_shared_assets(&gamepkg::registry::default_root()?)?;
             }
             use std::io::Write;
             let data = pkg.asset(&path)?;

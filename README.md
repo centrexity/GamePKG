@@ -505,6 +505,32 @@ blob. Every read checks the exact size and content hash. Writes publish without
 replacing existing blobs; a corrupted blob causes an error. Symlinked blobs and
 pool folders are rejected. Individual blobs are limited to 64 MiB.
 
-This is the storage foundation for store packages. Signed external asset
-references and runtime integration are still being implemented; ordinary games
-continue reading their assets directly from their own archives.
+Store packages can now sign external asset references and use them through the
+same scoped runtime API. Ordinary sideloaded packages continue reading their
+assets directly from their own archives.
+
+To create a store package, use:
+
+```sh
+gamepkg pack /path/to/game -o store.gamepkg --key creator.key --shared-assets
+```
+
+This adds assets to your current library's pool and replaces embedded assets
+with signed `shared_assets` entries in the manifest. Each entry binds an
+asset-relative path to its SHA-256 and exact size. The original source folder
+is unchanged. Missing blobs are never fetched automatically; provision a
+recipient's pool with `gamepkg pool-put /path/to/asset` or import the original
+self-contained package with `pool-import` before installing its store variant.
+
+Signature verification works offline without the pool. Installation, building,
+and playing additionally require every referenced blob to match its signed
+hash and size. Runtime reads use private session snapshots and the same 64 KiB
+range limit and fuel accounting as stored archive assets. A changed or deleted
+pool blob cannot alter an active session. Logical package contents, including
+shared references, remain bounded to 256 MiB. Conflicting sizes for one hash,
+invalid paths, and assets declared both embedded and shared are rejected.
+
+Run `python3 tests/shared_assets_game.py` to verify both core and WIT source
+games using signed store packages, missing-blob refusal, deduplication, and
+small reads from large shared assets. Remote store distribution and pool
+garbage collection remain future work.

@@ -40,6 +40,7 @@ pub fn compile(root: &Path, id: &str) -> Result<()> {
     snapshot.flush()?;
     let mut pkg = Package::open(snapshot.path())?;
     let manifest = verify_embedded(&mut pkg)?;
+    pkg.resolve_shared_assets(root)?;
     let cargo: toml::Value = toml::from_str(std::str::from_utf8(&pkg.read("source/Cargo.toml")?)?)?;
     let edition = cargo
         .get("package")

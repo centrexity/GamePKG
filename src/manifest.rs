@@ -26,6 +26,8 @@ pub struct Manifest {
     pub update_url: Option<String>,
     #[serde(default)]
     pub requires_rom: bool,
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub shared_assets: std::collections::BTreeMap<String, crate::pool::Reference>,
 }
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -155,6 +157,29 @@ impl Manifest {
         }
         if hex::decode(&m.lockfile_sha256)?.len() != 32 {
             bail!("invalid lockfile digest");
+        }
+        if m.shared_assets.len() > 10000 {
+            bail!("too many shared assets");
+        }
+        let mut total = 0u64;
+        let mut sizes = std::collections::BTreeMap::new();
+        for (path, reference) in &m.shared_assets {
+            if path.len() > 1024 || !crate::archive::valid_path(path) {
+                bail!("invalid shared asset path");
+            }
+            reference.validate()?;
+            if sizes
+                .insert(&reference.sha256, reference.size)
+                .is_some_and(|size| size != reference.size)
+            {
+                bail!("shared digest has conflicting sizes");
+            }
+            total = total
+                .checked_add(reference.size)
+                .ok_or_else(|| anyhow::anyhow!("shared asset size overflow"))?;
+        }
+        if total > crate::archive::MAX_TOTAL {
+            bail!("shared assets exceed package size limit");
         }
         Ok(m)
     }

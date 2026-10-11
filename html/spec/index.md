@@ -29,3 +29,16 @@ Update URLs support HTTP/HTTPS v3 `.onion` services through a local Tor SOCKS pr
 Import saves metadata only, with no package/thumbnail downloads and no creator trust. Games remain in a Not downloaded state until selected for download. A fetched package must verify and match the catalog ID; first installation requires creator approval. Installed signed manifest metadata takes precedence over catalog claims. Identical reimports merge without duplication; conflicting existing IDs reject the import atomically.
 
 The `[limits]` table accepts `hard_memory_bytes` (required, positive, at most 512 MiB) and `recommended_memory_bytes` (optional, positive, no greater than the hard limit). The recommendation defaults to the hard limit and is advisory; the runtime enforces the hard limit on guest linear memory. Legacy `memory_bytes` is an alias for `hard_memory_bytes`, and both names cannot appear together.
+
+## Shared store assets
+
+A signed manifest may contain `shared_assets`, mapping asset-relative paths to
+`sha256` (64 lowercase hexadecimal characters) and `size` (bytes, at most
+64 MiB). Referenced paths cannot also be embedded under `assets/`. Logical
+contents remain limited to 256 MiB. Reusing a digest requires the same size.
+
+The host verifies signed references offline, then requires matching local pool
+blobs before installation, builds, or play. It does not download blobs
+automatically. Gameplay uses private verified snapshots through the existing
+scoped asset API. `pack --shared-assets` creates store packages; ordinary
+packages retain their embedded assets for self-contained sideloading.

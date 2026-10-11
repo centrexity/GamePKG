@@ -23,6 +23,8 @@ pub struct Package {
     pub entries: BTreeMap<String, u64>,
     raw: File,
     verified: bool,
+    shared_refs: BTreeMap<String, crate::pool::Reference>,
+    shared_files: BTreeMap<String, tempfile::NamedTempFile>,
 }
 impl Package {
     pub fn open(path: &Path) -> Result<Self> {
@@ -88,6 +90,8 @@ impl Package {
             entries,
             raw: raw_file,
             verified: false,
+            shared_refs: BTreeMap::new(),
+            shared_files: BTreeMap::new(),
         })
     }
     pub fn read(&mut self, path: &str) -> Result<Vec<u8>> {
@@ -103,6 +107,35 @@ impl Package {
         }
         Ok(data)
     }
+    pub fn has_shared_assets(&self) -> bool {
+        !self.shared_refs.is_empty()
+    }
+    pub(crate) fn set_shared_refs(&mut self, refs: BTreeMap<String, crate::pool::Reference>) {
+        self.shared_refs = refs;
+        self.shared_files.clear();
+    }
+    /// Resolve signed references into private session snapshots, never host paths.
+    pub fn resolve_shared_assets(&mut self, root: &Path) -> Result<()> {
+        if !self.verified {
+            bail!("shared assets require a verified package");
+        }
+        if self.shared_refs.is_empty() {
+            return Ok(());
+        }
+        let pool = crate::pool::Pool::open(root)?;
+        let mut files = BTreeMap::new();
+        for reference in self.shared_refs.values() {
+            if files.contains_key(&reference.sha256) {
+                continue;
+            }
+            let bytes = pool.read(reference)?;
+            let mut snapshot = tempfile::NamedTempFile::new()?;
+            std::io::Write::write_all(&mut snapshot, &bytes)?;
+            files.insert(reference.sha256.clone(), snapshot);
+        }
+        self.shared_files = files;
+        Ok(())
+    }
     pub(crate) fn mark_verified(&mut self) {
         self.verified = true;
     }
@@ -114,6 +147,12 @@ impl Package {
     ) -> Result<u64> {
         if !self.verified || !valid_path(path) || length > 65536 {
             bail!("invalid asset range");
+        }
+        if let Some(reference) = self.shared_refs.get(path) {
+            if !self.shared_files.contains_key(&reference.sha256) || offset > reference.size {
+                bail!("shared asset unavailable or invalid offset");
+            }
+            return Ok((length as u64).min(reference.size - offset) + 1024);
         }
         let entry = self.archive.by_name(&format!("assets/{path}"))?;
         if offset > entry.size() {
@@ -131,6 +170,20 @@ impl Package {
     pub fn asset_chunk(&mut self, path: &str, offset: u64, length: usize) -> Result<Vec<u8>> {
         if !self.verified || !valid_path(path) || length > 65536 {
             bail!("asset range requires a verified package, valid path, and at most 64 KiB");
+        }
+        if let Some(reference) = self.shared_refs.get(path) {
+            if offset > reference.size {
+                bail!("shared asset offset exceeds size");
+            }
+            let file = self
+                .shared_files
+                .get_mut(&reference.sha256)
+                .context("shared asset is not resolved")?
+                .as_file_mut();
+            file.seek(SeekFrom::Start(offset))?;
+            let mut bytes = vec![0; length.min((reference.size - offset) as usize)];
+            file.read_exact(&mut bytes)?;
+            return Ok(bytes);
         }
         let mut entry = self.archive.by_name(&format!("assets/{path}"))?;
         if offset > entry.size() {
@@ -158,6 +211,15 @@ impl Package {
     pub fn asset(&mut self, path: &str) -> Result<Vec<u8>> {
         if !valid_path(path) {
             bail!("invalid asset path");
+        }
+        if let Some(reference) = self.shared_refs.get(path) {
+            let size = reference.size;
+            self.asset_chunk(path, 0, 0)?;
+            let mut bytes = Vec::new();
+            for offset in (0..size).step_by(65536) {
+                bytes.extend(self.asset_chunk(path, offset, 65536)?);
+            }
+            return Ok(bytes);
         }
         self.read(&format!("assets/{path}"))
     }

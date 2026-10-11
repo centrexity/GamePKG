@@ -645,6 +645,7 @@ impl eframe::App for App {
                 ui.label(if m.requires_rom { "Requires a ROM supplied by you. It is not included in this package." } else { "No user ROM required." });
                 ui.label(format!("Creator fingerprint: {}", crate::verify::digest(&hex::decode(&m.creator_key).unwrap_or_default())));
                 ui.label("A valid signature proves key ownership, not a real-world identity. Confirm the creator before first installation.");
+                if !m.shared_assets.is_empty() { ui.label(format!("Shared store assets: {} (must be available locally to install and play)", m.shared_assets.len())); }
                 ui.label(format!("Runtime: {} • Entry world: {}",m.runtime_profile,m.entry_world));
                 ui.label(format!("Engine requirement: {} • Save schema: {}",m.engine_version,m.save_schema));
                 if self.pending.is_some() && self.installed.iter().any(|old| old.id == m.id && old.save_schema != m.save_schema) {

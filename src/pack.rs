@@ -116,3 +116,59 @@ pub fn pack(dir: &Path, out: &Path, seed: &[u8; 32]) -> Result<()> {
     let _ = fs::remove_file(&temp);
     result
 }
+
+/// Produce a signed store package whose assets refer to local shared blobs.
+pub fn pack_shared(dir: &Path, out: &Path, seed: &[u8; 32], library: &Path) -> Result<()> {
+    let root = fs::canonicalize(dir)?;
+    let parent = fs::canonicalize(
+        out.parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or(Path::new(".")),
+    )?;
+    if parent.starts_with(&root) || out.exists() {
+        bail!("output must be new and outside the package directory");
+    }
+    let pool = crate::pool::Pool::open(library)?;
+    let mut manifest_bytes = Vec::new();
+    fs::File::open(root.join("manifest.toml"))?
+        .take(crate::archive::MAX_FILE + 1)
+        .read_to_end(&mut manifest_bytes)?;
+    if manifest_bytes.len() as u64 > crate::archive::MAX_FILE {
+        bail!("manifest too large");
+    }
+    let mut manifest = crate::manifest::Manifest::parse(&manifest_bytes)?;
+    for reference in manifest.shared_assets.values() {
+        pool.read(reference)?;
+    }
+    let mut files = Vec::new();
+    collect(&root, &root, &mut files)?;
+    let stage = tempfile::tempdir()?;
+    let mut total = 0u64;
+    for name in files {
+        let file = fs::File::open(root.join(&name))?;
+        let mut bytes = Vec::new();
+        file.take(crate::archive::MAX_FILE + 1)
+            .read_to_end(&mut bytes)?;
+        total += bytes.len() as u64;
+        if bytes.len() as u64 > crate::archive::MAX_FILE || total > crate::archive::MAX_TOTAL {
+            bail!("package too large");
+        }
+        if let Some(asset) = name.strip_prefix("assets/") {
+            if manifest.shared_assets.contains_key(asset) {
+                bail!("shared asset also embedded in input");
+            }
+            manifest
+                .shared_assets
+                .insert(asset.into(), pool.put(&bytes)?);
+        } else if name != "manifest.toml" {
+            let destination = stage.path().join(name);
+            fs::create_dir_all(destination.parent().unwrap())?;
+            fs::write(destination, bytes)?;
+        }
+    }
+    fs::write(
+        stage.path().join("manifest.toml"),
+        toml::to_string(&manifest)?,
+    )?;
+    pack(stage.path(), out, seed)
+}

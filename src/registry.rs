@@ -209,7 +209,9 @@ pub fn install(root: &Path, path: &Path, approve_creator: bool) -> Result<Manife
         bail!("package exceeds installation size limit");
     }
     snapshot.flush()?;
-    let m = verify_embedded(&mut Package::open(snapshot.path())?)?;
+    let mut package = Package::open(snapshot.path())?;
+    let m = verify_embedded(&mut package)?;
+    package.resolve_shared_assets(root)?;
     let target = root.join(format!("{}.gamepkg", m.id));
     if target.exists() {
         if fs::symlink_metadata(&target)?.file_type().is_symlink() {

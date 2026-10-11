@@ -103,8 +103,11 @@ impl Pool {
         path: &Path,
     ) -> Result<std::collections::BTreeMap<String, Reference>> {
         let mut package = crate::archive::Package::open(path)?;
-        crate::verify::verify_embedded(&mut package)?;
-        let mut references = std::collections::BTreeMap::new();
+        let manifest = crate::verify::verify_embedded(&mut package)?;
+        let mut references = manifest.shared_assets;
+        for reference in references.values() {
+            self.read(reference)?;
+        }
         let assets: Vec<_> = package
             .entries
             .keys()

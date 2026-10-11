@@ -99,6 +99,19 @@ pub fn verify(pkg: &mut Package, trusted: &[u8; 32]) -> Result<Manifest> {
             crate::previews::validate(name, &pkg.read(name)?)?;
         }
     }
+    let mut logical = pkg.entries.values().sum::<u64>();
+    for (path, reference) in &m.shared_assets {
+        if pkg.entries.contains_key(&format!("assets/{path}")) {
+            bail!("shared asset also embedded in archive");
+        }
+        logical = logical
+            .checked_add(reference.size)
+            .context("logical package size overflow")?;
+    }
+    if logical > crate::archive::MAX_TOTAL {
+        bail!("logical package size exceeds 256 MiB");
+    }
+    pkg.set_shared_refs(m.shared_assets.clone());
     pkg.mark_verified();
     Ok(m)
 }
