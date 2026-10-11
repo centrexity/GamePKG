@@ -4,7 +4,7 @@ This archive contains `bin/gamepkg.exe` and `bin/gamepkg-gui.exe`, example sourc
 
 Run `bin\gamepkg.exe --help` in PowerShell, or launch `bin\gamepkg-gui.exe` for the desktop library. Inspection, creator approval and installed-library metadata use the same verified package format as Linux. The host requires a working desktop graphics driver.
 
-The current source has an **experimental, opt-in WSL 2 compiler connection**. End-to-end builds through WSL 2 and native desktop GPU gameplay have not been verified on Windows yet. The existing Linux preview provides the verified build/play workflow.
+The current source has an **experimental, opt-in WSL 2 compiler connection**. End-to-end builds through WSL 2, core/component playback, integrity repair and actual native GUI shader rendering/input passed on a hosted Windows runner using software OpenGL. Hardware graphics drivers were not tested exhaustively. The existing Linux preview provides the verified build/play workflow.
 
 To configure the experimental connection, install a WSL 2 Linux distribution and prepare its GamePKG compiler with the same version as the Windows host, Rust's `wasm32-unknown-unknown` target, bubblewrap, and the pinned Slang compiler following the Linux setup instructions. The Linux compiler must include the internal `build-worker` command; the earlier published 0.1.3 Linux archive predates that command, so build the current source for this development preview. Test a source build inside Linux first.
 
