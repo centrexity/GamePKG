@@ -13,10 +13,10 @@ fn snapshot(root: &Path) -> Result<Vec<u8>> {
     let games=report.games.into_iter().map(|m| {
         let history=crate::progress::load(root,&m.id,&m.creator_key).ok();
         let usage=crate::storage::usage(root,&m).ok();
-        serde_json::json!({"manifest":m,"history":history,"used_bytes":usage.as_ref().map(|u|u.used_bytes()),"storage_breakdown":usage.map(|u|u.breakdown())})
+        serde_json::json!({"manifest":m,"history":history,"used_bytes":usage.as_ref().map(|u|u.used_bytes()),"expected_bytes":usage.as_ref().and_then(|u|u.estimated_bytes),"storage_breakdown":usage.map(|u|u.breakdown())})
     }).collect::<Vec<_>>();
     let data = serde_json::to_vec(
-        &serde_json::json!({"format_version":1,"scope":crate::verify::digest(fs::canonicalize(root)?.to_string_lossy().as_bytes()),"games":games,"catalog":crate::catalog::entries(root)?,"settings":crate::settings::load()?,"rejected":report.rejected}),
+        &serde_json::json!({"format_version":1,"scope":crate::verify::digest(fs::canonicalize(root)?.to_string_lossy().as_bytes()),"games":games,"catalog":crate::catalog::entries(root)?,"settings":crate::settings::load()?,"rejected":report.rejected,"library_used_bytes":crate::storage::total(root).ok()}),
     )?;
     if data.len() > 8 * 1024 * 1024 {
         bail!("browser library metadata exceeds 8 MiB");

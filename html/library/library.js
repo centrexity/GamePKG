@@ -4,9 +4,31 @@ const [token,scope]=location.hash.slice(1).split(':');
 let store;
 function render(snapshot,cached) {
     const body=document.getElementById('games');body.replaceChildren();
-    const row=values=>{const tr=document.createElement('tr');for(const value of values){const td=document.createElement('td');td.textContent=String(value);tr.append(td);}body.append(tr);};
+    const row=values=>{const tr=document.createElement('tr');for(const value of values){const td=document.createElement('td');td.textContent=String(value);tr.append(td);}body.append(tr);return tr;};
     const installed=new Set();
-    for(const game of snapshot.games){const m=game.manifest;installed.add(m.id);row([m.id,m.version,cached?'Cached installed metadata':'Installed',game.history?`${Math.floor(game.history.played_ms/1000)} seconds`:'Unavailable',game.history?`${(m.achievements||[]).filter(a=>Object.hasOwn(game.history.unlocked,a.id)).length}/${(m.achievements||[]).length}`:'Unavailable',game.used_bytes===null?'Unavailable':`${game.used_bytes} bytes`]);}
+    for(const game of snapshot.games){
+        const m=game.manifest;installed.add(m.id);
+        const definitions=m.achievements||[];
+        const count=game.history?`${definitions.filter(a=>Object.hasOwn(game.history.unlocked,a.id)).length}/${definitions.length} unlocked`:'History unavailable';
+        const used=game.used_bytes===null?'Unavailable':`${game.used_bytes} bytes used`;
+        const expected=game.expected_bytes==null?'Expected size unknown':`${game.expected_bytes} bytes expected`;
+        const tr=row([m.id,m.version,cached?'Cached installed metadata':'Installed',game.history?`${Math.floor(game.history.played_ms/1000)} seconds`:'Unavailable',count,`${used}; ${expected}`]);
+        tr.lastElementChild.title=game.storage_breakdown||'Storage unavailable';
+        if(definitions.length){
+            const detail=document.createElement('details'),summary=document.createElement('summary');summary.textContent=count;detail.append(summary);
+            for(const achievement of definitions){
+                const item=document.createElement('p');
+                const state=game.history?(Object.hasOwn(game.history.unlocked,achievement.id)?'Unlocked':'Locked'):'Unavailable';
+                item.textContent=`${state} — ${achievement.title}: ${achievement.description}`;detail.append(item);
+            }
+            tr.children[4].replaceChildren(detail);
+        }
+        const requirements=document.createElement('details'),label=document.createElement('summary');label.textContent='Game requirements';requirements.append(label);
+        const memory=document.createElement('p');memory.textContent=`Memory: ${(m.limits.recommended_memory_bytes||m.limits.hard_memory_bytes)/1048576} MiB recommended; ${m.limits.hard_memory_bytes/1048576} MiB hard limit`;requirements.append(memory);
+        const rom=document.createElement('p');rom.textContent=m.roms?.length?`Your ROM files, in order: ${m.roms.map(r=>r.title).join(', ')}`:m.requires_rom?'One ROM supplied by you':'No user ROM required';requirements.append(rom);tr.firstElementChild.append(requirements);
+    }
+    document.getElementById('library-space').textContent=snapshot.library_used_bytes==null?'Library storage unavailable':`Library storage used: ${snapshot.library_used_bytes} bytes`;
+
     for(const game of snapshot.catalog){if(!installed.has(game.id))row([game.title,game.version||'Unknown',cached?'Cached catalog metadata':'Not downloaded','Not played','—','Unknown']);}
     for(const [name,error] of snapshot.rejected)row([name,'Unknown',`Unavailable: ${error}`,'Unavailable','Unavailable','Unavailable']);
     const settings=document.getElementById('settings');settings.replaceChildren();
