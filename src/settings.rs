@@ -66,8 +66,11 @@ impl Settings {
         {
             bail!("library directory must be an absolute path or empty for the default");
         }
-        if !self.slang_directory.is_empty() && !Path::new(&self.slang_directory).is_absolute() {
-            bail!("Slang folder must be an absolute path");
+        if !self.slang_directory.is_empty()
+            && (!Path::new(&self.slang_directory).is_absolute()
+                || self.slang_directory.chars().any(char::is_control))
+        {
+            bail!("Slang folder must be an absolute path or empty");
         }
         if !self.dxc_directory.is_empty()
             && (!Path::new(&self.dxc_directory).is_absolute()

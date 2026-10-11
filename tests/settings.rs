@@ -65,6 +65,11 @@ fn settings_validate_bounds_and_reject_unknown_or_large_files() {
     for proxy in ["example.com:9050", "127.0.0.1:0", "192.168.1.2:9050"] {
         assert!(gamepkg::settings::validate_proxy(proxy).is_err());
     }
+    for directory in ["relative", "/tmp/slang\ninvalid", "/tmp/slang\0invalid"] {
+        let mut s = defaults.clone();
+        s.slang_directory = directory.into();
+        assert!(s.validate().is_err());
+    }
     for directory in ["relative", "/tmp/dxc\ninvalid"] {
         let mut s = defaults.clone();
         s.dxc_directory = directory.into();
