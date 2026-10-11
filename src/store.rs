@@ -23,10 +23,7 @@ pub struct Bundle {
     blobs: BTreeMap<String, (Reference, PathBuf)>,
 }
 fn snapshot(from: &Path, to: &Path, limit: u64) -> Result<()> {
-    let input = fs::File::open(from)?;
-    if !input.metadata()?.is_file() {
-        bail!("store input must be a regular file");
-    }
+    let input = crate::files::open_regular(from, limit, true)?;
     let mut output = fs::File::create(to)?;
     if std::io::copy(&mut input.take(limit + 1), &mut output)? > limit {
         bail!("store input exceeds size limit");

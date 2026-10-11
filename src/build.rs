@@ -66,18 +66,9 @@ pub fn cache_path(root: &Path, id: &str) -> Result<PathBuf> {
 }
 pub fn is_built(root: &Path, id: &str) -> Result<bool> {
     let path = cache_path(root, id)?;
-    let Ok(file) = fs::File::open(path) else {
+    let Ok(bytes) = crate::files::read_regular(&path, 32 * 1024 * 1024, false) else {
         return Ok(false);
     };
-    use std::io::Read;
-    let mut bytes = Vec::new();
-    if file
-        .take(32 * 1024 * 1024 + 1)
-        .read_to_end(&mut bytes)
-        .is_err()
-    {
-        return Ok(false);
-    }
     Ok(artifact_has_tick(&bytes)
         && crate::integrity::verify_build(&cache_path(root, id)?, &bytes).is_ok())
 }

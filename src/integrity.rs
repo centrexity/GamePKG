@@ -21,7 +21,8 @@ pub(crate) fn retain_package(
     fs::create_dir_all(&folder)?;
     let mut copy = tempfile::NamedTempFile::new_in(&folder)?;
     let size = std::io::copy(
-        &mut fs::File::open(source)?.take(crate::archive::MAX_TOTAL + 1),
+        &mut crate::files::open_regular(source, crate::archive::MAX_TOTAL, false)?
+            .take(crate::archive::MAX_TOTAL + 1),
         &mut copy,
     )?;
     if size > crate::archive::MAX_TOTAL {
@@ -51,13 +52,7 @@ pub fn record_build(path: &Path, bytes: &[u8]) -> Result<()> {
 }
 pub fn verify_build(path: &Path, bytes: &[u8]) -> Result<()> {
     let receipt = path.with_extension("sha256");
-    if fs::symlink_metadata(&receipt)?.file_type().is_symlink() {
-        bail!("build integrity receipt is a symlink");
-    }
-    let mut expected = String::new();
-    fs::File::open(receipt)?
-        .take(65)
-        .read_to_string(&mut expected)?;
+    let expected = String::from_utf8(crate::files::read_regular(&receipt, 64, false)?)?;
     if expected.len() != 64 || expected != crate::verify::digest(bytes) {
         bail!("compiled game integrity mismatch; rebuild from verified source");
     }
@@ -86,7 +81,7 @@ fn check_locked(root: &Path, id: &str) -> Result<String> {
     if !metadata.is_file() || metadata.len() > 32 * 1024 * 1024 {
         bail!("invalid compiled game file");
     }
-    let bytes = fs::read(&path)?;
+    let bytes = crate::files::read_regular(&path, 32 * 1024 * 1024, false)?;
     verify_build(&path, &bytes)?;
     if !crate::build::is_built(root, id)? {
         bail!("compiled game has no valid playable entry point");
@@ -126,7 +121,8 @@ pub fn fix_with_store(root: &Path, id: &str, store: Option<&Path>) -> Result<Str
         }
         let mut file = tempfile::NamedTempFile::new_in(root)?;
         let size = std::io::copy(
-            &mut fs::File::open(&backup)?.take(crate::archive::MAX_TOTAL + 1),
+            &mut crate::files::open_regular(&backup, crate::archive::MAX_TOTAL, false)?
+                .take(crate::archive::MAX_TOTAL + 1),
             &mut file,
         )?;
         if size > crate::archive::MAX_TOTAL {

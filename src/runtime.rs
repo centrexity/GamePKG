@@ -519,7 +519,11 @@ impl Game {
     pub fn load_with_roms(root: &Path, id: &str, rom_paths: &[std::path::PathBuf]) -> Result<Self> {
         crate::registry::installed_manifest(root, id)?;
         let _build_read = crate::build::BuildChange::read(root, id)?;
-        let archive = std::fs::read(root.join(format!("{id}.gamepkg")))?;
+        let archive = crate::files::read_regular(
+            &root.join(format!("{id}.gamepkg")),
+            crate::archive::MAX_TOTAL,
+            false,
+        )?;
         let mut snapshot = tempfile::NamedTempFile::new()?;
         use std::io::Write;
         snapshot.write_all(&archive)?;
@@ -531,7 +535,8 @@ impl Game {
             .join("builds")
             .join(crate::verify::digest(&archive))
             .join("game.wasm");
-        let bytes = std::fs::read(&cache).context("build this game before playing")?;
+        let bytes = crate::files::read_regular(&cache, 32 * 1024 * 1024, false)
+            .context("build this game before playing")?;
         crate::integrity::verify_build(&cache, &bytes)
             .context("build integrity unavailable or damaged; rebuild this game")?;
         if rom_paths.len() != manifest.required_rom_count() {
@@ -544,13 +549,8 @@ impl Game {
         let mut snapshots = Vec::new();
         let mut total = 0usize;
         for path in rom_paths {
-            use std::io::Read;
-            let file = std::fs::File::open(path).context("unable to open selected ROM")?;
-            if !file.metadata()?.is_file() {
-                bail!("ROM must be a regular file");
-            }
-            let mut bytes = Vec::new();
-            file.take(64 * 1024 * 1024 + 1).read_to_end(&mut bytes)?;
+            let bytes = crate::files::read_regular(path, 64 * 1024 * 1024, true)
+                .context("unable to open selected ROM")?;
             if bytes.is_empty() || bytes.len() > 64 * 1024 * 1024 {
                 bail!("ROM must be 1 byte to 64 MiB");
             }

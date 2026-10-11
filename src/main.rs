@@ -442,6 +442,14 @@ fn main() -> Result<()> {
                 }
             }
             for m in installed {
+                println!(
+                    "Build state: {}",
+                    match gamepkg::build::is_built(&root, &m.id) {
+                        Ok(true) => "Built",
+                        Ok(false) => "Not built",
+                        Err(_) => "Unavailable",
+                    }
+                );
                 let statistics = (|| -> Result<()> {
                     let progress = gamepkg::progress::load(&root, &m.id, &m.creator_key)?;
                     let usage = gamepkg::storage::usage(&root, &m)?;
