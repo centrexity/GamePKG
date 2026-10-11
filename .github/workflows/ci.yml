@@ -99,7 +99,10 @@ jobs:
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/drawing_game.py
       - name: Install virtual display tools
         if: matrix.features == '--all-features'
-        run: sudo apt-get install -y xvfb xdotool imagemagick python3-pil libxkbcommon-x11-0 libgl1-mesa-dri
+        run: sudo apt-get install -y xvfb xdotool imagemagick tesseract-ocr python3-pil libxkbcommon-x11-0 libgl1-mesa-dri
+      - name: Verify library rejection notices and unreadable-folder recovery
+        if: matrix.features == '--all-features'
+        run: python3 tests/library_gui.py
       - name: Verify desktop Settings approval persistence and cancellation
         if: matrix.features == '--all-features'
         run: python3 tests/settings_gui.py

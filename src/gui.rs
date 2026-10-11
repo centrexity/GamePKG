@@ -111,7 +111,13 @@ impl App {
                 }
                 self.installed = games;
             }
-            Err(e) => self.status = format!("Unable to read installed library: {e:#}"),
+            Err(e) => {
+                self.installed.clear();
+                self.rejected.clear();
+                self.icons.clear();
+                self.built.clear();
+                self.status = format!("Unable to read installed library: {e:#}");
+            }
         }
     }
     fn begin(
