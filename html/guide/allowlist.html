@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Approved game libraries — GamePKG</title>
+  <meta name="description" content="How GamePKG approves pinned game libraries and compiles without downloading dependencies.">
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #10171d; color: #e8eef1; line-height: 1.6; }
+    body { margin: 0; } main { max-width: 780px; margin: auto; padding: 36px 24px 60px; }
+    a { color: #91dfc7; } h1 { line-height: 1.15; font-size: clamp(2rem, 6vw, 3.5rem); }
+    h2 { margin-top: 2rem; } li { margin: .6rem 0; } pre { overflow-x: auto; padding: 16px; background: #1b2931; border-radius: 8px; }
+    .notice { padding: 16px; border-left: 3px solid #91dfc7; background: #17232b; } code { font-size: .95em; }
+    footer { margin-top: 36px; border-top: 1px solid #40535e; padding-top: 18px; }
+  </style>
+</head>
+<body><main>
+<nav aria-label="Main"><a href="../index.html">← GamePKG</a> · <a href="index.html">Start playing</a></nav>
+<h1>Approved game libraries.</h1>
+<p>Games can use only libraries in the host’s bundled, pinned catalog that you have approved. Adding an approval cannot authorize an arbitrary crate or download new code.</p>
+<h2>Current catalog</h2>
+<p><strong>byteorder-lite 0.1.0</strong> reads and writes numbers in different byte orders. It is approved by default, with default features disabled and no additional features or dependencies.</p>
+<p>The signed lockfile must match the exact version, registry source, dependency graph, and archive checksum:</p>
+<pre><code>8f1fe948ff07f4bd06c30984e69f5b4899c516a3ef74f34df92a2df2ab535495</code></pre>
+<p>GamePKG supplies its bundled source to the isolated build. The game cannot substitute a package, select a different version, or fetch a dependency from the network.</p>
+<h2>Choose your approvals</h2>
+<p>Open <strong>Settings → Approved game libraries</strong>, change the byteorder-lite checkbox, then choose <strong>Save settings</strong>. Cancel discards edits. The desktop and CLI share these preferences.</p>
+<pre><code>gamepkg allowlist list
+gamepkg allowlist remove byteorder-lite
+gamepkg allowlist add byteorder-lite</code></pre>
+<p>Removing approval blocks verification, installation, builds, and new play sessions for games that depend on that library. It does not interrupt a game already running. Games without dependencies continue to use the same source and runtime restrictions.</p>
+<h2>What source packages cannot do</h2>
+<p>Guest packages cannot use build scripts, procedural macros, path or Git dependencies, unapproved transitive dependencies, extra dependency features, or binary includes. Every packaged Rust source file is checked, including unused modules. Unsafe guest code and ambient filesystem, network, and process operations are rejected.</p>
+<p>Linux builds use locked, offline Cargo in an isolated process without the user’s home directory or network access. Runtime games receive scoped host operations under Wasmtime. Source scanning is a policy filter; build and runtime isolation enforce additional boundaries.</p>
+<h2>Adding a library to the catalog</h2>
+<p>The current release has one catalog entry. An unknown name passed to <code>allowlist add</code> is rejected. A new library requires a host update that reviews and bundles its source, pins its complete dependency graph, and tests its permitted build configuration. A creator cannot expand the catalog through a game manifest.</p>
+<p class="notice">Approval and signatures do not guarantee harmless code. The host, compilers, and graphics drivers remain trusted components. Review the creator and permissions before installation.</p>
+<footer><a href="https://github.com/centrexity/GamePKG/blob/main/html/guide/security.md">Security model</a> · <a href="https://github.com/centrexity/GamePKG/blob/main/src/allowlist.rs">Enforced catalog policy</a> · GamePKG · Apache 2.0</footer>
+</main></body></html>
