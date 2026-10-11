@@ -252,3 +252,54 @@ fn rejected_package_does_not_hide_valid_games_but_strict_listing_still_fails() {
     assert!(text.contains("broken.gamepkg — Unavailable"));
     assert!(text.contains("com.gamepkg.minimal 0.1.0"));
 }
+
+#[cfg(unix)]
+#[test]
+fn github_project_download_installs_only_verified_release_packages() {
+    use std::{os::unix::fs::PermissionsExt, process::Command};
+    let temp = tempfile::tempdir().unwrap();
+    let archive = package(temp.path(), "release", "0.1.0", &[31; 32]);
+    let tools = temp.path().join("tools");
+    fs::create_dir(&tools).unwrap();
+    let script = tools.join("curl");
+    fs::write(&script, r#"#!/usr/bin/env python3
+import json, os, pathlib, sys
+args = sys.argv[1:]
+out = pathlib.Path(args[args.index('--output') + 1])
+url = args[args.index('--url') + 1]
+if url == 'https://api.github.com/repos/creator/game/releases/latest':
+    out.write_text(json.dumps({'draft': False, 'assets': [{'name': 'game.gamepkg', 'size': pathlib.Path(os.environ['TEST_PACKAGE']).stat().st_size, 'browser_download_url': 'https://github.com/creator/game/releases/download/v1/game.gamepkg'}]}))
+elif url == 'https://github.com/creator/game/releases/download/v1/game.gamepkg':
+    out.write_bytes(pathlib.Path(os.environ['TEST_PACKAGE']).read_bytes())
+else:
+    sys.exit(23)
+print('200', end='')
+"#).unwrap();
+    fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+    let path = format!("{}:{}", tools.display(), std::env::var("PATH").unwrap());
+    let root = temp.path().join("library");
+    let install = || {
+        Command::new(env!("CARGO_BIN_EXE_gamepkg"))
+            .env("PATH", &path)
+            .env("TEST_PACKAGE", &archive)
+            .env("GAMEPKG_HOME", &root)
+            .args([
+                "install",
+                "https://github.com/creator/game",
+                "--trust-creator",
+            ])
+            .output()
+            .unwrap()
+    };
+    let result = install();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(registry::list(&root).unwrap().len(), 1);
+    fs::remove_dir_all(&root).unwrap();
+    fs::write(&archive, b"unsigned release asset").unwrap();
+    assert!(!install().status.success());
+    assert!(registry::list(&root).unwrap().is_empty());
+}

@@ -71,6 +71,100 @@ fn tor_proxy() -> Result<String> {
     Ok(format!("socks5h://{address}"))
 }
 pub fn download(value: &str) -> Result<tempfile::NamedTempFile> {
+    let url = parsed_url(value)?;
+    if let Some(api) = github_release_api(&url)? {
+        let metadata = download_direct(api.as_str(), 4 * 1024 * 1024)?;
+        let release: serde_json::Value = serde_json::from_reader(metadata.as_file())
+            .context("invalid GitHub release metadata")?;
+        let asset = github_package_asset(&release)?;
+        return download_direct(&asset, crate::archive::MAX_TOTAL);
+    }
+    download_direct(value, crate::archive::MAX_TOTAL)
+}
+
+// Repository links select the latest published release; explicit tags stay pinned.
+fn github_release_api(url: &url::Url) -> Result<Option<url::Url>> {
+    if url.host_str() != Some("github.com") || url.port().is_some() {
+        return Ok(None);
+    }
+    let parts: Vec<_> = url
+        .path()
+        .trim_end_matches('/')
+        .trim_start_matches('/')
+        .split('/')
+        .collect();
+    let repository = matches!(parts.len(), 2)
+        || (parts.len() == 4 && parts[2] == "releases" && parts[3] == "latest")
+        || (parts.len() == 5 && parts[2] == "releases" && parts[3] == "tag");
+    if !repository {
+        return Ok(None);
+    }
+    if url.query().is_some() || url.fragment().is_some() {
+        bail!("GitHub project URLs cannot contain a query or fragment");
+    }
+    for part in &parts[..2] {
+        if part.is_empty()
+            || !part
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b))
+            || matches!(*part, "." | "..")
+        {
+            bail!("invalid GitHub owner or repository");
+        }
+    }
+    let endpoint = if parts.len() == 5 {
+        format!("tags/{}", parts[4])
+    } else {
+        "latest".to_owned()
+    };
+    Ok(Some(url::Url::parse(&format!(
+        "https://api.github.com/repos/{}/{}/releases/{endpoint}",
+        parts[0], parts[1]
+    ))?))
+}
+
+fn github_package_asset(release: &serde_json::Value) -> Result<String> {
+    if release.get("draft").and_then(|v| v.as_bool()) != Some(false) {
+        bail!("GitHub release must be published");
+    }
+    let assets = release
+        .get("assets")
+        .and_then(|v| v.as_array())
+        .context("GitHub release has no assets")?;
+    let packages: Vec<_> = assets
+        .iter()
+        .filter(|a| {
+            a.get("name")
+                .and_then(|v| v.as_str())
+                .is_some_and(|n| n.ends_with(".gamepkg"))
+        })
+        .collect();
+    if packages.len() != 1 {
+        bail!("GitHub release must contain exactly one .gamepkg asset; use a direct asset URL when there are multiple games");
+    }
+    let asset = packages[0];
+    let size = asset
+        .get("size")
+        .and_then(|v| v.as_u64())
+        .context("GitHub asset has no size")?;
+    if size == 0 || size > crate::archive::MAX_TOTAL {
+        bail!("GitHub package asset exceeds size limit or is empty");
+    }
+    let value = asset
+        .get("browser_download_url")
+        .and_then(|v| v.as_str())
+        .context("GitHub asset has no download URL")?;
+    let url = parsed_url(value)?;
+    if url.host_str() != Some("github.com")
+        || url.port().is_some()
+        || !url.path().contains("/releases/download/")
+    {
+        bail!("invalid GitHub release asset URL");
+    }
+    Ok(url.to_string())
+}
+
+fn download_direct(value: &str, limit: u64) -> Result<tempfile::NamedTempFile> {
     let mut current = parsed_url(value)?;
     let mut tor_only = current.host_str().is_some_and(|h| h.ends_with(".onion"));
     let file = tempfile::NamedTempFile::new()?;
@@ -96,7 +190,9 @@ pub fn download(value: &str) -> Result<tempfile::NamedTempFile> {
                 "--max-time",
                 "120",
                 "--max-filesize",
-                "268435456",
+                &limit.to_string(),
+                "--user-agent",
+                "GamePKG/0.1",
                 "--write-out",
                 "%{http_code}",
                 "--dump-header",
@@ -123,7 +219,7 @@ pub fn download(value: &str) -> Result<tempfile::NamedTempFile> {
                 String::from_utf8_lossy(&output.stderr)
             );
         }
-        if file.as_file().metadata()?.len() > crate::archive::MAX_TOTAL {
+        if file.as_file().metadata()?.len() > limit {
             bail!("download exceeds size limit");
         }
         let status: u16 = std::str::from_utf8(&output.stdout)?
@@ -299,4 +395,60 @@ pub fn check_update(root: &Path, id: &str) -> Result<Option<(Manifest, tempfile:
         return Ok(None);
     }
     Ok(Some((candidate, file)))
+}
+
+#[cfg(test)]
+mod github_tests {
+    use super::*;
+    #[test]
+    fn repository_latest_tag_and_direct_asset_urls() {
+        for (source, endpoint) in [
+            ("https://github.com/creator/game/", "latest"),
+            ("https://github.com/creator/game/releases/latest", "latest"),
+            (
+                "https://github.com/creator/game/releases/tag/v1.2.3",
+                "tags/v1.2.3",
+            ),
+        ] {
+            assert_eq!(
+                github_release_api(&parsed_url(source).unwrap())
+                    .unwrap()
+                    .unwrap()
+                    .as_str(),
+                format!("https://api.github.com/repos/creator/game/releases/{endpoint}")
+            );
+        }
+        assert!(github_release_api(
+            &parsed_url("https://github.com/creator/game/releases/download/v1/game.gamepkg")
+                .unwrap()
+        )
+        .unwrap()
+        .is_none());
+        assert!(github_release_api(
+            &parsed_url("https://github.com/creator/game?token=secret").unwrap()
+        )
+        .is_err());
+        assert!(github_release_api(
+            &parsed_url("https://github.com.evil.test/creator/game").unwrap()
+        )
+        .unwrap()
+        .is_none());
+    }
+    #[test]
+    fn published_single_bounded_package_required() {
+        let mut release = serde_json::json!({"draft": false, "assets": [{"name": "game.gamepkg", "size": 123, "browser_download_url": "https://github.com/creator/game/releases/download/v1/game.gamepkg"}, {"name": "README.txt"}]});
+        assert!(github_package_asset(&release).is_ok());
+        release["assets"][0]["size"] = serde_json::json!(crate::archive::MAX_TOTAL + 1);
+        assert!(github_package_asset(&release).is_err());
+        release["assets"][0]["size"] = serde_json::json!(123);
+        release["assets"][0]["browser_download_url"] =
+            serde_json::json!("https://evil.test/game.gamepkg");
+        assert!(github_package_asset(&release).is_err());
+        release["assets"] = serde_json::json!([]);
+        assert!(github_package_asset(&release).is_err());
+        release["assets"] = serde_json::json!([{"name":"a.gamepkg"}, {"name":"b.gamepkg"}]);
+        assert!(github_package_asset(&release).is_err());
+        release["draft"] = serde_json::json!(true);
+        assert!(github_package_asset(&release).is_err());
+    }
 }
