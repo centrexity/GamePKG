@@ -11,7 +11,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-library-play-') as directory:
     def run(*args):
         return subprocess.run([str(project/'target/release/gamepkg'),*map(str,args)],env=env,check=True,capture_output=True,text=True,timeout=60)
     key=root/'key';package=root/'game.gamepkg'
-    run('keygen','-o',key);run('pack',project/'examples/minimal','-o',package,'--key',key);run('install',package,'--trust-creator')
+    run('keygen','-o',key);run('pack',project/'examples/minimal','-o',package,'--key',key)
     display=start_display(env,1600,1000)
     app=subprocess.Popen([str(project/'target/release/gamepkg-gui')],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
     try:
@@ -46,6 +46,19 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-library-play-') as directory:
         def click_word(words, label):
             word=next(word for word in words if word['text'].strip('[](){}|')==label or (label=='Back' and word['text'].strip('[](){}|').startswith('Back')))
             subprocess.run(['xdotool','mousemove','--window',window,str(int(word['left'])+int(word['width'])//2),str(int(word['top'])+int(word['height'])//2),'click','1'],env=env,check=True)
+        def enter_source(words, source):
+            label=next(word for word in words if word['text']=='Local')
+            subprocess.run(['xdotool','windowfocus',window],env=env,check=True)
+            subprocess.run(['xdotool','mousemove','--window',window,'100',str(int(label['top'])+int(label['height'])+12),'click','1'],env=env,check=True)
+            time.sleep(.2)
+            subprocess.run(['xdotool','key','ctrl+a','type','--clearmodifiers',str(source)],env=env,check=True)
+            time.sleep(.2)
+        text,words=wait_screen(lambda text:'No games yet' in text,'library-empty.png',20)
+        enter_source(words,package)
+        click_word(words,'Download')
+        text,words=wait_screen(lambda text:'creator fingerprint:' in text.lower() and 'Trust this creator and install' in text,'library-inspected.png',20)
+        assert not (library/'com.gamepkg.minimal.gamepkg').exists(), 'inspection installed a package'
+        click_word(words,'Trust')
         text,words=wait_screen(lambda text:'com.gamepkg.minimal' in text and 'Not built' in text,'library-before-build.png')
         assert 'Rebuild' not in text, text
         click_word(words,'Build')
@@ -62,17 +75,12 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-library-play-') as directory:
         text,words=read_screen('library-before-catalog.png')
         catalog=root/'games.gamepkglist'
         catalog.write_text("format_version = 1\n[[games]]\nid = 'com.example.offline'\ntitle = 'Offline Catalog Game'\nversion = '2.0.0'\ndownload_url = 'https://unreachable.invalid/game.gamepkg'\nrequires_rom = true\n")
-        label=next(word for word in words if word['text']=='Local')
-        subprocess.run(['xdotool','windowfocus',window],env=env,check=True)
-        subprocess.run(['xdotool','mousemove','--window',window,'100',str(int(label['top'])+int(label['height'])+12),'click','1'],env=env,check=True)
-        time.sleep(.2)
-        subprocess.run(['xdotool','type','--clearmodifiers',str(catalog)],env=env,check=True)
-        time.sleep(.2)
+        enter_source(words,catalog)
         click_word(words,'Import')
         wait_screen(lambda text:'Not downloaded' in text and 'No game packages downloaded' in text,'library-catalog-imported.png',20)
         assert 'com.example.offline' in (library/'catalog.gamepkglist').read_text()
         assert list(library.glob('*.gamepkg')) == [library/'com.gamepkg.minimal.gamepkg']
         assert not (library/'com.example.offline.gamepkg').exists()
-        print('Desktop workflow passed: Build, Play, return, Rebuild, and offline catalog import without downloading packages.')
+        print('Desktop workflow passed: inspect, creator approval, install, Build, Play, return, Rebuild, and offline catalog import without downloading packages.')
     finally:
         app.terminate();app.wait(timeout=10);display.terminate();display.wait(timeout=10)
