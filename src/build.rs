@@ -40,7 +40,7 @@ pub fn compile(root: &Path, id: &str) -> Result<()> {
     snapshot.write_all(&bytes)?;
     snapshot.flush()?;
     let mut pkg = Package::open(snapshot.path())?;
-    verify_embedded(&mut pkg)?;
+    let manifest = verify_embedded(&mut pkg)?;
     let cargo: toml::Value = toml::from_str(std::str::from_utf8(&pkg.read("source/Cargo.toml")?)?)?;
     let edition = cargo
         .get("package")
@@ -79,6 +79,7 @@ pub fn compile(root: &Path, id: &str) -> Result<()> {
         bail!("install the Wasm target with rustup target add wasm32-unknown-unknown");
     }
     let settings = crate::settings::load()?;
+    crate::shaders::compile(root, &bytes, &mut pkg, &manifest, &settings)?;
     let mut cmd = Command::new("timeout");
     cmd.args([
         "60",

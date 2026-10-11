@@ -2,7 +2,7 @@
 
 **Know what you run. Control what it can access.** GamePKG is building a safer way to share and play games: inspectable source, creator-signed packages, isolated compilation, and a host that is designed to grant only the capabilities a game needs.
 
-**Current status:** this is a development preview. Package verification, catalog import, installation, update checks, and isolated single-file Wasm builds on Linux work today. The experimental grid-v1 profile now plays in the GUI and terminal under Wasmtime with scoped asset reads, fuel, memory limits, and epoch deadlines. The broader WIT/Slang/audio API remains pending; this is not a guarantee that a package is harmless.
+**Current status:** this is a development preview. Package verification, catalog import, installation, update checks, and isolated single-file Wasm and Slang shader builds on Linux work today. The experimental grid-v1 profile now plays in the GUI and terminal under Wasmtime with scoped asset reads, fuel, memory limits, and epoch deadlines. The broader WIT/rendering/audio API remains pending; this is not a guarantee that a package is harmless.
 
 ## Why distribute GamePKG instead of an opaque executable?
 
@@ -129,9 +129,9 @@ For a local HTTPS end-to-end test (requires Python 3, OpenSSL, and curl), run `p
 
 The desktop library shows each installed package's thumbnail, ID, version, ROM requirement, build status, and actions. Build becomes Rebuild once the exact installed package has a cached Wasm output. Installing a new package version resets that status. Play is enabled for built packages; ROM games require a file path in the library’s ROM field. The package must implement the grid-v1 entry point; packages without it report a clear runtime error and need a playable source implementation. Thumbnails decode with bounded dimensions and allocation; invalid icons show a fallback.
 
-Set `requires_rom = true` at the top level of the manifest for a game requiring a ROM supplied by the end user. It defaults to false for existing packages and is covered by the creator signature. The host displays the requirement during inspection and in the library. No ROM is downloaded, uploaded, or included automatically. ROM selection and guest delivery will be implemented with the runtime.
+Set `requires_rom = true` at the top level of the manifest for a game requiring a ROM supplied by the end user. It defaults to false for existing packages and is covered by the creator signature. The host displays the requirement during inspection and in the library. No ROM is downloaded, uploaded, or included automatically. Select a local ROM path when launching; the guest receives bounded read-only bytes for that session.
 
-`gamepkg build <id>` uses the same build action as the GUI. This initial build profile compiles the verified, dependency-free `source/src/lib.rs` directly to `wasm32-unknown-unknown` under Linux bubblewrap, without Cargo build scripts. It requires `bwrap`, `timeout`, Rust, and `rustup target add wasm32-unknown-unknown`. The compiler has a private working directory, an isolated network namespace, access to system tools and its toolchain, and a 60-second deadline. It has no access to the user's home directory. Failed sandbox setup stops the build; there is no native or unsandboxed fallback. Compiler memory caps, dependency support, WIT bindings and Slang integration remain pending.
+`gamepkg build <id>` uses the same build action as the GUI. This initial build profile compiles the verified, dependency-free `source/src/lib.rs` directly to `wasm32-unknown-unknown` under Linux bubblewrap, without Cargo build scripts. It requires `bwrap`, `timeout`, Rust, `rustup target add wasm32-unknown-unknown`, and the pinned Slang installation described below. The compiler has a private working directory, an isolated network namespace, access to system tools and its toolchain, and a 60-second deadline. It has no access to the user's home directory. Failed sandbox setup stops the build; there is no native or unsandboxed fallback. Compiler memory caps, dependency support, WIT bindings and GPU rendering remain pending.
 
 `gamepkg check-updates <id>` checks the signed URL without changing the installed game. In the GUI, a newer update opens for review and explicit installation. Matching versions report up-to-date; older versions and changed IDs/keys are rejected. `gamepkg update <id>` remains the explicit download-and-install command.
 
@@ -190,7 +190,7 @@ In the terminal, enter W/A/S/D to move and Q to quit. In the GUI, click Play and
 
 The experimental grid-v1 ABI uses core Wasm, not the planned WIT component API. Guest source defines `pub fn game_tick(input: u32, state: u64) -> u64`; the host compiler appends the exported wrapper, so guest export attributes are unnecessary. State packs player x/y and target x/y into four bytes, followed by a 32-bit score. Input bits are left=1, right=2, up=4, down=8. Coordinates use a 16×16 grid. Guests receive zero input unless the signed manifest grants input.
 
-Runtime modules can import only the scoped GamePKG asset and ROM APIs; WASI, filesystem and socket imports are rejected. Wasmtime enforces memory, fuel and epoch limits. A trap ends gameplay. Shader rendering and audio remain pending.
+Runtime modules can import only the scoped GamePKG asset, ROM and save APIs; WASI, filesystem and socket imports are rejected. Wasmtime enforces memory, fuel and epoch limits. A trap ends gameplay. Slang compilation is available; GPU rendering and audio remain pending.
 
 For a game declaring `requires_rom = true`, use `gamepkg run <id> --rom /path/to/file` or enter your ROM path above the desktop library table. ROM files must be regular files of 1 byte to 64 MiB and are read into a session snapshot. Guests use `gamepkg::rom_size()` and `gamepkg::rom_read(offset, &mut buffer)`, never a host path. Reads are capped at 64 KiB and consume fuel. No ROM is downloaded, installed or bundled automatically. `examples/good/rom-required` is a playable data-driven example; `python3 tests/runtime_rom.py` tests the signed build and runtime path.
 
@@ -252,3 +252,41 @@ game; creators should handle migration when changing their save layout.
 `examples/good/save-counter` keeps its tick count across sessions. After a
 release build, `python3 tests/runtime_saves.py` verifies persistence, updates,
 permission denial and trap rollback.
+
+## Pinned shader builds
+
+Build/Rebuild now compiles the signed Slang shader source in a network-isolated
+Linux process before publishing the Wasm artifact. Install the supported
+compiler into a new folder:
+
+```sh
+python3 tools/install_slang.py /absolute/path/gamepkg-slang
+export GAMEPKG_SLANG_ROOT=/absolute/path/gamepkg-slang
+```
+
+The installer downloads the official Slang 2026.19 Linux x86-64 release and
+checks a pinned SHA-256 before unpacking it. Alternatively set the installation
+folder and backend in the desktop Settings page. The default backend is
+SPIR-V; WGSL and Metal source outputs are also tested. DXIL requires a suitable
+downstream DXC installation and reports an error if unavailable. No backend
+fallback occurs. This step compiles shaders and stores reflection; using those
+outputs for GPU rendering remains pending.
+
+Legacy manifests default to `shaders/main.slang`, `fragmentMain`, fragment
+stage. Declare multiple entry points explicitly using signed manifest entries:
+
+```toml
+[[shaders]]
+source = "shaders/main.slang"
+entry = "fragmentMain"
+stage = "fragment"
+```
+
+Supported stages are vertex, fragment and compute, with up to 32 entries.
+Compiler outputs and JSON reflection are cached outside the archive, keyed by
+package bytes, compiler version/binaries and backend. A failed shader build
+publishes no partial cache or new playable artifact. The compiler sees its
+own tools, system libraries and staged shader sources; your home directory
+and network are unavailable. Run `python3 tests/shaders.py` with
+`GAMEPKG_SLANG_ROOT` set to verify actual backends, reflection and host include
+rejection.

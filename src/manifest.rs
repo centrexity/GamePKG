@@ -13,11 +13,44 @@ pub struct Manifest {
     pub permissions: Permissions,
     pub shader_profile: String,
     #[serde(default)]
+    pub shaders: Vec<Shader>,
+    #[serde(default)]
     pub creator_key: String,
     #[serde(default)]
     pub update_url: Option<String>,
     #[serde(default)]
     pub requires_rom: bool,
+}
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Shader {
+    pub source: String,
+    pub entry: String,
+    pub stage: String,
+}
+impl Shader {
+    pub fn validate(&self) -> Result<()> {
+        if !crate::archive::valid_path(&self.source)
+            || !self.source.starts_with("shaders/")
+            || !self.source.ends_with(".slang")
+        {
+            bail!("invalid shader source path");
+        }
+        if self.entry.is_empty()
+            || self.entry.len() > 128
+            || !self
+                .entry
+                .bytes()
+                .all(|c| c.is_ascii_alphanumeric() || c == b'_')
+            || self.entry.as_bytes()[0].is_ascii_digit()
+        {
+            bail!("invalid shader entry point");
+        }
+        if !matches!(self.stage.as_str(), "vertex" | "fragment" | "compute") {
+            bail!("unsupported shader stage");
+        }
+        Ok(())
+    }
 }
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -78,6 +111,12 @@ impl Manifest {
         }
         if m.permissions.network != "none" {
             bail!("network capabilities are not implemented");
+        }
+        if m.shaders.len() > 32 {
+            bail!("too many shader entry points");
+        }
+        for shader in &m.shaders {
+            shader.validate()?;
         }
         if m.shader_profile != "slang" {
             bail!("Slang shader profile required");

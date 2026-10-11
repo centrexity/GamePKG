@@ -205,14 +205,14 @@ impl eframe::App for App {
                             rect.min + egui::vec2(v, 0.0),
                             rect.min + egui::vec2(v, size),
                         ],
-                        egui::Stroke::new(1.0, egui::Color32::from_gray(45)),
+                        egui::Stroke::new(1.0_f32, egui::Color32::from_gray(45)),
                     );
                     painter.line_segment(
                         [
                             rect.min + egui::vec2(0.0, v),
                             rect.min + egui::vec2(size, v),
                         ],
-                        egui::Stroke::new(1.0, egui::Color32::from_gray(45)),
+                        egui::Stroke::new(1.0_f32, egui::Color32::from_gray(45)),
                     );
                 }
                 let position = |(x, y): (u8, u8)| {
@@ -278,6 +278,12 @@ impl eframe::App for App {
                     ui.horizontal(|ui| { ui.label("Tick deadline (ms)");ui.add(egui::Slider::new(&mut self.settings_draft.tick_deadline_ms,10..=100).step_by(10.0)); });
                     ui.label("Memory and fuel use the lower of your ceiling and the signed game limit. These settings cannot raise a game's hard limit. Changes apply the next time you launch a game.");
                     ui.separator();ui.heading("Builds and appearance");
+                    ui.label("Slang 2026.19 installation folder");
+                    ui.text_edit_singleline(&mut self.settings_draft.slang_directory);
+                    egui::ComboBox::from_label("Shader backend").selected_text(&self.settings_draft.shader_backend).show_ui(ui, |ui| {
+                        for backend in ["spirv", "wgsl", "metal", "dxil"] { ui.selectable_value(&mut self.settings_draft.shader_backend, backend.to_string(), backend); }
+                    });
+                    ui.label("Shader compilation is isolated. GPU rendering integration is still pending.");
                     ui.checkbox(&mut self.settings_draft.optimize_builds,"Optimize new builds");
                     ui.label("Applies on Build/Rebuild; existing compiled games are kept.");
                     ui.checkbox(&mut self.settings_draft.dark_mode,"Dark appearance");
@@ -416,7 +422,7 @@ impl eframe::App for App {
                     }
                 }
             }
-            ui.separator(); ui.label("Experimental grid-v1 games are playable. Asset and selected ROM reads work. Scoped saves work. WIT, Slang rendering and audio are pending.");
+            ui.separator(); ui.label("Experimental grid-v1 games are playable. Asset and selected ROM reads work. Scoped saves work. Slang compilation works. WIT, GPU rendering and audio are pending.");
             ui.hyperlink_to("GamePKG • Apache 2.0", "https://gamepkg.com");
         });
     }

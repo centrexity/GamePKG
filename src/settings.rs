@@ -16,6 +16,8 @@ pub struct Settings {
     pub tick_deadline_ms: u64,
     pub optimize_builds: bool,
     pub dark_mode: bool,
+    pub slang_directory: String,
+    pub shader_backend: String,
 }
 impl Default for Settings {
     fn default() -> Self {
@@ -28,6 +30,8 @@ impl Default for Settings {
             tick_deadline_ms: 100,
             optimize_builds: true,
             dark_mode: true,
+            slang_directory: String::new(),
+            shader_backend: "spirv".into(),
         }
     }
 }
@@ -41,6 +45,15 @@ impl Settings {
                 || self.library_directory.chars().any(char::is_control))
         {
             bail!("library directory must be an absolute path or empty for the default");
+        }
+        if !self.slang_directory.is_empty() && !Path::new(&self.slang_directory).is_absolute() {
+            bail!("Slang folder must be an absolute path");
+        }
+        if !matches!(
+            self.shader_backend.as_str(),
+            "spirv" | "wgsl" | "metal" | "dxil"
+        ) {
+            bail!("unsupported shader backend");
         }
         validate_proxy(&self.tor_proxy)?;
         if !(1..=512).contains(&self.memory_ceiling_mib) {

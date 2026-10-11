@@ -32,6 +32,11 @@ jobs:
       - name: Install isolated build prerequisites
         if: matrix.features == '--all-features'
         run: sudo apt-get update && sudo apt-get install -y bubblewrap && rustup target add wasm32-unknown-unknown
+      - name: Install pinned shader compiler
+        if: matrix.features == '--all-features'
+        run: |
+          python3 tools/install_slang.py "$RUNNER_TEMP/gamepkg-slang"
+          echo "GAMEPKG_SLANG_ROOT=$RUNNER_TEMP/gamepkg-slang" >> "$GITHUB_ENV"
       - name: Playable source build integration
         if: matrix.features == '--all-features'
         run: python3 tests/playable.py
@@ -44,3 +49,6 @@ jobs:
       - name: Scoped save integration
         if: matrix.features == '--all-features'
         run: python3 tests/runtime_saves.py
+      - name: Pinned shader integration
+        if: matrix.features == '--all-features'
+        run: python3 tests/shaders.py

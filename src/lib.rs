@@ -14,3 +14,5 @@ pub mod runtime;
 pub mod settings;
 
 pub mod saves;
+
+pub mod shaders;
