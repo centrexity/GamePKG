@@ -15,7 +15,31 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-worker-test-') as directory:
  assert {p.name for p in output.iterdir()}=={'exchange.json','builds','shader-builds'}
  assert not list(output.rglob('*.key')) and not (output/'progress').exists() and not (output/'saves').exists()
  run('store-import',store,'--trust-creators')
- for name in ['builds','shader-builds']:shutil.copytree(output/name,home/name)
+ run('accept-build-worker','com.gamepkg.shader-switch',output)
+ protected={p:p.read_bytes() for p in (home/'builds').rglob('*') if p.is_file()}
+ def reject(change):
+  candidate=root/'candidate';shutil.copytree(output,candidate)
+  change(candidate)
+  run('accept-build-worker','com.gamepkg.shader-switch',candidate,good=False)
+  assert all(p.read_bytes()==data for p,data in protected.items())
+  shutil.rmtree(candidate)
+ def metadata(field,value):
+  def change(candidate):
+   path=candidate/'exchange.json';data=json.loads(path.read_text());data[field]=value;path.write_text(json.dumps(data))
+  return change
+ for field,value in [('id','wrong'),('package_digest','0'*64),('backend','wgsl'),('format_version',2),('compiler_host_version','wrong'),('unknown',True)]:reject(metadata(field,value))
+ def damage(pattern):
+  def change(candidate):
+   path=next(candidate.rglob(pattern));path.write_bytes(path.read_bytes()+b'broken')
+  return change
+ for pattern in ['game.wasm','game.sha256','*.reflection.json','*.shader']:reject(damage(pattern))
+ reject(lambda candidate:next(candidate.rglob('shaders-glsl.json')).unlink())
+ reject(lambda candidate:(next((candidate/'builds').iterdir())/'extra').write_text('extra'))
+ reject(lambda candidate:(next((candidate/'builds').iterdir())/'nested').mkdir())
+ def linked(candidate):
+  path=next(candidate.rglob('game.wasm'));path.unlink();path.symlink_to(package)
+ reject(linked)
+ run('accept-build-worker','com.gamepkg.shader-switch',output)
  # Loading the transferred cache needs no compiler or private worker library.
  env.pop('GAMEPKG_SLANG_ROOT',None)
  run('run','com.gamepkg.shader-switch','--frames','3')

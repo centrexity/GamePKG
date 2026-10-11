@@ -40,7 +40,7 @@ fn publish_receipt(
     output.persist(path)?;
     Ok(())
 }
-fn playback_cache(
+pub(crate) fn playback_cache(
     root: &Path,
     archive: &[u8],
     settings: &Settings,

@@ -72,7 +72,7 @@ pub fn is_built(root: &Path, id: &str) -> Result<bool> {
     Ok(artifact_has_tick(&bytes)
         && crate::integrity::verify_build(&cache_path(root, id)?, &bytes).is_ok())
 }
-fn artifact_has_tick(bytes: &[u8]) -> bool {
+pub(crate) fn artifact_has_tick(bytes: &[u8]) -> bool {
     if bytes.len() > 32 * 1024 * 1024 {
         return false;
     }

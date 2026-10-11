@@ -12,6 +12,9 @@ struct Cli {
 }
 #[derive(Subcommand)]
 enum Command {
+    /// Internal verified compiler response; requires an installed signed package.
+    #[command(hide = true)]
+    AcceptBuildWorker { id: String, exchange: PathBuf },
     /// Internal isolated compiler exchange; not an installable game format.
     #[command(hide = true)]
     BuildWorker {
@@ -164,6 +167,9 @@ fn key(s: &str) -> Result<[u8; 32]> {
 }
 fn main() -> Result<()> {
     match Cli::parse().command {
+        Command::AcceptBuildWorker { id, exchange } => {
+            gamepkg::build_worker::accept(&gamepkg::registry::default_root()?, &id, &exchange)?;
+        }
         Command::BuildWorker {
             store,
             output,
