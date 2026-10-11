@@ -21,7 +21,7 @@ path = "src/bin/gui.rs"
 required-features = ["gui"]
 
 [dependencies]
-wasmtime = { version = "34", default-features = false, features = ["cranelift", "runtime", "std"] }
+wasmtime = { version = "36.0.17", default-features = false, features = ["cranelift", "runtime", "std"] }
 image = { version = "0.25", optional = true, default-features = false, features = ["png"] }
 eframe = { version = "0.31", optional = true, default-features = false, features = ["default_fonts", "glow", "x11", "wayland"] }
 anyhow = "1"
