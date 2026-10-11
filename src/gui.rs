@@ -148,6 +148,7 @@ impl eframe::App for App {
                             self.status = "Preview ready.".into();
                         }
                         Ok(Work::Game(game)) => {
+                            self.preview = None;
                             self.gpu = None;
                             if !game.shader_sources.is_empty() {
                                 let renderer = self
@@ -441,12 +442,14 @@ impl eframe::App for App {
                     .clicked()
                 {
                     self.show_settings = false;
+                    self.preview = None;
                 }
                 if ui
                     .add_enabled(self.result.is_none(), egui::Button::new("Settings"))
                     .clicked()
                 {
                     self.show_settings = true;
+                    self.preview = None;
                     match crate::settings::load() {
                         Ok(settings) => self.settings_draft = settings,
                         Err(e) => self.status = format!("Unable to load settings: {e:#}"),

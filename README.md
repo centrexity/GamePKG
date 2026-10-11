@@ -486,3 +486,7 @@ error; preview decoding is currently supported on Linux only.
 `--theora` selects the fallback explicitly. Run `python3 tests/previews.py`
 after building release binaries to exercise real AV1/Theora videos, signing,
 verification, decoding, and rejected malformed videos.
+
+`python3 tests/previews_gui.py` uses a private Xvfb display to verify that
+AV1 frames advance, the explicit Theora fallback renders, and preview playback
+leaves the game unbuilt. It requires Xvfb, xdotool, ImageMagick, and Pillow.
