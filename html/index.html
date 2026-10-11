@@ -54,8 +54,8 @@
       <h1>Play games safely.</h1>
       <p class="lead">Know what you run. Control what it can access.</p>
       <p>GamePKG is building a safer way to share and play games: inspectable source, creator-signed packages, isolated compilation, and a host designed to grant only the capabilities a game needs.</p>
-      <a class="button" href="https://github.com/centrexity/GamePKG">Explore the project</a>
-      <aside class="notice" aria-label="Development status"><p><strong>Development preview.</strong> Verification, catalogs, installation, update checks, and isolated Wasm and Slang shader builds on Linux work today. Experimental grid-v1 games now play through Wasmtime with scoped asset reads and enforced fuel, memory, and deadline limits. Scoped ROM reads and saves are available. Bounded audio output and RGBA sprite drawing are available. Resource-free compiled Slang fragment passes render in the OpenGL desktop player. Package shader texture bindings and broader GPU rendering are still being built; GamePKG does not guarantee that a package is harmless.</p></aside>
+      <a class="button" href="https://github.com/centrexity/GamePKG/releases/tag/v0.1.2">Download the Linux preview</a>
+      <aside class="notice" aria-label="Development status"><p><strong>Development preview for Linux x86-64.</strong> The download includes the CLI and desktop library. Install creator-signed packages, build in isolation, and play supported games with scoped assets, named ROM files, saves, audio, and memory and execution limits. The desktop player supports sprites and compiled fragment shaders. The Hindsight browser library caches game information and icons. Broader GPU rendering and isolated builds on other systems remain unfinished. GamePKG does not guarantee that a package is harmless.</p></aside>
     </div>
     <section aria-labelledby="why"><h2 id="why">A game package you can inspect.</h2>
       <p>An opaque executable is difficult to review. When launched without a sandbox, it may inherit your account's access to files, network connections, and other programs. GamePKG brings source visibility, signed contents, restricted builds, and declared capabilities into one workflow.</p>
@@ -87,7 +87,7 @@
         <li><strong>Assets:</strong> virtual paths inside the game's archive, rather than unrestricted access to your folders.</li>
         <li><strong>Input, rendering, and audio:</strong> explicit game operations exposed by the host.</li>
         <li><strong>Saves:</strong> host-scoped storage rather than arbitrary filesystem writes.</li>
-        <li><strong>ROMs:</strong> a signed manifest declares whether a ROM must be supplied by the player. No ROM is fetched or bundled automatically; only the file selected by the player is shared read-only for that session.</li>
+        <li><strong>ROMs:</strong> a signed manifest declares which ROM files must be supplied by the player. No ROM is fetched automatically; only the files selected by the player are shared read-only in the signed manifest’s order for that session.</li>
         <li><strong>Networking:</strong> guest networking is unsupported. Current manifests must declare <code>network = "none"</code>.</li>
       </ul>
       <p>Installing a package runs no game code or package-provided install scripts. The initial scanner rejects detected filesystem, network, process, and environment paths, compile-time file includes, unsafe blocks, and foreign declarations. Compiler isolation remains necessary because source scanning cannot prove what arbitrary macros will do.</p>

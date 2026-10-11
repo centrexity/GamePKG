@@ -205,6 +205,14 @@ jobs:
           python3 tools/package_release.py "$RUNNER_TEMP/gamepkg-distribution"
           gamepkg_release_version="$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["version"])')"
           sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" /usr/bin/python3 tests/release_package.py "$RUNNER_TEMP/gamepkg-distribution/gamepkg-${gamepkg_release_version}-linux-x86_64.tar.gz"
+      - name: Preserve desktop screenshots after a failed integration
+        uses: actions/upload-artifact@v4
+        if: failure() && matrix.features == '--all-features'
+        with:
+          name: gamepkg-desktop-failure-screenshots
+          path: target/*.png
+          retention-days: 7
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         if: matrix.features == '--all-features'
         with:

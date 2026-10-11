@@ -37,3 +37,37 @@ def start_display(env, width=1024, height=900):
         raise
     finally:
         os.close(reader)
+
+
+def click_text(window, env, text, directory, timeout=15):
+    """Locate actual visible control text; never depend on a historical layout."""
+    import csv
+    import io
+    from pathlib import Path
+    directory = Path(directory)
+    deadline = time.monotonic() + timeout
+    wanted = text.split()
+    last = ''
+    while True:
+        screenshot = directory / 'control-screen.png'
+        subprocess.run(['import', '-display', env['DISPLAY'], '-window', window, str(screenshot)], env=env, check=True)
+        for name, filters in [('plain', []), ('controls', ['-colorspace', 'Gray', '-negate', '-threshold', '55%'])]:
+            enlarged = directory / f'control-{name}.png'
+            subprocess.run(['convert', str(screenshot), *filters, '-resize', '300%', str(enlarged)], env=env, check=True)
+            tsv = subprocess.check_output(['tesseract', str(enlarged), 'stdout', '--psm', '11', 'tsv'], stderr=subprocess.DEVNULL, text=True)
+            words = [w for w in csv.DictReader(io.StringIO(tsv), delimiter='\t') if w['text'].strip()]
+            last = ' '.join(w['text'] for w in words)
+            for index in range(len(words)-len(wanted)+1):
+                candidate = words[index:index+len(wanted)]
+                if [w['text'].strip('[]()|') for w in candidate] != wanted:
+                    continue
+                if max(int(w['top']) for w in candidate)-min(int(w['top']) for w in candidate)>18:
+                    continue
+                first = candidate[0]
+                x = (int(first['left'])+int(first['width'])//2)//3
+                y = (int(first['top'])+int(first['height'])//2)//3
+                subprocess.run(['xdotool','mousemove','--window',window,str(x),str(y),'click','1'],env=env,check=True)
+                return
+        if time.monotonic() >= deadline:
+            raise AssertionError(f'Visible control {text!r} was not found: {last}')
+        time.sleep(.1)

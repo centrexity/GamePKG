@@ -1,4 +1,4 @@
-from gui_test_support import start_display
+from gui_test_support import start_display, click_text
 """Verify AV1 frame progression and explicit Theora fallback in a virtual GUI."""
 from pathlib import Path
 import os, shutil, subprocess, tempfile, time
@@ -21,7 +21,7 @@ try:
  window=state.stdout.strip().splitlines()[0];subprocess.run(['xdotool','windowsize',window,'1500','950'],env=env,check=True);time.sleep(.5)
  subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(project/'target/preview-library.png')],env=env,check=True)
  print('window='+window,flush=True)
- subprocess.run(['xdotool','mousemove','--window',window,'478','150','click','1'],env=env,check=True);time.sleep(1)
+ click_text(window,env,'Details',root);time.sleep(.3)
  subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(project/'target/preview-details.png')],env=env,check=True)
  from PIL import Image
  def count_color(color, screenshot):
@@ -36,12 +36,12 @@ try:
    if app.poll() is not None:raise RuntimeError(app.stderr.read().decode())
    time.sleep(.1)
   raise AssertionError(f'{color} preview did not render')
- subprocess.run(['xdotool','mousemove','--window',window,'50','496','click','1'],env=env,check=True)
+ click_text(window,env,'Play preview',root)
  await_color('red','preview-av1-first.png')
  await_color('green','preview-av1-later.png')
- subprocess.run(['xdotool','mousemove','--window',window,'160','496','click','1'],env=env,check=True)
+ click_text(window,env,'Play Theora fallback',root)
  await_color('blue','preview-theora.png')
- subprocess.run(['xdotool','mousemove','--window',window,'85','10','click','1'],env=env,check=True);time.sleep(.3)
+ click_text(window,env,'Settings',root);time.sleep(.3)
  assert count_color('blue',project/'target/settings-after-preview.png')==0, 'preview remained visible in settings'
  assert not (root/'library/builds').exists(), 'preview started a game build'
  print('GUI preview passed: AV1 frames advance and explicit Theora fallback renders.',flush=True)
