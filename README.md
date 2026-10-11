@@ -629,3 +629,5 @@ caches after failed builds.
 ### Import portable stores in the desktop library
 
 Enter a local `.gamepkgstore` path, HTTPS URL, or Tor onion URL in the Library source field, then choose **Inspect .gamepkgstore bundle**. GamePKG verifies every package signature and shared blob before showing the game versions, ROM requirements, and creator keys. Inspection does not install games. Choose **Trust listed creators and install store** to approve first installations, or **Cancel store import** to discard the review. Existing creator-key and version protections still apply. Installation uses a private verified snapshot, so changes to the original file cannot replace reviewed content. Imported games appear in the table and can be built and played.
+
+Cargo package names use at most 64 ASCII letters, digits, underscores, or hyphens, beginning with a letter or underscore. Explicit editions must be string values `2015`, `2018`, `2021`, or `2024`; omitting the field retains Cargo's default. Invalid identity or edition metadata is rejected during package verification before it reaches the isolated compiler.

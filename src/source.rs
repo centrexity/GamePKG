@@ -127,6 +127,25 @@ pub fn scan(pkg: &mut Package) -> Result<()> {
     if package.get("build") != Some(&toml::Value::Boolean(false)) {
         bail!("package.build must be false");
     }
+    let name = package
+        .get("name")
+        .and_then(toml::Value::as_str)
+        .ok_or_else(|| anyhow::anyhow!("Cargo package name must be a string"))?;
+    if name.is_empty()
+        || name.len() > 64
+        || !name
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
+        || !name.as_bytes()[0].is_ascii_alphabetic() && name.as_bytes()[0] != b'_'
+    {
+        bail!("Cargo package name must be a Rust-compatible ASCII name of at most 64 bytes");
+    }
+    if package
+        .get("edition")
+        .is_some_and(|edition| !matches!(edition.as_str(), Some("2015" | "2018" | "2021" | "2024")))
+    {
+        bail!("unsupported Rust edition; expected 2015, 2018, 2021, or 2024");
+    }
     crate::allowlist::approved(&cargo, &pkg.read("source/Cargo.lock")?)?;
     if let Some(lib) = cargo.get("lib") {
         let t = lib

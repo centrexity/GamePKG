@@ -296,3 +296,63 @@ fn rejects_understated_or_overstated_decoded_entry_sizes() {
         }
     }
 }
+
+#[test]
+fn malformed_cargo_identity_and_editions_fail_before_signing() {
+    for (name, edition) in [
+        ("valid", "edition = 2021"),
+        ("valid", "edition = \"2099\""),
+        ("valid", "edition = { workspace = true }"),
+        ("9invalid", "edition = \"2021\""),
+        ("invalid.name", "edition = \"2021\""),
+        ("", "edition = \"2021\""),
+    ] {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("game");
+        fixture(&root);
+        fs::write(
+            root.join("source/Cargo.toml"),
+            format!("[package]\nname = {name:?}\nversion = \"0.1.0\"\nbuild = false\n{edition}\n"),
+        )
+        .unwrap();
+        fs::write(
+            root.join("source/Cargo.lock"),
+            format!("version = 4\n[[package]]\nname = {name:?}\nversion = \"0.1.0\"\n"),
+        )
+        .unwrap();
+        let manifest_path = root.join("manifest.toml");
+        let mut manifest: toml::Value =
+            toml::from_str(&fs::read_to_string(&manifest_path).unwrap()).unwrap();
+        manifest["lockfile_sha256"] = toml::Value::String(gamepkg::verify::digest(
+            &fs::read(root.join("source/Cargo.lock")).unwrap(),
+        ));
+        fs::write(manifest_path, toml::to_string(&manifest).unwrap()).unwrap();
+        let output = temp.path().join("bad.gamepkg");
+        let error = pack(&root, &output, &SEED).unwrap_err().to_string();
+        assert!(
+            error.contains("edition") || error.contains("package name"),
+            "{error}"
+        );
+        assert!(!output.exists());
+    }
+}
+
+#[test]
+fn supported_cargo_editions_and_default_remain_accepted() {
+    for edition in [None, Some("2015"), Some("2018"), Some("2021"), Some("2024")] {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("game");
+        fixture(&root);
+        let cargo = root.join("source/Cargo.toml");
+        let text = fs::read_to_string(&cargo).unwrap();
+        let mut value: toml::Value = toml::from_str(&text).unwrap();
+        let package = value["package"].as_table_mut().unwrap();
+        if let Some(edition) = edition {
+            package.insert("edition".into(), toml::Value::String(edition.into()));
+        } else {
+            package.remove("edition");
+        }
+        fs::write(cargo, toml::to_string(&value).unwrap()).unwrap();
+        pack(&root, &temp.path().join("good.gamepkg"), &SEED).unwrap();
+    }
+}
