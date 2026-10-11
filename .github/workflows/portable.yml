@@ -1,9 +1,14 @@
 name: Native host portability
 on:
   push:
+    paths-ignore: ['README.md', 'DESIGN.md', 'docs/**', 'html/**', '.github/workflows/pages.yml', 'tools/check_site.py']
   pull_request:
+    paths-ignore: ['README.md', 'DESIGN.md', 'docs/**', 'html/**', '.github/workflows/pages.yml', 'tools/check_site.py']
 permissions:
   contents: read
+concurrency:
+  group: gamepkg-portable-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   native:
     strategy:
