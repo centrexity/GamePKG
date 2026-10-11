@@ -28,8 +28,16 @@ pub struct Manifest {
     pub update_url: Option<String>,
     #[serde(default)]
     pub requires_rom: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub roms: Vec<RomRequirement>,
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub shared_assets: std::collections::BTreeMap<String, crate::pool::Reference>,
+}
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RomRequirement {
+    pub id: String,
+    pub title: String,
 }
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -89,6 +97,13 @@ pub struct Permissions {
     pub network: String,
 }
 impl Manifest {
+    pub fn required_rom_count(&self) -> usize {
+        if self.roms.is_empty() {
+            usize::from(self.requires_rom)
+        } else {
+            self.roms.len()
+        }
+    }
     pub fn ensure_engine_compatible(&self) -> Result<()> {
         if self.engine_version.trim().is_empty() || self.engine_version.len() > 256 {
             bail!("invalid engine version requirement");
@@ -106,6 +121,23 @@ impl Manifest {
     }
     pub fn parse(bytes: &[u8]) -> Result<Self> {
         let mut m: Self = toml::from_str(std::str::from_utf8(bytes)?)?;
+        if m.roms.len() > 8 {
+            bail!("at most eight ROMs may be required");
+        }
+        let mut rom_ids = std::collections::HashSet::new();
+        for rom in &m.roms {
+            if !crate::progress::valid_id(&rom.id)
+                || !rom_ids.insert(&rom.id)
+                || rom.title.trim().is_empty()
+                || rom.title.len() > 128
+                || rom.title.chars().any(char::is_control)
+            {
+                bail!("invalid or duplicate ROM requirement");
+            }
+        }
+        if !m.roms.is_empty() {
+            m.requires_rom = true;
+        }
         if m.achievements.len() > 128 {
             bail!("at most 128 achievements may be declared");
         }

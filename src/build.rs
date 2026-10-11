@@ -35,7 +35,8 @@ pub fn is_built(root: &Path, id: &str) -> Result<bool> {
     {
         return Ok(false);
     }
-    Ok(artifact_has_tick(&bytes))
+    Ok(artifact_has_tick(&bytes)
+        && crate::integrity::verify_build(&cache_path(root, id)?, &bytes).is_ok())
 }
 fn artifact_has_tick(bytes: &[u8]) -> bool {
     if bytes.len() > 32 * 1024 * 1024 {
@@ -291,7 +292,8 @@ pub fn compile(root: &Path, id: &str) -> Result<()> {
     use std::io::Write;
     temp.write_all(&artifact)?;
     temp.as_file().sync_all()?;
-    temp.persist(cache).map_err(|e| e.error)?;
+    temp.persist(&cache).map_err(|e| e.error)?;
+    crate::integrity::record_build(&cache, &artifact)?;
     Ok(())
 }
 

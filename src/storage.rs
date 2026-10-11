@@ -4,6 +4,7 @@ use std::path::Path;
 #[derive(Default, Clone)]
 pub struct Usage {
     pub package_bytes: u64,
+    pub recovery_bytes: u64,
     pub built_bytes: u64,
     pub shader_bytes: u64,
     pub save_bytes: u64,
@@ -15,6 +16,7 @@ impl Usage {
     pub fn used_bytes(&self) -> u64 {
         [
             self.package_bytes,
+            self.recovery_bytes,
             self.built_bytes,
             self.shader_bytes,
             self.save_bytes,
@@ -25,7 +27,7 @@ impl Usage {
         .fold(0, u64::saturating_add)
     }
     pub fn breakdown(&self) -> String {
-        format!("Package: {}; current build: {}; shader caches: {}; current save: {}; play history: {}; cached shared assets: {}. Shared assets may also be used by other games. Older Wasm builds and save schemas remain in the library total.",bytes(self.package_bytes),bytes(self.built_bytes),bytes(self.shader_bytes),bytes(self.save_bytes),bytes(self.history_bytes),bytes(self.shared_bytes))
+        format!("Package: {}; recovery copy: {}; current build: {}; shader caches: {}; current save: {}; play history: {}; cached shared assets: {}. Shared assets may also be used by other games. Older Wasm builds and save schemas remain in the library total.",bytes(self.package_bytes),bytes(self.recovery_bytes),bytes(self.built_bytes),bytes(self.shader_bytes),bytes(self.save_bytes),bytes(self.history_bytes),bytes(self.shared_bytes))
     }
 }
 pub fn bytes(value: u64) -> String {
@@ -166,6 +168,12 @@ pub fn usage(root: &Path, manifest: &crate::manifest::Manifest) -> Result<Usage>
     }
     Ok(Usage {
         package_bytes,
+        recovery_bytes: scoped_total(
+            root,
+            &root
+                .join("verified-packages")
+                .join(format!("{}.gamepkg", manifest.id)),
+        )?,
         built_bytes,
         shader_bytes,
         save_bytes,

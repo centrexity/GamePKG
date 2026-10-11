@@ -1,6 +1,6 @@
 """Build and play through actual desktop library buttons, without startup shortcuts."""
 from pathlib import Path
-import csv, io, os, subprocess, tempfile, time
+import csv, io, os, shutil, subprocess, tempfile, time
 from gui_test_support import start_display
 from PIL import Image
 project=Path(__file__).resolve().parents[1]
@@ -24,8 +24,9 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-library-play-') as directory:
         window=found.stdout.splitlines()[0]
         subprocess.run(['xdotool','windowsize',window,'1500','950'],env=env,check=True);time.sleep(.5)
         def read_screen(name):
-            path=project/'target'/name
+            path=root/name
             subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(path)],env=env,check=True)
+            shutil.copy2(path,project/'target'/name)
             original_text=subprocess.run(['tesseract',str(path),'stdout','--psm','6'],check=True,capture_output=True,text=True).stdout
             enlarged=root/'ocr.png'
             with Image.open(path) as image:
@@ -34,6 +35,16 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-library-play-') as directory:
             words=[word for word in csv.DictReader(io.StringIO(tsv),delimiter='\t') if word['text'].strip()]
             for word in words:
                 for field in ['left','top','width','height']:word[field]=str(int(word[field])//3)
+            row_image=root/'row-ocr.png'
+            with Image.open(path) as image:
+                region=image.crop((0,100,image.width,400))
+                region.resize((region.width*3,region.height*3)).save(row_image)
+            row_tsv=subprocess.run(['tesseract',str(row_image),'stdout','--psm','11','tsv'],check=True,capture_output=True,text=True).stdout
+            row_words=[word for word in csv.DictReader(io.StringIO(row_tsv),delimiter='\t') if word['text'].strip()]
+            for word in row_words:
+                for field in ['left','top','width','height']:word[field]=str(int(word[field])//3)
+                word['top']=str(int(word['top'])+100)
+            words=row_words+words
             return original_text+' '+' '.join(word['text'] for word in words), words
         def wait_screen(predicate, name, seconds=90):
             deadline=time.monotonic()+seconds
@@ -64,21 +75,31 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-library-play-') as directory:
         click_word(words,'Build')
         text,words=wait_screen(lambda text:'Rebuild' in text,'library-after-build.png')
         assert len(list((library/'builds').glob('*/game.wasm')))==1
+        click_word(words,'integrity')
+        text,words=wait_screen(lambda text:'compiled game verified' in text,'library-integrity.png')
         click_word(words,'Play')
         text,words=wait_screen(lambda text:'Score:' in text,'library-click-play.png',20)
         assert 'com.gamepkg.collect-stars' in text, text
         time.sleep(1.5)
+        subprocess.run(['xdotool','windowfocus','--sync',window],env=env,check=True)
+        for direction in ['Left','Up']:
+            subprocess.run(['xdotool','key','--clearmodifiers','--repeat','6','--delay','100',direction],env=env,check=True)
+        time.sleep(.3)
         click_word(words,'Back')
         text,words=wait_screen(lambda text:'Rebuild' in text and 'Score:' not in text,'library-returned.png',20)
         assert 'Storage' in text and 'Played' in text, text
-        crop=project/'target/library-history-storage.png'
-        Image.open(project/'target/library-returned.png').crop((0,100,1100,180)).resize((3300,240)).save(crop)
-        row=subprocess.run(['tesseract',str(crop),'stdout','--psm','6'],check=True,capture_output=True,text=True).stdout
+        assert 'First star' in text and 'Star collector' in text and 'Locked' in text and 'Unlocked' in text, text
+        crop=root/'library-history-storage.png'
+        Image.open(root/'library-returned.png').crop((0,100,1100,330)).resize((3300,690)).save(crop)
+        shutil.copy2(crop,project/'target/library-history-storage.png')
+        row=subprocess.run(['tesseract',str(crop),'stdout','--psm','11'],check=True,capture_output=True,text=True).stdout
         assert 'unlocked' in row and 'expected' in row and 'used' in row, row
         import json
         records=list((library/'progress').glob('*.json'))
         assert len(records)==1
-        assert json.loads(records[0].read_text())['played_ms'] >= 1000
+        history=json.loads(records[0].read_text())
+        assert history['played_ms'] >= 1000
+        assert set(history['unlocked']) == {'first_star'}, history
         click_word(words,'Rebuild')
         wait_screen(lambda text:'Built com.gamepkg.collect-stars' in text,'library-rebuilt.png')
         assert len(list((library/'builds').glob('*/game.wasm')))==1

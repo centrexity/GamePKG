@@ -1,6 +1,9 @@
 package gamepkg:engine@0.1.0;
 
 interface host {
+    rom-count: func() -> u32;
+    rom-size-at: func(index: u32) -> option<u32>;
+    rom-read-at: func(index: u32, offset: u32, length: u32) -> option<list<u8>>;
     achievement-unlock: func(index: u32) -> bool;
     asset-read: func(path: string, offset: u32, length: u32) -> option<list<u8>>;
     rom-size: func() -> option<u32>;

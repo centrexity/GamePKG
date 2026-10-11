@@ -369,6 +369,7 @@ pub fn install(root: &Path, path: &Path, approve_creator: bool) -> Result<Manife
         );
     }
     snapshot.as_file().sync_all()?;
+    crate::integrity::retain_package(root, &m, snapshot.path())?;
     snapshot.persist(&target).map_err(|e| e.error)?;
     Ok(m)
 }

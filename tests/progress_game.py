@@ -38,4 +38,25 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-progress-') as directory:
         assert second['unlocked']==first['unlocked'] and second['played_ms']>=first['played_ms']
         text=run('list')
         assert '[Unlocked] Started' in text and 'achievements: 1/1' in text and 'package:' in text and 'build:' in text,text
-        print(profile+': signed source compiled, achievement unlocked once, session history persisted, storage shown.')
+        original=manifest.read_text().split('\n[[achievements]]')[0]
+        manifest.write_text(original.replace('version = "0.1.0"','version = "0.2.0"')+'\n[[achievements]]\nid="new_goal"\ntitle="New goal"\ndescription="Added by an update"\n[[achievements]]\nid="started"\ntitle="First session"\ndescription="Renamed, same stable ID"\n')
+        (source/'source/src/lib.rs').write_text('''pub fn game_tick(_:u32,state:u64)->u64 {
+            assert!(gamepkg::achievement_unlock(1));
+            if state > 0 { assert!(gamepkg::achievement_unlock(0)); }
+            state + 1
+        }''')
+        package.unlink()
+        run('pack',source,'-o',package,'--key',key)
+        run('install',package)
+        text=run('list')
+        assert '[Unlocked] First session' in text and '[Locked] New goal' in text and 'achievements: 1/2' in text,text
+        run('build','com.gamepkg.minimal')
+        run('run','com.gamepkg.minimal','--frames','1')
+        assert '[Locked] New goal' in run('list')
+        run('run','com.gamepkg.minimal','--frames','2')
+        updated=json.loads(record.read_text())
+        assert updated['unlocked']['started']==first['unlocked']['started']
+        assert set(updated['unlocked'])=={'started','new_goal'}
+        assert updated['played_ms']>=second['played_ms']
+        assert 'achievements: 2/2' in run('list')
+        print(profile+': signed source compiled, achievement unlocked once, session history persisted, signed updates reorder/rename/add achievements correctly, storage shown.')

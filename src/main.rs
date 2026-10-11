@@ -12,6 +12,10 @@ struct Cli {
 }
 #[derive(Subcommand)]
 enum Command {
+    /// Verify installed signed contents, shared assets and compiled game checksums.
+    IntegrityCheck { id: String },
+    /// Rebuild compiled files from verified source; never alter signatures or player data.
+    IntegrityFix { id: String },
     /// Manage host approval of checksum-pinned bundled guest crates.
     Allowlist {
         #[command(subcommand)]
@@ -60,9 +64,9 @@ enum Command {
         id: String,
         #[arg(long)]
         frames: Option<u32>,
-        /// Read-only ROM file explicitly supplied for this session.
+        /// Read-only ROM file; repeat in manifest order for games requiring multiple files.
         #[arg(long)]
-        rom: Option<PathBuf>,
+        rom: Vec<PathBuf>,
     },
     /// Import a .gamepkglist without downloading games.
     ImportList { source: String },
@@ -136,6 +140,14 @@ fn key(s: &str) -> Result<[u8; 32]> {
 }
 fn main() -> Result<()> {
     match Cli::parse().command {
+        Command::IntegrityCheck { id } => println!(
+            "{}",
+            gamepkg::integrity::check(&gamepkg::registry::default_root()?, &id)?
+        ),
+        Command::IntegrityFix { id } => println!(
+            "{}",
+            gamepkg::integrity::fix(&gamepkg::registry::default_root()?, &id)?
+        ),
         Command::Allowlist { command } => match command {
             AllowlistCommand::List => {
                 let settings = gamepkg::settings::load()?;
@@ -255,10 +267,10 @@ fn main() -> Result<()> {
             println!("Creator public key: {public}");
         }
         Command::Run { id, frames, rom } => {
-            let mut game = gamepkg::runtime::Game::load_with_rom(
+            let mut game = gamepkg::runtime::Game::load_with_roms(
                 &gamepkg::registry::default_root()?,
                 &id,
-                rom.as_deref(),
+                &rom,
             )?;
             if let Some(count) = frames {
                 if count > 10000 {

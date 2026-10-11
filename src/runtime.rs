@@ -24,7 +24,7 @@ struct Data {
     pending_achievements: Vec<String>,
     limits: StoreLimits,
     package: Option<crate::archive::Package>,
-    rom: Option<Vec<u8>>,
+    rom: Option<Vec<Vec<u8>>>,
     save: Option<crate::saves::Save>,
     frame: crate::drawing::Frame,
     audio: Vec<i16>,
@@ -67,7 +67,7 @@ impl Game {
         manifest: &Manifest,
         settings: &crate::settings::Settings,
         package: Option<crate::archive::Package>,
-        rom: Option<Vec<u8>>,
+        rom: Option<Vec<Vec<u8>>>,
         save: Option<crate::saves::Save>,
     ) -> Result<Self> {
         settings.validate()?;
@@ -78,8 +78,8 @@ impl Game {
             bail!("unsupported runtime profile");
         }
         manifest.ensure_engine_compatible()?;
-        if manifest.requires_rom && rom.is_none() {
-            bail!("ROM delivery requires a file selected by you");
+        if manifest.required_rom_count() != rom.as_ref().map_or(0, Vec::len) {
+            bail!("ROM delivery requires every declared file selected by you");
         }
         if !manifest.requires_rom && rom.is_some() {
             bail!("this game does not request a user ROM");
@@ -113,6 +113,9 @@ impl Game {
                         "asset_read"
                             | "rom_read"
                             | "rom_size"
+                            | "rom_count"
+                            | "rom_size_at"
+                            | "rom_read_at"
                             | "save_read"
                             | "save_write"
                             | "save_size"
@@ -443,6 +446,23 @@ impl Game {
                 },
             )?;
             linker.func_wrap("gamepkg", "rom_read", rom_read)?;
+            linker.func_wrap("gamepkg", "rom_read_at", rom_read_at)?;
+            linker.func_wrap("gamepkg", "rom_count", |caller: Caller<'_, Data>| -> i32 {
+                caller.data().rom.as_ref().map_or(0, |r| r.len() as i32)
+            })?;
+            linker.func_wrap(
+                "gamepkg",
+                "rom_size_at",
+                |caller: Caller<'_, Data>, index: i32| -> i32 {
+                    caller
+                        .data()
+                        .rom
+                        .as_ref()
+                        .and_then(|r| r.get(index as usize))
+                        .map_or(-1, |r| r.len() as i32)
+                },
+            )?;
+
             linker.func_wrap("gamepkg", "save_read", save_read)?;
             linker.func_wrap("gamepkg", "save_write", save_write)?;
             linker.func_wrap("gamepkg", "save_size", |caller: Caller<'_, Data>| -> i32 {
@@ -453,7 +473,12 @@ impl Game {
                     .map_or(-1, |s| s.bytes.len() as i32)
             })?;
             linker.func_wrap("gamepkg", "rom_size", |caller: Caller<'_, Data>| -> i32 {
-                caller.data().rom.as_ref().map_or(-1, |r| r.len() as i32)
+                caller
+                    .data()
+                    .rom
+                    .as_ref()
+                    .and_then(|r| r.first())
+                    .map_or(-1, |r| r.len() as i32)
             })?;
             let instance = linker.instantiate(&mut store, module.as_ref().unwrap())?;
             let tick = instance
@@ -488,6 +513,10 @@ impl Game {
         Self::load_with_rom(root, id, None)
     }
     pub fn load_with_rom(root: &Path, id: &str, rom_path: Option<&Path>) -> Result<Self> {
+        let paths: Vec<_> = rom_path.into_iter().map(Path::to_path_buf).collect();
+        Self::load_with_roms(root, id, &paths)
+    }
+    pub fn load_with_roms(root: &Path, id: &str, rom_paths: &[std::path::PathBuf]) -> Result<Self> {
         crate::registry::list(root)?
             .into_iter()
             .find(|m| m.id == id)
@@ -504,26 +533,36 @@ impl Game {
             .join("builds")
             .join(crate::verify::digest(&archive))
             .join("game.wasm");
-        let bytes = std::fs::read(cache).context("build this game before playing")?;
-        let rom = match rom_path {
-            Some(path) => {
-                use std::io::Read;
-                if !manifest.requires_rom {
-                    bail!("this game does not request a user ROM");
-                }
-                let file = std::fs::File::open(path).context("unable to open selected ROM")?;
-                if !file.metadata()?.is_file() {
-                    bail!("ROM must be a regular file");
-                }
-                let mut bytes = Vec::new();
-                file.take(64 * 1024 * 1024 + 1).read_to_end(&mut bytes)?;
-                if bytes.is_empty() || bytes.len() > 64 * 1024 * 1024 {
-                    bail!("ROM must be 1 byte to 64 MiB");
-                }
-                Some(bytes)
+        let bytes = std::fs::read(&cache).context("build this game before playing")?;
+        crate::integrity::verify_build(&cache, &bytes)
+            .context("build integrity unavailable or damaged; rebuild this game")?;
+        if rom_paths.len() != manifest.required_rom_count() {
+            bail!(
+                "this game requires {} user-selected ROM files, but {} were supplied",
+                manifest.required_rom_count(),
+                rom_paths.len()
+            );
+        }
+        let mut snapshots = Vec::new();
+        let mut total = 0usize;
+        for path in rom_paths {
+            use std::io::Read;
+            let file = std::fs::File::open(path).context("unable to open selected ROM")?;
+            if !file.metadata()?.is_file() {
+                bail!("ROM must be a regular file");
             }
-            None => None,
-        };
+            let mut bytes = Vec::new();
+            file.take(64 * 1024 * 1024 + 1).read_to_end(&mut bytes)?;
+            if bytes.is_empty() || bytes.len() > 64 * 1024 * 1024 {
+                bail!("ROM must be 1 byte to 64 MiB");
+            }
+            total = total.saturating_add(bytes.len());
+            if total > 128 * 1024 * 1024 {
+                bail!("combined ROM snapshots exceed 128 MiB");
+            }
+            snapshots.push(bytes);
+        }
+        let rom = (!snapshots.is_empty()).then_some(snapshots);
         let settings = crate::settings::load()?;
         let mut game = Self::with_package(
             &bytes,
@@ -693,7 +732,16 @@ fn asset_read(
     length as i32
 }
 
-fn rom_read(mut caller: Caller<'_, Data>, offset: i32, output: i32, length: i32) -> i32 {
+fn rom_read(caller: Caller<'_, Data>, offset: i32, output: i32, length: i32) -> i32 {
+    rom_read_at(caller, 0, offset, output, length)
+}
+fn rom_read_at(
+    mut caller: Caller<'_, Data>,
+    index: i32,
+    offset: i32,
+    output: i32,
+    length: i32,
+) -> i32 {
     if offset < 0 || output < 0 || !(0..=65536).contains(&length) {
         return -1;
     }
@@ -721,6 +769,7 @@ fn rom_read(mut caller: Caller<'_, Data>, offset: i32, output: i32, length: i32)
         .data()
         .rom
         .as_ref()
+        .and_then(|r| r.get(index as usize))
         .and_then(|r| r.get(offset as usize..))
     else {
         return -1;

@@ -4,6 +4,9 @@
 pub mod gamepkg {
     #[link(wasm_import_module = "gamepkg")]
     unsafe extern "C" {
+        #[link_name="rom_count"] fn host_rom_count()->u32;
+        #[link_name="rom_size_at"] fn host_rom_size_at(index:u32)->i32;
+        #[link_name="rom_read_at"] fn host_rom_read_at(index:u32,offset:i32,output:*mut u8,length:i32)->i32;
         #[link_name="achievement_unlock"] fn host_achievement(index:u32)->i32;
         #[link_name="draw_shader_image"] fn host_shader_image(index:u32,pw:u32,ph:u32,pixels:*const u8,length:usize)->i32;
         #[link_name="draw_asset_image"] fn host_asset_image(path:*const u8,length:usize,x:f32,y:f32,w:f32,h:f32)->i32;
@@ -39,6 +42,13 @@ pub mod gamepkg {
         if result < 0 { None } else { Some(result as usize) }
     }
     /// Size of the ROM explicitly selected by the player, if available.
+    pub fn rom_count()->u32 { unsafe { host_rom_count() } }
+    pub fn rom_size_at(index:u32)->Option<usize> { let n=unsafe {host_rom_size_at(index)}; if n<0 {None} else {Some(n as usize)} }
+    pub fn rom_read_at(index:u32,offset:u32,output:&mut [u8])->Option<usize> {
+        if offset>i32::MAX as u32 || output.len()>65536 {return None;}
+        let n=unsafe {host_rom_read_at(index,offset as i32,output.as_mut_ptr(),output.len() as i32)};
+        if n<0 {None} else {Some(n as usize)}
+    }
     pub fn rom_size() -> Option<usize> {
         let size = unsafe { host_rom_size() };
         if size < 0 { None } else { Some(size as usize) }

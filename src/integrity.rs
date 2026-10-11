@@ -1,0 +1,153 @@
+//! Host-side verification and rebuild repair. Never modify signed package contents.
+use anyhow::{bail, Context, Result};
+use std::{
+    fs,
+    io::{Read, Write},
+    path::Path,
+};
+
+pub fn retain_package(
+    root: &Path,
+    manifest: &crate::manifest::Manifest,
+    source: &Path,
+) -> Result<()> {
+    let folder = root.join("verified-packages");
+    if folder
+        .symlink_metadata()
+        .is_ok_and(|m| !m.is_dir() || m.file_type().is_symlink())
+    {
+        bail!("recovery folder must be a real directory");
+    }
+    fs::create_dir_all(&folder)?;
+    let mut copy = tempfile::NamedTempFile::new_in(&folder)?;
+    let size = std::io::copy(
+        &mut fs::File::open(source)?.take(crate::archive::MAX_TOTAL + 1),
+        &mut copy,
+    )?;
+    if size > crate::archive::MAX_TOTAL {
+        bail!("recovery package exceeds size limit");
+    }
+    copy.flush()?;
+    let checked = crate::verify::verify_embedded(&mut crate::archive::Package::open(copy.path())?)?;
+    if checked.id != manifest.id
+        || checked.creator_key != manifest.creator_key
+        || checked.version != manifest.version
+    {
+        bail!("recovery source changed");
+    }
+    copy.as_file().sync_all()?;
+    copy.persist(folder.join(format!("{}.gamepkg", manifest.id)))
+        .map_err(|e| e.error)?;
+    Ok(())
+}
+pub fn record_build(path: &Path, bytes: &[u8]) -> Result<()> {
+    let parent = path.parent().context("invalid build path")?;
+    let mut file = tempfile::NamedTempFile::new_in(parent)?;
+    file.write_all(crate::verify::digest(bytes).as_bytes())?;
+    file.as_file().sync_all()?;
+    file.persist(path.with_extension("sha256"))
+        .map_err(|e| e.error)?;
+    Ok(())
+}
+pub fn verify_build(path: &Path, bytes: &[u8]) -> Result<()> {
+    let receipt = path.with_extension("sha256");
+    if fs::symlink_metadata(&receipt)?.file_type().is_symlink() {
+        bail!("build integrity receipt is a symlink");
+    }
+    let mut expected = String::new();
+    fs::File::open(receipt)?
+        .take(65)
+        .read_to_string(&mut expected)?;
+    if expected.len() != 64 || expected != crate::verify::digest(bytes) {
+        bail!("compiled game integrity mismatch; rebuild from verified source");
+    }
+    Ok(())
+}
+pub fn check(root: &Path, id: &str) -> Result<String> {
+    // Validate the identifier through the verified registry before constructing paths.
+    let manifest = crate::registry::list(root)?
+        .into_iter()
+        .find(|m| m.id == id)
+        .context("verified installed package not found")?;
+    let mut package = crate::archive::Package::open(&root.join(format!("{id}.gamepkg")))?;
+    crate::verify::verify_embedded(&mut package)?;
+    package.resolve_shared_assets(root)?;
+    retain_package(root, &manifest, &root.join(format!("{id}.gamepkg")))?;
+    crate::progress::load(root, &manifest.id, &manifest.creator_key)?;
+    let path = crate::build::cache_path(root, id)?;
+    if !path.exists() {
+        return Ok(format!(
+            "{id}: signed package, shared assets and play history verified; not built"
+        ));
+    }
+    let metadata = fs::symlink_metadata(&path)?;
+    if !metadata.is_file() || metadata.len() > 32 * 1024 * 1024 {
+        bail!("invalid compiled game file");
+    }
+    let bytes = fs::read(&path)?;
+    verify_build(&path, &bytes)?;
+    if !crate::build::is_built(root, id)? {
+        bail!("compiled game has no valid playable entry point");
+    }
+    Ok(format!(
+        "{id}: signed package, shared assets, play history and compiled game verified"
+    ))
+}
+pub fn fix(root: &Path, id: &str) -> Result<String> {
+    // Compilation rechecks signatures and shared blob hashes before running the isolated compiler.
+    // Damaged archives can use the host-retained verified original; external blobs must remain valid.
+    if id.is_empty()
+        || !id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
+    {
+        bail!("invalid game identifier");
+    }
+    let target = root.join(format!("{id}.gamepkg"));
+    if crate::archive::Package::open(&target)
+        .and_then(|mut p| crate::verify::verify_embedded(&mut p))
+        .is_err()
+    {
+        let backup = root.join("verified-packages").join(format!("{id}.gamepkg"));
+        if fs::symlink_metadata(backup.parent().unwrap())?
+            .file_type()
+            .is_symlink()
+            || fs::symlink_metadata(&backup)?.file_type().is_symlink()
+        {
+            bail!("recovery copy cannot be a symlink");
+        }
+        let mut file = tempfile::NamedTempFile::new_in(root)?;
+        let size = std::io::copy(
+            &mut fs::File::open(&backup)?.take(crate::archive::MAX_TOTAL + 1),
+            &mut file,
+        )?;
+        if size > crate::archive::MAX_TOTAL {
+            bail!("recovery package exceeds size limit");
+        }
+        file.flush()?;
+        let mut package = crate::archive::Package::open(file.path())?;
+        let manifest = crate::verify::verify_embedded(&mut package)?;
+        if manifest.id != id {
+            bail!("recovery package ID differs");
+        }
+        package.resolve_shared_assets(root)?;
+        file.as_file().sync_all()?;
+        file.persist(target).map_err(|e| e.error)?;
+    }
+    crate::build::compile(root, id)?;
+    check(root, id)
+}
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn changed_artifacts_and_missing_receipts_are_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("game.wasm");
+        assert!(super::verify_build(&path, b"original").is_err());
+        super::record_build(&path, b"original").unwrap();
+        super::verify_build(&path, b"original").unwrap();
+        assert!(super::verify_build(&path, b"changed").is_err());
+        std::fs::write(path.with_extension("sha256"), b"invalid").unwrap();
+        assert!(super::verify_build(&path, b"original").is_err());
+    }
+}

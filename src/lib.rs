@@ -44,3 +44,5 @@ pub mod allowlist;
 pub mod progress;
 
 pub mod storage;
+
+pub mod integrity;

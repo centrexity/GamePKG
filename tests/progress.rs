@@ -31,6 +31,7 @@ fn play_history_achievements_and_storage_survive_sessions() {
     fs::create_dir_all(cache.parent().unwrap()).unwrap();
     let good=wat::parse_str("(module (import \"gamepkg\" \"achievement_unlock\" (func $unlock (param i32) (result i32))) (func (export \"gamepkg_tick\") (param i32 i64) (result i64) i32.const -1 call $unlock drop i32.const 0 call $unlock drop i64.const 0))").unwrap();
     fs::write(&cache, &good).unwrap();
+    gamepkg::integrity::record_build(&cache, &good).unwrap();
     {
         let mut game = Game::load(&root, &manifest.id).unwrap();
         game.step(0).unwrap();
@@ -66,7 +67,7 @@ fn play_history_achievements_and_storage_survive_sessions() {
             .unwrap()
             .len()
     );
-    assert_eq!(usage.built_bytes, good.len() as u64);
+    assert_eq!(usage.built_bytes, good.len() as u64 + 64);
     assert!(usage.estimated_bytes.is_none());
     let mut estimated = manifest.clone();
     estimated.limits.recommended_storage_bytes = Some(1);
@@ -98,7 +99,8 @@ fn play_history_achievements_and_storage_survive_sessions() {
     registry::install(&other_root, &package, true).unwrap();
     let other_cache = gamepkg::build::cache_path(&other_root, &manifest.id).unwrap();
     fs::create_dir_all(other_cache.parent().unwrap()).unwrap();
-    fs::write(other_cache,wat::parse_str("(module (import \"gamepkg\" \"achievement_unlock\" (func $u (param i32) (result i32))) (func (export \"gamepkg_tick\") (param i32 i64) (result i64) i32.const 0 call $u drop unreachable))").unwrap()).unwrap();
+    fs::write(&other_cache,wat::parse_str("(module (import \"gamepkg\" \"achievement_unlock\" (func $u (param i32) (result i32))) (func (export \"gamepkg_tick\") (param i32 i64) (result i64) i32.const 0 call $u drop unreachable))").unwrap()).unwrap();
+    gamepkg::integrity::record_build(&other_cache, &fs::read(&other_cache).unwrap()).unwrap();
     {
         let mut game = Game::load(&other_root, &manifest.id).unwrap();
         assert!(game.step(0).is_err());

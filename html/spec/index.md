@@ -78,3 +78,11 @@ The host API includes `draw-image(x, y, width, height, pixel-width, pixel-height
 `draw-asset-image(path, x, y, width, height)` loads a PNG through the verified virtual asset API, including resolved shared references. The encoded file is limited to 2 MiB and the decoder allocation budget to 8 MiB; the same 512×512 dimensions, exact RGBA snapshot, and frame budget apply. Fuel is reserved before full archive reads and decoding. Invalid data, unavailable assets, and paths outside the asset root return false.
 
 GLSL fragment passes may use one host-owned combined `Sampler2D gamepkgTexture` at binding 0 via `draw_shader_image(index, pixel_width, pixel_height, rgba)`. Pixels are snapshotted and fuel-charged before queueing, bounded to 512×512 and included in the shared 8 MiB frame image budget. Additional shader resources are rejected. Core and WIT runtimes support this API. Textured SPIR-V/WGSL playback validates one float 2D image and one non-comparison sampler at group 0 bindings 0 and 1 before translating to GLSL. SPIR-V builds define `GAMEPKG_SEPARATE_SAMPLER=1`; use the example’s explicit texture/sampler branch.
+
+## Multiple player ROMs
+
+Optional `[[roms]]` entries contain unique `id` and human-readable `title` fields. Up to eight entries are permitted. A nonempty list implies `requires_rom = true`; legacy `requires_rom = true` without entries requires one file. The player supplies every file in declaration order. Read-only session snapshots are limited to 64 MiB per file and 128 MiB combined. Core and component hosts expose count, indexed size and indexed read; legacy functions refer to the first file.
+
+## Installed integrity and repair
+
+Signed package verification covers the archive contents; shared assets are checked against signed hashes. Compiled Wasm has a host-written SHA-256 receipt checked before playback. Integrity repair restores damaged archives only from a verified local recovery copy, and rebuilds compiled files from verified source. A damaged or missing recovery copy requires a verified replacement original. Player saves and history are never reset automatically. Shader caches retain playback validation separately. Build checksums detect changes, but are not signatures protecting a compromised host.

@@ -711,6 +711,25 @@ title = "First star"
 description = "Collect your first star."
 ```
 
-Both core and WIT guests call `gamepkg::achievement_unlock(0)` with the declaration's zero-based index. Invalid indices return false. Unlocks commit only after a successful tick, remain unlocked on repeat calls, and retain their first unlock timestamp. Keep IDs stable across updates. Achievement reports come from the game; they are local progress records rather than an anti-cheat service. Collect Stars demonstrates first-star and ten-star achievements. Hover over the table's achievement count for descriptions and status; the CLI lists each achievement.
+Both core and WIT guests call `gamepkg::achievement_unlock(0)` with the declaration's zero-based index. Invalid indices return false. Unlocks commit only after a successful tick, remain unlocked on repeat calls, and retain their first unlock timestamp. Keep IDs stable across updates. Achievement reports come from the game; they are local progress records rather than an anti-cheat service. Collect Stars demonstrates first-star and ten-star achievements. Game Details includes an achievement list with descriptions and locked/unlocked status. The table count also has a quick summary on hover, and the CLI lists each achievement. Signed updates retain unlocks by stable ID even when achievements are reordered or renamed; new IDs begin locked.
 
 Storage shows measured current package, Wasm build, identified shader caches, current save, play history, and referenced cached shared asset file bytes, plus an optional creator estimate. Shared blobs are counted once per game even when referenced under multiple asset paths. They can appear in several game totals; the library total counts each stored file once. Older Wasm builds and save schemas remain in the library total. Set `recommended_storage_bytes` under `[limits]` to estimate the total space needed after building. Estimates do not limit disk usage or guarantee the final size. The library total also includes shader caches, older builds, shared assets, saves, and play history. External compilers, user ROMs, and filesystem allocation overhead are excluded. Catalog sizes remain unknown until download; game estimates remain unknown unless the creator supplies one.
+
+### Multiple ROMs and integrity
+
+A signed manifest can declare up to eight player-provided files, in order:
+
+```toml
+[[roms]]
+id = "program"
+title = "Program ROM"
+[[roms]]
+id = "data"
+title = "Data ROM"
+```
+
+Supply each file with repeated `--rom` options, or use **Add ROM file** in the library. Games receive read-only snapshots, indexed in declaration order, without host paths. Each file is limited to 64 MiB and the combined files to 128 MiB. Legacy `requires_rom = true` still requests one file. Guest APIs include `rom_count`, `rom_size_at`, and `rom_read_at`; existing ROM APIs read the first file.
+
+Use `gamepkg integrity-check GAME_ID` or **Check integrity** to verify the signed archive, shared blob hashes, play history format and compiled Wasm checksum. `gamepkg integrity-fix GAME_ID` or **Fix / rebuild** rebuilds from verified source under the existing compiler isolation. Older builds without checksums need a rebuild before playback. Checksums detect accidental changes; they do not authenticate the host against someone who can modify both a build and its receipt.
+
+Repairs never rewrite signatures, invent missing shared blobs, reset saves, or erase play history. Installation and successful checks retain a verified local recovery copy. Repair can restore a damaged archive from that copy; a damaged recovery copy is rejected. Missing recovery copies or shared blobs require verified replacement originals. Recovery copies add one archive’s size to library storage. Shader caches retain their existing validation on playback; this check currently covers the Wasm build, not every shader backend cache.

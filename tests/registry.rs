@@ -173,7 +173,8 @@ fn rom_requirement_is_signed_and_build_cache_tracks_exact_package() {
         "(module (func (export \"gamepkg_tick\") (param i32 i64) (result i64) local.get 1))",
     )
     .unwrap();
-    fs::write(cache.join("game.wasm"), playable).unwrap();
+    fs::write(cache.join("game.wasm"), &playable).unwrap();
+    gamepkg::integrity::record_build(&cache.join("game.wasm"), &playable).unwrap();
     assert!(gamepkg::build::is_built(&root, &m.id).unwrap());
     fs::write(
         &p,
