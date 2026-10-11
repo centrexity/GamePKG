@@ -57,17 +57,20 @@ def click_text(window, env, text, directory, timeout=15):
             tsv = subprocess.check_output(['tesseract', str(enlarged), 'stdout', '--psm', '11', 'tsv'], stderr=subprocess.DEVNULL, text=True)
             words = [w for w in csv.DictReader(io.StringIO(tsv), delimiter='\t') if w['text'].strip()]
             last = ' '.join(w['text'] for w in words)
-            for index in range(len(words)-len(wanted)+1):
-                candidate = words[index:index+len(wanted)]
-                if [w['text'].strip('[]()|') for w in candidate] != wanted:
-                    continue
-                if max(int(w['top']) for w in candidate)-min(int(w['top']) for w in candidate)>18:
-                    continue
-                first = candidate[0]
-                x = (int(first['left'])+int(first['width'])//2)//3
-                y = (int(first['top'])+int(first['height'])//2)//3
-                subprocess.run(['xdotool','mousemove','--window',window,str(x),str(y),'click','1'],env=env,check=True)
-                return
+            # OCR may merge adjacent words in a compact button label.
+            for count in range(1, len(wanted)+1):
+                for index in range(len(words)-count+1):
+                    candidate = words[index:index+count]
+                    actual = ''.join(w['text'].strip('[]()|') for w in candidate)
+                    if actual != ''.join(wanted):
+                        continue
+                    if max(int(w['top']) for w in candidate)-min(int(w['top']) for w in candidate)>18:
+                        continue
+                    first = candidate[0]
+                    x = (int(first['left'])+int(first['width'])//2)//3
+                    y = (int(first['top'])+int(first['height'])//2)//3
+                    subprocess.run(['xdotool','mousemove','--window',window,str(x),str(y),'click','1'],env=env,check=True)
+                    return
         if time.monotonic() >= deadline:
             raise AssertionError(f'Visible control {text!r} was not found: {last}')
         time.sleep(.1)
