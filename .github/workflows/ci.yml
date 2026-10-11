@@ -65,6 +65,9 @@ jobs:
       - name: Signed preview validation and decoding
         if: matrix.features == '--all-features'
         run: sudo env PATH="$PATH" python3 tests/previews.py
+      - name: Playable entrypoint and failed-build cache preservation
+        if: matrix.features == '--all-features'
+        run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/build_entrypoints.py
       - name: Pinned approved guest dependency
         if: matrix.features == '--all-features'
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/approved_crate_game.py

@@ -23,10 +23,91 @@ pub fn cache_path(root: &Path, id: &str) -> Result<PathBuf> {
 }
 pub fn is_built(root: &Path, id: &str) -> Result<bool> {
     let path = cache_path(root, id)?;
-    let Ok(bytes) = fs::read(path) else {
+    let Ok(file) = fs::File::open(path) else {
         return Ok(false);
     };
-    Ok(bytes.starts_with(b"\0asm\x01\0\0\0") || bytes.starts_with(b"\0asm\x0d\0\x01\0"))
+    use std::io::Read;
+    let mut bytes = Vec::new();
+    if file
+        .take(32 * 1024 * 1024 + 1)
+        .read_to_end(&mut bytes)
+        .is_err()
+    {
+        return Ok(false);
+    }
+    Ok(artifact_has_tick(&bytes))
+}
+fn artifact_has_tick(bytes: &[u8]) -> bool {
+    if bytes.len() > 32 * 1024 * 1024 {
+        return false;
+    }
+    let core = bytes.starts_with(b"\0asm\x01\0\0\0");
+    let component = bytes.starts_with(b"\0asm\x0d\0\x01\0");
+    if !core && !component {
+        return false;
+    }
+    let Ok(types) = wasmparser::Validator::new().validate_all(bytes) else {
+        return false;
+    };
+    let mut depth: u32 = 0;
+    let mut found = false;
+    for payload in wasmparser::Parser::new(0).parse_all(bytes) {
+        match payload {
+            Ok(
+                wasmparser::Payload::ModuleSection { .. }
+                | wasmparser::Payload::ComponentSection { .. },
+            ) => depth += 1,
+            Ok(wasmparser::Payload::End(_)) => {
+                depth = depth.saturating_sub(1);
+            }
+            Ok(wasmparser::Payload::ExportSection(exports)) if core && depth == 0 => {
+                found |= exports.into_iter().any(|export| {
+                    export.is_ok_and(|export| {
+                        export.name == "gamepkg_tick"
+                            && export.kind == wasmparser::ExternalKind::Func
+                            && {
+                                let function = types[types.as_ref().core_function_at(export.index)]
+                                    .unwrap_func();
+                                function.params()
+                                    == [wasmparser::ValType::I32, wasmparser::ValType::I64]
+                                    && function.results() == [wasmparser::ValType::I64]
+                            }
+                    })
+                });
+            }
+            Ok(wasmparser::Payload::ComponentExportSection(exports)) if component && depth == 0 => {
+                found |= exports.into_iter().any(|export| {
+                    export.is_ok_and(|export| {
+                        export.name.0 == "tick"
+                            && export.kind == wasmparser::ComponentExternalKind::Func
+                            && {
+                                use wasmparser::{
+                                    component_types::ComponentValType, PrimitiveValType,
+                                };
+                                let function =
+                                    &types[types.as_ref().component_function_at(export.index)];
+                                function.params.len() == 2
+                                    && matches!(
+                                        function.params[0].1,
+                                        ComponentValType::Primitive(PrimitiveValType::U32)
+                                    )
+                                    && matches!(
+                                        function.params[1].1,
+                                        ComponentValType::Primitive(PrimitiveValType::U64)
+                                    )
+                                    && matches!(
+                                        function.result,
+                                        Some(ComponentValType::Primitive(PrimitiveValType::U64))
+                                    )
+                            }
+                    })
+                });
+            }
+            Err(_) => return false,
+            _ => (),
+        }
+    }
+    found
 }
 pub fn compile(root: &Path, id: &str) -> Result<()> {
     if !cfg!(target_os = "linux") {
@@ -45,19 +126,15 @@ pub fn compile(root: &Path, id: &str) -> Result<()> {
     let approved = crate::allowlist::approved(&cargo, &pkg.read("source/Cargo.lock")?)?;
     let stage = tempfile::tempdir()?;
     let mut source = String::from_utf8(pkg.read("source/src/lib.rs")?)?;
-    let parsed = syn::parse_file(&source)?;
-    if parsed
-        .items
-        .iter()
-        .any(|item| matches!(item, syn::Item::Fn(f) if f.sig.ident == "game_tick"))
-    {
-        let export = if manifest.runtime_profile == "component-v1" {
-            "tick"
-        } else {
-            "gamepkg_tick"
-        };
-        source.push_str(&format!("\n#[unsafe(no_mangle)] pub extern \"C\" fn {export}(input: u32, state: u64) -> u64 {{ game_tick(input, state) }}\n"));
+    if manifest.entry_world != "game" {
+        bail!("unsupported runtime entry world");
     }
+    let export = if manifest.runtime_profile == "component-v1" {
+        "tick"
+    } else {
+        "gamepkg_tick"
+    };
+    source.push_str(&format!("\n#[unsafe(no_mangle)] pub extern \"C\" fn {export}(input: u32, state: u64) -> u64 {{ game_tick(input, state) }}\n"));
     source.push_str(if manifest.runtime_profile == "component-v1" {
         include_str!("component_guest.rs.txt")
     } else {
@@ -205,6 +282,9 @@ pub fn compile(root: &Path, id: &str) -> Result<()> {
     if artifact.len() > 32 * 1024 * 1024 {
         bail!("compiled Wasm exceeds 32 MiB build limit");
     }
+    if !artifact_has_tick(&artifact) {
+        bail!("compiled artifact lacks a valid playable entry point");
+    }
     let parent = cache.parent().context("invalid build cache")?;
     fs::create_dir_all(parent)?;
     let mut temp = tempfile::NamedTempFile::new_in(parent)?;
@@ -213,4 +293,24 @@ pub fn compile(root: &Path, id: &str) -> Result<()> {
     temp.as_file().sync_all()?;
     temp.persist(cache).map_err(|e| e.error)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::artifact_has_tick;
+    #[test]
+    fn readiness_requires_a_valid_root_tick_export() {
+        assert!(!artifact_has_tick(&wat::parse_str("(module)").unwrap()));
+        assert!(artifact_has_tick(&wat::parse_str("(module (func (export \"gamepkg_tick\") (param i32 i64) (result i64) local.get 1))").unwrap()));
+        assert!(!artifact_has_tick(
+            &wat::parse_str("(module (memory (export \"gamepkg_tick\") 1))").unwrap()
+        ));
+        assert!(!artifact_has_tick(
+            &wat::parse_str("(component (core module (func (export \"gamepkg_tick\"))))").unwrap()
+        ));
+        assert!(!artifact_has_tick(
+            &wat::parse_str("(module (func (export \"gamepkg_tick\")))").unwrap()
+        ));
+        assert!(!artifact_has_tick(b"\0asm\x01\0\0\0broken"));
+    }
 }

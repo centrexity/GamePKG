@@ -614,3 +614,14 @@ segments. Only checked files enter the private offline Cargo workspace.
 reading, and constants modules. `tests/approved_crate_game.py` builds and plays
 it under both runtime profiles; `tests/modules.rs` checks missing/ambiguous
 modules, path redirection, forbidden unused files, and malformed source.
+
+Builds require a callable root `game_tick(u32, u64) -> u64`, including a
+re-export from another module. Missing or incompatible entry points and
+unsupported entry worlds fail before a build is published. The library checks
+cached Wasm validity and the root tick signature before offering Play; older
+caches without that entry point offer Build/Rebuild. The minimal, counter, and
+asset-catalog examples now provide playable entry points.
+
+`tests/build_entrypoints.py` covers successful core/WIT launches, reexports,
+wrong/missing entry points, unsupported worlds, and preservation of earlier
+caches after failed builds.

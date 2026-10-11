@@ -168,6 +168,12 @@ fn rom_requirement_is_signed_and_build_cache_tracks_exact_package() {
     fs::write(cache.join("game.wasm"), b"bad").unwrap();
     assert!(!gamepkg::build::is_built(&root, &m.id).unwrap());
     fs::write(cache.join("game.wasm"), b"\0asm\x01\0\0\0").unwrap();
+    assert!(!gamepkg::build::is_built(&root, &m.id).unwrap());
+    let playable = wat::parse_str(
+        "(module (func (export \"gamepkg_tick\") (param i32 i64) (result i64) local.get 1))",
+    )
+    .unwrap();
+    fs::write(cache.join("game.wasm"), playable).unwrap();
     assert!(gamepkg::build::is_built(&root, &m.id).unwrap());
     fs::write(
         &p,
