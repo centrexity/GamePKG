@@ -73,14 +73,36 @@ fn portable_store_deduplicates_blobs_requires_trust_and_imports_idempotently() {
     let destination = root.path().join("player-library");
     assert!(bundle.install(&destination, false).is_err());
     assert!(!destination.exists());
+    fs::create_dir_all(&destination).unwrap();
+    fs::write(destination.join("unrelated-broken.gamepkg"), b"damaged").unwrap();
     assert_eq!(bundle.install(&destination, true).unwrap(), 2);
     assert_eq!(bundle.install(&destination, false).unwrap(), 0);
-    assert_eq!(gamepkg::registry::list(&destination).unwrap().len(), 2);
+    assert_eq!(
+        gamepkg::registry::inspect_library(&destination)
+            .unwrap()
+            .games
+            .len(),
+        2
+    );
     let manifest = &bundle.games()[0];
     let reference = &manifest.shared_assets["hello.txt"];
     assert_eq!(
         Pool::open(&destination).unwrap().read(reference).unwrap(),
         b"Hello from an archived asset!\n"
+    );
+    fs::write(destination.join("unrelated-broken.gamepkg"), b"damaged").unwrap();
+    assert_eq!(bundle.install(&destination, false).unwrap(), 0);
+    let target = destination.join(format!("{}.gamepkg", manifest.id));
+    fs::write(&target, b"damaged target").unwrap();
+    assert!(bundle
+        .install(&destination, true)
+        .unwrap_err()
+        .to_string()
+        .contains("repair it before importing"));
+    assert_eq!(fs::read(target).unwrap(), b"damaged target");
+    assert_eq!(
+        fs::read(destination.join("unrelated-broken.gamepkg")).unwrap(),
+        b"damaged"
     );
     let original = fs::read(&output).unwrap();
     assert!(store::export(&root.path().join("creator-library"), &inputs, &output).is_err());

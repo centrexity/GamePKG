@@ -65,11 +65,7 @@ pub fn verify_build(path: &Path, bytes: &[u8]) -> Result<()> {
 }
 pub fn check(root: &Path, id: &str) -> Result<String> {
     // Validate the identifier through the verified registry before constructing paths.
-    let manifest = crate::registry::inspect_library(root)?
-        .games
-        .into_iter()
-        .find(|m| m.id == id)
-        .context("verified installed package not found")?;
+    let manifest = crate::registry::installed_manifest(root, id)?;
     let mut package = crate::archive::Package::open(&root.join(format!("{id}.gamepkg")))?;
     crate::verify::verify_embedded(&mut package)?;
     package.resolve_shared_assets(root)?;

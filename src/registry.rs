@@ -304,6 +304,27 @@ pub fn inspect_library(root: &Path) -> Result<LibraryInspection> {
     report.rejected.sort_by(|a, b| a.0.cmp(&b.0));
     Ok(report)
 }
+/// Verify one installed game without letting unrelated damaged files block it.
+pub fn installed_manifest(root: &Path, id: &str) -> Result<Manifest> {
+    if id.is_empty()
+        || id.len() > 200
+        || !id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
+    {
+        bail!("invalid package ID");
+    }
+    let path = root.join(format!("{id}.gamepkg"));
+    let metadata = fs::symlink_metadata(&path).context("package is not installed")?;
+    if !metadata.is_file() || metadata.file_type().is_symlink() {
+        bail!("installed package must be a regular file");
+    }
+    let manifest = verify_embedded(&mut Package::open(&path)?)?;
+    if manifest.id != id {
+        bail!("installed package ID mismatch");
+    }
+    Ok(manifest)
+}
 pub fn list(root: &Path) -> Result<Vec<Manifest>> {
     let report = inspect_library(root)?;
     if let Some((name, error)) = report.rejected.first() {
@@ -374,10 +395,7 @@ pub fn install(root: &Path, path: &Path, approve_creator: bool) -> Result<Manife
     Ok(m)
 }
 pub fn update(root: &Path, id: &str) -> Result<Manifest> {
-    let old = list(root)?
-        .into_iter()
-        .find(|m| m.id == id)
-        .context("package is not installed")?;
+    let old = installed_manifest(root, id)?;
     let url = old.update_url.context("package has no update URL")?;
     let downloaded = download(&url)?;
     let candidate = verify_embedded(&mut Package::open(downloaded.path())?)?;
@@ -389,10 +407,7 @@ pub fn update(root: &Path, id: &str) -> Result<Manifest> {
 
 /// Stage an available update without installing or modifying the current game.
 pub fn check_update(root: &Path, id: &str) -> Result<Option<(Manifest, tempfile::NamedTempFile)>> {
-    let old = list(root)?
-        .into_iter()
-        .find(|m| m.id == id)
-        .context("package is not installed")?;
+    let old = installed_manifest(root, id)?;
     let url = old.update_url.context("package has no update URL")?;
     let file = download(&url)?;
     let candidate = verify_embedded(&mut Package::open(file.path())?)?;

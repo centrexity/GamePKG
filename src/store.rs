@@ -111,9 +111,20 @@ impl Bundle {
     }
     pub fn install(&self, root: &Path, approve_creators: bool) -> Result<usize> {
         // Preflight the whole batch before publishing any pool data or games.
-        let installed = crate::registry::list(root)?;
+        let report = crate::registry::inspect_library(root)?;
+        let installed = report.games;
         let mut pending = Vec::new();
         for game in &self.games {
+            if let Some((_, error)) = report
+                .rejected
+                .iter()
+                .find(|(name, _)| name == &format!("{}.gamepkg", game.id))
+            {
+                bail!(
+                    "store target {} is damaged: {error}; repair it before importing",
+                    game.id
+                );
+            }
             let path = &self.packages[&game.id];
             if let Some(old) = installed.iter().find(|old| old.id == game.id) {
                 if old.creator_key != game.creator_key {

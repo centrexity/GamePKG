@@ -243,6 +243,15 @@ fn rejected_package_does_not_hide_valid_games_but_strict_listing_still_fails() {
     assert_eq!(report.rejected[0].0, "broken.gamepkg");
     assert!(report.rejected[1].1.contains("ID mismatch"));
     assert!(registry::list(&root).is_err());
+    assert_eq!(
+        registry::installed_manifest(&root, &installed.id)
+            .unwrap()
+            .id,
+        installed.id
+    );
+    for id in ["../escape", "broken", "wrong-id"] {
+        assert!(registry::installed_manifest(&root, id).is_err());
+    }
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_gamepkg"))
         .env("GAMEPKG_HOME", &root)
         .args(["list"])

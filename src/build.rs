@@ -11,11 +11,7 @@ use std::{
 };
 
 fn installed(root: &Path, id: &str) -> Result<PathBuf> {
-    registry::inspect_library(root)?
-        .games
-        .into_iter()
-        .find(|m| m.id == id)
-        .context("package is not installed")?;
+    registry::installed_manifest(root, id)?;
     Ok(root.join(format!("{id}.gamepkg")))
 }
 pub fn cache_path(root: &Path, id: &str) -> Result<PathBuf> {

@@ -91,6 +91,7 @@ print('200', end='')
     env['GAMEPKG_HOME'] = library
     run('download', 'com.gamepkg.minimal', '--trust-creator')
     assert '0.1.0' in run('list').stdout
+    (Path(library) / 'unrelated-broken.gamepkg').write_bytes(b'damaged unrelated package')
     publish('0.2.0')
     assert 'Update available' in run('check-updates', 'com.gamepkg.minimal').stdout
     assert '0.1.0' in run('list').stdout
