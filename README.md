@@ -2,7 +2,7 @@
 
 **Know what you run. Control what it can access.** GamePKG is building a safer way to share and play games: inspectable source, creator-signed packages, isolated compilation, and a host that is designed to grant only the capabilities a game needs.
 
-**Current status:** this is a development preview. Package verification, catalog import, installation, update checks, and isolated single-file Wasm and Slang shader builds on Linux work today. The experimental grid-v1 profile now plays in the GUI and terminal under Wasmtime with scoped asset reads, fuel, memory limits, and epoch deadlines. Resource-free Slang fragment passes now render in the OpenGL GUI; the broader WIT/rendering API remains pending; this is not a guarantee that a package is harmless.
+**Current status:** this is a development preview. Package verification, catalog import, installation, update checks, and isolated single-file Wasm and Slang shader builds on Linux work today. The experimental grid-v1 profile now plays in the GUI and terminal under Wasmtime with scoped asset reads, fuel, memory limits, and epoch deadlines. Resource-free Slang fragment passes now render in the OpenGL GUI; versioned WIT components are supported alongside the legacy core profile; broader rendering remains pending; this is not a guarantee that a package is harmless.
 
 ## Why distribute GamePKG instead of an opaque executable?
 
@@ -131,7 +131,7 @@ The desktop library shows each installed package's thumbnail, ID, version, ROM r
 
 Set `requires_rom = true` at the top level of the manifest for a game requiring a ROM supplied by the end user. It defaults to false for existing packages and is covered by the creator signature. The host displays the requirement during inspection and in the library. No ROM is downloaded, uploaded, or included automatically. Select a local ROM path when launching; the guest receives bounded read-only bytes for that session.
 
-`gamepkg build <id>` uses the same build action as the GUI. This initial build profile compiles the verified, dependency-free `source/src/lib.rs` directly to `wasm32-unknown-unknown` under Linux bubblewrap, without Cargo build scripts. It requires `bwrap`, `timeout`, Rust, `rustup target add wasm32-unknown-unknown`, and the pinned Slang installation described below. The compiler has a private working directory, an isolated network namespace, access to system tools and its toolchain, and a 60-second deadline. It has no access to the user's home directory. Failed sandbox setup stops the build; there is no native or unsandboxed fallback. Compiler memory caps, dependency support, WIT bindings and GPU rendering remain pending.
+`gamepkg build <id>` uses the same build action as the GUI. This initial build profile compiles the verified, dependency-free `source/src/lib.rs` directly to `wasm32-unknown-unknown` under Linux bubblewrap, without Cargo build scripts. It requires `bwrap`, `timeout`, Rust, `rustup target add wasm32-unknown-unknown`, and the pinned Slang installation described below. The compiler has a private working directory, an isolated network namespace, access to system tools and its toolchain, and a 60-second deadline. It has no access to the user's home directory. Failed sandbox setup stops the build; there is no native or unsandboxed fallback. Compiler memory caps, approved dependency support and broader GPU rendering remain pending.
 
 `gamepkg check-updates <id>` checks the signed URL without changing the installed game. In the GUI, a newer update opens for review and explicit installation. Matching versions report up-to-date; older versions and changed IDs/keys are rejected. `gamepkg update <id>` remains the explicit download-and-install command.
 
@@ -188,7 +188,7 @@ gamepkg run com.gamepkg.collect-stars
 
 In the terminal, enter W/A/S/D to move and Q to quit. In the GUI, click Play and use arrows or WASD; collect yellow targets to increase your score. Restart resets the game; Back to library unloads it. The desktop executable also accepts `--library <directory> --play com.gamepkg.collect-stars`.
 
-The experimental grid-v1 ABI uses core Wasm, not the planned WIT component API. Guest source defines `pub fn game_tick(input: u32, state: u64) -> u64`; the host compiler appends the exported wrapper, so guest export attributes are unnecessary. State packs player x/y and target x/y into four bytes, followed by a 32-bit score. Input bits are left=1, right=2, up=4, down=8. Coordinates use a 16×16 grid. Guests receive zero input unless the signed manifest grants input.
+The legacy grid-v1 ABI uses core Wasm. The versioned WIT component profile is described below. Guest source defines `pub fn game_tick(input: u32, state: u64) -> u64`; the host compiler appends the exported wrapper, so guest export attributes are unnecessary. State packs player x/y and target x/y into four bytes, followed by a 32-bit score. Input bits are left=1, right=2, up=4, down=8. Coordinates use a 16×16 grid. Guests receive zero input unless the signed manifest grants input.
 
 Runtime modules can import only the scoped GamePKG asset, ROM and save APIs; WASI, filesystem and socket imports are rejected. Wasmtime enforces memory, fuel and epoch limits. A trap ends gameplay. Slang compilation is available; Resource-free GLSL fragment passes render in the desktop player.
 
@@ -230,8 +230,8 @@ Paths are relative to `assets/` in the signed archive. The function returns
 `Some(bytes_read)`, including zero at EOF, or `None` for invalid paths, offsets,
 or missing assets. Reads are limited to 64 KiB per call; archive work consumes
 runtime fuel. The guest receives only the requested bytes and cannot open host
-files. This core-Wasm API is experimental; the component/WIT interface remains
-pending. Rebuild existing games to use the new wrapper.
+files. The same safe Rust wrappers are available in the versioned WIT component
+profile. Rebuild existing games to use the new wrapper.
 
 Run `python3 tests/runtime_assets.py` after building the release CLI to verify
 asset reads and path rejection through signing, isolated compilation and play.
@@ -325,7 +325,7 @@ arbitrary shader cannot stall or crash a driver.
 `examples/good/shader-switch` switches two compiled fragment passes with held
 Right input. `tests/shader_gui.py` verifies the actual blue and green pixels in
 an isolated display. Textures, external bindings, vertex/compute pipelines,
-other rendering backends and the broader WIT component API remain pending.
+other rendering backends remain pending.
 
 Hosted Linux build integrations run controlled fixtures with elevated namespace
 setup privileges because the runner rejects unprivileged network namespace
@@ -392,3 +392,33 @@ engine requirement, save schema, permissions, creator fingerprint, ROM
 requirement and signed lockfile inventory hash. It does not stage a download
 or install anything. Creator keys normalize to their byte identity so hex
 letter case cannot create different trust or save identities.
+
+
+## Versioned WIT components
+
+Set `runtime_profile = "component-v1"` at the top level of the signed manifest
+with `entry_world = "game"`. Omission preserves the existing `core-v1` profile.
+The authoritative contract is [`wit/game.wit`](wit/game.wit), package
+`gamepkg:engine@0.1.0`, world `game`. It exports a typed `tick(input: u32,
+state: u64) -> u64` and imports only `gamepkg:engine/host@0.1.0`.
+
+Guest source still defines `game_tick` and uses the safe `gamepkg` wrappers.
+The isolated compiler appends host-owned canonical ABI bindings, compiles source
+into core Wasm, and encodes a validated component outside the signed archive.
+No guest-supplied prebuilt component, WIT file, WASI interface, build script or
+additional dependency is accepted. CLI and GUI load components through Wasmtime's
+component linker with the same fuel, epoch deadline, input permission, memory
+ceiling, draw/audio bounds and transactional save behavior as the core profile.
+Component instances allow four internal modules and two bounded tables for the
+canonical ABI; linear memory remains limited to one memory and the signed/user
+ceiling. Host list copies are additional bounded host allocations, outside the
+linear memory ceiling.
+
+Assets, ROM and save reads use typed optional byte lists. Save writes and audio
+use typed lists; drawing returns a boolean success value. Paths stay virtual,
+ROMs remain explicitly selected, and saves remain scoped to identity/schema.
+`examples/good/component-playground` is a playable component source example.
+Run `tests/components_game.py` for signed build, typed list transfers, permission
+denial and save rollback, and `tests/component_gui.py` for rendering and held
+movement verified from actual screen pixels. The GUI test requires the same
+virtual display tools as the drawing test.

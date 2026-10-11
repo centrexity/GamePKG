@@ -1,0 +1,73 @@
+// Trusted canonical-ABI bindings for wit/game.wit. Guest sources cannot supply these imports.
+pub mod gamepkg {
+    #[link(wasm_import_module = "gamepkg:engine/host@0.1.0")]
+    unsafe extern "C" {
+        #[link_name = "asset-read"] fn asset(path: *const u8, n: usize, offset: u32, length: u32, result: *mut u32);
+        #[link_name = "rom-read"] fn rom(offset: u32, length: u32, result: *mut u32);
+        #[link_name = "save-read"] fn save(offset: u32, length: u32, result: *mut u32);
+        #[link_name = "rom-size"] fn rom_len(result: *mut u32);
+        #[link_name = "save-size"] fn save_len(result: *mut u32);
+        #[link_name = "save-write"] fn write(bytes: *const u8, n: usize) -> i32;
+        #[link_name = "draw-clear"] fn clear(rgba: u32) -> i32;
+        #[link_name = "draw-rect"] fn rect(x: f32,y: f32,w: f32,h: f32,rgba: u32) -> i32;
+        #[link_name = "draw-circle"] fn circle(x: f32,y: f32,r: f32,rgba: u32) -> i32;
+        #[link_name = "draw-shader"] fn shader(index: u32) -> i32;
+        #[link_name = "audio-submit"] fn audio(samples: *const i16, n: usize) -> i32;
+    }
+    unsafe fn copy_result(result: [u32;3], output: &mut [u8]) -> Option<usize> {
+        if result[0] == 0 { return None; }
+        let n = result[2] as usize;
+        let pointer = result[1] as *mut u8;
+        if n > output.len() { unreachable!(); }
+        if n > 0 {
+            output[..n].copy_from_slice(unsafe { std::slice::from_raw_parts(pointer,n) });
+            unsafe { std::alloc::dealloc(pointer,std::alloc::Layout::from_size_align(n,1).unwrap()) };
+        }
+        Some(n)
+    }
+    pub fn asset_read(path: &str, offset: u32, output: &mut [u8]) -> Option<usize> {
+        if path.len() > 1024 || output.len() > 65536 { return None; }
+        let mut result = [0u32;3];
+        unsafe { asset(path.as_ptr(),path.len(),offset,output.len() as u32,result.as_mut_ptr()); copy_result(result,output) }
+    }
+    pub fn rom_read(offset: u32, output: &mut [u8]) -> Option<usize> {
+        if output.len() > 65536 { return None; }
+        let mut result = [0u32;3];
+        unsafe { rom(offset,output.len() as u32,result.as_mut_ptr()); copy_result(result,output) }
+    }
+    pub fn save_read(offset: u32, output: &mut [u8]) -> Option<usize> {
+        if output.len() > 65536 { return None; }
+        let mut result = [0u32;3];
+        unsafe { save(offset,output.len() as u32,result.as_mut_ptr()); copy_result(result,output) }
+    }
+    pub fn rom_size() -> Option<usize> {
+        let mut result = [0u32;2]; unsafe { rom_len(result.as_mut_ptr()); }
+        if result[0] == 0 { None } else { Some(result[1] as usize) }
+    }
+    pub fn save_size() -> Option<usize> {
+        let mut result = [0u32;2]; unsafe { save_len(result.as_mut_ptr()); }
+        if result[0] == 0 { None } else { Some(result[1] as usize) }
+    }
+    pub fn save_write(bytes: &[u8]) -> bool {
+        bytes.len() <= 1048576 && unsafe { write(bytes.as_ptr(),bytes.len()) != 0 }
+    }
+    pub fn draw_clear(rgba: u32) -> bool { unsafe { clear(rgba) != 0 } }
+    pub fn draw_rect(x: f32,y: f32,w: f32,h: f32,rgba: u32) -> bool { unsafe { rect(x,y,w,h,rgba) != 0 } }
+    pub fn draw_circle(x: f32,y: f32,r: f32,rgba: u32) -> bool { unsafe { circle(x,y,r,rgba) != 0 } }
+    pub fn draw_shader(index: u32) -> bool { unsafe { shader(index) != 0 } }
+    pub fn audio_submit(samples: &[i16]) -> bool { samples.len() <= 1600 && unsafe { audio(samples.as_ptr(),samples.len()) != 0 } }
+    pub const HELD_LEFT: u32 = 1 << 8;
+    pub const HELD_RIGHT: u32 = 1 << 9;
+    pub const HELD_UP: u32 = 1 << 10;
+    pub const HELD_DOWN: u32 = 1 << 11;
+}
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cabi_realloc(old: *mut u8, old_size: usize, align: usize, new_size: usize) -> *mut u8 {
+    if new_size == 0 { return align as *mut u8; }
+    let layout = std::alloc::Layout::from_size_align(new_size,align).unwrap();
+    let pointer = if old_size == 0 { unsafe { std::alloc::alloc(layout) } } else {
+        unsafe { std::alloc::realloc(old,std::alloc::Layout::from_size_align(old_size,align).unwrap(),new_size) }
+    };
+    if pointer.is_null() { std::alloc::handle_alloc_error(layout); }
+    pointer
+}

@@ -24,3 +24,5 @@ pub mod audio;
 
 #[cfg(feature = "gui")]
 pub mod gpu;
+
+pub mod hostapi;

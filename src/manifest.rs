@@ -12,6 +12,8 @@ pub struct Manifest {
     pub id: String,
     pub version: String,
     pub entry_world: String,
+    #[serde(default = "default_runtime_profile")]
+    pub runtime_profile: String,
     pub lockfile_sha256: String,
     pub limits: Limits,
     pub permissions: Permissions,
@@ -105,6 +107,9 @@ impl Manifest {
         }
         semver::Version::parse(&m.version)?;
         m.ensure_engine_compatible()?;
+        if !matches!(m.runtime_profile.as_str(), "core-v1" | "component-v1") {
+            bail!("unsupported runtime profile");
+        }
         if m.save_schema == 0 {
             bail!("save schema must be positive");
         }
@@ -164,4 +169,8 @@ fn default_engine_version() -> String {
 }
 fn default_save_schema() -> u32 {
     1
+}
+
+fn default_runtime_profile() -> String {
+    "core-v1".into()
 }

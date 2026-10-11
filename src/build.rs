@@ -27,7 +27,7 @@ pub fn is_built(root: &Path, id: &str) -> Result<bool> {
     let Ok(bytes) = fs::read(path) else {
         return Ok(false);
     };
-    Ok(bytes.starts_with(b"\0asm\x01\0\0\0"))
+    Ok(bytes.starts_with(b"\0asm\x01\0\0\0") || bytes.starts_with(b"\0asm\x0d\0\x01\0"))
 }
 pub fn compile(root: &Path, id: &str) -> Result<()> {
     if !cfg!(target_os = "linux") {
@@ -56,9 +56,18 @@ pub fn compile(root: &Path, id: &str) -> Result<()> {
         .iter()
         .any(|item| matches!(item, syn::Item::Fn(f) if f.sig.ident == "game_tick"))
     {
-        source.push_str("\n#[unsafe(no_mangle)] pub extern \"C\" fn gamepkg_tick(input: u32, state: u64) -> u64 { game_tick(input, state) }\n");
+        let export = if manifest.runtime_profile == "component-v1" {
+            "tick"
+        } else {
+            "gamepkg_tick"
+        };
+        source.push_str(&format!("\n#[unsafe(no_mangle)] pub extern \"C\" fn {export}(input: u32, state: u64) -> u64 {{ game_tick(input, state) }}\n"));
     }
-    source.push_str(include_str!("guest_api.rs.txt"));
+    source.push_str(if manifest.runtime_profile == "component-v1" {
+        include_str!("component_guest.rs.txt")
+    } else {
+        include_str!("guest_api.rs.txt")
+    });
     fs::write(stage.path().join("lib.rs"), source)?;
     let rustc = Command::new("rustup")
         .args(["which", "rustc"])
@@ -150,6 +159,11 @@ pub fn compile(root: &Path, id: &str) -> Result<()> {
     if !artifact.starts_with(b"\0asm\x01\0\0\0") {
         bail!("compiler did not produce a Wasm module");
     }
+    let artifact = if manifest.runtime_profile == "component-v1" {
+        crate::hostapi::componentize(artifact).context("unable to encode game WIT component")?
+    } else {
+        artifact
+    };
     let parent = cache.parent().context("invalid build cache")?;
     fs::create_dir_all(parent)?;
     let mut temp = tempfile::NamedTempFile::new_in(parent)?;

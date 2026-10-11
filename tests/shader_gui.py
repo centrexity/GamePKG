@@ -1,6 +1,7 @@
-import os, subprocess, tempfile, time
+import os, subprocess, tempfile, time, argparse, shutil
 from pathlib import Path
 from PIL import Image
+parser=argparse.ArgumentParser();parser.add_argument('--component',action='store_true');args=parser.parse_args()
 project=Path(__file__).resolve().parents[1]
 os.chdir(project)
 with tempfile.TemporaryDirectory(prefix='gamepkg-shader-ui-') as directory:
@@ -11,7 +12,11 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-shader-ui-') as directory:
   result=subprocess.run(['target/release/gamepkg',*map(str,args)],env=env,capture_output=True,text=True,timeout=140)
   assert result.returncode==0,result.stderr
  key=root/'key';key.write_text(os.urandom(32).hex())
- run('pack','examples/good/shader-switch','-o',root/'game.gamepkg','--key',key)
+ source=project/'examples/good/shader-switch'
+ if args.component:
+  source=root/'source';shutil.copytree(project/'examples/good/shader-switch',source)
+  manifest=source/'manifest.toml';manifest.write_text('runtime_profile = "component-v1"\n'+manifest.read_text())
+ run('pack',source,'-o',root/'game.gamepkg','--key',key)
  run('install',root/'game.gamepkg','--trust-creator');run('build','com.gamepkg.shader-switch')
  display=subprocess.Popen(['Xvfb',':97','-screen','0','1024x900x24','-ac'],stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
  try:
@@ -20,7 +25,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-shader-ui-') as directory:
   try:
    for _ in range(100):
     if app.poll() is not None:raise RuntimeError(app.stderr.read().decode())
-    state=subprocess.run(['xdotool','search','--name','^GamePKG$'],env=env,capture_output=True,text=True)
+    state=subprocess.run(['xdotool','search','--onlyvisible','--name','^GamePKG$'],env=env,capture_output=True,text=True)
     if state.returncode==0:break
     time.sleep(.1)
    window=state.stdout.strip().splitlines()[0]

@@ -1,0 +1,137 @@
+//! Versioned typed WIT imports. No WASI or ambient host interfaces are linked.
+use super::Data;
+use anyhow::Result;
+use wasmtime::{component::Linker, Engine, StoreContextMut};
+fn charge(store: &mut StoreContextMut<'_, Data>, cost: u64) -> Result<bool> {
+    let fuel = store.get_fuel()?;
+    store.set_fuel(fuel.saturating_sub(cost))?;
+    Ok(fuel >= cost)
+}
+fn chunk(bytes: Option<&[u8]>, offset: u32, length: u32) -> Option<Vec<u8>> {
+    if length > 65536 {
+        return None;
+    }
+    let bytes = bytes?.get(offset as usize..)?;
+    Some(bytes[..bytes.len().min(length as usize)].to_vec())
+}
+pub(super) fn linker(engine: &Engine) -> Result<Linker<Data>> {
+    let mut linker = Linker::new(engine);
+    let mut host = linker.instance("gamepkg:engine/host@0.1.0")?;
+    host.func_wrap(
+        "asset-read",
+        |mut store: StoreContextMut<'_, Data>, (path, offset, length): (String, u32, u32)| {
+            if path.len() > 1024 || !crate::archive::valid_path(&path) || length > 65536 {
+                return Ok((None::<Vec<u8>>,));
+            }
+            let size = store
+                .data()
+                .package
+                .as_ref()
+                .and_then(|p| p.entries.get(&format!("assets/{path}")).copied());
+            let Some(size) = size else {
+                return Ok((None,));
+            };
+            if !charge(&mut store, size.saturating_add(1024))? {
+                return Ok((None,));
+            }
+            let bytes = store.data_mut().package.as_mut().unwrap().asset(&path).ok();
+            Ok((chunk(bytes.as_deref(), offset, length),))
+        },
+    )?;
+    host.func_wrap("rom-size", |store: StoreContextMut<'_, Data>, (): ()| {
+        Ok((store.data().rom.as_ref().map(|v| v.len() as u32),))
+    })?;
+    host.func_wrap("save-size", |store: StoreContextMut<'_, Data>, (): ()| {
+        Ok((store.data().save.as_ref().map(|v| v.bytes.len() as u32),))
+    })?;
+    host.func_wrap(
+        "rom-read",
+        |mut store: StoreContextMut<'_, Data>, (offset, length): (u32, u32)| {
+            if length > 65536 || !charge(&mut store, u64::from(length) + 128)? {
+                return Ok((None::<Vec<u8>>,));
+            }
+            Ok((chunk(store.data().rom.as_deref(), offset, length),))
+        },
+    )?;
+    host.func_wrap(
+        "save-read",
+        |mut store: StoreContextMut<'_, Data>, (offset, length): (u32, u32)| {
+            if length > 65536 || !charge(&mut store, u64::from(length) + 128)? {
+                return Ok((None::<Vec<u8>>,));
+            }
+            Ok((chunk(
+                store.data().save.as_ref().map(|v| v.bytes.as_slice()),
+                offset,
+                length,
+            ),))
+        },
+    )?;
+    host.func_wrap(
+        "save-write",
+        |mut store: StoreContextMut<'_, Data>, (bytes,): (Vec<u8>,)| {
+            if bytes.len() > crate::saves::MAX_SAVE
+                || store.data().save.is_none()
+                || !charge(&mut store, bytes.len() as u64 + 1024)?
+            {
+                return Ok((false,));
+            }
+            let save = store.data_mut().save.as_mut().unwrap();
+            save.bytes = bytes;
+            save.dirty = true;
+            Ok((true,))
+        },
+    )?;
+    host.func_wrap(
+        "draw-clear",
+        |mut store: StoreContextMut<'_, Data>, (rgba,): (u32,)| {
+            if !charge(&mut store, 64)? {
+                return Ok((false,));
+            }
+            store.data_mut().frame.reset();
+            store.data_mut().frame.background = Some(rgba);
+            Ok((true,))
+        },
+    )?;
+    host.func_wrap(
+        "draw-rect",
+        |mut store: StoreContextMut<'_, Data>, (x, y, w, h, rgba): (f32, f32, f32, f32, u32)| {
+            if !charge(&mut store, 64)? {
+                return Ok((false,));
+            }
+            Ok((store.data_mut().frame.rect(x, y, w, h, rgba),))
+        },
+    )?;
+    host.func_wrap(
+        "draw-circle",
+        |mut store: StoreContextMut<'_, Data>, (x, y, r, rgba): (f32, f32, f32, u32)| {
+            if !charge(&mut store, 64)? {
+                return Ok((false,));
+            }
+            Ok((store.data_mut().frame.circle(x, y, r, rgba),))
+        },
+    )?;
+    host.func_wrap(
+        "draw-shader",
+        |mut store: StoreContextMut<'_, Data>, (index,): (u32,)| {
+            if index > i32::MAX as u32 || !charge(&mut store, 64)? {
+                return Ok((false,));
+            }
+            let count = store.data().shader_count;
+            Ok((store.data_mut().frame.shader(index as i32, count),))
+        },
+    )?;
+    host.func_wrap(
+        "audio-submit",
+        |mut store: StoreContextMut<'_, Data>, (samples,): (Vec<i16>,)| {
+            if !store.data().audio_allowed
+                || samples.len() + store.data().audio.len() > 1600
+                || !charge(&mut store, samples.len() as u64 * 2 + 64)?
+            {
+                return Ok((false,));
+            }
+            store.data_mut().audio.extend(samples);
+            Ok((true,))
+        },
+    )?;
+    Ok(linker)
+}

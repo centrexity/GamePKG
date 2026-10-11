@@ -23,7 +23,9 @@ required-features = ["gui"]
 
 [dependencies]
 cpal = { version = "0.18.2", optional = true }
-wasmtime = { version = "36.0.17", default-features = false, features = ["cranelift", "runtime", "std"] }
+wit-component = "=0.236.1"
+wit-parser = "=0.236.1"
+wasmtime = { version = "36.0.17", default-features = false, features = ["cranelift", "runtime", "std", "component-model"] }
 image = { version = "0.25", optional = true, default-features = false, features = ["png"] }
 eframe = { version = "0.31", optional = true, default-features = false, features = ["default_fonts", "glow", "x11", "wayland"] }
 anyhow = "1"

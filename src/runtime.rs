@@ -13,6 +13,12 @@ use std::{
 use wasmtime::{
     Caller, Config, Engine, Linker, Module, Store, StoreLimits, StoreLimitsBuilder, TypedFunc,
 };
+mod component_api;
+
+enum Tick {
+    Core(TypedFunc<(i32, i64), i64>),
+    Component(wasmtime::component::TypedFunc<(u32, u64), (u64,)>),
+}
 struct Data {
     limits: StoreLimits,
     package: Option<crate::archive::Package>,
@@ -25,7 +31,7 @@ struct Data {
 }
 pub struct Game {
     store: Store<Data>,
-    tick: TypedFunc<(i32, i64), i64>,
+    tick: Tick,
     fuel: u64,
     deadline_epochs: u64,
     stop: Arc<AtomicBool>,
@@ -62,6 +68,12 @@ impl Game {
         save: Option<crate::saves::Save>,
     ) -> Result<Self> {
         settings.validate()?;
+        if !matches!(
+            manifest.runtime_profile.as_str(),
+            "core-v1" | "component-v1"
+        ) {
+            bail!("unsupported runtime profile");
+        }
         manifest.ensure_engine_compatible()?;
         if manifest.requires_rom && rom.is_none() {
             bail!("ROM delivery requires a file selected by you");
@@ -73,34 +85,65 @@ impl Game {
             bail!("unsupported runtime entry world");
         }
         let mut config = Config::new();
+        config.wasm_component_model(true);
         config.consume_fuel(true);
         config.epoch_interruption(true);
         let engine = Engine::new(&config)?;
         if bytes.len() > 32 * 1024 * 1024 {
             bail!("compiled Wasm exceeds 32 MiB runtime limit");
         }
-        let module = Module::new(&engine, bytes)?;
-        if module.imports().any(|i| {
-            i.module() != "gamepkg"
-                || !matches!(
-                    i.name(),
-                    "asset_read"
-                        | "rom_read"
-                        | "rom_size"
-                        | "save_read"
-                        | "save_write"
-                        | "save_size"
-                        | "draw_clear"
-                        | "draw_rect"
-                        | "draw_circle"
-                        | "draw_shader"
-                        | "audio_submit"
-                )
-        }) {
-            bail!("games cannot import functions outside the scoped GamePKG API");
-        }
-        let uses_shaders = module.imports().any(|i| i.name() == "draw_shader");
-        let custom_renderer = module.imports().any(|i| i.name().starts_with("draw_"));
+        let module = if manifest.runtime_profile == "core-v1" {
+            Some(Module::new(&engine, bytes)?)
+        } else {
+            None
+        };
+        let component = if module.is_none() {
+            Some(wasmtime::component::Component::new(&engine, bytes)?)
+        } else {
+            None
+        };
+        let (uses_shaders, custom_renderer) = if let Some(module) = &module {
+            if module.imports().any(|i| {
+                i.module() != "gamepkg"
+                    || !matches!(
+                        i.name(),
+                        "asset_read"
+                            | "rom_read"
+                            | "rom_size"
+                            | "save_read"
+                            | "save_write"
+                            | "save_size"
+                            | "draw_clear"
+                            | "draw_rect"
+                            | "draw_circle"
+                            | "draw_shader"
+                            | "audio_submit"
+                    )
+            }) {
+                bail!("games cannot import functions outside the scoped GamePKG API");
+            }
+            let uses_shaders = module.imports().any(|i| i.name() == "draw_shader");
+            let custom_renderer = module.imports().any(|i| i.name().starts_with("draw_"));
+            (uses_shaders, custom_renderer)
+        } else {
+            let mut uses_shaders = false;
+            let mut custom_renderer = false;
+            for (_, item) in component
+                .as_ref()
+                .unwrap()
+                .component_type()
+                .imports(&engine)
+            {
+                if let wasmtime::component::types::ComponentItem::ComponentInstance(instance) = item
+                {
+                    uses_shaders |= instance.get_export(&engine, "draw-shader").is_some();
+                    custom_renderer |= instance
+                        .exports(&engine)
+                        .any(|(name, _)| name.starts_with("draw-"));
+                }
+            }
+            (uses_shaders, custom_renderer)
+        };
         let memory = manifest
             .limits
             .hard_memory_bytes
@@ -110,9 +153,9 @@ impl Game {
         let limits = StoreLimitsBuilder::new()
             .memory_size(memory as usize)
             .table_elements(10000)
-            .instances(1)
+            .instances(if module.is_some() { 1 } else { 4 })
             .memories(1)
-            .tables(1)
+            .tables(if module.is_some() { 1 } else { 2 })
             .trap_on_grow_failure(true)
             .build();
         let mut store = Store::new(
@@ -141,6 +184,13 @@ impl Game {
             }
         });
         let result = (|| -> Result<_> {
+            if module.is_none() {
+                let component = component.as_ref().unwrap();
+                let instance =
+                    component_api::linker(&engine)?.instantiate(&mut store, component)?;
+                let tick = instance.get_typed_func::<(u32, u64), (u64,)>(&mut store, "tick")?;
+                return Ok(Tick::Component(tick));
+            }
             let mut linker = Linker::new(&engine);
             linker.func_wrap("gamepkg", "asset_read", asset_read)?;
             linker.func_wrap("gamepkg", "audio_submit", audio_submit)?;
@@ -212,11 +262,11 @@ impl Game {
             linker.func_wrap("gamepkg", "rom_size", |caller: Caller<'_, Data>| -> i32 {
                 caller.data().rom.as_ref().map_or(-1, |r| r.len() as i32)
             })?;
-            let instance = linker.instantiate(&mut store, &module)?;
+            let instance = linker.instantiate(&mut store, module.as_ref().unwrap())?;
             let tick = instance
                 .get_typed_func::<(i32, i64), i64>(&mut store, "gamepkg_tick")
                 .context("game has no grid-v1 entry point; use a playable example and rebuild")?;
-            Ok(tick)
+            Ok(Tick::Core(tick))
         })();
         let tick = match result {
             Ok(t) => t,
@@ -316,18 +366,22 @@ impl Game {
         self.store.set_fuel(self.fuel)?;
         self.store.set_epoch_deadline(self.deadline_epochs);
         let previous_save = self.store.data().save.as_ref().map(|s| s.bytes.clone());
-        let result = self
-            .tick
-            .call(
-                &mut self.store,
-                (
-                    if self.input_allowed { input as i32 } else { 0 },
-                    self.state as i64,
-                ),
-            )
-            .context("game stopped by the Wasm sandbox");
+        let input = if self.input_allowed { input } else { 0 };
+        let result: Result<u64> = match &self.tick {
+            Tick::Core(tick) => tick
+                .call(&mut self.store, (input as i32, self.state as i64))
+                .map(|v| v as u64),
+            Tick::Component(tick) => {
+                tick.call(&mut self.store, (input, self.state))
+                    .and_then(|(v,)| {
+                        tick.post_return(&mut self.store)?;
+                        Ok(v)
+                    })
+            }
+        }
+        .context("game stopped by the Wasm sandbox");
         self.state = match result {
-            Ok(state) => state as u64,
+            Ok(state) => state,
             Err(error) => {
                 self.store.data_mut().frame.reset();
                 self.store.data_mut().audio.clear();

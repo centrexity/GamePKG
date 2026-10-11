@@ -19,7 +19,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-draw-ui-') as directory:
   try:
    for _ in range(100):
     if app.poll() is not None:raise RuntimeError(app.stderr.read().decode())
-    state=subprocess.run(['xdotool','search','--name','^GamePKG$'],env=env,capture_output=True,text=True)
+    state=subprocess.run(['xdotool','search','--onlyvisible','--name','^GamePKG$'],env=env,capture_output=True,text=True)
     if state.returncode==0:break
     time.sleep(.1)
    window=state.stdout.strip().splitlines()[0]
