@@ -21,7 +21,7 @@ Locally, the final 0.1.3 archive passed `tests/release_package.py`: archive hash
 | URL downloads and GitHub projects | HTTPS, explicit GitHub tags and unique matching release assets; bounded transfers and signature review | `tests/https_download.py`, `tests/github_download.py` |
 | Tor update URLs | Onion traffic uses SOCKS5 with proxy-side DNS, cannot redirect to ordinary hosts, no direct fallback | `tests/tor_download.py` uses an actual local SOCKS protocol server; a live Tor onion service has not been tested |
 | Multi-game catalogs and predownload state | Bounded `.gamepkglist`, atomic metadata-only import, Not downloaded rows, explicit selected download | `tests/catalog.rs`, `tests/web_library.py` |
-| Safety-first README and homepage | Explain source distribution, capability limits, local optimization, update checks, and development limits | `README.md`, `html/index.html`, `html/guide/security.html`; repository HTML exists, live gamepkg.com deployment is not established |
+| Safety-first README and homepage | Explain source distribution, capability limits, local optimization, update checks, and development limits | `README.md`, `html/index.html`, `html/guide/security.html`; all five public pages are deployed and HTTP-verified at https://centrexity.github.io/GamePKG/; custom gamepkg.com deployment is not established |
 | Recommended memory and hard limits | Recommendation is advisory; manifest hard limit and user ceiling are enforced separately | `tests/manifest_memory.rs`, `tests/runtime.rs` |
 | Settings page | Save/cancel/reset, validation, stored settings, compiler paths, limits, audio/backend and periodic update checks | `tests/settings.rs`, `tests/settings_gui.py`, `tests/updates_gui.py` |
 | Hindsight Database/IndexedDB | Actual package worker API stores metadata, icons, catalog, settings, history, achievements and storage information | `tests/hindsight_storage.py`, `tests/web_library.py --play`; both tested package hashes are accepted by 0.1.3 |
@@ -40,7 +40,7 @@ The 0.1.3 source passed `cargo test --locked --all-features`, formatting and all
 - Isolated source compilation is implemented for Linux. Windows/macOS automated checks cover host compilation and portable verification/runtime tests; they do not prove isolated source builds or native desktop GPU playback there.
 - Desktop rendering supports sprites and the documented fragment shader paths through OpenGL, including translated SPIR-V/WGSL and bounded texture binding. Native Metal/DXIL playback and broader vertex/compute/resource support are unfinished.
 - Hindsight is supplied separately; the tested package is not redistributed. Its native desktop backend reports unavailable, so IndexedDB persistence is in the browser library. Installation, builds, gameplay and repairs use the desktop or CLI.
-- A live onion service and deployment of the static HTML to gamepkg.com remain unverified.
+- A live onion service and the custom gamepkg.com domain remain unverified. The static website is deployed at https://centrexity.github.io/GamePKG/; GitHub deployment run 38175133082 succeeded and all five public pages returned HTTP 200 with current release links.
 - Key rotation, automatic save migration and shared-pool garbage collection are future development, not completed capabilities.
 
 The workflows in `.github/workflows/ci.yml` and `portable.yml` run the listed regression gates. Inspect the exact run for a commit before claiming its hosted checks passed; a queued or running job is not a passing result.
