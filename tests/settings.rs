@@ -34,6 +34,14 @@ fn settings_validate_bounds_and_reject_unknown_or_large_files() {
         assert!(s.validate().is_err());
     }
     defaults.validate().unwrap();
+    for approved in [
+        vec!["unknown".into()],
+        vec!["byteorder-lite".into(), "byteorder-lite".into()],
+    ] {
+        let mut s = defaults.clone();
+        s.approved_crates = approved;
+        assert!(s.validate().is_err());
+    }
     for memory in [0, 513] {
         let mut s = defaults.clone();
         s.memory_ceiling_mib = memory;

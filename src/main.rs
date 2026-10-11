@@ -12,6 +12,11 @@ struct Cli {
 }
 #[derive(Subcommand)]
 enum Command {
+    /// Manage host approval of checksum-pinned bundled guest crates.
+    Allowlist {
+        #[command(subcommand)]
+        command: AllowlistCommand,
+    },
     /// Bundle signed packages and their shared blobs for portable distribution.
     StoreExport {
         #[arg(required = true)]
@@ -108,6 +113,15 @@ enum Command {
         output: PathBuf,
     },
 }
+#[derive(Subcommand)]
+enum AllowlistCommand {
+    /// Show the bundled catalog and current approvals.
+    List,
+    /// Approve a crate from the bundled pinned catalog.
+    Add { name: String },
+    /// Revoke a crate approval for package verification and future builds.
+    Remove { name: String },
+}
 fn key(s: &str) -> Result<[u8; 32]> {
     hex::decode(s.trim())?
         .try_into()
@@ -115,6 +129,35 @@ fn key(s: &str) -> Result<[u8; 32]> {
 }
 fn main() -> Result<()> {
     match Cli::parse().command {
+        Command::Allowlist { command } => match command {
+            AllowlistCommand::List => {
+                let settings = gamepkg::settings::load()?;
+                println!(
+                    "{} {} — {} — SHA-256 {}",
+                    gamepkg::allowlist::NAME,
+                    gamepkg::allowlist::VERSION,
+                    if settings
+                        .approved_crates
+                        .iter()
+                        .any(|name| name == gamepkg::allowlist::NAME)
+                    {
+                        "approved"
+                    } else {
+                        "not approved"
+                    },
+                    gamepkg::allowlist::CHECKSUM
+                );
+            }
+            AllowlistCommand::Add { name } => {
+                gamepkg::allowlist::set_approval(&name, true)?;
+                println!("Approved {name} from the pinned catalog");
+            }
+            AllowlistCommand::Remove { name } => {
+                gamepkg::allowlist::set_approval(&name, false)?;
+                println!("Revoked {name}; applies to subsequent verification and builds");
+            }
+        },
+
         Command::StoreExport { packages, output } => {
             gamepkg::store::export(&gamepkg::registry::default_root()?, &packages, &output)?;
             println!("Created {}", output.display());

@@ -9,6 +9,7 @@ use std::{
 #[serde(default, deny_unknown_fields)]
 pub struct Settings {
     pub format_version: u32,
+    pub approved_crates: Vec<String>,
     pub library_directory: String,
     pub tor_proxy: String,
     pub memory_ceiling_mib: u64,
@@ -28,6 +29,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             format_version: 1,
+            approved_crates: vec![crate::allowlist::NAME.into()],
             library_directory: String::new(),
             tor_proxy: "127.0.0.1:9050".into(),
             memory_ceiling_mib: 512,
@@ -47,6 +49,14 @@ impl Default for Settings {
 }
 impl Settings {
     pub fn validate(&self) -> Result<()> {
+        if self.approved_crates.len() > 1
+            || self
+                .approved_crates
+                .iter()
+                .any(|name| name != crate::allowlist::NAME)
+        {
+            bail!("approved crates must be unique entries from the bundled pinned catalog");
+        }
         if self.format_version != 1 {
             bail!("unsupported settings version");
         }

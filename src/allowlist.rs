@@ -10,6 +10,14 @@ pub fn approved(cargo: &toml::Value, lock: &[u8]) -> Result<bool> {
     if cargo.get("dependencies").is_some() && dependencies.is_none() {
         bail!("invalid dependency allowlist declaration");
     }
+    if enabled
+        && !crate::settings::load()?
+            .approved_crates
+            .iter()
+            .any(|name| name == NAME)
+    {
+        bail!("crate is not approved by this host; use gamepkg allowlist add byteorder-lite");
+    }
     if let Some(dependencies) = dependencies {
         for (name, value) in dependencies {
             let entry = value
@@ -82,4 +90,16 @@ pub fn stage(directory: &Path) -> Result<()> {
     )?;
     std::fs::write(directory.join("Cargo.toml"), "[package]\nname = \"byteorder-lite\"\nversion = \"0.1.0\"\nedition = \"2021\"\nbuild = false\n[features]\ndefault = []\nstd = []\n")?;
     Ok(())
+}
+
+pub fn set_approval(name: &str, approve: bool) -> Result<()> {
+    if name != NAME {
+        bail!("crate is not in the bundled pinned catalog");
+    }
+    let mut settings = crate::settings::load()?;
+    settings.approved_crates.retain(|entry| entry != name);
+    if approve {
+        settings.approved_crates.push(name.into());
+    }
+    settings.save(&crate::settings::path()?)
 }

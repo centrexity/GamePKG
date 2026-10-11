@@ -642,3 +642,7 @@ Enter a local `.gamepkgstore` path, HTTPS URL, or Tor onion URL in the Library s
 Cargo package names use at most 64 ASCII letters, digits, underscores, or hyphens, beginning with a letter or underscore. Explicit editions must be string values `2015`, `2018`, `2021`, or `2024`; omitting the field retains Cargo's default. Invalid identity or edition metadata is rejected during package verification before it reaches the isolated compiler.
 
 When DXIL is selected, Settings also provides a **DXC 1.9.2609 installation folder** field. The saved folder is shared by CLI and desktop builds. `GAMEPKG_DXC_ROOT` overrides the saved folder for the current launch; both paths require the same pinned library checksums. Older settings files default to an empty DXC folder.
+
+### Host crate approvals
+
+`gamepkg allowlist list` shows the bundled crate catalog, pinned version, checksum, and current approval. `gamepkg allowlist remove byteorder-lite` revokes approval; `gamepkg allowlist add byteorder-lite` restores it. Approval persists in the same settings file used by the desktop and CLI. The default policy approves the bundled byteorder-lite 0.1.0 library. Unknown crates cannot be added: extending the catalog requires host-reviewed, bundled source and an exact dependency graph. Revocation affects subsequent package verification, installation, and builds; it does not interrupt an already running game. Libraries containing revoked dependencies may report verification errors until approval is restored.
