@@ -84,9 +84,23 @@ jobs:
         if: runner.os == 'Windows'
         shell: wsl-bash_Ubuntu-24.04 {0}
         run: bash tools/setup_wsl_ci.sh
+      - name: Prepare software graphics for native rendering tests
+        if: runner.os == 'Windows'
+        run: |
+          python -m pip install Pillow==11.3.0
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python tools/install_mesa_test.py target/release
       - name: Verify actual Windows WSL builds, playback and repair
         if: runner.os == 'Windows'
-        run: python tests/windows_wsl.py --distribution Ubuntu-24.04 --compiler /opt/gamepkg/bin/gamepkg
+        run: python tests/windows_wsl.py --distribution Ubuntu-24.04 --compiler /opt/gamepkg/bin/gamepkg --gui
+      - name: Preserve native Windows rendering evidence
+        if: always() && runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-native-gameplay-evidence
+          path: target/windows-gui-proof
+          retention-days: 7
+          if-no-files-found: ignore
       - name: Package Windows host distribution
         if: runner.os == 'Windows'
         run: |

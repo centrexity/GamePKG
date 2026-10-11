@@ -68,7 +68,14 @@ fn memory_limits_reject_initial_and_growing_memory() {
 fn epoch_deadline_stops_a_guest_with_excessive_fuel() {
     let mut m = manifest();
     m.limits.fuel = u64::MAX;
-    let wasm=module("(module (func (export \"gamepkg_tick\") (param i32 i64) (result i64) (loop br 0) i64.const 0))");
+    // A host-call loop cannot burn its whole fuel budget before the timer runs
+    // on a fast CPU. Still require an Interrupt, not merely any terminating trap.
+    let wasm = module(
+        r#"(module
+        (import "gamepkg" "rom_count" (func $count (result i32)))
+        (func (export "gamepkg_tick") (param i32 i64) (result i64)
+            (loop call $count drop br 0) i64.const 0))"#,
+    );
     let settings = gamepkg::settings::Settings {
         fuel_ceiling: 100000000,
         tick_deadline_ms: 10,
