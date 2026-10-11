@@ -359,9 +359,11 @@ fn validate_fragment_reflection(metadata: &serde_json::Value, entry: &str) -> Re
         .get("entryPoints")
         .and_then(|value| value.as_array())
         .context("shader reflection must declare its entry points")?;
-    if entries.len() != 1 || entries[0].get("name").and_then(|value| value.as_str()) != Some(entry)
+    if entries.len() != 1
+        || entries[0].get("name").and_then(|value| value.as_str()) != Some(entry)
+        || entries[0].get("stage").and_then(|value| value.as_str()) != Some("fragment")
     {
-        bail!("shader reflection entry point does not match the signed manifest");
+        bail!("shader reflection entry point or stage does not match the signed manifest");
     }
     Ok(())
 }
@@ -467,11 +469,14 @@ mod wgsl_tests {
 mod reflection_tests {
     #[test]
     fn reflected_entry_must_match_the_signed_request() {
-        let valid = serde_json::json!({"parameters":[], "entryPoints":[{"name":"blueMain"}]});
+        let valid = serde_json::json!({"parameters":[], "entryPoints":[{"name":"blueMain", "stage":"fragment"}]});
         super::validate_fragment_reflection(&valid, "blueMain").unwrap();
         assert!(super::validate_fragment_reflection(&valid, "greenMain").is_err());
         for value in [
             serde_json::json!({"parameters":[]}),
+            serde_json::json!({"parameters":[],"entryPoints":[{"name":"blueMain"}]}),
+            serde_json::json!({"parameters":[],"entryPoints":[{"name":"blueMain","stage":"vertex"}]}),
+            serde_json::json!({"parameters":[],"entryPoints":[{"name":"blueMain","stage":"compute"}]}),
             serde_json::json!({"parameters":[],"entryPoints":[]}),
             serde_json::json!({"parameters":[],"entryPoints":[{"name":"blueMain"},{"name":"greenMain"}]}),
         ] {

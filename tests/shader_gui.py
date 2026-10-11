@@ -62,12 +62,14 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-shader-ui-') as directory:
  parsed=json.loads(original)
  mismatched=dict(parsed,entryPoints=[{'name':'not-the-signed-entry'}])
  missing_entries=dict(parsed);missing_entries.pop('entryPoints',None)
- for reflection in [{'parameters':[{'name':'untrustedTexture'}]}, {}, mismatched, missing_entries]:
+ wrong_stage=dict(parsed,entryPoints=[dict(parsed['entryPoints'][0],stage='compute')])
+ missing_stage=dict(parsed,entryPoints=[{k:v for k,v in parsed['entryPoints'][0].items() if k!='stage'}])
+ for reflection in [{'parameters':[{'name':'untrustedTexture'}]}, {}, mismatched, missing_entries, wrong_stage, missing_stage]:
   metadata.write_text(json.dumps(reflection))
   result=subprocess.run(['target/release/gamepkg','run','com.gamepkg.shader-switch','--frames','1'],env=env,capture_output=True,text=True)
   assert result.returncode!=0 and ('resource' in result.stderr or 'reflection' in result.stderr), result.stderr
  metadata.write_bytes(original)
- print('External resources, missing reflection, and entry-point mismatches rejected before playback.')
+ print('External resources, missing reflection, and entry-point and stage mismatches rejected before playback.')
 
  if args.backend in ('spirv','wgsl'):
   binary=metadata.with_name('0.shader');original_binary=binary.read_bytes()
