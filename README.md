@@ -763,3 +763,5 @@ Host file snapshots reject special files such as named pipes before reading, and
 For an end-to-end example check on Linux, configure the pinned Slang compiler and run `python3 tests/good_examples.py`. It signs, verifies, installs, builds and plays every advertised good example, then rejects every bad example for its declared reason without publishing package output. This complements the archive, runtime and bypass tests in the Rust suite.
 
 With the compiler installed, add `--play` to `tests/web_library.py` to verify actual signed gameplay, achievement unlocks and measured play time flowing into Hindsight, including a browser restart without a valid host session token. Unverified changes to the supplied Hindsight package remain rejected.
+
+For an opt-in live Tor network test with a locally supplied Tor binary, run `python3 tests/tor_live.py --tor /path/to/tor`. It starts a temporary local onion service, verifies signed installation and a same-creator update, then stops Tor and removes its private test state. This requires network access and is separate from the deterministic routing test.
