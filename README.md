@@ -2,7 +2,7 @@
 
 **Know what you run. Control what it can access.** GamePKG is building a safer way to share and play games: inspectable source, creator-signed packages, isolated compilation, and a host that is designed to grant only the capabilities a game needs.
 
-**Current status:** this is a development preview. Package verification, catalog import, installation, update checks, and isolated single-file Wasm and Slang shader builds on Linux work today. The experimental grid-v1 profile now plays in the GUI and terminal under Wasmtime with scoped asset reads, fuel, memory limits, and epoch deadlines. The broader WIT/custom-shader/audio API remains pending; this is not a guarantee that a package is harmless.
+**Current status:** this is a development preview. Package verification, catalog import, installation, update checks, and isolated single-file Wasm and Slang shader builds on Linux work today. The experimental grid-v1 profile now plays in the GUI and terminal under Wasmtime with scoped asset reads, fuel, memory limits, and epoch deadlines. The broader WIT/custom-shader API remains pending; this is not a guarantee that a package is harmless.
 
 ## Why distribute GamePKG instead of an opaque executable?
 
@@ -190,7 +190,7 @@ In the terminal, enter W/A/S/D to move and Q to quit. In the GUI, click Play and
 
 The experimental grid-v1 ABI uses core Wasm, not the planned WIT component API. Guest source defines `pub fn game_tick(input: u32, state: u64) -> u64`; the host compiler appends the exported wrapper, so guest export attributes are unnecessary. State packs player x/y and target x/y into four bytes, followed by a 32-bit score. Input bits are left=1, right=2, up=4, down=8. Coordinates use a 16×16 grid. Guests receive zero input unless the signed manifest grants input.
 
-Runtime modules can import only the scoped GamePKG asset, ROM and save APIs; WASI, filesystem and socket imports are rejected. Wasmtime enforces memory, fuel and epoch limits. A trap ends gameplay. Slang compilation is available; GPU rendering and audio remain pending.
+Runtime modules can import only the scoped GamePKG asset, ROM and save APIs; WASI, filesystem and socket imports are rejected. Wasmtime enforces memory, fuel and epoch limits. A trap ends gameplay. Slang compilation is available; Custom GPU shader rendering remains pending.
 
 For a game declaring `requires_rom = true`, use `gamepkg run <id> --rom /path/to/file` or enter your ROM path above the desktop library table. ROM files must be regular files of 1 byte to 64 MiB and are read into a session snapshot. Guests use `gamepkg::rom_size()` and `gamepkg::rom_read(offset, &mut buffer)`, never a host path. Reads are capped at 64 KiB and consume fuel. No ROM is downloaded, installed or bundled automatically. `examples/good/rom-required` is a playable data-driven example; `python3 tests/runtime_rom.py` tests the signed build and runtime path.
 
@@ -315,7 +315,7 @@ verify rendering and held-key movement. The latter requires Xvfb, xdotool,
 ImageMagick and Pillow. Set `GAMEPKG_SLANG_ROOT` for both tests.
 
 This draw API uses the host renderer. Running a package's compiled Slang
-shaders on the GPU, textures, audio and the broader WIT component API are
+shaders on the GPU, textures and the broader WIT component API are
 still pending.
 
 Hosted Linux build integrations run controlled fixtures with elevated namespace
@@ -323,3 +323,34 @@ setup privileges because the runner rejects unprivileged network namespace
 configuration. The actual compilers still run inside bubblewrap with a private
 network and filesystem. The application continues to fail closed when sandbox
 setup is unavailable; it does not use an unrestricted build fallback.
+
+## Bounded audio output
+
+Games declaring `permissions.audio = true` can submit signed 16-bit mono PCM
+at 48 kHz with `gamepkg::audio_submit(&samples)`. A tick may submit at most
+1,600 samples in total; the device queue keeps at most 100 ms. Invalid memory
+ranges, excess samples and denied permissions are rejected. Calls consume
+fuel, and trapped ticks discard their audio. Guests receive no device handles
+and cannot access microphones. The host resamples for the selected output
+rate and handles volume.
+
+The desktop includes audio by default. **Settings → Sound** offers mute and
+volume controls for new play sessions. Missing or disconnected devices produce
+a visible sound error while gameplay continues. Back to Library stops the
+output stream. Headless CLI runs generate and check audio without playing it;
+interactive terminal builds need the `audio` feature for sound output.
+
+On Linux, desktop/audio builds require ALSA development headers
+(`libasound2-dev` on Debian/Ubuntu). `examples/good/tone-pad` generates a quiet
+triangle wave and changes pitch with held Up/Down. `tests/audio_game.py` tests
+its signed build and PCM generation. The ignored `audio_output_null_device`
+test is run explicitly with an ALSA null device to verify the actual output
+callback and mute behavior without speaker playback:
+
+```sh
+echo 'pcm.!default { type null }' > /tmp/gamepkg-null-alsa.conf
+ALSA_CONFIG_PATH=/tmp/gamepkg-null-alsa.conf cargo test --all-features audio_output_null_device -- --ignored --test-threads=1
+```
+
+Hosted privileged build fixtures stage toolchains under `/tmp` so namespace
+root can traverse the compiler paths without access to runner home folders.

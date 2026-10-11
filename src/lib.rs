@@ -18,3 +18,6 @@ pub mod saves;
 pub mod shaders;
 
 pub mod drawing;
+
+#[cfg(feature = "audio")]
+pub mod audio;

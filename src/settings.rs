@@ -18,6 +18,8 @@ pub struct Settings {
     pub dark_mode: bool,
     pub slang_directory: String,
     pub shader_backend: String,
+    pub mute_audio: bool,
+    pub audio_volume: u8,
 }
 impl Default for Settings {
     fn default() -> Self {
@@ -32,6 +34,8 @@ impl Default for Settings {
             dark_mode: true,
             slang_directory: String::new(),
             shader_backend: "spirv".into(),
+            mute_audio: false,
+            audio_volume: 50,
         }
     }
 }
@@ -54,6 +58,9 @@ impl Settings {
             "spirv" | "wgsl" | "metal" | "dxil"
         ) {
             bail!("unsupported shader backend");
+        }
+        if self.audio_volume > 100 {
+            bail!("audio volume must be 0–100");
         }
         validate_proxy(&self.tor_proxy)?;
         if !(1..=512).contains(&self.memory_ceiling_mib) {

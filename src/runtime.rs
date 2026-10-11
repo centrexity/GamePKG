@@ -19,6 +19,8 @@ struct Data {
     rom: Option<Vec<u8>>,
     save: Option<crate::saves::Save>,
     frame: crate::drawing::Frame,
+    audio: Vec<i16>,
+    audio_allowed: bool,
 }
 pub struct Game {
     store: Store<Data>,
@@ -30,6 +32,7 @@ pub struct Game {
     pub id: String,
     input_allowed: bool,
     pub custom_renderer: bool,
+    pub audio_allowed: bool,
 }
 impl Drop for Game {
     fn drop(&mut self) {
@@ -86,6 +89,7 @@ impl Game {
                         | "draw_clear"
                         | "draw_rect"
                         | "draw_circle"
+                        | "audio_submit"
                 )
         }) {
             bail!("games cannot import functions outside the scoped GamePKG API");
@@ -113,6 +117,8 @@ impl Game {
                 rom,
                 save,
                 frame: crate::drawing::Frame::default(),
+                audio: Vec::new(),
+                audio_allowed: manifest.permissions.audio,
             },
         );
         store.limiter(|s| &mut s.limits);
@@ -130,6 +136,7 @@ impl Game {
         let result = (|| -> Result<_> {
             let mut linker = Linker::new(&engine);
             linker.func_wrap("gamepkg", "asset_read", asset_read)?;
+            linker.func_wrap("gamepkg", "audio_submit", audio_submit)?;
             linker.func_wrap(
                 "gamepkg",
                 "draw_clear",
@@ -206,6 +213,7 @@ impl Game {
             id: manifest.id.clone(),
             input_allowed: manifest.permissions.input,
             custom_renderer,
+            audio_allowed: manifest.permissions.audio,
         })
     }
     pub fn load(root: &Path, id: &str) -> Result<Self> {
@@ -264,11 +272,15 @@ impl Game {
             },
         )
     }
+    pub fn audio_frame(&self) -> &[i16] {
+        &self.store.data().audio
+    }
     pub fn frame(&self) -> &crate::drawing::Frame {
         &self.store.data().frame
     }
     pub fn step(&mut self, input: u32) -> Result<u64> {
         self.store.data_mut().frame.reset();
+        self.store.data_mut().audio.clear();
         self.store.set_fuel(self.fuel)?;
         self.store.set_epoch_deadline(self.deadline_epochs);
         let previous_save = self.store.data().save.as_ref().map(|s| s.bytes.clone());
@@ -286,6 +298,7 @@ impl Game {
             Ok(state) => state as u64,
             Err(error) => {
                 self.store.data_mut().frame.reset();
+                self.store.data_mut().audio.clear();
                 if let (Some(save), Some(bytes)) =
                     (self.store.data_mut().save.as_mut(), previous_save)
                 {
@@ -509,4 +522,45 @@ fn draw_fuel(caller: &mut Caller<'_, Data>) -> bool {
         return false;
     }
     caller.set_fuel(fuel - 64).is_ok()
+}
+
+/// Signed 16-bit little-endian mono PCM at 48 kHz; at most 1,600 samples per tick.
+fn audio_submit(mut caller: Caller<'_, Data>, pointer: i32, count: i32) -> i32 {
+    if !caller.data().audio_allowed
+        || pointer < 0
+        || !(0..=1600).contains(&count)
+        || caller.data().audio.len() + count as usize > 1600
+    {
+        return -1;
+    }
+    let Some(memory) = caller.get_export("memory").and_then(|e| e.into_memory()) else {
+        return -1;
+    };
+    let Some(end) = (pointer as usize).checked_add(count as usize * 2) else {
+        return -1;
+    };
+    if end > memory.data_size(&caller) {
+        return -1;
+    }
+    let Ok(fuel) = caller.get_fuel() else {
+        return -1;
+    };
+    let cost = count as u64 * 2 + 64;
+    if fuel < cost {
+        let _ = caller.set_fuel(0);
+        return -1;
+    }
+    if caller.set_fuel(fuel - cost).is_err() {
+        return -1;
+    }
+    let mut bytes = vec![0; count as usize * 2];
+    if memory.read(&caller, pointer as usize, &mut bytes).is_err() {
+        return -1;
+    }
+    caller.data_mut().audio.extend(
+        bytes
+            .chunks_exact(2)
+            .map(|b| i16::from_le_bytes([b[0], b[1]])),
+    );
+    0
 }

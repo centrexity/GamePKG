@@ -95,12 +95,42 @@ fn main() -> Result<()> {
                 } else {
                     println!("Ran {count} frames; score: {}", game.score());
                 }
+                if game.audio_allowed {
+                    println!(
+                        "Audio samples: {}; peak: {}",
+                        game.audio_frame().len(),
+                        game.audio_frame()
+                            .iter()
+                            .map(|&s| (s as i32).abs())
+                            .max()
+                            .unwrap_or(0)
+                    );
+                }
             } else {
                 if game.custom_renderer {
                     anyhow::bail!("this game draws graphics; open it in gamepkg-gui --play {id}, or use --frames for a headless run");
                 }
+                #[cfg(feature = "audio")]
+                let audio = {
+                    let settings = gamepkg::settings::load()?;
+                    if game.audio_allowed && !settings.mute_audio && settings.audio_volume > 0 {
+                        match gamepkg::audio::Player::new(settings.audio_volume) {
+                            Ok(player) => Some(player),
+                            Err(error) => {
+                                eprintln!("Sound unavailable: {error:#}");
+                                None
+                            }
+                        }
+                    } else {
+                        None
+                    }
+                };
                 use std::io::{self, Write};
                 game.step(0)?;
+                #[cfg(feature = "audio")]
+                if let Some(audio) = &audio {
+                    audio.submit(game.audio_frame());
+                }
                 loop {
                     let (x, y) = game.player();
                     let (tx, ty) = game.target();
@@ -135,6 +165,10 @@ fn main() -> Result<()> {
                         _ => 0,
                     };
                     game.step(input)?;
+                    #[cfg(feature = "audio")]
+                    if let Some(audio) = &audio {
+                        audio.submit(game.audio_frame());
+                    }
                 }
             }
         }

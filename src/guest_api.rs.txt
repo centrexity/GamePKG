@@ -4,6 +4,8 @@
 pub mod gamepkg {
     #[link(wasm_import_module = "gamepkg")]
     unsafe extern "C" {
+        #[link_name = "audio_submit"]
+        fn host_audio_submit(samples: *const i16, count: i32) -> i32;
         #[link_name = "draw_clear"]
         fn host_draw_clear(rgba: u32) -> i32;
         #[link_name = "draw_rect"]
@@ -64,4 +66,9 @@ pub mod gamepkg {
     pub const HELD_RIGHT: u32 = 1 << 9;
     pub const HELD_UP: u32 = 1 << 10;
     pub const HELD_DOWN: u32 = 1 << 11;
+    /// Submit mono signed 16-bit PCM at 48 kHz, bounded to 1,600 samples per tick.
+    pub fn audio_submit(samples: &[i16]) -> bool {
+        if samples.len() > 1600 { return false; }
+        unsafe { host_audio_submit(samples.as_ptr(), samples.len() as i32) == 0 }
+    }
 }

@@ -19,6 +19,8 @@ pub struct App {
     player: Option<Box<crate::runtime::Game>>,
     next_frame: Option<std::time::Instant>,
     pending_input: u32,
+    audio_player: Option<crate::audio::Player>,
+    audio_error: String,
     status: String,
     result: Option<mpsc::Receiver<Result<Work, String>>>,
     manifest: Option<crate::manifest::Manifest>,
@@ -126,7 +128,31 @@ impl eframe::App for App {
                     match result {
                         Ok(Work::Game(game)) => {
                             self.next_frame = None;
+                            if let Some(audio) = &self.audio_player {
+                                audio.clear();
+                            }
                             self.pending_input = 0;
+                            self.audio_player = None;
+                            self.audio_error.clear();
+                            if game.audio_allowed {
+                                match crate::settings::load() {
+                                    Ok(settings)
+                                        if !settings.mute_audio && settings.audio_volume > 0 =>
+                                    {
+                                        match crate::audio::Player::new(settings.audio_volume) {
+                                            Ok(player) => self.audio_player = Some(player),
+                                            Err(error) => {
+                                                self.audio_error =
+                                                    format!("Sound unavailable: {error:#}")
+                                            }
+                                        }
+                                    }
+                                    Ok(_) => {}
+                                    Err(error) => {
+                                        self.audio_error = format!("Sound disabled: {error:#}")
+                                    }
+                                }
+                            }
                             self.player = Some(game);
                         }
                         Ok(Work::Package(m)) => {
@@ -173,6 +199,9 @@ impl eframe::App for App {
                     if ui.button("Restart").clicked() {
                         game.state = 0;
                         self.next_frame = None;
+                        if let Some(audio) = &self.audio_player {
+                            audio.clear();
+                        }
                     }
                 });
                 let input = ctx.input(|i| {
@@ -199,11 +228,35 @@ impl eframe::App for App {
                 self.pending_input |= input & 15;
                 let now = std::time::Instant::now();
                 if self.next_frame.is_none_or(|next| now >= next) {
-                    if let Err(e) = game.step(self.pending_input | (input & 0xf00)) {
-                        failure = Some(format!("Game stopped: {e:#}"));
+                    match game.step(self.pending_input | (input & 0xf00)) {
+                        Err(e) => failure = Some(format!("Game stopped: {e:#}")),
+                        Ok(_) => {
+                            if let Some(audio) = &self.audio_player {
+                                audio.submit(game.audio_frame());
+                            }
+                        }
                     }
                     self.pending_input = 0;
                     self.next_frame = Some(now + std::time::Duration::from_millis(16));
+                }
+                if let Some(error) = self.audio_player.as_ref().and_then(|a| a.error()) {
+                    self.audio_error = format!("Sound stopped: {error}");
+                    self.audio_player = None;
+                }
+                if let Some(audio) = &self.audio_player {
+                    ui.colored_label(
+                        if audio.non_silent_frames() > 0 {
+                            egui::Color32::GREEN
+                        } else {
+                            egui::Color32::GRAY
+                        },
+                        "Sound on",
+                    );
+                } else if game.audio_allowed && self.audio_error.is_empty() {
+                    ui.label("Sound muted");
+                }
+                if !self.audio_error.is_empty() {
+                    ui.label(&self.audio_error);
                 }
                 if game.custom_renderer {
                     ui.label("Arrows or WASD to move.");
@@ -304,6 +357,7 @@ impl eframe::App for App {
             ctx.request_repaint_after(std::time::Duration::from_millis(16));
             if close || failure.is_some() {
                 self.player = None;
+                self.audio_player = None;
             }
             if let Some(e) = failure {
                 self.status = e;
@@ -359,6 +413,10 @@ impl eframe::App for App {
                     ui.checkbox(&mut self.settings_draft.optimize_builds,"Optimize new builds");
                     ui.label("Applies on Build/Rebuild; existing compiled games are kept.");
                     ui.checkbox(&mut self.settings_draft.dark_mode,"Dark appearance");
+                    ui.separator(); ui.heading("Sound");
+                    ui.checkbox(&mut self.settings_draft.mute_audio,"Mute game audio");
+                    ui.add(egui::Slider::new(&mut self.settings_draft.audio_volume,0..=100).text("Volume"));
+                    ui.label("Applies when you next play a game. Only games with audio permission can submit sound.");
                     ui.separator();
                     ui.horizontal(|ui| {
                         if ui.button("Save settings").clicked() {
@@ -494,7 +552,7 @@ impl eframe::App for App {
                     }
                 }
             }
-            ui.separator(); ui.label("Experimental grid-v1 games are playable. Asset and selected ROM reads work. Scoped saves work. Slang compilation works. WIT, GPU rendering and audio are pending.");
+            ui.separator(); ui.label("Experimental grid-v1 games are playable. Asset and selected ROM reads work. Scoped saves work. Slang compilation works. Bounded audio output works. WIT and custom shader rendering are pending.");
             ui.hyperlink_to("GamePKG • Apache 2.0", "https://gamepkg.com");
         });
     }

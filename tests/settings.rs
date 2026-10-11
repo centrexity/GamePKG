@@ -11,6 +11,8 @@ fn settings_persist_and_failed_saves_preserve_previous_values() {
     settings.tick_deadline_ms = 50;
     settings.optimize_builds = false;
     settings.dark_mode = false;
+    settings.mute_audio = true;
+    settings.audio_volume = 20;
     settings.save(&path).unwrap();
     assert_eq!(Settings::read(&path).unwrap(), settings);
     let before = std::fs::read(&path).unwrap();
@@ -43,6 +45,9 @@ fn settings_validate_bounds_and_reject_unknown_or_large_files() {
     for proxy in ["example.com:9050", "127.0.0.1:0", "192.168.1.2:9050"] {
         assert!(gamepkg::settings::validate_proxy(proxy).is_err());
     }
+    let mut s = defaults.clone();
+    s.audio_volume = 101;
+    assert!(s.validate().is_err());
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("settings.toml");
     std::fs::write(&path, "unknown=true").unwrap();

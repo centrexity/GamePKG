@@ -14,6 +14,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install Rust tools
         run: rustup update stable && rustup default stable && rustup component add rustfmt clippy
+      - name: Install audio development headers
+        if: matrix.features == '--all-features'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
       - name: Check formatting
         run: cargo fmt --all -- --check
       - name: Test
@@ -35,34 +38,53 @@ jobs:
       - name: Install pinned shader compiler
         if: matrix.features == '--all-features'
         run: |
-          python3 tools/install_slang.py "$RUNNER_TEMP/gamepkg-slang"
-          echo "GAMEPKG_SLANG_ROOT=$RUNNER_TEMP/gamepkg-slang" >> "$GITHUB_ENV"
+          python3 tools/install_slang.py "/tmp/gamepkg-slang"
+          echo "GAMEPKG_SLANG_ROOT=/tmp/gamepkg-slang" >> "$GITHUB_ENV"
+      - name: Stage compiler for privileged namespace tests
+        if: matrix.features == '--all-features'
+        run: |
+          sudo cp -a "$(rustc --print sysroot)" /tmp/gamepkg-ci-toolchain
+          sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup rustup toolchain link gamepkg-ci /tmp/gamepkg-ci-toolchain
+          sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup rustup default gamepkg-ci
       # Hosted runners restrict unprivileged network namespace setup. These
       # controlled fixture tests run as root while bwrap still isolates the build.
       - name: Isolated compiler integration
         if: matrix.features == '--all-features'
-        run: sudo env PATH="$PATH" RUSTUP_HOME="$HOME/.rustup" CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/isolated_build.py
+        run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/isolated_build.py
       - name: Playable source build integration
         if: matrix.features == '--all-features'
-        run: sudo env PATH="$PATH" RUSTUP_HOME="$HOME/.rustup" CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/playable.py
+        run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/playable.py
       - name: Guest asset integration
         if: matrix.features == '--all-features'
-        run: sudo env PATH="$PATH" RUSTUP_HOME="$HOME/.rustup" CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/runtime_assets.py
+        run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/runtime_assets.py
       - name: User ROM integration
         if: matrix.features == '--all-features'
-        run: sudo env PATH="$PATH" RUSTUP_HOME="$HOME/.rustup" CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/runtime_rom.py
+        run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/runtime_rom.py
       - name: Scoped save integration
         if: matrix.features == '--all-features'
-        run: sudo env PATH="$PATH" RUSTUP_HOME="$HOME/.rustup" CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/runtime_saves.py
+        run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/runtime_saves.py
       - name: Pinned shader integration
         if: matrix.features == '--all-features'
-        run: sudo env PATH="$PATH" RUSTUP_HOME="$HOME/.rustup" CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/shaders.py
+        run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/shaders.py
       - name: Guest drawing integration
         if: matrix.features == '--all-features'
-        run: sudo env PATH="$PATH" RUSTUP_HOME="$HOME/.rustup" CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/drawing_game.py
+        run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/drawing_game.py
       - name: Install virtual display tools
         if: matrix.features == '--all-features'
         run: sudo apt-get install -y xvfb xdotool imagemagick python3-pil
       - name: Verify guest drawing in the GUI
         if: matrix.features == '--all-features'
-        run: sudo env PATH="$PATH" RUSTUP_HOME="$HOME/.rustup" CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" /usr/bin/python3 tests/drawing_gui.py
+        run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" /usr/bin/python3 tests/drawing_gui.py
+      - name: Null audio output integration
+        if: matrix.features == '--all-features'
+        run: |
+          echo 'pcm.!default { type null }' > "$RUNNER_TEMP/gamepkg-null-alsa.conf"
+          ALSA_CONFIG_PATH="$RUNNER_TEMP/gamepkg-null-alsa.conf" cargo test --locked --all-features audio_output_null_device -- --ignored --test-threads=1
+      - name: Signed guest audio integration
+        if: matrix.features == '--all-features'
+        run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/audio_game.py
+      - name: Verify GUI audio and mute on a null device
+        if: matrix.features == '--all-features'
+        run: |
+          sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" /usr/bin/python3 tests/audio_gui.py
+          sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" /usr/bin/python3 tests/audio_gui.py --muted
