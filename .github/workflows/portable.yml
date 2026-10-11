@@ -36,7 +36,10 @@ jobs:
       - name: Package Windows host distribution
         if: runner.os == 'Windows'
         run: |
+          python tests/package_zip.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python tools/package_release.py "$env:RUNNER_TEMP/gamepkg-windows"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $version = python -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["version"])'
           python tests/windows_package.py "$env:RUNNER_TEMP/gamepkg-windows/gamepkg-$version-windows-x86_64.zip"
       - name: Preserve verified Windows distribution

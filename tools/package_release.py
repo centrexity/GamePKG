@@ -26,6 +26,18 @@ def is_elf(path):
         return binary.read(4) == b'\x7fELF'
 
 
+def write_zip(root, destination):
+    with zipfile.ZipFile(destination, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+        for path in sorted(root.rglob('*')):
+            if path.is_file():
+                info = zipfile.ZipInfo(path.relative_to(root.parent).as_posix(), (1980, 1, 1, 0, 0, 0))
+                info.compress_type = zipfile.ZIP_DEFLATED
+                info.create_system = 3
+                info.external_attr = (0o100755 if path.suffix == '.exe' else 0o100644) << 16
+                with path.open('rb') as source, archive.open(info, 'w') as target:
+                    shutil.copyfileobj(source, target)
+
+
 def package(output_directory, binary_directory):
     system = platform.system()
     if system not in ('Linux', 'Windows') or platform.machine().lower() not in ('x86_64', 'amd64'):
@@ -90,10 +102,7 @@ def package(output_directory, binary_directory):
             temporary_path = Path(temporary.name)
         try:
             if windows:
-                with zipfile.ZipFile(temporary_path, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
-                    for path in sorted(root.rglob('*')):
-                        if path.is_file():
-                            archive.write(path, path.relative_to(root.parent).as_posix())
+                write_zip(root, temporary_path)
             else:
                 with temporary_path.open('wb') as raw, gzip.GzipFile(filename='', fileobj=raw, mode='wb', mtime=0) as compressed, tarfile.open(fileobj=compressed, mode='w') as archive:
                     for path in [root, *sorted(root.rglob('*'))]:
