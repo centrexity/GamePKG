@@ -27,6 +27,8 @@ jobs:
           sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup rustup default gamepkg-ci
       - name: Prepare signed isolated compiler exchange
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT=/tmp/gamepkg-slang python3 tests/compiler_exchange.py prepare /tmp/gamepkg-native-exchange
+      - name: Make verified fixture readable for artifact upload
+        run: sudo chmod -R a+rX /tmp/gamepkg-native-exchange
       - uses: actions/upload-artifact@v4
         with:
           name: isolated-compiler-exchange
