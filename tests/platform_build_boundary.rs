@@ -9,6 +9,19 @@ fn unsupported_platform_rejects_compilation_before_creating_a_build_tree() {
         .to_string()
         .contains("isolated builds currently require Linux"));
     assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 0);
+    let error = gamepkg::build_worker::compile(
+        &root.path().join("missing.gamepkgstore"),
+        &root.path().join("exchange"),
+        "glsl",
+        true,
+        true,
+    )
+    .unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("compiler worker currently requires Linux"));
+    assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 0);
+
     let package_path = root.path().join("example.gamepkg");
     gamepkg::pack::pack(
         &Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/minimal"),

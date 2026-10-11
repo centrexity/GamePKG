@@ -148,6 +148,17 @@ pub fn compile(root: &Path, id: &str) -> Result<()> {
     if !cfg!(target_os = "linux") {
         bail!("isolated builds currently require Linux and bubblewrap");
     }
+    compile_with_settings(root, id, &crate::settings::load()?)
+}
+pub(crate) fn compile_with_settings(
+    root: &Path,
+    id: &str,
+    settings: &crate::settings::Settings,
+) -> Result<()> {
+    if !cfg!(target_os = "linux") {
+        bail!("isolated builds currently require Linux and bubblewrap");
+    }
+    settings.validate()?;
     let archive = installed(root, id)?;
     let _build_lock = BuildChange::acquire(root, id)?;
     let bytes = crate::files::read_regular(&archive, 256 * 1024 * 1024, false)?;
@@ -160,6 +171,15 @@ pub fn compile(root: &Path, id: &str) -> Result<()> {
     pkg.resolve_shared_assets(root)?;
     let cargo: toml::Value = toml::from_str(std::str::from_utf8(&pkg.read("source/Cargo.toml")?)?)?;
     let approved = crate::allowlist::approved(&cargo, &pkg.read("source/Cargo.lock")?)?;
+    if approved
+        && !settings
+            .approved_crates
+            .iter()
+            .any(|name| name == crate::allowlist::NAME)
+    {
+        bail!("selected compiler settings do not approve the guest dependency");
+    }
+
     let stage = tempfile::tempdir()?;
     let mut source = String::from_utf8(pkg.read("source/src/lib.rs")?)?;
     if manifest.entry_world != "game" {
@@ -220,11 +240,7 @@ pub fn compile(root: &Path, id: &str) -> Result<()> {
             }
         }
     }
-    let level = if crate::settings::load()?.optimize_builds {
-        2
-    } else {
-        0
-    };
+    let level = if settings.optimize_builds { 2 } else { 0 };
     let cargo_text = format!(
         "{}\n[profile.release]\nopt-level = {level}\n",
         toml::to_string(&staged)?
@@ -251,8 +267,7 @@ pub fn compile(root: &Path, id: &str) -> Result<()> {
     {
         bail!("install the Wasm target with rustup target add wasm32-unknown-unknown");
     }
-    let settings = crate::settings::load()?;
-    crate::shaders::compile(root, &bytes, &mut pkg, &manifest, &settings)?;
+    crate::shaders::compile(root, &bytes, &mut pkg, &manifest, settings)?;
     let mut cmd = crate::compiler::command(32 * 1024 * 1024);
     cmd.args([
         "bwrap",

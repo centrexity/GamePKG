@@ -12,6 +12,18 @@ struct Cli {
 }
 #[derive(Subcommand)]
 enum Command {
+    /// Internal isolated compiler exchange; not an installable game format.
+    #[command(hide = true)]
+    BuildWorker {
+        store: PathBuf,
+        output: PathBuf,
+        #[arg(long, default_value = "glsl")]
+        shader_backend: String,
+        #[arg(long)]
+        no_optimize: bool,
+        #[arg(long)]
+        no_approved_crates: bool,
+    },
     /// Open a local browser metadata library using Hindsight Database/IndexedDB.
     WebLibrary {
         #[arg(long)]
@@ -152,6 +164,21 @@ fn key(s: &str) -> Result<[u8; 32]> {
 }
 fn main() -> Result<()> {
     match Cli::parse().command {
+        Command::BuildWorker {
+            store,
+            output,
+            shader_backend,
+            no_optimize,
+            no_approved_crates,
+        } => {
+            gamepkg::build_worker::compile(
+                &store,
+                &output,
+                &shader_backend,
+                !no_optimize,
+                !no_approved_crates,
+            )?;
+        }
         Command::WebLibrary {
             indexeddb_package,
             port,

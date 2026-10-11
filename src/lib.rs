@@ -50,3 +50,5 @@ pub mod integrity;
 pub mod web_library;
 
 mod files;
+
+pub mod build_worker;

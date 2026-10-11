@@ -1,0 +1,31 @@
+"""Verify the isolated compiler exchange without transporting player data."""
+import hashlib,json,os,shutil,subprocess,tempfile
+from pathlib import Path
+PROJECT=Path(__file__).resolve().parents[1];CLI=PROJECT/'target/release/gamepkg'
+with tempfile.TemporaryDirectory(prefix='gamepkg-worker-test-') as directory:
+ root=Path(directory);home=root/'library';config=root/'settings.toml';config.write_text('automatic_update_checks=false\n')
+ env=dict(os.environ,GAMEPKG_HOME=str(home),GAMEPKG_CONFIG=str(config))
+ def run(*args,good=True):
+  r=subprocess.run([str(CLI),*map(str,args)],env=env,capture_output=True,text=True,timeout=180);assert (r.returncode==0)==good,r.stdout+r.stderr;return r.stdout+r.stderr
+ key=root/'key';run('keygen','-o',key);package=root/'game.gamepkg';store=root/'game.gamepkgstore'
+ run('pack',PROJECT/'examples/good/shader-switch','-o',package,'--key',key,'--shared-assets')
+ run('store-export',package,'-o',store);output=root/'output'
+ run('build-worker',store,output)
+ info=json.loads((output/'exchange.json').read_text());assert info['package_digest']==hashlib.sha256(package.read_bytes()).hexdigest();assert info['id']=='com.gamepkg.shader-switch' and info['backend']=='glsl'
+ assert {p.name for p in output.iterdir()}=={'exchange.json','builds','shader-builds'}
+ assert not list(output.rglob('*.key')) and not (output/'progress').exists() and not (output/'saves').exists()
+ run('store-import',store,'--trust-creators')
+ for name in ['builds','shader-builds']:shutil.copytree(output/name,home/name)
+ # Loading the transferred cache needs no compiler or private worker library.
+ env.pop('GAMEPKG_SLANG_ROOT',None)
+ run('run','com.gamepkg.shader-switch','--frames','3')
+ run('integrity-check','com.gamepkg.shader-switch')
+ marker=output/'keep';marker.write_text('unchanged');run('build-worker',store,output,good=False);assert marker.read_text()=='unchanged'
+ bad=root/'bad';run('build-worker',store,bad,'--shader-backend','unknown',good=False);assert not bad.exists()
+ other=root/'other.gamepkg';run('pack',PROJECT/'examples/good/collect-stars','-o',other,'--key',key)
+ multi=root/'multi.gamepkgstore';run('store-export',package,other,'-o',multi);run('build-worker',multi,root/'multi-output',good=False);assert not (root/'multi-output').exists()
+ dependency=root/'dependency.gamepkg';run('pack',PROJECT/'examples/good/byteorder-game','-o',dependency,'--key',key)
+ dep_store=root/'dependency.gamepkgstore';run('store-export',dependency,'-o',dep_store)
+ denied=run('build-worker',dep_store,root/'dependency-output','--no-approved-crates',good=False)
+ assert 'do not approve' in denied and not (root/'dependency-output').exists(),denied
+ print('Worker exchange passed: verified shared assets, isolated compilation, package binding, transferred shader/Wasm playback without a compiler, no player data, and atomic failure checks.')
