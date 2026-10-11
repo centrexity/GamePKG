@@ -712,8 +712,9 @@ impl eframe::App for App {
                         } else { ui.label("History unavailable"); }
                         if let Some(usage)=self.usage.get(&m.id) { ui.label(format!("{} used\n{} expected", crate::storage::bytes(usage.used_bytes()), usage.estimated_bytes.map(crate::storage::bytes).unwrap_or_else(||"Unknown".into()))).on_hover_text(format!("{} Expected size is a creator estimate.", usage.breakdown())); } else { ui.label("Unavailable"); }
                         ui.vertical(|ui| {
-                            if ui.add_enabled(self.result.is_none(), egui::Button::new("Check integrity")).clicked() { integrity = Some((m.id.clone(),false)); }
-                            if ui.add_enabled(self.result.is_none(), egui::Button::new("Fix / rebuild")).clicked() { integrity = Some((m.id.clone(),true)); }
+                            if ui.add_enabled(self.result.is_none(), egui::Button::new("Check integrity")).clicked() { integrity = Some((m.id.clone(),false,None)); }
+                            if ui.add_enabled(self.result.is_none(), egui::Button::new("Fix / rebuild")).clicked() { integrity = Some((m.id.clone(),true,None)); }
+                            if !m.shared_assets.is_empty() && ui.add_enabled(self.result.is_none() && self.source.trim().ends_with(".gamepkgstore") && std::path::Path::new(self.source.trim()).is_file(),egui::Button::new("Repair assets")).on_hover_text("Enter the original local .gamepkgstore path in the package field below, then repair this game's exact signed assets and rebuild.").clicked() {integrity=Some((m.id.clone(),true,Some(PathBuf::from(self.source.trim()))));}
                             if ui.add_enabled(self.result.is_none(),egui::Button::new("Details")).clicked() { inspect = Some(m.id.clone()); }
                             if ui.add_enabled(built && self.result.is_none() && (m.required_rom_count()==0 || (self.rom_game.as_deref()==Some(m.id.as_str()) && !self.rom_path.trim().is_empty() && self.additional_rom_paths.len()+1==m.required_rom_count() && self.additional_rom_paths.iter().all(|p| !p.trim().is_empty()))), egui::Button::new("Play")).on_hover_text("Play this built game. ROM games need your file path above.").clicked() { play = Some(m.id.clone()); }
                             if ui.add_enabled(self.result.is_none(), egui::Button::new(if built { "Rebuild" } else { "Build" })).clicked() { build = Some(m.id.clone()); }
@@ -736,12 +737,13 @@ impl eframe::App for App {
             for (name, error) in &self.rejected {
                 ui.colored_label(egui::Color32::from_rgb(240, 130, 100), format!("Unavailable package: {name}"));
                 ui.label(error);
-                if ui.add_enabled(self.result.is_none(), egui::Button::new("Restore verified copy / rebuild")).clicked() { if let Some(id)=name.strip_suffix(".gamepkg") { integrity=Some((id.to_owned(),true)); } }
+                if ui.add_enabled(self.result.is_none(), egui::Button::new("Restore verified copy / rebuild")).clicked() { if let Some(id)=name.strip_suffix(".gamepkg") { integrity=Some((id.to_owned(),true,None)); } }
+                if ui.add_enabled(self.result.is_none() && self.source.trim().ends_with(".gamepkgstore") && std::path::Path::new(self.source.trim()).is_file(),egui::Button::new("Repair assets")).on_hover_text("Use the retained verified package and the original local store bundle entered below.").clicked() {if let Some(id)=name.strip_suffix(".gamepkg") {integrity=Some((id.to_owned(),true,Some(PathBuf::from(self.source.trim()))));}}
             }
             if self.installed.is_empty() && self.catalog.is_empty() && self.rejected.is_empty() { ui.label("No games yet. Import a game list or install a package."); }
             if ui.add_enabled(self.result.is_none(), egui::Button::new("Refresh library")).clicked() { self.refresh(ctx); }
-            if let Some((id,fix)) = integrity {
-                self.begin_work(move || { let root=crate::registry::default_root()?; Ok(Work::Message(if fix {crate::integrity::fix(&root,&id)?} else {crate::integrity::check(&root,&id)?})) });
+            if let Some((id,fix,store)) = integrity {
+                self.begin_work(move || { let root=crate::registry::default_root()?; Ok(Work::Message(if fix {crate::integrity::fix_with_store(&root,&id,store.as_deref())?} else {crate::integrity::check(&root,&id)?})) });
             }
             if let Some(id) = inspect {
                 if self.installed.iter().any(|m|m.id==id && m.requires_rom) {

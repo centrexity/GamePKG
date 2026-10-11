@@ -22,7 +22,12 @@ enum Command {
     /// Verify installed signed contents, shared assets and compiled game checksums.
     IntegrityCheck { id: String },
     /// Rebuild compiled files from verified source; never alter signatures or player data.
-    IntegrityFix { id: String },
+    IntegrityFix {
+        id: String,
+        /// Restore missing or damaged shared assets from the original verified store bundle.
+        #[arg(long)]
+        store: Option<PathBuf>,
+    },
     /// Manage host approval of checksum-pinned bundled guest crates.
     Allowlist {
         #[command(subcommand)]
@@ -159,9 +164,13 @@ fn main() -> Result<()> {
             "{}",
             gamepkg::integrity::check(&gamepkg::registry::default_root()?, &id)?
         ),
-        Command::IntegrityFix { id } => println!(
+        Command::IntegrityFix { id, store } => println!(
             "{}",
-            gamepkg::integrity::fix(&gamepkg::registry::default_root()?, &id)?
+            gamepkg::integrity::fix_with_store(
+                &gamepkg::registry::default_root()?,
+                &id,
+                store.as_deref()
+            )?
         ),
         Command::Allowlist { command } => match command {
             AllowlistCommand::List => {

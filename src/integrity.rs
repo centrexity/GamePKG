@@ -96,9 +96,14 @@ fn check_locked(root: &Path, id: &str) -> Result<String> {
     ))
 }
 pub fn fix(root: &Path, id: &str) -> Result<String> {
+    fix_with_store(root, id, None)
+}
+pub fn fix_with_store(root: &Path, id: &str, store: Option<&Path>) -> Result<String> {
     let _lock = crate::registry::LibraryChange::acquire(root)?;
     // Compilation rechecks signatures and shared blob hashes before running the isolated compiler.
-    // Damaged archives can use the host-retained verified original; external blobs must remain valid.
+    // A supplied store can restore exact signed shared assets before rebuilding.
+    let store = store.map(crate::store::Bundle::open).transpose()?;
+    let mut restored = 0;
     if id.is_empty()
         || !id
             .bytes()
@@ -133,12 +138,23 @@ pub fn fix(root: &Path, id: &str) -> Result<String> {
         if manifest.id != id {
             bail!("recovery package ID differs");
         }
+        if let Some(store) = &store {
+            restored = store.repair_assets(root, &mut package)?;
+        }
         package.resolve_shared_assets(root)?;
         file.as_file().sync_all()?;
         file.persist(target).map_err(|e| e.error)?;
+    } else if let Some(store) = &store {
+        let mut package = crate::archive::Package::open(&target)?;
+        restored = store.repair_assets(root, &mut package)?;
     }
     crate::build::compile(root, id)?;
-    check_locked(root, id)
+    let result = check_locked(root, id)?;
+    Ok(if store.is_some() {
+        format!("{result}; restored {restored} shared assets")
+    } else {
+        result
+    })
 }
 #[cfg(test)]
 mod tests {

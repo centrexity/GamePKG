@@ -109,6 +109,43 @@ impl Bundle {
             blobs,
         })
     }
+    pub(crate) fn repair_assets(&self, root: &Path, trusted: &mut Package) -> Result<usize> {
+        let manifest = crate::verify::verify_embedded(trusted)?;
+        let source = self
+            .packages
+            .get(&manifest.id)
+            .context("repair store does not contain this game")?;
+        let mut source = Package::open(source)?;
+        crate::verify::verify_embedded(&mut source)?;
+        if crate::verify::tree_hash(trusted)? != crate::verify::tree_hash(&mut source)? {
+            bail!("repair store must contain the exact signed game revision");
+        }
+        let mut bytes = BTreeMap::new();
+        for reference in manifest.shared_assets.values() {
+            let (provided, path) = self
+                .blobs
+                .get(&reference.sha256)
+                .context("repair store is missing an asset")?;
+            if provided != reference {
+                bail!("repair asset reference differs");
+            }
+            if !bytes.contains_key(&reference.sha256) {
+                let data = fs::read(path)?;
+                if data.len() as u64 != reference.size
+                    || crate::verify::digest(&data) != reference.sha256
+                {
+                    bail!("repair asset bytes changed");
+                }
+                bytes.insert(reference.sha256.clone(), (reference.clone(), data));
+            }
+        }
+        let pool = Pool::open(root)?;
+        let mut repaired = 0;
+        for (reference, data) in bytes.values() {
+            repaired += usize::from(pool.restore(reference, data)?);
+        }
+        Ok(repaired)
+    }
     pub fn install(&self, root: &Path, approve_creators: bool) -> Result<usize> {
         // Preflight the whole batch before publishing any pool data or games.
         let report = crate::registry::inspect_library(root)?;

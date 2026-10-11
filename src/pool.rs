@@ -98,6 +98,29 @@ impl Pool {
         }
         Ok(reference)
     }
+    pub(crate) fn restore(&self, reference: &Reference, bytes: &[u8]) -> Result<bool> {
+        let path = self.path(reference)?;
+        if bytes.len() as u64 != reference.size || crate::verify::digest(bytes) != reference.sha256
+        {
+            bail!("repair bytes do not match signed asset reference");
+        }
+        if self.read(reference).is_ok() {
+            return Ok(false);
+        }
+        match fs::symlink_metadata(&path) {
+            Ok(metadata) if !metadata.is_file() || metadata.file_type().is_symlink() => {
+                bail!("repair target must be a regular file")
+            }
+            Ok(_) => (),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
+            Err(error) => return Err(error.into()),
+        }
+        let mut stage = tempfile::NamedTempFile::new_in(&self.directory)?;
+        stage.write_all(bytes)?;
+        stage.as_file().sync_all()?;
+        stage.persist(path).map_err(|error| error.error)?;
+        Ok(true)
+    }
     pub fn import_package(
         &self,
         path: &Path,
