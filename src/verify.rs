@@ -55,9 +55,6 @@ pub fn verify(pkg: &mut Package, trusted: &[u8; 32]) -> Result<Manifest> {
         if name.starts_with("shaders/") && !name.ends_with(".slang") {
             bail!("only Slang shader sources allowed");
         }
-        if name == "preview.av1.webm" || name == "preview.ogv" {
-            bail!("preview validation is not implemented");
-        }
         if !matches!(
             name.as_str(),
             "manifest.toml"
@@ -66,6 +63,8 @@ pub fn verify(pkg: &mut Package, trusted: &[u8; 32]) -> Result<Manifest> {
                 | "LICENSE"
                 | "NOTICE"
                 | "CREDITS.md"
+                | "preview.av1.webm"
+                | "preview.ogv"
         ) && !["source/", "shaders/", "assets/"]
             .iter()
             .any(|p| name.starts_with(p))
@@ -95,6 +94,11 @@ pub fn verify(pkg: &mut Package, trusted: &[u8; 32]) -> Result<Manifest> {
         .verify_strict(&tree_hash(pkg)?, &sig)
         .context("invalid package signature")?;
     crate::source::scan(pkg)?;
+    for name in ["preview.av1.webm", "preview.ogv"] {
+        if pkg.entries.contains_key(name) {
+            crate::previews::validate(name, &pkg.read(name)?)?;
+        }
+    }
     pkg.mark_verified();
     Ok(m)
 }

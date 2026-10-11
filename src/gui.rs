@@ -5,6 +5,7 @@ use std::{
     sync::mpsc,
 };
 enum Work {
+    Preview(Vec<Vec<u8>>),
     Game(Box<crate::runtime::Game>),
     Package(crate::manifest::Manifest),
     Update(crate::manifest::Manifest, tempfile::NamedTempFile),
@@ -34,6 +35,7 @@ pub struct App {
     loaded: bool,
     icons: HashMap<String, egui::TextureHandle>,
     built: HashSet<String>,
+    preview: Option<(Vec<Vec<u8>>, std::time::Instant, egui::TextureHandle)>,
 }
 impl App {
     pub fn new(play: Option<String>, gl: Option<std::sync::Arc<eframe::glow::Context>>) -> Self {
@@ -136,6 +138,15 @@ impl eframe::App for App {
                 Ok(result) => {
                     self.result = None;
                     match result {
+                        Ok(Work::Preview(frames)) => {
+                            let texture = ctx.load_texture(
+                                "game-preview",
+                                egui::ColorImage::from_rgb([320, 240], &frames[0]),
+                                egui::TextureOptions::LINEAR,
+                            );
+                            self.preview = Some((frames, std::time::Instant::now(), texture));
+                            self.status = "Preview ready.".into();
+                        }
                         Ok(Work::Game(game)) => {
                             self.gpu = None;
                             if !game.shader_sources.is_empty() {
@@ -183,11 +194,13 @@ impl eframe::App for App {
                             self.player = Some(game);
                         }
                         Ok(Work::Package(m)) => {
+                            self.preview = None;
                             self.status = format!("Verified {} {}", m.id, m.version);
                             self.manifest = Some(m);
                             self.refresh(ctx);
                         }
                         Ok(Work::Update(m, file)) => {
+                            self.preview = None;
                             self.status = format!(
                                 "Package ready: {} {}. Review and install below.",
                                 m.id, m.version
@@ -622,7 +635,8 @@ impl eframe::App for App {
                 }
             }
             ui.label(&self.status);
-            if let Some(m) = &self.manifest {
+            if let Some(m) = self.manifest.clone() {
+                egui::ScrollArea::vertical().id_salt("game-details").max_height((ui.available_height() - 35.0).max(100.0)).show(ui, |ui| {
                 ui.separator(); ui.heading(&m.id); ui.label(format!("Version: {}", m.version));
                 ui.label(format!("Memory: {:.1} MiB recommended • {:.1} MiB hard limit", m.limits.recommended_memory_bytes() as f64 / 1048576.0, m.limits.hard_memory_bytes as f64 / 1048576.0));
                 ui.label(if m.requires_rom { "Requires a ROM supplied by you. It is not included in this package." } else { "No user ROM required." });
@@ -636,6 +650,34 @@ impl eframe::App for App {
                 ui.label(format!("Lockfile / dependency inventory SHA-256: {}",m.lockfile_sha256));
                 ui.label(format!("Permissions: input={}, audio={}, save={}, network={}", m.permissions.input, m.permissions.audio, m.permissions.save, m.permissions.network));
                 if let Some(url) = &m.update_url { ui.label(format!("Updates: {url}")); }
+                let preview_id = m.id.clone();
+                ui.horizontal(|ui| {
+                    for (label, prefer_theora) in [("Play preview", false), ("Play Theora fallback", true)] {
+                        if ui.add_enabled(self.result.is_none(), egui::Button::new(label)).clicked() {
+                            self.preview = None;
+                            let snapshot = self.pending.as_ref().and_then(|file| file.reopen().ok());
+                            let id = preview_id.clone();
+                            self.begin_work(move || {
+                                let mut copy = tempfile::NamedTempFile::new()?;
+                                let mut input = match snapshot { Some(file) => file, None => std::fs::File::open(crate::registry::default_root()?.join(format!("{id}.gamepkg")))? };
+                                std::io::copy(&mut std::io::Read::take(&mut input, crate::archive::MAX_TOTAL + 1), &mut copy)?;
+                                let mut pkg = crate::archive::Package::open(copy.path())?;
+                                crate::verify::verify_embedded(&mut pkg)?;
+                                let name = if !prefer_theora && pkg.entries.contains_key("preview.av1.webm") { "preview.av1.webm" } else { "preview.ogv" };
+                                Ok(Work::Preview(crate::previews::decode(name, &pkg.read(name)?)?))
+                            });
+                        }
+                    }
+                });
+                let mut stop_preview = false;
+                if let Some((frames, start, texture)) = &mut self.preview {
+                    let index = ((start.elapsed().as_millis() / 200) as usize).min(frames.len() - 1);
+                    texture.set(egui::ColorImage::from_rgb([320, 240], &frames[index]), egui::TextureOptions::LINEAR);
+                    ui.image((texture.id(), egui::vec2(320.0, 240.0)));
+                    ctx.request_repaint_after(std::time::Duration::from_millis(200));
+                    stop_preview = ui.button("Close preview").clicked();
+                }
+                if stop_preview { self.preview = None; }
                 let already = self.installed.iter().any(|old| old.id == m.id);
                 let label = if already { "Install verified update" } else { "Trust this creator and install" };
                 if self.pending.is_some() && ui.add_enabled(self.result.is_none(), egui::Button::new(label)).clicked() {
@@ -643,6 +685,7 @@ impl eframe::App for App {
                         self.begin(move || crate::registry::install(&crate::registry::default_root()?, stage.path(), true));
                     }
                 }
+                });
             }
             ui.separator(); ui.label("Development preview. Supported games can play here; some package features are still in development.");
             ui.hyperlink_to("GamePKG • Apache 2.0", "https://gamepkg.com");

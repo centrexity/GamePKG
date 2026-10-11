@@ -465,3 +465,24 @@ policy is conservative: the reserved identifiers are rejected even when used as
 ordinary variable names; string literal text is allowed. Normal expression macros
 remain supported. Scanning supplements compiler isolation and Wasm linking; it is
 not a proof that source code is harmless.
+
+## Game previews
+
+Packages may include `preview.av1.webm` (AV1 in WebM) and/or `preview.ogv`
+(Theora in Ogg). Previews are signed along with the game. The current profile
+accepts one silent video stream, at most 16 MiB, 640×480, 30 seconds, and 900
+frames, starting with a keyframe. Damaged videos, wrong codecs and oversized
+previews are rejected before installation.
+
+On Linux, install FFmpeg and bubblewrap to verify packages with previews.
+Video inspection and decoding run in a separate process with no network, a
+private temporary directory, a 2 GiB address-space ceiling and a 60-second
+timeout. The desktop **Details** view offers **Play preview** and **Play Theora
+fallback**. Playback decodes at 320×240 and five frames per second, retains at
+most 150 frames, and never starts the game. A missing preview produces an
+error; preview decoding is currently supported on Linux only.
+
+`gamepkg preview game.gamepkg` checks and decodes the preferred preview;
+`--theora` selects the fallback explicitly. Run `python3 tests/previews.py`
+after building release binaries to exercise real AV1/Theora videos, signing,
+verification, decoding, and rejected malformed videos.

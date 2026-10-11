@@ -1,7 +1,7 @@
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Manifest {
     pub format_version: u32,
@@ -27,7 +27,7 @@ pub struct Manifest {
     #[serde(default)]
     pub requires_rom: bool,
 }
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Shader {
     pub source: String,
@@ -58,7 +58,7 @@ impl Shader {
         Ok(())
     }
 }
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Limits {
     #[serde(alias = "memory_bytes")]
@@ -67,7 +67,7 @@ pub struct Limits {
     pub recommended_memory_bytes: Option<u64>,
     pub fuel: u64,
 }
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Permissions {
     pub input: bool,

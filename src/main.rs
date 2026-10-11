@@ -12,6 +12,12 @@ struct Cli {
 }
 #[derive(Subcommand)]
 enum Command {
+    /// Validate and decode a package preview without running its game.
+    Preview {
+        package: PathBuf,
+        #[arg(long)]
+        theora: bool,
+    },
     /// Create a private signing key and print its public creator key.
     Keygen {
         #[arg(short, long)]
@@ -79,6 +85,17 @@ fn key(s: &str) -> Result<[u8; 32]> {
 }
 fn main() -> Result<()> {
     match Cli::parse().command {
+        Command::Preview { package, theora } => {
+            let mut pkg = gamepkg::archive::Package::open(&package)?;
+            gamepkg::verify::verify_embedded(&mut pkg)?;
+            let name = if !theora && pkg.entries.contains_key("preview.av1.webm") {
+                "preview.av1.webm"
+            } else {
+                "preview.ogv"
+            };
+            let frames = gamepkg::previews::decode(name, &pkg.read(name)?)?;
+            println!("Decoded {} preview frames (320×240, 5 fps)", frames.len());
+        }
         Command::Keygen { output } => {
             let public = gamepkg::creator::generate(&output)?;
             println!("Created private signing key: {}", output.display());
