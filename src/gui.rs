@@ -33,6 +33,7 @@ pub struct App {
     pending: Option<tempfile::NamedTempFile>,
     pending_store: Option<crate::store::Bundle>,
     installed: Vec<crate::manifest::Manifest>,
+    rejected: Vec<(String, String)>,
     catalog: Vec<crate::catalog::Entry>,
     loaded: bool,
     icons: HashMap<String, egui::TextureHandle>,
@@ -67,8 +68,12 @@ impl App {
             Ok(entries) => self.catalog = entries,
             Err(e) => self.status = format!("Unable to read catalog: {e:#}"),
         }
-        match crate::registry::default_root().and_then(|root| crate::registry::list(&root)) {
-            Ok(games) => {
+        match crate::registry::default_root()
+            .and_then(|root| crate::registry::inspect_library(&root))
+        {
+            Ok(report) => {
+                self.rejected = report.rejected;
+                let games = report.games;
                 self.icons.clear();
                 self.built.clear();
                 if let Ok(root) = crate::registry::default_root() {
@@ -540,7 +545,7 @@ impl eframe::App for App {
                                 Ok(()) => {
                                     ctx.set_visuals(if self.settings_draft.dark_mode { egui::Visuals::dark() } else { egui::Visuals::light() });
                                     self.applied_settings=Some(self.settings_draft.clone());
-                                    self.pending=None;self.pending_store=None;self.manifest=None;self.installed.clear();self.catalog.clear();self.status="Settings saved.".into();self.refresh(ctx);
+                                    self.pending=None;self.pending_store=None;self.manifest=None;self.installed.clear();self.rejected.clear();self.catalog.clear();self.status="Settings saved.".into();self.refresh(ctx);
                                 }
                                 Err(e) => self.status=format!("Settings not saved: {e:#}"),
                             }
@@ -603,7 +608,11 @@ impl eframe::App for App {
                     }
                 });
             });
-            if self.installed.is_empty() && self.catalog.is_empty() { ui.label("No games yet. Import a game list or install a package."); }
+            for (name, error) in &self.rejected {
+                ui.colored_label(egui::Color32::from_rgb(240, 130, 100), format!("Unavailable package: {name}"));
+                ui.label(error);
+            }
+            if self.installed.is_empty() && self.catalog.is_empty() && self.rejected.is_empty() { ui.label("No games yet. Import a game list or install a package."); }
             if ui.add_enabled(self.result.is_none(), egui::Button::new("Refresh library")).clicked() { self.refresh(ctx); }
             if let Some(id) = inspect {
                 self.pending = None;

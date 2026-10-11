@@ -220,3 +220,35 @@ fn onion_urls_allow_http_only_for_v3_onion_hosts() {
         assert!(registry::validate_url(value).is_err(), "accepted {value}");
     }
 }
+
+#[test]
+fn rejected_package_does_not_hide_valid_games_but_strict_listing_still_fails() {
+    let temp = tempfile::tempdir().unwrap();
+    let source = temp.path().join("source");
+    copy(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/minimal"),
+        &source,
+    );
+    let package = temp.path().join("game.gamepkg");
+    pack(&source, &package, &[9; 32]).unwrap();
+    let root = temp.path().join("library");
+    let installed = registry::install(&root, &package, true).unwrap();
+    fs::write(root.join("broken.gamepkg"), b"not an archive").unwrap();
+    fs::copy(&package, root.join("wrong-id.gamepkg")).unwrap();
+    let report = registry::inspect_library(&root).unwrap();
+    assert_eq!(report.games.len(), 1);
+    assert_eq!(report.games[0].id, installed.id);
+    assert_eq!(report.rejected.len(), 2);
+    assert_eq!(report.rejected[0].0, "broken.gamepkg");
+    assert!(report.rejected[1].1.contains("ID mismatch"));
+    assert!(registry::list(&root).is_err());
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_gamepkg"))
+        .env("GAMEPKG_HOME", &root)
+        .args(["list"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(text.contains("broken.gamepkg — Unavailable"));
+    assert!(text.contains("com.gamepkg.minimal 0.1.0"));
+}

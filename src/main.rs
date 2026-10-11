@@ -374,7 +374,11 @@ fn main() -> Result<()> {
         }
         Command::List => {
             let root = gamepkg::registry::default_root()?;
-            let installed = gamepkg::registry::list(&root)?;
+            let report = gamepkg::registry::inspect_library(&root)?;
+            for (name, error) in report.rejected {
+                println!("{name} — Unavailable: {error}");
+            }
+            let installed = report.games;
             for entry in gamepkg::catalog::entries(&root)? {
                 if !installed.iter().any(|m| m.id == entry.id) {
                     println!(

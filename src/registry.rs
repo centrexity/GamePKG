@@ -155,14 +155,25 @@ pub fn download(value: &str) -> Result<tempfile::NamedTempFile> {
     }
     bail!("too many download redirects")
 }
-pub fn list(root: &Path) -> Result<Vec<Manifest>> {
+pub struct LibraryInspection {
+    pub games: Vec<Manifest>,
+    pub rejected: Vec<(String, String)>,
+}
+/// Inspect each file independently for display; rejected files never supply game metadata.
+pub fn inspect_library(root: &Path) -> Result<LibraryInspection> {
+    let mut report = LibraryInspection {
+        games: Vec::new(),
+        rejected: Vec::new(),
+    };
     if !root.exists() {
-        return Ok(Vec::new());
+        return Ok(report);
     }
-    let mut games = Vec::new();
     for entry in fs::read_dir(root)? {
         let entry = entry?;
-        if entry.path().extension().is_some_and(|x| x == "gamepkg") {
+        if entry.path().extension().is_none_or(|x| x != "gamepkg") {
+            continue;
+        }
+        let result = (|| -> Result<Manifest> {
             if entry.file_type()?.is_symlink() {
                 bail!("installed package is a symlink");
             }
@@ -170,11 +181,26 @@ pub fn list(root: &Path) -> Result<Vec<Manifest>> {
             if entry.file_name().to_str() != Some(&format!("{}.gamepkg", m.id)) {
                 bail!("installed package ID mismatch");
             }
-            games.push(m);
+            Ok(m)
+        })();
+        match result {
+            Ok(m) => report.games.push(m),
+            Err(error) => report.rejected.push((
+                entry.file_name().to_string_lossy().into_owned(),
+                format!("{error:#}"),
+            )),
         }
     }
-    games.sort_by(|a, b| a.id.cmp(&b.id));
-    Ok(games)
+    report.games.sort_by(|a, b| a.id.cmp(&b.id));
+    report.rejected.sort_by(|a, b| a.0.cmp(&b.0));
+    Ok(report)
+}
+pub fn list(root: &Path) -> Result<Vec<Manifest>> {
+    let report = inspect_library(root)?;
+    if let Some((name, error)) = report.rejected.first() {
+        bail!("installed package {name} rejected: {error}");
+    }
+    Ok(report.games)
 }
 pub fn install(root: &Path, path: &Path, approve_creator: bool) -> Result<Manifest> {
     fs::create_dir_all(root)?;
