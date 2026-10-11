@@ -12,6 +12,11 @@ struct Cli {
 }
 #[derive(Subcommand)]
 enum Command {
+    /// Create a private signing key and print its public creator key.
+    Keygen {
+        #[arg(short, long)]
+        output: PathBuf,
+    },
     /// Play an installed grid-v1 game in the terminal, or run N headless frames.
     Run {
         id: String,
@@ -74,6 +79,11 @@ fn key(s: &str) -> Result<[u8; 32]> {
 }
 fn main() -> Result<()> {
     match Cli::parse().command {
+        Command::Keygen { output } => {
+            let public = gamepkg::creator::generate(&output)?;
+            println!("Created private signing key: {}", output.display());
+            println!("Creator public key: {public}");
+        }
         Command::Run { id, frames, rom } => {
             let mut game = gamepkg::runtime::Game::load_with_rom(
                 &gamepkg::registry::default_root()?,
@@ -251,7 +261,7 @@ fn main() -> Result<()> {
             output,
             key: path,
         } => {
-            gamepkg::pack::pack(&dir, &output, &key(&fs::read_to_string(path)?)?)?;
+            gamepkg::pack::pack(&dir, &output, &gamepkg::creator::read_seed(&path)?)?;
             println!("Created {}", output.display());
         }
         Command::Verify {

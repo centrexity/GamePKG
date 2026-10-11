@@ -44,9 +44,10 @@ cargo test --locked
 cargo run -- --help
 ```
 
-A complete package input is in `examples/minimal`. Generate a private signing seed and its public key with your Ed25519 key tooling. The private key file must contain exactly 32 bytes encoded as 64 hexadecimal characters. Keep it outside your package directory and restrict access to it.
+A complete package input is in `examples/minimal`. Generate a creator signing key with `keygen`, keeping it outside the package directory. The command uses operating-system randomness, refuses to replace an existing file, and prints only the public creator key. On Unix, the private file is readable and writable only by its owner. Keep a private backup: signed updates must use the same key. Players do not need this private key.
 
 ```sh
+cargo run -- keygen -o /path/to/signing.key
 cargo run -- pack examples/minimal -o minimal.gamepkg --key /path/to/signing.key
 cargo run -- verify minimal.gamepkg
 cargo run -- asset minimal.gamepkg hello.txt -o hello.txt

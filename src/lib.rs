@@ -30,3 +30,5 @@ pub mod hostapi;
 pub mod updates;
 
 mod compiler;
+
+pub mod creator;
