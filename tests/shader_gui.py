@@ -49,7 +49,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-shader-ui-') as directory:
     time.sleep(.1)
     subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(before)],env=env,check=True)
    subprocess.run(['xdotool','keydown','Right'],env=env,check=True);time.sleep(.5)
-   after=project/'target/shader-player.png'
+   after=root/'after.png'
    subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(after)],env=env,check=True)
    assert dominant(after,1), 'Package green shader pixels missing'
    subprocess.run(['xdotool','keyup','Right'],env=env,check=True)
@@ -58,6 +58,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-shader-ui-') as directory:
     subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(after)],env=env,check=True)
     assert not dominant(after,1) and not dominant(after,2), 'Plain shader reused previously supplied image'
     subprocess.run(['xdotool','keyup','Down'],env=env,check=True)
+   shutil.copy2(after,project/'target'/f'shader-player-{args.backend}-{args.component}-{args.texture}.png')
    print('Compiled package fragment passes rendered; held input switched actual blue/green screen pixels.')
   finally:
    app.terminate();app.wait(timeout=5)
