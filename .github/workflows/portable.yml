@@ -10,7 +10,31 @@ concurrency:
   group: gamepkg-portable-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 jobs:
+  compiler-fixture:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install isolated compiler prerequisites
+        run: sudo apt-get update && sudo apt-get install -y bubblewrap && rustup target add wasm32-unknown-unknown
+      - name: Build compiler host
+        run: cargo build --locked --release --bin gamepkg
+      - name: Install pinned shader compiler
+        run: python3 tools/install_slang.py /tmp/gamepkg-slang
+      - name: Stage isolated toolchain
+        run: |
+          sudo cp -a "$(rustc --print sysroot)" /tmp/gamepkg-ci-toolchain
+          sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup rustup toolchain link gamepkg-ci /tmp/gamepkg-ci-toolchain
+          sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup rustup default gamepkg-ci
+      - name: Prepare signed isolated compiler exchange
+        run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT=/tmp/gamepkg-slang python3 tests/compiler_exchange.py prepare /tmp/gamepkg-native-exchange
+      - uses: actions/upload-artifact@v4
+        with:
+          name: isolated-compiler-exchange
+          path: /tmp/gamepkg-native-exchange
+          retention-days: 1
+          if-no-files-found: error
   native:
+    needs: compiler-fixture
     strategy:
       fail-fast: false
       matrix:
@@ -24,6 +48,12 @@ jobs:
         run: rustup default stable
       - name: Build CLI and desktop entry points
         run: cargo build --locked --release --all-features --bins
+      - uses: actions/download-artifact@v4
+        with:
+          name: isolated-compiler-exchange
+          path: native-exchange-fixture
+      - name: Play validated isolated compiler outputs on the native host
+        run: python tests/compiler_exchange.py consume native-exchange-fixture
       - name: Exercise verification, runtime, and portable host behavior
         run: cargo test --locked --all-features
       - name: Check portable implementation warnings
