@@ -2,7 +2,7 @@
 
 **Know what you run. Control what it can access.** GamePKG is building a safer way to share and play games: inspectable source, creator-signed packages, isolated compilation, and a host that is designed to grant only the capabilities a game needs.
 
-**Current status:** this is a development preview. Package verification, catalog import, installation, update checks, and isolated single-file Wasm and Slang shader builds on Linux work today. The experimental grid-v1 profile now plays in the GUI and terminal under Wasmtime with scoped asset reads, fuel, memory limits, and epoch deadlines. The broader WIT/rendering/audio API remains pending; this is not a guarantee that a package is harmless.
+**Current status:** this is a development preview. Package verification, catalog import, installation, update checks, and isolated single-file Wasm and Slang shader builds on Linux work today. The experimental grid-v1 profile now plays in the GUI and terminal under Wasmtime with scoped asset reads, fuel, memory limits, and epoch deadlines. The broader WIT/custom-shader/audio API remains pending; this is not a guarantee that a package is harmless.
 
 ## Why distribute GamePKG instead of an opaque executable?
 
@@ -290,3 +290,36 @@ own tools, system libraries and staged shader sources; your home directory
 and network are unavailable. Run `python3 tests/shaders.py` with
 `GAMEPKG_SLANG_ROOT` set to verify actual backends, reflection and host include
 rejection.
+
+## Guest drawing
+
+Guests can draw their own scene with `gamepkg::draw_clear(rgba)`,
+`gamepkg::draw_rect(x, y, width, height, rgba)` and
+`gamepkg::draw_circle(x, y, radius, rgba)`. These safe wrappers send bounded
+commands to the desktop renderer; games never receive a graphics-device handle.
+Coordinates use a 640 × 480 canvas and colors use `0xRRGGBBAA`.
+Each frame keeps at most 1,024 commands. Non-finite coordinates and oversized
+geometry are rejected, calls consume fuel, and trapped ticks discard the frame.
+The desktop clips commands to the game viewport and scales the canvas to fit.
+
+Input bits 0–3 report newly pressed left/right/up/down directions as before.
+Bits 8–11 report held directions (`HELD_LEFT`, `HELD_RIGHT`, `HELD_UP`,
+`HELD_DOWN`). Disabling input permission clears both sets of bits.
+
+`examples/good/shape-playground` draws an animated scene and moves a square
+with held arrows/WASD. Play it through the GUI or run it headlessly using
+`--frames`. Interactive terminal playback remains for the grid profile.
+`tests/drawing_game.py` checks the signed source/build/runtime path;
+`tests/drawing_gui.py` uses a virtual display and actual screen pixels to
+verify rendering and held-key movement. The latter requires Xvfb, xdotool,
+ImageMagick and Pillow. Set `GAMEPKG_SLANG_ROOT` for both tests.
+
+This draw API uses the host renderer. Running a package's compiled Slang
+shaders on the GPU, textures, audio and the broader WIT component API are
+still pending.
+
+Hosted Linux build integrations run controlled fixtures with elevated namespace
+setup privileges because the runner rejects unprivileged network namespace
+configuration. The actual compilers still run inside bubblewrap with a private
+network and filesystem. The application continues to fail closed when sandbox
+setup is unavailable; it does not use an unrestricted build fallback.

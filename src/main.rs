@@ -87,8 +87,18 @@ fn main() -> Result<()> {
                 for _ in 0..count {
                     game.step(0)?;
                 }
-                println!("Ran {count} frames; score: {}", game.score());
+                if game.custom_renderer {
+                    println!(
+                        "Ran {count} frames; draw commands: {}",
+                        game.frame().commands.len()
+                    );
+                } else {
+                    println!("Ran {count} frames; score: {}", game.score());
+                }
             } else {
+                if game.custom_renderer {
+                    anyhow::bail!("this game draws graphics; open it in gamepkg-gui --play {id}, or use --frames for a headless run");
+                }
                 use std::io::{self, Write};
                 game.step(0)?;
                 loop {

@@ -16,3 +16,5 @@ pub mod settings;
 pub mod saves;
 
 pub mod shaders;
+
+pub mod drawing;

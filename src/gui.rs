@@ -17,6 +17,8 @@ pub struct App {
     show_settings: bool,
     settings_draft: crate::settings::Settings,
     player: Option<Box<crate::runtime::Game>>,
+    next_frame: Option<std::time::Instant>,
+    pending_input: u32,
     status: String,
     result: Option<mpsc::Receiver<Result<Work, String>>>,
     manifest: Option<crate::manifest::Manifest>,
@@ -123,6 +125,8 @@ impl eframe::App for App {
                     self.result = None;
                     match result {
                         Ok(Work::Game(game)) => {
+                            self.next_frame = None;
+                            self.pending_input = 0;
                             self.player = Some(game);
                         }
                         Ok(Work::Package(m)) => {
@@ -168,10 +172,20 @@ impl eframe::App for App {
                     }
                     if ui.button("Restart").clicked() {
                         game.state = 0;
+                        self.next_frame = None;
                     }
                 });
                 let input = ctx.input(|i| {
-                    u32::from(i.key_pressed(egui::Key::ArrowLeft) || i.key_pressed(egui::Key::A))
+                    (u32::from(i.key_down(egui::Key::ArrowLeft) || i.key_down(egui::Key::A)) << 8)
+                        | (u32::from(i.key_down(egui::Key::ArrowRight) || i.key_down(egui::Key::D))
+                            << 9)
+                        | (u32::from(i.key_down(egui::Key::ArrowUp) || i.key_down(egui::Key::W))
+                            << 10)
+                        | (u32::from(i.key_down(egui::Key::ArrowDown) || i.key_down(egui::Key::S))
+                            << 11)
+                        | u32::from(
+                            i.key_pressed(egui::Key::ArrowLeft) || i.key_pressed(egui::Key::A),
+                        )
                         | (u32::from(
                             i.key_pressed(egui::Key::ArrowRight) || i.key_pressed(egui::Key::D),
                         ) << 1)
@@ -182,13 +196,71 @@ impl eframe::App for App {
                             i.key_pressed(egui::Key::ArrowDown) || i.key_pressed(egui::Key::S),
                         ) << 3)
                 });
-                if let Err(e) = game.step(input) {
-                    failure = Some(format!("Game stopped: {e:#}"));
+                self.pending_input |= input & 15;
+                let now = std::time::Instant::now();
+                if self.next_frame.is_none_or(|next| now >= next) {
+                    if let Err(e) = game.step(self.pending_input | (input & 0xf00)) {
+                        failure = Some(format!("Game stopped: {e:#}"));
+                    }
+                    self.pending_input = 0;
+                    self.next_frame = Some(now + std::time::Duration::from_millis(16));
                 }
-                ui.label(format!(
-                    "Score: {} — Arrows or WASD to move. Collect the yellow stars.",
-                    game.score()
-                ));
+                if game.custom_renderer {
+                    ui.label("Arrows or WASD to move.");
+                } else {
+                    ui.label(format!("Score: {} — Arrows or WASD to move.", game.score()));
+                }
+                if game.custom_renderer {
+                    let scale = (ui.available_width() / 640.0)
+                        .min(ui.available_height() / 480.0)
+                        .clamp(0.1, 2.0);
+                    let (rect, _) = ui.allocate_exact_size(
+                        egui::vec2(640.0 * scale, 480.0 * scale),
+                        egui::Sense::hover(),
+                    );
+                    let painter = ui.painter_at(rect);
+                    let color = |rgba: u32| {
+                        egui::Color32::from_rgba_unmultiplied(
+                            (rgba >> 24) as u8,
+                            (rgba >> 16) as u8,
+                            (rgba >> 8) as u8,
+                            rgba as u8,
+                        )
+                    };
+                    painter.rect_filled(
+                        rect,
+                        0.0,
+                        color(game.frame().background.unwrap_or(0x10171dff)),
+                    );
+                    for command in &game.frame().commands {
+                        match *command {
+                            crate::drawing::Command::Rect {
+                                x,
+                                y,
+                                width,
+                                height,
+                                rgba,
+                            } => {
+                                painter.rect_filled(
+                                    egui::Rect::from_min_size(
+                                        rect.min + egui::vec2(x * scale, y * scale),
+                                        egui::vec2(width * scale, height * scale),
+                                    ),
+                                    0.0,
+                                    color(rgba),
+                                );
+                            }
+                            crate::drawing::Command::Circle { x, y, radius, rgba } => {
+                                painter.circle_filled(
+                                    rect.min + egui::vec2(x * scale, y * scale),
+                                    radius * scale,
+                                    color(rgba),
+                                );
+                            }
+                        }
+                    }
+                    return;
+                }
                 let size = ui
                     .available_width()
                     .min(ui.available_height())
@@ -197,7 +269,7 @@ impl eframe::App for App {
                     ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
                 let painter = ui.painter_at(rect);
                 let cell = size / 16.0;
-                painter.rect_filled(rect, 0.0, egui::Color32::from_rgb(16, 23, 29));
+                painter.rect_filled(rect, 0.0_f32, egui::Color32::from_rgb(16, 23, 29));
                 for n in 0..=16 {
                     let v = n as f32 * cell;
                     painter.line_segment(

@@ -18,6 +18,7 @@ struct Data {
     package: Option<crate::archive::Package>,
     rom: Option<Vec<u8>>,
     save: Option<crate::saves::Save>,
+    frame: crate::drawing::Frame,
 }
 pub struct Game {
     store: Store<Data>,
@@ -28,6 +29,7 @@ pub struct Game {
     pub state: u64,
     pub id: String,
     input_allowed: bool,
+    pub custom_renderer: bool,
 }
 impl Drop for Game {
     fn drop(&mut self) {
@@ -81,10 +83,14 @@ impl Game {
                         | "save_read"
                         | "save_write"
                         | "save_size"
+                        | "draw_clear"
+                        | "draw_rect"
+                        | "draw_circle"
                 )
         }) {
             bail!("games cannot import functions outside the scoped GamePKG API");
         }
+        let custom_renderer = module.imports().any(|i| i.name().starts_with("draw_"));
         let memory = manifest
             .limits
             .hard_memory_bytes
@@ -106,6 +112,7 @@ impl Game {
                 package,
                 rom,
                 save,
+                frame: crate::drawing::Frame::default(),
             },
         );
         store.limiter(|s| &mut s.limits);
@@ -123,6 +130,46 @@ impl Game {
         let result = (|| -> Result<_> {
             let mut linker = Linker::new(&engine);
             linker.func_wrap("gamepkg", "asset_read", asset_read)?;
+            linker.func_wrap(
+                "gamepkg",
+                "draw_clear",
+                |mut caller: Caller<'_, Data>, rgba: i32| -> i32 {
+                    if !draw_fuel(&mut caller) {
+                        return -1;
+                    }
+                    caller.data_mut().frame.reset();
+                    caller.data_mut().frame.background = Some(rgba as u32);
+                    0
+                },
+            )?;
+            linker.func_wrap(
+                "gamepkg",
+                "draw_rect",
+                |mut caller: Caller<'_, Data>, x: f32, y: f32, w: f32, h: f32, rgba: i32| -> i32 {
+                    if !draw_fuel(&mut caller) {
+                        return -1;
+                    }
+                    if caller.data_mut().frame.rect(x, y, w, h, rgba as u32) {
+                        0
+                    } else {
+                        -1
+                    }
+                },
+            )?;
+            linker.func_wrap(
+                "gamepkg",
+                "draw_circle",
+                |mut caller: Caller<'_, Data>, x: f32, y: f32, r: f32, rgba: i32| -> i32 {
+                    if !draw_fuel(&mut caller) {
+                        return -1;
+                    }
+                    if caller.data_mut().frame.circle(x, y, r, rgba as u32) {
+                        0
+                    } else {
+                        -1
+                    }
+                },
+            )?;
             linker.func_wrap("gamepkg", "rom_read", rom_read)?;
             linker.func_wrap("gamepkg", "save_read", save_read)?;
             linker.func_wrap("gamepkg", "save_write", save_write)?;
@@ -158,6 +205,7 @@ impl Game {
             state: 0,
             id: manifest.id.clone(),
             input_allowed: manifest.permissions.input,
+            custom_renderer,
         })
     }
     pub fn load(root: &Path, id: &str) -> Result<Self> {
@@ -216,7 +264,11 @@ impl Game {
             },
         )
     }
+    pub fn frame(&self) -> &crate::drawing::Frame {
+        &self.store.data().frame
+    }
     pub fn step(&mut self, input: u32) -> Result<u64> {
+        self.store.data_mut().frame.reset();
         self.store.set_fuel(self.fuel)?;
         self.store.set_epoch_deadline(self.deadline_epochs);
         let previous_save = self.store.data().save.as_ref().map(|s| s.bytes.clone());
@@ -233,6 +285,7 @@ impl Game {
         self.state = match result {
             Ok(state) => state as u64,
             Err(error) => {
+                self.store.data_mut().frame.reset();
                 if let (Some(save), Some(bytes)) =
                     (self.store.data_mut().save.as_mut(), previous_save)
                 {
@@ -445,4 +498,15 @@ fn save_read(mut caller: Caller<'_, Data>, offset: i32, pointer: i32, length: i3
         return -1;
     }
     bytes.len() as i32
+}
+
+fn draw_fuel(caller: &mut Caller<'_, Data>) -> bool {
+    let Ok(fuel) = caller.get_fuel() else {
+        return false;
+    };
+    if fuel < 64 {
+        let _ = caller.set_fuel(0);
+        return false;
+    }
+    caller.set_fuel(fuel - 64).is_ok()
 }
