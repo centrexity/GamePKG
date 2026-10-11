@@ -2,6 +2,31 @@ use ed25519_dalek::SigningKey;
 use gamepkg::{archive::Package, pack::pack, verify::verify};
 use std::path::Path;
 #[test]
+fn checked_out_lockfiles_match_the_manifest_bytes_on_every_platform() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples");
+    let mut examples = vec![root.join("minimal")];
+    examples.extend(
+        std::fs::read_dir(root.join("good"))
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| path.is_dir()),
+    );
+    for example in examples {
+        let manifest = gamepkg::manifest::Manifest::parse(
+            &std::fs::read(example.join("manifest.toml")).unwrap(),
+        )
+        .unwrap();
+        let lock = std::fs::read(example.join("source/Cargo.lock")).unwrap();
+        assert_eq!(
+            gamepkg::verify::digest(&lock),
+            manifest.lockfile_sha256,
+            "{}: preserve LF checkout bytes",
+            example.display()
+        );
+    }
+}
+
+#[test]
 fn good_examples_are_signed_and_verified() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     for name in [

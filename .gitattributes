@@ -1,0 +1,9 @@
+# Signed example lock hashes require identical text bytes on every platform.
+* text=auto eol=lf
+*.png -text
+*.webm -text
+*.ogv -text
+*.gamepkg -text
+*.gamepkgstore -text
+*.zip -text
+*.tar.gz -text

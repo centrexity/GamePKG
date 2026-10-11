@@ -87,7 +87,11 @@ fn host_approvals_are_persistent_and_gate_signed_dependency_packages() {
     ];
     let rejected = run(&args);
     assert!(!rejected.status.success());
-    assert!(String::from_utf8_lossy(&rejected.stderr).contains("not approved by this host"));
+    assert!(
+        String::from_utf8_lossy(&rejected.stderr).contains("not approved by this host"),
+        "{}",
+        String::from_utf8_lossy(&rejected.stderr)
+    );
     assert!(!output.exists());
     assert!(run(&["allowlist", "add", "byteorder-lite"])
         .status
