@@ -114,6 +114,7 @@ impl Game {
                             | "save_write"
                             | "save_size"
                             | "draw_clear"
+                            | "draw_asset_image"
                             | "draw_image"
                             | "draw_rect"
                             | "draw_circle"
@@ -195,6 +196,48 @@ impl Game {
             let mut linker = Linker::new(&engine);
             linker.func_wrap("gamepkg", "asset_read", asset_read)?;
             linker.func_wrap("gamepkg", "audio_submit", audio_submit)?;
+            linker.func_wrap(
+                "gamepkg",
+                "draw_asset_image",
+                |mut caller: Caller<'_, Data>,
+                 pointer: i32,
+                 length: i32,
+                 x: f32,
+                 y: f32,
+                 w: f32,
+                 h: f32|
+                 -> i32 {
+                    if pointer < 0 || !(1..=1024).contains(&length) {
+                        return -1;
+                    }
+                    let Some(memory) = caller.get_export("memory").and_then(|e| e.into_memory())
+                    else {
+                        return -1;
+                    };
+                    let Some(end) = (pointer as usize).checked_add(length as usize) else {
+                        return -1;
+                    };
+                    let Some(bytes) = memory.data(&caller).get(pointer as usize..end) else {
+                        return -1;
+                    };
+                    let Ok(path) = std::str::from_utf8(bytes) else {
+                        return -1;
+                    };
+                    let path = path.to_owned();
+                    let Ok(mut fuel) = caller.get_fuel() else {
+                        return -1;
+                    };
+                    let result = draw_asset_image(caller.data_mut(), &mut fuel, &path, x, y, w, h);
+                    if caller.set_fuel(fuel).is_err() {
+                        return -1;
+                    }
+                    if result {
+                        0
+                    } else {
+                        -1
+                    }
+                },
+            )?;
             linker.func_wrap(
                 "gamepkg",
                 "draw_image",
@@ -652,6 +695,73 @@ fn save_read(mut caller: Caller<'_, Data>, offset: i32, pointer: i32, length: i3
         return -1;
     }
     bytes.len() as i32
+}
+
+fn draw_asset_image(
+    data: &mut Data,
+    fuel: &mut u64,
+    path: &str,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+) -> bool {
+    use crate::drawing::image::{Image, MAX_PNG_BYTES};
+    if path.len() > 1024
+        || !crate::archive::valid_path(path)
+        || !data.frame.can_image(x, y, w, h, 0)
+    {
+        return false;
+    }
+    let Some(package) = data.package.as_mut() else {
+        return false;
+    };
+    let Ok(size) = package.asset_size(path) else {
+        return false;
+    };
+    if !(33..=MAX_PNG_BYTES as u64).contains(&size) {
+        return false;
+    }
+    if *fuel < 1280 {
+        *fuel = 0;
+        return false;
+    }
+    *fuel -= 1280;
+    let Ok(header) = package.asset_chunk(path, 0, 33) else {
+        return false;
+    };
+    let Some(pixel_bytes) = Image::png_byte_length(&header) else {
+        return false;
+    };
+    if !data.frame.can_image(x, y, w, h, pixel_bytes) {
+        return false;
+    }
+    let mut cost = pixel_bytes as u64 * 4;
+    for offset in (0..size).step_by(65536) {
+        let Ok(chunk_cost) = package.asset_chunk_cost(path, offset, 65536) else {
+            return false;
+        };
+        cost += chunk_cost;
+    }
+    if *fuel < cost {
+        *fuel = 0;
+        return false;
+    }
+    *fuel -= cost;
+    let mut encoded = Vec::with_capacity(size as usize);
+    for offset in (0..size).step_by(65536) {
+        let Ok(chunk) = package.asset_chunk(path, offset, 65536) else {
+            return false;
+        };
+        encoded.extend(chunk);
+    }
+    let Some(image) = Image::from_png(&encoded) else {
+        return false;
+    };
+    if image.pixels().len() != pixel_bytes {
+        return false;
+    }
+    data.frame.image(x, y, w, h, image)
 }
 
 fn draw_fuel(caller: &mut Caller<'_, Data>) -> bool {

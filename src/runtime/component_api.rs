@@ -2,7 +2,7 @@
 use super::Data;
 use anyhow::Result;
 use wasmtime::{
-    component::{Linker, WasmList},
+    component::{Linker, WasmList, WasmStr},
     AsContext, Engine, StoreContextMut,
 };
 fn charge(store: &mut StoreContextMut<'_, Data>, cost: u64) -> Result<bool> {
@@ -116,6 +116,21 @@ pub(super) fn linker(engine: &Engine) -> Result<Linker<Data>> {
                 return Ok((false,));
             }
             Ok((store.data_mut().frame.circle(x, y, r, rgba),))
+        },
+    )?;
+    host.func_wrap(
+        "draw-asset-image",
+        |mut store: StoreContextMut<'_, Data>,
+         (path, x, y, w, h): (WasmStr, f32, f32, f32, f32)| {
+            let path = path.to_str(store.as_context())?;
+            if path.len() > 1024 {
+                return Ok((false,));
+            }
+            let path = path.into_owned();
+            let mut fuel = store.get_fuel()?;
+            let result = super::draw_asset_image(store.data_mut(), &mut fuel, &path, x, y, w, h);
+            store.set_fuel(fuel)?;
+            Ok((result,))
         },
     )?;
     host.func_wrap(

@@ -4,6 +4,7 @@
 pub mod gamepkg {
     #[link(wasm_import_module = "gamepkg")]
     unsafe extern "C" {
+        #[link_name="draw_asset_image"] fn host_asset_image(path:*const u8,length:usize,x:f32,y:f32,w:f32,h:f32)->i32;
         #[link_name = "draw_image"] fn host_image(x:f32,y:f32,w:f32,h:f32,pw:u32,ph:u32,pixels:*const u8,length:usize) -> i32;
         #[link_name = "audio_submit"]
         fn host_audio_submit(samples: *const i16, count: i32) -> i32;
@@ -66,6 +67,11 @@ pub mod gamepkg {
         unsafe { host_draw_circle(x,y,radius,rgba) == 0 }
     }
     /// Draw a compiled manifest fragment entry over the game viewport.
+    /// Draw a bounded PNG from the package's virtual assets folder.
+    pub fn draw_asset_image(path:&str,x:f32,y:f32,w:f32,h:f32)->bool {
+        if path.len()>1024 { return false; }
+        unsafe { host_asset_image(path.as_ptr(),path.len(),x,y,w,h) ==0 }
+    }
     /// Draw raw RGBA pixels (at most 512 by 512) on the virtual canvas.
     pub fn draw_image(x:f32,y:f32,w:f32,h:f32,pw:u32,ph:u32,pixels:&[u8]) -> bool {
         if pw==0 || ph==0 || pw>512 || ph>512 || pixels.len()!=pw as usize*ph as usize*4 { return false; }

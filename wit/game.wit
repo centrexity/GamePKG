@@ -10,6 +10,7 @@ interface host {
     draw-clear: func(rgba: u32) -> bool;
     draw-rect: func(x: f32, y: f32, width: f32, height: f32, rgba: u32) -> bool;
     draw-circle: func(x: f32, y: f32, radius: f32, rgba: u32) -> bool;
+    draw-asset-image: func(path: string, x: f32, y: f32, width: f32, height: f32) -> bool;
     draw-image: func(x: f32, y: f32, width: f32, height: f32, pixel-width: u32, pixel-height: u32, pixels: list<u8>) -> bool;
     draw-shader: func(index: u32) -> bool;
     audio-submit: func(samples: list<s16>) -> bool;

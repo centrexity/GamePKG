@@ -208,6 +208,21 @@ impl Package {
         }
         Ok(bytes)
     }
+    pub(crate) fn asset_size(&self, path: &str) -> Result<u64> {
+        if !self.verified || !valid_path(path) {
+            bail!("asset size requires a verified package and valid path");
+        }
+        if let Some(reference) = self.shared_refs.get(path) {
+            if !self.shared_files.contains_key(&reference.sha256) {
+                bail!("shared asset is unavailable");
+            }
+            return Ok(reference.size);
+        }
+        self.entries
+            .get(&format!("assets/{path}"))
+            .copied()
+            .context("asset is missing")
+    }
     pub fn asset(&mut self, path: &str) -> Result<Vec<u8>> {
         if !valid_path(path) {
             bail!("invalid asset path");

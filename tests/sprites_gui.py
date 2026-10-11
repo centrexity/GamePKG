@@ -2,7 +2,8 @@
 from gui_test_support import start_display
 from pathlib import Path
 from PIL import Image
-import os, shutil, subprocess, tempfile, time
+import os, shutil, subprocess, tempfile, time, argparse
+parser=argparse.ArgumentParser();parser.add_argument("--png",action="store_true");args=parser.parse_args()
 project=Path(__file__).resolve().parents[1]
 with tempfile.TemporaryDirectory(prefix='gamepkg-sprites-') as directory:
  root=Path(directory);source=root/'source';shutil.copytree(project/'examples/minimal',source)
@@ -13,6 +14,26 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-sprites-') as directory:
      assert!(gamepkg::draw_image(64.0,64.0,512.0,352.0,2,2,&pixels));
      state
  }''')
+ if args.png:
+  pixels=[(255,0,0,255),(0,255,0,255),(0,0,255,255),(255,255,255,0)]
+  image=Image.new('RGBA',(2,2));image.putdata(pixels);image.save(source/'assets/sprite.png')
+  pixels[0]=(255,255,0,255);image.putdata(pixels);image.save(source/'assets/yellow.png')
+  (source/'assets/invalid.png').write_bytes(b'invalid PNG')
+  (source/'assets/truncated.png').write_bytes((source/'assets/sprite.png').read_bytes()[:40])
+  Image.new('RGBA',(513,1)).save(source/'assets/wide.png')
+  (source/'assets/oversized.png').write_bytes(bytes(2*1024*1024+1))
+  (source/'source/src/lib.rs').write_text('''pub fn game_tick(input:u32,state:u64)->u64 {
+      assert!(!gamepkg::draw_asset_image("../thumbnail.png",0.0,0.0,10.0,10.0));
+      assert!(!gamepkg::draw_asset_image("missing.png",0.0,0.0,10.0,10.0));
+      assert!(!gamepkg::draw_asset_image("invalid.png",0.0,0.0,10.0,10.0));
+      assert!(!gamepkg::draw_asset_image("truncated.png",0.0,0.0,10.0,10.0));
+      assert!(!gamepkg::draw_asset_image("wide.png",0.0,0.0,10.0,10.0));
+      assert!(!gamepkg::draw_asset_image("oversized.png",0.0,0.0,10.0,10.0));
+      gamepkg::draw_clear(0x10171dff);
+      let path=if input & gamepkg::HELD_RIGHT != 0 {"yellow.png"} else {"sprite.png"};
+      assert!(gamepkg::draw_asset_image(path,64.0,64.0,512.0,352.0));
+      state
+  }''')
  original=(source/'manifest.toml').read_text()
  for profile in ['core-v1','component-v1']:
   config=root/(profile+'.toml');config.write_text('automatic_update_checks=false\n')
@@ -23,7 +44,11 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-sprites-') as directory:
    assert result.returncode==0,result.stderr
   key=root/(profile+'.key');run('keygen','-o',key)
   (source/'manifest.toml').write_text(f'runtime_profile="{profile}"\n'+original)
-  package=root/(profile+'.gamepkg');run('pack',source,'-o',package,'--key',key)
+  package=root/(profile+'.gamepkg');run('pack',source,'-o',package,'--key',key,*(['--shared-assets'] if args.png and profile=='component-v1' else []))
+  if args.png and profile=='component-v1':
+   import zipfile
+   with zipfile.ZipFile(package) as archive:assert 'assets/sprite.png' not in archive.namelist()
+   assert (root/profile/'asset-pool').exists()
   run('install',package,'--trust-creator');run('build','com.gamepkg.minimal');run('run','com.gamepkg.minimal','--frames','2')
   display=start_display(env)
   app=subprocess.Popen([str(project/'target/release/gamepkg-gui'),'--play','com.gamepkg.minimal'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
@@ -34,7 +59,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-sprites-') as directory:
     if found.returncode==0:break
     time.sleep(.1)
    else:raise AssertionError('GUI did not open')
-   window=found.stdout.splitlines()[0];path=project/'target'/f'sprites-{profile}.png'
+   window=found.stdout.splitlines()[0];path=project/'target'/f'sprites-{"png" if args.png else "rgba"}-{profile}.png'
    deadline=time.monotonic()+15
    while True:
     if app.poll() is not None:raise RuntimeError(app.stderr.read().decode())
@@ -50,7 +75,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-sprites-') as directory:
     time.sleep(.1)
    subprocess.run(['xdotool','windowfocus',window,'keydown','Right'],env=env,check=True)
    deadline=time.monotonic()+10
-   changed=project/'target'/f'sprites-changed-{profile}.png'
+   changed=project/'target'/f'sprites-changed-{"png" if args.png else "rgba"}-{profile}.png'
    while True:
     subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(changed)],env=env,check=True)
     with Image.open(changed) as image:
@@ -59,6 +84,6 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-sprites-') as directory:
     assert time.monotonic()<deadline,'Changed sprite pixels did not reach the texture'
     time.sleep(.1)
    subprocess.run(['xdotool','keyup','Right'],env=env,check=True)
-   print(profile+': signed source built and played; RGB quadrants, transparency, and changed texture pixels verified.',flush=True)
+   print(profile+(' PNG assets' if args.png else ' RGBA')+': signed source built and played; RGB quadrants, transparency, and changed texture pixels verified.',flush=True)
   finally:
    app.terminate();app.wait(timeout=10);display.terminate();display.wait(timeout=10)
