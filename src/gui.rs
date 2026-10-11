@@ -532,10 +532,11 @@ impl eframe::App for App {
                         ui.label(if built { "Built" } else { "Not built" }).on_hover_text(format!("Memory: {:.1} MiB recommended; {:.1} MiB hard limit", m.limits.recommended_memory_bytes() as f64 / 1048576.0, m.limits.hard_memory_bytes as f64 / 1048576.0));
                         ui.horizontal(|ui| {
                             if ui.add_enabled(self.result.is_none(),egui::Button::new("Details")).clicked() { inspect = Some(m.id.clone()); }
-                            if ui.add_enabled(built && self.result.is_none() && (!m.requires_rom || !self.rom_path.trim().is_empty()), egui::Button::new("Play")).on_hover_text("Play the experimental grid-v1 profile. ROM games need your file path above.").clicked() { play = Some(m.id.clone()); }
+                            if ui.add_enabled(built && self.result.is_none() && (!m.requires_rom || !self.rom_path.trim().is_empty()), egui::Button::new("Play")).on_hover_text("Play this built game. ROM games need your file path above.").clicked() { play = Some(m.id.clone()); }
                             if ui.add_enabled(self.result.is_none(), egui::Button::new(if built { "Rebuild" } else { "Build" })).clicked() { build = Some(m.id.clone()); }
                         });
                         ui.vertical(|ui| {
+                        ui.set_min_width(180.0);
                         if let Some(notice) = self.updates.notices.get(&m.id) {
                             match notice {
                                 crate::updates::Notice::Available(version) => { ui.colored_label(egui::Color32::GREEN,format!("Update {version} available")); }
@@ -570,7 +571,7 @@ impl eframe::App for App {
                 });
             }
             if let Some(id) = build {
-                self.begin_work(move || { crate::build::compile(&crate::registry::default_root()?, &id)?; Ok(Work::Message(format!("Built {id}. Ready to play if this package implements grid-v1."))) });
+                self.begin_work(move || { crate::build::compile(&crate::registry::default_root()?, &id)?; Ok(Work::Message(format!("Built {id}. Ready to play if this package has a playable entry point."))) });
             }
             if let Some(id) = update {
                 self.pending = None; self.manifest = None;
@@ -638,7 +639,7 @@ impl eframe::App for App {
                     }
                 }
             }
-            ui.separator(); ui.label("Experimental grid-v1 games are playable. Asset and selected ROM reads work. Scoped saves work. Slang compilation works. Bounded audio output works. WIT and custom shader rendering are pending.");
+            ui.separator(); ui.label("Development preview. Supported games can play here; some package features are still in development.");
             ui.hyperlink_to("GamePKG • Apache 2.0", "https://gamepkg.com");
         });
     }
