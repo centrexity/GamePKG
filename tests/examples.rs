@@ -7,6 +7,7 @@ fn good_examples_are_signed_and_verified() {
     for name in [
         "minimal",
         "good/counter",
+        "good/byteorder-game",
         "good/asset-catalog",
         "good/rom-required",
         "good/collect-stars",

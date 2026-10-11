@@ -1,0 +1,28 @@
+"""Exercise a checksum-pinned guest dependency through offline Cargo builds."""
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
+PROJECT = Path(__file__).resolve().parents[1]
+CLI = PROJECT/'target/release/gamepkg'
+with tempfile.TemporaryDirectory(prefix='gamepkg-approved-') as directory:
+    root=Path(directory);source=root/'source'
+    shutil.copytree(PROJECT/'examples/good/byteorder-game',source)
+    original=(source/'manifest.toml').read_text()
+    key=root/'creator.key'
+    env=dict(os.environ,GAMEPKG_HOME=str(root/'library'),GAMEPKG_CONFIG=str(root/'settings.toml'))
+    def run(*args):
+        result=subprocess.run([str(CLI),*map(str,args)],env=env,capture_output=True,text=True,timeout=140)
+        assert result.returncode==0,result.stderr
+        return result.stdout
+    run('keygen','-o',key)
+    for profile in ['core-v1','component-v1']:
+        (source/'manifest.toml').write_text(f'runtime_profile = "{profile}"\n'+original.replace('com.gamepkg.byteorder',f'com.gamepkg.byteorder-{profile}'))
+        package=root/f'{profile}.gamepkg'
+        run('pack',source,'-o',package,'--key',key)
+        run('install',package,'--trust-creator')
+        run('build',f'com.gamepkg.byteorder-{profile}')
+        assert '42' in run('run',f'com.gamepkg.byteorder-{profile}','--frames','2')
+        run('build',f'com.gamepkg.byteorder-{profile}')
+    print('Pinned byteorder-lite passed: offline locked Cargo build, core/WIT gameplay, and rebuilds.')

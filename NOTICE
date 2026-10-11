@@ -4,3 +4,8 @@ Project: https://gamepkg.com
 
 GamePKG is licensed under the Apache License, Version 2.0.
 This notice identifies the origin of the GamePKG software.
+
+Bundled guest dependency: byteorder-lite 0.1.0
+Source: https://github.com/image-rs/byteorder-lite
+License: Unlicense OR MIT. See vendor/byteorder-lite-0.1.0/LICENSE-MIT
+and vendor/byteorder-lite-0.1.0/UNLICENSE.

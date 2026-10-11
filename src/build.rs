@@ -1,4 +1,4 @@
-//! Single-file, dependency-free Wasm compilation. Never fall back to a native build.
+//! Offline locked Cargo builds with host-owned dependencies and no native fallback.
 use crate::{
     archive::Package,
     registry,
@@ -42,12 +42,7 @@ pub fn compile(root: &Path, id: &str) -> Result<()> {
     let manifest = verify_embedded(&mut pkg)?;
     pkg.resolve_shared_assets(root)?;
     let cargo: toml::Value = toml::from_str(std::str::from_utf8(&pkg.read("source/Cargo.toml")?)?)?;
-    let edition = cargo
-        .get("package")
-        .and_then(|p| p.get("edition"))
-        .and_then(|e| e.as_str())
-        .unwrap_or("2015")
-        .to_owned();
+    let approved = crate::allowlist::approved(&cargo, &pkg.read("source/Cargo.lock")?)?;
     let stage = tempfile::tempdir()?;
     let mut source = String::from_utf8(pkg.read("source/src/lib.rs")?)?;
     let parsed = syn::parse_file(&source)?;
@@ -69,6 +64,51 @@ pub fn compile(root: &Path, id: &str) -> Result<()> {
         include_str!("guest_api.rs.txt")
     });
     fs::write(stage.path().join("lib.rs"), source)?;
+    let mut staged = cargo.clone();
+    let table = staged.as_table_mut().unwrap();
+    table.insert(
+        "lib".into(),
+        toml::Value::Table(toml::map::Map::from_iter([
+            ("path".into(), toml::Value::String("lib.rs".into())),
+            (
+                "crate-type".into(),
+                toml::Value::Array(vec![toml::Value::String("cdylib".into())]),
+            ),
+        ])),
+    );
+    let mut locked: toml::Value =
+        toml::from_str(std::str::from_utf8(&pkg.read("source/Cargo.lock")?)?)?;
+    locked["version"] = toml::Value::Integer(4);
+    if approved {
+        crate::allowlist::stage(&stage.path().join("vendor/byteorder-lite"))?;
+        staged["dependencies"]["byteorder-lite"] = toml::Value::Table(toml::map::Map::from_iter([
+            (
+                "path".into(),
+                toml::Value::String("vendor/byteorder-lite".into()),
+            ),
+            ("default-features".into(), toml::Value::Boolean(false)),
+        ]));
+        for package in locked["package"].as_array_mut().unwrap() {
+            if package.get("source").is_some() {
+                let table = package.as_table_mut().unwrap();
+                table.remove("source");
+                table.remove("checksum");
+            }
+        }
+    }
+    let level = if crate::settings::load()?.optimize_builds {
+        2
+    } else {
+        0
+    };
+    let cargo_text = format!(
+        "{}\n[profile.release]\nopt-level = {level}\n",
+        toml::to_string(&staged)?
+    );
+    fs::write(stage.path().join("Cargo.toml"), cargo_text)?;
+    fs::write(stage.path().join("Cargo.lock"), toml::to_string(&locked)?)?;
+    let crate_name = cargo["package"]["name"].as_str().unwrap().replace('-', "_");
+
     let rustc = crate::compiler::run(
         crate::compiler::command(32 * 1024 * 1024).args(["rustup", "which", "rustc"]),
     )
@@ -119,33 +159,26 @@ pub fn compile(root: &Path, id: &str) -> Result<()> {
             "--setenv",
             "PATH",
             "/toolchain/bin:/usr/bin",
+            "--setenv",
+            "CARGO_HOME",
+            "/tmp/cargo",
             "--",
-            "/toolchain/bin/rustc",
-            "lib.rs",
-            "--edition",
-            &edition,
-            "--crate-name",
-            "game",
-            "--crate-type",
-            "cdylib",
+            "/toolchain/bin/cargo",
+            "build",
+            "--offline",
+            "--locked",
+            "--release",
+            "--lib",
             "--target",
             "wasm32-unknown-unknown",
-            "-o",
-            "game.wasm",
         ]);
-    cmd.args([
-        "-C",
-        if settings.optimize_builds {
-            "opt-level=2"
-        } else {
-            "opt-level=0"
-        },
-    ]);
     let output = crate::compiler::run(&mut cmd)?;
     if !output.status.success() {
         bail!("isolated Wasm build failed: {}", output.stderr);
     }
-    let artifact = fs::read(stage.path().join("game.wasm"))?;
+    let artifact = fs::read(stage.path().join(format!(
+        "target/wasm32-unknown-unknown/release/{crate_name}.wasm"
+    )))?;
     let installed_now = fs::read(installed(root, id)?)?;
     if digest(&installed_now) != digest(&bytes) {
         bail!("installed package changed during build; rebuild the new version");

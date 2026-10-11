@@ -38,3 +38,5 @@ pub mod previews;
 pub mod pool;
 
 pub mod store;
+
+pub mod allowlist;

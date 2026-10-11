@@ -106,11 +106,7 @@ pub fn scan(pkg: &mut Package) -> Result<()> {
     if package.get("build") != Some(&toml::Value::Boolean(false)) {
         bail!("package.build must be false");
     }
-    if let Some(deps) = cargo.get("dependencies") {
-        if deps.as_table().is_none_or(|t| !t.is_empty()) {
-            bail!("initial crate allowlist is empty");
-        }
-    }
+    crate::allowlist::approved(&cargo, &pkg.read("source/Cargo.lock")?)?;
     if let Some(lib) = cargo.get("lib") {
         let t = lib
             .as_table()

@@ -15,7 +15,7 @@ A `.gamepkg` contains Rust source, Slang shader source, assets, and a signed man
 | Inspectable source | Games ship source rather than a bundled native executable; review is possible before building. Source visibility alone does not prove safety. | Yes |
 | Signed identity and updates | The manifest and package contents are signed. Updates must keep the installed creator key and package ID, with a higher version. | Yes; first creator approval is still required |
 | Restricted package contents | Rejects traversal paths, duplicate entries, symlinks, oversized archive contents, unsupported shaders, and source outside the initial policy. | Yes |
-| Isolated compilation | Supported Linux builds run inside bubblewrap with a private work area, no network, and no access to your home directory. | Yes; single-file, dependency-free profile |
+| Isolated compilation | Supported Linux builds run inside bubblewrap with a private work area, no network, and no access to your home directory. | Yes; single-file source with a pinned dependency allowlist |
 | Limited game access | Games will receive only host-approved asset, input, rendering, audio, and save operations. | grid-v1 supports scoped asset reads; broader host APIs planned |
 | Runtime resource limits | Memory caps, execution fuel, and deadlines will constrain running games. | Enforced for grid-v1 Wasmtime execution |
 
@@ -62,8 +62,8 @@ Packing validates before publishing and refuses to overwrite files. The output m
 - At most 10,000 entries, 64 MiB per file, 256 MiB uncompressed total; stored and zstd entries only.
 - No absolute paths, traversal, backslashes, duplicate paths, directory entries, or symlinks.
 - Only UTF-8 `.slang` files under `shaders/`. Inline SPIR-V, target-code injection and macro token pasting are rejected in every shader file, including unused sources. The conservative check also inspects comments and strings; it supplements the isolated compiler and does not prove GPU code is harmless.
-- Only one Rust source file, no dependencies, `package.build = false`, and restricted Cargo fields. Includes, attributes, external modules, unsafe blocks, foreign declarations, and filesystem/network/process/environment paths are rejected.
-- Optional previews are rejected until codec and keyframe validation exists. PNG validation currently checks the magic bytes only.
+- Only one Rust source file, pinned allowlisted dependencies only, `package.build = false`, and restricted Cargo fields. Includes, attributes, external modules, unsafe blocks, foreign declarations, and filesystem/network/process/environment paths are rejected.
+- Optional AV1/WebM and Theora/Ogg previews undergo isolated codec, size, duration, frame-count, and initial-keyframe validation. PNG package validation checks magic bytes; GUI image decoding is bounded.
 
 The source scanner is an early policy filter, **not a security boundary**. Rust macros and compiler behavior require an OS-isolated build process, followed by a Wasm capability sandbox. Linux builds now invoke the verified single-file compiler inside bubblewrap; game code executes only through the Wasmtime runtime when Play/run is requested. Do not relax the source profile before those boundaries exist.
 
@@ -132,7 +132,7 @@ The desktop library shows each installed package's thumbnail, ID, version, ROM r
 
 Set `requires_rom = true` at the top level of the manifest for a game requiring a ROM supplied by the end user. It defaults to false for existing packages and is covered by the creator signature. The host displays the requirement during inspection and in the library. No ROM is downloaded, uploaded, or included automatically. Select a local ROM path when launching; the guest receives bounded read-only bytes for that session.
 
-`gamepkg build <id>` uses the same build action as the GUI. This initial build profile compiles the verified, dependency-free `source/src/lib.rs` directly to `wasm32-unknown-unknown` under Linux bubblewrap, without Cargo build scripts. It requires `bwrap`, `timeout`, `prlimit`, Rust, `rustup target add wasm32-unknown-unknown`, and the pinned Slang installation described below. The compiler has a private working directory, an isolated network namespace, access to system tools and its toolchain, and a 60-second deadline. It has no access to the user's home directory. Failed sandbox setup stops the build; there is no native or unsandboxed fallback. Compiler processes have a 2 GiB virtual address-space ceiling, core dumps disabled, output-file limits (32 MiB for Rust, 16 MiB for Slang), and bounded diagnostics (1 MiB per stream). These are per-process limits rather than a total process-tree memory budget. Approved dependency support and broader GPU rendering remain pending.
+`gamepkg build <id>` uses the same build action as the GUI. This initial build profile compiles verified `source/src/lib.rs` and approved host-owned crates through offline, locked Cargo to `wasm32-unknown-unknown` under Linux bubblewrap, without Cargo build scripts. It requires `bwrap`, `timeout`, `prlimit`, Rust, `rustup target add wasm32-unknown-unknown`, and the pinned Slang installation described below. The compiler has a private working directory, an isolated network namespace, access to system tools and its toolchain, and a 60-second deadline. It has no access to the user's home directory. Failed sandbox setup stops the build; there is no native or unsandboxed fallback. Compiler processes have a 2 GiB virtual address-space ceiling, core dumps disabled, output-file limits (32 MiB for Rust, 16 MiB for Slang), and bounded diagnostics (1 MiB per stream). These are per-process limits rather than a total process-tree memory budget. The initial approved crate is `byteorder-lite` 0.1.0 with default features disabled; broader GPU rendering remains pending.
 
 `gamepkg check-updates <id>` checks the signed URL without changing the installed game. In the GUI, a newer update opens for review and explicit installation. Matching versions report up-to-date; older versions and changed IDs/keys are rejected. `gamepkg update <id>` remains the explicit download-and-install command.
 
@@ -568,3 +568,31 @@ Reimporting the same bundle safely skips completed games.
 to a fresh recipient library, then builds and plays both enclosed runtime
 profiles. `tests/store.rs` checks deduplication, approval, repeat imports,
 conflicts, and deliberately malformed bundles.
+
+## Approved guest crates
+
+The host currently approves `byteorder-lite` 0.1.0 for endian-aware binary asset
+reading, with all default features disabled:
+
+```toml
+[dependencies.byteorder-lite]
+version = "=0.1.0"
+default-features = false
+```
+
+The signed `source/Cargo.lock` must match the exact root package and approved
+dependency graph, including the registry SHA-256. Alternate sources, aliases,
+features, version ranges, extra locked packages, build scripts and procedural
+macros are rejected. The host bundles the checksum-verified crate source and
+its licenses; guest packages do not supply dependency source.
+
+Builds stage a host-owned local dependency and a matching lockfile, then run
+`cargo build --offline --locked --release --lib --target wasm32-unknown-unknown`
+inside the existing network-isolated sandbox with a private Cargo home. The
+original package lockfile remains unchanged and covered by its signed hash.
+No registry access or dependency downloads occur during gameplay builds.
+
+`examples/good/byteorder-game` is playable and reads a big-endian score from an
+archived asset. `tests/approved_crate_game.py` builds, runs and rebuilds it under
+both core and WIT profiles. The approval list is currently shipped with the
+host; configurable crate approval and multi-file guest source remain pending.

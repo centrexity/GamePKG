@@ -1,15 +1,35 @@
 # Security model
 
-There are three intended boundaries: package verification, isolated compilation, and capability-scoped Wasm execution. Package verification and an initial Linux-only isolated single-file build exist today; The experimental grid-v1 Wasmtime runtime executes with no imported functions or WASI, and enforces memory, fuel and epoch limits. Broader host APIs remain pending.
+GamePKG checks package signatures and resource declarations, compiles supported
+source in an isolated Linux process, and runs the result under Wasmtime with
+scoped host APIs. A signature establishes package integrity and creator-key
+continuity. First installation requires creator approval; it does not identify
+a real-world person or guarantee harmless code.
 
-Verification checks the signature against the manifest creator key before source policy checks. Embedded signatures establish integrity, not independent creator identity. First installation requires creator approval; subsequent installations pin the same key and reject rollback versions. It bounds decompression and rejects ambiguous paths, duplicates and symlinks. Asset reads use the archive index and never extract a directory.
+The source policy rejects build scripts, procedural macros, binary includes,
+external source modules, unsafe guest code, and filesystem/network/process
+paths. The pinned guest crate allowlist currently contains byteorder-lite 0.1.0
+with default features disabled. The signed lockfile must match its approved
+graph and registry checksum. Source scanning is a policy filter; compilation
+and runtime isolation enforce the remaining boundaries.
 
-The initial compiler runs under bubblewrap with an isolated network, a private working directory, and read-only system/toolchain mounts, without the user home directory. It invokes rustc directly on the verified dependency-free source file and fails closed if sandbox setup fails. Build scripts and proc macros are unsupported. A pinned offline dependency set and compiler memory caps remain future work. Source scanning alone cannot enforce those restrictions. Rust macros can conceal tokens; do not use scan success as permission to run Cargo on untrusted source.
+Linux builds use offline, locked Cargo inside bubblewrap, with an isolated
+network, private working directory and Cargo home, read-only system/toolchain
+mounts, and no user home directory. Dependencies come from host-owned bundled
+source. Compiler processes have memory, file-size and time limits, with bounded
+diagnostics. Failed sandbox setup stops the build.
 
-Execution must link only approved host capabilities and enforce memory, fuel and epoch limits. The grid-v1 runtime exists with an empty import surface and no native execution fallback; the broader WIT host API is pending.
+Core and versioned WIT component games receive only scoped asset, input,
+drawing, audio, ROM and save operations. WASI and ambient filesystem/socket
+imports are unavailable. Wasmtime enforces linear memory, fuel and epoch
+deadlines. ROM access uses an explicitly selected read-only session snapshot.
+Save writes commit only after successful ticks. Audio permission permits output
+without microphone access. Shared assets use signed hashes and private
+verified session snapshots.
 
-Future tests must cover compiler/macro bypasses, zip bombs, malformed PNG/preview decoding, dependency closures, shader compiler isolation, and runtime filesystem/network escape attempts.
-
-Host-controlled HTTPS and Tor onion package downloads do not grant guest network access. Downloaded files are bounded, verified and staged before installation. Signed update URLs point directly to new packages; every candidate must keep the installed ID and creator key.
-
-Onion downloads use a local SOCKS5 proxy with remote hostname resolution and no direct fallback. NO_PROXY cannot bypass onion routing. Redirects are checked before each request; an onion request cannot redirect to an ordinary host. HTTPS certificate verification remains enabled.
+Optional video previews decode in a separate network-isolated process with
+bounded output. Resource-free compiled fragment shaders can render in the
+OpenGL player; broader GPU resource support is still under development. GPU
+drivers and the host runtime remain trusted components, and GPU work is not
+metered by Wasm fuel. These restrictions reduce access and do not establish a
+general guarantee that a package cannot cause harm.
