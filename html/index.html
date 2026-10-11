@@ -67,13 +67,13 @@
       </div>
     </section>
     <section aria-labelledby="protections"><h2 id="protections">Limits that belong in the format.</h2>
-      <div class="table-scroll"><table><caption style="text-align:left;margin-bottom:16px;color:var(--muted)">Current protections and the runtime safeguards still being built</caption><thead><tr><th scope="col">Protection</th><th scope="col">What it controls</th><th scope="col">Status</th></tr></thead><tbody>
+      <div class="table-scroll"><table><caption style="text-align:left;margin-bottom:16px;color:var(--muted)">Current package, build, and runtime protections</caption><thead><tr><th scope="col">Protection</th><th scope="col">What it controls</th><th scope="col">Status</th></tr></thead><tbody>
         <tr><td>Signed packages and updates</td><td>Detect altered signed contents. Require the same creator key and game ID, plus a newer version, for updates. First installation still requires creator approval.</td><td>Available</td></tr>
         <tr><td>Bounded archive access</td><td>Reject traversal paths, duplicate entries, symlinks, and oversized archive contents. Read assets from the archive without extracting the whole game.</td><td>Available</td></tr>
-        <tr><td>Restricted source profile</td><td>One Rust source file, no dependencies, no build scripts or proc-macro configuration, and Slang-only shader source. Scan for forbidden source constructs.</td><td>Available; scanning alone is not a sandbox</td></tr>
-        <tr><td>Isolated compilation</td><td>Linux builds use bubblewrap, a private work area, no network, no user home access, and a 60-second deadline. Sandbox failure stops the build.</td><td>Available for the initial single-file profile</td></tr>
-        <tr><td>Scoped game capabilities</td><td>Expose only host-approved assets, input, rendering, audio, and save operations instead of ambient operating-system access.</td><td>Grid-v1 supports scoped asset reads; broader APIs planned</td></tr>
-        <tr><td>Runtime resource budgets</td><td>Enforce memory caps, execution fuel, and deadlines for running games. Manifest memory and fuel limits are enforced by the grid-v1 runtime.</td><td>Enforced for grid-v1</td></tr>
+        <tr><td>Restricted source profile</td><td>Checked Rust source modules, approved pinned dependencies, no build scripts or procedural macros, and Slang-only shader source. Every packaged Rust file is scanned.</td><td>Available; scanning alone is not a sandbox</td></tr>
+        <tr><td>Isolated compilation</td><td>Linux builds use bubblewrap, a private work area, no network, no user home access, and a 60-second deadline. Sandbox failure stops the build.</td><td>Available for checked source modules and pinned dependencies</td></tr>
+        <tr><td>Scoped game capabilities</td><td>Expose only host-approved assets, input, rendering, audio, and save operations instead of ambient operating-system access.</td><td>Available in core and versioned WIT component profiles</td></tr>
+        <tr><td>Runtime resource budgets</td><td>Enforce memory caps, execution fuel, and deadlines for running games. Signed memory and fuel limits apply in both runtime profiles. GPU work is not metered by Wasm fuel.</td><td>Enforced for both Wasmtime profiles</td></tr>
       </tbody></table></div>
     </section>
     <section aria-labelledby="local-builds"><h2 id="local-builds">Build here. Improve over time.</h2>

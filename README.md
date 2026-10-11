@@ -8,7 +8,7 @@
 
 A conventional game executable can be difficult to inspect, and launching it without a sandbox may give it the permissions of your user account. That can include reading personal files, making network connections, or starting other programs. Signed binaries and separately sandboxed applications can also provide protections; the benefit of GamePKG is making source visibility, package verification, restricted builds, and declared capabilities part of one distribution workflow.
 
-A `.gamepkg` contains Rust source, Slang shader source, assets, and a signed manifest. You can inspect the code and declared permissions before choosing to install it. The host checks the package, compiles its supported source profile into Wasm, and keeps game assets in the archive. The intended runtime will expose a small game API rather than the operating system's full set of interfaces.
+A `.gamepkg` contains Rust source, Slang shader source, assets, and a signed manifest. You can inspect the code and declared permissions before choosing to install it. The host checks the package, compiles its supported source profile into Wasm, and keeps game assets in the archive. The runtime exposes scoped game operations through the host rather than the operating system’s full set of interfaces.
 
 | Protection | What it changes | Available today? |
 | --- | --- | --- |
@@ -16,22 +16,22 @@ A `.gamepkg` contains Rust source, Slang shader source, assets, and a signed man
 | Signed identity and updates | The manifest and package contents are signed. Updates must keep the installed creator key and package ID, with a higher version. | Yes; first creator approval is still required |
 | Restricted package contents | Rejects traversal paths, duplicate entries, symlinks, oversized archive contents, unsupported shaders, and source outside the initial policy. | Yes |
 | Isolated compilation | Supported Linux builds run inside bubblewrap with a private work area, no network, and no access to your home directory. | Yes; checked source modules with a pinned dependency allowlist |
-| Limited game access | Games will receive only host-approved asset, input, rendering, audio, and save operations. | grid-v1 supports scoped asset reads; broader host APIs planned |
-| Runtime resource limits | Memory caps, execution fuel, and deadlines will constrain running games. | Enforced for grid-v1 Wasmtime execution |
+| Limited game access | Games receive host-approved asset, input, ROM, drawing, audio, and save operations. | Available in the core and versioned WIT component profiles |
+| Runtime resource limits | Memory caps, execution fuel, and deadlines constrain running games. | Enforced for both Wasmtime profiles; GPU work is not fuel-metered |
 
 ## Build locally, improve over time
 
 Building on demand on your own machine creates opportunities to optimize games for the supported platform and runtime instead of relying on a single prebuilt executable. Shipping source also lets the host rebuild games as compiler tooling and optimization settings improve. Creators can release signed source updates, and the host can check periodically for newer versions while preserving creator-key continuity.
 
-These are opportunities, not a promise that every local build will be faster. GamePKG currently supports manual isolated Wasm builds, manual rebuilds, and user-requested update checks. Platform-specific performance tuning and automatic periodic update checks are planned. Wasm builds must stay within their supported target and sandbox; local compilation does not grant games extra access to your machine.
+These are opportunities, not a promise that every local build will be faster. GamePKG supports isolated Wasm builds, manual rebuilds, user-requested update checks, and configurable periodic checks while the desktop library is open and idle. Broader platform-specific performance tuning remains planned. Wasm builds must stay within their supported target and sandbox; local compilation does not grant games extra access to your machine.
 
 ## What can a GamePKG do—and what can it access?
 
 Today, importing a `.gamepkglist` adds catalog entries without fetching games or trusting creators. Downloading fetches the package you select. Installation verifies and stores it; it runs no game code or package-provided install scripts. Update checks stage a signed candidate for review. Supported builds compile the verified Rust source to Wasm inside an isolated Linux process.
 
-The initial package policy allows one Rust source file and no dependencies. It rejects build scripts, proc-macro configuration, compile-time file includes, unsafe blocks, foreign declarations, and filesystem, network, process, or environment paths detected by the source scanner. Shader files must be Slang source. The scanner is a policy filter, not a substitute for compiler isolation or a runtime sandbox.
+The package policy supports checked Rust source modules and host-owned pinned dependencies. The current catalog contains byteorder-lite 0.1.0, whose approval can be changed in Settings or through the CLI. It rejects build scripts, proc-macro configuration, compile-time file includes, unsafe blocks, foreign declarations, and filesystem, network, process, or environment paths detected by the source scanner. Shader files must be Slang source. The scanner is a policy filter, not a substitute for compiler isolation or a runtime sandbox.
 
-The runtime design starts with **no ambient filesystem or network access**. A game will request specific capabilities such as input, audio, or saving through the host. Asset access will use virtual paths inside its own archive; save access will be scoped by the host rather than exposing your folders. A game requiring a ROM declares that requirement, and the player supplies it. ROM bytes are shared read-only only for the selected play session.
+The runtime provides **no ambient filesystem or network access**. Games use specific capabilities such as input, audio, or saving through the host. Asset access uses virtual paths inside the game’s archive; save access is scoped by creator, game ID, and save schema. A game requiring a ROM declares that requirement, and the player supplies it. ROM bytes are shared read-only only for the selected play session.
 
 Guest networking is currently unsupported: manifests must declare `network = "none"`. User-requested host downloads over HTTPS or Tor are separate from game permissions. A signed update URL does not give the game permission to browse the internet. Signatures establish integrity and continuity with a creator key, not a creator's real-world identity or a promise that their code is safe.
 
@@ -67,16 +67,13 @@ Packing validates before publishing and refuses to overwrite files. The output m
 
 The source scanner is an early policy filter, **not a security boundary**. Rust macros and compiler behavior require an OS-isolated build process, followed by a Wasm capability sandbox. Linux builds now invoke the verified Cargo compiler inside bubblewrap; game code executes only through the Wasmtime runtime when Play/run is requested. Do not relax the source profile before those boundaries exist.
 
-## Roadmap
+## Implemented workflow and remaining work
 
-1. **Implemented:** archive reader, manifest, signature/trust verification, source policy, pack/verify CLI, malicious-input tests.
-2. OS-isolated offline Cargo wrapper with pinned compiler and approved dependency closures.
-3. Wasmtime fuel, memory and epoch limits, minimal WIT host API, asset/input/save access.
-4. Pinned Slang compilation and shader reflection validation.
-5. Install/list/update CLI and local package registry implemented; isolated Cargo Wasm build implemented; grid-v1 game run implemented.
-6. Broader bypass fixtures and preview decoding checks.
-7. Feature-gated GUI verification, installed library, URL download and installation implemented; grid-v1 playback implemented; broader runtime APIs remain pending.
-8. Shared asset pool and store tooling.
+Archive verification, signed creator continuity, source checking, Linux isolated builds, and all four requested Slang output formats are implemented. CLI and desktop workflows support installation, catalogs, updates, build/rebuild, and scoped gameplay. The desktop includes previews, Settings, and portable store imports with shared assets. Core and versioned WIT component runtimes enforce memory, fuel, and tick deadlines.
+
+Local tests cover accepted and rejected packages, every good source example, compiler isolation, scoped runtime operations, store transfers, and desktop behavior. Hosted verification runs the same fixture integrations. The [quickstart](html/guide/index.html) explains installation and play; the [library policy](html/guide/allowlist.html) describes the pinned approval catalog.
+
+Remaining development includes broader GPU resources and vertex/compute pipelines, native Metal/DXIL desktop rendering, and isolated source builds on other operating systems. Key rotation, automatic save migration, and shared-pool garbage collection are also unfinished. The current Linux preview supports the documented gameplay profiles; these limits remain visible to creators and players.
 
 See [the format notes](html/spec/index.md) and [security design](html/guide/security.md). The original design brief is preserved in `DESIGN.md`. No site has been deployed.
 
@@ -102,7 +99,7 @@ cargo build --locked --release --features gui --bins
 cargo test --locked --all-features
 ```
 
-The executables are `target/release/gamepkg` and `target/release/gamepkg-gui` (with `.exe` on Windows). Launch the GUI with `cargo run --locked --features gui --bin gamepkg-gui`. It lists installed packages and accepts a local package path or HTTPS URL. Inspection runs in a background worker and displays the verified creator fingerprint and permissions before installation. New creators require approval; updates use the installed creator key automatically. It can compile the supported source profile on Linux; game grid-v1 playback implemented; broader runtime APIs remain pending. A desktop display is required to launch it.
+The executables are `target/release/gamepkg` and `target/release/gamepkg-gui` (with `.exe` on Windows). Launch the GUI with `cargo run --locked --features gui --bin gamepkg-gui`. It lists installed packages and accepts a local package path or HTTPS URL. Inspection runs in a background worker and displays the verified creator fingerprint and permissions before installation. New creators require approval; updates use the installed creator key automatically. It compiles the supported source profile on Linux and plays core and versioned WIT component games with scoped assets, ROMs, saves, drawing, and audio. Resource-free fragment passes render through OpenGL; broader graphics remain unfinished. A desktop display is required to launch it.
 
 The CLI remains available without desktop dependencies: `cargo build --locked --release --bin gamepkg`. See [examples](examples/README.md) for valid and deliberately rejected packages. Local integration tests exercise the actual CLI binary, every example, and signed archive tampering.
 
