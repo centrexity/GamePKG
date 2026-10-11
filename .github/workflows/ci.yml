@@ -6,7 +6,7 @@ permissions:
   contents: read
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
         features: ["", "--all-features"]
@@ -177,3 +177,16 @@ jobs:
         run: |
           sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" /usr/bin/python3 tests/audio_gui.py
           sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" /usr/bin/python3 tests/audio_gui.py --muted
+      - name: Package and verify extracted Linux distribution
+        if: matrix.features == '--all-features'
+        run: |
+          cargo fetch --locked
+          python3 tools/package_release.py "$RUNNER_TEMP/gamepkg-distribution"
+          sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" /usr/bin/python3 tests/release_package.py "$RUNNER_TEMP/gamepkg-distribution/gamepkg-0.1.0-linux-x86_64.tar.gz"
+      - uses: actions/upload-artifact@v4
+        if: matrix.features == '--all-features'
+        with:
+          name: verified-gamepkg-linux-x86_64
+          path: ${{ runner.temp }}/gamepkg-distribution/*
+          retention-days: 7
+          if-no-files-found: error

@@ -1,0 +1,25 @@
+name: Package Linux preview
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install host build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+      - name: Install Rust
+        run: rustup update stable && rustup default stable
+      - name: Build both host entry points
+        run: cargo build --locked --release --all-features --bins
+      - name: Fetch metadata sources for dependency notices
+        run: cargo fetch --locked
+      - name: Package executables, setup tools, examples, and notices
+        run: python3 tools/package_release.py dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gamepkg-linux-x86_64-preview
+          path: dist/*
+          if-no-files-found: error
