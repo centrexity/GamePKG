@@ -25,18 +25,26 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-web-library-') as directory:
         rejected({});rejected({'Authorization':'Bearer wrong'});rejected({'Authorization':'Bearer '+token,'Origin':'https://other.invalid'});rejected({'Host':'other.invalid'});rejected({},method='POST',expected=405)
         request=urllib.request.Request(base+'api/library',headers={'Authorization':'Bearer '+token})
         snapshot=json.load(urllib.request.urlopen(request,timeout=5));assert snapshot['games'][0]['manifest']['id']=='com.gamepkg.collect-stars';assert snapshot['catalog'][0]['id']=='com.example.waiting'
+        rejected({},path='api/icon/com.gamepkg.collect-stars')
+        rejected({'Authorization':'Bearer '+token},path='api/icon/missing-game',expected=404)
+        rejected({'Authorization':'Bearer '+token},path='api/icon/..',expected=404)
+        icon=json.load(urllib.request.urlopen(urllib.request.Request(base+'api/icon/com.gamepkg.collect-stars',headers={'Authorization':'Bearer '+token}),timeout=5))
+        assert icon['width']==40 and len(icon['rgba_hex'])==12800 and icon['identity']==snapshot['games'][0]['icon_identity']
         options=Options();options.binary_location=shutil.which('chromium');options.add_argument('--headless=new');options.add_argument('--no-sandbox');options.add_argument('--disable-dev-shm-usage');options.add_argument('--user-data-dir='+str(root/'profile'))
         with webdriver.Chrome(service=Service(shutil.which('chromedriver')),options=options) as browser:
             browser.get(url)
             WebDriverWait(browser,20).until(lambda b:'saved using Hindsight' in b.find_element('id','status').text)
+            WebDriverWait(browser,20).until(lambda b:len(b.find_elements('css selector','#games canvas'))==1)
             rows=browser.find_element('id','games').text;assert 'com.gamepkg.collect-stars' in rows and 'Waiting game' in rows and 'Not downloaded' in rows,rows
             browser.find_element('css selector','#games details summary').click()
-            achievements=browser.find_elements('css selector','#games td:nth-child(5) details summary');assert len(achievements)==1
+            achievements=browser.find_elements('css selector','#games td:nth-child(6) details summary');assert len(achievements)==1
             achievements[0].click();rows=browser.find_element('id','games').text
+            assert 'Not built' in rows,rows
             assert 'Locked — First star' in rows and 'Star collector' in rows and 'bytes expected' in rows,rows
             assert 'Library storage used:' in browser.find_element('id','library-space').text
             browser.get(base+'#wrong:'+scope);browser.refresh()
             WebDriverWait(browser,20).until(lambda b:'showing cached metadata' in b.find_element('id','status').text)
+            WebDriverWait(browser,20).until(lambda b:len(b.find_elements('css selector','#games canvas'))==1)
             rows=browser.find_element('id','games').text;assert 'Cached installed metadata' in rows and 'Cached catalog metadata' in rows,rows
-        print('Running browser library passed: authenticated host metadata, actual Hindsight storage, installed/catalog rows, achievement descriptions, expected storage, cached display and cross-origin rejection.')
+        print('Running browser library passed: authenticated host metadata, actual Hindsight storage, installed/catalog rows, live build status, verified and cached icons, achievement descriptions, expected storage, cached display and cross-origin rejection.')
     finally:host.terminate();host.wait(timeout=10)

@@ -8,12 +8,42 @@ use std::{
     time::Duration,
 };
 const PACKAGE_SHA: &str = "602b55aa4610aa47b3216f2c2299191730ce6bc847db1b2a81ef183a3b25129b";
+fn icon_identity(m: &crate::manifest::Manifest) -> String {
+    crate::verify::digest(format!("{}\0{}\0{}", m.id, m.version, m.creator_key).as_bytes())
+}
+fn icon(root: &Path, id: &str) -> Result<Vec<u8>> {
+    crate::registry::installed_manifest(root, id)?;
+    let mut package = crate::archive::Package::open(&root.join(format!("{id}.gamepkg")))?;
+    let manifest = crate::verify::verify_embedded(&mut package)?;
+    if manifest.id != id {
+        bail!("icon package ID differs");
+    }
+    if package
+        .entries
+        .get("thumbnail.png")
+        .copied()
+        .unwrap_or(u64::MAX)
+        > crate::drawing::image::MAX_PNG_BYTES as u64
+    {
+        bail!("thumbnail exceeds icon size limit");
+    }
+    let decoded = crate::drawing::image::Image::from_png(&package.read("thumbnail.png")?)
+        .context("invalid thumbnail")?;
+    let size = decoded.size();
+    let pixels =
+        image::RgbaImage::from_raw(size[0] as u32, size[1] as u32, decoded.pixels().to_vec())
+            .context("invalid thumbnail pixels")?;
+    let small = image::imageops::resize(&pixels, 40, 40, image::imageops::FilterType::Triangle);
+    Ok(serde_json::to_vec(
+        &serde_json::json!({"identity":icon_identity(&manifest),"width":40,"height":40,"rgba_hex":hex::encode(small.as_raw())}),
+    )?)
+}
 fn snapshot(root: &Path) -> Result<Vec<u8>> {
     let report = crate::registry::inspect_library(root)?;
     let games=report.games.into_iter().map(|m| {
         let history=crate::progress::load(root,&m.id,&m.creator_key).ok();
         let usage=crate::storage::usage(root,&m).ok();
-        serde_json::json!({"manifest":m,"history":history,"used_bytes":usage.as_ref().map(|u|u.used_bytes()),"expected_bytes":usage.as_ref().and_then(|u|u.estimated_bytes),"storage_breakdown":usage.map(|u|u.breakdown())})
+        serde_json::json!({"icon_identity":icon_identity(&m),"built":crate::build::is_built(root,&m.id).ok(),"manifest":m,"history":history,"used_bytes":usage.as_ref().map(|u|u.used_bytes()),"expected_bytes":usage.as_ref().and_then(|u|u.estimated_bytes),"storage_breakdown":usage.map(|u|u.breakdown())})
     }).collect::<Vec<_>>();
     let data = serde_json::to_vec(
         &serde_json::json!({"format_version":1,"scope":crate::verify::digest(fs::canonicalize(root)?.to_string_lossy().as_bytes()),"games":games,"catalog":crate::catalog::entries(root)?,"settings":crate::settings::load()?,"rejected":report.rejected,"library_used_bytes":crate::storage::total(root).ok()}),
@@ -119,6 +149,25 @@ fn request(
                 Err(error) => respond(
                     stream,
                     "500 Internal Server Error",
+                    "text/plain",
+                    error.to_string().as_bytes(),
+                ),
+            }
+        }
+        path if path.starts_with("/api/icon/") => {
+            if values("authorization") != vec![format!("Bearer {token}").as_str()] {
+                return respond(
+                    stream,
+                    "403 Forbidden",
+                    "text/plain",
+                    b"Session authorization required",
+                );
+            }
+            match icon(root, path.trim_start_matches("/api/icon/")) {
+                Ok(data) => respond(stream, "200 OK", "application/json", &data),
+                Err(error) => respond(
+                    stream,
+                    "404 Not Found",
                     "text/plain",
                     error.to_string().as_bytes(),
                 ),

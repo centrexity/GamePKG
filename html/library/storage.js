@@ -59,6 +59,20 @@ export class HindsightLibraryStorage {
         if (snapshot.format_version !== 1 || !Array.isArray(snapshot.games) || !Array.isArray(snapshot.catalog)) throw new Error('Unsupported stored library snapshot');
         return snapshot;
     }
+    iconKey(identity) {
+        if(typeof identity!=='string'|| !/^[a-f0-9]{64}$/.test(identity))throw new Error('Invalid icon identity');
+        return `icon:${this.scope}:${identity}`;
+    }
+    async saveIcon(icon) {
+        if(!this.ready)throw new Error('Open library storage first');
+        if(icon.width!==40||icon.height!==40||typeof icon.rgba_hex!=='string'|| !/^[a-f0-9]{12800}$/.test(icon.rgba_hex))throw new Error('Invalid bounded icon pixels');
+        await this.operation(indexeddb_put_constcharptr_constcharptr_constcharptr_int,'libraries',JSON.stringify(this.iconKey(icon.identity)),JSON.stringify(icon));
+    }
+    async loadIcon(identity) {
+        if(!this.ready)throw new Error('Open library storage first');
+        const encoded=await this.operation(indexeddb_get_constcharptr_constcharptr_int,'libraries',JSON.stringify(this.iconKey(identity)));
+        return encoded===null?null:JSON.parse(encoded);
+    }
     async close() {
         if (!this.ready) return;
         await this.operation(indexeddb_close_int);
