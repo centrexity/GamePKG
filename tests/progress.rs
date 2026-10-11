@@ -77,6 +77,22 @@ fn play_history_achievements_and_storage_survive_sessions() {
         Some(usage.package_bytes)
     );
     assert!(gamepkg::storage::total(&root).unwrap() >= usage.package_bytes + usage.built_bytes);
+    let history_path = fs::read_dir(root.join("progress"))
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .find(|p| p.extension().is_some_and(|x| x == "json"))
+        .unwrap();
+    let history_bytes = fs::read(&history_path).unwrap();
+    fs::write(&history_path, b"corrupt history").unwrap();
+    let listed = std::process::Command::new(env!("CARGO_BIN_EXE_gamepkg"))
+        .env("GAMEPKG_HOME", &root)
+        .arg("list")
+        .output()
+        .unwrap();
+    assert!(listed.status.success());
+    let text = String::from_utf8(listed.stdout).unwrap();
+    assert!(text.contains("unavailable") && text.contains(&manifest.id));
+    fs::write(&history_path, history_bytes).unwrap();
     // A trap must not unlock anything, even if the guest called the API first.
     let other_root = temp.path().join("trapped");
     registry::install(&other_root, &package, true).unwrap();

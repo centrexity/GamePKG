@@ -13,7 +13,7 @@ pub struct Record {
     pub played_ms: u64,
     pub unlocked: BTreeMap<String, u64>,
 }
-fn path(root: &Path, id: &str, creator: &str) -> Result<PathBuf> {
+pub(crate) fn path(root: &Path, id: &str, creator: &str) -> Result<PathBuf> {
     let directory = root.join("progress");
     if directory
         .symlink_metadata()

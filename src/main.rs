@@ -406,9 +406,10 @@ fn main() -> Result<()> {
                 }
             }
             for m in installed {
-                let progress = gamepkg::progress::load(&root, &m.id, &m.creator_key)?;
-                let usage = gamepkg::storage::usage(&root, &m)?;
-                println!(
+                let statistics = (|| -> Result<()> {
+                    let progress = gamepkg::progress::load(&root, &m.id, &m.creator_key)?;
+                    let usage = gamepkg::storage::usage(&root, &m)?;
+                    println!(
                     "Played: {}; achievements: {}/{}; package: {}; build: {}; expected storage: {}",
                     gamepkg::progress::duration(progress.played_ms),
                     m.achievements
@@ -423,17 +424,27 @@ fn main() -> Result<()> {
                         .map(gamepkg::storage::bytes)
                         .unwrap_or_else(|| "unknown until built".into())
                 );
-                for a in &m.achievements {
                     println!(
-                        "  [{}] {} — {}",
-                        if progress.unlocked.contains_key(&a.id) {
-                            "Unlocked"
-                        } else {
-                            "Locked"
-                        },
-                        a.title,
-                        a.description
+                        "Storage used: {}; {}",
+                        gamepkg::storage::bytes(usage.used_bytes()),
+                        usage.breakdown()
                     );
+                    for a in &m.achievements {
+                        println!(
+                            "  [{}] {} — {}",
+                            if progress.unlocked.contains_key(&a.id) {
+                                "Unlocked"
+                            } else {
+                                "Locked"
+                            },
+                            a.title,
+                            a.description
+                        );
+                    }
+                    Ok(())
+                })();
+                if let Err(error) = statistics {
+                    println!("Play history/storage unavailable: {error:#}");
                 }
                 println!(
                     "{} {} (ROM: {})",
