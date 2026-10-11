@@ -7,7 +7,10 @@ use std::{
     path::Path,
     time::Duration,
 };
-const PACKAGE_SHA: &str = "602b55aa4610aa47b3216f2c2299191730ce6bc847db1b2a81ef183a3b25129b";
+const PACKAGE_SHAS: &[&str] = &[
+    "602b55aa4610aa47b3216f2c2299191730ce6bc847db1b2a81ef183a3b25129b",
+    "b6fc9ff6b00a415d72b39e8fe936542f1cad7caf063752183d5ff81cef5bb097",
+];
 fn icon_identity(m: &crate::manifest::Manifest) -> String {
     crate::verify::digest(format!("{}\0{}\0{}", m.id, m.version, m.creator_key).as_bytes())
 }
@@ -183,7 +186,7 @@ pub fn serve(root: &Path, package: &Path, port: u16) -> Result<()> {
         bail!("invalid Hindsight IndexedDB package source");
     }
     let source = fs::read(path)?;
-    if crate::verify::digest(&source) != PACKAGE_SHA {
+    if !PACKAGE_SHAS.contains(&crate::verify::digest(&source).as_str()) {
         bail!("Hindsight IndexedDB source differs from the verified package revision");
     }
     fs::create_dir_all(root)?;

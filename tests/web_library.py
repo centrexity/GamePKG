@@ -6,17 +6,24 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.ui import WebDriverWait
 PROJECT=Path(__file__).resolve().parents[1]
-p=argparse.ArgumentParser();p.add_argument('--indexeddb-package',type=Path,required=True);args=p.parse_args()
+p=argparse.ArgumentParser();p.add_argument('--indexeddb-package',type=Path,required=True);p.add_argument('--play',action='store_true',help='Compile and play a signed achievement fixture, then verify persistent browser history');args=p.parse_args()
 with tempfile.TemporaryDirectory(prefix='gamepkg-web-library-') as directory:
     root=Path(directory);env=dict(os.environ,GAMEPKG_HOME=str(root/'library'),GAMEPKG_CONFIG=str(root/'settings.toml'))
     (root/'settings.toml').write_text('automatic_update_checks=false\n')
     cli=PROJECT/'target/release/gamepkg'
     def run(*args):return subprocess.run([str(cli),*map(str,args)],env=env,check=True,capture_output=True,text=True,timeout=60)
-    key=root/'key';package=root/'game.gamepkg';run('keygen','-o',key);run('pack',PROJECT/'examples/good/collect-stars','-o',package,'--key',key);run('install',package,'--trust-creator')
+    source=root/'source';shutil.copytree(PROJECT/'examples/good/collect-stars',source)
+    if args.play:
+        (source/'source/src/lib.rs').write_text('pub fn game_tick(_:u32,state:u64)->u64 { assert!(gamepkg::achievement_unlock(0)); state + 1 }')
+    key=root/'key';package=root/'game.gamepkg';run('keygen','-o',key);run('pack',source,'-o',package,'--key',key);run('install',package,'--trust-creator')
     catalog=root/'games.gamepkglist';catalog.write_text('format_version=1\n[[games]]\nid="com.example.waiting"\ntitle="Waiting game"\ndownload_url="https://unreachable.invalid/game.gamepkg"\n');run('import-list',catalog)
+    altered=root/'altered-package/code_langs';altered.mkdir(parents=True)
+    (altered/'js.js').write_bytes((args.indexeddb_package/'code_langs/js.js').read_bytes()+b'\n// unverified change\n')
+    rejected_source=subprocess.run([str(cli),'web-library','--indexeddb-package',str(altered.parent),'--port','0'],env=env,capture_output=True,text=True,timeout=10)
+    assert rejected_source.returncode!=0 and 'differs from the verified' in rejected_source.stderr
     host=subprocess.Popen([str(cli),'web-library','--indexeddb-package',str(args.indexeddb_package),'--port','0'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
     try:
-        line=host.stdout.readline();assert line.startswith('Open http://127.0.0.1:'),line
+        line=host.stdout.readline();assert line.startswith('Open http://127.0.0.1:'),line+host.stderr.read()
         url=line.strip().split(' ',1)[1];base,fragment=url.split('#');token,scope=fragment.split(':')
         def rejected(headers,method='GET',path='api/library',expected=403):
             try:urllib.request.urlopen(urllib.request.Request(base+path,headers=headers,method=method),timeout=5)
@@ -42,9 +49,29 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-web-library-') as directory:
             assert 'Not built' in rows,rows
             assert 'Locked — First star' in rows and 'Star collector' in rows and 'bytes expected' in rows,rows
             assert 'Library storage used:' in browser.find_element('id','library-space').text
+            if args.play:
+                run('build','com.gamepkg.collect-stars');run('run','com.gamepkg.collect-stars','--frames','10000')
+                played=json.load(urllib.request.urlopen(request,timeout=5))['games'][0]
+                assert played['built'] and played['history']['played_ms']>0
+                assert set(played['history']['unlocked'])=={'first_star'}
+                browser.find_element('id','refresh').click()
+                WebDriverWait(browser,20).until(lambda b:'Not built' not in b.find_element('id','games').text and 'Built' in b.find_element('id','games').text)
+                browser.find_element('css selector','#games td:nth-child(6) details summary').click()
+                rows=browser.find_element('id','games').text
+                assert 'Unlocked — First star' in rows and 'Locked — Star collector' in rows,rows
             browser.get(base+'#wrong:'+scope);browser.refresh()
             WebDriverWait(browser,20).until(lambda b:'showing cached metadata' in b.find_element('id','status').text)
             WebDriverWait(browser,20).until(lambda b:len(b.find_elements('css selector','#games canvas'))==1)
             rows=browser.find_element('id','games').text;assert 'Cached installed metadata' in rows and 'Cached catalog metadata' in rows,rows
+        if args.play:
+            with webdriver.Chrome(service=Service(shutil.which('chromedriver')),options=options) as browser:
+                browser.get(base+'#wrong:'+scope)
+                WebDriverWait(browser,20).until(lambda b:'showing cached metadata' in b.find_element('id','status').text)
+                browser.find_element('css selector','#games td:nth-child(6) details summary').click()
+                assert 'Unlocked — First star' in browser.find_element('id','games').text
+                cached=browser.execute_async_script('''const done=arguments[0];import('/storage.js').then(async ({HindsightLibraryStorage})=>{const storage=new HindsightLibraryStorage(location.hash.slice(1).split(':')[1]);await storage.open();const snapshot=await storage.loadLibrary();await storage.close();done(snapshot.games[0].history);}).catch(error=>done({error:String(error)}));''')
+                assert cached==played['history'],cached
+                WebDriverWait(browser,20).until(lambda b:len(b.find_elements('css selector','#games canvas'))==1)
+            print('Actual gameplay history and achievements persisted through Hindsight and a browser restart with host authorization unavailable.')
         print('Running browser library passed: authenticated host metadata, actual Hindsight storage, installed/catalog rows, live build status, verified and cached icons, achievement descriptions, expected storage, cached display and cross-origin rejection.')
     finally:host.terminate();host.wait(timeout=10)
