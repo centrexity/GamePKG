@@ -4,3 +4,6 @@
 *.key
 
 /.demo-library/
+
+# Local demo signing credentials
+/.demo-private/
