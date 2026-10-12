@@ -1,5 +1,6 @@
 """Validate and stage public documentation; the authenticated library stays local."""
 import argparse
+import hashlib
 from html.parser import HTMLParser
 from pathlib import Path
 import shutil
@@ -7,7 +8,9 @@ from urllib.parse import unquote, urlsplit
 
 PROJECT = Path(__file__).resolve().parents[1]
 ROOT = PROJECT / 'html'
-PUBLIC = [ROOT / 'index.html', *sorted((ROOT / 'guide').glob('*')), *sorted((ROOT / 'spec').glob('*'))]
+DEMO_NAMES = ['collect-stars.gamepkg', 'shape-playground.gamepkg', 'png-sprite-playground.gamepkg']
+DEMOS = [ROOT / 'demos' / name for name in DEMO_NAMES]
+PUBLIC = [ROOT / 'index.html', *sorted((ROOT / 'guide').glob('*')), *sorted((ROOT / 'spec').glob('*')), *DEMOS, ROOT / 'demos/packages.sha256']
 
 class Links(HTMLParser):
     def __init__(self):
@@ -24,6 +27,11 @@ class Links(HTMLParser):
                 self.links.append(attrs[name])
 
 def check():
+    recorded = dict((name, digest) for digest, name in (line.split() for line in (ROOT / 'demos/packages.sha256').read_text().splitlines()))
+    assert set(recorded) == set(DEMO_NAMES), 'Unexpected public demo checksum entries'
+    for package in DEMOS:
+        assert package.is_file() and not package.is_symlink() and package.stat().st_size <= 1024 * 1024
+        assert hashlib.sha256(package.read_bytes()).hexdigest() == recorded[package.name], 'Public demo checksum mismatch'
     pages = {}
     for path in PUBLIC:
         if path.suffix == '.html':
