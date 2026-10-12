@@ -7,3 +7,8 @@
 
 # Local demo signing credentials
 /.demo-private/
+
+# Signed public demo update endpoints; other package outputs remain ignored.
+!html/demos/collect-stars.gamepkg
+!html/demos/shape-playground.gamepkg
+!html/demos/png-sprite-playground.gamepkg
