@@ -28,10 +28,10 @@ Install a signed package from a file or HTTPS URL in the desktop library. Review
 To try a ready-to-install game, paste this catalog URL into the desktop library and choose **Import .gamepkglist**:
 
 ```text
-https://github.com/centrexity/GamePKG/releases/download/v0.1.3/demos.gamepkglist
+https://github.com/centrexity/GamePKG/releases/download/v0.1.4/demos.gamepkglist
 ```
 
-The catalog adds three games without downloading them. Choose **Download / inspect** for Collect Stars, review and approve its creator, then **Build** and **Play**. None of these demos requires a ROM. In Collect Stars, use the arrow keys or WASD to move toward the yellow target; collecting stars increases your score and unlocks achievements. In Shape Playground and PNG Sprite Playground, hold Left or Right to move the square or sprite. Use **Back to library** to return to your games. The demo manifests contain signed update URLs, so **Check for updates** can verify whether a newer same-creator version is available. For offline use, download the [demo store](https://github.com/centrexity/GamePKG/releases/download/v0.1.3/demos.gamepkgstore), then inspect and import that local file. [Demo checksums](https://github.com/centrexity/GamePKG/releases/download/v0.1.3/demo-packages.sha256) cover the packages, catalog and store.
+The catalog adds three games without downloading them. Choose **Download / inspect** for Collect Stars, review and approve its creator, then **Build** and **Play**. None of these demos requires a ROM. In Collect Stars, use the arrow keys or WASD to move toward the yellow target; collecting stars increases your score and unlocks achievements. In Shape Playground and PNG Sprite Playground, hold Left or Right to move the square or sprite. Use **Back to library** to return to your games. The demo manifests contain signed update URLs, so **Check for updates** can verify whether a newer same-creator version is available. For offline use, download the [demo store](https://github.com/centrexity/GamePKG/releases/download/v0.1.4/demos.gamepkgstore), then inspect and import that local file. [Demo checksums](https://github.com/centrexity/GamePKG/releases/download/v0.1.4/demo-packages.sha256) cover the packages, catalog and store.
 
 To create your own signed package from an included example, generate a private creator key outside the example directory:
 
