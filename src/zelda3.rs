@@ -321,7 +321,7 @@ impl Zelda {
         let pointer = self.pixels.call(&mut self.store, ())? as usize;
         let mut pixels = vec![0u8; 256 * 224 * 4];
         self.memory.read(&self.store, pointer, &mut pixels)?;
-        for pixel in pixels.chunks_exact_mut(4) {
+        for pixel in pixels.as_chunks_mut::<4>().0 {
             pixel.swap(0, 2);
             pixel[3] = 255;
         }
@@ -329,7 +329,9 @@ impl Zelda {
         let mut pcm = vec![0u8; 1600];
         self.memory.read(&self.store, pointer, &mut pcm)?;
         let audio = pcm
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|b| i16::from_le_bytes([b[0], b[1]]))
             .collect();
         let save = if self.dirty.call(&mut self.store, ())? != 0 {
