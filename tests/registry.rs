@@ -313,3 +313,92 @@ print('200', end='')
     assert!(!install().status.success());
     assert!(registry::list(&root).unwrap().is_empty());
 }
+
+// Model an authentic package from an older host that allowed Rust macros.
+// Signing happens outside pack(), because the current packer must reject it.
+fn legacy_archive(path: &Path, source: &[u8], seed: &[u8; 32], resign: bool) {
+    use ed25519_dalek::Signer;
+    let mut original = Package::open(path).unwrap();
+    let mut entries = std::collections::BTreeMap::new();
+    for name in original.entries.keys().cloned().collect::<Vec<_>>() {
+        entries.insert(name.clone(), original.read(&name).unwrap());
+    }
+    entries.insert("source/src/lib.rs".into(), source.to_vec());
+    fn write(path: &Path, entries: &std::collections::BTreeMap<String, Vec<u8>>) {
+        use std::io::Write;
+        let mut archive = zip::ZipWriter::new(fs::File::create(path).unwrap());
+        for (name, bytes) in entries {
+            archive
+                .start_file(name, zip::write::SimpleFileOptions::default())
+                .unwrap();
+            archive.write_all(bytes).unwrap();
+        }
+        archive.finish().unwrap();
+    }
+    drop(original);
+    write(path, &entries);
+    if resign {
+        let digest = gamepkg::verify::tree_hash(&mut Package::open(path).unwrap()).unwrap();
+        let key = ed25519_dalek::SigningKey::from_bytes(seed);
+        let envelope = gamepkg::verify::Envelope {
+            public_key: hex::encode(key.verifying_key().as_bytes()),
+            signature: hex::encode(key.sign(&digest).to_bytes()),
+        };
+        entries.insert(
+            "signature.toml".into(),
+            toml::to_string(&envelope).unwrap().into_bytes(),
+        );
+        write(path, &entries);
+    }
+}
+
+#[test]
+fn policy_rejected_legacy_packages_can_only_upgrade_to_verified_same_creator_source() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("library");
+    let old = package(temp.path(), "legacy", "0.1.0", &[5; 32]);
+    let source = b"pub fn game_tick(input: u32, state: u64) -> u64 { assert!(input < 256); state }";
+    legacy_archive(&old, source, &[5; 32], true);
+    assert!(verify_embedded(&mut Package::open(&old).unwrap()).is_err());
+    assert!(registry::install(&root, &old, true).is_err());
+    // A previous host installed these signed bytes; the current host quarantines them.
+    fs::create_dir_all(root.join("saves")).unwrap();
+    let installed = root.join("com.gamepkg.minimal.gamepkg");
+    fs::copy(&old, &installed).unwrap();
+    fs::write(root.join("saves/retained"), b"player progress").unwrap();
+    assert!(registry::installed_manifest(&root, "com.gamepkg.minimal").is_err());
+    assert!(registry::list(&root).is_err());
+    let quarantined = registry::inspect_library(&root).unwrap();
+    assert!(quarantined.games.is_empty());
+    assert_eq!(quarantined.rejected.len(), 1);
+    let original = fs::read(&installed).unwrap();
+    let unsafe_next = package(temp.path(), "unsafe-next", "0.2.0", &[5; 32]);
+    legacy_archive(&unsafe_next, source, &[5; 32], true);
+    assert!(registry::install(&root, &unsafe_next, false).is_err());
+    let imposter = package(temp.path(), "legacy-imposter", "9.0.0", &[6; 32]);
+    assert!(registry::install(&root, &imposter, true).is_err());
+    assert_eq!(fs::read(&installed).unwrap(), original);
+    let next = package(temp.path(), "safe-next", "0.2.0", &[5; 32]);
+    registry::install(&root, &next, false).unwrap();
+    assert_eq!(
+        registry::installed_manifest(&root, "com.gamepkg.minimal")
+            .unwrap()
+            .version,
+        "0.2.0"
+    );
+    assert_eq!(
+        fs::read(root.join("saves/retained")).unwrap(),
+        b"player progress"
+    );
+    // An altered old archive cannot establish the creator identity for recovery.
+    fs::copy(&old, &installed).unwrap();
+    legacy_archive(
+        &installed,
+        b"pub fn game_tick(input: u32, state: u64) -> u64 { assert!(input < 512); state }",
+        &[5; 32],
+        false,
+    );
+    let tampered = fs::read(&installed).unwrap();
+    assert!(registry::install(&root, &next, false).is_err());
+    assert_eq!(fs::read(&installed).unwrap(), tampered);
+}

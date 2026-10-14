@@ -31,6 +31,21 @@ pub struct Envelope {
     pub signature: String,
 }
 pub fn verify(pkg: &mut Package, trusted: &[u8; 32]) -> Result<Manifest> {
+    let m = authenticate_contents(pkg, trusted)?;
+    crate::source::scan(pkg)?;
+    pkg.set_shared_refs(m.shared_assets.clone());
+    pkg.mark_verified();
+    Ok(m)
+}
+
+// Update recovery authenticates the old archive without activating its source.
+// This deliberately does not mark the package verified for asset access or play.
+pub(crate) fn verify_signed_identity(pkg: &mut Package) -> Result<Manifest> {
+    let m = Manifest::parse(&pkg.read("manifest.toml")?)?;
+    authenticate_contents(pkg, &decode_key(&m.creator_key)?)
+}
+
+fn authenticate_contents(pkg: &mut Package, trusted: &[u8; 32]) -> Result<Manifest> {
     let m = Manifest::parse(&pkg.read("manifest.toml")?)?;
     for name in [
         "thumbnail.png",
@@ -93,7 +108,6 @@ pub fn verify(pkg: &mut Package, trusted: &[u8; 32]) -> Result<Manifest> {
     VerifyingKey::from_bytes(trusted)?
         .verify_strict(&tree_hash(pkg)?, &sig)
         .context("invalid package signature")?;
-    crate::source::scan(pkg)?;
     for name in ["preview.av1.webm", "preview.ogv"] {
         if pkg.entries.contains_key(name) {
             crate::previews::validate(name, &pkg.read(name)?)?;
@@ -111,8 +125,6 @@ pub fn verify(pkg: &mut Package, trusted: &[u8; 32]) -> Result<Manifest> {
     if logical > crate::archive::MAX_TOTAL {
         bail!("logical package size exceeds 256 MiB");
     }
-    pkg.set_shared_refs(m.shared_assets.clone());
-    pkg.mark_verified();
     Ok(m)
 }
 

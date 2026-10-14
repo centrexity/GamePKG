@@ -310,6 +310,10 @@ pub fn inspect_library(root: &Path) -> Result<LibraryInspection> {
 }
 /// Verify one installed game without letting unrelated damaged files block it.
 pub fn installed_manifest(root: &Path, id: &str) -> Result<Manifest> {
+    installed_manifest_with_policy(root, id, true)
+}
+
+fn installed_manifest_with_policy(root: &Path, id: &str, scan_source: bool) -> Result<Manifest> {
     if id.is_empty()
         || id.len() > 200
         || !id
@@ -323,7 +327,12 @@ pub fn installed_manifest(root: &Path, id: &str) -> Result<Manifest> {
     if !metadata.is_file() || metadata.file_type().is_symlink() {
         bail!("installed package must be a regular file");
     }
-    let manifest = verify_embedded(&mut Package::open(&path)?)?;
+    let mut package = Package::open(&path)?;
+    let manifest = if scan_source {
+        verify_embedded(&mut package)?
+    } else {
+        crate::verify::verify_signed_identity(&mut package)?
+    };
     if manifest.id != id {
         bail!("installed package ID mismatch");
     }
@@ -381,7 +390,7 @@ pub fn install(root: &Path, path: &Path, approve_creator: bool) -> Result<Manife
         if fs::symlink_metadata(&target)?.file_type().is_symlink() {
             bail!("installed package is a symlink");
         }
-        let old = verify_embedded(&mut Package::open(&target)?)?;
+        let old = crate::verify::verify_signed_identity(&mut Package::open(&target)?)?;
         if old.creator_key != m.creator_key {
             bail!("update creator key differs from installed creator");
         }
@@ -403,7 +412,7 @@ pub fn install(root: &Path, path: &Path, approve_creator: bool) -> Result<Manife
     Ok(m)
 }
 pub fn update(root: &Path, id: &str) -> Result<Manifest> {
-    let old = installed_manifest(root, id)?;
+    let old = installed_manifest_with_policy(root, id, false)?;
     let url = old.update_url.context("package has no update URL")?;
     let downloaded = download(&url)?;
     let candidate = verify_embedded(&mut Package::open(downloaded.path())?)?;
@@ -415,7 +424,7 @@ pub fn update(root: &Path, id: &str) -> Result<Manifest> {
 
 /// Stage an available update without installing or modifying the current game.
 pub fn check_update(root: &Path, id: &str) -> Result<Option<(Manifest, tempfile::NamedTempFile)>> {
-    let old = installed_manifest(root, id)?;
+    let old = installed_manifest_with_policy(root, id, false)?;
     let url = old.update_url.context("package has no update URL")?;
     let file = download(&url)?;
     let candidate = verify_embedded(&mut Package::open(file.path())?)?;

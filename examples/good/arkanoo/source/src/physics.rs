@@ -436,8 +436,9 @@ pub fn pattern(level: u32, row: usize, col: usize) -> bool {
             ((dx * dx + dy * dy).sqrt() as i32) % 3 != 1
         }
         9 => {
-            !(col % 4 == 1 && row % 4 == 1 || col % 4 == 2 && row % 4 == 2)
-                && !(col + row).is_multiple_of(7)
+            !((col + row).is_multiple_of(7)
+                || col % 4 == 1 && row % 4 == 1
+                || col % 4 == 2 && row % 4 == 2)
         }
         _ => {
             let seed = level
