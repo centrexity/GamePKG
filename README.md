@@ -818,7 +818,7 @@ Wasm memory limit is 32 MiB, reserved across two 16 MiB instances. Engine work
 is charged to the same frame fuel budget and deadline as the Rust entry.
 
 On Ubuntu 24.04, install Clang 18, `wasi-libc`, `libclang-rt-18-dev-wasm32`,
-and the normal Rust/bubblewrap build prerequisites. ROM decoding is built into
+and the normal Rust/Slang/bubblewrap build prerequisites. ROM decoding is built into
 the host; building and playing Zelda3 require no Python or external decoder.
 A private prepared C sysroot can be selected with `GAMEPKG_ZELDA3_SYSROOT`.
 Then sign/install the source example, build `com.gamepkg.zelda3`, select your ROM

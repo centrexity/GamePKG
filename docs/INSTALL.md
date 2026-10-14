@@ -18,10 +18,14 @@ Install Rust with rustup using its official instructions at https://rustup.rs, t
 
 ```sh
 rustup target add wasm32-unknown-unknown
-python3 tools/install_slang.py "$HOME/.local/share/gamepkg/slang-2026.19"
+curl --fail --location --output slang-2026.19.tar.gz https://github.com/shader-slang/slang/releases/download/v2026.19/slang-2026.19-linux-x86_64-glibc-2.27.tar.gz
+echo '5899bd40c3d1ee60eadd1d1b37acc4e88ae65cc25ac61651534d55b71a85fe75  slang-2026.19.tar.gz' | sha256sum --check
+mkdir -p "$HOME/.local/share/gamepkg"
+mkdir "$HOME/.local/share/gamepkg/slang-2026.19"
+tar -xzf slang-2026.19.tar.gz -C "$HOME/.local/share/gamepkg/slang-2026.19"
 ```
 
-Enter that Slang folder in the desktop Settings page, or set GAMEPKG_SLANG_ROOT to it for the CLI. The installer verifies the pinned compiler archive before extraction. Namespace support is required for isolated builds; a denied sandbox stops compilation. GLSL is the default desktop shader backend. DXIL compilation additionally requires the pinned DXC installer; native Metal/DXIL playback remains unfinished.
+After the checksum passes, extract into the new Slang folder as shown above. No Python installer is needed. Enter that folder in the desktop Settings page, or set GAMEPKG_SLANG_ROOT to it for the CLI. Namespace support is required for isolated builds; a denied sandbox stops compilation. GLSL is the default desktop shader backend. DXIL compilation additionally requires the pinned DXC installer; native Metal/DXIL playback remains unfinished.
 
 Install a signed package from a file or HTTPS URL in the desktop library. Review its creator fingerprint and permissions, approve installation, choose Build, then Play. A game that requires a ROM needs a file you supply explicitly. Importing a .gamepkglist only adds catalog entries; it does not download games.
 
