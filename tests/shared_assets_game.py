@@ -14,11 +14,11 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-shared-') as directory:
     data.write_bytes(b'0' * (16 * 1024 * 1024 - 3) + b'ABC')
     (source / 'source/src/lib.rs').write_text('''pub fn game_tick(_: u32, _: u64) -> u64 {
         let mut buffer = [0; 8];
-        assert_eq!(gamepkg::asset_read("large.bin", 16777213, &mut buffer), Some(3));
-        assert_eq!(&buffer[..3], b"ABC");
-        assert_eq!(gamepkg::asset_read("large.bin", 16777216, &mut buffer), Some(0));
-        assert_eq!(gamepkg::asset_read("large.bin", 16777217, &mut buffer), None);
-        assert_eq!(gamepkg::asset_read("../large.bin", 0, &mut buffer), None);
+        if !((gamepkg::asset_read("large.bin", 16777213, &mut buffer)) == (Some(3))) { loop {} };
+        if !((&buffer[..3]) == (b"ABC")) { loop {} };
+        if !((gamepkg::asset_read("large.bin", 16777216, &mut buffer)) == (Some(0))) { loop {} };
+        if !((gamepkg::asset_read("large.bin", 16777217, &mut buffer)) == (None)) { loop {} };
+        if !((gamepkg::asset_read("../large.bin", 0, &mut buffer)) == (None)) { loop {} };
         42u64 << 32
     }''')
     key = root / 'creator.key'

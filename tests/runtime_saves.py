@@ -39,9 +39,9 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-saves-') as directory:
     before = blobs[0].read_bytes()
     (source / 'source/src/lib.rs').write_text('''
 pub fn game_tick(_: u32, _: u64) -> u64 {
-    assert_eq!(gamepkg::save_size(), Some(4));
-    assert!(gamepkg::save_write(b"broken"));
-    panic!("abort this tick")
+    if !((gamepkg::save_size()) == (Some(4))) { loop {} };
+    if !(gamepkg::save_write(b"broken")) { loop {} };
+    loop {}
 }
 ''')
     publish()
@@ -50,9 +50,9 @@ pub fn game_tick(_: u32, _: u64) -> u64 {
     (source / 'manifest.toml').write_text((source / 'manifest.toml').read_text().replace('save = true', 'save = false'))
     (source / 'source/src/lib.rs').write_text('''
 pub fn game_tick(_: u32, _: u64) -> u64 {
-    assert_eq!(gamepkg::save_size(), None);
-    assert_eq!(gamepkg::save_read(0, &mut [0; 8]), None);
-    assert!(!gamepkg::save_write(b"forbidden"));
+    if !((gamepkg::save_size()) == (None)) { loop {} };
+    if !((gamepkg::save_read(0, &mut [0; 8])) == (None)) { loop {} };
+    if !(!gamepkg::save_write(b"forbidden")) { loop {} };
     7u64 << 32
 }
 ''')

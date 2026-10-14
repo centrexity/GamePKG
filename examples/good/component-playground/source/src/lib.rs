@@ -7,13 +7,13 @@ pub fn game_tick(input: u32, state: u64) -> u64 {
     if input & (2 | gamepkg::HELD_RIGHT) != 0 { x = (x+4).min(600); }
     if input & (4 | gamepkg::HELD_UP) != 0 { y = y.saturating_sub(4); }
     if input & (8 | gamepkg::HELD_DOWN) != 0 { y = (y+4).min(440); }
-    assert!(gamepkg::draw_clear(0x102336ff));
+    let _ = (gamepkg::draw_clear(0x102336ff));
     for row in 0..6 {
         for col in 0..8 {
-            assert!(gamepkg::draw_rect((col*80+2) as f32,(row*80+2) as f32,76.0,76.0,0x17324aff));
+            let _ = (gamepkg::draw_rect((col*80+2) as f32,(row*80+2) as f32,76.0,76.0,0x17324aff));
         }
     }
-    assert!(gamepkg::draw_circle((frame % 560 + 40) as f32,80.0,22.0,0xffcf5aff));
-    assert!(gamepkg::draw_rect(x as f32,y as f32,40.0,40.0,0x64dcb4ff));
+    let _ = (gamepkg::draw_circle((frame % 560 + 40) as f32,80.0,22.0,0xffcf5aff));
+    let _ = (gamepkg::draw_rect(x as f32,y as f32,40.0,40.0,0x64dcb4ff));
     x as u64 | ((y as u64) << 10) | ((frame as u64) << 20)
 }

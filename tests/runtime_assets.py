@@ -15,12 +15,12 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-assets-') as directory:
     (source / 'source/src/lib.rs').write_text('''
 pub fn game_tick(_: u32, _: u64) -> u64 {
     let mut buffer = [0; 8];
-    assert_eq!(gamepkg::asset_read("message.txt", 1, &mut buffer), Some(2));
-    assert_eq!(&buffer[..2], b"BC");
-    assert_eq!(gamepkg::asset_read("message.txt", 3, &mut buffer), Some(0));
-    assert_eq!(gamepkg::asset_read("message.txt", 4, &mut buffer), None);
+    if !((gamepkg::asset_read("message.txt", 1, &mut buffer)) == (Some(2))) { loop {} };
+    if !((&buffer[..2]) == (b"BC")) { loop {} };
+    if !((gamepkg::asset_read("message.txt", 3, &mut buffer)) == (Some(0))) { loop {} };
+    if !((gamepkg::asset_read("message.txt", 4, &mut buffer)) == (None)) { loop {} };
     for path in ["../manifest.toml", "/etc/passwd", "missing", "../assets/message.txt"] {
-        assert_eq!(gamepkg::asset_read(path, 0, &mut buffer), None);
+        if !((gamepkg::asset_read(path, 0, &mut buffer)) == (None)) { loop {} };
     }
     42u64 << 32
 }

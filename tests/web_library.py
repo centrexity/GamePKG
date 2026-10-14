@@ -14,7 +14,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-web-library-') as directory:
     def run(*args):return subprocess.run([str(cli),*map(str,args)],env=env,check=True,capture_output=True,text=True,timeout=60)
     source=root/'source';shutil.copytree(PROJECT/'examples/good/collect-stars',source)
     if args.play:
-        (source/'source/src/lib.rs').write_text('pub fn game_tick(_:u32,state:u64)->u64 { assert!(gamepkg::achievement_unlock(0)); state + 1 }')
+        (source/'source/src/lib.rs').write_text('pub fn game_tick(_:u32,state:u64)->u64 { if !(gamepkg::achievement_unlock(0)) { loop {} }; state + 1 }')
     key=root/'key';package=root/'game.gamepkg';run('keygen','-o',key);run('pack',source,'-o',package,'--key',key);run('install',package,'--trust-creator')
     catalog=root/'games.gamepkglist';catalog.write_text('format_version=1\n[[games]]\nid="com.example.waiting"\ntitle="Waiting game"\ndownload_url="https://unreachable.invalid/game.gamepkg"\n');run('import-list',catalog)
     altered=root/'altered-package/code_langs';altered.mkdir(parents=True)
@@ -31,7 +31,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-web-library-') as directory:
             else:raise AssertionError('unauthorized request succeeded')
         rejected({});rejected({'Authorization':'Bearer wrong'});rejected({'Authorization':'Bearer '+token,'Origin':'https://other.invalid'});rejected({'Host':'other.invalid'});rejected({},method='POST',expected=405)
         request=urllib.request.Request(base+'api/library',headers={'Authorization':'Bearer '+token})
-        snapshot=json.load(urllib.request.urlopen(request,timeout=5));assert snapshot['games'][0]['manifest']['id']=='com.gamepkg.collect-stars';assert snapshot['catalog'][0]['id']=='com.example.waiting'
+        snapshot=json.load(urllib.request.urlopen(request,timeout=5));assert json.loads((root/'library/database/library.json').read_text()) == snapshot;assert snapshot['games'][0]['manifest']['id']=='com.gamepkg.collect-stars';assert snapshot['catalog'][0]['id']=='com.example.waiting'
         rejected({},path='api/icon/com.gamepkg.collect-stars')
         rejected({'Authorization':'Bearer '+token},path='api/icon/missing-game',expected=404)
         rejected({'Authorization':'Bearer '+token},path='api/icon/..',expected=404)

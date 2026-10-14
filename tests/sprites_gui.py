@@ -8,10 +8,10 @@ project=Path(__file__).resolve().parents[1]
 with tempfile.TemporaryDirectory(prefix='gamepkg-sprites-') as directory:
  root=Path(directory);source=root/'source';shutil.copytree(project/'examples/minimal',source)
  (source/'source/src/lib.rs').write_text('''pub fn game_tick(input:u32,state:u64)->u64 {
-     assert!(gamepkg::draw_clear(0x10171dff));
+     if !(gamepkg::draw_clear(0x10171dff)) { loop {} };
      let mut pixels=[255,0,0,255, 0,255,0,255, 0,0,255,255, 255,255,255,0];
      if input & gamepkg::HELD_RIGHT != 0 { pixels[1]=255; }
-     assert!(gamepkg::draw_image(64.0,64.0,512.0,352.0,2,2,&pixels));
+     if !(gamepkg::draw_image(64.0,64.0,512.0,352.0,2,2,&pixels)) { loop {} };
      state
  }''')
  if args.png:
@@ -23,15 +23,15 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-sprites-') as directory:
   Image.new('RGBA',(513,1)).save(source/'assets/wide.png')
   (source/'assets/oversized.png').write_bytes(bytes(2*1024*1024+1))
   (source/'source/src/lib.rs').write_text('''pub fn game_tick(input:u32,state:u64)->u64 {
-      assert!(!gamepkg::draw_asset_image("../thumbnail.png",0.0,0.0,10.0,10.0));
-      assert!(!gamepkg::draw_asset_image("missing.png",0.0,0.0,10.0,10.0));
-      assert!(!gamepkg::draw_asset_image("invalid.png",0.0,0.0,10.0,10.0));
-      assert!(!gamepkg::draw_asset_image("truncated.png",0.0,0.0,10.0,10.0));
-      assert!(!gamepkg::draw_asset_image("wide.png",0.0,0.0,10.0,10.0));
-      assert!(!gamepkg::draw_asset_image("oversized.png",0.0,0.0,10.0,10.0));
+      if !(!gamepkg::draw_asset_image("../thumbnail.png",0.0,0.0,10.0,10.0)) { loop {} };
+      if !(!gamepkg::draw_asset_image("missing.png",0.0,0.0,10.0,10.0)) { loop {} };
+      if !(!gamepkg::draw_asset_image("invalid.png",0.0,0.0,10.0,10.0)) { loop {} };
+      if !(!gamepkg::draw_asset_image("truncated.png",0.0,0.0,10.0,10.0)) { loop {} };
+      if !(!gamepkg::draw_asset_image("wide.png",0.0,0.0,10.0,10.0)) { loop {} };
+      if !(!gamepkg::draw_asset_image("oversized.png",0.0,0.0,10.0,10.0)) { loop {} };
       gamepkg::draw_clear(0x10171dff);
       let path=if input & gamepkg::HELD_RIGHT != 0 {"yellow.png"} else {"sprite.png"};
-      assert!(gamepkg::draw_asset_image(path,64.0,64.0,512.0,352.0));
+      if !(gamepkg::draw_asset_image(path,64.0,64.0,512.0,352.0)) { loop {} };
       state
   }''')
  original=(source/'manifest.toml').read_text()

@@ -174,7 +174,11 @@ pub fn path() -> Result<PathBuf> {
     let root = std::env::var_os("XDG_CONFIG_HOME")
         .or_else(|| std::env::var_os("APPDATA"))
         .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|p| PathBuf::from(p).join(".config")))
+        .or_else(|| {
+            std::env::var_os("HOME")
+                .or_else(|| std::env::var_os("USERPROFILE"))
+                .map(|p| PathBuf::from(p).join(".config"))
+        })
         .context("set GAMEPKG_CONFIG to a settings file")?;
     Ok(root.join("gamepkg/settings.toml"))
 }

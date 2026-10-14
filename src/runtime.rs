@@ -107,7 +107,8 @@ impl Game {
         };
         let (uses_shaders, custom_renderer) = if let Some(module) = &module {
             if module.imports().any(|i| {
-                i.module() != "gamepkg"
+                !matches!(i.ty(), wasmtime::ExternType::Func(_))
+                    || i.module() != "gamepkg"
                     || !matches!(
                         i.name(),
                         "asset_read"
@@ -140,19 +141,52 @@ impl Game {
         } else {
             let mut uses_shaders = false;
             let mut custom_renderer = false;
-            for (_, item) in component
+            for (name, item) in component
                 .as_ref()
                 .unwrap()
                 .component_type()
                 .imports(&engine)
             {
+                if name != "gamepkg:engine/host@0.1.0" {
+                    bail!("games cannot import interfaces outside the scoped GamePKG API");
+                }
                 if let wasmtime::component::types::ComponentItem::ComponentInstance(instance) = item
                 {
+                    for (name, export) in instance.exports(&engine) {
+                        if !matches!(
+                            export,
+                            wasmtime::component::types::ComponentItem::ComponentFunc(_)
+                        ) || !matches!(
+                            name,
+                            "asset-read"
+                                | "rom-read"
+                                | "rom-size"
+                                | "rom-count"
+                                | "rom-size-at"
+                                | "rom-read-at"
+                                | "save-read"
+                                | "save-write"
+                                | "save-size"
+                                | "draw-clear"
+                                | "draw-asset-image"
+                                | "draw-image"
+                                | "draw-shader-image"
+                                | "draw-rect"
+                                | "draw-circle"
+                                | "draw-shader"
+                                | "achievement-unlock"
+                                | "audio-submit"
+                        ) {
+                            bail!("games cannot import functions outside the scoped GamePKG API");
+                        }
+                    }
                     uses_shaders |= instance.get_export(&engine, "draw-shader").is_some()
                         || instance.get_export(&engine, "draw-shader-image").is_some();
                     custom_renderer |= instance
                         .exports(&engine)
                         .any(|(name, _)| name.starts_with("draw-"));
+                } else {
+                    bail!("games cannot import non-interface host resources");
                 }
             }
             (uses_shaders, custom_renderer)

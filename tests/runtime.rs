@@ -143,3 +143,43 @@ fn scoped_asset_import_checks_guest_ranges_and_rejects_unknown_api() {
     let wrong = module(r#"(module (import "gamepkg" "asset_read" (func)))"#);
     assert!(Game::from_bytes(&wrong, &manifest()).is_err());
 }
+
+#[test]
+fn filesystem_and_network_imports_are_denied_before_guest_start() {
+    for (namespace, operation) in [
+        ("wasi_snapshot_preview1", "path_open"),
+        ("wasi_snapshot_preview1", "fd_read"),
+        ("wasi_snapshot_preview1", "sock_open"),
+        ("wasi_snapshot_preview1", "sock_connect"),
+        ("env", "open"),
+        ("env", "connect"),
+        ("gamepkg", "fs_read"),
+        ("gamepkg", "network_connect"),
+        ("gamepkg", "path_open"),
+    ] {
+        let bytes = module(&format!(
+            r#"(module
+            (import "{namespace}" "{operation}" (func))
+            (func $start unreachable) (start $start)
+            (func (export "gamepkg_tick") (param i32 i64) (result i64) i64.const 0))"#
+        ));
+        let error = Game::from_bytes(&bytes, &manifest())
+            .err()
+            .unwrap()
+            .to_string();
+        assert!(
+            error.contains("cannot import"),
+            "{namespace}/{operation}: {error}"
+        );
+    }
+    for resource in ["(memory 1)", "(global i32)", "(table 1 funcref)"] {
+        let bytes = module(&format!(
+            r#"(module (import "gamepkg" "asset_read" {resource}))"#
+        ));
+        let error = Game::from_bytes(&bytes, &manifest())
+            .err()
+            .unwrap()
+            .to_string();
+        assert!(error.contains("cannot import"), "{resource}: {error}");
+    }
+}

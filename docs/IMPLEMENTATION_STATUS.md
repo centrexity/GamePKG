@@ -52,3 +52,41 @@ The released 0.1.4 program also passed the actual Hindsight `tests/web_library.p
 - Key rotation, automatic save migration and shared-pool garbage collection are future development, not completed capabilities.
 
 The workflows in `.github/workflows/ci.yml` and `portable.yml` run the listed regression gates. Inspect the exact run for a commit before claiming its hosted checks passed; a queued or running job is not a passing result.
+
+## Source-policy, persistent database and web-export additions
+
+The current source parses all packaged Rust files and resolves the callback-name
+policy across modules. It rejects guest aliases, macros and indirect-call source
+forms. Before a compiler is launched, it additionally parses all Rust files in
+the exact private build tree, including trusted generated bindings and pinned
+dependency source. Core and component runtime imports remain restricted to the
+scoped API. `tests/modules.rs`, `tests/security.rs`, `tests/runtime.rs`,
+`tests/components.rs` and staged-source unit tests cover these rules.
+
+`examples/good/2048` adapts Adrien Ball's MIT-licensed 2048-rs row merging at the
+revision recorded in its credits. The original license is included in the signed
+package. All sixteen good examples and seven bad examples passed their actual
+pack/verify/install/build/run or expected-rejection checks locally. The native
+2048 GUI rendered tiles and changed the board on a right-arrow key; its library
+**Export for web** button produced a complete player folder.
+
+The home-folder library now holds an atomic `database/library.json` snapshot.
+`tests/home_database.py` verified default home selection and persistent library
+identity and records across two native host sessions. `tests/web_library.py
+--play` verified the actual Hindsight package, play history and achievements,
+including browser restart without host authorization. The native snapshot is
+rebuilt from verified host data and supplements Hindsight's browser database.
+
+`web-export ID --output FOLDER` exports a verified core build, a browser worker
+player, assets, readable notices and the signed source package. Browser tests
+verified rendered 2048 tiles and input, stop, output overwrite rejection,
+artifact checksum rejection, scoped assets and traversal denial, explicit ROM
+selection, persistent saves, achievements and termination of an infinite loop.
+A Wasm memory-maximum test verifies that memory growth cannot exceed the manifest
+hard limit. The GUI and CLI use the same export function.
+
+Browser support currently covers core-v1 grid/drawing games and scoped
+asset/ROM/save/achievement operations. Component, shader, image and audio imports
+fail export explicitly; the browser provides no Wasmtime fuel metering. Existing
+published 0.1.4 binaries predate these source changes. Compiler isolation and
+runtime capabilities remain necessary; Rust parsing does not prove safety.

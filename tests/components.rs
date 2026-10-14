@@ -151,3 +151,25 @@ fn component_sprite_lists_are_bounded_before_host_copy() {
     assert_eq!(game.step(0).unwrap(), 0);
     assert!(game.frame().commands.is_empty());
 }
+
+#[test]
+fn components_cannot_request_filesystem_or_socket_interfaces() {
+    for namespace in [
+        "wasi:filesystem/types@0.2.0",
+        "wasi:sockets/tcp@0.2.0",
+        "wasi:sockets/network@0.2.0",
+        "gamepkg:engine/filesystem@0.1.0",
+    ] {
+        let bytes = wat::parse_str(format!(
+            r#"(component
+            (type $host (instance))
+            (import "{namespace}" (instance (type $host))))"#
+        ))
+        .unwrap();
+        let error = Game::from_bytes(&bytes, &manifest())
+            .err()
+            .unwrap()
+            .to_string();
+        assert!(error.contains("cannot import"), "{namespace}: {error}");
+    }
+}

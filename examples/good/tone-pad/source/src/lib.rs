@@ -8,10 +8,10 @@ pub fn game_tick(input: u32, state: u64) -> u64 {
         *sample = value as i16;
         phase = (phase+1)%period;
     }
-    assert!(gamepkg::audio_submit(&samples));
-    assert!(gamepkg::draw_clear(0x102336ff));
-    for index in 0..3 { assert!(gamepkg::draw_rect((index*180+60) as f32,160.0,160.0,160.0,0x17324aff)); }
+    let _ = (gamepkg::audio_submit(&samples));
+    let _ = (gamepkg::draw_clear(0x102336ff));
+    for index in 0..3 { let _ = (gamepkg::draw_rect((index*180+60) as f32,160.0,160.0,160.0,0x17324aff)); }
     let x = if period == 480 { 140.0 } else if period == 120 { 500.0 } else { 320.0 };
-    assert!(gamepkg::draw_circle(x,240.0,45.0,0x64dcb4ff));
+    let _ = (gamepkg::draw_circle(x,240.0,45.0,0x64dcb4ff));
     phase as u64
 }

@@ -11,15 +11,15 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-integrity-roms-') as directory:
         manifest=source/'manifest.toml'
         manifest.write_text(f'runtime_profile="{profile}"\n'+manifest.read_text()+'\n[[roms]]\nid="program"\ntitle="Program ROM"\n[[roms]]\nid="data"\ntitle="Data ROM"\n')
         (source/'source/src/lib.rs').write_text('''pub fn game_tick(_:u32,state:u64)->u64 {
-            assert_eq!(gamepkg::rom_count(),2);
-            assert_eq!(gamepkg::rom_size_at(0),Some(3));
-            assert_eq!(gamepkg::rom_size_at(1),Some(4));
-            assert_eq!(gamepkg::rom_size_at(9999),None);
+            if !((gamepkg::rom_count()) == (2)) { loop {} };
+            if !((gamepkg::rom_size_at(0)) == (Some(3))) { loop {} };
+            if !((gamepkg::rom_size_at(1)) == (Some(4))) { loop {} };
+            if !((gamepkg::rom_size_at(9999)) == (None)) { loop {} };
             let mut bytes=[0u8;4];
-            assert_eq!(gamepkg::rom_read_at(1,0,&mut bytes),Some(4));
-            assert_eq!(&bytes,b"DATA");
-            assert_eq!(gamepkg::rom_read_at(9999,0,&mut bytes),None);
-            assert_eq!(gamepkg::rom_size(),Some(3)); state+1
+            if !((gamepkg::rom_read_at(1,0,&mut bytes)) == (Some(4))) { loop {} };
+            if !((&bytes) == (b"DATA")) { loop {} };
+            if !((gamepkg::rom_read_at(9999,0,&mut bytes)) == (None)) { loop {} };
+            if !((gamepkg::rom_size()) == (Some(3))) { loop {} }; state+1
         }''')
         env=dict(os.environ,GAMEPKG_HOME=str(home/'library'),GAMEPKG_CONFIG=str(home/'settings.toml'))
         def run(*args,good=True):

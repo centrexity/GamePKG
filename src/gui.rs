@@ -691,6 +691,7 @@ impl eframe::App for App {
             let mut inspect = None;
             let mut update = None;
             let mut build = None;
+            let mut export_web = None;
             let mut download = None;
             let mut play = None;
             let mut integrity = None;
@@ -727,6 +728,7 @@ impl eframe::App for App {
                             if ui.add_enabled(self.result.is_none(),egui::Button::new("Details")).clicked() { inspect = Some(m.id.clone()); }
                             if ui.add_enabled(built && self.result.is_none() && (m.required_rom_count()==0 || (self.rom_game.as_deref()==Some(m.id.as_str()) && !self.rom_path.trim().is_empty() && self.additional_rom_paths.len()+1==m.required_rom_count() && self.additional_rom_paths.iter().all(|p| !p.trim().is_empty()))), egui::Button::new("Play")).on_hover_text("Play this built game. ROM games need your file path above.").clicked() { play = Some(m.id.clone()); }
                             if ui.add_enabled(self.result.is_none(), egui::Button::new(if built { "Rebuild" } else { "Build" })).clicked() { build = Some(m.id.clone()); }
+                            if ui.add_enabled(built && self.result.is_none() && m.runtime_profile == "core-v1", egui::Button::new("Export for web")).on_hover_text("Export a portable browser player into your library web-exports folder. Some desktop graphics and audio imports are not supported yet.").clicked() { export_web = Some(m.id.clone()); }
                         });
                         ui.vertical(|ui| {
                         ui.set_min_width(180.0);
@@ -783,6 +785,15 @@ impl eframe::App for App {
                 self.begin_work(move || {
                     let (m,file) = crate::catalog::fetch(&crate::registry::default_root()?, &id)?;
                     Ok(Work::Update(m,file))
+                });
+            }
+            if let Some(id) = export_web {
+                self.begin_work(move || {
+                    let root = crate::registry::default_root()?;
+                    let suffix = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_nanos();
+                    let output = root.join("web-exports").join(format!("{id}-{suffix}"));
+                    crate::web_export::export(&root, &id, &output)?;
+                    Ok(Work::Message(format!("Web player exported to {}. Serve this folder over HTTP or HTTPS to play.", output.display())))
                 });
             }
             if let Some(id) = build {

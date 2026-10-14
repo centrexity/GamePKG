@@ -72,6 +72,16 @@ Packing validates before publishing and refuses to overwrite files. The output m
 - Rust source files under `source/src/`, pinned allowlisted dependencies only, `package.build = false`, and restricted Cargo fields. Includes, attributes, unsafe blocks, foreign declarations, and filesystem/network/process/environment paths are rejected.
 - Optional AV1/WebM and Theora/Ogg previews undergo isolated codec, size, duration, frame-count, and initial-keyframe validation. PNG package validation checks magic bytes; GUI image decoding is bounded.
 
+Filesystem access from games is virtual and scoped: assets come from the signed
+package, ROM reads use only files explicitly selected by the player, and saves
+use the game's own bounded save data. Games receive no operating-system paths,
+file handles, general filesystem API, or networking API. Package downloading and
+update checks run in the host separately from game execution. Core Wasm imports
+must be approved GamePKG functions; component imports must be functions from the
+versioned GamePKG host interface. Filesystem, socket, and unknown imports are
+rejected before guest initialization. This boundary denies ambient access rather
+than replacing Rust's standard library with a permissive compatibility layer.
+
 The source scanner is an early policy filter, **not a security boundary**. Rust macros and compiler behavior require an OS-isolated build process, followed by a Wasm capability sandbox. Linux builds now invoke the verified Cargo compiler inside bubblewrap; game code executes only through the Wasmtime runtime when Play/run is requested. Do not relax the source profile before those boundaries exist.
 
 ## Implemented workflow and remaining work
@@ -474,13 +484,16 @@ against the final 32 MiB artifact limit. A failed rebuild leaves earlier compile
 output intact. `tests/compiler_limits.py` exercises an oversized real Rust artifact;
 ordinary Rust, component and Slang build integrations verify successful builds.
 
-The source scanner checks identifiers inside macro token groups and import aliases,
-including raw identifiers. Hidden includes, unsafe/foreign code, restricted OS
-names, attributes and module declarations inside macros are refused. This initial
-policy is conservative: the reserved identifiers are rejected even when used as
-ordinary variable names; string literal text is allowed. Normal expression macros
-remain supported. Scanning supplements compiler isolation and Wasm linking; it is
-not a proof that source code is harmless.
+The game source profile rejects macro definitions and invocations (including
+`assert!` and derives), renamed imports (`use ... as ...`), wildcard imports, type aliases,
+closures, function-pointer types, dynamic traits, and computed call targets.
+Call functions directly by name or qualified path. Qualified uppercase constant
+paths remain supported. Calls through locally bound variables and passing named
+functions as callback values are rejected conservatively. Ordinary imports,
+modules, direct helper functions, and direct GamePKG API calls remain supported.
+Reserved OS identifiers, unsafe code, foreign code, and attributes are rejected.
+This syntax policy supplements compiler isolation and restricted Wasm imports;
+it does not prove that source code or approved dependencies are harmless.
 
 ## Game previews
 
@@ -771,3 +784,69 @@ Run `python3 tests/progress_gui.py --indexeddb-package /path/to/Hindsight4/Compi
 For an opt-in live Tor network test with a locally supplied Tor binary, run `python3 tests/tor_live.py --tor /path/to/tor`. It starts a temporary local onion service, verifies signed installation and a same-creator update, then stops Tor and removes its private test state. This requires network access and is separate from the deterministic routing test.
 
 The internal `prepare-build-worker` command exports exactly one verified installed game and its signed shared assets into a private request store. Player saves, history, ROMs and signing keys are excluded; an existing request file is preserved. The internal `build-worker` command prepares a private compiler exchange from exactly one verified `.gamepkgstore`. It uses a temporary Linux build library and the normal offline sandbox, binds the output to the signed package digest, copies bounded compiled caches, and publishes without replacing an existing output. It does not transport player saves, history or keys, and its output is not an installable game package. The receiving `accept-build-worker` command snapshots and validates the complete response before publishing it: package identity, backend, host version, playable entry point, exact output filenames, checksums and signed shader declarations must match. Links, unexpected nested folders and excessive output are rejected. `tests/build_worker.py` verifies accepted transfers, damaged responses preserving existing builds, and playback without compiler discovery. The current source also has an experimental, explicitly configured WSL 2 connection for Windows Build/Rebuild; setup is described in `docs/INSTALL_WINDOWS.md`. Actual Windows WSL 2 source builds, core/component playback, integrity repair and native GUI keyboard-driven shader pixels passed in hosted verification using software OpenGL. Windows still needs a configured compiler and working graphics driver.
+
+## Complete build-source parsing and persistent metadata
+
+Before invoking a compiler, GamePKG parses every Rust file in its private build
+folder, including generated core/component API bindings, unused modules, and
+pinned dependency source. Game-owned files also pass the restricted source
+policy during signature verification. Trusted host bindings and reviewed
+pinned dependencies have a separate policy because they implement that API.
+Parsing catches syntax and policy violations; compiler isolation and Wasm
+capabilities continue to enforce access limits.
+
+The library persists under the user's home profile by default: Linux uses
+`~/.local/share/gamepkg`; Windows uses `%LOCALAPPDATA%/gamepkg`.
+`GAMEPKG_HOME` and the library setting can select another persistent folder.
+The browser host atomically saves its authoritative metadata snapshot to
+`database/library.json` inside this folder at startup and on refresh. Hindsight
+IndexedDB remains the browser cache, populated from authenticated host records;
+the home-folder snapshot contains no session authentication token or ROM bytes.
+
+## Open-source 2048 example
+
+`examples/good/2048` adapts row sliding and merging from
+[Adrien Ball's 2048-rs](https://github.com/adrienball/2048-rs), with the exact
+upstream revision and adaptation details in its `CREDITS.md` and the upstream
+MIT license included as a packaged asset. Arrow keys slide and merge tiles;
+new tiles appear after a move changes the board. Each tile stores its exponent
+in four bits, with a maximum of 32768. The game draws through GamePKG's checked
+rectangle operations and uses no terminal, network, or filesystem interface.
+`tests/game_2048.rs` verifies movement and merging; `tests/open_source_2048.py`
+verifies a signed installation, isolated compilation, headless execution, and
+integrity.
+
+## Package a game for the web
+
+Build an installed game, then export it:
+
+```sh
+gamepkg build com.gamepkg.2048
+gamepkg web-export com.gamepkg.2048 --output ./2048-web
+python3 -m http.server 8080 --directory ./2048-web
+```
+
+Open `http://localhost:8080`. You can upload the exported folder to static HTTPS
+hosting. The GUI's **Export for web** button writes a fresh folder under the
+library's `web-exports` directory and reports its location. Existing output
+folders are never overwritten. The export includes a browser player, compiled
+Wasm, asset data, game and player notices, and the original signed `.gamepkg`
+source archive for inspection. Exported Wasm is a separate browser artifact;
+it is never accepted as source inside a `.gamepkg`.
+
+The current browser player supports `core-v1` games using grid output, rectangles,
+circles, scoped asset and ROM reads, bounded saves, and achievements. Unsupported
+component, shader, image, and audio imports produce an export error. The 2048
+example is playable in both the desktop and browser players. ROMs are selected
+by the player and never included in an export. Browser saves and play history
+are scoped by game and creator; save data is also scoped by schema version.
+Browser storage can be cleared or evicted and does not write desktop saves.
+
+The guest runs in a worker with no filesystem, socket, or browser-object imports.
+Export rewrites the Wasm memory maximum to enforce the manifest's hard limit,
+checks the built artifact checksum, and the player checks that checksum again
+before starting. A watchdog terminates a worker that does not return from a
+frame. Browser execution does not offer Wasmtime fuel metering, and background
+tab scheduling can delay a watchdog. Native compiler isolation and desktop
+runtime controls remain in place. The hosting site's scripts are trusted host
+code; export checksums do not authenticate a malicious hosting site.

@@ -32,6 +32,7 @@ fn good_examples_are_signed_and_verified() {
     for name in [
         "minimal",
         "good/counter",
+        "good/2048",
         "good/byteorder-game",
         "good/modular-game",
         "good/asset-catalog",
@@ -49,7 +50,8 @@ fn good_examples_are_signed_and_verified() {
         let temp = tempfile::tempdir().unwrap();
         let out = temp.path().join("example.gamepkg");
         let seed = [13; 32];
-        pack(&root.join("examples").join(name), &out, &seed).unwrap();
+        pack(&root.join("examples").join(name), &out, &seed)
+            .unwrap_or_else(|error| panic!("{name}: {error}"));
         let mut pkg = Package::open(&out).unwrap();
         verify(
             &mut pkg,

@@ -20,6 +20,7 @@ fn every_source_file_is_checked_and_modules_must_resolve_unambiguously() {
         "build-script",
         "non-rust",
         "invalid-utf8",
+        "cross-module-callback",
     ] {
         let temp = tempfile::tempdir().unwrap();
         let input = temp.path().join("source");
@@ -32,6 +33,15 @@ fn every_source_file_is_checked_and_modules_must_resolve_unambiguously() {
         );
         let source = input.join("source/src");
         match case {
+            "cross-module-callback" => {
+                fs::write(
+                    source.join("movement.rs"),
+                    "pub fn UPPER(x: u32) -> u32 { x } pub fn next(_:u32,x:u32)->u32 { x }",
+                )
+                .unwrap();
+                fs::write(source.join("lib.rs"), "mod movement; pub fn game_tick(_:u32,_:u64)->u64 { Some(1).map(movement::UPPER).unwrap() as u64 }").unwrap();
+            }
+
             "unused-forbidden" => fs::write(
                 source.join("unused.rs"),
                 "pub fn x() { std::fs::read(\"secret\"); }",

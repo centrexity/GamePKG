@@ -6,14 +6,19 @@ scoped host APIs. A signature establishes package integrity and creator-key
 continuity. First installation requires creator approval; it does not identify
 a real-world person or guarantee harmless code.
 
-The source policy rejects build scripts, procedural macros, binary includes,
+The source policy rejects build scripts, all guest macros, renamed and wildcard
+imports, type aliases, closures, function-pointer types, dynamic traits, computed
+call targets, binary includes,
 source path overrides, unsafe guest code, and filesystem/network/process
 paths. The pinned guest crate allowlist currently contains byteorder-lite 0.1.0
 with default features disabled. The signed lockfile must match its approved
 graph and registry checksum. The host supplies the source offline. Local
 approval can be revoked or restored through `allowlist remove/add` or desktop
 Settings; unknown crates cannot be added to the bundled catalog. Source scanning is a policy filter; compilation
-and runtime isolation enforce the remaining boundaries.
+and runtime isolation enforce the remaining boundaries. Every game Rust file,
+including unused modules, is parsed before compilation. A second pass parses the
+exact private build tree, including generated bindings and pinned dependency
+source. Parsing is a syntax and policy check, not a proof of harmless behavior.
 
 Linux builds use offline, locked Cargo inside bubblewrap, with an isolated
 network, private working directory and Cargo home, read-only system/toolchain

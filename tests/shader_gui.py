@@ -20,7 +20,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-shader-ui-') as directory:
   if args.component:
    manifest=source/'manifest.toml';manifest.write_text('runtime_profile = "component-v1"\n'+manifest.read_text())
  if args.texture:
-  (source/'source/src/lib.rs').write_text('pub fn game_tick(input:u32,state:u64)->u64 { if input & gamepkg::HELD_DOWN != 0 { assert!(gamepkg::draw_shader(0)); return state+1; } let pixels=if input & gamepkg::HELD_RIGHT != 0 { [0,255,0,255] } else { [0,0,255,255] }; assert!(!gamepkg::draw_shader_image(99,1,1,&pixels)); assert!(!gamepkg::draw_shader_image(0,513,1,&pixels)); assert!(!gamepkg::draw_shader_image(0,1,1,&pixels[..3])); assert!(gamepkg::draw_shader_image(0,1,1,&pixels)); state+1 }')
+  (source/'source/src/lib.rs').write_text('pub fn game_tick(input:u32,state:u64)->u64 { if input & gamepkg::HELD_DOWN != 0 { if !(gamepkg::draw_shader(0)) { loop {} }; return state+1; } let pixels=if input & gamepkg::HELD_RIGHT != 0 { [0,255,0,255] } else { [0,0,255,255] }; if !(!gamepkg::draw_shader_image(99,1,1,&pixels)) { loop {} }; if !(!gamepkg::draw_shader_image(0,513,1,&pixels)) { loop {} }; if !(!gamepkg::draw_shader_image(0,1,1,&pixels[..3])) { loop {} }; if !(gamepkg::draw_shader_image(0,1,1,&pixels)) { loop {} }; state+1 }')
   (source/'shaders/main.slang').write_text((project/'examples/good/shader-texture/shaders/main.slang').read_text())
  run('pack',source,'-o',root/'game.gamepkg','--key',key)
  run('install',root/'game.gamepkg','--trust-creator');run('build','com.gamepkg.shader-switch')

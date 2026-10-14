@@ -9,10 +9,10 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-roms-gui-') as directory:
     manifest=source/'manifest.toml'
     manifest.write_text(manifest.read_text()+'\n[[roms]]\nid="program"\ntitle="Program ROM"\n[[roms]]\nid="data"\ntitle="Data ROM"\n')
     (source/'source/src/lib.rs').write_text('''pub fn game_tick(_:u32,_:u64)->u64 {
-        assert_eq!(gamepkg::rom_count(),2);
+        if !((gamepkg::rom_count()) == (2)) { loop {} };
         let mut bytes=[0u8;4];
-        assert_eq!(gamepkg::rom_read_at(1,0,&mut bytes),Some(4));
-        assert_eq!(&bytes,b"DATA"); 7u64<<32
+        if !((gamepkg::rom_read_at(1,0,&mut bytes)) == (Some(4))) { loop {} };
+        if !((&bytes) == (b"DATA")) { loop {} }; 7u64<<32
     }''')
     env=dict(os.environ,GAMEPKG_HOME=str(root/'library'),GAMEPKG_CONFIG=str(root/'settings.toml'),LIBGL_ALWAYS_SOFTWARE='1');env.pop('WAYLAND_DISPLAY',None)
     (root/'settings.toml').write_text('automatic_update_checks=false\n')

@@ -55,3 +55,5 @@ pub mod build_worker;
 
 #[cfg(any(windows, test))]
 mod windows_build;
+
+pub mod web_export;

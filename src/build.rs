@@ -270,6 +270,8 @@ pub(crate) fn compile_with_settings(
     fs::write(stage.path().join("Cargo.lock"), toml::to_string(&locked)?)?;
     let crate_name = cargo["package"]["name"].as_str().unwrap().replace('-', "_");
 
+    crate::source::parse_build_tree(stage.path())?;
+
     // Desktop/WSL launches do not necessarily load Rustup's shell PATH setup.
     let rustup = std::env::var_os("CARGO_HOME")
         .map(PathBuf::from)

@@ -18,7 +18,11 @@ pub fn default_root() -> Result<PathBuf> {
     let base = std::env::var_os("XDG_DATA_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("LOCALAPPDATA").map(PathBuf::from))
-        .or_else(|| std::env::var_os("HOME").map(|p| PathBuf::from(p).join(".local/share")))
+        .or_else(|| {
+            std::env::var_os("HOME")
+                .or_else(|| std::env::var_os("USERPROFILE"))
+                .map(|p| PathBuf::from(p).join(".local/share"))
+        })
         .context("set GAMEPKG_HOME to an installation directory")?;
     Ok(base.join("gamepkg"))
 }

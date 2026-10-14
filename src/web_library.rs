@@ -54,8 +54,35 @@ fn snapshot(root: &Path) -> Result<Vec<u8>> {
     if data.len() > 8 * 1024 * 1024 {
         bail!("browser library metadata exceeds 8 MiB");
     }
+    persist_snapshot(root, &data)?;
     Ok(data)
 }
+// Home-folder mirror survives browser profile deletion and origin changes.
+// Hindsight remains the browser database; this snapshot is rebuilt from verified
+// native records rather than trusting arbitrary browser writes.
+fn persist_snapshot(root: &Path, data: &[u8]) -> Result<()> {
+    let directory = root.join("database");
+    if directory
+        .symlink_metadata()
+        .is_ok_and(|m| !m.is_dir() || m.file_type().is_symlink())
+    {
+        bail!("database folder must be a real directory");
+    }
+    fs::create_dir_all(&directory)?;
+    let destination = directory.join("library.json");
+    if destination
+        .symlink_metadata()
+        .is_ok_and(|m| !m.is_file() || m.file_type().is_symlink())
+    {
+        bail!("database snapshot must be a regular file");
+    }
+    let mut temporary = tempfile::NamedTempFile::new_in(&directory)?;
+    temporary.write_all(data)?;
+    temporary.as_file().sync_all()?;
+    temporary.persist(destination)?;
+    Ok(())
+}
+
 fn respond(stream: &mut TcpStream, status: &str, kind: &str, body: &[u8]) -> Result<()> {
     write!(stream,"HTTP/1.1 {status}\r\nContent-Type: {kind}\r\nContent-Length: {}\r\nConnection: close\r\nCache-Control: no-store\r\nCross-Origin-Opener-Policy: same-origin\r\nCross-Origin-Embedder-Policy: require-corp\r\nX-Content-Type-Options: nosniff\r\nContent-Security-Policy: default-src 'self'; script-src 'self'; worker-src 'self' blob:; connect-src 'self'; style-src 'self'; frame-ancestors 'none'; base-uri 'none'\r\n\r\n",body.len())?;
     stream.write_all(body)?;
@@ -190,6 +217,7 @@ pub fn serve(root: &Path, package: &Path, port: u16) -> Result<()> {
         bail!("Hindsight IndexedDB source differs from the verified package revision");
     }
     fs::create_dir_all(root)?;
+    snapshot(root)?;
     let listener = TcpListener::bind(("127.0.0.1", port))?;
     let host = listener.local_addr()?.to_string();
     let mut secret = [0u8; 32];
@@ -206,4 +234,22 @@ pub fn serve(root: &Path, package: &Path, port: u16) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod persistence_tests {
+    use super::*;
+    #[test]
+    fn snapshot_survives_reopening_and_is_atomically_replaced() {
+        let root = tempfile::tempdir().unwrap();
+        persist_snapshot(root.path(), br#"{"format_version":1}"#).unwrap();
+        let path = root.path().join("database/library.json");
+        assert_eq!(fs::read(&path).unwrap(), br#"{"format_version":1}"#);
+        persist_snapshot(root.path(), br#"{"format_version":1,"games":[]}"#).unwrap();
+        assert_eq!(
+            fs::read(&path).unwrap(),
+            br#"{"format_version":1,"games":[]}"#
+        );
+        assert_eq!(fs::read_dir(path.parent().unwrap()).unwrap().count(), 1);
+    }
 }

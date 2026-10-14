@@ -12,13 +12,13 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-rom-') as directory:
     shutil.copytree(PROJECT / 'examples/good/rom-required', source)
     (source / 'source/src/lib.rs').write_text('''
 pub fn game_tick(_: u32, _: u64) -> u64 {
-    assert_eq!(gamepkg::rom_size(), Some(3));
+    if !((gamepkg::rom_size()) == (Some(3))) { loop {} };
     let mut buffer = [0; 8];
-    assert_eq!(gamepkg::rom_read(1, &mut buffer), Some(2));
-    assert_eq!(&buffer[..2], b"BC");
-    assert_eq!(gamepkg::rom_read(3, &mut buffer), Some(0));
-    assert_eq!(gamepkg::rom_read(4, &mut buffer), None);
-    assert_eq!(gamepkg::rom_read(u32::MAX, &mut buffer), None);
+    if !((gamepkg::rom_read(1, &mut buffer)) == (Some(2))) { loop {} };
+    if !((&buffer[..2]) == (b"BC")) { loop {} };
+    if !((gamepkg::rom_read(3, &mut buffer)) == (Some(0))) { loop {} };
+    if !((gamepkg::rom_read(4, &mut buffer)) == (None)) { loop {} };
+    if !((gamepkg::rom_read(u32::MAX, &mut buffer)) == (None)) { loop {} };
     42u64 << 32
 }
 ''')

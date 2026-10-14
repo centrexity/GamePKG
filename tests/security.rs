@@ -260,13 +260,29 @@ fn rejects_shader_assembly_and_macro_injection_without_publishing() {
 }
 
 #[test]
-fn ordinary_macros_and_literal_text_remain_accepted() {
+fn macros_are_rejected_but_literal_text_remains_accepted() {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path().join("game");
     fixture(&root);
-    fs::write(root.join("source/src/lib.rs"),r#"macro_rules! add { ($x:expr) => { $x + 1 }; }
-        pub fn game_tick(_: u32,state:u64)->u64 { assert_eq!("unsafe std::fs include_bytes mod #", "unsafe std::fs include_bytes mod #"); add!(state) }"#).unwrap();
-    pack(&root, &temp.path().join("ordinary.gamepkg"), &SEED).unwrap();
+    let source = root.join("source/src/lib.rs");
+    fs::write(
+        &source,
+        r#"macro_rules! add { ($x:expr) => { $x + 1 }; }
+        pub fn game_tick(_: u32,state:u64)->u64 { add!(state) }"#,
+    )
+    .unwrap();
+    let output = temp.path().join("ordinary.gamepkg");
+    assert!(pack(&root, &output, &SEED).is_err());
+    assert!(!output.exists());
+    fs::write(
+        &source,
+        r#"pub fn game_tick(_: u32,state:u64)->u64 {
+        let text = "unsafe std::fs include_bytes mod #";
+        state + text.len() as u64
+    }"#,
+    )
+    .unwrap();
+    pack(&root, &output, &SEED).unwrap();
 }
 
 #[test]

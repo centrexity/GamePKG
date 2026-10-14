@@ -16,8 +16,8 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-progress-') as directory:
         manifest=source/'manifest.toml'
         manifest.write_text(f'runtime_profile="{profile}"\n'+manifest.read_text()+'\n[[achievements]]\nid="started"\ntitle="Started"\ndescription="Play this game"\n')
         (source/'source/src/lib.rs').write_text('''pub fn game_tick(_:u32,state:u64)->u64 {
-            assert!(gamepkg::achievement_unlock(0));
-            assert!(!gamepkg::achievement_unlock(9999));
+            if !(gamepkg::achievement_unlock(0)) { loop {} };
+            if !(!gamepkg::achievement_unlock(9999)) { loop {} };
             state + 1
         }''')
         env=dict(os.environ,GAMEPKG_HOME=str(home/'library'),GAMEPKG_CONFIG=str(home/'settings.toml'))
@@ -41,8 +41,8 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-progress-') as directory:
         original=manifest.read_text().split('\n[[achievements]]')[0]
         manifest.write_text(original.replace('version = "0.1.0"','version = "0.2.0"')+'\n[[achievements]]\nid="new_goal"\ntitle="New goal"\ndescription="Added by an update"\n[[achievements]]\nid="started"\ntitle="First session"\ndescription="Renamed, same stable ID"\n')
         (source/'source/src/lib.rs').write_text('''pub fn game_tick(_:u32,state:u64)->u64 {
-            assert!(gamepkg::achievement_unlock(1));
-            if state > 0 { assert!(gamepkg::achievement_unlock(0)); }
+            if !(gamepkg::achievement_unlock(1)) { loop {} };
+            if state > 0 { if !(gamepkg::achievement_unlock(0)) { loop {} }; }
             state + 1
         }''')
         package.unlink()

@@ -31,6 +31,12 @@ enum Command {
         #[arg(long)]
         copy_output: bool,
     },
+    /// Export a built game as a self-contained browser player.
+    WebExport {
+        id: String,
+        #[arg(short, long)]
+        output: PathBuf,
+    },
     /// Open a local browser metadata library using Hindsight Database/IndexedDB.
     WebLibrary {
         #[arg(long)]
@@ -197,6 +203,10 @@ fn main() -> Result<()> {
                 !no_optimize,
                 !no_approved_crates,
             )?;
+        }
+        Command::WebExport { id, output } => {
+            gamepkg::web_export::export(&gamepkg::registry::default_root()?, &id, &output)?;
+            println!("Web player exported to {}", output.display());
         }
         Command::WebLibrary {
             indexeddb_package,

@@ -18,27 +18,27 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-assets-') as directory:
     (source / 'assets/message.txt').write_bytes(b'ABC')
     (source / 'source/src/lib.rs').write_text('''
 pub fn game_tick(_: u32, _: u64) -> u64 {
-    assert!(gamepkg::achievement_unlock(0));
-    assert!(!gamepkg::achievement_unlock(9999));
+    if !(gamepkg::achievement_unlock(0)) { loop {} };
+    if !(!gamepkg::achievement_unlock(9999)) { loop {} };
     let mut buffer = [0; 8];
-    assert_eq!(gamepkg::asset_read("message.txt", 1, &mut buffer), Some(2));
-    assert_eq!(&buffer[..2], b"BC");
-    assert_eq!(gamepkg::asset_read("message.txt", 3, &mut buffer), Some(0));
-    assert_eq!(gamepkg::asset_read("message.txt", 4, &mut buffer), None);
+    if !((gamepkg::asset_read("message.txt", 1, &mut buffer)) == (Some(2))) { loop {} };
+    if !((&buffer[..2]) == (b"BC")) { loop {} };
+    if !((gamepkg::asset_read("message.txt", 3, &mut buffer)) == (Some(0))) { loop {} };
+    if !((gamepkg::asset_read("message.txt", 4, &mut buffer)) == (None)) { loop {} };
     for path in ["../manifest.toml", "/etc/passwd", "missing", "../assets/message.txt"] {
-        assert_eq!(gamepkg::asset_read(path, 0, &mut buffer), None);
+        if !((gamepkg::asset_read(path, 0, &mut buffer)) == (None)) { loop {} };
     }
-    assert_eq!(gamepkg::rom_size(), Some(3));
-    assert_eq!(gamepkg::rom_read(1, &mut buffer), Some(2));
-    assert_eq!(&buffer[..2], b"OM");
-    assert!(gamepkg::save_write(b"saved"));
-    assert_eq!(gamepkg::save_size(), Some(5));
-    assert_eq!(gamepkg::save_read(0, &mut buffer), Some(5));
-    assert_eq!(&buffer[..5], b"saved");
-    assert!(gamepkg::draw_clear(0x102030ff));
-    assert!(gamepkg::draw_rect(10.0,20.0,30.0,40.0,0xabcdef12));
-    assert!(gamepkg::draw_circle(100.0,100.0,20.0,0x123456ff));
-    assert!(gamepkg::audio_submit(&[100,-100,0]));
+    if !((gamepkg::rom_size()) == (Some(3))) { loop {} };
+    if !((gamepkg::rom_read(1, &mut buffer)) == (Some(2))) { loop {} };
+    if !((&buffer[..2]) == (b"OM")) { loop {} };
+    if !(gamepkg::save_write(b"saved")) { loop {} };
+    if !((gamepkg::save_size()) == (Some(5))) { loop {} };
+    if !((gamepkg::save_read(0, &mut buffer)) == (Some(5))) { loop {} };
+    if !((&buffer[..5]) == (b"saved")) { loop {} };
+    if !(gamepkg::draw_clear(0x102030ff)) { loop {} };
+    if !(gamepkg::draw_rect(10.0,20.0,30.0,40.0,0xabcdef12)) { loop {} };
+    if !(gamepkg::draw_circle(100.0,100.0,20.0,0x123456ff)) { loop {} };
+    if !(gamepkg::audio_submit(&[100,-100,0])) { loop {} };
     42u64 << 32
 }
 ''')
@@ -61,8 +61,8 @@ pub fn game_tick(_: u32, _: u64) -> u64 {
     save_path = next((root/'library/saves').glob('*.blob'))
     (source/'source/src/lib.rs').write_text('''
 pub fn game_tick(_: u32, _: u64) -> u64 {
-    assert!(gamepkg::save_write(b"rollback"));
-    assert!(false);
+    if !(gamepkg::save_write(b"rollback")) { loop {} };
+    if !(false) { loop {} };
     0
 }
 ''')
@@ -75,9 +75,9 @@ pub fn game_tick(_: u32, _: u64) -> u64 {
     manifest.write_text(manifest.read_text().replace('version = "0.2.0"','version = "0.3.0"').replace('save = true','save = false').replace('audio = true','audio = false'))
     (source/'source/src/lib.rs').write_text('''
 pub fn game_tick(_: u32, _: u64) -> u64 {
-    assert_eq!(gamepkg::save_size(),None);
-    assert!(!gamepkg::save_write(b"denied"));
-    assert!(!gamepkg::audio_submit(&[100]));
+    if !((gamepkg::save_size()) == (None)) { loop {} };
+    if !(!gamepkg::save_write(b"denied")) { loop {} };
+    if !(!gamepkg::audio_submit(&[100])) { loop {} };
     0
 }
 ''')
