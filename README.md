@@ -46,6 +46,8 @@ Port recipes for Zelda3, Arkanoo, and 2048 live in [GamePKG_Ports](https://githu
 
 ## Try it
 
+The desktop **Support** tab and [website support page](https://centrexity.github.io/GamePKG/support/) offer PayPal, Bitcoin, Monero, Dogecoin, and a link to the GamePKG mining group. Payment details are currently blank. Maintainers can add them in `html/support/details.json`; the site reads that file and the app embeds it when rebuilt. Click a configured crypto address to copy it. `gamepkg-gui --support` opens the page directly.
+
 Install Rust, clone with the pinned ports, then run:
 
 ```sh
