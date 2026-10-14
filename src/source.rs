@@ -1,10 +1,106 @@
 use crate::archive::Package;
 use anyhow::{bail, Result};
 use syn::visit::Visit;
+// Bound syntax complexity with a non-recursive lexer before either token-tree
+// construction or AST parsing. Literals/comments are single tokens, so large
+// asset literals cannot impersonate delimiter/operator nesting.
+fn syntax_budget(text: &str) -> Result<()> {
+    use rustc_lexer::TokenKind as K;
+    struct Scope {
+        close: Option<K>,
+        current: usize,
+        maximum: usize,
+        declaration: bool,
+    }
+    let mut scopes = vec![Scope {
+        close: None,
+        current: 0,
+        maximum: 0,
+        declaration: false,
+    }];
+    let mut count = 0;
+    let mut offset = 0;
+    let mut declaration = false;
+    for token in rustc_lexer::tokenize(text) {
+        let spelling = &text[offset..offset + token.len];
+        offset += token.len;
+        if matches!(
+            token.kind,
+            K::Whitespace | K::LineComment | K::BlockComment { .. }
+        ) {
+            continue;
+        }
+        count += 1;
+        if count > 131072 {
+            bail!("Rust source exceeds token budget");
+        }
+        if token.kind == K::Ident
+            && matches!(
+                spelling,
+                "fn" | "mod" | "impl" | "struct" | "enum" | "trait"
+            )
+        {
+            declaration = true;
+        }
+        scopes.last_mut().unwrap().current += 1;
+        if scopes.iter().map(|scope| scope.current).sum::<usize>() > 1024 {
+            bail!("Rust source exceeds expression complexity budget");
+        }
+        let close = match token.kind {
+            K::OpenParen => Some(K::CloseParen),
+            K::OpenBrace => Some(K::CloseBrace),
+            K::OpenBracket => Some(K::CloseBracket),
+            _ => None,
+        };
+        if let Some(close) = close {
+            if scopes.len() > 64 {
+                bail!("Rust source exceeds syntax nesting budget");
+            }
+            let item = token.kind == K::OpenBrace && declaration;
+            if token.kind == K::OpenBrace {
+                declaration = false;
+            }
+            scopes.push(Scope {
+                close: Some(close),
+                current: 0,
+                maximum: 0,
+                declaration: item,
+            });
+        } else if matches!(token.kind, K::CloseParen | K::CloseBrace | K::CloseBracket) {
+            if scopes.len() == 1 {
+                bail!("unmatched Rust delimiter");
+            }
+            let child = scopes.pop().unwrap();
+            if child.close != Some(token.kind) {
+                bail!("mismatched Rust delimiter");
+            }
+            let parent = scopes.last_mut().unwrap();
+            parent.current += child.current.max(child.maximum);
+            if scopes.iter().map(|scope| scope.current).sum::<usize>() > 1024 {
+                bail!("Rust source exceeds expression complexity budget");
+            }
+            if child.declaration {
+                let parent = scopes.last_mut().unwrap();
+                parent.maximum = parent.maximum.max(parent.current);
+                parent.current = 0;
+            }
+        } else if token.kind == K::Semi {
+            let current = scopes.last_mut().unwrap();
+            current.maximum = current.maximum.max(current.current);
+            current.current = 0;
+        }
+    }
+    if scopes.len() != 1 {
+        bail!("unterminated Rust delimiter");
+    }
+    Ok(())
+}
+
 struct Scanner {
     rejected: bool,
     bindings: std::collections::BTreeSet<String>,
     functions: std::collections::BTreeSet<String>,
+    constants: std::collections::BTreeSet<String>,
 }
 fn reserved(name: &str) -> bool {
     matches!(
@@ -115,6 +211,15 @@ impl<'ast> Visit<'ast> for Scanner {
         {
             self.rejected = true;
         }
+        if node.path.segments.len() == 1 {
+            let name = node.path.segments[0].ident.to_string();
+            if !self.bindings.contains(&name)
+                && !self.constants.contains(&name)
+                && !matches!(name.as_str(), "None" | "self")
+            {
+                self.rejected = true;
+            }
+        }
         syn::visit::visit_expr_path(self, node);
     }
     fn visit_item_mod(&mut self, node: &'ast syn::ItemMod) {
@@ -148,8 +253,34 @@ impl<'ast> Visit<'ast> for Scanner {
 struct Names {
     bindings: std::collections::BTreeSet<String>,
     functions: std::collections::BTreeSet<String>,
+    constants: std::collections::BTreeSet<String>,
 }
 impl<'ast> Visit<'ast> for Names {
+    fn visit_item_const(&mut self, node: &'ast syn::ItemConst) {
+        self.constants.insert(node.ident.to_string());
+        syn::visit::visit_item_const(self, node);
+    }
+    fn visit_item_static(&mut self, node: &'ast syn::ItemStatic) {
+        self.constants.insert(node.ident.to_string());
+        syn::visit::visit_item_static(self, node);
+    }
+    fn visit_impl_item_fn(&mut self, node: &'ast syn::ImplItemFn) {
+        self.functions.insert(node.sig.ident.to_string());
+        syn::visit::visit_impl_item_fn(self, node);
+    }
+    fn visit_variant(&mut self, node: &'ast syn::Variant) {
+        if matches!(node.fields, syn::Fields::Unnamed(_)) {
+            self.functions.insert(node.ident.to_string());
+        }
+        syn::visit::visit_variant(self, node);
+    }
+    fn visit_item_struct(&mut self, node: &'ast syn::ItemStruct) {
+        if matches!(node.fields, syn::Fields::Unnamed(_)) {
+            self.functions.insert(node.ident.to_string());
+        }
+        syn::visit::visit_item_struct(self, node);
+    }
+
     fn visit_use_name(&mut self, node: &'ast syn::UseName) {
         let name = node.ident.to_string();
         if name.chars().any(|c| c.is_ascii_lowercase()) {
@@ -261,6 +392,7 @@ pub fn scan(pkg: &mut Package) -> Result<()> {
         }
         let data = pkg.read(&name)?;
         let text = std::str::from_utf8(&data)?;
+        syntax_budget(text)?;
         let tokens = text
             .parse::<proc_macro2::TokenStream>()
             .map_err(|error| anyhow::anyhow!("invalid source tokens: {error}"))?;
@@ -278,6 +410,7 @@ pub fn scan(pkg: &mut Package) -> Result<()> {
             rejected: false,
             bindings: names.bindings,
             functions: global_names.functions.clone(),
+            constants: global_names.constants.clone(),
         };
         scanner.visit_file(&ast);
         let parent = name.rsplit_once('/').unwrap().0;
@@ -312,6 +445,7 @@ mod restricted_calls_tests {
             rejected: false,
             bindings: names.bindings,
             functions: names.functions,
+            constants: names.constants,
         };
         scanner.visit_file(&ast);
         scanner.rejected
@@ -320,6 +454,11 @@ mod restricted_calls_tests {
     fn rejects_aliases_macros_and_callbacks() {
         for text in [
             "use gamepkg as api;",
+            "fn tick() { let mapped = Some(1).map(Some); }",
+            "struct Value; impl Value { pub fn UPPER(x:u32)->u32 { x } } fn tick() { Some(1).map(Value::UPPER); }",
+            "enum Value { UPPER(u32) } fn tick() { Some(1).map(Value::UPPER); }",
+            "struct UPPER(u32); fn tick() { Some(1).map(UPPER); }",
+
             "use gamepkg::*;",
             "use gamepkg::save_write; fn tick() { gamepkg::callback(save_write); }",
             "use gamepkg::save_write as write;",
@@ -349,6 +488,7 @@ mod restricted_calls_tests {
 pub(crate) fn parse_build_tree(root: &std::path::Path) -> Result<usize> {
     let mut pending = vec![(root.to_path_buf(), 0usize)];
     let mut files = 0;
+    let mut total_bytes = 0u64;
     while let Some((directory, depth)) = pending.pop() {
         if depth > 32 {
             bail!("build source tree exceeds depth limit");
@@ -373,7 +513,15 @@ pub(crate) fn parse_build_tree(root: &std::path::Path) -> Result<usize> {
                 if files > 4096 {
                     bail!("too many Rust source files");
                 }
-                let bytes = crate::files::read_regular(&entry.path(), 16 * 1024 * 1024, false)?;
+                let bytes = crate::files::read_regular(
+                    &entry.path(),
+                    crate::archive::MAX_FILE + 1024 * 1024,
+                    false,
+                )?;
+                total_bytes += bytes.len() as u64;
+                if total_bytes > crate::archive::MAX_TOTAL + 1024 * 1024 {
+                    bail!("staged Rust sources exceed package and host-binding budgets");
+                }
                 let text = std::str::from_utf8(&bytes)?;
                 syn::parse_file(text).map_err(|error| {
                     anyhow::anyhow!(
@@ -418,5 +566,38 @@ mod staged_tree_tests {
         ] {
             syn::parse_file(text).unwrap();
         }
+    }
+}
+
+#[cfg(test)]
+mod syntax_budget_tests {
+    use super::*;
+    #[test]
+    fn excessive_operators_and_nesting_are_rejected_without_ast_parsing() {
+        assert!(syntax_budget(&format!(
+            "fn x() {{ let value = {}false; }}",
+            "!".repeat(10000)
+        ))
+        .is_err());
+        assert!(syntax_budget(&format!(
+            "fn x() {{ {}0{}; }}",
+            "(".repeat(1000),
+            ")".repeat(1000)
+        ))
+        .is_err());
+        assert!(syntax_budget(&format!("fn x() {{ {}0; }}", "1 + ".repeat(2000))).is_err());
+    }
+    #[test]
+    fn punctuation_in_strings_and_comments_is_not_syntax_nesting() {
+        let text = format!(
+            "fn x() {{ let text = \"{}\"; /* {} */ }}",
+            "!([".repeat(10000),
+            ")!]".repeat(10000)
+        );
+        syn::parse_file(&text).unwrap();
+        syntax_budget(&text).unwrap();
+        let raw = r####"fn x() { let text = r###"! ([ /* ) ] */"###; let byte = b'('; }"####;
+        syn::parse_file(raw).unwrap();
+        syntax_budget(raw).unwrap();
     }
 }

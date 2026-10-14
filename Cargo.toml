@@ -1,6 +1,6 @@
 [package]
 name = "gamepkg"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2021"
 rust-version = "1.89"
 license = "Apache-2.0"
@@ -48,6 +48,7 @@ syn = { version = "2", features = ["full", "visit"] }
 url = "2"
 semver = "1"
 tempfile = "3"
+rustc_lexer = "=0.1.0"
 
 [dev-dependencies]
 wat = "1"

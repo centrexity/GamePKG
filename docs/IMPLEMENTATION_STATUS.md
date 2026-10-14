@@ -77,7 +77,7 @@ identity and records across two native host sessions. `tests/web_library.py
 including browser restart without host authorization. The native snapshot is
 rebuilt from verified host data and supplements Hindsight's browser database.
 
-`web-export ID --output FOLDER` exports a verified core build, a browser worker
+`web-export ID --output FOLDER` exports a verified core or host-generated component guest build, a browser worker
 player, assets, readable notices and the signed source package. Browser tests
 verified rendered 2048 tiles and input, stop, output overwrite rejection,
 artifact checksum rejection, scoped assets and traversal denial, explicit ROM
@@ -85,8 +85,30 @@ selection, persistent saves, achievements and termination of an infinite loop.
 A Wasm memory-maximum test verifies that memory growth cannot exceed the manifest
 hard limit. The GUI and CLI use the same export function.
 
-Browser support currently covers core-v1 grid/drawing games and scoped
-asset/ROM/save/achievement operations. Component, shader, image and audio imports
-fail export explicitly; the browser provides no Wasmtime fuel metering. Existing
+Browser support covers both runtime profiles, scoped
+asset/ROM/save/achievement operations, raw and PNG sprites, output-only audio
+with mute, and verified WebGL 2 fragment/texture passes. Browser tests passed
+actual sprite movement, audio scheduling/mute, and shader blue/green/released-blue
+pixels for both profiles. The adapter selects exactly one validated embedded
+guest module from a component and does not forward arbitrary component graphs.
+A corrected preflight file bound matches the 64 MiB package-file limit; the
+actual oversized-artifact test still reaches the isolated compiler, fails and
+preserves earlier compiled output. The browser provides no Wasmtime fuel metering. Existing
 published 0.1.4 binaries predate these source changes. Compiler isolation and
 runtime capabilities remain necessary; Rust parsing does not prove safety.
+
+The source is now version 0.1.5 so Windows compiler-worker version checks reject
+older 0.1.4 workers that lack the complete private-tree parsing pass. Callback
+checks also cover associated functions, tuple/enum constructors and implicit
+prelude function values, while retaining ordinary bindings, constants and direct
+calls. These additions passed the all-feature Rust test suite and local browser
+checks. Published 0.1.4 archives remain the previous preview until replacement
+archives are verified and released.
+
+An actual 10,000-unary-operator source probe aborted the earlier CLI with a stack
+overflow. The lexer preflight now rejects it, excessive grouping and long
+operator expressions with a normal error before AST construction. The actual
+CLI test verifies non-abort exit status and absence of published package data;
+string/raw-string/comment tests ensure punctuation in data is not syntax nesting.
+Near-boundary source probes (256, 512 and 900 operators) packed successfully with
+a 2 MiB process stack, and all sixteen good/seven bad examples still passed.

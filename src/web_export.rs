@@ -16,6 +16,11 @@ const SUPPORTED: &[&str] = &[
     "draw_rect",
     "draw_circle",
     "achievement_unlock",
+    "draw_image",
+    "draw_asset_image",
+    "audio_submit",
+    "draw_shader",
+    "draw_shader_image",
 ];
 
 fn leb(bytes: &[u8], cursor: &mut usize) -> Result<u32> {
@@ -95,15 +100,59 @@ fn cap_memory(bytes: &[u8], limit: u64) -> Result<Vec<u8>> {
     Ok(output)
 }
 
+/// Select the host-generated core guest inside a verified WIT component.
+/// Browser bindings implement its fixed canonical ABI; arbitrary component
+/// graphs and additional imports are never forwarded to the browser.
+fn browser_module(bytes: &[u8], profile: &str) -> Result<Vec<u8>> {
+    if profile == "core-v1" {
+        if !bytes.starts_with(b"\0asm\x01\0\0\0") {
+            bail!("core runtime requires a core Wasm build");
+        }
+        return Ok(bytes.to_vec());
+    }
+    if profile != "component-v1" || !bytes.starts_with(b"\0asm\x0d\0\x01\0") {
+        bail!("unsupported browser runtime profile or mismatched build");
+    }
+    wasmparser::Validator::new().validate_all(bytes)?;
+    let mut selected = None;
+    for payload in wasmparser::Parser::new(0).parse_all(bytes) {
+        if let wasmparser::Payload::ModuleSection {
+            unchecked_range, ..
+        } = payload?
+        {
+            let module = bytes
+                .get(unchecked_range)
+                .context("invalid component module range")?;
+            let mut tick = false;
+            let mut allocator = false;
+            for item in wasmparser::Parser::new(0).parse_all(module) {
+                if let wasmparser::Payload::ExportSection(exports) = item? {
+                    for export in exports {
+                        let export = export?;
+                        tick |=
+                            export.name == "tick" && export.kind == wasmparser::ExternalKind::Func;
+                        allocator |= export.name == "cabi_realloc"
+                            && export.kind == wasmparser::ExternalKind::Func;
+                    }
+                }
+            }
+            if tick && allocator {
+                if selected.is_some() {
+                    bail!("ambiguous component guest modules");
+                }
+                selected = Some(module.to_vec());
+            }
+        }
+    }
+    selected.context("component lacks a browser-compatible GamePKG guest module")
+}
+
 pub fn export(root: &Path, id: &str, output: &Path) -> Result<()> {
     let _guard = crate::registry::LibraryChange::acquire(root)?;
     let mut package = crate::archive::Package::open(&root.join(format!("{id}.gamepkg")))?;
     let manifest = crate::verify::verify_embedded(&mut package)?;
     if manifest.id != id {
         bail!("installed package ID differs");
-    }
-    if manifest.runtime_profile != "core-v1" {
-        bail!("web export currently requires core-v1; component games need a browser component adapter");
     }
     let source_package = crate::files::read_regular(
         &root.join(format!("{id}.gamepkg")),
@@ -120,18 +169,35 @@ pub fn export(root: &Path, id: &str, output: &Path) -> Result<()> {
     let path = crate::build::cache_path(root, id)?;
     let wasm = crate::files::read_regular(&path, 32 * 1024 * 1024, false)?;
     crate::integrity::verify_build(&path, &wasm)?;
-    if !wasm.starts_with(b"\0asm\x01\0\0\0") {
-        bail!("web export requires a core Wasm build matching the runtime profile");
-    }
     if !crate::build::artifact_has_tick(&wasm) {
         bail!("build the game before exporting for web");
     }
+    let wasm = browser_module(&wasm, &manifest.runtime_profile)?;
+    let namespace = if manifest.runtime_profile == "component-v1" {
+        "gamepkg:engine/host@0.1.0"
+    } else {
+        "gamepkg"
+    };
+    let mut uses_shaders = false;
+    let mut custom_renderer = false;
     for payload in wasmparser::Parser::new(0).parse_all(&wasm) {
         if let wasmparser::Payload::ImportSection(imports) = payload? {
             for import in imports {
                 let import = import?;
-                if import.module != "gamepkg"
-                    || !SUPPORTED.contains(&import.name)
+                custom_renderer |=
+                    import.name.starts_with("draw_") || import.name.starts_with("draw-");
+                uses_shaders |= matches!(
+                    import.name,
+                    "draw_shader" | "draw_shader_image" | "draw-shader" | "draw-shader-image"
+                );
+                if import.module != namespace
+                    || !SUPPORTED.iter().any(|name| {
+                        if manifest.runtime_profile == "component-v1" {
+                            name.replace('_', "-") == import.name
+                        } else {
+                            *name == import.name
+                        }
+                    })
                     || !matches!(import.ty, wasmparser::TypeRef::Func(_))
                 {
                     bail!(
@@ -165,8 +231,21 @@ pub fn export(root: &Path, id: &str, output: &Path) -> Result<()> {
         }
         assets.insert(name, hex::encode(bytes));
     }
+    let shaders = if uses_shaders {
+        crate::shaders::load_fragment_sources(
+            root,
+            &source_package,
+            &manifest,
+            &crate::settings::load()?,
+        )?
+    } else {
+        Vec::new()
+    };
+    if shaders.iter().map(String::len).sum::<usize>() > 32 * 1024 * 1024 {
+        bail!("browser shader source exceeds 32 MiB export budget");
+    }
     let data = serde_json::to_vec(
-        &serde_json::json!({"format_version":1,"manifest":manifest,"wasm_sha256":crate::verify::digest(&wasm),"assets":assets}),
+        &serde_json::json!({"format_version":1,"manifest":manifest,"wasm_sha256":crate::verify::digest(&wasm),"assets":assets,"shaders":shaders,"custom_renderer":custom_renderer}),
     )?;
     let parent = output
         .parent()
@@ -215,6 +294,31 @@ pub fn export(root: &Path, id: &str, output: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn extracts_the_verified_component_guest_without_forwarding_component_graphs() {
+        let core = wat::parse_str(
+            r#"(module (memory (export "memory") 1)
+            (func (export "tick") (param i32 i64) (result i64) local.get 1)
+            (func (export "cabi_realloc") (param i32 i32 i32 i32) (result i32) i32.const 1024))"#,
+        )
+        .unwrap();
+        let component = crate::hostapi::componentize(core.clone()).unwrap();
+        let selected = browser_module(&component, "component-v1").unwrap();
+        assert!(selected.starts_with(b"\0asm\x01\0\0\0"));
+        assert!(browser_module(&core, "component-v1").is_err());
+        assert!(browser_module(&component, "core-v1").is_err());
+        let duplicate = wat::parse_str(
+            r#"(component
+            (core module (func (export "tick")) (func (export "cabi_realloc")))
+            (core module (func (export "tick")) (func (export "cabi_realloc"))))"#,
+        )
+        .unwrap();
+        assert!(browser_module(&duplicate, "component-v1")
+            .unwrap_err()
+            .to_string()
+            .contains("ambiguous"));
+    }
+
     #[test]
     fn memory_grow_is_bounded_by_manifest() {
         let bytes = wat::parse_str(

@@ -834,10 +834,12 @@ Wasm, asset data, game and player notices, and the original signed `.gamepkg`
 source archive for inspection. Exported Wasm is a separate browser artifact;
 it is never accepted as source inside a `.gamepkg`.
 
-The current browser player supports `core-v1` games using grid output, rectangles,
-circles, scoped asset and ROM reads, bounded saves, and achievements. Unsupported
-component, shader, image, and audio imports produce an export error. The 2048
-example is playable in both the desktop and browser players. ROMs are selected
+The browser player supports `core-v1` and the host-generated `component-v1`
+guest ABI, with grid output, rectangles, circles, raw and PNG sprites, scoped
+asset and ROM reads, bounded saves, achievements, output-only audio and mute.
+Verified GLSL/SPIR-V/WGSL fragment caches supply WebGL 2 passes, including the
+single bounded texture supported by the desktop host. Unsupported browser shader
+features fail visibly. The 2048 example is playable in both players. ROMs are selected
 by the player and never included in an export. Browser saves and play history
 are scoped by game and creator; save data is also scoped by schema version.
 Browser storage can be cleared or evicted and does not write desktop saves.
@@ -846,7 +848,28 @@ The guest runs in a worker with no filesystem, socket, or browser-object imports
 Export rewrites the Wasm memory maximum to enforce the manifest's hard limit,
 checks the built artifact checksum, and the player checks that checksum again
 before starting. A watchdog terminates a worker that does not return from a
-frame. Browser execution does not offer Wasmtime fuel metering, and background
+frame. GPU work is not fuel-metered, and WebGL context loss stops playback. Browser execution does not offer Wasmtime fuel metering, and background
 tab scheduling can delay a watchdog. Native compiler isolation and desktop
 runtime controls remain in place. The hosting site's scripts are trusted host
 code; export checksums do not authenticate a malicious hosting site.
+
+Run `tests/web_export.py` and `tests/web_export.py --component` with the local
+shader compiler and Chromium/Selenium prerequisites to verify real browser input,
+scoped data, sprites, audio scheduling/mute, fragment passes, textures and the
+worker watchdog in both profiles. The source scanner's guest-macro prohibition
+is intentionally stricter than earlier releases: creators must repack games
+that use `assert!`, derives, or other macros. Existing signed archives are not
+edited by the host.
+
+These changes are in the 0.1.5 source; published 0.1.4 archives predate web export
+and the stricter source policy. Build the current source to use them. Windows
+source builds require a matching 0.1.5 Linux compiler worker; older workers are
+rejected before they can compile a package.
+
+Rust inspection uses a non-recursive lexer before constructing token groups or
+an AST. It limits syntax nesting to 64 groups, source tokens to 131,072 per file,
+and weighted expression complexity to 1,024. Excessive operator and nesting
+inputs fail cleanly instead of overflowing the parser's stack. Literal/comment
+contents do not count as nesting, and the oversized-artifact fixture still
+reaches the isolated compiler. `tests/parser_limits.py` covers actual CLI
+rejection without publishing a partial package.
