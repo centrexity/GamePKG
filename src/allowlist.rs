@@ -5,6 +5,15 @@ pub const NAME: &str = "byteorder-lite";
 pub const VERSION: &str = "0.1.0";
 pub const CHECKSUM: &str = "8f1fe948ff07f4bd06c30984e69f5b4899c516a3ef74f34df92a2df2ab535495";
 pub fn approved(cargo: &toml::Value, lock: &[u8]) -> Result<bool> {
+    let table = cargo
+        .as_table()
+        .context("invalid Cargo allowlist declaration")?;
+    if table
+        .keys()
+        .any(|key| !["package", "lib", "dependencies"].contains(&key.as_str()))
+    {
+        bail!("unsupported Cargo section in dependency allowlist");
+    }
     let dependencies = cargo.get("dependencies").and_then(toml::Value::as_table);
     let enabled = dependencies.is_some_and(|table| !table.is_empty());
     if cargo.get("dependencies").is_some() && dependencies.is_none() {

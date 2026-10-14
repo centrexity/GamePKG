@@ -1111,3 +1111,146 @@ fn zelda3_tick(mut caller: Caller<'_, Data>, input: i32, state: i64) -> Result<i
     }
     Ok((state as u64).wrapping_add(1) as i64)
 }
+
+#[cfg(test)]
+mod adversarial_assets_tests {
+    use super::*;
+    mod cases {
+        include!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/support/path_cases.rs"
+        ));
+    }
+
+    #[test]
+    fn raw_guest_imports_deny_path_and_pointer_attacks_without_changing_output() {
+        let temp = tempfile::tempdir().unwrap();
+        let archive = temp.path().join("game.gamepkg");
+        crate::pack::pack(
+            Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/examples/minimal")),
+            &archive,
+            &[29; 32],
+        )
+        .unwrap();
+        let mut package = crate::archive::Package::open(&archive).unwrap();
+        let manifest = crate::verify::verify_embedded(&mut package).unwrap();
+        let mut data = String::from("(data (i32.const 0) \"hello.txt\")");
+        let mut code = String::from("i32.const 0 i32.const 9 i32.const 0 i32.const 60000 i32.const 5 call $read i32.const 5 i32.ne if unreachable end\n");
+        // Establish working asset access before adversarial calls. Each rejected
+        // call must leave this sentinel intact, including its full output range.
+        code.push_str("i32.const 60000 i64.const 123456789 i64.store\n");
+        let mut position = 256;
+        for bytes in cases::rejected_paths()
+            .into_iter()
+            .chain(cases::literal_paths().iter().map(|p| p.to_string()))
+            .map(String::into_bytes)
+            .chain([vec![0xff], vec![0xc0, 0xaf], vec![b'a'; 1025]])
+        {
+            let escaped = bytes
+                .iter()
+                .map(|byte| format!("\\{byte:02x}"))
+                .collect::<String>();
+            data.push_str(&format!("(data (i32.const {position}) \"{escaped}\")\n"));
+            code.push_str(&format!("i32.const {position} i32.const {} i32.const 0 i32.const 60000 i32.const 8 call $read i32.const -1 i32.ne if unreachable end\n", bytes.len()));
+            code.push_str(&format!("i32.const {position} i32.const {} f32.const 0 f32.const 0 f32.const 1 f32.const 1 call $image i32.const -1 i32.ne if unreachable end\n", bytes.len()));
+            code.push_str(
+                "i32.const 60000 i64.load i64.const 123456789 i64.ne if unreachable end\n",
+            );
+            position += bytes.len().max(1);
+        }
+        assert!(position < 60000);
+        for (pointer, length, offset, output, count) in [
+            (-1, 9, 0, 60000, 8),
+            (i32::MAX, 9, 0, 60000, 8),
+            (65535, 9, 0, 60000, 8),
+            (0, -1, 0, 60000, 8),
+            (0, 0, 0, 60000, 8),
+            (0, 1025, 0, 60000, 8),
+            (0, 9, -1, 60000, 8),
+            (0, 9, i32::MAX, 60000, 8),
+            (0, 9, 0, -1, 8),
+            (0, 9, 0, i32::MAX, 8),
+            (0, 9, 0, 65535, 8),
+            (0, 9, 0, 60000, -1),
+            (0, 9, 0, 0, 65537),
+        ] {
+            code.push_str(&format!("i32.const {pointer} i32.const {length} i32.const {offset} i32.const {output} i32.const {count} call $read i32.const -1 i32.ne if unreachable end\n"));
+            code.push_str(
+                "i32.const 60000 i64.load i64.const 123456789 i64.ne if unreachable end\n",
+            );
+        }
+        let wasm = wat::parse_str(format!(r#"(module
+            (import "gamepkg" "asset_read" (func $read (param i32 i32 i32 i32 i32) (result i32)))
+            (import "gamepkg" "draw_asset_image" (func $image (param i32 i32 f32 f32 f32 f32) (result i32)))
+            (memory (export "memory") 1) {data}
+            (func (export "gamepkg_tick") (param i32 i64) (result i64) {code} i64.const 42))"#)).unwrap();
+        let mut game = Game::with_package(
+            &wasm,
+            &manifest,
+            &Default::default(),
+            Some(package),
+            None,
+            None,
+        )
+        .unwrap();
+        assert_eq!(game.step(0).unwrap(), 42);
+        assert!(game.frame().commands.is_empty());
+    }
+
+    #[test]
+    fn typed_component_imports_apply_the_same_path_policy() {
+        let temp = tempfile::tempdir().unwrap();
+        let archive = temp.path().join("game.gamepkg");
+        crate::pack::pack(
+            Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/examples/minimal")),
+            &archive,
+            &[29; 32],
+        )
+        .unwrap();
+        let mut package = crate::archive::Package::open(&archive).unwrap();
+        let mut manifest = crate::verify::verify_embedded(&mut package).unwrap();
+        manifest.runtime_profile = "component-v1".into();
+        let mut data = String::from("(data (i32.const 0) \"hello.txt\")");
+        let mut code = String::from("i32.const 0 i32.const 9 i32.const 0 i32.const 5 i32.const 50000 call $read\ni32.const 50000 i32.load i32.const 1 i32.ne if unreachable end\ni32.const 50008 i32.load i32.const 5 i32.ne if unreachable end\n");
+        let mut position = 256;
+        for path in cases::rejected_paths()
+            .into_iter()
+            .chain(cases::literal_paths().iter().map(|p| p.to_string()))
+        {
+            let escaped = path
+                .bytes()
+                .map(|byte| format!("\\{byte:02x}"))
+                .collect::<String>();
+            data.push_str(&format!("(data (i32.const {position}) \"{escaped}\")\n"));
+            code.push_str("i32.const 60000 i64.const 123456789 i64.store\n");
+            code.push_str(&format!("i32.const {position} i32.const {} i32.const 0 i32.const 8 i32.const 50000 call $read\ni32.const 50000 i32.load if unreachable end\n", path.len()));
+            code.push_str(&format!("i32.const {position} i32.const {} f32.const 0 f32.const 0 f32.const 1 f32.const 1 call $image if unreachable end\n", path.len()));
+            code.push_str(
+                "i32.const 60000 i64.load i64.const 123456789 i64.ne if unreachable end\n",
+            );
+            position += path.len().max(1);
+        }
+        for (offset, count) in [(u32::MAX, 8), (0, 65537)] {
+            code.push_str(&format!("i32.const 0 i32.const 9 i32.const {offset} i32.const {count} i32.const 50000 call $read\ni32.const 50000 i32.load if unreachable end\n"));
+        }
+        assert!(position < 50000);
+        let wasm = wat::parse_str(format!(r#"(module
+            (import "gamepkg:engine/host@0.1.0" "asset-read" (func $read (param i32 i32 i32 i32 i32)))
+            (import "gamepkg:engine/host@0.1.0" "draw-asset-image" (func $image (param i32 i32 f32 f32 f32 f32) (result i32)))
+            (memory (export "memory") 1) {data}
+            (func (export "cabi_realloc") (param i32 i32 i32 i32) (result i32) i32.const 55000)
+            (func (export "tick") (param i32 i64) (result i64) {code} i64.const 42))"#)).unwrap();
+        let component = crate::hostapi::componentize(wasm).unwrap();
+        let mut game = Game::with_package(
+            &component,
+            &manifest,
+            &Default::default(),
+            Some(package),
+            None,
+            None,
+        )
+        .unwrap();
+        assert_eq!(game.step(0).unwrap(), 42);
+        assert!(game.frame().commands.is_empty());
+    }
+}

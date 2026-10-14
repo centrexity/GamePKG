@@ -20,6 +20,33 @@ including unused modules, is parsed before compilation. A second pass parses the
 exact private build tree, including generated bindings and pinned dependency
 source. Parsing is a syntax and policy check, not a proof of harmless behavior.
 
+Virtual paths are exact archive keys, never host paths. They are not URL-decoded,
+expanded, or Unicode-normalized. Absolute paths, traversal, empty components,
+backslashes, drive/stream colons, control characters, Windows device names,
+reserved characters, and trailing dots/spaces are rejected. Paths are bounded
+to 1,024 UTF-8 bytes, 32 components, and 255 bytes per component. Archives reject
+case aliases and file/directory conflicts. Compiler source filenames must be
+ASCII to avoid normalization aliases across filesystems; source text and virtual
+asset names may still contain Unicode. Slang file inclusion and module imports
+are forbidden, including in unused shader files.
+
+Dependency declarations may only name the bundled pinned crate with its exact
+version, disabled default features, and no extra features or source overrides.
+Build, development, target-specific, workspace, patch, replace, and feature
+sections cannot introduce dependencies. Host settings may enable or revoke
+catalog entries, but cannot add an unreviewed crate. A valid creator signature
+does not exempt a package from source or dependency checks.
+
+The adversarial suites in `tests/path_attacks.rs`, `tests/dependency_attacks.rs`,
+and `tests/source_attacks.rs` cover generated path spellings, signed hostile
+packages, dependency-graph mutations, hidden source/configuration, and symlinks.
+Native runtime tests call the raw core and component imports with a real verified
+package and check that rejected reads preserve output memory. The browser suite
+`node tests/web_path_attacks.mjs` directly exercises the shipped worker's core and
+component read/image imports. Positive controls confirm ordinary asset reads and
+the approved graph remain usable. These are regression checks, not a claim of
+exhaustive protection against every possible attack.
+
 Linux builds use offline, locked Cargo inside bubblewrap, with an isolated
 network, private working directory and Cargo home, read-only system/toolchain
 mounts, and no user home directory. Dependencies come from host-owned bundled

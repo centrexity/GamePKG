@@ -314,7 +314,7 @@ pub fn installed_manifest(root: &Path, id: &str) -> Result<Manifest> {
 }
 
 fn installed_manifest_with_policy(root: &Path, id: &str, scan_source: bool) -> Result<Manifest> {
-    if id.is_empty()
+    if !crate::archive::valid_path(id)
         || id.len() > 200
         || !id
             .bytes()

@@ -281,14 +281,18 @@ pub fn validate_source(bytes: &[u8]) -> Result<()> {
     for token in source.split(|c: char| !c.is_ascii_alphanumeric() && c != '_') {
         if matches!(
             token,
-            "spirv_asm"
+            "include"
+                | "include_next"
+                | "import"
+                | "__include"
+                | "spirv_asm"
                 | "__intrinsic_asm"
                 | "__require_prelude"
                 | "__requirePrelude"
                 | "__target_intrinsic"
                 | "__spirv_instruction"
         ) {
-            bail!("shader target-code injection is not allowed: {token}");
+            bail!("shader file inclusion or target-code injection is not allowed: {token}");
         }
     }
     Ok(())

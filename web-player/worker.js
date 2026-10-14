@@ -2,14 +2,22 @@
 let instance, manifest, assets, roms, save, state=0n, commands=[], background=null, unlocks=[],saveDirty=false,saveBudget=0,images=new Map(),imageBudget=0,audioSamples=[],shaderCount=0;
 function imageCommand(x,y,w,h,pw,ph,pixels){if(!finite(x,y,w,h)||w<0||h<0||!Number.isInteger(pw)||!Number.isInteger(ph)||pw<1||ph<1||pw>512||ph>512||pixels.length!==pw*ph*4||imageBudget+pixels.length>8388608)return -1;imageBudget+=pixels.length;return command(['image',x,y,w,h,pw,ph,pixels.slice()]);}
 async function prepareImages(){images=new Map();let total=0;for(const [name,pixels] of assets){if(!name.toLowerCase().endsWith('.png')||pixels.length>2097152||pixels.length<33)continue;const signature=[137,80,78,71,13,10,26,10];if(!signature.every((byte,index)=>pixels[index]===byte))continue;const header=new DataView(pixels.buffer,pixels.byteOffset,pixels.byteLength),w=header.getUint32(16),h=header.getUint32(20);if(w<1||h<1||w>512||h>512||total+w*h*4>33554432)continue;let bitmap;try{bitmap=await createImageBitmap(new Blob([pixels],{type:'image/png'}));if(bitmap.width!==w||bitmap.height!==h)continue;const surface=new OffscreenCanvas(w,h),context=surface.getContext('2d');context.drawImage(bitmap,0,0);images.set(name,{width:w,height:h,pixels:context.getImageData(0,0,w,h).data});total+=w*h*4;}catch{}finally{bitmap?.close();}}}
-function assetName(pointer,length){const value=bytes(pointer,length,1024);if(!value||!length)return null;let name;try{name=new TextDecoder('utf-8',{fatal:true}).decode(value);}catch{return null;}return name&&!name.startsWith('/')&&!name.includes('\\')&&!name.split('/').some(p=>!p||p==='.'||p==='..')&&!/[\x00-\x1f]/.test(name)?name:null;}
+function validAssetPath(name){
+ if(!name||new TextEncoder().encode(name).length>1024||name.split('/').length>32||name.startsWith('/')||/[\\:<>"|?*\x00-\x1f\x7f-\x9f]/.test(name))return false;
+ return name.split('/').every(part=>{
+  if(!part||new TextEncoder().encode(part).length>255||/[. ]$/.test(part))return false;
+  const base=part.split('.')[0].replace(/ +$/,'').toUpperCase();
+  return !/^(CON|PRN|AUX|NUL|CONIN\$|CONOUT\$|COM[1-9¹²³]|LPT[1-9¹²³])$/.test(base);
+ });
+}
+function assetName(pointer,length){const value=bytes(pointer,length,1024);if(!value||!length)return null;let name;try{name=new TextDecoder('utf-8',{fatal:true}).decode(value);}catch{return null;}return validAssetPath(name)?name:null;}
 function range(pointer,length,max=65536){return Number.isInteger(pointer)&&Number.isInteger(length)&&pointer>=0&&length>=0&&length<=max&&instance?.exports.memory&&pointer+length<=instance.exports.memory.buffer.byteLength;}
 function bytes(pointer,length,max){if(!range(pointer,length,max))return null;return new Uint8Array(instance.exports.memory.buffer,pointer,length);}
 function read(source,offset,pointer,length){if(!source||offset<0||offset>source.length||!range(pointer,length))return -1;const part=source.subarray(offset,offset+length);bytes(pointer,part.length).set(part);return part.length;}
 function finite(...values){return values.every(Number.isFinite)&&values.every(v=>Math.abs(v)<=16384);}
 function command(value){if(commands.length>=1024)return -1;commands.push(value);return 0;}
 const api={
- asset_read:(p,n,offset,out,length)=>{const name=bytes(p,n,1024);if(!name||n===0)return -1;let path;try{path=new TextDecoder('utf-8',{fatal:true}).decode(name);}catch{return -1;}if(!path||path.startsWith('/')||path.includes('\\')||path.split('/').some(p=>!p||p==='.'||p==='..')||/[\x00-\x1f]/.test(path))return -1;return read(assets.get(path),offset,out,length);},
+ asset_read:(p,n,offset,out,length)=>{const name=assetName(p,n);return name===null?-1:read(assets.get(name),offset,out,length);},
  rom_count:()=>roms.length,rom_size:()=>roms[0]?.length??-1,rom_size_at:index=>roms[index]?.length??-1,
  rom_read:(offset,out,length)=>read(roms[0],offset,out,length),rom_read_at:(index,offset,out,length)=>read(roms[index],offset,out,length),
  save_size:()=>manifest.permissions.save?save.length:-1,
@@ -63,7 +71,7 @@ const canonical={
  'save-size':pointer=>optionSize(pointer,api.save_size()),
  'save-read':(offset,length,pointer)=>optionBytes(pointer,manifest.permissions.save?save:null,offset,length),
  'save-write':(pointer,length)=>api.save_write(pointer,length)===0?1:0,
- 'asset-read':(pointer,length,offset,count,result)=>{let source=null;const encoded=bytes(pointer,length,1024);if(encoded){let name;try{name=new TextDecoder('utf-8',{fatal:true}).decode(encoded);}catch{}if(name&&!name.startsWith('/')&&!name.includes('\\')&&!name.split('/').some(p=>!p||p==='.'||p==='..')&&!/[\x00-\x1f]/.test(name))source=assets.get(name);}optionBytes(result,source,offset,count);},
+ 'asset-read':(pointer,length,offset,count,result)=>{const name=assetName(pointer,length);optionBytes(result,name===null?null:assets.get(name),offset,count);},
  'achievement-unlock':api.achievement_unlock,
  'draw-clear':rgba=>api.draw_clear(rgba)===0?1:0,
  'draw-rect':(...args)=>api.draw_rect(...args)===0?1:0,

@@ -9,14 +9,60 @@ use zip::ZipArchive;
 
 pub const MAX_FILE: u64 = 64 * 1024 * 1024;
 pub const MAX_TOTAL: u64 = 256 * 1024 * 1024;
+// Virtual names also become compiler staging paths. Apply portable component
+// rules before any host path is constructed; do not normalize attacker input.
 pub fn valid_path(name: &str) -> bool {
     !name.is_empty()
+        && name.len() <= 1024
+        && name.split('/').count() <= 32
         && !name.contains('\\')
         && !name.contains(':')
         && !name.starts_with('/')
-        && name
-            .split('/')
-            .all(|p| !p.is_empty() && p != "." && p != ".." && !p.chars().any(char::is_control))
+        && name.split('/').all(|p| {
+            let base = p
+                .split('.')
+                .next()
+                .unwrap()
+                .trim_end_matches(' ')
+                .to_ascii_uppercase();
+            let device = matches!(
+                base.as_str(),
+                "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$"
+            ) || ["COM", "LPT"].iter().any(|prefix| {
+                base.strip_prefix(prefix).is_some_and(|digit| {
+                    matches!(
+                        digit,
+                        "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³"
+                    )
+                })
+            });
+            !p.is_empty()
+                && p.len() <= 255
+                && !p.ends_with(['.', ' '])
+                && !device
+                && !p.chars().any(|c| c.is_control() || "<>\"|?*".contains(c))
+        })
+}
+
+fn register_path(paths: &mut BTreeMap<String, (String, bool)>, name: &str) -> Result<()> {
+    let mut prefix = String::new();
+    let mut parts = name.split('/').peekable();
+    while let Some(part) = parts.next() {
+        if !prefix.is_empty() {
+            prefix.push('/');
+        }
+        prefix.push_str(part);
+        let file = parts.peek().is_none();
+        let folded = prefix.to_lowercase();
+        if let Some((previous, was_file)) = paths.get(&folded) {
+            if previous != &prefix || *was_file || file {
+                bail!("ambiguous archive path: {name}");
+            }
+        } else {
+            paths.insert(folded, (prefix.clone(), file));
+        }
+    }
+    Ok(())
 }
 pub struct Package {
     archive: ZipArchive<File>,
@@ -60,12 +106,21 @@ impl Package {
             bail!("too many archive entries");
         }
         let mut entries = BTreeMap::new();
+        let mut portable_paths = BTreeMap::new();
         let mut total = 0u64;
         for i in 0..archive.len() {
             let f = archive.by_index(i)?;
             if !valid_path(f.name()) || f.is_dir() || f.is_symlink() {
                 bail!("invalid archive path: {}", f.name());
             }
+            if (f.name().starts_with("source/") || f.name().starts_with("shaders/"))
+                && !f.name().is_ascii()
+            {
+                bail!(
+                    "compiler source paths must be ASCII to avoid filesystem normalization aliases"
+                );
+            }
+            register_path(&mut portable_paths, f.name())?;
             if !matches!(
                 f.compression(),
                 zip::CompressionMethod::Stored | zip::CompressionMethod::Zstd

@@ -172,7 +172,7 @@ impl Manifest {
         if m.format_version != 1 {
             bail!("unsupported format version");
         }
-        if m.id.is_empty()
+        if !crate::archive::valid_path(&m.id)
             || m.id.len() > 200
             || !m
                 .id
