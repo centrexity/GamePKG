@@ -8,7 +8,7 @@ from urllib.parse import unquote, urlsplit
 
 PROJECT = Path(__file__).resolve().parents[1]
 ROOT = PROJECT / 'html'
-DEMO_NAMES = ['collect-stars.gamepkg', 'shape-playground.gamepkg', 'png-sprite-playground.gamepkg']
+DEMO_NAMES = ['collect-stars.gamepkg', 'shape-playground.gamepkg', 'png-sprite-playground.gamepkg', 'zelda3.gamepkg']
 DEMOS = [ROOT / 'demos' / name for name in DEMO_NAMES]
 PUBLIC = [ROOT / 'index.html', *sorted((ROOT / 'guide').glob('*')), *sorted((ROOT / 'spec').glob('*')), *DEMOS, ROOT / 'demos/packages.sha256']
 

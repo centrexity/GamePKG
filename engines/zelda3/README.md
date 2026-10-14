@@ -14,7 +14,8 @@ LakeSnes authors' notices, remain in `upstream/LICENSE.txt`.
 
 - The selected USA 1 MiB ROM is recognized; a 512-byte copier header is supported.
 - The resource decoder constructs all 165 engine resource records in RAM.
-- A Python audit hook denies actual writes/mkdir/rename/remove during decoding.
+- The native Rust decoder has no file IO, process launch or interpreter calls.
+- All 165 resources match the pinned reference loader byte for byte.
 - The source ROM's checksum is unchanged after decoding.
 - All selected C translation units pass Clang syntax checks before compilation.
 - The full gameplay/PPU/DSP engine builds into a 16 MiB maximum-memory Wasm module.
@@ -28,10 +29,10 @@ replay logging from the tick path. Native libc diagnostic descriptor operations
 fail closed inside Wasm. The signed `examples/ports/zelda3` GamePKG now builds and plays through the
 native GamePKG runtime. Its Rust entry invokes only the checked host engine API.
 
-The Python RAM decoder is currently a development bridge over pinned upstream
-resource code. It is not package-authored Python and must not become a facility
-for running arbitrary package scripts. Its temporary structures and output exist
-only in memory. The native runtime preserves that behavior.
+ROM decoding runs inside the native GamePKG executable on every platform. Users
+need no Python, Pillow, PyYAML, script interpreter or external decoder. Pinned
+upstream Python scripts remain development references only. The native compiler
+also invokes Clang directly, without a Python build script.
 
 ## Isolation and integration
 
@@ -56,26 +57,25 @@ remain pending; a new downloadable host release is not yet published.
 
 ## Build and play
 
-Use a source-built GamePKG 0.1.6 host. The older downloadable host cannot run
-this engine. From the repository root, sign and install the ROM-free recipe:
+Use GamePKG 0.1.6, currently available from source. The older downloadable host
+cannot run this engine. Players can download the signed ROM-free package:
 
 ```sh
-gamepkg keygen --output /path/to/private-creator.key
-gamepkg pack examples/ports/zelda3 --key /path/to/private-creator.key --output /path/to/zelda3.gamepkg
-gamepkg install /path/to/zelda3.gamepkg --trust-creator
+gamepkg install https://raw.githubusercontent.com/centrexity/GamePKG/main/html/demos/zelda3.gamepkg --trust-creator
 gamepkg build com.gamepkg.zelda3
 gamepkg-gui
 ```
 
-Keep that creator key private. Players installing a signed package do not enter
-a key. In Settings, set the fuel ceiling to 100,000,000 before playing. Select
-your supported USA ROM in the game's ROM field, then press Play. Arrow keys or
-WASD move; Z/X are B/Y, C/V are A/X, Enter is Start, Tab is Select, and Q/E are
-L/R. The ROM remains in its original location. SRAM saves go to the library's
-scoped save storage, not beside the ROM.
+Players do not need a signing key. For creator development, the source recipe is
+in `examples/ports/zelda3`; sign it using your own private creator key before
+installation. In Settings, set the fuel ceiling to 100,000,000 before playing.
+Select your supported USA ROM in the game's ROM field, then press Play. Arrow
+keys or WASD move; Z/X are B/Y, C/V are A/X, Enter is Start, Tab is Select, and
+Q/E are L/R. The ROM remains in its original location. SRAM saves go to the
+library's scoped save storage, not beside the ROM.
 
 The port currently needs Linux, Clang 18 plus a Wasm C sysroot for isolated
-source builds, and host Python with Pillow/PyYAML for in-memory ROM decoding.
+source builds. Playback uses the built-in Rust ROM decoder.
 Set `GAMEPKG_ZELDA3_SYSROOT` to the prepared sysroot. The signed manifest requests
 100,000,000 fuel; select that ceiling explicitly in Settings (the existing
 10,000,000 default is preserved). The host checks this before play. Memory is
@@ -86,10 +86,7 @@ Windows compiler exchange now transfers and checks the engine artifact and its
 receipt. The actual Windows CLI and GUI have passed local Wine tests with the
 player-selected ROM, including 1,000 frames/audio, ROM selection, saved-slot
 loading and keyboard movement. This is Wine evidence, not a claim of real
-Windows hardware coverage. An optional checksum-pinned portable Python/Pillow/
-PyYAML runtime can be prepared with `tools/install_zelda3_runtime.py`; Windows
-uses it from `bin/runtime/zelda3/python.exe`, an explicitly configured
-`GAMEPKG_ZELDA3_PYTHON`, or a system `python.exe`. WSL is used only for source
+Windows hardware coverage. No separate decoder runtime is needed. WSL is used only for source
 compilation, not playback. The compile request includes no ROM or save data.
 A browser ROM decoder remains outside this native port; Zelda3 web export currently gives a clear
 unsupported-feature error instead of producing a broken player.

@@ -5,7 +5,7 @@ from PIL import Image,ImageChops
 from gui_test_support import start_display,click_text
 def pixels(image):return image.get_flattened_data() if hasattr(image,"get_flattened_data") else image.getdata()
 PROJECT=Path(__file__).resolve().parents[1]
-p=argparse.ArgumentParser();p.add_argument('rom',type=Path);p.add_argument('--library',type=Path,required=True);p.add_argument('--wine-prefix',type=Path);p.add_argument('--windows-python',type=Path);args=p.parse_args()
+p=argparse.ArgumentParser();p.add_argument('rom',type=Path);p.add_argument('--library',type=Path,required=True);p.add_argument('--wine-prefix',type=Path);args=p.parse_args()
 PROOF=PROJECT/('target/zelda3-windows-proof' if args.wine_prefix else 'target/zelda3-proof');PROOF.mkdir(parents=True,exist_ok=True)
 with tempfile.TemporaryDirectory(prefix='zelda3-gui-',dir=PROJECT/'target') as temporary:
     root=Path(temporary);shutil.copytree(args.library,root/'library',ignore=shutil.ignore_patterns('progress'))
@@ -17,8 +17,8 @@ with tempfile.TemporaryDirectory(prefix='zelda3-gui-',dir=PROJECT/'target') as t
     if args.wine_prefix:
         def windows(path):return 'Z:'+str(Path(path).resolve()).replace('/','\\')
         env.update(WINEPREFIX=str(args.wine_prefix.resolve()),WINEDEBUG='-all',GAMEPKG_HOME=windows(root/'library'),GAMEPKG_CONFIG=windows(config))
-        env.pop('GAMEPKG_ZELDA3_PYTHON',None)
-        if args.windows_python:env['GAMEPKG_ZELDA3_PYTHON']=windows(args.windows_python)
+        env['GAMEPKG_ZELDA3_PYTHON']='intentionally-unavailable-decoder'
+
         rom=windows(args.rom)
         command=['wine',str(PROJECT/'target/x86_64-pc-windows-gnu/release/gamepkg-gui.exe')]
     app=subprocess.Popen(command,env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)

@@ -59,4 +59,6 @@ mod windows_build;
 pub mod web_export;
 
 mod zelda3;
+mod zelda3_rom;
+#[cfg(target_os = "linux")]
 mod zelda3_sources;

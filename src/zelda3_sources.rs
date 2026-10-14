@@ -13,56 +13,8 @@ pub const FILES: &[(&str, &[u8])] = &[
         include_bytes!("../engines/zelda3/adapters/include/SDL_keycode.h"),
     ),
     (
-        "engines/zelda3/adapters/rom_resources.py",
-        include_bytes!("../engines/zelda3/adapters/rom_resources.py"),
-    ),
-    (
         "engines/zelda3/upstream/LICENSE.txt",
         include_bytes!("../engines/zelda3/upstream/LICENSE.txt"),
-    ),
-    (
-        "engines/zelda3/upstream/assets/compile_music.py",
-        include_bytes!("../engines/zelda3/upstream/assets/compile_music.py"),
-    ),
-    (
-        "engines/zelda3/upstream/assets/compile_resources.py",
-        include_bytes!("../engines/zelda3/upstream/assets/compile_resources.py"),
-    ),
-    (
-        "engines/zelda3/upstream/assets/decode_music.py",
-        include_bytes!("../engines/zelda3/upstream/assets/decode_music.py"),
-    ),
-    (
-        "engines/zelda3/upstream/assets/extract_music.py",
-        include_bytes!("../engines/zelda3/upstream/assets/extract_music.py"),
-    ),
-    (
-        "engines/zelda3/upstream/assets/extract_resources.py",
-        include_bytes!("../engines/zelda3/upstream/assets/extract_resources.py"),
-    ),
-    (
-        "engines/zelda3/upstream/assets/restool.py",
-        include_bytes!("../engines/zelda3/upstream/assets/restool.py"),
-    ),
-    (
-        "engines/zelda3/upstream/assets/sprite_sheet_info.py",
-        include_bytes!("../engines/zelda3/upstream/assets/sprite_sheet_info.py"),
-    ),
-    (
-        "engines/zelda3/upstream/assets/sprite_sheets.py",
-        include_bytes!("../engines/zelda3/upstream/assets/sprite_sheets.py"),
-    ),
-    (
-        "engines/zelda3/upstream/assets/tables.py",
-        include_bytes!("../engines/zelda3/upstream/assets/tables.py"),
-    ),
-    (
-        "engines/zelda3/upstream/assets/text_compression.py",
-        include_bytes!("../engines/zelda3/upstream/assets/text_compression.py"),
-    ),
-    (
-        "engines/zelda3/upstream/assets/util.py",
-        include_bytes!("../engines/zelda3/upstream/assets/util.py"),
     ),
     (
         "engines/zelda3/upstream/snes/apu.c",
@@ -407,9 +359,5 @@ pub const FILES: &[(&str, &[u8])] = &[
     (
         "engines/zelda3/upstream-lock.json",
         include_bytes!("../engines/zelda3/upstream-lock.json"),
-    ),
-    (
-        "tools/build_zelda3_engine.py",
-        include_bytes!("../tools/build_zelda3_engine.py"),
     ),
 ];

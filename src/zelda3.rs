@@ -2,16 +2,14 @@
 use anyhow::{bail, Context, Result};
 #[cfg(target_os = "linux")]
 use std::path::{Path, PathBuf};
-use std::{
-    io::{Read, Write},
-    process::{Command, Stdio},
-    thread,
-};
+#[cfg(target_os = "linux")]
+use std::process::Command;
 use wasmtime::{
     Engine, Instance, Memory, Module, Store, StoreLimits, StoreLimitsBuilder, TypedFunc,
 };
 pub const PROFILE: &str = "zelda3-45a149d8";
 pub const MEMORY: u64 = 16 * 1048576;
+#[cfg(target_os = "linux")]
 fn kit() -> Result<tempfile::TempDir> {
     let kit = tempfile::tempdir()?;
     for (name, bytes) in crate::zelda3_sources::FILES {
@@ -40,17 +38,7 @@ fn isolated(kit: &Path, max_file: u64) -> Command {
         }
     }
     cmd.arg("--ro-bind").arg(kit).arg("/source");
-    cmd.args([
-        "--proc",
-        "/proc",
-        "--dev",
-        "/dev",
-        "--tmpfs",
-        "/tmp",
-        "--setenv",
-        "PYTHONDONTWRITEBYTECODE",
-        "1",
-    ]);
+    cmd.args(["--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp"]);
     cmd
 }
 pub fn build() -> Result<Vec<u8>> {
@@ -66,21 +54,122 @@ pub fn build() -> Result<Vec<u8>> {
             .map(PathBuf::from).or_else(||Path::new("/usr/include/wasm32-wasi").is_dir().then(||PathBuf::from("/usr")))
             .context("install Clang 18, wasi-libc and libclang-rt-18-dev-wasm32, or configure GAMEPKG_ZELDA3_SYSROOT")?;
         let sysroot = std::fs::canonicalize(sysroot)?;
-        let mut cmd = isolated(kit.path(), 32 * 1048576);
-        cmd.arg("--ro-bind").arg(sysroot).arg("/sysroot");
-        cmd.arg("--bind").arg(output.path()).arg("/work");
-        cmd.args([
-            "--",
-            "/usr/bin/python3",
-            "/source/tools/build_zelda3_engine.py",
-            "--sysroot",
-            "/sysroot",
-            "--output",
-            "/work/engine.wasm",
-        ]);
-        let result = crate::compiler::run(&mut cmd)?;
-        if !result.status.success() {
-            bail!("isolated Zelda3 engine build failed: {}", result.stderr);
+        // The host owns these sources; no package can supply compiler scripts.
+        let upstream = kit.path().join("engines/zelda3/upstream");
+        let lock: serde_json::Value =
+            serde_json::from_slice(include_bytes!("../engines/zelda3/upstream-lock.json"))?;
+        for (name, digest) in lock["files"]
+            .as_object()
+            .context("invalid engine source lock")?
+        {
+            if name.ends_with(".py") {
+                continue;
+            }
+            use sha2::Digest;
+            let bytes = std::fs::read(upstream.join(name))?;
+            if hex::encode(sha2::Sha256::digest(bytes)) != digest.as_str().unwrap_or("") {
+                bail!("pinned Zelda3 source changed: {name}");
+            }
+        }
+        let rtl_path = upstream.join("src/zelda_rtl.c");
+        let mut rtl = std::fs::read_to_string(&rtl_path)?;
+        for name in ["ZeldaReadSram", "ZeldaWriteSram"] {
+            let begin = rtl
+                .find(&format!("void {name}() {{"))
+                .with_context(|| format!("missing pinned engine function {name}"))?;
+            let brace = begin + rtl[begin..].find('{').unwrap();
+            let mut depth = 0;
+            let mut end = None;
+            for (offset, byte) in rtl.as_bytes()[brace..].iter().enumerate() {
+                match byte {
+                    b'{' => depth += 1,
+                    b'}' => depth -= 1,
+                    _ => {}
+                }
+                if depth == 0 {
+                    end = Some(brace + offset + 1);
+                    break;
+                }
+            }
+            rtl.replace_range(begin..end.context("invalid pinned engine function")?, "");
+        }
+        std::fs::write(rtl_path, rtl)?;
+        let source_root = "/source/engines/zelda3/upstream";
+        let mut sources: Vec<String> = crate::zelda3_sources::FILES
+            .iter()
+            .filter_map(|(name, _)| {
+                let tail = name.strip_prefix("engines/zelda3/upstream/src/")?;
+                (tail.ends_with(".c")
+                    && !tail.contains('/')
+                    && ![
+                        "main.c",
+                        "audio.c",
+                        "config.c",
+                        "glsl_shader.c",
+                        "opengl.c",
+                        "zelda_cpu_infra.c",
+                    ]
+                    .contains(&tail))
+                .then(|| format!("{source_root}/src/{tail}"))
+            })
+            .collect();
+        sources.sort();
+        for name in ["ppu.c", "dma.c", "dsp.c", "snes_other.c"] {
+            sources.push(format!("{source_root}/snes/{name}"));
+        }
+        sources.push("/source/engines/zelda3/adapters/engine.c".into());
+        let prefix = if sysroot.join("usr/include/wasm32-wasi").is_dir() {
+            "/sysroot/usr"
+        } else {
+            "/sysroot"
+        };
+        let flags = [
+            "--target=wasm32-wasi".to_string(),
+            format!("--sysroot={prefix}"),
+            format!("-resource-dir={prefix}/lib/llvm-18/lib/clang/18"),
+            "-isystem".into(),
+            "/usr/lib/llvm-18/lib/clang/18/include".into(),
+            "-O2".into(),
+            "-mbulk-memory".into(),
+            "-fno-strict-aliasing".into(),
+            "-ffunction-sections".into(),
+            "-fdata-sections".into(),
+            format!("-I{source_root}"),
+            "-I/source/engines/zelda3/adapters/include".into(),
+        ];
+        for syntax_only in [true, false] {
+            let mut cmd = isolated(kit.path(), 32 * 1048576);
+            cmd.arg("--ro-bind").arg(&sysroot).arg("/sysroot");
+            cmd.arg("--bind").arg(output.path()).arg("/work");
+            cmd.args(["--", "/usr/bin/clang-18"])
+                .args(&flags)
+                .args(&sources);
+            if syntax_only {
+                cmd.arg("-fsyntax-only");
+            } else {
+                cmd.args([
+                    "-nostartfiles",
+                    "-Wl,--no-entry",
+                    "-Wl,--export-memory",
+                    "-Wl,--gc-sections",
+                    "-Wl,--wrap=memcpy",
+                    "-Wl,--wrap=memmove",
+                    "-Wl,--wrap=memset",
+                    "-Wl,--wrap=__wasi_fd_close",
+                    "-Wl,--wrap=__wasi_fd_fdstat_get",
+                    "-Wl,--wrap=__wasi_fd_seek",
+                    "-Wl,--wrap=__wasi_fd_write",
+                    "-Wl,--initial-memory=4194304",
+                    "-Wl,--max-memory=16777216",
+                    "-Wl,-z,stack-size=1048576",
+                    "-o",
+                    "/work/engine.wasm",
+                ]);
+            }
+            let result = crate::compiler::run(&mut cmd)?;
+            if !result.status.success() {
+                bail!("isolated Zelda3 engine build failed: {}", result.stderr);
+            }
         }
         let bytes =
             crate::files::read_regular(&output.path().join("engine.wasm"), 32 * 1048576, false)?;
@@ -111,96 +200,6 @@ pub fn validate(bytes: &[u8]) -> Result<()> {
     }
     Ok(())
 }
-fn decode(rom: &[u8]) -> Result<Vec<u8>> {
-    if !matches!(rom.len(), 1048576 | 1049088) {
-        bail!("Zelda3 needs the supported USA 1 MiB ROM, optionally with a 512-byte copier header");
-    }
-    let kit = kit()?;
-    #[cfg(target_os = "linux")]
-    let mut cmd = {
-        let mut cmd = isolated(kit.path(), 0);
-        cmd.args([
-            "--",
-            "/usr/bin/python3",
-            "/source/engines/zelda3/adapters/rom_resources.py",
-            "--stdin",
-        ]);
-        cmd
-    };
-    #[cfg(not(target_os = "linux"))]
-    let mut cmd = {
-        let default = if cfg!(windows) {
-            "python.exe"
-        } else {
-            "python3"
-        };
-        let interpreter = std::env::var_os("GAMEPKG_ZELDA3_PYTHON")
-            .or_else(|| {
-                if cfg!(windows) {
-                    let executable = std::env::current_exe().ok()?;
-                    let bundled = executable.parent()?.join("runtime/zelda3/python.exe");
-                    bundled.is_file().then(|| bundled.into_os_string())
-                } else {
-                    None
-                }
-            })
-            .unwrap_or_else(|| default.into());
-        let mut cmd = Command::new(interpreter);
-        cmd.arg("-I");
-        cmd.arg(kit.path().join("engines/zelda3/adapters/rom_resources.py"))
-            .arg("--stdin")
-            .env("PYTHONDONTWRITEBYTECODE", "1");
-        cmd
-    };
-    let mut child = cmd
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .context("ROM decoding requires the host Python runtime with Pillow and PyYAML")?;
-    let mut stdin = child.stdin.take().unwrap();
-    let input = rom.to_vec();
-    let writer = thread::spawn(move || stdin.write_all(&input));
-    let stdout = child.stdout.take().unwrap();
-    let stderr = child.stderr.take().unwrap();
-    let reader = thread::spawn(move || {
-        let mut bytes = Vec::new();
-        stdout.take(8388609).read_to_end(&mut bytes).map(|_| bytes)
-    });
-    let errors = thread::spawn(move || {
-        let mut bytes = Vec::new();
-        stderr.take(65536).read_to_end(&mut bytes).map(|_| bytes)
-    });
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(65);
-    let status = loop {
-        if let Some(status) = child.try_wait()? {
-            break status;
-        }
-        if std::time::Instant::now() > deadline {
-            let _ = child.kill();
-            let _ = child.wait();
-            bail!("ROM decoding exceeded its deadline");
-        }
-        thread::sleep(std::time::Duration::from_millis(20));
-    };
-    let _ = writer.join();
-    let bytes = reader
-        .join()
-        .map_err(|_| anyhow::anyhow!("ROM decoder output stopped"))??;
-    let errors = errors
-        .join()
-        .map_err(|_| anyhow::anyhow!("ROM decoder diagnostics stopped"))??;
-    if !status.success() {
-        bail!(
-            "unable to decode selected Zelda3 ROM: {}",
-            String::from_utf8_lossy(&errors)
-        );
-    }
-    if bytes.len() > 8388608 {
-        bail!("ROM decoder exceeded resource limit");
-    }
-    Ok(bytes)
-}
 pub struct Zelda {
     store: Store<StoreLimits>,
     memory: Memory,
@@ -230,7 +229,7 @@ impl Zelda {
         deadline: u64,
     ) -> Result<Self> {
         validate(bytes)?;
-        let resources = decode(rom)?;
+        let resources = crate::zelda3_rom::decode(rom)?;
         let module = Module::new(engine, bytes)?;
         if module.imports().next().is_some() {
             bail!("Zelda3 engine cannot import host capabilities");

@@ -28,17 +28,9 @@ Ubuntu 24.04 environment. The matching 0.1.6 host includes the pinned engine
 sources and transfers its verified Wasm/receipt alongside the Rust entry.
 No player ROM or save data is sent to the compiler.
 
-Playback runs in the native Windows host and does not use WSL. It needs a host
-Python runtime with Pillow and PyYAML. Either set GAMEPKG_ZELDA3_PYTHON to your
-Python executable, or prepare the optional portable runtime beside the programs:
-
-```powershell
-python tools/install_zelda3_runtime.py bin/runtime/zelda3
-```
-
-The installer uses checksum-pinned official Python/PyPI downloads, installs into
-a new folder, and preserves their license files. A system Python can run the
-installer; the resulting decoder does not need pip or an installed Python.
-Set the fuel ceiling to 100,000,000, import/sign/build the Zelda3 example and
-select your own supported USA ROM in the library. The ROM is decoded only in RAM;
-only game SRAM is persisted. See engines/zelda3/README.md for controls and tests.
+Playback runs in the native Windows host and does not use WSL or Python.
+ROM decoding is built into the executable; no interpreter, pip, Pillow, PyYAML
+or separate runtime installation is needed. Set the fuel ceiling to 100,000,000,
+install/build the Zelda3 package and select your own supported USA ROM in the
+library. The ROM is decoded only in RAM; only game SRAM is persisted.
+See engines/zelda3/README.md for controls and tests.

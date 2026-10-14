@@ -1,7 +1,8 @@
-"""Decode a selected US ROM into engine resources in RAM, with no output files.
+"""Development-only reference decoder for native Rust differential tests.
 
-Development bridge while the in-process GamePKG loader is integrated. Only pinned
-upstream code may call this; package-supplied Python is never executed.
+The shipped GamePKG executable neither embeds nor executes this script. User
+builds invoke Clang directly, and playback decodes the selected ROM in Rust.
+This reference holds all decoded resources in RAM without extracted output files.
 """
 import builtins
 import contextlib

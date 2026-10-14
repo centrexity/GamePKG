@@ -19,7 +19,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-native-exchange-') as temporary
  else:env.pop('GAMEPKG_SLANG_ROOT',None)
  for case,example,backend in cases:
   folder=fixture/case;game_id='com.gamepkg.'+example
-  config.write_text(f'automatic_update_checks=false\nshader_backend="{backend}"\n')
+  config.write_text(f'automatic_update_checks=false\nshader_backend="{backend}"\nfuel_ceiling=100000000\n')
   if args.mode=='prepare':
    folder.mkdir();package=root/(case+'.gamepkg')
    run('pack',PROJECT/('examples/ports' if example=='zelda3' else 'examples/good')/example,'-o',package,'--key',key,'--shared-assets')
@@ -33,7 +33,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-native-exchange-') as temporary
    if example!='zelda3':run('run',game_id,'--frames','3')
    else:
     assert next((root/'library/builds').rglob('zelda3.wasm')).is_file()
-    run('run',game_id,'--frames','3',good=False)
+    assert 'ROM' in run('run',game_id,'--frames','3',good=False)
    run('integrity-check',game_id)
    info=folder/'exchange/exchange.json';original=info.read_bytes();metadata=json.loads(original);metadata['package_digest']='0'*64
    info.write_text(json.dumps(metadata))
@@ -46,8 +46,20 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-native-exchange-') as temporary
    wasm.write_bytes(replacement);receipt.write_text(hashlib.sha256(replacement).hexdigest())
    try:run('accept-build-worker',game_id,folder/'exchange',good=False)
    finally:wasm.write_bytes(original_wasm);receipt.write_bytes(original_receipt)
+   if example=='zelda3':
+    engine=next((folder/'exchange/builds').rglob('zelda3.wasm'));engine_receipt=engine.with_suffix('.sha256')
+    original_engine=engine.read_bytes();original_engine_receipt=engine_receipt.read_bytes()
+    # Both stale checksums and correctly checksummed ambient imports must fail.
+    try:
+     engine.write_bytes(original_engine[:-1])
+     run('accept-build-worker',game_id,folder/'exchange',good=False)
+     engine.write_bytes(replacement);engine_receipt.write_text(hashlib.sha256(replacement).hexdigest())
+     run('accept-build-worker',game_id,folder/'exchange',good=False)
+    finally:engine.write_bytes(original_engine);engine_receipt.write_bytes(original_engine_receipt)
+    assert next((root/'library/builds').rglob('zelda3.wasm')).read_bytes()==original_engine
+    run('integrity-check',game_id)
    if example!='zelda3':run('run',game_id,'--frames','3')
    else:
     assert next((root/'library/builds').rglob('zelda3.wasm')).is_file()
-    run('run',game_id,'--frames','3',good=False)
+    assert 'ROM' in run('run',game_id,'--frames','3',good=False)
   print('Cross-platform compiler exchange passed:',args.mode,case)
