@@ -16,7 +16,9 @@ with tempfile.TemporaryDirectory(prefix='zelda3-gui-',dir=PROJECT/'target') as t
     command=[str(PROJECT/'target/release/gamepkg-gui')]
     if args.wine_prefix:
         def windows(path):return 'Z:'+str(Path(path).resolve()).replace('/','\\')
-        env.update(WINEPREFIX=str(args.wine_prefix.resolve()),WINEDEBUG='-all',GAMEPKG_HOME=windows(root/'library'),GAMEPKG_CONFIG=windows(config),GAMEPKG_ZELDA3_PYTHON=windows(args.windows_python))
+        env.update(WINEPREFIX=str(args.wine_prefix.resolve()),WINEDEBUG='-all',GAMEPKG_HOME=windows(root/'library'),GAMEPKG_CONFIG=windows(config))
+        env.pop('GAMEPKG_ZELDA3_PYTHON',None)
+        if args.windows_python:env['GAMEPKG_ZELDA3_PYTHON']=windows(args.windows_python)
         rom=windows(args.rom)
         command=['wine',str(PROJECT/'target/x86_64-pc-windows-gnu/release/gamepkg-gui.exe')]
     app=subprocess.Popen(command,env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)

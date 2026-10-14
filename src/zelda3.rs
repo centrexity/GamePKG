@@ -134,8 +134,17 @@ fn decode(rom: &[u8]) -> Result<Vec<u8>> {
         } else {
             "python3"
         };
-        let interpreter =
-            std::env::var_os("GAMEPKG_ZELDA3_PYTHON").unwrap_or_else(|| default.into());
+        let interpreter = std::env::var_os("GAMEPKG_ZELDA3_PYTHON")
+            .or_else(|| {
+                if cfg!(windows) {
+                    let executable = std::env::current_exe().ok()?;
+                    let bundled = executable.parent()?.join("runtime/zelda3/python.exe");
+                    bundled.is_file().then(|| bundled.into_os_string())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_else(|| default.into());
         let mut cmd = Command::new(interpreter);
         cmd.arg("-I");
         cmd.arg(kit.path().join("engines/zelda3/adapters/rom_resources.py"))
