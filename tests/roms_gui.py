@@ -35,7 +35,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-roms-gui-') as directory:
             shutil.copy2(path,PROJECT/'target/roms-gui.png')
             with Image.open(path) as image:image.resize((image.width*3,image.height*3)).save(root/'ocr.png')
             tsv=subprocess.run(['tesseract',str(root/'ocr.png'),'stdout','--psm','11','tsv'],check=True,capture_output=True,text=True).stdout
-            words=[w for w in csv.DictReader(io.StringIO(tsv),delimiter='\t') if w['text'].strip()]
+            words=[w for w in csv.DictReader(io.StringIO(tsv),delimiter='\t',quoting=csv.QUOTE_NONE) if w['text'].strip()]
             for w in words:
                 for field in ['left','top','width','height']:w[field]=str(int(w[field])//3)
             return ' '.join(w['text'] for w in words),words

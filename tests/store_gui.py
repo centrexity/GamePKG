@@ -36,7 +36,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-store-gui-') as directory:
             subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(path)],env=env,check=True)
             shutil.copy2(path,project/'target'/name)
             result=subprocess.run(['tesseract',str(path),'stdout','--psm','6','tsv'],check=True,capture_output=True,text=True).stdout
-            return [w for w in csv.DictReader(io.StringIO(result),delimiter='\t') if w['text'].strip()]
+            return [w for w in csv.DictReader(io.StringIO(result),delimiter='\t',quoting=csv.QUOTE_NONE) if w['text'].strip()]
         def wait_word(label,name):
             deadline=time.monotonic()+30
             while True:

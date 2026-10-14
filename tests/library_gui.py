@@ -27,7 +27,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-library-gui-') as directory:
             path=project/'target'/name
             subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(path)],env=env,check=True)
             tsv=subprocess.run(['tesseract',str(path),'stdout','--psm','6','tsv'],check=True,capture_output=True,text=True).stdout
-            words=[word for word in csv.DictReader(io.StringIO(tsv),delimiter='\t') if word['text'].strip()]
+            words=[word for word in csv.DictReader(io.StringIO(tsv),delimiter='\t',quoting=csv.QUOTE_NONE) if word['text'].strip()]
             return ' '.join(word['text'] for word in words), words
         text,words=read_screen('library-rejected.png')
         assert 'com.gamepkg.minimal' in text, text

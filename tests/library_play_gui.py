@@ -32,7 +32,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-library-play-') as directory:
             with Image.open(path) as image:
                 image.resize((image.width*3,image.height*3)).save(enlarged)
             tsv=subprocess.run(['tesseract',str(enlarged),'stdout','--psm','6','tsv'],check=True,capture_output=True,text=True).stdout
-            words=[word for word in csv.DictReader(io.StringIO(tsv),delimiter='\t') if word['text'].strip()]
+            words=[word for word in csv.DictReader(io.StringIO(tsv),delimiter='\t',quoting=csv.QUOTE_NONE) if word['text'].strip()]
             for word in words:
                 for field in ['left','top','width','height']:word[field]=str(int(word[field])//3)
             row_image=root/'row-ocr.png'
@@ -40,7 +40,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-library-play-') as directory:
                 region=image.crop((0,100,image.width,400))
                 region.resize((region.width*3,region.height*3)).save(row_image)
             row_tsv=subprocess.run(['tesseract',str(row_image),'stdout','--psm','11','tsv'],check=True,capture_output=True,text=True).stdout
-            row_words=[word for word in csv.DictReader(io.StringIO(row_tsv),delimiter='\t') if word['text'].strip()]
+            row_words=[word for word in csv.DictReader(io.StringIO(row_tsv),delimiter='\t',quoting=csv.QUOTE_NONE) if word['text'].strip()]
             for word in row_words:
                 for field in ['left','top','width','height']:word[field]=str(int(word[field])//3)
                 word['top']=str(int(word['top'])+100)

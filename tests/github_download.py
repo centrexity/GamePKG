@@ -151,7 +151,7 @@ print('200', end='')
                     subprocess.run(['convert', str(screenshot), *filters, '-resize', '300%', str(enlarged)], env=env, check=True)
                     tsv = subprocess.run(['tesseract', str(enlarged), 'stdout', '--psm', '11', 'tsv'],
                                          capture_output=True, text=True, check=True).stdout
-                    words.extend(w for w in csv.DictReader(io.StringIO(tsv), delimiter='\t') if w['text'].strip())
+                    words.extend(w for w in csv.DictReader(io.StringIO(tsv), delimiter='\t',quoting=csv.QUOTE_NONE) if w['text'].strip())
                 for word in words:
                     for field in ['left', 'top', 'width', 'height']:
                         word[field] = str(int(word[field]) // 3)

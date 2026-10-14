@@ -55,7 +55,7 @@ def click_text(window, env, text, directory, timeout=15):
             enlarged = directory / f'control-{name}.png'
             subprocess.run(['convert', str(screenshot), *filters, '-resize', '300%', str(enlarged)], env=env, check=True)
             tsv = subprocess.check_output(['tesseract', str(enlarged), 'stdout', '--psm', '11', 'tsv'], stderr=subprocess.DEVNULL, text=True)
-            words = [w for w in csv.DictReader(io.StringIO(tsv), delimiter='\t') if w['text'].strip()]
+            words = [w for w in csv.DictReader(io.StringIO(tsv), delimiter='\t',quoting=csv.QUOTE_NONE) if w['text'].strip()]
             last = ' '.join(w['text'] for w in words)
             # OCR may merge adjacent words in a compact button label.
             for count in range(1, len(wanted)+1):

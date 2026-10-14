@@ -98,7 +98,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-integrity-store-') as directory
                     enlarged = root / (name+'.png')
                     subprocess.run(['convert',str(screenshot),*filters,'-resize','300%',str(enlarged)],env=env,check=True)
                     tsv = subprocess.check_output(['tesseract',str(enlarged),'stdout','--psm','11','tsv'],stderr=subprocess.DEVNULL,text=True)
-                    words.extend(w for w in csv.DictReader(io.StringIO(tsv),delimiter='\t') if w['text'].strip())
+                    words.extend(w for w in csv.DictReader(io.StringIO(tsv),delimiter='\t',quoting=csv.QUOTE_NONE) if w['text'].strip())
                 for w in words:
                     for field in ['left','top','width','height']: w[field] = str(int(w[field])//3)
                 return ' '.join(w['text'] for w in words),words
