@@ -24,6 +24,18 @@ fn forbidden(name: &str) -> bool {
             | "transmute_copy"
             | "as_ptr"
             | "as_mut_ptr"
+            | "ptr"
+            | "NonNull"
+            | "AtomicPtr"
+            | "MaybeUninit"
+            | "into_raw"
+            | "into_raw_with_allocator"
+            | "from_raw"
+            | "from_raw_in"
+            | "as_raw"
+            | "expose_provenance"
+            | "with_exposed_provenance"
+            | "without_provenance"
             | "from_raw_parts"
             | "from_raw_parts_mut"
             | "into_raw_parts"
@@ -78,6 +90,12 @@ impl<'ast> Visit<'ast> for Policy {
             self.reason = Some("primitive type names cannot be shadowed");
         }
         syn::visit::visit_item_enum(self, item);
+    }
+    fn visit_item_union(&mut self, item: &'ast syn::ItemUnion) {
+        if primitive(&item.ident.to_string()) {
+            self.reason = Some("primitive type names cannot be shadowed");
+        }
+        syn::visit::visit_item_union(self, item);
     }
     fn visit_ident(&mut self, ident: &'ast syn::Ident) {
         if forbidden(&ident.to_string()) {
