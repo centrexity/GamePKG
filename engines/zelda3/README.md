@@ -26,7 +26,7 @@ LakeSnes authors' notices, remain in `upstream/LICENSE.txt`.
 `adapters/engine.c` replaces the SDL shell and native save/audio integration. It
 retains normal SPC/DSP music, disables external MSU music, and removes desktop
 replay logging from the tick path. Native libc diagnostic descriptor operations
-fail closed inside Wasm. The signed `examples/ports/zelda3` GamePKG now builds and plays through the
+fail closed inside Wasm. The signed `ports/zelda3` GamePKG now builds and plays through the
 native GamePKG runtime. Its Rust entry invokes only the checked host engine API.
 
 ROM decoding runs inside the native GamePKG executable on every platform. Users
@@ -67,7 +67,7 @@ gamepkg-gui
 ```
 
 Players do not need a signing key. For creator development, the source recipe is
-in `examples/ports/zelda3`; sign it using your own private creator key before
+in `ports/zelda3`; sign it using your own private creator key before
 installation. In Settings, set the fuel ceiling to 100,000,000 before playing.
 Select your supported USA ROM in the game's ROM field, then press Play. Arrow
 keys or WASD move; Z/X are B/Y, C/V are A/X, Enter is Start, Tab is Select, and

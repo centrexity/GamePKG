@@ -9,6 +9,8 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-windows-package-') as directory
  root=Path(directory)
  with zipfile.ZipFile(archive) as bundle:bundle.extractall(root)
  distribution=root/archive.stem;metadata=json.loads((distribution/'BUILD.json').read_text());assert metadata['platform']=='windows-x86_64'
+ for port in ['2048','arkanoo','zelda3']:assert (distribution/'ports'/port/'manifest.toml').is_file()
+ assert not list((distribution/'ports').rglob('.git'))
  assert (distribution/'third-party-sources').is_dir();assert json.loads((distribution/'DEPENDENCIES.json').read_text())
  env=dict(os.environ,GAMEPKG_HOME=str(root/'library'),GAMEPKG_CONFIG=str(root/'settings.toml'))
  def run(exe,*args):

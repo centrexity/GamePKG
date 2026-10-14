@@ -14,6 +14,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - name: Install isolated compiler prerequisites
         run: sudo apt-get update && sudo apt-get install -y bubblewrap clang-18 wasi-libc libclang-rt-18-dev-wasm32 && rustup target add wasm32-unknown-unknown
       - name: Build compiler host
@@ -46,6 +48,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - name: Install Rust
         run: rustup update stable
       - name: Select Rust

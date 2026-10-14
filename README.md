@@ -42,11 +42,15 @@ The runtime provides **no ambient filesystem or network access**. Games use spec
 
 Guest networking is currently unsupported: manifests must declare `network = "none"`. User-requested host downloads over HTTPS or Tor are separate from game permissions. A signed update URL does not give the game permission to browse the internet. Signatures establish integrity and continuity with a creator key, not a creator's real-world identity or a promise that their code is safe.
 
+Port recipes for Zelda3, Arkanoo, and 2048 live in [GamePKG_Ports](https://github.com/centrexity/GamePKG_Ports). This repository pins them under `ports` for integration tests and release bundles. Existing checkouts should run `git submodule update --init --recursive` before building or testing. Trusted engine integration remains part of the host.
+
 ## Try it
 
-Install Rust, then run:
+Install Rust, clone with the pinned ports, then run:
 
 ```sh
+git clone --recurse-submodules https://github.com/centrexity/GamePKG.git
+cd GamePKG
 cargo test --locked
 cargo run -- --help
 ```
@@ -805,7 +809,7 @@ the home-folder snapshot contains no session authentication token or ROM bytes.
 
 ## Zelda3 ROM-required port
 
-`examples/ports/zelda3` ports the complete pinned [Zelda3 engine](https://github.com/snesrev/zelda3)
+`ports/zelda3` ports the complete pinned [Zelda3 engine](https://github.com/snesrev/zelda3)
 through a checked host API. It requires a player-selected **A Link to the Past
 USA ROM** (1 MiB, optionally with a 512-byte copier header). No ROM, graphics or
 music are included in the package. Resources are decoded in memory from that
@@ -843,7 +847,7 @@ package-supplied scripts.
 
 ## Arkanoo arcade game
 
-`examples/good/arkanoo` ports gameplay from [c0m4r's Arkanoo](https://github.com/c0m4r/arkanoo).
+`ports/arkanoo` ports gameplay from [c0m4r's Arkanoo](https://github.com/c0m4r/arkanoo).
 It includes nine campaign layouts followed by endless stages, paddle spin,
 three lives, multiball, long-paddle and ghost bonuses, explosive rockets, particles,
 synthesized sound effects, achievements, and saved high scores/level checkpoints.
@@ -860,7 +864,7 @@ With a current source-built CLI and GUI:
 
 ```sh
 gamepkg keygen --output ./arkanoo-creator.key
-gamepkg pack examples/good/arkanoo --output ./arkanoo.gamepkg --key ./arkanoo-creator.key
+gamepkg pack ports/arkanoo --output ./arkanoo.gamepkg --key ./arkanoo-creator.key
 gamepkg install ./arkanoo.gamepkg --trust-creator
 gamepkg build com.gamepkg.arkanoo
 gamepkg-gui --play com.gamepkg.arkanoo
@@ -879,7 +883,7 @@ this first port; see `CREDITS.md` for the full adaptation scope.
 
 ## Open-source 2048 example
 
-`examples/good/2048` adapts row sliding and merging from
+`ports/2048` adapts row sliding and merging from
 [Adrien Ball's 2048-rs](https://github.com/adrienball/2048-rs), with the exact
 upstream revision and adaptation details in its `CREDITS.md` and the upstream
 MIT license included as a packaged asset. Arrow keys slide and merge tiles;

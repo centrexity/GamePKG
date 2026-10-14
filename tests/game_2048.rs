@@ -7,7 +7,7 @@ mod adapted {
             true
         }
     }
-    include!("../examples/good/2048/source/src/lib.rs");
+    include!("../ports/2048/source/src/lib.rs");
 }
 #[test]
 fn upstream_merges_once_per_move_in_all_directions() {

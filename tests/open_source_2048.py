@@ -19,7 +19,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-2048-') as directory:
         assert result.returncode == 0, result.stderr
         return result.stdout
     archive = root / '2048.gamepkg'
-    run('pack', PROJECT / 'examples/good/2048', '-o', archive, '--key', key)
+    run('pack', PROJECT / 'ports/2048', '-o', archive, '--key', key)
     run('install', archive, '--trust-creator')
     run('build', 'com.gamepkg.2048')
     assert 'Ran 60 frames' in run('run', 'com.gamepkg.2048', '--frames', '60')

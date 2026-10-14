@@ -63,7 +63,7 @@ dependency source. Core and component runtime imports remain restricted to the
 scoped API. `tests/modules.rs`, `tests/security.rs`, `tests/runtime.rs`,
 `tests/components.rs` and staged-source unit tests cover these rules.
 
-`examples/good/2048` adapts Adrien Ball's MIT-licensed 2048-rs row merging at the
+`ports/2048` adapts Adrien Ball's MIT-licensed 2048-rs row merging at the
 revision recorded in its credits. The original license is included in the signed
 package. All sixteen good examples and seven bad examples passed their actual
 pack/verify/install/build/run or expected-rejection checks locally. The native

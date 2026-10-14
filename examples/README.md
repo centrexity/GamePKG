@@ -1,3 +1,5 @@
+Port recipes have moved to [GamePKG_Ports](https://github.com/centrexity/GamePKG_Ports), pinned under `ports/` in the host checkout. Initialize them with `git submodule update --init --recursive`.
+
 # Package examples
 
 Every directory below is a complete source package. Generate a private creator key with `gamepkg keygen -o creator.key`, then pack an example to a path outside its source directory:
@@ -29,7 +31,7 @@ The desktop library provides Build and Play for installed games. Graphics games 
 | save-counter | Persist the tick count across play sessions |
 | rom-required | Read a ROM file explicitly supplied by the player |
 
-`tests/good_examples.py` signs, verifies, installs, builds, and runs all 15 examples, checking representative scores and required-ROM rejection. It uses temporary keys and an isolated library; no private creator keys are included. Dedicated GUI tests check rendered graphics and audio behavior.
+`tests/good_examples.py` signs, verifies, installs, builds, and runs all host examples, checking representative scores and required-ROM rejection. It uses temporary keys and an isolated library; no private creator keys are included. Dedicated GUI tests check rendered graphics and audio behavior.
 
 Every `bad/` directory is a complete, deliberately rejected package input:
 

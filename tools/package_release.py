@@ -79,6 +79,7 @@ def package(output_directory, binary_directory):
             shutil.copyfile(PROJECT / 'tools' / filename, root / 'tools' / filename)
         shutil.copytree(PROJECT / 'engines', root / 'engines', ignore=shutil.ignore_patterns('__pycache__', 'target'))
         shutil.copytree(PROJECT / 'examples', root / 'examples', ignore=shutil.ignore_patterns('__pycache__', 'target'))
+        shutil.copytree(PROJECT / 'ports', root / 'ports', ignore=shutil.ignore_patterns('.git', '__pycache__', 'target'))
         shutil.copyfile(PROJECT / 'docs' / ('INSTALL_WINDOWS.md' if windows else 'INSTALL.md'), root / 'INSTALL.md')
         notices = []
         for dependency in sorted(metadata['packages'], key=lambda p: p['id']):

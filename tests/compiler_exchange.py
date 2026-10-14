@@ -22,7 +22,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-native-exchange-') as temporary
   config.write_text(f'automatic_update_checks=false\nshader_backend="{backend}"\nfuel_ceiling=100000000\n')
   if args.mode=='prepare':
    folder.mkdir();package=root/(case+'.gamepkg')
-   run('pack',PROJECT/('examples/ports' if example=='zelda3' else 'examples/good')/example,'-o',package,'--key',key,'--shared-assets')
+   run('pack',PROJECT/('ports' if example=='zelda3' else 'examples/good')/example,'-o',package,'--key',key,'--shared-assets')
    if backend=='glsl':run('install',package,'--trust-creator')
    run('prepare-build-worker',game_id,folder/'game.gamepkgstore')
    run('build-worker',folder/'game.gamepkgstore',folder/'exchange','--shader-backend',backend,'--copy-output')

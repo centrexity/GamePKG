@@ -29,7 +29,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-web-export-') as temporary:
         assert result.returncode==0,result.stderr
         return result
     archive=root/'2048.gamepkg'
-    source=root/'source';shutil.copytree(PROJECT/'examples/good/2048',source)
+    source=root/'source';shutil.copytree(PROJECT/'ports/2048',source)
     manifest=source/'manifest.toml';manifest.write_text(profile_prefix+manifest.read_text())
     run('pack',source,'-o',archive,'--key',key)
     run('install',archive,'--trust-creator');run('build','com.gamepkg.2048')
@@ -109,7 +109,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-web-export-') as temporary:
                     colored=browser.execute_script('const d=document.querySelector("canvas").getContext("2d").getImageData(0,0,640,480).data;let count=0;for(let i=0;i<d.length;i+=4)if(d[i]>80||d[i+1]>80||d[i+2]>80)count++;return count;')
                     assert colored>10000,(name,colored)
                 browser.find_element(By.ID,'stop').click()
-            hanging=root/'hanging';shutil.copytree(PROJECT/'examples/good/2048',hanging)
+            hanging=root/'hanging';shutil.copytree(PROJECT/'ports/2048',hanging)
             manifest=hanging/'manifest.toml';manifest.write_text(profile_prefix+manifest.read_text().replace('com.gamepkg.2048','com.gamepkg.web-hang'))
             (hanging/'source/src/lib.rs').write_text('pub fn game_tick(_:u32,_:u64)->u64 { loop {} }')
             run('pack',hanging,'-o',root/'hang.gamepkg','--key',key);run('install',root/'hang.gamepkg','--trust-creator');run('build','com.gamepkg.web-hang')

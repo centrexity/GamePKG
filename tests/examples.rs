@@ -11,6 +11,12 @@ fn checked_out_lockfiles_match_the_manifest_bytes_on_every_platform() {
             .map(|entry| entry.unwrap().path())
             .filter(|path| path.is_dir()),
     );
+    examples.extend(
+        std::fs::read_dir(Path::new(env!("CARGO_MANIFEST_DIR")).join("ports"))
+            .expect("initialize the pinned ports with git submodule update --init --recursive")
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| path.join("manifest.toml").is_file()),
+    );
     for example in examples {
         let manifest = gamepkg::manifest::Manifest::parse(
             &std::fs::read(example.join("manifest.toml")).unwrap(),
@@ -32,7 +38,9 @@ fn good_examples_are_signed_and_verified() {
     for name in [
         "minimal",
         "good/counter",
-        "good/2048",
+        "../ports/2048",
+        "../ports/arkanoo",
+        "../ports/zelda3",
         "good/byteorder-game",
         "good/modular-game",
         "good/asset-catalog",

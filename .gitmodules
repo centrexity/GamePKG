@@ -1,0 +1,3 @@
+[submodule "ports"]
+	path = ports
+	url = https://github.com/centrexity/GamePKG_Ports.git

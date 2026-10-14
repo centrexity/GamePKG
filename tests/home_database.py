@@ -12,7 +12,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-home-db-') as temporary:
         assert result.returncode==0,result.stderr
         return result.stdout
     key=root/'key';key.write_text('65'*32)
-    run('pack',PROJECT/'examples/good/2048','-o',root/'2048.gamepkg','--key',key)
+    run('pack',PROJECT/'ports/2048','-o',root/'2048.gamepkg','--key',key)
     run('install',root/'2048.gamepkg','--trust-creator')
     library=home/'.local/share/gamepkg';database=library/'database/library.json'
     assert (library/'com.gamepkg.2048.gamepkg').is_file()

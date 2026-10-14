@@ -29,7 +29,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-arkanoo-',dir=PROJECT/'target')
         r=subprocess.run([str(CLI),*map(str,args)],env=env,text=True,capture_output=True,timeout=120)
         assert r.returncode==0,r.stderr
         return r.stdout
-    run('pack',PROJECT/'examples/good/arkanoo','-o',root/'arkanoo.gamepkg','--key',key)
+    run('pack',PROJECT/'ports/arkanoo','-o',root/'arkanoo.gamepkg','--key',key)
     run('install',root/'arkanoo.gamepkg','--trust-creator');run('build','com.gamepkg.arkanoo')
     result=run('run','com.gamepkg.arkanoo','--frames',180)
     assert 'Ran 180 frames' in result and 'draw commands: 1024' not in result,result
@@ -78,7 +78,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-arkanoo-',dir=PROJECT/'target')
     for component in [False,True]:
         game_id='com.gamepkg.arkanoo'
         if component:
-            source=root/'component';shutil.copytree(PROJECT/'examples/good/arkanoo',source)
+            source=root/'component';shutil.copytree(PROJECT/'ports/arkanoo',source)
             manifest=source/'manifest.toml';manifest.write_text('runtime_profile = "component-v1"\n'+manifest.read_text().replace('com.gamepkg.arkanoo','com.gamepkg.arkanoo-component'))
             game_id+='-component'
             run('pack',source,'-o',root/'component.gamepkg','--key',key);run('install',root/'component.gamepkg','--trust-creator');run('build',game_id)

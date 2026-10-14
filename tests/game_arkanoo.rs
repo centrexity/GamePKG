@@ -1,4 +1,4 @@
-#[path = "../examples/good/arkanoo/source/src/physics.rs"]
+#[path = "../ports/arkanoo/source/src/physics.rs"]
 mod physics;
 #[test]
 fn campaign_and_endless_are_nonempty() {

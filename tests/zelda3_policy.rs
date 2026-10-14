@@ -2,7 +2,7 @@ use gamepkg::manifest::Manifest;
 fn source() -> String {
     std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/examples/ports/zelda3/manifest.toml"
+        "/ports/zelda3/manifest.toml"
     ))
     .unwrap()
 }

@@ -23,6 +23,9 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-release-test-') as directory:
         assert all(not member.issym() and not member.islnk() for member in package.getmembers())
         package.extractall(root / 'distribution', filter='data')
     distribution, = (root / 'distribution').iterdir()
+    for port in ['2048', 'arkanoo', 'zelda3']:
+        assert (distribution / 'ports' / port / 'manifest.toml').is_file()
+    assert not list((distribution / 'ports').rglob('.git'))
     build = json.loads((distribution / 'BUILD.json').read_text())
     for name, digest in build['executables_sha256'].items():
         with (distribution / 'bin' / name).open('rb') as stream:

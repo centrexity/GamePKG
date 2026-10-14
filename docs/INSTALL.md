@@ -58,6 +58,6 @@ For games with multiple ROMs, select the game and supply every named file in man
 For the 0.1.6 Zelda3 port, Ubuntu 24.04 additionally needs Clang 18,
 wasi-libc and libclang-rt-18-dev-wasm32. No Python or external ROM decoder is
 needed for building or playing Zelda3. Select a fuel
-ceiling of 100,000,000 in Settings. Build examples/ports/zelda3 as a signed package
+ceiling of 100,000,000 in Settings. Build ports/zelda3 as a signed package
 and select your supported USA ROM in the library. No extracted assets are written.
 See engines/zelda3/README.md for the complete setup and verification details.
