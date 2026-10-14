@@ -26,6 +26,30 @@ def is_elf(path):
         return binary.read(4) == b'\x7fELF'
 
 
+def executable_architecture(path, windows):
+    with path.open('rb') as binary:
+        header = binary.read(64)
+        if windows:
+            if len(header) < 64 or header[:2] != b'MZ':
+                raise ValueError('expected a Windows executable')
+            binary.seek(int.from_bytes(header[60:64], 'little'))
+            pe = binary.read(6)
+            if pe[:4] != b'PE\0\0':
+                raise ValueError('invalid Windows PE header')
+            machine = int.from_bytes(pe[4:6], 'little')
+            architectures = {0x14c: 'i686', 0x8664: 'x86_64'}
+        else:
+            if len(header) < 20 or header[:4] != b'\x7fELF' or header[5] != 1:
+                raise ValueError('expected a little-endian Linux ELF executable')
+            machine = int.from_bytes(header[18:20], 'little')
+            architectures = {3: 'i686', 62: 'x86_64'}
+            if (machine == 3 and header[4] != 1) or (machine == 62 and header[4] != 2):
+                raise ValueError('ELF class and architecture differ')
+        if machine not in architectures:
+            raise ValueError('release packaging supports x86 32-bit and 64-bit executables')
+        return architectures[machine]
+
+
 def write_zip(root, destination):
     with zipfile.ZipFile(destination, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
         for path in sorted(root.rglob('*')):
@@ -40,11 +64,15 @@ def write_zip(root, destination):
 
 def package(output_directory, binary_directory):
     system = platform.system()
-    if system not in ('Linux', 'Windows') or platform.machine().lower() not in ('x86_64', 'amd64'):
-        raise ValueError('release packaging supports Linux or Windows x86-64')
+    if system not in ('Linux', 'Windows'):
+        raise ValueError('release packaging supports Linux or Windows')
     windows = system == 'Windows'
-    host = 'windows-x86_64' if windows else 'linux-x86_64'
-    target = 'x86_64-pc-windows-msvc' if windows else 'x86_64-unknown-linux-gnu'
+    suffix = '.exe' if windows else ''
+    architecture = executable_architecture(binary_directory / ('gamepkg' + suffix), windows)
+    if executable_architecture(binary_directory / ('gamepkg-gui' + suffix), windows) != architecture:
+        raise ValueError('CLI and GUI architectures must match')
+    host = ('windows-' if windows else 'linux-') + architecture
+    target = architecture + ('-pc-windows-msvc' if windows else '-unknown-linux-gnu')
     version = tomllib.loads((PROJECT / 'Cargo.toml').read_text())['package']['version']
     name = f'gamepkg-{version}-{host}'
     output_directory.mkdir(parents=True, exist_ok=True)

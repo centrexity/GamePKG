@@ -25,7 +25,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-saves-') as directory:
         manifest = source / 'manifest.toml'
         text = manifest.read_text()
         import re
-        text = re.sub(r'^version = "0\.\d+\.0"', f'version = "0.{version}.0"', text, flags=re.MULTILINE)
+        text = re.sub(r'^version = "[^"\n]+"', f'version = "0.{version}.0"', text, flags=re.MULTILINE)
         manifest.write_text(text)
         package = root / f'game-{version}.gamepkg'
         run('pack', source, '-o', package, '--key', key)

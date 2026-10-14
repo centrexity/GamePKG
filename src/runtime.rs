@@ -92,6 +92,10 @@ impl Game {
         }
         let mut config = Config::new();
         config.wasm_component_model(true);
+        // The guest ABI is wasm32 regardless of the native host word size.
+        config.wasm_memory64(false);
+        config.wasm_relaxed_simd(false);
+        config.cranelift_nan_canonicalization(true);
         config.consume_fuel(true);
         config.epoch_interruption(true);
         let engine = Engine::new(&config)?;

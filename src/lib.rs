@@ -3,6 +3,7 @@ pub mod archive;
 pub mod gui;
 pub mod manifest;
 pub mod pack;
+mod portability;
 pub mod source;
 pub mod verify;
 

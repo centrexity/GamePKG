@@ -70,6 +70,8 @@ Packing validates before publishing and refuses to overwrite files. The output m
 
 ## Initial policy
 
+Game source also follows an enforced [portable data policy](docs/PORTABILITY.md): fixed-width byte conversions, explicit byte order, a fixed wasm32 ABI, and no native layout or pointer-dependent serialization. Dedicated 32-bit Linux, Windows, and Android checks exercise the same core and component runtime boundaries.
+
 - Format version 1; network must be `none`; positive fuel and memory limit up to 512 MiB.
 - Required manifest, PNG-signature thumbnail, license, credits, Cargo manifest/lockfile, and `source/src/lib.rs`.
 - At most 10,000 entries, 64 MiB per file, 256 MiB uncompressed total; stored and zstd entries only.

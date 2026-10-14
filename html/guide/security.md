@@ -20,6 +20,13 @@ including unused modules, is parsed before compilation. A second pass parses the
 exact private build tree, including generated bindings and pinned dependency
 source. Parsing is a syntax and policy check, not a proof of harmless behavior.
 
+Guest data follows a fixed wasm32 ABI on 32-bit and 64-bit hosts. Asset, ROM,
+and save byte counts use fixed-width `u32` values. Numeric byte conversions must
+name a fixed-width primitive and explicit little- or big-endian order; native
+endian encoding, pointer access, layout inspection, and architecture-specific
+intrinsics are rejected. Memory64 guests are rejected. Index and length values
+may use `usize` internally, but serialized numbers require an explicit width.
+
 Virtual paths are exact archive keys, never host paths. They are not URL-decoded,
 expanded, or Unicode-normalized. Absolute paths, traversal, empty components,
 backslashes, drive/stream colons, control characters, Windows device names,

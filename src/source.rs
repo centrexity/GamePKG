@@ -400,6 +400,7 @@ pub fn scan(pkg: &mut Package) -> Result<()> {
             bail!("source uses a forbidden construct");
         }
         let ast = syn::parse_file(text)?;
+        crate::portability::validate(&ast)?;
         global_names.visit_file(&ast);
         parsed.push((name, ast));
     }

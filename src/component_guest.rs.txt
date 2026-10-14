@@ -21,7 +21,7 @@ pub mod gamepkg {
         #[link_name = "draw-shader"] fn shader(index: u32) -> i32;
         #[link_name = "audio-submit"] fn audio(samples: *const i16, n: usize) -> i32;
     }
-    unsafe fn copy_result(result: [u32;3], output: &mut [u8]) -> Option<usize> {
+    unsafe fn copy_result(result: [u32;3], output: &mut [u8]) -> Option<u32> {
         if result[0] == 0 { return None; }
         let n = result[2] as usize;
         let pointer = result[1] as *mut u8;
@@ -30,38 +30,38 @@ pub mod gamepkg {
             output[..n].copy_from_slice(unsafe { std::slice::from_raw_parts(pointer,n) });
             unsafe { std::alloc::dealloc(pointer,std::alloc::Layout::from_size_align(n,1).unwrap()) };
         }
-        Some(n)
+        Some(result[2])
     }
     /// Unlock the signed manifest achievement at this zero-based index.
     pub fn achievement_unlock(index: u32) -> bool { unsafe { host_achievement(index) == 1 } }
-    pub fn asset_read(path: &str, offset: u32, output: &mut [u8]) -> Option<usize> {
+    pub fn asset_read(path: &str, offset: u32, output: &mut [u8]) -> Option<u32> {
         if path.len() > 1024 || output.len() > 65536 { return None; }
         let mut result = [0u32;3];
         unsafe { asset(path.as_ptr(),path.len(),offset,output.len() as u32,result.as_mut_ptr()); copy_result(result,output) }
     }
-    pub fn rom_read(offset: u32, output: &mut [u8]) -> Option<usize> {
+    pub fn rom_read(offset: u32, output: &mut [u8]) -> Option<u32> {
         if output.len() > 65536 { return None; }
         let mut result = [0u32;3];
         unsafe { rom(offset,output.len() as u32,result.as_mut_ptr()); copy_result(result,output) }
     }
-    pub fn save_read(offset: u32, output: &mut [u8]) -> Option<usize> {
+    pub fn save_read(offset: u32, output: &mut [u8]) -> Option<u32> {
         if output.len() > 65536 { return None; }
         let mut result = [0u32;3];
         unsafe { save(offset,output.len() as u32,result.as_mut_ptr()); copy_result(result,output) }
     }
     pub fn rom_count()->u32 {unsafe {host_rom_count()}}
-    pub fn rom_size_at(index:u32)->Option<usize> {let mut result=[0u32;2]; unsafe {host_rom_size_at(index,result.as_mut_ptr());} if result[0]==0 {None} else {Some(result[1] as usize)}}
-    pub fn rom_read_at(index:u32,offset:u32,output:&mut [u8])->Option<usize> {
+    pub fn rom_size_at(index:u32)->Option<u32> {let mut result=[0u32;2]; unsafe {host_rom_size_at(index,result.as_mut_ptr());} if result[0]==0 {None} else {Some(result[1])}}
+    pub fn rom_read_at(index:u32,offset:u32,output:&mut [u8])->Option<u32> {
         if output.len()>65536 {return None;} let mut result=[0u32;3];
         unsafe {host_rom_read_at(index,offset,output.len() as u32,result.as_mut_ptr()); copy_result(result,output)}
     }
-    pub fn rom_size() -> Option<usize> {
+    pub fn rom_size() -> Option<u32> {
         let mut result = [0u32;2]; unsafe { rom_len(result.as_mut_ptr()); }
-        if result[0] == 0 { None } else { Some(result[1] as usize) }
+        if result[0] == 0 { None } else { Some(result[1]) }
     }
-    pub fn save_size() -> Option<usize> {
+    pub fn save_size() -> Option<u32> {
         let mut result = [0u32;2]; unsafe { save_len(result.as_mut_ptr()); }
-        if result[0] == 0 { None } else { Some(result[1] as usize) }
+        if result[0] == 0 { None } else { Some(result[1]) }
     }
     pub fn save_write(bytes: &[u8]) -> bool {
         bytes.len() <= 1048576 && unsafe { write(bytes.as_ptr(),bytes.len()) != 0 }

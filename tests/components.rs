@@ -1,10 +1,9 @@
 use gamepkg::{hostapi::componentize, manifest::Manifest, runtime::Game};
 fn manifest() -> Manifest {
-    let text = std::fs::read_to_string(concat!(
+    let text = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/examples/minimal/manifest.toml"
-    ))
-    .unwrap();
+    ));
     Manifest::parse(format!("runtime_profile = \"component-v1\"\n{text}").as_bytes()).unwrap()
 }
 fn component(source: &str) -> Vec<u8> {

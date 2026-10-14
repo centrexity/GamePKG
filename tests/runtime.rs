@@ -1,12 +1,9 @@
 use gamepkg::{manifest::Manifest, runtime::Game};
 fn manifest() -> Manifest {
-    Manifest::parse(
-        &std::fs::read(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/examples/minimal/manifest.toml"
-        ))
-        .unwrap(),
-    )
+    Manifest::parse(include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/examples/minimal/manifest.toml"
+    )))
     .unwrap()
 }
 fn module(body: &str) -> Vec<u8> {

@@ -13,29 +13,49 @@ use std::{
 pub const SEED: [u8; 32] = [73; 32];
 
 pub fn fixture(example: &str) -> BTreeMap<String, Vec<u8>> {
-    fn read(root: &Path, folder: &Path, result: &mut BTreeMap<String, Vec<u8>>) {
-        for entry in fs::read_dir(folder).unwrap() {
-            let entry = entry.unwrap();
-            if entry.file_type().unwrap().is_dir() {
-                read(root, &entry.path(), result);
-            } else {
-                result.insert(
-                    entry
-                        .path()
-                        .strip_prefix(root)
-                        .unwrap()
-                        .to_str()
-                        .unwrap()
-                        .replace('\\', "/"),
-                    fs::read(entry.path()).unwrap(),
-                );
+    #[cfg(target_os = "android")]
+    {
+        macro_rules! embedded {
+            ($base:literal; $($name:literal),+ $(,)?) => {
+                BTreeMap::from([$(($name.to_owned(), include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/", $base, "/", $name)).to_vec())),+])
+            };
+        }
+        match example {
+            "examples/minimal" => {
+                embedded!("examples/minimal"; "manifest.toml", "CREDITS.md", "LICENSE", "NOTICE", "thumbnail.png", "source/Cargo.toml", "source/Cargo.lock", "source/src/lib.rs", "shaders/main.slang", "assets/hello.txt")
             }
+            "examples/good/byteorder-game" => {
+                embedded!("examples/good/byteorder-game"; "manifest.toml", "CREDITS.md", "LICENSE", "NOTICE", "thumbnail.png", "source/Cargo.toml", "source/Cargo.lock", "source/src/lib.rs", "shaders/main.slang", "assets/hello.txt", "assets/score.bin")
+            }
+            _ => panic!("embed the requested Android fixture: {example}"),
         }
     }
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join(example);
-    let mut files = BTreeMap::new();
-    read(&root, &root, &mut files);
-    files
+    #[cfg(not(target_os = "android"))]
+    {
+        fn read(root: &Path, folder: &Path, result: &mut BTreeMap<String, Vec<u8>>) {
+            for entry in fs::read_dir(folder).unwrap() {
+                let entry = entry.unwrap();
+                if entry.file_type().unwrap().is_dir() {
+                    read(root, &entry.path(), result);
+                } else {
+                    result.insert(
+                        entry
+                            .path()
+                            .strip_prefix(root)
+                            .unwrap()
+                            .to_str()
+                            .unwrap()
+                            .replace('\\', "/"),
+                        fs::read(entry.path()).unwrap(),
+                    );
+                }
+            }
+        }
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join(example);
+        let mut files = BTreeMap::new();
+        read(&root, &root, &mut files);
+        files
+    }
 }
 
 pub fn write_fixture(files: &BTreeMap<String, Vec<u8>>, root: &Path) {
