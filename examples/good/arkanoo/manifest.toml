@@ -1,0 +1,33 @@
+format_version = 1
+id = "com.gamepkg.arkanoo"
+version = "0.1.0"
+entry_world = "game"
+lockfile_sha256 = "28385a27f421a8cc8b417127fdbd67aef322b4394d8d26ad6f8556da0552d843"
+shader_profile = "slang"
+
+[limits]
+recommended_storage_bytes = 1048576
+recommended_memory_bytes = 8388608
+hard_memory_bytes = 16777216
+fuel = 3000000
+
+[permissions]
+input = true
+audio = true
+save = true
+network = "none"
+
+[[achievements]]
+id = "first_brick"
+title = "First brick"
+description = "Break your first brick."
+
+[[achievements]]
+id = "first_level"
+title = "Getting warmed up"
+description = "Clear the first level."
+
+[[achievements]]
+id = "campaign"
+title = "Nine lives of bricks"
+description = "Clear all nine campaign levels."

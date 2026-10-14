@@ -803,6 +803,42 @@ The browser host atomically saves its authoritative metadata snapshot to
 IndexedDB remains the browser cache, populated from authenticated host records;
 the home-folder snapshot contains no session authentication token or ROM bytes.
 
+## Arkanoo arcade game
+
+`examples/good/arkanoo` ports gameplay from [c0m4r's Arkanoo](https://github.com/c0m4r/arkanoo).
+It includes nine campaign layouts followed by endless stages, paddle spin,
+three lives, multiball, long-paddle and ghost bonuses, explosive rockets, particles,
+synthesized sound effects, achievements, and saved high scores/level checkpoints.
+The exact upstream revision, original license and adaptation credits are included.
+Upstream music and artwork are replaced with original drawing and sound.
+
+Left/right arrows or A/D move. Up/W starts, launches, fires rockets and confirms
+level transitions or restart. Down/S pauses or resumes. Starting a new session
+continues from the unlocked level; after game over, Up restarts the campaign.
+High scores and unlocked levels save when a life is lost or a level is completed.
+Live state stays in the game's own Wasm memory. No ROM is required.
+
+With a current source-built CLI and GUI:
+
+```sh
+gamepkg keygen --output ./arkanoo-creator.key
+gamepkg pack examples/good/arkanoo --output ./arkanoo.gamepkg --key ./arkanoo-creator.key
+gamepkg install ./arkanoo.gamepkg --trust-creator
+gamepkg build com.gamepkg.arkanoo
+gamepkg-gui --play com.gamepkg.arkanoo
+# Optional standalone browser package:
+gamepkg web-export com.gamepkg.arkanoo --output ./arkanoo-web
+python3 -m http.server 8080 --directory ./arkanoo-web
+```
+
+`cargo test --test game_arkanoo` checks campaign progression, collision response,
+bonus bounds/expiry and restart. `python3 tests/arkanoo.py` performs signed
+installation and isolated compilation, real Wasm audio/save/achievement checks,
+native keyboard play, and Chromium gameplay in both export profiles.
+Its `--skip-browser` option runs the native checks without Selenium/Chromium.
+The upstream editor, mouse input, music and portal/gravity effects are outside
+this first port; see `CREDITS.md` for the full adaptation scope.
+
 ## Open-source 2048 example
 
 `examples/good/2048` adapts row sliding and merging from
