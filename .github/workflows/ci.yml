@@ -32,6 +32,8 @@ jobs:
         run: cargo test --locked ${{ matrix.features }}
       - name: Test browser guest path protections
         run: node tests/web_path_attacks.mjs
+      - name: Test support links and clipboard behavior
+        run: node tests/support_page.mjs
       - name: Lint
         run: cargo clippy --locked --all-targets ${{ matrix.features }} -- -D warnings
       - name: Build CLI and GUI

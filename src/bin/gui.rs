@@ -6,6 +6,8 @@ struct Args {
     library: Option<std::path::PathBuf>,
     #[arg(long)]
     play: Option<String>,
+    #[arg(long, conflicts_with = "play", help = "Open the project support page")]
+    support: bool,
 }
 fn main() -> eframe::Result {
     let args = Args::parse();
@@ -14,7 +16,17 @@ fn main() -> eframe::Result {
     }
     eframe::run_native(
         "GamePKG",
-        eframe::NativeOptions::default(),
-        Box::new(move |cc| Ok(Box::new(gamepkg::gui::App::new(args.play, cc.gl.clone())))),
+        eframe::NativeOptions {
+            viewport: eframe::egui::ViewportBuilder::default()
+                .with_icon(gamepkg::gui::window_icon()),
+            ..Default::default()
+        },
+        Box::new(move |cc| {
+            let mut app = gamepkg::gui::App::new(args.play, cc.gl.clone());
+            if args.support {
+                app.open_support();
+            }
+            Ok(Box::new(app))
+        }),
     )
 }

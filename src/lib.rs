@@ -12,6 +12,7 @@ pub mod build;
 pub mod catalog;
 pub mod runtime;
 pub mod settings;
+pub mod support;
 
 pub mod saves;
 

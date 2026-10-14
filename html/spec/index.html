@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Format specification — GamePKG</title>
   <meta name="description" content="GamePKG package signatures, runtime profiles, limits, catalogs, and portable stores.">
+  <link rel="icon" type="image/png" href="../assets/gamepkg-icon.png">
   <style>
     :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #10171d; color: #e8eef1; line-height: 1.6; }
     body { margin: 0; } main { max-width: 780px; margin: auto; padding: 36px 24px 60px; }
@@ -73,5 +74,5 @@ not install or execute games.</p>
 <p>Optional <code>[[roms]]</code> entries contain unique <code>id</code> and human-readable <code>title</code> fields. Up to eight entries are permitted. A nonempty list implies <code>requires_rom = true</code>; legacy <code>requires_rom = true</code> without entries requires one file. The player supplies every file in declaration order. Read-only session snapshots are limited to 64 MiB per file and 128 MiB combined. Core and component hosts expose count, indexed size and indexed read; legacy functions refer to the first file.</p>
 <h2>Installed integrity and repair</h2>
 <p>Signed package verification covers the archive contents; shared assets are checked against signed hashes. Compiled Wasm has a host-written SHA-256 receipt checked before playback. Integrity repair restores damaged archives only from a verified local recovery copy, and rebuilds compiled files from verified source. A damaged or missing recovery copy requires a verified replacement original. Player saves and history are never reset automatically. Shader caches retain playback validation separately. Build checksums detect changes, but are not signatures protecting a compromised host.</p>
-<footer><a href="../guide/allowlist.html">Approved game libraries</a> · <a href="https://github.com/centrexity/GamePKG/blob/main/html/spec/index.md">Documentation source</a> · GamePKG · Apache 2.0</footer>
+<footer><a href="../support/index.html">Support GamePKG</a> · <a href="../guide/allowlist.html">Approved game libraries</a> · <a href="https://github.com/centrexity/GamePKG/blob/main/html/spec/index.md">Documentation source</a> · GamePKG · Apache 2.0</footer>
 </main></body></html>

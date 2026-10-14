@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Support GamePKG</title>
+  <meta name="description" content="Help build a safer way to share and play games. Support GamePKG or join our mining group.">
+  <link rel="icon" type="image/png" href="../assets/gamepkg-icon.png">
+  <style>
+    :root { color-scheme:dark; --bg:#10171d; --panel:#18232c; --ink:#edf3f6; --muted:#b2c2cc; --accent:#91ebbe; --border:#34454f; }
+    * { box-sizing:border-box; } body { margin:0; background:var(--bg); color:var(--ink); font:17px/1.65 system-ui,sans-serif; }
+    main { max-width:960px; margin:auto; padding:28px 24px 60px; } nav { display:flex; justify-content:space-between; flex-wrap:wrap; gap:16px; }
+    a { color:var(--accent); text-underline-offset:4px; } a:focus-visible,button:focus-visible { outline:3px solid var(--accent); outline-offset:5px; }
+    .hero { display:flex; align-items:center; gap:28px; padding:54px 0 34px; } .hero img { width:128px; height:128px; border-radius:26px; }
+    .eyebrow { color:var(--accent); font-size:13px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; }
+    h1 { font-size:clamp(34px,6vw,56px); line-height:1.1; letter-spacing:-.04em; margin:12px 0; } h2 { font-size:26px; margin:0 0 12px; } h3 { margin:0 0 14px; }
+    p { margin:0 0 20px; } .lead,.muted { color:var(--muted); } .lead { font-size:20px; }
+    .grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:18px; margin:22px 0; }
+    .card { background:var(--panel); border:1px solid var(--border); border-radius:18px; padding:24px; }
+    .payment { display:inline-block; border:0; border-radius:9px; background:var(--accent); color:#10231a; padding:12px 20px; font:700 16px system-ui,sans-serif; text-decoration:none; cursor:pointer; }
+    .payment[aria-disabled="true"],button:disabled { opacity:.5; cursor:default; }
+    .address { width:100%; border:1px solid var(--border); border-radius:9px; background:var(--bg); color:var(--ink); padding:14px; text-align:left; font:inherit; cursor:pointer; }
+    .address code { display:block; white-space:normal; overflow-wrap:anywhere; font-size:13px; color:var(--accent); }
+    .address code:empty { display:none; } .address span { display:block; font-size:14px; margin-top:4px; } .hint { color:var(--muted); font-size:14px; margin:12px 0 0; }
+    .mining { margin-top:32px; border-top:1px solid var(--border); padding-top:32px; } #feedback { min-height:28px; color:var(--accent); }
+    footer { margin-top:44px; border-top:1px solid var(--border); padding-top:24px; color:var(--muted); font-size:14px; }
+    @media(max-width:680px) { .grid { grid-template-columns:1fr; } .hero { align-items:flex-start; gap:18px; } .hero img { width:80px; height:80px; border-radius:18px; } }
+  </style>
+</head>
+<body><main>
+  <nav aria-label="Main"><a href="../index.html">← GamePKG</a><a href="../guide/index.html">Start playing</a></nav>
+  <div class="hero"><img src="../assets/gamepkg-icon.png" alt="GamePKG shield and game package icon" width="128" height="128"><div><div class="eyebrow">Built together</div><h1>Support GamePKG.</h1><p class="lead">Help build a safer way to share and play games.</p></div></div>
+  <p>Your support helps maintain the host, improve protections, and make GamePKG easier to use.</p>
+  <section class="card" aria-labelledby="paypal-title"><h2 id="paypal-title">PayPal</h2><a id="paypal" class="payment" role="link" aria-disabled="true">Support with PayPal</a><p id="paypal-hint" class="hint">Details coming soon.</p></section>
+  <section aria-labelledby="crypto-title"><h2 id="crypto-title" style="margin-top:32px">Crypto</h2><p class="muted">Click an address to copy it.</p><div class="grid">
+    <div class="card"><h3>Bitcoin</h3><button id="bitcoin" class="address" type="button" disabled aria-label="Copy Bitcoin address"><code></code><span>Copy address</span></button><p class="hint">Address coming soon.</p></div>
+    <div class="card"><h3>Monero</h3><button id="monero" class="address" type="button" disabled aria-label="Copy Monero address"><code></code><span>Copy address</span></button><p class="hint">Address coming soon.</p></div>
+    <div class="card"><h3>Dogecoin</h3><button id="dogecoin" class="address" type="button" disabled aria-label="Copy Dogecoin address"><code></code><span>Copy address</span></button><p class="hint">Address coming soon.</p></div>
+  </div><p id="feedback" role="status" aria-live="polite"></p></section>
+  <section class="mining" aria-labelledby="mining-title"><h2 id="mining-title">Mine with me</h2><p class="muted">Join the GamePKG group on Simoleons.</p><a class="payment" href="https://simoleons.net/group/gamepkg">Mine with me →</a></section>
+  <noscript><p>Enable JavaScript to load donation details and copy addresses. The mining-group link works without JavaScript.</p></noscript>
+  <footer>GamePKG · <a href="https://github.com/centrexity/GamePKG">Source on GitHub</a> · Apache 2.0</footer>
+  <script type="module" src="support.js"></script>
+</main></body>
+</html>

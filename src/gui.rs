@@ -26,6 +26,9 @@ pub struct App {
     rom_identity: Option<String>,
     additional_rom_paths: Vec<String>,
     show_settings: bool,
+    show_support: bool,
+    support_copied: Option<String>,
+    brand_icon: Option<egui::TextureHandle>,
     settings_draft: crate::settings::Settings,
     player: Option<Box<crate::runtime::Game>>,
     next_frame: Option<std::time::Instant>,
@@ -49,6 +52,12 @@ pub struct App {
     preview: Option<(Vec<Vec<u8>>, std::time::Instant, egui::TextureHandle)>,
 }
 impl App {
+    pub fn open_support(&mut self) {
+        self.show_support = true;
+        self.show_settings = false;
+        self.preview = None;
+        self.support_copied = None;
+    }
     pub fn new(play: Option<String>, gl: Option<std::sync::Arc<eframe::glow::Context>>) -> Self {
         let mut app = Self {
             gl,
@@ -589,10 +598,11 @@ impl eframe::App for App {
         egui::TopBottomPanel::top("navigation").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 if ui
-                    .selectable_label(!self.show_settings, "Library")
+                    .selectable_label(!self.show_settings && !self.show_support, "Library")
                     .clicked()
                 {
                     self.show_settings = false;
+                    self.show_support = false;
                     self.preview = None;
                 }
                 if ui
@@ -600,14 +610,76 @@ impl eframe::App for App {
                     .clicked()
                 {
                     self.show_settings = true;
+                    self.show_support = false;
                     self.preview = None;
                     match crate::settings::load() {
                         Ok(settings) => self.settings_draft = settings,
                         Err(e) => self.status = format!("Unable to load settings: {e:#}"),
                     }
                 }
+                if ui.selectable_label(self.show_support, "Support").clicked() {
+                    self.open_support();
+                }
             });
         });
+        if self.show_support {
+            if self.brand_icon.is_none() {
+                let icon = window_icon();
+                self.brand_icon = Some(ctx.load_texture(
+                    "gamepkg-brand",
+                    egui::ColorImage::from_rgba_unmultiplied(
+                        [icon.width as usize, icon.height as usize],
+                        &icon.rgba,
+                    ),
+                    egui::TextureOptions::LINEAR,
+                ));
+            }
+            let support = crate::support::details();
+            egui::CentralPanel::default().show(ctx, |ui| {
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        if let Some(icon) = &self.brand_icon {
+                            ui.image((icon.id(), egui::vec2(88.0, 88.0)));
+                        }
+                        ui.vertical(|ui| {
+                            ui.heading("Support GamePKG");
+                            ui.label("Help build a safer way to share and play games.");
+                        });
+                    });
+                    ui.add_space(20.0);
+                    ui.label("Your support helps maintain the host, improve protections, and make GamePKG easier to use.");
+                    ui.add_space(16.0);
+                    ui.heading("PayPal");
+                    if support.paypal_url.is_empty() {
+                        ui.add_enabled(false, egui::Button::new("Support with PayPal"));
+                        ui.weak("Details coming soon.");
+                    } else {
+                        ui.hyperlink_to("Support with PayPal", &support.paypal_url);
+                    }
+                    ui.add_space(16.0);
+                    ui.heading("Crypto");
+                    ui.label("Click an address to copy it.");
+                    for (name, address) in [("Bitcoin", &support.bitcoin), ("Monero", &support.monero), ("Dogecoin", &support.dogecoin)] {
+                        ui.group(|ui| {
+                            ui.label(name);
+                            if address.is_empty() {
+                                ui.add_enabled(false, egui::Button::new("Copy address"));
+                                ui.weak("Address coming soon.");
+                            } else if ui.button(egui::RichText::new(address).monospace()).on_hover_text("Copy address").clicked() {
+                                ctx.copy_text(address.clone());
+                                self.support_copied = Some(format!("{name} address copied."));
+                            }
+                        });
+                    }
+                    if let Some(message) = &self.support_copied { ui.label(message); }
+                    ui.add_space(20.0);
+                    ui.heading("Mine with me");
+                    ui.label("Join the GamePKG group on Simoleons.");
+                    ui.hyperlink_to("Mine with me", &support.mining_url);
+                });
+            });
+            return;
+        }
         if self.show_settings {
             egui::CentralPanel::default().show(ctx,|ui| {
                 ui.heading("Settings");
@@ -992,6 +1064,18 @@ impl eframe::App for App {
             ui.separator(); ui.label("Development preview. Supported games can play here; some package features are still in development.");
             ui.hyperlink_to("GamePKG • Apache 2.0", "https://gamepkg.com");
         });
+    }
+}
+
+pub fn window_icon() -> egui::IconData {
+    let image = image::load_from_memory(include_bytes!("../html/assets/gamepkg-icon.png"))
+        .expect("bundled GamePKG icon must be a valid PNG")
+        .thumbnail(256, 256)
+        .into_rgba8();
+    egui::IconData {
+        width: image.width(),
+        height: image.height(),
+        rgba: image.into_raw(),
     }
 }
 

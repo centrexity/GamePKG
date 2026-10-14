@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Start playing — GamePKG</title>
   <meta name="description" content="Install GamePKG, inspect a signed game, build it locally, and play with scoped access to assets and your selected ROM.">
+  <link rel="icon" type="image/png" href="../assets/gamepkg-icon.png">
   <style>
     :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #10171d; color: #e8eef1; line-height: 1.6; }
     body { margin: 0; } main { max-width: 780px; margin: auto; padding: 36px 24px 60px; }
@@ -25,8 +26,8 @@
   <p>To build the host from source instead, follow the <a href="https://github.com/centrexity/GamePKG#readme">repository build instructions</a>.</p>
   <p>In <strong>Settings</strong>, enter your Slang 2026.19 installation folder. New configurations use GLSL so supported shader games can render in the desktop player. Set your library folder, memory ceiling, sound volume, and update-check interval, then choose <strong>Save settings</strong>.</p>
   <h2>Try the signed demos</h2>
-  <p>Enter the <a href="https://github.com/centrexity/GamePKG/releases/download/v0.1.6/demos.gamepkglist">demo catalog URL</a> in Library and choose <strong>Import .gamepkglist</strong>. It adds Collect Stars, Shape Playground, PNG Sprite Playground and Zelda3 as <strong>Not downloaded</strong>. Select a game, approve its creator, then Build and Play. The three original demos need no ROM; Zelda3 requires your supported USA ROM. Players need no signing key. The <a href="https://github.com/centrexity/GamePKG/releases/download/v0.1.6/demos.gamepkgstore">portable demo store</a> includes all four signed games for offline import.</p>
-  <p>Use arrows or WASD in Collect Stars to reach the yellow target. Hold Left or Right to move the square or PNG sprite in the other demos. Choose <strong>Back to library</strong> to return. The signed demo manifests include working update URLs.</p>
+  <p>Enter the <a href="https://github.com/centrexity/GamePKG/releases/download/v0.1.6/demos.gamepkglist">demo catalog URL</a> in Library and choose <strong>Import .gamepkglist</strong>. It adds signed sample packages as <strong>Not downloaded</strong>. Select a game, approve its creator, then Build and Play. Some packages require player-provided ROM files; review their requirements before playing. Players need no signing key. The <a href="https://github.com/centrexity/GamePKG/releases/download/v0.1.6/demos.gamepkgstore">portable demo store</a> includes signed packages for offline import.</p>
+  <p>Follow the package’s controls when playing. Choose <strong>Back to library</strong> to return. The signed demo manifests include working update URLs.</p>
   <h2>Inspect, install, build, play</h2>
   <ol>
     <li>In Library, enter a local <code>.gamepkg</code> path or a creator’s HTTPS download URL. Choose <strong>Download / inspect</strong>.</li>
@@ -46,16 +47,16 @@
   <h2>Try a source example</h2>
   <p>Creators can build a local example into a signed source package. Keep the private key private; players need no key entry.</p>
   <pre><code>./target/release/gamepkg keygen -o creator.key
-./target/release/gamepkg build examples/good/collect-stars \
-  -o /tmp/collect-stars.gamepkg --key creator.key</code></pre>
-  <p>Inspect <code>/tmp/collect-stars.gamepkg</code> in the desktop library, then follow the install, build, and play steps above. The creator build checks compilation before publishing the package; it does not install it automatically.</p>
+./target/release/gamepkg build examples/minimal \
+  -o /tmp/example.gamepkg --key creator.key</code></pre>
+  <p>Inspect <code>/tmp/example.gamepkg</code> in the desktop library, then follow the install, build, and play steps above. The creator build checks compilation before publishing the package; it does not install it automatically.</p>
   <section><h2>Download from a GitHub project</h2><p>Enter <code>https://github.com/owner/repository</code> to download its latest published stable release. The release must contain exactly one <code>.gamepkg</code> file. A <code>/releases/tag/version</code> link selects a specific release; use a direct asset link when the project distributes multiple games. GitHub project links also work in game catalogs and signed update URLs. For list or store imports, the app selects one matching <code>.gamepkglist</code> or <code>.gamepkgstore</code> release file. Package signatures, creator approval, and update checks still apply.</p></section>
   <section>
     <h2>Integrity checks and repair</h2>
     <p>Use <strong>Check integrity</strong> in Library to verify signed package contents, shared assets and compiled game checksums. <strong>Fix / rebuild</strong> recompiles verified source. Damaged archives can be restored from the verified local recovery copy. If that copy is missing or damaged, supply a verified replacement original. Player saves and history are preserved.</p>
     <p>For missing or damaged shared assets, enter the original local <code>.gamepkgstore</code> path in the package field and choose <strong>Repair assets</strong>. The host requires the exact signed package before restoring its blobs. The CLI equivalent is <code>gamepkg integrity-fix GAME_ID --store original.gamepkgstore</code>.</p>
   </section>
-  <footer><a href="allowlist.html">Approved game libraries</a> · <a href="security.html">Security model</a> · <a href="../spec/index.html">Format specification</a> · GamePKG · Apache 2.0</footer>
+  <footer><a href="../support/index.html">Support GamePKG</a> · <a href="allowlist.html">Approved game libraries</a> · <a href="security.html">Security model</a> · <a href="../spec/index.html">Format specification</a> · GamePKG · Apache 2.0</footer>
 
 </main></body>
 </html>

@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="GamePKG is building safer game distribution with inspectable source, creator-signed packages, isolated builds, and a capability-scoped game runtime.">
   <title>GamePKG — Play games safely</title>
+  <link rel="icon" type="image/png" href="assets/gamepkg-icon.png">
   <style>
     :root { color-scheme: dark; --bg:#10171d; --panel:#18232c; --ink:#edf3f6; --muted:#b2c2cc; --accent:#91ebbe; --border:#34454f; }
     * { box-sizing:border-box; }
@@ -45,8 +46,8 @@
 <body>
   <a class="skip" href="#main">Skip to content</a>
   <header><div class="wrap"><nav aria-label="Main navigation">
-    <a class="brand" href="./">GamePKG</a>
-    <div class="links"><a href="#protections">Protections</a><a href="#access">Game access</a><a href="https://github.com/centrexity/GamePKG">Source on GitHub</a></div>
+    <a class="brand" href="./"><img src="assets/gamepkg-icon.png" alt="" width="42" height="42" style="vertical-align:middle;border-radius:10px;margin-right:10px">GamePKG</a>
+    <div class="links"><a href="#protections">Protections</a><a href="#access">Game access</a><a href="support/index.html">Support</a><a href="https://github.com/centrexity/GamePKG">Source on GitHub</a></div>
   </nav></div></header>
   <main id="main" class="wrap">
     <div class="hero">
@@ -57,13 +58,9 @@
       <a class="button" href="https://github.com/centrexity/GamePKG/releases/download/v0.1.6/gamepkg-0.1.6-linux-x86_64.tar.gz">Download for Linux</a>
       <a class="button" href="https://github.com/centrexity/GamePKG/releases/download/v0.1.6/gamepkg-0.1.6-windows-x86_64.zip">Download for Windows</a>
       <p>Verify your download with the <a href="https://github.com/centrexity/GamePKG/releases/tag/v0.1.6">release checksums</a>. Windows source builds use a matching Linux compiler inside WSL 2; playback runs in the native Windows app. Follow the <a href="https://github.com/centrexity/GamePKG/blob/main/docs/INSTALL_WINDOWS.md">Windows setup guide</a>.</p>
-      <p>Try the <a href="https://github.com/centrexity/GamePKG/releases/download/v0.1.6/demos.gamepkglist">signed demo catalog</a>: import it into your library, choose a game, approve its creator, then Build and Play. The three original demos need no ROM; Zelda3 requires your supported USA ROM. Players need no signing key. A <a href="https://github.com/centrexity/GamePKG/releases/download/v0.1.6/demos.gamepkgstore">portable demo store</a> is also available.</p>
+      <p>Try the <a href="https://github.com/centrexity/GamePKG/releases/download/v0.1.6/demos.gamepkglist">signed demo catalog</a>: import it into your library, choose a game, approve its creator, then Build and Play. Some packages need player-provided ROM files; each manifest lists its requirements. Players need no signing key. A <a href="https://github.com/centrexity/GamePKG/releases/download/v0.1.6/demos.gamepkgstore">portable demo store</a> is also available.</p>
       <aside class="notice" aria-label="Development status"><p><strong>Development preview for Linux and Windows x86-64.</strong> The download includes the CLI and desktop library. Install creator-signed packages, build in isolation, and play supported games with scoped assets, named ROM files, saves, audio, and memory and execution limits. The desktop player supports sprites and compiled fragment shaders. The Hindsight browser library caches game information and icons. Windows builds use the verified WSL 2 compiler connection and play in the native Windows app. Broader GPU rendering and isolated macOS builds remain unfinished. GamePKG does not guarantee that a package is harmless.</p></aside>
     </div>
-    <section aria-labelledby="zelda3"><h2 id="zelda3">Bring your own ROM: Zelda3.</h2>
-      <p>The <a href="demos/zelda3.gamepkg">signed Zelda3 package</a> uses your own supported USA A Link to the Past ROM in its original location. Graphics, music and level resources are decoded only in memory; the package contains no ROM or game assets. Save progress stays in the game's scoped storage.</p>
-      <p>This port requires GamePKG 0.1.6 from the downloads above, and a fuel ceiling of 100,000,000 in Settings. Build the package, select your ROM and play in the desktop app. Python and an external decoder are not needed. Windows playback runs natively; source compilation uses the matching Linux compiler. See the <a href="https://github.com/centrexity/GamePKG/blob/main/engines/zelda3/README.md">setup and controls</a>. Source recipes for Zelda3, Arkanoo and 2048 live in <a href="https://github.com/centrexity/GamePKG_Ports">GamePKG_Ports</a>. Browser playback is not supported for this port.</p>
-    </section>
     <section aria-labelledby="why"><h2 id="why">A game package you can inspect.</h2>
       <p>An opaque executable is difficult to review. When launched without a sandbox, it may inherit your account's access to files, network connections, and other programs. GamePKG brings source visibility, signed contents, restricted builds, and declared capabilities into one workflow.</p>
       <p>Each <code>.gamepkg</code> carries Rust source, Slang shader source, assets, and a signed manifest. You can inspect its code and permissions before installing it. Source visibility makes review possible; it does not prove safety. Conventional signed binaries and separately sandboxed apps can also offer protections.</p>

@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Approved game libraries — GamePKG</title>
   <meta name="description" content="How GamePKG approves pinned game libraries and compiles without downloading dependencies.">
+  <link rel="icon" type="image/png" href="../assets/gamepkg-icon.png">
   <style>
     :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #10171d; color: #e8eef1; line-height: 1.6; }
     body { margin: 0; } main { max-width: 780px; margin: auto; padding: 36px 24px 60px; }
@@ -35,5 +36,5 @@ gamepkg allowlist add byteorder-lite</code></pre>
 <h2>Adding a library to the catalog</h2>
 <p>The current release has one catalog entry. An unknown name passed to <code>allowlist add</code> is rejected. A new library requires a host update that reviews and bundles its source, pins its complete dependency graph, and tests its permitted build configuration. A creator cannot expand the catalog through a game manifest.</p>
 <p class="notice">Approval and signatures do not guarantee harmless code. The host, compilers, and graphics drivers remain trusted components. Review the creator and permissions before installation.</p>
-<footer><a href="security.html">Security model</a> · <a href="https://github.com/centrexity/GamePKG/blob/main/src/allowlist.rs">Enforced catalog policy</a> · GamePKG · Apache 2.0</footer>
+<footer><a href="../support/index.html">Support GamePKG</a> · <a href="security.html">Security model</a> · <a href="https://github.com/centrexity/GamePKG/blob/main/src/allowlist.rs">Enforced catalog policy</a> · GamePKG · Apache 2.0</footer>
 </main></body></html>
