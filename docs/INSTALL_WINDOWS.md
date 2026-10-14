@@ -6,7 +6,7 @@ Run `bin\gamepkg.exe --help` in PowerShell, or launch `bin\gamepkg-gui.exe` for 
 
 The current source has an **experimental, opt-in WSL 2 compiler connection**. End-to-end builds through WSL 2, core/component playback, integrity repair and actual native GUI shader rendering/input passed on a hosted Windows runner using software OpenGL. Hardware graphics drivers were not tested exhaustively. The existing Linux preview provides the verified build/play workflow.
 
-To configure the experimental connection, install a WSL 2 Linux distribution and prepare its GamePKG compiler with the same version as the Windows host, Rust's `wasm32-unknown-unknown` target, bubblewrap, and the pinned Slang compiler following the Linux setup instructions. The matching 0.1.4 Linux preview includes the internal compiler worker. Download its archive and checksum, verify and extract them inside WSL, and follow its `INSTALL.md` to install the compiler prerequisites. The Linux command-line binary also needs the listed ALSA runtime library; no Linux desktop display is needed for compilation. Test a source build inside Linux first. Earlier 0.1.3 Linux archives predate this worker and cannot serve as the matching compiler.
+To configure the experimental connection, install a WSL 2 Linux distribution and prepare its GamePKG compiler with the same version as the Windows host, Rust's `wasm32-unknown-unknown` target, bubblewrap, and the pinned Slang compiler following the Linux setup instructions. Use the matching 0.1.6 Linux preview, which includes the internal compiler worker. Download its archive and checksum, verify and extract them inside WSL, and follow its `INSTALL.md` to install the compiler prerequisites. The Linux command-line binary also needs the listed ALSA runtime library; no Linux desktop display is needed for compilation. Test a source build inside Linux first. Older host/compiler versions cannot serve as the matching 0.1.6 compiler.
 
 In the Windows settings page, supply the distribution name and the absolute Linux path to its `gamepkg` executable, for example `GamePKG-Ubuntu-24.04` and `/opt/gamepkg/bin/gamepkg`. Both fields must be supplied together; blank fields disable the connection. These values can also be set as `windows_compiler_distribution` and `windows_compiler_executable` in the settings file. Slang configuration inside the Linux distribution controls its compiler installation.
 
@@ -18,7 +18,7 @@ For an actual Windows/WSL integration check after setup, build the current Windo
 
 Add `--gui` with Pillow installed and a working OpenGL driver to verify actual blue/green shader pixels and held/released keyboard input for both runtime profiles. The hosted test uses checksum-pinned Mesa 26.2.4 DLLs only in its build folder; those test DLLs are excluded from the distribution. Screenshots and diagnostics are retained as a separate test artifact.
 
-The current 0.1.5 source requires a matching 0.1.5 compiler worker for the full Rust preflight policy. Build both hosts from the same source revision until matching release archives are published; a 0.1.4 worker is intentionally rejected by a 0.1.5 Windows host.
+The 0.1.6 Windows host requires a matching 0.1.6 Linux compiler worker. Use the Linux and Windows archives from the same release. The full source preflight policy and builtin engine version are checked before compiler outputs are accepted.
 
 ## Zelda3 optional engine
 

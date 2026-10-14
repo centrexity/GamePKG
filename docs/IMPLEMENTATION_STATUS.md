@@ -133,3 +133,33 @@ sprites, audio scheduling/mute, GLSL fragment/texture playback, and translated
 SPIR-V/WGSL caches. No test result is a proof that arbitrary source is harmless:
 compiler isolation, restricted runtime imports and resource limits remain part
 of the boundary. Published 0.1.4 downloads still predate these source changes.
+
+## Zelda3 native port and 0.1.6 release
+
+The native port is implemented at source revision `72fd39c0c4d36fa42bac61e97d372041fa3d53ce`.
+Its full [Linux gates](https://github.com/centrexity/GamePKG/actions/runs/38623053566)
+and [Windows/macOS portability gates](https://github.com/centrexity/GamePKG/actions/runs/38623053906)
+completed successfully. Native Windows checks included actual WSL 2 compilation,
+core/component rendering and keyboard input, integrity repair, compiler exchange
+including the Zelda engine, and extracted host installation. The player ROM was
+never sent to CI. Actual Zelda ROM playback on Windows was checked locally under
+Wine; that is not a claim of testing Zelda on Windows hardware.
+
+| Port requirement | Verified evidence |
+| --- | --- |
+| Full pinned engine, isolated builds and integrity receipts | All copied upstream source/license hashes checked; selected C translation units parsed before direct Clang builds; resulting engine has zero imports and a 16 MiB memory maximum; compiler exchange checks both engine bytes and receipt. |
+| Existing game source restrictions | `tests/zelda3_policy.rs`, generic source-policy tests, and all good/bad examples pass. The package's Rust entry calls only the checked engine API; arbitrary package C/Python is not admitted. |
+| ROM used in place; no extraction or Python for players | The native Rust decoder has no file output, process launch or interpreter calls. All 165 resources and the full packed blob match the pinned development reference; headered ROMs match; missing/wrong/truncated ROMs fail. ROM checksums remain unchanged. The extracted host plays with an empty executable search path. |
+| Native CLI/GUI and controls | Signed install/build/run; title, file registration, opening dialogue, held movement and action input checked. Linux GUI and actual Windows executable under Wine select the ROM through the library and render playable frames. Existing arrow/WASD bits are preserved. |
+| Pixels/audio and execution limits | Real frames produce the 256×224 image and 800 mono audio samples per tick. Child work uses the same frame fuel/deadline budget; two bounded Wasm instances reserve 32 MiB combined. Generic deadline, fuel, memory and failed-frame save tests pass. |
+| Persistent original SRAM | A real file/name slot creates valid 8 KiB SRAM, survives reopening and loads through the native GUI. Corrupted engine bytes fail integrity; source repair restores playability without changing SRAM files. |
+| Signed public package and host distribution | `zelda3.gamepkg` contains only the source recipe, original icon and notices, with a named player ROM and minimum host 0.1.6. Both host entries and original dependency sources/licenses are shipped. Host binaries and release downloads are checked against SHA-256 metadata. |
+| Creator continuity and usable existing demos | Demo 0.1.3 keeps the original creator/update endpoints and passes strict source checks. An authentic legacy macro package can upgrade to current, same-creator source without another approval or save changes; unsafe candidates, different creators and altered old signatures fail. |
+
+The release catalog and portable store contain Zelda plus the three original
+ROM-free demos. Zelda requires a fuel ceiling of 100,000,000 and the supported
+USA ROM. Source builds use Linux (including the matching opt-in WSL compiler on
+Windows); playback is native and uses no Python or separate decoder. Zelda
+browser export remains explicitly unsupported. Original upstream MIT notices
+and GamePKG's Apache-2.0 notices are retained; ROM/graphics/music data are not
+included in any public package or compiler exchange.

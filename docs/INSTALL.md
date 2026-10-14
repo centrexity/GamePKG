@@ -4,8 +4,8 @@ This archive contains the GamePKG command-line program and desktop library. It d
 
 These builds target Ubuntu 24.04 or a compatible system with glibc 2.39 or newer. The desktop requires a working X11 or Wayland display, OpenGL, and ALSA. The exact builder libc version and executable hashes are recorded in BUILD.json. Dependency license expressions and original notices are included in DEPENDENCIES.json and third-party-licenses/. Original resolved dependency source archives are preserved as directories in third-party-sources/, including notices embedded in source and bundled fonts.
 
-1. Check the downloaded archive against its .sha256 file with `sha256sum -c gamepkg-0.1.4-linux-x86_64.tar.gz.sha256`.
-2. Extract it into a folder you control with `tar -xzf gamepkg-0.1.4-linux-x86_64.tar.gz`.
+1. Check the downloaded archive against its .sha256 file with `sha256sum -c gamepkg-0.1.6-linux-x86_64.tar.gz.sha256`.
+2. Extract it into a folder you control with `tar -xzf gamepkg-0.1.6-linux-x86_64.tar.gz`.
 3. Enter the extracted folder. Run `./bin/gamepkg --help` for the CLI or `./bin/gamepkg-gui` for the desktop.
 
 On Ubuntu 24.04, install the runtime tools needed for isolated builds, downloads, previews, and audio:
@@ -32,10 +32,10 @@ Install a signed package from a file or HTTPS URL in the desktop library. Review
 To try a ready-to-install game, paste this catalog URL into the desktop library and choose **Import .gamepkglist**:
 
 ```text
-https://github.com/centrexity/GamePKG/releases/download/v0.1.4/demos.gamepkglist
+https://github.com/centrexity/GamePKG/releases/download/v0.1.6/demos.gamepkglist
 ```
 
-The catalog adds three games without downloading them. Choose **Download / inspect** for Collect Stars, review and approve its creator, then **Build** and **Play**. None of these demos requires a ROM. In Collect Stars, use the arrow keys or WASD to move toward the yellow target; collecting stars increases your score and unlocks achievements. In Shape Playground and PNG Sprite Playground, hold Left or Right to move the square or sprite. Use **Back to library** to return to your games. The demo manifests contain signed update URLs, so **Check for updates** can verify whether a newer same-creator version is available. For offline use, download the [demo store](https://github.com/centrexity/GamePKG/releases/download/v0.1.4/demos.gamepkgstore), then inspect and import that local file. [Demo checksums](https://github.com/centrexity/GamePKG/releases/download/v0.1.4/demo-packages.sha256) cover the packages, catalog and store.
+The catalog adds four games without downloading them. Zelda requires your own supported USA ROM; the three original demos do not. Choose **Download / inspect** for Collect Stars, review and approve its creator, then **Build** and **Play**. Those three original demos require no ROM. In Collect Stars, use the arrow keys or WASD to move toward the yellow target; collecting stars increases your score and unlocks achievements. In Shape Playground and PNG Sprite Playground, hold Left or Right to move the square or sprite. Use **Back to library** to return to your games. The demo manifests contain signed update URLs, so **Check for updates** can verify whether a newer same-creator version is available. For offline use, download the [demo store](https://github.com/centrexity/GamePKG/releases/download/v0.1.6/demos.gamepkgstore), then inspect and import that local file. [Demo checksums](https://github.com/centrexity/GamePKG/releases/download/v0.1.6/demo-packages.sha256) cover the packages, catalog and store.
 
 To create your own signed package from an included example, generate a private creator key outside the example directory:
 
@@ -55,7 +55,7 @@ For games with multiple ROMs, select the game and supply every named file in man
 
 ## Zelda3 optional engine
 
-For the source-built 0.1.6 port, Ubuntu 24.04 additionally needs Clang 18,
+For the 0.1.6 Zelda3 port, Ubuntu 24.04 additionally needs Clang 18,
 wasi-libc and libclang-rt-18-dev-wasm32. No Python or external ROM decoder is
 needed for building or playing Zelda3. Select a fuel
 ceiling of 100,000,000 in Settings. Build examples/ports/zelda3 as a signed package
