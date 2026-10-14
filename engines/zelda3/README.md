@@ -52,13 +52,13 @@ Local tests cover signed installation/building, invalid and headered ROMs,
 persistence and reopening. Native Linux GUI tests select the ROM through the
 library and verify visible held-key movement. Windows CLI and GUI tests under
 Wine cover compiler exchange, playback, saved-slot loading and keyboard input.
-Source is published in Centrexity/GamePKG. Current GitHub portability checks
-remain pending; a new downloadable host release is not yet published.
+Source and signed packages are published in Centrexity/GamePKG. The 0.1.6
+release includes native CLI and GUI hosts plus the four-game catalog and store.
 
 ## Build and play
 
-Use GamePKG 0.1.6, currently available from source. The older downloadable host
-cannot run this engine. Players can download the signed ROM-free package:
+Use the [GamePKG 0.1.6 release](https://github.com/centrexity/GamePKG/releases/tag/v0.1.6).
+Players can download the signed ROM-free package:
 
 ```sh
 gamepkg install https://raw.githubusercontent.com/centrexity/GamePKG/main/html/demos/zelda3.gamepkg --trust-creator
