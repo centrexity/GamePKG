@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="GamePKG is building safer game distribution with inspectable source, creator-signed packages, isolated builds, and a capability-scoped game runtime.">
+  <meta name="description" content="Inspect game source, verify creator signatures, and build locally with GamePKG. Transparent packages, scoped access, and configurable optimization.">
   <title>GamePKG — Play games safely</title>
   <link rel="icon" type="image/png" href="assets/gamepkg-icon.png">
   <style>
@@ -51,39 +51,38 @@
   </nav></div></header>
   <main id="main" class="wrap">
     <div class="hero">
-      <div class="eyebrow">Source-first game distribution</div>
-      <h1>Play games safely.</h1>
+      <div class="eyebrow">Transparent games. Local builds.</div>
+      <h1>Know what you play.</h1>
       <p class="lead">Know what you run. Control what it can access.</p>
-      <p>GamePKG is building a safer way to share and play games: inspectable source, creator-signed packages, isolated compilation, and a host designed to grant only the capabilities a game needs.</p>
+      <p>See the source, review permissions, and verify the creator before you play. GamePKG builds your chosen packages locally and limits their access through an isolated runtime. GamePKG is a package format and player; creators host their own games, and you choose where to obtain them.</p>
       <a class="button" href="https://github.com/centrexity/GamePKG/releases/download/v0.1.6/gamepkg-0.1.6-linux-x86_64.tar.gz">Download for Linux</a>
       <a class="button" href="https://github.com/centrexity/GamePKG/releases/download/v0.1.6/gamepkg-0.1.6-windows-x86_64.zip">Download for Windows</a>
       <p>Verify your download with the <a href="https://github.com/centrexity/GamePKG/releases/tag/v0.1.6">release checksums</a>. Windows source builds use a matching Linux compiler inside WSL 2; playback runs in the native Windows app. Follow the <a href="https://github.com/centrexity/GamePKG/blob/main/docs/INSTALL_WINDOWS.md">Windows setup guide</a>.</p>
       <p>Try the <a href="https://github.com/centrexity/GamePKG/releases/download/v0.1.6/demos.gamepkglist">signed demo catalog</a>: import it into your library, choose a game, approve its creator, then Build and Play. Some packages need player-provided ROM files; each manifest lists its requirements. Players need no signing key. A <a href="https://github.com/centrexity/GamePKG/releases/download/v0.1.6/demos.gamepkgstore">portable demo store</a> is also available.</p>
-      <aside class="notice" aria-label="Development status"><p><strong>Development preview for Linux and Windows x86-64.</strong> The download includes the CLI and desktop library. Install creator-signed packages, build in isolation, and play supported games with scoped assets, named ROM files, saves, audio, and memory and execution limits. The desktop player supports sprites and compiled fragment shaders. The Hindsight browser library caches game information and icons. Windows builds use the verified WSL 2 compiler connection and play in the native Windows app. Broader GPU rendering and isolated macOS builds remain unfinished. GamePKG does not guarantee that a package is harmless.</p></aside>
+
     </div>
     <section aria-labelledby="why"><h2 id="why">A game package you can inspect.</h2>
       <p>An opaque executable is difficult to review. When launched without a sandbox, it may inherit your account's access to files, network connections, and other programs. GamePKG brings source visibility, signed contents, restricted builds, and declared capabilities into one workflow.</p>
       <p>Each <code>.gamepkg</code> carries Rust source, Slang shader source, assets, and a signed manifest. You can inspect its code and permissions before installing it. Source visibility makes review possible; it does not prove safety. Conventional signed binaries and separately sandboxed apps can also offer protections.</p>
       <div class="steps">
-        <div class="step"><span>01 / INSPECT</span><h3>See what ships.</h3><p>Review the source, creator fingerprint, permissions, and any user-provided ROM requirement.</p></div>
+        <div class="step"><span>01 / INSPECT</span><h3>See what you run.</h3><p>Review the source, creator fingerprint, permissions, and any user-provided ROM requirement.</p></div>
         <div class="step"><span>02 / VERIFY &amp; BUILD</span><h3>Keep the build isolated.</h3><p>Verify signed contents and compile verified source in a private, network-isolated Linux work area, including through WSL 2 on Windows.</p></div>
         <div class="step"><span>03 / RUNTIME DESIGN</span><h3>Grant specific access.</h3><p>The Wasm host exposes scoped assets, selected ROMs, saves, drawing and audio through a versioned WIT component API or the legacy core profile, with fuel, memory and deadline limits.</p></div>
       </div>
     </section>
     <section aria-labelledby="protections"><h2 id="protections">Limits that belong in the format.</h2>
-      <div class="table-scroll"><table><caption style="text-align:left;margin-bottom:16px;color:var(--muted)">Current package, build, and runtime protections</caption><thead><tr><th scope="col">Protection</th><th scope="col">What it controls</th><th scope="col">Status</th></tr></thead><tbody>
-        <tr><td>Signed packages and updates</td><td>Detect altered signed contents. Require the same creator key and game ID, plus a newer version, for updates. First installation still requires creator approval.</td><td>Available</td></tr>
-        <tr><td>Bounded archive access</td><td>Reject traversal paths, duplicate entries, symlinks, and oversized archive contents. Read assets from the archive without extracting the whole game.</td><td>Available</td></tr>
-        <tr><td>Restricted source profile</td><td>Checked Rust source modules, approved pinned dependencies, no build scripts or procedural macros, and Slang-only shader source. Every packaged Rust file is scanned.</td><td>Available; scanning alone is not a sandbox</td></tr>
-        <tr><td>Isolated compilation</td><td>Linux builds use bubblewrap, a private work area, no network, no user home access, and a 60-second deadline. Sandbox failure stops the build.</td><td>Available for checked source modules and pinned dependencies</td></tr>
-        <tr><td>Scoped game capabilities</td><td>Expose only host-approved assets, input, rendering, audio, and save operations instead of ambient operating-system access.</td><td>Available in core and versioned WIT component profiles</td></tr>
-        <tr><td>Runtime resource budgets</td><td>Enforce memory caps, execution fuel, and deadlines for running games. Signed memory and fuel limits apply in both runtime profiles. GPU work is not metered by Wasm fuel.</td><td>Enforced for both Wasmtime profiles</td></tr>
+      <div class="table-scroll"><table><caption style="text-align:left;margin-bottom:16px;color:var(--muted)">Package, build, and runtime protections</caption><thead><tr><th scope="col">Protection</th><th scope="col">What it controls</th></tr></thead><tbody>
+        <tr><td>Signed packages and updates</td><td>Detect altered signed contents. Require the same creator key and game ID, plus a newer version, for updates. First installation still requires creator approval.</td></tr>
+        <tr><td>Bounded archive access</td><td>Reject traversal paths, duplicate entries, symlinks, and oversized archive contents. Read assets from the archive without extracting the whole game.</td></tr>
+        <tr><td>Restricted source profile</td><td>Checked Rust source modules, approved pinned dependencies, no build scripts or procedural macros, and Slang-only shader source. Every packaged Rust file is scanned.</td></tr>
+        <tr><td>Isolated compilation</td><td>Linux builds use bubblewrap, a private work area, no network, no user home access, and a 60-second deadline. Sandbox failure stops the build.</td></tr>
+        <tr><td>Scoped game capabilities</td><td>Expose only host-approved assets, input, rendering, audio, and save operations instead of ambient operating-system access.</td></tr>
+        <tr><td>Runtime resource budgets</td><td>Enforce memory caps, execution fuel, and deadlines for running games. Signed memory and fuel limits apply in both runtime profiles. GPU work is not metered by Wasm fuel.</td></tr>
       </tbody></table></div>
     </section>
     <section aria-labelledby="local-builds"><h2 id="local-builds">Build here. Improve over time.</h2>
-      <p>Building games on demand on your own machine creates opportunities to optimize for the supported platform and runtime. Shipping source lets the host rebuild as compiler tooling and optimization settings improve, while creators can deliver signed source updates.</p>
-      <p>The host can also check periodically for newer versions while preserving continuity with the creator key you approved. Local compilation and updates remain subject to the same package restrictions and sandbox boundaries.</p>
-      <p><strong>Today:</strong> isolated Wasm builds, rebuilds, user-requested update checks, and configurable periodic checks while the desktop library is idle. Broader platform-specific performance tuning remains planned. Local builds are not guaranteed to outperform prebuilt games.</p>
+      <p>Source transparency also gives you control over the build. Compile on demand with configurable optimization settings, then rebuild when your settings or compiler tools change. Performance depends on the game, settings, and host runtime.</p>
+      <p>Check for creator-signed updates yourself or set periodic checks while the library is idle. Review each update before installing it; rebuilding uses the same source checks and isolated compiler boundaries.</p>
     </section>
     <section aria-labelledby="access"><h2 id="access">What can a game access?</h2>
       <p>The runtime design starts with <strong>no ambient filesystem or network access</strong>. Games receive specific operations through a small host API. The host scopes those operations to the signed package permissions and explicit user selections.</p>
@@ -92,9 +91,9 @@
         <li><strong>Input, rendering, and audio:</strong> explicit game operations exposed by the host.</li>
         <li><strong>Saves:</strong> host-scoped storage rather than arbitrary filesystem writes.</li>
         <li><strong>ROMs:</strong> a signed manifest declares which ROM files must be supplied by the player. No ROM is fetched automatically; only the files selected by the player are shared read-only in the signed manifest’s order for that session.</li>
-        <li><strong>Networking:</strong> guest networking is unsupported. Current manifests must declare <code>network = "none"</code>.</li>
+        <li><strong>Networking:</strong> guest networking is unsupported. Manifests must declare <code>network = "none"</code>.</li>
       </ul>
-      <p>Installing a package runs no game code or package-provided install scripts. The initial scanner rejects detected filesystem, network, process, and environment paths, compile-time file includes, unsafe blocks, and foreign declarations. Compiler isolation remains necessary because source scanning cannot prove what arbitrary macros will do.</p>
+      <p>Installing a package runs no game code or package-provided install scripts. Source checks reject filesystem, network, process, and environment paths, compile-time file includes, macros, unsafe blocks, and foreign declarations. Source checks, compiler isolation, and runtime limits work together; inspection alone cannot prove a game harmless.</p>
     </section>
     <section aria-labelledby="library"><h2 id="library">Build your library at your own pace.</h2>
       <p>Your library tracks time played, locally earned achievements, and storage used. Signed game manifests can declare achievements and an estimated storage requirement; measured usage and creator estimates are shown separately.</p>
@@ -107,7 +106,7 @@
       <p><a href="guide/allowlist.html">Approved game libraries and source policy →</a></p>
       <p><a href="guide/security.html">Security model</a> · <a href="spec/index.html">Format specification</a></p>
     </section>
-  <section><h2>Download from a GitHub project</h2><p>Enter <code>https://github.com/owner/repository</code> to download its latest published stable release. The release must contain exactly one <code>.gamepkg</code> file. A <code>/releases/tag/version</code> link selects a specific release; use a direct asset link when the project distributes multiple games. GitHub project links also work in game catalogs and signed update URLs. For list or store imports, the app selects one matching <code>.gamepkglist</code> or <code>.gamepkgstore</code> release file. Package signatures, creator approval, and update checks still apply.</p></section>
+  <section><h2>Download from a GitHub project</h2><p>Enter <code>https://github.com/owner/repository</code> to download its latest published stable release. The release must contain exactly one <code>.gamepkg</code> file. A <code>/releases/tag/version</code> link selects a specific release; use a direct asset link when the project hosts multiple packages. GitHub project links also work in game catalogs and signed update URLs. For list or store imports, the app selects one matching <code>.gamepkglist</code> or <code>.gamepkgstore</code> release file. Package signatures, creator approval, and update checks still apply.</p></section>
 </main>
   <footer><div class="wrap">GamePKG · <a href="https://gamepkg.com">gamepkg.com</a> · Copyright 2026 GamePKG contributors · <a href="https://github.com/centrexity/GamePKG/blob/main/LICENSE">Apache 2.0</a></div></footer>
 </body>

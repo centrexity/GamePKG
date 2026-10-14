@@ -70,7 +70,7 @@ verified session snapshots.
 
 Optional video previews decode in a separate network-isolated process with
 bounded output. Resource-free compiled fragment shaders can render in the
-OpenGL player; broader GPU resource support is still under development. GPU
+OpenGL player. GPU
 drivers and the host runtime remain trusted components, and GPU work is not
 metered by Wasm fuel. These restrictions reduce access and do not establish a
 general guarantee that a package cannot cause harm.
