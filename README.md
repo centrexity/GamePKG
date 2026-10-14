@@ -803,6 +803,43 @@ The browser host atomically saves its authoritative metadata snapshot to
 IndexedDB remains the browser cache, populated from authenticated host records;
 the home-folder snapshot contains no session authentication token or ROM bytes.
 
+## Zelda3 ROM-required port
+
+`examples/ports/zelda3` ports the complete pinned [Zelda3 engine](https://github.com/snesrev/zelda3)
+through a checked host API. It requires a player-selected **A Link to the Past
+USA ROM** (1 MiB, optionally with a 512-byte copier header). No ROM, graphics or
+music are included in the package. Resources are decoded in memory from that
+selection; no extracted asset folder or data file is created. Only the game's
+8 KiB SRAM save is persisted in the normal creator-scoped save folder.
+
+Use the source-built **0.1.6** host. Set the fuel ceiling to **100,000,000** in
+Settings; the existing default remains 10,000,000. The game's combined hard
+Wasm memory limit is 32 MiB, reserved across two 16 MiB instances. Engine work
+is charged to the same frame fuel budget and deadline as the Rust entry.
+
+On Ubuntu 24.04, install Clang 18, `wasi-libc`, `libclang-rt-18-dev-wasm32`,
+Python with Pillow/PyYAML, and the normal Rust/Slang build prerequisites.
+A private prepared C sysroot can be selected with `GAMEPKG_ZELDA3_SYSROOT`.
+Then sign/install the source example, build `com.gamepkg.zelda3`, select your ROM
+in the desktop library and click Play. The CLI supports:
+
+```sh
+gamepkg run com.gamepkg.zelda3 --rom /path/to/your/zelda3.sfc --frames 1000
+```
+
+Arrows/WASD move. Z is sword/B, X item/Y, C interact/A, V map/X,
+Enter Start/pause, Tab Select/save menu, and Q/E shoulders.
+Wait for the title screen before starting. File registration and normal saves
+use the original game menus. See [the port guide](engines/zelda3/README.md) for
+Windows setup, provenance, detailed tests and current limitations. Browser export
+is currently unsupported for this builtin engine and reports that explicitly.
+
+The Rust package entry follows the existing source restrictions. Only the
+host-owned pinned C engine is compiled, inside the isolated compiler; packages
+cannot supply arbitrary C code. Its Wasm has no imports, including no WASI
+filesystem/network imports. The ROM decoder uses pinned host code rather than
+package-supplied scripts.
+
 ## Arkanoo arcade game
 
 `examples/good/arkanoo` ports gameplay from [c0m4r's Arkanoo](https://github.com/c0m4r/arkanoo).

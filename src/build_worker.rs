@@ -282,14 +282,24 @@ pub(crate) fn accept_with_guard(
         &snapshot.path().join("builds"),
         std::slice::from_ref(&info.package_digest),
     )?;
-    require_entries(
-        &source_build,
-        &[
-            "game.wasm".into(),
-            "game.sha256".into(),
-            receipt_name.clone(),
-        ],
-    )?;
+    let builtin = if manifest.builtin_engine.is_some() {
+        let path = source_build.join("zelda3.wasm");
+        let bytes = crate::files::read_regular(&path, 32 * 1048576, false)?;
+        crate::integrity::verify_build(&path, &bytes)?;
+        crate::zelda3::validate(&bytes)?;
+        Some(bytes)
+    } else {
+        None
+    };
+    let mut expected = vec![
+        "game.wasm".into(),
+        "game.sha256".into(),
+        receipt_name.clone(),
+    ];
+    if builtin.is_some() {
+        expected.extend(["zelda3.wasm".into(), "zelda3.sha256".into()]);
+    }
+    require_entries(&source_build, &expected)?;
     let component = bytes.starts_with(b"\0asm\x0d\0\x01\0");
     if component != (manifest.runtime_profile == "component-v1")
         || !crate::build::artifact_has_tick(&bytes)
@@ -357,6 +367,11 @@ pub(crate) fn accept_with_guard(
         fs::rename(staged_cache, &cache)?;
     }
     publish_file(&destination.join(receipt_name), &shader_receipt)?;
+    if let Some(engine) = builtin {
+        let path = destination.join("zelda3.wasm");
+        publish_file(&path, &engine)?;
+        crate::integrity::record_build(&path, &engine)?;
+    }
     publish_file(&destination.join("game.wasm"), &bytes)?;
     crate::integrity::record_build(&destination.join("game.wasm"), &bytes)?;
     Ok(())

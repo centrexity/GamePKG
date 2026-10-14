@@ -16,6 +16,8 @@ pub struct Manifest {
     pub entry_world: String,
     #[serde(default = "default_runtime_profile")]
     pub runtime_profile: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub builtin_engine: Option<String>,
     pub lockfile_sha256: String,
     pub limits: Limits,
     pub permissions: Permissions,
@@ -154,6 +156,17 @@ impl Manifest {
                     .any(char::is_control)
             {
                 bail!("invalid or duplicate achievement declaration");
+            }
+        }
+        if let Some(engine) = &m.builtin_engine {
+            if engine != crate::zelda3::PROFILE
+                || m.runtime_profile != "core-v1"
+                || m.required_rom_count() != 1
+                || !m.permissions.save
+                || !m.permissions.audio
+                || m.limits.hard_memory_bytes < 33554432
+            {
+                bail!("Zelda3 requires the pinned core-v1 engine, one ROM, save/audio permissions and at least 32 MiB memory");
             }
         }
         if m.format_version != 1 {

@@ -48,3 +48,11 @@ Keep private creator keys private. Players do not need a key to install or play 
 The browser library is included in this preview. Run `./bin/gamepkg web-library --indexeddb-package /path/to/Hindsight4/Compiler/packages/Database/IndexedDB` and open its printed session link. Hindsight’s package is supplied separately. The browser stores library information and icons in IndexedDB; use the desktop or CLI for installation, builds, gameplay and repairs.
 
 For games with multiple ROMs, select the game and supply every named file in manifest order. To repair damaged shared assets, enter the original local `.gamepkgstore` path in the desktop package field and choose **Repair assets**, or run `./bin/gamepkg integrity-fix GAME_ID --store original.gamepkgstore`.
+
+## Zelda3 optional engine
+
+For the source-built 0.1.6 port, Ubuntu 24.04 additionally needs Clang 18,
+wasi-libc, libclang-rt-18-dev-wasm32, python3-pil and python3-yaml. Select a fuel
+ceiling of 100,000,000 in Settings. Build examples/ports/zelda3 as a signed package
+and select your supported USA ROM in the library. No extracted assets are written.
+See engines/zelda3/README.md for the complete setup and verification details.

@@ -57,3 +57,6 @@ pub mod build_worker;
 mod windows_build;
 
 pub mod web_export;
+
+mod zelda3;
+mod zelda3_sources;

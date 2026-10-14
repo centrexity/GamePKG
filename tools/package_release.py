@@ -75,8 +75,9 @@ def package(output_directory, binary_directory):
         for filename in ['LICENSE', 'NOTICE', 'Cargo.lock']:
             shutil.copyfile(PROJECT / filename, root / filename)
         (root / 'tools').mkdir()
-        for filename in ['install_slang.py', 'install_dxc.py']:
+        for filename in ['install_slang.py', 'install_dxc.py', 'install_zelda3_runtime.py']:
             shutil.copyfile(PROJECT / 'tools' / filename, root / 'tools' / filename)
+        shutil.copytree(PROJECT / 'engines', root / 'engines', ignore=shutil.ignore_patterns('__pycache__', 'target'))
         shutil.copytree(PROJECT / 'examples', root / 'examples', ignore=shutil.ignore_patterns('__pycache__', 'target'))
         shutil.copyfile(PROJECT / 'docs' / ('INSTALL_WINDOWS.md' if windows else 'INSTALL.md'), root / 'INSTALL.md')
         notices = []

@@ -172,6 +172,9 @@ pub fn export(root: &Path, id: &str, output: &Path) -> Result<()> {
     if !crate::build::artifact_has_tick(&wasm) {
         bail!("build the game before exporting for web");
     }
+    if manifest.builtin_engine.is_some() {
+        bail!("Zelda3 browser export requires a browser ROM decoder; native playback is supported");
+    }
     let wasm = browser_module(&wasm, &manifest.runtime_profile)?;
     let namespace = if manifest.runtime_profile == "component-v1" {
         "gamepkg:engine/host@0.1.0"

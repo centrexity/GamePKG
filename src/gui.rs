@@ -326,6 +326,26 @@ impl eframe::App for App {
             let mut close = false;
             let mut image_count = 0;
             let mut failure = None;
+            let select_input = ctx.input(|i| {
+                u32::from(i.key_pressed(egui::Key::Tab)) << 7
+                    | u32::from(i.key_down(egui::Key::Tab)) << 15
+            });
+            if game.builtin_engine {
+                ctx.input_mut(|i| {
+                    i.events.retain(|event| {
+                        !matches!(
+                            event,
+                            egui::Event::Key {
+                                key: egui::Key::Tab,
+                                ..
+                            }
+                        )
+                    })
+                });
+                if let Some(id) = ctx.memory(|m| m.focused()) {
+                    ctx.memory_mut(|m| m.surrender_focus(id));
+                }
+            }
             egui::CentralPanel::default().show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     ui.heading(&game.id);
@@ -361,10 +381,19 @@ impl eframe::App for App {
                             i.key_pressed(egui::Key::ArrowDown) || i.key_pressed(egui::Key::S),
                         ) << 3)
                 });
-                self.pending_input |= input & 15;
+                let input = input | select_input | ctx.input(|i| {
+                    let mut buttons=0u32;
+                    for (key,press,held) in [(egui::Key::Z,4,12),(egui::Key::X,5,13),(egui::Key::Enter,6,14),(egui::Key::Tab,7,15),
+                        (egui::Key::C,16,20),(egui::Key::V,17,21),(egui::Key::Q,18,22),(egui::Key::E,19,23)] {
+                        buttons |= u32::from(i.key_pressed(key)) << press;
+                        buttons |= u32::from(i.key_down(key)) << held;
+                    }
+                    buttons
+                });
+                self.pending_input |= input & 0xf00ff;
                 let now = std::time::Instant::now();
                 if self.next_frame.is_none_or(|next| now >= next) {
-                    match game.step(self.pending_input | (input & 0xf00)) {
+                    match game.step(self.pending_input | (input & 0xf0ff00)) {
                         Err(e) => failure = Some(format!("Game stopped: {e:#}")),
                         Ok(_) => {
                             if let Some(audio) = &self.audio_player {
@@ -395,7 +424,7 @@ impl eframe::App for App {
                     ui.label(&self.audio_error);
                 }
                 if game.custom_renderer {
-                    ui.label("Arrows or WASD to move.");
+                    ui.label(if game.builtin_engine {"Arrows/WASD move; Z sword; X item; C interact; V map; Enter start; Tab select; Q/E shoulders."} else {"Arrows or WASD to move."});
                 } else {
                     ui.label(format!("Score: {} — Arrows or WASD to move.", game.score()));
                 }

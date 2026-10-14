@@ -4,7 +4,7 @@ from pathlib import Path
 PROJECT=Path(__file__).resolve().parents[1]
 p=argparse.ArgumentParser(description=__doc__);p.add_argument('mode',choices=['prepare','consume']);p.add_argument('directory',type=Path);args=p.parse_args()
 cli=PROJECT/'target/release'/('gamepkg.exe' if os.name=='nt' else 'gamepkg')
-cases=[('core-glsl','shader-switch','glsl'),('component-glsl','component-playground','glsl'),('component-spirv','component-playground','spirv'),('component-wgsl','component-playground','wgsl')]
+cases=[('core-glsl','shader-switch','glsl'),('component-glsl','component-playground','glsl'),('component-spirv','component-playground','spirv'),('component-wgsl','component-playground','wgsl'),('zelda3','zelda3','glsl')]
 with tempfile.TemporaryDirectory(prefix='gamepkg-native-exchange-') as temporary:
  root=Path(temporary);config=root/'settings.toml'
  env=dict(os.environ,GAMEPKG_HOME=str(root/'library'),GAMEPKG_CONFIG=str(config))
@@ -22,7 +22,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-native-exchange-') as temporary
   config.write_text(f'automatic_update_checks=false\nshader_backend="{backend}"\n')
   if args.mode=='prepare':
    folder.mkdir();package=root/(case+'.gamepkg')
-   run('pack',PROJECT/'examples/good'/example,'-o',package,'--key',key,'--shared-assets')
+   run('pack',PROJECT/('examples/ports' if example=='zelda3' else 'examples/good')/example,'-o',package,'--key',key,'--shared-assets')
    if backend=='glsl':run('install',package,'--trust-creator')
    run('prepare-build-worker',game_id,folder/'game.gamepkgstore')
    run('build-worker',folder/'game.gamepkgstore',folder/'exchange','--shader-backend',backend,'--copy-output')
@@ -30,18 +30,24 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-native-exchange-') as temporary
   else:
    run('store-import',folder/'game.gamepkgstore','--trust-creators')
    run('accept-build-worker',game_id,folder/'exchange')
-   run('run',game_id,'--frames','3')
+   if example!='zelda3':run('run',game_id,'--frames','3')
+   else:
+    assert next((root/'library/builds').rglob('zelda3.wasm')).is_file()
+    run('run',game_id,'--frames','3',good=False)
    run('integrity-check',game_id)
    info=folder/'exchange/exchange.json';original=info.read_bytes();metadata=json.loads(original);metadata['package_digest']='0'*64
    info.write_text(json.dumps(metadata))
    try:run('accept-build-worker',game_id,folder/'exchange',good=False)
    finally:info.write_bytes(original)
-   other='component-glsl' if case=='core-glsl' else 'core-glsl'
+   other='component-glsl' if case in ['core-glsl','zelda3'] else 'core-glsl'
    replacement=next((fixture/other/'exchange/builds').rglob('game.wasm')).read_bytes()
    wasm=next((folder/'exchange/builds').rglob('game.wasm'));receipt=wasm.with_suffix('.sha256')
    original_wasm=wasm.read_bytes();original_receipt=receipt.read_bytes()
    wasm.write_bytes(replacement);receipt.write_text(hashlib.sha256(replacement).hexdigest())
    try:run('accept-build-worker',game_id,folder/'exchange',good=False)
    finally:wasm.write_bytes(original_wasm);receipt.write_bytes(original_receipt)
-   run('run',game_id,'--frames','3')
+   if example!='zelda3':run('run',game_id,'--frames','3')
+   else:
+    assert next((root/'library/builds').rglob('zelda3.wasm')).is_file()
+    run('run',game_id,'--frames','3',good=False)
   print('Cross-platform compiler exchange passed:',args.mode,case)

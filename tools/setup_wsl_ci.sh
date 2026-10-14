@@ -2,6 +2,8 @@
 # Prepare only the disposable WSL distribution in the native verification job.
 set -euo pipefail
 project=$(pwd)
+apt-get update
+apt-get install -y clang-18 wasi-libc libclang-rt-18-dev-wasm32
 test -f "$project/native-exchange-fixture/gamepkg-linux"
 curl --proto '=https' --tlsv1.2 --fail --silent --show-error https://sh.rustup.rs -o /tmp/gamepkg-rustup-init.sh
 sh /tmp/gamepkg-rustup-init.sh -y --profile minimal --default-toolchain 1.89.0

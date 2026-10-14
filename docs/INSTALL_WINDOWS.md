@@ -19,3 +19,26 @@ For an actual Windows/WSL integration check after setup, build the current Windo
 Add `--gui` with Pillow installed and a working OpenGL driver to verify actual blue/green shader pixels and held/released keyboard input for both runtime profiles. The hosted test uses checksum-pinned Mesa 26.2.4 DLLs only in its build folder; those test DLLs are excluded from the distribution. Screenshots and diagnostics are retained as a separate test artifact.
 
 The current 0.1.5 source requires a matching 0.1.5 compiler worker for the full Rust preflight policy. Build both hosts from the same source revision until matching release archives are published; a 0.1.4 worker is intentionally rejected by a 0.1.5 Windows host.
+
+## Zelda3 optional engine
+
+Zelda3 uses the same opt-in WSL 2 compiler exchange as other source games.
+Install Clang 18, wasi-libc and libclang-rt-18-dev-wasm32 in that compiler's
+Ubuntu 24.04 environment. The matching 0.1.6 host includes the pinned engine
+sources and transfers its verified Wasm/receipt alongside the Rust entry.
+No player ROM or save data is sent to the compiler.
+
+Playback runs in the native Windows host and does not use WSL. It needs a host
+Python runtime with Pillow and PyYAML. Either set GAMEPKG_ZELDA3_PYTHON to your
+Python executable, or prepare the optional portable runtime beside the programs:
+
+```powershell
+python tools/install_zelda3_runtime.py bin/runtime/zelda3
+```
+
+The installer uses checksum-pinned official Python/PyPI downloads, installs into
+a new folder, and preserves their license files. A system Python can run the
+installer; the resulting decoder does not need pip or an installed Python.
+Set the fuel ceiling to 100,000,000, import/sign/build the Zelda3 example and
+select your own supported USA ROM in the library. The ROM is decoded only in RAM;
+only game SRAM is persisted. See engines/zelda3/README.md for controls and tests.

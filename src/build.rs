@@ -69,6 +69,18 @@ pub fn is_built(root: &Path, id: &str) -> Result<bool> {
     let Ok(bytes) = crate::files::read_regular(&path, 32 * 1024 * 1024, false) else {
         return Ok(false);
     };
+    let manifest = registry::installed_manifest(root, id)?;
+    if manifest.builtin_engine.is_some() {
+        let engine = path.with_file_name("zelda3.wasm");
+        let Ok(bytes) = crate::files::read_regular(&engine, 32 * 1048576, false) else {
+            return Ok(false);
+        };
+        if crate::integrity::verify_build(&engine, &bytes).is_err()
+            || crate::zelda3::validate(&bytes).is_err()
+        {
+            return Ok(false);
+        }
+    }
     Ok(artifact_has_tick(&bytes)
         && crate::integrity::verify_build(&cache_path(root, id)?, &bytes).is_ok())
 }
@@ -271,6 +283,11 @@ pub(crate) fn compile_with_settings(
     let crate_name = cargo["package"]["name"].as_str().unwrap().replace('-', "_");
 
     crate::source::parse_build_tree(stage.path())?;
+    let builtin = if manifest.builtin_engine.is_some() {
+        Some(crate::zelda3::build()?)
+    } else {
+        None
+    };
 
     // Desktop/WSL launches do not necessarily load Rustup's shell PATH setup.
     let rustup = std::env::var_os("CARGO_HOME")
@@ -377,8 +394,16 @@ pub(crate) fn compile_with_settings(
     }
     let parent = cache.parent().context("invalid build cache")?;
     fs::create_dir_all(parent)?;
-    let mut temp = tempfile::NamedTempFile::new_in(parent)?;
     use std::io::Write;
+    if let Some(bytes) = builtin {
+        let path = cache.with_file_name("zelda3.wasm");
+        let mut file = tempfile::NamedTempFile::new_in(parent)?;
+        file.write_all(&bytes)?;
+        file.as_file().sync_all()?;
+        file.persist(&path).map_err(|e| e.error)?;
+        crate::integrity::record_build(&path, &bytes)?;
+    }
+    let mut temp = tempfile::NamedTempFile::new_in(parent)?;
     temp.write_all(&artifact)?;
     temp.as_file().sync_all()?;
     temp.persist(&cache).map_err(|e| e.error)?;

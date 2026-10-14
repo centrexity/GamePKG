@@ -98,7 +98,10 @@ impl Package {
         if !valid_path(path) {
             bail!("invalid virtual path");
         }
-        let f = self.archive.by_name(path)?;
+        let f = self
+            .archive
+            .by_name(path)
+            .with_context(|| format!("unable to read package file {path}"))?;
         let expected = f.size();
         let mut data = Vec::new();
         f.take(expected + 1).read_to_end(&mut data)?;
