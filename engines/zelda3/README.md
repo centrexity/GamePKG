@@ -1,4 +1,4 @@
-# Zelda3 port work in progress
+# Zelda3 native GamePKG port
 
 The full objective is a playable signed GamePKG using a player-selected Zelda:
 A Link to the Past USA ROM directly. Neither the ROM nor its decoded resources
@@ -10,7 +10,7 @@ The engine is pinned to snesrev/zelda3 revision
 of each copied source and license. Copyright and MIT notices, including the
 LakeSnes authors' notices, remain in `upstream/LICENSE.txt`.
 
-## Verified development milestone
+## Verified native behavior
 
 - The selected USA 1 MiB ROM is recognized; a 512-byte copier header is supported.
 - The resource decoder constructs all 165 engine resource records in RAM.
@@ -31,33 +31,48 @@ native GamePKG runtime. Its Rust entry invokes only the checked host engine API.
 The Python RAM decoder is currently a development bridge over pinned upstream
 resource code. It is not package-authored Python and must not become a facility
 for running arbitrary package scripts. Its temporary structures and output exist
-only in memory. The final runtime integration must preserve that behavior.
+only in memory. The native runtime preserves that behavior.
 
-## Remaining requirements before calling the port complete
+## Isolation and integration
 
-1. Integrate the pinned engine with isolated GamePKG builds and integrity receipts;
-   accept no arbitrary C code or unapproved engine binaries from game packages.
-2. Keep package-authored Rust subject to the existing macro/alias/indirect-call
-   restrictions; no general relaxation of that policy is authorized by this port.
-3. Bind ROM decoding to the file explicitly selected through the existing ROM UI;
-   no ambient game filesystem/network access, extracted files or bundled ROM data.
-4. Add the needed action/start/select/shoulder controls without changing existing
-   arrow/WASD input bits. Deliver usable native CLI/GUI entry paths.
-5. Route engine pixels/audio through the checked host operations; enforce memory,
-   fuel and deadline limits and roll back failed frame saves.
-6. Persist original SRAM through the creator-scoped save API and verify reopening.
-7. Sign/install/build the actual package; test missing/wrong/headered ROM cases,
-   title, file selection, beginning gameplay, movement/actions and native rendering.
-8. Document build/play requirements and runtime portability truthfully. Browser
-   support must be verified separately before it is claimed for this engine.
+The pinned engine builds in the isolated compiler and carries an integrity
+receipt alongside the Rust entry. Package-authored Rust keeps the existing
+macro, alias and indirect-call restrictions; packages cannot supply arbitrary C
+or Python. The engine has no filesystem or network imports. Only the ROM
+selected by the player is passed to the host-owned RAM decoder.
 
-Current additional evidence: the signed package runs 1,000 frames through the
-actual runtime. Tests create a file/name slot, advance the opening dialogue,
-move Link inside the house, write the 8 KiB SRAM save and reopen the slot.
-The native GUI test selects the ROM through the library, loads that saved slot,
-and verifies visible held-key movement. `cargo test`, formatting and all-feature
-Clippy pass locally. Source publication, remote portability checks and final completion
-verification are still pending; the project goal remains active.
+Pixels and audio pass through checked host operations. Both Wasm instances share
+the declared fuel and deadline budget, reserve memory under the combined hard
+limit, and persist the original 8 KiB SRAM through creator-scoped storage.
+Failed frame saves use the runtime's existing rollback behavior.
+
+Local tests cover signed installation/building, invalid and headered ROMs,
+1,000 runtime frames, file/name creation, opening dialogue, movement, SRAM
+persistence and reopening. Native Linux GUI tests select the ROM through the
+library and verify visible held-key movement. Windows CLI and GUI tests under
+Wine cover compiler exchange, playback, saved-slot loading and keyboard input.
+Source is published in Centrexity/GamePKG. Current GitHub portability checks
+remain pending; a new downloadable host release is not yet published.
+
+## Build and play
+
+Use a source-built GamePKG 0.1.6 host. The older downloadable host cannot run
+this engine. From the repository root, sign and install the ROM-free recipe:
+
+```sh
+gamepkg keygen --output /path/to/private-creator.key
+gamepkg pack examples/ports/zelda3 --key /path/to/private-creator.key --output /path/to/zelda3.gamepkg
+gamepkg install /path/to/zelda3.gamepkg --trust-creator
+gamepkg build com.gamepkg.zelda3
+gamepkg-gui
+```
+
+Keep that creator key private. Players installing a signed package do not enter
+a key. In Settings, set the fuel ceiling to 100,000,000 before playing. Select
+your supported USA ROM in the game's ROM field, then press Play. Arrow keys or
+WASD move; Z/X are B/Y, C/V are A/X, Enter is Start, Tab is Select, and Q/E are
+L/R. The ROM remains in its original location. SRAM saves go to the library's
+scoped save storage, not beside the ROM.
 
 The port currently needs Linux, Clang 18 plus a Wasm C sysroot for isolated
 source builds, and host Python with Pillow/PyYAML for in-memory ROM decoding.
