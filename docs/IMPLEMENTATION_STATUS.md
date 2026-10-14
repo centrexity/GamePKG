@@ -112,3 +112,24 @@ CLI test verifies non-abort exit status and absence of published package data;
 string/raw-string/comment tests ensure punctuation in data is not syntax nesting.
 Near-boundary source probes (256, 512 and 900 operators) packed successfully with
 a 2 MiB process stack, and all sixteen good/seven bad examples still passed.
+
+## Final 0.1.5 verification
+
+At commit `c4c4fcac1238931b28d5889e86ae429622aed0f6`, the full
+[Linux verification run](https://github.com/centrexity/GamePKG/actions/runs/38588068146)
+and [native portability run](https://github.com/centrexity/GamePKG/actions/runs/38588068426)
+both completed successfully. Linux gates included all good/bad examples, parser
+limits, compiler output limits, scoped runtime operations, native GUI gameplay,
+the 2048 web-export button, rendering/audio and extracted distribution checks.
+Windows gates included native CLI/GUI builds, runtime and lint checks, real
+matching WSL compilation, repair, native GUI rendering/input, ZIP packaging and
+extracted installation. macOS build/runtime/lint and transferred-cache checks
+passed. Windows GUI evidence uses the documented software graphics driver.
+
+The final local 0.1.5 host also passed home-default/native-restart persistence and
+actual Hindsight play-history/achievement persistence through browser restart.
+Real Chromium web tests passed core and component gameplay, scoped data,
+sprites, audio scheduling/mute, GLSL fragment/texture playback, and translated
+SPIR-V/WGSL caches. No test result is a proof that arbitrary source is harmless:
+compiler isolation, restricted runtime imports and resource limits remain part
+of the boundary. Published 0.1.4 downloads still predate these source changes.
