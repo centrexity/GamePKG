@@ -420,9 +420,9 @@ impl Game {
 pub fn pattern(level: u32, row: usize, col: usize) -> bool {
     match level {
         1 => true,
-        2 => (row + col) % 2 == 0,
-        3 => row % 2 == 0,
-        4 => col % 2 == 0 || col % 2 == 1 && row == 0 || row == 9,
+        2 => (row + col).is_multiple_of(2),
+        3 => row.is_multiple_of(2),
+        4 => col.is_multiple_of(2) || !col.is_multiple_of(2) && row == 0 || row == 9,
         5 => (col as i32 - 10).abs() <= row as i32,
         6 => (col as i32 - 10).abs() + (row as i32 - 5).abs() <= 7,
         7 => {
@@ -436,7 +436,8 @@ pub fn pattern(level: u32, row: usize, col: usize) -> bool {
             ((dx * dx + dy * dy).sqrt() as i32) % 3 != 1
         }
         9 => {
-            !(col % 4 == 1 && row % 4 == 1 || col % 4 == 2 && row % 4 == 2) && (col + row) % 7 != 0
+            !(col % 4 == 1 && row % 4 == 1 || col % 4 == 2 && row % 4 == 2)
+                && !(col + row).is_multiple_of(7)
         }
         _ => {
             let seed = level
