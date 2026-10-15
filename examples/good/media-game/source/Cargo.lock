@@ -1,0 +1,14 @@
+version = 4
+[[package]]
+name = "media-game"
+version = "0.1.0"
+dependencies = ["gamepkg-audio", "gamepkg-shader", "gamepkg-window"]
+[[package]]
+name = "gamepkg-audio"
+version = "0.1.0"
+[[package]]
+name = "gamepkg-shader"
+version = "0.1.0"
+[[package]]
+name = "gamepkg-window"
+version = "0.1.0"

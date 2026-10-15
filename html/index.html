@@ -67,7 +67,7 @@
       <div class="steps">
         <div class="step"><span>01 / INSPECT</span><h3>See what you run.</h3><p>Review the source, creator fingerprint, permissions, and any user-provided ROM requirement.</p></div>
         <div class="step"><span>02 / VERIFY &amp; BUILD</span><h3>Keep the build isolated.</h3><p>Verify signed contents and compile verified source in a private, network-isolated Linux work area, including through WSL 2 on Windows.</p></div>
-        <div class="step"><span>03 / RUNTIME DESIGN</span><h3>Grant specific access.</h3><p>The Wasm host exposes scoped assets, selected ROMs, saves, drawing and audio through a versioned WIT component API or the legacy core profile, with fuel, memory and deadline limits.</p></div>
+        <div class="step"><span>03 / RUNTIME DESIGN</span><h3>Grant specific access.</h3><p>The Wasm host exposes scoped assets, selected ROMs, saves, drawing and audio through a versioned WIT component API or the legacy core profile, with memory and deadline limits.</p></div>
       </div>
     </section>
     <section aria-labelledby="protections"><h2 id="protections">Limits that belong in the format.</h2>
@@ -77,7 +77,7 @@
         <tr><td>Restricted source profile</td><td>Checked Rust source modules, approved pinned dependencies, no build scripts or procedural macros, and Slang-only shader source. Every packaged Rust file is scanned.</td></tr>
         <tr><td>Isolated compilation</td><td>Linux builds use bubblewrap, a private work area, no network, no user home access, and a 60-second deadline. Sandbox failure stops the build.</td></tr>
         <tr><td>Scoped game capabilities</td><td>Expose only host-approved assets, input, rendering, audio, and save operations instead of ambient operating-system access.</td></tr>
-        <tr><td>Runtime resource budgets</td><td>Enforce memory caps, execution fuel, and deadlines for running games. Signed memory and fuel limits apply in both runtime profiles. GPU work is not metered by Wasm fuel.</td></tr>
+        <tr><td>Runtime resource budgets</td><td>Enforce memory caps and deadlines for running games. Signed memory limits apply in both runtime profiles. GPU work is outside Wasm time limits.</td></tr>
       </tbody></table></div>
     </section>
     <section aria-labelledby="local-builds"><h2 id="local-builds">Build here. Improve over time.</h2>

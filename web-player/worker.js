@@ -29,6 +29,7 @@ const api={
  draw_image:(x,y,w,h,pw,ph,pointer,length)=>{const pixels=bytes(pointer,length,1048576);return pixels?imageCommand(x,y,w,h,pw,ph,pixels):-1;},
  draw_asset_image:(pointer,length,x,y,w,h)=>{const image=images.get(assetName(pointer,length));return image?imageCommand(x,y,w,h,image.width,image.height,image.pixels):-1;},
  draw_shader:index=>Number.isInteger(index)&&index>=0&&index<shaderCount?command(['shader',index]):-1,
+ draw_shader_asset_image:(index,pointer,length)=>{const image=images.get(assetName(pointer,length));if(!Number.isInteger(index)||index<0||index>=shaderCount||!image||imageBudget+image.pixels.length>8388608||commands.length>=1024)return -1;imageBudget+=image.pixels.length;return command(['shader-image',index,image.width,image.height,image.pixels.slice()]);},
  draw_shader_image:(index,pw,ph,pointer,length)=>{const pixels=bytes(pointer,length,1048576);if(!Number.isInteger(index)||index<0||index>=shaderCount||!pixels||!Number.isInteger(pw)||!Number.isInteger(ph)||pw<1||ph<1||pw>512||ph>512||length!==pw*ph*4||imageBudget+length>8388608)return -1;imageBudget+=length;return command(['shader-image',index,pw,ph,pixels.slice()]);},
  audio_submit:(pointer,count)=>{const samples=bytes(pointer,count*2,3200);if(!manifest.permissions.audio||!Number.isInteger(count)||count<0||count>1600||audioSamples.length+count>1600||!samples)return -1;const view=new DataView(samples.buffer,samples.byteOffset,samples.byteLength);for(let index=0;index<count;index++)audioSamples.push(view.getInt16(index*2,true));return 0;},
  achievement_unlock:index=>{const item=manifest.achievements?.[index];if(!item||unlocks.length>=1024)return 0;unlocks.push(item.id);return 1;}
@@ -80,5 +81,6 @@ const canonical={
  'draw-asset-image':(...args)=>api.draw_asset_image(...args)===0?1:0,
  'audio-submit':(...args)=>api.audio_submit(...args)===0?1:0,
  'draw-shader':index=>api.draw_shader(index)===0?1:0,
+ 'draw-shader-asset-image':(...args)=>api.draw_shader_asset_image(...args)===0?1:0,
  'draw-shader-image':(...args)=>api.draw_shader_image(...args)===0?1:0
 };

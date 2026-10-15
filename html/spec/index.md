@@ -73,11 +73,11 @@ not install or execute games.
 
 ## RGBA sprite drawing
 
-The host API includes `draw-image(x, y, width, height, pixel-width, pixel-height, pixels)`. Coordinates use the 640×480 virtual canvas; the last argument is a row-major RGBA byte list with exactly four bytes per pixel. Each pixel dimension is 1–512. Image bytes count toward a per-frame 8 MiB budget and the existing 1,024-command budget. The host copies accepted pixels into a private frame snapshot, charges fuel, and validates finite display coordinates and dimensions. The desktop uses nearest-neighbor sampling and alpha transparency. Sprites are scoped host draw commands; this API does not expose arbitrary GPU bindings.
+The host API includes `draw-image(x, y, width, height, pixel-width, pixel-height, pixels)`. Coordinates use the 640×480 virtual canvas; the last argument is a row-major RGBA byte list with exactly four bytes per pixel. Each pixel dimension is 1–512. Image bytes count toward a per-frame 8 MiB budget and the existing 1,024-command budget. The host copies accepted pixels into a private frame snapshot, and validates finite display coordinates and dimensions. The desktop uses nearest-neighbor sampling and alpha transparency. Sprites are scoped host draw commands; this API does not expose arbitrary GPU bindings.
 
-`draw-asset-image(path, x, y, width, height)` loads a PNG through the verified virtual asset API, including resolved shared references. The encoded file is limited to 2 MiB and the decoder allocation budget to 8 MiB; the same 512×512 dimensions, exact RGBA snapshot, and frame budget apply. Fuel is reserved before full archive reads and decoding. Invalid data, unavailable assets, and paths outside the asset root return false.
+`draw-asset-image(path, x, y, width, height)` loads a PNG through the verified virtual asset API, including resolved shared references. The encoded file is limited to 2 MiB and the decoder allocation budget to 8 MiB; the same 512×512 dimensions, exact RGBA snapshot, and frame budget apply. Invalid data, unavailable assets, and paths outside the asset root return false.
 
-GLSL fragment passes may use one host-owned combined `Sampler2D gamepkgTexture` at binding 0 via `draw_shader_image(index, pixel_width, pixel_height, rgba)`. Pixels are snapshotted and fuel-charged before queueing, bounded to 512×512 and included in the shared 8 MiB frame image budget. Additional shader resources are rejected. Core and WIT runtimes support this API. Textured SPIR-V/WGSL playback validates one float 2D image and one non-comparison sampler at group 0 bindings 0 and 1 before translating to GLSL. SPIR-V builds define `GAMEPKG_SEPARATE_SAMPLER=1`; use the example’s explicit texture/sampler branch.
+GLSL fragment passes may use one host-owned combined `Sampler2D gamepkgTexture` at binding 0 via `draw_shader_image(index, pixel_width, pixel_height, rgba)`. Pixels are snapshotted before queueing, bounded to 512×512 and included in the shared 8 MiB frame image budget. Additional shader resources are rejected. Core and WIT runtimes support this API. Textured SPIR-V/WGSL playback validates one float 2D image and one non-comparison sampler at group 0 bindings 0 and 1 before translating to GLSL. SPIR-V builds define `GAMEPKG_SEPARATE_SAMPLER=1`; use the example’s explicit texture/sampler branch.
 
 ## Multiple player ROMs
 
@@ -86,3 +86,9 @@ Optional `[[roms]]` entries contain unique `id` and human-readable `title` field
 ## Installed integrity and repair
 
 Signed package verification covers the archive contents; shared assets are checked against signed hashes. Compiled Wasm has a host-written SHA-256 receipt checked before playback. Integrity repair restores damaged archives only from a verified local recovery copy, and rebuilds compiled files from verified source. A damaged or missing recovery copy requires a verified replacement original. Player saves and history are never reset automatically. Shader caches retain playback validation separately. Build checksums detect changes, but are not signatures protecting a compromised host.
+
+## Shader asset textures and execution policy
+
+`draw-shader-asset-image(index, path)` supplies a PNG from the verified virtual assets to the selected fragment pass. It uses the same path checks, 2 MiB encoded limit, 512×512 decoded limit, 8 MiB decoder allocation limit, private snapshots and frame image budget as sprite loading. Unknown indices and invalid files return false. The core ABI names this operation `draw_shader_asset_image`; the component API uses the hyphenated name.
+
+The runtime uses memory limits and host time deadlines, without instruction metering. Legacy instruction-budget values in existing signed manifests are accepted but ignored; new manifests omit them.

@@ -1,0 +1,2 @@
+// Host-owned audio bridge; permissions and cumulative sample bounds stay in the runtime.
+#[unsafe(no_mangle)] pub extern "Rust" fn __gamepkg_audio_submit(samples: &[i16]) -> bool { gamepkg::audio_submit(samples) }

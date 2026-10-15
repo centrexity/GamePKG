@@ -217,7 +217,6 @@ pub struct Frame {
     pub pixels: Vec<u8>,
     pub audio: Vec<i16>,
     pub save: Option<Vec<u8>>,
-    pub fuel: u64,
 }
 impl Zelda {
     pub fn new(
@@ -225,7 +224,6 @@ impl Zelda {
         bytes: &[u8],
         rom: &[u8],
         save: Option<&[u8]>,
-        fuel: u64,
         deadline: u64,
     ) -> Result<Self> {
         validate(bytes)?;
@@ -244,7 +242,6 @@ impl Zelda {
             .build();
         let mut store = Store::new(engine, limits);
         store.limiter(|s| s);
-        store.set_fuel(fuel)?;
         store.set_epoch_deadline(deadline);
         let instance = Instance::new(&mut store, &module, &[])?;
         let memory = instance
@@ -298,8 +295,7 @@ impl Zelda {
         let xy = self.position.call(&mut self.store, ())? as u32;
         Ok((mode, xy as u16, (xy >> 16) as u16))
     }
-    pub fn step(&mut self, input: u32, restart: bool, fuel: u64, deadline: u64) -> Result<Frame> {
-        self.store.set_fuel(fuel)?;
+    pub fn step(&mut self, input: u32, restart: bool, deadline: u64) -> Result<Frame> {
         self.store.set_epoch_deadline(deadline);
         if restart {
             self.reset.call(&mut self.store, ())?;
@@ -354,7 +350,6 @@ impl Zelda {
             pixels,
             audio,
             save,
-            fuel: self.store.get_fuel()?,
         })
     }
 }

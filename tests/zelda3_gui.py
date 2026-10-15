@@ -9,7 +9,7 @@ p=argparse.ArgumentParser();p.add_argument('rom',type=Path);p.add_argument('--li
 PROOF=PROJECT/('target/zelda3-windows-proof' if args.wine_prefix else 'target/zelda3-proof');PROOF.mkdir(parents=True,exist_ok=True)
 with tempfile.TemporaryDirectory(prefix='zelda3-gui-',dir=PROJECT/'target') as temporary:
     root=Path(temporary);shutil.copytree(args.library,root/'library',ignore=shutil.ignore_patterns('progress'))
-    config=root/'settings.toml';config.write_text('automatic_update_checks=false\nfuel_ceiling=100000000\n')
+    config=root/'settings.toml';config.write_text('automatic_update_checks=false\n')
     env=dict(os.environ,GAMEPKG_HOME=str(root/'library'),GAMEPKG_CONFIG=str(config),LIBGL_ALWAYS_SOFTWARE='1');env.pop('WAYLAND_DISPLAY',None)
     display=start_display(env,width=1800,height=1100)
     rom=args.rom

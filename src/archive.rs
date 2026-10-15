@@ -197,33 +197,6 @@ impl Package {
     pub(crate) fn mark_verified(&mut self) {
         self.verified = true;
     }
-    pub(crate) fn asset_chunk_cost(
-        &mut self,
-        path: &str,
-        offset: u64,
-        length: usize,
-    ) -> Result<u64> {
-        if !self.verified || !valid_path(path) || length > 65536 {
-            bail!("invalid asset range");
-        }
-        if let Some(reference) = self.shared_refs.get(path) {
-            if !self.shared_files.contains_key(&reference.sha256) || offset > reference.size {
-                bail!("shared asset unavailable or invalid offset");
-            }
-            return Ok((length as u64).min(reference.size - offset) + 1024);
-        }
-        let entry = self.archive.by_name(&format!("assets/{path}"))?;
-        if offset > entry.size() {
-            bail!("asset offset exceeds entry size");
-        }
-        let read = (length as u64).min(entry.size() - offset);
-        let prefix = if entry.compression() == zip::CompressionMethod::Stored {
-            0
-        } else {
-            offset
-        };
-        Ok(prefix + read + 1024)
-    }
     /// Read a bounded range from an already verified package without extracting it.
     pub fn asset_chunk(&mut self, path: &str, offset: u64, length: usize) -> Result<Vec<u8>> {
         if !self.verified || !valid_path(path) || length > 65536 {
@@ -320,14 +293,6 @@ mod tests {
             assert!(package.asset_chunk("data", 2, 3).is_err());
             assert_eq!(package.asset("data").unwrap(), b"abcdefghij");
             package.mark_verified();
-            assert_eq!(
-                package.asset_chunk_cost("data", 2, 3).unwrap(),
-                if method == zip::CompressionMethod::Stored {
-                    1027
-                } else {
-                    1029
-                }
-            );
             assert_eq!(package.asset_chunk("data", 2, 3).unwrap(), b"cde");
             assert_eq!(package.asset_chunk("data", 8, 50).unwrap(), b"ij");
             assert!(package.asset_chunk("data", 10, 3).unwrap().is_empty());

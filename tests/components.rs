@@ -27,7 +27,7 @@ fn typed_component_draws_and_trapped_ticks_discard_commands() {
     assert!(game.frame().commands.is_empty());
 }
 #[test]
-fn component_input_permissions_and_fuel_are_enforced() {
+fn component_input_permissions_and_deadlines_are_enforced() {
     let bytes = component(
         r#"(module (memory (export "memory") 1)
       (func (export "tick") (param i32 i64) (result i64) local.get 0 i64.extend_i32_u))"#,
@@ -171,4 +171,39 @@ fn components_cannot_request_filesystem_or_socket_interfaces() {
             .to_string();
         assert!(error.contains("cannot import"), "{namespace}: {error}");
     }
+}
+
+#[test]
+fn component_initialization_and_ticks_use_deadlines_without_instruction_budgets() {
+    let mut manifest = manifest();
+    manifest.limits.legacy_execution_budget = Some(1);
+    let bytes = component(
+        r#"(module (memory (export "memory") 1)
+        (func (export "tick") (param i32 i64) (result i64) (local $count i32)
+            (loop $again local.get $count i32.const 1 i32.add local.tee $count
+                i32.const 1000 i32.lt_u br_if $again) i64.const 42))"#,
+    );
+    let mut game = Game::from_bytes(&bytes, &manifest).unwrap();
+    assert_eq!(game.step(0).unwrap(), 42);
+    let bytes = component(
+        r#"(module (memory (export "memory") 1)
+        (func $start (loop br 0)) (start $start)
+        (func (export "tick") (param i32 i64) (result i64) i64.const 0))"#,
+    );
+    assert!(Game::from_bytes(&bytes, &manifest).is_err());
+}
+
+#[test]
+fn unavailable_package_assets_return_none_without_trapping() {
+    let bytes = component(
+        r#"(module
+        (import "gamepkg:engine/host@0.1.0" "asset-read" (func $read (param i32 i32 i32 i32 i32)))
+        (memory (export "memory") 1) (data (i32.const 0) "missing")
+        (func (export "cabi_realloc") (param i32 i32 i32 i32) (result i32) i32.const 60000)
+        (func (export "tick") (param i32 i64) (result i64)
+            i32.const 0 i32.const 7 i32.const 0 i32.const 1 i32.const 50000 call $read
+            i32.const 50000 i32.load if unreachable end i64.const 42))"#,
+    );
+    let mut game = Game::from_bytes(&bytes, &manifest()).unwrap();
+    assert_eq!(game.step(0).unwrap(), 42);
 }

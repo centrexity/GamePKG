@@ -88,7 +88,9 @@ pub struct Limits {
     pub recommended_storage_bytes: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recommended_memory_bytes: Option<u64>,
-    pub fuel: u64,
+    // Accepted only for packages signed with the earlier schema; never enforced or emitted.
+    #[serde(default, rename = "fuel", skip_serializing)]
+    pub legacy_execution_budget: Option<u64>,
 }
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -204,10 +206,7 @@ impl Manifest {
         if m.version.is_empty() || m.entry_world.is_empty() {
             bail!("version and entry world are required");
         }
-        if m.limits.hard_memory_bytes == 0
-            || m.limits.hard_memory_bytes > 512 * 1024 * 1024
-            || m.limits.fuel == 0
-        {
+        if m.limits.hard_memory_bytes == 0 || m.limits.hard_memory_bytes > 512 * 1024 * 1024 {
             bail!("invalid resource limits");
         }
         if m.limits.recommended_storage_bytes == Some(0) {

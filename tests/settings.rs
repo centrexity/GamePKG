@@ -8,7 +8,6 @@ fn settings_persist_and_failed_saves_preserve_previous_values() {
     settings.library_directory = temp.path().join("library").to_string_lossy().into_owned();
     settings.tor_proxy = "127.0.0.1:9150".into();
     settings.memory_ceiling_mib = 64;
-    settings.fuel_ceiling = 10000;
     settings.tick_deadline_ms = 50;
     settings.approved_crates.clear();
     settings.optimize_builds = false;
@@ -47,11 +46,6 @@ fn settings_validate_bounds_and_reject_unknown_or_large_files() {
     for memory in [0, 513] {
         let mut s = defaults.clone();
         s.memory_ceiling_mib = memory;
-        assert!(s.validate().is_err());
-    }
-    for fuel in [0, 100000001] {
-        let mut s = defaults.clone();
-        s.fuel_ceiling = fuel;
         assert!(s.validate().is_err());
     }
     for deadline in [0, 15, 110] {
@@ -148,4 +142,20 @@ fn windows_compiler_configuration_is_explicit_and_preserved() {
         assert!(changed.save(&path).is_err());
         assert_eq!(Settings::read(&path).unwrap(), settings);
     }
+}
+
+#[test]
+fn earlier_instruction_ceiling_is_read_but_never_written_or_enforced() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("settings.toml");
+    std::fs::write(&path, "fuel_ceiling = 0\n").unwrap();
+    let settings = Settings::read(&path).unwrap();
+    assert_eq!(settings.legacy_execution_ceiling, Some(0));
+    settings.validate().unwrap();
+    settings.save(&path).unwrap();
+    assert!(!std::fs::read_to_string(&path).unwrap().contains("fuel"));
+    assert_eq!(
+        Settings::read(&path).unwrap().legacy_execution_ceiling,
+        None
+    );
 }

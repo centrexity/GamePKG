@@ -30,7 +30,6 @@ No player ROM or save data is sent to the compiler.
 
 Playback runs in the native Windows host and does not use WSL or Python.
 ROM decoding is built into the executable; no interpreter, pip, Pillow, PyYAML
-or separate runtime installation is needed. Set the fuel ceiling to 100,000,000,
-install/build the Zelda3 package and select your own supported USA ROM in the
+or separate runtime installation is needed. Install/build the Zelda3 package and select your own supported USA ROM in the
 library. The ROM is decoded only in RAM; only game SRAM is persisted.
 See engines/zelda3/README.md for controls and tests.

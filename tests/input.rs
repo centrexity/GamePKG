@@ -130,7 +130,7 @@ fn both_pinned_crates_can_coexist_with_exact_lock_graph() {
 
 #[test]
 fn only_exact_owned_wrappers_are_catalog_entries_and_source_pins_match() {
-    assert_eq!(gamepkg::allowlist::CATALOG.len(), 5);
+    assert_eq!(gamepkg::allowlist::CATALOG.len(), 7);
     for entry in gamepkg::allowlist::CATALOG {
         assert!(entry.name.starts_with("gamepkg-"));
         let directory = tempfile::tempdir().unwrap();

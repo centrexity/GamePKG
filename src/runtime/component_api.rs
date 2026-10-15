@@ -5,11 +5,6 @@ use wasmtime::{
     component::{Linker, WasmList, WasmStr},
     AsContext, Engine, StoreContextMut,
 };
-fn charge(store: &mut StoreContextMut<'_, Data>, cost: u64) -> Result<bool> {
-    let fuel = store.get_fuel()?;
-    store.set_fuel(fuel.saturating_sub(cost))?;
-    Ok(fuel >= cost)
-}
 fn chunk(bytes: Option<&[u8]>, offset: u32, length: u32) -> Option<Vec<u8>> {
     if length > 65536 {
         return None;
@@ -26,23 +21,11 @@ pub(super) fn linker(engine: &Engine) -> Result<Linker<Data>> {
             if path.len() > 1024 || !crate::archive::valid_path(&path) || length > 65536 {
                 return Ok((None::<Vec<u8>>,));
             }
-            let cost = store.data_mut().package.as_mut().and_then(|p| {
-                p.asset_chunk_cost(&path, u64::from(offset), length as usize)
+            let bytes = store.data_mut().package.as_mut().and_then(|package| {
+                package
+                    .asset_chunk(&path, u64::from(offset), length as usize)
                     .ok()
             });
-            let Some(cost) = cost else {
-                return Ok((None,));
-            };
-            if !charge(&mut store, cost)? {
-                return Ok((None,));
-            }
-            let bytes = store
-                .data_mut()
-                .package
-                .as_mut()
-                .unwrap()
-                .asset_chunk(&path, u64::from(offset), length as usize)
-                .ok();
             Ok((bytes,))
         },
     )?;
@@ -52,9 +35,6 @@ pub(super) fn linker(engine: &Engine) -> Result<Linker<Data>> {
             let Some(id) = store.data().achievements.get(index as usize).cloned() else {
                 return Ok((false,));
             };
-            if !charge(&mut store, 64)? {
-                return Ok((false,));
-            }
             if !store.data().pending_achievements.contains(&id) {
                 store.data_mut().pending_achievements.push(id);
             }
@@ -77,8 +57,8 @@ pub(super) fn linker(engine: &Engine) -> Result<Linker<Data>> {
     )?;
     host.func_wrap(
         "rom-read-at",
-        |mut store: StoreContextMut<'_, Data>, (index, offset, length): (u32, u32, u32)| {
-            if length > 65536 || !charge(&mut store, u64::from(length) + 128)? {
+        |store: StoreContextMut<'_, Data>, (index, offset, length): (u32, u32, u32)| {
+            if length > 65536 {
                 return Ok((None::<Vec<u8>>,));
             }
             Ok((chunk(
@@ -106,8 +86,8 @@ pub(super) fn linker(engine: &Engine) -> Result<Linker<Data>> {
     })?;
     host.func_wrap(
         "rom-read",
-        |mut store: StoreContextMut<'_, Data>, (offset, length): (u32, u32)| {
-            if length > 65536 || !charge(&mut store, u64::from(length) + 128)? {
+        |store: StoreContextMut<'_, Data>, (offset, length): (u32, u32)| {
+            if length > 65536 {
                 return Ok((None::<Vec<u8>>,));
             }
             Ok((chunk(
@@ -124,8 +104,8 @@ pub(super) fn linker(engine: &Engine) -> Result<Linker<Data>> {
     )?;
     host.func_wrap(
         "save-read",
-        |mut store: StoreContextMut<'_, Data>, (offset, length): (u32, u32)| {
-            if length > 65536 || !charge(&mut store, u64::from(length) + 128)? {
+        |store: StoreContextMut<'_, Data>, (offset, length): (u32, u32)| {
+            if length > 65536 {
                 return Ok((None::<Vec<u8>>,));
             }
             Ok((chunk(
@@ -138,10 +118,7 @@ pub(super) fn linker(engine: &Engine) -> Result<Linker<Data>> {
     host.func_wrap(
         "save-write",
         |mut store: StoreContextMut<'_, Data>, (bytes,): (Vec<u8>,)| {
-            if bytes.len() > crate::saves::MAX_SAVE
-                || store.data().save.is_none()
-                || !charge(&mut store, bytes.len() as u64 + 1024)?
-            {
+            if bytes.len() > crate::saves::MAX_SAVE || store.data().save.is_none() {
                 return Ok((false,));
             }
             let save = store.data_mut().save.as_mut().unwrap();
@@ -153,9 +130,6 @@ pub(super) fn linker(engine: &Engine) -> Result<Linker<Data>> {
     host.func_wrap(
         "draw-clear",
         |mut store: StoreContextMut<'_, Data>, (rgba,): (u32,)| {
-            if !charge(&mut store, 64)? {
-                return Ok((false,));
-            }
             store.data_mut().frame.reset();
             store.data_mut().frame.background = Some(rgba);
             Ok((true,))
@@ -164,18 +138,12 @@ pub(super) fn linker(engine: &Engine) -> Result<Linker<Data>> {
     host.func_wrap(
         "draw-rect",
         |mut store: StoreContextMut<'_, Data>, (x, y, w, h, rgba): (f32, f32, f32, f32, u32)| {
-            if !charge(&mut store, 64)? {
-                return Ok((false,));
-            }
             Ok((store.data_mut().frame.rect(x, y, w, h, rgba),))
         },
     )?;
     host.func_wrap(
         "draw-circle",
         |mut store: StoreContextMut<'_, Data>, (x, y, r, rgba): (f32, f32, f32, u32)| {
-            if !charge(&mut store, 64)? {
-                return Ok((false,));
-            }
             Ok((store.data_mut().frame.circle(x, y, r, rgba),))
         },
     )?;
@@ -188,10 +156,23 @@ pub(super) fn linker(engine: &Engine) -> Result<Linker<Data>> {
                 return Ok((false,));
             }
             let path = path.into_owned();
-            let mut fuel = store.get_fuel()?;
-            let result = super::draw_asset_image(store.data_mut(), &mut fuel, &path, x, y, w, h);
-            store.set_fuel(fuel)?;
+            let result = super::draw_asset_image(store.data_mut(), &path, x, y, w, h);
             Ok((result,))
+        },
+    )?;
+    host.func_wrap(
+        "draw-shader-asset-image",
+        |mut store: StoreContextMut<'_, Data>, (index, path): (u32, WasmStr)| {
+            let path = path.to_str(store.as_context())?;
+            if index > i32::MAX as u32 || path.is_empty() || path.len() > 1024 {
+                return Ok((false,));
+            }
+            let path = path.into_owned();
+            Ok((super::draw_shader_asset_image(
+                store.data_mut(),
+                index as i32,
+                &path,
+            ),))
         },
     )?;
     host.func_wrap(
@@ -201,10 +182,7 @@ pub(super) fn linker(engine: &Engine) -> Result<Linker<Data>> {
             let Some(bytes) = crate::drawing::image::Image::byte_length(pw, ph) else {
                 return Ok((false,));
             };
-            if pixels.len() != bytes
-                || !store.data().frame.can_image(x, y, w, h, bytes)
-                || !charge(&mut store, bytes as u64 + 64)?
-            {
+            if pixels.len() != bytes || !store.data().frame.can_image(x, y, w, h, bytes) {
                 return Ok((false,));
             }
             let Some(image) =
@@ -227,10 +205,7 @@ pub(super) fn linker(engine: &Engine) -> Result<Linker<Data>> {
             let Some(bytes) = crate::drawing::image::Image::byte_length(pw, ph) else {
                 return Ok((false,));
             };
-            if pixels.len() != bytes
-                || !store.data().frame.can_image(x, y, w, h, bytes)
-                || !charge(&mut store, bytes as u64 + 64)?
-            {
+            if pixels.len() != bytes || !store.data().frame.can_image(x, y, w, h, bytes) {
                 return Ok((false,));
             }
             let Some(image) =
@@ -247,7 +222,7 @@ pub(super) fn linker(engine: &Engine) -> Result<Linker<Data>> {
     host.func_wrap(
         "draw-shader",
         |mut store: StoreContextMut<'_, Data>, (index,): (u32,)| {
-            if index > i32::MAX as u32 || !charge(&mut store, 64)? {
+            if index > i32::MAX as u32 {
                 return Ok((false,));
             }
             let count = store.data().shader_count;
@@ -257,10 +232,7 @@ pub(super) fn linker(engine: &Engine) -> Result<Linker<Data>> {
     host.func_wrap(
         "audio-submit",
         |mut store: StoreContextMut<'_, Data>, (samples,): (Vec<i16>,)| {
-            if !store.data().audio_allowed
-                || samples.len() + store.data().audio.len() > 1600
-                || !charge(&mut store, samples.len() as u64 * 2 + 64)?
-            {
+            if !store.data().audio_allowed || samples.len() + store.data().audio.len() > 1600 {
                 return Ok((false,));
             }
             store.data_mut().audio.extend(samples);

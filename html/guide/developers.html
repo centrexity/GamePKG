@@ -18,11 +18,12 @@
 <body><main>
 <nav aria-label="Main"><a href="../index.html">← GamePKG</a> · <a href="index.html">Start playing</a></nav>
 <h1>Build a transparent GamePKG game</h1>
+<p>Use a host built from this repository for the wrapper APIs and time-based execution policy described here. Run <code>gamepkg allowlist list</code> to inspect your installed catalog.</p>
 <p>Start with <code>examples/minimal</code> or <code>examples/good/input-game</code> in the source repository. GamePKG is the format and player: creators choose where to host their own packages. Players inspect your source and permissions before approving your key.</p>
 <h2>Creator checklist</h2>
 <ol>
 <li>Write <code>source/src/lib.rs</code> with <code>pub fn game_tick(input: u32, state: u64) -&gt; u64</code>. Use direct function calls and checked source modules. The host adds the runtime bindings and export wrapper; do not add your own imports or export attributes.</li>
-<li>Set a unique game ID, semantic version, runtime profile, and source lockfile hash in <code>manifest.toml</code>. Declare only the permissions you need, recommended memory, hard memory, and fuel limits. Guest networking must be <code>none</code>.</li>
+<li>Set a unique game ID, semantic version, runtime profile, and source lockfile hash in <code>manifest.toml</code>. Declare only the permissions you need, recommended memory, hard memory, and execution deadlines. Guest networking must be <code>none</code>.</li>
 <li>Put assets under <code>assets/</code>, Slang source under <code>shaders/</code>, and include a thumbnail, license and credits. Paths must be portable relative paths with forward slashes, no traversal, device names or symlinks.</li>
 <li>Use only the exact dependencies below. Include <code>source/Cargo.lock</code>; put its SHA-256 in <code>lockfile_sha256</code>. GamePKG supplies the approved dependency source offline. Do not vendor dependency replacements into your package.</li>
 <li>If your game requires ROM files, declare each requirement in the manifest. Players select their own files; read only those ROMs through <code>gamepkg::rom_count</code>, <code>rom_size_at</code> and <code>rom_read_at</code>. Do not fetch ROMs or ask for access to their folders.</li>
@@ -66,6 +67,18 @@
 <td>Drawing into the host viewport</td>
 </tr>
 <tr>
+<td><code>gamepkg-shader</code></td>
+<td><code>=0.1.0</code></td>
+<td><code>default-features = false</code>, no extra features</td>
+<td>Signed Slang entries and bounded PNG/RGBA textures</td>
+</tr>
+<tr>
+<td><code>gamepkg-audio</code></td>
+<td><code>=0.1.0</code></td>
+<td><code>default-features = false</code>, no extra features</td>
+<td>Permission-gated mono PCM audio output</td>
+</tr>
+<tr>
 <td><code>gamepkg-networking</code></td>
 <td><code>=0.1.0</code></td>
 <td><code>default-features = false</code>, no extra features</td>
@@ -73,7 +86,7 @@
 </tr>
 </tbody>
 </table>
-<p>Only these exact GamePKG-owned wrappers are allowed guest dependencies. The <code>gamepkg-</code> prefix by itself grants nothing. Raw third-party crates, including <code>byteorder-lite</code>, are rejected. All five are approved by default. Players may revoke individual approvals in Settings or with <code>gamepkg allowlist remove NAME</code>. Unknown crates, renamed dependencies, Git/path sources, build scripts, extra features, and unapproved transitive dependencies are rejected. Approval cannot expand the bundled catalog.</p>
+<p>Only these exact GamePKG-owned wrappers are allowed guest dependencies. The <code>gamepkg-</code> prefix by itself grants nothing. Raw third-party crates, including <code>byteorder-lite</code>, are rejected. All seven are approved by default. Players may revoke individual approvals in Settings or with <code>gamepkg allowlist remove NAME</code>. Unknown crates, renamed dependencies, Git/path sources, build scripts, extra features, and unapproved transitive dependencies are rejected. Approval cannot expand the bundled catalog.</p>
 <pre><code class="language-toml">[dependencies.gamepkg-input]
 version = &quot;=0.1.0&quot;
 default-features = false
@@ -84,6 +97,18 @@ default-features = false
 <p>Use <code>gamepkg_window::clear</code>, <code>rect</code>, <code>circle</code> and <code>asset_image</code> for drawing into the host-owned game viewport. The wrapper cannot create arbitrary windows or obtain GPU handles. Use the existing scoped host API for additional drawing and audio operations.</p>
 <p><code>gamepkg_networking::request(url, output)</code> always returns <code>Error::PermissionDenied</code>, leaves output untouched, and performs no I/O. The manifest still requires <code>network = "none"</code>. A wrapper name cannot enable networking; any future networking capability needs an explicit host policy and runtime implementation.</p>
 <p>These wrappers narrow the callable API; they do not replace source checks, package signatures, the isolated compiler, or Wasm runtime restrictions. Guest declarations cannot select replacement sources or access the wrappers' private bridge symbols. The bridges are generated by the host with the same compiler for both runtime profiles.</p>
+<h2>Slang shaders, textures and audio</h2>
+<p>Add <code>gamepkg-shader</code> and <code>gamepkg-audio</code> using the same pinned dependency declaration as the other wrappers. <code>examples/good/media-game</code> has their complete lock graph and manifest. Declare each Slang source, entry and stage in <code>[[shaders]]</code>. The host verifies the signed source, compiles it in isolation on Build/Rebuild, validates resource reflection, caches the result, and selects the configured playback backend. Games never run a compiler themselves or supply precompiled shader binaries.</p>
+<pre><code class="language-rust">if let Some(shader) = gamepkg_shader::Shader::from_slang(&quot;shaders/texture.slang&quot;, &quot;blueMain&quot;) {
+    shader.draw_texture(&quot;texture.png&quot;);
+}
+gamepkg_audio::submit(&amp;[100, -100]);
+</code></pre>
+<p><code>Shader::from_slang(source, entry)</code> resolves only signed fragment entries; unknown source/entry pairs return <code>None</code>. <code>draw()</code> draws a resource-free pass; <code>draw_rgba(width, height, pixels)</code> supplies a private RGBA snapshot; <code>draw_texture(path)</code> loads and decodes a PNG from the package's virtual <code>assets/</code> folder. Paths never grant host filesystem access. PNG inputs are capped at 2 MiB, decoded images at 512×512 pixels, decoder allocations at 8 MiB, and queued image data at 8 MiB per frame. The host owns the sampler and texture. Extra shader resources, includes and module imports are rejected. Raw GPU handles are never exposed.</p>
+<p>For texture sampling, use the Slang declaration and separate-sampler branch in <code>examples/good/media-game/shaders/texture.slang</code>. GLSL plays directly; supported SPIR-V/WGSL passes translate to the host renderer. Desktop playback supports fragment passes, not arbitrary compute dispatch. Wasm deadlines do not interrupt GPU work; compiler restrictions and bounded renderer resources are separate protections.</p>
+<p>Set <code>[permissions] audio = true</code> for output. <code>gamepkg_audio::submit(samples)</code> accepts mono signed 16-bit samples at 48,000 Hz; <code>submit_pcm16_le(bytes)</code> decodes explicit little-endian PCM. The runtime caps the total at 1,600 samples per tick, including multiple submissions. Odd byte counts, oversized buffers and denied permissions return <code>false</code>. Audio is discarded if the tick traps. The host handles the output device, volume and resampling; games receive no microphone or device access. These are PCM APIs, not compressed-audio or WAV container decoders.</p>
+<h2>Execution limits</h2>
+<p>There is no instruction metering or instruction-budget setting. The runtime interrupts Wasm ticks and start functions using host time deadlines, enforces the lower of the signed memory cap and player ceiling, and bounds draw commands, images, audio and saves. A stopped tick discards pending drawing/audio/save changes. Old instruction-budget fields are accepted only for reading existing packages/settings; they are ignored and omitted when writing new data.</p>
 <h3>Migrate a direct third-party dependency</h3>
 <p>Packages that used <code>byteorder-lite</code> must replace it with <code>gamepkg-byteorder</code>, update source imports to <code>gamepkg_byteorder</code>, use its explicit-endian <code>u32</code> API, regenerate the approved lock graph and hash, increase their game version, and sign again with the same creator key. Existing settings naming <code>byteorder-lite</code> must be updated to the wrapper names; unknown catalog names are rejected rather than silently approved.</p>
 <h2>Controller and touch input</h2>

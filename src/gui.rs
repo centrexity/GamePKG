@@ -702,9 +702,8 @@ impl eframe::App for App {
                     if std::env::var_os("GAMEPKG_TOR_PROXY").is_some() { ui.label("GAMEPKG_TOR_PROXY overrides this setting for the current launch."); }
                     ui.separator();ui.heading("Game resource ceilings");
                     ui.horizontal(|ui| { ui.label("Memory ceiling (MiB)");ui.add(egui::DragValue::new(&mut self.settings_draft.memory_ceiling_mib).range(1..=512)); });
-                    ui.horizontal(|ui| { ui.label("Fuel ceiling per tick");ui.add(egui::DragValue::new(&mut self.settings_draft.fuel_ceiling).range(1..=100000000).speed(1000)); });
                     ui.horizontal(|ui| { ui.label("Tick deadline (ms)");ui.add(egui::Slider::new(&mut self.settings_draft.tick_deadline_ms,10..=100).step_by(10.0)); });
-                    ui.label("Memory and fuel use the lower of your ceiling and the signed game limit. These settings cannot raise a game's hard limit. Changes apply the next time you launch a game.");
+                    ui.label("Memory uses the lower of your ceiling and the signed game limit. These settings cannot raise a game's hard limit. Changes apply the next time you launch a game.");
                     ui.separator();ui.heading("Builds and appearance");
                     #[cfg(windows)]
                     {

@@ -43,7 +43,7 @@ or Python. The engine has no filesystem or network imports. Only the ROM
 selected by the player is passed to the host-owned RAM decoder.
 
 Pixels and audio pass through checked host operations. Both Wasm instances share
-the declared fuel and deadline budget, reserve memory under the combined hard
+the host frame deadline, reserve memory under the combined hard
 limit, and persist the original 8 KiB SRAM through creator-scoped storage.
 Failed frame saves use the runtime's existing rollback behavior.
 
@@ -68,7 +68,7 @@ gamepkg-gui
 
 Players do not need a signing key. For creator development, the source recipe is
 in `ports/zelda3`; sign it using your own private creator key before
-installation. In Settings, set the fuel ceiling to 100,000,000 before playing.
+installation.
 Select your supported USA ROM in the game's ROM field, then press Play. Arrow
 keys or WASD move; Z/X are B/Y, C/V are A/X, Enter is Start, Tab is Select, and
 Q/E are L/R. The ROM remains in its original location. SRAM saves go to the
@@ -76,11 +76,9 @@ library's scoped save storage, not beside the ROM.
 
 The port currently needs Linux, Clang 18 plus a Wasm C sysroot for isolated
 source builds. Playback uses the built-in Rust ROM decoder.
-Set `GAMEPKG_ZELDA3_SYSROOT` to the prepared sysroot. The signed manifest requests
-100,000,000 fuel; select that ceiling explicitly in Settings (the existing
-10,000,000 default is preserved). The host checks this before play. Memory is
+Set `GAMEPKG_ZELDA3_SYSROOT` to the prepared sysroot. Memory is
 reserved as 16 MiB for each Wasm instance under the combined 32 MiB limit, and
-both frame execution and engine initialization use the declared fuel/deadline.
+both frame execution and engine initialization use the host deadline.
 
 Windows compiler exchange now transfers and checks the engine artifact and its
 receipt. The actual Windows CLI and GUI have passed local Wine tests with the

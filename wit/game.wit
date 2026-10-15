@@ -17,6 +17,7 @@ interface host {
     draw-asset-image: func(path: string, x: f32, y: f32, width: f32, height: f32) -> bool;
     draw-image: func(x: f32, y: f32, width: f32, height: f32, pixel-width: u32, pixel-height: u32, pixels: list<u8>) -> bool;
     draw-shader-image: func(index: u32, pixel-width: u32, pixel-height: u32, pixels: list<u8>) -> bool;
+    draw-shader-asset-image: func(index: u32, path: string) -> bool;
     draw-shader: func(index: u32) -> bool;
     audio-submit: func(samples: list<s16>) -> bool;
 }

@@ -64,7 +64,7 @@ fn guest_controls_frames_and_trapped_ticks_discard_draws() {
     assert_eq!(game.state, 5);
 }
 #[test]
-fn draw_calls_consume_guest_fuel() {
+fn deadlines_interrupt_infinite_draw_calls() {
     let wasm = wat::parse_str(
         r#"(module
       (import "gamepkg" "draw_clear" (func $clear (param i32) (result i32)))
@@ -72,8 +72,7 @@ fn draw_calls_consume_guest_fuel() {
         (loop i32.const 0 call $clear drop br 0) i64.const 0))"#,
     )
     .unwrap();
-    let mut m = manifest();
-    m.limits.fuel = 1000;
+    let m = manifest();
     let mut game = Game::from_bytes(&wasm, &m).unwrap();
     assert!(game.step(0).is_err());
     assert!(game.frame().commands.is_empty());

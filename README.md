@@ -4,7 +4,7 @@
 
 **Know what you run. Control what it can access.** GamePKG is building a safer way to share and play games: inspectable source, creator-signed packages, isolated compilation, and a host that is designed to grant only the capabilities a game needs.
 
-**Current status:** this is a development preview. Package verification, catalog import, installation, update checks, and isolated Cargo Wasm and Slang shader builds on Linux and the configured Windows WSL 2 connection work today. The experimental grid-v1 profile now plays in the GUI and terminal under Wasmtime with scoped asset reads, fuel, memory limits, and epoch deadlines. Resource-free Slang GLSL, SPIR-V, and WGSL fragment passes now render in the OpenGL GUI; versioned WIT components are supported alongside the legacy core profile; broader rendering remains pending; this is not a guarantee that a package is harmless.
+**Current status:** this is a development preview. Package verification, catalog import, installation, update checks, and isolated Cargo Wasm and Slang shader builds on Linux and the configured Windows WSL 2 connection work today. The experimental grid-v1 profile now plays in the GUI and terminal under Wasmtime with scoped asset reads, memory limits, and epoch deadlines. Resource-free Slang GLSL, SPIR-V, and WGSL fragment passes now render in the OpenGL GUI; versioned WIT components are supported alongside the legacy core profile; broader rendering remains pending; this is not a guarantee that a package is harmless.
 
 Download the [0.1.6 Linux and Windows CLI/desktop previews](https://github.com/centrexity/GamePKG/releases/tag/v0.1.6), including the checksum for your platform. Windows source builds use the matching Linux compiler inside WSL 2; playback runs in the native Windows app. See [Windows setup](docs/INSTALL_WINDOWS.md). Host distributions can also be prepared with `python3 tools/package_release.py /tmp/gamepkg-distribution` after building both release entry points. The archive includes CLI/GUI executables, setup tools, examples, original resolved dependency sources and notices, and integrity hashes. See [installation instructions](docs/INSTALL.md). See the [implementation and verification audit](docs/IMPLEMENTATION_STATUS.md) for requirement coverage and remaining limits. The public repository's **Package Linux preview** workflow produces the same artifact on Ubuntu 24.04.
 
@@ -24,7 +24,7 @@ A `.gamepkg` contains Rust source, Slang shader source, assets, and a signed man
 | Restricted package contents | Rejects traversal paths, duplicate entries, symlinks, oversized archive contents, unsupported shaders, and source outside the initial policy. | Yes |
 | Isolated compilation | Supported Linux builds run inside bubblewrap with a private work area, no network, and no access to your home directory. | Yes; checked source modules with a pinned dependency allowlist |
 | Limited game access | Games receive host-approved asset, input, ROM, drawing, audio, and save operations. | Available in the core and versioned WIT component profiles |
-| Runtime resource limits | Memory caps, execution fuel, and deadlines constrain running games. | Enforced for both Wasmtime profiles; GPU work is not fuel-metered |
+| Runtime resource limits | Memory caps and deadlines constrain running games. | Enforced for both Wasmtime profiles; GPU work is outside Wasm time limits |
 
 ## Build locally, improve over time
 
@@ -72,7 +72,7 @@ Packing validates before publishing and refuses to overwrite files. The output m
 
 Game source also follows an enforced [portable data policy](docs/PORTABILITY.md): fixed-width byte conversions, explicit byte order, a fixed wasm32 ABI, and no native layout or pointer-dependent serialization. Dedicated 32-bit Linux, Windows, and Android checks exercise the same core and component runtime boundaries.
 
-- Format version 1; network must be `none`; positive fuel and memory limit up to 512 MiB.
+- Format version 1; network must be `none`; positive memory limit up to 512 MiB.
 - Required manifest, PNG-signature thumbnail, license, credits, Cargo manifest/lockfile, and `source/src/lib.rs`.
 - At most 10,000 entries, 64 MiB per file, 256 MiB uncompressed total; stored and zstd entries only.
 - No absolute paths, traversal, backslashes, duplicate paths, directory entries, or symlinks.
@@ -94,7 +94,7 @@ The source scanner is an early policy filter, **not a security boundary**. Rust 
 
 ## Implemented workflow and remaining work
 
-Archive verification, signed creator continuity, source checking, Linux isolated builds, and all four requested Slang output formats are implemented. CLI and desktop workflows support installation, catalogs, updates, build/rebuild, and scoped gameplay. The desktop includes previews, Settings, and portable store imports with shared assets. Core and versioned WIT component runtimes enforce memory, fuel, and tick deadlines.
+Archive verification, signed creator continuity, source checking, Linux isolated builds, and all four requested Slang output formats are implemented. CLI and desktop workflows support installation, catalogs, updates, build/rebuild, and scoped gameplay. The desktop includes previews, Settings, and portable store imports with shared assets. Core and versioned WIT component runtimes enforce memory and tick deadlines.
 
 Local tests cover accepted and rejected packages, every good source example, compiler isolation, scoped runtime operations, store transfers, and desktop behavior. Hosted verification runs the same fixture integrations. The [quickstart](html/guide/index.html) explains installation and play; the [library policy](html/guide/allowlist.html) describes the pinned approval catalog.
 
@@ -213,9 +213,9 @@ In the terminal, enter W/A/S/D to move and Q to quit. In the GUI, click Play and
 
 The legacy grid-v1 ABI uses core Wasm. The versioned WIT component profile is described below. Guest source defines `pub fn game_tick(input: u32, state: u64) -> u64`; the host compiler appends the exported wrapper, so guest export attributes are unnecessary. State packs player x/y and target x/y into four bytes, followed by a 32-bit score. Input bits are left=1, right=2, up=4, down=8. Coordinates use a 16×16 grid. Guests receive zero input unless the signed manifest grants input.
 
-Runtime modules can import only the scoped GamePKG asset, ROM and save APIs; WASI, filesystem and socket imports are rejected. Wasmtime enforces memory, fuel and epoch limits. A trap ends gameplay. Slang compilation is available; Resource-free GLSL fragment passes render in the desktop player.
+Runtime modules can import only the scoped GamePKG asset, ROM and save APIs; WASI, filesystem and socket imports are rejected. Wasmtime enforces memory and epoch limits. A trap ends gameplay. Slang compilation is available; Resource-free GLSL fragment passes render in the desktop player.
 
-For a game declaring `requires_rom = true`, use `gamepkg run <id> --rom /path/to/file` or enter your ROM path above the desktop library table. ROM files must be regular files of 1 byte to 64 MiB and are read into a session snapshot. Guests use `gamepkg::rom_size()` and `gamepkg::rom_read(offset, &mut buffer)`, never a host path. Reads are capped at 64 KiB and consume fuel. No ROM is downloaded, installed or bundled automatically. `examples/good/rom-required` is a playable data-driven example; `python3 tests/runtime_rom.py` tests the signed build and runtime path.
+For a game declaring `requires_rom = true`, use `gamepkg run <id> --rom /path/to/file` or enter your ROM path above the desktop library table. ROM files must be regular files of 1 byte to 64 MiB and are read into a session snapshot. Guests use `gamepkg::rom_size()` and `gamepkg::rom_read(offset, &mut buffer)`, never a host path. Reads are capped at 64 KiB. No ROM is downloaded, installed or bundled automatically. `examples/good/rom-required` is a playable data-driven example; `python3 tests/runtime_rom.py` tests the signed build and runtime path.
 
 Run `python3 tests/playable.py` after the release build to test the complete signed-package, isolated-build, movement and scoring path. Runtime tests separately exercise forbidden imports, missing exports, input permission denial, excessive memory, infinite loops and epoch interruption.
 
@@ -227,7 +227,6 @@ Creators set both values in the signed manifest:
 [limits]
 recommended_memory_bytes = 8388608 # 8 MiB, advisory
 hard_memory_bytes = 16777216       # 16 MiB, enforced
-fuel = 1000000
 ```
 
 Recommended memory describes the creator's suggested budget; it neither reserves memory nor stops a game from using more. Wasmtime enforces the hard limit on guest linear memory, including initial allocation and growth. It is not a cap on the entire host process, compiler, or JIT memory. The GUI displays both values during inspection and in the installed-state tooltip.
@@ -240,7 +239,7 @@ Open **Settings** from the desktop library navigation. Save applies validated pr
 
 - Library folder: choose an absolute path or leave empty for the default. Switching libraries does not move existing packages.
 - Tor proxy: local loopback IP and SOCKS port; Tor remains a separately running service.
-- Game ceilings: memory (1–512 MiB), fuel (1–100 million per tick), and tick deadline (10–100 ms). Memory/fuel use the lower of the saved ceiling and the signed game limit. New sessions use the settings; current games are unaffected.
+- Game ceilings: memory (1–512 MiB), tick deadline (10–100 ms). Memory uses the lower of the saved ceiling and the signed game limit. New sessions use the settings; current games are unaffected.
 - Optimize builds: enables Rust `opt-level=2` for subsequent Build/Rebuild; existing artifacts remain available.
 - Appearance: dark or light theme, applied after saving.
 
@@ -252,9 +251,8 @@ The isolated compiler supplies `gamepkg::asset_read(path, offset, &mut buffer)`.
 Paths are relative to `assets/` in the signed archive. The function returns
 `Some(bytes_read)`, including zero at EOF, or `None` for invalid paths, offsets,
 or missing assets. Reads are limited to 64 KiB per call; archive work consumes
-runtime fuel. Verified stored assets use direct archive offsets; compressed assets
-stream through the prefix without allocating the entire file. Fuel charges cover
-the requested bytes plus any decoded prefix. The guest receives only the requested bytes and cannot open host
+the host time and memory boundaries. Verified stored assets use direct archive offsets; compressed assets
+stream through the prefix without allocating the entire file. The guest receives only the requested bytes and cannot open host
 files. The same safe Rust wrappers are available in the versioned WIT component
 profile. Rebuild existing games to use the new wrapper.
 
@@ -269,7 +267,7 @@ The host keeps one blob of at most 1 MiB under the library’s `saves` folder,
 scoped by the signed game ID and creator key. Same-creator updates retain the
 blob; another game or creator cannot select it. Reads are capped at 64 KiB.
 Denied permissions return `None` or `false` without opening save storage.
-Writes consume fuel and replace the blob atomically only after a successful
+Writes replace the blob atomically only after a successful
 tick. A trapped tick discards its pending save. Concurrent sessions use the
 last successfully committed write. The version-one blob format belongs to the
 game; creators should handle migration when changing their save layout.
@@ -336,7 +334,7 @@ Guests can draw their own scene with `gamepkg::draw_clear(rgba)`,
 commands to the desktop renderer; games never receive a graphics-device handle.
 Coordinates use a 640 × 480 canvas and colors use `0xRRGGBBAA`.
 Each frame keeps at most 1,024 commands. Non-finite coordinates and oversized
-geometry are rejected, calls consume fuel, and trapped ticks discard the frame.
+geometry are rejected, and trapped ticks discard the frame.
 The desktop clips commands to the game viewport and scales the canvas to fit.
 
 Input bits 0–3 report newly pressed left/right/up/down directions as before.
@@ -355,7 +353,7 @@ The host also exposes `gamepkg::draw_shader(index)`, which draws a full viewport
 pass using the signed manifest's fragment entry at that index. Select GLSL, SPIR-V, or WGSL in
 Settings and rebuild. The host checks reflected resources and active uniforms,
 keeps graphics handles private, and bounds the per-tick command queue. Guest
-Wasm fuel does not meter GPU shader execution; GPU drivers and shader compilation
+Wasm deadlines do not interrupt GPU shader execution; GPU drivers and shader compilation
 remain part of the trusted computing base. This does not guarantee that an
 arbitrary shader cannot stall or crash a driver.
 
@@ -375,8 +373,7 @@ setup is unavailable; it does not use an unrestricted build fallback.
 Games declaring `permissions.audio = true` can submit signed 16-bit mono PCM
 at 48 kHz with `gamepkg::audio_submit(&samples)`. A tick may submit at most
 1,600 samples in total; the device queue keeps at most 100 ms. Invalid memory
-ranges, excess samples and denied permissions are rejected. Calls consume
-fuel, and trapped ticks discard their audio. Guests receive no device handles
+ranges, excess samples and denied permissions are rejected. Trapped ticks discard their audio. Guests receive no device handles
 and cannot access microphones. The host resamples for the selected output
 rate and handles volume.
 
@@ -444,7 +441,7 @@ The isolated compiler appends host-owned canonical ABI bindings, compiles source
 into core Wasm, and encodes a validated component outside the signed archive.
 No guest-supplied prebuilt component, WIT file, WASI interface, build script or
 additional dependency is accepted. CLI and GUI load components through Wasmtime's
-component linker with the same fuel, epoch deadline, input permission, memory
+component linker with the same epoch deadline, input permission, memory
 ceiling, draw/audio bounds and transactional save behavior as the core profile.
 Component instances allow four internal modules and two bounded tables for the
 canonical ABI; linear memory remains limited to one memory and the signed/user
@@ -562,7 +559,7 @@ self-contained package with `pool-import` before installing its store variant.
 Signature verification works offline without the pool. Installation, building,
 and playing additionally require every referenced blob to match its signed
 hash and size. Runtime reads use private session snapshots and the same 64 KiB
-range limit and fuel accounting as stored archive assets. A changed or deleted
+range limit as stored archive assets. A changed or deleted
 pool blob cannot alter an active session. Logical package contents, including
 shared references, remain bounded to 256 MiB. Conflicting sizes for one hash,
 invalid paths, and assets declared both embedded and shared are rejected.
@@ -673,7 +670,7 @@ When DXIL is selected, Settings also provides a **DXC 1.9.2609 installation fold
 
 ### Host crate approvals
 
-`gamepkg allowlist list` shows the bundled crate catalog, pinned version, checksum, and current approval. `gamepkg allowlist remove gamepkg-byteorder` revokes approval; `gamepkg allowlist add gamepkg-byteorder` restores it. Approval persists in the same settings file used by the desktop and CLI. The default policy approves all five bundled GamePKG-owned wrappers. Unknown crates cannot be added: extending the catalog requires host-reviewed, bundled source and an exact dependency graph. Revocation affects subsequent package verification, installation, and builds; it does not interrupt an already running game. Libraries containing revoked dependencies may report verification errors until approval is restored.
+`gamepkg allowlist list` shows the bundled crate catalog, pinned version, checksum, and current approval. `gamepkg allowlist remove gamepkg-byteorder` revokes approval; `gamepkg allowlist add gamepkg-byteorder` restores it. Approval persists in the same settings file used by the desktop and CLI. The default policy approves all seven bundled GamePKG-owned wrappers. Unknown crates cannot be added: extending the catalog requires host-reviewed, bundled source and an exact dependency graph. Revocation affects subsequent package verification, installation, and builds; it does not interrupt an already running game. Libraries containing revoked dependencies may report verification errors until approval is restored.
 
 Desktop Settings provides the same policy under **Approved game libraries**. Changes apply only after **Save settings**; **Cancel edits** reloads the saved approval. Expand **Pinned library details** to view the catalog checksum and source restrictions. Resetting the form restores the default approval; save to apply it.
 
@@ -705,13 +702,13 @@ Fragment builds for the desktop GLSL, SPIR-V, and WGSL backends validate reflect
 
 The static site includes browser-readable [format notes](html/spec/index.html), [security model](html/guide/security.html), and [library policy](html/guide/allowlist.html). After editing the specification or security Markdown sources, run `python3 tools/render_site_docs.py` (requires Python-Markdown, packaged as `python3-markdown` on Debian/Ubuntu) and commit the generated HTML. The site serves directly from `html/` without a server-side renderer.
 
-Games can draw RGBA sprites with `gamepkg::draw_image(x, y, width, height, pixel_width, pixel_height, &pixels)` in either runtime profile. Pixels use row-major red/green/blue/alpha bytes, with exactly four bytes per pixel. Images must be 1–512 pixels in each dimension. The host snapshots accepted pixels, charges fuel for copying, checks guest memory ranges, and limits queued sprite bytes to 8 MiB per frame within the existing 1,024-command limit. Frame resets and trapped ticks discard queued images. The desktop draws sprites with nearest-neighbor sampling and alpha transparency. Shader texture access uses the separate bounded API described below. See `examples/good/sprite-playground` and `tests/sprites_gui.py`.
+Games can draw RGBA sprites with `gamepkg::draw_image(x, y, width, height, pixel_width, pixel_height, &pixels)` in either runtime profile. Pixels use row-major red/green/blue/alpha bytes, with exactly four bytes per pixel. Images must be 1–512 pixels in each dimension. The host snapshots accepted pixels, checks guest memory ranges, and limits queued sprite bytes to 8 MiB per frame within the existing 1,024-command limit. Frame resets and trapped ticks discard queued images. The desktop draws sprites with nearest-neighbor sampling and alpha transparency. Shader texture access uses the separate bounded API described below. See `examples/good/sprite-playground` and `tests/sprites_gui.py`.
 
 The desktop reuses sprite textures when their pixel content is unchanged, updates the existing texture when pixels change, and releases textures when sprites disappear from the current frame or play ends. `tests/sprites_gui.py` verifies live pixel changes through held input in both runtime profiles.
 
-Use `gamepkg::draw_asset_image("sprite.png", x, y, width, height)` to draw a PNG from a verified virtual asset path in either runtime. Embedded files and verified shared-pool snapshots work through the same archive API. Encoded PNGs are capped at 2 MiB, decoded dimensions at 512×512, and decoder allocations at 8 MiB. The host reserves fuel for bounded archive reads, decompression prefixes, and pixel decoding before processing the complete image. Images remain subject to the 8 MiB frame budget; missing, malformed, oversized, or traversal paths return false. These host rendering budgets are separate from guest linear-memory limits. See `examples/good/png-sprite-playground` and `tests/sprites_gui.py --png`.
+Use `gamepkg::draw_asset_image("sprite.png", x, y, width, height)` to draw a PNG from a verified virtual asset path in either runtime. Embedded files and verified shared-pool snapshots work through the same archive API. Encoded PNGs are capped at 2 MiB, decoded dimensions at 512×512, and decoder allocations at 8 MiB. The host validates PNG dimensions and frame capacity before decoding the complete image. Images remain subject to the 8 MiB frame budget; missing, malformed, oversized, or traversal paths return false. These host rendering budgets are separate from guest linear-memory limits. See `examples/good/png-sprite-playground` and `tests/sprites_gui.py --png`.
 
-Games can supply a texture to a supported fragment pass with `gamepkg::draw_shader_image(index, pixel_width, pixel_height, &rgba)`. The Slang pass may declare exactly one `Sampler2D gamepkgTexture` at binding 0. For SPIR-V, the host defines `GAMEPKG_SEPARATE_SAMPLER=1`: use `Texture2D<float4> gamepkgTexture` and `SamplerState gamepkgSampler` at bindings 0 and 1 in that branch, as the example demonstrates. Additional uniforms, samplers, arrays, storage buffers, and texture bindings remain rejected. Both core and WIT profiles snapshot pixels before returning, charge copying fuel, and share the 8 MiB frame image budget and 512×512 dimension limits with sprites. The renderer owns one reusable texture, uses nearest-neighbor sampling and clamp-to-edge, and replaces its contents before each pass; a plain `draw_shader` uses a transparent 1×1 texture so another pass's image cannot leak. The shader receives straight RGBA and must produce the renderer's expected output alpha convention. Textured passes support GLSL, SPIR-V, and WGSL. See `examples/good/shader-texture` and `tests/shader_gui.py --texture` (also `--component`).
+Games can supply a texture to a supported fragment pass with `gamepkg::draw_shader_image(index, pixel_width, pixel_height, &rgba)`. The Slang pass may declare exactly one `Sampler2D gamepkgTexture` at binding 0. For SPIR-V, the host defines `GAMEPKG_SEPARATE_SAMPLER=1`: use `Texture2D<float4> gamepkgTexture` and `SamplerState gamepkgSampler` at bindings 0 and 1 in that branch, as the example demonstrates. Additional uniforms, samplers, arrays, storage buffers, and texture bindings remain rejected. Both core and WIT profiles snapshot pixels before returning, and share the 8 MiB frame image budget and 512×512 dimension limits with sprites. The renderer owns one reusable texture, uses nearest-neighbor sampling and clamp-to-edge, and replaces its contents before each pass; a plain `draw_shader` uses a transparent 1×1 texture so another pass's image cannot leak. The shader receives straight RGBA and must produce the renderer's expected output alpha convention. Textured passes support GLSL, SPIR-V, and WGSL. See `examples/good/shader-texture` and `tests/shader_gui.py --texture` (also `--component`).
 
 Translated texture passes validate one non-arrayed, non-multisampled float 2D image at group 0/binding 0 and one non-comparison sampler at binding 1. Naga validates the complete module and its generated texture mapping before the renderer binds any pixels. Slang's combined WGSL sampler reflection occupies two descriptor slots; SPIR-V uses the explicit separate-sampler source branch. Input and output retain the 16 MiB translation bounds. Changing the SPIR-V compiler definition produces a new shader cache identity; rebuild affected games. The CI tests actual texture pixels, held-input changes, transparent fallback, and malformed caches in both runtime profiles for both translated backends.
 
@@ -820,10 +817,9 @@ music are included in the package. Resources are decoded in memory from that
 selection; no extracted asset folder or data file is created. Only the game's
 8 KiB SRAM save is persisted in the normal creator-scoped save folder.
 
-Use the **0.1.6** CLI/desktop host from the release downloads. Set the fuel ceiling to **100,000,000** in
-Settings; the existing default remains 10,000,000. The game's combined hard
+Use a CLI/desktop host built from this source for playback without instruction metering. The game's combined hard
 Wasm memory limit is 32 MiB, reserved across two 16 MiB instances. Engine work
-is charged to the same frame fuel budget and deadline as the Rust entry.
+uses the same frame deadline as the Rust entry.
 
 On Ubuntu 24.04, install Clang 18, `wasi-libc`, `libclang-rt-18-dev-wasm32`,
 and the normal Rust/Slang/bubblewrap build prerequisites. ROM decoding is built into
@@ -930,7 +926,7 @@ The guest runs in a worker with no filesystem, socket, or browser-object imports
 Export rewrites the Wasm memory maximum to enforce the manifest's hard limit,
 checks the built artifact checksum, and the player checks that checksum again
 before starting. A watchdog terminates a worker that does not return from a
-frame. GPU work is not fuel-metered, and WebGL context loss stops playback. Browser execution does not offer Wasmtime fuel metering, and background
+frame. GPU work is outside Wasm time limits, and WebGL context loss stops playback. Browser execution uses a worker watchdog, and background
 tab scheduling can delay a watchdog. Native compiler isolation and desktop
 runtime controls remain in place. The hosting site's scripts are trusted host
 code; export checksums do not authenticate a malicious hosting site.
@@ -960,4 +956,4 @@ rejection without publishing a partial package.
 
 See [Developing games](docs/DEVELOPING_GAMES.md) for the creator checklist, exact allowed crates, controller and touchscreen controls, source restrictions, and build commands.
 
-Guest dependencies are limited to the pinned GamePKG-owned `gamepkg-input`, `gamepkg-file`, `gamepkg-window`, `gamepkg-networking`, and `gamepkg-byteorder` wrappers. Prefixes do not grant approval. Networking requests remain denied. See the developer instructions for migration and scoped APIs.
+Guest dependencies are limited to the pinned GamePKG-owned `gamepkg-input`, `gamepkg-file`, `gamepkg-window`, `gamepkg-networking`, `gamepkg-shader`, `gamepkg-audio`, and `gamepkg-byteorder` wrappers. Prefixes do not grant approval. Networking requests remain denied. See the developer instructions for migration and scoped APIs.

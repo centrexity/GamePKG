@@ -41,6 +41,18 @@ pub const CATALOG: &[Entry] = &[
         checksum: "ff37bff9711f8a6c1b3c8228d5248088035c8bba88a2884c486b1a9820d0b0a1",
         source: include_bytes!("../vendor/gamepkg-networking-0.1.0/src/lib.rs"),
     },
+    Entry {
+        name: "gamepkg-shader",
+        version: "0.1.0",
+        checksum: "7059c9a2fcfd27a0bce50f9ba3382cb2cef405fc78022bd420897b1d17f5cf3a",
+        source: include_bytes!("../vendor/gamepkg-shader-0.1.0/src/lib.rs"),
+    },
+    Entry {
+        name: "gamepkg-audio",
+        version: "0.1.0",
+        checksum: "7cae234cee39b219503286f6c1451db9ed1e09b2f21e88183222a9e8f0e9d983",
+        source: include_bytes!("../vendor/gamepkg-audio-0.1.0/src/lib.rs"),
+    },
 ];
 pub fn selected(cargo: &toml::Value) -> impl Iterator<Item = &'static Entry> + '_ {
     CATALOG.iter().filter(|entry| {

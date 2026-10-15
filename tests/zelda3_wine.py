@@ -4,7 +4,7 @@ import argparse,os,subprocess
 PROJECT=Path(__file__).resolve().parents[1]
 p=argparse.ArgumentParser();p.add_argument('rom',type=Path);p.add_argument('--prefix',type=Path,required=True);args=p.parse_args()
 root=PROJECT/'target/zelda3-windows-play';root.mkdir(parents=True,exist_ok=True)
-config=root/'settings.toml';config.write_text('automatic_update_checks=false\nfuel_ceiling=100000000\n')
+config=root/'settings.toml';config.write_text('automatic_update_checks=false\n')
 def windows(path):return 'Z:'+str(Path(path).resolve()).replace('/','\\')
 env=dict(os.environ,WINEPREFIX=str(args.prefix.resolve()),WINEDEBUG='-all',GAMEPKG_HOME=windows(root/'library'),GAMEPKG_CONFIG=windows(config))
 env['GAMEPKG_ZELDA3_PYTHON']='intentionally-unavailable-decoder'

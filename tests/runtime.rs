@@ -41,9 +41,8 @@ fn rejects_ambient_imports_and_missing_entrypoints() {
         .contains("ROM delivery"));
 }
 #[test]
-fn fuel_stops_infinite_guest_loops_and_start_functions() {
-    let mut m = manifest();
-    m.limits.fuel = 1000;
+fn deadlines_stop_infinite_guest_loops_and_start_functions() {
+    let m = manifest();
     let wasm=module("(module (func (export \"gamepkg_tick\") (param i32 i64) (result i64) (loop br 0) i64.const 0))");
     let mut game = Game::from_bytes(&wasm, &m).unwrap();
     assert!(game.step(0).is_err());
@@ -62,11 +61,9 @@ fn memory_limits_reject_initial_and_growing_memory() {
     assert!(game.step(0).is_err());
 }
 #[test]
-fn epoch_deadline_stops_a_guest_with_excessive_fuel() {
-    let mut m = manifest();
-    m.limits.fuel = u64::MAX;
-    // A host-call loop cannot burn its whole fuel budget before the timer runs
-    // on a fast CPU. Still require an Interrupt, not merely any terminating trap.
+fn epoch_deadline_stops_unmetered_host_call_loops() {
+    let m = manifest();
+    // Host-call loops must be interrupted by the deadline, with no instruction meter.
     let wasm = module(
         r#"(module
         (import "gamepkg" "rom_count" (func $count (result i32)))
@@ -74,7 +71,6 @@ fn epoch_deadline_stops_a_guest_with_excessive_fuel() {
             (loop call $count drop br 0) i64.const 0))"#,
     );
     let settings = gamepkg::settings::Settings {
-        fuel_ceiling: 100000000,
         tick_deadline_ms: 10,
         ..Default::default()
     };
@@ -101,10 +97,10 @@ fn recommended_memory_does_not_reduce_the_enforced_hard_limit() {
 }
 
 #[test]
-fn user_memory_and_fuel_ceilings_tighten_manifest_limits() {
+fn user_memory_ceiling_and_deadline_are_enforced() {
     let mut m = manifest();
     m.limits.hard_memory_bytes = 2097152;
-    let mut settings = gamepkg::settings::Settings {
+    let settings = gamepkg::settings::Settings {
         memory_ceiling_mib: 1,
         ..Default::default()
     };
@@ -112,7 +108,6 @@ fn user_memory_and_fuel_ceilings_tighten_manifest_limits() {
     assert!(Game::with_settings(&wasm, &m, &settings).is_err());
     let small=module("(module (memory 1) (func (export \"gamepkg_tick\") (param i32 i64) (result i64) i64.const 1))");
     assert!(Game::with_settings(&small, &m, &settings).is_ok());
-    settings.fuel_ceiling = 1;
     let wasm=module("(module (func (export \"gamepkg_tick\") (param i32 i64) (result i64) (loop br 0) i64.const 0))");
     let mut game = Game::with_settings(&wasm, &m, &settings).unwrap();
     assert!(game.step(0).is_err());
@@ -179,4 +174,19 @@ fn filesystem_and_network_imports_are_denied_before_guest_start() {
             .to_string();
         assert!(error.contains("cannot import"), "{resource}: {error}");
     }
+}
+
+#[test]
+fn old_instruction_budget_is_ignored_and_new_manifests_omit_it() {
+    let mut manifest = manifest();
+    manifest.limits.legacy_execution_budget = Some(1);
+    let wasm = module(
+        r#"(module
+        (func (export "gamepkg_tick") (param i32 i64) (result i64) (local $i i32)
+            (loop $again local.get $i i32.const 1 i32.add local.tee $i
+                i32.const 1000 i32.lt_u br_if $again) i64.const 42))"#,
+    );
+    let mut game = Game::from_bytes(&wasm, &manifest).unwrap();
+    assert_eq!(game.step(0).unwrap(), 42);
+    assert!(!toml::to_string(&manifest).unwrap().contains("fuel"));
 }

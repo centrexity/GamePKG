@@ -28,7 +28,8 @@ imports, type aliases, closures, function-pointer types, dynamic traits, compute
 call targets, binary includes,
 source path overrides, unsafe guest code, and filesystem/network/process
 paths. Guest dependencies are restricted to host-owned gamepkg-input,
-gamepkg-file, gamepkg-window, gamepkg-networking and gamepkg-byteorder 0.1.0,
+gamepkg-file, gamepkg-window, gamepkg-networking, gamepkg-shader, gamepkg-audio
+and gamepkg-byteorder 0.1.0,
 with default features disabled. The signed lockfile must match the exact graph;
 raw third-party crates and unknown gamepkg-prefixed names are rejected. The host supplies the source offline. Local
 approval can be revoked or restored through <code>allowlist remove/add</code> or desktop
@@ -74,7 +75,7 @@ source. Compiler processes have memory, file-size and time limits, with bounded
 diagnostics. Failed sandbox setup stops the build.</p>
 <p>Core and versioned WIT component games receive only scoped asset, input,
 drawing, audio, ROM and save operations. WASI and ambient filesystem/socket
-imports are unavailable. Wasmtime enforces linear memory, fuel and epoch
+imports are unavailable. Wasmtime enforces linear memory and epoch
 deadlines. ROM access uses an explicitly selected read-only session snapshot.
 Save writes commit only after successful ticks. Audio permission permits output
 without microphone access. Shared assets use signed hashes and private
@@ -83,7 +84,7 @@ verified session snapshots.</p>
 bounded output. Resource-free compiled fragment shaders can render in the
 OpenGL player. GPU
 drivers and the host runtime remain trusted components, and GPU work is not
-metered by Wasm fuel. These restrictions reduce access and do not establish a
+interrupted by Wasm deadlines. These restrictions reduce access and do not establish a
 general guarantee that a package cannot cause harm.</p>
 <p>Packaged source modules are supported. Every Rust file is scanned, including
 unused modules; declarations must resolve unambiguously within the package.
@@ -99,8 +100,9 @@ translated to GLSL for the OpenGL player.</p>
 blob before showing creator identities for approval. Inspection runs no game
 code and installs nothing. Rejected library files are shown as unavailable
 without hiding other verified games; installation checks remain strict.</p>
-<p>RGBA sprite drawing accepts images up to 512×512 pixels, with exact byte counts and at most 8 MiB of queued image bytes per frame. The host validates guest memory ranges, charges fuel, snapshots accepted pixels, and discards queued images after trapped ticks. Component pixel lists are length-checked through lazy guest-memory views before a host copy. Sprites draw through the host; GLSL shaders may receive one explicitly supplied host-owned texture through the bounded shader-image API.</p>
-<p>PNG sprite loading uses bounded verified archive ranges rather than host filesystem paths. Encoded files are limited to 2 MiB, decoded dimensions to 512×512, and decoder allocations to 8 MiB. The host charges archive decompression prefixes and reserves decoding fuel before reading the full file. These renderer budgets are separate from guest linear-memory limits.</p>
-<p>GLSL fragment passes may use one host-owned combined <code>Sampler2D gamepkgTexture</code> at binding 0 via <code>draw_shader_image(index, pixel_width, pixel_height, rgba)</code>. Pixels are snapshotted and fuel-charged before queueing, bounded to 512×512 and included in the shared 8 MiB frame image budget. Additional shader resources are rejected. Core and WIT runtimes support this API. Textured SPIR-V/WGSL playback validates one float 2D image and one non-comparison sampler at group 0 bindings 0 and 1 before translating to GLSL. SPIR-V builds define <code>GAMEPKG_SEPARATE_SAMPLER=1</code>; use the example’s explicit texture/sampler branch.</p>
+<p>RGBA sprite drawing accepts images up to 512×512 pixels, with exact byte counts and at most 8 MiB of queued image bytes per frame. The host validates guest memory ranges, snapshots accepted pixels, and discards queued images after trapped ticks. Component pixel lists are length-checked through lazy guest-memory views before a host copy. Sprites draw through the host; GLSL shaders may receive one explicitly supplied host-owned texture through the bounded shader-image API.</p>
+<p>PNG sprite loading uses bounded verified archive ranges rather than host filesystem paths. Encoded files are limited to 2 MiB, decoded dimensions to 512×512, and decoder allocations to 8 MiB. The host validates dimensions and frame capacity before reading the full file. These renderer budgets are separate from guest linear-memory limits.</p>
+<p>GLSL fragment passes may use one host-owned combined <code>Sampler2D gamepkgTexture</code> at binding 0 via <code>draw_shader_image(index, pixel_width, pixel_height, rgba)</code>. Pixels are snapshotted before queueing, bounded to 512×512 and included in the shared 8 MiB frame image budget. Additional shader resources are rejected. Core and WIT runtimes support this API. Textured SPIR-V/WGSL playback validates one float 2D image and one non-comparison sampler at group 0 bindings 0 and 1 before translating to GLSL. SPIR-V builds define <code>GAMEPKG_SEPARATE_SAMPLER=1</code>; use the example’s explicit texture/sampler branch.</p>
+<p>Instruction metering is disabled. Host epoch deadlines interrupt Wasm execution, including initialization and calls that repeatedly invoke host operations. Shader textures loaded from PNG use the same bounded verified archive decoder as sprites. The shader/audio crates add no ambient GPU, device, file or network access.</p>
 <footer><a href="../support/index.html">Support GamePKG</a> · <a href="../guide/allowlist.html">Approved game libraries</a> · <a href="https://github.com/centrexity/GamePKG/blob/main/html/guide/security.md">Documentation source</a> · GamePKG · Apache 2.0</footer>
 </main></body></html>

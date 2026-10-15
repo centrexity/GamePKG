@@ -4,7 +4,7 @@ GamePKG compiles every guest for `wasm32-unknown-unknown`. A game has the same
 32-bit address model and little-endian WebAssembly memory on every supported
 native host. The host rejects memory64 modules in both runtime profiles.
 Wasmtime selects its Pulley interpreter automatically on 32-bit x86 and ARM;
-games still receive the same scoped APIs, memory limits, fuel, and deadlines.
+games still receive the same scoped APIs, memory limits and deadlines.
 
 The portable source policy runs during packing, verification, installation,
 and compilation, including for signed packages and unused source files.

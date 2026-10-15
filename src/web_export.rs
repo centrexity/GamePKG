@@ -21,6 +21,7 @@ const SUPPORTED: &[&str] = &[
     "audio_submit",
     "draw_shader",
     "draw_shader_image",
+    "draw_shader_asset_image",
 ];
 
 fn leb(bytes: &[u8], cursor: &mut usize) -> Result<u32> {
@@ -191,7 +192,12 @@ pub fn export(root: &Path, id: &str, output: &Path) -> Result<()> {
                     import.name.starts_with("draw_") || import.name.starts_with("draw-");
                 uses_shaders |= matches!(
                     import.name,
-                    "draw_shader" | "draw_shader_image" | "draw-shader" | "draw-shader-image"
+                    "draw_shader"
+                        | "draw_shader_image"
+                        | "draw_shader_asset_image"
+                        | "draw-shader"
+                        | "draw-shader-image"
+                        | "draw-shader-asset-image"
                 );
                 if import.module != namespace
                     || !SUPPORTED.iter().any(|name| {

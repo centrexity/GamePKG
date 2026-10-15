@@ -57,7 +57,7 @@ fn invalid_audio_memory_and_total_sample_budget_are_rejected() {
     assert_eq!(game.audio_frame().len(), 1600);
 }
 #[test]
-fn repeated_audio_calls_are_metered() {
+fn deadlines_interrupt_infinite_audio_calls() {
     let wasm = wat::parse_str(
         r#"(module
         (import "gamepkg" "audio_submit" (func $audio (param i32 i32) (result i32)))
@@ -68,7 +68,6 @@ fn repeated_audio_calls_are_metered() {
     .unwrap();
     let mut m = manifest();
     m.permissions.audio = true;
-    m.limits.fuel = 1000;
     let mut game = Game::from_bytes(&wasm, &m).unwrap();
     assert!(game.step(0).is_err());
     assert!(game.audio_frame().is_empty());

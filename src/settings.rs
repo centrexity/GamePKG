@@ -13,7 +13,8 @@ pub struct Settings {
     pub library_directory: String,
     pub tor_proxy: String,
     pub memory_ceiling_mib: u64,
-    pub fuel_ceiling: u64,
+    #[serde(default, rename = "fuel_ceiling", skip_serializing)]
+    pub legacy_execution_ceiling: Option<u64>,
     pub tick_deadline_ms: u64,
     pub optimize_builds: bool,
     pub dark_mode: bool,
@@ -38,7 +39,7 @@ impl Default for Settings {
             library_directory: String::new(),
             tor_proxy: "127.0.0.1:9050".into(),
             memory_ceiling_mib: 512,
-            fuel_ceiling: 10000000,
+            legacy_execution_ceiling: None,
             tick_deadline_ms: 100,
             optimize_builds: true,
             dark_mode: true,
@@ -130,9 +131,6 @@ impl Settings {
         validate_proxy(&self.tor_proxy)?;
         if !(1..=512).contains(&self.memory_ceiling_mib) {
             bail!("memory ceiling must be 1–512 MiB");
-        }
-        if self.fuel_ceiling == 0 || self.fuel_ceiling > 100000000 {
-            bail!("fuel ceiling must be 1–100000000");
         }
         if !(10..=100).contains(&self.tick_deadline_ms) || !self.tick_deadline_ms.is_multiple_of(10)
         {

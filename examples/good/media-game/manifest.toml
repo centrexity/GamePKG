@@ -1,0 +1,26 @@
+format_version = 1
+id = "com.gamepkg.media"
+version = "0.1.0"
+entry_world = "game"
+lockfile_sha256 = "872e3412f44e1dc0235dc7e396ac7621f260fb1ac0b703cd653e60d1a0a3cac7"
+shader_profile = "slang"
+
+[limits]
+recommended_memory_bytes = 8388608
+hard_memory_bytes = 16777216
+
+[permissions]
+input = true
+audio = true
+save = false
+network = "none"
+
+[[shaders]]
+source = "shaders/texture.slang"
+entry = "blueMain"
+stage = "fragment"
+
+[[shaders]]
+source = "shaders/main.slang"
+entry = "fragmentMain"
+stage = "fragment"

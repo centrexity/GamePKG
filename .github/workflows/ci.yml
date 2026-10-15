@@ -117,6 +117,9 @@ jobs:
       - name: Owned wrapper policy and both runtime profiles
         if: matrix.features == '--all-features'
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/wrapper_games.py
+      - name: Slang texture and audio wrappers with both profiles and permission denial
+        if: matrix.features == '--all-features'
+        run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/media_wrappers.py
       - name: Shared assets and HTTPS store transfer
         if: matrix.features == '--all-features'
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/shared_assets_game.py
@@ -138,6 +141,11 @@ jobs:
       - name: Install virtual display tools
         if: matrix.features == '--all-features'
         run: sudo apt-get install -y xvfb xdotool imagemagick tesseract-ocr python3-pil libxkbcommon-x11-0 libgl1-mesa-dri
+      - name: Wrapped Slang PNG/RGBA rendering pixels
+        if: matrix.features == '--all-features'
+        run: |
+          sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/shader_gui.py --wrapped --backend glsl
+          sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/shader_gui.py --wrapped --component --backend wgsl
       - name: Verify GitHub project downloads in the desktop library
         if: matrix.features == '--all-features'
         run: python3 tests/github_download.py --gui

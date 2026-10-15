@@ -9,7 +9,6 @@ shader_profile = "slang"
 [limits]
 recommended_memory_bytes = 8388608
 hard_memory_bytes = 16777216
-fuel = 1000000
 
 [permissions]
 input = true

@@ -53,7 +53,7 @@ gamepkg/
     manifest.rs
     archive.rs          # zip index, offset reads, content-addressed refs
     build.rs            # cargo wrapper: allowlist, no build.rs, wasm target
-    sandbox.rs          # Wasmtime linker, fuel, memory, epoch, WASI scoping
+    sandbox.rs          # Wasmtime linker, memory, epoch, WASI scoping
     shaders.rs          # slangc invocation + reflection
     hostapi.rs          # WIT world the guest imports
     verify.rs           # signature, SBOM, source scan
@@ -80,7 +80,7 @@ gamepkg/
 2. Scan `source/`: reject `build.rs`, proc-macro crates, path/git deps, `include_bytes!` / `include_str!` / `include!`, anything not on the crate allowlist.
 3. `cargo build --target wasm32-wasip1 --offline --locked` (or `wasm32-unknown-unknown` with a custom WIT world). No preopens, no sockets unless the manifest grants a host-proxied capability.
 4. Compile `.slang` with pinned `slangc` to the active backend; cache output outside the package.
-5. Instantiate under Wasmtime with fuel, memory cap, epoch deadline, and an empty or tightly scoped linker. Guest sees only the host API (load asset by virtual path, input, draw, audio, save blob).
+5. Instantiate under Wasmtime with memory cap, epoch deadline, and an empty or tightly scoped linker. Guest sees only the host API (load asset by virtual path, input, draw, audio, save blob).
 6. Serve assets by central-directory offset. Optional content-addressed pool for shared blobs across store packages; sideloaded packages stay self-contained.
 
 ## CLI
@@ -96,7 +96,7 @@ gamepkg allowlist add <crate>
 
 ## GUI
 
-Feature-gated (`gui`). Library view, package detail (permissions, SBOM, thumbnail, preview), install/run, settings for backend and fuel defaults. Same core library as the CLI; GUI is a thin frontend (egui, iced, or a small system webview over the `html/` assets if you want one UI stack).
+Feature-gated (`gui`). Library view, package detail (permissions, SBOM, thumbnail, preview), install/run, settings for backend, memory ceilings and time deadlines. Same core library as the CLI; GUI is a thin frontend (egui, iced, or a small system webview over the `html/` assets if you want one UI stack).
 
 ## Safety tests
 

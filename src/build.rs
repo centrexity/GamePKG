@@ -232,6 +232,24 @@ pub(crate) fn compile_with_settings(
     });
     for entry in crate::allowlist::selected(&cargo) {
         match entry.name {
+            "gamepkg-audio" => source.push_str(include_str!("audio_bridge.rs.txt")),
+            "gamepkg-shader" => {
+                source.push_str(include_str!("shader_bridge.rs.txt"));
+                source.push_str("\n#[unsafe(no_mangle)] pub extern \"Rust\" fn __gamepkg_shader_index(source: &str, entry: &str) -> Option<u32> { match (source, entry) {\n");
+                if manifest.shaders.is_empty() {
+                    source.push_str("(\"shaders/main.slang\", \"fragmentMain\") => Some(0),\n");
+                } else {
+                    for (index, shader) in manifest.shaders.iter().enumerate() {
+                        if shader.stage == "fragment" {
+                            source.push_str(&format!(
+                                "({:?}, {:?}) => Some({index}),\n",
+                                shader.source, shader.entry
+                            ));
+                        }
+                    }
+                }
+                source.push_str("_ => None } }\n");
+            }
             "gamepkg-file" => source.push_str(include_str!("file_bridge.rs.txt")),
             "gamepkg-window" => source.push_str(include_str!("window_bridge.rs.txt")),
             _ => {}

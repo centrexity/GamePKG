@@ -37,7 +37,6 @@ pub struct Game {
     progress: Option<crate::progress::Session>,
     store: Store<Data>,
     tick: Tick,
-    fuel: u64,
     deadline_epochs: u64,
     stop: Arc<AtomicBool>,
     pub state: u64,
@@ -96,7 +95,6 @@ impl Game {
         config.wasm_memory64(false);
         config.wasm_relaxed_simd(false);
         config.cranelift_nan_canonicalization(true);
-        config.consume_fuel(true);
         config.epoch_interruption(true);
         let engine = Engine::new(&config)?;
         if bytes.len() > 32 * 1024 * 1024 {
@@ -133,6 +131,7 @@ impl Game {
                             | "draw_asset_image"
                             | "draw_image"
                             | "draw_shader_image"
+                            | "draw_shader_asset_image"
                             | "draw_rect"
                             | "draw_circle"
                             | "draw_shader"
@@ -142,9 +141,12 @@ impl Game {
             }) {
                 bail!("games cannot import functions outside the scoped GamePKG API");
             }
-            let uses_shaders = module
-                .imports()
-                .any(|i| matches!(i.name(), "draw_shader" | "draw_shader_image"));
+            let uses_shaders = module.imports().any(|i| {
+                matches!(
+                    i.name(),
+                    "draw_shader" | "draw_shader_image" | "draw_shader_asset_image"
+                )
+            });
             let custom_renderer = module
                 .imports()
                 .any(|i| i.name().starts_with("draw_") || i.name() == "zelda3_tick");
@@ -182,6 +184,7 @@ impl Game {
                                 | "draw-asset-image"
                                 | "draw-image"
                                 | "draw-shader-image"
+                                | "draw-shader-asset-image"
                                 | "draw-rect"
                                 | "draw-circle"
                                 | "draw-shader"
@@ -192,7 +195,10 @@ impl Game {
                         }
                     }
                     uses_shaders |= instance.get_export(&engine, "draw-shader").is_some()
-                        || instance.get_export(&engine, "draw-shader-image").is_some();
+                        || instance.get_export(&engine, "draw-shader-image").is_some()
+                        || instance
+                            .get_export(&engine, "draw-shader-asset-image")
+                            .is_some();
                     custom_renderer |= instance
                         .exports(&engine)
                         .any(|(name, _)| name.starts_with("draw-"));
@@ -214,14 +220,7 @@ impl Game {
         } else {
             memory
         };
-        if manifest.builtin_engine.is_some() && settings.fuel_ceiling < manifest.limits.fuel {
-            bail!(
-                "Zelda3 needs a fuel ceiling of {} in Settings; the selected ceiling is {}",
-                manifest.limits.fuel,
-                settings.fuel_ceiling
-            );
-        }
-        let fuel = manifest.limits.fuel.min(settings.fuel_ceiling);
+
         let deadline_epochs = settings.tick_deadline_ms / 10;
         let limits = StoreLimitsBuilder::new()
             .memory_size(memory as usize)
@@ -249,7 +248,6 @@ impl Game {
             },
         );
         store.limiter(|s| &mut s.limits);
-        store.set_fuel(fuel)?;
         store.set_epoch_deadline(deadline_epochs);
         let stop = Arc::new(AtomicBool::new(false));
         let flag = stop.clone();
@@ -279,13 +277,7 @@ impl Game {
                     let Some(id) = caller.data().achievements.get(index as usize).cloned() else {
                         return 0;
                     };
-                    let fuel = caller.get_fuel().unwrap_or(0);
-                    if fuel < 64 {
-                        return 0;
-                    }
-                    if caller.set_fuel(fuel - 64).is_err() {
-                        return 0;
-                    }
+
                     if !caller.data().pending_achievements.contains(&id) {
                         caller.data_mut().pending_achievements.push(id);
                     }
@@ -295,6 +287,34 @@ impl Game {
 
             linker.func_wrap("gamepkg", "asset_read", asset_read)?;
             linker.func_wrap("gamepkg", "audio_submit", audio_submit)?;
+            linker.func_wrap(
+                "gamepkg",
+                "draw_shader_asset_image",
+                |mut caller: Caller<'_, Data>, index: i32, pointer: i32, length: i32| -> i32 {
+                    if index < 0 || pointer < 0 || !(1..=1024).contains(&length) {
+                        return -1;
+                    }
+                    let Some(memory) = caller.get_export("memory").and_then(|e| e.into_memory())
+                    else {
+                        return -1;
+                    };
+                    let Some(end) = (pointer as usize).checked_add(length as usize) else {
+                        return -1;
+                    };
+                    let Some(bytes) = memory.data(&caller).get(pointer as usize..end) else {
+                        return -1;
+                    };
+                    let Ok(path) = std::str::from_utf8(bytes) else {
+                        return -1;
+                    };
+                    let path = path.to_owned();
+                    if draw_shader_asset_image(caller.data_mut(), index, &path) {
+                        0
+                    } else {
+                        -1
+                    }
+                },
+            )?;
             linker.func_wrap(
                 "gamepkg",
                 "draw_asset_image",
@@ -323,13 +343,8 @@ impl Game {
                         return -1;
                     };
                     let path = path.to_owned();
-                    let Ok(mut fuel) = caller.get_fuel() else {
-                        return -1;
-                    };
-                    let result = draw_asset_image(caller.data_mut(), &mut fuel, &path, x, y, w, h);
-                    if caller.set_fuel(fuel).is_err() {
-                        return -1;
-                    }
+                    let result = draw_asset_image(caller.data_mut(), &path, x, y, w, h);
+
                     if result {
                         0
                     } else {
@@ -370,17 +385,7 @@ impl Game {
                     if end > memory.data_size(&caller) {
                         return -1;
                     }
-                    let Ok(fuel) = caller.get_fuel() else {
-                        return -1;
-                    };
-                    let cost = bytes as u64 + 64;
-                    if fuel < cost {
-                        let _ = caller.set_fuel(0);
-                        return -1;
-                    }
-                    if caller.set_fuel(fuel - cost).is_err() {
-                        return -1;
-                    }
+
                     let Some(image) = crate::drawing::image::Image::new(
                         pw,
                         ph,
@@ -429,17 +434,7 @@ impl Game {
                     if end > memory.data_size(&caller) {
                         return -1;
                     }
-                    let Ok(fuel) = caller.get_fuel() else {
-                        return -1;
-                    };
-                    let cost = bytes as u64 + 64;
-                    if fuel < cost {
-                        let _ = caller.set_fuel(0);
-                        return -1;
-                    }
-                    if caller.set_fuel(fuel - cost).is_err() {
-                        return -1;
-                    }
+
                     let Some(image) = crate::drawing::image::Image::new(
                         pw,
                         ph,
@@ -459,9 +454,6 @@ impl Game {
                 "gamepkg",
                 "draw_clear",
                 |mut caller: Caller<'_, Data>, rgba: i32| -> i32 {
-                    if !draw_fuel(&mut caller) {
-                        return -1;
-                    }
                     caller.data_mut().frame.reset();
                     caller.data_mut().frame.background = Some(rgba as u32);
                     0
@@ -471,9 +463,6 @@ impl Game {
                 "gamepkg",
                 "draw_rect",
                 |mut caller: Caller<'_, Data>, x: f32, y: f32, w: f32, h: f32, rgba: i32| -> i32 {
-                    if !draw_fuel(&mut caller) {
-                        return -1;
-                    }
                     if caller.data_mut().frame.rect(x, y, w, h, rgba as u32) {
                         0
                     } else {
@@ -485,9 +474,6 @@ impl Game {
                 "gamepkg",
                 "draw_circle",
                 |mut caller: Caller<'_, Data>, x: f32, y: f32, r: f32, rgba: i32| -> i32 {
-                    if !draw_fuel(&mut caller) {
-                        return -1;
-                    }
                     if caller.data_mut().frame.circle(x, y, r, rgba as u32) {
                         0
                     } else {
@@ -499,9 +485,6 @@ impl Game {
                 "gamepkg",
                 "draw_shader",
                 |mut caller: Caller<'_, Data>, index: i32| -> i32 {
-                    if !draw_fuel(&mut caller) {
-                        return -1;
-                    }
                     let count = caller.data().shader_count;
                     if caller.data_mut().frame.shader(index, count) {
                         0
@@ -562,7 +545,6 @@ impl Game {
             progress: None,
             store,
             tick,
-            fuel,
             deadline_epochs,
             stop,
             state: 0,
@@ -667,7 +649,6 @@ impl Game {
                 &bytes,
                 rom,
                 save,
-                game.fuel,
                 game.deadline_epochs,
             )?;
             game.store.data_mut().zelda = Some(zelda);
@@ -720,7 +701,6 @@ impl Game {
         self.store.data_mut().pending_achievements.clear();
         self.store.data_mut().frame.reset();
         self.store.data_mut().audio.clear();
-        self.store.set_fuel(self.fuel)?;
         self.store.set_epoch_deadline(self.deadline_epochs);
         let previous_save = self.store.data().save.as_ref().map(|s| s.bytes.clone());
         let input = if self.input_allowed { input } else { 0 };
@@ -806,24 +786,6 @@ fn asset_read(
     if end > memory.data_size(&caller) {
         return -1;
     }
-    let cost = caller.data_mut().package.as_mut().and_then(|p| {
-        p.asset_chunk_cost(name, offset as u64, output_len as usize)
-            .ok()
-    });
-    let Some(cost) = cost else {
-        return -1;
-    };
-    // Compressed ranges also pay for decoding the prefix before their offset.
-    let Ok(fuel) = caller.get_fuel() else {
-        return -1;
-    };
-    if fuel < cost {
-        let _ = caller.set_fuel(0);
-        return -1;
-    }
-    if caller.set_fuel(fuel - cost).is_err() {
-        return -1;
-    }
     let Some(package) = caller.data_mut().package.as_mut() else {
         return -1;
     };
@@ -862,17 +824,7 @@ fn rom_read_at(
     if end > memory.data_size(&caller) {
         return -1;
     }
-    let Ok(fuel) = caller.get_fuel() else {
-        return -1;
-    };
-    let cost = length as u64 + 128;
-    if fuel < cost {
-        let _ = caller.set_fuel(0);
-        return -1;
-    }
-    if caller.set_fuel(fuel - cost).is_err() {
-        return -1;
-    }
+
     let Some(bytes) = caller
         .data()
         .rom
@@ -905,17 +857,7 @@ fn save_write(mut caller: Caller<'_, Data>, pointer: i32, length: i32) -> i32 {
     if end > memory.data_size(&caller) {
         return -1;
     }
-    let cost = length as u64 + 1024;
-    let Ok(fuel) = caller.get_fuel() else {
-        return -1;
-    };
-    if fuel < cost {
-        let _ = caller.set_fuel(0);
-        return -1;
-    }
-    if caller.set_fuel(fuel - cost).is_err() {
-        return -1;
-    }
+
     let mut bytes = vec![0; length as usize];
     if memory.read(&caller, pointer as usize, &mut bytes).is_err() {
         return -1;
@@ -938,17 +880,7 @@ fn save_read(mut caller: Caller<'_, Data>, offset: i32, pointer: i32, length: i3
     if end > memory.data_size(&caller) {
         return -1;
     }
-    let cost = length as u64 + 128;
-    let Ok(fuel) = caller.get_fuel() else {
-        return -1;
-    };
-    if fuel < cost {
-        let _ = caller.set_fuel(0);
-        return -1;
-    }
-    if caller.set_fuel(fuel - cost).is_err() {
-        return -1;
-    }
+
     let Some(bytes) = caller
         .data()
         .save
@@ -964,82 +896,62 @@ fn save_read(mut caller: Caller<'_, Data>, offset: i32, pointer: i32, length: i3
     bytes.len() as i32
 }
 
-fn draw_asset_image(
+fn draw_asset_image(data: &mut Data, path: &str, x: f32, y: f32, w: f32, h: f32) -> bool {
+    let Some(image) = decode_asset_image(data, path, x, y, w, h) else {
+        return false;
+    };
+    data.frame.image(x, y, w, h, image)
+}
+fn draw_shader_asset_image(data: &mut Data, index: i32, path: &str) -> bool {
+    if index < 0 || index as usize >= data.shader_count {
+        return false;
+    }
+    let Some(image) = decode_asset_image(data, path, 0.0, 0.0, 640.0, 480.0) else {
+        return false;
+    };
+    data.frame.shader_image(index, data.shader_count, image)
+}
+fn decode_asset_image(
     data: &mut Data,
-    fuel: &mut u64,
     path: &str,
     x: f32,
     y: f32,
     w: f32,
     h: f32,
-) -> bool {
+) -> Option<crate::drawing::image::Image> {
     use crate::drawing::image::{Image, MAX_PNG_BYTES};
     if path.len() > 1024
         || !crate::archive::valid_path(path)
         || !data.frame.can_image(x, y, w, h, 0)
     {
-        return false;
+        return None;
     }
-    let Some(package) = data.package.as_mut() else {
-        return false;
-    };
+    let package = data.package.as_mut()?;
     let Ok(size) = package.asset_size(path) else {
-        return false;
+        return None;
     };
     if !(33..=MAX_PNG_BYTES as u64).contains(&size) {
-        return false;
+        return None;
     }
-    if *fuel < 1280 {
-        *fuel = 0;
-        return false;
-    }
-    *fuel -= 1280;
     let Ok(header) = package.asset_chunk(path, 0, 33) else {
-        return false;
+        return None;
     };
-    let Some(pixel_bytes) = Image::png_byte_length(&header) else {
-        return false;
-    };
+    let pixel_bytes = Image::png_byte_length(&header)?;
     if !data.frame.can_image(x, y, w, h, pixel_bytes) {
-        return false;
+        return None;
     }
-    let mut cost = pixel_bytes as u64 * 4;
-    for offset in (0..size).step_by(65536) {
-        let Ok(chunk_cost) = package.asset_chunk_cost(path, offset, 65536) else {
-            return false;
-        };
-        cost += chunk_cost;
-    }
-    if *fuel < cost {
-        *fuel = 0;
-        return false;
-    }
-    *fuel -= cost;
     let mut encoded = Vec::with_capacity(size as usize);
     for offset in (0..size).step_by(65536) {
         let Ok(chunk) = package.asset_chunk(path, offset, 65536) else {
-            return false;
+            return None;
         };
         encoded.extend(chunk);
     }
-    let Some(image) = Image::from_png(&encoded) else {
-        return false;
-    };
+    let image = Image::from_png(&encoded)?;
     if image.pixels().len() != pixel_bytes {
-        return false;
+        return None;
     }
-    data.frame.image(x, y, w, h, image)
-}
-
-fn draw_fuel(caller: &mut Caller<'_, Data>) -> bool {
-    let Ok(fuel) = caller.get_fuel() else {
-        return false;
-    };
-    if fuel < 64 {
-        let _ = caller.set_fuel(0);
-        return false;
-    }
-    caller.set_fuel(fuel - 64).is_ok()
+    Some(image)
 }
 
 /// Signed 16-bit little-endian mono PCM at 48 kHz; at most 1,600 samples per tick.
@@ -1060,17 +972,7 @@ fn audio_submit(mut caller: Caller<'_, Data>, pointer: i32, count: i32) -> i32 {
     if end > memory.data_size(&caller) {
         return -1;
     }
-    let Ok(fuel) = caller.get_fuel() else {
-        return -1;
-    };
-    let cost = count as u64 * 2 + 64;
-    if fuel < cost {
-        let _ = caller.set_fuel(0);
-        return -1;
-    }
-    if caller.set_fuel(fuel - cost).is_err() {
-        return -1;
-    }
+
     let mut bytes = vec![0; count as usize * 2];
     if memory.read(&caller, pointer as usize, &mut bytes).is_err() {
         return -1;
@@ -1086,15 +988,13 @@ fn audio_submit(mut caller: Caller<'_, Data>, pointer: i32, count: i32) -> i32 {
 }
 
 fn zelda3_tick(mut caller: Caller<'_, Data>, input: i32, state: i64) -> Result<i64> {
-    let fuel = caller.get_fuel()?;
     let deadline = caller.data().deadline_epochs;
     let frame = caller
         .data_mut()
         .zelda
         .as_mut()
         .context("Zelda3 engine is not initialized")?
-        .step(input as u32, state == 0, fuel, deadline)?;
-    caller.set_fuel(frame.fuel)?;
+        .step(input as u32, state == 0, deadline)?;
     let data = caller.data_mut();
     data.frame.background = Some(0x000000ff);
     let image = crate::drawing::image::Image::new(256, 224, &frame.pixels)
@@ -1157,6 +1057,7 @@ mod adversarial_assets_tests {
             data.push_str(&format!("(data (i32.const {position}) \"{escaped}\")\n"));
             code.push_str(&format!("i32.const {position} i32.const {} i32.const 0 i32.const 60000 i32.const 8 call $read i32.const -1 i32.ne if unreachable end\n", bytes.len()));
             code.push_str(&format!("i32.const {position} i32.const {} f32.const 0 f32.const 0 f32.const 1 f32.const 1 call $image i32.const -1 i32.ne if unreachable end\n", bytes.len()));
+            code.push_str(&format!("i32.const 0 i32.const {position} i32.const {} call $texture i32.const -1 i32.ne if unreachable end\n", bytes.len()));
             code.push_str(
                 "i32.const 60000 i64.load i64.const 123456789 i64.ne if unreachable end\n",
             );
@@ -1185,6 +1086,7 @@ mod adversarial_assets_tests {
         }
         let wasm = wat::parse_str(format!(r#"(module
             (import "gamepkg" "asset_read" (func $read (param i32 i32 i32 i32 i32) (result i32)))
+            (import "gamepkg" "draw_shader_asset_image" (func $texture (param i32 i32 i32) (result i32)))
             (import "gamepkg" "draw_asset_image" (func $image (param i32 i32 f32 f32 f32 f32) (result i32)))
             (memory (export "memory") 1) {data}
             (func (export "gamepkg_tick") (param i32 i64) (result i64) {code} i64.const 42))"#)).unwrap();
@@ -1197,6 +1099,7 @@ mod adversarial_assets_tests {
             None,
         )
         .unwrap();
+        game.store.data_mut().shader_count = 1;
         assert_eq!(game.step(0).unwrap(), 42);
         assert!(game.frame().commands.is_empty());
     }
@@ -1229,6 +1132,10 @@ mod adversarial_assets_tests {
             code.push_str("i32.const 60000 i64.const 123456789 i64.store\n");
             code.push_str(&format!("i32.const {position} i32.const {} i32.const 0 i32.const 8 i32.const 50000 call $read\ni32.const 50000 i32.load if unreachable end\n", path.len()));
             code.push_str(&format!("i32.const {position} i32.const {} f32.const 0 f32.const 0 f32.const 1 f32.const 1 call $image if unreachable end\n", path.len()));
+            code.push_str(&format!(
+                "i32.const 0 i32.const {position} i32.const {} call $texture if unreachable end\n",
+                path.len()
+            ));
             code.push_str(
                 "i32.const 60000 i64.load i64.const 123456789 i64.ne if unreachable end\n",
             );
@@ -1240,6 +1147,7 @@ mod adversarial_assets_tests {
         assert!(position < 50000);
         let wasm = wat::parse_str(format!(r#"(module
             (import "gamepkg:engine/host@0.1.0" "asset-read" (func $read (param i32 i32 i32 i32 i32)))
+            (import "gamepkg:engine/host@0.1.0" "draw-shader-asset-image" (func $texture (param i32 i32 i32) (result i32)))
             (import "gamepkg:engine/host@0.1.0" "draw-asset-image" (func $image (param i32 i32 f32 f32 f32 f32) (result i32)))
             (memory (export "memory") 1) {data}
             (func (export "cabi_realloc") (param i32 i32 i32 i32) (result i32) i32.const 55000)
@@ -1254,6 +1162,7 @@ mod adversarial_assets_tests {
             None,
         )
         .unwrap();
+        game.store.data_mut().shader_count = 1;
         assert_eq!(game.step(0).unwrap(), 42);
         assert!(game.frame().commands.is_empty());
     }
