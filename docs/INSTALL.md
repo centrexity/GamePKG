@@ -11,7 +11,7 @@ These builds target Ubuntu 24.04 or a compatible system with glibc 2.39 or newer
 On Ubuntu 24.04, install the runtime tools needed for isolated builds, downloads, previews, and audio:
 
 ```sh
-sudo apt install bubblewrap coreutils util-linux curl ffmpeg libasound2t64
+sudo apt install bubblewrap coreutils util-linux curl ffmpeg libasound2t64 libudev1
 ```
 
 Install Rust with rustup using its official instructions at https://rustup.rs, then add the game compilation target:

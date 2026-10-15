@@ -16,25 +16,24 @@
   </style>
 </head>
 <body><main>
-<nav aria-label="Main"><a href="../index.html">← GamePKG</a> · <a href="index.html">Start playing</a></nav>
+<nav aria-label="Main"><a href="../index.html">← GamePKG</a> · <a href="index.html">Start playing</a> · <a href="developers.html">Developer instructions</a></nav>
 <h1>Approved game libraries.</h1>
 <p>Games can use only libraries in the host’s bundled, pinned catalog that you have approved. Adding an approval cannot authorize an arbitrary crate or download new code.</p>
-<h2>Current catalog</h2>
-<p><strong>byteorder-lite 0.1.0</strong> reads and writes numbers in different byte orders. It is approved by default, with default features disabled and no additional features or dependencies.</p>
-<p>The signed lockfile must match the exact version, registry source, dependency graph, and archive checksum:</p>
-<pre><code>8f1fe948ff07f4bd06c30984e69f5b4899c516a3ef74f34df92a2df2ab535495</code></pre>
-<p>GamePKG supplies its bundled source to the isolated build. The game cannot substitute a package, select a different version, or fetch a dependency from the network.</p>
+<h2>Bundled catalog</h2>
+<p>Only these host-owned wrappers are allowed, each pinned to <strong>0.1.0</strong> with default features disabled and no extra features or transitive dependencies:</p>
+<ul><li><strong>gamepkg-input:</strong> keyboard, controller and touchscreen button input.</li><li><strong>gamepkg-file:</strong> scoped assets, selected ROMs and saves.</li><li><strong>gamepkg-window:</strong> drawing into the host viewport.</li><li><strong>gamepkg-networking:</strong> denied requests under the no-network policy.</li><li><strong>gamepkg-byteorder:</strong> explicit-endian u32 reads and writes.</li></ul>
+<p>A matching prefix grants no approval. Raw third-party crates and unknown <code>gamepkg-*</code> names are rejected. The host supplies pinned source offline and rejects replacements. The signed lockfile must match the exact host-owned graph. Run <code>gamepkg allowlist list</code> for source hashes and read the <a href="developers.html">developer instructions</a> for the checklist, declarations, examples and migration steps.</p>
 <h2>Choose your approvals</h2>
-<p>Open <strong>Settings → Approved game libraries</strong>, change the byteorder-lite checkbox, then choose <strong>Save settings</strong>. Cancel discards edits. The desktop and CLI share these preferences.</p>
+<p>Open <strong>Settings → Approved game libraries</strong>, change each library’s checkbox, then choose <strong>Save settings</strong>. Cancel discards edits. The desktop and CLI share these preferences.</p>
 <pre><code>gamepkg allowlist list
-gamepkg allowlist remove byteorder-lite
-gamepkg allowlist add byteorder-lite</code></pre>
+gamepkg allowlist remove gamepkg-byteorder
+gamepkg allowlist add gamepkg-byteorder</code></pre>
 <p>Removing approval blocks verification, installation, builds, and new play sessions for games that depend on that library. It does not interrupt a game already running. Games without dependencies continue to use the same source and runtime restrictions.</p>
 <h2>What source packages cannot do</h2>
 <p>Guest packages cannot use build scripts, procedural macros, path or Git dependencies, unapproved transitive dependencies, extra dependency features, or binary includes. Every packaged Rust source file is checked, including unused modules. Unsafe guest code and ambient filesystem, network, and process operations are rejected.</p>
 <p>Linux builds use locked, offline Cargo in an isolated process without the user’s home directory or network access. Runtime games receive scoped host operations under Wasmtime. Source scanning is a policy filter; build and runtime isolation enforce additional boundaries.</p>
 <h2>Adding a library to the catalog</h2>
-<p>The current release has one catalog entry. An unknown name passed to <code>allowlist add</code> is rejected. A new library requires a host update that reviews and bundles its source, pins its complete dependency graph, and tests its permitted build configuration. A creator cannot expand the catalog through a game manifest.</p>
+<p>The catalog contains the five pinned entries above. An unknown name passed to <code>allowlist add</code> is rejected. A new library requires a host update that reviews and bundles its source, pins its complete dependency graph, and tests its permitted build configuration. A creator cannot expand the catalog through a game manifest.</p>
 <p class="notice">Approval and signatures do not guarantee harmless code. The host, compilers, and graphics drivers remain trusted components. Review the creator and permissions before installation.</p>
 <footer><a href="../support/index.html">Support GamePKG</a> · <a href="security.html">Security model</a> · <a href="https://github.com/centrexity/GamePKG/blob/main/src/allowlist.rs">Enforced catalog policy</a> · GamePKG · Apache 2.0</footer>
 </main></body></html>

@@ -203,14 +203,15 @@ pub(crate) fn compile_with_settings(
     let manifest = verify_embedded(&mut pkg)?;
     pkg.resolve_shared_assets(root)?;
     let cargo: toml::Value = toml::from_str(std::str::from_utf8(&pkg.read("source/Cargo.toml")?)?)?;
-    let approved = crate::allowlist::approved(&cargo, &pkg.read("source/Cargo.lock")?)?;
-    if approved
-        && !settings
+    let _approved = crate::allowlist::approved(&cargo, &pkg.read("source/Cargo.lock")?)?;
+    for entry in crate::allowlist::selected(&cargo) {
+        if !settings
             .approved_crates
             .iter()
-            .any(|name| name == crate::allowlist::NAME)
-    {
-        bail!("selected compiler settings do not approve the guest dependency");
+            .any(|name| name == entry.name)
+        {
+            bail!("selected compiler settings do not approve the guest dependency");
+        }
     }
 
     let stage = tempfile::tempdir()?;
@@ -229,6 +230,13 @@ pub(crate) fn compile_with_settings(
     } else {
         include_str!("guest_api.rs.txt")
     });
+    for entry in crate::allowlist::selected(&cargo) {
+        match entry.name {
+            "gamepkg-file" => source.push_str(include_str!("file_bridge.rs.txt")),
+            "gamepkg-window" => source.push_str(include_str!("window_bridge.rs.txt")),
+            _ => {}
+        }
+    }
     for name in pkg
         .entries
         .keys()
@@ -256,13 +264,11 @@ pub(crate) fn compile_with_settings(
     let mut locked: toml::Value =
         toml::from_str(std::str::from_utf8(&pkg.read("source/Cargo.lock")?)?)?;
     locked["version"] = toml::Value::Integer(4);
-    if approved {
-        crate::allowlist::stage(&stage.path().join("vendor/byteorder-lite"))?;
-        staged["dependencies"]["byteorder-lite"] = toml::Value::Table(toml::map::Map::from_iter([
-            (
-                "path".into(),
-                toml::Value::String("vendor/byteorder-lite".into()),
-            ),
+    for entry in crate::allowlist::selected(&cargo) {
+        let path = format!("vendor/{}", entry.name);
+        crate::allowlist::stage_entry(entry, &stage.path().join(&path))?;
+        staged["dependencies"][entry.name] = toml::Value::Table(toml::map::Map::from_iter([
+            ("path".into(), toml::Value::String(path)),
             ("default-features".into(), toml::Value::Boolean(false)),
         ]));
         for package in locked["package"].as_array_mut().unwrap() {

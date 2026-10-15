@@ -10,7 +10,7 @@ default-run = "gamepkg"
 
 [features]
 default = []
-gui = ["dep:eframe", "audio"]
+gui = ["dep:eframe", "dep:gilrs", "audio"]
 audio = ["dep:cpal"]
 
 [[bin]]
@@ -23,6 +23,7 @@ path = "src/bin/gui.rs"
 required-features = ["gui"]
 
 [dependencies]
+gamepkg-input = { path = "vendor/gamepkg-input-0.1.0", version = "=0.1.0" }
 cpal = { version = "0.18.2", optional = true }
 wit-component = "=0.236.1"
 wit-parser = "=0.236.1"
@@ -52,3 +53,6 @@ rustc_lexer = "=0.1.0"
 
 [dev-dependencies]
 wat = "1"
+
+[target.'cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))'.dependencies]
+gilrs = { version = "=0.10.10", optional = true, default-features = false, features = ["xinput"] }

@@ -11,7 +11,7 @@ jobs:
         with:
           submodules: recursive
       - name: Install host build dependencies
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev
       - name: Install Rust
         run: rustup update stable && rustup default stable
       - name: Build both host entry points

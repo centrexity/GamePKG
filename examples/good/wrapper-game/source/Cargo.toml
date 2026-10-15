@@ -1,0 +1,22 @@
+[package]
+name = "wrapper-game"
+version = "0.1.0"
+edition = "2021"
+build = false
+[lib]
+path = "src/lib.rs"
+[dependencies.gamepkg-byteorder]
+version = "=0.1.0"
+default-features = false
+[dependencies.gamepkg-file]
+version = "=0.1.0"
+default-features = false
+[dependencies.gamepkg-input]
+version = "=0.1.0"
+default-features = false
+[dependencies.gamepkg-networking]
+version = "=0.1.0"
+default-features = false
+[dependencies.gamepkg-window]
+version = "=0.1.0"
+default-features = false

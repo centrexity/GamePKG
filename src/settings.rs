@@ -31,7 +31,10 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             format_version: 1,
-            approved_crates: vec![crate::allowlist::NAME.into()],
+            approved_crates: crate::allowlist::CATALOG
+                .iter()
+                .map(|e| e.name.into())
+                .collect(),
             library_directory: String::new(),
             tor_proxy: "127.0.0.1:9050".into(),
             memory_ceiling_mib: 512,
@@ -77,11 +80,17 @@ impl Settings {
         {
             bail!("Windows compiler executable must be an absolute Linux path without control characters");
         }
-        if self.approved_crates.len() > 1
-            || self
-                .approved_crates
-                .iter()
-                .any(|name| name != crate::allowlist::NAME)
+        if self
+            .approved_crates
+            .iter()
+            .collect::<std::collections::HashSet<_>>()
+            .len()
+            != self.approved_crates.len()
+            || self.approved_crates.iter().any(|name| {
+                !crate::allowlist::CATALOG
+                    .iter()
+                    .any(|entry| entry.name == name)
+            })
         {
             bail!("approved crates must be unique entries from the bundled pinned catalog");
         }

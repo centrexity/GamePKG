@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Developer instructions — GamePKG</title>
+  <meta name="description" content="Create GamePKG games with pinned crates, portable input, scoped APIs, and verified local builds.">
+  <link rel="icon" type="image/png" href="../assets/gamepkg-icon.png">
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #10171d; color: #e8eef1; line-height: 1.6; }
+    body { margin: 0; } main { max-width: 780px; margin: auto; padding: 36px 24px 60px; }
+    a { color: #91dfc7; } h1 { line-height: 1.15; font-size: clamp(2rem, 6vw, 3.5rem); }
+    h2 { margin-top: 2rem; } li { margin: .6rem 0; } pre { overflow-x: auto; padding: 16px; background: #1b2931; border-radius: 8px; }
+    .notice { padding: 16px; border-left: 3px solid #91dfc7; background: #17232b; } code { font-size: .95em; }
+    footer { margin-top: 36px; border-top: 1px solid #40535e; padding-top: 18px; }
+  </style>
+</head>
+<body><main>
+<nav aria-label="Main"><a href="../index.html">← GamePKG</a> · <a href="index.html">Start playing</a></nav>
+<h1>Build a transparent GamePKG game</h1>
+<p>Start with <code>examples/minimal</code> or <code>examples/good/input-game</code> in the source repository. GamePKG is the format and player: creators choose where to host their own packages. Players inspect your source and permissions before approving your key.</p>
+<h2>Creator checklist</h2>
+<ol>
+<li>Write <code>source/src/lib.rs</code> with <code>pub fn game_tick(input: u32, state: u64) -&gt; u64</code>. Use direct function calls and checked source modules. The host adds the runtime bindings and export wrapper; do not add your own imports or export attributes.</li>
+<li>Set a unique game ID, semantic version, runtime profile, and source lockfile hash in <code>manifest.toml</code>. Declare only the permissions you need, recommended memory, hard memory, and fuel limits. Guest networking must be <code>none</code>.</li>
+<li>Put assets under <code>assets/</code>, Slang source under <code>shaders/</code>, and include a thumbnail, license and credits. Paths must be portable relative paths with forward slashes, no traversal, device names or symlinks.</li>
+<li>Use only the exact dependencies below. Include <code>source/Cargo.lock</code>; put its SHA-256 in <code>lockfile_sha256</code>. GamePKG supplies the approved dependency source offline. Do not vendor dependency replacements into your package.</li>
+<li>If your game requires ROM files, declare each requirement in the manifest. Players select their own files; read only those ROMs through <code>gamepkg::rom_count</code>, <code>rom_size_at</code> and <code>rom_read_at</code>. Do not fetch ROMs or ask for access to their folders.</li>
+<li>Use <code>gamepkg</code> host functions for assets, saves, drawing, audio and achievements. Keep numbers portable: fixed-width serialized values and qualified conversions such as <code>u32::to_le_bytes(value)</code>. <code>usize</code> is for internal indexing, not stored data.</li>
+<li>Pack, verify, install, build and play locally before publishing. Test missing assets, absent ROMs, denied permissions, corrupt saves, resource limits and both new and held input. Test both <code>core-v1</code> and <code>component-v1</code> if you claim both profiles.</li>
+<li>Keep your private signing key outside the package and backed up. Publish your signed package at your chosen URL. An optional <code>update_url</code> points to the next signed package; updates retain your game ID and creator key and increase the version. Players need no private key or Python.</li>
+</ol>
+<h2>Allowed guest crates</h2>
+<table>
+<thead>
+<tr>
+<th>Crate</th>
+<th>Exact version</th>
+<th>Configuration</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>gamepkg-byteorder</code></td>
+<td><code>=0.1.0</code></td>
+<td><code>default-features = false</code>, no extra features</td>
+<td>Explicit little/big-endian <code>u32</code> reads and writes</td>
+</tr>
+<tr>
+<td><code>gamepkg-input</code></td>
+<td><code>=0.1.0</code></td>
+<td><code>default-features = false</code>, no extra features</td>
+<td>Portable keyboard, controller and touchscreen button decoding</td>
+</tr>
+<tr>
+<td><code>gamepkg-file</code></td>
+<td><code>=0.1.0</code></td>
+<td><code>default-features = false</code>, no extra features</td>
+<td>Scoped assets, selected ROMs and saves</td>
+</tr>
+<tr>
+<td><code>gamepkg-window</code></td>
+<td><code>=0.1.0</code></td>
+<td><code>default-features = false</code>, no extra features</td>
+<td>Drawing into the host viewport</td>
+</tr>
+<tr>
+<td><code>gamepkg-networking</code></td>
+<td><code>=0.1.0</code></td>
+<td><code>default-features = false</code>, no extra features</td>
+<td>Explicit permission-denied responses; no network access</td>
+</tr>
+</tbody>
+</table>
+<p>Only these exact GamePKG-owned wrappers are allowed guest dependencies. The <code>gamepkg-</code> prefix by itself grants nothing. Raw third-party crates, including <code>byteorder-lite</code>, are rejected. All five are approved by default. Players may revoke individual approvals in Settings or with <code>gamepkg allowlist remove NAME</code>. Unknown crates, renamed dependencies, Git/path sources, build scripts, extra features, and unapproved transitive dependencies are rejected. Approval cannot expand the bundled catalog.</p>
+<pre><code class="language-toml">[dependencies.gamepkg-input]
+version = &quot;=0.1.0&quot;
+default-features = false
+</code></pre>
+<p>All catalog entries are host-owned bundled source, not crates.io packages to download. Copy the lockfile in <code>examples/good/input-game</code> for input alone or <code>examples/good/wrapper-game</code> for all wrappers. Each dependency entry has only <code>name</code> and <code>version</code>, with no registry source or checksum. List root dependencies alphabetically. The host checks the complete graph and supplies its own source; <code>gamepkg allowlist list</code> reports each pinned source-file SHA-256.</p>
+<h2>Scoped wrappers</h2>
+<p>Use <code>gamepkg_file::asset_read</code> for package-relative asset paths, <code>rom_count</code>, <code>rom_size_at</code> and <code>rom_read_at</code> for player-selected ROMs, and <code>save_size</code>, <code>save_read</code> and <code>save_write</code> for the game's save blob. These call the same permission-checked host operations in core and component games. They never open arbitrary host files. Existing <code>gamepkg::</code> bindings remain compatible scoped APIs.</p>
+<p>Use <code>gamepkg_window::clear</code>, <code>rect</code>, <code>circle</code> and <code>asset_image</code> for drawing into the host-owned game viewport. The wrapper cannot create arbitrary windows or obtain GPU handles. Use the existing scoped host API for additional drawing and audio operations.</p>
+<p><code>gamepkg_networking::request(url, output)</code> always returns <code>Error::PermissionDenied</code>, leaves output untouched, and performs no I/O. The manifest still requires <code>network = "none"</code>. A wrapper name cannot enable networking; any future networking capability needs an explicit host policy and runtime implementation.</p>
+<p>These wrappers narrow the callable API; they do not replace source checks, package signatures, the isolated compiler, or Wasm runtime restrictions. Guest declarations cannot select replacement sources or access the wrappers' private bridge symbols. The bridges are generated by the host with the same compiler for both runtime profiles.</p>
+<h3>Migrate a direct third-party dependency</h3>
+<p>Packages that used <code>byteorder-lite</code> must replace it with <code>gamepkg-byteorder</code>, update source imports to <code>gamepkg_byteorder</code>, use its explicit-endian <code>u32</code> API, regenerate the approved lock graph and hash, increase their game version, and sign again with the same creator key. Existing settings naming <code>byteorder-lite</code> must be updated to the wrapper names; unknown catalog names are rejected rather than silently approved.</p>
+<h2>Controller and touch input</h2>
+<p>Games consume one <code>u32</code> input value per tick. The same buttons work with the keyboard, a controller, or the player's on-screen touch controls. Set <code>[permissions] input = true</code>; otherwise the runtime passes zero.</p>
+<pre><code class="language-rust">pub fn game_tick(input: u32, state: u64) -&gt; u64 {
+    let mut next = state;
+    if gamepkg_input::held(input, gamepkg_input::RIGHT) {
+        next = next.wrapping_add(1);
+    }
+    if gamepkg_input::pressed(input, gamepkg_input::B) {
+        next = 0;
+    }
+    next
+}
+</code></pre>
+<p><code>pressed</code> detects newly pressed buttons; <code>held</code> detects continuing presses. Constants are <code>LEFT</code>, <code>RIGHT</code>, <code>UP</code>, <code>DOWN</code>, <code>A</code>, <code>B</code>, <code>X</code>, <code>Y</code>, <code>L</code>, <code>R</code>, <code>START</code>, and <code>SELECT</code>. These are digital controls; this API does not expose raw touch coordinates, pressure, controller identities, or analog values to games.</p>
+<p>The desktop host uses pinned <code>gilrs 0.10.10</code> for Linux/Windows controller input and the existing <code>egui 0.31.1</code> input layer for touch. These are host dependencies, not allowed guest dependencies: games cannot open devices or windows. D-pad and the left stick map to directions with a deadzone; face buttons map by position (south=B, west=Y, east=A, north=X). Shoulder buttons, Start and Select map to their names. Multiple connected controllers contribute to the same input. Choose <strong>Touch controls</strong> in the player to show the buttons; touch events also reveal them automatically. Movement and action buttons can be held simultaneously. Losing window focus clears device input. Android controller device access and an Android GUI are not supplied by this desktop integration.</p>
+<h2>Source restrictions</h2>
+<p>Do not use aliases, renamed/wildcard imports, guest macros, closures, function pointers, dynamic dispatch, indirect calls, unsafe code, foreign declarations, binary includes, custom source paths, or direct filesystem/network/process/environment access. Do not use native-endian encoding, raw pointers, memory layout inspection, architecture-specific intrinsics or shadow primitive type names. Guest code does not receive WASI imports. All packaged Rust files are scanned, even unused files.</p>
+<p>Source checks make code easier to inspect; isolated compilation and bounded Wasm execution enforce additional boundaries. A signature proves the contents came from a key, not that the code is harmless.</p>
+<h2>Build and test</h2>
+<p>Install the host and compiler tools using the repository installation guide. Keep the signing key and output package outside the source folder.</p>
+<pre><code class="language-sh">gamepkg keygen -o /path/to/private/creator.key
+gamepkg pack /path/to/game -o /path/to/output/game.gamepkg --key /path/to/private/creator.key
+gamepkg verify /path/to/output/game.gamepkg
+gamepkg install /path/to/output/game.gamepkg --trust-creator
+gamepkg build com.example.game
+gamepkg run com.example.game --frames 60
+gamepkg-gui
+</code></pre>
+<p>Replace the ID with your manifest ID. For the input example use <code>com.gamepkg.input</code>. The desktop player supplies controller and touch controls; the CLI is useful for deterministic frame checks. Linux source builds use bubblewrap; Windows source builds use the configured Linux compiler connection through WSL 2. Optimization settings change local builds without expanding game permissions.</p>
+<footer><a href="../support/index.html">Support GamePKG</a> · <a href="../guide/allowlist.html">Approved game libraries</a> · <a href="https://github.com/centrexity/GamePKG/blob/main/docs/DEVELOPING_GAMES.md">Documentation source</a> · GamePKG · Apache 2.0</footer>
+</main></body></html>

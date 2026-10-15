@@ -1,0 +1,17 @@
+format_version = 1
+id = "com.gamepkg.input"
+version = "0.1.0"
+entry_world = "game"
+lockfile_sha256 = "c4d191cbd536461e0b239a9feaf3855e304d8e3f6e26dc78a8fa3968c284f289"
+shader_profile = "slang"
+
+[limits]
+recommended_memory_bytes = 8388608
+hard_memory_bytes = 16777216
+fuel = 1000000
+
+[permissions]
+input = true
+audio = false
+save = false
+network = "none"

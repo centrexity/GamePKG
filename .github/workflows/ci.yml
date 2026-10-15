@@ -25,7 +25,7 @@ jobs:
         run: rustup update stable && rustup default stable && rustup component add rustfmt clippy
       - name: Install audio development headers
         if: matrix.features == '--all-features'
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev
       - name: Check formatting
         run: cargo fmt --all -- --check
       - name: Test
@@ -114,6 +114,9 @@ jobs:
       - name: Pinned approved guest dependency
         if: matrix.features == '--all-features'
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/approved_crate_game.py
+      - name: Owned wrapper policy and both runtime profiles
+        if: matrix.features == '--all-features'
+        run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/wrapper_games.py
       - name: Shared assets and HTTPS store transfer
         if: matrix.features == '--all-features'
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/shared_assets_game.py

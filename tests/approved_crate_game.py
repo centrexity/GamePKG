@@ -5,7 +5,7 @@ import shutil
 import subprocess
 import tempfile
 PROJECT = Path(__file__).resolve().parents[1]
-CLI = PROJECT/'target/release/gamepkg'
+CLI = Path(os.environ.get('GAMEPKG_TEST_BINARY_DIR', PROJECT/'target/release'))/'gamepkg'
 with tempfile.TemporaryDirectory(prefix='gamepkg-approved-') as directory:
     root=Path(directory);source=root/'source'
     shutil.copytree(PROJECT/'examples/good/modular-game',source)
@@ -25,4 +25,4 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-approved-') as directory:
         run('build',f'com.gamepkg.modular-{profile}')
         assert '42' in run('run',f'com.gamepkg.modular-{profile}','--frames','2')
         run('build',f'com.gamepkg.modular-{profile}')
-    print('Multi-file source with pinned byteorder-lite passed: offline locked Cargo build, core/WIT gameplay, and rebuilds.')
+    print('Multi-file source with pinned gamepkg-byteorder passed: offline locked Cargo build, core/WIT gameplay, and rebuilds.')

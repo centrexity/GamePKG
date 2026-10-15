@@ -1,0 +1,8 @@
+version = 4
+[[package]]
+name = "input-game"
+version = "0.1.0"
+dependencies = ["gamepkg-input"]
+[[package]]
+name = "gamepkg-input"
+version = "0.1.0"

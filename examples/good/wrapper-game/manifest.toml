@@ -1,0 +1,17 @@
+format_version = 1
+id = "com.gamepkg.wrappers"
+version = "0.1.0"
+entry_world = "game"
+lockfile_sha256 = "cf4edd3c81255fead72b50ea7ca31127f8c491f53a9cfb3f811aba768f3839ce"
+shader_profile = "slang"
+
+[limits]
+recommended_memory_bytes = 8388608
+hard_memory_bytes = 16777216
+fuel = 1000000
+
+[permissions]
+input = true
+audio = false
+save = false
+network = "none"

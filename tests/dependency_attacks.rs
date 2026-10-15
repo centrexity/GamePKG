@@ -16,17 +16,20 @@ fn cargo_attacks() -> Vec<(String, toml::Value)> {
     let mut attacks = Vec::new();
     for name in [
         "serde",
+        "byteorder-lite",
+        "gamepkg-evil",
+        "gamepkg-input-evil",
         "libc",
         "std",
         "tokio",
-        "byteorder_lite",
+        "gamepkg_byteorder",
         "Byteorder-lite",
-        "byteorder-lite ",
-        "byteorder-lite\u{200b}",
+        "gamepkg-byteorder ",
+        "gamepkg-byteorder\u{200b}",
         "byteorder-lіte",
     ] {
         let mut cargo = base.clone();
-        let dependency = cargo["dependencies"]["byteorder-lite"].clone();
+        let dependency = cargo["dependencies"]["gamepkg-byteorder"].clone();
         cargo["dependencies"]
             .as_table_mut()
             .unwrap()
@@ -44,7 +47,7 @@ fn cargo_attacks() -> Vec<(String, toml::Value)> {
         "=0.1.0+evil",
     ] {
         let mut cargo = base.clone();
-        cargo["dependencies"]["byteorder-lite"]["version"] = version.into();
+        cargo["dependencies"]["gamepkg-byteorder"]["version"] = version.into();
         attacks.push((format!("version {version:?}"), cargo));
     }
     for (key, value) in [
@@ -60,7 +63,7 @@ fn cargo_attacks() -> Vec<(String, toml::Value)> {
         ("target", "x86_64-unknown-linux-gnu"),
     ] {
         let mut cargo = base.clone();
-        cargo["dependencies"]["byteorder-lite"]
+        cargo["dependencies"]["gamepkg-byteorder"]
             .as_table_mut()
             .unwrap()
             .insert(key.into(), value.into());
@@ -78,7 +81,7 @@ fn cargo_attacks() -> Vec<(String, toml::Value)> {
         ("default-features", "false".into()),
     ] {
         let mut cargo = base.clone();
-        cargo["dependencies"]["byteorder-lite"]
+        cargo["dependencies"]["gamepkg-byteorder"]
             .as_table_mut()
             .unwrap()
             .insert(key.into(), value);
@@ -86,7 +89,7 @@ fn cargo_attacks() -> Vec<(String, toml::Value)> {
     }
     for field in ["version", "default-features"] {
         let mut cargo = base.clone();
-        cargo["dependencies"]["byteorder-lite"]
+        cargo["dependencies"]["gamepkg-byteorder"]
             .as_table_mut()
             .unwrap()
             .remove(field);
@@ -94,7 +97,7 @@ fn cargo_attacks() -> Vec<(String, toml::Value)> {
     }
     for value in ["=0.1.0".into(), false.into(), toml::Value::Array(vec![])] {
         let mut cargo = base.clone();
-        cargo["dependencies"]["byteorder-lite"] = value;
+        cargo["dependencies"]["gamepkg-byteorder"] = value;
         attacks.push(("non-table dependency".into(), cargo));
     }
     for extra in [
@@ -103,8 +106,8 @@ fn cargo_attacks() -> Vec<(String, toml::Value)> {
         "[target.'cfg(unix)'.dependencies]\nevil='1'",
         "[target.'cfg(windows)'.build-dependencies]\nevil='1'",
         "[target.wasm32-unknown-unknown.dependencies]\nevil='1'",
-        "[patch.crates-io]\nbyteorder-lite={path='../evil'}",
-        "[replace]\n'byteorder-lite:0.1.0'={git='https://example.invalid/evil'}",
+        "[patch.crates-io]\ngamepkg-byteorder={path='../evil'}",
+        "[replace]\n'gamepkg-byteorder:0.1.0'={git='https://example.invalid/evil'}",
         "[workspace.dependencies]\nevil='1'",
         "[features]\nescape=['evil']",
         "[profile.release]\nbuild-override={opt-level=3}",
@@ -124,7 +127,7 @@ fn cargo_attacks() -> Vec<(String, toml::Value)> {
 fn allowlist_rejects_all_name_source_feature_and_hidden_section_overrides() {
     let (mut cargo, lock) = base();
     assert!(approved(&cargo, &lock).unwrap());
-    cargo["dependencies"]["byteorder-lite"]
+    cargo["dependencies"]["gamepkg-byteorder"]
         .as_table_mut()
         .unwrap()
         .insert("features".into(), toml::Value::Array(vec![]));
@@ -148,10 +151,13 @@ fn lockfiles_must_describe_exactly_the_reviewed_graph() {
         ("checksum", "invalid"),
     ] {
         let mut bad = lock.clone();
-        bad["package"].as_array_mut().unwrap()[1][field] = value.into();
+        bad["package"].as_array_mut().unwrap()[1]
+            .as_table_mut()
+            .unwrap()
+            .insert(field.into(), value.into());
         attacks.push((field.to_owned(), bad));
     }
-    for field in ["checksum", "source", "name", "version"] {
+    for field in ["name", "version"] {
         let mut bad = lock.clone();
         bad["package"].as_array_mut().unwrap()[1]
             .as_table_mut()
@@ -170,7 +176,7 @@ fn lockfiles_must_describe_exactly_the_reviewed_graph() {
     attacks.push(("transitive dependency".into(), bad));
     let mut bad = lock.clone();
     bad["package"].as_array_mut().unwrap()[0]["dependencies"] = toml::Value::Array(
-        vec!["byteorder-lite", "evil"]
+        vec!["gamepkg-byteorder", "evil"]
             .into_iter()
             .map(Into::into)
             .collect(),
@@ -279,10 +285,10 @@ fn valid_signatures_do_not_authorize_unapproved_crates_at_pack_verify_or_install
 fn settings_cannot_expand_the_host_owned_crate_catalog() {
     for names in [
         vec!["serde"],
-        vec!["byteorder-lite", "serde"],
-        vec!["byteorder-lite", "byteorder-lite"],
+        vec!["gamepkg-byteorder", "serde"],
+        vec!["gamepkg-byteorder", "gamepkg-byteorder"],
         vec!["Byteorder-lite"],
-        vec!["byteorder_lite"],
+        vec!["gamepkg_byteorder"],
     ] {
         let settings = gamepkg::settings::Settings {
             approved_crates: names.into_iter().map(str::to_owned).collect(),

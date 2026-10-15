@@ -16,7 +16,7 @@ fn only_the_pinned_no_std_graph_is_allowed() {
     }
     for field in ["path", "git", "package", "artifact"] {
         let mut bad = cargo.clone();
-        bad["dependencies"]["byteorder-lite"]
+        bad["dependencies"]["gamepkg-byteorder"]
             .as_table_mut()
             .unwrap()
             .insert(field.into(), "untrusted".into());
@@ -24,28 +24,24 @@ fn only_the_pinned_no_std_graph_is_allowed() {
     }
     for version in ["0.1", "*", "=0.2.0"] {
         let mut bad = cargo.clone();
-        bad["dependencies"]["byteorder-lite"]["version"] = version.into();
+        bad["dependencies"]["gamepkg-byteorder"]["version"] = version.into();
         assert!(approved(&bad, &lock).is_err());
     }
     let mut bad = cargo.clone();
-    bad["dependencies"]["byteorder-lite"]["default-features"] = true.into();
+    bad["dependencies"]["gamepkg-byteorder"]["default-features"] = true.into();
     assert!(approved(&bad, &lock).is_err());
     let mut bad = cargo.clone();
-    bad["dependencies"]["byteorder-lite"]
+    bad["dependencies"]["gamepkg-byteorder"]
         .as_table_mut()
         .unwrap()
         .insert("features".into(), toml::Value::Array(vec!["std".into()]));
     assert!(approved(&bad, &lock).is_err());
-    for change in [
-        String::from_utf8(lock.clone())
-            .unwrap()
-            .replace(gamepkg::allowlist::CHECKSUM, &"0".repeat(64)),
-        String::from_utf8(lock.clone()).unwrap().replace(
-            "registry+https://github.com/rust-lang/crates.io-index",
-            "git+https://example.com/untrusted",
-        ),
+    for suffix in [
+        "\nchecksum = \"bad\"",
+        "\nsource = \"git+https://example.com/untrusted\"",
     ] {
-        assert!(approved(&cargo, change.as_bytes()).is_err());
+        let changed = format!("{}{suffix}", std::str::from_utf8(&lock).unwrap());
+        assert!(approved(&cargo, changed.as_bytes()).is_err());
     }
 }
 
@@ -63,7 +59,7 @@ fn host_approvals_are_persistent_and_gate_signed_dependency_packages() {
             .unwrap()
     };
     assert!(String::from_utf8_lossy(&run(&["allowlist", "list"]).stdout).contains("approved"));
-    assert!(run(&["allowlist", "remove", "byteorder-lite"])
+    assert!(run(&["allowlist", "remove", "gamepkg-byteorder"])
         .status
         .success());
     let before = std::fs::read(&config).unwrap();
@@ -93,12 +89,12 @@ fn host_approvals_are_persistent_and_gate_signed_dependency_packages() {
         String::from_utf8_lossy(&rejected.stderr)
     );
     assert!(!output.exists());
-    assert!(run(&["allowlist", "add", "byteorder-lite"])
+    assert!(run(&["allowlist", "add", "gamepkg-byteorder"])
         .status
         .success());
     assert!(run(&args).status.success());
     assert!(run(&["verify", output.to_str().unwrap()]).status.success());
-    assert!(run(&["allowlist", "remove", "byteorder-lite"])
+    assert!(run(&["allowlist", "remove", "gamepkg-byteorder"])
         .status
         .success());
     assert!(!run(&["verify", output.to_str().unwrap()]).status.success());

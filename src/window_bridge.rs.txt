@@ -1,0 +1,5 @@
+// Host-owned viewport bridge for either guest profile.
+#[unsafe(no_mangle)] pub extern "Rust" fn __gamepkg_draw_clear(rgba: u32) -> bool { gamepkg::draw_clear(rgba) }
+#[unsafe(no_mangle)] pub extern "Rust" fn __gamepkg_draw_rect(x: f32, y: f32, width: f32, height: f32, rgba: u32) -> bool { gamepkg::draw_rect(x, y, width, height, rgba) }
+#[unsafe(no_mangle)] pub extern "Rust" fn __gamepkg_draw_circle(x: f32, y: f32, radius: f32, rgba: u32) -> bool { gamepkg::draw_circle(x, y, radius, rgba) }
+#[unsafe(no_mangle)] pub extern "Rust" fn __gamepkg_draw_asset_image(path: &str, x: f32, y: f32, width: f32, height: f32) -> bool { gamepkg::draw_asset_image(path, x, y, width, height) }

@@ -10,9 +10,10 @@ The source policy rejects build scripts, all guest macros, renamed and wildcard
 imports, type aliases, closures, function-pointer types, dynamic traits, computed
 call targets, binary includes,
 source path overrides, unsafe guest code, and filesystem/network/process
-paths. The pinned guest crate allowlist currently contains byteorder-lite 0.1.0
-with default features disabled. The signed lockfile must match its approved
-graph and registry checksum. The host supplies the source offline. Local
+paths. Guest dependencies are restricted to host-owned gamepkg-input,
+gamepkg-file, gamepkg-window, gamepkg-networking and gamepkg-byteorder 0.1.0,
+with default features disabled. The signed lockfile must match the exact graph;
+raw third-party crates and unknown gamepkg-prefixed names are rejected. The host supplies the source offline. Local
 approval can be revoked or restored through `allowlist remove/add` or desktop
 Settings; unknown crates cannot be added to the bundled catalog. Source scanning is a policy filter; compilation
 and runtime isolation enforce the remaining boundaries. Every game Rust file,
@@ -37,7 +38,7 @@ ASCII to avoid normalization aliases across filesystems; source text and virtual
 asset names may still contain Unicode. Slang file inclusion and module imports
 are forbidden, including in unused shader files.
 
-Dependency declarations may only name the bundled pinned crate with its exact
+Dependency declarations may only name bundled pinned crates with their exact
 version, disabled default features, and no extra features or source overrides.
 Build, development, target-specific, workspace, patch, replace, and feature
 sections cannot introduce dependencies. Host settings may enable or revoke

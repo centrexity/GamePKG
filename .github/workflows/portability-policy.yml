@@ -19,7 +19,7 @@ jobs:
         run: |
           sudo dpkg --add-architecture i386
           sudo apt-get update
-          sudo apt-get install -y gcc-multilib g++-multilib libasound2-dev:i386
+          sudo apt-get install -y gcc-multilib g++-multilib libasound2-dev:i386 libudev-dev:i386
       - name: Execute 32-bit core, component and portable data tests
         env:
           PKG_CONFIG_ALLOW_CROSS: '1'

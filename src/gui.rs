@@ -1,4 +1,5 @@
 use eframe::egui;
+mod input;
 mod sprites;
 use std::{
     collections::{HashMap, HashSet},
@@ -33,6 +34,7 @@ pub struct App {
     player: Option<Box<crate::runtime::Game>>,
     next_frame: Option<std::time::Instant>,
     pending_input: u32,
+    input_devices: input::Devices,
     audio_player: Option<crate::audio::Player>,
     audio_error: String,
     status: String,
@@ -329,6 +331,7 @@ impl eframe::App for App {
             }
         }
         if self.player.is_none() {
+            self.input_devices.reset();
             self.sprite_textures.finish(0);
         }
         if let Some(game) = self.player.as_mut() {
@@ -399,6 +402,8 @@ impl eframe::App for App {
                     }
                     buttons
                 });
+                let device_input = self.input_devices.poll(ui);
+                let input = if ctx.input(|i| i.focused) { input | device_input } else { self.pending_input = 0; 0 };
                 self.pending_input |= input & 0xf00ff;
                 let now = std::time::Instant::now();
                 if self.next_frame.is_none_or(|next| now >= next) {
@@ -724,16 +729,14 @@ impl eframe::App for App {
                     }
                     ui.separator();
                     ui.heading("Approved game libraries");
-                    let mut approved = self.settings_draft.approved_crates.iter().any(|name| name == crate::allowlist::NAME);
-                    if ui.checkbox(&mut approved, "Allow bundled byteorder-lite 0.1.0").changed() {
-                        self.settings_draft.approved_crates.clear();
-                        if approved { self.settings_draft.approved_crates.push(crate::allowlist::NAME.into()); }
+                    for entry in crate::allowlist::CATALOG {
+                        let mut approved = self.settings_draft.approved_crates.iter().any(|n| n == entry.name);
+                        if ui.checkbox(&mut approved, format!("Allow bundled {} {}", entry.name, entry.version)).changed() {
+                            self.settings_draft.approved_crates.retain(|n| n != entry.name);
+                            if approved { self.settings_draft.approved_crates.push(entry.name.into()); }
+                        }
+                        ui.collapsing(format!("{} source pin", entry.name), |ui| { ui.monospace(entry.checksum); });
                     }
-                    ui.label("Some games need this reviewed library. Turning it off blocks their verification, installation, builds, and new play sessions after saving.");
-                    ui.collapsing("Pinned library details", |ui| {
-                        ui.label(format!("Archive SHA-256: {}", crate::allowlist::CHECKSUM));
-                        ui.label("The host supplies the approved source. Games cannot change its version, enable extra features, or download other libraries.");
-                    });
                     ui.separator();
                     ui.checkbox(&mut self.settings_draft.optimize_builds,"Optimize new builds");
                     ui.label("Applies on Build/Rebuild; existing compiled games are kept.");

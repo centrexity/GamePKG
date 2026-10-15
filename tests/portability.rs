@@ -7,7 +7,7 @@ fn host_width_byte_order_and_layout_cannot_choose_the_save_format() {
     for source in [
         "fn x(v:u32) { v.to_ne_bytes(); }",
         "fn x() { u32::from_ne_bytes([0;4]); }",
-        "use byteorder_lite::NativeEndian;",
+        "use gamepkg_byteorder::NativeEndian;",
         "fn x(v:usize) { v.to_le_bytes(); }",
         "fn x(v:usize) { usize::to_be_bytes(v); }",
         "fn x() { usize::from_le_bytes([0;4]); }",

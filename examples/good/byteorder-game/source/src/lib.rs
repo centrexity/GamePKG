@@ -1,4 +1,4 @@
-use byteorder_lite::{BigEndian, ByteOrder};
+use gamepkg_byteorder::{BigEndian, ByteOrder};
 pub fn game_tick(input: u32, state: u64) -> u64 {
     let mut score = (state >> 32) as u32;
     if state == 0 {

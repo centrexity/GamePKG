@@ -231,21 +231,19 @@ fn main() -> Result<()> {
         Command::Allowlist { command } => match command {
             AllowlistCommand::List => {
                 let settings = gamepkg::settings::load()?;
-                println!(
-                    "{} {} — {} — SHA-256 {}",
-                    gamepkg::allowlist::NAME,
-                    gamepkg::allowlist::VERSION,
-                    if settings
-                        .approved_crates
-                        .iter()
-                        .any(|name| name == gamepkg::allowlist::NAME)
-                    {
-                        "approved"
-                    } else {
-                        "not approved"
-                    },
-                    gamepkg::allowlist::CHECKSUM
-                );
+                for entry in gamepkg::allowlist::CATALOG {
+                    println!(
+                        "{} {} — {} — source SHA-256 {}",
+                        entry.name,
+                        entry.version,
+                        if settings.approved_crates.iter().any(|n| n == entry.name) {
+                            "approved"
+                        } else {
+                            "not approved"
+                        },
+                        entry.checksum
+                    );
+                }
             }
             AllowlistCommand::Add { name } => {
                 gamepkg::allowlist::set_approval(&name, true)?;

@@ -36,7 +36,7 @@ These are opportunities, not a promise that every local build will be faster. Ga
 
 Today, importing a `.gamepkglist` adds catalog entries without fetching games or trusting creators. Downloading fetches the package you select. Installation verifies and stores it; it runs no game code or package-provided install scripts. Update checks stage a signed candidate for review. Supported builds compile the verified Rust source to Wasm inside an isolated Linux process.
 
-The package policy supports checked Rust source modules and host-owned pinned dependencies. The current catalog contains byteorder-lite 0.1.0, whose approval can be changed in Settings or through the CLI. It rejects build scripts, proc-macro configuration, compile-time file includes, unsafe blocks, foreign declarations, and filesystem, network, process, or environment paths detected by the source scanner. Shader files must be Slang source. The scanner is a policy filter, not a substitute for compiler isolation or a runtime sandbox.
+The package policy supports checked Rust source modules and host-owned pinned dependencies. The catalog contains only pinned GamePKG-owned wrappers, whose approvals can be changed in Settings or through the CLI. It rejects build scripts, proc-macro configuration, compile-time file includes, unsafe blocks, foreign declarations, and filesystem, network, process, or environment paths detected by the source scanner. Shader files must be Slang source. The scanner is a policy filter, not a substitute for compiler isolation or a runtime sandbox.
 
 The runtime provides **no ambient filesystem or network access**. Games use specific capabilities such as input, audio, or saving through the host. Asset access uses virtual paths inside the game’s archive; save access is scoped by creator, game ID, and save schema. A game requiring a ROM declares that requirement, and the player supplies it. ROM bytes are shared read-only only for the selected play session.
 
@@ -154,7 +154,7 @@ The desktop library shows each installed package's thumbnail, ID, version, ROM r
 
 Set `requires_rom = true` at the top level of the manifest for a game requiring a ROM supplied by the end user. It defaults to false for existing packages and is covered by the creator signature. The host displays the requirement during inspection and in the library. No ROM is downloaded, uploaded, or included automatically. Select a local ROM path when launching; the guest receives bounded read-only bytes for that session.
 
-`gamepkg build <id>` uses the same build action as the GUI. This initial build profile compiles verified `source/src/lib.rs` and approved host-owned crates through offline, locked Cargo to `wasm32-unknown-unknown` under Linux bubblewrap, without Cargo build scripts. It requires `bwrap`, `timeout`, `prlimit`, Rust, `rustup target add wasm32-unknown-unknown`, and the pinned Slang installation described below. The compiler has a private working directory, an isolated network namespace, access to system tools and its toolchain, and a 60-second deadline. It has no access to the user's home directory. Failed sandbox setup stops the build; there is no native or unsandboxed fallback. Compiler processes have a 2 GiB virtual address-space ceiling, core dumps disabled, output-file limits (32 MiB for Rust, 16 MiB for Slang), and bounded diagnostics (1 MiB per stream). These are per-process limits rather than a total process-tree memory budget. The initial approved crate is `byteorder-lite` 0.1.0 with default features disabled; broader GPU rendering remains pending.
+`gamepkg build <id>` uses the same build action as the GUI. This initial build profile compiles verified `source/src/lib.rs` and approved host-owned crates through offline, locked Cargo to `wasm32-unknown-unknown` under Linux bubblewrap, without Cargo build scripts. It requires `bwrap`, `timeout`, `prlimit`, Rust, `rustup target add wasm32-unknown-unknown`, and the pinned Slang installation described below. The compiler has a private working directory, an isolated network namespace, access to system tools and its toolchain, and a 60-second deadline. It has no access to the user's home directory. Failed sandbox setup stops the build; there is no native or unsandboxed fallback. Compiler processes have a 2 GiB virtual address-space ceiling, core dumps disabled, output-file limits (32 MiB for Rust, 16 MiB for Slang), and bounded diagnostics (1 MiB per stream). These are per-process limits rather than a total process-tree memory budget. The initial approved crate is `gamepkg-byteorder` 0.1.0 with default features disabled; broader GPU rendering remains pending.
 
 `gamepkg check-updates <id>` checks the signed URL without changing the installed game. In the GUI, a newer update opens for review and explicit installation. Matching versions report up-to-date; older versions and changed IDs/keys are rejected. `gamepkg update <id>` remains the explicit download-and-install command.
 
@@ -608,19 +608,19 @@ conflicts, and deliberately malformed bundles.
 
 ## Approved guest crates
 
-The host currently approves `byteorder-lite` 0.1.0 for endian-aware binary asset
+The host supplies `gamepkg-byteorder` 0.1.0 for explicit-endian u32 binary asset
 reading, with all default features disabled:
 
 ```toml
-[dependencies.byteorder-lite]
+[dependencies.gamepkg-byteorder]
 version = "=0.1.0"
 default-features = false
 ```
 
 The signed `source/Cargo.lock` must match the exact root package and approved
-dependency graph, including the registry SHA-256. Alternate sources, aliases,
+dependency graph. Host-owned lock entries have only name and version. Alternate sources, aliases,
 features, version ranges, extra locked packages, build scripts and procedural
-macros are rejected. The host bundles the checksum-verified crate source and
+macros are rejected. The host bundles the source-pinned wrapper code and
 its licenses; guest packages do not supply dependency source.
 
 Builds stage a host-owned local dependency and a matching lockfile, then run
@@ -673,7 +673,7 @@ When DXIL is selected, Settings also provides a **DXC 1.9.2609 installation fold
 
 ### Host crate approvals
 
-`gamepkg allowlist list` shows the bundled crate catalog, pinned version, checksum, and current approval. `gamepkg allowlist remove byteorder-lite` revokes approval; `gamepkg allowlist add byteorder-lite` restores it. Approval persists in the same settings file used by the desktop and CLI. The default policy approves the bundled byteorder-lite 0.1.0 library. Unknown crates cannot be added: extending the catalog requires host-reviewed, bundled source and an exact dependency graph. Revocation affects subsequent package verification, installation, and builds; it does not interrupt an already running game. Libraries containing revoked dependencies may report verification errors until approval is restored.
+`gamepkg allowlist list` shows the bundled crate catalog, pinned version, checksum, and current approval. `gamepkg allowlist remove gamepkg-byteorder` revokes approval; `gamepkg allowlist add gamepkg-byteorder` restores it. Approval persists in the same settings file used by the desktop and CLI. The default policy approves all five bundled GamePKG-owned wrappers. Unknown crates cannot be added: extending the catalog requires host-reviewed, bundled source and an exact dependency graph. Revocation affects subsequent package verification, installation, and builds; it does not interrupt an already running game. Libraries containing revoked dependencies may report verification errors until approval is restored.
 
 Desktop Settings provides the same policy under **Approved game libraries**. Changes apply only after **Save settings**; **Cancel edits** reloads the saved approval. Expand **Pinned library details** to view the catalog checksum and source restrictions. Resetting the form restores the default approval; save to apply it.
 
@@ -955,3 +955,9 @@ inputs fail cleanly instead of overflowing the parser's stack. Literal/comment
 contents do not count as nesting, and the oversized-artifact fixture still
 reaches the isolated compiler. `tests/parser_limits.py` covers actual CLI
 rejection without publishing a partial package.
+
+## Developer instructions
+
+See [Developing games](docs/DEVELOPING_GAMES.md) for the creator checklist, exact allowed crates, controller and touchscreen controls, source restrictions, and build commands.
+
+Guest dependencies are limited to the pinned GamePKG-owned `gamepkg-input`, `gamepkg-file`, `gamepkg-window`, `gamepkg-networking`, and `gamepkg-byteorder` wrappers. Prefixes do not grant approval. Networking requests remain denied. See the developer instructions for migration and scoped APIs.

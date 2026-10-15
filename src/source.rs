@@ -103,6 +103,9 @@ struct Scanner {
     constants: std::collections::BTreeSet<String>,
 }
 fn reserved(name: &str) -> bool {
+    if name.trim_start_matches("r#").starts_with("__gamepkg_") {
+        return true;
+    }
     matches!(
         name.strip_prefix("r#").unwrap_or(name),
         "include"
@@ -455,6 +458,9 @@ mod restricted_calls_tests {
     fn rejects_aliases_macros_and_callbacks() {
         for text in [
             "use gamepkg as api;",
+            "fn tick() { __gamepkg_rom_count(); }",
+            "fn tick() { r#__gamepkg_rom_count(); }",
+            "fn __gamepkg_asset_read() {}",
             "fn tick() { let mapped = Some(1).map(Some); }",
             "struct Value; impl Value { pub fn UPPER(x:u32)->u32 { x } } fn tick() { Some(1).map(Value::UPPER); }",
             "enum Value { UPPER(u32) } fn tick() { Some(1).map(Value::UPPER); }",
@@ -563,7 +569,7 @@ mod staged_tree_tests {
         for text in [
             include_str!("guest_api.rs.txt"),
             include_str!("component_guest.rs.txt"),
-            include_str!("../vendor/byteorder-lite-0.1.0/src/lib.rs"),
+            include_str!("../vendor/gamepkg-byteorder-0.1.0/src/lib.rs"),
         ] {
             syn::parse_file(text).unwrap();
         }
