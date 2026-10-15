@@ -7,7 +7,7 @@ Start with `examples/minimal` or `examples/good/input-game` in the source reposi
 ## Creator checklist
 
 1. Write `source/src/lib.rs` with `pub fn game_tick(input: u32, state: u64) -> u64`. Use direct function calls and checked source modules. The host adds the runtime bindings and export wrapper; do not add your own imports or export attributes.
-2. Set a unique game ID, semantic version, runtime profile, and source lockfile hash in `manifest.toml`. Declare only the permissions you need, recommended memory, hard memory, and execution deadlines. Guest networking must be `none`.
+2. Set a unique game ID, semantic version, runtime profile, and source lockfile hash in `manifest.toml`. Declare only the permissions you need, recommended memory, and hard memory limits. Players choose execution deadlines in Settings. Guest networking must be `none`.
 3. Put assets under `assets/`, Slang source under `shaders/`, and include a thumbnail, license and credits. Paths must be portable relative paths with forward slashes, no traversal, device names or symlinks.
 4. Use only the exact dependencies below. Include `source/Cargo.lock`; put its SHA-256 in `lockfile_sha256`. GamePKG supplies the approved dependency source offline. Do not vendor dependency replacements into your package.
 5. If your game requires ROM files, declare each requirement in the manifest. Players select their own files; read only those ROMs through `gamepkg::rom_count`, `rom_size_at` and `rom_read_at`. Do not fetch ROMs or ask for access to their folders.

@@ -23,7 +23,7 @@
 <h2>Creator checklist</h2>
 <ol>
 <li>Write <code>source/src/lib.rs</code> with <code>pub fn game_tick(input: u32, state: u64) -&gt; u64</code>. Use direct function calls and checked source modules. The host adds the runtime bindings and export wrapper; do not add your own imports or export attributes.</li>
-<li>Set a unique game ID, semantic version, runtime profile, and source lockfile hash in <code>manifest.toml</code>. Declare only the permissions you need, recommended memory, hard memory, and execution deadlines. Guest networking must be <code>none</code>.</li>
+<li>Set a unique game ID, semantic version, runtime profile, and source lockfile hash in <code>manifest.toml</code>. Declare only the permissions you need, recommended memory, and hard memory limits. Players choose execution deadlines in Settings. Guest networking must be <code>none</code>.</li>
 <li>Put assets under <code>assets/</code>, Slang source under <code>shaders/</code>, and include a thumbnail, license and credits. Paths must be portable relative paths with forward slashes, no traversal, device names or symlinks.</li>
 <li>Use only the exact dependencies below. Include <code>source/Cargo.lock</code>; put its SHA-256 in <code>lockfile_sha256</code>. GamePKG supplies the approved dependency source offline. Do not vendor dependency replacements into your package.</li>
 <li>If your game requires ROM files, declare each requirement in the manifest. Players select their own files; read only those ROMs through <code>gamepkg::rom_count</code>, <code>rom_size_at</code> and <code>rom_read_at</code>. Do not fetch ROMs or ask for access to their folders.</li>
