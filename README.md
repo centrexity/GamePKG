@@ -937,3 +937,7 @@ Guest Cargo dependencies are forbidden. Scoped input, file, drawing, shader, tex
 ## DOOM port
 
 The dependency-free DOOM recipe is in [GamePKG_Ports](https://github.com/centrexity/GamePKG_Ports/tree/main/doom). Current main adds a pinned, locally compiled Wasm engine with no host imports, single-player rendering, controller/touch input, sound effects and one scoped quicksave slot. Select your own DOOM.WAD or DOOM2.WAD in the player; no WAD or extracted assets are included. See [engine setup and verification](engines/doom/README.md). Released 0.1.6 binaries predate this engine.
+
+## Drag files into the desktop app
+
+Drop one `.gamepkg` or `.gamepkglist` file anywhere in the library window. Packages are copied into a private snapshot, verified, and shown for creator review before installation. Choose **Cancel package review** to discard one. Lists add catalog entries as **Not downloaded**, without fetching games. Finish or cancel an existing review before dropping another file; return to Library first when playing. Unsupported files and multiple-file drops show an explanation without replacing current work.

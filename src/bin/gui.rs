@@ -18,7 +18,8 @@ fn main() -> eframe::Result {
         "GamePKG",
         eframe::NativeOptions {
             viewport: eframe::egui::ViewportBuilder::default()
-                .with_icon(gamepkg::gui::window_icon()),
+                .with_icon(gamepkg::gui::window_icon())
+                .with_drag_and_drop(true),
             ..Default::default()
         },
         Box::new(move |cc| {

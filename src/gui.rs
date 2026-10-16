@@ -1,4 +1,5 @@
 use eframe::egui;
+mod drops;
 mod input;
 mod sprites;
 use std::{
@@ -22,6 +23,7 @@ pub struct App {
     applied_settings: Option<crate::settings::Settings>,
     updates: crate::updates::Monitor,
     source: String,
+    drop_notice: Option<String>,
     rom_path: String,
     rom_game: Option<String>,
     rom_identity: Option<String>,
@@ -182,6 +184,32 @@ impl App {
             }
         }
     }
+    fn inspect_package(&mut self, source: String, local: Option<PathBuf>) {
+        self.manifest = None;
+        self.pending = None;
+        self.preview = None;
+        match tempfile::NamedTempFile::new() {
+            Ok(stage) => {
+                let path = stage.path().to_owned();
+                self.pending = Some(stage);
+                self.begin(move || {
+                    let bytes = if let Some(local) = local {
+                        crate::files::read_regular(&local, crate::archive::MAX_TOTAL, true)?
+                    } else {
+                        let download = crate::registry::download(&source)?;
+                        crate::files::read_regular(
+                            download.path(),
+                            crate::archive::MAX_TOTAL,
+                            false,
+                        )?
+                    };
+                    std::fs::write(&path, bytes)?;
+                    crate::verify::verify_embedded(&mut crate::archive::Package::open(&path)?)
+                });
+            }
+            Err(e) => self.status = format!("Unable to stage package: {e}"),
+        }
+    }
     fn begin(
         &mut self,
         task: impl FnOnce() -> anyhow::Result<crate::manifest::Manifest> + Send + 'static,
@@ -302,6 +330,7 @@ impl eframe::App for App {
                         Err(e) => {
                             self.status = format!("Failed: {e}");
                             self.manifest = None;
+                            self.pending = None;
                         }
                     }
                 }
@@ -313,6 +342,18 @@ impl eframe::App for App {
                     ctx.request_repaint_after(std::time::Duration::from_millis(100))
                 }
             }
+        }
+        self.handle_drops(ctx);
+        if let Some(notice) = self.drop_notice.clone() {
+            egui::Window::new("File drop")
+                .collapsible(false)
+                .resizable(false)
+                .show(ctx, |ui| {
+                    ui.label(notice);
+                    if ui.button("OK").clicked() {
+                        self.drop_notice = None;
+                    }
+                });
         }
         if self.player.is_none() && self.result.is_none() && !self.show_settings {
             if let (Some(settings), Ok(root)) =
@@ -905,6 +946,7 @@ impl eframe::App for App {
             ui.label(format!("Library storage used: {} (file bytes, including shared assets, caches, saves and play history)", self.library_bytes.map(crate::storage::bytes).unwrap_or_else(||"Unavailable".into())));
             ui.separator();
             ui.label("Local package, game list, or store bundle path; HTTPS, GitHub project, or Tor URL");
+            ui.label("Or drop a .gamepkg or .gamepkglist file anywhere in this window (one at a time).");
             ui.text_edit_singleline(&mut self.source);
             ui.horizontal(|ui| {
             if ui.add_enabled(self.result.is_none(), egui::Button::new("Inspect .gamepkgstore bundle")).clicked() {
@@ -933,28 +975,9 @@ impl eframe::App for App {
             }
             });
             if ui.add_enabled(self.result.is_none(), egui::Button::new("Download / inspect")).clicked() {
-                self.manifest = None;
-                self.pending = None;
                 let source = self.source.trim().to_owned();
-                // A private staging file holds the verified download until approval.
-                match tempfile::NamedTempFile::new() {
-                    Ok(stage) => {
-                        let path = stage.path().to_owned(); self.pending = Some(stage);
-                        self.begin(move || {
-                            if source.contains("://") {
-                                let download = crate::registry::download(&source)?;
-                                std::fs::copy(download.path(), &path)?;
-                            } else {
-                                use std::io::Read;
-                                let mut input = std::fs::File::open(PathBuf::from(source))?.take(crate::archive::MAX_TOTAL + 1);
-                                let mut output = std::fs::File::create(&path)?;
-                                if std::io::copy(&mut input, &mut output)? > crate::archive::MAX_TOTAL { anyhow::bail!("package too large"); }
-                            }
-                            crate::verify::verify_embedded(&mut crate::archive::Package::open(&path)?)
-                        });
-                    }
-                    Err(e) => self.status = format!("Unable to stage package: {e}"),
-                }
+                let local = (!source.contains("://")).then(|| PathBuf::from(&source));
+                self.inspect_package(source, local);
             }
             ui.label(&self.status);
             if let Some(bundle) = &self.pending_store {
@@ -1055,6 +1078,10 @@ impl eframe::App for App {
                     }
                 }
                 });
+                if self.pending.is_some() && self.result.is_none() && ui.button("Cancel package review").clicked() {
+                    self.pending = None; self.manifest = None;
+                    self.status = "Package review cancelled. Nothing installed.".into();
+                }
             }
             ui.separator(); ui.label("Development preview. Supported games can play here; some package features are still in development.");
             ui.hyperlink_to("GamePKG • Apache 2.0", "https://gamepkg.com");
