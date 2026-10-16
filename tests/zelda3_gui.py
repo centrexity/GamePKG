@@ -13,7 +13,7 @@ with tempfile.TemporaryDirectory(prefix='zelda3-gui-',dir=PROJECT/'target') as t
     env=dict(os.environ,GAMEPKG_HOME=str(root/'library'),GAMEPKG_CONFIG=str(config),LIBGL_ALWAYS_SOFTWARE='1');env.pop('WAYLAND_DISPLAY',None)
     display=start_display(env,width=1800,height=1100)
     rom=args.rom
-    command=[str(PROJECT/'target/release/gamepkg-gui')]
+    command=[str(Path(os.environ.get('GAMEPKG_TEST_BINARY_DIR',PROJECT/'target/release'))/'gamepkg-gui')]
     if args.wine_prefix:
         def windows(path):return 'Z:'+str(Path(path).resolve()).replace('/','\\')
         env.update(WINEPREFIX=str(args.wine_prefix.resolve()),WINEDEBUG='-all',GAMEPKG_HOME=windows(root/'library'),GAMEPKG_CONFIG=windows(config))

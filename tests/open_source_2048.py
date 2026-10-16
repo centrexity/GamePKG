@@ -5,7 +5,7 @@ import subprocess
 import tempfile
 
 PROJECT = Path(__file__).resolve().parents[1]
-CLI = PROJECT / 'target/release/gamepkg'
+CLI = Path(os.environ.get('GAMEPKG_TEST_BINARY_DIR',PROJECT/'target/release'))/'gamepkg'
 with tempfile.TemporaryDirectory(prefix='gamepkg-2048-') as directory:
     root = Path(directory)
     key = root / 'creator.key'

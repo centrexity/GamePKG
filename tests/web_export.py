@@ -12,7 +12,7 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 
 PROJECT=Path(__file__).resolve().parents[1]
-CLI=PROJECT/'target/release/gamepkg'
+CLI=Path(os.environ.get('GAMEPKG_TEST_BINARY_DIR',PROJECT/'target/release'))/'gamepkg'
 p=argparse.ArgumentParser();p.add_argument('--component',action='store_true');p.add_argument('--backend',choices=['glsl','spirv','wgsl'],default='glsl');args=p.parse_args()
 profile_prefix='runtime_profile = \"component-v1\"\n' if args.component else ''
 class Quiet(SimpleHTTPRequestHandler):

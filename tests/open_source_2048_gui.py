@@ -8,7 +8,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-2048-gui-') as temporary:
     root=Path(temporary);env=dict(os.environ,LIBGL_ALWAYS_SOFTWARE='1',GAMEPKG_CONFIG=str(root/'settings.toml'),GAMEPKG_HOME=str(root/'library'));env.pop('WAYLAND_DISPLAY',None)
     (root/'settings.toml').write_text('automatic_update_checks=false\n')
     def run(*args):
-        result=subprocess.run([str(PROJECT/'target/release/gamepkg'),*map(str,args)],env=env,capture_output=True,text=True,timeout=120)
+        result=subprocess.run([str(Path(os.environ.get('GAMEPKG_TEST_BINARY_DIR',PROJECT/'target/release'))/'gamepkg'),*map(str,args)],env=env,capture_output=True,text=True,timeout=120)
         assert result.returncode==0,result.stderr
     key=root/'key';key.write_text('55'*32)
     run('pack',PROJECT/'ports/2048','-o',root/'2048.gamepkg','--key',key)
@@ -16,7 +16,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-2048-gui-') as temporary:
     display=start_display(env, width=1900, height=1000)
     app=None
     try:
-        app=subprocess.Popen([str(PROJECT/'target/release/gamepkg-gui'),'--play','com.gamepkg.2048'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+        app=subprocess.Popen([str(Path(os.environ.get('GAMEPKG_TEST_BINARY_DIR',PROJECT/'target/release'))/'gamepkg-gui'),'--play','com.gamepkg.2048'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
         deadline=time.monotonic()+15
         while time.monotonic()<deadline:
             if app.poll() is not None:raise RuntimeError(app.stderr.read().decode())
@@ -39,7 +39,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-2048-gui-') as temporary:
         changed=sum(1 for pixel in ImageChops.difference(first,second).getdata() if max(pixel)>30)
         assert changed>1000,changed
         app.terminate();app.wait(timeout=10)
-        app=subprocess.Popen([str(PROJECT/'target/release/gamepkg-gui')],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+        app=subprocess.Popen([str(Path(os.environ.get('GAMEPKG_TEST_BINARY_DIR',PROJECT/'target/release'))/'gamepkg-gui')],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
         deadline=time.monotonic()+15
         while time.monotonic()<deadline:
             if app.poll() is not None:raise RuntimeError(app.stderr.read().decode())

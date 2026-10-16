@@ -5,37 +5,40 @@ fn actual_zelda3_frames() {
     let root = std::path::PathBuf::from(std::env::var_os("GAMEPKG_ZELDA3_TEST_ROOT").unwrap());
     let rom = std::path::PathBuf::from(std::env::var_os("GAMEPKG_ZELDA3_TEST_ROM").unwrap());
     let fixture = tempfile::tempdir().unwrap();
-    fn copy(from: &std::path::Path, to: &std::path::Path) {
+    fn copy(from: &std::path::Path, to: &std::path::Path, include_session: bool) {
         std::fs::create_dir_all(to).unwrap();
         for entry in std::fs::read_dir(from).unwrap() {
             let entry = entry.unwrap();
             let name = entry.file_name();
-            if name == "saves" || name == "progress" {
+            if !include_session && (name == "saves" || name == "progress") {
                 continue;
             }
             if entry.file_type().unwrap().is_dir() {
-                copy(&entry.path(), &to.join(name));
+                copy(&entry.path(), &to.join(name), include_session);
             } else {
                 std::fs::copy(entry.path(), to.join(name)).unwrap();
             }
         }
     }
-    copy(&root, fixture.path());
+    copy(&root, fixture.path(), false);
     let root = fixture.path().to_path_buf();
     let mut game = Game::load_with_rom(&root, "com.gamepkg.zelda3", Some(&rom)).unwrap();
-    fn run(game: &mut Game, frames: u32, input: u32) {
+    fn run(game: &mut Game, frames: u32, input: u32) -> bool {
+        let mut audible = false;
         for frame in 0..frames {
             if let Err(error) = game.step(input) {
                 panic!("frame {frame}: {error:#}");
             }
+            audible |= game.audio_frame().iter().any(|sample| *sample != 0);
         }
         println!(
             "state {:?} controller {:?}",
             game.builtin_state().unwrap(),
             game.builtin_controller().unwrap()
         );
+        audible
     }
-    run(&mut game, 1000, 0);
+    assert!(run(&mut game, 1000, 0), "Title playback produced no audio");
     run(&mut game, 1, 64);
     run(&mut game, 60, 0);
     run(&mut game, 1, 64);
@@ -101,5 +104,16 @@ fn actual_zelda3_frames() {
         "reopened slot was lost and returned to name entry"
     );
     assert_eq!(std::fs::read(&saves[0]).unwrap(), saved);
-    println!("Actual GamePKG Zelda3 title, file/name selection, opening dialogue, Link movement and SRAM reload passed.");
+    drop(reopened);
+    // Optional developer fixture for the GUI check; it contains only the package,
+    // compiled code, play history and SRAM. The selected ROM is never copied.
+    if let Some(output) = std::env::var_os("GAMEPKG_ZELDA3_PLAY_EXPORT") {
+        let output = std::path::PathBuf::from(output);
+        assert!(
+            !output.exists(),
+            "test export must not replace an existing path"
+        );
+        copy(&root, &output, true);
+    }
+    println!("Actual GamePKG Zelda3 title, audio, file/name selection, opening dialogue, Link movement and SRAM reload passed.");
 }

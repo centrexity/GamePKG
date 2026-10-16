@@ -17,7 +17,7 @@ if not args.skip_browser:
     from selenium.webdriver.common.action_chains import ActionChains
     from selenium.webdriver.common.keys import Keys
     from selenium.webdriver.support.ui import WebDriverWait
-PROJECT=Path(__file__).resolve().parents[1];CLI=PROJECT/'target/release/gamepkg'
+PROJECT=Path(__file__).resolve().parents[1];CLI=Path(os.environ.get('GAMEPKG_TEST_BINARY_DIR',PROJECT/'target/release'))/'gamepkg'
 PROOF=PROJECT/'target/arkanoo-proof';PROOF.mkdir(parents=True,exist_ok=True)
 class Quiet(SimpleHTTPRequestHandler):
     def log_message(self,*args):pass
@@ -48,7 +48,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-arkanoo-',dir=PROJECT/'target')
         assert len(points)>100,len(points)
         return sum(x for x,y in points)/len(points)
     try:
-        app=subprocess.Popen([str(PROJECT/'target/release/gamepkg-gui'),'--play','com.gamepkg.arkanoo'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+        app=subprocess.Popen([str(Path(os.environ.get('GAMEPKG_TEST_BINARY_DIR',PROJECT/'target/release'))/'gamepkg-gui'),'--play','com.gamepkg.arkanoo'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
         deadline=time.monotonic()+20
         while time.monotonic()<deadline:
             if app.poll() is not None:raise RuntimeError(app.stderr.read().decode())
@@ -57,12 +57,26 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-arkanoo-',dir=PROJECT/'target')
             time.sleep(.1)
         assert found.returncode==0
         window=found.stdout.splitlines()[0];subprocess.run(['xdotool','windowfocus',window],env=env,check=True);time.sleep(.5)
-        capture(window,'native-title.png')
+        ready=time.monotonic()+20
+        while True:
+            if app.poll() is not None:raise RuntimeError(app.stderr.read().decode())
+            try:
+                paddle(capture(window,'native-title.png'))
+                break
+            except AssertionError:
+                assert time.monotonic()<ready,'The actual game frame did not become ready'
+                time.sleep(.1)
         subprocess.run(['xdotool','key','--window',window,'Up'],env=env,check=True);time.sleep(.2)
         before=capture(window,'native-start.png')
-        subprocess.run(['xdotool','keydown','--window',window,'Right'],env=env,check=True);time.sleep(.3)
-        subprocess.run(['xdotool','keyup','--window',window,'Right'],env=env,check=True)
-        after=capture(window,'native-right.png');assert paddle(after)>paddle(before)+25
+        subprocess.run(['xdotool','keydown','--window',window,'Right'],env=env,check=True)
+        try:
+            moved=time.monotonic()+3
+            while True:
+                after=capture(window,'native-right.png')
+                if paddle(after)>paddle(before)+25:break
+                assert time.monotonic()<moved,'Held Right did not move the paddle'
+                time.sleep(.05)
+        finally:subprocess.run(['xdotool','keyup','--window',window,'Right'],env=env,check=True)
         subprocess.run(['xdotool','key','--window',window,'Down'],env=env,check=True);time.sleep(.2)
         capture(window,'native-paused.png')
         print('Native Arkanoo: visible campaign, start, held-key paddle movement and pause passed.')

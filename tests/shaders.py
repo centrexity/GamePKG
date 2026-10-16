@@ -6,7 +6,7 @@ import shutil
 import subprocess
 import tempfile
 PROJECT = Path(__file__).resolve().parents[1]
-CLI = PROJECT / 'target/release/gamepkg'
+CLI = Path(os.environ.get('GAMEPKG_TEST_BINARY_DIR',PROJECT/'target/release'))/'gamepkg'
 assert os.environ.get('GAMEPKG_SLANG_ROOT'), 'set GAMEPKG_SLANG_ROOT to the pinned Slang installation'
 with tempfile.TemporaryDirectory(prefix='gamepkg-shaders-') as directory:
     root = Path(directory)
@@ -77,10 +77,9 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-shaders-') as directory:
     manifest.write_text(manifest.read_text().replace('version = "0.2.0"', 'version = "0.3.0"'))
     (source / 'shaders/main.slang').write_text('#include "/etc/passwd"\n')
     bad = root / 'bad.gamepkg'
-    run('pack', source, '-o', bad, '--key', key)
-    run('install', bad)
     caches = set((library / 'shader-builds').glob('*'))
-    assert 'isolated shader build failed' in run('build', 'com.gamepkg.collect-stars', success=False)
+    assert 'shader file inclusion' in run('pack', source, '-o', bad, '--key', key, success=False)
+    assert not bad.exists(), 'Rejected shader source published a package'
     assert set((library / 'shader-builds').glob('*')) == caches
     assert len(list((library / 'builds').glob('*/game.wasm'))) == 1
     print('Shaders passed: SPIR-V, WGSL, Metal, DXIL, reflection, unsupported resource rejection before cache publication, rebuild caching and host include denial.')
