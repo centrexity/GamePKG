@@ -1,4 +1,4 @@
-"""Test the actual local host and Hindsight-backed browser library."""
+"""Test the actual local host and GamePKG-owned browser library."""
 import argparse,json,os,shutil,subprocess,tempfile,urllib.error,urllib.request
 from pathlib import Path
 from selenium import webdriver
@@ -6,7 +6,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.ui import WebDriverWait
 PROJECT=Path(__file__).resolve().parents[1]
-p=argparse.ArgumentParser();p.add_argument('--indexeddb-package',type=Path,required=True);p.add_argument('--play',action='store_true',help='Compile and play a signed achievement fixture, then verify persistent browser history');args=p.parse_args()
+p=argparse.ArgumentParser();p.add_argument('--play',action='store_true',help='Compile and play a signed achievement fixture, then verify persistent browser history');args=p.parse_args()
 with tempfile.TemporaryDirectory(prefix='gamepkg-web-library-') as directory:
     root=Path(directory);env=dict(os.environ,GAMEPKG_HOME=str(root/'library'),GAMEPKG_CONFIG=str(root/'settings.toml'))
     (root/'settings.toml').write_text('automatic_update_checks=false\n')
@@ -20,11 +20,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-web-library-') as directory:
         (source/'source/src/lib.rs').write_text('pub fn game_tick(_:u32,state:u64)->u64 { if !(gamepkg::achievement_unlock(0)) { loop {} }; state + 1 }')
     key=root/'key';package=root/'game.gamepkg';run('keygen','-o',key);run('pack',source,'-o',package,'--key',key);run('install',package,'--trust-creator')
     catalog=root/'games.gamepkglist';catalog.write_text('format_version=1\n[[games]]\nid="com.example.waiting"\ntitle="Waiting game"\ndescription="Waiting description."\ndownload_url="https://unreachable.invalid/game.gamepkg"\n');run('import-list',catalog)
-    altered=root/'altered-package/code_langs';altered.mkdir(parents=True)
-    (altered/'js.js').write_bytes((args.indexeddb_package/'code_langs/js.js').read_bytes()+b'\n// unverified change\n')
-    rejected_source=subprocess.run([str(cli),'web-library','--indexeddb-package',str(altered.parent),'--port','0'],env=env,capture_output=True,text=True,timeout=10)
-    assert rejected_source.returncode!=0 and 'differs from the verified' in rejected_source.stderr
-    host=subprocess.Popen([str(cli),'web-library','--indexeddb-package',str(args.indexeddb_package),'--port','0'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+    host=subprocess.Popen([str(cli),'web-library','--port','0'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
     try:
         line=host.stdout.readline();assert line.startswith('Open http://127.0.0.1:'),line+host.stderr.read()
         url=line.strip().split(' ',1)[1];base,fragment=url.split('#');token,scope=fragment.split(':')
@@ -43,7 +39,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-web-library-') as directory:
         options=Options();options.binary_location=shutil.which('chromium');options.add_argument('--headless=new');options.add_argument('--no-sandbox');options.add_argument('--disable-dev-shm-usage');options.add_argument('--user-data-dir='+str(root/'profile'))
         with webdriver.Chrome(service=Service(shutil.which('chromedriver')),options=options) as browser:
             browser.get(url)
-            WebDriverWait(browser,20).until(lambda b:'saved using Hindsight' in b.find_element('id','status').text)
+            WebDriverWait(browser,20).until(lambda b:'saved in the GamePKG browser cache' in b.find_element('id','status').text)
             WebDriverWait(browser,20).until(lambda b:len(b.find_elements('css selector','#games canvas'))==1)
             rows=browser.find_element('id','games').text;assert 'com.gamepkg.collect-stars' in rows and 'Waiting game' in rows and 'Not downloaded' in rows,rows
             assert 'Collect Stars' in rows and 'Literal <img src=x onerror=window.__metadataExecuted=true> description.' in rows,rows
@@ -74,9 +70,18 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-web-library-') as directory:
                 WebDriverWait(browser,20).until(lambda b:'showing cached metadata' in b.find_element('id','status').text)
                 browser.find_element('css selector','#games td:nth-child(6) details summary').click()
                 assert 'Unlocked — First star' in browser.find_element('id','games').text
-                cached=browser.execute_async_script('''const done=arguments[0];import('/storage.js').then(async ({HindsightLibraryStorage})=>{const storage=new HindsightLibraryStorage(location.hash.slice(1).split(':')[1]);await storage.open();const snapshot=await storage.loadLibrary();await storage.close();done(snapshot.games[0].history);}).catch(error=>done({error:String(error)}));''')
+                cached=browser.execute_async_script('''const done=arguments[0];import('/storage.js').then(async ({GamePKGLibraryStorage})=>{const storage=new GamePKGLibraryStorage(location.hash.slice(1).split(':')[1]);await storage.open();const snapshot=await storage.loadLibrary();await storage.close();done(snapshot.games[0].history);}).catch(error=>done({error:String(error)}));''')
                 assert cached==played['history'],cached
                 WebDriverWait(browser,20).until(lambda b:len(b.find_elements('css selector','#games canvas'))==1)
-            print('Actual gameplay history and achievements persisted through Hindsight and a browser restart with host authorization unavailable.')
-        print('Running browser library passed: authenticated host metadata, actual Hindsight storage, installed/catalog rows, live build status, verified and cached icons, achievement descriptions, expected storage, cached display and cross-origin rejection.')
+            print('Actual gameplay history and achievements persisted through the GamePKG browser cache and a browser restart with host authorization unavailable.')
+        # Cache restrictions must not hide current authenticated host data or icons.
+        isolated=Options();isolated.binary_location=shutil.which('chromium')
+        for argument in ['--headless=new','--no-sandbox','--disable-dev-shm-usage']:isolated.add_argument(argument)
+        with webdriver.Chrome(service=Service(shutil.which('chromedriver')),options=isolated) as browser:
+            browser.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument',{'source':"Object.defineProperty(window,'indexedDB',{get(){throw new DOMException('Blocked by test','SecurityError')}});"})
+            browser.get(url)
+            WebDriverWait(browser,20).until(lambda b:'Library loaded from host. Browser cache unavailable' in b.find_element('id','status').text)
+            WebDriverWait(browser,20).until(lambda b:len(b.find_elements('css selector','#games canvas'))==1)
+            assert 'Collect Stars' in browser.find_element('id','games').text
+        print('Running browser library passed: authenticated host metadata, GamePKG-owned browser storage, installed/catalog rows, live build status, verified and cached icons, achievement descriptions, expected storage, cached display and cross-origin rejection.')
     finally:host.terminate();host.wait(timeout=10)

@@ -1,7 +1,6 @@
 """Check home-folder defaults and metadata survival across native host restarts."""
 import argparse, json, os, subprocess, tempfile
 from pathlib import Path
-p=argparse.ArgumentParser();p.add_argument('--indexeddb-package',type=Path,required=True);args=p.parse_args()
 PROJECT=Path(__file__).resolve().parents[1];CLI=PROJECT/'target/release/gamepkg'
 with tempfile.TemporaryDirectory(prefix='gamepkg-home-db-') as temporary:
     root=Path(temporary);home=root/'home';home.mkdir()
@@ -18,7 +17,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-home-db-') as temporary:
     assert (library/'com.gamepkg.2048.gamepkg').is_file()
     previous=None
     for _ in range(2):
-        host=subprocess.Popen([str(CLI),'web-library','--indexeddb-package',str(args.indexeddb_package),'--port','0'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+        host=subprocess.Popen([str(CLI),'web-library','--port','0'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
         try:
             line=host.stdout.readline();assert line.startswith('Open http://'),line
             record=json.loads(database.read_text());assert record['games'][0]['manifest']['id']=='com.gamepkg.2048'

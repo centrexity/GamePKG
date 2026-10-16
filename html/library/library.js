@@ -1,4 +1,4 @@
-import {HindsightLibraryStorage} from './storage.js';
+import {GamePKGLibraryStorage} from './storage.js';
 const status=document.getElementById('status');
 const [token,scope]=location.hash.slice(1).split(':');
 let store;
@@ -41,8 +41,8 @@ function render(snapshot,cached) {
 }
 async function loadIcon(game,cell,cached,current) {
     try {
-        let icon=await store.loadIcon(game.icon_identity);
-        if(!icon&&!cached){const response=await fetch(`/api/icon/${encodeURIComponent(game.manifest.id)}`,{headers:{Authorization:`Bearer ${token}`}});if(!response.ok)return;icon=await response.json();if(icon.identity!==game.icon_identity)return;await store.saveIcon(icon);}
+        let icon=null;try{if(store)icon=await store.loadIcon(game.icon_identity);}catch(_){}
+        if(!icon&&!cached){const response=await fetch(`/api/icon/${encodeURIComponent(game.manifest.id)}`,{headers:{Authorization:`Bearer ${token}`}});if(!response.ok)return;icon=await response.json();if(icon.identity!==game.icon_identity)return;try{if(store)await store.saveIcon(icon);}catch(_){}}
         if(!icon||current!==generation||icon.width!==40||icon.height!==40||typeof icon.rgba_hex!=='string'|| !/^[a-f0-9]{12800}$/.test(icon.rgba_hex))return;
         const pixels=new Uint8ClampedArray(icon.rgba_hex.match(/../g).map(value=>parseInt(value,16)));
         const canvas=document.createElement('canvas');canvas.width=40;canvas.height=40;canvas.setAttribute('aria-label',`${game.manifest.id} icon`);canvas.getContext('2d').putImageData(new ImageData(pixels,40,40),0,0);cell.replaceChildren(canvas);
@@ -56,15 +56,18 @@ async function refresh(){
         if(!response.ok)throw new Error(await response.text());
         const snapshot=await response.json();
         if(snapshot.scope!==scope)throw new Error('Library scope differs from this session link');
-        if(!store){store=new HindsightLibraryStorage(snapshot.scope);await store.open();}
-        await store.saveLibrary(snapshot);render(await store.loadLibrary(),false);
-        status.textContent='Library information saved using Hindsight IndexedDB.';
+        render(snapshot,false);
+        try{
+            if(!store)store=new GamePKGLibraryStorage(snapshot.scope);
+            await store.open();await store.saveLibrary(snapshot);
+            status.textContent='Library information saved in the GamePKG browser cache.';
+        }catch(error){status.textContent=`Library loaded from host. Browser cache unavailable: ${error.message}`;}
     }catch(error){
         let cached=null;if(store)try{cached=await store.loadLibrary();}catch(_){}
         if(cached)render(cached,true);
         status.textContent=`Unable to refresh: ${error.message}${cached?' — showing cached metadata.':''}`;
     }finally{refreshing=false;document.getElementById('refresh').disabled=false;}
 }
-try{store=new HindsightLibraryStorage(scope);await store.open();const cached=await store.loadLibrary();if(cached)render(cached,true);}catch(error){status.textContent=error.message;}
+try{store=new GamePKGLibraryStorage(scope);await store.open();const cached=await store.loadLibrary();if(cached)render(cached,true);}catch(error){status.textContent=error.message;}
 document.getElementById('refresh').addEventListener('click',refresh);
 await refresh();

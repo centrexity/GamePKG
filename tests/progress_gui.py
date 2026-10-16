@@ -3,7 +3,7 @@ import argparse,json,os,subprocess,tempfile,time,shutil,select
 from pathlib import Path
 from gui_test_support import start_display,click_text
 PROJECT=Path(__file__).resolve().parents[1]
-parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--indexeddb-package',type=Path);args=parser.parse_args()
+parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--browser-cache',action='store_true');args=parser.parse_args()
 with tempfile.TemporaryDirectory(prefix='gamepkg-progress-gui-') as directory:
  root=Path(directory);config=root/'settings.toml';config.write_text('automatic_update_checks=false\n')
  env=dict(os.environ,GAMEPKG_HOME=str(root/'library'),GAMEPKG_CONFIG=str(config),LIBGL_ALWAYS_SOFTWARE='1');env.pop('WAYLAND_DISPLAY',None)
@@ -35,12 +35,12 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-progress-gui-') as directory:
   text=run('list');assert '[Unlocked] First star' in text and '[Locked] Star collector' in text,text
   history=json.loads(records[0].read_text());assert history['played_ms']>0,history
   print('Desktop keyboard play collected a star; achievement and measured play time persisted after returning to Library.')
-  if args.indexeddb_package:
+  if args.browser_cache:
    from selenium import webdriver
    from selenium.webdriver.chrome.options import Options
    from selenium.webdriver.chrome.service import Service
    from selenium.webdriver.support.ui import WebDriverWait
-   host=subprocess.Popen([str(PROJECT/'target/release/gamepkg'),'web-library','--indexeddb-package',str(args.indexeddb_package),'--port','0'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+   host=subprocess.Popen([str(PROJECT/'target/release/gamepkg'),'web-library','--port','0'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
    try:
     ready,_,_=select.select([host.stdout],[],[],10);assert ready,'Browser host did not start'
     line=host.stdout.readline();assert line.startswith('Open http://127.0.0.1:'),line
@@ -49,14 +49,14 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-progress-gui-') as directory:
     for cached in [False,True]:
      with webdriver.Chrome(service=Service(shutil.which('chromedriver')),options=options) as browser:
       browser.get(base+'#wrong:'+scope if cached else url)
-      status='showing cached metadata' if cached else 'saved using Hindsight'
+      status='showing cached metadata' if cached else 'saved in the GamePKG browser cache'
       WebDriverWait(browser,20).until(lambda b:status in b.find_element('id','status').text)
       browser.find_element('css selector','#games td:nth-child(6) details summary').click()
       rows=browser.find_element('id','games').text
       assert 'Unlocked — First star' in rows and 'Locked — Star collector' in rows,rows
-      stored=browser.execute_async_script("const done=arguments[0];import('/storage.js').then(async ({HindsightLibraryStorage})=>{const storage=new HindsightLibraryStorage(location.hash.slice(1).split(':')[1]);await storage.open();const snapshot=await storage.loadLibrary();await storage.close();done(snapshot.games[0].history);}).catch(error=>done({error:String(error)}));")
+      stored=browser.execute_async_script("const done=arguments[0];import('/storage.js').then(async ({GamePKGLibraryStorage})=>{const storage=new GamePKGLibraryStorage(location.hash.slice(1).split(':')[1]);await storage.open();const snapshot=await storage.loadLibrary();await storage.close();done(snapshot.games[0].history);}).catch(error=>done({error:String(error)}));")
       assert stored==history,stored
-    print('Normal desktop gameplay history persisted through actual Hindsight and an unauthorized browser restart.')
+    print('Normal desktop gameplay history persisted through the GamePKG browser cache and an unauthorized browser restart.')
    finally:
     host.terminate();host.wait(timeout=10)
  finally:

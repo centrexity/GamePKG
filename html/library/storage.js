@@ -1,81 +1,72 @@
-// Adapter for Hindsight4 Compiler/packages/Database/IndexedDB/code_langs/js.js.
-// The native host remains responsible for signatures, builds and executing games.
-export class HindsightLibraryStorage {
+// GamePKG-owned optional browser cache. Native Rust records remain authoritative.
+export class GamePKGLibraryStorage {
     constructor(scope) {
-        if (typeof scope !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(scope)) throw new Error('Invalid library storage scope');
-        this.scope = scope;
-        this.connection = new indexeddb();
-        this.queue = Promise.resolve();
-        this.ready = false;
-    }
-    operation(start, ...args) {
-        const job = this.queue.then(async () => {
-            const accepted = {data: 0};
-            start(this.connection, ...args, accepted);
-            if (accepted.data !== 1) {
-                const error = {data: ''}; indexeddb_last_error_bytes(this.connection, error);
-                throw new Error(error.data || 'Hindsight operation was not started');
-            }
-            const status = {data: 1};
-            while (status.data === 1) {
-                indexeddb_status_int(this.connection, status);
-                if (status.data === 1) await new Promise(resolve => setTimeout(resolve, 10));
-            }
-            if (status.data === -1) {
-                const error = {data: ''}; indexeddb_last_error_bytes(this.connection, error);
-                throw new Error(error.data || 'Hindsight storage failed');
-            }
-            if (status.data === 3) return null;
-            if (status.data !== 2) throw new Error('Unexpected Hindsight completion status');
-            const result = {data: ''}; indexeddb_result_bytes(this.connection, result);
-            return result.data;
-        });
-        // Wait for the actual completion; a timeout must never retry a pending write.
-        this.queue = job.catch(() => {});
-        return job;
+        if(typeof scope!=='string'|| !/^[a-zA-Z0-9_-]{1,128}$/.test(scope))throw new Error('Invalid library storage scope');
+        this.scope=scope;this.connection=null;this.opening=null;this.queue=Promise.resolve();
     }
     async open() {
-        if (this.ready) return;
-        const available = {data: 0}; indexeddb_isavailable_int(this.connection, available);
-        if (available.data !== 1) throw new Error('Hindsight IndexedDB requires a browser with cross-origin isolation');
-        await this.operation(indexeddb_open_constcharptr_constint_constcharptr_int,
-            'gamepkg-library-v1', 1, JSON.stringify([{name: 'libraries'}]));
-        this.ready = true;
+        if(this.connection)return;
+        if(this.opening)return this.opening;
+        if(!globalThis.indexedDB)throw new Error('Browser storage is unavailable');
+        this.opening=new Promise((resolve,reject)=>{
+            const request=indexedDB.open('gamepkg-browser-cache-v1',1);
+            let failed=false;
+            request.onupgradeneeded=()=>{if(!request.result.objectStoreNames.contains('libraries'))request.result.createObjectStore('libraries');};
+            request.onerror=()=>{failed=true;reject(request.error||new Error('Cannot open browser cache'));};
+            request.onblocked=()=>{failed=true;reject(new Error('Close other library tabs before opening browser cache'));};
+            request.onsuccess=()=>{
+                if(failed){request.result.close();return;}
+                this.connection=request.result;
+                this.connection.onversionchange=()=>{this.connection?.close();this.connection=null;};
+                resolve();
+            };
+        });
+        try{await this.opening;}finally{this.opening=null;}
+    }
+    operation(mode,action) {
+        const result=this.queue.then(()=>new Promise((resolve,reject)=>{
+            if(!this.connection){reject(new Error('Open library storage first'));return;}
+            let transaction,request;
+            try{transaction=this.connection.transaction('libraries',mode);request=action(transaction.objectStore('libraries'));}
+            catch(error){if(transaction)transaction.abort();reject(error);return;}
+            // Resolve writes on commit, not when their individual requests succeed.
+            transaction.oncomplete=()=>resolve(request.result);
+            transaction.onabort=()=>reject(transaction.error||request.error||new Error('Browser cache transaction aborted'));
+            transaction.onerror=()=>{}; // The abort event reports the final outcome.
+        }));
+        this.queue=result.catch(()=>{});
+        return result;
+    }
+    validate(snapshot) {
+        if(!snapshot||snapshot.format_version!==1||!Array.isArray(snapshot.games)||!Array.isArray(snapshot.catalog))throw new Error('Invalid library snapshot');
+        if(snapshot.scope!==undefined&&snapshot.scope!==this.scope)throw new Error('Library scope differs from stored metadata');
     }
     async saveLibrary(snapshot) {
-        if (!this.ready) throw new Error('Open library storage first');
-        if (!snapshot || snapshot.format_version !== 1 || !Array.isArray(snapshot.games) || !Array.isArray(snapshot.catalog)) throw new Error('Invalid library snapshot');
-        const encoded = JSON.stringify(snapshot);
-        if (new TextEncoder().encode(encoded).length > 8 * 1024 * 1024) throw new Error('Library snapshot exceeds 8 MiB');
-        await this.operation(indexeddb_put_constcharptr_constcharptr_constcharptr_int,
-            'libraries', JSON.stringify(this.scope), encoded);
+        this.validate(snapshot);
+        const encoded=JSON.stringify(snapshot);
+        if(new TextEncoder().encode(encoded).length>8*1024*1024)throw new Error('Library snapshot exceeds 8 MiB');
+        await this.operation('readwrite',store=>store.put(encoded,this.scope));
     }
     async loadLibrary() {
-        if (!this.ready) throw new Error('Open library storage first');
-        const encoded = await this.operation(indexeddb_get_constcharptr_constcharptr_int,
-            'libraries', JSON.stringify(this.scope));
-        if (encoded === null) return null;
-        const snapshot = JSON.parse(encoded);
-        if (snapshot.format_version !== 1 || !Array.isArray(snapshot.games) || !Array.isArray(snapshot.catalog)) throw new Error('Unsupported stored library snapshot');
-        return snapshot;
+        const encoded=await this.operation('readonly',store=>store.get(this.scope));
+        if(encoded===undefined)return null;
+        if(typeof encoded!=='string'||new TextEncoder().encode(encoded).length>8*1024*1024)throw new Error('Invalid stored library snapshot');
+        const snapshot=JSON.parse(encoded);this.validate(snapshot);return snapshot;
     }
     iconKey(identity) {
         if(typeof identity!=='string'|| !/^[a-f0-9]{64}$/.test(identity))throw new Error('Invalid icon identity');
         return `icon:${this.scope}:${identity}`;
     }
-    async saveIcon(icon) {
-        if(!this.ready)throw new Error('Open library storage first');
-        if(icon.width!==40||icon.height!==40||typeof icon.rgba_hex!=='string'|| !/^[a-f0-9]{12800}$/.test(icon.rgba_hex))throw new Error('Invalid bounded icon pixels');
-        await this.operation(indexeddb_put_constcharptr_constcharptr_constcharptr_int,'libraries',JSON.stringify(this.iconKey(icon.identity)),JSON.stringify(icon));
+    validateIcon(icon) {
+        if(!icon||icon.width!==40||icon.height!==40||typeof icon.rgba_hex!=='string'|| !/^[a-f0-9]{12800}$/.test(icon.rgba_hex))throw new Error('Invalid bounded icon pixels');
+        return this.iconKey(icon.identity);
     }
+    async saveIcon(icon) {const key=this.validateIcon(icon);await this.operation('readwrite',store=>store.put(JSON.stringify(icon),key));}
     async loadIcon(identity) {
-        if(!this.ready)throw new Error('Open library storage first');
-        const encoded=await this.operation(indexeddb_get_constcharptr_constcharptr_int,'libraries',JSON.stringify(this.iconKey(identity)));
-        return encoded===null?null:JSON.parse(encoded);
+        const encoded=await this.operation('readonly',store=>store.get(this.iconKey(identity)));
+        if(encoded===undefined)return null;
+        if(typeof encoded!=='string'||encoded.length>16384)throw new Error('Invalid stored icon');
+        const icon=JSON.parse(encoded);this.validateIcon(icon);if(icon.identity!==identity)throw new Error('Stored icon identity differs');return icon;
     }
-    async close() {
-        if (!this.ready) return;
-        await this.operation(indexeddb_close_int);
-        this.ready = false;
-    }
+    async close() {if(this.opening)await this.opening.catch(()=>{});await this.queue;if(this.connection)this.connection.close();this.connection=null;}
 }

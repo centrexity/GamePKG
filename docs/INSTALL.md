@@ -4,8 +4,8 @@ This archive contains the GamePKG command-line program and desktop library. It d
 
 These builds target Ubuntu 24.04 or a compatible system with glibc 2.39 or newer. The desktop requires a working X11 or Wayland display, Vulkan and ALSA. OpenGL is available explicitly with `--renderer opengl`. The exact builder libc version and executable hashes are recorded in BUILD.json. Dependency license expressions and original notices are included in DEPENDENCIES.json and third-party-licenses/. Original resolved dependency source archives are preserved as directories in third-party-sources/, including notices embedded in source and bundled fonts.
 
-1. Check the downloaded archive against its .sha256 file with `sha256sum -c gamepkg-0.1.13-linux-x86_64.tar.gz.sha256`.
-2. Extract it into a folder you control with `tar -xzf gamepkg-0.1.13-linux-x86_64.tar.gz`.
+1. Check the downloaded archive against its .sha256 file with `sha256sum -c gamepkg-0.1.14-linux-x86_64.tar.gz.sha256`.
+2. Extract it into a folder you control with `tar -xzf gamepkg-0.1.14-linux-x86_64.tar.gz`.
 3. Enter the extracted folder. Run `./bin/gamepkg --help` for the CLI or `./bin/gamepkg-gui` for the desktop.
 
 On Ubuntu 24.04, install the runtime tools needed for isolated builds, downloads, previews, and audio:
@@ -51,7 +51,7 @@ To create your own signed package from an included example, generate a private c
 
 Keep private creator keys private. Players do not need a key to install or play games; the signed manifest carries the public creator key. Checksums detect download corruption; they do not establish an independent publisher identity.
 
-The browser library is included in this preview. Run `./bin/gamepkg web-library --indexeddb-package /path/to/Hindsight4/Compiler/packages/Database/IndexedDB` and open its printed session link. Hindsight’s package is supplied separately. The browser stores library information and icons in IndexedDB; use the desktop or CLI for installation, builds, gameplay and repairs.
+The browser library is included. Run `./bin/gamepkg web-library` and open its printed session link. It needs no separate storage package. The Rust host retains the native records; standard browser storage optionally caches library information and icons. Use the desktop or CLI for installation, builds, gameplay and repairs.
 
 Open a game’s page and click each ROM file field to select its named file. Their locations are remembered separately across restarts; Play can launch any configured game. To repair damaged shared assets, enter the original local `.gamepkgstore` path in the desktop package field and choose **Repair assets**, or run `./bin/gamepkg integrity-fix GAME_ID --store original.gamepkgstore`.
 
@@ -67,6 +67,6 @@ See engines/zelda3/README.md for the complete setup and verification details.
 
 ## DOOM source engine
 
-Version 0.1.13 includes the pinned DOOM Wasm engine. The Linux compiler needs the same Clang 18 and WASI tools described above. See [DOOM engine setup](../engines/doom/README.md) and the [port instructions](https://github.com/centrexity/GamePKG_Ports/blob/main/DOOM.md). Select your own DOOM.WAD/DOOM2.WAD; no WAD is included. Windows compilation uses the existing opt-in WSL 2 exchange; native Windows DOOM playback has not been tested locally.
+Version 0.1.14 includes the pinned DOOM Wasm engine. The Linux compiler needs the same Clang 18 and WASI tools described above. See [DOOM engine setup](../engines/doom/README.md) and the [port instructions](https://github.com/centrexity/GamePKG_Ports/blob/main/DOOM.md). Select your own DOOM.WAD/DOOM2.WAD; no WAD is included. Windows compilation uses the existing opt-in WSL 2 exchange; native Windows DOOM playback has not been tested locally.
 
 See [native runtime setup](NATIVE_RUNTIME.md) for target-specific caches and isolation, and [networking](NETWORKING.md) for separately declared HTTPS and multiplayer permissions.

@@ -35,10 +35,8 @@ enum Command {
         #[arg(short, long)]
         output: PathBuf,
     },
-    /// Open a local browser metadata library using Hindsight Database/IndexedDB.
+    /// Open the local GamePKG browser library.
     WebLibrary {
-        #[arg(long)]
-        indexeddb_package: PathBuf,
         #[arg(long, default_value_t = 39173)]
         port: u16,
     },
@@ -190,14 +188,9 @@ fn main() -> Result<()> {
             gamepkg::web_export::export(&gamepkg::registry::default_root()?, &id, &output)?;
             println!("Web player exported to {}", output.display());
         }
-        Command::WebLibrary {
-            indexeddb_package,
-            port,
-        } => gamepkg::web_library::serve(
-            &gamepkg::registry::default_root()?,
-            &indexeddb_package,
-            port,
-        )?,
+        Command::WebLibrary { port } => {
+            gamepkg::web_library::serve(&gamepkg::registry::default_root()?, port)?
+        }
         Command::IntegrityCheck { id } => println!(
             "{}",
             gamepkg::integrity::check(&gamepkg::registry::default_root()?, &id)?

@@ -1,4 +1,4 @@
-//! Local browser metadata library backed by the user's Hindsight IndexedDB package.
+//! GamePKG local browser library with Rust-managed records and an optional browser cache.
 use anyhow::{bail, Context, Result};
 use std::{
     fs,
@@ -7,10 +7,6 @@ use std::{
     path::Path,
     time::Duration,
 };
-const PACKAGE_SHAS: &[&str] = &[
-    "602b55aa4610aa47b3216f2c2299191730ce6bc847db1b2a81ef183a3b25129b",
-    "b6fc9ff6b00a415d72b39e8fe936542f1cad7caf063752183d5ff81cef5bb097",
-];
 fn icon_identity(m: &crate::manifest::Manifest) -> String {
     crate::verify::digest(format!("{}\0{}\0{}", m.id, m.version, m.creator_key).as_bytes())
 }
@@ -58,8 +54,7 @@ fn snapshot(root: &Path) -> Result<Vec<u8>> {
     Ok(data)
 }
 // Home-folder mirror survives browser profile deletion and origin changes.
-// Hindsight remains the browser database; this snapshot is rebuilt from verified
-// native records rather than trusting arbitrary browser writes.
+// This snapshot is rebuilt from verified native records, never browser writes.
 fn persist_snapshot(root: &Path, data: &[u8]) -> Result<()> {
     let directory = root.join("database");
     if directory
@@ -84,17 +79,11 @@ fn persist_snapshot(root: &Path, data: &[u8]) -> Result<()> {
 }
 
 fn respond(stream: &mut TcpStream, status: &str, kind: &str, body: &[u8]) -> Result<()> {
-    write!(stream,"HTTP/1.1 {status}\r\nContent-Type: {kind}\r\nContent-Length: {}\r\nConnection: close\r\nCache-Control: no-store\r\nCross-Origin-Opener-Policy: same-origin\r\nCross-Origin-Embedder-Policy: require-corp\r\nX-Content-Type-Options: nosniff\r\nContent-Security-Policy: default-src 'self'; script-src 'self'; worker-src 'self' blob:; connect-src 'self'; style-src 'self'; frame-ancestors 'none'; base-uri 'none'\r\n\r\n",body.len())?;
+    write!(stream,"HTTP/1.1 {status}\r\nContent-Type: {kind}\r\nContent-Length: {}\r\nConnection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nContent-Security-Policy: default-src 'self'; script-src 'self'; worker-src 'none'; connect-src 'self'; style-src 'self'; frame-ancestors 'none'; base-uri 'none'\r\n\r\n",body.len())?;
     stream.write_all(body)?;
     Ok(())
 }
-fn request(
-    stream: &mut TcpStream,
-    root: &Path,
-    host: &str,
-    token: &str,
-    package: &[u8],
-) -> Result<()> {
+fn request(stream: &mut TcpStream, root: &Path, host: &str, token: &str) -> Result<()> {
     stream.set_read_timeout(Some(Duration::from_secs(2)))?;
     stream.set_write_timeout(Some(Duration::from_secs(2)))?;
     let mut bytes = Vec::new();
@@ -164,7 +153,6 @@ fn request(
             "text/css",
             include_bytes!("../html/library/style.css"),
         ),
-        "/hindsight.js" => respond(stream, "200 OK", "text/javascript", package),
         "/api/library" => {
             if values("authorization") != vec![format!("Bearer {token}").as_str()] {
                 return respond(
@@ -206,16 +194,7 @@ fn request(
         _ => respond(stream, "404 Not Found", "text/plain", b"Not found"),
     }
 }
-pub fn serve(root: &Path, package: &Path, port: u16) -> Result<()> {
-    let path = package.join("code_langs/js.js");
-    let metadata = fs::symlink_metadata(&path)?;
-    if !metadata.is_file() || metadata.len() > 512 * 1024 {
-        bail!("invalid Hindsight IndexedDB package source");
-    }
-    let source = fs::read(path)?;
-    if !PACKAGE_SHAS.contains(&crate::verify::digest(&source).as_str()) {
-        bail!("Hindsight IndexedDB source differs from the verified package revision");
-    }
+pub fn serve(root: &Path, port: u16) -> Result<()> {
     fs::create_dir_all(root)?;
     snapshot(root)?;
     let listener = TcpListener::bind(("127.0.0.1", port))?;
@@ -229,7 +208,7 @@ pub fn serve(root: &Path, package: &Path, port: u16) -> Result<()> {
     std::io::stdout().flush()?;
     for stream in listener.incoming() {
         let mut stream = stream?;
-        if let Err(error) = request(&mut stream, root, &host, &token, &source) {
+        if let Err(error) = request(&mut stream, root, &host, &token) {
             eprintln!("Browser request failed: {error}");
         }
     }
