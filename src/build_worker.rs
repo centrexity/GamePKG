@@ -37,13 +37,7 @@ pub(crate) fn prepare_with_guard(
     crate::store::export(root, &[package], output)
 }
 
-pub fn compile(
-    store: &Path,
-    output: &Path,
-    backend: &str,
-    optimize: bool,
-    approved_crates: bool,
-) -> Result<()> {
+pub fn compile(store: &Path, output: &Path, backend: &str, optimize: bool) -> Result<()> {
     if !cfg!(target_os = "linux") {
         bail!("the isolated compiler worker currently requires Linux");
     }
@@ -62,9 +56,6 @@ pub fn compile(
     let mut settings = crate::settings::load()?;
     settings.shader_backend = backend.to_owned();
     settings.optimize_builds = optimize;
-    if !approved_crates {
-        settings.approved_crates.clear();
-    }
     settings.validate()?;
     crate::build::compile_with_settings(work.path(), &manifest.id, &settings)?;
     let archive = crate::files::read_regular(
@@ -102,13 +93,7 @@ pub fn compile(
 }
 /// Transfer only a completed private exchange to a host-owned workspace.
 /// Callers accept it only after this operation exits successfully and validates it.
-pub fn compile_transport(
-    store: &Path,
-    output: &Path,
-    backend: &str,
-    optimize: bool,
-    approved_crates: bool,
-) -> Result<()> {
+pub fn compile_transport(store: &Path, output: &Path, backend: &str, optimize: bool) -> Result<()> {
     if !cfg!(target_os = "linux") {
         bail!("the isolated compiler worker currently requires Linux");
     }
@@ -117,7 +102,7 @@ pub fn compile_transport(
     }
     let private = tempfile::tempdir()?;
     let complete = private.path().join("complete");
-    compile(store, &complete, backend, optimize, approved_crates)?;
+    compile(store, &complete, backend, optimize)?;
     // Exclusive directory creation preserves even an empty target appearing mid-build.
     fs::create_dir(output)?;
     let mut total = 0;

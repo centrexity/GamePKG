@@ -1,6 +1,6 @@
 //! Device access lives in the host; guests receive only a bounded button mask.
+use crate::input_buttons as buttons;
 use eframe::egui;
-use gamepkg_input as buttons;
 
 #[derive(Default)]
 pub struct Devices {

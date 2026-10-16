@@ -1,4 +1,4 @@
-"""Play exported shader/audio wrappers in a private headless browser."""
+"""Play exported shader/audio host APIs in a private headless browser."""
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -54,4 +54,4 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-media-web-') as directory:
     finally:
         server.shutdown()
         server.server_close()
-print('Exported shader/audio wrappers rendered actual PNG/RGBA pixels in Chromium for core and component profiles; normal audio permission/buffer checks completed before rendering.')
+print('Exported shader/audio host APIs rendered actual PNG/RGBA pixels in Chromium for core and component profiles; normal audio permission/buffer checks completed before rendering.')

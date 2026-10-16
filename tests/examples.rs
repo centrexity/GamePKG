@@ -80,7 +80,7 @@ fn bad_examples_fail_for_the_expected_reason() {
         ("include-bytes", "forbidden construct"),
         ("build-script", "Rust source files"),
         ("proc-macro", "library configuration"),
-        ("unknown-crate", "allowlist"),
+        ("unknown-crate", "guest crates"),
         ("non-slang", "only Slang"),
     ] {
         let temp = tempfile::tempdir().unwrap();

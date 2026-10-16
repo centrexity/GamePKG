@@ -28,7 +28,7 @@ for source, destination, title, description, quickstart in PAGES:
     output = head + '<body><main>\n'
     output += f'<nav aria-label="Main"><a href="../index.html">← GamePKG</a> · <a href="{quickstart}">Start playing</a></nav>\n'
     output += body + '\n<footer>'
-    output += '<a href="../support/index.html">Support GamePKG</a> · <a href="../guide/allowlist.html">Approved game libraries</a> · '
+    output += '<a href="../support/index.html">Support GamePKG</a> · <a href="../guide/allowlist.html">Game source policy</a> · '
     output += f'<a href="https://github.com/centrexity/GamePKG/blob/main/{source}">Documentation source</a> · GamePKG · Apache 2.0'
     output += '</footer>\n</main></body></html>\n'
     (ROOT / destination).write_text(output)

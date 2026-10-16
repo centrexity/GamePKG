@@ -146,6 +146,9 @@ impl<'ast> Visit<'ast> for Scanner {
             self.rejected = true;
         }
     }
+    fn visit_item_extern_crate(&mut self, _: &'ast syn::ItemExternCrate) {
+        self.rejected = true;
+    }
     fn visit_macro(&mut self, _node: &'ast syn::Macro) {
         self.rejected = true;
     }
@@ -362,7 +365,7 @@ pub fn scan(pkg: &mut Package) -> Result<()> {
     {
         bail!("unsupported Rust edition; expected 2015, 2018, 2021, or 2024");
     }
-    crate::allowlist::approved(&cargo, &pkg.read("source/Cargo.lock")?)?;
+    crate::dependencies::validate(&cargo, &pkg.read("source/Cargo.lock")?)?;
     if let Some(lib) = cargo.get("lib") {
         let t = lib
             .as_table()
@@ -489,8 +492,8 @@ mod restricted_calls_tests {
     }
 }
 
-/// Parse the exact private build tree, including host bindings and pinned dependencies.
-/// Guest files have already passed `scan`; trusted generated/dependency code has
+/// Parse the exact private build tree, including host bindings.
+/// Guest files have already passed `scan`; trusted generated host code has
 /// a different policy, but must still parse before any compiler is launched.
 pub(crate) fn parse_build_tree(root: &std::path::Path) -> Result<usize> {
     let mut pending = vec![(root.to_path_buf(), 0usize)];
@@ -569,7 +572,7 @@ mod staged_tree_tests {
         for text in [
             include_str!("guest_api.rs.txt"),
             include_str!("component_guest.rs.txt"),
-            include_str!("../vendor/gamepkg-byteorder-0.1.0/src/lib.rs"),
+            include_str!("guest_helpers.rs.txt"),
         ] {
             syn::parse_file(text).unwrap();
         }

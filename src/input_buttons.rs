@@ -1,6 +1,5 @@
 //! Portable button input shared by keyboards, controllers and touch controls.
 //! The host supplies the tick's u32 value; this crate opens no devices.
-#![no_std]
 
 pub const LEFT: u32 = 1;
 pub const RIGHT: u32 = 1 << 1;

@@ -1,0 +1,31 @@
+
+/// A signed Slang fragment entry; the host compiles it during Build/Rebuild.
+pub struct Shader { index: u32 }
+impl Shader {
+    pub fn from_slang(source: &str, entry: &str) -> Option<Self> {
+        shader_index(source, entry).map(|index| Self { index })
+    }
+    pub fn draw(&self) -> bool { draw_shader(self.index) }
+    pub fn draw_rgba(&self, width: u32, height: u32, pixels: &[u8]) -> bool {
+        draw_shader_image(self.index, width, height, pixels)
+    }
+    pub fn draw_texture(&self, path: &str) -> bool { draw_shader_asset_image(self.index, path) }
+}
+pub const AUDIO_SAMPLE_RATE: u32 = 48000;
+pub const MAX_AUDIO_SAMPLES: usize = 1600;
+pub fn audio_submit_pcm16_le(bytes: &[u8]) -> bool {
+    if bytes.len() % 2 != 0 || bytes.len() > MAX_AUDIO_SAMPLES * 2 { return false; }
+    let mut samples = [0i16; MAX_AUDIO_SAMPLES];
+    let count = bytes.len() / 2;
+    let mut index = 0;
+    while index < count {
+        samples[index] = i16::from_le_bytes([bytes[index*2], bytes[index*2+1]]);
+        index += 1;
+    }
+    audio_submit(&samples[..count])
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NetworkError { PermissionDenied }
+pub fn network_request(_url: &str, _output: &mut [u8]) -> Result<u32, NetworkError> {
+    Err(NetworkError::PermissionDenied)
+}

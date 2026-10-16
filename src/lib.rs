@@ -41,7 +41,9 @@ pub mod pool;
 
 pub mod store;
 
-pub mod allowlist;
+pub mod dependencies;
+#[doc(hidden)]
+pub mod input_buttons;
 
 pub mod progress;
 

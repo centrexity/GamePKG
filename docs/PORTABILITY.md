@@ -29,7 +29,7 @@ binding profiles and the WIT interface.
 Raw pointers, pointer extraction, raw slice construction, transmutation, layout
 inspection, `isize`, platform-specific intrinsics, and primitive-name shadowing
 are rejected. Existing bans on macros, attributes, aliases, callbacks, build
-scripts, and unapproved crates prevent alternative architecture-specific paths.
+scripts, and guest crates prevent alternative architecture-specific paths.
 Host-generated bindings and reviewed host-owned dependencies are trusted code;
 they are not subject to the guest restrictions.
 

@@ -1,3 +1,0 @@
-#[unsafe(no_mangle)] pub extern "Rust" fn __gamepkg_shader_draw(index: u32) -> bool { gamepkg::draw_shader(index) }
-#[unsafe(no_mangle)] pub extern "Rust" fn __gamepkg_shader_rgba(index: u32, width: u32, height: u32, pixels: &[u8]) -> bool { gamepkg::draw_shader_image(index, width, height, pixels) }
-#[unsafe(no_mangle)] pub extern "Rust" fn __gamepkg_shader_texture(index: u32, path: &str) -> bool { gamepkg::draw_shader_asset_image(index, path) }

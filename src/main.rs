@@ -27,8 +27,6 @@ enum Command {
         #[arg(long)]
         no_optimize: bool,
         #[arg(long)]
-        no_approved_crates: bool,
-        #[arg(long)]
         copy_output: bool,
     },
     /// Export a built game as a self-contained browser player.
@@ -52,11 +50,6 @@ enum Command {
         /// Restore missing or damaged shared assets from the original verified store bundle.
         #[arg(long)]
         store: Option<PathBuf>,
-    },
-    /// Manage host approval of checksum-pinned bundled guest crates.
-    Allowlist {
-        #[command(subcommand)]
-        command: AllowlistCommand,
     },
     /// Bundle signed packages and their shared blobs for portable distribution.
     StoreExport {
@@ -161,15 +154,7 @@ enum Command {
         output: PathBuf,
     },
 }
-#[derive(Subcommand)]
-enum AllowlistCommand {
-    /// Show the bundled catalog and current approvals.
-    List,
-    /// Approve a crate from the bundled pinned catalog.
-    Add { name: String },
-    /// Revoke a crate approval for package verification and future builds.
-    Remove { name: String },
-}
+
 fn key(s: &str) -> Result<[u8; 32]> {
     hex::decode(s.trim())?
         .try_into()
@@ -188,7 +173,6 @@ fn main() -> Result<()> {
             output,
             shader_backend,
             no_optimize,
-            no_approved_crates,
             copy_output,
         } => {
             let compile = if copy_output {
@@ -196,13 +180,7 @@ fn main() -> Result<()> {
             } else {
                 gamepkg::build_worker::compile
             };
-            compile(
-                &store,
-                &output,
-                &shader_backend,
-                !no_optimize,
-                !no_approved_crates,
-            )?;
+            compile(&store, &output, &shader_backend, !no_optimize)?;
         }
         Command::WebExport { id, output } => {
             gamepkg::web_export::export(&gamepkg::registry::default_root()?, &id, &output)?;
@@ -228,33 +206,6 @@ fn main() -> Result<()> {
                 store.as_deref()
             )?
         ),
-        Command::Allowlist { command } => match command {
-            AllowlistCommand::List => {
-                let settings = gamepkg::settings::load()?;
-                for entry in gamepkg::allowlist::CATALOG {
-                    println!(
-                        "{} {} — {} — source SHA-256 {}",
-                        entry.name,
-                        entry.version,
-                        if settings.approved_crates.iter().any(|n| n == entry.name) {
-                            "approved"
-                        } else {
-                            "not approved"
-                        },
-                        entry.checksum
-                    );
-                }
-            }
-            AllowlistCommand::Add { name } => {
-                gamepkg::allowlist::set_approval(&name, true)?;
-                println!("Approved {name} from the pinned catalog");
-            }
-            AllowlistCommand::Remove { name } => {
-                gamepkg::allowlist::set_approval(&name, false)?;
-                println!("Revoked {name}; applies to subsequent verification and builds");
-            }
-        },
-
         Command::StoreExport { packages, output } => {
             gamepkg::store::export(&gamepkg::registry::default_root()?, &packages, &output)?;
             println!("Created {}", output.display());

@@ -5,11 +5,6 @@ Project: https://gamepkg.com
 GamePKG is licensed under the Apache License, Version 2.0.
 This notice identifies the origin of the GamePKG software.
 
-Bundled guest dependency: byteorder-lite 0.1.0
-Source: https://github.com/image-rs/byteorder-lite
-License: Unlicense OR MIT. See vendor/byteorder-lite-0.1.0/LICENSE-MIT
-and vendor/byteorder-lite-0.1.0/UNLICENSE.
-
 Zelda3 engine and native ROM loader adaptations:
 Source: https://github.com/snesrev/zelda3
 Pinned revision: 45a149d8b4bb8098f53d1009f76e76e7d8b79bbf

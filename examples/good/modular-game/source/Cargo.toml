@@ -5,6 +5,3 @@ edition = "2021"
 build = false
 [lib]
 path = "src/lib.rs"
-[dependencies.gamepkg-byteorder]
-version = "=0.1.0"
-default-features = false

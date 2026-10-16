@@ -120,9 +120,6 @@ pub(crate) fn compile(
     if !settings.optimize_builds {
         arguments.push("--no-optimize");
     }
-    if settings.approved_crates.is_empty() {
-        arguments.push("--no-approved-crates");
-    }
     invoke(&arguments, 210)?;
     if crate::settings::load()? != settings {
         bail!("settings changed during compilation; compiler response was not published");

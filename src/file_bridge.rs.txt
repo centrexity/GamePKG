@@ -1,8 +1,0 @@
-// Host-owned links shared by both guest profiles; never supplied by a package.
-#[unsafe(no_mangle)] pub extern "Rust" fn __gamepkg_asset_read(path: &str, offset: u32, out: &mut [u8]) -> Option<u32> { gamepkg::asset_read(path, offset, out) }
-#[unsafe(no_mangle)] pub extern "Rust" fn __gamepkg_rom_count() -> u32 { gamepkg::rom_count() }
-#[unsafe(no_mangle)] pub extern "Rust" fn __gamepkg_rom_size_at(index: u32) -> Option<u32> { gamepkg::rom_size_at(index) }
-#[unsafe(no_mangle)] pub extern "Rust" fn __gamepkg_rom_read_at(index: u32, offset: u32, out: &mut [u8]) -> Option<u32> { gamepkg::rom_read_at(index, offset, out) }
-#[unsafe(no_mangle)] pub extern "Rust" fn __gamepkg_save_size() -> Option<u32> { gamepkg::save_size() }
-#[unsafe(no_mangle)] pub extern "Rust" fn __gamepkg_save_read(offset: u32, out: &mut [u8]) -> Option<u32> { gamepkg::save_read(offset, out) }
-#[unsafe(no_mangle)] pub extern "Rust" fn __gamepkg_save_write(bytes: &[u8]) -> bool { gamepkg::save_write(bytes) }

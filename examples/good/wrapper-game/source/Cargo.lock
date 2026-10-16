@@ -2,19 +2,3 @@ version = 4
 [[package]]
 name = "wrapper-game"
 version = "0.1.0"
-dependencies = ["gamepkg-byteorder", "gamepkg-file", "gamepkg-input", "gamepkg-networking", "gamepkg-window"]
-[[package]]
-name = "gamepkg-byteorder"
-version = "0.1.0"
-[[package]]
-name = "gamepkg-file"
-version = "0.1.0"
-[[package]]
-name = "gamepkg-input"
-version = "0.1.0"
-[[package]]
-name = "gamepkg-networking"
-version = "0.1.0"
-[[package]]
-name = "gamepkg-window"
-version = "0.1.0"

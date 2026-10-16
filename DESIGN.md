@@ -91,7 +91,6 @@ gamepkg verify game.gamepkg
 gamepkg install game.gamepkg
 gamepkg run <id>
 gamepkg pack --sign ...
-gamepkg allowlist add <crate>
 ```
 
 ## GUI

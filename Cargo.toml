@@ -23,7 +23,6 @@ path = "src/bin/gui.rs"
 required-features = ["gui"]
 
 [dependencies]
-gamepkg-input = { path = "vendor/gamepkg-input-0.1.0", version = "=0.1.0" }
 cpal = { version = "0.18.2", optional = true }
 wit-component = "=0.236.1"
 wit-parser = "=0.236.1"

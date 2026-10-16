@@ -2,7 +2,7 @@
 from pathlib import Path
 import os, subprocess, tempfile, tomllib
 project = Path(__file__).resolve().parents[1]
-cli = project/'target/release/gamepkg'
+cli = Path(os.environ.get('GAMEPKG_TEST_BINARY_DIR',project/'target/release'))/'gamepkg'
 with tempfile.TemporaryDirectory(prefix='gamepkg-examples-') as directory:
     root = Path(directory)
     env = dict(os.environ, GAMEPKG_HOME=str(root/'library'), GAMEPKG_CONFIG=str(root/'settings.toml'))
@@ -32,7 +32,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-examples-') as directory:
         if source.name in expected:assert expected[source.name] in output, output
         if manifest.get('permissions',{}).get('audio',False):assert 'Audio samples:' in output, output
         print(f'{source.name}: signed, verified, built, and played',flush=True)
-    expected_rejections={'filesystem':'forbidden construct','network':'forbidden construct','include-bytes':'forbidden construct','build-script':'Rust source files','proc-macro':'library configuration','unknown-crate':'allowlist','non-slang':'only Slang'}
+    expected_rejections={'filesystem':'forbidden construct','network':'forbidden construct','include-bytes':'forbidden construct','build-script':'Rust source files','proc-macro':'library configuration','unknown-crate':'guest crates','non-slang':'only Slang'}
     bad_examples=sorted(path for path in (project/'examples/bad').iterdir() if path.is_dir())
     assert {path.name for path in bad_examples}==set(expected_rejections), 'Declare an expected rejection reason for every bad example'
     for source in bad_examples:

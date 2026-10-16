@@ -1,4 +1,4 @@
-"""Exercise a checksum-pinned guest dependency through offline Cargo builds."""
+"""Exercise a dependency-free guest source through offline Cargo builds."""
 import os
 from pathlib import Path
 import shutil
@@ -25,4 +25,4 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-approved-') as directory:
         run('build',f'com.gamepkg.modular-{profile}')
         assert '42' in run('run',f'com.gamepkg.modular-{profile}','--frames','2')
         run('build',f'com.gamepkg.modular-{profile}')
-    print('Multi-file source with pinned gamepkg-byteorder passed: offline locked Cargo build, core/WIT gameplay, and rebuilds.')
+    print('Multi-file source with explicit-endian host-independent source passed: offline locked Cargo build, core/WIT gameplay, and rebuilds.')

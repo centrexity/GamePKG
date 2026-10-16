@@ -1,4 +1,4 @@
-//! Offline locked Cargo builds with host-owned dependencies and no native fallback.
+//! Offline locked Cargo builds with host-supplied bindings and no native fallback.
 use crate::{
     archive::Package,
     registry,
@@ -203,16 +203,7 @@ pub(crate) fn compile_with_settings(
     let manifest = verify_embedded(&mut pkg)?;
     pkg.resolve_shared_assets(root)?;
     let cargo: toml::Value = toml::from_str(std::str::from_utf8(&pkg.read("source/Cargo.toml")?)?)?;
-    let _approved = crate::allowlist::approved(&cargo, &pkg.read("source/Cargo.lock")?)?;
-    for entry in crate::allowlist::selected(&cargo) {
-        if !settings
-            .approved_crates
-            .iter()
-            .any(|name| name == entry.name)
-        {
-            bail!("selected compiler settings do not approve the guest dependency");
-        }
-    }
+    crate::dependencies::validate(&cargo, &pkg.read("source/Cargo.lock")?)?;
 
     let stage = tempfile::tempdir()?;
     let mut source = String::from_utf8(pkg.read("source/src/lib.rs")?)?;
@@ -225,36 +216,34 @@ pub(crate) fn compile_with_settings(
         "gamepkg_tick"
     };
     source.push_str(&format!("\n#[unsafe(no_mangle)] pub extern \"C\" fn {export}(input: u32, state: u64) -> u64 {{ game_tick(input, state) }}\n"));
-    source.push_str(if manifest.runtime_profile == "component-v1" {
+    let bindings = if manifest.runtime_profile == "component-v1" {
         include_str!("component_guest.rs.txt")
     } else {
         include_str!("guest_api.rs.txt")
-    });
-    for entry in crate::allowlist::selected(&cargo) {
-        match entry.name {
-            "gamepkg-audio" => source.push_str(include_str!("audio_bridge.rs.txt")),
-            "gamepkg-shader" => {
-                source.push_str(include_str!("shader_bridge.rs.txt"));
-                source.push_str("\n#[unsafe(no_mangle)] pub extern \"Rust\" fn __gamepkg_shader_index(source: &str, entry: &str) -> Option<u32> { match (source, entry) {\n");
-                if manifest.shaders.is_empty() {
-                    source.push_str("(\"shaders/main.slang\", \"fragmentMain\") => Some(0),\n");
-                } else {
-                    for (index, shader) in manifest.shaders.iter().enumerate() {
-                        if shader.stage == "fragment" {
-                            source.push_str(&format!(
-                                "({:?}, {:?}) => Some({index}),\n",
-                                shader.source, shader.entry
-                            ));
-                        }
-                    }
-                }
-                source.push_str("_ => None } }\n");
+    };
+    let mut helpers = include_str!("input_buttons.rs").replace("//!", "//");
+    helpers.push_str(include_str!("guest_helpers.rs.txt"));
+    helpers.push_str(
+        "\nfn shader_index(source: &str, entry: &str) -> Option<u32> { match (source, entry) {\n",
+    );
+    if manifest.shaders.is_empty() {
+        helpers.push_str("(\"shaders/main.slang\", \"fragmentMain\") => Some(0),\n");
+    } else {
+        for (index, shader) in manifest.shaders.iter().enumerate() {
+            if shader.stage == "fragment" {
+                helpers.push_str(&format!(
+                    "({:?}, {:?}) => Some({index}),\n",
+                    shader.source, shader.entry
+                ));
             }
-            "gamepkg-file" => source.push_str(include_str!("file_bridge.rs.txt")),
-            "gamepkg-window" => source.push_str(include_str!("window_bridge.rs.txt")),
-            _ => {}
         }
     }
+    helpers.push_str("_ => None } }\n");
+    source.push_str(&bindings.replacen(
+        "pub mod gamepkg {",
+        &format!("pub mod gamepkg {{\n{helpers}"),
+        1,
+    ));
     for name in pkg
         .entries
         .keys()
@@ -282,21 +271,6 @@ pub(crate) fn compile_with_settings(
     let mut locked: toml::Value =
         toml::from_str(std::str::from_utf8(&pkg.read("source/Cargo.lock")?)?)?;
     locked["version"] = toml::Value::Integer(4);
-    for entry in crate::allowlist::selected(&cargo) {
-        let path = format!("vendor/{}", entry.name);
-        crate::allowlist::stage_entry(entry, &stage.path().join(&path))?;
-        staged["dependencies"][entry.name] = toml::Value::Table(toml::map::Map::from_iter([
-            ("path".into(), toml::Value::String(path)),
-            ("default-features".into(), toml::Value::Boolean(false)),
-        ]));
-        for package in locked["package"].as_array_mut().unwrap() {
-            if package.get("source").is_some() {
-                let table = package.as_table_mut().unwrap();
-                table.remove("source");
-                table.remove("checksum");
-            }
-        }
-    }
     let level = if settings.optimize_builds { 2 } else { 0 };
     let cargo_text = format!(
         "{}\n[profile.release]\nopt-level = {level}\n",

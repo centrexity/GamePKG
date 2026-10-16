@@ -10,17 +10,10 @@ The source policy rejects build scripts, all guest macros, renamed and wildcard
 imports, type aliases, closures, function-pointer types, dynamic traits, computed
 call targets, binary includes,
 source path overrides, unsafe guest code, and filesystem/network/process
-paths. Guest dependencies are restricted to host-owned gamepkg-input,
-gamepkg-file, gamepkg-window, gamepkg-networking, gamepkg-shader, gamepkg-audio
-and gamepkg-byteorder 0.1.0,
-with default features disabled. The signed lockfile must match the exact graph;
-raw third-party crates and unknown gamepkg-prefixed names are rejected. The host supplies the source offline. Local
-approval can be revoked or restored through `allowlist remove/add` or desktop
-Settings; unknown crates cannot be added to the bundled catalog. Source scanning is a policy filter; compilation
+paths. All guest Cargo dependencies are forbidden, including former gamepkg-prefixed wrappers. The signed lockfile contains only the root package. Legacy approvals cannot enable a crate. Source scanning is a policy filter; compilation
 and runtime isolation enforce the remaining boundaries. Every game Rust file,
 including unused modules, is parsed before compilation. A second pass parses the
-exact private build tree, including generated bindings and pinned dependency
-source. Parsing is a syntax and policy check, not a proof of harmless behavior.
+exact private build tree, including generated host bindings. Parsing is a syntax and policy check, not a proof of harmless behavior.
 
 Guest data follows a fixed wasm32 ABI on 32-bit and 64-bit hosts. Asset, ROM,
 and save byte counts use fixed-width `u32` values. Numeric byte conversions must
@@ -39,12 +32,7 @@ ASCII to avoid normalization aliases across filesystems; source text and virtual
 asset names may still contain Unicode. Slang file inclusion and module imports
 are forbidden, including in unused shader files.
 
-Dependency declarations may only name bundled pinned crates with their exact
-version, disabled default features, and no extra features or source overrides.
-Build, development, target-specific, workspace, patch, replace, and feature
-sections cannot introduce dependencies. Host settings may enable or revoke
-catalog entries, but cannot add an unreviewed crate. A valid creator signature
-does not exempt a package from source or dependency checks.
+Dependency tables must be absent or empty. Build, development, target-specific, workspace, patch, replace and feature sections are rejected. Renamed, optional and source-overridden crates receive no exception. A valid creator signature does not exempt a package from source or dependency checks.
 
 The adversarial suites in `tests/path_attacks.rs`, `tests/dependency_attacks.rs`,
 and `tests/source_attacks.rs` cover generated path spellings, signed hostile
@@ -53,13 +41,12 @@ Native runtime tests call the raw core and component imports with a real verifie
 package and check that rejected reads preserve output memory. The browser suite
 `node tests/web_path_attacks.mjs` directly exercises the shipped worker's core and
 component read/image imports. Positive controls confirm ordinary asset reads and
-the approved graph remain usable. These are regression checks, not a claim of
+dependency-free builds remain usable. These are regression checks, not a claim of
 exhaustive protection against every possible attack.
 
 Linux builds use offline, locked Cargo inside bubblewrap, with an isolated
 network, private working directory and Cargo home, read-only system/toolchain
-mounts, and no user home directory. Dependencies come from host-owned bundled
-source. Compiler processes have memory, file-size and time limits, with bounded
+mounts, and no user home directory. The host injects its scoped bindings; no guest dependency resolution occurs. Compiler processes have memory, file-size and time limits, with bounded
 diagnostics. Failed sandbox setup stops the build.
 
 Core and versioned WIT component games receive only scoped asset, input,
@@ -100,4 +87,4 @@ PNG sprite loading uses bounded verified archive ranges rather than host filesys
 
 GLSL fragment passes may use one host-owned combined `Sampler2D gamepkgTexture` at binding 0 via `draw_shader_image(index, pixel_width, pixel_height, rgba)`. Pixels are snapshotted before queueing, bounded to 512×512 and included in the shared 8 MiB frame image budget. Additional shader resources are rejected. Core and WIT runtimes support this API. Textured SPIR-V/WGSL playback validates one float 2D image and one non-comparison sampler at group 0 bindings 0 and 1 before translating to GLSL. SPIR-V builds define `GAMEPKG_SEPARATE_SAMPLER=1`; use the example’s explicit texture/sampler branch.
 
-Instruction metering is disabled. Host epoch deadlines interrupt Wasm execution, including initialization and calls that repeatedly invoke host operations. Shader textures loaded from PNG use the same bounded verified archive decoder as sprites. The shader/audio crates add no ambient GPU, device, file or network access.
+Instruction metering is disabled. Host epoch deadlines interrupt Wasm execution, including initialization and calls that repeatedly invoke host operations. Shader textures loaded from PNG use the same bounded verified archive decoder as sprites. The injected shader/audio APIs add no ambient GPU, device, file or network access.

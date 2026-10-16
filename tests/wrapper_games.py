@@ -1,4 +1,4 @@
-"""Signed owned wrappers -> offline isolated build -> both guest profiles."""
+"""Signed host APIs -> offline isolated build -> both guest profiles."""
 import os
 from pathlib import Path
 import shutil
@@ -28,9 +28,4 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-wrappers-') as directory:
         run('build', identity)
         output = run('run', identity, '--frames', '2')
         assert 'draw commands: 3' in output, output
-        for name in ['gamepkg-file', 'gamepkg-input', 'gamepkg-window', 'gamepkg-networking', 'gamepkg-byteorder']:
-            run('allowlist', 'remove', name)
-            denied = subprocess.run([str(CLI), 'verify', str(package)], env=env, capture_output=True, text=True)
-            assert denied.returncode != 0 and 'not approved' in denied.stderr, denied.stderr
-            run('allowlist', 'add', name)
-    print('All five owned wrappers passed core/WIT compilation and gameplay: valid asset reads/drawing, denied traversal/ROM/save/network access, unchanged denied-read buffers, and per-crate revocation.')
+    print('All five host APIs passed core/WIT compilation and gameplay: valid asset reads/drawing, denied traversal/ROM/save/network access, unchanged denied-read buffers, and dependency-free source.')

@@ -25,15 +25,8 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-shader-ui-') as directory:
   (source/'source/src/lib.rs').write_text('pub fn game_tick(input:u32,state:u64)->u64 { if input & gamepkg::HELD_DOWN != 0 { if !(gamepkg::draw_shader(0)) { loop {} }; return state+1; } let pixels=if input & gamepkg::HELD_RIGHT != 0 { [0,255,0,255] } else { [0,0,255,255] }; if !(!gamepkg::draw_shader_image(99,1,1,&pixels)) { loop {} }; if !(!gamepkg::draw_shader_image(0,513,1,&pixels)) { loop {} }; if !(!gamepkg::draw_shader_image(0,1,1,&pixels[..3])) { loop {} }; if !(gamepkg::draw_shader_image(0,1,1,&pixels)) { loop {} }; state+1 }')
   (source/'shaders/main.slang').write_text((project/'examples/good/shader-texture/shaders/main.slang').read_text())
  if args.wrapped:
-  import tomllib
-  cargo=tomllib.loads((source/'source/Cargo.toml').read_text());name=cargo['package']['name'];version=cargo['package']['version']
-  (source/'source/Cargo.toml').write_text((source/'source/Cargo.toml').read_text()+'\n[dependencies.gamepkg-shader]\nversion = "=0.1.0"\ndefault-features = false\n')
-  lock=f'version = 4\n[[package]]\nname = "{name}"\nversion = "{version}"\ndependencies = ["gamepkg-shader"]\n[[package]]\nname = "gamepkg-shader"\nversion = "0.1.0"\n'
-  (source/'source/Cargo.lock').write_text(lock)
-  import re
-  manifest=source/'manifest.toml';manifest.write_text(re.sub(r'lockfile_sha256 = ".*?"','lockfile_sha256 = "'+hashlib.sha256(lock.encode()).hexdigest()+'"',manifest.read_text()))
   shutil.copy2(project/'examples/good/media-game/assets/texture.png',source/'assets/texture.png')
-  (source/'source/src/lib.rs').write_text('pub fn game_tick(input:u32,state:u64)->u64 { let Some(shader)=gamepkg_shader::Shader::from_slang("shaders/main.slang","blueMain") else {loop {}}; let ok=if input & gamepkg::HELD_DOWN != 0 { shader.draw() } else if input & gamepkg::HELD_RIGHT != 0 { shader.draw_rgba(1,1,&[0,255,0,255]) } else { shader.draw_texture("texture.png") }; if !ok {loop {}}; state+1 }')
+  (source/'source/src/lib.rs').write_text('pub fn game_tick(input:u32,state:u64)->u64 { let Some(shader)=gamepkg::Shader::from_slang("shaders/main.slang","blueMain") else {loop {}}; let ok=if input & gamepkg::HELD_DOWN != 0 { shader.draw() } else if input & gamepkg::HELD_RIGHT != 0 { shader.draw_rgba(1,1,&[0,255,0,255]) } else { shader.draw_texture("texture.png") }; if !ok {loop {}}; state+1 }')
  run('pack',source,'-o',root/'game.gamepkg','--key',key)
  run('install',root/'game.gamepkg','--trust-creator');run('build','com.gamepkg.shader-switch')
  display=start_display(env)

@@ -111,13 +111,13 @@ jobs:
       - name: Playable entrypoint and failed-build cache preservation
         if: matrix.features == '--all-features'
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/build_entrypoints.py
-      - name: Pinned approved guest dependency
+      - name: Dependency-free game APIs
         if: matrix.features == '--all-features'
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/approved_crate_game.py
-      - name: Owned wrapper policy and both runtime profiles
+      - name: Injected host API policy and both runtime profiles
         if: matrix.features == '--all-features'
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/wrapper_games.py
-      - name: Slang texture and audio wrappers with both profiles and permission denial
+      - name: Slang texture and audio host APIs with both profiles and permission denial
         if: matrix.features == '--all-features'
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/media_wrappers.py
       - name: Shared assets and HTTPS store transfer
@@ -164,7 +164,7 @@ jobs:
       - name: Named multiple ROM desktop playback
         if: matrix.features == '--all-features'
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" /usr/bin/python3 tests/roms_gui.py
-      - name: Verify desktop Settings approval persistence and cancellation
+      - name: Verify desktop Settings preference persistence and cancellation
         if: matrix.features == '--all-features'
         run: python3 tests/settings_gui.py
       - name: Verify desktop store import review and approval

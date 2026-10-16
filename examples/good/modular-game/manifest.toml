@@ -2,7 +2,7 @@ format_version = 1
 id = "com.gamepkg.modular"
 version = "0.1.0"
 entry_world = "game"
-lockfile_sha256 = "23356654bf6b71f9e6005a348c74d28f96f8717850b3765aca3b257e18ae05d2"
+lockfile_sha256 = "a4c59742e6e2ef1915e0a7190086cee3345600cb875e33c131635926797eccf8"
 shader_profile = "slang"
 
 [limits]

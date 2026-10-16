@@ -1,3 +1,1 @@
-# Credits
-
-GamePKG contributors created this example and its bundled gamepkg-byteorder wrapper. Both are available under Apache-2.0.
+GamePKG contributors created this dependency-free example under Apache-2.0.

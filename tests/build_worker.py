@@ -1,7 +1,7 @@
 """Verify the isolated compiler exchange without transporting player data."""
 import hashlib,json,os,shutil,subprocess,tempfile
 from pathlib import Path
-PROJECT=Path(__file__).resolve().parents[1];CLI=PROJECT/'target/release/gamepkg'
+PROJECT=Path(__file__).resolve().parents[1];CLI=Path(os.environ.get('GAMEPKG_TEST_BINARY_DIR',PROJECT/'target/release'))/'gamepkg'
 with tempfile.TemporaryDirectory(prefix='gamepkg-worker-test-') as directory:
  root=Path(directory);home=root/'library';config=root/'settings.toml';config.write_text('automatic_update_checks=false\n')
  env=dict(os.environ,GAMEPKG_HOME=str(home),GAMEPKG_CONFIG=str(config))
@@ -63,8 +63,9 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-worker-test-') as directory:
  bad=root/'bad';run('build-worker',store,bad,'--shader-backend','unknown',good=False);assert not bad.exists()
  other=root/'other.gamepkg';run('pack',PROJECT/'examples/good/collect-stars','-o',other,'--key',key)
  multi=root/'multi.gamepkgstore';run('store-export',package,other,'-o',multi);run('build-worker',multi,root/'multi-output',good=False);assert not (root/'multi-output').exists()
- dependency=root/'dependency.gamepkg';run('pack',PROJECT/'examples/good/byteorder-game','-o',dependency,'--key',key)
- dep_store=root/'dependency.gamepkgstore';run('store-export',dependency,'-o',dep_store)
- denied=run('build-worker',dep_store,root/'dependency-output','--no-approved-crates',good=False)
- assert 'do not approve' in denied and not (root/'dependency-output').exists(),denied
+ assert '--no-approved-crates' not in run('build-worker','--help')
+ dependency=root/'dependency-source';shutil.copytree(PROJECT/'examples/good/byteorder-game',dependency)
+ with (dependency/'source/Cargo.toml').open('a') as cargo:cargo.write('\n[dependencies]\nserde="1"\n')
+ rejected=root/'dependency.gamepkg';denied=run('pack',dependency,'-o',rejected,'--key',key,good=False)
+ assert 'guest crates' in denied and not rejected.exists(),denied
  print('Worker exchange passed: verified shared assets, compilation without a login PATH, package binding, transferred shader/Wasm playback without a compiler, no player data, and atomic failure checks.')

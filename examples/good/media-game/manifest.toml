@@ -2,7 +2,7 @@ format_version = 1
 id = "com.gamepkg.media"
 version = "0.1.0"
 entry_world = "game"
-lockfile_sha256 = "872e3412f44e1dc0235dc7e396ac7621f260fb1ac0b703cd653e60d1a0a3cac7"
+lockfile_sha256 = "b92109230429b85405fc85971dc6779bb9816815e9d75f742d3077c667ffb923"
 shader_profile = "slang"
 
 [limits]

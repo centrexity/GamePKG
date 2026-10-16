@@ -1279,7 +1279,6 @@ dependencies = [
  "cpal",
  "ed25519-dalek",
  "eframe",
- "gamepkg-input",
  "getrandom 0.3.4",
  "gilrs",
  "hex",
@@ -1303,10 +1302,6 @@ dependencies = [
  "wit-parser",
  "zip",
 ]
-
-[[package]]
-name = "gamepkg-input"
-version = "0.1.0"
 
 [[package]]
 name = "generic-array"

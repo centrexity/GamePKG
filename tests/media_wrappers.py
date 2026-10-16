@@ -1,4 +1,4 @@
-"""Compile signed Slang/texture/audio wrappers in both profiles; test audio denial."""
+"""Compile signed Slang/texture/audio host APIs in both profiles; test audio denial."""
 import os
 from pathlib import Path
 import shutil
@@ -34,9 +34,4 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-media-') as directory:
             assert 'draw commands: 4' in output, output
             if permitted: assert 'Audio samples: 4; peak: 16384' in output, output
             else: assert 'Audio samples:' not in output, output
-            for crate in ['gamepkg-shader', 'gamepkg-audio']:
-                run('allowlist', 'remove', crate)
-                denied = subprocess.run([str(CLI), 'verify', str(package)], env=env, capture_output=True, text=True)
-                assert denied.returncode != 0 and 'not approved' in denied.stderr, denied.stderr
-                run('allowlist', 'add', crate)
-    print('Shader/audio wrappers passed both profiles: signed Slang lookup, PNG/RGBA textures, path and format rejection, PCM decoding, cumulative audio limits, permission denial and revocation.')
+    print('Shader/audio host APIs passed both profiles: signed Slang lookup, PNG/RGBA textures, path and format rejection, PCM decoding, cumulative audio limits, permission denial and dependency-free source.')

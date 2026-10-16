@@ -9,7 +9,8 @@ use std::{
 #[serde(default, deny_unknown_fields)]
 pub struct Settings {
     pub format_version: u32,
-    pub approved_crates: Vec<String>,
+    #[serde(default, rename = "approved_crates", skip_serializing)]
+    pub legacy_approved_crates: Vec<String>,
     pub library_directory: String,
     pub tor_proxy: String,
     pub memory_ceiling_mib: u64,
@@ -32,10 +33,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             format_version: 1,
-            approved_crates: crate::allowlist::CATALOG
-                .iter()
-                .map(|e| e.name.into())
-                .collect(),
+            legacy_approved_crates: Vec::new(),
             library_directory: String::new(),
             tor_proxy: "127.0.0.1:9050".into(),
             memory_ceiling_mib: 512,
@@ -80,20 +78,6 @@ impl Settings {
                 || executable.chars().any(char::is_control))
         {
             bail!("Windows compiler executable must be an absolute Linux path without control characters");
-        }
-        if self
-            .approved_crates
-            .iter()
-            .collect::<std::collections::HashSet<_>>()
-            .len()
-            != self.approved_crates.len()
-            || self.approved_crates.iter().any(|name| {
-                !crate::allowlist::CATALOG
-                    .iter()
-                    .any(|entry| entry.name == name)
-            })
-        {
-            bail!("approved crates must be unique entries from the bundled pinned catalog");
         }
         if self.format_version != 1 {
             bail!("unsupported settings version");

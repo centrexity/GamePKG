@@ -74,7 +74,7 @@
       <div class="table-scroll"><table><caption style="text-align:left;margin-bottom:16px;color:var(--muted)">Package, build, and runtime protections</caption><thead><tr><th scope="col">Protection</th><th scope="col">What it controls</th></tr></thead><tbody>
         <tr><td>Signed packages and updates</td><td>Detect altered signed contents. Require the same creator key and game ID, plus a newer version, for updates. First installation still requires creator approval.</td></tr>
         <tr><td>Bounded archive access</td><td>Reject traversal paths, duplicate entries, symlinks, and oversized archive contents. Read assets from the archive without extracting the whole game.</td></tr>
-        <tr><td>Restricted source profile</td><td>Checked Rust source modules, approved pinned dependencies, no build scripts or procedural macros, and Slang-only shader source. Every packaged Rust file is scanned.</td></tr>
+        <tr><td>Restricted source profile</td><td>Checked Rust source modules, no guest Cargo dependencies, no build scripts or procedural macros, and Slang-only shader source. Every packaged Rust file is scanned.</td></tr>
         <tr><td>Isolated compilation</td><td>Linux builds use bubblewrap, a private work area, no network, no user home access, and a 60-second deadline. Sandbox failure stops the build.</td></tr>
         <tr><td>Scoped game capabilities</td><td>Expose only host-approved assets, input, rendering, audio, and save operations instead of ambient operating-system access.</td></tr>
         <tr><td>Runtime resource budgets</td><td>Enforce memory caps and deadlines for running games. Signed memory limits apply in both runtime profiles. GPU work is outside Wasm time limits.</td></tr>
@@ -103,7 +103,7 @@
       <p>User-requested downloads support HTTPS and Tor onion URLs. Onion downloads go through a local Tor SOCKS proxy with remote DNS and no direct fallback. Host downloads and update checks do not grant game code network access.</p>
       <p>Updates keep continuity with the creator key approved at installation. A signature proves integrity and key ownership, not a creator's real-world identity or the safety of their code.</p>
       <a href="guide/index.html">Start playing: setup and quickstart →</a>
-      <p><a href="guide/allowlist.html">Approved game libraries and source policy →</a></p>
+      <p><a href="guide/allowlist.html">Game source policy →</a></p>
       <p><a href="guide/security.html">Security model</a> · <a href="spec/index.html">Format specification</a></p>
     </section>
   <section><h2>Download from a GitHub project</h2><p>Enter <code>https://github.com/owner/repository</code> to download its latest published stable release. The release must contain exactly one <code>.gamepkg</code> file. A <code>/releases/tag/version</code> link selects a specific release; use a direct asset link when the project hosts multiple packages. GitHub project links also work in game catalogs and signed update URLs. For list or store imports, the app selects one matching <code>.gamepkglist</code> or <code>.gamepkgstore</code> release file. Package signatures, creator approval, and update checks still apply.</p></section>

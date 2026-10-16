@@ -727,15 +727,8 @@ impl eframe::App for App {
                         if std::env::var_os("GAMEPKG_DXC_ROOT").is_some() { ui.label("GAMEPKG_DXC_ROOT overrides this folder for the current launch."); }
                     }
                     ui.separator();
-                    ui.heading("Approved game libraries");
-                    for entry in crate::allowlist::CATALOG {
-                        let mut approved = self.settings_draft.approved_crates.iter().any(|n| n == entry.name);
-                        if ui.checkbox(&mut approved, format!("Allow bundled {} {}", entry.name, entry.version)).changed() {
-                            self.settings_draft.approved_crates.retain(|n| n != entry.name);
-                            if approved { self.settings_draft.approved_crates.push(entry.name.into()); }
-                        }
-                        ui.collapsing(format!("{} source pin", entry.name), |ui| { ui.monospace(entry.checksum); });
-                    }
+                    ui.heading("Game source policy");
+                    ui.label("Game packages cannot use Cargo dependencies. The host supplies the gamepkg API for input, files, drawing, shaders and audio.");
                     ui.separator();
                     ui.checkbox(&mut self.settings_draft.optimize_builds,"Optimize new builds");
                     ui.label("Applies on Build/Rebuild; existing compiled games are kept.");

@@ -1,10 +1,9 @@
-use gamepkg_byteorder::{BigEndian, ByteOrder};
 pub fn game_tick(input: u32, state: u64) -> u64 {
     let mut score = (state >> 32) as u32;
     if state == 0 {
         let mut bytes = [0; 4];
         if gamepkg::asset_read("score.bin", 0, &mut bytes) == Some(4) {
-            score = BigEndian::read_u32(&bytes);
+            score = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
         }
     }
     let mut x = (state & 15) as u32;

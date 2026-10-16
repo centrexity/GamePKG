@@ -9,7 +9,7 @@ fn settings_persist_and_failed_saves_preserve_previous_values() {
     settings.tor_proxy = "127.0.0.1:9150".into();
     settings.memory_ceiling_mib = 64;
     settings.tick_deadline_ms = 50;
-    settings.approved_crates.clear();
+    settings.legacy_approved_crates.clear();
     settings.optimize_builds = false;
     settings.dark_mode = false;
     settings.mute_audio = true;
@@ -35,14 +35,6 @@ fn settings_validate_bounds_and_reject_unknown_or_large_files() {
     }
     defaults.validate().unwrap();
     assert_eq!(defaults.shader_backend, "glsl");
-    for approved in [
-        vec!["unknown".into()],
-        vec!["gamepkg-byteorder".into(), "gamepkg-byteorder".into()],
-    ] {
-        let mut s = defaults.clone();
-        s.approved_crates = approved;
-        assert!(s.validate().is_err());
-    }
     for memory in [0, 513] {
         let mut s = defaults.clone();
         s.memory_ceiling_mib = memory;
@@ -158,4 +150,21 @@ fn earlier_instruction_ceiling_is_read_but_never_written_or_enforced() {
         Settings::read(&path).unwrap().legacy_execution_ceiling,
         None
     );
+}
+
+#[test]
+fn legacy_crate_approvals_are_ignored_and_removed_on_save() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("settings.toml");
+    std::fs::write(
+        &path,
+        "approved_crates=['gamepkg-input','serde','gamepkg-evil']\n",
+    )
+    .unwrap();
+    let settings = Settings::read(&path).unwrap();
+    settings.validate().unwrap();
+    settings.save(&path).unwrap();
+    assert!(!std::fs::read_to_string(path)
+        .unwrap()
+        .contains("approved_crates"));
 }
