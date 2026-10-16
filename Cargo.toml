@@ -1,6 +1,6 @@
 [package]
 name = "gamepkg"
-version = "0.1.9"
+version = "0.1.10"
 edition = "2021"
 rust-version = "1.89"
 license = "Apache-2.0"
@@ -10,7 +10,7 @@ default-run = "gamepkg"
 
 [features]
 default = []
-gui = ["dep:eframe", "dep:gilrs", "dep:rfd", "audio"]
+gui = ["dep:eframe", "dep:gilrs", "dep:rfd", "dep:pollster", "audio"]
 audio = ["dep:cpal"]
 
 [[bin]]
@@ -27,10 +27,10 @@ cpal = { version = "0.18.2", optional = true }
 wit-component = "=0.236.1"
 wit-parser = "=0.236.1"
 wasmparser = "=0.236.1"
-naga = { version = "=24.0.0", features = ["spv-in", "wgsl-in", "glsl-out"] }
+naga = { version = "=24.0.0", features = ["spv-in", "wgsl-in", "glsl-out", "wgsl-out"] }
 wasmtime = { version = "36.0.17", default-features = false, features = ["cranelift", "runtime", "std", "component-model"] }
 image = { version = "0.25", default-features = false, features = ["png"] }
-eframe = { version = "0.31", optional = true, default-features = false, features = ["default_fonts", "glow", "x11", "wayland"] }
+eframe = { version = "0.31", optional = true, default-features = false, features = ["default_fonts", "glow", "wgpu", "x11", "wayland"] }
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
@@ -49,6 +49,7 @@ url = "2"
 semver = "1"
 tempfile = "3"
 rustc_lexer = "=0.1.0"
+pollster = { version = "=0.4.0", optional = true }
 rfd = { version = "=0.17.2", optional = true }
 
 [dev-dependencies]

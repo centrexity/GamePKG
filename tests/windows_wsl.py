@@ -10,6 +10,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-wsl-test-') as directory:
  config.write_text('automatic_update_checks=false\nwindows_compiler_distribution='+json.dumps(args.distribution)+'\nwindows_compiler_executable='+json.dumps(args.compiler)+'\n')
  env=dict(os.environ,GAMEPKG_HOME=str(home),GAMEPKG_CONFIG=str(config))
  def run(*arguments,good=True):
+  if arguments and arguments[0] in ('build','integrity-fix') and '--target' not in arguments: arguments=(*arguments,'--target','wasm')
   result=subprocess.run([str(cli),*map(str,arguments)],env=env,capture_output=True,text=True,timeout=600)
   assert (result.returncode==0)==good,result.stdout+result.stderr
   return result.stdout+result.stderr

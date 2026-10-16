@@ -65,10 +65,7 @@ pub fn build() -> Result<Vec<u8>> {
     }
     #[cfg(target_os = "linux")]
     {
-        use std::{
-            fs,
-            path::{Path, PathBuf},
-        };
+        use std::{fs, path::Path};
         let kit = tempfile::tempdir()?;
         let output = tempfile::tempdir()?;
         for (name, bytes) in crate::doom_sources::FILES {
@@ -89,9 +86,8 @@ pub fn build() -> Result<Vec<u8>> {
                 bail!("pinned DOOM source changed: {name}");
             }
         }
-        let sysroot=std::env::var_os("GAMEPKG_DOOM_SYSROOT").or_else(||std::env::var_os("GAMEPKG_ZELDA3_SYSROOT")).map(PathBuf::from)
-            .or_else(||Path::new("/usr/include/wasm32-wasi").is_dir().then(||PathBuf::from("/usr")))
-            .context("install Clang 18, wasi-libc and libclang-rt-18-dev-wasm32, or set GAMEPKG_DOOM_SYSROOT")?.canonicalize()?;
+        let sysroot =
+            crate::c_toolchain::resolve(&["GAMEPKG_DOOM_SYSROOT", "GAMEPKG_ZELDA3_SYSROOT"])?;
         let prefix = if sysroot.join("usr/include/wasm32-wasi").is_dir() {
             "/sysroot/usr"
         } else {

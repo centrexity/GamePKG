@@ -25,6 +25,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-shared-') as directory:
     original = (source / 'manifest.toml').read_text()
     env = dict(os.environ, GAMEPKG_HOME=str(root/'library'), GAMEPKG_CONFIG=str(root/'settings.toml'))
     def run(*args, success=True, environment=env):
+        if args and args[0] in ('build','integrity-fix') and '--target' not in args: args=(*args,'--target','wasm')
         result = subprocess.run([str(CLI), *map(str,args)],env=environment,capture_output=True,text=True,timeout=120)
         assert (result.returncode == 0) == success, result.stderr
         return result.stdout

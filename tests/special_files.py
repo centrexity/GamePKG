@@ -10,6 +10,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-special-files-') as directory:
  manifest.write_text('requires_rom=true\n'+(PROJECT/'examples/minimal/manifest.toml').read_text())
  library=root/'library';env=dict(os.environ,GAMEPKG_HOME=str(library),GAMEPKG_CONFIG=str(root/'settings.toml'))
  def run(*args,good=True,timeout=5):
+  if args and args[0] in ('build','integrity-fix') and '--target' not in args: args=(*args,'--target','wasm')
   result=subprocess.run([str(CLI),*map(str,args)],env=env,capture_output=True,text=True,timeout=timeout)
   assert (result.returncode==0)==good,result.stdout+result.stderr
   return result.stdout+result.stderr

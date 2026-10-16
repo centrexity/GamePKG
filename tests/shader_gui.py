@@ -11,8 +11,9 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-shader-ui-') as directory:
  root=Path(directory)
  env=dict(os.environ,DISPLAY=':97',LIBGL_ALWAYS_SOFTWARE='1',GAMEPKG_CONFIG=str(root/'settings.toml'),GAMEPKG_HOME=str(root/'library'),GAMEPKG_SLANG_ROOT=os.environ.get('GAMEPKG_SLANG_ROOT',''));env.pop('WAYLAND_DISPLAY',None)
  # No backend setting by default: first-launch defaults must support desktop playback.
- if args.backend: (root/'settings.toml').write_text(f'shader_backend = "{args.backend}"\n')
+ if args.backend: (root/'settings.toml').write_text(f'shader_backend = "{args.backend}"\nrenderer = "'+('opengl' if args.backend=='glsl' else 'vulkan')+'"\n')
  def run(*args):
+  if args and args[0] in ('build','integrity-fix') and '--target' not in args: args=(*args,'--target','wasm')
   result=subprocess.run([str(binaries/'gamepkg'),*map(str,args)],env=env,capture_output=True,text=True,timeout=140)
   assert result.returncode==0,result.stderr
  key=root/'key';key.write_text(os.urandom(32).hex())

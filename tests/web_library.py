@@ -11,7 +11,9 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-web-library-') as directory:
     root=Path(directory);env=dict(os.environ,GAMEPKG_HOME=str(root/'library'),GAMEPKG_CONFIG=str(root/'settings.toml'))
     (root/'settings.toml').write_text('automatic_update_checks=false\n')
     cli=PROJECT/'target/release/gamepkg'
-    def run(*args):return subprocess.run([str(cli),*map(str,args)],env=env,check=True,capture_output=True,text=True,timeout=60)
+    def run(*args):
+     if args and args[0] in ('build','integrity-fix') and '--target' not in args: args=(*args,'--target','wasm')
+     return subprocess.run([str(cli),*map(str,args)],env=env,check=True,capture_output=True,text=True,timeout=60)
     source=root/'source';shutil.copytree(PROJECT/'examples/good/collect-stars',source)
     if args.play:
         (source/'source/src/lib.rs').write_text('pub fn game_tick(_:u32,state:u64)->u64 { if !(gamepkg::achievement_unlock(0)) { loop {} }; state + 1 }')

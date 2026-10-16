@@ -2,6 +2,23 @@
 
 This audit maps the starting design and subsequent requested features to implemented behavior and concrete verification. It is not a claim that every planned platform or graphics feature is finished.
 
+## 0.1.10 runtime update
+
+The default Build action now produces direct CPU machine code on Linux. Native
+workers run in a separate restricted process with a mandatory syscall filter,
+private filesystem and network namespaces, memory ceilings and tick deadlines.
+Build Wasm and Play Wasm remain explicit alternatives. Native game compilation
+on Windows is not implemented; Windows retains its explicit Wasm workflow.
+Desktop rendering now defaults to Vulkan, with OpenGL available in Settings.
+Signed networking permissions expose bounded HTTPS GET, TCP/UDP clients and TCP
+listeners through host services; games receive no operating-system sockets.
+
+Local verification includes native DOOM and Zelda gameplay, remembered ROM
+selections, native 2048, Vulkan shader and texture rendering, deadline and memory
+termination, networking denial and TCP/UDP echo, plus integrity corruption.
+The earlier audit below records historical releases and their limitations;
+its OpenGL-only and Wasm-only descriptions are superseded by this update.
+
 ## Public deliverables
 
 The public repository is [centrexity/GamePKG](https://github.com/centrexity/GamePKG). [Linux and Windows preview 0.1.4](https://github.com/centrexity/GamePKG/releases/tag/v0.1.4) contains both CLI and desktop programs, checksums, setup tools, example source, and dependency sources/notices. Apache-2.0 and NOTICE provide the project's attribution terms. The three signed demo packages, catalog and portable store are attached to the same release. Players supply no signing key.

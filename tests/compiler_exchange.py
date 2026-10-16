@@ -19,7 +19,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-native-exchange-') as temporary
  else:env.pop('GAMEPKG_SLANG_ROOT',None)
  for case,example,backend in cases:
   folder=fixture/case;game_id='com.gamepkg.'+example
-  config.write_text(f'automatic_update_checks=false\nshader_backend="{backend}"\n')
+  config.write_text(f'automatic_update_checks=false\nshader_backend="{backend}"\nrenderer="'+('opengl' if backend=='glsl' else 'vulkan')+'"\n')
   if args.mode=='prepare':
    folder.mkdir();package=root/(case+'.gamepkg')
    run('pack',PROJECT/('ports' if example=='zelda3' else 'examples/good')/example,'-o',package,'--key',key,'--shared-assets')

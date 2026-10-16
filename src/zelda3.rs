@@ -1,7 +1,7 @@
 //! Pinned Zelda3 engine: Wasm-only execution and selected-ROM decoding in RAM.
 use anyhow::{bail, Context, Result};
 #[cfg(target_os = "linux")]
-use std::path::{Path, PathBuf};
+use std::path::Path;
 #[cfg(target_os = "linux")]
 use std::process::Command;
 use wasmtime::{
@@ -50,10 +50,7 @@ pub fn build() -> Result<Vec<u8>> {
     {
         let kit = kit()?;
         let output = tempfile::tempdir()?;
-        let sysroot = std::env::var_os("GAMEPKG_ZELDA3_SYSROOT")
-            .map(PathBuf::from).or_else(||Path::new("/usr/include/wasm32-wasi").is_dir().then(||PathBuf::from("/usr")))
-            .context("install Clang 18, wasi-libc and libclang-rt-18-dev-wasm32, or configure GAMEPKG_ZELDA3_SYSROOT")?;
-        let sysroot = std::fs::canonicalize(sysroot)?;
+        let sysroot = crate::c_toolchain::resolve(&["GAMEPKG_ZELDA3_SYSROOT"])?;
         // The host owns these sources; no package can supply compiler scripts.
         let upstream = kit.path().join("engines/zelda3/upstream");
         let lock: serde_json::Value =

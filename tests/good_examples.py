@@ -8,6 +8,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-examples-') as directory:
     env = dict(os.environ, GAMEPKG_HOME=str(root/'library'), GAMEPKG_CONFIG=str(root/'settings.toml'))
     (root/'settings.toml').write_text('automatic_update_checks = false\n')
     def run(*args, success=True, reason=None):
+        if args and args[0] in ('build','integrity-fix') and '--target' not in args: args=(*args,'--target','wasm')
         result = subprocess.run([str(cli), *map(str,args)],env=env,capture_output=True,text=True,timeout=150)
         assert (result.returncode == 0) == success, f'{args}: {result.stderr}'
         if reason is not None: assert reason in result.stderr, result.stderr

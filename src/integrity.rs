@@ -71,19 +71,44 @@ fn check_locked(root: &Path, id: &str) -> Result<String> {
     package.resolve_shared_assets(root)?;
     retain_package(root, &manifest, &root.join(format!("{id}.gamepkg")))?;
     crate::progress::load(root, &manifest.id, &manifest.creator_key)?;
-    let path = crate::build::cache_path(root, id)?;
+    let native = crate::native::cache_path(root, id)?;
+    let is_native = native.exists();
+    let path = if is_native {
+        native
+    } else {
+        crate::build::cache_path(root, id)?
+    };
     if !path.exists() {
         return Ok(format!(
             "{id}: signed package, shared assets and play history verified; not built"
         ));
     }
     let metadata = fs::symlink_metadata(&path)?;
-    if !metadata.is_file() || metadata.len() > 32 * 1024 * 1024 {
+    if !metadata.is_file()
+        || metadata.len()
+            > if is_native {
+                64 * 1024 * 1024
+            } else {
+                32 * 1024 * 1024
+            }
+    {
         bail!("invalid compiled game file");
     }
-    let bytes = crate::files::read_regular(&path, 32 * 1024 * 1024, false)?;
+    let bytes = crate::files::read_regular(
+        &path,
+        if is_native {
+            64 * 1024 * 1024
+        } else {
+            32 * 1024 * 1024
+        },
+        false,
+    )?;
     verify_build(&path, &bytes)?;
-    if !crate::build::is_built(root, id)? {
+    if !(if is_native {
+        crate::native::is_built(root, id)?
+    } else {
+        crate::build::is_built(root, id)?
+    }) {
         bail!("compiled game has no valid playable entry point");
     }
     Ok(format!(
@@ -94,6 +119,9 @@ pub fn fix(root: &Path, id: &str) -> Result<String> {
     fix_with_store(root, id, None)
 }
 pub fn fix_with_store(root: &Path, id: &str, store: Option<&Path>) -> Result<String> {
+    fix_target(root, id, store, false)
+}
+pub fn fix_target(root: &Path, id: &str, store: Option<&Path>, native: bool) -> Result<String> {
     let _lock = crate::registry::LibraryChange::acquire(root)?;
     // Compilation rechecks signatures and shared blob hashes before running the isolated compiler.
     // A supplied store can restore exact signed shared assets before rebuilding.
@@ -144,7 +172,11 @@ pub fn fix_with_store(root: &Path, id: &str, store: Option<&Path>) -> Result<Str
         let mut package = crate::archive::Package::open(&target)?;
         restored = store.repair_assets(root, &mut package)?;
     }
-    crate::build::compile_for_repair(root, id, &_lock)?;
+    if native {
+        crate::native::compile(root, id)?;
+    } else {
+        crate::build::compile_for_repair(root, id, &_lock)?;
+    }
     let result = check_locked(root, id)?;
     Ok(if store.is_some() {
         format!("{result}; restored {restored} shared assets")

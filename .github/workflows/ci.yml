@@ -53,7 +53,7 @@ jobs:
         run: python3 tests/tor_download.py
       - name: Install isolated build prerequisites
         if: matrix.features == '--all-features'
-        run: sudo apt-get update && sudo apt-get install -y bubblewrap clang-18 wasi-libc libclang-rt-18-dev-wasm32 && rustup target add wasm32-unknown-unknown
+        run: sudo apt-get update && sudo apt-get install -y bubblewrap clang-18 lld-18 wasi-libc libclang-rt-18-dev-wasm32 && rustup target add wasm32-unknown-unknown
       - name: Install pinned shader compiler
         if: matrix.features == '--all-features'
         run: |
@@ -75,6 +75,12 @@ jobs:
       - name: Isolated compiler integration
         if: matrix.features == '--all-features'
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/isolated_build.py
+      - name: Native worker isolation and multiplayer
+        if: matrix.features == '--all-features'
+        run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" python3 tests/native_build.py
+      - name: Core and component networking
+        if: matrix.features == '--all-features'
+        run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/network_game.py
       - name: Compile every good example and reject every bad example
         if: matrix.features == '--all-features'
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/good_examples.py
@@ -143,7 +149,7 @@ jobs:
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/drawing_game.py
       - name: Install virtual display tools
         if: matrix.features == '--all-features'
-        run: sudo apt-get install -y xvfb xdotool imagemagick tesseract-ocr python3-pil python3-xlib libxkbcommon-x11-0 libgl1-mesa-dri
+        run: sudo apt-get install -y xvfb xdotool imagemagick tesseract-ocr python3-pil python3-xlib libxkbcommon-x11-0 libgl1-mesa-dri libvulkan1 mesa-vulkan-drivers
       - name: Native package and catalog drag-and-drop
         if: matrix.features == '--all-features'
         run: /usr/bin/python3 tests/drop_files_gui.py

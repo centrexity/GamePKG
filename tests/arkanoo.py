@@ -26,6 +26,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-arkanoo-',dir=PROJECT/'target')
     env=dict(os.environ,GAMEPKG_HOME=str(root/'library'),GAMEPKG_CONFIG=str(config),LIBGL_ALWAYS_SOFTWARE='1');env.pop('WAYLAND_DISPLAY',None)
     key=root/'key';key.write_text('61'*32)
     def run(*args):
+        if args and args[0] in ('build','integrity-fix') and '--target' not in args: args=(*args,'--target','wasm')
         r=subprocess.run([str(CLI),*map(str,args)],env=env,text=True,capture_output=True,timeout=120)
         assert r.returncode==0,r.stderr
         return r.stdout

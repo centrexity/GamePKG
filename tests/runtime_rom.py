@@ -26,6 +26,7 @@ pub fn game_tick(_: u32, _: u64) -> u64 {
     key.write_text(os.urandom(32).hex())
     env = dict(os.environ, GAMEPKG_HOME=str(root / 'library'), GAMEPKG_CONFIG=str(root / 'settings.toml'))
     def run(*args, success=True):
+        if args and args[0] in ('build','integrity-fix') and '--target' not in args: args=(*args,'--target','wasm')
         result = subprocess.run([str(CLI), *map(str,args)], env=env, capture_output=True, text=True, timeout=75)
         assert (result.returncode == 0) == success, result.stderr
         return result.stdout + result.stderr

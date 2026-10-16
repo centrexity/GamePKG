@@ -1,4 +1,4 @@
-//! Enforced guest data rules; games always compile for the same wasm32 ABI.
+//! Enforced portable data rules for native and optional wasm32 builds.
 use anyhow::{bail, Result};
 use syn::visit::Visit;
 

@@ -8,6 +8,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-compiler-limits-') as directory
     key=root/'key';key.write_text(os.urandom(32).hex())
     env=dict(os.environ,GAMEPKG_HOME=str(root/'library'),GAMEPKG_CONFIG=str(root/'settings.toml'))
     def run(*args,success=True):
+        if args and args[0] in ('build','integrity-fix') and '--target' not in args: args=(*args,'--target','wasm')
         result=subprocess.run([str(cli),*map(str,args)],env=env,capture_output=True,text=True,timeout=140)
         assert (result.returncode==0)==success,result.stderr
         return result

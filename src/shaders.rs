@@ -379,6 +379,49 @@ fn compiler_cache(root: &Path, archive: &[u8], settings: &Settings) -> Result<(P
     Ok((compiler, root.join("shader-builds").join(identity)))
 }
 
+pub fn load_desktop_sources(
+    root: &Path,
+    archive: &[u8],
+    manifest: &Manifest,
+    settings: &Settings,
+) -> Result<Vec<String>> {
+    if settings.renderer == "opengl" {
+        return load_fragment_sources(root, archive, manifest, settings);
+    }
+    if !matches!(settings.shader_backend.as_str(), "wgsl" | "spirv") {
+        bail!("Vulkan shaders need WGSL or SPIR-V. Select WGSL in Settings and rebuild this game.");
+    }
+    // Reuse all checksum, reflection and resource validation before creating a GPU module.
+    load_fragment_sources(root, archive, manifest, settings)?;
+    let (cache, _) = playback_cache(root, archive, settings, manifest.shaders.len().max(1))?;
+    (0..manifest.shaders.len().max(1))
+        .map(|index| {
+            let bytes = read_output(&cache.join(format!("{index}.shader")))?;
+            let module = if settings.shader_backend == "wgsl" {
+                naga::front::wgsl::parse_str(std::str::from_utf8(&bytes)?)?
+            } else {
+                naga::front::spv::parse_u8_slice(
+                    &bytes,
+                    &naga::front::spv::Options {
+                        strict_capabilities: true,
+                        ..Default::default()
+                    },
+                )?
+            };
+            let info = naga::valid::Validator::new(
+                naga::valid::ValidationFlags::all(),
+                naga::valid::Capabilities::empty(),
+            )
+            .validate(&module)?;
+            Ok(naga::back::wgsl::write_string(
+                &module,
+                &info,
+                naga::back::wgsl::WriterFlags::empty(),
+            )?)
+        })
+        .collect()
+}
+
 pub fn load_fragment_sources(
     root: &Path,
     archive: &[u8],

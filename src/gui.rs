@@ -22,6 +22,8 @@ enum Work {
 pub struct App {
     gl: Option<std::sync::Arc<eframe::glow::Context>>,
     gpu: Option<std::sync::Arc<crate::gpu::Renderer>>,
+    vulkan_state: Option<eframe::egui_wgpu::RenderState>,
+    vulkan: Option<std::sync::Arc<crate::gpu_vulkan::Renderer>>,
     sprite_textures: sprites::Cache,
     applied_settings: Option<crate::settings::Settings>,
     updates: crate::updates::Monitor,
@@ -55,12 +57,16 @@ pub struct App {
     loaded: bool,
     icons: HashMap<String, egui::TextureHandle>,
     built: HashSet<String>,
+    wasm_built: HashSet<String>,
     history: HashMap<String, crate::progress::Record>,
     usage: HashMap<String, crate::storage::Usage>,
     library_bytes: Option<u64>,
     preview: Option<(Vec<Vec<u8>>, std::time::Instant, egui::TextureHandle)>,
 }
 impl App {
+    pub fn set_vulkan(&mut self, state: Option<eframe::egui_wgpu::RenderState>) {
+        self.vulkan_state = state;
+    }
     pub fn open_support(&mut self) {
         self.show_support = true;
         self.show_settings = false;
@@ -141,6 +147,7 @@ impl App {
                 let games = report.games;
                 self.icons.clear();
                 self.built.clear();
+                self.wasm_built.clear();
                 if let Ok(root) = crate::registry::default_root() {
                     self.rom_paths.clear();
                     self.history.clear();
@@ -168,6 +175,9 @@ impl App {
                             }
                         }
                         if crate::build::is_built(&root, &m.id).unwrap_or(false) {
+                            self.wasm_built.insert(m.id.clone());
+                        }
+                        if crate::native::is_built(&root, &m.id).unwrap_or(false) {
                             self.built.insert(m.id.clone());
                         }
                         let decoded = (|| -> anyhow::Result<_> {
@@ -215,6 +225,7 @@ impl App {
                 self.rejected.clear();
                 self.icons.clear();
                 self.built.clear();
+                self.wasm_built.clear();
                 self.status = format!("Unable to read installed library: {e:#}");
             }
         }
@@ -299,7 +310,22 @@ impl eframe::App for App {
                         Ok(Work::Game(game)) => {
                             self.preview = None;
                             self.gpu = None;
-                            if !game.shader_sources.is_empty() {
+                            self.vulkan = None;
+                            if !game.shader_sources.is_empty() && self.vulkan_state.is_some() {
+                                match crate::gpu_vulkan::Renderer::new(
+                                    self.vulkan_state.as_ref().unwrap(),
+                                    &game.shader_sources,
+                                ) {
+                                    Ok(renderer) => {
+                                        self.vulkan = Some(std::sync::Arc::new(renderer))
+                                    }
+                                    Err(error) => {
+                                        self.status = format!("Unable to play: {error:#}");
+                                        return;
+                                    }
+                                }
+                            }
+                            if !game.shader_sources.is_empty() && self.vulkan_state.is_none() {
                                 let renderer = self
                                     .gl
                                     .clone()
@@ -577,6 +603,9 @@ impl eframe::App for App {
                                 );
                             }
                             crate::drawing::Command::ShaderImage { index, ref image } => {
+                                if let Some(renderer) = &self.vulkan {
+                                    if let Some(callback)=renderer.callback(rect,index,Some(image)) {painter.add(callback);}
+                                }
                                 if let Some(renderer) = &self.gpu {
                                     let renderer = renderer.clone();
                                     let image = image.clone();
@@ -591,6 +620,9 @@ impl eframe::App for App {
                                 }
                             }
                             crate::drawing::Command::Shader { index } => {
+                                if let Some(renderer) = &self.vulkan {
+                                    if let Some(callback)=renderer.callback(rect,index,None) {painter.add(callback);}
+                                }
                                 if let Some(renderer) = &self.gpu {
                                     let renderer = renderer.clone();
                                     painter.add(egui::PaintCallback {
@@ -681,6 +713,7 @@ impl eframe::App for App {
                 self.player = None;
                 self.loaded = false;
                 self.gpu = None;
+                self.vulkan = None;
                 self.audio_player = None;
             }
             if let Some(e) = failure {
@@ -803,12 +836,28 @@ impl eframe::App for App {
                         ui.text_edit_singleline(&mut self.settings_draft.windows_compiler_executable);
                         ui.label("Use a configured Linux compiler with the same GamePKG version. Games still run in this Windows app after their build is verified.");
                     }
+                    #[cfg(target_os = "linux")]
+                    {
+                        ui.label("C/WASI build tools folder (optional; empty uses system tools)");
+                        ui.text_edit_singleline(&mut self.settings_draft.wasi_sysroot_directory);
+                        ui.label("Native source ports use Clang 18 and lld-18. The separate Wasm build also needs wasi-libc and libclang-rt-18-dev-wasm32; set this folder only for a separate WASI installation.");
+                        if ui.button("Check C/WASI build tools").clicked() {
+                            self.status = match crate::c_toolchain::check_draft(&self.settings_draft.wasi_sysroot_directory) {
+                                Ok(root) => format!("C/WASI build tools ready: {}. Save settings to use this folder.", root.display()),
+                                Err(error) => format!("C/WASI build tools: {error:#}"),
+                            };
+                        }
+                    }
+                    egui::ComboBox::from_label("Renderer (restart app after changing)").selected_text(&self.settings_draft.renderer).show_ui(ui, |ui| {
+                        ui.selectable_value(&mut self.settings_draft.renderer,"vulkan".into(),"Vulkan");
+                        ui.selectable_value(&mut self.settings_draft.renderer,"opengl".into(),"OpenGL");
+                    });
                     ui.label("Slang 2026.19 installation folder");
                     ui.text_edit_singleline(&mut self.settings_draft.slang_directory);
                     egui::ComboBox::from_label("Shader backend").selected_text(&self.settings_draft.shader_backend).show_ui(ui, |ui| {
                         for backend in ["spirv", "wgsl", "metal", "dxil", "glsl"] { ui.selectable_value(&mut self.settings_draft.shader_backend, backend.to_string(), backend); }
                     });
-                    ui.label("GLSL, SPIR-V, and WGSL support bounded texture fragment passes in this desktop player. Other backends compile and cache shaders.");
+                    ui.label("Vulkan uses WGSL or SPIR-V for bounded texture fragment passes. OpenGL also supports GLSL. Other backends compile and cache shaders.");
                     if self.settings_draft.shader_backend == "dxil" {
                         ui.label("DXC 1.9.2609 installation folder");
                         ui.text_edit_singleline(&mut self.settings_draft.dxc_directory);

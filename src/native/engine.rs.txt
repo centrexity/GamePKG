@@ -1,0 +1,44 @@
+    #[cfg(any(gamepkg_doom,gamepkg_zelda))]
+    mod engine {
+        #[cfg(gamepkg_doom)] unsafe extern "C" {fn initialize(data:*mut u8,length:u32,save:u32)->i32;}
+        #[cfg(gamepkg_zelda)] unsafe extern "C" {fn initialize(data:*mut u8,length:u32)->i32;}
+        unsafe extern "C" {fn step(input:u32)->i32;fn pixels()->*mut u8;fn audio()->*mut i16;fn reset_engine();}
+        #[cfg(gamepkg_doom)] unsafe extern "C" {fn savedata()->*mut u8;fn savedlength()->u32;fn savedirty()->i32;fn status()->u32;fn position()->u32;fn controller()->u32;}
+        #[cfg(gamepkg_zelda)] unsafe extern "C" {fn sram()->*mut u8;fn save_changed()->i32;fn engine_status()->u32;fn engine_position()->u32;fn engine_controller()->u32;}
+        static mut STARTED:bool=false;
+        pub(super) fn init(){
+            let len=super::number(super::rpc(19,&[])).expect("missing engine ROM");assert!(len<=64*1024*1024);
+            let mut rom=vec![0;len as usize];let mut offset=0;
+            while offset<rom.len(){let n=(rom.len()-offset).min(65536);let b=super::rpc(20,&super::u32s(&[offset as u32,n as u32]));assert_eq!(b.len(),n+1);assert_eq!(b[0],0);rom[offset..offset+n].copy_from_slice(&b[1..]);offset+=n;}
+            let pointer=Box::leak(rom.into_boxed_slice()).as_mut_ptr();
+            let n=super::save_size().unwrap_or(0) as usize;let mut save=vec![0;n];let mut offset=0;
+            while offset<n{let size=(n-offset).min(65536);super::save_read(offset as u32,&mut save[offset..offset+size]).unwrap();offset+=size;}
+            unsafe {
+                #[cfg(gamepkg_doom)] {assert!(n<=512*1024);if n>0{std::ptr::copy_nonoverlapping(save.as_ptr(),savedata(),n);}}
+                #[cfg(gamepkg_doom)] assert_eq!(initialize(pointer,len,n as u32),0);
+                #[cfg(gamepkg_zelda)] assert_eq!(initialize(pointer,len),0);
+                #[cfg(gamepkg_zelda)] {if n>0{assert_eq!(n,8192);std::ptr::copy_nonoverlapping(save.as_ptr(),sram(),n);}}
+            }
+        }
+        pub(super) fn tick(input:u32,state:u64)->u64{unsafe{
+            #[cfg(gamepkg_doom)] if state==0&&STARTED{reset_engine();}
+            #[cfg(gamepkg_zelda)] if state==0{reset_engine();}
+            STARTED=true;
+            #[cfg(gamepkg_doom)] let buttons=input;
+            #[cfg(gamepkg_zelda)] let buttons={let mut buttons=0;for (mask,bit) in [(0x101,6),(0x202,7),(0x404,4),(0x808,5),(0x1010,0),(0x2020,1),(0x4040,3),(0x8080,2),(0x110000,8),(0x220000,9),(0x440000,10),(0x880000,11)]{if input&mask!=0{buttons|=1<<bit;}}buttons};
+            assert_eq!(step(buttons),0);
+            #[cfg(gamepkg_doom)] let (w,h)=(320,200);
+            #[cfg(gamepkg_zelda)] let (w,h)=(256,224);
+            let mut p=std::slice::from_raw_parts(pixels(),w*h*4).to_vec();for pixel in p.chunks_exact_mut(4){pixel.swap(0,2);pixel[3]=255;}
+            super::draw_clear(0x000000ff);
+            #[cfg(gamepkg_doom)] super::draw_image(0.0,0.0,640.0,480.0,w as u32,h as u32,&p);
+            #[cfg(gamepkg_zelda)] super::draw_image(64.0,16.0,512.0,448.0,w as u32,h as u32,&p);
+            super::audio_submit(std::slice::from_raw_parts(audio(),800));
+            #[cfg(gamepkg_doom)] {if savedirty()!=0{let n=savedlength() as usize;assert!(n<=512*1024);super::save_write(std::slice::from_raw_parts(savedata(),n));}super::rpc(21,&super::u32s(&[status(),position(),controller()]));}
+            #[cfg(gamepkg_zelda)] {if save_changed()!=0{super::save_write(std::slice::from_raw_parts(sram(),8192));}super::rpc(21,&super::u32s(&[engine_status(),engine_position(),engine_controller()]));}
+            state.wrapping_add(1)
+        }}
+    }
+    #[cfg(gamepkg_doom)] pub fn doom_tick(input:u32,state:u64)->u64{engine::tick(input,state)}
+    #[cfg(gamepkg_zelda)] pub fn zelda3_tick(input:u32,state:u64)->u64{engine::tick(input,state)}
+    pub(crate) fn __gamepkg_initialize_engine(){#[cfg(any(gamepkg_doom,gamepkg_zelda))] engine::init();}

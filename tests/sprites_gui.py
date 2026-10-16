@@ -40,6 +40,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-sprites-') as directory:
   env=dict(os.environ,GAMEPKG_HOME=str(root/profile),GAMEPKG_CONFIG=str(config),LIBGL_ALWAYS_SOFTWARE='1');env.pop('WAYLAND_DISPLAY',None)
   cli=project/'target/release/gamepkg'
   def run(*args):
+   if args and args[0] in ('build','integrity-fix') and '--target' not in args: args=(*args,'--target','wasm')
    result=subprocess.run([str(cli),*map(str,args)],env=env,capture_output=True,text=True,timeout=140)
    assert result.returncode==0,result.stderr
   key=root/(profile+'.key');run('keygen','-o',key)

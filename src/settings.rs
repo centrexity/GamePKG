@@ -20,10 +20,12 @@ pub struct Settings {
     pub optimize_builds: bool,
     pub dark_mode: bool,
     pub slang_directory: String,
+    pub wasi_sysroot_directory: String,
     pub dxc_directory: String,
     pub windows_compiler_distribution: String,
     pub windows_compiler_executable: String,
     pub shader_backend: String,
+    pub renderer: String,
     pub mute_audio: bool,
     pub audio_volume: u8,
     pub automatic_update_checks: bool,
@@ -42,10 +44,12 @@ impl Default for Settings {
             optimize_builds: true,
             dark_mode: true,
             slang_directory: String::new(),
+            wasi_sysroot_directory: String::new(),
             dxc_directory: String::new(),
             windows_compiler_distribution: String::new(),
             windows_compiler_executable: String::new(),
-            shader_backend: "glsl".into(),
+            shader_backend: "wgsl".into(),
+            renderer: "vulkan".into(),
             mute_audio: false,
             audio_volume: 50,
             automatic_update_checks: true,
@@ -94,11 +98,20 @@ impl Settings {
         {
             bail!("Slang folder must be an absolute path or empty");
         }
+        if !self.wasi_sysroot_directory.is_empty()
+            && (!Path::new(&self.wasi_sysroot_directory).is_absolute()
+                || self.wasi_sysroot_directory.chars().any(char::is_control))
+        {
+            bail!("C/WASI tools folder must be an absolute path or empty");
+        }
         if !self.dxc_directory.is_empty()
             && (!Path::new(&self.dxc_directory).is_absolute()
                 || self.dxc_directory.chars().any(char::is_control))
         {
             bail!("DXC folder must be an absolute path or empty");
+        }
+        if !matches!(self.renderer.as_str(), "vulkan" | "opengl") {
+            bail!("unsupported renderer");
         }
         if !matches!(
             self.shader_backend.as_str(),
@@ -174,5 +187,10 @@ pub fn path() -> Result<PathBuf> {
     Ok(root.join("gamepkg/settings.toml"))
 }
 pub fn load() -> Result<Settings> {
-    Settings::read(&path()?)
+    let mut settings = Settings::read(&path()?)?;
+    if let Ok(renderer) = std::env::var("GAMEPKG_RENDERER") {
+        settings.renderer = renderer;
+        settings.validate()?;
+    }
+    Ok(settings)
 }

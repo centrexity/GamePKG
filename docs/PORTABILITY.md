@@ -1,8 +1,6 @@
 # Portable game data and 32-bit hosts
 
-GamePKG compiles every guest for `wasm32-unknown-unknown`. A game has the same
-32-bit address model and little-endian WebAssembly memory on every supported
-native host. The host rejects memory64 modules in both runtime profiles.
+Native builds compile the checked source for the current Linux CPU; fixed-width data rules keep packaged data portable across word sizes and byte orders. Optional Wasm builds target `wasm32-unknown-unknown`, with the same 32-bit address model and little-endian WebAssembly memory on every supported host. The host rejects memory64 modules in both runtime profiles.
 Wasmtime selects its Pulley interpreter automatically on 32-bit x86 and ARM;
 games still receive the same scoped APIs, memory limits and deadlines.
 

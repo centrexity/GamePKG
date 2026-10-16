@@ -14,6 +14,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-2048-') as directory:
     config.write_text('automatic_update_checks = false\n')
     env = dict(os.environ, GAMEPKG_HOME=str(root / 'library'), GAMEPKG_CONFIG=str(config))
     def run(*args, input=None):
+        if args and args[0] in ('build','integrity-fix') and '--target' not in args: args=(*args,'--target','wasm')
         result = subprocess.run([str(CLI), *map(str,args)], env=env, input=input,
                                 capture_output=True, text=True, timeout=120)
         assert result.returncode == 0, result.stderr

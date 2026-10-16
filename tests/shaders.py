@@ -18,6 +18,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-shaders-') as directory:
     config = root / 'settings.toml'
     env = dict(os.environ, GAMEPKG_HOME=str(library), GAMEPKG_CONFIG=str(config))
     def run(*args, success=True):
+        if args and args[0] in ('build','integrity-fix') and '--target' not in args: args=(*args,'--target','wasm')
         result = subprocess.run([str(CLI), *map(str,args)], env=env, capture_output=True, text=True, timeout=140)
         assert (result.returncode == 0) == success, result.stderr
         return result.stdout + result.stderr

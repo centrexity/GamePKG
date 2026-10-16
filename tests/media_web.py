@@ -32,6 +32,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-media-web-') as directory:
                 manifest.write_text(f'runtime_profile = "{profile}"\n'+manifest.read_text())
                 env = dict(os.environ, GAMEPKG_HOME=str(work/'library'), GAMEPKG_CONFIG=str(work/'settings.toml'))
                 def run(*args):
+                    if args and args[0] in ('build','integrity-fix') and '--target' not in args: args=(*args,'--target','wasm')
                     result = subprocess.run([str(CLI), *map(str,args)], env=env, capture_output=True, text=True, timeout=140)
                     assert result.returncode == 0, result.stderr
                 key = work/'key'

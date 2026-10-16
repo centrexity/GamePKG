@@ -4,6 +4,7 @@ fn settings_persist_and_failed_saves_preserve_previous_values() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("config/settings.toml");
     let mut settings = Settings::read(&path).unwrap();
+    settings.wasi_sysroot_directory = temp.path().join("wasi").to_string_lossy().into_owned();
     settings.dxc_directory = temp.path().join("dxc").to_string_lossy().into_owned();
     settings.library_directory = temp.path().join("library").to_string_lossy().into_owned();
     settings.tor_proxy = "127.0.0.1:9150".into();
@@ -34,7 +35,8 @@ fn settings_validate_bounds_and_reject_unknown_or_large_files() {
         assert!(s.validate().is_err());
     }
     defaults.validate().unwrap();
-    assert_eq!(defaults.shader_backend, "glsl");
+    assert_eq!(defaults.shader_backend, "wgsl");
+    assert_eq!(defaults.renderer, "vulkan");
     for memory in [0, 513] {
         let mut s = defaults.clone();
         s.memory_ceiling_mib = memory;
@@ -57,6 +59,9 @@ fn settings_validate_bounds_and_reject_unknown_or_large_files() {
         assert!(s.validate().is_err());
     }
     for directory in ["relative", "/tmp/dxc\ninvalid"] {
+        let mut invalid = defaults.clone();
+        invalid.wasi_sysroot_directory = directory.into();
+        assert!(invalid.validate().is_err());
         let mut s = defaults.clone();
         s.dxc_directory = directory.into();
         assert!(s.validate().is_err());

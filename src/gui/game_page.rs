@@ -38,7 +38,7 @@ impl App {
             self.rom_identity = None;
         }
     }
-    fn launch_selected(&mut self, id: String) {
+    fn launch_selected(&mut self, id: String, native: bool) {
         let paths = self
             .rom_paths
             .get(&id)
@@ -66,8 +66,11 @@ impl App {
                     "The game or library changed. Select the ROM files again."
                 );
             }
-            Ok(Work::Game(Box::new(crate::runtime::Game::load_with_roms(
-                &root, &id, &paths,
+            Ok(Work::Game(Box::new(crate::runtime::Game::load_target(
+                &root,
+                &id,
+                &paths,
+                Some(native),
             )?)))
         });
     }
@@ -97,20 +100,24 @@ impl App {
             ui.add_space(16.0);
             if let Some(m)=installed {
                 let built=self.built.contains(&id);let reviewing=self.pending.is_some();
-                ui.label(if built{"Ready to play"}else{"Not built"});
+                ui.label(if built{"Native build ready to play"}else{"Native build: Not built"});
                 if let Some(usage)=self.usage.get(&id){ui.label(format!("Storage: {} used",crate::storage::bytes(usage.used_bytes())));}
                 ui.horizontal_wrapped(|ui|{
-                    if ui.add_enabled(!reviewing&&built&&self.result.is_none()&&(!m.requires_rom||self.rom_paths.get(&id).is_some_and(|p|crate::rom_selections::ready(p,m.required_rom_count()))),egui::Button::new("Play").min_size(egui::vec2(100.0,36.0))).clicked(){self.launch_selected(id.clone());}
-                    if ui.add_enabled(!reviewing&&self.result.is_none(),egui::Button::new(if built{"Rebuild"}else{"Build"}).min_size(egui::vec2(100.0,36.0))).clicked(){let id=id.clone();self.begin_work(move||{crate::build::compile(&crate::registry::default_root()?,&id)?;Ok(Work::Message("Built. Ready to play.".into()))});}
+                    if ui.add_enabled(!reviewing&&built&&self.result.is_none()&&(!m.requires_rom||self.rom_paths.get(&id).is_some_and(|p|crate::rom_selections::ready(p,m.required_rom_count()))),egui::Button::new("Play").min_size(egui::vec2(100.0,36.0))).clicked(){self.launch_selected(id.clone(),true);}
+                    if ui.add_enabled(cfg!(target_os="linux")&&!reviewing&&self.result.is_none(),egui::Button::new(if built{"Rebuild"}else{"Build"}).min_size(egui::vec2(100.0,36.0))).clicked(){let id=id.clone();self.begin_work(move||{crate::native::compile(&crate::registry::default_root()?,&id)?;Ok(Work::Message("Native build ready to play.".into()))});}
                     if ui.add_enabled(!reviewing&&self.result.is_none()&&m.update_url.is_some(),egui::Button::new("Check for updates")).clicked(){let id=id.clone();self.begin_work(move||match crate::registry::check_update(&crate::registry::default_root()?,&id)?{Some((m,file))=>Ok(Work::Update(m,file)),None=>Ok(Work::Message("This game is up to date.".into()))});}
+                    if ui.add_enabled(!reviewing&&self.result.is_none(),egui::Button::new("Build Wasm")).clicked(){let id=id.clone();self.begin_work(move||{crate::build::compile(&crate::registry::default_root()?,&id)?;Ok(Work::Message("Wasm build complete. Native build kept separately.".into()))});}
+                    if ui.add_enabled(!reviewing&&self.wasm_built.contains(&id)&&self.result.is_none()&&(!m.requires_rom||self.rom_paths.get(&id).is_some_and(|p|crate::rom_selections::ready(p,m.required_rom_count()))),egui::Button::new("Play Wasm")).clicked(){self.launch_selected(id.clone(),false);}
                     ui.menu_button("More",|ui|{
                         if ui.add_enabled(!reviewing&&self.result.is_none(),egui::Button::new("Check integrity")).clicked(){let id=id.clone();self.begin_work(move||Ok(Work::Message(crate::integrity::check(&crate::registry::default_root()?,&id)?)));ui.close_menu();}
-                        if ui.add_enabled(!reviewing&&self.result.is_none(),egui::Button::new("Fix / rebuild")).clicked(){let id=id.clone();self.begin_work(move||Ok(Work::Message(crate::integrity::fix_with_store(&crate::registry::default_root()?,&id,None)?)));ui.close_menu();}
+                        if ui.add_enabled(cfg!(target_os="linux")&&!reviewing&&self.result.is_none(),egui::Button::new("Fix / rebuild native")).clicked(){let id=id.clone();self.begin_work(move||Ok(Work::Message(crate::integrity::fix_target(&crate::registry::default_root()?,&id,None,true)?)));ui.close_menu();}
+                        if ui.add_enabled(!reviewing&&self.result.is_none(),egui::Button::new("Fix / rebuild Wasm")).clicked(){let id=id.clone();self.begin_work(move||Ok(Work::Message(crate::integrity::fix_target(&crate::registry::default_root()?,&id,None,false)?)));ui.close_menu();}
                         if !m.shared_assets.is_empty(){ui.label("Original .gamepkgstore path");ui.text_edit_singleline(&mut self.source);}
-                        if !m.shared_assets.is_empty()&&ui.add_enabled(!reviewing&&self.result.is_none(),egui::Button::new("Repair assets from store")).clicked(){let id=id.clone();let source=self.source.clone();self.begin_work(move||Ok(Work::Message(crate::integrity::fix_with_store(&crate::registry::default_root()?,&id,Some(std::path::Path::new(source.trim())))?)));ui.close_menu();}
-                        if ui.add_enabled(!reviewing&&built&&self.result.is_none(),egui::Button::new("Export for web")).clicked(){let id=id.clone();self.begin_work(move||{let root=crate::registry::default_root()?;let suffix=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_nanos();let output=root.join("web-exports").join(format!("{id}-{suffix}"));crate::web_export::export(&root,&id,&output)?;Ok(Work::Message(format!("Web player exported to {}",output.display())))});ui.close_menu();}
+                        if !m.shared_assets.is_empty()&&ui.add_enabled(!reviewing&&self.result.is_none(),egui::Button::new("Repair assets from store")).clicked(){let id=id.clone();let source=self.source.clone();self.begin_work(move||Ok(Work::Message(crate::integrity::fix_target(&crate::registry::default_root()?,&id,Some(std::path::Path::new(source.trim())),true)?)));ui.close_menu();}
+                        if ui.add_enabled(!reviewing&&self.wasm_built.contains(&id)&&self.result.is_none(),egui::Button::new("Export for web")).clicked(){let id=id.clone();self.begin_work(move||{let root=crate::registry::default_root()?;let suffix=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_nanos();let output=root.join("web-exports").join(format!("{id}-{suffix}"));crate::web_export::export(&root,&id,&output)?;Ok(Work::Message(format!("Web player exported to {}",output.display())))});ui.close_menu();}
                     });
                 });
+                if !cfg!(target_os="linux"){ui.label("Native worker isolation is currently available on Linux. Use the explicit Wasm build and Play Wasm on this platform.");}
                 if m.requires_rom&&!self.rom_paths.get(&id).is_some_and(|p|crate::rom_selections::ready(p,m.required_rom_count())){ui.label("Choose the required ROM files below to enable Play.");}
             }else if self.pending.is_none(){
                 if let Some(entry)=self.catalog.iter().find(|e|e.id==id).cloned(){
@@ -209,6 +216,7 @@ impl App {
                 }
                 ui.label(format!("Lockfile / dependency inventory SHA-256: {}",m.lockfile_sha256));
                 ui.label(format!("Permissions: input={}, audio={}, save={}, network={}", m.permissions.input, m.permissions.audio, m.permissions.save, m.permissions.network));
+                if m.permissions.network != "none" {ui.label(format!("Network endpoints: {}. Listening: {}. Local network: {}",m.permissions.network_hosts.join(", "),m.permissions.network_listen.join(", "),m.permissions.network_allow_local));}
                 if let Some(url) = &m.update_url { ui.label(format!("Updates: {url}")); }
                 let preview_id = m.id.clone();
                 ui.horizontal(|ui| {

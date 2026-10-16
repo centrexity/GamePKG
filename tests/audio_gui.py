@@ -10,6 +10,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-draw-ui-') as directory:
  if muted: (root/'settings.toml').write_text('mute_audio = true\n')
  env=dict(os.environ,DISPLAY=':97',LIBGL_ALWAYS_SOFTWARE='1',GAMEPKG_CONFIG=str(root/'settings.toml'),GAMEPKG_HOME=str(root/'library'),GAMEPKG_SLANG_ROOT=os.environ.get('GAMEPKG_SLANG_ROOT',''));env.pop('WAYLAND_DISPLAY',None)
  def run(*args):
+  if args and args[0] in ('build','integrity-fix') and '--target' not in args: args=(*args,'--target','wasm')
   result=subprocess.run(['target/release/gamepkg',*map(str,args)],env=env,capture_output=True,text=True,timeout=140)
   assert result.returncode==0,result.stderr
  (root/'null-alsa.conf').write_text('pcm.!default { type null }\n')

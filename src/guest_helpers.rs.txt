@@ -24,8 +24,3 @@ pub fn audio_submit_pcm16_le(bytes: &[u8]) -> bool {
     }
     audio_submit(&samples[..count])
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum NetworkError { PermissionDenied }
-pub fn network_request(_url: &str, _output: &mut [u8]) -> Result<u32, NetworkError> {
-    Err(NetworkError::PermissionDenied)
-}

@@ -23,6 +23,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-integrity-roms-') as directory:
         }''')
         env=dict(os.environ,GAMEPKG_HOME=str(home/'library'),GAMEPKG_CONFIG=str(home/'settings.toml'))
         def run(*args,good=True):
+            if args and args[0] in ('build','integrity-fix') and '--target' not in args: args=(*args,'--target','wasm')
             result=subprocess.run([str(CLI),*map(str,args)],env=env,capture_output=True,text=True,timeout=180)
             assert (result.returncode==0)==good,result.stdout+result.stderr
             return result.stdout+result.stderr

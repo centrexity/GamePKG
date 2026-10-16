@@ -1,6 +1,7 @@
 package gamepkg:engine@0.1.0;
 
 interface host {
+  network-call: func(operation: u32, request: list<u8>, capacity: u32) -> tuple<s32, list<u8>>;
     rom-count: func() -> u32;
     rom-size-at: func(index: u32) -> option<u32>;
     rom-read-at: func(index: u32, offset: u32, length: u32) -> option<list<u8>>;

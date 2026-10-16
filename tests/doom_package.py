@@ -7,6 +7,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-doom-package-') as temp:
  root=Path(temp);config=root/'settings.toml';config.write_text('automatic_update_checks=false\n')
  env=dict(os.environ,GAMEPKG_HOME=str(root/'library'),GAMEPKG_CONFIG=str(config))
  def run(*args,good=True):
+  if args and args[0] in ('build','integrity-fix') and '--target' not in args: args=(*args,'--target','wasm')
   r=subprocess.run([str(CLI),*map(str,args)],env=env,capture_output=True,text=True,timeout=180)
   assert (r.returncode==0)==good,r.stdout+r.stderr
   return r.stdout+r.stderr

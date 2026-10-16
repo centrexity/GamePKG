@@ -7,7 +7,7 @@ Start with `examples/minimal` or `examples/good/input-game` in the source reposi
 ## Creator checklist
 
 1. Write `source/src/lib.rs` with `pub fn game_tick(input: u32, state: u64) -> u64`. Use direct function calls and checked source modules. The host adds the runtime bindings and export wrapper; do not add your own imports or export attributes.
-2. Set a unique game ID, semantic version, runtime profile, and source lockfile hash in `manifest.toml`. Declare only the permissions you need, recommended memory, and hard memory limits. Players choose execution deadlines in Settings. Guest networking must be `none`.
+2. Set a unique game ID, semantic version, runtime profile, and source lockfile hash in `manifest.toml`. Declare only the permissions you need, recommended memory, and hard memory limits. Players choose execution deadlines in Settings. Leave networking as `none` unless you declare the exact HTTPS/multiplayer endpoints needed by your game.
 3. Put assets under `assets/`, Slang source under `shaders/`, and include a thumbnail, license and credits. Paths must be portable relative paths with forward slashes, no traversal, device names or symlinks.
 4. Declare no Cargo dependencies. Include a root-only `source/Cargo.lock` and put its SHA-256 in `lockfile_sha256`. Do not vendor dependency replacements into your package.
 5. If your game requires ROM files, declare each requirement in the manifest. Players select their own files; read only those ROMs through `gamepkg::rom_count`, `rom_size_at` and `rom_read_at`. Do not fetch ROMs or ask for access to their folders.
@@ -52,7 +52,7 @@ Keep the name and version identical in both Cargo files. Hash the exact lockfile
 
 Use `gamepkg::asset_read` for package-relative assets, `rom_count`, `rom_size_at` and `rom_read_at` for player-selected ROMs, and `save_size`, `save_read` and `save_write` for the game's save blob. They never open arbitrary host files.
 
-Use `gamepkg::draw_clear`, `draw_rect`, `draw_circle` and `draw_asset_image` for the host-owned viewport. Games cannot create windows or obtain GPU handles. `gamepkg::network_request(url, output)` always returns `NetworkError::PermissionDenied`, leaves output untouched and performs no I/O. The manifest requires `network = "none"`.
+Use `gamepkg::draw_clear`, `draw_rect`, `draw_circle` and `draw_asset_image` for the host-owned viewport. Games cannot create windows or obtain GPU handles. `gamepkg::network_request(url, output)` performs an asynchronous, bounded HTTPS GET only when the signed manifest permits that exact endpoint. TCP and UDP use the same host-controlled network service. See [networking](NETWORKING.md).
 
 These functions preserve the source checks, signatures, isolated compiler and Wasm restrictions. Games cannot replace the injected implementation or declare their own host imports.
 
@@ -123,3 +123,9 @@ gamepkg-gui
 ```
 
 Replace the ID with your manifest ID. For the input example use `com.gamepkg.input`. The desktop player supplies controller and touch controls; the CLI is useful for deterministic frame checks. Linux source builds use bubblewrap; Windows source builds use the configured Linux compiler connection through WSL 2. Optimization settings change local builds without expanding game permissions.
+
+## Native builds, Vulkan and networking
+
+The default Linux Build compiles directly for the local CPU in an isolated native worker. Build Wasm is an explicit alternative. The same source and no-dependency rules apply to both. Direct standard I/O and thread APIs are also rejected; use the host functions. Vulkan is the default desktop renderer, with WGSL or SPIR-V output compiled from Slang. Guests receive no raw window, Vulkan or socket handles.
+
+See [native runtime and build rules](NATIVE_RUNTIME.md) and [network permissions and API](NETWORKING.md). HTTPS GET, TCP and UDP use declared signed endpoints and asynchronous host calls. Existing packages declaring `network = "none"` retain no network access.

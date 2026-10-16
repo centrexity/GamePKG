@@ -1,0 +1,18 @@
+format_version = 1
+id = "com.gamepkg.network-client"
+version = "0.1.0"
+entry_world = "game"
+engine_version = ">=0.1.10, <0.2.0"
+lockfile_sha256 = "fd15f338700661beff6c66ee930c8dbc9c226dfc8b20f56d6292e4771436d603"
+shader_profile = "slang"
+
+[limits]
+recommended_memory_bytes = 8388608
+hard_memory_bytes = 16777216
+
+[permissions]
+input = true
+audio = false
+save = false
+network = "https"
+network_hosts = ["example.com:443"]

@@ -4,9 +4,9 @@
 
 **Know what you run. Control what it can access.** GamePKG is building a safer way to share and play games: inspectable source, creator-signed packages, isolated compilation, and a host that is designed to grant only the capabilities a game needs.
 
-**Current status:** this is a development preview. Package verification, catalog import, installation, update checks, and isolated Cargo Wasm and Slang shader builds on Linux and the configured Windows WSL 2 connection work today. The experimental grid-v1 profile now plays in the GUI and terminal under Wasmtime with scoped asset reads, memory limits, and epoch deadlines. Resource-free Slang GLSL, SPIR-V, and WGSL fragment passes now render in the OpenGL GUI; versioned WIT components are supported alongside the legacy core profile; broader rendering remains pending; this is not a guarantee that a package is harmless.
+**Current status:** this is a development preview. Package verification, catalog import, installation, update checks, and isolated Cargo Wasm and Slang shader builds on Linux and the configured Windows WSL 2 connection work today. The default Linux build uses a direct CPU executable in an isolated native worker. Optional Wasm profiles play in the GUI and terminal under Wasmtime with scoped asset reads, memory limits, and epoch deadlines. Vulkan is the default renderer; bounded Slang fragment passes use WGSL or SPIR-V, with OpenGL available explicitly; versioned WIT components are supported alongside the legacy core profile; broader rendering remains pending; this is not a guarantee that a package is harmless.
 
-Download the [0.1.9 Linux and Windows CLI/desktop apps](https://github.com/centrexity/GamePKG/releases/tag/v0.1.9), including the checksum for your platform. Windows source builds use the matching Linux compiler inside WSL 2; playback runs in the native Windows app. See [Windows setup](docs/INSTALL_WINDOWS.md). Host distributions can also be prepared with `python3 tools/package_release.py /tmp/gamepkg-distribution` after building both release entry points. The archive includes CLI/GUI executables, setup tools, examples, original resolved dependency sources and notices, and integrity hashes. See [installation instructions](docs/INSTALL.md). See the [implementation and verification audit](docs/IMPLEMENTATION_STATUS.md) for requirement coverage and remaining limits. The public repository's **Package Linux preview** workflow produces the same artifact on Ubuntu 24.04.
+Download the [0.1.10 Linux and Windows CLI/desktop apps](https://github.com/centrexity/GamePKG/releases/tag/v0.1.10), including the checksum for your platform. Windows source builds use the matching Linux compiler inside WSL 2; playback runs in the native Windows app. See [Windows setup](docs/INSTALL_WINDOWS.md). Host distributions can also be prepared with `python3 tools/package_release.py /tmp/gamepkg-distribution` after building both release entry points. The archive includes CLI/GUI executables, setup tools, examples, original resolved dependency sources and notices, and integrity hashes. See [installation instructions](docs/INSTALL.md). See the [implementation and verification audit](docs/IMPLEMENTATION_STATUS.md) for requirement coverage and remaining limits. The public repository's **Package Linux preview** workflow produces the same artifact on Ubuntu 24.04.
 
 Try the [signed demo catalog](https://github.com/centrexity/GamePKG/releases/download/v0.1.6/demos.gamepkglist) with **Import .gamepkglist** in the desktop library. It adds Collect Stars, Shape Playground, PNG Sprite Playground and Zelda3 as **Not downloaded**. Choose a game to download, approve its creator on first installation, then **Build** and **Play**. The three original demos need no ROM; Zelda3 requires your supported USA ROM. Players need no signing key. The [portable demo store](https://github.com/centrexity/GamePKG/releases/download/v0.1.6/demos.gamepkgstore) includes all four signed games for offline import. Compare downloads against [demo checksums](https://github.com/centrexity/GamePKG/releases/download/v0.1.6/demo-packages.sha256).
 
@@ -23,14 +23,14 @@ A `.gamepkg` contains Rust source, Slang shader source, assets, and a signed man
 | Signed identity and updates | The manifest and package contents are signed. Updates must keep the installed creator key and package ID, with a higher version. | Yes; first creator approval is still required |
 | Restricted package contents | Rejects traversal paths, duplicate entries, symlinks, oversized archive contents, unsupported shaders, and source outside the initial policy. | Yes |
 | Isolated compilation | Supported Linux builds run inside bubblewrap with a private work area, no network, and no access to your home directory. | Yes; checked source modules with no Cargo dependencies |
-| Limited game access | Games receive host-approved asset, input, ROM, drawing, audio, and save operations. | Available in the core and versioned WIT component profiles |
-| Runtime resource limits | Memory caps and deadlines constrain running games. | Enforced for both Wasmtime profiles; GPU work is outside Wasm time limits |
+| Limited game access | Games receive host-approved asset, input, ROM, drawing, audio, save and endpoint-scoped network operations. | Available in the native worker and optional core/WIT Wasm profiles |
+| Runtime resource limits | Memory caps and deadlines constrain running games. | Enforced for native workers and optional Wasmtime profiles; GPU work is outside CPU time limits |
 
 ## Build locally, improve over time
 
 Building on demand on your own machine creates opportunities to optimize games for the supported platform and runtime instead of relying on a single prebuilt executable. Shipping source also lets the host rebuild games as compiler tooling and optimization settings improve. Creators can release signed source updates, and the host can check periodically for newer versions while preserving creator-key continuity.
 
-These are opportunities, not a promise that every local build will be faster. GamePKG supports isolated Wasm builds, manual rebuilds, user-requested update checks, and configurable periodic checks while the desktop library is open and idle. Broader platform-specific performance tuning remains planned. Wasm builds must stay within their supported target and sandbox; local compilation does not grant games extra access to your machine.
+These are opportunities, not a promise that every local build will be faster. GamePKG supports isolated native and optional Wasm builds, manual rebuilds, user-requested update checks, and configurable periodic checks while the desktop library is open and idle. Broader platform-specific performance tuning remains planned. Wasm builds must stay within their supported target and sandbox; local compilation does not grant games extra access to your machine.
 
 ## What can a GamePKG do—and what can it access?
 
@@ -40,7 +40,7 @@ The package policy supports checked Rust source modules with no Cargo dependenci
 
 The runtime provides **no ambient filesystem or network access**. Games use specific capabilities such as input, audio, or saving through the host. Asset access uses virtual paths inside the game’s archive; save access is scoped by creator, game ID, and save schema. A game requiring a ROM declares that requirement, and the player supplies it. ROM bytes are shared read-only only for the selected play session.
 
-Guest networking is currently unsupported: manifests must declare `network = "none"`. User-requested host downloads over HTTPS or Tor are separate from game permissions. A signed update URL does not give the game permission to browse the internet. Signatures establish integrity and continuity with a creator key, not a creator's real-world identity or a promise that their code is safe.
+Game networking is off by default. Signed permissions can enable HTTPS GET and TCP/UDP multiplayer connections to exact declared endpoints, including explicit TCP listeners. See [networking permissions and API](docs/NETWORKING.md). User-requested host downloads over HTTPS or Tor are separate from game permissions. A signed update URL does not give the game permission to browse the internet. Signatures establish integrity and continuity with a creator key, not a creator's real-world identity or a promise that their code is safe.
 
 Port recipes for DOOM, Zelda3, Arkanoo, and 2048 live in [GamePKG_Ports](https://github.com/centrexity/GamePKG_Ports). This repository pins them under `ports` for integration tests and release bundles. Existing checkouts should run `git submodule update --init --recursive` before building or testing. Trusted engine integration remains part of the host.
 
@@ -75,7 +75,7 @@ Packing validates before publishing and refuses to overwrite files. The output m
 
 Game source also follows an enforced [portable data policy](docs/PORTABILITY.md): fixed-width byte conversions, explicit byte order, a fixed wasm32 ABI, and no native layout or pointer-dependent serialization. Dedicated 32-bit Linux, Windows, and Android checks exercise the same core and component runtime boundaries.
 
-- Format version 1; network must be `none`; positive memory limit up to 512 MiB.
+- Format version 1; networking is denied unless explicitly declared with bounded endpoint capabilities; positive memory limit up to 512 MiB.
 - Required manifest, PNG-signature thumbnail, license, credits, Cargo manifest/lockfile, and `source/src/lib.rs`.
 - At most 10,000 entries, 64 MiB per file, 256 MiB uncompressed total; stored and zstd entries only.
 - No absolute paths, traversal, backslashes, duplicate paths, directory entries, or symlinks.
@@ -86,7 +86,7 @@ Game source also follows an enforced [portable data policy](docs/PORTABILITY.md)
 Filesystem access from games is virtual and scoped: assets come from the signed
 package, ROM reads use only files explicitly selected by the player, and saves
 use the game's own bounded save data. Games receive no operating-system paths,
-file handles, general filesystem API, or networking API. Package downloading and
+file handles or a general filesystem API. Networking uses the endpoint-scoped host API. Package downloading and
 update checks run in the host separately from game execution. Core Wasm imports
 must be approved GamePKG functions; component imports must be functions from the
 versioned GamePKG host interface. Filesystem, socket, and unknown imports are
@@ -145,7 +145,7 @@ Without `--trust-creator`, a first CLI install reports the creator fingerprint a
 
 Creators may set `update_url = "https://creator.example/latest.gamepkg"` at the top level of their input manifest. It points directly to the newest signed `.gamepkg`, not a JSON feed. The host downloads it only when the user requests an update; the downloaded ID, signer, and version must pass continuity checks. Packing inserts `creator_key` automatically; if supplied, it must match the signing key. The private signing key never goes inside the archive.
 
-Downloads require the `curl` executable, enforce HTTPS for ordinary hosts, Tor-only routing for onion hosts, certificate verification for HTTPS, connection/transfer timeouts, and a 256 MiB transfer limit. No game code runs during installation. Host downloads are separate from guest network permissions, which remain `none`.
+Downloads require the `curl` executable, enforce HTTPS for ordinary hosts, Tor-only routing for onion hosts, certificate verification for HTTPS, connection/transfer timeouts, and a 256 MiB transfer limit. No game code runs during installation. Host downloads are separate from guest network permissions, which are separately declared in the signed manifest.
 
 Installed archives reside under `GAMEPKG_HOME` when set, otherwise `$XDG_DATA_HOME/gamepkg`, `%LOCALAPPDATA%/gamepkg`, or `$HOME/.local/share/gamepkg`. Installation snapshots and verifies the bytes before replacement, uses an install lock, and leaves the old version intact on validation failure. An interrupted process may leave `.install-lock`; remove it only after confirming no install process is active.
 
@@ -157,7 +157,7 @@ The desktop library shows each installed package's thumbnail, ID, version, ROM r
 
 Set `requires_rom = true` at the top level of the manifest for a game requiring a ROM supplied by the end user. It defaults to false for existing packages and is covered by the creator signature. The host displays the requirement during inspection and in the library. No ROM is downloaded, uploaded, or included automatically. Select a local ROM path when launching; the guest receives bounded read-only bytes for that session.
 
-`gamepkg build <id>` uses the same build action as the GUI. This initial build profile compiles verified `source/src/lib.rs` with host-supplied bindings through offline, locked Cargo to `wasm32-unknown-unknown` under Linux bubblewrap, without Cargo build scripts. It requires `bwrap`, `timeout`, `prlimit`, Rust, `rustup target add wasm32-unknown-unknown`, and the pinned Slang installation described below. The compiler has a private working directory, an isolated network namespace, access to system tools and its toolchain, and a 60-second deadline. It has no access to the user's home directory. Failed sandbox setup stops the build; there is no native or unsandboxed fallback. Compiler processes have a 2 GiB virtual address-space ceiling, core dumps disabled, output-file limits (32 MiB for Rust, 16 MiB for Slang), and bounded diagnostics (1 MiB per stream). These are per-process limits rather than a total process-tree memory budget.
+`gamepkg build <id>` and the GUI Build action now compile native machine code for the current Linux computer, with a separately isolated worker. They do not also build Wasm. See [native builds, isolation and Vulkan rendering](docs/NATIVE_RUNTIME.md). Use **Build Wasm** or `gamepkg build <id> --target wasm` for the optional Wasm profile. That profile compiles verified `source/src/lib.rs` with host-supplied bindings through offline, locked Cargo to `wasm32-unknown-unknown` under Linux bubblewrap, without Cargo build scripts. It requires `bwrap`, `timeout`, `prlimit`, Rust, `rustup target add wasm32-unknown-unknown`, and the pinned Slang installation described below. The compiler has a private working directory, an isolated network namespace, access to system tools and its toolchain, and a 60-second deadline. It has no access to the user's home directory. Failed sandbox setup stops the build; there is no unsandboxed fallback. Compiler processes have a 2 GiB virtual address-space ceiling, core dumps disabled, output-file limits (32 MiB for Rust, 16 MiB for Slang), and bounded diagnostics (1 MiB per stream). These are per-process limits rather than a total process-tree memory budget.
 
 `gamepkg check-updates <id>` checks the signed URL without changing the installed game. In the GUI, a newer update opens for review and explicit installation. Matching versions report up-to-date; older versions and changed IDs/keys are rejected. `gamepkg update <id>` remains the explicit download-and-install command.
 
@@ -293,7 +293,7 @@ export GAMEPKG_SLANG_ROOT=/absolute/path/gamepkg-slang
 The installer downloads the official Slang 2026.19 Linux x86-64 release and
 checks a pinned SHA-256 before unpacking it. Alternatively set the installation
 folder and backend in the desktop Settings page. New configurations default to
-GLSL for shader playback in the OpenGL desktop player. SPIR-V, WGSL, Metal,
+WGSL or SPIR-V for Vulkan shader playback. OpenGL also accepts GLSL. SPIR-V, WGSL, Metal,
 and DXIL compilation outputs are also tested. DXIL requires the pinned
 DXC 1.9.2609 Linux x86-64 distribution:
 
@@ -669,7 +669,7 @@ With `-o` and `--key`, `build` signs a temporary candidate, verifies it, and com
 
 Creator directory-build outputs must be outside the source tree, including when their parent folder is a symlink. The destination parent must already exist. Existing files and symlinks are refused before compilation; publication still uses an atomic no-overwrite operation after successful compilation.
 
-Existing explicitly saved shader backends remain selected. For desktop shader playback, choose GLSL and rebuild if an older configuration selected another backend. New installations and Reset form to defaults use GLSL so supported shader games can be built and played without an extra configuration step.
+Existing explicitly saved shader backends remain selected. For desktop shader playback, choose WGSL for Vulkan, or choose OpenGL explicitly when using GLSL, and rebuild. New installations and Reset form to defaults use Vulkan and WGSL. OpenGL is an explicit alternative.
 
 New builds publish a bounded shader-cache receipt tied to the signed package digest and selected backend, with checksums for each compiled output and reflection file. Playback validates the exact bytes it uses without starting the compiler. Earlier builds without a receipt retain the original compiler-based cache lookup. `tests/shader_gui.py --without-compiler` verifies actual rendering and input after removing compiler discovery; the test also rejects altered outputs and receipts for a different package or backend. This prepares the playback side for a separate isolated Windows compilation worker; The configured Windows WSL 2 connection now passes actual source build, native playback and integrity-repair tests for core and component games.
 
@@ -944,3 +944,5 @@ The dependency-free DOOM recipe is in [GamePKG_Ports](https://github.com/centrex
 ## Drag files into the desktop app
 
 Drop one `.gamepkg` or `.gamepkglist` file anywhere in the library window. Packages are copied into a private snapshot, verified, and shown for creator review before installation. Choose **Cancel package review** to discard one. Lists add catalog entries as **Not downloaded**, without fetching games. Finish or cancel an existing review before dropping another file; return to Library first when playing. Unsupported files and multiple-file drops show an explanation without replacing current work.
+
+Native and optional Wasm builds have separate controls and caches. Native C-based ports use Clang 18 and lld-18; their optional Wasm builds additionally use WASI libraries. Shader-free native games do not need Slang. See [native runtime details](docs/NATIVE_RUNTIME.md) and [HTTPS and multiplayer networking](docs/NETWORKING.md).

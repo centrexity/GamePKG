@@ -99,6 +99,12 @@ pub struct Permissions {
     pub audio: bool,
     pub save: bool,
     pub network: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub network_hosts: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub network_listen: Vec<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub network_allow_local: bool,
 }
 impl Manifest {
     pub fn required_rom_count(&self) -> usize {
@@ -222,9 +228,7 @@ impl Manifest {
                 );
             }
         }
-        if m.permissions.network != "none" {
-            bail!("network capabilities are not implemented");
-        }
+        crate::network::validate(&m.permissions)?;
         if m.shaders.len() > 32 {
             bail!("too many shader entry points");
         }

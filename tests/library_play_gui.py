@@ -80,7 +80,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-library-play-') as directory:
         assert 'Rebuild' not in text, text
         click_word(words,'Build')
         text,words=wait_screen(lambda text:'Rebuild' in text,'library-after-build.png')
-        assert len(list((library/'builds').glob('*/game.wasm')))==1
+        assert len(list((library/'builds').glob('*/native-v1-*/game')))==1
         click_word(words,'More')
         text,words=wait_screen(lambda text:'Check integrity' in text,'game-more.png')
         click_word(words,'integrity')
@@ -104,8 +104,8 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-library-play-') as directory:
         assert history['played_ms'] >= 1000
         assert set(history['unlocked']) == {'first_star'}, history
         click_word(words,'Rebuild')
-        wait_screen(lambda text:'Built. Ready to play.' in text,'library-rebuilt.png')
-        assert len(list((library/'builds').glob('*/game.wasm')))==1
+        wait_screen(lambda text:'Native build ready to play.' in text,'library-rebuilt.png')
+        assert len(list((library/'builds').glob('*/native-v1-*/game')))==1
         text,words=read_screen('library-before-catalog.png')
         click_word(words,'Back')
         text,words=read_screen('library-catalog-source.png')

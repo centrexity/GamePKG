@@ -55,9 +55,9 @@
       <h1>Know what you play.</h1>
       <p class="lead">Know what you run. Control what it can access.</p>
       <p>See the source, review permissions, and verify the creator before you play. GamePKG builds your chosen packages locally and limits their access through an isolated runtime. GamePKG is a package format and player; creators host their own games, and you choose where to obtain them.</p>
-      <a class="button" href="https://github.com/centrexity/GamePKG/releases/download/v0.1.9/gamepkg-0.1.9-linux-x86_64.tar.gz">Download for Linux</a>
-      <a class="button" href="https://github.com/centrexity/GamePKG/releases/download/v0.1.9/gamepkg-0.1.9-windows-x86_64.zip">Download for Windows</a>
-      <p>Verify your download with the <a href="https://github.com/centrexity/GamePKG/releases/tag/v0.1.9">release checksums</a>. Windows source builds use a matching Linux compiler inside WSL 2; playback runs in the native Windows app. Follow the <a href="https://github.com/centrexity/GamePKG/blob/main/docs/INSTALL_WINDOWS.md">Windows setup guide</a>.</p>
+      <a class="button" href="https://github.com/centrexity/GamePKG/releases/download/v0.1.10/gamepkg-0.1.10-linux-x86_64.tar.gz">Download for Linux</a>
+      <a class="button" href="https://github.com/centrexity/GamePKG/releases/download/v0.1.10/gamepkg-0.1.10-windows-x86_64.zip">Download for Windows</a>
+      <p>Verify your download with the <a href="https://github.com/centrexity/GamePKG/releases/tag/v0.1.10">release checksums</a>. Windows source builds use a matching Linux compiler inside WSL 2; playback runs in the native Windows app. Follow the <a href="https://github.com/centrexity/GamePKG/blob/main/docs/INSTALL_WINDOWS.md">Windows setup guide</a>.</p>
       <p>Try the <a href="https://github.com/centrexity/GamePKG/releases/download/v0.1.6/demos.gamepkglist">signed demo catalog</a>: import it into your library, choose a game, approve its creator, then Build and Play. Some packages need player-provided ROM files; each manifest lists its requirements. Players need no signing key. A <a href="https://github.com/centrexity/GamePKG/releases/download/v0.1.6/demos.gamepkgstore">portable demo store</a> is also available.</p>
 
     </div>
@@ -66,8 +66,8 @@
       <p>Each <code>.gamepkg</code> carries Rust source, Slang shader source, assets, and a signed manifest. You can inspect its code and permissions before installing it. Source visibility makes review possible; it does not prove safety. Conventional signed binaries and separately sandboxed apps can also offer protections.</p>
       <div class="steps">
         <div class="step"><span>01 / INSPECT</span><h3>See what you run.</h3><p>Review the source, creator fingerprint, permissions, and any user-provided ROM requirement.</p></div>
-        <div class="step"><span>02 / VERIFY &amp; BUILD</span><h3>Keep the build isolated.</h3><p>Verify signed contents and compile verified source in a private, network-isolated Linux work area, including through WSL 2 on Windows.</p></div>
-        <div class="step"><span>03 / RUNTIME DESIGN</span><h3>Grant specific access.</h3><p>The Wasm host exposes scoped assets, selected ROMs, saves, drawing and audio through a versioned WIT component API or the legacy core profile, with memory and deadline limits.</p></div>
+        <div class="step"><span>02 / VERIFY &amp; BUILD</span><h3>Build for your machine.</h3><p>Verify signed contents and compile directly for the current Linux CPU in a private, network-isolated work area. Wasm and web builds have separate controls.</p></div>
+        <div class="step"><span>03 / RUNTIME DESIGN</span><h3>Grant specific access.</h3><p>The host exposes scoped assets, selected ROMs, saves, drawing, audio and permitted networking. Native Linux workers use OS isolation; separate Wasm builds use the sandboxed runtime.</p></div>
       </div>
     </section>
     <section aria-labelledby="protections"><h2 id="protections">Limits that belong in the format.</h2>
@@ -77,7 +77,7 @@
         <tr><td>Restricted source profile</td><td>Checked Rust source modules, no guest Cargo dependencies, no build scripts or procedural macros, and Slang-only shader source. Every packaged Rust file is scanned.</td></tr>
         <tr><td>Isolated compilation</td><td>Linux builds use bubblewrap, a private work area, no network, no user home access, and a 60-second deadline. Sandbox failure stops the build.</td></tr>
         <tr><td>Scoped game capabilities</td><td>Expose only host-approved assets, input, rendering, audio, and save operations instead of ambient operating-system access.</td></tr>
-        <tr><td>Runtime resource budgets</td><td>Enforce memory caps and deadlines for running games. Signed memory limits apply in both runtime profiles. GPU work is outside Wasm time limits.</td></tr>
+        <tr><td>Runtime resource budgets</td><td>Enforce memory caps and deadlines for running games. Signed memory limits and CPU deadlines apply to native workers and optional Wasm runtimes. GPU work has separate limits.</td></tr>
       </tbody></table></div>
     </section>
     <section aria-labelledby="local-builds"><h2 id="local-builds">Build here. Improve over time.</h2>
@@ -91,7 +91,7 @@
         <li><strong>Input, rendering, and audio:</strong> explicit game operations exposed by the host.</li>
         <li><strong>Saves:</strong> host-scoped storage rather than arbitrary filesystem writes.</li>
         <li><strong>ROMs:</strong> a signed manifest declares which ROM files must be supplied by the player. No ROM is fetched automatically; only the files selected by the player are shared read-only in the signed manifest’s order for that session.</li>
-        <li><strong>Networking:</strong> guest networking is unsupported. Manifests must declare <code>network = "none"</code>.</li>
+        <li><strong>Networking:</strong> off by default. Signed permissions can allow bounded HTTPS requests and TCP/UDP multiplayer traffic to declared endpoints; games never receive direct socket access.</li>
       </ul>
       <p>Installing a package runs no game code or package-provided install scripts. Source checks reject filesystem, network, process, and environment paths, compile-time file includes, macros, unsafe blocks, and foreign declarations. Source checks, compiler isolation, and runtime limits work together; inspection alone cannot prove a game harmless.</p>
     </section>

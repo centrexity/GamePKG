@@ -1,0 +1,43 @@
+// Trusted host bindings for native game workers. Guest source cannot use std I/O.
+pub mod gamepkg {
+    use std::io::{Read, Write};
+    use std::convert::TryInto;
+    fn rpc(op:u8, data:&[u8])->Vec<u8> {
+        let mut out=std::io::stdout().lock();
+        out.write_all(&((data.len()+1) as u32).to_le_bytes()).unwrap();out.write_all(&[op]).unwrap();out.write_all(data).unwrap();out.flush().unwrap();drop(out);
+        let mut input=std::io::stdin().lock();let mut len=[0;4];input.read_exact(&mut len).unwrap();let n=u32::from_le_bytes(len) as usize;assert!(n<=8*1024*1024+65536);let mut bytes=vec![0;n];input.read_exact(&mut bytes).unwrap();bytes
+    }
+    fn u32s(values:&[u32])->Vec<u8>{values.iter().flat_map(|v|v.to_le_bytes()).collect()}
+    fn number(bytes:Vec<u8>)->Option<u32>{if bytes.len()!=4{return None;} let n=i32::from_le_bytes(bytes.try_into().unwrap());if n<0{None}else{Some(n as u32)}}
+    fn accepted(op:u8,data:&[u8])->bool{rpc(op,data)==[0]}
+    fn read(op:u8, values:&[u32], out:&mut[u8])->Option<u32>{if out.len()>65536{return None;}let data=rpc(op,&u32s(values));if data.first()!=Some(&0)||data.len()-1>out.len(){return None;}let n=data.len()-1;out[..n].copy_from_slice(&data[1..]);Some(n as u32)}
+    pub fn asset_read(path:&str,offset:u32,out:&mut[u8])->Option<u32>{if path.is_empty()||path.len()>1024||out.len()>65536{return None;}let mut b=u32s(&[path.len() as u32]);b.extend(path.as_bytes());b.extend(u32s(&[offset,out.len() as u32]));let d=rpc(1,&b);if d.first()!=Some(&0)||d.len()-1>out.len(){return None;}let n=d.len()-1;out[..n].copy_from_slice(&d[1..]);Some(n as u32)}
+    pub fn rom_count()->u32{number(rpc(2,&[])).unwrap_or(0)}
+    pub fn rom_size_at(index:u32)->Option<u32>{number(rpc(3,&u32s(&[index])))}
+    pub fn rom_size()->Option<u32>{rom_size_at(0)}
+    pub fn rom_read_at(index:u32,offset:u32,out:&mut[u8])->Option<u32>{read(4,&[index,offset,out.len() as u32],out)}
+    pub fn rom_read(offset:u32,out:&mut[u8])->Option<u32>{rom_read_at(0,offset,out)}
+    pub fn save_size()->Option<u32>{number(rpc(5,&[]))}
+    pub fn save_read(offset:u32,out:&mut[u8])->Option<u32>{read(6,&[offset,out.len() as u32],out)}
+    pub fn save_write(bytes:&[u8])->bool{bytes.len()<=1048576&&accepted(7,bytes)}
+    pub fn draw_clear(rgba:u32)->bool{accepted(8,&u32s(&[rgba]))}
+    pub fn draw_rect(x:f32,y:f32,w:f32,h:f32,rgba:u32)->bool{accepted(9,&u32s(&[x.to_bits(),y.to_bits(),w.to_bits(),h.to_bits(),rgba]))}
+    pub fn draw_circle(x:f32,y:f32,r:f32,rgba:u32)->bool{accepted(10,&u32s(&[x.to_bits(),y.to_bits(),r.to_bits(),rgba]))}
+    pub fn draw_shader(index:u32)->bool{accepted(11,&u32s(&[index]))}
+    pub fn audio_submit(samples:&[i16])->bool{if samples.len()>1600{return false;}let b:Vec<u8>=samples.iter().flat_map(|v|v.to_le_bytes()).collect();accepted(12,&b)}
+    pub fn draw_image(x:f32,y:f32,w:f32,h:f32,pw:u32,ph:u32,pixels:&[u8])->bool{if pw==0||ph==0||pw>512||ph>512||pixels.len()!=pw as usize*ph as usize*4{return false;}let mut b=u32s(&[x.to_bits(),y.to_bits(),w.to_bits(),h.to_bits(),pw,ph]);b.extend(pixels);accepted(13,&b)}
+    pub fn draw_asset_image(path:&str,x:f32,y:f32,w:f32,h:f32)->bool{if path.len()>1024{return false;}let mut b=u32s(&[path.len() as u32]);b.extend(path.as_bytes());b.extend(u32s(&[x.to_bits(),y.to_bits(),w.to_bits(),h.to_bits()]));accepted(14,&b)}
+    pub fn draw_shader_image(index:u32,pw:u32,ph:u32,pixels:&[u8])->bool{if pw==0||ph==0||pw>512||ph>512||pixels.len()!=pw as usize*ph as usize*4{return false;}let mut b=u32s(&[index,pw,ph]);b.extend(pixels);accepted(15,&b)}
+    pub fn draw_shader_asset_image(index:u32,path:&str)->bool{if path.len()>1024{return false;}let mut b=u32s(&[index]);b.extend(path.as_bytes());accepted(16,&b)}
+    pub fn achievement_unlock(index:u32)->bool{accepted(17,&u32s(&[index]))}
+    // Network requests are mediated by the parent; this worker has no network interface.
+    fn __gamepkg_network_call(operation:u32,input:&[u8],output:&mut[u8])->Result<u32,NetworkError>{if input.len()>65540||output.len()>65536{return Err(NetworkError::PermissionDenied);}let mut b=vec![operation as u8];b.extend((output.len() as u32).to_le_bytes());b.extend(input);let data=rpc(22,&b);match data.first(){Some(0) if data.len()-1<=output.len()=>{let n=data.len()-1;output[..n].copy_from_slice(&data[1..]);Ok(n as u32)},Some(2)=>Err(NetworkError::Pending),Some(3)=>Err(NetworkError::Failed),_=>Err(NetworkError::PermissionDenied)}}
+    #[cfg(not(gamepkg_doom))]
+    pub fn doom_tick(_:u32,_:u64)->u64{panic!("No approved DOOM engine")}
+    #[cfg(not(gamepkg_zelda))]
+    pub fn zelda3_tick(_:u32,_:u64)->u64{panic!("No approved Zelda engine")}
+    // GAMEPKG_HELPERS
+    // GAMEPKG_ENGINE
+    pub(super) fn __gamepkg_packet(data:&[u8]) {let mut out=std::io::stdout().lock();out.write_all(&(data.len() as u32).to_le_bytes()).unwrap();out.write_all(data).unwrap();out.flush().unwrap();}
+    pub(super) fn __gamepkg_next_tick()->Option<(u32,u64)>{let mut input=std::io::stdin().lock();let mut len=[0;4];if input.read_exact(&mut len).is_err(){return None;}assert_eq!(u32::from_le_bytes(len),12);let mut b=[0;12];input.read_exact(&mut b).unwrap();Some((u32::from_le_bytes(b[..4].try_into().unwrap()),u64::from_le_bytes(b[4..].try_into().unwrap())))}
+}

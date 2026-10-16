@@ -114,6 +114,9 @@ fn reserved(name: &str) -> bool {
             | "unsafe"
             | "extern"
             | "fs"
+            | "io"
+            | "os"
+            | "thread"
             | "net"
             | "process"
             | "env"
@@ -203,6 +206,23 @@ impl<'ast> Visit<'ast> for Scanner {
     fn visit_expr_path(&mut self, node: &'ast syn::ExprPath) {
         // Qualified paths may be called directly, but may not be passed around
         // as callbacks. Reject local function items as values as well.
+        let network_error = node
+            .path
+            .segments
+            .iter()
+            .map(|s| s.ident.to_string())
+            .collect::<Vec<_>>();
+        if network_error.len() == 3
+            && network_error[0] == "gamepkg"
+            && network_error[1] == "NetworkError"
+            && matches!(
+                network_error[2].as_str(),
+                "PermissionDenied" | "Pending" | "Failed"
+            )
+        {
+            self.visit_path(&node.path);
+            return;
+        }
         if (node.path.segments.len() > 1
             && !node.path.segments.last().is_some_and(|s| {
                 let name = s.ident.to_string();
@@ -247,7 +267,7 @@ impl<'ast> Visit<'ast> for Scanner {
         if node.segments.iter().any(|s| {
             matches!(
                 s.ident.to_string().as_str(),
-                "fs" | "net" | "process" | "env" | "libc"
+                "fs" | "io" | "os" | "thread" | "net" | "process" | "env" | "libc"
             )
         }) {
             self.rejected = true;
@@ -482,12 +502,17 @@ mod restricted_calls_tests {
             "fn helper() {} fn tick() { let f = helper; }",
             "fn tick(f: &dyn Fn()) { f(); }",
             "fn tick() { gamepkg::callback(gamepkg::save_write); }",
+            "pub fn game_tick(_:u32,_:u64)->u64 { let _=std::io::stdin();0 }",
+            "use std::io::stdin;pub fn game_tick(_:u32,_:u64)->u64 {let _=stdin();0}",
+            "pub fn game_tick(_:u32,_:u64)->u64 {let _=std::thread::current();0}",
+            "pub fn game_tick(_:u32,_:u64)->u64 {gamepkg::__gamepkg_packet(b\"x\");0}",
         ] {
             assert!(rejected(text), "accepted: {text}");
         }
     }
     #[test]
     fn accepts_direct_functions_and_api_calls() {
+        assert!(!rejected("pub fn game_tick(_:u32,_:u64)->u64 { match gamepkg::tcp_connect(\"server.example:1234\") { Err(gamepkg::NetworkError::Pending) => 0, _ => 1 } }"));
         assert!(!rejected("fn helper(x: u32) -> u32 { x + 1 } pub fn game_tick(input: u32, state: u64) -> u64 { let _ = gamepkg::draw_clear(0); helper(input) as u64 + state }"));
     }
 }

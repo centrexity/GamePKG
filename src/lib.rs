@@ -31,6 +31,8 @@ pub mod hostapi;
 
 pub mod updates;
 
+#[cfg(target_os = "linux")]
+mod c_toolchain;
 mod compiler;
 
 pub mod creator;
@@ -74,3 +76,10 @@ mod doom_sources;
 
 #[cfg(feature = "gui")]
 mod rom_selections;
+
+pub mod native;
+
+#[cfg(feature = "gui")]
+pub mod gpu_vulkan;
+
+mod network;

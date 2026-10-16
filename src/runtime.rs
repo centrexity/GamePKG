@@ -33,11 +33,14 @@ struct Data {
     zelda: Option<crate::zelda3::Zelda>,
     doom: Option<crate::doom::Doom>,
     deadline_epochs: u64,
+    network: crate::network::Service,
 }
 pub struct Game {
     progress: Option<crate::progress::Session>,
-    store: Store<Data>,
-    tick: Tick,
+    store: Option<Store<Data>>,
+    tick: Option<Tick>,
+    #[cfg(target_os = "linux")]
+    native: Option<crate::native::Session>,
     deadline_epochs: u64,
     stop: Arc<AtomicBool>,
     pub state: u64,
@@ -122,7 +125,8 @@ impl Game {
                         && manifest.builtin_engine.as_deref() != Some(crate::doom::PROFILE))
                     || !matches!(
                         i.name(),
-                        "zelda3_tick"
+                        "network_call"
+                            | "zelda3_tick"
                             | "doom_tick"
                             | "asset_read"
                             | "rom_read"
@@ -177,7 +181,8 @@ impl Game {
                             wasmtime::component::types::ComponentItem::ComponentFunc(_)
                         ) || !matches!(
                             name,
-                            "asset-read"
+                            "network-call"
+                                | "asset-read"
                                 | "rom-read"
                                 | "rom-size"
                                 | "rom-count"
@@ -242,6 +247,7 @@ impl Game {
             Data {
                 achievements: manifest.achievements.iter().map(|a| a.id.clone()).collect(),
                 pending_achievements: Vec::new(),
+                network: crate::network::Service::new(manifest.permissions.clone()),
                 limits,
                 package,
                 rom,
@@ -539,6 +545,7 @@ impl Game {
                     .and_then(|r| r.first())
                     .map_or(-1, |r| r.len() as i32)
             })?;
+            linker.func_wrap("gamepkg", "network_call", network_call)?;
             let instance = linker.instantiate(&mut store, module.as_ref().unwrap())?;
             let tick = instance
                 .get_typed_func::<(i32, i64), i64>(&mut store, "gamepkg_tick")
@@ -554,8 +561,10 @@ impl Game {
         };
         Ok(Self {
             progress: None,
-            store,
-            tick,
+            store: Some(store),
+            tick: Some(tick),
+            #[cfg(target_os = "linux")]
+            native: None,
             deadline_epochs,
             stop,
             state: 0,
@@ -577,6 +586,14 @@ impl Game {
         Self::load_with_roms(root, id, &paths)
     }
     pub fn load_with_roms(root: &Path, id: &str, rom_paths: &[std::path::PathBuf]) -> Result<Self> {
+        Self::load_target(root, id, rom_paths, None)
+    }
+    pub fn load_target(
+        root: &Path,
+        id: &str,
+        rom_paths: &[std::path::PathBuf],
+        native: Option<bool>,
+    ) -> Result<Self> {
         crate::registry::installed_manifest(root, id)?;
         let _build_read = crate::build::BuildChange::read(root, id)?;
         let archive = crate::files::read_regular(
@@ -595,10 +612,6 @@ impl Game {
             .join("builds")
             .join(crate::verify::digest(&archive))
             .join("game.wasm");
-        let bytes = crate::files::read_regular(&cache, 32 * 1024 * 1024, false)
-            .context("build this game before playing")?;
-        crate::integrity::verify_build(&cache, &bytes)
-            .context("build integrity unavailable or damaged; rebuild this game")?;
         if rom_paths.len() != manifest.required_rom_count() {
             bail!(
                 "this game requires {} ROM files selected by you, but {} were supplied",
@@ -627,6 +640,71 @@ impl Game {
         }
         let rom = (!snapshots.is_empty()).then_some(snapshots);
         let settings = crate::settings::load()?;
+        let native = native.unwrap_or(
+            crate::native::cache_path(root, id)?
+                .symlink_metadata()
+                .is_ok(),
+        );
+        if native {
+            #[cfg(not(target_os = "linux"))]
+            bail!("native game isolation is not available on this platform");
+            #[cfg(target_os = "linux")]
+            {
+                let mut uses_shaders = false;
+                let mut custom_renderer = manifest.builtin_engine.is_some();
+                for name in package
+                    .entries
+                    .keys()
+                    .filter(|name| name.starts_with("source/src/") && name.ends_with(".rs"))
+                    .cloned()
+                    .collect::<Vec<_>>()
+                {
+                    let source = String::from_utf8(package.read(&name)?)?;
+                    let (draw, shader) = crate::native::source_flags(&source)?;
+                    uses_shaders |= shader;
+                    custom_renderer |= draw;
+                }
+                let shader_sources = if uses_shaders {
+                    crate::shaders::load_desktop_sources(root, &archive, &manifest, &settings)?
+                } else {
+                    Vec::new()
+                };
+                let session = crate::native::Session::new(
+                    root,
+                    &crate::verify::digest(&archive),
+                    package,
+                    manifest.clone(),
+                    rom.unwrap_or_default(),
+                    &settings,
+                    shader_sources.len(),
+                )?;
+                return Ok(Self {
+                    progress: Some(crate::progress::Session::open(
+                        root,
+                        &manifest.id,
+                        &manifest.creator_key,
+                    )?),
+                    store: None,
+                    tick: None,
+                    native: Some(session),
+                    deadline_epochs: 0,
+                    stop: Arc::new(AtomicBool::new(false)),
+                    state: 0,
+                    id: manifest.id.clone(),
+                    input_allowed: manifest.permissions.input,
+                    custom_renderer,
+                    shader_sources,
+                    uses_shaders,
+                    audio_allowed: manifest.permissions.audio,
+                    builtin_engine: manifest.builtin_engine.is_some(),
+                    doom_engine: manifest.builtin_engine.as_deref() == Some(crate::doom::PROFILE),
+                });
+            }
+        }
+        let bytes = crate::files::read_regular(&cache, 32 * 1024 * 1024, false)
+            .context("build this game before playing")?;
+        crate::integrity::verify_build(&cache, &bytes)
+            .context("build integrity unavailable or damaged; rebuild this game")?;
         let mut game = Self::with_package(
             &bytes,
             &manifest,
@@ -649,7 +727,7 @@ impl Game {
             let bytes = crate::files::read_regular(&path, 32 * 1048576, false)
                 .context("rebuild the pinned Zelda3 engine before playing")?;
             crate::integrity::verify_build(&path, &bytes)?;
-            let data = game.store.data();
+            let data = game.store.as_ref().unwrap().data();
             let rom = data
                 .rom
                 .as_ref()
@@ -657,20 +735,20 @@ impl Game {
                 .context("select your Zelda3 ROM")?;
             let save = data.save.as_ref().map(|s| s.bytes.as_slice());
             let zelda = crate::zelda3::Zelda::new(
-                game.store.engine(),
+                game.store.as_ref().unwrap().engine(),
                 &bytes,
                 rom,
                 save,
                 game.deadline_epochs,
             )?;
-            game.store.data_mut().zelda = Some(zelda);
+            game.store.as_mut().unwrap().data_mut().zelda = Some(zelda);
         }
         if manifest.builtin_engine.as_deref() == Some(crate::doom::PROFILE) {
             let path = cache.with_file_name("doom.wasm");
             let bytes = crate::files::read_regular(&path, 32 * 1048576, false)
                 .context("rebuild the pinned DOOM engine before playing")?;
             crate::integrity::verify_build(&path, &bytes)?;
-            let data = game.store.data();
+            let data = game.store.as_ref().unwrap().data();
             let wad = data
                 .rom
                 .as_ref()
@@ -678,18 +756,18 @@ impl Game {
                 .context("select your DOOM WAD")?;
             let save = data.save.as_ref().map(|s| s.bytes.as_slice());
             let doom = crate::doom::Doom::new(
-                game.store.engine(),
+                game.store.as_ref().unwrap().engine(),
                 &bytes,
                 wad,
                 save,
                 game.deadline_epochs,
             )?;
-            game.store.data_mut().doom = Some(doom);
+            game.store.as_mut().unwrap().data_mut().doom = Some(doom);
         }
         if game.uses_shaders {
             game.shader_sources =
-                crate::shaders::load_fragment_sources(root, &archive, &manifest, &settings)?;
-            game.store.data_mut().shader_count = game.shader_sources.len();
+                crate::shaders::load_desktop_sources(root, &archive, &manifest, &settings)?;
+            game.store.as_mut().unwrap().data_mut().shader_count = game.shader_sources.len();
         }
         game.progress = Some(crate::progress::Session::open(
             root,
@@ -706,10 +784,16 @@ impl Game {
     }
     /// Read-only builtin engine state for playback diagnostics.
     pub fn builtin_controller(&mut self) -> Result<Option<u32>> {
-        if let Some(doom) = self.store.data_mut().doom.as_mut() {
+        #[cfg(target_os = "linux")]
+        if let Some(n) = &self.native {
+            return Ok(n.diagnostic.map(|d| d.2));
+        }
+        if let Some(doom) = self.store.as_mut().unwrap().data_mut().doom.as_mut() {
             return doom.controller().map(Some);
         }
         self.store
+            .as_mut()
+            .unwrap()
             .data_mut()
             .zelda
             .as_mut()
@@ -717,10 +801,16 @@ impl Game {
             .transpose()
     }
     pub fn builtin_state(&mut self) -> Result<Option<(u32, u16, u16)>> {
-        if let Some(doom) = self.store.data_mut().doom.as_mut() {
+        #[cfg(target_os = "linux")]
+        if let Some(n) = &self.native {
+            return Ok(n.diagnostic.map(|d| (d.0, d.1 as u16, (d.1 >> 16) as u16)));
+        }
+        if let Some(doom) = self.store.as_mut().unwrap().data_mut().doom.as_mut() {
             return doom.state().map(Some);
         }
         self.store
+            .as_mut()
+            .unwrap()
             .data_mut()
             .zelda
             .as_mut()
@@ -728,53 +818,87 @@ impl Game {
             .transpose()
     }
     pub fn audio_frame(&self) -> &[i16] {
-        &self.store.data().audio
+        #[cfg(target_os = "linux")]
+        if let Some(n) = &self.native {
+            return &n.audio;
+        }
+        &self.store.as_ref().unwrap().data().audio
     }
     pub fn frame(&self) -> &crate::drawing::Frame {
-        &self.store.data().frame
+        #[cfg(target_os = "linux")]
+        if let Some(n) = &self.native {
+            return &n.frame;
+        }
+        &self.store.as_ref().unwrap().data().frame
     }
     pub fn step(&mut self, input: u32) -> Result<u64> {
         if let Some(progress) = &mut self.progress {
             progress.start();
         }
-        self.store.data_mut().pending_achievements.clear();
-        self.store.data_mut().frame.reset();
-        self.store.data_mut().audio.clear();
-        self.store.set_epoch_deadline(self.deadline_epochs);
-        let previous_save = self.store.data().save.as_ref().map(|s| s.bytes.clone());
-        let input = if self.input_allowed { input } else { 0 };
-        let result: Result<u64> = match &self.tick {
-            Tick::Core(tick) => tick
-                .call(&mut self.store, (input as i32, self.state as i64))
-                .map(|v| v as u64),
-            Tick::Component(tick) => {
-                tick.call(&mut self.store, (input, self.state))
-                    .and_then(|(v,)| {
-                        tick.post_return(&mut self.store)?;
-                        Ok(v)
-                    })
+        #[cfg(target_os = "linux")]
+        if let Some(n) = &mut self.native {
+            self.state = n.step(if self.input_allowed { input } else { 0 }, self.state)?;
+            if let Some(progress) = &mut self.progress {
+                progress.tick(&n.achievements)?;
             }
+            return Ok(self.state);
+        }
+        self.store
+            .as_mut()
+            .unwrap()
+            .data_mut()
+            .pending_achievements
+            .clear();
+        self.store.as_mut().unwrap().data_mut().frame.reset();
+        self.store.as_mut().unwrap().data_mut().audio.clear();
+        self.store
+            .as_mut()
+            .unwrap()
+            .set_epoch_deadline(self.deadline_epochs);
+        let previous_save = self
+            .store
+            .as_ref()
+            .unwrap()
+            .data()
+            .save
+            .as_ref()
+            .map(|s| s.bytes.clone());
+        let input = if self.input_allowed { input } else { 0 };
+        let result: Result<u64> = match self.tick.as_ref().unwrap() {
+            Tick::Core(tick) => tick
+                .call(
+                    self.store.as_mut().unwrap(),
+                    (input as i32, self.state as i64),
+                )
+                .map(|v| v as u64),
+            Tick::Component(tick) => tick
+                .call(self.store.as_mut().unwrap(), (input, self.state))
+                .and_then(|(v,)| {
+                    tick.post_return(self.store.as_mut().unwrap())?;
+                    Ok(v)
+                }),
         }
         .context("game stopped by the Wasm sandbox");
         self.state = match result {
             Ok(state) => state,
             Err(error) => {
-                self.store.data_mut().frame.reset();
-                self.store.data_mut().audio.clear();
-                if let (Some(save), Some(bytes)) =
-                    (self.store.data_mut().save.as_mut(), previous_save)
-                {
+                self.store.as_mut().unwrap().data_mut().frame.reset();
+                self.store.as_mut().unwrap().data_mut().audio.clear();
+                if let (Some(save), Some(bytes)) = (
+                    self.store.as_mut().unwrap().data_mut().save.as_mut(),
+                    previous_save,
+                ) {
                     save.bytes = bytes;
                     save.dirty = false;
                 }
                 return Err(error);
             }
         };
-        if let Some(save) = self.store.data_mut().save.as_mut() {
+        if let Some(save) = self.store.as_mut().unwrap().data_mut().save.as_mut() {
             save.commit().context("unable to persist game save")?;
         }
         if let Some(progress) = &mut self.progress {
-            progress.tick(&self.store.data().pending_achievements)?;
+            progress.tick(&self.store.as_ref().unwrap().data().pending_achievements)?;
         }
         Ok(self.state)
     }
@@ -1084,6 +1208,57 @@ fn zelda3_tick(mut caller: Caller<'_, Data>, input: i32, state: i64) -> Result<i
     Ok((state as u64).wrapping_add(1) as i64)
 }
 
+fn network_call(
+    mut caller: Caller<'_, Data>,
+    operation: i32,
+    input: i32,
+    length: i32,
+    output: i32,
+    capacity: i32,
+) -> i32 {
+    if input < 0
+        || output < 0
+        || !(0..=65540).contains(&length)
+        || !(0..=65536).contains(&capacity)
+        || !(0..=9).contains(&operation)
+    {
+        return -1;
+    }
+    let Some(memory) = caller.get_export("memory").and_then(|e| e.into_memory()) else {
+        return -1;
+    };
+    let mut request = vec![0; length as usize];
+    if memory.read(&caller, input as usize, &mut request).is_err() {
+        return -1;
+    }
+    if (output as usize)
+        .checked_add(capacity as usize)
+        .is_none_or(|end| end > memory.data_size(&caller))
+    {
+        return -1;
+    }
+    let reply = caller
+        .data_mut()
+        .network
+        .call(operation as u8, &request, capacity as usize);
+    match reply.first() {
+        Some(0) => {
+            if reply.len() - 1 > capacity as usize
+                || memory
+                    .write(&mut caller, output as usize, &reply[1..])
+                    .is_err()
+            {
+                -1
+            } else {
+                (reply.len() - 1) as i32
+            }
+        }
+        Some(2) => -2,
+        Some(3) => -3,
+        _ => -1,
+    }
+}
+
 #[cfg(test)]
 mod adversarial_assets_tests {
     use super::*;
@@ -1167,7 +1342,7 @@ mod adversarial_assets_tests {
             None,
         )
         .unwrap();
-        game.store.data_mut().shader_count = 1;
+        game.store.as_mut().unwrap().data_mut().shader_count = 1;
         assert_eq!(game.step(0).unwrap(), 42);
         assert!(game.frame().commands.is_empty());
     }
@@ -1230,7 +1405,7 @@ mod adversarial_assets_tests {
             None,
         )
         .unwrap();
-        game.store.data_mut().shader_count = 1;
+        game.store.as_mut().unwrap().data_mut().shader_count = 1;
         assert_eq!(game.step(0).unwrap(), 42);
         assert!(game.frame().commands.is_empty());
     }

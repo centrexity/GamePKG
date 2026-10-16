@@ -223,6 +223,7 @@ pub(crate) fn compile_with_settings(
     };
     let mut helpers = include_str!("input_buttons.rs").replace("//!", "//");
     helpers.push_str(include_str!("guest_helpers.rs.txt"));
+    helpers.push_str(include_str!("network_guest.rs.txt"));
     helpers.push_str(
         "\nfn shader_index(source: &str, entry: &str) -> Option<u32> { match (source, entry) {\n",
     );
@@ -413,6 +414,14 @@ pub(crate) fn compile_with_settings(
 
 /// Creator workflow: publish a signed source archive only after a real isolated build.
 pub fn package(directory: &Path, output: &Path, seed: &[u8; 32]) -> Result<()> {
+    package_target(directory, output, seed, true)
+}
+pub fn package_target(
+    directory: &Path,
+    output: &Path,
+    seed: &[u8; 32],
+    native: bool,
+) -> Result<()> {
     let root = fs::canonicalize(directory)?;
     let parent = fs::canonicalize(
         output
@@ -438,7 +447,11 @@ pub fn package(directory: &Path, output: &Path, seed: &[u8; 32]) -> Result<()> {
     crate::pack::pack(directory, &candidate, seed)?;
     let library = stage.path().join("library");
     let manifest = crate::registry::install(&library, &candidate, true)?;
-    compile(&library, &manifest.id)?;
+    if native {
+        crate::native::compile(&library, &manifest.id)?;
+    } else {
+        compile(&library, &manifest.id)?;
+    }
     let mut published = tempfile::NamedTempFile::new_in(&parent)?;
     std::io::copy(&mut fs::File::open(&candidate)?, &mut published)?;
     published.as_file().sync_all()?;

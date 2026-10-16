@@ -8,6 +8,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-progress-gui-') as directory:
  root=Path(directory);config=root/'settings.toml';config.write_text('automatic_update_checks=false\n')
  env=dict(os.environ,GAMEPKG_HOME=str(root/'library'),GAMEPKG_CONFIG=str(config),LIBGL_ALWAYS_SOFTWARE='1');env.pop('WAYLAND_DISPLAY',None)
  def run(*args):
+  if args and args[0] in ('build','integrity-fix') and '--target' not in args: args=(*args,'--target','wasm')
   r=subprocess.run([str(PROJECT/'target/release/gamepkg'),*map(str,args)],env=env,capture_output=True,text=True,timeout=180);assert r.returncode==0,r.stderr;return r.stdout
  key=root/'creator.key';run('keygen','-o',key);package=root/'collect-stars.gamepkg'
  run('pack',PROJECT/'examples/good/collect-stars','-o',package,'--key',key);run('install',package,'--trust-creator');run('build','com.gamepkg.collect-stars')

@@ -10,7 +10,9 @@ The engine is pinned to snesrev/zelda3 revision
 of each copied source and license. Copyright and MIT notices, including the
 LakeSnes authors' notices, remain in `upstream/LICENSE.txt`.
 
-## Verified native behavior
+Default Build compiles the pinned engine directly for the local Linux CPU, requiring Clang 18 and lld-18. The separate Build Wasm retains the WASI toolchain and bounded-memory engine described below. Both keep ROM decoding in RAM and use scoped host operations.
+
+## Verified behavior
 
 - The selected USA 1 MiB ROM is recognized; a 512-byte copier header is supported.
 - The resource decoder constructs all 165 engine resource records in RAM.
@@ -88,3 +90,5 @@ Windows hardware coverage. No separate decoder runtime is needed. WSL is used on
 compilation, not playback. The compile request includes no ROM or save data.
 A browser ROM decoder remains outside this native port; Zelda3 web export currently gives a clear
 unsupported-feature error instead of producing a broken player.
+
+For a separate WASI installation, use **Settings → C/WASI build tools folder**, check the tools and save settings. This persists across app restarts without requiring a launch-time environment variable. Engine-specific sysroot environment overrides take precedence.

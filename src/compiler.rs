@@ -10,6 +10,7 @@ pub const DIAGNOSTICS: usize = 1024 * 1024;
 pub struct Output {
     pub status: ExitStatus,
     pub stdout: String,
+    pub stdout_bytes: Vec<u8>,
     pub stderr: String,
 }
 pub fn command(max_file: u64) -> Command {
@@ -63,11 +64,11 @@ pub fn run(command: &mut Command) -> Result<Output> {
     Ok(Output {
         status,
         stdout: String::from_utf8_lossy(&stdout).into_owned(),
+        stdout_bytes: stdout,
         stderr,
     })
 }
 /// Bound launcher execution and pipe draining independently of guest timeouts.
-#[cfg(any(windows, test))]
 pub(crate) fn run_timed(command: &mut Command, limit: std::time::Duration) -> Result<Output> {
     let deadline = std::time::Instant::now() + limit;
     let mut child = command
@@ -117,6 +118,7 @@ pub(crate) fn run_timed(command: &mut Command, limit: std::time::Duration) -> Re
     Ok(Output {
         status,
         stdout: String::from_utf8_lossy(&stdout).into_owned(),
+        stdout_bytes: stdout,
         stderr,
     })
 }

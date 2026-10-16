@@ -12,7 +12,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-2048-gui-') as temporary:
         assert result.returncode==0,result.stderr
     key=root/'key';key.write_text('55'*32)
     run('pack',PROJECT/'ports/2048','-o',root/'2048.gamepkg','--key',key)
-    run('install',root/'2048.gamepkg','--trust-creator');run('build','com.gamepkg.2048')
+    run('install',root/'2048.gamepkg','--trust-creator');run('build','com.gamepkg.2048');run('build','com.gamepkg.2048','--target','wasm')
     display=start_display(env, width=1900, height=1000)
     app=None
     try:

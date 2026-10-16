@@ -22,7 +22,7 @@ enum Command {
     BuildWorker {
         store: PathBuf,
         output: PathBuf,
-        #[arg(long, default_value = "glsl")]
+        #[arg(long, default_value = "wgsl")]
         shader_backend: String,
         #[arg(long)]
         no_optimize: bool,
@@ -47,6 +47,8 @@ enum Command {
     /// Rebuild compiled files from verified source; never alter signatures or player data.
     IntegrityFix {
         id: String,
+        #[arg(long,value_parser=["native","wasm"],default_value="native")]
+        target: String,
         /// Restore missing or damaged shared assets from the original verified store bundle.
         #[arg(long)]
         store: Option<PathBuf>,
@@ -106,9 +108,11 @@ enum Command {
         #[arg(long)]
         trust_creator: bool,
     },
-    /// Compile an installed game to Wasm under Linux bubblewrap isolation.
+    /// Compile an installed game for this computer (other targets are explicit).
     Build {
         id: String,
+        #[arg(long, value_parser = ["native", "wasm"], default_value="native")]
+        target: String,
         /// Build a source directory into a signed package after isolated compilation succeeds.
         #[arg(short, long, requires = "key")]
         output: Option<PathBuf>,
@@ -198,12 +202,13 @@ fn main() -> Result<()> {
             "{}",
             gamepkg::integrity::check(&gamepkg::registry::default_root()?, &id)?
         ),
-        Command::IntegrityFix { id, store } => println!(
+        Command::IntegrityFix { id, store, target } => println!(
             "{}",
-            gamepkg::integrity::fix_with_store(
+            gamepkg::integrity::fix_target(
                 &gamepkg::registry::default_root()?,
                 &id,
-                store.as_deref()
+                store.as_deref(),
+                target == "native"
             )?
         ),
         Command::StoreExport { packages, output } => {
@@ -411,16 +416,26 @@ fn main() -> Result<()> {
             let m = gamepkg::registry::install(&root, file.path(), trust_creator)?;
             println!("Installed {} {}", m.id, m.version);
         }
-        Command::Build { id, output, key } => {
+        Command::Build {
+            id,
+            output,
+            key,
+            target,
+        } => {
             if let (Some(output), Some(key)) = (output, key) {
-                gamepkg::build::package(
+                gamepkg::build::package_target(
                     std::path::Path::new(&id),
                     &output,
                     &gamepkg::creator::read_seed(&key)?,
+                    target == "native",
                 )?;
                 println!("Built and verified source package: {}", output.display());
             } else {
-                gamepkg::build::compile(&gamepkg::registry::default_root()?, &id)?;
+                if target == "native" {
+                    gamepkg::native::compile(&gamepkg::registry::default_root()?, &id)?;
+                } else {
+                    gamepkg::build::compile(&gamepkg::registry::default_root()?, &id)?;
+                }
                 println!("Built {id}");
             }
         }
@@ -449,10 +464,15 @@ fn main() -> Result<()> {
             for m in installed {
                 println!(
                     "Build state: {}",
-                    match gamepkg::build::is_built(&root, &m.id) {
-                        Ok(true) => "Built",
-                        Ok(false) => "Not built",
-                        Err(_) => "Unavailable",
+                    match (
+                        gamepkg::native::is_built(&root, &m.id),
+                        gamepkg::build::is_built(&root, &m.id)
+                    ) {
+                        (Ok(true), Ok(true)) => "Built (native and Wasm)",
+                        (Ok(true), _) => "Built (native)",
+                        (_, Ok(true)) => "Built (Wasm)",
+                        (Ok(false), Ok(false)) => "Not built",
+                        _ => "Unavailable",
                     }
                 );
                 let statistics = (|| -> Result<()> {

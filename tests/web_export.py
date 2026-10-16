@@ -25,6 +25,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-web-export-') as temporary:
     env=dict(os.environ,GAMEPKG_HOME=str(root/'library'),GAMEPKG_CONFIG=str(config))
     key=root/'key';key.write_text('45'*32)
     def run(*args):
+        if args and args[0] in ('build','integrity-fix') and '--target' not in args: args=(*args,'--target','wasm')
         result=subprocess.run([str(CLI),*map(str,args)],env=env,capture_output=True,text=True,timeout=120)
         assert result.returncode==0,result.stderr
         return result

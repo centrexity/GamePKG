@@ -15,6 +15,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-play-') as directory:
     package = root / 'stars.gamepkg'
     env = dict(os.environ, GAMEPKG_HOME=str(root / 'library'))
     def run(*args, input=None):
+        if args and args[0] in ('build','integrity-fix') and '--target' not in args: args=(*args,'--target','wasm')
         result = subprocess.run([str(CLI), *map(str,args)], env=env, input=input,
                                 capture_output=True, text=True, timeout=75)
         assert result.returncode == 0, result.stderr
