@@ -174,7 +174,7 @@ pub fn export(root: &Path, id: &str, output: &Path) -> Result<()> {
         bail!("build the game before exporting for web");
     }
     if manifest.builtin_engine.is_some() {
-        bail!("Zelda3 browser export requires a browser ROM decoder; native playback is supported");
+        bail!("builtin-engine browser export is not supported; use the native player");
     }
     let wasm = browser_module(&wasm, &manifest.runtime_profile)?;
     let namespace = if manifest.runtime_profile == "component-v1" {

@@ -60,3 +60,7 @@ wasi-libc and libclang-rt-18-dev-wasm32. No Python or external ROM decoder is
 needed for building or playing Zelda3. Build ports/zelda3 as a signed package
 and select your supported USA ROM in the library. No extracted assets are written.
 See engines/zelda3/README.md for the complete setup and verification details.
+
+## DOOM source engine
+
+Current main includes the pinned DOOM Wasm engine; the published 0.1.6 binaries predate it. Build matching current host/compiler sources. The Linux compiler needs the same Clang 18 and WASI tools described above. See [DOOM engine setup](../engines/doom/README.md) and the [port instructions](https://github.com/centrexity/GamePKG_Ports/blob/main/DOOM.md). Select your own DOOM.WAD/DOOM2.WAD; no WAD is included. Windows compilation uses the existing opt-in WSL 2 exchange; native Windows DOOM playback has not been tested locally.

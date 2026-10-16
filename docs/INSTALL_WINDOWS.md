@@ -33,3 +33,7 @@ ROM decoding is built into the executable; no interpreter, pip, Pillow, PyYAML
 or separate runtime installation is needed. Install/build the Zelda3 package and select your own supported USA ROM in the
 library. The ROM is decoded only in RAM; only game SRAM is persisted.
 See engines/zelda3/README.md for controls and tests.
+
+## DOOM source engine
+
+Current main includes the pinned DOOM Wasm engine; the published 0.1.6 binaries predate it. Build matching current host/compiler sources. The Linux compiler needs the same Clang 18 and WASI tools described above. See [DOOM engine setup](../engines/doom/README.md) and the [port instructions](https://github.com/centrexity/GamePKG_Ports/blob/main/DOOM.md). Select your own DOOM.WAD/DOOM2.WAD; no WAD is included. Windows compilation uses the existing opt-in WSL 2 exchange; native Windows DOOM playback has not been tested locally.

@@ -267,11 +267,11 @@ pub(crate) fn accept_with_guard(
         &snapshot.path().join("builds"),
         std::slice::from_ref(&info.package_digest),
     )?;
-    let builtin = if manifest.builtin_engine.is_some() {
-        let path = source_build.join("zelda3.wasm");
+    let builtin = if let Some(profile) = manifest.builtin_engine.as_deref() {
+        let path = source_build.join(crate::builtin::filename(profile)?);
         let bytes = crate::files::read_regular(&path, 32 * 1048576, false)?;
         crate::integrity::verify_build(&path, &bytes)?;
-        crate::zelda3::validate(&bytes)?;
+        crate::builtin::validate(profile, &bytes)?;
         Some(bytes)
     } else {
         None
@@ -282,7 +282,14 @@ pub(crate) fn accept_with_guard(
         receipt_name.clone(),
     ];
     if builtin.is_some() {
-        expected.extend(["zelda3.wasm".into(), "zelda3.sha256".into()]);
+        let name = crate::builtin::filename(manifest.builtin_engine.as_deref().unwrap())?;
+        expected.extend([
+            name.into(),
+            std::path::Path::new(name)
+                .with_extension("sha256")
+                .to_string_lossy()
+                .into_owned(),
+        ]);
     }
     require_entries(&source_build, &expected)?;
     let component = bytes.starts_with(b"\0asm\x0d\0\x01\0");
@@ -353,7 +360,9 @@ pub(crate) fn accept_with_guard(
     }
     publish_file(&destination.join(receipt_name), &shader_receipt)?;
     if let Some(engine) = builtin {
-        let path = destination.join("zelda3.wasm");
+        let path = destination.join(crate::builtin::filename(
+            manifest.builtin_engine.as_deref().unwrap(),
+        )?);
         publish_file(&path, &engine)?;
         crate::integrity::record_build(&path, &engine)?;
     }

@@ -10,3 +10,4 @@
 
 # Preserve the exact upstream bytes recorded in the engine provenance lock.
 engines/zelda3/upstream/** -text -whitespace
+engines/doom/upstream/** -text -whitespace

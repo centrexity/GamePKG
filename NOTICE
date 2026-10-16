@@ -11,3 +11,11 @@ Pinned revision: 45a149d8b4bb8098f53d1009f76e76e7d8b79bbf
 Copyright 2022 snesrev and 2021 elzo_d; upstream code is MIT licensed.
 See engines/zelda3/upstream/LICENSE.txt for complete engine and LakeSnes notices.
 ROM files and game assets are not distributed by GamePKG.
+
+DOOM engine and GamePKG adapter:
+Source: https://github.com/ozkl/doomgeneric
+Pinned revision: e257a09527062bfb986b6e5e0780839b6cbd5b71
+Copyright id Software and Chocolate Doom/doomgeneric contributors.
+Engine and adapter: GPL-2.0-or-later. See engines/doom/upstream/LICENSE
+and the source headers for complete copyright notices. Corresponding source
+is included under engines/doom. No WADs or extracted game assets are included.

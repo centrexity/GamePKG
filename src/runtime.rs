@@ -31,6 +31,7 @@ struct Data {
     audio_allowed: bool,
     shader_count: usize,
     zelda: Option<crate::zelda3::Zelda>,
+    doom: Option<crate::doom::Doom>,
     deadline_epochs: u64,
 }
 pub struct Game {
@@ -47,6 +48,7 @@ pub struct Game {
     uses_shaders: bool,
     pub audio_allowed: bool,
     pub builtin_engine: bool,
+    pub doom_engine: bool,
 }
 impl Drop for Game {
     fn drop(&mut self) {
@@ -114,10 +116,14 @@ impl Game {
             if module.imports().any(|i| {
                 !matches!(i.ty(), wasmtime::ExternType::Func(_))
                     || i.module() != "gamepkg"
-                    || (i.name() == "zelda3_tick" && manifest.builtin_engine.is_none())
+                    || (i.name() == "zelda3_tick"
+                        && manifest.builtin_engine.as_deref() != Some(crate::zelda3::PROFILE))
+                    || (i.name() == "doom_tick"
+                        && manifest.builtin_engine.as_deref() != Some(crate::doom::PROFILE))
                     || !matches!(
                         i.name(),
                         "zelda3_tick"
+                            | "doom_tick"
                             | "asset_read"
                             | "rom_read"
                             | "rom_size"
@@ -147,9 +153,9 @@ impl Game {
                     "draw_shader" | "draw_shader_image" | "draw_shader_asset_image"
                 )
             });
-            let custom_renderer = module
-                .imports()
-                .any(|i| i.name().starts_with("draw_") || i.name() == "zelda3_tick");
+            let custom_renderer = module.imports().any(|i| {
+                i.name().starts_with("draw_") || matches!(i.name(), "zelda3_tick" | "doom_tick")
+            });
             (uses_shaders, custom_renderer)
         } else {
             let mut uses_shaders = false;
@@ -212,11 +218,12 @@ impl Game {
             .limits
             .hard_memory_bytes
             .min(settings.memory_ceiling_mib * 1048576);
-        let memory = if manifest.builtin_engine.is_some() {
-            if memory < 33554432 {
-                bail!("Zelda3 needs at least 32 MiB under the selected memory ceiling");
+        let memory = if let Some(profile) = manifest.builtin_engine.as_deref() {
+            let reserved = crate::builtin::memory(profile)?;
+            if memory < reserved + 16 * 1048576 {
+                bail!("builtin engine exceeds the selected memory ceiling");
             }
-            memory - crate::zelda3::MEMORY
+            memory - reserved
         } else {
             memory
         };
@@ -244,6 +251,7 @@ impl Game {
                 audio_allowed: manifest.permissions.audio,
                 shader_count: 0,
                 zelda: None,
+                doom: None,
                 deadline_epochs,
             },
         );
@@ -267,8 +275,11 @@ impl Game {
                 return Ok(Tick::Component(tick));
             }
             let mut linker = Linker::new(&engine);
-            if manifest.builtin_engine.is_some() {
+            if manifest.builtin_engine.as_deref() == Some(crate::zelda3::PROFILE) {
                 linker.func_wrap("gamepkg", "zelda3_tick", zelda3_tick)?;
+            }
+            if manifest.builtin_engine.as_deref() == Some(crate::doom::PROFILE) {
+                linker.func_wrap("gamepkg", "doom_tick", doom_tick)?;
             }
             linker.func_wrap(
                 "gamepkg",
@@ -555,6 +566,7 @@ impl Game {
             uses_shaders,
             audio_allowed: manifest.permissions.audio,
             builtin_engine: manifest.builtin_engine.is_some(),
+            doom_engine: manifest.builtin_engine.as_deref() == Some(crate::doom::PROFILE),
         })
     }
     pub fn load(root: &Path, id: &str) -> Result<Self> {
@@ -632,7 +644,7 @@ impl Game {
                 None
             },
         )?;
-        if manifest.builtin_engine.is_some() {
+        if manifest.builtin_engine.as_deref() == Some(crate::zelda3::PROFILE) {
             let path = cache.with_file_name("zelda3.wasm");
             let bytes = crate::files::read_regular(&path, 32 * 1048576, false)
                 .context("rebuild the pinned Zelda3 engine before playing")?;
@@ -652,6 +664,27 @@ impl Game {
                 game.deadline_epochs,
             )?;
             game.store.data_mut().zelda = Some(zelda);
+        }
+        if manifest.builtin_engine.as_deref() == Some(crate::doom::PROFILE) {
+            let path = cache.with_file_name("doom.wasm");
+            let bytes = crate::files::read_regular(&path, 32 * 1048576, false)
+                .context("rebuild the pinned DOOM engine before playing")?;
+            crate::integrity::verify_build(&path, &bytes)?;
+            let data = game.store.data();
+            let wad = data
+                .rom
+                .as_ref()
+                .and_then(|roms| roms.first())
+                .context("select your DOOM WAD")?;
+            let save = data.save.as_ref().map(|s| s.bytes.as_slice());
+            let doom = crate::doom::Doom::new(
+                game.store.engine(),
+                &bytes,
+                wad,
+                save,
+                game.deadline_epochs,
+            )?;
+            game.store.data_mut().doom = Some(doom);
         }
         if game.uses_shaders {
             game.shader_sources =
@@ -673,6 +706,9 @@ impl Game {
     }
     /// Read-only builtin engine state for playback diagnostics.
     pub fn builtin_controller(&mut self) -> Result<Option<u32>> {
+        if let Some(doom) = self.store.data_mut().doom.as_mut() {
+            return doom.controller().map(Some);
+        }
         self.store
             .data_mut()
             .zelda
@@ -681,6 +717,9 @@ impl Game {
             .transpose()
     }
     pub fn builtin_state(&mut self) -> Result<Option<(u32, u16, u16)>> {
+        if let Some(doom) = self.store.data_mut().doom.as_mut() {
+            return doom.state().map(Some);
+        }
         self.store
             .data_mut()
             .zelda
@@ -985,6 +1024,35 @@ fn audio_submit(mut caller: Caller<'_, Data>, pointer: i32, count: i32) -> i32 {
             .map(|b| i16::from_le_bytes([b[0], b[1]])),
     );
     0
+}
+
+fn doom_tick(mut caller: Caller<'_, Data>, input: i32, state: i64) -> Result<i64> {
+    let deadline = caller.data().deadline_epochs;
+    let frame = caller
+        .data_mut()
+        .doom
+        .as_mut()
+        .context("DOOM engine is not initialized")?
+        .step(input as u32, state == 0, deadline)?;
+    let data = caller.data_mut();
+    data.frame.background = Some(0x000000ff);
+    let image = crate::drawing::image::Image::new(320, 200, &frame.pixels)
+        .context("invalid DOOM engine image")?;
+    if !data.frame.image(0.0, 0.0, 640.0, 480.0, image) {
+        bail!("DOOM image exceeds the frame budget");
+    }
+    if data.audio_allowed {
+        data.audio = frame.audio;
+    }
+    if let Some(bytes) = frame.save {
+        let save = data
+            .save
+            .as_mut()
+            .context("DOOM requires scoped save access")?;
+        save.bytes = bytes;
+        save.dirty = true;
+    }
+    Ok((state as u64).wrapping_add(1) as i64)
 }
 
 fn zelda3_tick(mut caller: Caller<'_, Data>, input: i32, state: i64) -> Result<i64> {

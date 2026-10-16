@@ -66,3 +66,8 @@ mod zelda3;
 mod zelda3_rom;
 #[cfg(target_os = "linux")]
 mod zelda3_sources;
+
+mod builtin;
+mod doom;
+#[cfg(target_os = "linux")]
+mod doom_sources;

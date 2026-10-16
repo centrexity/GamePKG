@@ -438,7 +438,7 @@ impl eframe::App for App {
                     ui.label(&self.audio_error);
                 }
                 if game.custom_renderer {
-                    ui.label(if game.builtin_engine {"Arrows/WASD move; Z sword; X item; C interact; V map; Enter start; Tab select; Q/E shoulders."} else {"Arrows or WASD to move."});
+                    ui.label(if game.doom_engine {"Arrows/WASD move and turn; Z fire; C use; X run; V map; Q/E strafe; Enter confirm; Tab menu. Q+E+Enter quicksave; saved games resume on launch."} else if game.builtin_engine {"Arrows/WASD move; Z sword; X item; C interact; V map; Enter start; Tab select; Q/E shoulders."} else {"Arrows or WASD to move."});
                 } else {
                     ui.label(format!("Score: {} — Arrows or WASD to move.", game.score()));
                 }

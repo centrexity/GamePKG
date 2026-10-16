@@ -161,14 +161,17 @@ impl Manifest {
             }
         }
         if let Some(engine) = &m.builtin_engine {
-            if engine != crate::zelda3::PROFILE
-                || m.runtime_profile != "core-v1"
+            let minimum = crate::builtin::memory(engine)? + 16 * 1048576;
+            if !matches!(
+                engine.as_str(),
+                crate::zelda3::PROFILE | crate::doom::PROFILE
+            ) || m.runtime_profile != "core-v1"
                 || m.required_rom_count() != 1
                 || !m.permissions.save
                 || !m.permissions.audio
-                || m.limits.hard_memory_bytes < 33554432
+                || m.limits.hard_memory_bytes < minimum
             {
-                bail!("Zelda3 requires the pinned core-v1 engine, one ROM, save/audio permissions and at least 32 MiB memory");
+                bail!("builtin games require a pinned core-v1 engine, one ROM, save/audio permissions and enough memory for the engine plus 16 MiB");
             }
         }
         if m.format_version != 1 {

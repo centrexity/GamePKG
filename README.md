@@ -42,7 +42,7 @@ The runtime provides **no ambient filesystem or network access**. Games use spec
 
 Guest networking is currently unsupported: manifests must declare `network = "none"`. User-requested host downloads over HTTPS or Tor are separate from game permissions. A signed update URL does not give the game permission to browse the internet. Signatures establish integrity and continuity with a creator key, not a creator's real-world identity or a promise that their code is safe.
 
-Port recipes for Zelda3, Arkanoo, and 2048 live in [GamePKG_Ports](https://github.com/centrexity/GamePKG_Ports). This repository pins them under `ports` for integration tests and release bundles. Existing checkouts should run `git submodule update --init --recursive` before building or testing. Trusted engine integration remains part of the host.
+Port recipes for DOOM, Zelda3, Arkanoo, and 2048 live in [GamePKG_Ports](https://github.com/centrexity/GamePKG_Ports). This repository pins them under `ports` for integration tests and release bundles. Existing checkouts should run `git submodule update --init --recursive` before building or testing. Trusted engine integration remains part of the host.
 
 ## Try it
 
@@ -933,3 +933,7 @@ rejection without publishing a partial package.
 See [Developing games](docs/DEVELOPING_GAMES.md) for the creator checklist, the no-dependency policy and host API, controller and touchscreen controls, source restrictions, and build commands.
 
 Guest Cargo dependencies are forbidden. Scoped input, file, drawing, shader, texture and audio functions come from the injected `gamepkg::` API. See the developer instructions for migration.
+
+## DOOM port
+
+The dependency-free DOOM recipe is in [GamePKG_Ports](https://github.com/centrexity/GamePKG_Ports/tree/main/doom). Current main adds a pinned, locally compiled Wasm engine with no host imports, single-player rendering, controller/touch input, sound effects and one scoped quicksave slot. Select your own DOOM.WAD or DOOM2.WAD in the player; no WAD or extracted assets are included. See [engine setup and verification](engines/doom/README.md). Released 0.1.6 binaries predate this engine.

@@ -70,13 +70,13 @@ pub fn is_built(root: &Path, id: &str) -> Result<bool> {
         return Ok(false);
     };
     let manifest = registry::installed_manifest(root, id)?;
-    if manifest.builtin_engine.is_some() {
-        let engine = path.with_file_name("zelda3.wasm");
+    if let Some(profile) = manifest.builtin_engine.as_deref() {
+        let engine = path.with_file_name(crate::builtin::filename(profile)?);
         let Ok(bytes) = crate::files::read_regular(&engine, 32 * 1048576, false) else {
             return Ok(false);
         };
         if crate::integrity::verify_build(&engine, &bytes).is_err()
-            || crate::zelda3::validate(&bytes).is_err()
+            || crate::builtin::validate(profile, &bytes).is_err()
         {
             return Ok(false);
         }
@@ -281,8 +281,8 @@ pub(crate) fn compile_with_settings(
     let crate_name = cargo["package"]["name"].as_str().unwrap().replace('-', "_");
 
     crate::source::parse_build_tree(stage.path())?;
-    let builtin = if manifest.builtin_engine.is_some() {
-        Some(crate::zelda3::build()?)
+    let builtin = if let Some(profile) = manifest.builtin_engine.as_deref() {
+        Some(crate::builtin::build(profile)?)
     } else {
         None
     };
@@ -394,7 +394,9 @@ pub(crate) fn compile_with_settings(
     fs::create_dir_all(parent)?;
     use std::io::Write;
     if let Some(bytes) = builtin {
-        let path = cache.with_file_name("zelda3.wasm");
+        let path = cache.with_file_name(crate::builtin::filename(
+            manifest.builtin_engine.as_deref().unwrap(),
+        )?);
         let mut file = tempfile::NamedTempFile::new_in(parent)?;
         file.write_all(&bytes)?;
         file.as_file().sync_all()?;

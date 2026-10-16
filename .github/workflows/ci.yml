@@ -53,7 +53,7 @@ jobs:
         run: python3 tests/tor_download.py
       - name: Install isolated build prerequisites
         if: matrix.features == '--all-features'
-        run: sudo apt-get update && sudo apt-get install -y bubblewrap && rustup target add wasm32-unknown-unknown
+        run: sudo apt-get update && sudo apt-get install -y bubblewrap clang-18 wasi-libc libclang-rt-18-dev-wasm32 && rustup target add wasm32-unknown-unknown
       - name: Install pinned shader compiler
         if: matrix.features == '--all-features'
         run: |
@@ -120,6 +120,9 @@ jobs:
       - name: Slang texture and audio host APIs with both profiles and permission denial
         if: matrix.features == '--all-features'
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/media_wrappers.py
+      - name: Pinned DOOM engine and compiler exchange without commercial assets
+        if: matrix.features == '--all-features'
+        run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/doom_package.py
       - name: Shared assets and HTTPS store transfer
         if: matrix.features == '--all-features'
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/shared_assets_game.py

@@ -5,6 +5,7 @@ pub mod gamepkg {
     #[link(wasm_import_module = "gamepkg")]
     unsafe extern "C" {
         #[link_name="draw_shader_asset_image"] fn host_shader_asset_image(index: u32, path: *const u8, length: usize) -> i32;
+        #[link_name="doom_tick"] fn host_doom_tick(input:u32,state:u64)->u64;
         #[link_name="zelda3_tick"] fn host_zelda3_tick(input:u32,state:u64)->u64;
         #[link_name="rom_count"] fn host_rom_count()->u32;
         #[link_name="rom_size_at"] fn host_rom_size_at(index:u32)->i32;
@@ -37,6 +38,7 @@ pub mod gamepkg {
         fn host_asset_read(path: *const u8, path_len: i32, offset: i32, output: *mut u8, output_len: i32) -> i32;
     }
     /// Run the pinned Zelda3 engine with the explicitly selected ROM.
+    pub fn doom_tick(input:u32,state:u64)->u64 { unsafe {host_doom_tick(input,state)} }
     pub fn zelda3_tick(input:u32,state:u64)->u64 { unsafe {host_zelda3_tick(input,state)} }
     /// Unlock the signed manifest achievement at this zero-based index.
     pub fn achievement_unlock(index: u32) -> bool { unsafe { host_achievement(index) == 1 } }
