@@ -62,8 +62,8 @@ def write_zip(root, destination):
                     shutil.copyfileobj(source, target)
 
 
-def package(output_directory, binary_directory):
-    system = platform.system()
+def package(output_directory, binary_directory, *, system=None, target_triple=None):
+    system = system or platform.system()
     if system not in ('Linux', 'Windows'):
         raise ValueError('release packaging supports Linux or Windows')
     windows = system == 'Windows'
@@ -72,7 +72,10 @@ def package(output_directory, binary_directory):
     if executable_architecture(binary_directory / ('gamepkg-gui' + suffix), windows) != architecture:
         raise ValueError('CLI and GUI architectures must match')
     host = ('windows-' if windows else 'linux-') + architecture
-    target = architecture + ('-pc-windows-msvc' if windows else '-unknown-linux-gnu')
+    target = target_triple or architecture + ('-pc-windows-msvc' if windows else '-unknown-linux-gnu')
+    allowed = {architecture + suffix for suffix in (('-pc-windows-msvc', '-pc-windows-gnu') if windows else ('-unknown-linux-gnu',))}
+    if target not in allowed:
+        raise ValueError('target triple must match the executable platform and architecture')
     version = tomllib.loads((PROJECT / 'Cargo.toml').read_text())['package']['version']
     name = f'gamepkg-{version}-{host}'
     output_directory.mkdir(parents=True, exist_ok=True)
@@ -159,5 +162,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('output_directory', type=Path)
     parser.add_argument('--binary-directory', type=Path, default=PROJECT / 'target' / 'release')
+    parser.add_argument('--system', choices=['Linux', 'Windows'])
+    parser.add_argument('--target', dest='target_triple')
     args = parser.parse_args()
-    print(package(args.output_directory.resolve(), args.binary_directory.resolve()))
+    print(package(args.output_directory.resolve(), args.binary_directory.resolve(), system=args.system, target_triple=args.target_triple))

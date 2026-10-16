@@ -24,6 +24,7 @@ pub struct App {
     updates: crate::updates::Monitor,
     source: String,
     drop_notice: Option<String>,
+    rom_paths: HashMap<String, Vec<String>>,
     rom_path: String,
     rom_game: Option<String>,
     rom_identity: Option<String>,
@@ -76,9 +77,14 @@ impl App {
         }
         if let Some(id) = play {
             app.begin_work(move || {
-                Ok(Work::Game(Box::new(crate::runtime::Game::load(
-                    &crate::registry::default_root()?,
-                    &id,
+                let root = crate::registry::default_root()?;
+                let manifest = crate::registry::installed_manifest(&root, &id)?;
+                let paths = crate::rom_selections::load(&root, &manifest)?
+                    .into_iter()
+                    .map(PathBuf::from)
+                    .collect::<Vec<_>>();
+                Ok(Work::Game(Box::new(crate::runtime::Game::load_with_roms(
+                    &root, &id, &paths,
                 )?)))
             });
         }
@@ -91,12 +97,25 @@ impl App {
             .find(|m| m.requires_rom && Some(&m.id) == self.rom_game.as_ref());
         let identity = selected.and_then(|m| rom_identity(root, m));
         if identity != self.rom_identity {
-            self.rom_path.clear();
-            self.additional_rom_paths =
-                vec![
-                    String::new();
-                    selected.map_or(0, |m| m.required_rom_count().saturating_sub(1))
-                ];
+            let paths = selected
+                .map(|m| crate::rom_selections::load(root, m))
+                .transpose();
+            match paths {
+                Ok(paths) => {
+                    let mut paths = paths.unwrap_or_default().into_iter();
+                    self.rom_path = paths.next().unwrap_or_default();
+                    self.additional_rom_paths = paths.collect();
+                }
+                Err(error) => {
+                    self.rom_path.clear();
+                    self.additional_rom_paths =
+                        vec![
+                            String::new();
+                            selected.map_or(0, |m| m.required_rom_count().saturating_sub(1))
+                        ];
+                    self.status = format!("Unable to load remembered ROM files: {error:#}");
+                }
+            }
             self.rom_identity = identity;
         }
         if selected.is_none() {
@@ -119,6 +138,7 @@ impl App {
                 self.icons.clear();
                 self.built.clear();
                 if let Ok(root) = crate::registry::default_root() {
+                    self.rom_paths.clear();
                     self.history.clear();
                     self.usage.clear();
                     self.library_bytes = crate::storage::total(&root).ok();
@@ -131,6 +151,17 @@ impl App {
                         }
                         if let Ok(usage) = crate::storage::usage(&root, m) {
                             self.usage.insert(m.id.clone(), usage);
+                        }
+                        if m.requires_rom {
+                            match crate::rom_selections::load(&root, m) {
+                                Ok(paths) => {
+                                    self.rom_paths.insert(m.id.clone(), paths);
+                                }
+                                Err(error) => {
+                                    self.status =
+                                        format!("Unable to read remembered ROM files: {error:#}")
+                                }
+                            }
                         }
                         if crate::build::is_built(&root, &m.id).unwrap_or(false) {
                             self.built.insert(m.id.clone());
@@ -808,23 +839,29 @@ impl eframe::App for App {
             return;
         }
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("GamePKG Library");
-            ui.label("Games — catalog entries download only when you choose");
-            if self.installed.iter().any(|m|m.requires_rom) {
-                let previous=self.rom_game.clone();
-                egui::ComboBox::from_label("ROM files for").selected_text(self.rom_game.as_deref().unwrap_or("Choose a game")).show_ui(ui,|ui| {
-                    for m in self.installed.iter().filter(|m|m.requires_rom) {ui.selectable_value(&mut self.rom_game,Some(m.id.clone()),&m.id);}
+            ui.heading("Your games");
+            ui.add_space(12.0);
+            if let Some(selected)=self.installed.iter().find(|m|Some(&m.id)==self.rom_game.as_ref()).cloned() {
+                egui::Frame::group(ui.style()).show(ui,|ui| {
+                    ui.strong(format!("ROM files — {}",selected.id));
+                    let mut changed=false;
+                    for index in 0..selected.required_rom_count() {
+                        let title=selected.roms.get(index).map(|r|r.title.clone()).unwrap_or_else(||format!("ROM {}",index+1));
+                        let path=if index==0 {&mut self.rom_path}else{&mut self.additional_rom_paths[index-1]};
+                        ui.horizontal(|ui|{ui.label(title);changed|=ui.add(egui::TextEdit::singleline(path).hint_text("File location").desired_width(420.0)).changed();});
+                    }
+                    ui.label("Locations are remembered for this game. Files stay on your drive and are shared read-only.");
+                    if changed {
+                        let paths=std::iter::once(self.rom_path.clone()).chain(self.additional_rom_paths.iter().cloned()).collect::<Vec<_>>();
+                        if let Ok(root)=crate::registry::default_root() {
+                            match crate::rom_selections::save(&root,&selected,&paths) {Ok(())=>{self.rom_paths.insert(selected.id.clone(),paths);},Err(e)=>self.status=format!("Unable to remember ROM files: {e:#}")}
+                        }
+                    }
+                    if ui.button("Done").clicked(){self.rom_game=None;self.rom_identity=None;}
                 });
-                if previous!=self.rom_game {
-                    if let Ok(root)=crate::registry::default_root() {self.sync_rom_selection(&root);}
-                }
+                ui.add_space(12.0);
             }
-            let rom_titles=self.installed.iter().find(|m|Some(&m.id)==self.rom_game.as_ref()).map(|m|m.roms.iter().map(|r|r.title.clone()).collect::<Vec<_>>()).unwrap_or_default();
-            ui.horizontal(|ui| { ui.label(rom_titles.first().map(String::as_str).unwrap_or("Your ROM file (for games that require one)")); ui.text_edit_singleline(&mut self.rom_path); });
-            for (index,path) in self.additional_rom_paths.iter_mut().enumerate() { ui.horizontal(|ui| {ui.label(rom_titles.get(index+1).cloned().unwrap_or_else(||format!("ROM {}",index+2))); ui.text_edit_singleline(path);}); }
-            ui.horizontal(|ui| {if self.additional_rom_paths.len()<7 && ui.button("Add ROM file").clicked() {self.additional_rom_paths.push(String::new());}
-            if !self.additional_rom_paths.is_empty() && ui.button("Remove last ROM").clicked() {self.additional_rom_paths.pop();}});
-            ui.label("Files are shared read-only in manifest order for this play session.");
+            let mut choose_rom = None;
             let mut inspect = None;
             let mut update = None;
             let mut build = None;
@@ -832,17 +869,16 @@ impl eframe::App for App {
             let mut download = None;
             let mut play = None;
             let mut integrity = None;
-            egui::ScrollArea::both().max_height(350.0).show(ui, |ui| {
-                egui::Grid::new("installed_games").striped(true).min_col_width(70.0).show(ui, |ui| {
-                    for label in ["Icon", "Game", "Version", "ROM", "State", "Played / achievements", "Storage", "Actions", "Updates"] { ui.strong(label); }
+            egui::ScrollArea::both().max_height((ui.available_height()*0.55).max(220.0)).show(ui, |ui| {
+                egui::Grid::new("installed_games").striped(true).min_col_width(70.0).spacing(egui::vec2(20.0,20.0)).min_row_height(76.0).show(ui, |ui| {
+                    for label in ["", "Game", "Version", "Status", "Played", "Storage", "Actions", "Updates"] { ui.strong(label); }
                     ui.end_row();
                     for entry in &self.catalog {
                         if self.installed.iter().any(|m| m.id == entry.id) { continue; }
                         ui.label("🎮");
                         ui.label(format!("{}\n{}",entry.title,entry.id)).on_hover_text("Catalog information is unverified until the package is downloaded");
                         ui.label(entry.version.as_deref().unwrap_or("Unknown")).on_hover_text("Version claimed by the catalog");
-                        ui.label(match entry.requires_rom { Some(true) => "User ROM required", Some(false) => "Not required", None => "Unknown" });
-                        ui.label("Not downloaded");
+                        ui.label(if entry.requires_rom==Some(true){"Not downloaded\nYour ROM required"}else{"Not downloaded"});
                         ui.label("Not played"); ui.label("Size unknown");
                         if ui.add_enabled(self.result.is_none(),egui::Button::new("Download / inspect")).clicked() { download = Some(entry.id.clone()); }
                         ui.label("Download first"); ui.end_row();
@@ -850,25 +886,27 @@ impl eframe::App for App {
                     for m in &self.installed {
                         if let Some(icon) = self.icons.get(&m.id) { ui.add(egui::Image::new(icon).fit_to_exact_size(egui::vec2(40.0,40.0))); }
                         else { ui.label("🎮").on_hover_text("Thumbnail unavailable or invalid"); }
-                        ui.label(&m.id); ui.label(&m.version);
-                        ui.label(if m.requires_rom {format!("{} ROM(s) required",m.required_rom_count())} else {"Not required".into()}).on_hover_text(m.roms.iter().map(|r|format!("{}: {}",r.id,r.title)).collect::<Vec<_>>().join("\n"));
+                        ui.strong(&m.id); ui.label(&m.version);
                         let built = self.built.contains(&m.id);
-                        ui.label(if built { "Built" } else { "Not built" }).on_hover_text(format!("Memory: {:.1} MiB recommended; {:.1} MiB hard limit", m.limits.recommended_memory_bytes() as f64 / 1048576.0, m.limits.hard_memory_bytes as f64 / 1048576.0));
+                        ui.label(format!("{}{}",if built {"Ready"}else{"Not built"},if m.requires_rom {if self.rom_paths.get(&m.id).is_some_and(|p|crate::rom_selections::ready(p,m.required_rom_count())) {"\nROM remembered"}else{"\nChoose ROM files"}}else{""})).on_hover_text(format!("Memory: {:.1} MiB recommended; {:.1} MiB hard limit", m.limits.recommended_memory_bytes() as f64 / 1048576.0, m.limits.hard_memory_bytes as f64 / 1048576.0));
                         if let Some(record)=self.history.get(&m.id) {
                         ui.label(format!("{}\n{}/{} unlocked", crate::progress::duration(record.played_ms), m.achievements.iter().filter(|a|record.unlocked.contains_key(&a.id)).count(), m.achievements.len())).on_hover_text(m.achievements.iter().map(|a|format!("{}: {} — {}", if record.unlocked.contains_key(&a.id) {"Unlocked"} else {"Locked"}, a.title, a.description)).collect::<Vec<_>>().join("\n"));
                         } else { ui.label("History unavailable"); }
                         if let Some(usage)=self.usage.get(&m.id) { ui.label(format!("{} used\n{} expected", crate::storage::bytes(usage.used_bytes()), usage.estimated_bytes.map(crate::storage::bytes).unwrap_or_else(||"Unknown".into()))).on_hover_text(format!("{} Expected size is a creator estimate.", usage.breakdown())); } else { ui.label("Unavailable"); }
                         ui.vertical(|ui| {
+                            if ui.add_enabled(self.result.is_none(),egui::Button::new("Details")).clicked() { inspect = Some(m.id.clone()); }
+                            if ui.add_enabled(built && self.result.is_none() && (!m.requires_rom || self.rom_paths.get(&m.id).is_some_and(|paths|crate::rom_selections::ready(paths,m.required_rom_count()))), egui::Button::new("Play")).on_hover_text("Missing a ROM? Choose ROM files for this game.").clicked() {play=Some(m.id.clone());}
+                            if m.requires_rom && ui.add_enabled(self.result.is_none(),egui::Button::new("ROM files")).clicked(){choose_rom=Some(m.id.clone());}
+                            if ui.add_enabled(self.result.is_none(), egui::Button::new(if built { "Rebuild" } else { "Build" })).clicked() { build = Some(m.id.clone()); }
+                            ui.menu_button("More",|ui| {
                             if ui.add_enabled(self.result.is_none(), egui::Button::new("Check integrity")).clicked() { integrity = Some((m.id.clone(),false,None)); }
                             if ui.add_enabled(self.result.is_none(), egui::Button::new("Fix / rebuild")).clicked() { integrity = Some((m.id.clone(),true,None)); }
                             if !m.shared_assets.is_empty() && ui.add_enabled(self.result.is_none() && self.source.trim().ends_with(".gamepkgstore") && std::path::Path::new(self.source.trim()).is_file(),egui::Button::new("Repair assets")).on_hover_text("Enter the original local .gamepkgstore path in the package field below, then repair this game's exact signed assets and rebuild.").clicked() {integrity=Some((m.id.clone(),true,Some(PathBuf::from(self.source.trim()))));}
-                            if ui.add_enabled(self.result.is_none(),egui::Button::new("Details")).clicked() { inspect = Some(m.id.clone()); }
-                            if ui.add_enabled(built && self.result.is_none() && (m.required_rom_count()==0 || (self.rom_game.as_deref()==Some(m.id.as_str()) && !self.rom_path.trim().is_empty() && self.additional_rom_paths.len()+1==m.required_rom_count() && self.additional_rom_paths.iter().all(|p| !p.trim().is_empty()))), egui::Button::new("Play")).on_hover_text("Play this built game. ROM games need your file path above.").clicked() { play = Some(m.id.clone()); }
-                            if ui.add_enabled(self.result.is_none(), egui::Button::new(if built { "Rebuild" } else { "Build" })).clicked() { build = Some(m.id.clone()); }
                             if ui.add_enabled(built && self.result.is_none(), egui::Button::new("Export for web")).on_hover_text("Export a portable browser player into your library web-exports folder. Shader effects require WebGL 2 in the browser.").clicked() { export_web = Some(m.id.clone()); }
+                            });
                         });
                         ui.vertical(|ui| {
-                        ui.set_min_width(180.0);
+                        ui.set_min_width(130.0);
                         if let Some(notice) = self.updates.notices.get(&m.id) {
                             match notice {
                                 crate::updates::Notice::Available(version) => { ui.colored_label(egui::Color32::GREEN,format!("Update {version} available")); }
@@ -893,6 +931,7 @@ impl eframe::App for App {
             if let Some((id,fix,store)) = integrity {
                 self.begin_work(move || { let root=crate::registry::default_root()?; Ok(Work::Message(if fix {crate::integrity::fix_with_store(&root,&id,store.as_deref())?} else {crate::integrity::check(&root,&id)?})) });
             }
+            if let Some(id)=choose_rom {self.rom_game=Some(id);if let Ok(root)=crate::registry::default_root(){self.sync_rom_selection(&root);}}
             if let Some(id) = inspect {
                 if self.installed.iter().any(|m|m.id==id && m.requires_rom) {
                     self.rom_game=Some(id.clone());
@@ -905,8 +944,8 @@ impl eframe::App for App {
                 });
             }
             if let Some(id) = play {
-                let paths = if self.installed.iter().any(|m|m.id==id && m.requires_rom) { std::iter::once(&self.rom_path).chain(self.additional_rom_paths.iter()).map(|p|PathBuf::from(p.trim())).collect::<Vec<_>>() } else {Vec::new()};
-                let selected_identity=self.rom_identity.clone();
+                let paths=self.rom_paths.get(&id).cloned().unwrap_or_default().into_iter().map(PathBuf::from).collect::<Vec<_>>();
+                let selected_identity=self.installed.iter().find(|m|m.id==id).and_then(|m|crate::registry::default_root().ok().and_then(|root|rom_identity(&root,m)));
                 self.begin_work(move || {
                     let root=crate::registry::default_root()?;
                     let _change=if paths.is_empty() {None} else {Some(crate::registry::LibraryChange::acquire(&root)?)};
@@ -1083,7 +1122,7 @@ impl eframe::App for App {
                     self.status = "Package review cancelled. Nothing installed.".into();
                 }
             }
-            ui.separator(); ui.label("Development preview. Supported games can play here; some package features are still in development.");
+            ui.separator(); ui.label(concat!("GamePKG ", env!("CARGO_PKG_VERSION")));
             ui.hyperlink_to("GamePKG • Apache 2.0", "https://gamepkg.com");
         });
     }
@@ -1101,10 +1140,10 @@ pub fn window_icon() -> egui::IconData {
     }
 }
 
-// Bind user-selected files to the library and the complete signed revision.
+// Bind remembered files to the library, creator, game and ROM requirements.
 fn rom_identity(root: &std::path::Path, manifest: &crate::manifest::Manifest) -> Option<String> {
     let root = std::fs::canonicalize(root).ok()?;
-    let data = serde_json::to_vec(&(root, manifest)).ok()?;
+    let data = serde_json::to_vec(&(root, crate::rom_selections::identity(manifest).ok()?)).ok()?;
     Some(crate::verify::digest(&data))
 }
 
@@ -1112,35 +1151,16 @@ fn rom_identity(root: &std::path::Path, manifest: &crate::manifest::Manifest) ->
 mod rom_selection_tests {
     use super::*;
     #[test]
-    fn selections_survive_refresh_but_clear_for_different_library_creator_or_revision() {
-        let first = tempfile::tempdir().unwrap();
-        let second = tempfile::tempdir().unwrap();
-        let mut manifest: crate::manifest::Manifest =
-            toml::from_str(include_str!("../examples/good/collect-stars/manifest.toml")).unwrap();
-        manifest.requires_rom = true;
-        let mut app = App {
-            installed: vec![manifest.clone()],
-            rom_game: Some(manifest.id.clone()),
-            ..App::default()
-        };
-        app.sync_rom_selection(first.path());
-        app.rom_path = "private-rom".into();
-        app.sync_rom_selection(first.path());
-        assert_eq!(app.rom_path, "private-rom");
-        app.sync_rom_selection(second.path());
-        assert!(app.rom_path.is_empty());
-        app.rom_path = "private-rom".into();
-        app.installed[0].creator_key = "another creator".into();
-        app.sync_rom_selection(second.path());
-        assert!(app.rom_path.is_empty());
-        app.rom_path = "private-rom".into();
-        app.installed[0].version = "9.0.0".parse().unwrap();
-        app.sync_rom_selection(second.path());
-        assert!(app.rom_path.is_empty());
-        app.rom_path = "private-rom".into();
-        app.installed.clear();
-        app.sync_rom_selection(second.path());
-        assert!(app.rom_path.is_empty());
-        assert!(app.rom_game.is_none());
+    fn scope_survives_version_updates_but_changes_for_creators_and_libraries() {
+        let a = tempfile::tempdir().unwrap();
+        let b = tempfile::tempdir().unwrap();
+        let mut m: crate::manifest::Manifest =
+            toml::from_str(include_str!("../ports/doom/manifest.toml")).unwrap();
+        let first = rom_identity(a.path(), &m);
+        m.version = "99.0.0".into();
+        assert_eq!(first, rom_identity(a.path(), &m));
+        assert_ne!(first, rom_identity(b.path(), &m));
+        m.creator_key = "changed".into();
+        assert_ne!(first, rom_identity(a.path(), &m));
     }
 }

@@ -71,3 +71,6 @@ mod builtin;
 mod doom;
 #[cfg(target_os = "linux")]
 mod doom_sources;
+
+#[cfg(feature = "gui")]
+mod rom_selections;

@@ -18,6 +18,8 @@ fn main() -> eframe::Result {
         "GamePKG",
         eframe::NativeOptions {
             viewport: eframe::egui::ViewportBuilder::default()
+                .with_inner_size([1280.0, 820.0])
+                .with_min_inner_size([900.0, 650.0])
                 .with_icon(gamepkg::gui::window_icon())
                 .with_drag_and_drop(true),
             ..Default::default()

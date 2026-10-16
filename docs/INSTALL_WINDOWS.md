@@ -6,7 +6,7 @@ Run `bin\gamepkg.exe --help` in PowerShell, or launch `bin\gamepkg-gui.exe` for 
 
 The current source has an **experimental, opt-in WSL 2 compiler connection**. End-to-end builds through WSL 2, core/component playback, integrity repair and actual native GUI shader rendering/input passed on a hosted Windows runner using software OpenGL. Hardware graphics drivers were not tested exhaustively. The existing Linux preview provides the verified build/play workflow.
 
-To configure the experimental connection, install a WSL 2 Linux distribution and prepare its GamePKG compiler with the same version as the Windows host, Rust's `wasm32-unknown-unknown` target, bubblewrap, and the pinned Slang compiler following the Linux setup instructions. Use the matching 0.1.6 Linux preview, which includes the internal compiler worker. Download its archive and checksum, verify and extract them inside WSL, and follow its `INSTALL.md` to install the compiler prerequisites. The Linux command-line binary also needs the listed ALSA runtime library; no Linux desktop display is needed for compilation. Test a source build inside Linux first. Older host/compiler versions cannot serve as the matching 0.1.6 compiler.
+To configure the experimental connection, install a WSL 2 Linux distribution and prepare its GamePKG compiler with the same version as the Windows host, Rust's `wasm32-unknown-unknown` target, bubblewrap, and the pinned Slang compiler following the Linux setup instructions. Use the matching 0.1.7 Linux preview, which includes the internal compiler worker. Download its archive and checksum, verify and extract them inside WSL, and follow its `INSTALL.md` to install the compiler prerequisites. The Linux command-line binary also needs the listed ALSA runtime library; no Linux desktop display is needed for compilation. Test a source build inside Linux first. Older host/compiler versions cannot serve as the matching 0.1.7 compiler.
 
 In the Windows settings page, supply the distribution name and the absolute Linux path to its `gamepkg` executable, for example `GamePKG-Ubuntu-24.04` and `/opt/gamepkg/bin/gamepkg`. Both fields must be supplied together; blank fields disable the connection. These values can also be set as `windows_compiler_distribution` and `windows_compiler_executable` in the settings file. Slang configuration inside the Linux distribution controls its compiler installation.
 
@@ -18,13 +18,13 @@ For an actual Windows/WSL integration check after setup, build the current Windo
 
 Add `--gui` with Pillow installed and a working OpenGL driver to verify actual blue/green shader pixels and held/released keyboard input for both runtime profiles. The hosted test uses checksum-pinned Mesa 26.2.4 DLLs only in its build folder; those test DLLs are excluded from the distribution. Screenshots and diagnostics are retained as a separate test artifact.
 
-The 0.1.6 Windows host requires a matching 0.1.6 Linux compiler worker. Use the Linux and Windows archives from the same release. The full source preflight policy and builtin engine version are checked before compiler outputs are accepted.
+The 0.1.7 Windows host requires a matching 0.1.7 Linux compiler worker. Use the Linux and Windows archives from the same release. The full source preflight policy and builtin engine version are checked before compiler outputs are accepted.
 
 ## Zelda3 optional engine
 
 Zelda3 uses the same opt-in WSL 2 compiler exchange as other source games.
 Install Clang 18, wasi-libc and libclang-rt-18-dev-wasm32 in that compiler's
-Ubuntu 24.04 environment. The matching 0.1.6 host includes the pinned engine
+Ubuntu 24.04 environment. The matching 0.1.7 host includes the pinned engine
 sources and transfers its verified Wasm/receipt alongside the Rust entry.
 No player ROM or save data is sent to the compiler.
 
@@ -36,4 +36,4 @@ See engines/zelda3/README.md for controls and tests.
 
 ## DOOM source engine
 
-Current main includes the pinned DOOM Wasm engine; the published 0.1.6 binaries predate it. Build matching current host/compiler sources. The Linux compiler needs the same Clang 18 and WASI tools described above. See [DOOM engine setup](../engines/doom/README.md) and the [port instructions](https://github.com/centrexity/GamePKG_Ports/blob/main/DOOM.md). Select your own DOOM.WAD/DOOM2.WAD; no WAD is included. Windows compilation uses the existing opt-in WSL 2 exchange; native Windows DOOM playback has not been tested locally.
+Version 0.1.7 includes the pinned DOOM Wasm engine. The Linux compiler needs the same Clang 18 and WASI tools described above. See [DOOM engine setup](../engines/doom/README.md) and the [port instructions](https://github.com/centrexity/GamePKG_Ports/blob/main/DOOM.md). Select your own DOOM.WAD/DOOM2.WAD; no WAD is included. Windows compilation uses the existing opt-in WSL 2 exchange; native Windows DOOM playback has not been tested locally.
