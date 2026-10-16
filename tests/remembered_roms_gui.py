@@ -2,7 +2,7 @@
 from pathlib import Path
 import csv,io,os,shutil,subprocess,tempfile,time,json
 from PIL import Image
-from gui_test_support import start_display,click_text,choose_native_file
+from gui_test_support import start_display,game_window,click_text,choose_native_file
 PROJECT=Path(__file__).resolve().parents[1];BINS=Path(os.environ.get('GAMEPKG_TEST_BINARY_DIR',PROJECT/'target/release'))
 with tempfile.TemporaryDirectory(prefix='gamepkg-remembered-roms-') as temp:
  root=Path(temp);home=root/'library';config=root/'settings.toml';config.write_text('automatic_update_checks=false\n')
@@ -23,7 +23,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-remembered-roms-') as temp:
   end=time.monotonic()+20
   while time.monotonic()<end:
    if app.poll() is not None:raise RuntimeError(app.stderr.read().decode())
-   found=subprocess.run(['xdotool','search','--onlyvisible','--name','^GamePKG$'],env=env,capture_output=True,text=True)
+   found=subprocess.run(['xdotool','search','--onlyvisible','--name',r'^(GamePKG|com\..*)$'],env=env,capture_output=True,text=True)
    if found.returncode==0:break
    time.sleep(.1)
   assert found.returncode==0;window=found.stdout.splitlines()[0]
@@ -65,8 +65,8 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-remembered-roms-') as temp:
    time.sleep(.3);click_text(window,env,'Back to library',root)
   stored=json.loads((home/'rom-selections.json').read_text());assert sorted(stored.values())==sorted([[str(a)],[str(b)]])
   close();launch()
-  click_text(window,env,'com.example.alpha',root);click_text(window,env,'Play',root);expect_score(65);click_text(window,env,'Back to game',root);click_text(window,env,'Back to library',root)
-  click_text(window,env,'com.example.beta',root);click_text(window,env,'Play',root);expect_score(66);click_text(window,env,'Back to game',root);click_text(window,env,'Back to library',root)
+  click_text(window,env,'com.example.alpha',root);click_text(window,env,'Play',root);library_window=window;window,pid=game_window(env,'com.example.alpha');assert pid != app.pid;expect_score(65);click_text(window,env,'Close game',root);window=library_window;click_text(window,env,'Back to library',root)
+  click_text(window,env,'com.example.beta',root);click_text(window,env,'Play',root);library_window=window;window,pid=game_window(env,'com.example.beta');assert pid != app.pid;expect_score(66);click_text(window,env,'Close game',root);window=library_window;click_text(window,env,'Back to library',root)
   proof=PROJECT/'target/remembered-roms-library.png';subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(proof)],env=env,check=True)
   close();launch('--play','com.example.alpha');expect_score(65)
   print('Remembered ROMs passed: separate file paths, game switching, restart and direct --play without reselecting files.')

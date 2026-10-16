@@ -2,7 +2,7 @@
 from pathlib import Path
 import argparse,csv,io,os,shutil,subprocess,tempfile,time
 from PIL import Image,ImageChops
-from gui_test_support import start_display,click_text,choose_native_file
+from gui_test_support import start_display,game_window,click_text,choose_native_file
 def pixels(im):return im.get_flattened_data() if hasattr(im,'get_flattened_data') else im.getdata()
 PROJECT=Path(__file__).resolve().parents[1]
 p=argparse.ArgumentParser();p.add_argument('wad',type=Path);p.add_argument('--library',type=Path,required=True);args=p.parse_args()
@@ -34,6 +34,8 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-doom-gui-',dir=PROJECT/'target'
   subprocess.run(['xdotool','mousemove','--window',window,'350',str(y),'click','1'],env=env,check=True)
   choose_native_file(env,'Choose Your DOOM.WAD or DOOM2.WAD (original PC IWAD)',args.wad.resolve())
   time.sleep(.3);click_text(window,env,'Play',root,timeout=20)
+  window,pid=game_window(env,'com.gamepkg.doom');assert pid != app.pid
+  subprocess.run(['xdotool','windowsize',window,'1700','1000','windowfocus',window],env=env,check=True)
   subprocess.run(['xdotool','windowsize',window,'1000','800','windowfocus',window],env=env,check=True)
   time.sleep(5)
   def key(value):subprocess.run(['xdotool','key','--window',window,value],env=env,check=True)

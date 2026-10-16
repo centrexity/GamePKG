@@ -28,7 +28,7 @@ def verify_shader_input(project,env,game_id,label):
   finally:gdi.SelectObject(memory,previous);gdi.DeleteObject(bitmap);gdi.DeleteDC(memory);user.ReleaseDC(window,dc)
  proof=Path(project)/'target/windows-gui-proof';proof.mkdir(parents=True,exist_ok=True)
  log_path=proof/(label+'.log');window=None
- player_env=dict(env,GALLIUM_DRIVER='llvmpipe',LIBGL_ALWAYS_SOFTWARE='1')
+ player_env=dict(env,GALLIUM_DRIVER='llvmpipe',LIBGL_ALWAYS_SOFTWARE='1',GAMEPKG_RENDERER='opengl')
  player_env.pop('GAMEPKG_SLANG_ROOT',None)
  with log_path.open('wb') as log:
   app=subprocess.Popen([str(Path(project)/'target/release/gamepkg-gui.exe'),'--play',game_id],env=player_env,stdout=log,stderr=log)

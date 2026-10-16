@@ -20,7 +20,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-2048-gui-') as temporary:
         deadline=time.monotonic()+15
         while time.monotonic()<deadline:
             if app.poll() is not None:raise RuntimeError(app.stderr.read().decode())
-            found=subprocess.run(['xdotool','search','--onlyvisible','--name','^GamePKG$'],env=env,capture_output=True,text=True,timeout=2)
+            found=subprocess.run(['xdotool','search','--onlyvisible','--name',r'^(GamePKG|com\..*)$'],env=env,capture_output=True,text=True,timeout=2)
             if found.returncode==0:break
             time.sleep(.1)
         assert found.returncode==0
@@ -43,7 +43,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-2048-gui-') as temporary:
         deadline=time.monotonic()+15
         while time.monotonic()<deadline:
             if app.poll() is not None:raise RuntimeError(app.stderr.read().decode())
-            found=subprocess.run(['xdotool','search','--onlyvisible','--name','^GamePKG$'],env=env,capture_output=True,text=True,timeout=2)
+            found=subprocess.run(['xdotool','search','--onlyvisible','--name',r'^(GamePKG|com\..*)$'],env=env,capture_output=True,text=True,timeout=2)
             if found.returncode==0:break
             time.sleep(.1)
         assert found.returncode==0

@@ -1,7 +1,7 @@
 """Build and play through actual desktop library buttons, without startup shortcuts."""
 from pathlib import Path
 import csv, io, os, shutil, subprocess, tempfile, time
-from gui_test_support import start_display,click_text
+from gui_test_support import start_display,click_text,game_window
 from PIL import Image
 project=Path(__file__).resolve().parents[1]
 with tempfile.TemporaryDirectory(prefix='gamepkg-library-play-') as directory:
@@ -85,7 +85,10 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-library-play-') as directory:
         text,words=wait_screen(lambda text:'Check integrity' in text,'game-more.png')
         click_word(words,'integrity')
         text,words=wait_screen(lambda text:'compiled game verified' in text,'library-integrity.png')
+        library_window=window
         click_word(words,'Play')
+        window,game_pid=game_window(env,'com.gamepkg.collect-stars')
+        assert game_pid != app.pid
         text,words=wait_screen(lambda text:'Score:' in text,'library-click-play.png',20)
         assert 'com.gamepkg.collect-stars' in text, text
         time.sleep(1.5)
@@ -93,7 +96,8 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-library-play-') as directory:
         for direction in ['Left','Up']:
             subprocess.run(['xdotool','key','--clearmodifiers','--repeat','6','--delay','100',direction],env=env,check=True)
         time.sleep(.3)
-        click_word(words,'Back')
+        click_text(window,env,'Close game',root)
+        window=library_window
         text,words=wait_screen(lambda text:'Rebuild' in text and 'Score:' not in text,'library-returned.png',20)
         assert 'Storage' in text and 'Played' in text, text
         assert 'First star' in text and 'Star collector' in text and 'Locked' in text and 'Unlocked' in text, text
@@ -127,6 +131,13 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-library-play-') as directory:
         assert 'com.example.offline' in (library/'catalog.gamepkglist').read_text()
         assert list(library.glob('*.gamepkg')) == [library/'com.gamepkg.collect-stars.gamepkg']
         assert not (library/'com.example.offline.gamepkg').exists()
+        click_text(window,env,'Play',root)
+        game,pid=game_window(env,'com.gamepkg.collect-stars');assert pid != app.pid
+        app.terminate();app.wait(timeout=10)
+        time.sleep(.5)
+        os.kill(pid,0)
+        assert subprocess.check_output(['xdotool','getwindowname',game],env=env,text=True).strip()=='com.gamepkg.collect-stars'
+        click_text(game,env,'Close game',root)
         print('Desktop workflow passed: inspect, creator approval, install, Build, Play, return, Rebuild, and offline catalog import without downloading packages.')
     finally:
         app.terminate();app.wait(timeout=10);display.terminate();display.wait(timeout=10)

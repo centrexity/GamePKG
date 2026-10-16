@@ -2,7 +2,7 @@
 import csv,io,os,shutil,subprocess,tempfile,time
 from pathlib import Path
 from PIL import Image
-from gui_test_support import start_display,click_text,choose_native_file
+from gui_test_support import start_display,game_window,click_text,choose_native_file
 PROJECT=Path(__file__).resolve().parents[1]
 with tempfile.TemporaryDirectory(prefix='gamepkg-roms-gui-') as directory:
     root=Path(directory);source=root/'source';shutil.copytree(PROJECT/'examples/minimal',source)
@@ -57,6 +57,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-roms-gui-') as directory:
             if label=='Program':
                 click(word('Play'));text,_=screen();assert 'Score:' not in text,'missing second ROM allowed playback'
         click(word('Play'))
+        window,pid=game_window(env,'com.gamepkg.minimal');assert pid != app.pid
         end=time.monotonic()+20
         while True:
             text,_=screen()

@@ -10,6 +10,7 @@ use std::{
     sync::mpsc,
 };
 enum Work {
+    Launched(String, std::process::Child),
     Store(crate::store::Bundle),
     Preview(Vec<Vec<u8>>),
     Game(Box<crate::runtime::Game>),
@@ -41,6 +42,8 @@ pub struct App {
     brand_icon: Option<egui::TextureHandle>,
     settings_draft: crate::settings::Settings,
     player: Option<Box<crate::runtime::Game>>,
+    game_window: bool,
+    game_processes: Vec<(String, std::process::Child)>,
     next_frame: Option<std::time::Instant>,
     pending_input: u32,
     input_devices: input::Devices,
@@ -74,7 +77,15 @@ impl App {
         self.support_copied = None;
     }
     pub fn new(play: Option<String>, gl: Option<std::sync::Arc<eframe::glow::Context>>) -> Self {
+        Self::new_with_target(play, gl, None)
+    }
+    pub fn new_with_target(
+        play: Option<String>,
+        gl: Option<std::sync::Arc<eframe::glow::Context>>,
+        target: Option<bool>,
+    ) -> Self {
         let mut app = Self {
+            game_window: play.is_some(),
             gl,
             ..Self::default()
         };
@@ -93,8 +104,8 @@ impl App {
                     .into_iter()
                     .map(PathBuf::from)
                     .collect::<Vec<_>>();
-                Ok(Work::Game(Box::new(crate::runtime::Game::load_with_roms(
-                    &root, &id, &paths,
+                Ok(Work::Game(Box::new(crate::runtime::Game::load_target(
+                    &root, &id, &paths, target,
                 )?)))
             });
         }
@@ -273,7 +284,27 @@ impl App {
     }
 }
 impl eframe::App for App {
+    fn on_exit(&mut self, _: Option<&eframe::glow::Context>) {
+        if let Some(game) = self.player.as_mut() {
+            let _ = game.finish();
+        }
+    }
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
+        let mut exited = false;
+        self.game_processes
+            .retain_mut(|(_, child)| match child.try_wait() {
+                Ok(Some(_)) => {
+                    exited = true;
+                    false
+                }
+                _ => true,
+            });
+        if exited {
+            self.refresh(ctx);
+        }
+        if !self.game_processes.is_empty() {
+            ctx.request_repaint_after(std::time::Duration::from_millis(500));
+        }
         if !self.loaded {
             self.loaded = true;
             ctx.set_visuals(if self.settings_draft.dark_mode {
@@ -288,6 +319,10 @@ impl eframe::App for App {
                 Ok(result) => {
                     self.result = None;
                     match result {
+                        Ok(Work::Launched(id, child)) => {
+                            self.status = format!("Opened {id} in its own window.");
+                            self.game_processes.push((id, child));
+                        }
                         Ok(Work::Store(bundle)) => {
                             self.preview = None;
                             self.manifest = None;
@@ -475,7 +510,7 @@ impl eframe::App for App {
             egui::CentralPanel::default().show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     ui.heading(&game.id);
-                    if ui.button("Back to game").clicked() {
+                    if ui.button("Close game").clicked() {
                         close = true;
                     }
                     if ui.button("Restart").clicked() {
@@ -710,6 +745,9 @@ impl eframe::App for App {
                         self.status = format!("Unable to save play history: {e}");
                     }
                 }
+                if self.game_window && failure.is_none() {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                }
                 self.player = None;
                 self.loaded = false;
                 self.gpu = None;
@@ -719,6 +757,20 @@ impl eframe::App for App {
             if let Some(e) = failure {
                 self.status = e;
             }
+            return;
+        }
+        if self.game_window {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.heading("Game player");
+                ui.label(if self.result.is_some() {
+                    "Starting game…"
+                } else {
+                    &self.status
+                });
+                if ui.button("Close").clicked() {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                }
+            });
             return;
         }
         egui::TopBottomPanel::top("navigation").show(ctx, |ui| {

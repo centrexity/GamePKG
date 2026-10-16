@@ -6,6 +6,8 @@ struct Args {
     library: Option<std::path::PathBuf>,
     #[arg(long)]
     play: Option<String>,
+    #[arg(long, requires="play", value_parser=["native","wasm"])]
+    target: Option<String>,
     #[arg(long,value_parser=["vulkan","opengl"],help="Choose the desktop renderer explicitly")]
     renderer: Option<String>,
     #[arg(long, conflicts_with = "play", help = "Open the project support page")]
@@ -24,8 +26,9 @@ fn main() -> eframe::Result {
     })?;
     let mut wgpu_options = eframe::egui_wgpu::WgpuSetupCreateNew::default();
     wgpu_options.instance_descriptor.backends = eframe::wgpu::Backends::VULKAN;
+    let title = args.play.clone().unwrap_or_else(|| "GamePKG".into());
     eframe::run_native(
-        "GamePKG",
+        &title,
         eframe::NativeOptions {
             renderer: if settings.renderer == "opengl" {
                 eframe::Renderer::Glow
@@ -44,7 +47,11 @@ fn main() -> eframe::Result {
             ..Default::default()
         },
         Box::new(move |cc| {
-            let mut app = gamepkg::gui::App::new(args.play, cc.gl.clone());
+            let mut app = gamepkg::gui::App::new_with_target(
+                args.play,
+                cc.gl.clone(),
+                args.target.as_deref().map(|t| t == "native"),
+            );
             app.set_vulkan(cc.wgpu_render_state.clone());
             if args.support {
                 app.open_support();

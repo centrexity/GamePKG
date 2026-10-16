@@ -104,3 +104,17 @@ def choose_native_file(env, title, path=None, windows=False):
         subprocess.run(['xdotool','type','--clearmodifiers',str(path)],env=env,check=True)
         subprocess.run(['xdotool','key','--clearmodifiers','Return'],env=env,check=True)
     time.sleep(.5)
+
+
+def game_window(env, game_id, timeout=20):
+    """Wait for a separate game window and return its X11 window and process IDs."""
+    import re
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        found = subprocess.run(['xdotool', 'search', '--onlyvisible', '--name', '^'+re.escape(game_id)+'$'], env=env, capture_output=True, text=True)
+        if found.returncode == 0:
+            window = found.stdout.splitlines()[0]
+            pid = int(subprocess.check_output(['xdotool', 'getwindowpid', window], env=env, text=True))
+            return window, pid
+        time.sleep(.1)
+    raise AssertionError('Separate game window did not open: '+game_id)

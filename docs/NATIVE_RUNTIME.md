@@ -25,3 +25,5 @@ Cached executables are checked against their integrity receipt and copied into a
 The desktop uses Vulkan through the host renderer by default. Game source uses the GamePKG drawing, texture, shader and audio functions; it never receives a Vulkan device or window-system handle. Signed Slang fragment passes are compiled to WGSL or SPIR-V, validated, and rendered through host-owned pipelines with bounded textures.
 
 OpenGL is an explicit alternative in Settings and requires an app restart. `gamepkg-gui --renderer opengl` can open the app on a machine without usable Vulkan. GLSL shader output is supported by the OpenGL renderer; Vulkan shader builds use WGSL or SPIR-V. The default shader output is WGSL.
+
+Play opens a separate process and game window named for the game. The library stays available; closing it does not stop an already running game. Close the game window to end the session and finish saving progress. The game window owns its rendering and audio, while native game code continues to run in its restricted worker process. `gamepkg-gui --play GAME_ID --target native` (or `--target wasm`) starts this player directly.

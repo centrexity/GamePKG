@@ -60,7 +60,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-release-test-') as directory:
         for _ in range(100):
             if app.poll() is not None:
                 raise RuntimeError(app.stderr.read().decode())
-            window = subprocess.run(['xdotool', 'search', '--onlyvisible', '--name', '^GamePKG$'], env=env, capture_output=True, text=True)
+            window = subprocess.run(['xdotool', 'search', '--onlyvisible', '--name', r'^(GamePKG|com\..*)$'], env=env, capture_output=True, text=True)
             if window.returncode == 0:
                 break
             time.sleep(.1)

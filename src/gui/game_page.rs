@@ -66,12 +66,29 @@ impl App {
                     "The game or library changed. Select the ROM files again."
                 );
             }
-            Ok(Work::Game(Box::new(crate::runtime::Game::load_target(
-                &root,
-                &id,
-                &paths,
-                Some(native),
-            )?)))
+            let manifest = crate::registry::installed_manifest(&root, &id)?;
+            if manifest.requires_rom {
+                crate::rom_selections::save(
+                    &root,
+                    &manifest,
+                    &paths
+                        .iter()
+                        .map(|p| p.to_string_lossy().into_owned())
+                        .collect::<Vec<_>>(),
+                )?;
+            }
+            let mut child = std::process::Command::new(std::env::current_exe()?);
+            child
+                .arg("--library")
+                .arg(&root)
+                .arg("--play")
+                .arg(&id)
+                .arg("--target")
+                .arg(if native { "native" } else { "wasm" })
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null());
+            Ok(Work::Launched(id, child.spawn()?))
         });
     }
     pub(super) fn show_game_page(&mut self, ctx: &egui::Context) {
