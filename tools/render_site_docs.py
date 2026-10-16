@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE = (ROOT / 'html/guide/index.html').read_text().split('<body>')[0]
 PAGES = [
     ('docs/DEVELOPING_GAMES.md', 'html/guide/developers.html', 'Developer instructions',
-     'Create GamePKG games with pinned crates, portable input, scoped APIs, and verified local builds.', 'index.html'),
+     'Create GamePKG games with dependency-free source, portable input, scoped APIs, and verified local builds.', 'index.html'),
     ('html/guide/security.md', 'html/guide/security.html', 'Security model',
      'How GamePKG verifies source packages, isolates compilation, and limits running games.',
      'index.html'),

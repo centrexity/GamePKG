@@ -111,11 +111,23 @@ impl App {
             ui.add_space(16.0);
             ui.horizontal(|ui|{
                 if let Some(icon)=self.icons.get(&id){ui.add(egui::Image::new(icon).fit_to_exact_size(egui::vec2(72.0,72.0)));}else{super::theme::cover(ui,&id,72.0);}
-                ui.vertical(|ui|{ui.heading(&id);if let Some(m)=self.manifest.as_ref(){ui.label(format!("Version {}",m.version));}
+                ui.vertical(|ui|{ui.heading(self.manifest.as_ref().map(|m|m.display_title()).or_else(||self.catalog.iter().find(|e|e.id==id).map(|e|e.title.as_str())).unwrap_or(&id));if let Some(m)=self.manifest.as_ref(){ui.label(format!("Version {}",m.version));}
                     if let Some(record)=self.history.get(&id){ui.label(format!("Played: {}",crate::progress::duration(record.played_ms)));}
                 });
             });
             ui.add_space(16.0);
+            if let Some(m)=self.manifest.as_ref() {
+                if let Some(description)=&m.description {egui::ScrollArea::vertical().id_salt("description").max_height(160.0).show(ui,|ui|{ui.label(description);});ui.add_space(8.0);}
+                if let Some(author)=&m.author {ui.label(format!("By {author}"));}
+                if !m.genres.is_empty() {ui.label(m.genres.join("  •  "));}
+                if let Some(url)=&m.homepage {ui.hyperlink_to("Project website",url);}
+                if m.title.is_some() {ui.small(&id);}
+                ui.add_space(12.0);
+            } else if let Some(description)=self.catalog.iter().find(|e|e.id==id).and_then(|e|e.description.as_ref()) {
+                ui.label(description);
+                ui.weak("Catalog description — verified when the signed package is downloaded.");
+                ui.add_space(12.0);
+            }
             if self.pending.is_some() {
                 ui.label("Review the creator and permissions before installing.");
                 if let Some(m)=self.manifest.as_ref() {
@@ -309,6 +321,7 @@ mod tests {
         app.catalog.push(crate::catalog::Entry {
             id: "catalog.game".into(),
             title: "Catalog game".into(),
+            description: None,
             download_url: "https://example.invalid/game.gamepkg".into(),
             version: Some("1.0.0".into()),
             requires_rom: Some(false),

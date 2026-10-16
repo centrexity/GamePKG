@@ -49,7 +49,7 @@ Update URLs support HTTP/HTTPS v3 `.onion` services through a local Tor SOCKS pr
 
 ## Game list format
 
-`.gamepkglist` is a UTF-8 TOML document with `format_version = 1` and a `games` array written as `[[games]]` tables. Each entry requires `id`, `title`, and `download_url`; `version` (semantic version) and `requires_rom` (boolean) are optional unverified claims. Unknown fields, duplicate IDs, unsafe URLs, inputs exceeding 4 MiB, and more than 10,000 games are rejected.
+`.gamepkglist` is a UTF-8 TOML document with `format_version = 1` and a `games` array written as `[[games]]` tables. Each entry requires `id`, `title`, and `download_url`; `version` (semantic version), `requires_rom` (boolean), and `description` (up to 4096 bytes of plain text) are optional unverified claims. Unknown fields, duplicate IDs, unsafe URLs, inputs exceeding 4 MiB, and more than 10,000 games are rejected.
 
 Import saves metadata only, with no package/thumbnail downloads and no creator trust. Games remain in a Not downloaded state until selected for download. A fetched package must verify and match the catalog ID; first installation requires creator approval. Installed signed manifest metadata takes precedence over catalog claims. Identical reimports merge without duplication; conflicting existing IDs reject the import atomically.
 
@@ -100,3 +100,7 @@ Signed package verification covers the archive contents; shared assets are check
 `draw-shader-asset-image(index, path)` supplies a PNG from the verified virtual assets to the selected fragment pass. It uses the same path checks, 2 MiB encoded limit, 512×512 decoded limit, 8 MiB decoder allocation limit, private snapshots and frame image budget as sprite loading. Unknown indices and invalid files return false. The core ABI names this operation `draw_shader_asset_image`; the component API uses the hyphenated name.
 
 The runtime uses memory limits and host time deadlines, without instruction metering. Legacy instruction-budget values in existing signed manifests are accepted but ignored; new manifests omit them.
+
+## Game display metadata
+
+Since 0.1.13, optional signed root fields include `title` (256 bytes), `description` (4096 bytes, with line breaks), `author` (128 bytes), `homepage` (2048 bytes, HTTPS/Tor), and `genres` (up to eight unique labels, 32 bytes each). Text is literal, without markup; control sequences and bidirectional formatting controls are rejected. Old packages fall back to their IDs. Catalog entries may also supply unverified descriptions. Installed signed metadata takes precedence. Use `engine_version = ">=0.1.13, <0.2.0"` and update older hosts first. See the developer guide for the manifest example.

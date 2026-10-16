@@ -11,7 +11,7 @@ impl App {
             .map(|m| {
                 (
                     m.id.as_str(),
-                    m.id.as_str(),
+                    m.display_title(),
                     m.version.as_str(),
                     if self.built.contains(&m.id) {
                         "Ready"

@@ -12,6 +12,16 @@ pub struct Manifest {
     #[serde(default = "default_save_schema")]
     pub save_schema: u32,
     pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub author: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub homepage: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub genres: Vec<String>,
     pub version: String,
     pub entry_world: String,
     #[serde(default = "default_runtime_profile")]
@@ -107,6 +117,9 @@ pub struct Permissions {
     pub network_allow_local: bool,
 }
 impl Manifest {
+    pub fn display_title(&self) -> &str {
+        self.title.as_deref().unwrap_or(&self.id)
+    }
     pub fn required_rom_count(&self) -> usize {
         if self.roms.is_empty() {
             usize::from(self.requires_rom)
@@ -131,6 +144,31 @@ impl Manifest {
     }
     pub fn parse(bytes: &[u8]) -> Result<Self> {
         let mut m: Self = toml::from_str(std::str::from_utf8(bytes)?)?;
+        for (label, value, max, multiline) in [
+            ("title", m.title.as_deref(), 256, false),
+            ("description", m.description.as_deref(), 4096, true),
+            ("author", m.author.as_deref(), 128, false),
+        ] {
+            if let Some(value) = value {
+                validate_metadata_text(value, max, multiline, label)?;
+            }
+        }
+        if let Some(homepage) = &m.homepage {
+            if homepage.len() > 2048 {
+                bail!("metadata homepage is too long");
+            }
+            crate::registry::validate_url(homepage)?;
+        }
+        if m.genres.len() > 8 {
+            bail!("at most eight metadata genres are allowed");
+        }
+        let mut genres = std::collections::HashSet::new();
+        for genre in &m.genres {
+            validate_metadata_text(genre, 32, false, "genre")?;
+            if !genres.insert(genre.trim().to_lowercase()) {
+                bail!("duplicate metadata genre");
+            }
+        }
         if m.roms.len() > 8 {
             bail!("at most eight ROMs may be required");
         }
@@ -284,4 +322,23 @@ fn default_save_schema() -> u32 {
 
 fn default_runtime_profile() -> String {
     "core-v1".into()
+}
+
+/// Metadata is bounded plain text, never markup or terminal control sequences.
+pub(crate) fn validate_metadata_text(
+    value: &str,
+    max: usize,
+    multiline: bool,
+    label: &str,
+) -> Result<()> {
+    if value.trim().is_empty()
+        || value.len() > max
+        || value.chars().any(|c| {
+            (c.is_control() && !(multiline && c == '\n'))
+                || matches!(c,'\u{202a}'..='\u{202e}'|'\u{2066}'..='\u{2069}')
+        })
+    {
+        bail!("invalid metadata {label}");
+    }
+    Ok(())
 }

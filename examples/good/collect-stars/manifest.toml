@@ -1,3 +1,8 @@
+title = "Collect Stars"
+description = "Find and collect stars around the board. Move with the arrow keys or WASD, improve your score and earn local achievements."
+author = "GamePKG contributors"
+genres = ["Arcade"]
+engine_version = ">=0.1.13, <0.2.0"
 format_version = 1
 id = "com.gamepkg.collect-stars"
 version = "0.1.0"

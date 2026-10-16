@@ -15,7 +15,8 @@ function render(snapshot,cached) {
         const used=game.used_bytes===null?'Unavailable':`${game.used_bytes} bytes used`;
         const expected=game.expected_bytes==null?'Expected size unknown':`${game.expected_bytes} bytes expected`;
         const state=cached?'Cached installed metadata':game.built===true?'Built':game.built===false?'Not built':'Build status unavailable';
-        const tr=row(['🎮',m.id,m.version,state,game.history?`${Math.floor(game.history.played_ms/1000)} seconds`:'Unavailable',count,`${used}; ${expected}`]);
+        const tr=row(['🎮',m.title||m.id,m.version,state,game.history?`${Math.floor(game.history.played_ms/1000)} seconds`:'Unavailable',count,`${used}; ${expected}`]);
+        for(const text of [m.title?m.id:null,m.description,m.author?`By ${m.author}`:null,m.genres?.join(' · '),m.homepage]){if(text){const detail=document.createElement('p');detail.textContent=text;tr.children[1].append(detail);}}
         tr.lastElementChild.title=game.storage_breakdown||'Storage unavailable';
         if(definitions.length){
             const detail=document.createElement('details'),summary=document.createElement('summary');summary.textContent=count;detail.append(summary);
@@ -33,7 +34,7 @@ function render(snapshot,cached) {
     }
     document.getElementById('library-space').textContent=snapshot.library_used_bytes==null?'Library storage unavailable':`Library storage used: ${snapshot.library_used_bytes} bytes`;
 
-    for(const game of snapshot.catalog){if(!installed.has(game.id))row(['🎮',game.title,game.version||'Unknown',cached?'Cached catalog metadata':'Not downloaded','Not played','—','Unknown']);}
+    for(const game of snapshot.catalog){if(!installed.has(game.id)){const tr=row(['🎮',game.title,game.version||'Unknown',cached?'Cached catalog metadata':'Not downloaded','Not played','—','Unknown']);if(game.description){const detail=document.createElement('p');detail.textContent=game.description;tr.children[1].append(detail);}}}
     for(const [name,error] of snapshot.rejected)row(['🎮',name,'Unknown',`Unavailable: ${error}`,'Unavailable','Unavailable','Unavailable']);
     const settings=document.getElementById('settings');settings.replaceChildren();
     for(const [label,value] of [['Dark appearance',snapshot.settings.dark_mode?'On':'Off'],['Shader backend',snapshot.settings.shader_backend],['Memory ceiling',`${snapshot.settings.memory_ceiling_mib} MiB`],['Audio',snapshot.settings.mute_audio?'Muted':`${snapshot.settings.audio_volume}% volume`],['Automatic update checks',snapshot.settings.automatic_update_checks?`Every ${snapshot.settings.update_interval_hours} hours`:'Off'],['Optimize builds',snapshot.settings.optimize_builds?'On':'Off']]){const name=document.createElement('dt'),detail=document.createElement('dd');name.textContent=label;detail.textContent=value;settings.append(name,detail);}

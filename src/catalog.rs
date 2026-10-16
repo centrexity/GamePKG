@@ -14,6 +14,8 @@ const MAX_GAMES: usize = 10000;
 pub struct Entry {
     pub id: String,
     pub title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
     pub download_url: String,
     #[serde(default)]
     pub version: Option<String>,
@@ -56,6 +58,9 @@ impl Catalog {
                 || entry.title.chars().any(char::is_control)
             {
                 bail!("invalid catalog title");
+            }
+            if let Some(description) = &entry.description {
+                crate::manifest::validate_metadata_text(description, 4096, true, "description")?;
             }
             if !seen.insert(&entry.id) {
                 bail!("duplicate catalog game ID");

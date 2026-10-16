@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Developer instructions — GamePKG</title>
-  <meta name="description" content="Create GamePKG games with pinned crates, portable input, scoped APIs, and verified local builds.">
+  <meta name="description" content="Create GamePKG games with dependency-free source, portable input, scoped APIs, and verified local builds.">
   <link rel="icon" type="image/png" href="../assets/gamepkg-icon.png">
   <style>
     :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #10171d; color: #e8eef1; line-height: 1.6; }
@@ -23,7 +23,7 @@
 <h2>Creator checklist</h2>
 <ol>
 <li>Write <code>source/src/lib.rs</code> with <code>pub fn game_tick(input: u32, state: u64) -&gt; u64</code>. Use direct function calls and checked source modules. The host adds the runtime bindings and export wrapper; do not add your own imports or export attributes.</li>
-<li>Set a unique game ID, semantic version, runtime profile, and source lockfile hash in <code>manifest.toml</code>. Declare only the permissions you need, recommended memory, and hard memory limits. Players choose execution deadlines in Settings. Guest networking must be <code>none</code>.</li>
+<li>Set a unique game ID, semantic version, runtime profile, and source lockfile hash in <code>manifest.toml</code>. Declare only the permissions you need, recommended memory, and hard memory limits. Players choose execution deadlines in Settings. Leave networking as <code>none</code> unless you declare the exact HTTPS/multiplayer endpoints needed by your game.</li>
 <li>Put assets under <code>assets/</code>, Slang source under <code>shaders/</code>, and include a thumbnail, license and credits. Paths must be portable relative paths with forward slashes, no traversal, device names or symlinks.</li>
 <li>Declare no Cargo dependencies. Include a root-only <code>source/Cargo.lock</code> and put its SHA-256 in <code>lockfile_sha256</code>. Do not vendor dependency replacements into your package.</li>
 <li>If your game requires ROM files, declare each requirement in the manifest. Players select their own files; read only those ROMs through <code>gamepkg::rom_count</code>, <code>rom_size_at</code> and <code>rom_read_at</code>. Do not fetch ROMs or ask for access to their folders.</li>
@@ -55,7 +55,7 @@ version = &quot;0.1.0&quot;
 <p>Keep the name and version identical in both Cargo files. Hash the exact lockfile bytes for the manifest's <code>lockfile_sha256</code>. Do not add dependencies or <code>extern crate</code> declarations. Call <code>gamepkg::</code> directly: it is a host-injected module, not a crate to install, download or list in Cargo.toml. Rust's built-in standard library remains subject to the source restrictions below; it does not grant filesystem or network access.</p>
 <h2>Scoped host functions</h2>
 <p>Use <code>gamepkg::asset_read</code> for package-relative assets, <code>rom_count</code>, <code>rom_size_at</code> and <code>rom_read_at</code> for player-selected ROMs, and <code>save_size</code>, <code>save_read</code> and <code>save_write</code> for the game's save blob. They never open arbitrary host files.</p>
-<p>Use <code>gamepkg::draw_clear</code>, <code>draw_rect</code>, <code>draw_circle</code> and <code>draw_asset_image</code> for the host-owned viewport. Games cannot create windows or obtain GPU handles. <code>gamepkg::network_request(url, output)</code> always returns <code>NetworkError::PermissionDenied</code>, leaves output untouched and performs no I/O. The manifest requires <code>network = "none"</code>.</p>
+<p>Use <code>gamepkg::draw_clear</code>, <code>draw_rect</code>, <code>draw_circle</code> and <code>draw_asset_image</code> for the host-owned viewport. Games cannot create windows or obtain GPU handles. <code>gamepkg::network_request(url, output)</code> performs an asynchronous, bounded HTTPS GET only when the signed manifest permits that exact endpoint. TCP and UDP use the same host-controlled network service. See <a href="https://github.com/centrexity/GamePKG/blob/main/docs/NETWORKING.md">networking</a>.</p>
 <p>These functions preserve the source checks, signatures, isolated compiler and Wasm restrictions. Games cannot replace the injected implementation or declare their own host imports.</p>
 <h2>Slang shaders, textures and audio</h2>
 <p>Use the injected shader and audio APIs directly. <code>examples/good/media-game</code> demonstrates them without dependencies. Declare each Slang source, entry and stage in <code>[[shaders]]</code>. The host verifies the signed source, compiles it in isolation on Build/Rebuild, validates resource reflection, caches the result, and selects the configured playback backend. Games never run a compiler themselves or supply precompiled shader binaries.</p>
@@ -100,5 +100,20 @@ gamepkg run com.example.game --frames 60
 gamepkg-gui
 </code></pre>
 <p>Replace the ID with your manifest ID. For the input example use <code>com.gamepkg.input</code>. The desktop player supplies controller and touch controls; the CLI is useful for deterministic frame checks. Linux source builds use bubblewrap; Windows source builds use the configured Linux compiler connection through WSL 2. Optimization settings change local builds without expanding game permissions.</p>
+<h2>Native builds, Vulkan and networking</h2>
+<p>The default Linux Build compiles directly for the local CPU in an isolated native worker. Build Wasm is an explicit alternative. The same source and no-dependency rules apply to both. Direct standard I/O and thread APIs are also rejected; use the host functions. Vulkan is the default desktop renderer, with WGSL or SPIR-V output compiled from Slang. Guests receive no raw window, Vulkan or socket handles.</p>
+<p>See <a href="https://github.com/centrexity/GamePKG/blob/main/docs/NATIVE_RUNTIME.md">native runtime and build rules</a> and <a href="https://github.com/centrexity/GamePKG/blob/main/docs/NETWORKING.md">network permissions and API</a>. HTTPS GET, TCP and UDP use declared signed endpoints and asynchronous host calls. Existing packages declaring <code>network = "none"</code> retain no network access.</p>
+<h2>Describing a game</h2>
+<p>GamePKG 0.1.13 adds optional signed display metadata at the top level of <code>manifest.toml</code>, before any <code>[limits]</code> or other table:</p>
+<pre><code class="language-toml">title = &quot;Puzzle Garden&quot;
+description = &quot;A relaxed puzzle adventure. Match tiles to explore the garden.&quot;
+author = &quot;Example Studio&quot;
+homepage = &quot;https://example.com/puzzle-garden&quot;
+genres = [&quot;Puzzle&quot;, &quot;Adventure&quot;]
+engine_version = &quot;&gt;=0.1.13, &lt;0.2.0&quot;
+</code></pre>
+<p>Title (256 bytes), description (4096 bytes, including optional newlines), author (128 bytes), homepage (2048 bytes), and up to eight genres (32 bytes each) are optional. Text is rendered literally, without HTML or Markdown. Control sequences and bidirectional formatting controls are rejected; descriptions can contain line breaks. Homepages use the same HTTPS/Tor URL rules as package links. Genre labels must be unique, ignoring case. Author is a self-reported display name; creator identity remains the signing key.</p>
+<p>Existing packages need none of these fields and keep their IDs as fallback titles. Metadata changes require a newly signed package and a higher game version. GamePKG 0.1.13 still reads older packages; update older hosts before importing packages or lists that use the new fields.</p>
+<p>A <code>.gamepkglist</code> entry can also include <code>description = "..."</code> with the same text limits. Catalog titles and descriptions are unverified preview text; after installation the signed manifest supplies the displayed information. Importing descriptions downloads no games.</p>
 <footer><a href="../support/index.html">Support GamePKG</a> · <a href="../guide/allowlist.html">Game source policy</a> · <a href="https://github.com/centrexity/GamePKG/blob/main/docs/DEVELOPING_GAMES.md">Documentation source</a> · GamePKG · Apache 2.0</footer>
 </main></body></html>

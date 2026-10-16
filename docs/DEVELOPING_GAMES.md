@@ -52,7 +52,7 @@ Keep the name and version identical in both Cargo files. Hash the exact lockfile
 
 Use `gamepkg::asset_read` for package-relative assets, `rom_count`, `rom_size_at` and `rom_read_at` for player-selected ROMs, and `save_size`, `save_read` and `save_write` for the game's save blob. They never open arbitrary host files.
 
-Use `gamepkg::draw_clear`, `draw_rect`, `draw_circle` and `draw_asset_image` for the host-owned viewport. Games cannot create windows or obtain GPU handles. `gamepkg::network_request(url, output)` performs an asynchronous, bounded HTTPS GET only when the signed manifest permits that exact endpoint. TCP and UDP use the same host-controlled network service. See [networking](NETWORKING.md).
+Use `gamepkg::draw_clear`, `draw_rect`, `draw_circle` and `draw_asset_image` for the host-owned viewport. Games cannot create windows or obtain GPU handles. `gamepkg::network_request(url, output)` performs an asynchronous, bounded HTTPS GET only when the signed manifest permits that exact endpoint. TCP and UDP use the same host-controlled network service. See [networking](https://github.com/centrexity/GamePKG/blob/main/docs/NETWORKING.md).
 
 These functions preserve the source checks, signatures, isolated compiler and Wasm restrictions. Games cannot replace the injected implementation or declare their own host imports.
 
@@ -128,4 +128,23 @@ Replace the ID with your manifest ID. For the input example use `com.gamepkg.inp
 
 The default Linux Build compiles directly for the local CPU in an isolated native worker. Build Wasm is an explicit alternative. The same source and no-dependency rules apply to both. Direct standard I/O and thread APIs are also rejected; use the host functions. Vulkan is the default desktop renderer, with WGSL or SPIR-V output compiled from Slang. Guests receive no raw window, Vulkan or socket handles.
 
-See [native runtime and build rules](NATIVE_RUNTIME.md) and [network permissions and API](NETWORKING.md). HTTPS GET, TCP and UDP use declared signed endpoints and asynchronous host calls. Existing packages declaring `network = "none"` retain no network access.
+See [native runtime and build rules](https://github.com/centrexity/GamePKG/blob/main/docs/NATIVE_RUNTIME.md) and [network permissions and API](https://github.com/centrexity/GamePKG/blob/main/docs/NETWORKING.md). HTTPS GET, TCP and UDP use declared signed endpoints and asynchronous host calls. Existing packages declaring `network = "none"` retain no network access.
+
+## Describing a game
+
+GamePKG 0.1.13 adds optional signed display metadata at the top level of `manifest.toml`, before any `[limits]` or other table:
+
+```toml
+title = "Puzzle Garden"
+description = "A relaxed puzzle adventure. Match tiles to explore the garden."
+author = "Example Studio"
+homepage = "https://example.com/puzzle-garden"
+genres = ["Puzzle", "Adventure"]
+engine_version = ">=0.1.13, <0.2.0"
+```
+
+Title (256 bytes), description (4096 bytes, including optional newlines), author (128 bytes), homepage (2048 bytes), and up to eight genres (32 bytes each) are optional. Text is rendered literally, without HTML or Markdown. Control sequences and bidirectional formatting controls are rejected; descriptions can contain line breaks. Homepages use the same HTTPS/Tor URL rules as package links. Genre labels must be unique, ignoring case. Author is a self-reported display name; creator identity remains the signing key.
+
+Existing packages need none of these fields and keep their IDs as fallback titles. Metadata changes require a newly signed package and a higher game version. GamePKG 0.1.13 still reads older packages; update older hosts before importing packages or lists that use the new fields.
+
+A `.gamepkglist` entry can also include `description = "..."` with the same text limits. Catalog titles and descriptions are unverified preview text; after installation the signed manifest supplies the displayed information. Importing descriptions downloads no games.

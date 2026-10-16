@@ -459,9 +459,28 @@ fn main() -> Result<()> {
                         entry.id,
                         entry.version.as_deref().unwrap_or("unknown")
                     );
+                    if let Some(description) = &entry.description {
+                        println!("Description: {description}");
+                    }
                 }
             }
             for m in installed {
+                if m.title.is_some() {
+                    println!("Title: {}", m.display_title());
+                }
+                if let Some(description) = &m.description {
+                    println!("Description: {description}");
+                }
+                if let Some(author) = &m.author {
+                    println!("Author: {author}");
+                }
+                if let Some(homepage) = &m.homepage {
+                    println!("Homepage: {homepage}");
+                }
+                if !m.genres.is_empty() {
+                    println!("Genres: {}", m.genres.join(", "));
+                }
+
                 println!(
                     "Build state: {}",
                     match (

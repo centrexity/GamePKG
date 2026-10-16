@@ -15,10 +15,11 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-web-library-') as directory:
      if args and args[0] in ('build','integrity-fix') and '--target' not in args: args=(*args,'--target','wasm')
      return subprocess.run([str(cli),*map(str,args)],env=env,check=True,capture_output=True,text=True,timeout=60)
     source=root/'source';shutil.copytree(PROJECT/'examples/good/collect-stars',source)
+    manifest=source/'manifest.toml';manifest.write_text(manifest.read_text().replace('Find and collect stars around the board. Move with the arrow keys or WASD, improve your score and earn local achievements.','Literal <img src=x onerror=window.__metadataExecuted=true> description.'))
     if args.play:
         (source/'source/src/lib.rs').write_text('pub fn game_tick(_:u32,state:u64)->u64 { if !(gamepkg::achievement_unlock(0)) { loop {} }; state + 1 }')
     key=root/'key';package=root/'game.gamepkg';run('keygen','-o',key);run('pack',source,'-o',package,'--key',key);run('install',package,'--trust-creator')
-    catalog=root/'games.gamepkglist';catalog.write_text('format_version=1\n[[games]]\nid="com.example.waiting"\ntitle="Waiting game"\ndownload_url="https://unreachable.invalid/game.gamepkg"\n');run('import-list',catalog)
+    catalog=root/'games.gamepkglist';catalog.write_text('format_version=1\n[[games]]\nid="com.example.waiting"\ntitle="Waiting game"\ndescription="Waiting description."\ndownload_url="https://unreachable.invalid/game.gamepkg"\n');run('import-list',catalog)
     altered=root/'altered-package/code_langs';altered.mkdir(parents=True)
     (altered/'js.js').write_bytes((args.indexeddb_package/'code_langs/js.js').read_bytes()+b'\n// unverified change\n')
     rejected_source=subprocess.run([str(cli),'web-library','--indexeddb-package',str(altered.parent),'--port','0'],env=env,capture_output=True,text=True,timeout=10)
@@ -45,6 +46,8 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-web-library-') as directory:
             WebDriverWait(browser,20).until(lambda b:'saved using Hindsight' in b.find_element('id','status').text)
             WebDriverWait(browser,20).until(lambda b:len(b.find_elements('css selector','#games canvas'))==1)
             rows=browser.find_element('id','games').text;assert 'com.gamepkg.collect-stars' in rows and 'Waiting game' in rows and 'Not downloaded' in rows,rows
+            assert 'Collect Stars' in rows and 'Literal <img src=x onerror=window.__metadataExecuted=true> description.' in rows,rows
+            assert browser.execute_script("return window.__metadataExecuted !== true && document.querySelectorAll('#games img').length===0")
             browser.find_element('css selector','#games details summary').click()
             achievements=browser.find_elements('css selector','#games td:nth-child(6) details summary');assert len(achievements)==1
             achievements[0].click();rows=browser.find_element('id','games').text
