@@ -48,6 +48,7 @@ def click_text(window, env, text, directory, timeout=15, max_y=None):
     deadline = time.monotonic() + timeout
     wanted = text.split()
     last = ''
+    scroll_attempt = 0
     while True:
         screenshot = directory / 'control-screen.png'
         subprocess.run(['import', '-display', env['DISPLAY'], '-window', window, str(screenshot)], env=env, check=True)
@@ -62,7 +63,7 @@ def click_text(window, env, text, directory, timeout=15, max_y=None):
                 for index in range(len(words)-count+1):
                     candidate = words[index:index+count]
                     actual = ''.join(w['text'].strip('[]()|') for w in candidate)
-                    if actual != ''.join(wanted):
+                    if actual.casefold() != ''.join(wanted).casefold():
                         continue
                     if max(int(w['top']) for w in candidate)-min(int(w['top']) for w in candidate)>18:
                         continue
@@ -73,6 +74,11 @@ def click_text(window, env, text, directory, timeout=15, max_y=None):
                     return
         if time.monotonic() >= deadline:
             raise AssertionError(f'Visible control {text!r} was not found: {last}')
+        if max_y is None:
+            geometry=subprocess.check_output(['xdotool','getwindowgeometry','--shell',window],env=env,text=True)
+            size=dict(line.split('=',1) for line in geometry.splitlines() if '=' in line)
+            subprocess.run(['xdotool','mousemove','--window',window,str(int(size['WIDTH'])-28),str(max(120,int(size['HEIGHT'])-180)),'click','--repeat','3','--delay','35','5' if scroll_attempt%8<4 else '4'],env=env,check=True)
+            scroll_attempt+=1
         time.sleep(.1)
 
 

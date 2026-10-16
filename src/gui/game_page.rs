@@ -105,22 +105,38 @@ impl App {
                 self.sync_rom_selection(&root);
             }
         }
-        egui::CentralPanel::default().show(ctx,|ui|{
+        egui::CentralPanel::default().frame(egui::Frame::central_panel(&ctx.style()).inner_margin(20)).show(ctx,|ui|{
+            egui::ScrollArea::vertical().id_salt("game-page").show(ui,|ui|{
             if ui.button("Back to library").clicked(){self.close_game_page();return;}
             ui.add_space(16.0);
             ui.horizontal(|ui|{
-                if let Some(icon)=self.icons.get(&id){ui.add(egui::Image::new(icon).fit_to_exact_size(egui::vec2(72.0,72.0)));}
+                if let Some(icon)=self.icons.get(&id){ui.add(egui::Image::new(icon).fit_to_exact_size(egui::vec2(72.0,72.0)));}else{super::theme::cover(ui,&id,72.0);}
                 ui.vertical(|ui|{ui.heading(&id);if let Some(m)=self.manifest.as_ref(){ui.label(format!("Version {}",m.version));}
                     if let Some(record)=self.history.get(&id){ui.label(format!("Played: {}",crate::progress::duration(record.played_ms)));}
                 });
             });
             ui.add_space(16.0);
+            if self.pending.is_some() {
+                ui.label("Review the creator and permissions before installing.");
+                if let Some(m)=self.manifest.as_ref() {
+                    ui.label(format!("Creator fingerprint: {}",crate::verify::digest(&hex::decode(&m.creator_key).unwrap_or_default())));
+                }
+                let already = self.manifest.as_ref().is_some_and(|m| self.installed.iter().any(|old|old.id==m.id));
+                let label = if already { "Install verified update" } else { "Trust this creator and install" };
+                if self.pending.is_some() && ui.add_enabled(self.result.is_none(), egui::Button::new(label)).clicked() {
+                    if let Some(stage) = self.pending.take() {
+                        self.begin(move || crate::registry::install(&crate::registry::default_root()?, stage.path(), true));
+                    }
+                }
+
+                ui.add_space(12.0);
+            }
             if let Some(m)=installed {
                 let built=self.built.contains(&id);let reviewing=self.pending.is_some();
                 ui.label(if built{"Native build ready to play"}else{"Native build: Not built"});
                 if let Some(usage)=self.usage.get(&id){ui.label(format!("Storage: {} used",crate::storage::bytes(usage.used_bytes())));}
                 ui.horizontal_wrapped(|ui|{
-                    if ui.add_enabled(!reviewing&&built&&self.result.is_none()&&(!m.requires_rom||self.rom_paths.get(&id).is_some_and(|p|crate::rom_selections::ready(p,m.required_rom_count()))),egui::Button::new("Play").min_size(egui::vec2(100.0,36.0))).clicked(){self.launch_selected(id.clone(),true);}
+                    if ui.add_enabled(!reviewing&&built&&self.result.is_none()&&(!m.requires_rom||self.rom_paths.get(&id).is_some_and(|p|crate::rom_selections::ready(p,m.required_rom_count()))),super::theme::primary("Play")).clicked(){self.launch_selected(id.clone(),true);}
                     if ui.add_enabled(cfg!(target_os="linux")&&!reviewing&&self.result.is_none(),egui::Button::new(if built{"Rebuild"}else{"Build"}).min_size(egui::vec2(100.0,36.0))).clicked(){let id=id.clone();self.begin_work(move||{crate::native::compile(&crate::registry::default_root()?,&id)?;Ok(Work::Message("Native build ready to play.".into()))});}
                     if ui.add_enabled(!reviewing&&self.result.is_none()&&m.update_url.is_some(),egui::Button::new("Check for updates")).clicked(){let id=id.clone();self.begin_work(move||match crate::registry::check_update(&crate::registry::default_root()?,&id)?{Some((m,file))=>Ok(Work::Update(m,file)),None=>Ok(Work::Message("This game is up to date.".into()))});}
                     if ui.add_enabled(!reviewing&&self.result.is_none(),egui::Button::new("Build Wasm")).clicked(){let id=id.clone();self.begin_work(move||{crate::build::compile(&crate::registry::default_root()?,&id)?;Ok(Work::Message("Wasm build complete. Native build kept separately.".into()))});}
@@ -149,6 +165,7 @@ impl App {
                 if self.pending.is_none(){self.game_rom_editor(ui);}
                 self.game_details(ui,ctx);
             });
+            });
         });
     }
 
@@ -166,11 +183,11 @@ impl App {
                     let title = selected.roms.get(index).map(|r| r.title.clone())
                         .unwrap_or_else(|| format!("ROM {}", index + 1));
                     let path = if index == 0 { &self.rom_path } else { &self.additional_rom_paths[index - 1] };
-                    ui.horizontal(|ui| {
+                    ui.vertical(|ui| {
                         ui.label(&title);
                         let text = if path.is_empty() { "Choose ROM file…" } else { path };
                         if ui.add_enabled(self.result.is_none(), egui::Button::new(text).truncate()
-                            .min_size(egui::vec2(420.0, 26.0)))
+                            .min_size(egui::vec2(ui.available_width().min(620.0), 38.0)))
                             .on_hover_text(if path.is_empty() { "Open the system file picker" } else { path })
                             .clicked() {
                             pick = Some((index, title, path.clone()));
@@ -231,6 +248,15 @@ impl App {
                 if self.pending.is_some() && self.installed.iter().any(|old| old.id == m.id && old.save_schema != m.save_schema) {
                     ui.label("This update uses a different save format. A separate save starts; your earlier save is kept.");
                 }
+                if self.pending.is_none() {
+                    if let Some(notice)=self.package_notices.get(&m.id) {
+                        egui::CollapsingHeader::new("Credits and licenses").show(ui,|ui| {
+                            egui::ScrollArea::vertical().id_salt("package-notice").max_height(260.0).show(ui,|ui| {
+                                ui.add(egui::Label::new(notice).selectable(true).wrap());
+                            });
+                        });
+                    }
+                }
                 ui.label(format!("Lockfile / dependency inventory SHA-256: {}",m.lockfile_sha256));
                 ui.label(format!("Permissions: input={}, audio={}, save={}, network={}", m.permissions.input, m.permissions.audio, m.permissions.save, m.permissions.network));
                 if m.permissions.network != "none" {ui.label(format!("Network endpoints: {}. Listening: {}. Local network: {}",m.permissions.network_hosts.join(", "),m.permissions.network_listen.join(", "),m.permissions.network_allow_local));}
@@ -263,13 +289,6 @@ impl App {
                     stop_preview = ui.button("Close preview").clicked();
                 }
                 if stop_preview { self.preview = None; }
-                let already = self.installed.iter().any(|old| old.id == m.id);
-                let label = if already { "Install verified update" } else { "Trust this creator and install" };
-                if self.pending.is_some() && ui.add_enabled(self.result.is_none(), egui::Button::new(label)).clicked() {
-                    if let Some(stage) = self.pending.take() {
-                        self.begin(move || crate::registry::install(&crate::registry::default_root()?, stage.path(), true));
-                    }
-                }
                 });
             if self.pending.is_some()
                 && self.result.is_none()

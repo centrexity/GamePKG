@@ -13,6 +13,7 @@ fn settings_persist_and_failed_saves_preserve_previous_values() {
     settings.legacy_approved_crates.clear();
     settings.optimize_builds = false;
     settings.dark_mode = false;
+    settings.ui_scale_percent = 140;
     settings.mute_audio = true;
     settings.audio_volume = 20;
     settings.automatic_update_checks = false;
@@ -33,6 +34,13 @@ fn settings_validate_bounds_and_reject_unknown_or_large_files() {
             ..Default::default()
         };
         assert!(s.validate().is_err());
+    }
+    for scale in [0, 79, 161, u16::MAX] {
+        let settings = Settings {
+            ui_scale_percent: scale,
+            ..Default::default()
+        };
+        assert!(settings.validate().is_err());
     }
     defaults.validate().unwrap();
     assert_eq!(defaults.shader_backend, "wgsl");

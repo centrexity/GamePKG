@@ -19,6 +19,7 @@ pub struct Settings {
     pub tick_deadline_ms: u64,
     pub optimize_builds: bool,
     pub dark_mode: bool,
+    pub ui_scale_percent: u16,
     pub slang_directory: String,
     pub wasi_sysroot_directory: String,
     pub dxc_directory: String,
@@ -43,6 +44,7 @@ impl Default for Settings {
             tick_deadline_ms: 100,
             optimize_builds: true,
             dark_mode: true,
+            ui_scale_percent: 100,
             slang_directory: String::new(),
             wasi_sysroot_directory: String::new(),
             dxc_directory: String::new(),
@@ -82,6 +84,9 @@ impl Settings {
                 || executable.chars().any(char::is_control))
         {
             bail!("Windows compiler executable must be an absolute Linux path without control characters");
+        }
+        if !(80..=160).contains(&self.ui_scale_percent) {
+            bail!("Interface size must be 80–160 percent");
         }
         if self.format_version != 1 {
             bail!("unsupported settings version");

@@ -19,7 +19,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-settings-gui-') as directory:
         window=found.stdout.splitlines()[0]
         subprocess.run(['xdotool','windowsize',window,'1100','1100'],env=env,check=True);time.sleep(.3)
         def click(label):
-            click_text(window, env, label, root, max_y=40 if label == 'Settings' else None)
+            click_text(window, env, label, root, max_y=60 if label == 'Settings' else None)
             time.sleep(.3)
         def open_and_toggle():
             for attempt in range(5):

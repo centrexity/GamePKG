@@ -185,6 +185,9 @@ jobs:
       - name: Verify desktop Settings preference persistence and cancellation
         if: matrix.features == '--all-features'
         run: python3 tests/settings_gui.py
+      - name: Verify responsive high-contrast library appearance
+        if: matrix.features == '--all-features'
+        run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" /usr/bin/python3 tests/appearance_gui.py
       - name: Verify desktop store import review and approval
         if: matrix.features == '--all-features'
         run: python3 tests/store_gui.py

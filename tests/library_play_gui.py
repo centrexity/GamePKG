@@ -64,14 +64,18 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-library-play-') as directory:
             word=next(word for word in words if word['text'].strip('[](){}|')==label or (label=='Back' and word['text'].strip('[](){}|').startswith('Back')))
             subprocess.run(['xdotool','mousemove','--window',window,str(int(word['left'])+int(word['width'])//2),str(int(word['top'])+int(word['height'])//2),'click','1'],env=env,check=True)
         def enter_source(words, source):
+            subprocess.run(['xdotool','mousemove','--window',window,'1450','850','click','--repeat','10','--delay','30','5'],env=env,check=True)
+            time.sleep(.2)
+            _,words=read_screen('library-add-games.png')
             label=next(word for word in words if word['text']=='Or')
             subprocess.run(['xdotool','windowfocus',window],env=env,check=True)
             subprocess.run(['xdotool','mousemove','--window',window,'100',str(int(label['top'])+int(label['height'])+12),'click','1'],env=env,check=True)
             time.sleep(.2)
             subprocess.run(['xdotool','key','ctrl+a','type','--clearmodifiers',str(source)],env=env,check=True)
             time.sleep(.2)
+            return read_screen('library-source-entered.png')[1]
         text,words=wait_screen(lambda text:'No games yet' in text,'library-empty.png',20)
-        enter_source(words,package)
+        words=enter_source(words,package)
         click_word(words,'Download')
         text,words=wait_screen(lambda text:'creator fingerprint:' in text.lower() and 'Trust this creator and install' in text,'library-inspected.png',20)
         assert not (library/'com.gamepkg.collect-stars.gamepkg').exists(), 'inspection installed a package'
@@ -115,7 +119,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-library-play-') as directory:
         text,words=read_screen('library-catalog-source.png')
         catalog=root/'games.gamepkglist'
         catalog.write_text("format_version = 1\n[[games]]\nid = 'com.example.offline'\ntitle = 'Offline Catalog Game'\nversion = '2.0.0'\ndownload_url = 'https://unreachable.invalid/game.gamepkg'\nrequires_rom = true\n")
-        enter_source(words,catalog)
+        words=enter_source(words,catalog)
         click_word(words,'Import')
         text,words=wait_screen(lambda text:'Not downloaded' in text and 'No game packages downloaded' in text,'library-catalog-imported.png',20)
         click_word(words,'Offline')
@@ -131,7 +135,19 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-library-play-') as directory:
         assert 'com.example.offline' in (library/'catalog.gamepkglist').read_text()
         assert list(library.glob('*.gamepkg')) == [library/'com.gamepkg.collect-stars.gamepkg']
         assert not (library/'com.example.offline.gamepkg').exists()
-        click_text(window,env,'Play',root)
+        read_screen('library-launch-again.png')
+        # The primary action has a filled teal surface; locate that visible control
+        # without relying on OCR's inconsistent reading of dark text on teal.
+        with Image.open(project/'target/library-launch-again.png') as image:
+            image=image.convert('RGB');start=None;point=None
+            for y in range(100,image.height):
+                xs=[x for x in range(image.width) if (lambda c:c[0]<100 and c[1]>170 and c[2]>140)(image.getpixel((x,y)))]
+                if len(xs)>70:
+                    if start is None:start=y
+                    if y-start>=20:point=(sum(xs)//len(xs),y-10);break
+                else:start=None
+        assert point,'Primary Play control was not visible'
+        subprocess.run(['xdotool','mousemove','--window',window,str(point[0]),str(point[1]),'click','1'],env=env,check=True)
         game,pid=game_window(env,'com.gamepkg.collect-stars');assert pid != app.pid
         app.terminate();app.wait(timeout=10)
         time.sleep(.5)

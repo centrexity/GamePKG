@@ -1,9 +1,12 @@
 use eframe::egui;
+mod artwork;
 mod drops;
 mod game_page;
 mod input;
+mod library_view;
 mod rom_picker;
 mod sprites;
+mod theme;
 use std::{
     collections::{HashMap, HashSet},
     path::PathBuf,
@@ -59,6 +62,7 @@ pub struct App {
     catalog: Vec<crate::catalog::Entry>,
     loaded: bool,
     icons: HashMap<String, egui::TextureHandle>,
+    package_notices: HashMap<String, String>,
     built: HashSet<String>,
     wasm_built: HashSet<String>,
     history: HashMap<String, crate::progress::Record>,
@@ -157,6 +161,7 @@ impl App {
                 self.rejected = report.rejected;
                 let games = report.games;
                 self.icons.clear();
+                self.package_notices.clear();
                 self.built.clear();
                 self.wasm_built.clear();
                 if let Ok(root) = crate::registry::default_root() {
@@ -195,6 +200,13 @@ impl App {
                             let mut pkg = crate::archive::Package::open(
                                 &root.join(format!("{}.gamepkg", m.id)),
                             )?;
+                            if let Ok(bytes) = pkg.read("NOTICE") {
+                                if bytes.len() <= 65536 {
+                                    if let Ok(text) = String::from_utf8(bytes) {
+                                        self.package_notices.insert(m.id.clone(), text);
+                                    }
+                                }
+                            }
                             let bytes = pkg.read("thumbnail.png")?;
                             let mut reader = image::ImageReader::with_format(
                                 std::io::Cursor::new(bytes),
@@ -206,11 +218,29 @@ impl App {
                             limits.max_alloc = Some(4 * 1024 * 1024);
                             reader.limits(limits);
                             let icon = reader.decode()?.to_rgba8();
+                            anyhow::ensure!(
+                                icon.width() >= 16 && icon.height() >= 16,
+                                "placeholder thumbnail"
+                            );
                             Ok(egui::ColorImage::from_rgba_unmultiplied(
                                 [icon.width() as usize, icon.height() as usize],
                                 icon.as_raw(),
                             ))
                         })();
+                        let decoded = decoded.or_else(|error| -> anyhow::Result<_> {
+                            let (bytes, notice) = artwork::fallback(&m.id).ok_or(error)?;
+                            let icon = image::load_from_memory(bytes)?.to_rgba8();
+                            self.package_notices
+                                .entry(m.id.clone())
+                                .or_default()
+                                .push_str(&format!(
+                                    "\n\nLibrary fallback artwork, provided by GamePKG:\n{notice}"
+                                ));
+                            Ok(egui::ColorImage::from_rgba_unmultiplied(
+                                [icon.width() as usize, icon.height() as usize],
+                                icon.as_raw(),
+                            ))
+                        });
                         if let Ok(icon) = decoded {
                             self.icons.insert(
                                 m.id.clone(),
@@ -235,6 +265,7 @@ impl App {
                 self.library_bytes = None;
                 self.rejected.clear();
                 self.icons.clear();
+                self.package_notices.clear();
                 self.built.clear();
                 self.wasm_built.clear();
                 self.status = format!("Unable to read installed library: {e:#}");
@@ -307,11 +338,11 @@ impl eframe::App for App {
         }
         if !self.loaded {
             self.loaded = true;
-            ctx.set_visuals(if self.settings_draft.dark_mode {
-                egui::Visuals::dark()
-            } else {
-                egui::Visuals::light()
-            });
+            theme::apply(
+                ctx,
+                self.settings_draft.dark_mode,
+                self.settings_draft.ui_scale_percent,
+            );
             self.refresh(ctx);
         }
         if let Some(rx) = &self.result {
@@ -507,7 +538,7 @@ impl eframe::App for App {
                     ctx.memory_mut(|m| m.surrender_focus(id));
                 }
             }
-            egui::CentralPanel::default().show(ctx, |ui| {
+            egui::CentralPanel::default().frame(egui::Frame::central_panel(&ctx.style()).inner_margin(20)).show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     ui.heading(&game.id);
                     if ui.button("Close game").clicked() {
@@ -760,21 +791,40 @@ impl eframe::App for App {
             return;
         }
         if self.game_window {
-            egui::CentralPanel::default().show(ctx, |ui| {
-                ui.heading("Game player");
-                ui.label(if self.result.is_some() {
-                    "Starting game…"
-                } else {
-                    &self.status
+            egui::CentralPanel::default()
+                .frame(egui::Frame::central_panel(&ctx.style()).inner_margin(20))
+                .show(ctx, |ui| {
+                    ui.heading("Game player");
+                    ui.label(if self.result.is_some() {
+                        "Starting game…"
+                    } else {
+                        &self.status
+                    });
+                    if ui.button("Close").clicked() {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    }
                 });
-                if ui.button("Close").clicked() {
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                }
-            });
             return;
         }
+        if self.brand_icon.is_none() {
+            let icon = window_icon();
+            self.brand_icon = Some(ctx.load_texture(
+                "gamepkg-brand",
+                egui::ColorImage::from_rgba_unmultiplied(
+                    [icon.width as usize, icon.height as usize],
+                    &icon.rgba,
+                ),
+                egui::TextureOptions::LINEAR,
+            ));
+        }
         egui::TopBottomPanel::top("navigation").show(ctx, |ui| {
-            ui.horizontal(|ui| {
+            ui.add_space(8.0);
+            ui.horizontal_wrapped(|ui| {
+                if let Some(icon) = &self.brand_icon {
+                    ui.image((icon.id(), egui::vec2(38.0, 38.0)));
+                }
+                ui.label(egui::RichText::new("GamePKG").size(23.0).strong());
+                ui.add_space(16.0);
                 if ui
                     .selectable_label(!self.show_settings && !self.show_support, "Library")
                     .clicked()
@@ -814,7 +864,7 @@ impl eframe::App for App {
                 ));
             }
             let support = crate::support::details();
-            egui::CentralPanel::default().show(ctx, |ui| {
+            egui::CentralPanel::default().frame(egui::Frame::central_panel(&ctx.style()).inner_margin(20)).show(ctx, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     ui.horizontal(|ui| {
                         if let Some(icon) = &self.brand_icon {
@@ -860,7 +910,7 @@ impl eframe::App for App {
             return;
         }
         if self.show_settings {
-            egui::CentralPanel::default().show(ctx,|ui| {
+            egui::CentralPanel::default().frame(egui::Frame::central_panel(&ctx.style()).inner_margin(20)).show(ctx,|ui| {
                 ui.heading("Settings");
                 ui.label("Choose how GamePKG stores, builds, and runs your games.");
                 egui::ScrollArea::vertical().max_height((ui.available_height() - 110.0).max(100.0)).show(ui,|ui| {
@@ -879,6 +929,8 @@ impl eframe::App for App {
                     ui.horizontal(|ui| { ui.label("Tick deadline (ms)");ui.add(egui::Slider::new(&mut self.settings_draft.tick_deadline_ms,10..=100).step_by(10.0)); });
                     ui.label("Memory uses the lower of your ceiling and the signed game limit. These settings cannot raise a game's hard limit. Changes apply the next time you launch a game.");
                     ui.separator();ui.heading("Builds and appearance");
+                    ui.add(egui::Slider::new(&mut self.settings_draft.ui_scale_percent,80..=160).step_by(10.0).text("Interface size (%)"));
+                    ui.label("Larger text and controls apply when you save. Display scaling also follows your system settings.");
                     #[cfg(windows)]
                     {
                         ui.heading("Windows compiler");
@@ -937,12 +989,12 @@ impl eframe::App for App {
                     if let Err(error) = &validation {
                         ui.colored_label(egui::Color32::from_rgb(240, 130, 100), error.to_string());
                     }
-                    ui.horizontal(|ui| {
+                    ui.horizontal_wrapped(|ui| {
                         if ui.add_enabled(validation.is_ok(), egui::Button::new("Save settings")).clicked() {
                             let result=crate::settings::path().and_then(|path|self.settings_draft.save(&path));
                             match result {
                                 Ok(()) => {
-                                    ctx.set_visuals(if self.settings_draft.dark_mode { egui::Visuals::dark() } else { egui::Visuals::light() });
+                                    theme::apply(ctx, self.settings_draft.dark_mode, self.settings_draft.ui_scale_percent);
                                     self.applied_settings=Some(self.settings_draft.clone());
                                     self.pending=None;self.pending_store=None;self.manifest=None;self.installed.clear();self.rejected.clear();self.catalog.clear();self.status="Settings saved.".into();self.refresh(ctx);
                                 }
@@ -960,31 +1012,22 @@ impl eframe::App for App {
             self.show_game_page(ctx);
             return;
         }
-        egui::CentralPanel::default().show(ctx, |ui| {
+        egui::CentralPanel::default().frame(egui::Frame::central_panel(&ctx.style()).inner_margin(20)).show(ctx, |ui| {
+            egui::ScrollArea::vertical().id_salt("library-page").show(ui, |ui| {
             ui.heading("Your games");
+            ui.label("Choose a game to build, play or explore.");
+            ui.horizontal_wrapped(|ui| {
+                for (label,value) in [("Installed",self.installed.len().to_string()),("Ready to play",self.built.len().to_string()),("Storage used",self.library_bytes.map(crate::storage::bytes).unwrap_or_else(||"—".into()))] {
+                    egui::Frame::group(ui.style()).inner_margin(14).corner_radius(10).show(ui,|ui| {
+                        ui.vertical(|ui| {ui.label(egui::RichText::new(value).size(24.0).strong().color(ui.visuals().hyperlink_color));ui.label(label);});
+                    });
+                }
+            });
             ui.add_space(12.0);
             let mut inspect = None;
             let mut integrity = None;
-            egui::ScrollArea::both().max_height((ui.available_height()*0.55).max(220.0)).show(ui, |ui| {
-                egui::Grid::new("installed_games").striped(true).min_col_width(70.0).spacing(egui::vec2(20.0,20.0)).min_row_height(76.0).show(ui, |ui| {
-                    for label in ["", "Game", "Version", "Status", "Played", "Storage"] {ui.strong(label);}ui.end_row();
-                    for entry in &self.catalog {
-                        if self.installed.iter().any(|m|m.id==entry.id){continue;}
-                        if ui.button("🎮").clicked(){inspect=Some(entry.id.clone());}
-                        if ui.add(egui::Button::new(format!("{}\n{}",entry.title,entry.id)).wrap()).clicked(){inspect=Some(entry.id.clone());}
-                        ui.label(entry.version.as_deref().unwrap_or("Unknown"));ui.label("Not downloaded");ui.label("Not played");ui.label("Unknown");ui.end_row();
-                    }
-                    for m in &self.installed {
-                        if let Some(icon)=self.icons.get(&m.id) {
-                            if ui.add(egui::Image::new(icon).fit_to_exact_size(egui::vec2(48.0,48.0)).sense(egui::Sense::click())).clicked(){inspect=Some(m.id.clone());}
-                        }else if ui.button("🎮").clicked(){inspect=Some(m.id.clone());}
-                        if ui.button(&m.id).clicked(){inspect=Some(m.id.clone());}
-                        ui.label(&m.version);
-                        ui.label(if self.built.contains(&m.id){"Ready"}else{"Not built"});
-                        ui.label(self.history.get(&m.id).map(|r|crate::progress::duration(r.played_ms)).unwrap_or_else(||"Not played".into()));
-                        ui.label(self.usage.get(&m.id).map(|u|crate::storage::bytes(u.used_bytes())).unwrap_or_else(||"Unknown".into()));ui.end_row();
-                    }
-                });
+            egui::ScrollArea::vertical().id_salt("library-games").max_height((ctx.available_rect().height()*0.45).clamp(160.0,440.0)).show(ui, |ui| {
+                inspect = self.library_games(ui);
             });
             for (name, error) in &self.rejected {
                 ui.colored_label(egui::Color32::from_rgb(240, 130, 100), format!("Unavailable package: {name}"));
@@ -1000,10 +1043,11 @@ impl eframe::App for App {
             if let Some(id)=inspect {self.open_game_page(&id);}
             ui.label(format!("Library storage used: {} (file bytes, including shared assets, caches, saves and play history)", self.library_bytes.map(crate::storage::bytes).unwrap_or_else(||"Unavailable".into())));
             ui.separator();
+            ui.heading("Add games");
             ui.label("Local package, game list, or store bundle path; HTTPS, GitHub project, or Tor URL");
             ui.label("Or drop a .gamepkg or .gamepkglist file anywhere in this window (one at a time).");
-            ui.text_edit_singleline(&mut self.source);
-            ui.horizontal(|ui| {
+            ui.add(egui::TextEdit::singleline(&mut self.source).desired_width(f32::INFINITY).min_size(egui::vec2(0.0,40.0)).margin(egui::Margin::symmetric(12,10)).hint_text("Paste a link or enter a file path…"));
+            ui.horizontal_wrapped(|ui| {
             if ui.add_enabled(self.result.is_none(), egui::Button::new("Inspect .gamepkgstore bundle")).clicked() {
                 self.pending_store = None;
                 self.pending = None;
@@ -1047,7 +1091,7 @@ impl eframe::App for App {
                 });
                 let mut install = false;
                 let mut cancel = false;
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     install = ui.add_enabled(self.result.is_none(), egui::Button::new("Trust listed creators and install store")).clicked();
                     cancel = ui.add_enabled(self.result.is_none(), egui::Button::new("Cancel store import")).clicked();
                 });
@@ -1066,6 +1110,7 @@ impl eframe::App for App {
             }
             ui.separator(); ui.label(concat!("GamePKG ", env!("CARGO_PKG_VERSION")));
             ui.hyperlink_to("GamePKG • Apache 2.0", "https://gamepkg.com");
+            });
         });
     }
 }
