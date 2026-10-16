@@ -20,7 +20,7 @@ The desktop library provides Build and Play for installed games. Graphics games 
 | asset-catalog | Read a nested asset from the signed archive |
 | collect-stars | Move on a grid and collect targets |
 | byteorder-game | Use a checksum-pinned, offline guest dependency |
-| modular-game | Split checked source across files and use the approved dependency |
+| modular-game | Split checked source across files and read explicit-endian values without dependencies |
 | component-playground | Draw using the WIT component host API |
 | shape-playground | Draw rectangles and circles from guest commands |
 | shader-switch | Switch between two compiled Slang fragment passes |
@@ -42,7 +42,7 @@ Every `bad/` directory is a complete, deliberately rejected package input:
 | include-bytes | Compile-time file inclusion |
 | build-script | Extra build.rs file |
 | proc-macro | Procedural macro configuration |
-| unknown-crate | Dependency outside the pinned allowlist |
+| unknown-crate | Any guest Cargo dependency is forbidden |
 | non-slang | Opaque shader binary |
 
 Packing these examples must fail. The security suite also modifies already signed archives to test tampering rejection, and tests malformed module layouts, hidden forbidden source, memory limits, shader restrictions, and archive bounds.
@@ -52,3 +52,5 @@ Packing these examples must fail. The security suite also modifies already signe
 `png-sprite-playground` loads its sprite from a verified packaged PNG asset and moves it with held arrows.
 
 `good/shader-texture` supplies bounded RGBA pixels to the host-owned `gamepkgTexture` sampler. Hold Right to change blue to green. This example supports GLSL, SPIR-V, and WGSL; its SPIR-V branch uses the host-defined `GAMEPKG_SEPARATE_SAMPLER` compiler symbol.
+
+All valid examples have no Cargo dependencies. Call the injected `gamepkg::` module directly; do not add `gamepkg-*` or third-party crates. See [developer instructions](../docs/DEVELOPING_GAMES.md) for minimal Cargo files and migration.

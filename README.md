@@ -22,7 +22,7 @@ A `.gamepkg` contains Rust source, Slang shader source, assets, and a signed man
 | Inspectable source | Games ship source rather than a bundled native executable; review is possible before building. Source visibility alone does not prove safety. | Yes |
 | Signed identity and updates | The manifest and package contents are signed. Updates must keep the installed creator key and package ID, with a higher version. | Yes; first creator approval is still required |
 | Restricted package contents | Rejects traversal paths, duplicate entries, symlinks, oversized archive contents, unsupported shaders, and source outside the initial policy. | Yes |
-| Isolated compilation | Supported Linux builds run inside bubblewrap with a private work area, no network, and no access to your home directory. | Yes; checked source modules with a no Cargo dependencies |
+| Isolated compilation | Supported Linux builds run inside bubblewrap with a private work area, no network, and no access to your home directory. | Yes; checked source modules with no Cargo dependencies |
 | Limited game access | Games receive host-approved asset, input, ROM, drawing, audio, and save operations. | Available in the core and versioned WIT component profiles |
 | Runtime resource limits | Memory caps and deadlines constrain running games. | Enforced for both Wasmtime profiles; GPU work is outside Wasm time limits |
 
@@ -498,7 +498,7 @@ functions as callback values are rejected conservatively. Ordinary imports,
 modules, direct helper functions, and direct GamePKG API calls remain supported.
 Reserved OS identifiers, unsafe code, foreign code, and attributes are rejected.
 This syntax policy supplements compiler isolation and restricted Wasm imports;
-it does not prove that source code or approved dependencies are harmless.
+it does not prove that source code or the host implementation are harmless.
 
 ## Game previews
 
@@ -930,6 +930,6 @@ rejection without publishing a partial package.
 
 ## Developer instructions
 
-See [Developing games](docs/DEVELOPING_GAMES.md) for the creator checklist, exact allowed crates, controller and touchscreen controls, source restrictions, and build commands.
+See [Developing games](docs/DEVELOPING_GAMES.md) for the creator checklist, the no-dependency policy and host API, controller and touchscreen controls, source restrictions, and build commands.
 
 Guest Cargo dependencies are forbidden. Scoped input, file, drawing, shader, texture and audio functions come from the injected `gamepkg::` API. See the developer instructions for migration.

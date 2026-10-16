@@ -34,6 +34,25 @@
 <h2>No guest crates</h2>
 <p>Cargo dependencies are forbidden, including <code>gamepkg-*</code>, renamed, optional, Git, path, build, development and target-specific dependencies. Workspace, patch, replace and feature sections are rejected. The lockfile must contain exactly the root package name and version, with no dependencies, source or checksum. An empty <code>[dependencies]</code> table is optional. Copy the Cargo files from <code>examples/minimal</code> and change both root identities together.</p>
 <p>The player has no dependency approval setting or command. Legacy approval settings are ignored and removed on save. This policy applies during packing, verification, installation and building, even to correctly signed packages. Host dependencies are reviewed separately as part of GamePKG itself.</p>
+<h3>Minimal Cargo files</h3>
+<p><code>source/Cargo.toml</code>:</p>
+<pre><code class="language-toml">[package]
+name = &quot;my-game&quot;
+version = &quot;0.1.0&quot;
+edition = &quot;2021&quot;
+build = false
+
+[lib]
+path = &quot;src/lib.rs&quot;
+</code></pre>
+<p><code>source/Cargo.lock</code>:</p>
+<pre><code class="language-toml">version = 4
+
+[[package]]
+name = &quot;my-game&quot;
+version = &quot;0.1.0&quot;
+</code></pre>
+<p>Keep the name and version identical in both Cargo files. Hash the exact lockfile bytes for the manifest's <code>lockfile_sha256</code>. Do not add dependencies or <code>extern crate</code> declarations. Call <code>gamepkg::</code> directly: it is a host-injected module, not a crate to install, download or list in Cargo.toml. Rust's built-in standard library remains subject to the source restrictions below; it does not grant filesystem or network access.</p>
 <h2>Scoped host functions</h2>
 <p>Use <code>gamepkg::asset_read</code> for package-relative assets, <code>rom_count</code>, <code>rom_size_at</code> and <code>rom_read_at</code> for player-selected ROMs, and <code>save_size</code>, <code>save_read</code> and <code>save_write</code> for the game's save blob. They never open arbitrary host files.</p>
 <p>Use <code>gamepkg::draw_clear</code>, <code>draw_rect</code>, <code>draw_circle</code> and <code>draw_asset_image</code> for the host-owned viewport. Games cannot create windows or obtain GPU handles. <code>gamepkg::network_request(url, output)</code> always returns <code>NetworkError::PermissionDenied</code>, leaves output untouched and performs no I/O. The manifest requires <code>network = "none"</code>.</p>

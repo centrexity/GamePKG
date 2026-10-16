@@ -7,7 +7,7 @@ Site: [gamepkg.com](https://gamepkg.com)
 ## Goals
 
 - Distribute games as source + assets, not opaque binaries.
-- Enforce a deny-by-default sandbox: approved crates only, no build scripts, no proc macros, no binary includes, no ambient filesystem or network.
+- Enforce a deny-by-default sandbox: no guest Cargo dependencies, no build scripts, no proc macros, no binary includes, no ambient filesystem or network.
 - Keep assets inside the archive (random-access zip, `store` for media, zstd for text).
 - Require Slang for shaders; host compiles to SPIR-V / DXIL / Metal / WGSL.
 - Open codecs for previews: PNG thumbnail, optional AV1-in-WebM, optional Theora-in-Ogg fallback.
@@ -52,7 +52,7 @@ gamepkg/
     lib.rs
     manifest.rs
     archive.rs          # zip index, offset reads, content-addressed refs
-    build.rs            # cargo wrapper: allowlist, no build.rs, wasm target
+    build.rs            # cargo wrapper: no guest dependencies, no build.rs, wasm target
     sandbox.rs          # Wasmtime linker, memory, epoch, WASI scoping
     shaders.rs          # slangc invocation + reflection
     hostapi.rs          # WIT world the guest imports
@@ -77,7 +77,7 @@ gamepkg/
 ## Host behavior
 
 1. Open archive, verify signature and manifest version.
-2. Scan `source/`: reject `build.rs`, proc-macro crates, path/git deps, `include_bytes!` / `include_str!` / `include!`, anything not on the crate allowlist.
+2. Scan `source/`: reject `build.rs`, proc-macro crates, path/git deps, `include_bytes!` / `include_str!` / `include!`, all guest Cargo dependencies.
 3. `cargo build --target wasm32-wasip1 --offline --locked` (or `wasm32-unknown-unknown` with a custom WIT world). No preopens, no sockets unless the manifest grants a host-proxied capability.
 4. Compile `.slang` with pinned `slangc` to the active backend; cache output outside the package.
 5. Instantiate under Wasmtime with memory cap, epoch deadline, and an empty or tightly scoped linker. Guest sees only the host API (load asset by virtual path, input, draw, audio, save blob).
@@ -113,7 +113,7 @@ Positive tests: minimal guest that loads an asset and ticks; offset reads that d
 
 ## Static site (`html/`)
 
-Landing page, spec summary, quickstart, security model, and crate allowlist policy. Plain static files so the same tree can be served from gamepkg.com or embedded later.
+Landing page, spec summary, quickstart, security model, and dependency-free source policy. Plain static files so the same tree can be served from gamepkg.com or embedded later.
 
 ## Implementation order
 

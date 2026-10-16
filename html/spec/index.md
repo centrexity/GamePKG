@@ -4,6 +4,14 @@ The ZIP contains `manifest.toml`, `signature.toml`, `thumbnail.png`, `LICENSE`, 
 
 The manifest example in `examples/minimal/manifest.toml` is authoritative for currently supported fields. Unknown fields fail validation. `lockfile_sha256` is the SHA-256 of raw Cargo.lock bytes; it is lockfile integrity, not a complete SBOM.
 
+## Guest dependency policy
+
+Game source must have **no Cargo dependencies**, including `gamepkg-*` crates. `[dependencies]` must be absent or empty. Build, development, target-specific, workspace, patch, replace and feature sections are rejected. Renamed, optional, Git and path dependencies receive no exception.
+
+`source/Cargo.lock` must use version 3 or 4 and contain exactly one package with the root Cargo name and version, without dependency lists, sources, checksums or extra package fields. Its raw bytes must match `lockfile_sha256`.
+
+The host injects the scoped `gamepkg::` module after source validation. It supplies input, scoped assets/ROMs/saves, drawing, shaders, textures, audio and achievements. It is not a Cargo dependency. Packing, verification, installation and building enforce this policy; signatures and settings cannot waive it. GamePKG's own host dependencies belong to the player implementation, not the game package. See the [developer instructions](../guide/developers.html) for minimal Cargo files and API examples.
+
 ## Signature encoding
 
 `signature.toml` has `public_key` (32 bytes in hexadecimal) and `signature` (64 bytes in hexadecimal). The manifest includes `creator_key` (32 bytes in hexadecimal), which must match the signature envelope key. Verification checks that embedded key; advanced callers may additionally supply an externally trusted key. An optional `update_url` is an HTTPS or Tor onion URL pointing directly to the latest signed package.

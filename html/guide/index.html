@@ -44,6 +44,9 @@
   <h2>Updates and Tor</h2>
   <p>Use <strong>Check for updates</strong> or enable periodic checks in Settings. Checks verify candidate updates while the library is idle; updates require your installation choice and must keep the game’s approved creator key.</p>
   <p>For onion URLs, run Tor separately and enter its loopback SOCKS proxy in Settings. DNS resolves through the proxy. Missing Tor connectivity fails the download; it never falls back to a direct connection.</p>
+  <h2>Dependency-free game source</h2>
+  <p>Game packages cannot declare Cargo dependencies, including <code>gamepkg-*</code> crates. The host provides the scoped <code>gamepkg::</code> API. Creator approval verifies who signed a package; it cannot allow dependencies or bypass source checks. There are no crate approval switches in Settings.</p>
+  <p>Creators: follow the <a href="developers.html">developer instructions</a> for Cargo files, API examples and migration from older dependency-based packages.</p>
   <h2>Try a source example</h2>
   <p>Creators can build a local example into a signed source package. Keep the private key private; players need no key entry.</p>
   <pre><code>./target/release/gamepkg keygen -o creator.key

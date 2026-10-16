@@ -21,6 +21,33 @@ Cargo dependencies are forbidden, including `gamepkg-*`, renamed, optional, Git,
 
 The player has no dependency approval setting or command. Legacy approval settings are ignored and removed on save. This policy applies during packing, verification, installation and building, even to correctly signed packages. Host dependencies are reviewed separately as part of GamePKG itself.
 
+### Minimal Cargo files
+
+`source/Cargo.toml`:
+
+```toml
+[package]
+name = "my-game"
+version = "0.1.0"
+edition = "2021"
+build = false
+
+[lib]
+path = "src/lib.rs"
+```
+
+`source/Cargo.lock`:
+
+```toml
+version = 4
+
+[[package]]
+name = "my-game"
+version = "0.1.0"
+```
+
+Keep the name and version identical in both Cargo files. Hash the exact lockfile bytes for the manifest's `lockfile_sha256`. Do not add dependencies or `extern crate` declarations. Call `gamepkg::` directly: it is a host-injected module, not a crate to install, download or list in Cargo.toml. Rust's built-in standard library remains subject to the source restrictions below; it does not grant filesystem or network access.
+
 ## Scoped host functions
 
 Use `gamepkg::asset_read` for package-relative assets, `rom_count`, `rom_size_at` and `rom_read_at` for player-selected ROMs, and `save_size`, `save_read` and `save_write` for the game's save blob. They never open arbitrary host files.
