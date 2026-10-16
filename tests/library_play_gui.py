@@ -1,7 +1,7 @@
 """Build and play through actual desktop library buttons, without startup shortcuts."""
 from pathlib import Path
 import csv, io, os, shutil, subprocess, tempfile, time
-from gui_test_support import start_display
+from gui_test_support import start_display,click_text
 from PIL import Image
 project=Path(__file__).resolve().parents[1]
 with tempfile.TemporaryDirectory(prefix='gamepkg-library-play-') as directory:
@@ -44,7 +44,13 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-library-play-') as directory:
             for word in row_words:
                 for field in ['left','top','width','height']:word[field]=str(int(word[field])//3)
                 word['top']=str(int(word['top'])+100)
-            words=row_words+words
+            controls=root/'controls.png'
+            subprocess.run(['convert',str(path),'-colorspace','Gray','-negate','-threshold','55%','-resize','300%',str(controls)],check=True)
+            control_tsv=subprocess.check_output(['tesseract',str(controls),'stdout','--psm','11','tsv'],stderr=subprocess.DEVNULL,text=True)
+            control_words=[w for w in csv.DictReader(io.StringIO(control_tsv),delimiter='\t',quoting=csv.QUOTE_NONE) if w['text'].strip()]
+            for word in control_words:
+                for field in ['left','top','width','height']:word[field]=str(int(word[field])//3)
+            words=control_words+row_words+words
             return original_text+' '+' '.join(word['text'] for word in words), words
         def wait_screen(predicate, name, seconds=90):
             deadline=time.monotonic()+seconds
@@ -58,7 +64,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-library-play-') as directory:
             word=next(word for word in words if word['text'].strip('[](){}|')==label or (label=='Back' and word['text'].strip('[](){}|').startswith('Back')))
             subprocess.run(['xdotool','mousemove','--window',window,str(int(word['left'])+int(word['width'])//2),str(int(word['top'])+int(word['height'])//2),'click','1'],env=env,check=True)
         def enter_source(words, source):
-            label=next(word for word in words if word['text']=='Local')
+            label=next(word for word in words if word['text']=='Or')
             subprocess.run(['xdotool','windowfocus',window],env=env,check=True)
             subprocess.run(['xdotool','mousemove','--window',window,'100',str(int(label['top'])+int(label['height'])+12),'click','1'],env=env,check=True)
             time.sleep(.2)
@@ -75,6 +81,8 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-library-play-') as directory:
         click_word(words,'Build')
         text,words=wait_screen(lambda text:'Rebuild' in text,'library-after-build.png')
         assert len(list((library/'builds').glob('*/game.wasm')))==1
+        click_word(words,'More')
+        text,words=wait_screen(lambda text:'Check integrity' in text,'game-more.png')
         click_word(words,'integrity')
         text,words=wait_screen(lambda text:'compiled game verified' in text,'library-integrity.png')
         click_word(words,'Play')
@@ -89,11 +97,6 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-library-play-') as directory:
         text,words=wait_screen(lambda text:'Rebuild' in text and 'Score:' not in text,'library-returned.png',20)
         assert 'Storage' in text and 'Played' in text, text
         assert 'First star' in text and 'Star collector' in text and 'Locked' in text and 'Unlocked' in text, text
-        crop=root/'library-history-storage.png'
-        Image.open(root/'library-returned.png').crop((0,100,1100,330)).resize((3300,690)).save(crop)
-        shutil.copy2(crop,project/'target/library-history-storage.png')
-        row=subprocess.run(['tesseract',str(crop),'stdout','--psm','11'],check=True,capture_output=True,text=True).stdout
-        assert 'unlocked' in row and 'expected' in row and 'used' in row, row
         import json
         records=list((library/'progress').glob('*.json'))
         assert len(records)==1
@@ -101,14 +104,26 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-library-play-') as directory:
         assert history['played_ms'] >= 1000
         assert set(history['unlocked']) == {'first_star'}, history
         click_word(words,'Rebuild')
-        wait_screen(lambda text:'Built com.gamepkg.collect-stars' in text,'library-rebuilt.png')
+        wait_screen(lambda text:'Built. Ready to play.' in text,'library-rebuilt.png')
         assert len(list((library/'builds').glob('*/game.wasm')))==1
         text,words=read_screen('library-before-catalog.png')
+        click_word(words,'Back')
+        text,words=read_screen('library-catalog-source.png')
         catalog=root/'games.gamepkglist'
         catalog.write_text("format_version = 1\n[[games]]\nid = 'com.example.offline'\ntitle = 'Offline Catalog Game'\nversion = '2.0.0'\ndownload_url = 'https://unreachable.invalid/game.gamepkg'\nrequires_rom = true\n")
         enter_source(words,catalog)
         click_word(words,'Import')
-        wait_screen(lambda text:'Not downloaded' in text and 'No game packages downloaded' in text,'library-catalog-imported.png',20)
+        text,words=wait_screen(lambda text:'Not downloaded' in text and 'No game packages downloaded' in text,'library-catalog-imported.png',20)
+        click_word(words,'Offline')
+        text,words=wait_screen(lambda text:'Back to library' in text and 'Catalog information is unverified' in text,'game-catalog-page.png',20)
+        assert 'Requires your own ROM' in text, text
+        assert 'com.gamepkg.collect-stars' not in text and 'Import .gamepkglist' not in text, text
+        click_word(words,'Back')
+        text,words=wait_screen(lambda text:'Offline Catalog Game' in text and 'com.gamepkg.collect-stars' in text,'game-page-return-to-library.png',20)
+        click_text(window,env,'com.gamepkg.collect-stars',root)
+        text,words=wait_screen(lambda text:'About this game' in text and 'Rebuild' in text,'game-installed-page.png',20)
+        assert 'Offline Catalog Game' not in text and 'Download / inspect' not in text, text
+
         assert 'com.example.offline' in (library/'catalog.gamepkglist').read_text()
         assert list(library.glob('*.gamepkg')) == [library/'com.gamepkg.collect-stars.gamepkg']
         assert not (library/'com.example.offline.gamepkg').exists()

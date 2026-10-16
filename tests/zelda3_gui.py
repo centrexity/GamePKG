@@ -32,7 +32,7 @@ with tempfile.TemporaryDirectory(prefix='zelda3-gui-',dir=PROJECT/'target') as t
         assert found.returncode==0
         window=found.stdout.splitlines()[0]
         subprocess.run(['xdotool','windowsize',window,'1700','1000','windowfocus',window],env=env,check=True);time.sleep(.3)
-        click_text(window,env,'Details',root,timeout=20);time.sleep(.3)
+        click_text(window,env,'com.gamepkg.zelda3',root,timeout=20);time.sleep(.3)
         def capture(name):
             path=PROOF/name;subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(path)],env=env,check=True,timeout=10);return path
         screen=capture('native-library.png')

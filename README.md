@@ -6,7 +6,7 @@
 
 **Current status:** this is a development preview. Package verification, catalog import, installation, update checks, and isolated Cargo Wasm and Slang shader builds on Linux and the configured Windows WSL 2 connection work today. The experimental grid-v1 profile now plays in the GUI and terminal under Wasmtime with scoped asset reads, memory limits, and epoch deadlines. Resource-free Slang GLSL, SPIR-V, and WGSL fragment passes now render in the OpenGL GUI; versioned WIT components are supported alongside the legacy core profile; broader rendering remains pending; this is not a guarantee that a package is harmless.
 
-Download the [0.1.7 Linux and Windows CLI/desktop apps](https://github.com/centrexity/GamePKG/releases/tag/v0.1.7), including the checksum for your platform. Windows source builds use the matching Linux compiler inside WSL 2; playback runs in the native Windows app. See [Windows setup](docs/INSTALL_WINDOWS.md). Host distributions can also be prepared with `python3 tools/package_release.py /tmp/gamepkg-distribution` after building both release entry points. The archive includes CLI/GUI executables, setup tools, examples, original resolved dependency sources and notices, and integrity hashes. See [installation instructions](docs/INSTALL.md). See the [implementation and verification audit](docs/IMPLEMENTATION_STATUS.md) for requirement coverage and remaining limits. The public repository's **Package Linux preview** workflow produces the same artifact on Ubuntu 24.04.
+Download the [0.1.8 Linux and Windows CLI/desktop apps](https://github.com/centrexity/GamePKG/releases/tag/v0.1.8), including the checksum for your platform. Windows source builds use the matching Linux compiler inside WSL 2; playback runs in the native Windows app. See [Windows setup](docs/INSTALL_WINDOWS.md). Host distributions can also be prepared with `python3 tools/package_release.py /tmp/gamepkg-distribution` after building both release entry points. The archive includes CLI/GUI executables, setup tools, examples, original resolved dependency sources and notices, and integrity hashes. See [installation instructions](docs/INSTALL.md). See the [implementation and verification audit](docs/IMPLEMENTATION_STATUS.md) for requirement coverage and remaining limits. The public repository's **Package Linux preview** workflow produces the same artifact on Ubuntu 24.04.
 
 Try the [signed demo catalog](https://github.com/centrexity/GamePKG/releases/download/v0.1.6/demos.gamepkglist) with **Import .gamepkglist** in the desktop library. It adds Collect Stars, Shape Playground, PNG Sprite Playground and Zelda3 as **Not downloaded**. Choose a game to download, approve its creator on first installation, then **Build** and **Play**. The three original demos need no ROM; Zelda3 requires your supported USA ROM. Players need no signing key. The [portable demo store](https://github.com/centrexity/GamePKG/releases/download/v0.1.6/demos.gamepkgstore) includes all four signed games for offline import. Compare downloads against [demo checksums](https://github.com/centrexity/GamePKG/releases/download/v0.1.6/demo-packages.sha256).
 
@@ -212,13 +212,13 @@ gamepkg build com.gamepkg.collect-stars
 gamepkg run com.gamepkg.collect-stars
 ```
 
-In the terminal, enter W/A/S/D to move and Q to quit. In the GUI, click Play and use arrows or WASD; collect yellow targets to increase your score. Restart resets the game; Back to library unloads it. The desktop executable also accepts `--library <directory> --play com.gamepkg.collect-stars`.
+In the terminal, enter W/A/S/D to move and Q to quit. In the GUI, click Play and use arrows or WASD; collect yellow targets to increase your score. Restart resets the game; Back to game unloads it and returns to that game’s page. The desktop executable also accepts `--library <directory> --play com.gamepkg.collect-stars`.
 
 The legacy grid-v1 ABI uses core Wasm. The versioned WIT component profile is described below. Guest source defines `pub fn game_tick(input: u32, state: u64) -> u64`; the host compiler appends the exported wrapper, so guest export attributes are unnecessary. State packs player x/y and target x/y into four bytes, followed by a 32-bit score. Input bits are left=1, right=2, up=4, down=8. Coordinates use a 16×16 grid. Guests receive zero input unless the signed manifest grants input.
 
 Runtime modules can import only the scoped GamePKG asset, ROM and save APIs; WASI, filesystem and socket imports are rejected. Wasmtime enforces memory and epoch limits. A trap ends gameplay. Slang compilation is available; Resource-free GLSL fragment passes render in the desktop player.
 
-For a game declaring `requires_rom = true`, use `gamepkg run <id> --rom /path/to/file` or enter your ROM path above the desktop library table. ROM files must be regular files of 1 byte to 64 MiB and are read into a session snapshot. Guests use `gamepkg::rom_size()` and `gamepkg::rom_read(offset, &mut buffer)`, never a host path. Reads are capped at 64 KiB. No ROM is downloaded, installed or bundled automatically. `examples/good/rom-required` is a playable data-driven example; `python3 tests/runtime_rom.py` tests the signed build and runtime path.
+For a game declaring `requires_rom = true`, use `gamepkg run <id> --rom /path/to/file` or open the game’s page and enter its ROM file locations. ROM files must be regular files of 1 byte to 64 MiB and are read into a session snapshot. Guests use `gamepkg::rom_size()` and `gamepkg::rom_read(offset, &mut buffer)`, never a host path. Reads are capped at 64 KiB. No ROM is downloaded, installed or bundled automatically. `examples/good/rom-required` is a playable data-driven example; `python3 tests/runtime_rom.py` tests the signed build and runtime path.
 
 Run `python3 tests/playable.py` after the release build to test the complete signed-package, isolated-build, movement and scoring path. Runtime tests separately exercise forbidden imports, missing exports, input permission denial, excessive memory, infinite loops and epoch interruption.
 
@@ -424,7 +424,7 @@ or deletion happens automatically. Keep the same schema when the game can
 read its existing save layout; use a new schema for a deliberately separate
 format. Automatic migration between namespaces remains pending.
 
-The library’s **Details** button verifies an installed package and shows its
+Click a game’s name or icon in the library to open its page. The page shows its
 engine requirement, save schema, permissions, creator fingerprint, ROM
 requirement and signed lockfile inventory hash. It does not stage a download
 or install anything. Creator keys normalize to their byte identity so hex
@@ -471,7 +471,7 @@ transport, signature verification and creator/ID continuity as manual checks.
 
 One request runs at a time. Each check downloads the complete package to verify
 it, then discards that download; it never installs, builds or replaces a game.
-An available version appears in the library table. Use **Check for updates** to
+An available version appears on the game’s page. Use **Check for updates** to
 fetch it again for review and explicit installation. Failures appear in the table
 and wait until the next interval rather than retrying continuously. Turning checks
 off prevents new requests; a request already running may finish. No update service
@@ -514,7 +514,7 @@ previews are rejected before installation.
 On Linux, install FFmpeg and bubblewrap to verify packages with previews.
 Video inspection and decoding run in a separate process with no network, a
 private temporary directory, a 2 GiB address-space ceiling and a 60-second
-timeout. The desktop **Details** view offers **Play preview** and **Play Theora
+timeout. The desktop game page offers **Play preview** and **Play Theora
 fallback**. Playback decodes at 320×240 and five frames per second, retains at
 most 150 frames, and never starts the game. A missing preview produces an
 error; preview decoding is currently supported on Linux only.
@@ -716,7 +716,7 @@ title = "First star"
 description = "Collect your first star."
 ```
 
-Both core and WIT guests call `gamepkg::achievement_unlock(0)` with the declaration's zero-based index. Invalid indices return false. Unlocks commit only after a successful tick, remain unlocked on repeat calls, and retain their first unlock timestamp. Keep IDs stable across updates. Achievement reports come from the game; they are local progress records rather than an anti-cheat service. Collect Stars demonstrates first-star and ten-star achievements. Game Details includes an achievement list with descriptions and locked/unlocked status. The table count also has a quick summary on hover, and the CLI lists each achievement. Signed updates retain unlocks by stable ID even when achievements are reordered or renamed; new IDs begin locked.
+Both core and WIT guests call `gamepkg::achievement_unlock(0)` with the declaration's zero-based index. Invalid indices return false. Unlocks commit only after a successful tick, remain unlocked on repeat calls, and retain their first unlock timestamp. Keep IDs stable across updates. Achievement reports come from the game; they are local progress records rather than an anti-cheat service. Collect Stars demonstrates first-star and ten-star achievements. Each game page includes an achievement list with descriptions and locked/unlocked status. The CLI also lists each achievement. Signed updates retain unlocks by stable ID even when achievements are reordered or renamed; new IDs begin locked.
 
 Storage shows measured current package, Wasm build, identified shader caches, current save, play history, and referenced cached shared asset file bytes, plus an optional creator estimate. Shared blobs are counted once per game even when referenced under multiple asset paths. They can appear in several game totals; the library total counts each stored file once. Older Wasm builds and save schemas remain in the library total. Set `recommended_storage_bytes` under `[limits]` to estimate the total space needed after building. Estimates do not limit disk usage or guarantee the final size. The library total also includes shader caches, older builds, shared assets, saves, and play history. External compilers, user ROMs, and filesystem allocation overhead are excluded. Catalog sizes remain unknown until download; game estimates remain unknown unless the creator supplies one.
 

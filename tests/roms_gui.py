@@ -2,7 +2,7 @@
 import csv,io,os,shutil,subprocess,tempfile,time
 from pathlib import Path
 from PIL import Image
-from gui_test_support import start_display
+from gui_test_support import start_display,click_text
 PROJECT=Path(__file__).resolve().parents[1]
 with tempfile.TemporaryDirectory(prefix='gamepkg-roms-gui-') as directory:
     root=Path(directory);source=root/'source';shutil.copytree(PROJECT/'examples/minimal',source)
@@ -48,7 +48,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-roms-gui-') as directory:
                 assert time.monotonic()<end,text
                 time.sleep(.2)
         def click(w):subprocess.run(['xdotool','mousemove','--window',window,str(int(w['left'])+int(w['width'])//2),str(int(w['top'])+int(w['height'])//2),'click','1'],env=env,check=True);time.sleep(.2)
-        click(word('Details'))
+        click_text(window,env,'com.gamepkg.minimal',root)
         for label,path in [('Program',a),('Data',b)]:
             w=word(label)
             subprocess.run(['xdotool','mousemove','--window',window,'250',str(int(w['top'])+int(w['height'])//2),'click','1','type','--clearmodifiers',str(path)],env=env,check=True)

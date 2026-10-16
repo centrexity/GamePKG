@@ -30,7 +30,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-progress-gui-') as directory:
    if 'first_star' in history.get('unlocked',{}):break
    assert time.monotonic()<deadline,'Normal gameplay did not unlock First star';time.sleep(.1)
   assert 'ten_stars' not in history['unlocked'],history
-  click_text(window,env,'Back to library',root)
+  click_text(window,env,'Back to game',root)
   text=run('list');assert '[Unlocked] First star' in text and '[Locked] Star collector' in text,text
   history=json.loads(records[0].read_text());assert history['played_ms']>0,history
   print('Desktop keyboard play collected a star; achievement and measured play time persisted after returning to Library.')

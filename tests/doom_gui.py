@@ -23,7 +23,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-doom-gui-',dir=PROJECT/'target'
    time.sleep(.1)
   assert found.returncode==0;window=found.stdout.splitlines()[0]
   subprocess.run(['xdotool','windowsize',window,'1700','1000','windowfocus',window],env=env,check=True)
-  click_text(window,env,'Details',root,timeout=20);time.sleep(.3)
+  click_text(window,env,'com.gamepkg.doom',root,timeout=20);time.sleep(.3)
   def capture(name):
    path=proof/name;subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(path)],env=env,check=True,timeout=10);return path
   screen=capture('rom-selection.png');large=root/'ocr.png';Image.open(screen).resize((5100,3000)).save(large)

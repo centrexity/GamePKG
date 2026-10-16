@@ -21,7 +21,7 @@ try:
  window=state.stdout.strip().splitlines()[0];subprocess.run(['xdotool','windowsize',window,'1500','950'],env=env,check=True);time.sleep(.5)
  subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(project/'target/preview-library.png')],env=env,check=True)
  print('window='+window,flush=True)
- click_text(window,env,'Details',root);time.sleep(.3)
+ click_text(window,env,'com.gamepkg.minimal',root);time.sleep(.3)
  subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(project/'target/preview-details.png')],env=env,check=True)
  from PIL import Image
  def count_color(color, screenshot):

@@ -36,21 +36,6 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-remembered-roms-') as temp:
   tsv=subprocess.check_output(['tesseract',str(root/'ocr.png'),'stdout','--psm','11','tsv'],stderr=subprocess.DEVNULL,text=True)
   return [dict(w,left=int(w['left'])//2,top=int(w['top'])//2,width=int(w['width'])//2,height=int(w['height'])//2) for w in csv.DictReader(io.StringIO(tsv),delimiter='\t',quoting=csv.QUOTE_NONE) if w['text'].strip()]
  def click_word(w):subprocess.run(['xdotool','mousemove','--window',window,str(w['left']+w['width']//2),str(w['top']+w['height']//2),'click','1'],env=env,check=True);time.sleep(.2)
- def row_button(name,label):
-  end=time.monotonic()+15
-  while time.monotonic()<end:
-   ws=words();rows=[w for w in ws if name in w['text'].lower() and 'example' in w['text'].lower()]
-   buttons=[w for w in ws if w['text'].strip('[]()')==label]
-   if rows:
-    y=max(w['top'] for w in rows);near=[w for w in buttons if y-65<=w['top']<=y+65]
-    if near:
-     actions=[w for w in ws if w['text']=='Actions'];left=actions[0]['left'] if actions else 500
-     near=[w for w in near if w['left']>=left-5]
-     if near:
-      shutil.copy2(root/'screen.png',PROJECT/'target/remembered-roms-debug.png')
-      click_word(min(near,key=lambda w:abs(w['top']-y)));return
-   time.sleep(.2)
-  raise AssertionError((name,label,' '.join(w['text'] for w in ws)))
  def expect_score(score):
   end=time.monotonic()+10
   while time.monotonic()<end:
@@ -61,15 +46,15 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-remembered-roms-') as temp:
  try:
   launch()
   for name,path in [('alpha',a),('beta',b)]:
-   row_button(name,'ROM');time.sleep(.2)
+   click_text(window,env,'com.example.'+name,root);time.sleep(.2)
    ws=words();labels=[w for w in ws if w['text'].lower()==name and w['left']<200]
    assert labels,ws;y=min(w['top']+w['height']//2 for w in labels)
    subprocess.run(['xdotool','mousemove','--window',window,'350',str(y),'click','1','type','--clearmodifiers',str(path)],env=env,check=True)
-   time.sleep(.3);click_text(window,env,'Done',root)
+   time.sleep(.3);click_text(window,env,'Back to library',root)
   stored=json.loads((home/'rom-selections.json').read_text());assert sorted(stored.values())==sorted([[str(a)],[str(b)]])
   close();launch()
-  row_button('alpha','Play');expect_score(65);click_text(window,env,'Back to library',root)
-  row_button('beta','Play');expect_score(66);click_text(window,env,'Back to library',root)
+  click_text(window,env,'com.example.alpha',root);click_text(window,env,'Play',root);expect_score(65);click_text(window,env,'Back to game',root);click_text(window,env,'Back to library',root)
+  click_text(window,env,'com.example.beta',root);click_text(window,env,'Play',root);expect_score(66);click_text(window,env,'Back to game',root);click_text(window,env,'Back to library',root)
   proof=PROJECT/'target/remembered-roms-library.png';subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(proof)],env=env,check=True)
   close();launch('--play','com.example.alpha');expect_score(65)
   print('Remembered ROMs passed: separate file paths, game switching, restart and direct --play without reselecting files.')

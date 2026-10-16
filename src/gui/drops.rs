@@ -52,6 +52,7 @@ impl App {
             }
         };
         self.drop_notice = None;
+        self.selected_game = None;
         self.show_settings = false;
         self.show_support = false;
         self.preview = None;
