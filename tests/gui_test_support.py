@@ -74,3 +74,33 @@ def click_text(window, env, text, directory, timeout=15, max_y=None):
         if time.monotonic() >= deadline:
             raise AssertionError(f'Visible control {text!r} was not found: {last}')
         time.sleep(.1)
+
+
+def choose_native_file(env, title, path=None, windows=False):
+    """Operate the real Linux picker, including cancelling without selecting."""
+    import re
+    deadline = time.monotonic() + 20
+    while True:
+        found = subprocess.run(['xdotool','search','--onlyvisible','--name','^('+re.escape(title)+'|Select a [Ff]ile|zenity)$'],env=env,capture_output=True,text=True)
+        if found.returncode == 0:
+            break
+        if time.monotonic() >= deadline:
+            from pathlib import Path
+            proof=Path(__file__).resolve().parents[1]/'target/native-rom-picker-failed.png'
+            subprocess.run(['import','-display',env['DISPLAY'],'-window','root',str(proof)],env=env,check=True)
+            names=subprocess.run(['xdotool','search','--onlyvisible','--name','.','getwindowname','%@'],env=env,capture_output=True,text=True)
+            raise AssertionError(f'Native picker {title!r} did not open: {names.stdout}')
+        time.sleep(.1)
+    dialog = found.stdout.splitlines()[-1]
+    from pathlib import Path
+    proof=Path(__file__).resolve().parents[1]/'target/native-rom-picker.png'
+    subprocess.run(['import','-display',env['DISPLAY'],'-window',dialog,str(proof)],env=env,check=True)
+    subprocess.run(['xdotool','windowfocus','--sync',dialog],env=env,check=True)
+    if path is None:
+        subprocess.run(['xdotool','key','--clearmodifiers','Escape'],env=env,check=True)
+    else:
+        subprocess.run(['xdotool','key','--clearmodifiers','alt+n' if windows else 'ctrl+l'],env=env,check=True)
+        time.sleep(.2)
+        subprocess.run(['xdotool','type','--clearmodifiers',str(path)],env=env,check=True)
+        subprocess.run(['xdotool','key','--clearmodifiers','Return'],env=env,check=True)
+    time.sleep(.5)

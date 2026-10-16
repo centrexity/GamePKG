@@ -2,7 +2,7 @@
 import csv,io,os,shutil,subprocess,tempfile,time
 from pathlib import Path
 from PIL import Image
-from gui_test_support import start_display,click_text
+from gui_test_support import start_display,click_text,choose_native_file
 PROJECT=Path(__file__).resolve().parents[1]
 with tempfile.TemporaryDirectory(prefix='gamepkg-roms-gui-') as directory:
     root=Path(directory);source=root/'source';shutil.copytree(PROJECT/'examples/minimal',source)
@@ -14,7 +14,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-roms-gui-') as directory:
         if !((gamepkg::rom_read_at(1,0,&mut bytes)) == (Some(4))) { loop {} };
         if !((&bytes) == (b"DATA")) { loop {} }; 7u64<<32
     }''')
-    env=dict(os.environ,GAMEPKG_HOME=str(root/'library'),GAMEPKG_CONFIG=str(root/'settings.toml'),LIBGL_ALWAYS_SOFTWARE='1');env.pop('WAYLAND_DISPLAY',None)
+    env=dict(os.environ,GAMEPKG_HOME=str(root/'library'),GAMEPKG_CONFIG=str(root/'settings.toml'),LIBGL_ALWAYS_SOFTWARE='1');env.pop('WAYLAND_DISPLAY',None);env['DBUS_SESSION_BUS_ADDRESS']='unix:path=/tmp/gamepkg-no-session-bus'
     (root/'settings.toml').write_text('automatic_update_checks=false\n')
     def run(*args):subprocess.run([str(PROJECT/'target/release/gamepkg'),*map(str,args)],env=env,check=True,capture_output=True,text=True,timeout=180)
     key=root/'key';package=root/'game.gamepkg';run('keygen','-o',key);run('pack',source,'-o',package,'--key',key);run('install',package,'--trust-creator');run('build','com.gamepkg.minimal')
@@ -51,7 +51,8 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-roms-gui-') as directory:
         click_text(window,env,'com.gamepkg.minimal',root)
         for label,path in [('Program',a),('Data',b)]:
             w=word(label)
-            subprocess.run(['xdotool','mousemove','--window',window,'250',str(int(w['top'])+int(w['height'])//2),'click','1','type','--clearmodifiers',str(path)],env=env,check=True)
+            subprocess.run(['xdotool','mousemove','--window',window,'250',str(int(w['top'])+int(w['height'])//2),'click','1'],env=env,check=True)
+            choose_native_file(env,'Choose '+label+' ROM',path)
             time.sleep(.2)
             if label=='Program':
                 click(word('Play'));text,_=screen();assert 'Score:' not in text,'missing second ROM allowed playback'

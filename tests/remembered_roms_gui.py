@@ -2,11 +2,11 @@
 from pathlib import Path
 import csv,io,os,shutil,subprocess,tempfile,time,json
 from PIL import Image
-from gui_test_support import start_display,click_text
+from gui_test_support import start_display,click_text,choose_native_file
 PROJECT=Path(__file__).resolve().parents[1];BINS=Path(os.environ.get('GAMEPKG_TEST_BINARY_DIR',PROJECT/'target/release'))
 with tempfile.TemporaryDirectory(prefix='gamepkg-remembered-roms-') as temp:
  root=Path(temp);home=root/'library';config=root/'settings.toml';config.write_text('automatic_update_checks=false\n')
- env=dict(os.environ,GAMEPKG_HOME=str(home),GAMEPKG_CONFIG=str(config),LIBGL_ALWAYS_SOFTWARE='1');env.pop('WAYLAND_DISPLAY',None)
+ env=dict(os.environ,GAMEPKG_HOME=str(home),GAMEPKG_CONFIG=str(config),LIBGL_ALWAYS_SOFTWARE='1');env.pop('WAYLAND_DISPLAY',None);env['DBUS_SESSION_BUS_ADDRESS']='unix:path=/tmp/gamepkg-no-session-bus'
  key=root/'key';key.write_text('65'*32)
  def run(*args):
   r=subprocess.run([str(BINS/'gamepkg'),*map(str,args)],env=env,capture_output=True,text=True,timeout=180);assert r.returncode==0,r.stderr
@@ -49,7 +49,19 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-remembered-roms-') as temp:
    click_text(window,env,'com.example.'+name,root);time.sleep(.2)
    ws=words();labels=[w for w in ws if w['text'].lower()==name and w['left']<200]
    assert labels,ws;y=min(w['top']+w['height']//2 for w in labels)
-   subprocess.run(['xdotool','mousemove','--window',window,'350',str(y),'click','1','type','--clearmodifiers',str(path)],env=env,check=True)
+   subprocess.run(['xdotool','mousemove','--window',window,'350',str(y),'click','1'],env=env,check=True)
+   choose_native_file(env,'Choose '+name.title()+' ROM',path)
+   deadline=time.monotonic()+10
+   while True:
+    stored=json.loads((home/'rom-selections.json').read_text()) if (home/'rom-selections.json').exists() else {}
+    if any(str(path) in paths for paths in stored.values()):break
+    assert time.monotonic()<deadline,'Selected ROM was not remembered'
+    time.sleep(.1)
+   if name=='alpha':
+    before=(home/'rom-selections.json').read_bytes()
+    subprocess.run(['xdotool','mousemove','--window',window,'350',str(y),'click','1'],env=env,check=True)
+    choose_native_file(env,'Choose Alpha ROM')
+    assert (home/'rom-selections.json').read_bytes()==before,'Cancel changed remembered ROMs'
    time.sleep(.3);click_text(window,env,'Back to library',root)
   stored=json.loads((home/'rom-selections.json').read_text());assert sorted(stored.values())==sorted([[str(a)],[str(b)]])
   close();launch()

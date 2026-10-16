@@ -1,6 +1,6 @@
 [package]
 name = "gamepkg"
-version = "0.1.8"
+version = "0.1.9"
 edition = "2021"
 rust-version = "1.89"
 license = "Apache-2.0"
@@ -10,7 +10,7 @@ default-run = "gamepkg"
 
 [features]
 default = []
-gui = ["dep:eframe", "dep:gilrs", "audio"]
+gui = ["dep:eframe", "dep:gilrs", "dep:rfd", "audio"]
 audio = ["dep:cpal"]
 
 [[bin]]
@@ -49,6 +49,7 @@ url = "2"
 semver = "1"
 tempfile = "3"
 rustc_lexer = "=0.1.0"
+rfd = { version = "=0.17.2", optional = true }
 
 [dev-dependencies]
 wat = "1"

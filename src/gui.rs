@@ -2,6 +2,7 @@ use eframe::egui;
 mod drops;
 mod game_page;
 mod input;
+mod rom_picker;
 mod sprites;
 use std::{
     collections::{HashMap, HashSet},
@@ -14,6 +15,7 @@ enum Work {
     Game(Box<crate::runtime::Game>),
     Package(crate::manifest::Manifest),
     Update(crate::manifest::Manifest, tempfile::NamedTempFile),
+    RomPicked(rom_picker::Selection),
     Message(String),
 }
 #[derive(Default)]
@@ -358,6 +360,15 @@ impl eframe::App for App {
                             self.selected_game = Some(m.id.clone());
                             self.manifest = Some(m);
                             self.pending = Some(file);
+                        }
+                        Ok(Work::RomPicked(selection)) => {
+                            self.status = match self.apply_rom_pick(selection) {
+                                Ok(true) => {
+                                    "ROM file remembered. The original stays on your drive.".into()
+                                }
+                                Ok(false) => "ROM selection cancelled. Previous file kept.".into(),
+                                Err(error) => format!("Unable to remember ROM file: {error:#}"),
+                            };
                         }
                         Ok(Work::Message(message)) => {
                             self.status = message;

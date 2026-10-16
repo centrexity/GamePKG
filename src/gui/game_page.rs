@@ -135,23 +135,44 @@ impl App {
             .find(|m| Some(&m.id) == self.selected_game.as_ref() && m.requires_rom)
             .cloned()
         {
-            egui::Frame::group(ui.style()).show(ui,|ui| {
-                    ui.strong(format!("ROM files — {}",selected.id));
-                    let mut changed=false;
-                    for index in 0..selected.required_rom_count() {
-                        let title=selected.roms.get(index).map(|r|r.title.clone()).unwrap_or_else(||format!("ROM {}",index+1));
-                        let path=if index==0 {&mut self.rom_path}else{&mut self.additional_rom_paths[index-1]};
-                        ui.horizontal(|ui|{ui.label(title);changed|=ui.add(egui::TextEdit::singleline(path).hint_text("File location").desired_width(420.0)).changed();});
-                    }
-                    ui.label("Locations are remembered for this game. Files stay on your drive and are shared read-only.");
-                    if changed {
-                        let paths=std::iter::once(self.rom_path.clone()).chain(self.additional_rom_paths.iter().cloned()).collect::<Vec<_>>();
-                        if let Ok(root)=crate::registry::default_root() {
-                            match crate::rom_selections::save(&root,&selected,&paths) {Ok(())=>{self.rom_paths.insert(selected.id.clone(),paths);},Err(e)=>self.status=format!("Unable to remember ROM files: {e:#}")}
+            let mut pick = None;
+            egui::Frame::group(ui.style()).show(ui, |ui| {
+                ui.strong(format!("ROM files — {}", selected.id));
+                for index in 0..selected.required_rom_count() {
+                    let title = selected.roms.get(index).map(|r| r.title.clone())
+                        .unwrap_or_else(|| format!("ROM {}", index + 1));
+                    let path = if index == 0 { &self.rom_path } else { &self.additional_rom_paths[index - 1] };
+                    ui.horizontal(|ui| {
+                        ui.label(&title);
+                        let text = if path.is_empty() { "Choose ROM file…" } else { path };
+                        if ui.add_enabled(self.result.is_none(), egui::Button::new(text).truncate()
+                            .min_size(egui::vec2(420.0, 26.0)))
+                            .on_hover_text(if path.is_empty() { "Open the system file picker" } else { path })
+                            .clicked() {
+                            pick = Some((index, title, path.clone()));
                         }
-                    }
-
-                });
+                    });
+                }
+                ui.label("Click a file field to choose a ROM. Locations are remembered for this game. Files stay on your drive and are shared read-only.");
+            });
+            if let Some((index, title, current)) = pick {
+                match crate::registry::default_root()
+                    .and_then(|root| super::rom_picker::Selection::new(root, selected, index))
+                {
+                    Ok(selection) => self.begin_work(move || {
+                        let mut dialog =
+                            rfd::FileDialog::new().set_title(format!("Choose {title}"));
+                        if let Some(parent) = std::path::Path::new(&current)
+                            .parent()
+                            .filter(|p| p.is_dir())
+                        {
+                            dialog = dialog.set_directory(parent);
+                        }
+                        Ok(Work::RomPicked(selection.with_path(dialog.pick_file())))
+                    }),
+                    Err(error) => self.status = format!("Unable to select ROM file: {error:#}"),
+                }
+            }
             ui.add_space(12.0);
         }
     }

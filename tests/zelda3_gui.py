@@ -2,7 +2,7 @@
 from pathlib import Path
 import argparse,csv,io,os,shutil,subprocess,tempfile,time
 from PIL import Image,ImageChops
-from gui_test_support import start_display,click_text
+from gui_test_support import start_display,click_text,choose_native_file
 def pixels(image):return image.get_flattened_data() if hasattr(image,"get_flattened_data") else image.getdata()
 PROJECT=Path(__file__).resolve().parents[1]
 p=argparse.ArgumentParser();p.add_argument('rom',type=Path);p.add_argument('--library',type=Path,required=True);p.add_argument('--wine-prefix',type=Path);args=p.parse_args()
@@ -10,7 +10,7 @@ PROOF=PROJECT/('target/zelda3-windows-proof' if args.wine_prefix else 'target/ze
 with tempfile.TemporaryDirectory(prefix='zelda3-gui-',dir=PROJECT/'target') as temporary:
     root=Path(temporary);shutil.copytree(args.library,root/'library',ignore=shutil.ignore_patterns('progress'))
     config=root/'settings.toml';config.write_text('automatic_update_checks=false\n')
-    env=dict(os.environ,GAMEPKG_HOME=str(root/'library'),GAMEPKG_CONFIG=str(config),LIBGL_ALWAYS_SOFTWARE='1');env.pop('WAYLAND_DISPLAY',None)
+    env=dict(os.environ,GAMEPKG_HOME=str(root/'library'),GAMEPKG_CONFIG=str(config),LIBGL_ALWAYS_SOFTWARE='1');env.pop('WAYLAND_DISPLAY',None);env['DBUS_SESSION_BUS_ADDRESS']='unix:path=/tmp/gamepkg-no-session-bus'
     display=start_display(env,width=1800,height=1100)
     rom=args.rom
     command=[str(Path(os.environ.get('GAMEPKG_TEST_BINARY_DIR',PROJECT/'target/release'))/'gamepkg-gui')]
@@ -41,7 +41,8 @@ with tempfile.TemporaryDirectory(prefix='zelda3-gui-',dir=PROJECT/'target') as t
         words=[w for w in csv.DictReader(io.StringIO(tsv),delimiter='\t',quoting=csv.QUOTE_NONE) if w['text'].strip()]
         your=min([w for w in words if w['text']=='Your'],key=lambda w:int(w['top']))
         y=(int(your['top'])+int(your['height'])//2)//3
-        subprocess.run(['xdotool','mousemove','--window',window,'350',str(y),'click','1','type','--clearmodifiers',str(rom)],env=env,check=True)
+        subprocess.run(['xdotool','mousemove','--window',window,'350',str(y),'click','1'],env=env,check=True)
+        choose_native_file(env,'Choose Your Zelda: A Link to the Past (USA) ROM',rom,windows=bool(args.wine_prefix))
         time.sleep(.3);capture('native-rom-selected.png')
         screen=capture('native-before-play.png')
         Image.open(screen).resize((5100,3000)).save(enlarged)

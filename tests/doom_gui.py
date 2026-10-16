@@ -2,7 +2,7 @@
 from pathlib import Path
 import argparse,csv,io,os,shutil,subprocess,tempfile,time
 from PIL import Image,ImageChops
-from gui_test_support import start_display,click_text
+from gui_test_support import start_display,click_text,choose_native_file
 def pixels(im):return im.get_flattened_data() if hasattr(im,'get_flattened_data') else im.getdata()
 PROJECT=Path(__file__).resolve().parents[1]
 p=argparse.ArgumentParser();p.add_argument('wad',type=Path);p.add_argument('--library',type=Path,required=True);args=p.parse_args()
@@ -10,7 +10,7 @@ proof=PROJECT/'target/doom-native-proof';proof.mkdir(parents=True,exist_ok=True)
 with tempfile.TemporaryDirectory(prefix='gamepkg-doom-gui-',dir=PROJECT/'target') as temp:
  root=Path(temp);shutil.copytree(args.library,root/'library',ignore=shutil.ignore_patterns('saves','progress'))
  config=root/'settings.toml';config.write_text('automatic_update_checks=false\n')
- env=dict(os.environ,GAMEPKG_HOME=str(root/'library'),GAMEPKG_CONFIG=str(config),LIBGL_ALWAYS_SOFTWARE='1');env.pop('WAYLAND_DISPLAY',None)
+ env=dict(os.environ,GAMEPKG_HOME=str(root/'library'),GAMEPKG_CONFIG=str(config),LIBGL_ALWAYS_SOFTWARE='1');env.pop('WAYLAND_DISPLAY',None);env['DBUS_SESSION_BUS_ADDRESS']='unix:path=/tmp/gamepkg-no-session-bus'
  display=start_display(env,1800,1100);app=None
  try:
   binary=Path(os.environ.get('GAMEPKG_TEST_BINARY_DIR',PROJECT/'target/release'))/'gamepkg-gui'
@@ -31,7 +31,8 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-doom-gui-',dir=PROJECT/'target'
   words=[w for w in csv.DictReader(io.StringIO(tsv),delimiter='\t',quoting=csv.QUOTE_NONE) if w['text'].strip()]
   your=min([w for w in words if w['text']=='Your'],key=lambda w:int(w['top']))
   y=(int(your['top'])+int(your['height'])//2)//3
-  subprocess.run(['xdotool','mousemove','--window',window,'350',str(y),'click','1','type','--clearmodifiers',str(args.wad.resolve())],env=env,check=True)
+  subprocess.run(['xdotool','mousemove','--window',window,'350',str(y),'click','1'],env=env,check=True)
+  choose_native_file(env,'Choose Your DOOM.WAD or DOOM2.WAD (original PC IWAD)',args.wad.resolve())
   time.sleep(.3);click_text(window,env,'Play',root,timeout=20)
   subprocess.run(['xdotool','windowsize',window,'1000','800','windowfocus',window],env=env,check=True)
   time.sleep(5)

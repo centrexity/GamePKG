@@ -4,14 +4,14 @@ This archive contains the GamePKG command-line program and desktop library. It d
 
 These builds target Ubuntu 24.04 or a compatible system with glibc 2.39 or newer. The desktop requires a working X11 or Wayland display, OpenGL, and ALSA. The exact builder libc version and executable hashes are recorded in BUILD.json. Dependency license expressions and original notices are included in DEPENDENCIES.json and third-party-licenses/. Original resolved dependency source archives are preserved as directories in third-party-sources/, including notices embedded in source and bundled fonts.
 
-1. Check the downloaded archive against its .sha256 file with `sha256sum -c gamepkg-0.1.8-linux-x86_64.tar.gz.sha256`.
-2. Extract it into a folder you control with `tar -xzf gamepkg-0.1.8-linux-x86_64.tar.gz`.
+1. Check the downloaded archive against its .sha256 file with `sha256sum -c gamepkg-0.1.9-linux-x86_64.tar.gz.sha256`.
+2. Extract it into a folder you control with `tar -xzf gamepkg-0.1.9-linux-x86_64.tar.gz`.
 3. Enter the extracted folder. Run `./bin/gamepkg --help` for the CLI or `./bin/gamepkg-gui` for the desktop.
 
 On Ubuntu 24.04, install the runtime tools needed for isolated builds, downloads, previews, and audio:
 
 ```sh
-sudo apt install bubblewrap coreutils util-linux curl ffmpeg libasound2t64 libudev1
+sudo apt install bubblewrap coreutils util-linux curl ffmpeg libasound2t64 libudev1 xdg-desktop-portal xdg-desktop-portal-gtk zenity
 ```
 
 Install Rust with rustup using its official instructions at https://rustup.rs, then add the game compilation target:
@@ -27,7 +27,7 @@ tar -xzf slang-2026.19.tar.gz -C "$HOME/.local/share/gamepkg/slang-2026.19"
 
 After the checksum passes, extract into the new Slang folder as shown above. No Python installer is needed. Enter that folder in the desktop Settings page, or set GAMEPKG_SLANG_ROOT to it for the CLI. Namespace support is required for isolated builds; a denied sandbox stops compilation. GLSL is the default desktop shader backend. DXIL compilation additionally requires the pinned DXC installer; native Metal/DXIL playback remains unfinished.
 
-Install a signed package from a file or HTTPS URL in the desktop library. Review its creator fingerprint and permissions, approve installation, choose Build, then Play. A game that requires a ROM needs a file you supply explicitly. Importing a .gamepkglist only adds catalog entries; it does not download games.
+Install a signed package from a file or HTTPS URL in the desktop library. Review its creator fingerprint and permissions, approve installation, choose Build, then Play. A game that requires a ROM needs a file you supply explicitly. Open its game page and click each ROM file field to open the system file picker. Choosing a file remembers its location for that game; cancelling keeps the previous choice. Importing a .gamepkglist only adds catalog entries; it does not download games.
 
 To try a ready-to-install game, paste this catalog URL into the desktop library and choose **Import .gamepkglist**:
 
@@ -63,4 +63,4 @@ See engines/zelda3/README.md for the complete setup and verification details.
 
 ## DOOM source engine
 
-Version 0.1.8 includes the pinned DOOM Wasm engine. The Linux compiler needs the same Clang 18 and WASI tools described above. See [DOOM engine setup](../engines/doom/README.md) and the [port instructions](https://github.com/centrexity/GamePKG_Ports/blob/main/DOOM.md). Select your own DOOM.WAD/DOOM2.WAD; no WAD is included. Windows compilation uses the existing opt-in WSL 2 exchange; native Windows DOOM playback has not been tested locally.
+Version 0.1.9 includes the pinned DOOM Wasm engine. The Linux compiler needs the same Clang 18 and WASI tools described above. See [DOOM engine setup](../engines/doom/README.md) and the [port instructions](https://github.com/centrexity/GamePKG_Ports/blob/main/DOOM.md). Select your own DOOM.WAD/DOOM2.WAD; no WAD is included. Windows compilation uses the existing opt-in WSL 2 exchange; native Windows DOOM playback has not been tested locally.
