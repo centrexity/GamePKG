@@ -40,8 +40,16 @@ fn main() -> eframe::Result {
                 ..Default::default()
             },
             viewport: eframe::egui::ViewportBuilder::default()
-                .with_inner_size([1280.0, 820.0])
-                .with_min_inner_size([620.0, 480.0])
+                .with_inner_size(if args.play.is_some() {
+                    [960.0, 720.0]
+                } else {
+                    [1280.0, 820.0]
+                })
+                .with_min_inner_size(if args.play.is_some() {
+                    [320.0, 240.0]
+                } else {
+                    [620.0, 480.0]
+                })
                 .with_icon(gamepkg::gui::window_icon())
                 .with_drag_and_drop(true),
             ..Default::default()

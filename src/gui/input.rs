@@ -8,7 +8,6 @@ pub struct Devices {
     controller: Option<gilrs::Gilrs>,
     initialized: bool,
     previous: u32,
-    show_touch: bool,
     contacts: std::collections::BTreeMap<(egui::TouchDeviceId, egui::TouchId), egui::Pos2>,
     error: Option<String>,
 }
@@ -27,7 +26,6 @@ impl Devices {
                 ..
             } = event
             {
-                self.show_touch = true;
                 let key = (*device_id, *id);
                 match phase {
                     egui::TouchPhase::Start | egui::TouchPhase::Move => {
@@ -96,45 +94,44 @@ impl Devices {
                 }
             }
         }
-        if let Some(error) = &self.error {
-            ui.label(error);
-        }
-        ui.checkbox(&mut self.show_touch, "Touch controls");
         ui.input(|i| self.update_contacts(&i.events, i.focused));
-        if self.show_touch {
-            ui.horizontal_wrapped(|ui| {
-                for (label, mask) in [
-                    ("←", buttons::LEFT),
-                    ("→", buttons::RIGHT),
-                    ("↑", buttons::UP),
-                    ("↓", buttons::DOWN),
-                    ("B", buttons::B),
-                    ("Y", buttons::Y),
-                    ("A", buttons::A),
-                    ("X", buttons::X),
-                    ("L", buttons::L),
-                    ("R", buttons::R),
-                    ("Start", buttons::START),
-                    ("Select", buttons::SELECT),
-                ] {
-                    let response = ui.add_sized(
-                        [48.0, 48.0],
-                        egui::Button::new(label).sense(egui::Sense::click_and_drag()),
-                    );
-                    // Inspect each contact so simultaneous movement/action touches work.
-                    let active_touch = self
-                        .contacts
-                        .values()
-                        .any(|pos| response.rect.contains(*pos));
-                    if ui.input(|i| i.events.iter().any(|e| matches!(e,
-                        egui::Event::Touch { phase: egui::TouchPhase::Start, pos, .. } if response.rect.contains(*pos)))) {
-                        pressed |= mask;
-                    }
-                    if response.is_pointer_button_down_on() || active_touch {
-                        held |= mask;
-                    }
-                }
-            });
+        // Touch targets never draw host controls over the game. The bottom third
+        // retains simultaneous direction/action input in twelve equal regions.
+        let bounds = ui.max_rect();
+        for (index, mask) in [
+            buttons::LEFT,
+            buttons::RIGHT,
+            buttons::UP,
+            buttons::DOWN,
+            buttons::B,
+            buttons::Y,
+            buttons::A,
+            buttons::X,
+            buttons::L,
+            buttons::R,
+            buttons::START,
+            buttons::SELECT,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let rect = egui::Rect::from_min_max(
+                egui::pos2(
+                    bounds.left() + bounds.width() * index as f32 / 12.0,
+                    bounds.bottom() - bounds.height() / 3.0,
+                ),
+                egui::pos2(
+                    bounds.left() + bounds.width() * (index + 1) as f32 / 12.0,
+                    bounds.bottom(),
+                ),
+            );
+            if self.contacts.values().any(|pos| rect.contains(*pos)) {
+                held |= mask;
+            }
+            if ui.input(|i| i.events.iter().any(|e| matches!(e,
+                egui::Event::Touch { phase: egui::TouchPhase::Start, pos, .. } if rect.contains(*pos)))) {
+                pressed |= mask;
+            }
         }
         if !ui.input(|i| i.focused) {
             held = 0;

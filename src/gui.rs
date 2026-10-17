@@ -515,7 +515,6 @@ impl eframe::App for App {
             self.sprite_textures.finish(0);
         }
         if let Some(game) = self.player.as_mut() {
-            let mut close = false;
             let mut image_count = 0;
             let mut failure = None;
             let select_input = ctx.input(|i| {
@@ -538,239 +537,238 @@ impl eframe::App for App {
                     ctx.memory_mut(|m| m.surrender_focus(id));
                 }
             }
-            egui::CentralPanel::default().frame(egui::Frame::central_panel(&ctx.style()).inner_margin(20)).show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    ui.heading(&game.id);
-                    if ui.button("Close game").clicked() {
-                        close = true;
-                    }
-                    if ui.button("Restart").clicked() {
-                        game.state = 0;
-                        self.next_frame = None;
-                        if let Some(audio) = &self.audio_player {
-                            audio.clear();
-                        }
-                    }
-                });
-                let input = ctx.input(|i| {
-                    (u32::from(i.key_down(egui::Key::ArrowLeft) || i.key_down(egui::Key::A)) << 8)
-                        | (u32::from(i.key_down(egui::Key::ArrowRight) || i.key_down(egui::Key::D))
-                            << 9)
-                        | (u32::from(i.key_down(egui::Key::ArrowUp) || i.key_down(egui::Key::W))
-                            << 10)
-                        | (u32::from(i.key_down(egui::Key::ArrowDown) || i.key_down(egui::Key::S))
-                            << 11)
-                        | u32::from(
-                            i.key_pressed(egui::Key::ArrowLeft) || i.key_pressed(egui::Key::A),
-                        )
-                        | (u32::from(
-                            i.key_pressed(egui::Key::ArrowRight) || i.key_pressed(egui::Key::D),
-                        ) << 1)
-                        | (u32::from(
-                            i.key_pressed(egui::Key::ArrowUp) || i.key_pressed(egui::Key::W),
-                        ) << 2)
-                        | (u32::from(
-                            i.key_pressed(egui::Key::ArrowDown) || i.key_pressed(egui::Key::S),
-                        ) << 3)
-                });
-                let input = input | select_input | ctx.input(|i| {
-                    let mut buttons=0u32;
-                    for (key,press,held) in [(egui::Key::Z,4,12),(egui::Key::X,5,13),(egui::Key::Enter,6,14),(egui::Key::Tab,7,15),
-                        (egui::Key::C,16,20),(egui::Key::V,17,21),(egui::Key::Q,18,22),(egui::Key::E,19,23)] {
-                        buttons |= u32::from(i.key_pressed(key)) << press;
-                        buttons |= u32::from(i.key_down(key)) << held;
-                    }
-                    buttons
-                });
-                let device_input = self.input_devices.poll(ui);
-                let input = if ctx.input(|i| i.focused) { input | device_input } else { self.pending_input = 0; 0 };
-                self.pending_input |= input & 0xf00ff;
-                let now = std::time::Instant::now();
-                if self.next_frame.is_none_or(|next| now >= next) {
-                    match game.step(self.pending_input | (input & 0xf0ff00)) {
-                        Err(e) => failure = Some(format!("Game stopped: {e:#}")),
-                        Ok(_) => {
-                            if let Some(audio) = &self.audio_player {
-                                audio.submit(game.audio_frame());
+            egui::CentralPanel::default()
+                .frame(egui::Frame::NONE.fill(egui::Color32::BLACK))
+                .show(ctx, |ui| {
+                    let input = ctx.input(|i| {
+                        (u32::from(i.key_down(egui::Key::ArrowLeft) || i.key_down(egui::Key::A))
+                            << 8)
+                            | (u32::from(
+                                i.key_down(egui::Key::ArrowRight) || i.key_down(egui::Key::D),
+                            ) << 9)
+                            | (u32::from(
+                                i.key_down(egui::Key::ArrowUp) || i.key_down(egui::Key::W),
+                            ) << 10)
+                            | (u32::from(
+                                i.key_down(egui::Key::ArrowDown) || i.key_down(egui::Key::S),
+                            ) << 11)
+                            | u32::from(
+                                i.key_pressed(egui::Key::ArrowLeft) || i.key_pressed(egui::Key::A),
+                            )
+                            | (u32::from(
+                                i.key_pressed(egui::Key::ArrowRight) || i.key_pressed(egui::Key::D),
+                            ) << 1)
+                            | (u32::from(
+                                i.key_pressed(egui::Key::ArrowUp) || i.key_pressed(egui::Key::W),
+                            ) << 2)
+                            | (u32::from(
+                                i.key_pressed(egui::Key::ArrowDown) || i.key_pressed(egui::Key::S),
+                            ) << 3)
+                    });
+                    let input = input
+                        | select_input
+                        | ctx.input(|i| {
+                            let mut buttons = 0u32;
+                            for (key, press, held) in [
+                                (egui::Key::Z, 4, 12),
+                                (egui::Key::X, 5, 13),
+                                (egui::Key::Enter, 6, 14),
+                                (egui::Key::Tab, 7, 15),
+                                (egui::Key::C, 16, 20),
+                                (egui::Key::V, 17, 21),
+                                (egui::Key::Q, 18, 22),
+                                (egui::Key::E, 19, 23),
+                            ] {
+                                buttons |= u32::from(i.key_pressed(key)) << press;
+                                buttons |= u32::from(i.key_down(key)) << held;
+                            }
+                            buttons
+                        });
+                    let device_input = self.input_devices.poll(ui);
+                    let input = if ctx.input(|i| i.focused) {
+                        input | device_input
+                    } else {
+                        self.pending_input = 0;
+                        0
+                    };
+                    self.pending_input |= input & 0xf00ff;
+                    let now = std::time::Instant::now();
+                    if self.next_frame.is_none_or(|next| now >= next) {
+                        match game.step(self.pending_input | (input & 0xf0ff00)) {
+                            Err(e) => failure = Some(format!("Game stopped: {e:#}")),
+                            Ok(_) => {
+                                if let Some(audio) = &self.audio_player {
+                                    audio.submit(game.audio_frame());
+                                }
                             }
                         }
+                        self.pending_input = 0;
+                        self.next_frame = Some(now + std::time::Duration::from_millis(16));
                     }
-                    self.pending_input = 0;
-                    self.next_frame = Some(now + std::time::Duration::from_millis(16));
-                }
-                if let Some(error) = self.audio_player.as_ref().and_then(|a| a.error()) {
-                    self.audio_error = format!("Sound stopped: {error}");
-                    self.audio_player = None;
-                }
-                if let Some(audio) = &self.audio_player {
-                    ui.colored_label(
-                        if audio.non_silent_frames() > 0 {
-                            egui::Color32::GREEN
-                        } else {
-                            egui::Color32::GRAY
-                        },
-                        "Sound on",
-                    );
-                } else if game.audio_allowed && self.audio_error.is_empty() {
-                    ui.label("Sound muted");
-                }
-                if !self.audio_error.is_empty() {
-                    ui.label(&self.audio_error);
-                }
-                if game.custom_renderer {
-                    ui.label(if game.doom_engine {"Arrows/WASD move and turn; Z fire; C use; X run; V map; Q/E strafe; Enter confirm; Tab menu. Q+E+Enter quicksave; saved games resume on launch."} else if game.builtin_engine {"Arrows/WASD move; Z sword; X item; C interact; V map; Enter start; Tab select; Q/E shoulders."} else {"Arrows or WASD to move."});
-                } else {
-                    ui.label(format!("Score: {} — Arrows or WASD to move.", game.score()));
-                }
-                if game.custom_renderer {
-                    let scale = (ui.available_width() / 640.0)
-                        .min(ui.available_height() / 480.0)
-                        .clamp(0.1, 2.0);
-                    let (rect, _) = ui.allocate_exact_size(
-                        egui::vec2(640.0 * scale, 480.0 * scale),
-                        egui::Sense::hover(),
+                    if let Some(error) = self.audio_player.as_ref().and_then(|a| a.error()) {
+                        self.audio_error = format!("Sound stopped: {error}");
+                        self.audio_player = None;
+                    }
+                    if game.custom_renderer {
+                        let scale = (ui.available_width() / 640.0)
+                            .min(ui.available_height() / 480.0)
+                            .max(0.0);
+                        let rect = egui::Rect::from_center_size(
+                            ui.max_rect().center(),
+                            egui::vec2(640.0 * scale, 480.0 * scale),
+                        );
+                        let painter = ui.painter_at(rect);
+                        let color = |rgba: u32| {
+                            egui::Color32::from_rgba_unmultiplied(
+                                (rgba >> 24) as u8,
+                                (rgba >> 16) as u8,
+                                (rgba >> 8) as u8,
+                                rgba as u8,
+                            )
+                        };
+                        painter.rect_filled(
+                            rect,
+                            0.0,
+                            color(game.frame().background.unwrap_or(0x10171dff)),
+                        );
+                        for command in &game.frame().commands {
+                            match *command {
+                                crate::drawing::Command::Image {
+                                    x,
+                                    y,
+                                    width,
+                                    height,
+                                    ref image,
+                                } => {
+                                    let texture =
+                                        self.sprite_textures.texture(ctx, image_count, image);
+                                    image_count += 1;
+                                    painter.image(
+                                        texture,
+                                        egui::Rect::from_min_size(
+                                            rect.min + egui::vec2(x * scale, y * scale),
+                                            egui::vec2(width * scale, height * scale),
+                                        ),
+                                        egui::Rect::from_min_max(
+                                            egui::Pos2::ZERO,
+                                            egui::pos2(1.0, 1.0),
+                                        ),
+                                        egui::Color32::WHITE,
+                                    );
+                                }
+                                crate::drawing::Command::ShaderImage { index, ref image } => {
+                                    if let Some(renderer) = &self.vulkan {
+                                        if let Some(callback) =
+                                            renderer.callback(rect, index, Some(image))
+                                        {
+                                            painter.add(callback);
+                                        }
+                                    }
+                                    if let Some(renderer) = &self.gpu {
+                                        let renderer = renderer.clone();
+                                        let image = image.clone();
+                                        painter.add(egui::PaintCallback {
+                                            rect,
+                                            callback: std::sync::Arc::new(
+                                                eframe::egui_glow::CallbackFn::new(move |_, _| {
+                                                    renderer.paint_image(index, Some(&image))
+                                                }),
+                                            ),
+                                        });
+                                    }
+                                }
+                                crate::drawing::Command::Shader { index } => {
+                                    if let Some(renderer) = &self.vulkan {
+                                        if let Some(callback) = renderer.callback(rect, index, None)
+                                        {
+                                            painter.add(callback);
+                                        }
+                                    }
+                                    if let Some(renderer) = &self.gpu {
+                                        let renderer = renderer.clone();
+                                        painter.add(egui::PaintCallback {
+                                            rect,
+                                            callback: std::sync::Arc::new(
+                                                eframe::egui_glow::CallbackFn::new(move |_, _| {
+                                                    renderer.paint(index)
+                                                }),
+                                            ),
+                                        });
+                                    }
+                                }
+                                crate::drawing::Command::Rect {
+                                    x,
+                                    y,
+                                    width,
+                                    height,
+                                    rgba,
+                                } => {
+                                    painter.rect_filled(
+                                        egui::Rect::from_min_size(
+                                            rect.min + egui::vec2(x * scale, y * scale),
+                                            egui::vec2(width * scale, height * scale),
+                                        ),
+                                        0.0,
+                                        color(rgba),
+                                    );
+                                }
+                                crate::drawing::Command::Circle { x, y, radius, rgba } => {
+                                    painter.circle_filled(
+                                        rect.min + egui::vec2(x * scale, y * scale),
+                                        radius * scale,
+                                        color(rgba),
+                                    );
+                                }
+                            }
+                        }
+                        return;
+                    }
+                    let size = ui.available_width().min(ui.available_height()).max(0.0);
+                    let rect = egui::Rect::from_center_size(
+                        ui.max_rect().center(),
+                        egui::vec2(size, size),
                     );
                     let painter = ui.painter_at(rect);
-                    let color = |rgba: u32| {
-                        egui::Color32::from_rgba_unmultiplied(
-                            (rgba >> 24) as u8,
-                            (rgba >> 16) as u8,
-                            (rgba >> 8) as u8,
-                            rgba as u8,
-                        )
-                    };
-                    painter.rect_filled(
-                        rect,
-                        0.0,
-                        color(game.frame().background.unwrap_or(0x10171dff)),
-                    );
-                    for command in &game.frame().commands {
-                        match *command {
-                            crate::drawing::Command::Image {
-                                x,
-                                y,
-                                width,
-                                height,
-                                ref image,
-                            } => {
-                                let texture = self.sprite_textures.texture(ctx, image_count, image);
-                                image_count += 1;
-                                painter.image(
-                                    texture,
-                                    egui::Rect::from_min_size(
-                                        rect.min + egui::vec2(x * scale, y * scale),
-                                        egui::vec2(width * scale, height * scale),
-                                    ),
-                                    egui::Rect::from_min_max(
-                                        egui::Pos2::ZERO,
-                                        egui::pos2(1.0, 1.0),
-                                    ),
-                                    egui::Color32::WHITE,
-                                );
-                            }
-                            crate::drawing::Command::ShaderImage { index, ref image } => {
-                                if let Some(renderer) = &self.vulkan {
-                                    if let Some(callback)=renderer.callback(rect,index,Some(image)) {painter.add(callback);}
-                                }
-                                if let Some(renderer) = &self.gpu {
-                                    let renderer = renderer.clone();
-                                    let image = image.clone();
-                                    painter.add(egui::PaintCallback {
-                                        rect,
-                                        callback: std::sync::Arc::new(
-                                            eframe::egui_glow::CallbackFn::new(move |_, _| {
-                                                renderer.paint_image(index, Some(&image))
-                                            }),
-                                        ),
-                                    });
-                                }
-                            }
-                            crate::drawing::Command::Shader { index } => {
-                                if let Some(renderer) = &self.vulkan {
-                                    if let Some(callback)=renderer.callback(rect,index,None) {painter.add(callback);}
-                                }
-                                if let Some(renderer) = &self.gpu {
-                                    let renderer = renderer.clone();
-                                    painter.add(egui::PaintCallback {
-                                        rect,
-                                        callback: std::sync::Arc::new(
-                                            eframe::egui_glow::CallbackFn::new(move |_, _| {
-                                                renderer.paint(index)
-                                            }),
-                                        ),
-                                    });
-                                }
-                            }
-                            crate::drawing::Command::Rect {
-                                x,
-                                y,
-                                width,
-                                height,
-                                rgba,
-                            } => {
-                                painter.rect_filled(
-                                    egui::Rect::from_min_size(
-                                        rect.min + egui::vec2(x * scale, y * scale),
-                                        egui::vec2(width * scale, height * scale),
-                                    ),
-                                    0.0,
-                                    color(rgba),
-                                );
-                            }
-                            crate::drawing::Command::Circle { x, y, radius, rgba } => {
-                                painter.circle_filled(
-                                    rect.min + egui::vec2(x * scale, y * scale),
-                                    radius * scale,
-                                    color(rgba),
-                                );
-                            }
-                        }
+                    let cell = size / 16.0;
+                    painter.rect_filled(rect, 0.0_f32, egui::Color32::from_rgb(16, 23, 29));
+                    for n in 0..=16 {
+                        let v = n as f32 * cell;
+                        painter.line_segment(
+                            [
+                                rect.min + egui::vec2(v, 0.0),
+                                rect.min + egui::vec2(v, size),
+                            ],
+                            egui::Stroke::new(1.0_f32, egui::Color32::from_gray(45)),
+                        );
+                        painter.line_segment(
+                            [
+                                rect.min + egui::vec2(0.0, v),
+                                rect.min + egui::vec2(size, v),
+                            ],
+                            egui::Stroke::new(1.0_f32, egui::Color32::from_gray(45)),
+                        );
                     }
-                    return;
-                }
-                let size = ui
-                    .available_width()
-                    .min(ui.available_height())
-                    .clamp(160.0, 640.0);
-                let (rect, _) =
-                    ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
-                let painter = ui.painter_at(rect);
-                let cell = size / 16.0;
-                painter.rect_filled(rect, 0.0_f32, egui::Color32::from_rgb(16, 23, 29));
-                for n in 0..=16 {
-                    let v = n as f32 * cell;
-                    painter.line_segment(
-                        [
-                            rect.min + egui::vec2(v, 0.0),
-                            rect.min + egui::vec2(v, size),
-                        ],
-                        egui::Stroke::new(1.0_f32, egui::Color32::from_gray(45)),
+                    let position = |(x, y): (u8, u8)| {
+                        rect.min
+                            + egui::vec2(
+                                (x.min(15) as f32 + 0.5) * cell,
+                                (y.min(15) as f32 + 0.5) * cell,
+                            )
+                    };
+                    painter.circle_filled(
+                        position(game.target()),
+                        cell * 0.28,
+                        egui::Color32::YELLOW,
                     );
-                    painter.line_segment(
-                        [
-                            rect.min + egui::vec2(0.0, v),
-                            rect.min + egui::vec2(size, v),
-                        ],
-                        egui::Stroke::new(1.0_f32, egui::Color32::from_gray(45)),
+                    painter.circle_filled(
+                        position(game.player()),
+                        cell * 0.35,
+                        egui::Color32::from_rgb(100, 220, 180),
                     );
-                }
-                let position = |(x, y): (u8, u8)| {
-                    rect.min
-                        + egui::vec2(
-                            (x.min(15) as f32 + 0.5) * cell,
-                            (y.min(15) as f32 + 0.5) * cell,
-                        )
-                };
-                painter.circle_filled(position(game.target()), cell * 0.28, egui::Color32::YELLOW);
-                painter.circle_filled(
-                    position(game.player()),
-                    cell * 0.35,
-                    egui::Color32::from_rgb(100, 220, 180),
-                );
-            });
+                });
             self.sprite_textures.finish(image_count);
             ctx.request_repaint_after(std::time::Duration::from_millis(16));
-            if close || failure.is_some() {
+            if failure.is_some() {
                 if let Some(game) = &mut self.player {
                     if let Err(e) = game.finish() {
                         self.status = format!("Unable to save play history: {e}");
@@ -792,18 +790,16 @@ impl eframe::App for App {
         }
         if self.game_window {
             egui::CentralPanel::default()
-                .frame(egui::Frame::central_panel(&ctx.style()).inner_margin(20))
-                .show(ctx, |ui| {
-                    ui.heading("Game player");
-                    ui.label(if self.result.is_some() {
-                        "Starting game…"
-                    } else {
-                        &self.status
-                    });
-                    if ui.button("Close").clicked() {
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                    }
-                });
+                .frame(egui::Frame::NONE.fill(egui::Color32::BLACK))
+                .show(ctx, |_| {});
+            if self.result.is_none() {
+                rfd::MessageDialog::new()
+                    .set_title("Unable to play game")
+                    .set_description(&self.status)
+                    .set_level(rfd::MessageLevel::Error)
+                    .show();
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
             return;
         }
         if self.brand_icon.is_none() {

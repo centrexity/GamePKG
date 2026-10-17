@@ -83,7 +83,7 @@ Remove all Cargo dependencies and reduce the lockfile to the root package. Repla
 
 ## Controller and touch input
 
-Games consume one `u32` input value per tick. The same buttons work with the keyboard, a controller, or the player's on-screen touch controls. Set `[permissions] input = true`; otherwise the runtime passes zero.
+Games consume one `u32` input value per tick. The same buttons work with the keyboard, a controller, or the player's touch regions. Set `[permissions] input = true`; otherwise the runtime passes zero.
 
 ```rust
 pub fn game_tick(input: u32, state: u64) -> u64 {
@@ -100,7 +100,7 @@ pub fn game_tick(input: u32, state: u64) -> u64 {
 
 `pressed` detects newly pressed buttons; `held` detects continuing presses. Constants are `LEFT`, `RIGHT`, `UP`, `DOWN`, `A`, `B`, `X`, `Y`, `L`, `R`, `START`, and `SELECT`. These are digital controls; this API does not expose raw touch coordinates, pressure, controller identities, or analog values to games.
 
-The desktop host uses pinned `gilrs 0.10.10` for Linux/Windows controller input and the existing `egui 0.31.1` input layer for touch. These are host dependencies, not allowed guest dependencies: games cannot open devices or windows. D-pad and the left stick map to directions with a deadzone; face buttons map by position (south=B, west=Y, east=A, north=X). Shoulder buttons, Start and Select map to their names. Multiple connected controllers contribute to the same input. Choose **Touch controls** in the player to show the buttons; touch events also reveal them automatically. Movement and action buttons can be held simultaneously. Losing window focus clears device input. Android controller device access and an Android GUI are not supplied by this desktop integration.
+The desktop host uses pinned `gilrs 0.10.10` for Linux/Windows controller input and the existing `egui 0.31.1` input layer for touch. These are host dependencies, not allowed guest dependencies: games cannot open devices or windows. D-pad and the left stick map to directions with a deadzone; face buttons map by position (south=B, west=Y, east=A, north=X). Shoulder buttons, Start and Select map to their names. Multiple connected controllers contribute to the same input. The game window contains only the game. Invisible touch regions occupy the bottom third of its client area, in twelve equal columns from left to right: Left, Right, Up, Down, B, Y, A, X, L, R, Start, Select. Movement and action buttons can be held simultaneously. Losing window focus clears device input. Android controller device access and an Android GUI are not supplied by this desktop integration.
 
 ## Source restrictions
 

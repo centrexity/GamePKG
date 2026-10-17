@@ -19,6 +19,21 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-player-window-') as temporary:
   library=subprocess.run(['xdotool','search','--onlyvisible','--name','^GamePKG$'],env=env,capture_output=True)
   assert library.returncode!=0,'Player opened library UI'
   time.sleep(1.5)
+  from PIL import Image
+  for width,height in [(960,720),(1200,500),(400,700)]:
+   subprocess.run(['xdotool','windowsize',window,str(width),str(height)],env=env,check=True)
+   time.sleep(.5)
+   capture=root/'player.png'
+   subprocess.run(['import','-window',window,str(capture)],env=env,check=True)
+   image=Image.open(capture).convert('RGB')
+   text=subprocess.run(['tesseract',str(capture),'stdout'],capture_output=True,text=True,check=True).stdout
+   for label in ['Close game','Restart','Score:','Sound on','Touch controls','Arrows']:
+    assert label not in text,(label,text)
+   # The square game board stays centered with black letterboxing.
+   w,h=image.size
+   assert all(channel<10 for channel in image.getpixel((2,2))),image.getpixel((2,2))
+   assert image.getpixel((w//2,h//2)) != (0,0,0)
+
   connection=xdisplay.Display(env['DISPLAY']);target=connection.create_resource_object('window',int(window))
   target.send_event(protocol.event.ClientMessage(window=target,client_type=connection.intern_atom('WM_PROTOCOLS'),data=(32,[connection.intern_atom('WM_DELETE_WINDOW'),0,0,0,0])),event_mask=0)
   connection.flush();assert app.wait(timeout=15)==0,app.stderr.read().decode();connection.close()
