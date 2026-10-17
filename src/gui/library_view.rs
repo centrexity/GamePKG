@@ -53,6 +53,21 @@ impl App {
                         .is_some_and(|s| s.memory_ceiling_mib >= 2048)))
     }
     pub(super) fn library_filters(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.label("Search");
+            let search = ui.add(
+                egui::TextEdit::singleline(&mut self.library_search)
+                    .hint_text("Title, ID, or description")
+                    .desired_width((ui.available_width() - 100.0).clamp(40.0, 420.0)),
+            );
+            if ui
+                .add_enabled(!self.library_search.is_empty(), egui::Button::new("Clear"))
+                .clicked()
+            {
+                self.library_search.clear();
+                search.request_focus();
+            }
+        });
         ui.horizontal_wrapped(|ui| {
             ui.label("Show:");
             for filter in [
@@ -71,9 +86,15 @@ impl App {
     pub(super) fn library_games(&self, ui: &mut egui::Ui) -> Option<String> {
         let mut selected = None;
         let wide = ui.available_width() >= 980.0;
+        let terms: Vec<_> = self
+            .library_search
+            .split_whitespace()
+            .map(str::to_lowercase)
+            .collect();
         let entries = self
             .installed
             .iter()
+            .filter(|m| matches_search(&terms, &m.id, m.display_title(), m.description.as_deref()))
             .filter(|m| {
                 self.library_filter.matches(
                     true,
@@ -103,6 +124,7 @@ impl App {
                 self.catalog
                     .iter()
                     .filter(|e| !self.installed.iter().any(|m| m.id == e.id))
+                    .filter(|e| matches_search(&terms, &e.id, &e.title, e.description.as_deref()))
                     .filter(|e| {
                         self.library_filter.matches(
                             false,
@@ -245,8 +267,16 @@ impl App {
             ui.add_space(4.0);
         }
         if count == 0 && (!self.installed.is_empty() || !self.catalog.is_empty()) {
-            ui.label("No games match this filter.");
+            ui.label("No games match your search and filters.");
         }
         selected
     }
+}
+
+fn matches_search(terms: &[String], id: &str, title: &str, description: Option<&str>) -> bool {
+    if terms.is_empty() {
+        return true;
+    }
+    let text = format!("{id}\n{title}\n{}", description.unwrap_or_default()).to_lowercase();
+    terms.iter().all(|term| text.contains(term))
 }

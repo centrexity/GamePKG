@@ -54,6 +54,7 @@ pub struct App {
     rom_identity: Option<String>,
     additional_rom_paths: Vec<String>,
     library_filter: library_view::Filter,
+    library_search: String,
     show_add: bool,
     show_settings: bool,
     app_release: Option<crate::app_updates::Release>,
