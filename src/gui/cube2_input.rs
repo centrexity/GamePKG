@@ -2,15 +2,16 @@
 use eframe::egui::{Event, Key, Modifiers, MouseWheelUnit, PointerButton, Vec2};
 
 /// Preserve the window's physical-pixel aspect ratio within the bridge budget.
-pub fn resolution(size: Vec2, pixels_per_point: f32) -> (u32, u32) {
+pub fn resolution(size: Vec2, pixels_per_point: f32, limit: Option<(u32, u32)>) -> (u32, u32) {
     let size = size * pixels_per_point;
     if !size.is_finite() || size.x <= 0.0 || size.y <= 0.0 {
         return (640, 480);
     }
-    let scale = (1280.0 / size.x).min(960.0 / size.y).min(1.0);
+    let (width, height) = limit.unwrap_or((10000, 10000));
+    let scale = (width as f32 / size.x).min(height as f32 / size.y).min(1.0);
     (
-        (size.x * scale).round().clamp(320.0, 1280.0) as u32,
-        (size.y * scale).round().clamp(200.0, 960.0) as u32,
+        (size.x * scale).round().clamp(320.0, 10000.0) as u32,
+        (size.y * scale).round().clamp(200.0, 10000.0) as u32,
     )
 }
 
@@ -236,11 +237,25 @@ mod tests {
     use super::*;
     #[test]
     fn resolution_uses_physical_pixels_and_preserves_widescreen_aspect() {
-        assert_eq!(resolution(Vec2::new(960.0, 720.0), 1.0), (960, 720));
-        assert_eq!(resolution(Vec2::new(1920.0, 1080.0), 1.0), (1280, 720));
-        assert_eq!(resolution(Vec2::new(960.0, 540.0), 2.0), (1280, 720));
-        assert_eq!(resolution(Vec2::new(480.0, 960.0), 1.0), (480, 960));
-        assert_eq!(resolution(Vec2::new(f32::NAN, 1.0), 1.0), (640, 480));
+        assert_eq!(resolution(Vec2::new(960.0, 720.0), 1.0, None), (960, 720));
+        assert_eq!(
+            resolution(Vec2::new(1920.0, 1080.0), 1.0, None),
+            (1920, 1080)
+        );
+        assert_eq!(resolution(Vec2::new(960.0, 540.0), 2.0, None), (1920, 1080));
+        assert_eq!(
+            resolution(Vec2::new(3840.0, 2160.0), 1.0, None),
+            (3840, 2160)
+        );
+        assert_eq!(
+            resolution(Vec2::new(1920.0, 1080.0), 1.0, Some((1280, 960))),
+            (1280, 720)
+        );
+        assert_eq!(
+            resolution(Vec2::new(640.0, 480.0), 1.0, Some((1920, 1080))),
+            (640, 480)
+        );
+        assert_eq!(resolution(Vec2::new(f32::NAN, 1.0), 1.0, None), (640, 480));
     }
     #[test]
     fn capture_follows_focus_and_explicit_release_without_stealing_escape() {

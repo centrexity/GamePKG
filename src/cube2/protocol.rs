@@ -2,8 +2,9 @@
 use anyhow::{ensure, Result};
 use std::io::Read;
 
-pub const MAX_WIDTH: u32 = 1280;
-pub const MAX_HEIGHT: u32 = 960;
+// Upstream SCR_MAXW/SCR_MAXH: protocol validation, not a render-quality cap.
+pub const MAX_WIDTH: u32 = 10000;
+pub const MAX_HEIGHT: u32 = 10000;
 pub const MAX_AUDIO_SAMPLES: u32 = 4800;
 pub const MAX_BUTTONS: u32 = (1 << 18) - 1;
 pub const MAX_MOUSE_DELTA: i32 = 2048;
@@ -401,8 +402,8 @@ mod tests {
             (0, 480),
             (319, 480),
             (640, 199),
-            (1281, 720),
-            (1280, 961),
+            (10001, 720),
+            (1280, 10001),
             (u32::MAX, 480),
         ] {
             assert!(super::resize_event(w, h).is_err());
@@ -613,8 +614,8 @@ mod tests {
         for (w, h, len) in [
             (0, 1, 0),
             (1, 0, 0),
-            (1281, 1, 5124),
-            (1, 961, 3844),
+            (10001, 1, 40004),
+            (1, 10001, 40004),
             (u32::MAX, u32::MAX, 4),
             (1, 1, u32::MAX),
             (2, 2, 4),

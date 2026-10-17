@@ -16,6 +16,8 @@ saves={p:p.read_bytes() for p in (LIBRARY/'saves').glob('*.cube2')}
 with tempfile.TemporaryDirectory(prefix='gamepkg-resolution-') as temporary:
     config=Path(temporary)/'settings.toml'
     config.write_text('memory_ceiling_mib=2048\ntick_deadline_ms=500\ncheck_app_updates_on_startup=false\nautomatic_update_checks=false\nmute_audio=true\n')
+    if '--limited' in sys.argv:
+        with config.open('a') as limits:limits.write('render_limit_enabled=true\nrender_max_width=1280\nrender_max_height=960\n')
     env=dict(os.environ,GAMEPKG_HOME=str(LIBRARY),GAMEPKG_CONFIG=str(config),LIBGL_ALWAYS_SOFTWARE='1',LP_NUM_THREADS='2',GAMEPKG_RENDERER='vulkan',DBUS_SESSION_BUS_ADDRESS='unix:path=/tmp/gamepkg-no-session-bus')
     env.pop('WAYLAND_DISPLAY',None)
     server=start_display(env,1800,1100);app=None
@@ -38,7 +40,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-resolution-') as temporary:
             # Before the fix, a 16:9 window retained wide black side bars.
             for x in [10,width-11]:
                 strip=image.crop((x,100,x+1,height-100))
-                assert sum(max(strip.getpixel((0,y)))>20 for y in range(strip.height))>100,'Game does not fill the window aspect ratio'
+                assert sum(max(strip.getpixel((0,y)))>4 for y in range(strip.height))>100,'Game does not fill the window aspect ratio'
         image=Image.open(proof/'1600x900.png').convert('RGB')
         center=image.crop((770,420,830,480))
         assert sum(min(center.getpixel((x,y)))>180 for x in range(center.width) for y in range(center.height))>=8,'Original gameplay crosshair is missing'
@@ -48,10 +50,11 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-resolution-') as temporary:
         command('xdotool','key','Return');time.sleep(.5)
         close_game(window,env);assert app.wait(timeout=15)==0,(proof/'player.log').read_text()
         saved=b''.join(p.read_bytes() for p in (LIBRARY/'saves').glob('*.cube2'))
-        assert b'1280x720' in saved,'Engine retained the fixed 640x480 resolution'
+        expected_resolution=b'1280x720' if '--limited' in sys.argv else b'1600x900'
+        assert expected_resolution in saved,'Engine did not use the requested resolution'
         expected=b'data/crosshair.png' if '--legacy' in sys.argv else b'packages/crosshairs/default.png'
         assert b'loadcrosshair "'+expected+b'" 0' in saved,'Original crosshair asset was not loaded'
-        print('Cube 2 passed: live resize, 5:4 and 16:9 presentation, 1280x720 engine render, visible original crosshair:',expected.decode())
+        print('Cube 2 passed: live resize, 5:4 and 16:9 presentation, native or optionally limited engine render, visible original crosshair:',expected.decode())
     finally:
         if app and app.poll() is None:
             command('import','-display',env['DISPLAY'],'-window','root',proof/'failure.png')

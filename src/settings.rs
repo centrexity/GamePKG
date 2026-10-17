@@ -17,6 +17,9 @@ pub struct Settings {
     #[serde(default, rename = "fuel_ceiling", skip_serializing)]
     pub legacy_execution_ceiling: Option<u64>,
     pub tick_deadline_ms: u64,
+    pub render_limit_enabled: bool,
+    pub render_max_width: u32,
+    pub render_max_height: u32,
     pub optimize_builds: bool,
     pub dark_mode: bool,
     pub ui_scale_percent: u16,
@@ -43,6 +46,9 @@ impl Default for Settings {
             memory_ceiling_mib: 512,
             legacy_execution_ceiling: None,
             tick_deadline_ms: 100,
+            render_limit_enabled: false,
+            render_max_width: 1920,
+            render_max_height: 1080,
             optimize_builds: true,
             dark_mode: true,
             ui_scale_percent: 100,
@@ -131,6 +137,13 @@ impl Settings {
         }
         if !(1..=168).contains(&self.update_interval_hours) {
             bail!("update interval must be 1–168 hours");
+        }
+        if !(320..=10000).contains(&self.render_max_width)
+            || !(200..=10000).contains(&self.render_max_height)
+        {
+            bail!(
+                "render resolution limit must be 320–10000 pixels wide and 200–10000 pixels high"
+            );
         }
         validate_proxy(&self.tor_proxy)?;
         if !(1..=4096).contains(&self.memory_ceiling_mib) {

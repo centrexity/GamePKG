@@ -242,6 +242,11 @@ On each installed game’s page, unmet launch requirements appear directly besid
 
 ## Desktop settings
 
+The **Limit game render resolution** option in Settings is off by default. Cube 2
+renders at the game window's physical resolution unless you enable the option
+and choose maximum width and height. An enabled limit preserves aspect ratio;
+changes apply the next time the game launches.
+
 Open **Settings** from the desktop library navigation. Save applies validated preferences; Cancel discards form changes, and Reset restores defaults in the form until you save.
 
 **GamePKG updates** in Settings checks the latest stable release from the official Centrexity/GamePKG repository for your operating system and CPU. Choose **Download and install GamePKG update**, select a writable folder, then **Restart into updated GamePKG**. Downloads are checked against the release's SHA-256 checksum, and executable hashes and build identity are checked before installation. Archive links, unsafe paths and excessive expanded sizes are rejected. These checks provide download integrity through the official HTTPS release channel; they are not an independent publisher signature.

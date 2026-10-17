@@ -2,10 +2,11 @@
 from pathlib import Path
 import os, subprocess, tempfile, time, tomllib
 from gui_test_support import start_display, click_text
+os.environ['OMP_THREAD_LIMIT']='1'
 project=Path(__file__).resolve().parents[1]
 with tempfile.TemporaryDirectory(prefix='gamepkg-settings-gui-') as directory:
     root=Path(directory);config=root/'settings.toml'
-    config.write_text('automatic_update_checks = false\napproved_crates = ["gamepkg-byteorder"]\n')
+    config.write_text('automatic_update_checks = false\ncheck_app_updates_on_startup = false\napproved_crates = ["gamepkg-byteorder"]\n')
     env=dict(os.environ,GAMEPKG_HOME=str(root/'library'),GAMEPKG_CONFIG=str(config),LIBGL_ALWAYS_SOFTWARE='1');env.pop('WAYLAND_DISPLAY',None)
     display=start_display(env,1200,1200)
     app=subprocess.Popen([str(Path(os.environ.get('GAMEPKG_TEST_BINARY_DIR', project/'target/release'))/'gamepkg-gui')],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
@@ -19,22 +20,34 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-settings-gui-') as directory:
         window=found.stdout.splitlines()[0]
         subprocess.run(['xdotool','windowsize',window,'1100','1100'],env=env,check=True);time.sleep(.3)
         def click(label):
+            if label in ['Optimize new builds','Limit game render resolution']:
+                direction='5' if label=='Optimize new builds' else '4'
+                subprocess.run(['xdotool','mousemove','--window',window,'400','600','click','--repeat','40','--delay','10',direction],env=env,check=True)
+                time.sleep(.3)
             click_text(window, env, label, root, max_y=60 if label == 'Settings' else None)
             time.sleep(.3)
         def open_and_toggle():
             click('Settings')
             # This preference can be below the fold. Allow the shared control
             # finder to scroll instead of repeatedly reopening the page.
-            click_text(window, env, 'Optimize new builds', root)
+            click('Optimize new builds')
             time.sleep(.3)
         open_and_toggle(); click('Save settings')
         saved=tomllib.loads(config.read_text())
         assert saved['optimize_builds'] is False, 'Save did not apply optimization preference'
         assert 'approved_crates' not in saved, 'Save retained obsolete crate approvals'
+        assert saved['render_limit_enabled'] is False, 'Render resolution limit was enabled by default'
         click('Optimize new builds'); click('Cancel edits')
         assert tomllib.loads(config.read_text())['optimize_builds'] is False, 'Cancel persisted an unsaved edit'
         open_and_toggle(); click('Save settings')
         assert tomllib.loads(config.read_text())['optimize_builds'] is True, 'Save did not restore optimization'
+        click('Limit game render resolution'); click('Cancel edits')
+        assert tomllib.loads(config.read_text())['render_limit_enabled'] is False, 'Cancel persisted the render limit'
+        click('Settings')
+        click('Limit game render resolution'); click('Save settings')
+        assert tomllib.loads(config.read_text())['render_limit_enabled'] is True, 'Render limit did not save'
+        click('Limit game render resolution'); click('Save settings')
+        assert tomllib.loads(config.read_text())['render_limit_enabled'] is False, 'Render limit did not turn off'
         output=subprocess.run([str(Path(os.environ.get('GAMEPKG_TEST_BINARY_DIR', project/'target/release'))/'gamepkg'),'--help'],env=env,check=True,capture_output=True,text=True).stdout
         assert 'allowlist' not in output, output
         subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(project/'target/settings-approval-tested.png')],env=env,check=True)

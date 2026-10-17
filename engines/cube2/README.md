@@ -33,7 +33,7 @@ The local build needs a C++ compiler, Make, SDL2, SDL2_image, SDL2_mixer, zlib a
 
 The development bridge runs SDL with its offscreen video driver and Mesa software rendering. Cube 2 renders internally using OpenGL; only bounded RGBA frames cross into the host. This avoids connecting the engine to the user's display server. The production player can present these frames through its existing Vulkan renderer without giving the engine a desktop window or GPU handle.
 
-One input packet authorizes one engine tick and frame. Input is exactly 16 bytes: `GPK1`, a little-endian held-key mask, then little-endian signed relative mouse X/Y deltas. Bits 0–15 map to W/S/A/D, Space, Shift, Enter, Escape, Tab, E, R and weapons 1–5. Bits 16 and 17 are primary and secondary mouse buttons. Mouse deltas are bounded to ±2048; unknown button bits and malformed packet magic stop the bridge. EOF terminates the engine. Output is `GPF2`, little-endian width, height, RGBA byte length and audio sample count, followed by tightly packed RGBA pixels in OpenGL's bottom-up row order and signed 16-bit little-endian mono PCM at 48 kHz. Audio is limited to 4,800 samples (100 ms) per frame; an SDL dummy mixer feeds a fixed-size ring and cannot open a host audio device. Dimensions are limited to 1280×960. Engine diagnostics go to stderr, never into the frame channel.
+One input packet authorizes one engine tick and frame. Input is exactly 16 bytes: `GPK1`, a little-endian held-key mask, then little-endian signed relative mouse X/Y deltas. Bits 0–15 map to W/S/A/D, Space, Shift, Enter, Escape, Tab, E, R and weapons 1–5. Bits 16 and 17 are primary and secondary mouse buttons. Mouse deltas are bounded to ±2048; unknown button bits and malformed packet magic stop the bridge. EOF terminates the engine. Output is `GPF2`, little-endian width, height, RGBA byte length and audio sample count, followed by tightly packed RGBA pixels in OpenGL's bottom-up row order and signed 16-bit little-endian mono PCM at 48 kHz. Audio is limited to 4,800 samples (100 ms) per frame; an SDL dummy mixer feeds a fixed-size ring and cannot open a host audio device. Frame dimensions are validated against the original engine's 10000-pixel coordinate range; actual allocation is constrained by the graphics driver and session memory/time limits. Engine diagnostics go to stderr, never into the frame channel.
 
 ## Supported integration
 
@@ -206,12 +206,19 @@ engine and remembered original data; no game data is included with the test.
 
 ## Resolution and original crosshairs
 
-The desktop host requests the game window's physical pixel size, bounded to
-1280×960 while preserving aspect ratio. The engine renders that size instead of
-stretching a fixed 640×480 image. Larger windows scale the bounded frame; this
-software rendering path does not render at unlimited desktop resolutions. The
-private SDL offscreen surface is allocated once at the maximum size, and the
-engine uses a bounded viewport inside it, avoiding stale EGL buffers on resize.
+The desktop host requests the game window's physical pixel size. **Limit game
+render resolution** in Settings is off by default, so a 1920×1080 window renders
+at 1920×1080 rather than being reduced to 1280×720. Enable the setting and choose
+maximum width/height to reduce rendering work while preserving aspect ratio.
+Existing settings files also default to no limit. Changes apply next launch.
+
+The private offscreen SDL window only supplies the graphics context. The engine
+renders into a dynamically allocated framebuffer with color and depth/stencil
+attachments. Its default framebuffer bindings are redirected to that target,
+so resizing does not depend on SDL/EGL window-surface resizing. Allocation is
+checked against the driver's actual renderbuffer capability. The original
+engine's coordinate range and session memory/time limits still apply; failure
+to allocate reports an error instead of silently reducing the chosen resolution.
 Resize requests are validated on both sides and coalesced during window drags.
 
 Modern crosshair files remain preferred. If unavailable, the engine uses the
@@ -222,5 +229,5 @@ from the selected original installation; none are copied into the package.
 `python3 tests/cube2_resolution_gui.py` checks actual window resizing, widescreen
 presentation, the engine's saved resolution and visible crosshair pixels. Set
 `GAMEPKG_CUBE2_TEST_DATA` to an older original installation and add `--legacy`
-to test the old crosshair filenames in place. The test uses and restores only
+to test the old crosshair filenames in place. Add `--limited` to verify the optional 1280×960 limit; without it, the test verifies native 1600×900 rendering. The test uses and restores only
 its private maintainer fixture's selections and saves.

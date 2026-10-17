@@ -23,6 +23,58 @@ static uint32_t gamepkg_previous = 0;
 static int gamepkg_width = 640, gamepkg_height = 480;
 static bool gamepkg_keys[232] = {};
 static bool gamepkg_mouse[6] = {};
+// Keep rendering independent of SDL's fixed-size offscreen/EGL window surface.
+// The original engine's default framebuffer is a host-owned resizable target.
+static GLuint gamepkg_framebuffer = 0, gamepkg_colorbuffer = 0, gamepkg_depthbuffer = 0;
+static int gamepkg_surface_width = 0, gamepkg_surface_height = 0;
+static PFNGLBINDFRAMEBUFFERPROC gamepkg_real_bind_framebuffer = NULL;
+static void APIENTRY gamepkg_bind_framebuffer(GLenum target, GLuint buffer)
+{
+    gamepkg_real_bind_framebuffer(target, buffer ? buffer : gamepkg_framebuffer);
+}
+void *gamepkg_glproc(const char *name)
+{
+    void *proc = SDL_GL_GetProcAddress(name);
+    if(!strcmp(name, "glBindFramebuffer") || !strcmp(name, "glBindFramebufferEXT"))
+    {
+        gamepkg_real_bind_framebuffer = (PFNGLBINDFRAMEBUFFERPROC)proc;
+        gamepkg_framebuffer = gamepkg_colorbuffer = gamepkg_depthbuffer = 0;
+        gamepkg_surface_width = gamepkg_surface_height = 0;
+        return proc ? (void *)gamepkg_bind_framebuffer : NULL;
+    }
+    return proc;
+}
+static void gamepkg_resize_surface()
+{
+    if(!gamepkg_real_bind_framebuffer || !glGenFramebuffers_ || !glRenderbufferStorage_) exit(2);
+    if(gamepkg_surface_width != gamepkg_width || gamepkg_surface_height != gamepkg_height)
+    {
+        GLint maximum=0; glGetIntegerv(GL_MAX_RENDERBUFFER_SIZE, &maximum);
+        if(gamepkg_width>maximum || gamepkg_height>maximum)
+        { fprintf(stderr,"Requested game resolution exceeds the graphics driver's renderbuffer size. Enable a render resolution limit in Settings.\n"); exit(2); }
+        if(!gamepkg_framebuffer)
+        {
+            glGenFramebuffers_(1,&gamepkg_framebuffer);
+            glGenRenderbuffers_(1,&gamepkg_colorbuffer);
+            glGenRenderbuffers_(1,&gamepkg_depthbuffer);
+        }
+        while(glGetError()!=GL_NO_ERROR) {}
+        gamepkg_real_bind_framebuffer(GL_FRAMEBUFFER,gamepkg_framebuffer);
+        glBindRenderbuffer_(GL_RENDERBUFFER,gamepkg_colorbuffer);
+        glRenderbufferStorage_(GL_RENDERBUFFER,GL_RGBA8,gamepkg_width,gamepkg_height);
+        glFramebufferRenderbuffer_(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_RENDERBUFFER,gamepkg_colorbuffer);
+        glBindRenderbuffer_(GL_RENDERBUFFER,gamepkg_depthbuffer);
+        glRenderbufferStorage_(GL_RENDERBUFFER,GL_DEPTH24_STENCIL8,gamepkg_width,gamepkg_height);
+        glFramebufferRenderbuffer_(GL_FRAMEBUFFER,GL_DEPTH_ATTACHMENT,GL_RENDERBUFFER,gamepkg_depthbuffer);
+        glFramebufferRenderbuffer_(GL_FRAMEBUFFER,GL_STENCIL_ATTACHMENT,GL_RENDERBUFFER,gamepkg_depthbuffer);
+        glBindRenderbuffer_(GL_RENDERBUFFER,0);
+        if(glCheckFramebufferStatus_(GL_FRAMEBUFFER)!=GL_FRAMEBUFFER_COMPLETE || glGetError()!=GL_NO_ERROR)
+        { fprintf(stderr,"Unable to allocate the requested game render resolution. Enable a render resolution limit in Settings.\n"); exit(2); }
+        glDrawBuffer(GL_COLOR_ATTACHMENT0); glReadBuffer(GL_COLOR_ATTACHMENT0);
+        gamepkg_surface_width=gamepkg_width; gamepkg_surface_height=gamepkg_height;
+    }
+    gamepkg_real_bind_framebuffer(GL_FRAMEBUFFER,gamepkg_framebuffer);
+}
 static bool gamepkg_transfer(int fd, void *data, size_t length, bool output)
 {
     unsigned char *p = static_cast<unsigned char *>(data);
@@ -109,7 +161,7 @@ static void gamepkg_input()
         {
             if(++events > 64) exit(2);
             uint32_t width=gamepkg_le32(packet+4), height=gamepkg_le32(packet+8);
-            if(width<320 || width>1280 || height<200 || height>960 || gamepkg_le32(packet+12)) exit(2);
+            if(width<320 || width>10000 || height<200 || height>10000 || gamepkg_le32(packet+12)) exit(2);
             gamepkg_width=int(width); gamepkg_height=int(height); continue;
         }
         if(!memcmp(packet, "GPC1", 4))
@@ -235,8 +287,7 @@ static void gamepkg_input()
         event.motion.xrel = mx; event.motion.yrel = my;
         SDL_PushEvent(&event);
     }
-    // The offscreen SDL/EGL surface is allocated once at the maximum bound.
-    // Resizing that native surface is unreliable with the offscreen driver.
+    gamepkg_resize_surface();
     extern int scr_w, scr_h;
     screenw = scr_w = gamepkg_width; screenh = scr_h = gamepkg_height;
     gl_resize();
@@ -275,7 +326,7 @@ static void gamepkg_present()
 {
     if(!gamepkg_running) return;
     int width = screenw, height = screenh;
-    if(width < 1 || width > 1280 || height < 1 || height > 960) exit(2);
+    if(width < 1 || width > 10000 || height < 1 || height > 10000) exit(2);
     vector<unsigned char> pixels;
     const size_t length = size_t(width)*size_t(height)*4;
     pixels.reserve(length); pixels.advance(length);

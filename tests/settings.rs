@@ -203,3 +203,21 @@ fn legacy_crate_approvals_are_ignored_and_removed_on_save() {
         .unwrap()
         .contains("approved_crates"));
 }
+
+#[test]
+fn render_resolution_limit_is_opt_in_and_persists() {
+    let default: gamepkg::settings::Settings = toml::from_str("tick_deadline_ms=500").unwrap();
+    assert!(!default.render_limit_enabled);
+    let mut settings = default;
+    settings.render_limit_enabled = true;
+    settings.render_max_width = 1280;
+    settings.render_max_height = 720;
+    settings.validate().unwrap();
+    let saved = toml::to_string(&settings).unwrap();
+    assert_eq!(
+        toml::from_str::<gamepkg::settings::Settings>(&saved).unwrap(),
+        settings
+    );
+    settings.render_max_width = 0;
+    assert!(settings.validate().is_err());
+}

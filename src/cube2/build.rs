@@ -114,6 +114,11 @@ pub fn compile_with_options(optimize: bool) -> Result<Vec<u8>> {
     patch_once(&mut text,
         "        crosshairs[i] = textureload(name, 3, true);\n    }\n}",
         "        crosshairs[i] = textureload(name, 3, true);\n        // Older original data uses these names; prefer the modern assets above.\n        if(crosshairs[i] == notexture) crosshairs[i] = textureload(i == 2 ? \"data/hit.png\" : i == 1 ? \"data/teammate.png\" : \"data/crosshair.png\", 3, true);\n    }\n}")?;
+    patch_once(
+        &mut text,
+        "    return SDL_GL_GetProcAddress(name);",
+        "    extern void *gamepkg_glproc(const char *name); return gamepkg_glproc(name);",
+    )?;
     fs::write(render, text)?;
     let tools = stage.path().join("shared/tools.h");
     let mut text = fs::read_to_string(&tools)?;

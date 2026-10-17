@@ -752,8 +752,14 @@ impl eframe::App for App {
                         0
                     };
                     if game.is_cube2() {
-                        let (width, height) =
-                            cube2_input::resolution(ui.available_size(), ctx.pixels_per_point());
+                        let (width, height) = cube2_input::resolution(
+                            ui.available_size(),
+                            ctx.pixels_per_point(),
+                            self.applied_settings
+                                .as_ref()
+                                .filter(|s| s.render_limit_enabled)
+                                .map(|s| (s.render_max_width, s.render_max_height)),
+                        );
                         game.cube2_resize(width, height);
                         let (buttons, dx, dy, focused) = ctx.input(|i| {
                             let mut buttons = 0u32;
@@ -1215,6 +1221,14 @@ impl eframe::App for App {
                     if self.focus_memory_settings { memory_control.scroll_to_me(Some(egui::Align::Center));self.focus_memory_settings=false; }
                     let tick_control = ui.horizontal(|ui| { ui.label("Tick deadline (ms)");ui.add(egui::Slider::new(&mut self.settings_draft.tick_deadline_ms,10..=1000).step_by(10.0)) }).inner;
                     if self.focus_tick_settings { tick_control.scroll_to_me(Some(egui::Align::Center));self.focus_tick_settings=false; }
+                    ui.checkbox(&mut self.settings_draft.render_limit_enabled,"Limit game render resolution");
+                    ui.add_enabled_ui(self.settings_draft.render_limit_enabled,|ui| {
+                        ui.horizontal(|ui| {
+                            ui.label("Maximum width");ui.add(egui::DragValue::new(&mut self.settings_draft.render_max_width).range(320..=10000));
+                            ui.label("Maximum height");ui.add(egui::DragValue::new(&mut self.settings_draft.render_max_height).range(200..=10000));
+                        });
+                    });
+                    ui.label("Off uses the game window's native resolution. An enabled limit preserves the window's aspect ratio. Changes apply next launch.");
                     ui.label("Memory uses the lower of your ceiling and the signed game limit. These settings cannot raise a game's hard limit. Changes apply the next time you launch a game.");
                     ui.separator();ui.heading("Builds and appearance");
                     ui.add(egui::Slider::new(&mut self.settings_draft.ui_scale_percent,80..=160).step_by(10.0).text("Interface size (%)"));
