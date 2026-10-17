@@ -1,5 +1,7 @@
 # Install the Linux development preview
 
+After installation, open **Settings → GamePKG updates** to check for a newer stable release, download it, verify it and install it into a folder you choose. **Restart into updated GamePKG** launches the new copy after you close running games. The old portable folder is kept for rollback; update your shortcuts to the new copy. Your library, ROM selections, saves and settings stay in their existing locations. The app updater requires curl, but no Python or administrator access.
+
 This archive contains the GamePKG command-line program and desktop library. It does not include a compiler or Tor. Host binaries are provided for Linux x86-64; game packages still ship source and compile locally in an isolated process.
 
 These builds target Ubuntu 24.04 or a compatible system with glibc 2.39 or newer. The desktop requires a working X11 or Wayland display, Vulkan and ALSA. OpenGL is available explicitly with `--renderer opengl`. The exact builder libc version and executable hashes are recorded in BUILD.json. Dependency license expressions and original notices are included in DEPENDENCIES.json and third-party-licenses/. Original resolved dependency source archives are preserved as directories in third-party-sources/, including notices embedded in source and bundled fonts.

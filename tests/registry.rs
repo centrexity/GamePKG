@@ -329,7 +329,11 @@ fn legacy_archive(path: &Path, source: &[u8], seed: &[u8; 32], resign: bool) {
         let mut archive = zip::ZipWriter::new(fs::File::create(path).unwrap());
         for (name, bytes) in entries {
             archive
-                .start_file(name, zip::write::SimpleFileOptions::default())
+                .start_file(
+                    name,
+                    zip::write::SimpleFileOptions::default()
+                        .compression_method(zip::CompressionMethod::Stored),
+                )
                 .unwrap();
             archive.write_all(bytes).unwrap();
         }

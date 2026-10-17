@@ -181,7 +181,7 @@ fn github_release_asset(
     Ok(url.to_string())
 }
 
-fn download_direct(value: &str, limit: u64) -> Result<tempfile::NamedTempFile> {
+pub(crate) fn download_direct(value: &str, limit: u64) -> Result<tempfile::NamedTempFile> {
     let mut current = parsed_url(value)?;
     let mut tor_only = current.host_str().is_some_and(|h| h.ends_with(".onion"));
     let file = tempfile::NamedTempFile::new()?;

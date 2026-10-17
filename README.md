@@ -242,6 +242,10 @@ Recommended memory is optional and defaults to the hard limit. When supplied, it
 
 Open **Settings** from the desktop library navigation. Save applies validated preferences; Cancel discards form changes, and Reset restores defaults in the form until you save.
 
+**GamePKG updates** in Settings checks the latest stable release from the official Centrexity/GamePKG repository for your operating system and CPU. Choose **Download and install GamePKG update**, select a writable folder, then **Restart into updated GamePKG**. Downloads are checked against the release's SHA-256 checksum, and executable hashes and build identity are checked before installation. Archive links, unsafe paths and excessive expanded sizes are rejected. These checks provide download integrity through the official HTTPS release channel; they are not an independent publisher signature.
+
+The updater installs a new portable version folder and keeps the current copy for rollback. Update your shortcuts to the new copy. Games, ROM selections, saves and settings remain in their existing locations. Close running games before restarting. No administrator access, Python or WSL is needed to update the app. A missing release for your platform, failed download or failed verification leaves the current installation intact. App update checks are manual and separate from periodic game update checks.
+
 - Library folder: choose an absolute path or leave empty for the default. Switching libraries does not move existing packages.
 - Tor proxy: local loopback IP and SOCKS port; Tor remains a separately running service.
 - Game ceilings: memory (1–4096 MiB, default 512 MiB), tick deadline (10–1000 ms, default 100 ms). Memory uses the lower of the saved ceiling and the signed game limit. New sessions use the settings; current games are unaffected.

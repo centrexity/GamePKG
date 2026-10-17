@@ -1,5 +1,7 @@
 # Windows host development preview
 
+Open **Settings → GamePKG updates** to check for a newer stable Windows release, download and verify it, and install it into a folder you choose. **Restart into updated GamePKG** launches the new copy after running games close. The updater keeps the previous portable folder for rollback and preserves your library, ROM selections, saves and settings. Update your shortcuts to the new copy. App updates use Windows curl and do not require Python, WSL or administrator access.
+
 This archive contains `bin/gamepkg.exe` and `bin/gamepkg-gui.exe`, example source, original dependency sources, license notices and SHA-256 metadata. Extract it into a folder you control. Verify the ZIP against its `.sha256` file; executable hashes are in `BUILD.json`.
 
 Run `bin\gamepkg.exe --help` in PowerShell, or launch `bin\gamepkg-gui.exe` for the desktop library. Inspection, creator approval and installed-library metadata use the same verified package format as Linux. The host requires a working desktop graphics driver.

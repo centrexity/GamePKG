@@ -1,5 +1,6 @@
 use eframe::egui;
 mod add_page;
+mod app_updates;
 mod artwork;
 mod cube2_input;
 mod drops;
@@ -30,6 +31,8 @@ enum Work {
     Update(crate::manifest::Manifest, tempfile::NamedTempFile),
     RomPicked(rom_picker::Selection),
     Message(String),
+    AppRelease(Option<crate::app_updates::Release>),
+    AppInstalled(PathBuf),
 }
 #[derive(Default)]
 pub struct App {
@@ -53,6 +56,8 @@ pub struct App {
     library_filter: library_view::Filter,
     show_add: bool,
     show_settings: bool,
+    app_release: Option<crate::app_updates::Release>,
+    app_installed: Option<PathBuf>,
     show_support: bool,
     support_copied: Option<String>,
     brand_icon: Option<egui::TextureHandle>,
@@ -406,6 +411,21 @@ impl eframe::App for App {
                 Ok(result) => {
                     self.result = None;
                     match result {
+                        Ok(Work::AppRelease(release)) => {
+                            self.status = if let Some(r) = &release {
+                                format!("GamePKG {} is available.", r.version)
+                            } else {
+                                "GamePKG is up to date.".into()
+                            };
+                            self.app_release = release;
+                        }
+                        Ok(Work::AppInstalled(path)) => {
+                            self.status = format!(
+                                "Update installed at {}. Ready to restart.",
+                                path.parent().unwrap_or(&path).display()
+                            );
+                            self.app_installed = Some(path);
+                        }
                         Ok(Work::Launched(id, child, network)) => {
                             if let Some((scope, selection)) = network {
                                 self.network_drafts.insert(scope, selection.into());
@@ -1131,6 +1151,7 @@ impl eframe::App for App {
                 ui.heading("Settings");
                 ui.label("Choose how GamePKG stores, builds, and runs your games.");
                 egui::ScrollArea::vertical().max_height((ui.available_height() - 110.0).max(100.0)).show(ui,|ui| {
+                    self.app_update_controls(ui, ctx);
                     ui.heading("Library");
                     ui.label("Library folder (absolute path; leave empty for the default)");
                     ui.text_edit_singleline(&mut self.settings_draft.library_directory);

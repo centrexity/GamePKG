@@ -85,6 +85,7 @@ pub mod gpu_vulkan;
 
 mod network;
 
+pub mod app_updates;
 #[doc(hidden)]
 pub mod cube2;
 pub mod game_data;
