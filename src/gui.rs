@@ -78,6 +78,9 @@ pub struct App {
     user_files: user_files::Picker,
     game_window: bool,
     game_window_closing: bool,
+    window_preferences: Option<crate::window_preferences::Session>,
+    window_preferences_active: bool,
+    pending_window_maximize: bool,
     cube_mouse_capture: cube2_input::MouseCapture,
     confine_mouse: bool,
     cube_pointer: cube2_input::Pointer,
@@ -113,6 +116,21 @@ pub struct App {
     preview: Option<(Vec<Vec<u8>>, std::time::Instant, egui::TextureHandle)>,
 }
 impl App {
+    pub fn set_window_preferences(&mut self, session: Option<crate::window_preferences::Session>) {
+        self.pending_window_maximize = session
+            .as_ref()
+            .is_some_and(|session| session.preferences.maximized);
+        self.window_preferences = session;
+    }
+    fn persist_window_preferences(&mut self) {
+        if self.window_preferences_active {
+            if let Some(session) = &mut self.window_preferences {
+                if let Err(error) = session.persist() {
+                    eprintln!("Unable to save game window settings: {error:#}");
+                }
+            }
+        }
+    }
     pub fn set_vulkan(&mut self, state: Option<eframe::egui_wgpu::RenderState>) {
         self.vulkan_state = state;
     }
@@ -403,8 +421,45 @@ impl eframe::App for App {
         if let Some(game) = self.player.as_mut() {
             let _ = game.finish();
         }
+        self.persist_window_preferences();
     }
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
+        // Some window managers ignore maximization during window creation.
+        // Restore once after mapping; subsequent window controls belong to the user.
+        let restoring_maximize = self.pending_window_maximize
+            && ctx.input(|input| {
+                input.focused
+                    && input.viewport().inner_rect.is_some()
+                    && input.viewport().fullscreen == Some(false)
+            });
+        if restoring_maximize {
+            self.pending_window_maximize = false;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true));
+        }
+        if self.window_preferences_active && !self.game_window_closing {
+            if let Some(session) = &mut self.window_preferences {
+                let zoom = ctx.zoom_factor();
+                ctx.input(|input| {
+                    let viewport = input.viewport();
+                    session.preferences.observe(
+                        if restoring_maximize {
+                            None
+                        } else {
+                            viewport
+                                .inner_rect
+                                .map(|rect| [rect.width() * zoom, rect.height() * zoom])
+                        },
+                        viewport.fullscreen,
+                        if restoring_maximize {
+                            None
+                        } else {
+                            viewport.maximized
+                        },
+                        viewport.minimized.unwrap_or(false),
+                    );
+                });
+            }
+        }
         self.user_files.tick(self.player.as_deref_mut(), ctx);
         let file_dialog_open = self.user_files.is_open();
         egui_winit::gamepkg_input::enable(
@@ -591,6 +646,7 @@ impl eframe::App for App {
                             );
                             self.selected_game = Some(game.id.clone());
                             self.source_window.release(ctx);
+                            self.window_preferences_active = self.game_window;
                             game.enable_user_files();
                             self.player = Some(game);
                         }
@@ -1105,6 +1161,7 @@ impl eframe::App for App {
                     }
                 }
                 if self.game_window && failure.is_none() {
+                    self.persist_window_preferences();
                     self.game_window_closing = true;
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }

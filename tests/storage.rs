@@ -58,16 +58,30 @@ fn storage_counts_game_data_and_deduplicates_shared_references() {
     .unwrap();
     m.shared_assets.insert("one.bin".into(), shared.clone());
     m.shared_assets.insert("two.bin".into(), shared);
+    let mut windows =
+        gamepkg::window_preferences::Session::open(root, &m.id, &m.creator_key).unwrap();
+    windows.persist().unwrap();
+    let window_bytes = fs::metadata(
+        fs::read_dir(root.join("window-preferences"))
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path(),
+    )
+    .unwrap()
+    .len();
     let usage = storage::usage(root, &m).unwrap();
     assert_eq!(usage.package_bytes, 7);
     assert_eq!(usage.built_bytes, 5);
     assert_eq!(usage.shader_bytes, metadata.len() as u64 + 6);
     assert_eq!(usage.save_bytes, 4);
     assert_eq!(usage.history_bytes, 7);
+    assert_eq!(usage.window_bytes, window_bytes);
     assert_eq!(usage.shared_bytes, 6);
     assert_eq!(
         usage.used_bytes(),
-        7 + 5 + metadata.len() as u64 + 6 + 4 + 7 + 6
+        7 + 5 + metadata.len() as u64 + 6 + 4 + 7 + 6 + window_bytes
     );
     assert!(storage::total(root).unwrap() > usage.used_bytes());
     #[cfg(unix)]

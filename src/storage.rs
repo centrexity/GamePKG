@@ -9,6 +9,7 @@ pub struct Usage {
     pub shader_bytes: u64,
     pub save_bytes: u64,
     pub history_bytes: u64,
+    pub window_bytes: u64,
     pub shared_bytes: u64,
     pub estimated_bytes: Option<u64>,
 }
@@ -21,13 +22,14 @@ impl Usage {
             self.shader_bytes,
             self.save_bytes,
             self.history_bytes,
+            self.window_bytes,
             self.shared_bytes,
         ]
         .into_iter()
         .fold(0, u64::saturating_add)
     }
     pub fn breakdown(&self) -> String {
-        format!("Package: {}; recovery copy: {}; current build: {}; shader caches: {}; current save: {}; play history: {}; cached shared assets: {}. Shared assets may also be used by other games. Older Wasm builds and save schemas remain in the library total.",bytes(self.package_bytes),bytes(self.recovery_bytes),bytes(self.built_bytes),bytes(self.shader_bytes),bytes(self.save_bytes),bytes(self.history_bytes),bytes(self.shared_bytes))
+        format!("Package: {}; recovery copy: {}; current build: {}; shader caches: {}; current save: {}; play history: {}; window settings: {}; cached shared assets: {}. Shared assets may also be used by other games. Older Wasm builds and save schemas remain in the library total.",bytes(self.package_bytes),bytes(self.recovery_bytes),bytes(self.built_bytes),bytes(self.shader_bytes),bytes(self.save_bytes),bytes(self.history_bytes),bytes(self.window_bytes),bytes(self.shared_bytes))
     }
 }
 pub fn bytes(value: u64) -> String {
@@ -189,6 +191,10 @@ pub fn usage(root: &Path, manifest: &crate::manifest::Manifest) -> Result<Usage>
         shader_bytes,
         save_bytes,
         history_bytes,
+        window_bytes: scoped_total(
+            root,
+            &crate::window_preferences::path(root, &manifest.id, &manifest.creator_key),
+        )?,
         shared_bytes,
         estimated_bytes: manifest
             .limits

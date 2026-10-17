@@ -15,6 +15,7 @@ pub mod runtime;
 pub mod server_selections;
 pub mod settings;
 pub mod support;
+pub mod window_preferences;
 
 pub mod saves;
 
