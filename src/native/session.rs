@@ -49,6 +49,7 @@ fn stereo_engine_audio(
 }
 
 pub(crate) struct Session {
+    pub(crate) window: crate::window_control::Service,
     pub(crate) user_files: crate::user_files::Service,
     input_events: crate::input_events::Queue,
     child: Child,
@@ -224,6 +225,7 @@ impl Session {
             package,
             network: crate::network::Service::new(manifest.permissions.clone()),
             input_events: crate::input_events::Queue::new(manifest.permissions.input),
+            window: crate::window_control::Service::new(manifest.permissions.input),
             user_files: crate::user_files::Service::new(manifest.permissions.files.clone()),
             manifest,
             roms,
@@ -306,6 +308,14 @@ impl Session {
             Ok(v)
         }
         let ok = match op {
+            29 => {
+                ensure!(b.len() == 8, "invalid window-control packet");
+                return Ok(vec![if self.window.request(n(b, 0)?, n(b, 4)?) {
+                    0
+                } else {
+                    1
+                }]);
+            }
             28 => {
                 ensure!(
                     b.len() >= 8 && b.len() - 8 <= crate::user_files::MAX_REQUEST,
@@ -568,14 +578,17 @@ impl Session {
                 if let Some(save) = &mut self.save {
                     if let Err(error) = save.commit() {
                         self.user_files.finish(false);
+                        self.window.finish(false);
                         return Err(error);
                     }
                 }
                 self.user_files.finish(true);
+                self.window.finish(true);
                 Ok(v)
             }
             Err(e) => {
                 self.user_files.finish(false);
+                self.window.finish(false);
                 self.frame.reset();
                 self.audio.clear();
                 self.achievements.clear();

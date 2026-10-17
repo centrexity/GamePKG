@@ -133,6 +133,12 @@ impl Service {
             entry: None,
         }
     }
+    pub fn shutdown(&mut self) {
+        self.alive.store(false, Ordering::Release);
+        self.entry = None;
+        self.gesture = false;
+        self.enabled = false;
+    }
     pub fn enable(&mut self) {
         self.enabled = true;
     }
@@ -294,11 +300,7 @@ impl Service {
     }
 }
 pub fn gesture(events: &[crate::input_events::Event]) -> bool {
-    events.iter().any(|e| {
-        e.kind == 2
-            || (e.kind == 5 && e.code & 65536 == 0)
-            || (e.kind == 9 && e.code & 0x80000000 == 0)
-    })
+    crate::input_events::gesture(events, 0)
 }
 /// Only the trusted UI supplies `path`; it is never decoded from guest bytes.
 pub fn execute(job: &Job, path: Option<&std::path::Path>) -> Outcome {

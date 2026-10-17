@@ -44,6 +44,12 @@ pub(super) fn linker(engine: &Engine) -> Result<Linker<Data>> {
             ))
         },
     )?;
+    host.func_wrap(
+        "window-control",
+        |mut store: StoreContextMut<'_, Data>, (operation, value): (u32, u32)| {
+            Ok((store.data_mut().window.request(operation, value),))
+        },
+    )?;
     host.func_wrap("random-u64", |_: StoreContextMut<'_, Data>, (): ()| {
         Ok((crate::random::value()?,))
     })?;

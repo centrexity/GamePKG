@@ -1561,3 +1561,43 @@ fn editor_file_commands_only_queue_intent_until_the_host_binding_accepts() {
     game.source_input(9, 0.0, 0.0, 105);
     assert_eq!(game.editor.file_requested, 0, "typing I started an import");
 }
+
+#[test]
+fn window_controls_follow_original_gameplay_pause_editor_and_quit_bindings() {
+    let mut game = physics::Game::new();
+    assert!(!game.cursor_confined());
+    for mode in 0..7 {
+        game.mode = mode;
+        assert_eq!(game.cursor_confined(), matches!(mode, 1 | 3 | 4 | 5));
+    }
+    game.mode = 6;
+    game.editor.naming = true;
+    game.source_input(5, 0.0, 0.0, 68);
+    assert_eq!(game.fullscreen_requests, 1);
+    game.source_input(5, 0.0, 0.0, 68 | 65536);
+    assert_eq!(
+        game.fullscreen_requests, 1,
+        "OS repeat retriggered fullscreen"
+    );
+    game.mode = 2;
+    game.source_input(9, 0.0, 0.0, 114);
+    assert_eq!(
+        game.fullscreen_requests, 1,
+        "restart discarded an earlier ordered fullscreen key"
+    );
+    for mode in [2, 4, 5] {
+        game.mode = mode;
+        game.quit_requested = false;
+        game.source_input(9, 0.0, 0.0, 113);
+        assert!(game.quit_requested);
+        let before = game.mode;
+        game.source_input(9, 0.0, 0.0, 114);
+        game.update(4);
+        assert_eq!(game.mode, before, "events after Quit still ran");
+    }
+    let mut game = physics::Game::new();
+    game.mode = 1;
+    game.source_input(9, 0.0, 0.0, 113);
+    assert!(!game.quit_requested);
+    assert_eq!(game.blocks, [0; 200]);
+}

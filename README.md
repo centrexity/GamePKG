@@ -436,7 +436,7 @@ product decisions before claiming full parity.
 | Cube 2 | Original startup/menu, HUD/FPS preferences and ordered desktop movement/menu key events have been restored. Physical keys now bypass egui normalization, including Pause, keypad distinctions, modifier sides and media/browser keys with SDL equivalents. Initial OS lock state and remaining uncommon-key/platform behavior still need verification. LAN broadcast, arbitrary master/authentication TCP traffic and public server registration are not provided. Persistence accepts selected file types, so arbitrary custom assets, movie recordings and other output formats are not equivalent to the desktop engine. Rendering inside the engine remains software OpenGL; Vulkan presents its frames. Native isolation currently requires Linux. | `src/cube2/session.rs`, `src/gui/cube2_input.rs`, `src/cube2/discovery.rs`, `engines/cube2/adapters/network.h`, `engines/cube2/adapters/persistence.h` |
 | DOOM | Original WAD music, spatial stereo effects, all six original save slots and configuration persistence now work. Original desktop keyboard/mouse input, saved bindings and the quit/ENDOOM flow pass native, Wasm and desktop GUI checks. Music backend selection and broader control/platform coverage remain unfinished. Multiplayer and extra WAD/mod loading are absent. | `engines/doom/adapters/engine.c`, `engines/doom/README.md` |
 | Zelda3 | Normal ROM-based SPC/DSP music and SRAM are supported. External MSU music is disabled; the desktop replay logger is removed. The adapter fixes the view to 256×224, disables extra side area, selects the default language and supplies no desktop configuration UI. Desktop enhancements, replay/save-state tools and alternate resource sets need individual support and tests. | `engines/zelda3/adapters/engine.c`, `engines/zelda3/upstream/src/config.h` |
-| Arkanoo | Gravity, the speed-triggered portal and original ball-to-ball responses are restored and tested. Original world proportions and movement/contact order now match upstream reference checks. Per-ball launch timing, life recovery and victory/endless transitions also match original-code fixtures; prior item/score/level caps are removed. Brick health and original blast rules are also verified. Focused mouse movement and original Space/Escape controls are restored. Editor painting/erasing, all nine brick choices, names, save/load, clear confirmation and test return are restored. Saved custom patterns join the original twelve procedural patterns in endless play. Original ASCII pattern import/export now uses player-selected files. Cursor/window behavior, original menus and music remain unfinished. Art and effects remain replacements. Best score/unlocked level/gravity persist; active runs do not. | `ports/arkanoo/CREDITS.md`, `ports/arkanoo/source/src/lib.rs` |
+| Arkanoo | Gravity, the speed-triggered portal and original ball-to-ball responses are restored and tested. Original world proportions and movement/contact order now match upstream reference checks. Per-ball launch timing, life recovery and victory/endless transitions also match original-code fixtures; prior item/score/level caps are removed. Brick health and original blast rules are also verified. Focused mouse movement and original Space/Escape controls are restored. Editor painting/erasing, all nine brick choices, names, save/load, clear confirmation and test return are restored. Saved custom patterns join the original twelve procedural patterns in endless play. Original ASCII pattern import/export now uses player-selected files. Gameplay cursor confinement/hiding, F11 fullscreen and pause Q-to-quit are verified in the native window and browser runtime checks. Original splash/menu behavior, saved window preferences and music remain unfinished. Art and effects remain replacements. Best score/unlocked level/gravity persist; active runs do not. | `ports/arkanoo/CREDITS.md`, `ports/arkanoo/source/src/lib.rs` |
 | 2048 | Original movement/spawn rules, merge scoring/best score, win/continue/game-over UI, restart, 128-step undo and saved board/history are supported. Tiles can merge beyond 32768. Cooperative expectimax assistance/autoplay matches pinned upstream reference decisions; one full deterministic game reaches 2048. Final signed-package delivery and broader platform checks remain open. | `ports/2048/source/src/model.rs`, `ports/2048/CREDITS.md`, `tests/game_2048.rs`, `tests/game_2048_play.rs` |
 
 Cube 2, Zelda and DOOM now preserve stereo through their engine bridges and
@@ -910,8 +910,12 @@ bonus bounds/expiry and restart. `python3 tests/arkanoo.py` performs signed
 installation and isolated compilation, real Wasm audio/save/achievement checks,
 native keyboard play, and Chromium gameplay in both export profiles.
 Its `--skip-browser` option runs the native checks without Selenium/Chromium.
-The upstream editor, mouse input, music and portal/gravity effects are outside
-this first port; see `CREDITS.md` for the full adaptation scope.
+Editor, scoped ASCII pattern import/export, mouse input and portal/gravity
+mechanics have original-code and actual-runtime regressions. Original menus,
+music, artwork/effects, active-run saves and full platform coverage remain open;
+see `ports/arkanoo/CREDITS.md` and the fidelity audit. Native window tests also
+require Metacity and Python Xlib alongside Xvfb, xdotool, ImageMagick and Pillow.
+These are maintainer test tools; players do not need Python.
 
 ## Open-source 2048 example
 
@@ -920,7 +924,7 @@ this first port; see `CREDITS.md` for the full adaptation scope.
 upstream revision and adaptation details in its `CREDITS.md` and the upstream
 MIT license included as a packaged asset. Arrow keys slide and merge tiles;
 new tiles appear after a move changes the board. Each tile stores its exponent
-in four bits, with a maximum of 32768. The game draws through GamePKG's checked
+in a byte, allowing merges beyond 32768. The game draws through GamePKG's checked
 rectangle operations and uses no terminal, network, or filesystem interface.
 `tests/game_2048.rs` verifies movement and merging; `tests/open_source_2048.py`
 verifies a signed installation, isolated compilation, headless execution, and

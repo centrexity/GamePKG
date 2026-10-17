@@ -2,12 +2,14 @@
 /// Read a chunk from a virtual path relative to the package's assets folder.
 /// Errors (missing asset, invalid path, or invalid offset) return None.
 pub mod gamepkg {
+    pub fn window_control(operation:u32,value:u32)->bool{unsafe{host_window_control(operation,value)==1}}
     fn __gamepkg_file_call(op:u32,input:&[u8],output:&mut[u8])->Option<u32>{if input.len()>1048840||output.len()>65536{return None;}let n=unsafe{host_file_call(op,input.as_ptr(),input.len() as i32,output.as_mut_ptr(),output.len() as i32)};if n<0{None}else{Some(n as u32)}}
     fn __gamepkg_input_events(output:&mut[u8])->Option<u32>{let n=unsafe{host_input_events(output.as_mut_ptr(),output.len() as i32)};if n<0{None}else{Some(n as u32)}}
     pub fn random_u64()->u64 {unsafe {host_random_u64()}}
     fn __gamepkg_network_call(operation:u32,input:&[u8],output:&mut[u8])->Result<u32,NetworkError>{if input.len()>65540||output.len()>65536{return Err(NetworkError::PermissionDenied);}let n=unsafe{host_network_call(operation,input.as_ptr(),input.len(),output.as_mut_ptr(),output.len())};match n{-2=>Err(NetworkError::Pending),-3=>Err(NetworkError::Failed),n if n<0=>Err(NetworkError::PermissionDenied),n=>Ok(n as u32)}}
     #[link(wasm_import_module = "gamepkg")]
     unsafe extern "C" {
+        #[link_name="window_control"] fn host_window_control(operation:u32,value:u32)->i32;
         #[link_name="file_call"] fn host_file_call(op:u32,input:*const u8,length:i32,output:*mut u8,capacity:i32)->i32;
         #[link_name="input_events"] fn host_input_events(output:*mut u8,capacity:i32)->i32;
         #[link_name="random_u64"] fn host_random_u64()->u64;

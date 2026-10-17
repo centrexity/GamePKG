@@ -94,3 +94,5 @@ pub mod cube2;
 pub mod game_data;
 
 pub mod user_files;
+
+pub mod window_control;

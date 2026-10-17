@@ -28,6 +28,20 @@ function encodeEvents(events){
   if(!valid)return new Uint8Array();view.setUint32(i*16,kind,true);view.setFloat32(i*16+4,x,true);view.setFloat32(i*16+8,y,true);view.setUint32(i*16+12,code,true);
  }return output;
 }
+// Transactional commands for the player's own window; no DOM/device handles.
+function defaultWindow(){return {visible:true,confined:false,fullscreen_toggle:false,closed:false};}
+let windowCurrent=defaultWindow(),windowPrevious=defaultWindow(),windowStaged=defaultWindow(),windowGesture=false;
+function windowBegin(gesture){windowPrevious={...windowCurrent};windowStaged={...windowCurrent};windowGesture=gesture;}
+function windowRequest(operation,value){
+ if(!manifest.permissions.input||windowStaged.closed||!Number.isInteger(operation)||!Number.isInteger(value))return 0;
+ if(operation===0&&(value===0||value===1))windowStaged.visible=value===1;
+ else if(operation===1&&(value===0||value===1))windowStaged.confined=value===1;
+ else if(operation===2&&value===0&&windowGesture)windowStaged.fullscreen_toggle=!windowStaged.fullscreen_toggle;
+ else if(operation===3&&value===0&&windowGesture)windowStaged.closed=true;
+ else return 0;return 1;
+}
+function windowFinish(success){windowCurrent=success?{...windowStaged}:{...windowPrevious};windowGesture=false;return {...windowCurrent};}
+
 // Player-selected file service; no worker filesystem or DOM access.
 let fileEntry=null,fileNext=1,fileGeneration=0,fileGesture=false;
 function fileNameAllowed(name,policy){if(typeof name!=='string'||!name||new TextEncoder().encode(name).length>255||/[. ]$/.test(name)||/[<>:"/\\|?*\x00-\x1f\x7f-\x9f]/.test(name))return false;const stem=name.split('.')[0].replace(/ +$/,'').toUpperCase();if(/^(CON|PRN|AUX|NUL|CONIN\$|CONOUT\$|COM[1-9¹²³]|LPT[1-9¹²³])$/.test(stem))return false;const split=name.lastIndexOf('.');return split>=0&&policy.extensions.includes(name.slice(split+1).toLowerCase());}
@@ -62,10 +76,11 @@ function fileResult(data){const entry=fileEntry;if(!entry||entry.status!==1||ent
  if(entry.operation===1&&data.status===3){entry.status=3;entry.bytes=new Uint8Array();return;}
  if(entry.operation===0&&data.status===2&&data.bytes instanceof Uint8Array&&data.bytes.length<=entry.policy.max_bytes&&data.bytes.length<=67108864&&fileNameAllowed(data.name,entry.policy)){entry.name=data.name;entry.bytes=data.bytes;entry.status=2;return;}entry.status=5;
 }
-function fileTickBegin(){fileGesture=false;if(manifest.permissions.input){const v=new DataView(eventBytes.buffer,eventBytes.byteOffset,eventBytes.byteLength);for(let at=0;at<eventBytes.length;at+=16){const kind=v.getUint32(at,true),code=v.getUint32(at+12,true);if(kind===2||(kind===5&&!(code&65536))||(kind===9&&!(code&0x80000000)))fileGesture=true;}}}
+function fileTickBegin(input=0){fileGesture=false;if(manifest.permissions.input){fileGesture=(input&0x000f00ff)!==0;const v=new DataView(eventBytes.buffer,eventBytes.byteOffset,eventBytes.byteLength);for(let at=0;at<eventBytes.length;at+=16){const kind=v.getUint32(at,true),code=v.getUint32(at+12,true);if(kind===2||(kind===5&&!(code&65536))||(kind===9&&!(code&0x80000000)))fileGesture=true;}}}
 function fileTickFinish(success){fileGesture=false;if(fileEntry?.staged){if(!success){fileEntry=null;return;}fileEntry.staged=false;postMessage({type:'file-request',handle:fileEntry.handle,generation:fileEntry.generation,index:fileEntry.index,operation:fileEntry.operation,name:fileEntry.name,bytes:fileEntry.operation===1?fileEntry.bytes:new Uint8Array()});}}
 
 const api={
+ window_control:windowRequest,
  file_call:(operation,pointer,length,output,capacity)=>{const request=bytes(pointer,length,1048840),out=bytes(output,capacity,65536);if(!request||!out)return -1;const reply=fileCall(operation,request.slice(),capacity);if(!reply)return -1;out.set(reply);return reply.length;},
  input_events:(pointer,capacity)=>{const output=bytes(pointer,capacity,32768);if(!output)return -1;const events=takeEvents(capacity);if(!events)return -1;output.set(events);return events.length;},
  random_u64:()=>{const words=new Uint32Array(2);crypto.getRandomValues(words);return BigInt(words[0])|(BigInt(words[1])<<32n);},
@@ -90,7 +105,7 @@ function decode(hex){if(typeof hex!=='string'||hex.length%2||!/^[a-f0-9]*$/.test
 onmessage=async ({data})=>{try{
  if(data.type==='file-result'){fileResult(data);return;}
  if(data.type==='start'){
-  fileEntry=null;fileNext=1;fileGeneration++;fileGesture=false;
+  fileEntry=null;fileNext=1;fileGeneration++;fileGesture=false;windowCurrent=defaultWindow();windowPrevious=defaultWindow();windowStaged=defaultWindow();
   shaderCount=data.shaderCount||0;manifest=data.manifest;assets=new Map(Object.entries(data.assets).map(([key,value])=>[key,decode(value)]));roms=data.roms.map(value=>new Uint8Array(value));save=new Uint8Array(data.save);state=0n;
   await prepareImages();
   const module=await WebAssembly.compile(data.wasm);
@@ -100,17 +115,17 @@ onmessage=async ({data})=>{try{
   if(typeof instance.exports[manifest.runtime_profile==='component-v1'?'tick':'gamepkg_tick']!=='function')throw Error('Missing game entry');
   postMessage({type:'ready'});
  }else if(data.type==='restart'){
-  eventBytes=new Uint8Array();state=0n;fileEntry=null;fileGeneration++;fileGesture=false;
+  eventBytes=new Uint8Array();state=0n;fileEntry=null;fileGeneration++;fileGesture=false;windowCurrent=defaultWindow();windowPrevious=defaultWindow();windowStaged=defaultWindow();
  }else if(data.type==='tick'){
   eventBytes=manifest.permissions.input?encodeEvents(data.events??[]):new Uint8Array();
-  commands=[];background=null;unlocks=[];saveDirty=false;saveBudget=0;imageBudget=0;audioSamples=[];fileTickBegin();
+  commands=[];background=null;unlocks=[];saveDirty=false;saveBudget=0;imageBudget=0;audioSamples=[];fileTickBegin(data.input);windowBegin(fileGesture);
   state=instance.exports[manifest.runtime_profile==='component-v1'?'tick':'gamepkg_tick'](manifest.permissions.input?data.input:0,state);
   if(instance.exports.memory&&instance.exports.memory.buffer.byteLength>manifest.limits.hard_memory_bytes)throw Error('Memory limit exceeded');
-  fileTickFinish(true);
+  const windowState=windowFinish(true);fileTickFinish(!windowState.closed);
   if(saveDirty)postMessage({type:'save',bytes:save});
-  postMessage({type:'frame',commands,background,state:String(state),unlocks,audio:audioSamples});
+  postMessage({type:'frame',commands,background,state:String(state),unlocks,audio:audioSamples,window:windowState});
  }
-}catch(error){fileTickFinish(false);postMessage({type:'error',error:String(error)});}};
+}catch(error){windowFinish(false);fileTickFinish(false);postMessage({type:'error',error:String(error)});}};
 
 // Canonical list results are allocated in guest memory through its bounded
 // allocator. Guest bindings copy and free these results immediately.
@@ -122,6 +137,7 @@ function optionBytes(pointer,source,offset,length){
  const view=new DataView(instance.exports.memory.buffer);view.setUint32(pointer,part?1:0,true);view.setUint32(pointer+4,address,true);view.setUint32(pointer+8,part?.length??0,true);
 }
 const canonical={
+ 'window-control':windowRequest,
  'file-call':(operation,pointer,length,capacity,result)=>{if(!range(result,12)||result%4)throw Error('Invalid result pointer');const request=bytes(pointer,length,1048840);let reply=null;if(request&&Number.isInteger(capacity)&&capacity>=0&&capacity<=65536)reply=fileCall(operation,request.slice(),capacity);let address=0;if(reply?.length){address=instance.exports.cabi_realloc(0,0,1,reply.length)>>>0;if(!range(address,reply.length))throw Error('Invalid allocation');bytes(address,reply.length).set(reply);}const v=new DataView(instance.exports.memory.buffer);v.setInt32(result,reply?reply.length:-1,true);v.setUint32(result+4,address,true);v.setUint32(result+8,reply?.length??0,true);},
  'input-events':(capacity,pointer)=>{if(!range(pointer,12)||pointer%4)throw Error('Invalid result pointer');const events=takeEvents(capacity);optionBytes(pointer,events,0,events?.length??0);},
  'random-u64':api.random_u64,

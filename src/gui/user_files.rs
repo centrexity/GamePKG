@@ -5,6 +5,9 @@ pub(super) struct Picker {
     pending: Option<(Job, mpsc::Receiver<Outcome>)>,
 }
 impl Picker {
+    pub(super) fn is_open(&self) -> bool {
+        self.pending.is_some()
+    }
     pub(super) fn tick(
         &mut self,
         game: Option<&mut crate::runtime::Game>,
@@ -30,6 +33,7 @@ impl Picker {
         let Some(job) = game.take_user_file_job() else {
             return;
         };
+        super::window_control::release_pointer(ctx);
         let id = game.id.clone();
         let (sender, receiver) = mpsc::channel();
         let request = job.clone();

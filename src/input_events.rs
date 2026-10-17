@@ -115,6 +115,17 @@ impl Queue {
     }
 }
 
+/// Fresh scoped key/pointer events or legacy controller/touch action edges.
+/// Held masks and OS key-repeat events never authorize window/file actions.
+pub fn gesture(events: &[Event], input: u32) -> bool {
+    input & 0x000f00ff != 0
+        || events.iter().any(|event| {
+            event.kind == 2
+                || (event.kind == 5 && event.code & 65536 == 0)
+                || (event.kind == 9 && event.code & 0x80000000 == 0)
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

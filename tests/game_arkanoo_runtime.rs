@@ -765,3 +765,59 @@ fn play_history_failure_does_not_open_a_new_file_dialog() {
         "a failed host tick exposed a file dialog"
     );
 }
+
+#[test]
+#[ignore = "requires the signed, isolated-built fixture prepared by tests/arkanoo.py"]
+fn original_window_bindings_work_across_runtime_profiles() {
+    use gamepkg::input_events::Event;
+    for id in ["com.gamepkg.arkanoo", "com.gamepkg.arkanoo-files-component"] {
+        let root = isolated_library();
+        let mut game = Game::load(root.path(), id).unwrap();
+        game.step(0).unwrap();
+        assert!(game.window_state().visible);
+        game.step(4).unwrap();
+        assert!(!game.window_state().visible);
+        assert!(game.window_state().confined);
+        game.input_event(Event {
+            kind: 5,
+            x: 0.0,
+            y: 0.0,
+            code: 68,
+        })
+        .unwrap();
+        game.step(0).unwrap();
+        assert!(game.window_state().fullscreen_toggle);
+        game.input_event(Event {
+            kind: 5,
+            x: 0.0,
+            y: 0.0,
+            code: 68 | 65536,
+        })
+        .unwrap();
+        game.step(0).unwrap();
+        assert!(
+            game.window_state().fullscreen_toggle,
+            "key repeat toggled fullscreen"
+        );
+        game.input_event(Event {
+            kind: 5,
+            x: 0.0,
+            y: 0.0,
+            code: 41,
+        })
+        .unwrap();
+        game.step(0).unwrap();
+        assert!(game.window_state().visible);
+        assert!(!game.window_state().confined);
+        game.input_event(Event {
+            kind: 9,
+            x: 0.0,
+            y: 0.0,
+            code: 113,
+        })
+        .unwrap();
+        game.step(0).unwrap();
+        assert!(game.exited(), "original Q-to-quit was ignored in pause");
+        assert!(game.take_user_file_job().is_none());
+    }
+}

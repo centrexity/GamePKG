@@ -132,7 +132,19 @@ pub fn game_tick(input:u32,state:u64)->u64 {
     run('integrity-check','com.gamepkg.arkanoo')
     subprocess.run(['cargo','test','--test','game_arkanoo_runtime','--','--ignored'],env=probe_env,check=True,timeout=120)
     # Real native window: locate the cyan paddle, hold movement, start, pause.
-    display=start_display(env,width=1400,height=900);app=None
+    display=start_display(env,width=1400,height=900);app=None;wm=None
+    from Xlib import display as xdisplay
+    from Xlib.ext import xfixes
+    def cursor_visible():
+        connection=xdisplay.Display(env['DISPLAY'])
+        try:
+            connection.xfixes_query_version()
+            return any(connection.xfixes_get_cursor_image(connection.screen().root).cursor_image)
+        finally:connection.close()
+    def expect_cursor(visible):
+        deadline=time.monotonic()+5
+        while cursor_visible()!=visible:
+            assert time.monotonic()<deadline,('Cursor visibility',visible);time.sleep(.05)
     def capture(window,name):
         path=PROOF/name
         subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(path)],env=env,check=True,timeout=10)
@@ -143,6 +155,10 @@ pub fn game_tick(input:u32,state:u64)->u64 {
         assert len(points)>100,len(points)
         return sum(x for x,y in points)/len(points)
     try:
+        wm=subprocess.Popen(['metacity','--sm-disable','--replace','--no-composite'],env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        deadline=time.monotonic()+5
+        while '_NET_SUPPORTING_WM_CHECK' not in subprocess.run(['xprop','-root','_NET_SUPPORTING_WM_CHECK'],env=env,capture_output=True,text=True).stdout or 'not found' in subprocess.run(['xprop','-root','_NET_SUPPORTING_WM_CHECK'],env=env,capture_output=True,text=True).stdout:
+            assert time.monotonic()<deadline,'Private test window manager did not start';time.sleep(.05)
         app=subprocess.Popen([str(Path(os.environ.get('GAMEPKG_TEST_BINARY_DIR',PROJECT/'target/release'))/'gamepkg-gui'),'--play','com.gamepkg.arkanoo'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
         deadline=time.monotonic()+20
         while time.monotonic()<deadline:
@@ -190,7 +206,7 @@ pub fn game_tick(input:u32,state:u64)->u64 {
             assert time.monotonic()<moved,'Mouse motion did not center the original paddle'
             time.sleep(.05)
         subprocess.run(['xdotool','key','--window',window,'Escape'],env=env,check=True);time.sleep(.2)
-        capture(window,'native-paused.png')
+        capture(window,'native-paused.png');expect_cursor(True)
         subprocess.run(['xdotool','key','--window',window,'e'],env=env,check=True);time.sleep(.2)
         editor_screen=capture(window,'native-editor-empty.png');scale=min(editor_screen.width/640,editor_screen.height/480)
         ox=(editor_screen.width-640*scale)/2;oy=(editor_screen.height-480*scale)/2
@@ -224,6 +240,18 @@ pub fn game_tick(input:u32,state:u64)->u64 {
         while not outgoing.exists():
             assert time.monotonic()<deadline,'Native Save dialog did not export the pattern';time.sleep(.05)
         assert outgoing.read_text().startswith('# Pattern: native-import\n') and '50******************' in outgoing.read_text()
+        subprocess.run(['xdotool','key','--window',window,'F11'],env=env,check=True)
+        deadline=time.monotonic()+5
+        while '_NET_WM_STATE_FULLSCREEN' not in subprocess.run(['xprop','-id',window,'_NET_WM_STATE'],env=env,capture_output=True,text=True).stdout:
+            assert time.monotonic()<deadline,'F11 did not enter actual fullscreen';time.sleep(.05)
+        subprocess.run(['xdotool','key','--window',window,'F11'],env=env,check=True)
+        deadline=time.monotonic()+5
+        while '_NET_WM_STATE_FULLSCREEN' in subprocess.run(['xprop','-id',window,'_NET_WM_STATE'],env=env,capture_output=True,text=True).stdout:
+            assert time.monotonic()<deadline,'F11 did not leave actual fullscreen';time.sleep(.05)
+        subprocess.run(['xdotool','key','--window',window,'Escape','Up'],env=env,check=True);time.sleep(.2);expect_cursor(False)
+        subprocess.run(['xdotool','key','--window',window,'Escape'],env=env,check=True);time.sleep(.2);expect_cursor(True)
+        subprocess.run(['xdotool','key','--window',window,'q'],env=env,check=True)
+        assert app.wait(timeout=10)==0,'Original Q-to-quit did not close cleanly'
         print('Native Arkanoo: gameplay/editor plus real file-picker import, cancellation and Save-dialog export passed.')
 
     finally:
@@ -231,6 +259,7 @@ pub fn game_tick(input:u32,state:u64)->u64 {
             app.terminate()
             try:app.wait(timeout=10)
             except subprocess.TimeoutExpired:app.kill();app.wait(timeout=5)
+        if wm is not None:wm.terminate();wm.wait(timeout=10)
         display.terminate();display.wait(timeout=10)
     if args.skip_browser:raise SystemExit(0)
     # Both actual runtime profiles, not a hand-written replacement for the game.
@@ -275,6 +304,8 @@ pub fn game_tick(input:u32,state:u64)->u64 {
             ActionChains(browser).send_keys(Keys.ESCAPE).perform();time.sleep(2)
             assert pixels()!=paused
             canvas.screenshot(str(PROOF/('browser-component.png' if component else 'browser-core.png')))
+            canvas.send_keys(Keys.ESCAPE)
+            wait.until(lambda b:b.execute_script('return document.pointerLockElement===null'))
             browser.find_element(By.ID,'restart').click()
             wait.until(lambda b:pixels()[(270*640+70)*4:(270*640+70)*4+3]==[16,27,53])
             restarted=pixels();time.sleep(.2);assert pixels()==restarted,'Restart retained the active run'
@@ -306,7 +337,18 @@ pub fn game_tick(input:u32,state:u64)->u64 {
             wait.until(lambda b:outgoing.exists() and '50******************' in outgoing.read_text())
             assert outgoing.read_text().startswith('# Pattern: '+incoming.stem+'\n')
             canvas.screenshot(str(PROOF/('browser-component-files.png' if component else 'browser-core-files.png')))
-            browser.find_element(By.ID,'stop').click()
-            assert 'Stopped' in browser.find_element(By.ID,'status').text
+            canvas.send_keys(Keys.F11)
+            wait.until(lambda b:b.execute_script('return document.fullscreenElement===document.querySelector("#game")'))
+            canvas.send_keys(Keys.F11)
+            wait.until(lambda b:b.execute_script('return document.fullscreenElement===null'))
+            browser.find_element(By.ID,'restart').click();time.sleep(.15)
+            canvas.send_keys(Keys.ARROW_UP);time.sleep(.15)
+            canvas.click()
+            wait.until(lambda b:b.execute_script('return document.pointerLockElement===document.querySelector("#game")'))
+            assert browser.execute_script('return document.querySelector("#game").style.cursor')=='none'
+            canvas.send_keys(Keys.ESCAPE)
+            wait.until(lambda b:b.execute_script('return document.pointerLockElement===null'))
+            canvas.send_keys('q')
+            wait.until(lambda b:'Game closed' in b.find_element(By.ID,'status').text)
             print(('Component' if component else 'Core')+' browser Arkanoo: gameplay/editor, selected-file import, cancellation and explicit download passed.')
         finally:browser.quit();server.shutdown();server.server_close()

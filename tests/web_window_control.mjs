@@ -1,0 +1,30 @@
+import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import vm from 'node:vm';
+const worker=vm.createContext({TextEncoder,TextDecoder});vm.runInContext(readFileSync(new URL('../web-player/worker.js',import.meta.url),'utf8'),worker);vm.runInContext('manifest={permissions:{input:true}};',worker);
+const api=vm.runInContext('({begin:windowBegin,request:windowRequest,finish:windowFinish,state:()=>windowCurrent,canonical})',worker);
+api.begin(false);assert.equal(api.request(0,0),1);assert.equal(api.request(1,1),1);assert.equal(api.request(2,0),0);assert.equal(api.request(3,0),0);assert.equal(api.state().visible,true);api.finish(false);assert.equal(api.state().visible,true);
+api.begin(true);api.request(0,0);api.request(1,1);api.request(2,0);api.finish(true);assert.equal(api.state().fullscreen_toggle,true);api.finish(false);assert.equal(api.state().visible,true);
+api.begin(true);api.request(2,0);api.request(2,0);api.finish(true);assert.equal(api.state().fullscreen_toggle,false);api.begin(true);assert.equal(api.canonical['window-control'](3,0),1);api.finish(true);assert.equal(api.state().closed,true);assert.equal(api.request(0,1),0);
+vm.runInContext('manifest.permissions.input=false;windowStaged=defaultWindow();',worker);assert.equal(api.request(0,0),0);
+async function settle(){for(let i=0;i<8;i++)await Promise.resolve();}
+const handlers=new Map(),documentHandlers=new Map(),windowHandlers=new Map(),timers=[];let now=1000,locks=0,exits=0,fullscreen=0,fullExits=0,stopped='';
+function listen(map,name,fn){const values=map.get(name)||[];values.push(fn);map.set(name,values);}
+const buttons=new Map(['#capture','#fullscreen'].map(name=>[name,{hidden:true}]));let focused=true;
+const document={activeElement:null,pointerLockElement:null,fullscreenElement:null,hasFocus:()=>focused,querySelector:name=>buttons.get(name),addEventListener:(name,fn)=>listen(documentHandlers,name,fn),exitPointerLock(){exits++;this.pointerLockElement=null;},async exitFullscreen(){fullExits++;this.fullscreenElement=null;}};
+const canvas={style:{},focus(){document.activeElement=this;},getBoundingClientRect:()=>({left:100,top:50,width:1280,height:960}),addEventListener:(name,fn)=>listen(handlers,name,fn),async requestPointerLock(){locks++;document.pointerLockElement=canvas;},async requestFullscreen(){fullscreen++;document.fullscreenElement=canvas;},setPointerCapture(){},hasPointerCapture:()=>false};document.activeElement=canvas;
+const ui=vm.createContext({canvas,document,running:true,filePending:null,performance:{now:()=>now},setTimeout:fn=>timers.push(fn),resetKeyboard(){},halt:message=>stopped=message,window:{addEventListener:(name,fn)=>listen(windowHandlers,name,fn)}});
+const source=readFileSync(new URL('../web-player/player.js',import.meta.url),'utf8');vm.runInContext(source.slice(source.indexOf('// Host-owned window controls'),source.indexOf('// Native browser file selection')),ui);vm.runInContext(source.slice(source.indexOf('// Ordered input')),ui);
+const control=vm.runInContext('({apply:applyWindowControls,release:releaseWindowForFile,reset:resetWindowControls,position:location,events:()=>surfaceEvents,clear:()=>{surfaceEvents=[];}})',ui);
+const desired={visible:false,confined:true,fullscreen_toggle:false,closed:false};assert.equal(control.apply(desired),true);await settle();assert.equal(locks,1);assert.equal(canvas.style.cursor,'none');
+assert.deepEqual(Array.from(control.position({movementX:200,movementY:-100},true)),[420,190]);control.position({movementX:100000,movementY:-100000},true);assert.deepEqual(Array.from(control.position({movementX:0,movementY:0},true)),[640,0]);
+assert.deepEqual(Array.from(control.position({movementX:-100,movementY:100})),[640,0],'button event integrated movement a second time');
+control.apply({...desired,visible:true,confined:false});assert.equal(document.pointerLockElement,null);assert.equal(canvas.style.cursor,'auto');assert.equal(exits,1);
+control.apply({...desired,visible:true,confined:false,fullscreen_toggle:true});await settle();assert.equal(fullscreen,1);document.fullscreenElement=null;control.apply({...desired,visible:true,confined:false,fullscreen_toggle:false});await settle();assert.equal(fullscreen,2,'toggle used stale desired fullscreen state');
+control.release();assert.equal(document.fullscreenElement,null);assert.equal(fullExits,1);
+control.apply(desired);await buttons.get('#capture').onclick();await settle();control.clear();document.pointerLockElement=null;for(const fn of documentHandlers.get('pointerlockchange'))fn();for(const fn of timers.splice(0))fn();assert.deepEqual(Array.from(control.events(),e=>e[0]),[5,6,9,10]);
+for(const fn of handlers.get('keydown'))fn({code:'Escape',key:'Escape',repeat:false});assert.equal(control.events().length,4,'browser Escape was delivered twice');
+control.clear();now+=200;for(const fn of handlers.get('keydown'))fn({code:'Escape',key:'Escape',ctrlKey:true,altKey:true,preventDefault(){}});assert.equal(control.events().length,0,'emergency release leaked Escape into the game');
+control.reset();vm.runInContext('running=true;filePending=null;',ui);let resolveLock;
+canvas.requestPointerLock=()=>new Promise(resolve=>{resolveLock=()=>{document.pointerLockElement=canvas;resolve();};});
+control.apply(desired);assert.ok(resolveLock);control.reset();resolveLock();await settle();assert.equal(document.pointerLockElement,null,'stale capture survived game reset');
+control.apply({...desired,closed:true});assert.equal(stopped,'Game closed');
+console.log('Browser window controls preserve tick rollback, scoped capture, relative-to-absolute motion, fullscreen parity and Escape release.');

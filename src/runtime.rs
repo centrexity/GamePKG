@@ -20,6 +20,7 @@ enum Tick {
     Component(wasmtime::component::TypedFunc<(u32, u64), (u64,)>),
 }
 struct Data {
+    window: crate::window_control::Service,
     user_files: crate::user_files::Service,
     input_events: crate::input_events::Queue,
     achievements: Vec<String>,
@@ -151,6 +152,7 @@ impl Game {
                             | "random_u64"
                             | "input_events"
                             | "file_call"
+                            | "window_control"
                             | "draw_clear"
                             | "draw_asset_image"
                             | "draw_image"
@@ -208,6 +210,7 @@ impl Game {
                                 | "random-u64"
                                 | "input-events"
                                 | "file-call"
+                                | "window-control"
                                 | "draw-clear"
                                 | "draw-asset-image"
                                 | "draw-image"
@@ -262,6 +265,7 @@ impl Game {
         let mut store = Store::new(
             &engine,
             Data {
+                window: crate::window_control::Service::new(manifest.permissions.input),
                 user_files: crate::user_files::Service::new(manifest.permissions.files.clone()),
                 input_events: crate::input_events::Queue::new(manifest.permissions.input),
                 achievements: manifest.achievements.iter().map(|a| a.id.clone()).collect(),
@@ -628,6 +632,13 @@ impl Game {
                         return -1;
                     }
                     reply.len() as i32
+                },
+            )?;
+            linker.func_wrap(
+                "gamepkg",
+                "window_control",
+                |mut caller: Caller<'_, Data>, operation: u32, value: u32| -> i32 {
+                    i32::from(caller.data_mut().window.request(operation, value))
                 },
             )?;
             linker.func_wrap("gamepkg", "random_u64", || -> Result<i64> {
@@ -1026,6 +1037,9 @@ impl Game {
         let _ = (x, y, modifiers);
     }
     pub fn exited(&self) -> bool {
+        if self.window_state().closed {
+            return true;
+        }
         #[cfg(target_os = "linux")]
         if let Some(cube) = &self.cube2 {
             return cube.exited;
@@ -1187,12 +1201,25 @@ impl Game {
             .as_mut()
             .map(|store| &mut store.data_mut().user_files)
     }
+    pub fn window_state(&self) -> crate::window_control::State {
+        #[cfg(target_os = "linux")]
+        if let Some(native) = &self.native {
+            return native.window.state();
+        }
+        self.store
+            .as_ref()
+            .map(|store| store.data().window.state())
+            .unwrap_or_default()
+    }
     pub fn enable_user_files(&mut self) {
         if let Some(files) = self.user_files_mut() {
             files.enable();
         }
     }
     pub fn take_user_file_job(&mut self) -> Option<crate::user_files::Job> {
+        if self.exited() {
+            return None;
+        }
         self.user_files_mut()?.take_job()
     }
     pub fn complete_user_file(
@@ -1205,7 +1232,8 @@ impl Game {
     }
     pub fn step(&mut self, input: u32) -> Result<u64> {
         let input_events = self.queued_input.drain_events();
-        let file_gesture = crate::user_files::gesture(&input_events);
+        let file_gesture =
+            crate::input_events::gesture(&input_events, if self.input_allowed { input } else { 0 });
         if let Some(files) = self.user_files_mut() {
             files.begin(file_gesture);
         }
@@ -1227,6 +1255,7 @@ impl Game {
         }
         #[cfg(target_os = "linux")]
         if let Some(n) = &mut self.native {
+            n.window.begin(file_gesture);
             n.set_input_events(input_events);
             self.state = n.step(
                 if self.input_allowed { input } else { 0 },
@@ -1236,11 +1265,21 @@ impl Game {
             if let Some(progress) = &mut self.progress {
                 if let Err(error) = progress.tick(&n.achievements) {
                     n.user_files.finish(false);
+                    n.window.finish(false);
                     return Err(error);
                 }
             }
+            if n.window.state().closed {
+                n.user_files.shutdown();
+            }
             return Ok(self.state);
         }
+        self.store
+            .as_mut()
+            .unwrap()
+            .data_mut()
+            .window
+            .begin(file_gesture);
         self.store
             .as_mut()
             .unwrap()
@@ -1312,6 +1351,7 @@ impl Game {
                     .data_mut()
                     .user_files
                     .finish(false);
+                self.store.as_mut().unwrap().data_mut().window.finish(false);
                 return Err(error);
             }
         };
@@ -1331,6 +1371,7 @@ impl Game {
                 .data_mut()
                 .user_files
                 .finish(false);
+            self.store.as_mut().unwrap().data_mut().window.finish(false);
             return Err(error).context("unable to persist game save");
         }
         if let Some(progress) = &mut self.progress {
@@ -1343,6 +1384,7 @@ impl Game {
                     .data_mut()
                     .user_files
                     .finish(false);
+                self.store.as_mut().unwrap().data_mut().window.finish(false);
                 return Err(error);
             }
         }
@@ -1352,6 +1394,15 @@ impl Game {
             .data_mut()
             .user_files
             .finish(true);
+        self.store.as_mut().unwrap().data_mut().window.finish(true);
+        if self.window_state().closed {
+            self.store
+                .as_mut()
+                .unwrap()
+                .data_mut()
+                .user_files
+                .shutdown();
+        }
         Ok(self.state)
     }
     pub fn player(&self) -> (u8, u8) {

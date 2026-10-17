@@ -67,6 +67,23 @@ text events. It returns `None` when the signed `input` permission is denied and
 continues to work for keyboard, controller and touch actions. This API requires
 the updated source host.
 
+`gamepkg::window_control(operation, value)` requests changes to the game's own
+window and requires signed `input` permission. Operations 0 and 1 accept 0/1 to
+set cursor visibility and absolute cursor confinement respectively. Operation 2
+with value 0 toggles actual fullscreen; operation 3 with value 0 closes the game.
+Fullscreen and close require a fresh key, pointer, controller or touch action;
+held buttons and repeated keys do not qualify. The return value means the host
+accepted the request, not that the operating system fulfilled it. Requests commit
+only after a successful tick and persistence; failed ticks roll them back.
+
+Focus loss, file dialogs and Ctrl+Alt+Escape release the pointer. Click the game
+to resume capture after emergency release. Desktop absolute confinement preserves
+pointer position. Browsers use pointer lock with a bounded virtual canvas position
+and may require the displayed Capture pointer or Enter fullscreen button because
+of browser gesture restrictions. Escape releases browser capture and reaches the
+game once. Close cancels pending file selection. These APIs require the updated
+source host and are unavailable in older release binaries.
+
 Each `InputEvent` has `kind: u32`, `x: f32`, `y: f32`, and `code: u32`:
 
 | Kind | Meaning | Coordinates and code |

@@ -10,8 +10,12 @@ pub(super) struct Capture {
     position: Option<egui::Pos2>,
     buttons: u32,
     focused: bool,
+    confined: bool,
 }
 impl Capture {
+    pub fn confine(&mut self, confined: bool) {
+        self.confined = confined;
+    }
     pub fn translate(
         &mut self,
         events: &[Native],
@@ -74,7 +78,7 @@ impl Capture {
                     if !position.x.is_finite() || !position.y.is_finite() {
                         continue;
                     }
-                    if !rect.contains(position) && self.buttons == 0 {
+                    if !rect.contains(position) && self.buttons == 0 && !self.confined {
                         self.position = None;
                         continue;
                     }

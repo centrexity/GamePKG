@@ -26,7 +26,7 @@ vm.runInContext('manifest.permissions.files[0].max_bytes=1024;manifest.permissio
 const posted=[];let writes=[],selectedName='selected.txt',savePicker=async()=>({name:selectedName,createWritable:async()=>({write:async bytes=>writes.push(Array.from(bytes)),close:async()=>{}})});
 const box={hidden:true,children:[],replaceChildren(){this.children=[];},append(node){this.children.push(node);}};
 const dom={querySelector:()=>box,createElement:tag=>({tag,textContent:'',setAttribute(){}})};const active={postMessage:value=>posted.push(value)};
-const uiHost=vm.createContext({TextEncoder,Uint8Array,document:dom,window:{showSaveFilePicker:(...args)=>savePicker(...args)},canvas:{focus(){}},worker:active,running:true,data:{manifest:{id:'test',permissions:{files:[{title:'Pattern',extensions:['txt'],max_bytes:1024,read:true,write:true}]}}}});
+const uiHost=vm.createContext({TextEncoder,Uint8Array,releaseWindowForFile(){},document:dom,window:{showSaveFilePicker:(...args)=>savePicker(...args)},canvas:{focus(){}},worker:active,running:true,data:{manifest:{id:'test',permissions:{files:[{title:'Pattern',extensions:['txt'],max_bytes:1024,read:true,write:true}]}}}});
 vm.runInContext('let filePending=null;'+playerSource.slice(playerSource.indexOf('// Native browser file selection'),playerSource.indexOf('// Ordered input')),uiHost);
 const display=vm.runInContext('showFileRequest',uiHost);const saveRequest={handle:1,generation:1,index:0,operation:1,name:'suggested.txt',bytes:new Uint8Array([1,2,3])};
 display(saveRequest,active);await box.children.find(n=>n.textContent.startsWith('Save ')).onclick();assert.deepEqual(writes,[[1,2,3]]);assert.equal(posted.at(-1).status,3);assert.equal(box.hidden,true);

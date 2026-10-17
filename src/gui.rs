@@ -14,6 +14,7 @@ mod source_input;
 mod sprites;
 mod theme;
 mod user_files;
+mod window_control;
 use std::{
     collections::{HashMap, HashSet},
     path::PathBuf,
@@ -81,6 +82,7 @@ pub struct App {
     confine_mouse: bool,
     cube_pointer: cube2_input::Pointer,
     source_input: source_input::Capture,
+    source_window: window_control::Controller,
     cube_desktop: cube2_input::Desktop,
     doom_desktop: doom_input::Desktop,
     game_processes: Vec<(String, std::process::Child)>,
@@ -404,13 +406,15 @@ impl eframe::App for App {
     }
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
         self.user_files.tick(self.player.as_deref_mut(), ctx);
+        let file_dialog_open = self.user_files.is_open();
         egui_winit::gamepkg_input::enable(
             ctx.viewport_id(),
             !self.game_window_closing
+                && !file_dialog_open
                 && self.player.as_ref().is_some_and(|game| {
                     game.doom_input_allowed() || game.is_cube2() || game.input_events_allowed()
                 }),
-            ctx.input(|i| i.focused),
+            ctx.input(|i| i.focused) && !file_dialog_open,
         );
         egui_winit::gamepkg_input::enable_surface(
             ctx.viewport_id(),
@@ -586,6 +590,7 @@ impl eframe::App for App {
                                 self.audio_player.as_ref().map(crate::audio::Player::sink),
                             );
                             self.selected_game = Some(game.id.clone());
+                            self.source_window.release(ctx);
                             game.enable_user_files();
                             self.player = Some(game);
                         }
@@ -730,7 +735,7 @@ impl eframe::App for App {
                 .show(ctx, |ui| {
                     let input = select_input | ctx.input(|i| self.keyboard.poll(i));
                     let device_input = self.input_devices.poll(ui);
-                    let input = if ctx.input(|i| i.focused) {
+                    let input = if ctx.input(|i| i.focused) && !file_dialog_open {
                         input | device_input
                     } else {
                         self.pending_input = 0;
@@ -782,7 +787,7 @@ impl eframe::App for App {
                             )
                         });
                         let (captured, recaptured) = self.cube_mouse_capture.update(
-                            focused,
+                            focused && !file_dialog_open,
                             ctx.input(cube2_input::release_requested),
                             ctx.input(|i| i.pointer.primary_clicked()),
                         );
@@ -819,7 +824,7 @@ impl eframe::App for App {
                     if game.doom_input_allowed() {
                         let focused = ctx.input(|i| i.focused);
                         let (captured, recaptured) = self.cube_mouse_capture.update(
-                            focused,
+                            focused && !file_dialog_open,
                             ctx.input(cube2_input::release_requested),
                             ctx.input(|i| i.pointer.primary_clicked()),
                         );
@@ -860,12 +865,19 @@ impl eframe::App for App {
                             egui::vec2(640.0 * scale, 480.0 * scale),
                         );
                         let events = egui_winit::gamepkg_input::take(ctx.viewport_id());
-                        let captured = self.source_input.translate(
-                            &events,
-                            rect,
-                            ctx.pixels_per_point(),
-                            ctx.input(|i| i.focused),
-                        );
+                        let release = ctx.input(cube2_input::release_requested);
+                        self.source_input.confine(self.source_window.confined());
+                        let captured = if release {
+                            self.source_input = Default::default();
+                            vec![crate::input_events::Event::RESET]
+                        } else {
+                            self.source_input.translate(
+                                &events,
+                                rect,
+                                ctx.pixels_per_point(),
+                                ctx.input(|i| i.focused) && !file_dialog_open,
+                            )
+                        };
                         for event in captured {
                             if let Err(error) = game.input_event(event) {
                                 failure = Some(format!("Game input failed: {error:#}"));
@@ -891,6 +903,16 @@ impl eframe::App for App {
                         }
                         self.pending_input = 0;
                         self.next_frame = Some(now + std::time::Duration::from_millis(16));
+                    }
+                    if !game.builtin_engine {
+                        self.source_window
+                            .apply(ctx, game.window_state(), file_dialog_open);
+                    } else {
+                        self.source_window.apply_display(
+                            ctx,
+                            game.window_state(),
+                            file_dialog_open,
+                        );
                     }
                     if let Some(error) = self.audio_player.as_ref().and_then(|a| a.error()) {
                         self.audio_error = format!("Sound stopped: {error}");
@@ -1076,6 +1098,7 @@ impl eframe::App for App {
                 // Release capture before the next frame can open a native error
                 // dialog; blocking the event loop while grabbed traps the cursor.
                 self.cube_mouse_capture.release(ctx, self.confine_mouse);
+                self.source_window.release(ctx);
                 if let Some(game) = &mut self.player {
                     if let Err(e) = game.finish() {
                         record_shutdown_error(&mut failure, &format!("{e:#}"));

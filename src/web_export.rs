@@ -6,6 +6,7 @@ const SUPPORTED: &[&str] = &[
     "random_u64",
     "input_events",
     "file_call",
+    "window_control",
     "asset_read",
     "rom_count",
     "rom_size",

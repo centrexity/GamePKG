@@ -21,7 +21,7 @@ function keyboardUp(event){
  for(const bit of heldKeys.values())held|=bit;
 }
 function color(rgba){return `rgba(${rgba>>>24},${rgba>>>16&255},${rgba>>>8&255},${(rgba&255)/255})`;}
-function halt(message){clearFileUI();for(const node of audioNodes){try{node.stop();}catch{}}audioNodes.clear();audioNext=0;clearTimeout(timer);clearTimeout(frameTimer);worker?.terminate();worker=null;running=false;resetKeyboard();surfaceEvents=[];play.disabled=false;stop.disabled=true;restart.disabled=true;status.textContent=message;}
+function halt(message){resetWindowControls();clearFileUI();for(const node of audioNodes){try{node.stop();}catch{}}audioNodes.clear();audioNext=0;clearTimeout(timer);clearTimeout(frameTimer);worker?.terminate();worker=null;running=false;resetKeyboard();surfaceEvents=[];play.disabled=false;stop.disabled=true;restart.disabled=true;status.textContent=message;}
 function watch(delay){clearTimeout(timer);const active=worker;timer=setTimeout(()=>{if(worker===active)halt('Game stopped: execution deadline exceeded.');},delay);}
 function stored(key,fallback){try{return JSON.parse(localStorage.getItem(key))??fallback;}catch{return fallback;}}
 function persist(key,value){try{localStorage.setItem(key,JSON.stringify(value));}catch{status.textContent='Browser storage is unavailable; progress may not persist.';}}
@@ -53,7 +53,8 @@ async function start(){
   if(message.type==='file-request')showFileRequest(message,active);
   if(message.type==='save')persist(saveKey,Array.from(message.bytes));
   if(message.type==='frame'){
-   try{render(message);playAudio(message.audio||[]);}catch(error){halt(String(error));return;}const history=stored(historyKey,{played_ms:0,unlocked:[]});const now=performance.now();history.played_ms+=Math.max(0,Math.min(250,Math.round(now-lastFrame)));lastFrame=now;for(const id of message.unlocks)if(!history.unlocked.includes(id))history.unlocked.push(id);persist(historyKey,history);
+   try{render(message);if(!message.window?.closed)playAudio(message.audio||[]);}catch(error){halt(String(error));return;}const history=stored(historyKey,{played_ms:0,unlocked:[]});const now=performance.now();history.played_ms+=Math.max(0,Math.min(250,Math.round(now-lastFrame)));lastFrame=now;for(const id of message.unlocks)if(!history.unlocked.includes(id))history.unlocked.push(id);persist(historyKey,history);
+   if(!applyWindowControls(message.window))return;
    frameTimer=setTimeout(tick,16);
   }
  };
@@ -64,7 +65,7 @@ canvas.addEventListener('keydown',keyboardDown);
 canvas.addEventListener('keyup',keyboardUp);
 window.addEventListener('blur',resetKeyboard);
 document.querySelector('#mute').onclick=()=>{muted=!muted;if(audioGain)audioGain.gain.value=muted?0:.5;document.querySelector('#mute').textContent=muted?'Unmute':'Mute';document.querySelector('#mute').setAttribute('aria-pressed',String(muted));};
-play.onclick=start;restart.onclick=()=>{if(running&&worker){clearFileUI();resetSurface();worker.postMessage({type:'restart'});canvas.focus();}};stop.onclick=()=>halt('Stopped');
+play.onclick=start;restart.onclick=()=>{if(running&&worker){clearFileUI();resetWindowControls(true);resetSurface();worker.postMessage({type:'restart'});canvas.focus();}};stop.onclick=()=>halt('Stopped');
 try{
  const response=await fetch('game.json',{cache:'no-store'});if(!response.ok)throw Error('Missing export metadata');data=await response.json();if(data.format_version!==1)throw Error('Unsupported web export');
  const binary=await fetch('game.wasm',{cache:'no-store'});if(!binary.ok)throw Error('Missing compiled game');wasm=await binary.arrayBuffer();
@@ -77,6 +78,46 @@ try{
  status.textContent='Ready to play';play.disabled=false;restart.disabled=false;
 }catch(error){status.textContent=String(error);}
 
+// Host-owned window controls. Escape remains a game key; Ctrl+Alt+Escape releases capture.
+let requestedWindow={visible:true,confined:false,fullscreen_toggle:false,closed:false},lastWindowToggle=false,pointerSuspended=false,captureAttempted=false,capturePending=false,intentionalUnlock=false,captureEpoch=0,pendingCaptureEpoch=0,fullscreenBusy=false,fullscreenQueued=false;
+function windowFocused(){return running&&document.activeElement===canvas&&document.hasFocus?.()!==false;}
+function pointerStyle(){canvas.style.cursor=windowFocused()&&!pointerSuspended&&!filePending&&!requestedWindow.visible&&(!requestedWindow.confined||document.pointerLockElement===canvas)?'none':'auto';const button=document.querySelector('#capture');if(button)button.hidden=!(running&&requestedWindow.confined&&document.pointerLockElement!==canvas&&!filePending);}
+function releaseWindowPointer(){captureEpoch++;intentionalUnlock=true;capturePending=false;if(document.pointerLockElement===canvas)document.exitPointerLock?.();canvas.style.cursor='auto';}
+function resetWindowControls(leaveFullscreen=false){requestedWindow={visible:true,confined:false,fullscreen_toggle:false,closed:false};lastWindowToggle=false;fullscreenQueued=false;pointerSuspended=false;captureAttempted=false;releaseWindowPointer();if(!leaveFullscreen&&document.fullscreenElement===canvas)document.exitFullscreen?.().catch?.(()=>{});for(const id of ['#capture','#fullscreen']){const button=document.querySelector(id);if(button)button.hidden=true;}}
+async function captureWindowPointer(explicit=false){
+ if(!windowFocused()||filePending||!requestedWindow.confined||capturePending||document.pointerLockElement===canvas||(!explicit&&(pointerSuspended||captureAttempted)))return;
+ captureAttempted=true;capturePending=true;intentionalUnlock=false;const epoch=captureEpoch;pendingCaptureEpoch=epoch;
+ try{if(!canvas.requestPointerLock)throw Error('Pointer lock unavailable');await canvas.requestPointerLock();if(epoch!==captureEpoch||!windowFocused()||filePending||pointerSuspended||!requestedWindow.confined)releaseWindowPointer();}catch{pointerSuspended=true;}finally{capturePending=false;pointerStyle();}
+}
+async function toggleWindowFullscreen(){
+ fullscreenQueued=!fullscreenQueued;if(fullscreenBusy)return;fullscreenBusy=true;const button=document.querySelector('#fullscreen');
+ try{while(fullscreenQueued&&running&&!filePending){fullscreenQueued=false;
+  if(document.fullscreenElement===canvas)await document.exitFullscreen();
+  else{if(!canvas.requestFullscreen)throw Error('Fullscreen unavailable');await canvas.requestFullscreen();}
+  if(!running||filePending||document.hasFocus?.()===false){fullscreenQueued=false;if(document.fullscreenElement===canvas)await document.exitFullscreen();}
+  if(button)button.hidden=true;
+ }}catch{fullscreenQueued=false;if(button)button.hidden=false;}finally{fullscreenBusy=false;}
+}
+function applyWindowControls(requested){
+ if(!requested||typeof requested.visible!=='boolean'||typeof requested.confined!=='boolean'||typeof requested.fullscreen_toggle!=='boolean'||typeof requested.closed!=='boolean')return true;
+ requestedWindow=requested;if(requested.closed){halt('Game closed');return false;}
+ if(!requested.confined){captureAttempted=false;pointerSuspended=false;releaseWindowPointer();}
+ if(filePending){releaseWindowPointer();pointerStyle();return true;}
+ if(windowFocused()&&requested.fullscreen_toggle!==lastWindowToggle){lastWindowToggle=requested.fullscreen_toggle;toggleWindowFullscreen();}
+ if(requested.confined)captureWindowPointer();pointerStyle();return true;
+}
+function releaseWindowForFile(){pointerSuspended=true;releaseWindowPointer();if(document.fullscreenElement===canvas)document.exitFullscreen?.().catch?.(()=>{});pointerStyle();}
+canvas.addEventListener('pointerdown',event=>{if(requestedWindow.confined){location(event);pointerSuspended=false;captureAttempted=false;captureWindowPointer(true);}});
+const captureButton=document.querySelector('#capture');if(captureButton)captureButton.onclick=()=>{canvas.focus();pointerSuspended=false;captureAttempted=false;captureWindowPointer(true);};
+const fullscreenButton=document.querySelector('#fullscreen');if(fullscreenButton)fullscreenButton.onclick=()=>{canvas.focus();toggleWindowFullscreen();};
+document.addEventListener('pointerlockchange',()=>{
+ if(document.pointerLockElement===canvas){if(!windowFocused()||filePending||pointerSuspended||!requestedWindow.confined||pendingCaptureEpoch!==captureEpoch){releaseWindowPointer();return;}intentionalUnlock=false;pointerSuspended=false;pointerStyle();return;}
+ const unexpected=!intentionalUnlock&&requestedWindow.confined;intentionalUnlock=false;capturePending=false;
+ if(unexpected){pointerSuspended=true;const lost=windowClock();setTimeout(()=>{if(windowFocused()&&!filePending&&requestedWindow.confined&&lastEscapeInput<lost-100){syntheticEscape=windowClock();surface([5,0,0,41]);surface([6,0,0,41]);surface([9,0,0,27]);surface([10,0,0,27]);}},0);}
+ pointerStyle();
+});
+window.addEventListener('blur',()=>{pointerSuspended=true;releaseWindowPointer();pointerStyle();});
+
 // Native browser file selection/downloads remain outside the guest worker.
 function chosenFileName(name,extensions){if(typeof name!=='string'||!name||new TextEncoder().encode(name).length>255||/[. ]$/.test(name)||/[<>:"/\\|?*\x00-\x1f\x7f-\x9f]/.test(name))return false;const stem=name.split('.')[0].replace(/ +$/,'').toUpperCase();if(/^(CON|PRN|AUX|NUL|CONIN\$|CONOUT\$|COM[1-9¹²³]|LPT[1-9¹²³])$/.test(stem))return false;const split=name.lastIndexOf('.');return split>=0&&extensions.includes(name.slice(split+1).toLowerCase());}
 function clearFileUI(){filePending=null;const box=document.querySelector('#user-files');if(box){box.replaceChildren();box.hidden=true;}}
@@ -84,7 +125,7 @@ function showFileRequest(message,active){
  if(filePending||!Number.isInteger(message.handle)||message.handle<1||!Number.isInteger(message.generation)||!Number.isInteger(message.index))return;
  const policy=data.manifest.permissions.files?.[message.index];if(!policy||![0,1].includes(message.operation)||!(message.operation===0?policy.read:policy.write))return;
  if(message.operation===1&&(!(message.bytes instanceof Uint8Array)||message.bytes.length>1048576||message.bytes.length>policy.max_bytes||!chosenFileName(message.name,policy.extensions)))return;
- const box=document.querySelector('#user-files');if(!box)return;filePending=message;box.replaceChildren();box.hidden=false;
+ const box=document.querySelector('#user-files');if(!box)return;releaseWindowForFile();filePending=message;box.replaceChildren();box.hidden=false;
  const label=document.createElement('p');label.textContent=`${data.manifest.title||data.manifest.id}: ${policy.title}`;box.append(label);
  const done=(status,name='',bytes=new Uint8Array())=>{if(!running||worker!==active||filePending!==message)return;active.postMessage({type:'file-result',handle:message.handle,generation:message.generation,status,name,bytes});clearFileUI();canvas.focus();};
  if(message.operation===0){
@@ -105,18 +146,20 @@ function showFileRequest(message,active){
 }
 
 // Ordered input is scoped to this focused canvas, never document-wide typing.
-let surfaceEvents=[];
+let surfaceEvents=[],pointerPosition=[320,240],lastEscapeInput=-Infinity,syntheticEscape=-Infinity;
+function windowClock(){return typeof performance==='object'?performance.now():Date.now();}
+
 const scanKeys={Enter:40,Escape:41,Backspace:42,Tab:43,Space:44,Minus:45,Equal:46,BracketLeft:47,BracketRight:48,Backslash:49,Semicolon:51,Quote:52,Backquote:53,Comma:54,Period:55,Slash:56,CapsLock:57,PrintScreen:70,ScrollLock:71,Pause:72,Insert:73,Home:74,PageUp:75,Delete:76,End:77,PageDown:78,ArrowRight:79,ArrowLeft:80,ArrowDown:81,ArrowUp:82,NumLock:83,NumpadDivide:84,NumpadMultiply:85,NumpadSubtract:86,NumpadAdd:87,NumpadEnter:88,NumpadDecimal:99,ControlLeft:224,ShiftLeft:225,AltLeft:226,MetaLeft:227,ControlRight:228,ShiftRight:229,AltRight:230,MetaRight:231};
 function scan(code){if(/^Key[A-Z]$/.test(code))return code.charCodeAt(3)-65+4;if(/^Digit[1-9]$/.test(code))return Number(code[5])+29;if(code==='Digit0')return 39;if(/^F([1-9]|1[0-2])$/.test(code))return Number(code.slice(1))+57;if(/^Numpad[1-9]$/.test(code))return Number(code.slice(6))+88;if(code==='Numpad0')return 98;return scanKeys[code]??0;}
 function surface(event){if(!running||document.activeElement!==canvas||document.hasFocus?.()===false)return;if(surfaceEvents.length>=2048){surfaceEvents=[[0,0,0,0]];return;}surfaceEvents.push(event);}
 function textInput(text){for(const character of String(text??'').slice(0,4096)){const code=character.codePointAt(0);if(code&&(code<0xd800||code>0xdfff))surface([7,0,0,code]);}}
-function location(event){const rect=canvas.getBoundingClientRect();if(!(rect.width>0&&rect.height>0))return null;return [Math.max(0,Math.min(640,(event.clientX-rect.left)/rect.width*640)),Math.max(0,Math.min(480,(event.clientY-rect.top)/rect.height*480))];}
+function location(event,motion=false){const rect=canvas.getBoundingClientRect();if(!(rect.width>0&&rect.height>0))return null;if(document.pointerLockElement===canvas){if(!motion)return pointerPosition;const dx=Number.isFinite(event.movementX)?event.movementX:0,dy=Number.isFinite(event.movementY)?event.movementY:0;pointerPosition=[Math.max(0,Math.min(640,pointerPosition[0]+dx/rect.width*640)),Math.max(0,Math.min(480,pointerPosition[1]+dy/rect.height*480))];}else{pointerPosition=[Math.max(0,Math.min(640,(event.clientX-rect.left)/rect.width*640)),Math.max(0,Math.min(480,(event.clientY-rect.top)/rect.height*480))];}return pointerPosition;}
 function logical(event){const named={Enter:13,Escape:27,Tab:9,Backspace:8,Delete:127,' ':32};if(named[event.key])return named[event.key];const chars=[...event.key];if(chars.length===1){const ch=chars[0];return /^[A-Z]$/.test(ch)?ch.toLowerCase().codePointAt(0):ch.codePointAt(0);}const code=scan(event.code);return code?code|0x40000000:0;}
-canvas.addEventListener('keydown',event=>{const code=scan(event.code);if(code)surface([5,0,0,code|(event.repeat?65536:0)]);const key=logical(event);if(key)surface([9,0,0,(key|(event.repeat?0x80000000:0))>>>0]);if(!event.isComposing&&!event.ctrlKey&&!event.metaKey&&!event.altKey&&[...event.key].length===1)textInput(event.key);});
+canvas.addEventListener('keydown',event=>{if(event.code==='Escape'||event.key==='Escape'){if(event.ctrlKey&&event.altKey){pointerSuspended=true;releaseWindowPointer();pointerStyle();event.preventDefault();return;}const now=windowClock();if(now-syntheticEscape<100)return;lastEscapeInput=now;}const code=scan(event.code);if(code)surface([5,0,0,code|(event.repeat?65536:0)]);const key=logical(event);if(key)surface([9,0,0,(key|(event.repeat?0x80000000:0))>>>0]);if(!event.isComposing&&!event.ctrlKey&&!event.metaKey&&!event.altKey&&[...event.key].length===1)textInput(event.key);});
 canvas.addEventListener('keyup',event=>{const code=scan(event.code);if(code)surface([6,0,0,code]);const key=logical(event);if(key)surface([10,0,0,key]);});
 canvas.addEventListener('compositionend',event=>textInput(event.data));
 canvas.addEventListener('paste',event=>{if(document.activeElement===canvas){event.preventDefault();textInput(event.clipboardData?.getData('text/plain')??'');}});
-canvas.addEventListener('pointermove',event=>{const point=location(event);if(point)surface([1,...point,event.buttons&31]);});
+canvas.addEventListener('pointermove',event=>{const point=location(event,true);if(point)surface([1,...point,event.buttons&31]);});
 canvas.addEventListener('pointerdown',event=>{canvas.focus();const point=location(event),code=[1,4,2,8,16][event.button];if(point&&code){surface([2,...point,code]);canvas.setPointerCapture(event.pointerId);}});
 canvas.addEventListener('pointerup',event=>{const point=location(event),code=[1,4,2,8,16][event.button];if(point&&code)surface([3,...point,code]);if(canvas.hasPointerCapture(event.pointerId))canvas.releasePointerCapture(event.pointerId);});
 canvas.addEventListener('pointercancel',()=>surface([8,0,0,0]));
