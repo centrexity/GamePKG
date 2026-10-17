@@ -195,6 +195,8 @@ gamepkg list
 gamepkg download com.creator.game --trust-creator
 ```
 
+The library filters games by **All games**, **Ready to play**, **Needs build**, **Needs ROM**, or **Not downloaded**. Ready to play checks the native build and required local files; Needs ROM includes missing ROM selections and catalog entries marked as requiring a ROM. **Refresh library** reloads local packages and saved catalog entries. It does not fetch imported lists again from their URLs; catalog source URLs are not retained.
+
 The **Add** button on the library opens a separate page with the path/URL field and **Import .gamepkglist** action. Imported games appear in the table as **Not downloaded**, with a placeholder icon and **Download / inspect** action. Version and ROM claims from the catalog are unverified; the signed manifest becomes authoritative after downloading. The package ID must match the requested catalog ID, and creator approval is still required before first installation. Existing installed packages appear only once and retain their verified metadata and signer continuity rules.
 
 Lists support the same HTTPS and Tor onion URLs as packages, have a 4 MiB/10,000-game limit, reject unknown fields and duplicate IDs, and are imported atomically. Reimporting identical entries is harmless. Conflicting metadata for existing catalog IDs rejects the entire import rather than silently replacing download sources. Catalog metadata persists in `catalog.gamepkglist` under the library directory; it contains no game binaries or creator trust approvals. A crashed import may leave `.catalog-lock`; remove it only after confirming no import process is active.

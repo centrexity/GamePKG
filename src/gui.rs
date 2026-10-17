@@ -50,6 +50,7 @@ pub struct App {
     rom_game: Option<String>,
     rom_identity: Option<String>,
     additional_rom_paths: Vec<String>,
+    library_filter: library_view::Filter,
     show_add: bool,
     show_settings: bool,
     show_support: bool,
@@ -1230,13 +1231,14 @@ impl eframe::App for App {
             });
             ui.label("Choose a game to build, play or explore.");
             ui.horizontal_wrapped(|ui| {
-                for (label,value) in [("Installed",self.installed.len().to_string()),("Ready to play",self.built.len().to_string()),("Storage used",self.library_bytes.map(crate::storage::bytes).unwrap_or_else(||"—".into()))] {
+                for (label,value) in [("Installed",self.installed.len().to_string()),("Ready to play",self.installed.iter().filter(|m|self.ready_to_play(m)).count().to_string()),("Storage used",self.library_bytes.map(crate::storage::bytes).unwrap_or_else(||"—".into()))] {
                     egui::Frame::group(ui.style()).inner_margin(14).corner_radius(10).show(ui,|ui| {
                         ui.vertical(|ui| {ui.label(egui::RichText::new(value).size(24.0).strong().color(ui.visuals().hyperlink_color));ui.label(label);});
                     });
                 }
             });
             ui.add_space(12.0);
+            self.library_filters(ui);
             let inspect = self.library_games(ui);
             let mut integrity = None;
             for (name, error) in &self.rejected {
@@ -1247,7 +1249,7 @@ impl eframe::App for App {
             }
             if self.installed.is_empty() && self.catalog.is_empty() && self.rejected.is_empty() { ui.label("No games yet. Import a game list or install a package."); }
             ui.label(&self.status);
-            if ui.add_enabled(self.result.is_none(), egui::Button::new("Refresh library")).clicked() { self.refresh(ctx); }
+            if ui.add_enabled(self.result.is_none(), egui::Button::new("Refresh library")).on_hover_text("Reload locally saved games and catalog entries. Lists are not fetched again from their URLs.").clicked() { self.refresh(ctx); }
             if let Some((id,fix,store)) = integrity {
                 self.begin_work(move || { let root=crate::registry::default_root()?; Ok(Work::Message(if fix {crate::integrity::fix_with_store(&root,&id,store.as_deref())?} else {crate::integrity::check(&root,&id)?})) });
             }
