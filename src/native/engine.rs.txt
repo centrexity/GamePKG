@@ -33,8 +33,7 @@
             super::draw_clear(0x000000ff);
             #[cfg(gamepkg_doom)] super::draw_image(0.0,0.0,640.0,480.0,w as u32,h as u32,&p);
             #[cfg(gamepkg_zelda)] super::draw_image(64.0,16.0,512.0,448.0,w as u32,h as u32,&p);
-            #[cfg(gamepkg_doom)] super::audio_submit(std::slice::from_raw_parts(audio(),800));
-            #[cfg(gamepkg_zelda)] super::__gamepkg_audio_submit_stereo(std::slice::from_raw_parts(audio(),1600));
+            super::__gamepkg_audio_submit_stereo(std::slice::from_raw_parts(audio(),1600));
             #[cfg(gamepkg_doom)] {if savedirty()!=0{let n=savedlength() as usize;assert!(n<=512*1024);super::save_write(std::slice::from_raw_parts(savedata(),n));}super::rpc(21,&super::u32s(&[status(),position(),controller()]));}
             #[cfg(gamepkg_zelda)] {if save_changed()!=0{super::save_write(std::slice::from_raw_parts(sram(),8192));}super::rpc(21,&super::u32s(&[engine_status(),engine_position(),engine_controller()]));}
             state.wrapping_add(1)

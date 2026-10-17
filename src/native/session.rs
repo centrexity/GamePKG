@@ -14,8 +14,10 @@ fn stereo_engine_audio(
     payload: &[u8],
 ) -> Result<Vec<i16>> {
     ensure!(
-        manifest.builtin_engine.as_deref() == Some(crate::zelda3::PROFILE)
-            && manifest.permissions.audio,
+        matches!(
+            manifest.builtin_engine.as_deref(),
+            Some(crate::zelda3::PROFILE | crate::doom::PROFILE)
+        ) && manifest.permissions.audio,
         "stereo engine audio access denied"
     );
     ensure!(
@@ -529,6 +531,8 @@ mod stereo_tests {
         manifest.builtin_engine = None;
         assert!(stereo_engine_audio(&manifest, 1, 0, &payload).is_err());
         manifest.builtin_engine = Some(crate::doom::PROFILE.into());
+        assert!(stereo_engine_audio(&manifest, 1, 0, &payload).is_ok());
+        manifest.builtin_engine = Some("doom-unreviewed".into());
         assert!(stereo_engine_audio(&manifest, 1, 0, &payload).is_err());
     }
 }

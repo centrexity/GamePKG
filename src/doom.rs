@@ -228,6 +228,7 @@ pub struct Doom {
     started: bool,
     pixels: TypedFunc<(), i32>,
     audio: TypedFunc<(), i32>,
+    audio_channels: u32,
     save: TypedFunc<(), i32>,
     save_length: TypedFunc<(), i32>,
     dirty: TypedFunc<(), i32>,
@@ -291,12 +292,23 @@ impl Doom {
                 String::from_utf8_lossy(&text).trim_end_matches('\0')
             );
         }
+        let audio_channels = if let Some(function) = instance.get_func(&mut store, "audio_channels")
+        {
+            store.set_epoch_deadline(deadline);
+            function.typed::<(), i32>(&store)?.call(&mut store, ())? as u32
+        } else {
+            1
+        };
+        if !matches!(audio_channels, 1 | 2) {
+            bail!("Invalid DOOM audio channel count");
+        }
         Ok(Self {
             step: instance.get_typed_func(&mut store, "step")?,
             reset: instance.get_typed_func(&mut store, "reset")?,
             started: false,
             pixels: instance.get_typed_func(&mut store, "pixels")?,
             audio: instance.get_typed_func(&mut store, "audio")?,
+            audio_channels,
             save: saved,
             save_length: instance.get_typed_func(&mut store, "save_length")?,
             dirty: instance.get_typed_func(&mut store, "save_dirty")?,
@@ -327,7 +339,7 @@ impl Doom {
             pixel[3] = 255;
         }
         let p = self.audio.call(&mut self.store, ())?;
-        let mut pcm = vec![0u8; 1600];
+        let mut pcm = vec![0u8; 1600 * self.audio_channels as usize];
         self.memory.read(&self.store, p as usize, &mut pcm)?;
         let audio = pcm
             .as_chunks::<2>()
@@ -350,7 +362,7 @@ impl Doom {
         Ok(crate::zelda3::Frame {
             pixels,
             audio,
-            audio_channels: 1,
+            audio_channels: self.audio_channels,
             save,
         })
     }

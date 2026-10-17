@@ -12,11 +12,18 @@ Both builds check every pinned upstream source hash. The optional Wasm build par
 
 ## Runtime boundaries
 
-The WAD is selected explicitly, snapshotted read-only and validated for its IWAD header, bounded directory and lump ranges. It is not copied to the game package or unpacked onto disk. The native worker runs the same pinned engine behind OS namespaces, a syscall allowlist, address-space limits and tick deadlines. The optional Wasmtime profile runs the engine with no host imports, a private 64 MiB memory and epoch deadlines. Engine and recipe memory together stay within the lower of the signed cap and player ceiling. Rendering snapshots 320×200 pixels through the bounded host renderer. Audio supplies 800 mono PCM samples per 60 Hz host tick. The engine advances at its original 35 Hz tic rate.
+The WAD is selected explicitly, snapshotted read-only and validated for its IWAD header, bounded directory and lump ranges. It is not copied to the game package or unpacked onto disk. The native worker runs the same pinned engine behind OS namespaces, a syscall allowlist, address-space limits and tick deadlines. The optional Wasmtime profile runs the engine with no host imports, a private 64 MiB memory and epoch deadlines. Engine and recipe memory together stay within the lower of the signed cap and player ceiling. Rendering snapshots 320×200 pixels through the bounded host renderer. Audio supplies 800 stereo PCM frames at 48 kHz per 60 Hz host tick. The engine advances at its original 35 Hz tic rate.
 
 The engine's C stdio adapter is a private virtual filesystem: only the selected WAD and one bounded save slot exist. No path can reach the host filesystem. Configuration files, environment access and process execution are denied. Saves commit through the existing per-game/per-creator save blob after successful ticks. The one persistent slot is limited to 512 KiB and can be restored on launch. Engine memory mutations after a trap are not rolled back; close and relaunch a stopped game.
 
 Sound effects use a bounded 16-channel DMX mixer. Music synthesis, multiplayer, mod loading and browser export are not implemented. No microphone, socket, SDL device or native library is exposed to the engine. Controller/touch input comes through the same host button snapshot as keyboard input.
+
+The mixer respects world-position separation and changing volume using the
+[original DOOM quadratic panning and PCM gain](https://github.com/id-Software/DOOM/blob/master/linuxdoom-1.10/i_sound.c).
+Separate channels survive native packets and Wasm reads through host output.
+Legacy mono Wasm caches remain readable; rebuild to enable stereo. A 64-bit
+playback counter prevents long sound effects from wrapping to earlier samples.
+`tests/doom_audio.c` exercises the production mixer without assets or devices.
 
 ## Source and licensing
 
@@ -35,5 +42,9 @@ cargo test --all-features --test doom_play -- --ignored
 ```
 
 That test works in a private copy, starts a level from the menus, checks movement and firing audio, quicksaves, reloads the saved position, checks a nonblank gameplay frame and verifies the WAD was unchanged. `tests/doom_gui.py WAD --library LIBRARY` checks actual ROM selection, visible gameplay, movement and quicksave in the desktop app on a private display. Both tests require a player-owned compatible WAD and never publish it.
+
+The same test file also runs the original attract demo and requires actual
+left/right sample differences. Both tests pass on native and Wasm; select one
+explicitly with `GAMEPKG_DOOM_TEST_TARGET=native` or `wasm`.
 
 For a separate WASI installation, use **Settings → C/WASI build tools folder**, check the tools and save settings. This persists across app restarts without requiring a launch-time environment variable. Engine-specific sysroot environment overrides take precedence.

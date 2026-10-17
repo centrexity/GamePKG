@@ -34,6 +34,8 @@ jobs:
         run: |
           g++ -Wall -Wextra -Werror tests/cube2_audio_bridge.cpp -o target/cube2-audio-bridge-test
           target/cube2-audio-bridge-test
+          cc -Wall -Wextra -Werror tests/doom_audio.c -o target/doom-audio-test
+          target/doom-audio-test
       - name: Test browser guest path protections
         run: node tests/web_path_attacks.mjs
       - name: Test support links and clipboard behavior

@@ -25,7 +25,7 @@ static char diagnostics[4096];
 static uint32_t diagnostic_length;
 static uint32_t ticks = 1, previous, buttons, accumulator;
 static unsigned keyqueue[64], qr, qw;
-static int16_t pcm[800];
+#include "audio.h"
 /* stdio is an entirely private virtual filesystem, never a host descriptor. */
 typedef struct {
   uint8_t *data;
@@ -231,13 +231,6 @@ static void event(int key, int down) {
   if (qw - qr < 64)
     keyqueue[qw++ % 64] = (down << 8) | key;
 }
-/* Deterministic mono mixer: DMX sound lumps, no devices or external codecs. */
-typedef struct {
-  const uint8_t *data;
-  uint32_t length, phase, rate;
-  int volume, active;
-} Channel;
-static Channel channels[16];
 static boolean snd_init(boolean prefix) { return true; }
 static void snd_shutdown(void) {}
 static int snd_lump(sfxinfo_t *s) {
@@ -248,7 +241,7 @@ static int snd_lump(sfxinfo_t *s) {
 static void snd_update(void) {}
 static void snd_params(int c, int vol, int sep) {
   if (c >= 0 && c < 16)
-    channels[c].volume = vol;
+    channel_params(&channels[c], vol, sep);
 }
 static int snd_start(sfxinfo_t *s, int c, int vol, int sep) {
   if (c < 0 || c >= 16)
@@ -261,7 +254,9 @@ static int snd_start(sfxinfo_t *s, int c, int vol, int sep) {
   uint32_t n = d[4] | d[5] << 8 | d[6] << 16 | (uint32_t)d[7] << 24;
   if (n > (uint32_t)size - 8)
     n = size - 8;
-  channels[c] = (Channel){d + 8, n, 0, (uint32_t)(d[2] | d[3] << 8), vol, 1};
+  channels[c] = (Channel){.data = d + 8, .length = n,
+                          .rate = (uint32_t)(d[2] | d[3] << 8), .active = 1};
+  channel_params(&channels[c], vol, sep);
   return c;
 }
 static void snd_stop(int c) {
@@ -280,28 +275,6 @@ music_module_t DG_music_module = {0};
 int use_libsamplerate = 0;
 float libsamplerate_scale = 1;
 void I_InitTimidityConfig(void) {}
-static void mix(void) {
-  for (int i = 0; i < 800; i++) {
-    int sum = 0;
-    for (int c = 0; c < 16; c++) {
-      Channel *p = &channels[c];
-      if (!p->active)
-        continue;
-      uint32_t pos = p->phase / 48000;
-      if (pos >= p->length) {
-        p->active = 0;
-        continue;
-      }
-      sum += ((int)p->data[pos] - 128) * p->volume * 2;
-      p->phase += p->rate;
-    }
-    if (sum > 32767)
-      sum = 32767;
-    if (sum < -32768)
-      sum = -32768;
-    pcm[i] = sum;
-  }
-}
 EXPORT("allocate") void *allocate(uint32_t n) {
   return n <= 64 * 1024 * 1024 ? malloc(n) : NULL;
 }
@@ -355,6 +328,7 @@ EXPORT("step") int step(uint32_t input) {
 }
 EXPORT("pixels") void *pixels(void) { return DG_ScreenBuffer; }
 EXPORT("audio") void *audio(void) { return pcm; }
+EXPORT("audio_channels") uint32_t audio_channels(void) { return 2; }
 EXPORT("save") void *savedata(void) { return save_data; }
 EXPORT("save_length") uint32_t savedlength(void) { return save_length; }
 EXPORT("save_dirty") int savedirty(void) {

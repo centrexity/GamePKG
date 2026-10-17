@@ -31,8 +31,8 @@ status = "pending"
 [[work]]
 id = "stereo_audio"
 requirements = ["Channel-aware host audio", "Cube 2 stereo", "DOOM spatial separation", "Zelda stereo DSP", "Output and channel-isolation tests"]
-status = "in_progress"
-notes = "Shared stereo output and Cube 2 stereo verified: callback/encoding, protocol, resampling, original-engine channel differences, real null-device output, cached package playback and GUI rendering. Zelda now preserves original DSP stereo through native and Wasm adapters; actual channel differences, gameplay, SRAM saving/reload, import-free engine and malformed/budget/permission handling verified. DOOM remains pending."
+status = "implemented_runtime_verified"
+notes = "Shared stereo output and Cube 2 stereo verified: callback/encoding, protocol, resampling, original-engine channel differences, real null-device output, cached package playback and GUI rendering. Zelda preserves original DSP stereo through native and Wasm adapters; actual channel differences, gameplay, SRAM saving/reload, import-free engine and malformed/budget/permission handling verified. DOOM spatial stereo verified in native and Wasm original attract demos and gameplay/save-reload tests. Production mixer tests cover separation, gain, clipping, end/rate bounds and long-sound counter overflow. Music remains separate pending work."
 
 [[work]]
 id = "doom_music"
