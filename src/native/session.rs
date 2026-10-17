@@ -7,6 +7,36 @@ use std::{
     time::{Duration, Instant},
 };
 const PACKET: usize = 8 * 1048576 + 65536;
+fn stereo_engine_audio(
+    manifest: &crate::manifest::Manifest,
+    channels: u32,
+    queued: usize,
+    payload: &[u8],
+) -> Result<Vec<i16>> {
+    ensure!(
+        manifest.builtin_engine.as_deref() == Some(crate::zelda3::PROFILE)
+            && manifest.permissions.audio,
+        "stereo engine audio access denied"
+    );
+    ensure!(
+        payload.len() <= 6400 && payload.len().is_multiple_of(4),
+        "invalid stereo engine audio packet"
+    );
+    ensure!(
+        (queued == 0 || (channels == 2 && queued.is_multiple_of(2)))
+            && queued
+                .checked_add(payload.len() / 2)
+                .is_some_and(|size| size <= 3200),
+        "stereo audio budget exceeded"
+    );
+    Ok(payload
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|sample| i16::from_le_bytes([sample[0], sample[1]]))
+        .collect())
+}
+
 pub(crate) struct Session {
     child: Child,
     _parent_thread: std::sync::mpsc::Sender<()>,
@@ -20,6 +50,7 @@ pub(crate) struct Session {
     engine_data: Option<Vec<u8>>,
     pub frame: crate::drawing::Frame,
     pub audio: Vec<i16>,
+    pub audio_channels: u32,
     pub achievements: Vec<String>,
     pub diagnostic: Option<(u32, u32, u32)>,
     network: crate::network::Service,
@@ -189,6 +220,7 @@ impl Session {
             engine_data: None,
             frame: Default::default(),
             audio: Vec::new(),
+            audio_channels: 1,
             achievements: Vec::new(),
             diagnostic: None,
             shader_count,
@@ -308,7 +340,10 @@ impl Session {
             11 => self.frame.shader(n(b, 0)? as i32, self.shader_count),
             12 => {
                 ensure!(
-                    b.len() <= 3200 && b.len() % 2 == 0 && self.manifest.permissions.audio,
+                    b.len() <= 3200
+                        && b.len() % 2 == 0
+                        && self.manifest.permissions.audio
+                        && (self.audio.is_empty() || self.audio_channels == 1),
                     "audio access denied"
                 );
                 ensure!(
@@ -321,6 +356,13 @@ impl Session {
                         .iter()
                         .map(|s| i16::from_le_bytes([s[0], s[1]])),
                 );
+                true
+            }
+            23 => {
+                let samples =
+                    stereo_engine_audio(&self.manifest, self.audio_channels, self.audio.len(), b)?;
+                self.audio_channels = 2;
+                self.audio.extend(samples);
                 true
             }
             13 => {
@@ -421,6 +463,7 @@ impl Session {
     pub fn step(&mut self, input: u32, state: u64) -> Result<u64> {
         self.frame.reset();
         self.audio.clear();
+        self.audio_channels = 1;
         self.achievements.clear();
         let previous = self.save.as_ref().map(|s| s.bytes.clone());
         let result = (|| {
@@ -460,5 +503,32 @@ impl Session {
                 Err(e)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod stereo_tests {
+    use super::*;
+    #[test]
+    fn stereo_rpc_requires_exact_engine_permission_complete_frames_and_budget() {
+        let mut manifest: crate::manifest::Manifest =
+            toml::from_str(include_str!("../../ports/zelda3/manifest.toml")).unwrap();
+        let payload = [0x34, 0x12, 0xbb, 0xdc];
+        assert_eq!(
+            stereo_engine_audio(&manifest, 1, 0, &payload).unwrap(),
+            [0x1234, -0x2345]
+        );
+        for (channels, queued) in [(1, 2), (2, 3), (2, 3200), (2, usize::MAX)] {
+            assert!(stereo_engine_audio(&manifest, channels, queued, &payload).is_err());
+        }
+        assert!(stereo_engine_audio(&manifest, 2, 0, &[0; 3]).is_err());
+        assert!(stereo_engine_audio(&manifest, 2, 0, &[0; 6404]).is_err());
+        manifest.permissions.audio = false;
+        assert!(stereo_engine_audio(&manifest, 1, 0, &payload).is_err());
+        manifest.permissions.audio = true;
+        manifest.builtin_engine = None;
+        assert!(stereo_engine_audio(&manifest, 1, 0, &payload).is_err());
+        manifest.builtin_engine = Some(crate::doom::PROFILE.into());
+        assert!(stereo_engine_audio(&manifest, 1, 0, &payload).is_err());
     }
 }

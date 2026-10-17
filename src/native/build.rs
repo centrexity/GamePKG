@@ -351,6 +351,7 @@ fn engine(stage: &Path, profile: &str, optimize: bool) -> Result<Vec<String>> {
             "step",
             "pixels",
             "audio",
+            "audio_channels",
             "sram",
             "save_dirty",
             "reset",

@@ -14,7 +14,7 @@ const uint8 *g_asset_ptrs[kNumberOfAssets];
 uint32 g_asset_sizes[kNumberOfAssets];
 static uint8 ports[4];
 static uint8 framebuffer[512 * 224 * 4];
-static int16 samples[800];
+static int16 samples[800 * 2];
 static bool initialized;
 static bool save_dirty;
 
@@ -89,10 +89,11 @@ int step(uint32 buttons) {
   }
   ZeldaRunFrameInternal((uint16)buttons,run_what);
   ZeldaPushApuState(); ZeldaDrawPpuFrame(framebuffer,256*4,kPpuRenderFlags_NewRenderer);
-  ZeldaRenderAudio(samples,800,1); return 0;
+  ZeldaRenderAudio(samples,800,2); return 0;
 }
 __attribute__((export_name("pixels"))) uint8 *pixels(void) { return framebuffer; }
 __attribute__((export_name("audio"))) int16 *audio(void) { return samples; }
+__attribute__((export_name("audio_channels"))) uint32 audio_channels(void) { return 2; }
 __attribute__((export_name("sram"))) uint8 *sram(void) { return initialized ? g_zenv.sram : NULL; }
 __attribute__((export_name("save_dirty"))) int save_changed(void) { int result=save_dirty;save_dirty=false;return result; }
 // libc diagnostic paths cannot reach ambient WASI descriptors.

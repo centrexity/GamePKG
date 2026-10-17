@@ -350,6 +350,7 @@ impl Doom {
         Ok(crate::zelda3::Frame {
             pixels,
             audio,
+            audio_channels: 1,
             save,
         })
     }

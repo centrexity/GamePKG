@@ -416,6 +416,10 @@ root can traverse the compiler paths without access to runner home folders.
 
 ## Port feature coverage
 
+See the [port fidelity audit and required host additions](docs/PORT_FIDELITY.md)
+and [implementation tracker](docs/port-parity.toml) for remaining work and
+completion criteria.
+
 Source audit against the pinned engines and checked-in recipes (2026-10-17):
 these ports are playable adaptations, not verified feature-complete replacements.
 Passing startup/gameplay tests does not establish that every upstream feature or
@@ -430,9 +434,9 @@ product decisions before claiming full parity.
 | Arkanoo | The upstream editor, mouse controls, menus, portal/gravity effects and music are omitted. Art, effects and endless level generation are replacements. Only high score/unlocked level persist, not the current run. | `ports/arkanoo/CREDITS.md`, `ports/arkanoo/source/src/lib.rs` |
 | 2048 | This adapts row merging rather than the whole upstream application. New tiles are always 2 and their position is deterministic. There is no score display, win/game-over flow, restart/undo or persistent board in the recipe. The upstream solver/terminal UI are replaced; tile values cap at 32768. | `ports/2048/CREDITS.md`, `ports/2048/source/src/lib.rs` |
 
-Cube 2 now preserves stereo through the engine bridge and shared host output.
-DOOM and Zelda still need their engine adapters and native/runtime metadata
-updated to use this channel-aware path.
+Cube 2 and Zelda now preserve stereo through their engine bridges and shared
+host output. Zelda's native and Wasm paths pass channel-separation and actual
+gameplay/save-reload tests. DOOM still needs its adapter updated for stereo.
 
 Next priorities include complete physical input in Cube 2; DOOM music, save slots,
 configuration and mouse controls; and standard 2048 spawning/scoring/end states.

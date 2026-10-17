@@ -29,13 +29,16 @@ const resources=fs.readFileSync(0);
 const ptr=e.allocate(resources.length);if(!ptr)throw Error('Allocation failed');
 new Uint8Array(e.memory.buffer,ptr,resources.length).set(resources);
 if(e.initialize(ptr,resources.length)!==0)throw Error('Initialization failed');
-let audio=false;
+let audio=false, separated=false;
+if(e.audio_channels()!==2)throw Error('Stereo channel metadata missing');
 for(let frame=0;frame<1000;frame++) {
   if(e.step(0)!==0)throw Error('Step failed');
-  const samples=new Int16Array(e.memory.buffer,e.audio(),800);
+  const samples=new Int16Array(e.memory.buffer,e.audio(),1600);
   if(samples.some(value=>value!==0))audio=true;
+  for(let i=0;i<samples.length;i+=2)if(samples[i]!==samples[i+1])separated=true;
 }
 if(!audio)throw Error('Engine never generated audio');
+if(!separated)throw Error('Original stereo channels were collapsed');
 const image=Buffer.from(new Uint8Array(e.memory.buffer,e.pixels(),256*224*4));
 process.stdout.write(image);
 '''

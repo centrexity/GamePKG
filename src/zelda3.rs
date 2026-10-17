@@ -204,6 +204,7 @@ pub struct Zelda {
     reset: TypedFunc<(), ()>,
     pixels: TypedFunc<(), i32>,
     audio: TypedFunc<(), i32>,
+    audio_channels: u32,
     sram: TypedFunc<(), i32>,
     dirty: TypedFunc<(), i32>,
     status: TypedFunc<(), i32>,
@@ -213,6 +214,7 @@ pub struct Zelda {
 pub struct Frame {
     pub pixels: Vec<u8>,
     pub audio: Vec<i16>,
+    pub audio_channels: u32,
     pub save: Option<Vec<u8>>,
 }
 impl Zelda {
@@ -266,6 +268,17 @@ impl Zelda {
         let reset = instance.get_typed_func(&mut store, "reset")?;
         let pixels = instance.get_typed_func(&mut store, "pixels")?;
         let audio = instance.get_typed_func(&mut store, "audio")?;
+        let audio_channels = if let Some(function) = instance.get_func(&mut store, "audio_channels")
+        {
+            store.set_epoch_deadline(deadline);
+            function.typed::<(), i32>(&store)?.call(&mut store, ())? as u32
+        } else {
+            1
+        };
+        if !matches!(audio_channels, 1 | 2) {
+            bail!("Invalid Zelda audio channel count");
+        }
+
         let dirty = instance.get_typed_func(&mut store, "save_dirty")?;
         let status = instance.get_typed_func(&mut store, "status")?;
         let position = instance.get_typed_func(&mut store, "position")?;
@@ -277,6 +290,7 @@ impl Zelda {
             reset,
             pixels,
             audio,
+            audio_channels,
             sram,
             dirty,
             status,
@@ -327,7 +341,7 @@ impl Zelda {
             pixel[3] = 255;
         }
         let pointer = self.audio.call(&mut self.store, ())? as usize;
-        let mut pcm = vec![0u8; 1600];
+        let mut pcm = vec![0u8; 1600 * self.audio_channels as usize];
         self.memory.read(&self.store, pointer, &mut pcm)?;
         let audio = pcm
             .as_chunks::<2>()
@@ -346,6 +360,7 @@ impl Zelda {
         Ok(Frame {
             pixels,
             audio,
+            audio_channels: self.audio_channels,
             save,
         })
     }

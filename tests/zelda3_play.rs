@@ -1,4 +1,14 @@
 use gamepkg::{drawing::Command, runtime::Game};
+fn load(root: &std::path::Path, rom: &std::path::Path) -> Game {
+    let native = std::env::var("GAMEPKG_ZELDA3_TEST_TARGET")
+        .ok()
+        .map(|target| match target.as_str() {
+            "native" => true,
+            "wasm" => false,
+            _ => panic!("test target must be native or wasm"),
+        });
+    Game::load_target(root, "com.gamepkg.zelda3", &[rom.to_path_buf()], native).unwrap()
+}
 #[test]
 #[ignore = "requires the signed built Zelda3 fixture and player-selected ROM"]
 fn actual_zelda3_frames() {
@@ -22,13 +32,19 @@ fn actual_zelda3_frames() {
     }
     copy(&root, fixture.path(), false);
     let root = fixture.path().to_path_buf();
-    let mut game = Game::load_with_rom(&root, "com.gamepkg.zelda3", Some(&rom)).unwrap();
+    let mut game = load(&root, &rom);
     fn run(game: &mut Game, frames: u32, input: u32) -> bool {
         let mut audible = false;
         for frame in 0..frames {
             if let Err(error) = game.step(input) {
                 panic!("frame {frame}: {error:#}");
             }
+            assert_eq!(
+                game.audio_channels(),
+                2,
+                "Zelda engine audio must remain stereo"
+            );
+            assert_eq!(game.audio_frame().len(), 1600);
             audible |= game.audio_frame().iter().any(|sample| *sample != 0);
         }
         println!(
@@ -92,7 +108,7 @@ fn actual_zelda3_frames() {
         .join("target/zelda3-proof/runtime-opening.png");
     image::save_buffer(path, image.pixels(), 256, 224, image::ColorType::Rgba8).unwrap();
     drop(game);
-    let mut reopened = Game::load_with_rom(&root, "com.gamepkg.zelda3", Some(&rom)).unwrap();
+    let mut reopened = load(&root, &rom);
     run(&mut reopened, 1000, 0);
     run(&mut reopened, 1, 64);
     run(&mut reopened, 60, 0);
@@ -116,4 +132,24 @@ fn actual_zelda3_frames() {
         copy(&root, &output, true);
     }
     println!("Actual GamePKG Zelda3 title, audio, file/name selection, opening dialogue, Link movement and SRAM reload passed.");
+}
+
+#[test]
+#[ignore = "requires the signed built Zelda3 fixture and player-selected ROM"]
+fn actual_zelda3_stereo_title_preserves_channel_differences() {
+    let root = std::path::PathBuf::from(std::env::var_os("GAMEPKG_ZELDA3_TEST_ROOT").unwrap());
+    let rom = std::path::PathBuf::from(std::env::var_os("GAMEPKG_ZELDA3_TEST_ROM").unwrap());
+    let mut game = load(&root, &rom);
+    let mut separated = false;
+    for _ in 0..1000 {
+        game.step(0).unwrap();
+        assert_eq!(game.audio_channels(), 2);
+        assert_eq!(game.audio_frame().len(), 1600);
+        separated |= game
+            .audio_frame()
+            .chunks_exact(2)
+            .any(|pair| pair[0] != pair[1]);
+    }
+    assert!(separated, "Zelda DSP stereo channels were collapsed");
+    game.finish().unwrap();
 }

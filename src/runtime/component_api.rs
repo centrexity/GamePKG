@@ -252,7 +252,10 @@ pub(super) fn linker(engine: &Engine) -> Result<Linker<Data>> {
     host.func_wrap(
         "audio-submit",
         |mut store: StoreContextMut<'_, Data>, (samples,): (Vec<i16>,)| {
-            if !store.data().audio_allowed || samples.len() + store.data().audio.len() > 1600 {
+            if !store.data().audio_allowed
+                || (!store.data().audio.is_empty() && store.data().audio_channels != 1)
+                || samples.len() + store.data().audio.len() > 1600
+            {
                 return Ok((false,));
             }
             store.data_mut().audio.extend(samples);

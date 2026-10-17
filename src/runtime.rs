@@ -28,6 +28,7 @@ struct Data {
     save: Option<crate::saves::Save>,
     frame: crate::drawing::Frame,
     audio: Vec<i16>,
+    audio_channels: u32,
     audio_allowed: bool,
     shader_count: usize,
     zelda: Option<crate::zelda3::Zelda>,
@@ -260,6 +261,7 @@ impl Game {
                 save,
                 frame: crate::drawing::Frame::default(),
                 audio: Vec::new(),
+                audio_channels: 1,
                 audio_allowed: manifest.permissions.audio,
                 shader_count: 0,
                 zelda: None,
@@ -997,7 +999,11 @@ impl Game {
         if let Some(cube) = &self.cube2 {
             return cube.audio_channels;
         }
-        1
+        #[cfg(target_os = "linux")]
+        if let Some(native) = &self.native {
+            return native.audio_channels;
+        }
+        self.store.as_ref().unwrap().data().audio_channels
     }
     pub fn audio_frame(&self) -> &[i16] {
         #[cfg(target_os = "linux")]
@@ -1050,6 +1056,7 @@ impl Game {
             .clear();
         self.store.as_mut().unwrap().data_mut().frame.reset();
         self.store.as_mut().unwrap().data_mut().audio.clear();
+        self.store.as_mut().unwrap().data_mut().audio_channels = 1;
         self.store
             .as_mut()
             .unwrap()
@@ -1319,6 +1326,7 @@ fn decode_asset_image(
 /// Signed 16-bit little-endian mono PCM at 48 kHz; at most 1,600 samples per tick.
 fn audio_submit(mut caller: Caller<'_, Data>, pointer: i32, count: i32) -> i32 {
     if !caller.data().audio_allowed
+        || (!caller.data().audio.is_empty() && caller.data().audio_channels != 1)
         || pointer < 0
         || !(0..=1600).contains(&count)
         || caller.data().audio.len() + count as usize > 1600
@@ -1366,6 +1374,7 @@ fn doom_tick(mut caller: Caller<'_, Data>, input: i32, state: i64) -> Result<i64
     }
     if data.audio_allowed {
         data.audio = frame.audio;
+        data.audio_channels = frame.audio_channels;
     }
     if let Some(bytes) = frame.save {
         let save = data
@@ -1395,6 +1404,7 @@ fn zelda3_tick(mut caller: Caller<'_, Data>, input: i32, state: i64) -> Result<i
     }
     if data.audio_allowed {
         data.audio = frame.audio;
+        data.audio_channels = frame.audio_channels;
     }
     if let Some(bytes) = frame.save {
         let save = data

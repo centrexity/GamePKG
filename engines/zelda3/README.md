@@ -31,6 +31,13 @@ replay logging from the tick path. Native libc diagnostic descriptor operations
 fail closed inside Wasm. The signed `ports/zelda3` GamePKG now builds and plays through the
 native GamePKG runtime. Its Rust entry invokes only the checked host engine API.
 
+Audio preserves the original DSP's left and right channels: 800 stereo frames
+at 48 kHz per host tick. Native packets and Wasm memory reads carry channel
+metadata through the shared output. Legacy mono Wasm caches remain readable;
+rebuild them to enable stereo. Both runtime targets are verified by the actual
+ROM gameplay/save test and a 1,000-frame channel-separation test. Set
+`GAMEPKG_ZELDA3_TEST_TARGET=native` or `wasm` to select the target explicitly.
+
 ROM decoding runs inside the native GamePKG executable on every platform. Users
 need no Python, Pillow, PyYAML, script interpreter or external decoder. Pinned
 upstream Python scripts remain development references only. The native compiler
