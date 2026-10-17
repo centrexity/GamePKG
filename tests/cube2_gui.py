@@ -70,8 +70,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-cube2-gui-') as temporary:
   command('xdotool','mousemove','--window',library_window,'400','800','click','--repeat','20','--delay','20','4')
   time.sleep(.3)
   # Target the visible label; placeholder punctuation is unreliable under OCR.
-  x,y=click_text(library_window,env,'Join server',root,click=False)
-  command('xdotool','mousemove','--window',library_window,str(x),str(y+30),'click','1')
+  click_text(library_window,env,'server.example:28785',root)
   command('xdotool','key','--clearmodifiers','ctrl+a')
   command('xdotool','type','--clearmodifiers','127.0.0.1:28785')
   click_text(library_window,env,'Save multiplayer settings',root);time.sleep(.3)

@@ -60,6 +60,7 @@ fn main() -> eframe::Result {
                 cc.gl.clone(),
                 args.target.as_deref().map(|t| t == "native"),
             );
+            app.set_native_display(cc);
             app.set_vulkan(cc.wgpu_render_state.clone());
             if args.support {
                 app.open_support();

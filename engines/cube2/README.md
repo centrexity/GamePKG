@@ -186,3 +186,20 @@ The ignored `original_server_browser_reads_only_the_host_master_snapshot` test r
 The ignored `two_original_engines_join_through_the_discovered_server_list` test verifies the original browser, the discovered grant (without a static destination), a real two-engine connection, and 35 seconds of continued background networking/play-time accounting.
 
 `python3 tests/cube2_readiness_gui.py` exercises an actual desktop Build with a 512 MiB ceiling, verifies the visible 2048 MiB requirement, changes and saves the ceiling through Settings, and launches the built game without a manual refresh. It requires the original data fixture at `target/cube2-test-data/` and keeps its library and configuration in a temporary directory.
+
+## Native mouse capture
+
+The desktop player locks and hides the system pointer while focused, including
+when Escape opens the original engine menus. Cube 2 continues to draw and move
+its own menu cursor through its original relative-input handler. Wayland uses
+pointer lock; X11 and Windows use supported confinement and recentering with raw
+relative motion. Focus loss releases and shows the system pointer; focus return
+recaptures it. Ctrl+Alt explicitly releases the pointer until the next click in
+the game window. Recapture drops the first relative delta to avoid camera jumps.
+Game input is cleared while released or unfocused. Closing or a runtime failure
+releases capture before any error dialog.
+
+`python3 tests/cube2_mouse_gui.py` checks actual X11 pointer ownership and cursor
+pixels through launch, Escape, explicit release, click recapture, focus changes,
+and native close. Run `tests/cube2_package.py` first to prepare its private cached
+engine and remembered original data; no game data is included with the test.

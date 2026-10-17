@@ -73,7 +73,8 @@ pub struct App {
     player: Option<Box<crate::runtime::Game>>,
     game_window: bool,
     game_window_closing: bool,
-    cube_mouse_grab: bool,
+    cube_mouse_capture: cube2_input::MouseCapture,
+    confine_mouse: bool,
     cube_pointer: cube2_input::Pointer,
     game_processes: Vec<(String, std::process::Child)>,
     next_frame: Option<std::time::Instant>,
@@ -111,6 +112,15 @@ impl App {
         self.show_settings = false;
         self.preview = None;
         self.support_copied = None;
+    }
+    pub fn set_native_display(&mut self, cc: &eframe::CreationContext<'_>) {
+        use eframe::egui_wgpu::wgpu::rwh::{HasDisplayHandle, RawDisplayHandle};
+        self.confine_mouse = cc.display_handle().is_ok_and(|handle| {
+            matches!(
+                handle.as_raw(),
+                RawDisplayHandle::Xlib(_) | RawDisplayHandle::Xcb(_) | RawDisplayHandle::Windows(_)
+            )
+        });
     }
     pub fn new(play: Option<String>, gl: Option<std::sync::Arc<eframe::glow::Context>>) -> Self {
         Self::new_with_target(play, gl, None)
@@ -482,7 +492,7 @@ impl eframe::App for App {
                             self.status = "Preview ready.".into();
                         }
                         Ok(Work::Game(mut game)) => {
-                            self.cube_mouse_grab = game.is_cube2();
+                            self.cube_mouse_capture = Default::default();
                             self.cube_pointer = Default::default();
                             self.preview = None;
                             self.gpu = None;
@@ -796,23 +806,14 @@ impl eframe::App for App {
                                 i.focused,
                             )
                         });
-                        if !focused || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-                            self.cube_mouse_grab = false;
-                        } else if ctx.input(|i| i.pointer.primary_clicked()) {
-                            self.cube_mouse_grab = true;
-                        }
-                        ctx.send_viewport_cmd(egui::ViewportCommand::CursorGrab(
-                            if focused && self.cube_mouse_grab {
-                                egui::CursorGrab::Locked
-                            } else {
-                                egui::CursorGrab::None
-                            },
-                        ));
-                        ctx.send_viewport_cmd(egui::ViewportCommand::CursorVisible(
-                            !focused || !self.cube_mouse_grab,
-                        ));
+                        let (captured, recaptured) = self.cube_mouse_capture.update(
+                            focused,
+                            ctx.input(|i| i.modifiers.ctrl && i.modifiers.alt),
+                            ctx.input(|i| i.pointer.primary_clicked()),
+                        );
+                        cube2_input::MouseCapture::apply(ctx, captured, self.confine_mouse);
                         let (look_x, look_y) = self.input_devices.look_delta();
-                        if focused {
+                        if captured {
                             ctx.input(|i| {
                                 cube2_input::forward(
                                     game,
@@ -822,9 +823,17 @@ impl eframe::App for App {
                                 )
                             });
                             game.cube2_desktop_input(
-                                buttons,
-                                dx.saturating_add(look_x),
-                                dy.saturating_add(look_y),
+                                if recaptured { 0 } else { buttons },
+                                if recaptured {
+                                    0
+                                } else {
+                                    dx.saturating_add(look_x)
+                                },
+                                if recaptured {
+                                    0
+                                } else {
+                                    dy.saturating_add(look_y)
+                                },
                             );
                         } else {
                             game.cube2_clear_input();
@@ -832,7 +841,7 @@ impl eframe::App for App {
                         }
                     }
                     let input = if game.is_cube2() {
-                        if ctx.input(|i| i.focused) {
+                        if self.cube_mouse_capture.captured() {
                             device_input
                         } else {
                             0
@@ -1024,9 +1033,7 @@ impl eframe::App for App {
             if failure.is_some() || exited {
                 // Release capture before the next frame can open a native error
                 // dialog; blocking the event loop while grabbed traps the cursor.
-                ctx.send_viewport_cmd(egui::ViewportCommand::CursorGrab(egui::CursorGrab::None));
-                ctx.send_viewport_cmd(egui::ViewportCommand::CursorVisible(true));
-                self.cube_mouse_grab = false;
+                self.cube_mouse_capture.release(ctx, self.confine_mouse);
                 if let Some(game) = &mut self.player {
                     if let Err(e) = game.finish() {
                         record_shutdown_error(&mut failure, &format!("{e:#}"));

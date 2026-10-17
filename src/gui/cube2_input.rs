@@ -1,6 +1,62 @@
 //! Additional native keyboard input. Legacy movement/action keys use the mask.
 use eframe::egui::{Event, Key, Modifiers, MouseWheelUnit, PointerButton, Vec2};
 
+/// The real desktop window owns pointer capture; the isolated engine draws its
+/// own menu cursor. Escape belongs to the game, never to capture management.
+#[derive(Default)]
+pub struct MouseCapture {
+    focused: bool,
+    released: bool,
+    captured: bool,
+}
+impl MouseCapture {
+    pub fn update(&mut self, focused: bool, release: bool, clicked: bool) -> (bool, bool) {
+        let previous = self.captured;
+        if focused && !self.focused {
+            self.released = false;
+        }
+        if release {
+            self.released = true;
+        } else if focused && clicked {
+            self.released = false;
+        }
+        self.focused = focused;
+        self.captured = focused && !self.released;
+        (self.captured, self.captured && !previous)
+    }
+    pub fn captured(&self) -> bool {
+        self.captured
+    }
+    pub fn release(&mut self, ctx: &eframe::egui::Context, confined: bool) {
+        *self = Self::default();
+        Self::apply(ctx, false, confined);
+    }
+    pub fn apply(ctx: &eframe::egui::Context, captured: bool, confined: bool) {
+        use eframe::egui::{CursorGrab, CursorIcon, ViewportCommand};
+        ctx.send_viewport_cmd(ViewportCommand::CursorGrab(if captured && confined {
+            CursorGrab::Confined
+        } else if captured {
+            CursorGrab::Locked
+        } else {
+            CursorGrab::None
+        }));
+        if captured && confined {
+            // X11/Windows use confinement plus recentering, like SDL's fallback.
+            // Camera input uses raw MouseMoved events, not warped positions.
+            if let Some(rect) = ctx.input(|i| i.viewport().inner_rect) {
+                ctx.send_viewport_cmd(ViewportCommand::CursorPosition(rect.size().to_pos2() * 0.5));
+            }
+        }
+        ctx.send_viewport_cmd(ViewportCommand::CursorVisible(!captured));
+        // egui's per-frame cursor output can otherwise override CursorVisible.
+        ctx.set_cursor_icon(if captured {
+            CursorIcon::None
+        } else {
+            CursorIcon::Default
+        });
+    }
+}
+
 #[derive(Default)]
 pub struct Pointer {
     remainder: Vec2,
@@ -165,6 +221,19 @@ pub fn forward(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn capture_follows_focus_and_explicit_release_without_stealing_escape() {
+        let mut capture = MouseCapture::default();
+        assert_eq!(capture.update(true, false, false), (true, true));
+        // Opening the original menu does not change focus or capture.
+        assert_eq!(capture.update(true, false, false), (true, false));
+        assert_eq!(capture.update(false, false, false), (false, false));
+        assert_eq!(capture.update(true, false, false), (true, true));
+        assert_eq!(capture.update(true, true, false), (false, false));
+        assert_eq!(capture.update(true, false, false), (false, false));
+        assert_eq!(capture.update(true, false, true), (true, true));
+        assert_eq!(capture.update(true, true, true), (false, false));
+    }
     #[test]
     fn wheel_preserves_fractions_rejects_nonfinite_values_and_bounds_bursts() {
         let mut pointer = Pointer::default();
