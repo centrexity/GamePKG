@@ -149,7 +149,7 @@ jobs:
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/drawing_game.py
       - name: Install virtual display tools
         if: matrix.features == '--all-features'
-        run: sudo apt-get install -y xvfb xdotool imagemagick tesseract-ocr python3-pil python3-xlib libxkbcommon-x11-0 libgl1-mesa-dri libvulkan1 mesa-vulkan-drivers
+        run: sudo apt-get install -y xvfb xdotool imagemagick tesseract-ocr python3-pil python3-xlib zenity libxkbcommon-x11-0 libgl1-mesa-dri libvulkan1 mesa-vulkan-drivers
       - name: Native package and catalog drag-and-drop
         if: matrix.features == '--all-features'
         run: /usr/bin/python3 tests/drop_files_gui.py
