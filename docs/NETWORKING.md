@@ -39,3 +39,9 @@ A game has at most 16 handles and can create at most eight per second. DNS/conne
 Networking is available in the desktop native worker and desktop core/WIT Wasm runtimes. Browser export does not provide these socket capabilities and rejects unsupported network imports.
 
 `examples/good/network-client` demonstrates an HTTPS request started by Start/Enter and polled over later frames, with no network traffic before that input.
+
+## Host-selected endpoints for reviewed native selectors
+
+A selector whose exact built-in profile supports it may sign `game_data.user_selected_servers = true` with `network = "multiplayer"`, empty static endpoint lists and `network_allow_local = false`. Ordinary guest packages cannot delegate endpoint selection this way. The host validates and remembers a user's join or hosting address, then builds the concrete per-session policy before executing the reviewed engine. Blank choices remain offline. The selected game port and adjacent server-information port are allowed; local/private endpoints require the separate host-user opt-in. The game cannot write these settings or authorize another address through its networking API. Signed creator/declaration changes revoke inherited choices. See the reviewed engine's documentation for its transport, supported address family and additional bounds.
+
+Supported reviewed profiles can additionally accept an explicit host-user master-server choice. This delegates discovery only to that chosen master: the host reads a bounded list, validates numeric endpoints against the user’s local/private-address choice, and materializes temporary per-session game and information-port grants. Blank choices authorize no discovery. Master text is never executed, and the engine receives neither a raw TCP socket nor authority to select a different master. Transport limits, cache/refresh behavior and supported address families are documented with the reviewed engine.

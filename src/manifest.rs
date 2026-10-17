@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -28,6 +28,8 @@ pub struct Manifest {
     pub runtime_profile: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub builtin_engine: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub game_data: Option<GameDataRequirement>,
     pub lockfile_sha256: String,
     pub limits: Limits,
     pub permissions: Permissions,
@@ -44,6 +46,13 @@ pub struct Manifest {
     pub roms: Vec<RomRequirement>,
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub shared_assets: std::collections::BTreeMap<String, crate::pool::Reference>,
+}
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct GameDataRequirement {
+    pub title: String,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub user_selected_servers: bool,
 }
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -117,6 +126,13 @@ pub struct Permissions {
     pub network_allow_local: bool,
 }
 impl Manifest {
+    pub fn uses_selected_servers(&self) -> bool {
+        self.builtin_engine.as_deref() == Some(crate::cube2::PROFILE)
+            && self
+                .game_data
+                .as_ref()
+                .is_some_and(|data| data.user_selected_servers)
+    }
     pub fn display_title(&self) -> &str {
         self.title.as_deref().unwrap_or(&self.id)
     }
@@ -204,18 +220,45 @@ impl Manifest {
                 bail!("invalid or duplicate achievement declaration");
             }
         }
-        if let Some(engine) = &m.builtin_engine {
-            let minimum = crate::builtin::memory(engine)? + 16 * 1048576;
-            if !matches!(
-                engine.as_str(),
-                crate::zelda3::PROFILE | crate::doom::PROFILE
-            ) || m.runtime_profile != "core-v1"
-                || m.required_rom_count() != 1
+        let cube2 = m.builtin_engine.as_deref() == Some(crate::cube2::PROFILE);
+        if cube2 {
+            if !m.shaders.is_empty() || !m.shared_assets.is_empty() {
+                bail!("Cube 2 cannot substitute package shaders or media for original game data");
+            }
+            let data = m
+                .game_data
+                .as_ref()
+                .context("Cube 2 requires an original game-data folder declaration")?;
+            if data.title.trim().is_empty()
+                || data.title.len() > 256
+                || data.title.chars().any(char::is_control)
+                || m.runtime_profile != "core-v1"
+                || m.entry_world != "game"
+                || m.required_rom_count() != 0
                 || !m.permissions.save
                 || !m.permissions.audio
-                || m.limits.hard_memory_bytes < minimum
+                || !m.permissions.input
+                || m.limits.hard_memory_bytes < crate::cube2::MEMORY
             {
-                bail!("builtin games require a pinned core-v1 engine, one ROM, save/audio permissions and enough memory for the engine plus 16 MiB");
+                bail!("Cube 2 requires a data folder, input/save/audio permissions and at least 2 GiB memory");
+            }
+        } else {
+            if m.game_data.is_some() {
+                bail!("game-data folders are only supported by the pinned Cube 2 engine");
+            }
+            if let Some(engine) = &m.builtin_engine {
+                let minimum = crate::builtin::memory(engine)? + 16 * 1048576;
+                if !matches!(
+                    engine.as_str(),
+                    crate::zelda3::PROFILE | crate::doom::PROFILE
+                ) || m.runtime_profile != "core-v1"
+                    || m.required_rom_count() != 1
+                    || !m.permissions.save
+                    || !m.permissions.audio
+                    || m.limits.hard_memory_bytes < minimum
+                {
+                    bail!("builtin games require a pinned core-v1 engine, one ROM, save/audio permissions and enough memory for the engine plus 16 MiB");
+                }
             }
         }
         if m.format_version != 1 {
@@ -253,7 +296,14 @@ impl Manifest {
         if m.version.is_empty() || m.entry_world.is_empty() {
             bail!("version and entry world are required");
         }
-        if m.limits.hard_memory_bytes == 0 || m.limits.hard_memory_bytes > 512 * 1024 * 1024 {
+        if m.limits.hard_memory_bytes == 0
+            || m.limits.hard_memory_bytes
+                > if cube2 {
+                    4 * 1024 * 1024 * 1024
+                } else {
+                    512 * 1024 * 1024
+                }
+        {
             bail!("invalid resource limits");
         }
         if m.limits.recommended_storage_bytes == Some(0) {
@@ -266,7 +316,11 @@ impl Manifest {
                 );
             }
         }
-        crate::network::validate(&m.permissions)?;
+        if m.uses_selected_servers() {
+            crate::network::validate_user_selected(&m.permissions)?;
+        } else {
+            crate::network::validate(&m.permissions)?;
+        }
         if m.shaders.len() > 32 {
             bail!("too many shader entry points");
         }

@@ -148,3 +148,9 @@ Title (256 bytes), description (4096 bytes, including optional newlines), author
 Existing packages need none of these fields and keep their IDs as fallback titles. Metadata changes require a newly signed package and a higher game version. GamePKG 0.1.13 still reads older packages; update older hosts before importing packages or lists that use the new fields.
 
 A `.gamepkglist` entry can also include `description = "..."` with the same text limits. Catalog titles and descriptions are unverified preview text; after installation the signed manifest supplies the displayed information. Importing descriptions downloads no games.
+
+## Reviewed folder-backed engines
+
+Only exact host-approved built-in engine profiles may request a `[game_data]` folder. The user selects the original installation through the system folder picker. The host remembers it for the signed game and creator, pins directory handles at launch and mounts only the declared data directories read-only. These packages must use their reviewed launcher template; extra Rust modules, C/C++ source, build scripts and dependencies are rejected. See the engine's repository documentation for its profile, source provenance, required tools and resource limits. Ordinary guest memory and image limits remain unchanged.
+
+A host-approved native selector can explicitly sign `game_data.user_selected_servers = true` together with `network = "multiplayer"`, empty endpoint lists and no static local-network grant. The host must support that exact reviewed profile. This lets the user choose an exact join or hosting address, or explicitly delegate discovery to a chosen master, in the library or with `configure-network`; blank choices grant no networking. The host validates and pins the chosen game/server-info endpoints and requires a separate user opt-in for local/private addresses. Ordinary guest source cannot use this declaration or change these host-only choices.

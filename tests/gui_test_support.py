@@ -97,7 +97,14 @@ def choose_native_file(env, title, path=None, windows=False):
             names=subprocess.run(['xdotool','search','--onlyvisible','--name','.','getwindowname','%@'],env=env,capture_output=True,text=True)
             raise AssertionError(f'Native picker {title!r} did not open: {names.stdout}')
         time.sleep(.1)
-    dialog = found.stdout.splitlines()[-1]
+    def area(window):
+        geometry = subprocess.run(['xdotool','getwindowgeometry','--shell',window],env=env,capture_output=True,text=True)
+        fields = dict(line.split('=',1) for line in geometry.stdout.splitlines() if '=' in line)
+        return int(fields.get('WIDTH',0))*int(fields.get('HEIGHT',0))
+    # GTK tooltips can share the dialog's WM_NAME. They must never receive the
+    # file-selection keystrokes; choose the actual chooser by its visible size.
+    dialog = max(found.stdout.splitlines(), key=area)
+    subprocess.run(['xdotool','mousemove','--window',dialog,'400','150'],env=env,check=True)
     from pathlib import Path
     proof=Path(__file__).resolve().parents[1]/'target/native-rom-picker.png'
     subprocess.run(['import','-display',env['DISPLAY'],'-window',dialog,str(proof)],env=env,check=True)
@@ -110,6 +117,7 @@ def choose_native_file(env, title, path=None, windows=False):
         subprocess.run(['xdotool','type','--clearmodifiers',str(path)],env=env,check=True)
         subprocess.run(['xdotool','key','--clearmodifiers','Return'],env=env,check=True)
     time.sleep(.5)
+    return dialog
 
 
 def game_window(env, game_id, timeout=20):

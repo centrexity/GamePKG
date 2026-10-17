@@ -13,3 +13,6 @@
 !html/demos/shape-playground.gamepkg
 !html/demos/png-sprite-playground.gamepkg
 !html/demos/zelda3.gamepkg
+
+# Maintainer test caches
+__pycache__/

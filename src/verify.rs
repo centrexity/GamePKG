@@ -33,6 +33,9 @@ pub struct Envelope {
 pub fn verify(pkg: &mut Package, trusted: &[u8; 32]) -> Result<Manifest> {
     let m = authenticate_contents(pkg, trusted)?;
     crate::source::scan(pkg)?;
+    if m.builtin_engine.as_deref() == Some(crate::cube2::PROFILE) {
+        crate::cube2::validate_recipe(pkg)?;
+    }
     pkg.set_shared_refs(m.shared_assets.clone());
     pkg.mark_verified();
     Ok(m)

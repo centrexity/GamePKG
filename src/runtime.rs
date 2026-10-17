@@ -41,6 +41,8 @@ pub struct Game {
     tick: Option<Tick>,
     #[cfg(target_os = "linux")]
     native: Option<crate::native::Session>,
+    #[cfg(target_os = "linux")]
+    cube2: Option<Box<crate::cube2::player::Player>>,
     deadline_epochs: u64,
     stop: Arc<AtomicBool>,
     pub state: u64,
@@ -78,6 +80,10 @@ impl Game {
         save: Option<crate::saves::Save>,
     ) -> Result<Self> {
         settings.validate()?;
+        anyhow::ensure!(
+            manifest.builtin_engine.as_deref() != Some(crate::cube2::PROFILE),
+            "Cube 2 can only run from its verified native engine cache"
+        );
         if !matches!(
             manifest.runtime_profile.as_str(),
             "core-v1" | "component-v1"
@@ -565,6 +571,8 @@ impl Game {
             tick: Some(tick),
             #[cfg(target_os = "linux")]
             native: None,
+            #[cfg(target_os = "linux")]
+            cube2: None,
             deadline_epochs,
             stop,
             state: 0,
@@ -608,6 +616,51 @@ impl Game {
         let mut package = crate::archive::Package::open(snapshot.path())?;
         let manifest = crate::verify::verify_embedded(&mut package)?;
         package.resolve_shared_assets(root)?;
+        if manifest.builtin_engine.as_deref() == Some(crate::cube2::PROFILE) {
+            anyhow::ensure!(
+                rom_paths.is_empty(),
+                "Cube 2 uses its original game-data folder rather than ROM file arguments"
+            );
+            anyhow::ensure!(
+                native != Some(false),
+                "Cube 2 uses the native Build and Play actions; Wasm export is unavailable"
+            );
+            #[cfg(not(target_os = "linux"))]
+            bail!("Cube 2 native process isolation is currently available on Linux");
+            #[cfg(target_os = "linux")]
+            {
+                let settings = crate::settings::load()?;
+                let player = crate::cube2::player::Player::load(
+                    root,
+                    &manifest,
+                    &crate::verify::digest(&archive),
+                    &settings,
+                )?;
+                return Ok(Self {
+                    progress: Some(crate::progress::Session::open(
+                        root,
+                        &manifest.id,
+                        &manifest.creator_key,
+                    )?),
+                    store: None,
+                    tick: None,
+                    native: None,
+                    cube2: Some(Box::new(player)),
+                    deadline_epochs: 0,
+                    stop: Arc::new(AtomicBool::new(false)),
+                    state: 0,
+                    id: manifest.id.clone(),
+                    input_allowed: true,
+                    custom_renderer: true,
+                    shader_sources: Vec::new(),
+                    uses_shaders: false,
+                    audio_allowed: true,
+                    builtin_engine: true,
+                    doom_engine: false,
+                });
+            }
+        }
+
         let cache = root
             .join("builds")
             .join(crate::verify::digest(&archive))
@@ -687,6 +740,7 @@ impl Game {
                     store: None,
                     tick: None,
                     native: Some(session),
+                    cube2: None,
                     deadline_epochs: 0,
                     stop: Arc::new(AtomicBool::new(false)),
                     state: 0,
@@ -776,7 +830,107 @@ impl Game {
         )?);
         Ok(game)
     }
+    pub fn is_cube2(&self) -> bool {
+        #[cfg(target_os = "linux")]
+        {
+            self.cube2.is_some()
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            false
+        }
+    }
+    pub fn cube2_desktop_input(&mut self, buttons: u32, dx: i32, dy: i32) {
+        #[cfg(target_os = "linux")]
+        if let Some(cube) = &mut self.cube2 {
+            cube.desktop(buttons, dx, dy);
+        }
+        #[cfg(not(target_os = "linux"))]
+        let _ = (buttons, dx, dy);
+    }
+    pub fn cube2_clear_input(&mut self) {
+        #[cfg(target_os = "linux")]
+        if let Some(cube) = &mut self.cube2 {
+            cube.clear_input();
+        }
+    }
+    /// Let a reviewed native engine progress independently of a UI render loop.
+    pub fn background_player(&mut self) -> Result<()> {
+        #[cfg(target_os = "linux")]
+        if let Some(cube) = &mut self.cube2 {
+            cube.background(self.progress.take())?;
+        }
+        Ok(())
+    }
+    #[cfg(all(feature = "audio", feature = "gui"))]
+    pub(crate) fn cube2_audio_sink(&self, sink: Option<crate::audio::Sink>) {
+        #[cfg(target_os = "linux")]
+        if let Some(cube) = &self.cube2 {
+            cube.audio_sink(sink);
+        }
+        #[cfg(not(target_os = "linux"))]
+        let _ = sink;
+    }
+    pub fn cube2_key(&mut self, scancode: u32, pressed: bool, repeat: bool, modifiers: u32) {
+        #[cfg(target_os = "linux")]
+        if let Some(cube) = &mut self.cube2 {
+            cube.key(scancode, pressed, repeat, modifiers);
+        }
+        #[cfg(not(target_os = "linux"))]
+        let _ = (scancode, pressed, repeat, modifiers);
+    }
+    pub fn cube2_text(&mut self, text: &str) {
+        #[cfg(target_os = "linux")]
+        if let Some(cube) = &mut self.cube2 {
+            cube.text(text);
+        }
+        #[cfg(not(target_os = "linux"))]
+        let _ = text;
+    }
+    pub fn cube2_modifiers(&mut self, modifiers: u32) {
+        #[cfg(target_os = "linux")]
+        if let Some(cube) = &mut self.cube2 {
+            cube.modifiers(modifiers);
+        }
+        #[cfg(not(target_os = "linux"))]
+        let _ = modifiers;
+    }
+    pub fn cube2_mouse_button(&mut self, button: u32, pressed: bool, modifiers: u32) {
+        #[cfg(target_os = "linux")]
+        if let Some(cube) = &mut self.cube2 {
+            cube.mouse_button(button, pressed, modifiers);
+        }
+        #[cfg(not(target_os = "linux"))]
+        let _ = (button, pressed, modifiers);
+    }
+    pub fn cube2_wheel(&mut self, x: i32, y: i32, modifiers: u32) {
+        #[cfg(target_os = "linux")]
+        if let Some(cube) = &mut self.cube2 {
+            cube.wheel(x, y, modifiers);
+        }
+        #[cfg(not(target_os = "linux"))]
+        let _ = (x, y, modifiers);
+    }
+    pub fn exited(&self) -> bool {
+        #[cfg(target_os = "linux")]
+        if let Some(cube) = &self.cube2 {
+            return cube.exited;
+        }
+        false
+    }
     pub fn finish(&mut self) -> Result<()> {
+        #[cfg(target_os = "linux")]
+        if let Some(cube) = &mut self.cube2 {
+            let save = cube.finish();
+            let progress = if let Some(progress) = &mut self.progress {
+                progress.finish()
+            } else {
+                Ok(())
+            };
+            save?;
+            progress?;
+            return Ok(());
+        }
         if let Some(progress) = &mut self.progress {
             progress.finish()?;
         }
@@ -784,6 +938,9 @@ impl Game {
     }
     /// Read-only builtin engine state for playback diagnostics.
     pub fn builtin_controller(&mut self) -> Result<Option<u32>> {
+        if self.is_cube2() {
+            return Ok(None);
+        }
         #[cfg(target_os = "linux")]
         if let Some(n) = &self.native {
             return Ok(n.diagnostic.map(|d| d.2));
@@ -801,6 +958,9 @@ impl Game {
             .transpose()
     }
     pub fn builtin_state(&mut self) -> Result<Option<(u32, u16, u16)>> {
+        if self.is_cube2() {
+            return Ok(None);
+        }
         #[cfg(target_os = "linux")]
         if let Some(n) = &self.native {
             return Ok(n.diagnostic.map(|d| (d.0, d.1 as u16, (d.1 >> 16) as u16)));
@@ -819,12 +979,20 @@ impl Game {
     }
     pub fn audio_frame(&self) -> &[i16] {
         #[cfg(target_os = "linux")]
+        if let Some(cube) = &self.cube2 {
+            return &cube.audio;
+        }
+        #[cfg(target_os = "linux")]
         if let Some(n) = &self.native {
             return &n.audio;
         }
         &self.store.as_ref().unwrap().data().audio
     }
     pub fn frame(&self) -> &crate::drawing::Frame {
+        #[cfg(target_os = "linux")]
+        if let Some(cube) = &self.cube2 {
+            return &cube.frame;
+        }
         #[cfg(target_os = "linux")]
         if let Some(n) = &self.native {
             return &n.frame;
@@ -834,6 +1002,15 @@ impl Game {
     pub fn step(&mut self, input: u32) -> Result<u64> {
         if let Some(progress) = &mut self.progress {
             progress.start();
+        }
+        #[cfg(target_os = "linux")]
+        if let Some(cube) = &mut self.cube2 {
+            cube.step(input)?;
+            self.state = self.state.wrapping_add(1);
+            if let Some(progress) = &mut self.progress {
+                progress.tick(&[])?;
+            }
+            return Ok(self.state);
         }
         #[cfg(target_os = "linux")]
         if let Some(n) = &mut self.native {

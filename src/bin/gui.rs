@@ -51,7 +51,7 @@ fn main() -> eframe::Result {
                     [620.0, 480.0]
                 })
                 .with_icon(gamepkg::gui::window_icon())
-                .with_drag_and_drop(true),
+                .with_drag_and_drop(args.play.is_none()),
             ..Default::default()
         },
         Box::new(move |cc| {

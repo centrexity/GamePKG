@@ -4,8 +4,8 @@ This archive contains the GamePKG command-line program and desktop library. It d
 
 These builds target Ubuntu 24.04 or a compatible system with glibc 2.39 or newer. The desktop requires a working X11 or Wayland display, Vulkan and ALSA. OpenGL is available explicitly with `--renderer opengl`. The exact builder libc version and executable hashes are recorded in BUILD.json. Dependency license expressions and original notices are included in DEPENDENCIES.json and third-party-licenses/. Original resolved dependency source archives are preserved as directories in third-party-sources/, including notices embedded in source and bundled fonts.
 
-1. Check the downloaded archive against its .sha256 file with `sha256sum -c gamepkg-0.1.14-linux-x86_64.tar.gz.sha256`.
-2. Extract it into a folder you control with `tar -xzf gamepkg-0.1.14-linux-x86_64.tar.gz`.
+1. Check the downloaded archive against its .sha256 file with `sha256sum -c gamepkg-0.1.15-linux-x86_64.tar.gz.sha256`.
+2. Extract it into a folder you control with `tar -xzf gamepkg-0.1.15-linux-x86_64.tar.gz`.
 3. Enter the extracted folder. Run `./bin/gamepkg --help` for the CLI or `./bin/gamepkg-gui` for the desktop.
 
 On Ubuntu 24.04, install the runtime tools needed for isolated builds, downloads, previews, and audio:
@@ -70,3 +70,15 @@ See engines/zelda3/README.md for the complete setup and verification details.
 Version 0.1.14 includes the pinned DOOM Wasm engine. The Linux compiler needs the same Clang 18 and WASI tools described above. See [DOOM engine setup](../engines/doom/README.md) and the [port instructions](https://github.com/centrexity/GamePKG_Ports/blob/main/DOOM.md). Select your own DOOM.WAD/DOOM2.WAD; no WAD is included. Windows compilation uses the existing opt-in WSL 2 exchange; native Windows DOOM playback has not been tested locally.
 
 See [native runtime setup](NATIVE_RUNTIME.md) for target-specific caches and isolation, and [networking](NETWORKING.md) for separately declared HTTPS and multiplayer permissions.
+
+## Original-data native engine
+
+GamePKG 0.1.15 includes the reviewed Cube 2 engine. Its native build needs GCC/G++, Make, SDL2, SDL2_image, SDL2_mixer, zlib and OpenGL development libraries. On Ubuntu 24.04:
+
+```sh
+sudo apt install build-essential libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev zlib1g-dev libgl1-mesa-dev libgl1-mesa-dri
+```
+
+Import the [ports catalog](https://github.com/centrexity/GamePKG_Ports), download and inspect the signed selector, then Build. Choose an original Sauerbraten installation containing `data` and `packages` on its game page. The game reads these directories in place; no original media is included in the package. Set the memory ceiling to at least 2048 MiB in Settings. Software rendering may need a 500 ms tick deadline. Play opens a separate game-only window, with Vulkan presentation by default. This engine currently runs on Linux; it is not a Windows native engine. Python is not needed.
+
+See [engine setup, controls, saves and multiplayer](../engines/cube2/README.md). Networking stays off until you explicitly choose a join/hosting address or a master for the server browser. Local/private addresses need their separate opt-in.

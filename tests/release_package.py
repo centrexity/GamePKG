@@ -13,7 +13,10 @@ from gui_test_support import start_display
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('archive', type=Path)
+parser.add_argument('--cube2-package', type=Path)
+parser.add_argument('--game-data', type=Path)
 args = parser.parse_args()
+assert bool(args.cube2_package)==bool(args.game_data),'Supply both Cube selector and original data, or neither'
 archive = args.archive.resolve()
 expected = archive.with_suffix(archive.suffix + '.sha256').read_text().split()[0]
 assert hashlib.file_digest(archive.open('rb'), 'sha256').hexdigest() == expected
@@ -23,7 +26,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-release-test-') as directory:
         assert all(not member.issym() and not member.islnk() for member in package.getmembers())
         package.extractall(root / 'distribution', filter='data')
     distribution, = (root / 'distribution').iterdir()
-    for port in ['2048', 'arkanoo', 'zelda3']:
+    for port in ['2048', 'arkanoo', 'zelda3', 'doom', 'cube2']:
         assert (distribution / 'ports' / port / 'manifest.toml').is_file()
     assert not list((distribution / 'ports').rglob('.git'))
     build = json.loads((distribution / 'BUILD.json').read_text())
@@ -36,7 +39,8 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-release-test-') as directory:
     assert (distribution / 'LICENSE').is_file() and (distribution / 'NOTICE').is_file()
     env = dict(os.environ, GAMEPKG_HOME=str(root / 'library'), GAMEPKG_CONFIG=str(root / 'settings.toml'), LIBGL_ALWAYS_SOFTWARE='1')
     env.pop('WAYLAND_DISPLAY', None)
-    (root / 'settings.toml').write_text('automatic_update_checks = false\n')
+    (root / 'settings.toml').write_text('automatic_update_checks = false\nmemory_ceiling_mib=2048\ntick_deadline_ms=500\nmute_audio=true\n')
+    env.update(LP_NUM_THREADS='2',OMP_THREAD_LIMIT='1')
     cli = distribution / 'bin' / 'gamepkg'
     def run(*arguments):
         result = subprocess.run([str(cli), *map(str, arguments)], cwd=distribution, env=env, capture_output=True, text=True, timeout=140)
@@ -54,6 +58,12 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-release-test-') as directory:
     run('build', game_id)
     run('run', game_id, '--frames', '3')
     assert 'compiled game verified' in run('integrity-check', game_id)
+    if args.cube2_package:
+        run('install',args.cube2_package.resolve(),'--trust-creator')
+        game_id='com.gamepkg.cube2'
+        run('build',game_id)
+        run('run',game_id,'--game-data',args.game_data.resolve(),'--frames','3')
+        assert 'compiled game verified' in run('integrity-check',game_id)
     display = start_display(env)
     app = subprocess.Popen([str(distribution / 'bin' / 'gamepkg-gui'), '--play', game_id], cwd=distribution, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     try:
@@ -66,12 +76,23 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-release-test-') as directory:
             time.sleep(.1)
         else:
             raise AssertionError('extracted desktop did not open')
-        time.sleep(.5)
         screenshot = root / 'play.png'
-        subprocess.run(['import', '-display', env['DISPLAY'], '-window', window.stdout.splitlines()[0], str(screenshot)], env=env, check=True)
+        from PIL import Image
+        deadline=time.monotonic()+30
+        while True:
+            subprocess.run(['import', '-display', env['DISPLAY'], '-window', window.stdout.splitlines()[0], str(screenshot)], env=env, check=True)
+            image=Image.open(screenshot).convert('RGB')
+            if len(image.getcolors(image.width*image.height))>(500 if args.cube2_package else 4):break
+            assert app.poll() is None and time.monotonic()<deadline,'No game graphics in extracted player'
+            time.sleep(.2)
         text = subprocess.check_output(['tesseract', str(screenshot), 'stdout'], stderr=subprocess.DEVNULL, text=True)
-        assert 'Score:' in text and 'Game stopped' not in text, text
+        assert all(label not in text for label in ['Score:','Close game','Restart','Game stopped']),text
+        from Xlib import display as xdisplay,protocol
+        connection=xdisplay.Display(env['DISPLAY'])
+        target=connection.create_resource_object('window',int(window.stdout.splitlines()[0]))
+        target.send_event(protocol.event.ClientMessage(window=target,client_type=connection.intern_atom('WM_PROTOCOLS'),data=(32,[connection.intern_atom('WM_DELETE_WINDOW'),0,0,0,0])),event_mask=0)
+        connection.flush();assert app.wait(timeout=15)==0;connection.close()
     finally:
-        app.terminate(); app.wait(timeout=10)
+        if app.poll() is None:app.terminate();app.wait(timeout=10)
         display.terminate(); display.wait(timeout=10)
 print('Distribution passed: checksums, dependency sources, extracted CLI, bundled dependency game build/play, and actual desktop gameplay.')

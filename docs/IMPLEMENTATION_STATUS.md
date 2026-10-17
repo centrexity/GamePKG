@@ -20,6 +20,7 @@ The optional browser cache is implemented by GamePKG using the standard IndexedD
 | Separate game windows | Independent player processes, saved progress on normal close | `tests/game_window.py`, `tests/library_play_gui.py` |
 | Graphics | Vulkan default, explicit OpenGL, bounded shaders and textures | `tests/shader_gui.py`, `tests/appearance_gui.py` |
 | Networking | Signed endpoints; bounded host HTTPS GET, TCP and UDP | `tests/network_game.py`, `src/network.rs` tests |
+| Reviewed original-data engine | Pinned Cube 2 source, signed selector, remembered read-only original directories, game-only Vulkan window, private edited maps, host-owned multiplayer and discovered servers | `tests/cube2_policy.rs`, `tests/cube2_package.py`, `tests/cube2_gui.py`, `tests/cube2_pointer_gui.py`, ignored `src/cube2/session.rs` original-engine tests |
 | Player-owned ROMs | Multiple per-game remembered paths, bounded read-only snapshots | `tests/manifest_roms.rs`, `tests/remembered_roms_gui.py` |
 | Progress | Play time, scoped achievements and concurrent-safe merges | `tests/progress.rs`, `tests/progress_gui.py --browser-cache` |
 | Independent storage | Native restart persistence, browser restart/cache isolation, unauthorized-request rejection | `tests/home_database.py`, `tests/browser_storage.py`, `tests/web_library.py` |

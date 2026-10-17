@@ -70,6 +70,9 @@ pub fn is_built(root: &Path, id: &str) -> Result<bool> {
         return Ok(false);
     };
     let manifest = registry::installed_manifest(root, id)?;
+    if manifest.builtin_engine.as_deref() == Some(crate::cube2::PROFILE) {
+        return Ok(false);
+    }
     if let Some(profile) = manifest.builtin_engine.as_deref() {
         let engine = path.with_file_name(crate::builtin::filename(profile)?);
         let Ok(bytes) = crate::files::read_regular(&engine, 32 * 1048576, false) else {
@@ -157,6 +160,13 @@ pub(crate) fn artifact_has_tick(bytes: &[u8]) -> bool {
     found
 }
 pub fn compile(root: &Path, id: &str) -> Result<()> {
+    if registry::installed_manifest(root, id)?
+        .builtin_engine
+        .as_deref()
+        == Some(crate::cube2::PROFILE)
+    {
+        bail!("Cube 2 requires the native Build action; Wasm compilation is unavailable");
+    }
     #[cfg(windows)]
     {
         crate::windows_build::compile(root, id, None)

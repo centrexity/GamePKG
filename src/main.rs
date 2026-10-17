@@ -12,6 +12,20 @@ struct Cli {
 }
 #[derive(Subcommand)]
 enum Command {
+    /// Remember the next multiplayer server or hosting address for a supported signed game.
+    ConfigureNetwork {
+        id: String,
+        #[arg(long)]
+        server: Option<String>,
+        #[arg(long)]
+        master: Option<String>,
+        #[arg(long)]
+        listen: Option<String>,
+        #[arg(long)]
+        allow_local: bool,
+        #[arg(long,conflicts_with_all=["server","master","listen","allow_local"])]
+        clear: bool,
+    },
     /// Internal verified compiler response; requires an installed signed package.
     #[command(hide = true)]
     AcceptBuildWorker { id: String, exchange: PathBuf },
@@ -92,6 +106,9 @@ enum Command {
     /// Play an installed grid-v1 game in the terminal, or run N headless frames.
     Run {
         id: String,
+        /// Remember an original installation folder for this signed game.
+        #[arg(long)]
+        game_data: Option<PathBuf>,
         #[arg(long)]
         frames: Option<u32>,
         /// Read-only ROM file; repeat in manifest order for games requiring multiple files.
@@ -288,12 +305,46 @@ fn main() -> Result<()> {
             let frames = gamepkg::previews::decode(name, &pkg.read(name)?)?;
             println!("Decoded {} preview frames (320×240, 5 fps)", frames.len());
         }
+        Command::ConfigureNetwork {
+            id,
+            server,
+            master,
+            listen,
+            allow_local,
+            clear,
+        } => {
+            anyhow::ensure!(
+                clear || server.is_some() || master.is_some() || listen.is_some(),
+                "provide --server, --master, --listen, or --clear"
+            );
+            let selection = gamepkg::server_selections::Selection {
+                server: server.unwrap_or_default(),
+                master: master.unwrap_or_default(),
+                listen: listen.unwrap_or_default(),
+                allow_local,
+            };
+            gamepkg::server_selections::remember_for_game(
+                &gamepkg::registry::default_root()?,
+                &id,
+                &selection,
+            )?;
+            println!("Multiplayer settings saved. They apply the next time you launch this game; blank addresses keep it offline.");
+        }
         Command::Keygen { output } => {
             let public = gamepkg::creator::generate(&output)?;
             println!("Created private signing key: {}", output.display());
             println!("Creator public key: {public}");
         }
-        Command::Run { id, frames, rom } => {
+        Command::Run {
+            id,
+            frames,
+            rom,
+            game_data,
+        } => {
+            if let Some(path) = game_data {
+                let root = gamepkg::registry::default_root()?;
+                gamepkg::game_data::remember_for_game(&root, &id, &path)?;
+            }
             let mut game = gamepkg::runtime::Game::load_with_roms(
                 &gamepkg::registry::default_root()?,
                 &id,
@@ -305,6 +356,9 @@ fn main() -> Result<()> {
                 }
                 for _ in 0..count {
                     game.step(0)?;
+                    if game.exited() {
+                        break;
+                    }
                 }
                 if game.custom_renderer {
                     println!(

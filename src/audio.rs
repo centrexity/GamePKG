@@ -42,11 +42,25 @@ impl Buffer {
 }
 pub struct Player {
     _stream: cpal::Stream,
-    buffer: Arc<Mutex<Buffer>>,
+    sink: Sink,
     error: Arc<Mutex<Option<String>>>,
     non_silent: Arc<AtomicU64>,
 }
+/// Host-only writer; the device stream remains owned by the desktop app.
+#[derive(Clone)]
+pub(crate) struct Sink {
+    buffer: Arc<Mutex<Buffer>>,
+}
+impl Sink {
+    pub fn submit(&self, samples: &[i16]) -> bool {
+        self.buffer.lock().is_ok_and(|mut b| b.append(samples))
+    }
+}
 impl Player {
+    #[cfg(any(feature = "gui", test))]
+    pub(crate) fn sink(&self) -> Sink {
+        self.sink.clone()
+    }
     pub fn new(volume: u8) -> Result<Self> {
         if volume > 100 {
             bail!("audio volume must be 0–100");
@@ -89,16 +103,16 @@ impl Player {
         stream.play()?;
         Ok(Self {
             _stream: stream,
-            buffer,
+            sink: Sink { buffer },
             error,
             non_silent,
         })
     }
     pub fn submit(&self, samples: &[i16]) -> bool {
-        self.buffer.lock().is_ok_and(|mut b| b.append(samples))
+        self.sink.submit(samples)
     }
     pub fn clear(&self) {
-        if let Ok(mut b) = self.buffer.lock() {
+        if let Ok(mut b) = self.sink.buffer.lock() {
             b.samples.clear();
             b.current = 0;
         }
@@ -182,10 +196,14 @@ mod tests {
         assert_eq!(muted.non_silent_frames(), 0);
         drop(muted);
         let player = Player::new(50).unwrap();
-        for _ in 0..10 {
-            player.submit(&[10000; 768]);
-            std::thread::sleep(std::time::Duration::from_millis(5));
-        }
+        let sink = player.sink();
+        let writer = std::thread::spawn(move || {
+            for _ in 0..10 {
+                sink.submit(&[10000; 768]);
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+        });
+        writer.join().unwrap();
         assert!(player.non_silent_frames() > 0);
         assert!(player.error().is_none());
     }

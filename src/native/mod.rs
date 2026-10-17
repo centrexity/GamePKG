@@ -52,12 +52,18 @@ pub fn path_for_digest(root: &Path, digest: &str) -> PathBuf {
         .join("game")
 }
 pub fn cache_path(root: &Path, id: &str) -> Result<PathBuf> {
-    crate::registry::installed_manifest(root, id)?;
+    let manifest = crate::registry::installed_manifest(root, id)?;
     let bytes = crate::files::read_regular(
         &root.join(format!("{id}.gamepkg")),
         crate::archive::MAX_TOTAL,
         false,
     )?;
+    if manifest.builtin_engine.as_deref() == Some(crate::cube2::PROFILE) {
+        return Ok(crate::cube2::cache_path(
+            root,
+            &crate::verify::digest(&bytes),
+        ));
+    }
     Ok(path_for_digest(root, &crate::verify::digest(&bytes)))
 }
 pub fn is_built(root: &Path, id: &str) -> Result<bool> {
@@ -73,15 +79,29 @@ pub fn is_built(root: &Path, id: &str) -> Result<bool> {
 pub fn compile(root: &Path, id: &str) -> Result<()> {
     #[cfg(target_os = "linux")]
     {
+        if crate::registry::installed_manifest(root, id)?
+            .builtin_engine
+            .as_deref()
+            == Some(crate::cube2::PROFILE)
+        {
+            return crate::cube2::build::compile_package(root, id);
+        }
         build::compile(root, id)
     }
     #[cfg(not(target_os = "linux"))]
     {
+        if crate::registry::installed_manifest(root, id)?
+            .builtin_engine
+            .as_deref()
+            == Some(crate::cube2::PROFILE)
+        {
+            bail!("Cube 2 currently requires Linux native process isolation");
+        }
         let _ = (root, id);
         bail!("native game isolation is not available on this platform; choose the separate Wasm build")
     }
 }
-fn validate_executable(bytes: &[u8]) -> Result<()> {
+pub(crate) fn validate_executable(bytes: &[u8]) -> Result<()> {
     ensure!(
         bytes.len() > 64 && bytes.starts_with(b"\x7fELF"),
         "compiler did not produce a native executable"

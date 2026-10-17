@@ -131,12 +131,13 @@ impl Settings {
             bail!("update interval must be 1–168 hours");
         }
         validate_proxy(&self.tor_proxy)?;
-        if !(1..=512).contains(&self.memory_ceiling_mib) {
-            bail!("memory ceiling must be 1–512 MiB");
+        if !(1..=4096).contains(&self.memory_ceiling_mib) {
+            bail!("memory ceiling must be 1–4096 MiB");
         }
-        if !(10..=100).contains(&self.tick_deadline_ms) || !self.tick_deadline_ms.is_multiple_of(10)
+        if !(10..=1000).contains(&self.tick_deadline_ms)
+            || !self.tick_deadline_ms.is_multiple_of(10)
         {
-            bail!("tick deadline must be 10–100 ms in steps of 10");
+            bail!("tick deadline must be 10–1000 ms in steps of 10");
         }
         Ok(())
     }

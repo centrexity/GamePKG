@@ -45,12 +45,24 @@ fn settings_validate_bounds_and_reject_unknown_or_large_files() {
     defaults.validate().unwrap();
     assert_eq!(defaults.shader_backend, "wgsl");
     assert_eq!(defaults.renderer, "vulkan");
-    for memory in [0, 513] {
+    for memory in [0, 4097, u64::MAX] {
         let mut s = defaults.clone();
         s.memory_ceiling_mib = memory;
         assert!(s.validate().is_err());
     }
-    for deadline in [0, 15, 110] {
+    assert_eq!(defaults.memory_ceiling_mib, 512);
+    for memory in [512, 1024, 2048, 4096] {
+        let mut settings = defaults.clone();
+        settings.memory_ceiling_mib = memory;
+        settings.validate().unwrap();
+    }
+    assert_eq!(defaults.tick_deadline_ms, 100);
+    for deadline in [10, 100, 500, 1000] {
+        let mut settings = defaults.clone();
+        settings.tick_deadline_ms = deadline;
+        settings.validate().unwrap();
+    }
+    for deadline in [0, 15, 1010] {
         let mut s = defaults.clone();
         s.tick_deadline_ms = deadline;
         assert!(s.validate().is_err());

@@ -1,9 +1,11 @@
 use eframe::egui;
 mod artwork;
+mod cube2_input;
 mod drops;
 mod game_page;
 mod input;
 mod library_view;
+mod multiplayer;
 mod rom_picker;
 mod sprites;
 mod theme;
@@ -13,7 +15,13 @@ use std::{
     sync::mpsc,
 };
 enum Work {
-    Launched(String, std::process::Child),
+    DataPicked(PathBuf, crate::manifest::Manifest, Option<PathBuf>),
+    Launched(
+        String,
+        std::process::Child,
+        Option<(String, crate::server_selections::Selection)>,
+    ),
+    NetworkSaved(String, crate::server_selections::Selection),
     Store(crate::store::Bundle),
     Preview(Vec<Vec<u8>>),
     Game(Box<crate::runtime::Game>),
@@ -35,6 +43,8 @@ pub struct App {
     drop_notice: Option<String>,
     selected_game: Option<String>,
     rom_paths: HashMap<String, Vec<String>>,
+    data_paths: HashMap<String, String>,
+    network_drafts: HashMap<String, multiplayer::Draft>,
     rom_path: String,
     rom_game: Option<String>,
     rom_identity: Option<String>,
@@ -46,6 +56,9 @@ pub struct App {
     settings_draft: crate::settings::Settings,
     player: Option<Box<crate::runtime::Game>>,
     game_window: bool,
+    game_window_closing: bool,
+    cube_mouse_grab: bool,
+    cube_pointer: cube2_input::Pointer,
     game_processes: Vec<(String, std::process::Child)>,
     next_frame: Option<std::time::Instant>,
     pending_input: u32,
@@ -160,16 +173,35 @@ impl App {
             Ok(report) => {
                 self.rejected = report.rejected;
                 let games = report.games;
+                let scopes: HashSet<String> = games
+                    .iter()
+                    .filter_map(|m| crate::server_selections::identity(m).ok())
+                    .collect();
+                self.network_drafts.retain(|key, _| scopes.contains(key));
                 self.icons.clear();
                 self.package_notices.clear();
                 self.built.clear();
                 self.wasm_built.clear();
                 if let Ok(root) = crate::registry::default_root() {
                     self.rom_paths.clear();
+                    self.data_paths.clear();
                     self.history.clear();
                     self.usage.clear();
                     self.library_bytes = crate::storage::total(&root).ok();
                     for m in &games {
+                        if let Ok(scope) = crate::server_selections::identity(m) {
+                            match crate::server_selections::load(&root, m) {
+                                Ok(selection) => self
+                                    .network_drafts
+                                    .entry(scope)
+                                    .or_default()
+                                    .loaded(selection),
+                                Err(error) => {
+                                    self.status =
+                                        format!("Unable to read multiplayer settings: {error:#}")
+                                }
+                            }
+                        }
                         match crate::progress::load(&root, &m.id, &m.creator_key) {
                             Ok(record) => {
                                 self.history.insert(m.id.clone(), record);
@@ -178,6 +210,10 @@ impl App {
                         }
                         if let Ok(usage) = crate::storage::usage(&root, m) {
                             self.usage.insert(m.id.clone(), usage);
+                        }
+                        if let Ok(Some(path)) = crate::game_data::load(&root, m) {
+                            self.data_paths
+                                .insert(m.id.clone(), path.to_string_lossy().into_owned());
                         }
                         if m.requires_rom {
                             match crate::rom_selections::load(&root, m) {
@@ -321,6 +357,12 @@ impl eframe::App for App {
         }
     }
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
+        // Closing a viewport can schedule one more update. Do not reopen the
+        // loading/error UI after an orderly in-game Quit has saved the session.
+        if self.game_window_closing {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            return;
+        }
         let mut exited = false;
         self.game_processes
             .retain_mut(|(_, child)| match child.try_wait() {
@@ -350,9 +392,17 @@ impl eframe::App for App {
                 Ok(result) => {
                     self.result = None;
                     match result {
-                        Ok(Work::Launched(id, child)) => {
+                        Ok(Work::Launched(id, child, network)) => {
+                            if let Some((scope, selection)) = network {
+                                self.network_drafts.insert(scope, selection.into());
+                            }
                             self.status = format!("Opened {id} in its own window.");
                             self.game_processes.push((id, child));
+                        }
+                        Ok(Work::NetworkSaved(scope, selection)) => {
+                            self.network_drafts.insert(scope, selection.into());
+                            self.status = "Multiplayer settings saved for the next launch.".into();
+                            self.refresh(ctx);
                         }
                         Ok(Work::Store(bundle)) => {
                             self.preview = None;
@@ -373,7 +423,9 @@ impl eframe::App for App {
                             self.preview = Some((frames, std::time::Instant::now(), texture));
                             self.status = "Preview ready.".into();
                         }
-                        Ok(Work::Game(game)) => {
+                        Ok(Work::Game(mut game)) => {
+                            self.cube_mouse_grab = game.is_cube2();
+                            self.cube_pointer = Default::default();
                             self.preview = None;
                             self.gpu = None;
                             self.vulkan = None;
@@ -433,6 +485,13 @@ impl eframe::App for App {
                                     }
                                 }
                             }
+                            if let Err(error) = game.background_player() {
+                                self.status = format!("Unable to play: {error:#}");
+                                return;
+                            }
+                            game.cube2_audio_sink(
+                                self.audio_player.as_ref().map(crate::audio::Player::sink),
+                            );
                             self.selected_game = Some(game.id.clone());
                             self.player = Some(game);
                         }
@@ -452,6 +511,36 @@ impl eframe::App for App {
                             self.selected_game = Some(m.id.clone());
                             self.manifest = Some(m);
                             self.pending = Some(file);
+                        }
+                        Ok(Work::DataPicked(root, requested, path)) => {
+                            self.status = (|| -> anyhow::Result<String> {
+                                let Some(path) = path else {
+                                    return Ok("Folder selection cancelled.".into());
+                                };
+                                anyhow::ensure!(
+                                    std::fs::canonicalize(crate::registry::default_root()?)?
+                                        == root,
+                                    "The library changed. Choose the folder again."
+                                );
+                                let _change = crate::registry::LibraryChange::acquire(&root)?;
+                                let current =
+                                    crate::registry::installed_manifest(&root, &requested.id)?;
+                                anyhow::ensure!(
+                                    crate::game_data::identity(&current)?
+                                        == crate::game_data::identity(&requested)?,
+                                    "The game-data request changed. Choose the folder again."
+                                );
+                                crate::game_data::remember(&root, &current, &path)?;
+                                self.data_paths
+                                    .insert(current.id, path.to_string_lossy().into_owned());
+                                Ok(
+                                    "Game-data folder remembered. Original files stay read-only."
+                                        .into(),
+                                )
+                            })()
+                            .unwrap_or_else(|error| {
+                                format!("Unable to select game data: {error:#}")
+                            });
                         }
                         Ok(Work::RomPicked(selection)) => {
                             self.status = match self.apply_rom_pick(selection) {
@@ -591,6 +680,105 @@ impl eframe::App for App {
                         self.pending_input = 0;
                         0
                     };
+                    if game.is_cube2() {
+                        let (buttons, dx, dy, focused) = ctx.input(|i| {
+                            let mut buttons = 0u32;
+                            for (key, bit) in [
+                                (egui::Key::W, 0),
+                                (egui::Key::S, 1),
+                                (egui::Key::A, 2),
+                                (egui::Key::D, 3),
+                                (egui::Key::Space, 4),
+                                (egui::Key::Enter, 6),
+                                (egui::Key::Escape, 7),
+                                (egui::Key::Tab, 8),
+                                (egui::Key::E, 9),
+                                (egui::Key::R, 10),
+                                (egui::Key::Num1, 11),
+                                (egui::Key::Num2, 12),
+                                (egui::Key::Num3, 13),
+                                (egui::Key::Num4, 14),
+                                (egui::Key::Num5, 15),
+                            ] {
+                                if i.key_down(key) || i.key_pressed(key) {
+                                    buttons |= 1 << bit;
+                                }
+                            }
+                            if i.modifiers.shift {
+                                buttons |= 1 << 5;
+                            }
+                            if i.pointer.primary_down()
+                                || i.pointer.button_pressed(egui::PointerButton::Primary)
+                            {
+                                buttons |= 1 << 16;
+                            }
+                            if i.pointer.secondary_down()
+                                || i.pointer.button_pressed(egui::PointerButton::Secondary)
+                            {
+                                buttons |= 1 << 17;
+                            }
+                            let motion = i
+                                .events
+                                .iter()
+                                .filter_map(|e| {
+                                    if let egui::Event::MouseMoved(delta) = e {
+                                        Some(*delta)
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .fold(egui::Vec2::ZERO, |a, b| a + b);
+                            (
+                                buttons,
+                                motion.x.round() as i32,
+                                motion.y.round() as i32,
+                                i.focused,
+                            )
+                        });
+                        if !focused || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+                            self.cube_mouse_grab = false;
+                        } else if ctx.input(|i| i.pointer.primary_clicked()) {
+                            self.cube_mouse_grab = true;
+                        }
+                        ctx.send_viewport_cmd(egui::ViewportCommand::CursorGrab(
+                            if focused && self.cube_mouse_grab {
+                                egui::CursorGrab::Locked
+                            } else {
+                                egui::CursorGrab::None
+                            },
+                        ));
+                        ctx.send_viewport_cmd(egui::ViewportCommand::CursorVisible(
+                            !focused || !self.cube_mouse_grab,
+                        ));
+                        let (look_x, look_y) = self.input_devices.look_delta();
+                        if focused {
+                            ctx.input(|i| {
+                                cube2_input::forward(
+                                    game,
+                                    &i.events,
+                                    i.modifiers,
+                                    &mut self.cube_pointer,
+                                )
+                            });
+                            game.cube2_desktop_input(
+                                buttons,
+                                dx.saturating_add(look_x),
+                                dy.saturating_add(look_y),
+                            );
+                        } else {
+                            game.cube2_clear_input();
+                            self.cube_pointer = Default::default();
+                        }
+                    }
+                    let input = if game.is_cube2() {
+                        if ctx.input(|i| i.focused) {
+                            device_input
+                        } else {
+                            0
+                        }
+                    } else {
+                        input
+                    };
                     self.pending_input |= input & 0xf00ff;
                     let now = std::time::Instant::now();
                     if self.next_frame.is_none_or(|next| now >= next) {
@@ -598,7 +786,9 @@ impl eframe::App for App {
                             Err(e) => failure = Some(format!("Game stopped: {e:#}")),
                             Ok(_) => {
                                 if let Some(audio) = &self.audio_player {
-                                    audio.submit(game.audio_frame());
+                                    for chunk in game.audio_frame().chunks(1600) {
+                                        audio.submit(chunk);
+                                    }
                                 }
                             }
                         }
@@ -608,6 +798,7 @@ impl eframe::App for App {
                     if let Some(error) = self.audio_player.as_ref().and_then(|a| a.error()) {
                         self.audio_error = format!("Sound stopped: {error}");
                         self.audio_player = None;
+                        game.cube2_audio_sink(None);
                     }
                     if game.custom_renderer {
                         let scale = (ui.available_width() / 640.0)
@@ -768,13 +959,21 @@ impl eframe::App for App {
                 });
             self.sprite_textures.finish(image_count);
             ctx.request_repaint_after(std::time::Duration::from_millis(16));
-            if failure.is_some() {
+            let exited = self.player.as_ref().is_some_and(|game| game.exited());
+            if failure.is_some() || exited {
+                // Release capture before the next frame can open a native error
+                // dialog; blocking the event loop while grabbed traps the cursor.
+                ctx.send_viewport_cmd(egui::ViewportCommand::CursorGrab(egui::CursorGrab::None));
+                ctx.send_viewport_cmd(egui::ViewportCommand::CursorVisible(true));
+                self.cube_mouse_grab = false;
                 if let Some(game) = &mut self.player {
                     if let Err(e) = game.finish() {
                         self.status = format!("Unable to save play history: {e}");
+                        failure = Some(self.status.clone());
                     }
                 }
                 if self.game_window && failure.is_none() {
+                    self.game_window_closing = true;
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
                 self.player = None;
@@ -921,8 +1120,8 @@ impl eframe::App for App {
                     ui.label("Run Tor separately. Onion downloads never fall back to a direct connection.");
                     if std::env::var_os("GAMEPKG_TOR_PROXY").is_some() { ui.label("GAMEPKG_TOR_PROXY overrides this setting for the current launch."); }
                     ui.separator();ui.heading("Game resource ceilings");
-                    ui.horizontal(|ui| { ui.label("Memory ceiling (MiB)");ui.add(egui::DragValue::new(&mut self.settings_draft.memory_ceiling_mib).range(1..=512)); });
-                    ui.horizontal(|ui| { ui.label("Tick deadline (ms)");ui.add(egui::Slider::new(&mut self.settings_draft.tick_deadline_ms,10..=100).step_by(10.0)); });
+                    ui.horizontal(|ui| { ui.label("Memory ceiling (MiB)");ui.add(egui::DragValue::new(&mut self.settings_draft.memory_ceiling_mib).range(1..=4096)); });
+                    ui.horizontal(|ui| { ui.label("Tick deadline (ms)");ui.add(egui::Slider::new(&mut self.settings_draft.tick_deadline_ms,10..=1000).step_by(10.0)); });
                     ui.label("Memory uses the lower of your ceiling and the signed game limit. These settings cannot raise a game's hard limit. Changes apply the next time you launch a game.");
                     ui.separator();ui.heading("Builds and appearance");
                     ui.add(egui::Slider::new(&mut self.settings_draft.ui_scale_percent,80..=160).step_by(10.0).text("Interface size (%)"));

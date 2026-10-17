@@ -26,6 +26,10 @@ fn import_catalog(root: &std::path::Path, path: &std::path::Path) -> anyhow::Res
 }
 impl App {
     pub(super) fn handle_drops(&mut self, ctx: &eframe::egui::Context) {
+        // The standalone player never imports packages or opens library dialogs.
+        if self.game_window {
+            return;
+        }
         let files = ctx.input(|i| i.raw.dropped_files.clone());
         if files.is_empty() {
             return;
@@ -95,6 +99,20 @@ mod tests {
             },
             |ctx| app.handle_drops(ctx),
         );
+    }
+    #[test]
+    fn standalone_player_ignores_drops_even_while_loading() {
+        let mut app = App {
+            game_window: true,
+            ..Default::default()
+        };
+        for path in ["sample.gamepkg", "catalog.gamepkglist", "other.txt"] {
+            drop(&mut app, vec![file(path)]);
+            assert!(app.drop_notice.is_none());
+            assert!(app.pending.is_none());
+            assert!(app.result.is_none());
+            assert!(app.source.is_empty());
+        }
     }
     #[test]
     fn native_drop_checks_type_cardinality_and_preserves_pending_work() {

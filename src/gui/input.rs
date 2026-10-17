@@ -8,12 +8,14 @@ pub struct Devices {
     controller: Option<gilrs::Gilrs>,
     initialized: bool,
     previous: u32,
+    look: (i32, i32),
     contacts: std::collections::BTreeMap<(egui::TouchDeviceId, egui::TouchId), egui::Pos2>,
     error: Option<String>,
 }
 impl Devices {
     pub fn reset(&mut self) {
         self.previous = 0;
+        self.look = (0, 0);
         self.contacts.clear();
     }
     fn update_contacts(&mut self, events: &[egui::Event], focused: bool) {
@@ -43,7 +45,11 @@ impl Devices {
             self.contacts.clear();
         }
     }
+    pub fn look_delta(&self) -> (i32, i32) {
+        self.look
+    }
     pub fn poll(&mut self, ui: &mut egui::Ui) -> u32 {
+        self.look = (0, 0);
         if !self.initialized {
             self.initialized = true;
             #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
@@ -69,6 +75,12 @@ impl Devices {
             }
             if ui.input(|i| i.focused) {
                 for (_, gamepad) in controller.gamepads() {
+                    self.look.0 = (self.look.0
+                        + look_axis(gamepad.value(gilrs::Axis::RightStickX)))
+                    .clamp(-64, 64);
+                    self.look.1 = (self.look.1
+                        - look_axis(gamepad.value(gilrs::Axis::RightStickY)))
+                    .clamp(-64, 64);
                     for (button, mask) in [
                         (gilrs::Button::DPadLeft, buttons::LEFT),
                         (gilrs::Button::DPadRight, buttons::RIGHT),
@@ -160,6 +172,14 @@ fn controller_button(button: gilrs::Button) -> u32 {
         _ => 0,
     }
 }
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos", test))]
+fn look_axis(value: f32) -> i32 {
+    if !value.is_finite() || value.abs() <= 0.2 {
+        0
+    } else {
+        (value.signum() * ((value.abs().min(1.0) - 0.2) / 0.8) * 12.0).round() as i32
+    }
+}
 fn stick(x: f32, y: f32) -> u32 {
     (u32::from(x < -0.35) * buttons::LEFT)
         | (u32::from(x > 0.35) * buttons::RIGHT)
@@ -211,6 +231,16 @@ mod tests {
         assert_eq!(devices.contacts.len(), 32);
         devices.reset();
         assert!(devices.contacts.is_empty());
+    }
+    #[test]
+    fn look_stick_is_bounded_and_invalid_samples_cannot_move_the_camera() {
+        for value in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY, -0.2, 0.0, 0.2] {
+            assert_eq!(look_axis(value), 0);
+        }
+        assert_eq!(look_axis(1.0), 12);
+        assert_eq!(look_axis(-1.0), -12);
+        assert_eq!(look_axis(1000.0), 12);
+        assert_eq!(look_axis(-1000.0), -12);
     }
     #[test]
     fn analog_deadzone_and_invalid_values_do_not_press_buttons() {

@@ -12,6 +12,7 @@ pub mod registry;
 pub mod build;
 pub mod catalog;
 pub mod runtime;
+pub mod server_selections;
 pub mod settings;
 pub mod support;
 
@@ -83,3 +84,7 @@ pub mod native;
 pub mod gpu_vulkan;
 
 mod network;
+
+#[doc(hidden)]
+pub mod cube2;
+pub mod game_data;

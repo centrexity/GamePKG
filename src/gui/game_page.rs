@@ -39,6 +39,16 @@ impl App {
         }
     }
     fn launch_selected(&mut self, id: String, native: bool) {
+        let network = self
+            .installed
+            .iter()
+            .find(|m| m.id == id)
+            .and_then(|m| crate::server_selections::identity(m).ok())
+            .and_then(|scope| {
+                self.network_drafts
+                    .get(&scope)
+                    .map(|draft| (scope, draft.value.clone()))
+            });
         let paths = self
             .rom_paths
             .get(&id)
@@ -54,7 +64,7 @@ impl App {
         });
         self.begin_work(move || {
             let root = crate::registry::default_root()?;
-            let _change = if paths.is_empty() {
+            let _change = if paths.is_empty() && network.is_none() {
                 None
             } else {
                 Some(crate::registry::LibraryChange::acquire(&root)?)
@@ -67,6 +77,16 @@ impl App {
                 );
             }
             let manifest = crate::registry::installed_manifest(&root, &id)?;
+            let saved_network = if let Some((scope, selection)) = network {
+                anyhow::ensure!(
+                    crate::server_selections::identity(&manifest)? == scope,
+                    "The game changed. Review multiplayer settings again."
+                );
+                let saved = crate::server_selections::remember(&root, &manifest, &selection)?;
+                Some((scope, saved))
+            } else {
+                None
+            };
             if manifest.requires_rom {
                 crate::rom_selections::save(
                     &root,
@@ -88,7 +108,7 @@ impl App {
                 .stdin(std::process::Stdio::null())
                 .stdout(std::process::Stdio::null())
                 .stderr(std::process::Stdio::null());
-            Ok(Work::Launched(id, child.spawn()?))
+            Ok(Work::Launched(id, child.spawn()?, saved_network))
         });
     }
     pub(super) fn show_game_page(&mut self, ctx: &egui::Context) {
@@ -148,10 +168,10 @@ impl App {
                 ui.label(if built{"Native build ready to play"}else{"Native build: Not built"});
                 if let Some(usage)=self.usage.get(&id){ui.label(format!("Storage: {} used",crate::storage::bytes(usage.used_bytes())));}
                 ui.horizontal_wrapped(|ui|{
-                    if ui.add_enabled(!reviewing&&built&&self.result.is_none()&&(!m.requires_rom||self.rom_paths.get(&id).is_some_and(|p|crate::rom_selections::ready(p,m.required_rom_count()))),super::theme::primary("Play")).clicked(){self.launch_selected(id.clone(),true);}
+                    if ui.add_enabled(!reviewing&&built&&self.result.is_none()&&(m.game_data.is_none()||self.applied_settings.as_ref().is_some_and(|s|s.memory_ceiling_mib>=2048))&&(m.game_data.is_none()||self.data_paths.get(&id).is_some_and(|p|std::path::Path::new(p).is_dir()))&&(!m.requires_rom||self.rom_paths.get(&id).is_some_and(|p|crate::rom_selections::ready(p,m.required_rom_count()))),super::theme::primary("Play")).clicked(){self.launch_selected(id.clone(),true);}
                     if ui.add_enabled(cfg!(target_os="linux")&&!reviewing&&self.result.is_none(),egui::Button::new(if built{"Rebuild"}else{"Build"}).min_size(egui::vec2(100.0,36.0))).clicked(){let id=id.clone();self.begin_work(move||{crate::native::compile(&crate::registry::default_root()?,&id)?;Ok(Work::Message("Native build ready to play.".into()))});}
                     if ui.add_enabled(!reviewing&&self.result.is_none()&&m.update_url.is_some(),egui::Button::new("Check for updates")).clicked(){let id=id.clone();self.begin_work(move||match crate::registry::check_update(&crate::registry::default_root()?,&id)?{Some((m,file))=>Ok(Work::Update(m,file)),None=>Ok(Work::Message("This game is up to date.".into()))});}
-                    if ui.add_enabled(!reviewing&&self.result.is_none(),egui::Button::new("Build Wasm")).clicked(){let id=id.clone();self.begin_work(move||{crate::build::compile(&crate::registry::default_root()?,&id)?;Ok(Work::Message("Wasm build complete. Native build kept separately.".into()))});}
+                    if ui.add_enabled(m.builtin_engine.as_deref()!=Some(crate::cube2::PROFILE)&&!reviewing&&self.result.is_none(),egui::Button::new("Build Wasm")).clicked(){let id=id.clone();self.begin_work(move||{crate::build::compile(&crate::registry::default_root()?,&id)?;Ok(Work::Message("Wasm build complete. Native build kept separately.".into()))});}
                     if ui.add_enabled(!reviewing&&self.wasm_built.contains(&id)&&self.result.is_none()&&(!m.requires_rom||self.rom_paths.get(&id).is_some_and(|p|crate::rom_selections::ready(p,m.required_rom_count()))),egui::Button::new("Play Wasm")).clicked(){self.launch_selected(id.clone(),false);}
                     ui.menu_button("More",|ui|{
                         if ui.add_enabled(!reviewing&&self.result.is_none(),egui::Button::new("Check integrity")).clicked(){let id=id.clone();self.begin_work(move||Ok(Work::Message(crate::integrity::check(&crate::registry::default_root()?,&id)?)));ui.close_menu();}
@@ -162,7 +182,7 @@ impl App {
                         if ui.add_enabled(!reviewing&&self.wasm_built.contains(&id)&&self.result.is_none(),egui::Button::new("Export for web")).clicked(){let id=id.clone();self.begin_work(move||{let root=crate::registry::default_root()?;let suffix=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_nanos();let output=root.join("web-exports").join(format!("{id}-{suffix}"));crate::web_export::export(&root,&id,&output)?;Ok(Work::Message(format!("Web player exported to {}",output.display())))});ui.close_menu();}
                     });
                 });
-                if !cfg!(target_os="linux"){ui.label("Native worker isolation is currently available on Linux. Use the explicit Wasm build and Play Wasm on this platform.");}
+                if !cfg!(target_os="linux"){ui.label(if m.game_data.is_some(){"This engine currently requires Linux native process isolation."}else{"Native worker isolation is currently available on Linux. Use the explicit Wasm build and Play Wasm on this platform."});}
                 if m.requires_rom&&!self.rom_paths.get(&id).is_some_and(|p|crate::rom_selections::ready(p,m.required_rom_count())){ui.label("Choose the required ROM files below to enable Play.");}
             }else if self.pending.is_none(){
                 if let Some(entry)=self.catalog.iter().find(|e|e.id==id).cloned(){
@@ -174,13 +194,65 @@ impl App {
             if let Some(notice)=self.updates.notices.get(&id){match notice {crate::updates::Notice::Available(version)=>{ui.label(format!("Update {version} available"));},crate::updates::Notice::Current=>{ui.label("Up to date");},crate::updates::Notice::Failed(error)=>{ui.label("Update check failed").on_hover_text(error);}}}
             ui.add_space(12.0);ui.label(&self.status);
             egui::ScrollArea::vertical().id_salt("game-page-content").show(ui,|ui|{
-                if self.pending.is_none(){self.game_rom_editor(ui);}
+                if self.pending.is_none(){self.game_rom_editor(ui);self.game_data_editor(ui);self.game_network_editor(ui);}
                 self.game_details(ui,ctx);
             });
             });
         });
     }
 
+    fn game_data_editor(&mut self, ui: &mut egui::Ui) {
+        let Some(selected) = self
+            .installed
+            .iter()
+            .find(|m| Some(&m.id) == self.selected_game.as_ref() && m.game_data.is_some())
+            .cloned()
+        else {
+            return;
+        };
+        let title = selected.game_data.as_ref().unwrap().title.clone();
+        let current = self
+            .data_paths
+            .get(&selected.id)
+            .cloned()
+            .unwrap_or_default();
+        ui.strong(title);
+        let label = if current.is_empty() {
+            "Choose game-data folder…"
+        } else {
+            &current
+        };
+        if ui
+            .add_enabled(
+                self.result.is_none(),
+                egui::Button::new(label)
+                    .truncate()
+                    .min_size(egui::vec2(ui.available_width().min(620.0), 38.0)),
+            )
+            .clicked()
+        {
+            self.begin_work(move || {
+                let root = std::fs::canonicalize(crate::registry::default_root()?)?;
+                let mut dialog =
+                    rfd::FileDialog::new().set_title("Choose original Sauerbraten installation");
+                if !current.is_empty() {
+                    dialog = dialog.set_directory(current);
+                }
+                Ok(Work::DataPicked(root, selected, dialog.pick_folder()))
+            });
+        }
+        ui.label("Choose the original installation containing data and packages folders. GamePKG reads these files in place and remembers this folder for this signed game.");
+        ui.label("Edited maps, map settings and saved demos are remembered separately from the original files. Saved files can use up to 32 MiB.");
+        if self
+            .applied_settings
+            .as_ref()
+            .is_none_or(|s| s.memory_ceiling_mib < 2048)
+        {
+            ui.label("This engine needs a memory ceiling of at least 2048 MiB. Adjust it in Settings before playing.");
+        }
+        ui.label("A 500 ms tick deadline is recommended for first-use software shader compilation. Adjust it in Settings.");
+        ui.add_space(12.0);
+    }
     fn game_rom_editor(&mut self, ui: &mut egui::Ui) {
         if let Some(selected) = self
             .installed
@@ -234,7 +306,7 @@ impl App {
             egui::ScrollArea::vertical().id_salt("game-details").max_height((ui.available_height() - 35.0).max(100.0)).show(ui, |ui| {
                 ui.separator(); ui.heading("About this game"); ui.label(format!("Version: {}", m.version));
                 ui.label(format!("Memory: {:.1} MiB recommended • {:.1} MiB hard limit", m.limits.recommended_memory_bytes() as f64 / 1048576.0, m.limits.hard_memory_bytes as f64 / 1048576.0));
-                ui.label(if m.requires_rom { format!("Requires {} ROM file(s) supplied by you. They are not included in this package.",m.required_rom_count()) } else { "No user ROM required.".into() });
+                ui.label(if m.requires_rom { format!("Requires {} ROM file(s) supplied by you. They are not included in this package.",m.required_rom_count()) } else if m.game_data.is_some(){"Original game-data folder required (read-only).".into()} else { "No user ROM required.".into() });
                 for (index,rom) in m.roms.iter().enumerate() {ui.label(format!("ROM {}: {} ({})",index+1,rom.title,rom.id));}
                 let package_size = self.pending.as_ref().and_then(|file| file.as_file().metadata().ok()).map(|m|m.len()).or_else(||self.usage.get(&m.id).map(|u|u.package_bytes));
                 ui.label(format!("Storage: {} package; {} expected after building", package_size.map(crate::storage::bytes).unwrap_or_else(||"Unknown".into()), m.limits.recommended_storage_bytes.map(|v|v.max(package_size.unwrap_or(0))).map(crate::storage::bytes).unwrap_or_else(||"Unknown (no creator estimate)".into())));
@@ -271,7 +343,8 @@ impl App {
                 }
                 ui.label(format!("Lockfile / dependency inventory SHA-256: {}",m.lockfile_sha256));
                 ui.label(format!("Permissions: input={}, audio={}, save={}, network={}", m.permissions.input, m.permissions.audio, m.permissions.save, m.permissions.network));
-                if m.permissions.network != "none" {ui.label(format!("Network endpoints: {}. Listening: {}. Local network: {}",m.permissions.network_hosts.join(", "),m.permissions.network_listen.join(", "),m.permissions.network_allow_local));}
+                if m.uses_selected_servers() {ui.label("Network permission: your chosen server or hosting addresses, plus servers listed by a master you explicitly select. Blank choices keep it offline.");}
+                else if m.permissions.network != "none" {ui.label(format!("Network endpoints: {}. Listening: {}. Local network: {}",m.permissions.network_hosts.join(", "),m.permissions.network_listen.join(", "),m.permissions.network_allow_local));}
                 if let Some(url) = &m.update_url { ui.label(format!("Updates: {url}")); }
                 let preview_id = m.id.clone();
                 ui.horizontal(|ui| {

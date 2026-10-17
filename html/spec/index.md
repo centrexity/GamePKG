@@ -35,7 +35,7 @@ requirement checked against the host during verification and loading.
 namespace without deleting or converting earlier saves.
 
 Compilation runs in an isolated Linux environment, including through WSL 2
-on Windows. The desktop player renders through the host-controlled OpenGL API.
+on Windows. The desktop player presents through host-controlled Vulkan by default, with an explicit OpenGL option.
 
 An optional top-level `NOTICE` carries license attribution and is included in the signed tree. Creators choose the license in their package's `LICENSE`; the host's Apache 2.0 license does not dictate the license of independently authored games.
 
@@ -104,3 +104,7 @@ The runtime uses memory limits and host time deadlines, without instruction mete
 ## Game display metadata
 
 Since 0.1.13, optional signed root fields include `title` (256 bytes), `description` (4096 bytes, with line breaks), `author` (128 bytes), `homepage` (2048 bytes, HTTPS/Tor), and `genres` (up to eight unique labels, 32 bytes each). Text is literal, without markup; control sequences and bidirectional formatting controls are rejected. Old packages fall back to their IDs. Catalog entries may also supply unverified descriptions. Installed signed metadata takes precedence. Use `engine_version = ">=0.1.13, <0.2.0"` and update older hosts first. See the developer guide for the manifest example.
+
+## User-selected native-server permission
+
+Only an exact host-approved folder-backed native selector may sign `game_data.user_selected_servers = true`. It requires `network = "multiplayer"`, empty static endpoint lists and no static local-network grant. The host validates and remembers an explicit user-selected join or hosting address and authorizes only its game port and adjacent server-information port for that session. Blank choices remain offline. Local/private addresses require a separate user opt-in. Choices are scoped to the signed game, creator and declaration; game code cannot change them. Ordinary guest packages cannot request this delegation.

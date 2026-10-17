@@ -6,7 +6,7 @@
 
 **Current status:** this is a development preview. Package verification, catalog import, installation, update checks, and isolated Cargo Wasm and Slang shader builds on Linux and the configured Windows WSL 2 connection work today. The default Linux build uses a direct CPU executable in an isolated native worker. Optional Wasm profiles play in the GUI and terminal under Wasmtime with scoped asset reads, memory limits, and epoch deadlines. Vulkan is the default renderer; bounded Slang fragment passes use WGSL or SPIR-V, with OpenGL available explicitly; versioned WIT components are supported alongside the legacy core profile; broader rendering remains pending; this is not a guarantee that a package is harmless.
 
-Download the [0.1.14 Linux and Windows CLI/desktop apps](https://github.com/centrexity/GamePKG/releases/tag/v0.1.14), including the checksum for your platform. Windows source builds use the matching Linux compiler inside WSL 2; playback runs in the native Windows app. See [Windows setup](docs/INSTALL_WINDOWS.md). Host distributions can also be prepared with `python3 tools/package_release.py /tmp/gamepkg-distribution` after building both release entry points. The archive includes CLI/GUI executables, setup tools, examples, original resolved dependency sources and notices, and integrity hashes. See [installation instructions](docs/INSTALL.md). See the [implementation and verification audit](docs/IMPLEMENTATION_STATUS.md) for requirement coverage and remaining limits. The public repository's **Package Linux preview** workflow produces the same artifact on Ubuntu 24.04.
+Download the [0.1.15 Linux and Windows CLI/desktop apps](https://github.com/centrexity/GamePKG/releases/tag/v0.1.15), including the checksum for your platform. Windows source builds use the matching Linux compiler inside WSL 2; playback runs in the native Windows app. See [Windows setup](docs/INSTALL_WINDOWS.md). Host distributions can also be prepared with `python3 tools/package_release.py /tmp/gamepkg-distribution` after building both release entry points. The archive includes CLI/GUI executables, setup tools, examples, original resolved dependency sources and notices, and integrity hashes. See [installation instructions](docs/INSTALL.md). See the [implementation and verification audit](docs/IMPLEMENTATION_STATUS.md) for requirement coverage and remaining limits. The public repository's **Package Linux preview** workflow produces the same artifact on Ubuntu 24.04.
 
 Try the [signed demo catalog](https://github.com/centrexity/GamePKG/releases/download/v0.1.6/demos.gamepkglist) with **Import .gamepkglist** in the desktop library. It adds Collect Stars, Shape Playground, PNG Sprite Playground and Zelda3 as **Not downloaded**. Choose a game to download, approve its creator on first installation, then **Build** and **Play**. The three original demos need no ROM; Zelda3 requires your supported USA ROM. Players need no signing key. The [portable demo store](https://github.com/centrexity/GamePKG/releases/download/v0.1.6/demos.gamepkgstore) includes all four signed games for offline import. Compare downloads against [demo checksums](https://github.com/centrexity/GamePKG/releases/download/v0.1.6/demo-packages.sha256).
 
@@ -75,7 +75,7 @@ Packing validates before publishing and refuses to overwrite files. The output m
 
 Game source also follows an enforced [portable data policy](docs/PORTABILITY.md): fixed-width byte conversions, explicit byte order, a fixed wasm32 ABI, and no native layout or pointer-dependent serialization. Dedicated 32-bit Linux, Windows, and Android checks exercise the same core and component runtime boundaries.
 
-- Format version 1; networking is denied unless explicitly declared with bounded endpoint capabilities; positive memory limit up to 512 MiB.
+- Format version 1; networking is denied unless explicitly declared with bounded endpoint capabilities; positive memory limits (up to 512 MiB for ordinary games, with larger bounded limits for reviewed native-engine profiles).
 - Required manifest, PNG-signature thumbnail, license, credits, Cargo manifest/lockfile, and `source/src/lib.rs`.
 - At most 10,000 entries, 64 MiB per file, 256 MiB uncompressed total; stored and zstd entries only.
 - No absolute paths, traversal, backslashes, duplicate paths, directory entries, or symlinks.
@@ -234,7 +234,7 @@ hard_memory_bytes = 16777216       # 16 MiB, enforced
 
 Recommended memory describes the creator's suggested budget; it neither reserves memory nor stops a game from using more. Wasmtime enforces the hard limit on guest linear memory, including initial allocation and growth. It is not a cap on the entire host process, compiler, or JIT memory. The GUI displays both values during inspection and in the installed-state tooltip.
 
-Recommended memory is optional and defaults to the hard limit. When supplied, it must be positive and no greater than the hard limit. The hard limit must be positive and at most 512 MiB. Existing `memory_bytes` remains accepted as an alias for `hard_memory_bytes`; supplying both is rejected, and newly packed manifests use the canonical hard-limit field.
+Recommended memory is optional and defaults to the hard limit. When supplied, it must be positive and no greater than the hard limit. The hard limit for ordinary games must be positive and at most 512 MiB. Reviewed native-engine profiles can define a larger bounded limit; this does not increase arbitrary guest Wasm memory. Existing `memory_bytes` remains accepted as an alias for `hard_memory_bytes`; supplying both is rejected, and newly packed manifests use the canonical hard-limit field.
 
 ## Desktop settings
 
@@ -242,7 +242,7 @@ Open **Settings** from the desktop library navigation. Save applies validated pr
 
 - Library folder: choose an absolute path or leave empty for the default. Switching libraries does not move existing packages.
 - Tor proxy: local loopback IP and SOCKS port; Tor remains a separately running service.
-- Game ceilings: memory (1–512 MiB), tick deadline (10–100 ms). Memory uses the lower of the saved ceiling and the signed game limit. New sessions use the settings; current games are unaffected.
+- Game ceilings: memory (1–4096 MiB, default 512 MiB), tick deadline (10–1000 ms, default 100 ms). Memory uses the lower of the saved ceiling and the signed game limit. New sessions use the settings; current games are unaffected.
 - Optimize builds: enables Rust `opt-level=2` for subsequent Build/Rebuild; existing artifacts remain available.
 - Appearance: dark or light theme, applied after saving.
 
@@ -935,7 +935,7 @@ Drop one `.gamepkg` or `.gamepkglist` file anywhere in the library window. Packa
 
 Native and optional Wasm builds have separate controls and caches. Native C-based ports use Clang 18 and lld-18; their optional Wasm builds additionally use WASI libraries. Shader-free native games do not need Slang. See [native runtime details](docs/NATIVE_RUNTIME.md) and [HTTPS and multiplayer networking](docs/NETWORKING.md).
 
-Play opens each game in its own process and window. The library stays open, and closing the library leaves running games alone. Close the game window to finish the session.
+Play opens each game in its own process and window. The player shows only the game, with no launcher toolbar, score panel, or controls drawn over it. Resize it using your system's window controls; the game keeps its proportions. The library stays open, and closing the library leaves running games alone. Close the game window to finish the session and save play time. Import packages in the library window.
 
 The desktop library uses high-contrast dark and light themes, artwork rows that adapt to the window width, and larger controls. Settings → Interface size adjusts text and controls from 80–160%, in addition to system display scaling.
 

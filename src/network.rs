@@ -50,6 +50,9 @@ impl Endpoint {
         format!("{}:{}", self.host, self.port)
     }
     fn resolve(&self, local: bool) -> Result<SocketAddr> {
+        Ok(self.resolve_all(local)?[0])
+    }
+    fn resolve_all(&self, local: bool) -> Result<Vec<SocketAddr>> {
         let hostname = self.host.trim_start_matches('[').trim_end_matches(']');
         let addresses = (hostname, self.port).to_socket_addrs()?.collect::<Vec<_>>();
         ensure!(
@@ -60,10 +63,10 @@ impl Endpoint {
             addresses.iter().all(|a| allowed_ip(a.ip(), local)),
             "local, private or reserved network address denied"
         );
-        Ok(addresses[0])
+        Ok(addresses)
     }
 }
-fn allowed_ip(ip: IpAddr, local: bool) -> bool {
+pub(crate) fn allowed_ip(ip: IpAddr, local: bool) -> bool {
     if ip.is_unspecified() || ip.is_multicast() {
         return false;
     }
@@ -96,6 +99,44 @@ fn allowed_ip(ip: IpAddr, local: bool) -> bool {
                     || a.segments()[0] == 0x2001 && a.segments()[1] == 0xdb8)
         }
     }
+}
+/// Resolve only signed multiplayer endpoints, once, for a reviewed engine broker.
+#[cfg(target_os = "linux")]
+pub(crate) fn multiplayer_endpoints(
+    p: &crate::manifest::Permissions,
+    listen: bool,
+) -> Result<Vec<(String, SocketAddr)>> {
+    validate(p)?;
+    ensure!(
+        matches!(p.network.as_str(), "multiplayer" | "all"),
+        "multiplayer permission denied"
+    );
+    let entries = if listen {
+        &p.network_listen
+    } else {
+        &p.network_hosts
+    };
+    let mut pinned = BTreeMap::new();
+    entries
+        .iter()
+        .map(|text| {
+            let endpoint = Endpoint::parse(text)?;
+            let ip = if let Some(ip) = pinned.get(&endpoint.host) {
+                *ip
+            } else {
+                let ip = endpoint
+                    .resolve_all(p.network_allow_local)?
+                    .into_iter()
+                    .find(SocketAddr::is_ipv4)
+                    .context("Cube 2 ENet requires an IPv4 endpoint")?
+                    .ip();
+                pinned.insert(endpoint.host.clone(), ip);
+                ip
+            };
+            let address = SocketAddr::new(ip, endpoint.port);
+            Ok((endpoint.host.clone(), address))
+        })
+        .collect()
 }
 pub(crate) fn validate(p: &crate::manifest::Permissions) -> Result<()> {
     ensure!(
@@ -140,6 +181,62 @@ pub(crate) fn validate(p: &crate::manifest::Permissions) -> Result<()> {
         );
     }
     Ok(())
+}
+/// A signed selector may delegate exact endpoint choice to its host UI only.
+pub(crate) fn validate_user_selected(p: &crate::manifest::Permissions) -> Result<()> {
+    ensure!(p.network=="multiplayer" && p.network_hosts.is_empty() && p.network_listen.is_empty() && !p.network_allow_local,
+        "user-selected servers require multiplayer permission without static endpoints or local-network grants");
+    Ok(())
+}
+pub(crate) fn selected_multiplayer(
+    server: &str,
+    listen: &str,
+    local: bool,
+) -> Result<crate::manifest::Permissions> {
+    ensure!(
+        server.is_empty() || listen.is_empty(),
+        "choose joining a server or hosting, not both"
+    );
+    let endpoints = |text: &str, hosting: bool| -> Result<Vec<String>> {
+        if text.is_empty() {
+            return Ok(Vec::new());
+        }
+        let endpoint = Endpoint::parse(text)?;
+        ensure!(
+            !endpoint.host.contains(':') && endpoint.port < 65535,
+            "use an IPv4 address or hostname and port 1–65534"
+        );
+        if let Ok(ip) = endpoint.host.parse::<IpAddr>() {
+            ensure!(
+                allowed_ip(ip, local),
+                "enable local/private addresses for this endpoint"
+            );
+        }
+        if hosting {
+            ensure!(
+                endpoint.host.parse::<std::net::Ipv4Addr>().is_ok(),
+                "hosting requires a local numeric IPv4 address"
+            );
+        }
+        Ok(vec![
+            endpoint.key(),
+            format!("{}:{}", endpoint.host, endpoint.port + 1),
+        ])
+    };
+    let hosts = endpoints(server, false)?;
+    let listeners = endpoints(listen, true)?;
+    let enabled = !hosts.is_empty() || !listeners.is_empty();
+    let permissions = crate::manifest::Permissions {
+        input: false,
+        audio: false,
+        save: false,
+        network: if enabled { "multiplayer" } else { "none" }.into(),
+        network_hosts: hosts,
+        network_listen: listeners,
+        network_allow_local: enabled && local,
+    };
+    validate(&permissions)?;
+    Ok(permissions)
 }
 enum Handle {
     Pending(mpsc::Receiver<Result<Resource>>),

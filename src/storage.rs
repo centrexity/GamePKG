@@ -143,12 +143,23 @@ pub fn usage(root: &Path, manifest: &crate::manifest::Manifest) -> Result<Usage>
             manifest.id, manifest.creator_key, manifest.save_schema
         )
     };
-    let save_bytes = scoped_total(
+    let mut save_bytes = scoped_total(
         root,
         &root
             .join("saves")
             .join(format!("{}.blob", crate::verify::digest(scope.as_bytes()))),
     )?;
+    if manifest.builtin_engine.as_deref() == Some(crate::cube2::PROFILE) {
+        save_bytes = save_bytes.saturating_add(scoped_total(
+            root,
+            &crate::cube2::save_path(
+                root,
+                &manifest.id,
+                &manifest.creator_key,
+                manifest.save_schema,
+            ),
+        )?);
+    }
     let history_bytes = scoped_total(
         root,
         &crate::progress::path(root, &manifest.id, &manifest.creator_key)?,

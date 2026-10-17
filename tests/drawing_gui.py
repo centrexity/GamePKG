@@ -2,6 +2,7 @@ from gui_test_support import start_display
 import os, subprocess, tempfile, time
 from pathlib import Path
 from PIL import Image
+from Xlib import display as xdisplay, protocol
 project=Path(__file__).resolve().parents[1]
 os.chdir(project)
 with tempfile.TemporaryDirectory(prefix='gamepkg-draw-ui-') as directory:
@@ -39,8 +40,35 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-draw-ui-') as directory:
    after=project/'target/drawing-player.png'
    subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(after)],env=env,check=True)
    assert green_x(after)<x-20,'Held input did not move the guest-drawn square'
-   print('GUI guest scene rendered; held movement verified from actual screen pixels.')
+   text=subprocess.check_output(['tesseract',str(after),'stdout'],stderr=subprocess.DEVNULL,text=True)
+   for label in ['Close game','Restart','Score:','Sound on','Touch controls']:
+    assert label not in text,(label,text)
+   # The scene occupies the entire client area, retaining its 4:3 proportions
+   # when the native window becomes wide. Letterboxing must stay black.
+   subprocess.run(['xdotool','windowsize',window,'1000','600'],env=env,check=True)
+   time.sleep(.3)
+   wide=root/'wide.png'
+   subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(wide)],env=env,check=True)
+   image=Image.open(wide).convert('RGB')
+   assert image.size==(1000,600),image.size
+   assert image.getpixel((0,0))==(0,0,0)
+   assert image.getpixel((999,599))==(0,0,0)
+   green_x(wide)
+   # Ask the app to close through the native window protocol, allowing save
+   # and play-history cleanup instead of terminating its process.
+   connection=xdisplay.Display(env['DISPLAY'])
+   target=connection.create_resource_object('window',int(window))
+   target.send_event(protocol.event.ClientMessage(window=target,
+    client_type=connection.intern_atom('WM_PROTOCOLS'),
+    data=(32,[connection.intern_atom('WM_DELETE_WINDOW'),0,0,0,0])),event_mask=0)
+   connection.flush()
+   assert app.wait(timeout=10)==0,app.stderr.read().decode()
+   connection.close()
+   import json
+   records=list((root/'library/progress').glob('*.json'))
+   assert records and json.loads(records[0].read_text())['played_ms']>0
+   print('Game-only native window passed: scene, held input, resizing, native close and saved play time.')
   finally:
-   app.terminate();app.wait(timeout=5)
+   if app.poll() is None:app.terminate();app.wait(timeout=5)
  finally:
   display.terminate();display.wait(timeout=5)
