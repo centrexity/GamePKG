@@ -883,3 +883,177 @@ fn level_reset_matches_unchanged_original_with_items_and_high_level_numbers() {
         );
     }
 }
+
+#[test]
+fn special_bricks_and_rocket_phases_match_unchanged_original_with_real_sdl() {
+    let reference: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-bricks.json")).unwrap();
+    for fixture in reference["fixtures"].as_array().unwrap() {
+        let mut game = physics::Game::new();
+        game.blocks = [0; 200];
+        game.balls.clear();
+        game.cooldown = 60;
+        game.ghost = if fixture["ghost"].as_bool().unwrap_or(false) {
+            600
+        } else {
+            0
+        };
+        for (index, block) in fixture["blocks"].as_array().unwrap().iter().enumerate() {
+            assert!(game.set_block(index, block[2].as_u64().unwrap() as u8));
+            game.block_x[index] = block[0].as_f64().unwrap() as f32 * 0.5;
+            game.block_y[index] = block[1].as_f64().unwrap() as f32 * 0.5 + physics::TOP;
+        }
+        if let Some(rockets) = fixture["rocket"].as_array() {
+            for rocket in rockets {
+                game.rockets.push((
+                    rocket[0].as_f64().unwrap() as f32 * 0.5,
+                    rocket[1].as_f64().unwrap() as f32 * 0.5 + physics::TOP,
+                ));
+            }
+        }
+        gamepkg::samples(&[199; 100]); // Original oracle suppresses random bonus drops.
+        for expected in fixture["expected"].as_array().unwrap() {
+            if let Some(ball) = fixture["ball"].as_array() {
+                game.balls.clear();
+                game.balls.push(collision_ball(
+                    ball[0].as_f64().unwrap() as f32 * 0.5 + 3.0,
+                    ball[1].as_f64().unwrap() as f32 * 0.5 + 63.0,
+                    ball[2].as_f64().unwrap() as f32 * 0.5,
+                    ball[3].as_f64().unwrap() as f32 * 0.5,
+                ));
+                game.collide_blocks(0);
+                let ball = &game.balls[0];
+                let actual = [
+                    (ball.x - 3.0) * 2.0,
+                    (ball.y - 63.0) * 2.0,
+                    ball.vx * 2.0,
+                    ball.vy * 2.0,
+                ];
+                for (actual, expected) in actual.iter().zip(expected["ball"].as_array().unwrap()) {
+                    assert!(
+                        (actual - expected.as_f64().unwrap() as f32).abs() < 0.0001,
+                        "{}",
+                        fixture["name"]
+                    );
+                }
+            } else {
+                game.update_rockets();
+            }
+            assert_eq!(
+                [
+                    game.score,
+                    game.rockets.len() as u32,
+                    game.drops.len() as u32
+                ],
+                expected["state"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|v| v.as_u64().unwrap() as u32)
+                    .collect::<Vec<_>>()
+                    .as_slice(),
+                "{}",
+                fixture["name"]
+            );
+            for (rocket, expected) in game
+                .rockets
+                .iter()
+                .zip(expected["rockets"].as_array().unwrap())
+            {
+                assert_eq!(
+                    [rocket.0 * 2.0, (rocket.1 - physics::TOP) * 2.0],
+                    [
+                        expected[0].as_f64().unwrap() as f32,
+                        expected[1].as_f64().unwrap() as f32
+                    ]
+                );
+            }
+            for (index, expected) in expected["blocks"].as_array().unwrap().iter().enumerate() {
+                assert_eq!(
+                    [game.blocks[index], game.block_health[index]],
+                    [
+                        expected[0].as_u64().unwrap() as u8,
+                        expected[1].as_u64().unwrap() as u8
+                    ],
+                    "{} block {index}",
+                    fixture["name"]
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn indirect_damage_never_drops_bonuses_or_consumes_drop_entropy() {
+    for rocket in [false, true] {
+        let mut game = physics::Game::new();
+        game.blocks = [0; 200];
+        game.cooldown = 60;
+        for index in 0..4 {
+            assert!(game.set_block(index, index as u8));
+            game.block_x[index] = 100.0;
+            game.block_y[index] = 100.0;
+        }
+        gamepkg::samples(&[100, 150]);
+        game.explode(115.0, 105.0, rocket);
+        assert_eq!(game.score, 40);
+        assert!(game.drops.is_empty());
+        assert_eq!(physics::below(100), 0);
+        assert_eq!(game.block_health[1], 2);
+        assert_eq!(game.block_health[3], 255);
+    }
+    let mut game = physics::Game::new();
+    game.blocks = [0; 200];
+    game.cooldown = 60;
+    assert!(game.set_block(0, 1));
+    gamepkg::samples(&[100]);
+    assert!(!game.hit(0));
+    assert_eq!(physics::below(100), 0);
+    assert!(game.drops.is_empty());
+    gamepkg::samples(&[100, 150]);
+    assert!(game.hit(0));
+    assert_eq!(game.drops.len(), 1);
+    assert_eq!(game.drops[0].kind, 1);
+    assert_eq!(game.cooldown, 0);
+}
+
+#[test]
+fn metal_is_ignored_for_level_completion_but_consumed_by_portals() {
+    let mut game = physics::Game::new();
+    game.blocks = [0; 200];
+    game.mode = 1;
+    assert!(game.set_block(0, 3));
+    game.update(0);
+    assert_eq!(game.mode, 3);
+    assert_eq!(game.blocks[0], 1);
+    assert_eq!(game.score, 0);
+    let mut game = physics::Game::new();
+    game.blocks = [0; 200];
+    game.mode = 1;
+    game.portal = true;
+    assert!(game.set_block(0, 3));
+    game.block_x[0] = 305.0;
+    game.block_y[0] = 235.0;
+    game.pull_blocks();
+    assert_eq!(game.blocks[0], 0);
+    assert_eq!(game.score, 0);
+    for _ in 0..270 {
+        game.pull_blocks();
+    }
+    assert_eq!(game.mode, 3);
+}
+
+#[test]
+fn invalid_editor_brick_types_and_indices_do_not_change_the_level() {
+    let mut game = physics::Game::new();
+    let blocks = game.blocks;
+    let types = game.block_type;
+    let health = game.block_health;
+    assert!(!game.set_block(200, 0));
+    assert!(!game.set_block(usize::MAX, 0));
+    assert!(!game.set_block(0, 4));
+    assert!(!game.set_block(0, 255));
+    assert_eq!(game.blocks, blocks);
+    assert_eq!(game.block_type, types);
+    assert_eq!(game.block_health, health);
+}

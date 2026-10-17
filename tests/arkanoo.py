@@ -57,6 +57,19 @@ pub fn game_tick(input:u32,state:u64)->u64 {
    if input&8192!=0 {*game=physics::Game::new();game.mode=1;}
    if input&16384!=0 {*game=physics::Game::new();game.mode=1;game.level=9;game.width=90.0;game.long=300;game.ghost=600;game.ammo=1;game.score=100;game.balls.clear();}
    if input&32768!=0 {*game=physics::Game::new();game.mode=1;game.level=999;game.blocks=[0;200];game.score=10000004;}
+   if input&65536!=0 {*game=physics::Game::new();game.mode=1;game.blocks=[0;200];game.set_block(0,1);game.set_block(1,3);game.set_block(2,2);game.set_block(199,0);game.balls.clear();game.balls.push(physics::Ball{x:34.0,y:114.0,vx:0.0,vy:-4.0,spin:0.0,attached:false,launch_timer:0});}
+   if input&262144!=0 {game.balls.clear();game.balls.push(physics::Ball{x:34.0,y:114.0,vx:0.0,vy:-4.0,spin:0.0,attached:false,launch_timer:0});}
+   if input&524288!=0 {*game=physics::Game::new();game.mode=1;game.blocks=[0;200];
+    game.set_block(0,0);game.block_x[0]=20.0;game.block_y[0]=100.0;
+    game.set_block(1,3);game.block_x[1]=20.0;game.block_y[1]=160.0;
+    game.set_block(2,1);game.block_x[2]=20.0;game.block_y[2]=160.5;
+    game.set_block(3,1);game.block_x[3]=56.0;game.block_y[3]=148.0;
+    game.set_block(4,0);game.block_x[4]=56.5;game.block_y[4]=148.0;
+    game.set_block(5,2);game.block_x[5]=80.0;game.block_y[5]=100.0;
+    game.set_block(6,0);game.block_x[6]=140.0;game.block_y[6]=100.0;
+    game.rockets.push((25.0,112.0));
+   }
+   if input&1048576!=0 {*game=physics::Game::new();game.mode=1;for index in 0..200 {game.set_block(index,1);}}
    if input&64!=0 {game.blocks=[0;200];}game.update(input);render::draw(game);
    let brick=game.balls.len()==1 && game.balls[0].y==113.0 && game.balls[0].vy==4.0 && game.blocks[0]==0;
    let ordered=game.balls.len()==2 && (game.balls[0].vx+4.4).abs()<0.001 && (game.balls[1].vx-0.8).abs()<0.001 && game.score==10;
@@ -64,7 +77,9 @@ pub fn game_tick(input:u32,state:u64)->u64 {
    let waiting=game.balls.len()==1 && game.balls[0].attached;
    let stationary=game.balls.len()==1 && !game.balls[0].attached && game.balls[0].y==392.0 && game.balls[0].vy==-2.0 && game.balls[0].launch_timer==0;
    let preserved=game.width==90.0 && game.long>0 && game.ghost>0 && game.ammo==1 && game.lost_life;
-   return (u64::from(game.score)<<32)|u64::from(game.portal)|(u64::from(game.gravity)<<1)|(u64::from(game.mode==3)<<2)|(u64::from(contact)<<3)|(u64::from(brick)<<4)|(u64::from(ordered)<<5)|(u64::from(waiting)<<6)|(u64::from(stationary)<<7)|(u64::from(game.mode==5)<<10)|(u64::from(preserved)<<11)|(u64::from(game.lives)<<8)|(u64::from(game.level)<<16);
+   let ice=game.blocks[0]==1 && game.block_type[0]==1 && game.block_health[0]==1;
+   let blast=game.blocks[0]==0 && game.blocks[1]==0 && game.blocks[2]==1 && game.blocks[3]==0 && game.blocks[4]==1 && game.blocks[5]==0 && game.blocks[6]==1;
+   return (u64::from(game.score)<<32)|u64::from(game.portal)|(u64::from(game.gravity)<<1)|(u64::from(game.mode==3)<<2)|(u64::from(contact)<<3)|(u64::from(brick)<<4)|(u64::from(ordered)<<5)|(u64::from(waiting)<<6)|(u64::from(stationary)<<7)|(u64::from(game.mode==5)<<10)|(u64::from(preserved)<<11)|(u64::from(ice)<<12)|(u64::from(blast)<<13)|(u64::from(game.lives)<<8)|(u64::from(game.level)<<16);
   }
  }state
 }''')

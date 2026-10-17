@@ -257,3 +257,40 @@ fn legacy_save_keeps_large_best_score_and_levels_above_the_old_cap() {
     );
     assert_eq!(u32::from_le_bytes(bytes[8..12].try_into().unwrap()), 1000);
 }
+
+#[test]
+#[ignore = "requires the production-physics fixture prepared by tests/arkanoo.py"]
+fn special_bricks_ice_damage_and_world_radius_blasts_reach_real_renderers() {
+    let root = isolated_library();
+    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
+    let state = game.step(65536).unwrap();
+    assert_ne!(state & 4096, 0);
+    assert_eq!(state >> 32, 0);
+    assert!(game.frame().commands.iter().any(|command|matches!(command,Command::Image{x,y,width,height,image} if *x==20.0 && *y==100.0 && *width==30.0 && *height==10.0 && image.pixels().chunks_exact(4).any(|pixel|pixel==[255,255,255,220]))),"damaged ice crack missing");
+    assert!(game.frame().commands.iter().any(|command|matches!(command,Command::Image{x,y,image,..} if *x==50.0 && *y==100.0 && image.pixels().chunks_exact(4).any(|pixel|pixel==[30,35,40,255]) && image.pixels().chunks_exact(4).any(|pixel|pixel==[150,150,160,255]))),"metal brick/rivets missing");
+    assert!(game.frame().commands.iter().any(|command|matches!(command,Command::Image{x,y,image,..} if *x==80.0 && *y==100.0 && image.pixels().chunks_exact(4).any(|pixel|pixel[0]>=220 && pixel[1]>=80 && pixel[2]==0 && pixel[3]==255))),"explosive brick missing");
+    let state = game.step(262144).unwrap();
+    assert_eq!(state >> 32, 10);
+    assert_eq!(state & 4096, 0);
+    let state = game.step(524288).unwrap();
+    assert_eq!(state >> 32, 40);
+    assert_ne!(
+        state & 8192,
+        0,
+        "world-distance blast or no-chain rule incorrect"
+    );
+    assert!(
+        game.frame()
+            .commands
+            .iter()
+            .any(|command| matches!(command,Command::Image{x,y,..} if *x==20.0 && *y==160.5)),
+        "outside-radius ice brick was removed"
+    );
+    game.step(1048576).unwrap();
+    game.step(0).unwrap();
+    assert_eq!(game.frame().commands.iter().filter(|command|matches!(command,Command::Image{width,height,..} if *width==30.0 && *height==10.0)).count(),200);
+    assert!(
+        game.frame().commands.len() < 400,
+        "special bricks exceeded drawing limits"
+    );
+}

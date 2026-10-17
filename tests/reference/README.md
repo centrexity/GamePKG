@@ -95,3 +95,24 @@ penguin rendering, original menus or full run persistence. Production randomness
 comes exclusively from GamePKG's host API. The unit harness injects deterministic
 words, including the modulo rejection tail and the no-relaunch/no-ammo-on-launch
 rules. Python is only needed to regenerate maintainer fixtures.
+
+Arkanoo special-brick and rocket oracle:
+
+```sh
+python3 tests/reference/arkanoo_bricks.py /path/to/pinned/arkanoo > tests/fixtures/arkanoo-bricks.json
+cargo test --test game_arkanoo
+```
+
+This compiles unchanged original brick collision/explosion and rocket-update
+phases, original Block/Rocket constructors, and actual SDL rectangle methods.
+Ten fixtures cover normal/ice/metal, ghost contacts, ordered overlapping bricks,
+explosive and rocket radii (60 and 120 original pixels), exact axial/diagonal
+boundaries, outside points, no indirect chains, armor bypass, repeated hits,
+multiple rockets and inactive rockets above the world. Original RNG calls use
+a fixed valid 0.99 sample to suppress incidental bonuses; audio and queued
+particle output are ignored. Production tests independently force a successful
+bonus sample to verify indirect damage does not consume it. Fixture regeneration
+requires Rust/SDL2/Python for maintainers. SDL2 and Python are not player
+requirements; player builds use GamePKG's existing Rust toolchain and host APIs.
+This does not prove editor UI,
+original visual effects or full campaign coverage.
