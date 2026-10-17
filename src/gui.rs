@@ -55,6 +55,7 @@ pub struct App {
     additional_rom_paths: Vec<String>,
     library_filter: library_view::Filter,
     library_search: String,
+    library_pagination: library_view::Pagination,
     show_add: bool,
     show_settings: bool,
     app_release: Option<crate::app_updates::Release>,
@@ -1270,7 +1271,9 @@ impl eframe::App for App {
             return;
         }
         egui::CentralPanel::default().frame(egui::Frame::central_panel(&ctx.style()).inner_margin(20)).show(ctx, |ui| {
-            egui::ScrollArea::vertical().id_salt("library-page").show(ui, |ui| {
+            let scroll = egui::ScrollArea::vertical().id_salt("library-page");
+            let scroll = if std::mem::take(&mut self.library_pagination.scroll_to_top) { scroll.vertical_scroll_offset(0.0) } else { scroll };
+            scroll.show(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
                 ui.heading("Your games");
                 if ui.add_enabled(self.result.is_none(), egui::Button::new("Add")).clicked() { self.open_add_page(); }

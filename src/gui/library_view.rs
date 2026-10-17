@@ -1,6 +1,94 @@
 use super::{theme, App};
 use eframe::egui::{self, RichText};
 
+pub(super) struct Pagination {
+    page: usize,
+    per_page: usize,
+    pub(super) scroll_to_top: bool,
+}
+impl Default for Pagination {
+    fn default() -> Self {
+        Self {
+            page: 0,
+            per_page: 20,
+            scroll_to_top: false,
+        }
+    }
+}
+impl Pagination {
+    fn reset(&mut self) {
+        self.page = 0;
+        self.scroll_to_top = true;
+    }
+    fn pages(&self, total: usize) -> usize {
+        total.div_ceil(self.per_page).max(1)
+    }
+    fn clamp(&mut self, total: usize) {
+        let page = self.page.min(self.pages(total) - 1);
+        if page != self.page {
+            self.page = page;
+            self.scroll_to_top = true;
+        }
+    }
+    fn controls(&mut self, ui: &mut egui::Ui, total: usize, top: bool) {
+        if total <= 10 {
+            return;
+        }
+        ui.push_id(
+            if top {
+                "pagination-top"
+            } else {
+                "pagination-bottom"
+            },
+            |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    if top {
+                        let previous_size = self.per_page;
+                        egui::ComboBox::from_id_salt("page-size")
+                            .selected_text(format!("{} per page", self.per_page))
+                            .show_ui(ui, |ui| {
+                                for size in [10, 20, 50, 100] {
+                                    ui.selectable_value(
+                                        &mut self.per_page,
+                                        size,
+                                        format!("{size} per page"),
+                                    );
+                                }
+                            });
+                        if previous_size != self.per_page {
+                            self.reset();
+                        }
+                    }
+                    let pages = self.pages(total);
+                    if ui
+                        .add_enabled(self.page > 0, egui::Button::new("Previous page"))
+                        .clicked()
+                    {
+                        self.page -= 1;
+                        self.scroll_to_top = true;
+                        ui.ctx().request_repaint();
+                    }
+                    ui.label(format!("Page {} of {pages}", self.page + 1));
+                    if ui
+                        .add_enabled(self.page + 1 < pages, egui::Button::new("Next page"))
+                        .clicked()
+                    {
+                        self.page += 1;
+                        self.scroll_to_top = true;
+                        ui.ctx().request_repaint();
+                    }
+                    let start = self.page * self.per_page;
+                    ui.label(format!(
+                        "Showing {}–{} of {total} games",
+                        start + 1,
+                        (start + self.per_page).min(total)
+                    ));
+                });
+            },
+        );
+    }
+}
+
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub(super) enum Filter {
     #[default]
@@ -60,11 +148,15 @@ impl App {
                     .hint_text("Title, ID, or description")
                     .desired_width((ui.available_width() - 100.0).clamp(40.0, 420.0)),
             );
+            if search.changed() {
+                self.library_pagination.reset();
+            }
             if ui
                 .add_enabled(!self.library_search.is_empty(), egui::Button::new("Clear"))
                 .clicked()
             {
                 self.library_search.clear();
+                self.library_pagination.reset();
                 search.request_focus();
             }
         });
@@ -77,13 +169,18 @@ impl App {
                 Filter::NeedsRom,
                 Filter::NotDownloaded,
             ] {
-                ui.selectable_value(&mut self.library_filter, filter, filter.label());
+                if ui
+                    .selectable_value(&mut self.library_filter, filter, filter.label())
+                    .changed()
+                {
+                    self.library_pagination.reset();
+                }
             }
         });
         ui.add_space(8.0);
     }
 
-    pub(super) fn library_games(&self, ui: &mut egui::Ui) -> Option<String> {
+    pub(super) fn library_games(&mut self, ui: &mut egui::Ui) -> Option<String> {
         let mut selected = None;
         let wide = ui.available_width() >= 980.0;
         let terms: Vec<_> = self
@@ -91,7 +188,7 @@ impl App {
             .split_whitespace()
             .map(str::to_lowercase)
             .collect();
-        let entries = self
+        let entries: Vec<_> = self
             .installed
             .iter()
             .filter(|m| matches_search(&terms, &m.id, m.display_title(), m.description.as_deref()))
@@ -142,7 +239,11 @@ impl App {
                             false,
                         )
                     }),
-            );
+            )
+            .collect();
+        let total = entries.len();
+        self.library_pagination.clamp(total);
+        self.library_pagination.controls(ui, total, true);
         if wide {
             ui.horizontal(|ui| {
                 ui.add_space(16.0 + 64.0 + 12.0);
@@ -164,9 +265,11 @@ impl App {
                 }
             });
         }
-        let mut count = 0;
-        for (id, title, version, status, installed) in entries {
-            count += 1;
+        for (id, title, version, status, installed) in entries
+            .into_iter()
+            .skip(self.library_pagination.page * self.library_pagination.per_page)
+            .take(self.library_pagination.per_page)
+        {
             egui::Frame::group(ui.style())
                 .fill(ui.visuals().extreme_bg_color)
                 .inner_margin(16)
@@ -266,7 +369,8 @@ impl App {
                 });
             ui.add_space(4.0);
         }
-        if count == 0 && (!self.installed.is_empty() || !self.catalog.is_empty()) {
+        self.library_pagination.controls(ui, total, false);
+        if total == 0 && (!self.installed.is_empty() || !self.catalog.is_empty()) {
             ui.label("No games match your search and filters.");
         }
         selected
