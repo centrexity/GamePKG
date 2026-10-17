@@ -3,6 +3,15 @@ use eframe::egui;
 use std::path::PathBuf;
 
 impl App {
+    fn import_game_list(&mut self, source: String) {
+        self.begin_work(move || {
+            let count =
+                crate::catalog::sources::import_source(&crate::registry::default_root()?, &source)?;
+            Ok(Work::Message(format!(
+                "Added {count} games to the catalog. No game packages downloaded."
+            )))
+        });
+    }
     pub(super) fn open_add_page(&mut self) {
         self.close_game_page();
         self.show_settings = false;
@@ -22,6 +31,13 @@ impl App {
                     }
                     ui.add_space(12.0);
                     ui.heading("Add games");
+                    if ui.add_enabled(self.result.is_none(), egui::Button::new("Import official ports library"))
+                        .on_hover_text("https://github.com/centrexity/GamePKG_Ports")
+                        .clicked() {
+                        self.import_game_list("https://github.com/centrexity/GamePKG_Ports".into());
+                    }
+                    ui.label("Add the official game list without downloading games. The list is saved for future refreshes.");
+                    ui.add_space(8.0);
                     ui.label("Local package, game list, or store bundle path; HTTPS, GitHub project, or Tor URL");
                     ui.label("Or drop a .gamepkg or .gamepkglist file anywhere in this window (one at a time).");
                     ui.add(egui::TextEdit::singleline(&mut self.source).desired_width(f32::INFINITY).min_size(egui::vec2(0.0,40.0)).margin(egui::Margin::symmetric(12,10)).hint_text("Paste a link or enter a file path…"));
@@ -43,10 +59,7 @@ impl App {
                     }
                     if ui.add_enabled(self.result.is_none(),egui::Button::new("Import .gamepkglist (no game downloads)")).clicked() {
                         let source = self.source.trim().to_owned();
-                        self.begin_work(move || {
-                            let count = crate::catalog::sources::import_source(&crate::registry::default_root()?, &source)?;
-                            Ok(Work::Message(format!("Added {count} games to the catalog. No game packages downloaded.")))
-                        });
+                        self.import_game_list(source);
                     }
                     });
                     if ui.add_enabled(self.result.is_none(), egui::Button::new("Download / inspect")).clicked() {

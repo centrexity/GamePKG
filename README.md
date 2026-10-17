@@ -44,7 +44,7 @@ Game networking is off by default. Signed permissions can enable HTTPS GET and T
 
 Port recipes for DOOM, Zelda3, Arkanoo, and 2048 live in [GamePKG_Ports](https://github.com/centrexity/GamePKG_Ports). This repository pins them under `ports` for integration tests and release bundles. Existing checkouts should run `git submodule update --init --recursive` before building or testing. Trusted engine integration remains part of the host.
 
-To import the published ports, choose **Add** in the library, paste `https://github.com/centrexity/GamePKG_Ports`, and choose **Import .gamepkglist (no game downloads)**. Or download [ports.gamepkglist](https://github.com/centrexity/GamePKG_Ports/releases/latest/download/ports.gamepkglist) and drag it into the app. Entries remain **Not downloaded** until you choose a game; packages still require creator review. The current DOOM port requires the updated main host.
+To import the published ports, choose **Add** in the library, then **Import official ports library**. The list URL is remembered for future refreshes. Or download [ports.gamepkglist](https://github.com/centrexity/GamePKG_Ports/releases/latest/download/ports.gamepkglist) and drag it into the app. Entries remain **Not downloaded** until you choose a game; packages still require creator review. The current DOOM port requires the updated main host.
 
 
 ## Try it
