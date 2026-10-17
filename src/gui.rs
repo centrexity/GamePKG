@@ -681,7 +681,7 @@ impl eframe::App for App {
                 u32::from(i.key_pressed(egui::Key::Tab)) << 7
                     | u32::from(i.key_down(egui::Key::Tab)) << 15
             });
-            if game.builtin_engine {
+            if game.builtin_engine && !game.is_cube2() {
                 ctx.input_mut(|i| {
                     i.events.retain(|event| {
                         !matches!(
@@ -763,27 +763,8 @@ impl eframe::App for App {
                         game.cube2_resize(width, height);
                         let (buttons, dx, dy, focused) = ctx.input(|i| {
                             let mut buttons = 0u32;
-                            for (key, bit) in [
-                                (egui::Key::W, 0),
-                                (egui::Key::S, 1),
-                                (egui::Key::A, 2),
-                                (egui::Key::D, 3),
-                                (egui::Key::Space, 4),
-                                (egui::Key::Enter, 6),
-                                (egui::Key::Escape, 7),
-                                (egui::Key::Tab, 8),
-                                (egui::Key::E, 9),
-                                (egui::Key::R, 10),
-                                (egui::Key::Num1, 11),
-                                (egui::Key::Num2, 12),
-                                (egui::Key::Num3, 13),
-                                (egui::Key::Num4, 14),
-                                (egui::Key::Num5, 15),
-                            ] {
-                                if i.key_down(key) || i.key_pressed(key) {
-                                    buttons |= 1 << bit;
-                                }
-                            }
+                            // Desktop keys use ordered press/release events. The
+                            // held mask remains for controller/touch actions.
                             if i.modifiers.shift {
                                 buttons |= 1 << 5;
                             }
@@ -817,7 +798,7 @@ impl eframe::App for App {
                         });
                         let (captured, recaptured) = self.cube_mouse_capture.update(
                             focused,
-                            ctx.input(|i| i.modifiers.ctrl && i.modifiers.alt),
+                            ctx.input(cube2_input::release_requested),
                             ctx.input(|i| i.pointer.primary_clicked()),
                         );
                         cube2_input::MouseCapture::apply(ctx, captured, self.confine_mouse);
@@ -1048,7 +1029,11 @@ impl eframe::App for App {
                     );
                 });
             self.sprite_textures.finish(image_count);
-            ctx.request_repaint_after(std::time::Duration::from_millis(16));
+            if self.player.as_ref().is_some_and(|game| game.is_cube2()) {
+                ctx.request_repaint();
+            } else {
+                ctx.request_repaint_after(std::time::Duration::from_millis(16));
+            }
             let exited = self.player.as_ref().is_some_and(|game| game.exited());
             if failure.is_some() || exited {
                 // Release capture before the next frame can open a native error

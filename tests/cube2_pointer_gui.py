@@ -3,7 +3,7 @@ from pathlib import Path
 import json,os,re,shutil,struct,subprocess,tempfile,time
 from PIL import Image
 from Xlib import display as xdisplay,protocol
-from gui_test_support import start_display,game_window
+from gui_test_support import start_display,game_window,cube2_choose_test_map
 PROJECT=Path(__file__).resolve().parents[1]
 FIXTURE=PROJECT/'target/cube2-package-test/library'
 with tempfile.TemporaryDirectory(prefix='cube2-pointer-ui-') as temporary:
@@ -29,6 +29,7 @@ with tempfile.TemporaryDirectory(prefix='cube2-pointer-ui-') as temporary:
    if len(image.getcolors(image.width*image.height))>500:break
    assert app.poll() is None and time.monotonic()<deadline,'No playable pointer-test scene'
    time.sleep(.1)
+  cube2_choose_test_map(window,env)
   console('name Input')
   # The labels come from the original keymap: the physical middle button is
   # MOUSE3, the two side buttons MOUSE6/7, and wheels MOUSE4/5/8/9.

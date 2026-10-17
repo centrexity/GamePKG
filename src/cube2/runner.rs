@@ -19,11 +19,17 @@ struct Input {
     expired: bool,
     reset_pending: bool,
     resize: Option<Vec<u8>>,
+    modifiers: Option<Vec<u8>>,
 }
 impl Input {
     fn submit(&mut self, buttons: u32, dx: i32, dy: i32, events: Vec<Vec<u8>>) -> Result<()> {
         ensure!(
-            self.events.len() + events.len() <= protocol::MAX_EVENTS,
+            self.events.len()
+                + events
+                    .iter()
+                    .filter(|e| !e.starts_with(b"GPD1") && !e.starts_with(b"GPM1"))
+                    .count()
+                <= protocol::MAX_QUEUED_EVENTS,
             "Cube 2 input event queue exceeded its bound"
         );
         self.pressed |= buttons & !self.held;
@@ -33,6 +39,8 @@ impl Input {
         for event in events {
             if event.starts_with(b"GPD1") {
                 self.resize = Some(event);
+            } else if event.starts_with(b"GPM1") {
+                self.modifiers = Some(event);
             } else {
                 self.events.push(event);
             }
@@ -47,6 +55,7 @@ impl Input {
         self.dx = 0;
         self.dy = 0;
         self.events.clear();
+        self.modifiers = None;
         self.expired = true;
         self.reset_pending = true;
     }
@@ -59,11 +68,16 @@ impl Input {
             // Release stale held controls, while preserving queued one-shot
             // inputs that arrived during a slow engine tick.
             self.held = 0;
+            self.modifiers = None;
             self.expired = true;
             self.reset_pending = true;
         }
         let buttons = self.held | std::mem::take(&mut self.pressed);
-        let mut events = std::mem::take(&mut self.events);
+        let reserved = usize::from(self.reset_pending)
+            + usize::from(self.resize.is_some())
+            + usize::from(self.modifiers.is_some());
+        let count = self.events.len().min(protocol::MAX_EVENTS - reserved);
+        let mut events: Vec<_> = self.events.drain(..count).collect();
         if self.reset_pending && events.len() < protocol::MAX_EVENTS {
             events.push(protocol::RESET_INPUT.to_vec());
             self.reset_pending = false;
@@ -72,6 +86,12 @@ impl Input {
             if let Some(resize) = self.resize.take() {
                 events.push(resize);
             }
+        }
+        if let Some(modifiers) = self.modifiers.take() {
+            events.push(modifiers);
+        }
+        if self.expired && !self.events.is_empty() {
+            self.reset_pending = true;
         }
         (
             buttons,
@@ -176,10 +196,8 @@ impl Worker {
                         if let Some(progress) = &mut progress {
                             progress.tick(&[])?;
                         }
-                        std::thread::sleep(
-                            (started + Duration::from_millis(16))
-                                .saturating_duration_since(Instant::now()),
-                        );
+                        // The original engine's limitfps/menufps owns pacing.
+                        // Do not impose an additional fixed 60 Hz game clock.
                     }
                     Ok(())
                 })();
@@ -282,6 +300,26 @@ mod tests {
     }
     use super::*;
     #[test]
+    fn idle_updates_during_loading_are_coalesced_and_keys_stay_ordered() {
+        let mut input = Input::default();
+        let mut expected = Vec::new();
+        for i in 0..200 {
+            let key = protocol::key_event(40, i % 2 == 0, false, 0).unwrap();
+            expected.push(key.clone());
+            input
+                .submit(0, 0, 0, vec![protocol::modifiers_event(0).unwrap(), key])
+                .unwrap();
+        }
+        assert_eq!(input.events.len(), 200);
+        let mut delivered = Vec::new();
+        while !input.events.is_empty() {
+            let events = input.take(Instant::now()).3;
+            assert!(events.len() <= protocol::MAX_EVENTS);
+            delivered.extend(events.into_iter().filter(|e| e.starts_with(b"GPI1")));
+        }
+        assert_eq!(delivered, expected);
+    }
+    #[test]
     fn rapid_press_release_is_latched_and_stale_inputs_expire_once() {
         let mut input = Input::default();
         input.submit(1, 100, 0, Vec::new()).unwrap();
@@ -317,17 +355,21 @@ mod tests {
                 0,
                 0,
                 0,
-                vec![protocol::RESET_INPUT.to_vec(); protocol::MAX_EVENTS],
+                vec![protocol::RESET_INPUT.to_vec(); protocol::MAX_QUEUED_EVENTS],
             )
             .unwrap();
         assert!(input
             .submit(1, 0, 0, vec![protocol::RESET_INPUT.to_vec()])
             .is_err());
-        assert_eq!(input.events.len(), protocol::MAX_EVENTS);
+        assert_eq!(input.events.len(), protocol::MAX_QUEUED_EVENTS);
         assert_eq!(input.held, 0);
         let time = input.updated.unwrap() + INPUT_LEASE;
         assert_eq!(input.take(time).3.len(), protocol::MAX_EVENTS);
-        assert_eq!(input.take(time).3, vec![protocol::RESET_INPUT.to_vec()]);
+        while !input.events.is_empty() {
+            let events = input.take(time).3;
+            assert!(!events.is_empty() && events.len() <= protocol::MAX_EVENTS);
+        }
+        assert!(input.take(time).3.is_empty());
         let mut output = Output::default();
         for i in 0..100 {
             let mut frame = crate::drawing::Frame::default();

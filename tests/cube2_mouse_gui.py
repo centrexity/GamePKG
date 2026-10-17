@@ -1,6 +1,7 @@
 """Real X11 capture/hidden cursor regression using the cached original engine.
 Run tests/cube2_package.py first. Uses only that maintainer fixture's library.
 """
+from gui_test_support import cube2_choose_test_map
 from pathlib import Path
 import ctypes, os, subprocess, tempfile, time
 from Xlib import X, display
@@ -60,6 +61,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-mouse-') as temporary:
             finally: x11.XFree(image)
         command('xdotool','windowfocus',window)
         wait_game_frame(window, env, proof, timeout=30)
+        cube2_choose_test_map(window,env)
         wait_capture(True); time.sleep(.3)
         assert not visible(), 'Captured system cursor is visible'
         from PIL import Image, ImageChops
@@ -77,7 +79,8 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-mouse-') as temporary:
         command('xdotool','key','Escape');time.sleep(.4)
         wait_capture(True)
         assert not visible(), 'Escape/menu revealed the system cursor'
-        command('xdotool','key','ctrl+alt');time.sleep(.3)
+        command('xdotool','keydown','Control_L','keydown','Alt_L');time.sleep(.3)
+        command('xdotool','keyup','Alt_L','keyup','Control_L');time.sleep(.2)
         wait_capture(False)
         assert visible(), 'Explicit release left cursor hidden'
         # The temporary pointer probe can change focus notifications on bare Xvfb.

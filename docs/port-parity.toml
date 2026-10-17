@@ -1,0 +1,74 @@
+# Full scope from the 2026-10-17 source audit. Completion requires behavior tests.
+objective = "Restore accurate feature behavior across every current port"
+status = "in_progress"
+
+[[work]]
+id = "cube2_startup"
+requirements = ["Original startup menus", "Saved HUD/console preferences", "Saved FPS preference"]
+status = "implemented_runtime_verified"
+notes = "Removed forced map/menu/HUD/FPS commands; added explicit bounded 60-second map-loading events. Desktop keys now use ordered press/release events. Original menu, console-selected gameplay and custom HUD/FPS preferences verified by tests/cube2_startup_gui.py. Removed the extra fixed host pacing limit."
+
+[[work]]
+id = "cube2_input"
+requirements = ["Complete original keyboard controls", "Mouse buttons and relative input", "Controller and touch equivalents"]
+status = "in_progress"
+
+[[work]]
+id = "cube2_network"
+requirements = ["LAN discovery", "Master browsing/authentication", "Public server registration", "Scoped multiplayer permissions"]
+status = "pending"
+
+[[work]]
+id = "cube2_content"
+requirements = ["Custom assets and mod loading", "Demo and movie outputs", "Scoped import/export and persistence"]
+status = "pending"
+
+[[work]]
+id = "cube2_renderer_platforms"
+requirements = ["Accurate graphics with hardware acceleration", "Native portability beyond Linux"]
+status = "pending"
+
+[[work]]
+id = "stereo_audio"
+requirements = ["Channel-aware host audio", "Cube 2 stereo", "DOOM spatial separation", "Zelda stereo DSP", "Output and channel-isolation tests"]
+status = "pending"
+
+[[work]]
+id = "doom_music"
+requirements = ["Original music playback", "Sound controls and persistence"]
+status = "pending"
+
+[[work]]
+id = "doom_saves_config_input"
+requirements = ["All original save slots", "Saved configuration", "Full keyboard and mouse controls"]
+status = "pending"
+
+[[work]]
+id = "doom_network_mods"
+requirements = ["Multiplayer", "Additional WADs and mods through scoped resources"]
+status = "pending"
+
+[[work]]
+id = "zelda_desktop_features"
+requirements = ["MSU music", "Replay and save-state tools", "Widescreen", "Language and enhancement settings", "Original ROM-only behavior retained"]
+status = "pending"
+
+[[work]]
+id = "arkanoo_parity"
+requirements = ["Editor", "Mouse controls", "Original menus and music", "Portal and gravity mechanics", "Accurate endless generation", "Run persistence", "Original artwork and effects where licensing permits"]
+status = "pending"
+
+[[work]]
+id = "2048_parity"
+requirements = ["Accurate randomized tile spawning", "Scoring", "Win and game-over flow", "Restart and undo", "Board persistence", "Solver functionality", "Tile representation fidelity"]
+status = "pending"
+
+[[work]]
+id = "web_exports"
+requirements = ["DOOM browser export", "Zelda browser ROM decoder and export", "Equivalent resource permissions and saves"]
+status = "pending"
+
+[[work]]
+id = "verification_and_delivery"
+requirements = ["Per-feature regressions", "Full campaigns and level coverage", "Cross-version saves", "Native platform verification", "Updated source recipes and signed packages", "Updated coverage documentation"]
+status = "pending"

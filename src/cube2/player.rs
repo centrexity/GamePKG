@@ -144,7 +144,7 @@ impl Player {
     }
     fn queue(&mut self, packet: Result<Vec<u8>>) {
         match packet {
-            Ok(packet) if self.events.len() < super::protocol::MAX_EVENTS => {
+            Ok(packet) if self.events.len() < super::protocol::MAX_QUEUED_EVENTS => {
                 self.events.push(packet)
             }
             Ok(_) => self.input_error = Some("Cube 2 input event queue exceeded its bound".into()),
@@ -193,7 +193,10 @@ impl Player {
         }
         let dx = std::mem::take(&mut self.dx);
         let dy = std::mem::take(&mut self.dy);
-        let events = std::mem::take(&mut self.events);
+        let mut events = std::mem::take(&mut self.events);
+        if self.worker.is_none() && events.len() > super::protocol::MAX_EVENTS {
+            self.events = events.split_off(super::protocol::MAX_EVENTS);
+        }
         if let Some(worker) = &self.worker {
             worker.submit(buttons, dx, dy, events)?;
             let output = worker.poll()?;

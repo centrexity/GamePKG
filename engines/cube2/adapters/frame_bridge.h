@@ -71,6 +71,15 @@ static void gamepkg_resize_surface()
         if(glCheckFramebufferStatus_(GL_FRAMEBUFFER)!=GL_FRAMEBUFFER_COMPLETE || glGetError()!=GL_NO_ERROR)
         { fprintf(stderr,"Unable to allocate the requested game render resolution. Enable a render resolution limit in Settings.\n"); exit(2); }
         glDrawBuffer(GL_COLOR_ATTACHMENT0); glReadBuffer(GL_COLOR_ATTACHMENT0);
+        // Newly allocated depth storage has no defined contents. Initialize it
+        // before the original menu draws (the world renderer clears each frame).
+        GLboolean depthwrite, colors[4], scissor=glIsEnabled(GL_SCISSOR_TEST);
+        glGetBooleanv(GL_DEPTH_WRITEMASK,&depthwrite); glGetBooleanv(GL_COLOR_WRITEMASK,colors);
+        glDisable(GL_SCISSOR_TEST); glDepthMask(GL_TRUE); glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE);
+        glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT|GL_STENCIL_BUFFER_BIT);
+        glDepthMask(depthwrite); glColorMask(colors[0],colors[1],colors[2],colors[3]);
+        if(scissor) glEnable(GL_SCISSOR_TEST);
+
         gamepkg_surface_width=gamepkg_width; gamepkg_surface_height=gamepkg_height;
     }
     gamepkg_real_bind_framebuffer(GL_FRAMEBUFFER,gamepkg_framebuffer);
@@ -147,8 +156,19 @@ static void gamepkg_quit()
     if(!gamepkg_transfer(gamepkg_output, magic, sizeof(magic), true)) return;
     gamepkg_snapshot();
 }
+static bool gamepkg_loading_notified = false;
+void gamepkg_loading()
+{
+    if(gamepkg_running && !gamepkg_loading_notified)
+    {
+        unsigned char marker[4] = { 'G', 'P', 'L', '1' };
+        if(!gamepkg_transfer(gamepkg_output,marker,sizeof(marker),true)) exit(2);
+        gamepkg_loading_notified = true;
+    }
+}
 static void gamepkg_input()
 {
+    gamepkg_loading_notified = false;
     // Fixed 16-byte input: GPK1, held-key mask, signed mouse dx and dy.
     unsigned char packet[16];
     unsigned events = 0;

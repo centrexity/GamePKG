@@ -94,6 +94,12 @@ impl Read for Reader<'_> {
         }
     }
 }
+// Normal launch follows upstream startup and saved preferences. Only explicit
+// host-approved multiplayer choices add commands; never choose a map or HUD.
+fn startup_script(commands: &str) -> Option<String> {
+    let commands = commands.trim().trim_start_matches(';').trim();
+    (!commands.is_empty()).then(|| format!("-x{commands}"))
+}
 impl Session {
     /// Compile the embedded kit and start it with only selected game data visible.
     /// Developer entry point; installed playback uses authenticated cached builds.
@@ -262,7 +268,7 @@ impl Session {
                 "-t0",
                 "-q/save",
             ])
-            .arg(format!("-xmode 0; map complex; showgui \"\"; consize 0; miniconsize 0; maxfps 60{commands}"))
+            .args(startup_script(&commands))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -362,17 +368,34 @@ impl Session {
         ensure!(!self.stopped, "Cube 2 session has stopped");
         let packet = protocol::input(buttons, dx, dy)?;
         let deadline = Instant::now() + self.deadline;
+        let mut loading = false;
         let result = (|| {
             for event in std::mem::take(&mut self.events) {
                 self.send(&event, deadline)?;
             }
             self.send(&packet, deadline)?;
-            protocol::read_update(Reader {
+            let update = protocol::read_update(Reader {
                 pipe: &mut self.output,
                 deadline,
-            })
+            })?;
+            if matches!(update, protocol::Update::Loading) {
+                loading = true;
+                // One fixed allowance per tick; repeated markers cannot renew it.
+                let update = protocol::read_update(Reader {
+                    pipe: &mut self.output,
+                    deadline: Instant::now() + Duration::from_secs(60),
+                })?;
+                ensure!(
+                    !matches!(update, protocol::Update::Loading),
+                    "Duplicate Cube 2 loading marker"
+                );
+                Ok(update)
+            } else {
+                Ok(update)
+            }
         })();
-        match self.complete(result, "render")? {
+        match self.complete(result, if loading { "load" } else { "render" })? {
+            protocol::Update::Loading => anyhow::bail!("Unexpected Cube 2 loading marker"),
             protocol::Update::Frame(frame) => Ok(Some(frame)),
             protocol::Update::Quit(saved) => {
                 self.exit_save = Some(saved);
@@ -529,6 +552,7 @@ impl Session {
 }
 fn timeout_message(operation: &str, deadline: Duration) -> String {
     match operation {
+        "load" => "The game exceeded its 60-second map-loading deadline.".to_owned(),
         "save" => "The game did not provide a save snapshot within its 2-second shutdown deadline. Existing saves were kept.".to_owned(),
         "close" => "The game did not close within its 2-second shutdown deadline.".to_owned(),
         _ => format!("The renderer exceeded your {} ms tick deadline. Increase Tick deadline in Settings (500 ms is recommended for software rendering).", deadline.as_millis()),
@@ -537,6 +561,15 @@ fn timeout_message(operation: &str, deadline: Duration) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn ordinary_startup_keeps_original_menu_hud_and_fps_preferences() {
+        assert_eq!(startup_script(""), None);
+        assert_eq!(startup_script(" ; "), None);
+        assert_eq!(
+            startup_script("; connect \"127.0.0.1\" 28785"),
+            Some("-xconnect \"127.0.0.1\" 28785".into())
+        );
+    }
     #[test]
     fn timeout_guidance_identifies_the_failed_operation() {
         let deadline = Duration::from_millis(100);
@@ -689,7 +722,7 @@ mod tests {
             &server_seed,
             || Ok(binary.clone()),
             Some(server_permissions.into()),
-            server_commands,
+            format!("mode 0; map complex{server_commands}"),
         )
         .unwrap();
         server.tick(0, 0, 0).unwrap();
@@ -955,6 +988,14 @@ mod tests {
             &seed,
         )
         .unwrap();
+        // Gameplay fixture explicitly chooses its map through original input.
+        session.tick(0, 0, 0).unwrap();
+        session.key(23, true, false, 0).unwrap();
+        session.tick(0, 0, 0).unwrap();
+        session.key(23, false, false, 0).unwrap();
+        session.text("/mode 0; map complex; showgui \"\"").unwrap();
+        session.tick(0, 0, 0).unwrap();
+        session.tick(1 << 6, 0, 0).unwrap();
         let first = session.tick(0, 0, 0).unwrap();
         assert_eq!((first.width, first.height), (640, 480));
         for (width, height) in [(960, 540), (800, 600), (640, 480)] {

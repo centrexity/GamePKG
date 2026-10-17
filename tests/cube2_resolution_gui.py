@@ -2,6 +2,7 @@
 Prepare tests/cube2_package.py first. GAMEPKG_CUBE2_TEST_DATA selects an optional
 older original installation; pass --legacy to assert the old crosshair path.
 """
+from gui_test_support import cube2_choose_test_map
 from pathlib import Path
 import os, subprocess, tempfile, time, sys
 from PIL import Image
@@ -30,6 +31,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-resolution-') as temporary:
         window,_=game_window(env,'com.gamepkg.cube2',timeout=30)
         command('xdotool','windowfocus',window)
         wait_game_frame(window,env,proof,timeout=30)
+        cube2_choose_test_map(window,env)
         for width,height in [(1000,800),(1600,900)]:
             command('xdotool','windowsize',window,width,height)
             time.sleep(2)

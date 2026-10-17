@@ -9,6 +9,8 @@ pub const MAX_AUDIO_SAMPLES: u32 = 4800;
 pub const MAX_BUTTONS: u32 = (1 << 18) - 1;
 pub const MAX_MOUSE_DELTA: i32 = 2048;
 pub const MAX_EVENTS: usize = 64;
+/// Host backlog during map loads; each engine tick still receives at most 64.
+pub const MAX_QUEUED_EVENTS: usize = 1024;
 pub const MAX_WHEEL_STEPS: i32 = 16;
 
 pub fn resize_event(width: u32, height: u32) -> Result<Vec<u8>> {
@@ -173,6 +175,7 @@ pub fn modifiers_event(modifiers: u32) -> Result<Vec<u8>> {
 
 #[derive(Debug)]
 pub enum Update {
+    Loading,
     Frame(Frame),
     Quit(Vec<u8>),
 }
@@ -181,6 +184,9 @@ pub enum Update {
 pub fn read_update(mut reader: impl Read) -> Result<Update> {
     let mut magic = [0; 4];
     reader.read_exact(&mut magic)?;
+    if &magic == b"GPL1" {
+        return Ok(Update::Loading);
+    }
     if &magic == b"GPQ1" {
         return Ok(Update::Quit(read_save(reader)?));
     }
@@ -391,6 +397,16 @@ pub(crate) fn test_tree(files: &[(&str, &[u8])]) -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn loading_marker_is_explicit_and_truncated_markers_fail() {
+        assert!(matches!(
+            super::read_update(b"GPL1".as_slice()).unwrap(),
+            super::Update::Loading
+        ));
+        for size in 0..4 {
+            assert!(super::read_update(&b"GPL1"[..size]).is_err());
+        }
+    }
     #[test]
     fn resize_packets_are_portable_and_bounded() {
         let p = super::resize_event(1280, 720).unwrap();

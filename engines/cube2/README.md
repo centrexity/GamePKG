@@ -104,7 +104,7 @@ gamepkg build com.gamepkg.cube2
 gamepkg run com.gamepkg.cube2 --game-data /path/to/original/sauerbraten --frames 60
 ```
 
-The engine starts a local free-for-all map. Original maps, textures and audio remain in the selected folder; original executables are never launched. Edited maps reload from the private saved-file archive. Blank multiplayer settings keep the selector offline. Saved join/hosting choices are applied at the next launch through the host broker.
+The engine starts at its original menu and preserves saved console/HUD and FPS preferences. Choose a mode/map through the original menus or console. Original maps, textures and audio remain in the selected folder; original executables are never launched. Edited maps reload from the private saved-file archive. Blank multiplayer settings keep the selector offline. Saved join/hosting choices are applied at the next launch through the host broker.
 
 ## Native keyboard, text and pointer input
 
@@ -231,3 +231,26 @@ presentation, the engine's saved resolution and visible crosshair pixels. Set
 `GAMEPKG_CUBE2_TEST_DATA` to an older original installation and add `--legacy`
 to test the old crosshair filenames in place. Add `--limited` to verify the optional 1280×960 limit; without it, the test verifies native 1600×900 rendering. The test uses and restores only
 its private maintainer fixture's selections and saves.
+
+
+## Original startup and ordered input
+
+Normal launch adds no map, HUD, menu or FPS overrides. Explicit host-selected
+multiplayer choices remain the only launch commands. Gameplay tests choose their
+fixture map explicitly rather than depending on production startup shortcuts.
+Desktop keyboard controls use ordered SDL scancode press/release events,
+including movement, Enter, Escape and Tab; controller/touch actions retain their
+held-button mask. Original engine FPS/menufps settings own worker pacing, and the
+player requests presentation at the window backend's cadence.
+
+A trusted `GPL1` marker precedes original map loading. It grants one fixed
+60-second loading deadline for that tick; repeated markers cannot renew it.
+Other ticks retain the configured render deadline. The host coalesces idle
+modifier/resize snapshots and buffers up to 1024 discrete input events during
+loading, draining at most 64 per engine tick without reordering them. This avoids
+stopping a normal map load because idle desktop updates filled the queue.
+
+`tests/cube2_startup_gui.py` verifies the original menu, chooses a map through
+original console input, preserves custom console sizes and FPS settings, and
+closes normally. The original-menu framebuffer is initialized before first draw
+so uninitialized depth storage cannot mask menu background pixels.

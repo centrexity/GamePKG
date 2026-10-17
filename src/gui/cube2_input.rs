@@ -1,4 +1,4 @@
-//! Additional native keyboard input. Legacy movement/action keys use the mask.
+//! Ordered native keyboard/text events; controllers retain the action mask.
 use eframe::egui::{Event, Key, Modifiers, MouseWheelUnit, PointerButton, Vec2};
 
 /// Preserve the window's physical-pixel aspect ratio within the bridge budget.
@@ -13,6 +13,11 @@ pub fn resolution(size: Vec2, pixels_per_point: f32, limit: Option<(u32, u32)>) 
         (size.x * scale).round().clamp(320.0, 10000.0) as u32,
         (size.y * scale).round().clamp(200.0, 10000.0) as u32,
     )
+}
+
+pub fn release_requested(input: &eframe::egui::InputState) -> bool {
+    (input.modifiers.ctrl && input.modifiers.alt)
+        || input.events.iter().any(|event| matches!(event,Event::Key { pressed:true,modifiers,.. } if modifiers.ctrl && modifiers.alt))
 }
 
 /// The real desktop window owns pointer capture; the isolated engine draws its
@@ -100,6 +105,21 @@ impl Pointer {
 fn scancode(key: Key) -> Option<u32> {
     use Key::*;
     Some(match key {
+        A => 4,
+        D => 7,
+        E => 8,
+        R => 21,
+        S => 22,
+        W => 26,
+        Num1 => 30,
+        Num2 => 31,
+        Num3 => 32,
+        Num4 => 33,
+        Num5 => 34,
+        Enter => 40,
+        Escape => 41,
+        Tab => 43,
+        Space => 44,
         B => 5,
         C => 6,
         F => 9,
@@ -258,6 +278,27 @@ mod tests {
         assert_eq!(resolution(Vec2::new(f32::NAN, 1.0), 1.0, None), (640, 480));
     }
     #[test]
+    fn release_shortcut_keeps_event_modifiers_after_keys_are_released() {
+        let ctx = eframe::egui::Context::default();
+        let raw = eframe::egui::RawInput {
+            events: vec![Event::Key {
+                key: Key::Escape,
+                physical_key: Some(Key::Escape),
+                pressed: true,
+                repeat: false,
+                modifiers: Modifiers {
+                    ctrl: true,
+                    alt: true,
+                    ..Default::default()
+                },
+            }],
+            ..Default::default()
+        };
+        let mut release = false;
+        let _ = ctx.run(raw, |ctx| release = ctx.input(release_requested));
+        assert!(release);
+    }
+    #[test]
     fn capture_follows_focus_and_explicit_release_without_stealing_escape() {
         let mut capture = MouseCapture::default();
         assert_eq!(capture.update(true, false, false), (true, true));
@@ -300,7 +341,7 @@ mod tests {
         assert_eq!(pointer.wheel(MouseWheelUnit::Line, Vec2::ZERO), (0, 0));
     }
     #[test]
-    fn extra_keys_preserve_legacy_controls_and_use_sdl_codes() {
+    fn desktop_keys_preserve_physical_sdl_codes_including_menu_and_movement_keys() {
         assert_eq!(scancode(Key::T), Some(23));
         assert_eq!(scancode(Key::F12), Some(69));
         assert_eq!(scancode(Key::Backspace), Some(42));
@@ -317,7 +358,10 @@ mod tests {
             Key::Escape,
             Key::Num1,
         ] {
-            assert_eq!(scancode(key), None, "duplicate legacy key {key:?}");
+            assert!(
+                scancode(key).is_some(),
+                "desktop key must carry ordered events: {key:?}"
+            );
         }
         assert_eq!(
             modifiers(Modifiers {

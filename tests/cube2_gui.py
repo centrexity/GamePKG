@@ -1,4 +1,5 @@
 """Actual library data picker, separate Cube 2 window, input and native close."""
+from gui_test_support import cube2_choose_test_map
 from pathlib import Path
 import json,os,signal,subprocess,tempfile,time
 from PIL import Image,ImageChops
@@ -109,6 +110,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-cube2-gui-') as temporary:
   window,player_pid=game_window(env,'com.gamepkg.cube2',timeout=30)
   assert player_pid!=app.pid
   command('xdotool','windowfocus',window)
+  time.sleep(1);cube2_choose_test_map(window,env)
   proof=PROJECT/'target/cube2-gui';proof.mkdir(exist_ok=True)
   def capture(name):
    path=proof/name;command('import','-display',env['DISPLAY'],'-window',window,path);return Image.open(path).convert('RGB')

@@ -120,6 +120,12 @@ pub fn compile_with_options(optimize: bool) -> Result<Vec<u8>> {
         "    extern void *gamepkg_glproc(const char *name); return gamepkg_glproc(name);",
     )?;
     fs::write(render, text)?;
+    let world = stage.path().join("engine/worldio.cpp");
+    let mut text = fs::read_to_string(&world)?;
+    patch_once(&mut text,
+        "    int loadingstart = SDL_GetTicks();",
+        "    extern void gamepkg_loading(); gamepkg_loading();\n    int loadingstart = SDL_GetTicks();")?;
+    fs::write(world, text)?;
     let tools = stage.path().join("shared/tools.h");
     let mut text = fs::read_to_string(&tools)?;
     patch_once(&mut text,
