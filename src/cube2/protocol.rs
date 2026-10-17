@@ -139,9 +139,10 @@ pub fn save_files(bytes: &[u8]) -> Result<Vec<SaveFile<'_>>> {
     Ok(files)
 }
 
-/// SDL's documented USB scancodes, never native event structs or pointers.
+/// SDL's bounded scancode numbers, including consumer/media keys; never native
+/// event structs or pointers. The engine asserts SDL_NUM_SCANCODES is 512.
 pub fn key_event(scancode: u32, pressed: bool, repeat: bool, modifiers: u32) -> Result<Vec<u8>> {
-    ensure!((4..=231).contains(&scancode), "unsupported Cube 2 key");
+    ensure!((4..512).contains(&scancode), "unsupported Cube 2 key");
     ensure!(modifiers & !0x0fc3 == 0, "unsupported Cube 2 modifiers");
     let mut bytes = b"GPI1".to_vec();
     for n in [
@@ -569,8 +570,13 @@ mod tests {
             key_event(69, true, true, 65).unwrap(),
             b"GPI1\x45\0\0\0\x03\0\0\0\x41\0\0\0"
         );
-        for code in [0, 3, 232, u32::MAX] {
+        for code in [0, 3, 512, u32::MAX] {
             assert!(key_event(code, true, false, 0).is_err());
+        }
+        for code in [4, 231, 258, 274, 286, 511] {
+            let bytes = key_event(code, true, false, 0).unwrap();
+            assert_eq!(u32::from_le_bytes(bytes[4..8].try_into().unwrap()), code);
+            assert!(key_event(code, false, false, 0).is_ok());
         }
         assert!(key_event(69, true, false, 1 << 31).is_err());
         assert!(modifiers_event(0x0fc3).is_ok());

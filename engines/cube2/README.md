@@ -239,8 +239,12 @@ Normal launch adds no map, HUD, menu or FPS overrides. Explicit host-selected
 multiplayer choices remain the only launch commands. Gameplay tests choose their
 fixture map explicitly rather than depending on production startup shortcuts.
 Desktop keyboard controls use ordered SDL scancode press/release events,
-including movement, Enter, Escape and Tab; controller/touch actions retain their
-held-button mask. Original engine FPS/menufps settings own worker pacing, and the
+including movement, Enter, Escape, Tab, Pause, distinct keypad keys and left/right
+modifiers. Media/browser/application keys with SDL equivalents also pass through
+the bounded 512-entry scancode table, including focus-reset release. Accepted
+keyboard, paste and committed IME text stays ordered with physical events.
+Controller/touch actions retain their held-button mask. Initial OS lock-key
+state and remaining uncommon-key/platform behavior need further verification. Original engine FPS/menufps settings own worker pacing, and the
 player requests presentation at the window backend's cadence.
 
 A trusted `GPL1` marker precedes original map loading. It grants one fixed

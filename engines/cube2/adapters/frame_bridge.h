@@ -21,7 +21,8 @@ static bool gamepkg_running = false;
 static bool gamepkg_closing = false;
 static uint32_t gamepkg_previous = 0;
 static int gamepkg_width = 640, gamepkg_height = 480;
-static bool gamepkg_keys[232] = {};
+static_assert(SDL_NUM_SCANCODES == 512, "Update the host SDL scancode bounds together");
+static bool gamepkg_keys[SDL_NUM_SCANCODES] = {};
 static bool gamepkg_mouse[6] = {};
 // Keep rendering independent of SDL's fixed-size offscreen/EGL window surface.
 // The original engine's default framebuffer is a host-owned resizable target.
@@ -231,7 +232,7 @@ static void gamepkg_input()
                 SDL_Event event;memset(&event,0,sizeof(event));event.type=SDL_MOUSEBUTTONUP;
                 event.button.state=SDL_RELEASED;event.button.button=i;SDL_PushEvent(&event);gamepkg_mouse[i]=false;
             }
-            for(unsigned i=4;i<232;i++) if(gamepkg_keys[i])
+            for(unsigned i=4;i<SDL_NUM_SCANCODES;i++) if(gamepkg_keys[i])
             {
                 SDL_Event event; memset(&event, 0, sizeof(event));
                 event.type = SDL_KEYUP; event.key.state = SDL_RELEASED;
@@ -246,7 +247,7 @@ static void gamepkg_input()
         {
             if(++events > 64) exit(2);
             uint32_t key = gamepkg_le32(packet+4), flags = gamepkg_le32(packet+8), mods = gamepkg_le32(packet+12);
-            if(key < 4 || key > 231 || flags > 3 || (mods & ~uint32_t(0x0fc3))) exit(2);
+            if(key < 4 || key >= SDL_NUM_SCANCODES || flags > 3 || (mods & ~uint32_t(0x0fc3))) exit(2);
             SDL_Event event; memset(&event, 0, sizeof(event));
             event.type = flags&1 ? SDL_KEYDOWN : SDL_KEYUP;
             event.key.state = flags&1 ? SDL_PRESSED : SDL_RELEASED;

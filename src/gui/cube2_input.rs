@@ -325,6 +325,28 @@ fn scancode(key: egui_winit::winit::keyboard::KeyCode) -> Option<u32> {
         ShiftRight => 229,
         AltRight => 230,
         SuperRight => 231,
+        NumpadHash => 204,
+        Props => 118,
+        Hiragana => 147,
+        Katakana => 146,
+        MediaTrackNext => 258,
+        MediaTrackPrevious => 259,
+        MediaStop => 260,
+        MediaPlayPause => 261,
+        MediaSelect => 263,
+        LaunchMail => 265,
+        LaunchApp2 => 266,
+        LaunchApp1 => 267,
+        BrowserSearch => 268,
+        BrowserHome => 269,
+        BrowserBack => 270,
+        BrowserForward => 271,
+        BrowserStop => 272,
+        BrowserRefresh => 273,
+        BrowserFavorites => 274,
+        Eject => 281,
+        Sleep => 282,
+
         _ => return None,
     })
 }
@@ -531,5 +553,19 @@ mod tests {
         desktop.keys.clear();
         assert_eq!(desktop.modifiers(), 0);
         assert_eq!(scancode(Fn), None);
+        for (key, expected) in [
+            (MediaTrackNext, 258),
+            (MediaPlayPause, 261),
+            (BrowserBack, 270),
+            (BrowserFavorites, 274),
+            (LaunchMail, 265),
+            (LaunchApp1, 267),
+            (LaunchApp2, 266),
+            (NumpadHash, 204),
+            (Hiragana, 147),
+            (Katakana, 146),
+        ] {
+            assert_eq!(scancode(key), Some(expected), "{key:?}");
+        }
     }
 }

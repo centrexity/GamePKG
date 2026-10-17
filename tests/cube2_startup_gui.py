@@ -12,7 +12,8 @@ config_bytes=(b'exec data/defaults.cfg\nconsize 7\nminiconsize 3\nmaxfps 144\n'
  b'bind KP1 [name (concatword (getname) _k)]\n'
  b'bind 1 [name wrong_keypad_alias]\n'
  b'bind RCTRL [name (concatword (getname) _r)]\n'
- b'bind LCTRL [name wrong_modifier_alias]\n')
+ b'bind LCTRL [name wrong_modifier_alias]\n'
+ b'keymap 0x40000102 TRACKNEXT\nbind TRACKNEXT [onrelease [maxfps 145]; name (concatword (getname) _n)]\n')
 name=b'config.cfg'
 payload=struct.pack('<IIII',len(name),len(config_bytes),0,0)+name+config_bytes
 save.write_bytes(b'GPS2'+struct.pack('<III',1,len(payload),0)+payload)
@@ -42,20 +43,32 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-startup-') as temporary:
         # produce a keysym (notably Control_R and keypad numbers).
         from Xlib import X, XK, display as xdisplay
         from Xlib.ext import xtest
+        XK.load_keysym_group('xf86')
         connection=xdisplay.Display(env['DISPLAY'])
         try:
-            for keysym in ['Pause','KP_End','Control_R']:
+            for keysym in ['Pause','KP_End','Control_R','XF86_AudioNext']:
                 code=connection.keysym_to_keycode(XK.string_to_keysym(keysym))
                 assert code,keysym
                 xtest.fake_input(connection,X.KeyPress,code);connection.sync();time.sleep(.1)
+                if keysym=='XF86_AudioNext':
+                    # The extended key must be released by the same focus-reset
+                    # path as ordinary keys, before its physical keyup arrives.
+                    time.sleep(.3)
+                    screen=connection.screen()
+                    other=screen.root.create_window(0,0,50,50,0,screen.root_depth,X.InputOutput,X.CopyFromParent)
+                    other.map();other.set_input_focus(X.RevertToParent,X.CurrentTime)
+                    connection.sync();time.sleep(.4)
+                    connection.create_resource_object('window',int(window)).set_input_focus(X.RevertToParent,X.CurrentTime)
+                    connection.sync();time.sleep(.3);other.destroy()
                 xtest.fake_input(connection,X.KeyRelease,code);connection.sync();time.sleep(.3)
         finally:connection.close()
 
         close_game(window,env);assert app.wait(timeout=15)==0
         saved=save.read_bytes()
         names=re.findall(rb'name [^\n]*',saved)
-        assert b'7_3_144_p_k_r' in saved, f'Physical bindings or ordered console text failed: {names!r}'
-        print('Original Cube 2 startup/menu/console preferences, physical Pause/keypad/right-modifier bindings and native close pass.')
+        assert b'7_3_144_p_k_r_n' in saved, f'Physical bindings or ordered console text failed: {names!r}'
+        assert b'maxfps 145' in saved,'Extended media key was not released and persisted'
+        print('Original Cube 2 startup/menu/console preferences, physical Pause/keypad/right-modifier/media bindings and native close pass.')
     finally:
         if app and app.poll() is None:
             command('import','-display',env['DISPLAY'],'-window','root',proof/'failure.png')
