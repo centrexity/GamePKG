@@ -42,6 +42,14 @@ pub fn load(root: &Path, manifest: &Manifest) -> Result<Option<PathBuf>> {
     }
     Ok(read(root)?.remove(&identity(manifest)?).map(PathBuf::from))
 }
+pub fn available(path: &Path) -> bool {
+    path.is_dir()
+        && ["data", "packages"].iter().all(|name| {
+            path.join(name)
+                .symlink_metadata()
+                .is_ok_and(|metadata| metadata.is_dir() && !metadata.file_type().is_symlink())
+        })
+}
 pub fn remember(root: &Path, manifest: &Manifest, path: &Path) -> Result<()> {
     let key = identity(manifest)?;
     let path = std::fs::canonicalize(path).context("choose the original game-data folder")?;

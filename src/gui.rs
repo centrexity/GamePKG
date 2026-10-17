@@ -31,6 +31,7 @@ enum Work {
     Update(crate::manifest::Manifest, tempfile::NamedTempFile),
     RomPicked(rom_picker::Selection),
     Message(String),
+    NativeBuilt(String),
     AppRelease(Option<crate::app_updates::Release>),
     AppInstalled(PathBuf),
 }
@@ -58,6 +59,7 @@ pub struct App {
     library_pagination: library_view::Pagination,
     show_add: bool,
     show_settings: bool,
+    focus_memory_settings: bool,
     app_release: Option<crate::app_updates::Release>,
     app_installed: Option<PathBuf>,
     startup_app_check: Option<mpsc::Receiver<Result<Option<crate::app_updates::Release>, String>>>,
@@ -421,6 +423,17 @@ impl eframe::App for App {
                 Ok(result) => {
                     self.result = None;
                     match result {
+                        Ok(Work::NativeBuilt(id)) => {
+                            self.refresh(ctx);
+                            self.status = match self.installed.iter().find(|m| m.id == id) {
+                                Some(manifest) => {
+                                    let blockers = self.play_blockers(manifest);
+                                    if blockers.is_empty() { "Native build complete. Ready to play.".into() }
+                                    else { format!("Native build complete. Before playing: {}", blockers.join(" ")) }
+                                }
+                                None => "Build finished, but the game is no longer available in this library.".into(),
+                            };
+                        }
                         Ok(Work::AppRelease(release)) => {
                             self.status = if let Some(r) = &release {
                                 format!("GamePKG {} is available.", r.version)
@@ -1177,7 +1190,8 @@ impl eframe::App for App {
                     ui.label("Run Tor separately. Onion downloads never fall back to a direct connection.");
                     if std::env::var_os("GAMEPKG_TOR_PROXY").is_some() { ui.label("GAMEPKG_TOR_PROXY overrides this setting for the current launch."); }
                     ui.separator();ui.heading("Game resource ceilings");
-                    ui.horizontal(|ui| { ui.label("Memory ceiling (MiB)");ui.add(egui::DragValue::new(&mut self.settings_draft.memory_ceiling_mib).range(1..=4096)); });
+                    let memory_control = ui.horizontal(|ui| { ui.label("Memory ceiling (MiB)");ui.add(egui::DragValue::new(&mut self.settings_draft.memory_ceiling_mib).range(1..=4096)) }).inner;
+                    if self.focus_memory_settings { memory_control.scroll_to_me(Some(egui::Align::Center));self.focus_memory_settings=false; }
                     ui.horizontal(|ui| { ui.label("Tick deadline (ms)");ui.add(egui::Slider::new(&mut self.settings_draft.tick_deadline_ms,10..=1000).step_by(10.0)); });
                     ui.label("Memory uses the lower of your ceiling and the signed game limit. These settings cannot raise a game's hard limit. Changes apply the next time you launch a game.");
                     ui.separator();ui.heading("Builds and appearance");

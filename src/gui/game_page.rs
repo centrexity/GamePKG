@@ -2,6 +2,55 @@ use super::{App, Work};
 use eframe::egui;
 use std::path::PathBuf;
 impl App {
+    pub(super) fn play_blockers(&self, m: &crate::manifest::Manifest) -> Vec<String> {
+        let mut blockers = Vec::new();
+        if !cfg!(target_os = "linux") {
+            blockers.push(
+                "Native play requires Linux; use Play Wasm for supported games on this platform."
+                    .into(),
+            );
+        }
+        if !self.built.contains(&m.id) {
+            blockers.push("Build this game first. If you already built it, recheck readiness or rebuild if the cached build is missing or invalid.".into());
+        }
+        if m.game_data.is_some() {
+            if self
+                .applied_settings
+                .as_ref()
+                .is_none_or(|s| s.memory_ceiling_mib < 2048)
+            {
+                let current = self
+                    .applied_settings
+                    .as_ref()
+                    .map(|s| s.memory_ceiling_mib)
+                    .unwrap_or(512);
+                blockers.push(format!("Increase the memory ceiling to at least 2048 MiB in Settings (currently {current} MiB)."));
+            }
+            match self.data_paths.get(&m.id).filter(|p| !p.is_empty()) {
+                None => blockers.push("Choose the original game-data folder below.".into()),
+                Some(path) if !crate::game_data::available(std::path::Path::new(path)) => blockers.push("The selected game-data folder is unavailable or missing its data/packages folders. Choose it again below.".into()),
+                _ => {}
+            }
+        }
+        if m.requires_rom {
+            for index in 0..m.required_rom_count() {
+                if !self
+                    .rom_paths
+                    .get(&m.id)
+                    .and_then(|paths| paths.get(index))
+                    .is_some_and(|path| !path.is_empty() && std::path::Path::new(path).is_file())
+                {
+                    let title = m
+                        .roms
+                        .get(index)
+                        .map(|rom| rom.title.clone())
+                        .unwrap_or_else(|| format!("ROM {}", index + 1));
+                    blockers.push(format!("Choose an available file for {title} below."));
+                }
+            }
+        }
+        blockers
+    }
     pub(super) fn close_game_page(&mut self) {
         self.selected_game = None;
         self.preview = None;
@@ -120,6 +169,9 @@ impl App {
             self.manifest = self.installed.iter().find(|m| m.id == id).cloned();
         }
         let installed = self.installed.iter().find(|m| m.id == id).cloned();
+        if installed.is_some() {
+            ctx.request_repaint_after(std::time::Duration::from_secs(1));
+        }
         if installed.as_ref().is_some_and(|m| m.requires_rom) {
             self.rom_game = Some(id.clone());
             if let Ok(root) = crate::registry::default_root() {
@@ -166,11 +218,13 @@ impl App {
             }
             if let Some(m)=installed {
                 let built=self.built.contains(&id);let reviewing=self.pending.is_some();
-                ui.label(if built{"Native build ready to play"}else{"Native build: Not built"});
+                let blockers = self.play_blockers(&m);
+                let ready = blockers.is_empty();
+                ui.label(if ready{"Ready to play"}else if built{"Native build verified — setup required"}else{"Native build: Not built or no longer valid"});
                 if let Some(usage)=self.usage.get(&id){ui.label(format!("Storage: {} used",crate::storage::bytes(usage.used_bytes())));}
                 ui.horizontal_wrapped(|ui|{
-                    if ui.add_enabled(!reviewing&&built&&self.result.is_none()&&(m.game_data.is_none()||self.applied_settings.as_ref().is_some_and(|s|s.memory_ceiling_mib>=2048))&&(m.game_data.is_none()||self.data_paths.get(&id).is_some_and(|p|std::path::Path::new(p).is_dir()))&&(!m.requires_rom||self.rom_paths.get(&id).is_some_and(|p|crate::rom_selections::ready(p,m.required_rom_count()))),super::theme::primary("Play")).clicked(){self.launch_selected(id.clone(),true);}
-                    if ui.add_enabled(cfg!(target_os="linux")&&!reviewing&&self.result.is_none(),egui::Button::new(if built{"Rebuild"}else{"Build"}).min_size(egui::vec2(100.0,36.0))).clicked(){let id=id.clone();self.begin_work(move||{crate::native::compile(&crate::registry::default_root()?,&id)?;Ok(Work::Message("Native build ready to play.".into()))});}
+                    if ui.add_enabled(!reviewing&&ready&&self.result.is_none(),super::theme::primary("Play")).clicked(){self.launch_selected(id.clone(),true);}
+                    if ui.add_enabled(cfg!(target_os="linux")&&!reviewing&&self.result.is_none(),egui::Button::new(if built{"Rebuild"}else{"Build"}).min_size(egui::vec2(100.0,36.0))).clicked(){let id=id.clone();self.begin_work(move||{crate::native::compile(&crate::registry::default_root()?,&id)?;Ok(Work::NativeBuilt(id))});}
                     if ui.add_enabled(!reviewing&&self.result.is_none()&&m.update_url.is_some(),egui::Button::new("Check for updates")).clicked(){let id=id.clone();self.begin_work(move||match crate::registry::check_update(&crate::registry::default_root()?,&id)?{Some((m,file))=>Ok(Work::Update(m,file)),None=>Ok(Work::Message("This game is up to date.".into()))});}
                     if ui.add_enabled(m.builtin_engine.as_deref()!=Some(crate::cube2::PROFILE)&&!reviewing&&self.result.is_none(),egui::Button::new("Build Wasm")).clicked(){let id=id.clone();self.begin_work(move||{crate::build::compile(&crate::registry::default_root()?,&id)?;Ok(Work::Message("Wasm build complete. Native build kept separately.".into()))});}
                     if ui.add_enabled(!reviewing&&self.wasm_built.contains(&id)&&self.result.is_none()&&(!m.requires_rom||self.rom_paths.get(&id).is_some_and(|p|crate::rom_selections::ready(p,m.required_rom_count()))),egui::Button::new("Play Wasm")).clicked(){self.launch_selected(id.clone(),false);}
@@ -182,6 +236,21 @@ impl App {
                         if !m.shared_assets.is_empty()&&ui.add_enabled(!reviewing&&self.result.is_none(),egui::Button::new("Repair assets from store")).clicked(){let id=id.clone();let source=self.source.clone();self.begin_work(move||Ok(Work::Message(crate::integrity::fix_target(&crate::registry::default_root()?,&id,Some(std::path::Path::new(source.trim())),true)?)));ui.close_menu();}
                         if ui.add_enabled(!reviewing&&self.wasm_built.contains(&id)&&self.result.is_none(),egui::Button::new("Export for web")).clicked(){let id=id.clone();self.begin_work(move||{let root=crate::registry::default_root()?;let suffix=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_nanos();let output=root.join("web-exports").join(format!("{id}-{suffix}"));crate::web_export::export(&root,&id,&output)?;Ok(Work::Message(format!("Web player exported to {}",output.display())))});ui.close_menu();}
                     });
+                });
+                if reviewing { ui.label("Finish or cancel the package review before playing."); }
+                if self.result.is_some() { ui.label("Waiting for the current operation to finish. Play is rechecked automatically when it completes."); }
+                for blocker in &blockers { ui.label(format!("Before playing: {blocker}")); }
+                ui.horizontal_wrapped(|ui| {
+                    if m.game_data.is_some() && self.applied_settings.as_ref().is_none_or(|s|s.memory_ceiling_mib<2048)
+                        && ui.add_enabled(self.result.is_none(), egui::Button::new("Open memory settings")).clicked() {
+                        match crate::settings::load() {
+                            Ok(settings) => { self.settings_draft=settings;self.show_settings=true;self.focus_memory_settings=true;self.show_add=false;self.show_support=false;self.preview=None; }
+                            Err(error) => self.status=format!("Unable to load settings: {error:#}"),
+                        }
+                    }
+                    if ui.add_enabled(self.result.is_none(), egui::Button::new("Recheck readiness")).clicked() {
+                        self.begin_work(|| Ok(Work::Message("Game readiness refreshed.".into())));
+                    }
                 });
                 if !cfg!(target_os="linux"){ui.label(if m.game_data.is_some(){"This engine currently requires Linux native process isolation."}else{"Native worker isolation is currently available on Linux. Use the explicit Wasm build and Play Wasm on this platform."});}
                 if m.requires_rom&&!self.rom_paths.get(&id).is_some_and(|p|crate::rom_selections::ready(p,m.required_rom_count())){ui.label("Choose the required ROM files below to enable Play.");}
@@ -481,6 +550,91 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn verified_cube_build_still_explains_memory_and_missing_data_requirements() {
+        let manifest: crate::manifest::Manifest =
+            toml::from_str(include_str!("../../ports/cube2/manifest.toml")).unwrap();
+        let folder = tempfile::tempdir().unwrap();
+        for name in ["data", "packages"] {
+            std::fs::create_dir(folder.path().join(name)).unwrap();
+        }
+        let mut app = App {
+            applied_settings: Some(crate::settings::Settings::default()),
+            ..Default::default()
+        };
+        app.built.insert(manifest.id.clone());
+        app.data_paths.insert(
+            manifest.id.clone(),
+            folder.path().to_string_lossy().into_owned(),
+        );
+        assert!(!app.ready_to_play(&manifest));
+        let blockers = app.play_blockers(&manifest);
+        assert!(blockers
+            .iter()
+            .any(|text| text.contains("2048") && text.contains("512")));
+        assert!(!blockers.iter().any(|text| text.contains("Build this game")));
+        app.applied_settings.as_mut().unwrap().memory_ceiling_mib = 2048;
+        assert_eq!(app.ready_to_play(&manifest), cfg!(target_os = "linux"));
+        if cfg!(target_os = "linux") {
+            assert!(app.play_blockers(&manifest).is_empty());
+        }
+        std::fs::remove_dir(folder.path().join("packages")).unwrap();
+        assert!(!app.ready_to_play(&manifest));
+        assert!(app
+            .play_blockers(&manifest)
+            .iter()
+            .any(|text| text.contains("data/packages")));
+        app.data_paths.clear();
+        assert!(app
+            .play_blockers(&manifest)
+            .iter()
+            .any(|text| text.contains("Choose the original")));
+    }
+    #[test]
+    fn missing_named_roms_and_missing_builds_have_separate_play_explanations() {
+        let mut manifest: crate::manifest::Manifest =
+            toml::from_str(include_str!("../../examples/minimal/manifest.toml")).unwrap();
+        manifest.requires_rom = true;
+        manifest.roms = vec![
+            crate::manifest::RomRequirement {
+                id: "first".into(),
+                title: "First ROM".into(),
+            },
+            crate::manifest::RomRequirement {
+                id: "second".into(),
+                title: "Second ROM".into(),
+            },
+        ];
+        let folder = tempfile::tempdir().unwrap();
+        let first = folder.path().join("first.rom");
+        std::fs::write(&first, b"first").unwrap();
+        let second = folder.path().join("second.rom");
+        std::fs::write(&second, b"second").unwrap();
+        let mut app = App::default();
+        app.built.insert(manifest.id.clone());
+        app.rom_paths.insert(
+            manifest.id.clone(),
+            vec![first.to_string_lossy().into_owned(), String::new()],
+        );
+        assert!(app
+            .play_blockers(&manifest)
+            .iter()
+            .any(|text| text.contains("Second ROM")));
+        app.rom_paths.get_mut(&manifest.id).unwrap()[1] = second.to_string_lossy().into_owned();
+        if cfg!(target_os = "linux") {
+            assert!(app.play_blockers(&manifest).is_empty());
+        }
+        app.built.clear();
+        assert!(app
+            .play_blockers(&manifest)
+            .iter()
+            .any(|text| text.contains("Build this game")));
+        std::fs::remove_file(&first).unwrap();
+        assert!(app
+            .play_blockers(&manifest)
+            .iter()
+            .any(|text| text.contains("First ROM")));
+    }
     #[test]
     fn opening_catalog_and_installed_pages_never_downloads_installs_or_plays() {
         let mut app = App::default();

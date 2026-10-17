@@ -238,6 +238,8 @@ Recommended memory describes the creator's suggested budget; it neither reserves
 
 Recommended memory is optional and defaults to the hard limit. When supplied, it must be positive and no greater than the hard limit. The hard limit for ordinary games must be positive and at most 512 MiB. Reviewed native-engine profiles can define a larger bounded limit; this does not increase arbitrary guest Wasm memory. Existing `memory_bytes` remains accepted as an alias for `hard_memory_bytes`; supplying both is rejected, and newly packed manifests use the canonical hard-limit field.
 
+On each installed game’s page, unmet launch requirements appear directly beside the Play controls: a missing or invalid native build, required memory ceiling, unavailable game-data folder, or missing named ROM files. Build completion refreshes these checks automatically. Saving settings or choosing files updates readiness; **Recheck readiness** reloads externally changed build or file selections. Memory ceilings are never raised automatically.
+
 ## Desktop settings
 
 Open **Settings** from the desktop library navigation. Save applies validated preferences; Cancel discards form changes, and Reset restores defaults in the form until you save.
