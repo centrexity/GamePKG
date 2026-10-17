@@ -113,7 +113,16 @@ def choose_native_file(env, title, path=None, windows=False):
     subprocess.run(['xdotool','mousemove','--window',dialog,'400','150'],env=env,check=True)
     from pathlib import Path
     proof=Path(__file__).resolve().parents[1]/'target/native-rom-picker.png'
-    subprocess.run(['import','-display',env['DISPLAY'],'-window',dialog,str(proof)],env=env,check=True)
+    # GTK4 maps its chooser before the controls are drawn. Sending Ctrl+L at
+    # that point can lose the shortcut and type into the wrong widget.
+    ready_deadline=time.monotonic()+20
+    while True:
+        subprocess.run(['import','-display',env['DISPLAY'],'-window',dialog,str(proof)],env=env,check=True)
+        text=subprocess.check_output(['tesseract',str(proof),'stdout','--psm','11'],env=env,stderr=subprocess.DEVNULL,text=True).casefold()
+        if re.search(r'\bcancel\b',text) and re.search(r'\b(open|select|ok)\b',text):
+            break
+        assert time.monotonic()<ready_deadline, f'Native picker controls were not ready: {text}'
+        time.sleep(.1)
     subprocess.run(['xdotool','windowfocus','--sync',dialog],env=env,check=True)
     if path is None:
         subprocess.run(['xdotool','key','--clearmodifiers','Escape'],env=env,check=True)
@@ -122,7 +131,15 @@ def choose_native_file(env, title, path=None, windows=False):
         time.sleep(.2)
         subprocess.run(['xdotool','type','--clearmodifiers',str(path)],env=env,check=True)
         subprocess.run(['xdotool','key','--clearmodifiers','Return'],env=env,check=True)
-    time.sleep(.5)
+    close_deadline=time.monotonic()+15
+    while True:
+        visible=subprocess.run(['xdotool','search','--onlyvisible','--name','^('+re.escape(title)+'|Select a [Ff]ile|zenity)$'],env=env,capture_output=True,text=True)
+        if dialog not in visible.stdout.splitlines():
+            break
+        if time.monotonic()>=close_deadline:
+            subprocess.run(['import','-display',env['DISPLAY'],'-window',dialog,str(proof)],env=env,check=True)
+            raise AssertionError(f'Native picker did not finish selecting {path!s}')
+        time.sleep(.1)
     return dialog
 
 
