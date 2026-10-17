@@ -19,3 +19,5 @@ keyboard.down(event('c','KeyC'));assert.equal(keyboard.tick(),65536|1048576);
 keyboard.reset();assert.equal(keyboard.tick(),0);
 keyboard.down(event('c','KeyC',true));assert.equal(keyboard.tick(),0);
 console.log('Browser keyboard preserves physical edges, shared-key holds, quick taps and action held bits.');
+
+keyboard.reset();let prevented=false;keyboard.down({key:'v',code:'KeyV',ctrlKey:true,preventDefault(){prevented=true;}});assert.equal(keyboard.tick(),0);assert.equal(prevented,false,'Ctrl+V must remain available to the focused canvas paste handler');

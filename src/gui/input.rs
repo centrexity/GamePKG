@@ -43,11 +43,25 @@ impl Keyboard {
                 physical_key,
                 pressed: down,
                 repeat: false,
+                modifiers,
                 ..
             } = event
             {
                 let id = physical_key.unwrap_or(*key);
                 if *down {
+                    if (modifiers.ctrl || modifiers.command || modifiers.alt)
+                        && !matches!(
+                            key,
+                            egui::Key::ArrowLeft
+                                | egui::Key::ArrowRight
+                                | egui::Key::ArrowUp
+                                | egui::Key::ArrowDown
+                                | egui::Key::Enter
+                                | egui::Key::Tab
+                        )
+                    {
+                        continue;
+                    }
                     let bit = key_button(*key);
                     if bit == 0 || self.keys.contains_key(&id) {
                         continue;
@@ -342,6 +356,21 @@ mod keyboard_tests {
         let mut result = 0;
         let _ = ctx.run(raw, |ctx| result = ctx.input(|input| keyboard.poll(input)));
         result
+    }
+    #[test]
+    fn command_letters_do_not_trigger_gameplay_while_arrow_controls_remain_available() {
+        let ctx = egui::Context::default();
+        let mut keyboard = Keyboard::default();
+        let mut paste = event(egui::Key::V, true, false);
+        if let egui::Event::Key { modifiers, .. } = &mut paste {
+            modifiers.ctrl = true;
+        }
+        assert_eq!(frame(&ctx, &mut keyboard, vec![paste], true), 0);
+        let mut arrow = event(egui::Key::ArrowLeft, true, false);
+        if let egui::Event::Key { modifiers, .. } = &mut arrow {
+            modifiers.ctrl = true;
+        }
+        assert_eq!(frame(&ctx, &mut keyboard, vec![arrow], true), 1 | 256);
     }
     #[test]
     fn physical_edges_ignore_repeat_and_keep_shared_bindings_down_until_all_release() {

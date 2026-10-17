@@ -12,11 +12,19 @@ pub enum Event {
         pressed: bool,
         repeat: bool,
     },
+    LogicalKey {
+        key: winit::keyboard::Key,
+        physical: Option<KeyCode>,
+        pressed: bool,
+        repeat: bool,
+    },
     Button {
         button: MouseButton,
         pressed: bool,
     },
     Motion(f64, f64),
+    Position(f64, f64),
+    PointerGone,
     Wheel(MouseScrollDelta),
     Text(String),
     Focus(bool),
@@ -25,6 +33,7 @@ pub enum Event {
 struct Capture {
     viewport: ViewportId,
     focused: bool,
+    surface: bool,
     events: Vec<Event>,
 }
 static CAPTURE: Mutex<Option<Capture>> = Mutex::new(None);
@@ -39,8 +48,17 @@ pub fn enable(viewport: ViewportId, active: bool, focused: bool) {
         *capture = Some(Capture {
             viewport,
             focused,
+            surface: false,
             events: Vec::new(),
         });
+    }
+}
+/// Absolute surface positions are enabled only for source-game consumers.
+/// Relative-input engines retain their original queue capacity and behavior.
+pub fn enable_surface(viewport: ViewportId, enabled: bool) {
+    let mut guard = CAPTURE.lock().unwrap_or_else(|p| p.into_inner());
+    if let Some(c) = guard.as_mut().filter(|c| c.viewport == viewport) {
+        c.surface = enabled;
     }
 }
 pub fn take(viewport: ViewportId) -> Vec<Event> {
@@ -104,7 +122,27 @@ pub(crate) fn window_event(viewport: ViewportId, event: &WindowEvent) {
                     },
                 );
             }
+            if c.surface
+                && !matches!(&event.logical_key,winit::keyboard::Key::Character(text) if text.len()>4)
+            {
+                push(
+                    c,
+                    Event::LogicalKey {
+                        key: event.logical_key.clone(),
+                        physical: match event.physical_key {
+                            PhysicalKey::Code(code) => Some(code),
+                            _ => None,
+                        },
+                        pressed: event.state == ElementState::Pressed,
+                        repeat: event.repeat,
+                    },
+                );
+            }
         }
+        WindowEvent::CursorMoved { position, .. } if c.surface => {
+            push(c, Event::Position(position.x, position.y))
+        }
+        WindowEvent::CursorLeft { .. } if c.surface => push(c, Event::PointerGone),
         WindowEvent::MouseInput { button, state, .. } => push(
             c,
             Event::Button {
@@ -162,6 +200,25 @@ mod tests {
         assert!(matches!(take(game).as_slice(), [Event::Focus(false)]));
         window_event(game, &WindowEvent::Focused(true));
         take(game);
+        let position = WindowEvent::CursorMoved {
+            device_id: winit::event::DeviceId::dummy(),
+            position: winit::dpi::PhysicalPosition::new(12.0, 34.0),
+        };
+        window_event(game, &position);
+        assert!(take(game).is_empty());
+        enable_surface(other, true);
+        window_event(game, &position);
+        assert!(take(game).is_empty());
+        enable_surface(game, true);
+        window_event(other, &position);
+        window_event(game, &position);
+        assert!(matches!(
+            take(game).as_slice(),
+            [Event::Position(12.0, 34.0)]
+        ));
+        enable_surface(game, false);
+        window_event(game, &position);
+        assert!(take(game).is_empty());
         for _ in 0..4096 {
             motion(game, (1.0, 1.0));
         }

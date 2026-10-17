@@ -336,3 +336,114 @@ fn original_layouts_match_in_native_and_32_bit_wasm_through_the_real_renderer() 
         }
     }
 }
+
+#[test]
+#[ignore = "requires signed controlled-input fixtures prepared by tests/arkanoo.py"]
+fn sdk_input_events_preserve_pointer_keys_unicode_and_permission_on_every_profile() {
+    use gamepkg::input_events::Event;
+    for suffix in ["events", "events-component"] {
+        let root = isolated_library();
+        let id = format!("com.gamepkg.arkanoo-{suffix}");
+        let mut game = Game::load(root.path(), &id).unwrap();
+        game.input_event(Event {
+            kind: 1,
+            x: 123.5,
+            y: 44.25,
+            code: 3,
+        })
+        .unwrap();
+        assert_eq!(game.step(0).unwrap(), (1u64 << 32) | 3);
+        assert!(game.frame().commands.iter().any(|command|matches!(command,Command::Rect{x,y,width,height,..} if *x==123.5 && *y==44.25 && *width==1.0 && *height==1.0)));
+        for (kind, code) in [
+            (5, 65536 + 511),
+            (7, 0x1f600),
+            (7, 0x10ffff),
+            (9, 0x80000000 + 114),
+            (10, 0x40000000 + 80),
+        ] {
+            game.input_event(Event {
+                kind,
+                x: 0.0,
+                y: 0.0,
+                code,
+            })
+            .unwrap();
+            assert_eq!(
+                game.step(0).unwrap(),
+                (u64::from(kind) << 32) | u64::from(code)
+            );
+        }
+        assert_eq!(game.step(0).unwrap(), 0);
+        drop(game);
+        let mut denied = Game::load(root.path(), &format!("{id}-denied")).unwrap();
+        assert!(denied.input_event(Event::RESET).is_err());
+        assert_eq!(denied.step(0).unwrap(), u64::MAX);
+    }
+}
+
+#[test]
+#[ignore = "requires the signed Arkanoo fixture prepared by tests/arkanoo.py"]
+fn actual_source_game_uses_mouse_position_and_original_space_escape_controls() {
+    use gamepkg::input_events::Event;
+    let root = isolated_library();
+    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo").unwrap();
+    game.step(4).unwrap();
+    game.input_event(Event {
+        kind: 1,
+        x: 500.4,
+        y: 200.0,
+        code: 0,
+    })
+    .unwrap();
+    game.input_event(Event {
+        kind: 5,
+        x: 0.0,
+        y: 0.0,
+        code: 44,
+    })
+    .unwrap();
+    game.step(0).unwrap();
+    assert!(game.frame().commands.iter().any(|command|matches!(command,Command::Rect{x,y,width,height,..} if *x==465.0 && *y==395.0 && *width==70.0 && *height==11.0)));
+    assert!(
+        game.frame().commands.iter().any(
+            |command| matches!(command,Command::Circle{y,radius,..} if *y==390.0 && *radius==3.0)
+        ),
+        "Space did not launch immediately"
+    );
+    game.input_event(Event {
+        kind: 5,
+        x: 0.0,
+        y: 0.0,
+        code: 41,
+    })
+    .unwrap();
+    game.step(0).unwrap();
+    let paused = game.frame().commands.clone();
+    game.step(0).unwrap();
+    assert_eq!(game.frame().commands, paused);
+    game.input_event(Event {
+        kind: 1,
+        x: 100.0,
+        y: 200.0,
+        code: 0,
+    })
+    .unwrap();
+    game.step(0).unwrap();
+    assert_eq!(game.frame().commands, paused);
+    game.input_event(Event {
+        kind: 5,
+        x: 0.0,
+        y: 0.0,
+        code: 41,
+    })
+    .unwrap();
+    game.input_event(Event {
+        kind: 1,
+        x: 100.0,
+        y: 200.0,
+        code: 0,
+    })
+    .unwrap();
+    game.step(0).unwrap();
+    assert!(game.frame().commands.iter().any(|command|matches!(command,Command::Rect{x,y,width,..} if *x==65.0 && *y==395.0 && *width==70.0)));
+}

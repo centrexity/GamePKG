@@ -49,6 +49,7 @@ fn stereo_engine_audio(
 }
 
 pub(crate) struct Session {
+    input_events: crate::input_events::Queue,
     child: Child,
     _parent_thread: std::sync::mpsc::Sender<()>,
     input: ChildStdin,
@@ -221,6 +222,7 @@ impl Session {
             _binary: binary,
             package,
             network: crate::network::Service::new(manifest.permissions.clone()),
+            input_events: crate::input_events::Queue::new(manifest.permissions.input),
             manifest,
             roms,
             save,
@@ -302,6 +304,17 @@ impl Session {
             Ok(v)
         }
         let ok = match op {
+            27 => {
+                ensure!(b.len() == 4, "invalid input request");
+                return Ok(match self.input_events.read(n(b, 0)? as usize) {
+                    Some(bytes) => {
+                        let mut reply = vec![0];
+                        reply.extend(bytes);
+                        reply
+                    }
+                    None => vec![255],
+                });
+            }
             26 => {
                 ensure!(b.is_empty(), "invalid random-value request");
                 return Ok(crate::random::value()?.to_le_bytes().to_vec());
@@ -487,6 +500,9 @@ impl Session {
             _ => bail!("unknown native host request"),
         };
         Ok(vec![if ok { 0 } else { 1 }])
+    }
+    pub fn set_input_events(&mut self, events: Vec<crate::input_events::Event>) {
+        self.input_events.begin(events);
     }
     pub fn step(
         &mut self,

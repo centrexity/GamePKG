@@ -2,7 +2,7 @@
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-import os, shutil, subprocess, tempfile, threading, time
+import os, shutil, subprocess, tempfile, threading, time, tomllib
 from PIL import Image
 from gui_test_support import start_display
 import argparse
@@ -95,11 +95,22 @@ pub fn game_tick(input:u32,state:u64)->u64 {
  }state
 }''')
     run('pack',layouts,'-o',root/'layouts.gamepkg','--key',key);run('install',root/'layouts.gamepkg','--trust-creator');run('build','com.gamepkg.arkanoo-levels')
+    for suffix,profile,allowed in [('events','core-v1',True),('events-denied','core-v1',False),('events-component','component-v1',True),('events-component-denied','component-v1',False)]:
+        fixture=root/suffix;shutil.copytree(PROJECT/'ports/arkanoo',fixture)
+        manifest=fixture/'manifest.toml';text=manifest.read_text().replace('com.gamepkg.arkanoo','com.gamepkg.arkanoo-'+suffix).replace('runtime_profile = "core-v1"','runtime_profile = "'+profile+'"')
+        if 'runtime_profile =' not in text:text=text.replace('entry_world = "game"','runtime_profile = "'+profile+'"\nentry_world = "game"')
+        assert tomllib.loads(text)['runtime_profile']==profile
+        if not allowed:text=text.replace('input = true','input = false')
+        manifest.write_text(text)
+        (fixture/'source/src/lib.rs').write_text('pub fn game_tick(_:u32,_:u64)->u64 {if let Some(events)=gamepkg::input_events(){let mut result=0;for event in events {if event.kind==1 {gamepkg::draw_rect(event.x,event.y,1.0,1.0,0xffffffff);}result=(u64::from(event.kind)<<32)|u64::from(event.code);}result}else{u64::MAX}}')
+        run('pack',fixture,'-o',root/(suffix+'.gamepkg'),'--key',key);run('install',root/(suffix+'.gamepkg'),'--trust-creator');run('build','com.gamepkg.arkanoo-'+suffix)
     probe_env=dict(env,GAMEPKG_ARKANOO_TEST_ROOT=str(root/'library'))
     subprocess.run(['cargo','test','--test','game_arkanoo_runtime','--','--ignored'],env=probe_env,check=True,timeout=120)
     run('build','com.gamepkg.arkanoo','--target','native')
     run('build','com.gamepkg.arkanoo-modes','--target','native')
     run('build','com.gamepkg.arkanoo-levels','--target','native')
+    run('build','com.gamepkg.arkanoo-events','--target','native')
+    run('build','com.gamepkg.arkanoo-events-denied','--target','native')
     run('integrity-check','com.gamepkg.arkanoo')
     subprocess.run(['cargo','test','--test','game_arkanoo_runtime','--','--ignored'],env=probe_env,check=True,timeout=120)
     # Real native window: locate the cyan paddle, hold movement, start, pause.
@@ -152,9 +163,17 @@ pub fn game_tick(input:u32,state:u64)->u64 {
                 assert time.monotonic()<moved,'Held Right did not move the paddle'
                 time.sleep(.05)
         finally:subprocess.run(['xdotool','keyup','--window',window,'Right'],env=env,check=True)
-        subprocess.run(['xdotool','key','--window',window,'Down'],env=env,check=True);time.sleep(.2)
+        target_x=after.width//4;target_y=after.height*3//5
+        subprocess.run(['xdotool','mousemove','--window',window,str(target_x),str(target_y)],env=env,check=True)
+        moved=time.monotonic()+3
+        while True:
+            mouse=capture(window,'native-mouse.png')
+            if abs(paddle(mouse)-target_x)<10:break
+            assert time.monotonic()<moved,'Mouse motion did not center the original paddle'
+            time.sleep(.05)
+        subprocess.run(['xdotool','key','--window',window,'Escape'],env=env,check=True);time.sleep(.2)
         capture(window,'native-paused.png')
-        print('Native Arkanoo: visible campaign, start, held-key paddle movement and pause passed.')
+        print('Native Arkanoo: campaign, keyboard/mouse movement, scaled coordinates and Escape pause passed.')
     finally:
         if app is not None:
             app.terminate()
@@ -191,14 +210,20 @@ pub fn game_tick(input:u32,state:u64)->u64 {
                 xs=[i%640 for i in range(395*640,406*640) if data[i*4:i*4+3]==[99,220,255]]
                 assert len(xs)>100
                 return sum(xs)/len(xs)
+            bounds=canvas.rect
+            ActionChains(browser).move_to_element_with_offset(canvas,-bounds['width']*.25,0).perform()
+            wait.until(lambda b:abs(center(pixels())-160)<5)
             left=center(pixels())
             ActionChains(browser).key_down(Keys.ARROW_RIGHT).pause(.3).key_up(Keys.ARROW_RIGHT).perform()
             assert center(pixels())>left+25
-            ActionChains(browser).send_keys(Keys.ARROW_DOWN).perform();time.sleep(.15)
+            ActionChains(browser).send_keys(Keys.ESCAPE).perform();time.sleep(.15)
             paused=pixels();time.sleep(.25);assert pixels()==paused,'pause changed pixels'
-            ActionChains(browser).send_keys(Keys.ARROW_DOWN).perform();time.sleep(2)
+            ActionChains(browser).send_keys(Keys.ESCAPE).perform();time.sleep(2)
             assert pixels()!=paused
             canvas.screenshot(str(PROOF/('browser-component.png' if component else 'browser-core.png')))
+            browser.find_element(By.ID,'restart').click()
+            wait.until(lambda b:pixels()[(270*640+70)*4:(270*640+70)*4+3]==[16,27,53])
+            restarted=pixels();time.sleep(.2);assert pixels()==restarted,'Restart retained the active run'
             browser.find_element(By.ID,'stop').click()
             assert 'Stopped' in browser.find_element(By.ID,'status').text
             print(('Component' if component else 'Core')+' browser Arkanoo: held movement, pause/resume and export passed.')

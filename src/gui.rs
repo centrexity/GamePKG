@@ -10,6 +10,7 @@ mod input;
 mod library_view;
 mod multiplayer;
 mod rom_picker;
+mod source_input;
 mod sprites;
 mod theme;
 use std::{
@@ -77,6 +78,7 @@ pub struct App {
     cube_mouse_capture: cube2_input::MouseCapture,
     confine_mouse: bool,
     cube_pointer: cube2_input::Pointer,
+    source_input: source_input::Capture,
     cube_desktop: cube2_input::Desktop,
     doom_desktop: doom_input::Desktop,
     game_processes: Vec<(String, std::process::Child)>,
@@ -402,11 +404,16 @@ impl eframe::App for App {
         egui_winit::gamepkg_input::enable(
             ctx.viewport_id(),
             !self.game_window_closing
-                && self
-                    .player
-                    .as_ref()
-                    .is_some_and(|game| game.doom_input_allowed() || game.is_cube2()),
+                && self.player.as_ref().is_some_and(|game| {
+                    game.doom_input_allowed() || game.is_cube2() || game.input_events_allowed()
+                }),
             ctx.input(|i| i.focused),
+        );
+        egui_winit::gamepkg_input::enable_surface(
+            ctx.viewport_id(),
+            self.player
+                .as_ref()
+                .is_some_and(|game| game.input_events_allowed()),
         );
         // Closing a viewport can schedule one more update. Do not reopen the
         // loading/error UI after an orderly in-game Quit has saved the session.
@@ -686,6 +693,7 @@ impl eframe::App for App {
         if self.player.is_none() {
             self.input_devices.reset();
             self.keyboard.reset();
+            self.source_input = Default::default();
             self.doom_desktop = Default::default();
             self.cube_desktop = Default::default();
             self.sprite_textures.finish(0);
@@ -839,6 +847,28 @@ impl eframe::App for App {
                     } else {
                         input
                     };
+                    if game.input_events_allowed() {
+                        let scale = (ui.available_width() / 640.0)
+                            .min(ui.available_height() / 480.0)
+                            .max(0.0);
+                        let rect = egui::Rect::from_center_size(
+                            ui.max_rect().center(),
+                            egui::vec2(640.0 * scale, 480.0 * scale),
+                        );
+                        let events = egui_winit::gamepkg_input::take(ctx.viewport_id());
+                        let captured = self.source_input.translate(
+                            &events,
+                            rect,
+                            ctx.pixels_per_point(),
+                            ctx.input(|i| i.focused),
+                        );
+                        for event in captured {
+                            if let Err(error) = game.input_event(event) {
+                                failure = Some(format!("Game input failed: {error:#}"));
+                                break;
+                            }
+                        }
+                    }
                     self.pending_input |= input & 0xf00ff;
                     let now = std::time::Instant::now();
                     if self.next_frame.is_none_or(|next| now >= next) {

@@ -1,3 +1,4 @@
+let eventBytes=new Uint8Array();
 // The guest sees only these typed imports, never JavaScript objects or browser APIs.
 let instance, manifest, assets, roms, save, state=0n, commands=[], background=null, unlocks=[],saveDirty=false,saveBudget=0,images=new Map(),imageBudget=0,audioSamples=[],shaderCount=0;
 function imageCommand(x,y,w,h,pw,ph,pixels){if(!finite(x,y,w,h)||w<0||h<0||!Number.isInteger(pw)||!Number.isInteger(ph)||pw<1||ph<1||pw>512||ph>512||pixels.length!==pw*ph*4||imageBudget+pixels.length>8388608)return -1;imageBudget+=pixels.length;return command(['image',x,y,w,h,pw,ph,pixels.slice()]);}
@@ -16,7 +17,19 @@ function bytes(pointer,length,max){if(!range(pointer,length,max))return null;ret
 function read(source,offset,pointer,length){if(!source||offset<0||offset>source.length||!range(pointer,length))return -1;const part=source.subarray(offset,offset+length);bytes(pointer,part.length).set(part);return part.length;}
 function finite(...values){return values.every(Number.isFinite)&&values.every(v=>Math.abs(v)<=16384);}
 function command(value){if(commands.length>=1024)return -1;commands.push(value);return 0;}
+function takeEvents(capacity){if(!manifest.permissions.input||!Number.isInteger(capacity)||capacity<=0||capacity>32768||capacity%16)return null;const result=eventBytes.slice(0,capacity);eventBytes=eventBytes.slice(result.length);return result;}
+function encodeEvents(events){
+ if(!Array.isArray(events)||events.length>2048)return new Uint8Array();
+ const output=new Uint8Array(events.length*16),view=new DataView(output.buffer);
+ for(let i=0;i<events.length;i++){
+  const event=events[i];if(!Array.isArray(event)||event.length!==4)return new Uint8Array();
+  const [kind,x,y,code]=event;if(!Number.isInteger(kind)||!Number.isInteger(code)||code<0||code>0xffffffff||!Number.isFinite(x)||!Number.isFinite(y))return new Uint8Array();
+  const valid=(kind===0||kind===8)?x===0&&y===0&&code===0:kind===1?x>=0&&x<=640&&y>=0&&y<=480&&code<=31:(kind===2||kind===3)?x>=0&&x<=640&&y>=0&&y<=480&&[1,2,4,8,16].includes(code):kind===4?Math.abs(x)<=4096&&Math.abs(y)<=4096&&code<=2:kind===5?x===0&&y===0&&(code&~0x101ff)===0&&(code&65535)>0&&(code&65535)<512:kind===6?x===0&&y===0&&code>0&&code<512:kind===7?x===0&&y===0&&code>0&&code<=0x10ffff&&(code<0xd800||code>0xdfff):(kind===9||kind===10)?x===0&&y===0&&(kind===9||code<0x80000000)&&((code&0x40000000)?(code&~0xc00001ff)===0&&(code&511)!==0:(code&0x7fffffff)>0&&(code&0x7fffffff)<=0x10ffff&&((code&0x7fffffff)<0xd800||(code&0x7fffffff)>0xdfff)):false;
+  if(!valid)return new Uint8Array();view.setUint32(i*16,kind,true);view.setFloat32(i*16+4,x,true);view.setFloat32(i*16+8,y,true);view.setUint32(i*16+12,code,true);
+ }return output;
+}
 const api={
+ input_events:(pointer,capacity)=>{const output=bytes(pointer,capacity,32768);if(!output)return -1;const events=takeEvents(capacity);if(!events)return -1;output.set(events);return events.length;},
  random_u64:()=>{const words=new Uint32Array(2);crypto.getRandomValues(words);return BigInt(words[0])|(BigInt(words[1])<<32n);},
  asset_read:(p,n,offset,out,length)=>{const name=assetName(p,n);return name===null?-1:read(assets.get(name),offset,out,length);},
  rom_count:()=>roms.length,rom_size:()=>roms[0]?.length??-1,rom_size_at:index=>roms[index]?.length??-1,
@@ -47,8 +60,9 @@ onmessage=async ({data})=>{try{
   if(typeof instance.exports[manifest.runtime_profile==='component-v1'?'tick':'gamepkg_tick']!=='function')throw Error('Missing game entry');
   postMessage({type:'ready'});
  }else if(data.type==='restart'){
-  state=0n;
+  eventBytes=new Uint8Array();state=0n;
  }else if(data.type==='tick'){
+  eventBytes=manifest.permissions.input?encodeEvents(data.events??[]):new Uint8Array();
   commands=[];background=null;unlocks=[];saveDirty=false;saveBudget=0;imageBudget=0;audioSamples=[];
   state=instance.exports[manifest.runtime_profile==='component-v1'?'tick':'gamepkg_tick'](manifest.permissions.input?data.input:0,state);
   if(instance.exports.memory&&instance.exports.memory.buffer.byteLength>manifest.limits.hard_memory_bytes)throw Error('Memory limit exceeded');
@@ -67,6 +81,7 @@ function optionBytes(pointer,source,offset,length){
  const view=new DataView(instance.exports.memory.buffer);view.setUint32(pointer,part?1:0,true);view.setUint32(pointer+4,address,true);view.setUint32(pointer+8,part?.length??0,true);
 }
 const canonical={
+ 'input-events':(capacity,pointer)=>{if(!range(pointer,12)||pointer%4)throw Error('Invalid result pointer');const events=takeEvents(capacity);optionBytes(pointer,events,0,events?.length??0);},
  'random-u64':api.random_u64,
  'rom-count':api.rom_count,
  'rom-size':pointer=>optionSize(pointer,api.rom_size()),

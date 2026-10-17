@@ -20,6 +20,7 @@ enum Tick {
     Component(wasmtime::component::TypedFunc<(u32, u64), (u64,)>),
 }
 struct Data {
+    input_events: crate::input_events::Queue,
     achievements: Vec<String>,
     pending_achievements: Vec<String>,
     limits: StoreLimits,
@@ -37,6 +38,7 @@ struct Data {
     network: crate::network::Service,
 }
 pub struct Game {
+    queued_input: crate::input_events::Queue,
     doom_events: Vec<crate::doom_input::Event>,
     progress: Option<crate::progress::Session>,
     store: Option<Store<Data>>,
@@ -146,6 +148,7 @@ impl Game {
                             | "save_write"
                             | "save_size"
                             | "random_u64"
+                            | "input_events"
                             | "draw_clear"
                             | "draw_asset_image"
                             | "draw_image"
@@ -201,6 +204,7 @@ impl Game {
                                 | "save-write"
                                 | "save-size"
                                 | "random-u64"
+                                | "input-events"
                                 | "draw-clear"
                                 | "draw-asset-image"
                                 | "draw-image"
@@ -255,6 +259,7 @@ impl Game {
         let mut store = Store::new(
             &engine,
             Data {
+                input_events: crate::input_events::Queue::new(manifest.permissions.input),
                 achievements: manifest.achievements.iter().map(|a| a.id.clone()).collect(),
                 pending_achievements: Vec::new(),
                 network: crate::network::Service::new(manifest.permissions.clone()),
@@ -540,6 +545,36 @@ impl Game {
             )?;
 
             linker.func_wrap("gamepkg", "save_read", save_read)?;
+            linker.func_wrap(
+                "gamepkg",
+                "input_events",
+                |mut caller: Caller<'_, Data>, pointer: i32, capacity: i32| -> i32 {
+                    if pointer < 0
+                        || capacity <= 0
+                        || capacity as usize > crate::input_events::MAX_BYTES
+                        || capacity % 16 != 0
+                    {
+                        return -1;
+                    }
+                    let Some(memory) = caller.get_export("memory").and_then(|e| e.into_memory())
+                    else {
+                        return -1;
+                    };
+                    if (pointer as usize)
+                        .checked_add(capacity as usize)
+                        .is_none_or(|end| end > memory.data_size(&caller))
+                    {
+                        return -1;
+                    }
+                    let Some(bytes) = caller.data_mut().input_events.read(capacity as usize) else {
+                        return -1;
+                    };
+                    if memory.write(&mut caller, pointer as usize, &bytes).is_err() {
+                        return -1;
+                    }
+                    bytes.len() as i32
+                },
+            )?;
             linker.func_wrap("gamepkg", "random_u64", || -> Result<i64> {
                 Ok(crate::random::value()? as i64)
             })?;
@@ -575,6 +610,7 @@ impl Game {
         };
         Ok(Self {
             doom_events: Vec::new(),
+            queued_input: crate::input_events::Queue::new(manifest.permissions.input),
             progress: None,
             store: Some(store),
             tick: Some(tick),
@@ -647,6 +683,7 @@ impl Game {
                 )?;
                 return Ok(Self {
                     doom_events: Vec::new(),
+                    queued_input: crate::input_events::Queue::new(manifest.permissions.input),
                     progress: Some(crate::progress::Session::open(
                         root,
                         &manifest.id,
@@ -743,6 +780,7 @@ impl Game {
                 )?;
                 return Ok(Self {
                     doom_events: Vec::new(),
+                    queued_input: crate::input_events::Queue::new(manifest.permissions.input),
                     progress: Some(crate::progress::Session::open(
                         root,
                         &manifest.id,
@@ -1075,7 +1113,18 @@ impl Game {
         self.doom_events.push(event);
         Ok(())
     }
+    pub fn input_event(&mut self, event: crate::input_events::Event) -> Result<()> {
+        anyhow::ensure!(
+            self.queued_input.push(event),
+            "game input is denied or invalid"
+        );
+        Ok(())
+    }
+    pub fn input_events_allowed(&self) -> bool {
+        self.input_allowed && !self.builtin_engine
+    }
     pub fn step(&mut self, input: u32) -> Result<u64> {
+        let input_events = self.queued_input.drain_events();
         let events: Vec<_> = self
             .doom_events
             .drain(..self.doom_events.len().min(crate::doom_input::MAX_PER_TICK))
@@ -1094,6 +1143,7 @@ impl Game {
         }
         #[cfg(target_os = "linux")]
         if let Some(n) = &mut self.native {
+            n.set_input_events(input_events);
             self.state = n.step(
                 if self.input_allowed { input } else { 0 },
                 self.state,
@@ -1104,6 +1154,12 @@ impl Game {
             }
             return Ok(self.state);
         }
+        self.store
+            .as_mut()
+            .unwrap()
+            .data_mut()
+            .input_events
+            .begin(input_events);
         if !events.is_empty() {
             self.store
                 .as_mut()

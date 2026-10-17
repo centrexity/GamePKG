@@ -24,3 +24,21 @@ pub fn audio_submit_pcm16_le(bytes: &[u8]) -> bool {
     }
     audio_submit(&samples[..count])
 }
+
+/// Focused game-surface events. Kinds: reset=0, move=1, down=2, up=3,
+/// wheel=4, physical key-down=5/up=6, committed Unicode scalar=7, pointer-reset=8,
+/// logical key-down=9/up=10 (SDL keycode; down bit 31 marks repeat).
+/// Pointer coordinates use the 640x480 canvas; wheel code is lines=0/pixels=1/pages=2.
+/// Key code is an SDL physical scancode (1..511), plus bit 16 on repeated down.
+pub struct InputEvent {pub kind:u32,pub x:f32,pub y:f32,pub code:u32}
+pub fn input_events()->Option<Vec<InputEvent>> {
+    let mut bytes=[0u8;32768];let count=__gamepkg_input_events(&mut bytes)? as usize;
+    if count>bytes.len()||count%16!=0{return None;}
+    let mut events=Vec::new();
+    for record in bytes[..count].chunks_exact(16){events.push(InputEvent{
+        kind:u32::from_le_bytes([record[0],record[1],record[2],record[3]]),
+        x:f32::from_le_bytes([record[4],record[5],record[6],record[7]]),
+        y:f32::from_le_bytes([record[8],record[9],record[10],record[11]]),
+        code:u32::from_le_bytes([record[12],record[13],record[14],record[15]])});}
+    Some(events)
+}

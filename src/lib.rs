@@ -75,6 +75,7 @@ mod doom;
 pub mod doom_input;
 #[cfg(target_os = "linux")]
 mod doom_sources;
+pub mod input_events;
 
 #[cfg(feature = "gui")]
 mod rom_selections;

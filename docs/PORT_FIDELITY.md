@@ -12,7 +12,7 @@ work stays open until behavior is verified.
 | Cube 2 | Initial OS lock-key state, remaining uncommon-key/platform behavior and full controller/touch equivalence; LAN discovery, master authentication and public server registration; custom asset/mod workflows; demo/movie output and persistence; hardware-accelerated engine rendering; native platforms beyond Linux. Vulkan currently presents software-rendered engine frames. |
 | DOOM | Original WAD music, spatial stereo effects, six save slots, configuration, desktop controls and the original quit/ENDOOM flow are runtime verified. Music backend selection, multiplayer, additional WADs/mods and broader control/platform coverage remain unfinished. |
 | Zelda3 | External MSU music, replay tools, save states, widescreen, language selection and desktop enhancement settings need support. The adapter fixes the view to 256×224. Original DSP stereo is verified in native and Wasm gameplay/save tests. |
-| Arkanoo | Gravity, speed-triggered portal behavior and ball-to-ball responses are restored with upstream reference and actual-engine tests. Original world proportions and movement/contact order now match upstream reference checks. Per-ball launch timing, life recovery and victory/endless transitions also match original-code fixtures; prior item/score/level caps are removed. Brick health and original blast rules are also verified. All twelve original procedural patterns are restored. Editor/mouse/menus/music and custom-pattern import/selection still need work. Art/effects remain replacements. Current runs do not persist; high score, unlocked level and gravity selection do. |
+| Arkanoo | Gravity, speed-triggered portal behavior and ball-to-ball responses are restored with upstream reference and actual-engine tests. Original world proportions and movement/contact order now match upstream reference checks. Per-ball launch timing, life recovery and victory/endless transitions also match original-code fixtures; prior item/score/level caps are removed. Brick health and original blast rules are also verified. All twelve original procedural patterns are restored. Focused mouse movement and original Space/Escape controls are restored. Editor, cursor/window behavior, menus/music and custom-pattern import/selection still need work. Art/effects remain replacements. Current runs do not persist; high score, unlocked level and gravity selection do. |
 | 2048 | Random spawning, merge scoring/best score, win/continue/game-over UI, restart, 128-step undo and persistent boards/history are implemented and tested. Byte-sized tile exponents remove the old 32768 cap. Cooperative expectimax assistance/autoplay matches independent upstream reference fixtures; a deterministic 932-turn game reaches 2048. Final signed-package delivery and broader platform verification remain open. |
 
 Evidence: [README coverage table](../README.md#port-feature-coverage),
@@ -47,6 +47,19 @@ and process isolation while restoring functionality. A stub is only acceptable
 when a verified host replacement provides the same observable behavior.
 
 ## Completion evidence required
+
+The ordered source-input changes have passed the full Rust suite, permission and
+malformed-buffer checks, native gameplay, and core/component browser gameplay.
+Arkanoo tests exercise mouse scaling, Space/Escape controls and Restart; SDK
+fixtures also cover Unicode, layout-aware keys and denied input permissions.
+Both 32-bit and 64-bit Windows builds pass compilation checks; this is not
+Windows gameplay verification. These checks do not close the remaining feature
+gaps listed above.
+
+Cube 2's rebuilt desktop fixture also passes original startup, console, saved
+preferences and physical-key regressions with the explicit OpenGL test backend.
+The headless display lacks Vulkan presentation support (DRI3), so this round
+does not establish Vulkan playback. The application's Vulkan default is unchanged.
 
 For every restored feature, test its normal path, denied-permission behavior,
 malformed input and persistence where applicable. Verify original bindings,

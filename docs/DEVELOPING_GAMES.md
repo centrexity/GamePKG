@@ -61,6 +61,41 @@ tick deadlines and native RPC limits. For a uniform choice among `n` outcomes,
 use rejection sampling before taking a remainder; `% n` alone can introduce bias.
 This API requires the updated source host; older release binaries may not expose it.
 
+Use `gamepkg::input_events()` for ordered pointer, physical keyboard and committed
+text events. It returns `None` when the signed `input` permission is denied and
+`Some(Vec<InputEvent>)` otherwise. The simple `game_tick` action-button mask
+continues to work for keyboard, controller and touch actions. This API requires
+the updated source host.
+
+Each `InputEvent` has `kind: u32`, `x: f32`, `y: f32`, and `code: u32`:
+
+| Kind | Meaning | Coordinates and code |
+| --- | --- | --- |
+| 0 | Focus/overflow reset | Release held keys and buttons; zero fields |
+| 1 | Pointer moved | Position in the 640×480 game canvas; code is held buttons |
+| 2 / 3 | Pointer button down / up | Canvas position; code identifies one button |
+| 4 | Wheel | Signed deltas; code 0 = lines, 1 = pixels, 2 = pages |
+| 5 / 6 | Physical key down / up | Zero coordinates; SDL scancode 1–511; down bit 16 marks repeat |
+| 7 | Committed text | Zero coordinates; code is one Unicode scalar, excluding NUL |
+| 8 | Pointer left/cancelled | Release pointer buttons; zero fields |
+| 9 / 10 | Logical key down / up | Zero coordinates; Unicode or SDL named-key code; down bit 31 marks repeat |
+
+Pointer button bits are left 1, right 2, middle 4, back 8 and forward 16.
+Logical keys preserve the keyboard layout, with ASCII shortcut letters folded to
+lowercase. Named keys use `0x40000000 | scancode`, except Space 32, Enter 13,
+Escape 27, Tab 9, Backspace 8 and Delete 127. Committed text preserves case.
+Logical keys and committed text follow physical keys in event order. Preedit text and typing
+outside the focused game surface are excluded. Unknown browser physical keys
+are omitted. Initial OS lock/modifier state, native IME activation and full native touch equivalence
+still need further work.
+
+At most 2,048 events (32 KiB) are queued. Overflow resets held input. Reads
+consume queued events, and unread events expire at the next tick. Coordinates,
+Unicode, button codes and wire lengths are validated by the host. Core,
+component, native and browser bindings use the same fixed-width little-endian
+records internally; game source uses the typed helper and never device handles.
+No new filesystem, network, window-creation or Cargo dependency access is granted.
+
 Use `gamepkg::draw_clear`, `draw_rect`, `draw_circle` and `draw_asset_image` for the host-owned viewport. Games cannot create windows or obtain GPU handles. `gamepkg::network_request(url, output)` performs an asynchronous, bounded HTTPS GET only when the signed manifest permits that exact endpoint. TCP and UDP use the same host-controlled network service. See [networking](https://github.com/centrexity/GamePKG/blob/main/docs/NETWORKING.md).
 
 These functions preserve the source checks, signatures, isolated compiler and Wasm restrictions. Games cannot replace the injected implementation or declare their own host imports.

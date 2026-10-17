@@ -4,6 +4,7 @@ const keys={ArrowLeft:1,a:1,ArrowRight:2,d:2,ArrowUp:4,w:4,ArrowDown:8,s:8,z:16,
 const heldKeys=new Map();
 function resetKeyboard(){heldKeys.clear();held=pressed=0;}
 function keyboardDown(event){
+ if((event.ctrlKey||event.metaKey||event.altKey)&&/^[a-z]$/i.test(event.key))return;
  const bit=keys[event.key]??keys[event.key.toLowerCase()];
  if(!bit)return;
  event.preventDefault();
@@ -19,11 +20,11 @@ function keyboardUp(event){
  for(const bit of heldKeys.values())held|=bit;
 }
 function color(rgba){return `rgba(${rgba>>>24},${rgba>>>16&255},${rgba>>>8&255},${(rgba&255)/255})`;}
-function halt(message){for(const node of audioNodes){try{node.stop();}catch{}}audioNodes.clear();audioNext=0;clearTimeout(timer);clearTimeout(frameTimer);worker?.terminate();worker=null;running=false;resetKeyboard();play.disabled=false;stop.disabled=true;restart.disabled=true;status.textContent=message;}
+function halt(message){for(const node of audioNodes){try{node.stop();}catch{}}audioNodes.clear();audioNext=0;clearTimeout(timer);clearTimeout(frameTimer);worker?.terminate();worker=null;running=false;resetKeyboard();surfaceEvents=[];play.disabled=false;stop.disabled=true;restart.disabled=true;status.textContent=message;}
 function watch(delay){clearTimeout(timer);const active=worker;timer=setTimeout(()=>{if(worker===active)halt('Game stopped: execution deadline exceeded.');},delay);}
 function stored(key,fallback){try{return JSON.parse(localStorage.getItem(key))??fallback;}catch{return fallback;}}
 function persist(key,value){try{localStorage.setItem(key,JSON.stringify(value));}catch{status.textContent='Browser storage is unavailable; progress may not persist.';}}
-function tick(){if(!running)return;watch(250);worker.postMessage({type:'tick',input:pressed|((held&255)<<8)|((held&0x000f0000)<<4)});pressed=0;}
+function tick(){if(!running)return;watch(250);worker.postMessage({type:'tick',input:pressed|((held&255)<<8)|((held&0x000f0000)<<4),events:surfaceEvents});surfaceEvents=[];pressed=0;}
 function shader(type,source){const value=gl.createShader(type);gl.shaderSource(value,source);gl.compileShader(value);if(!gl.getShaderParameter(value,gl.COMPILE_STATUS)){const error=gl.getShaderInfoLog(value);gl.deleteShader(value);throw Error('WebGL shader compilation failed: '+error);}return value;}
 function setupShaders(sources){if(!sources.length)return;shaderSurface=new OffscreenCanvas(640,480);gl=shaderSurface.getContext('webgl2',{alpha:true,depth:false,antialias:false,premultipliedAlpha:false,preserveDrawingBuffer:true});if(!gl)throw Error('This game requires WebGL 2');const vertex=shader(gl.VERTEX_SHADER,'#version 300 es\nvoid main(){vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2);gl_Position=vec4(p*2.0-1.0,0.0,1.0);}');for(const source of sources){const adapted=source.replace(/^#version[^\n]*\n/,'#version 300 es\nprecision highp float;\nprecision highp int;\n').replace(/layout\(row_major\) (uniform|buffer);/g,'').replace(/layout\(binding\s*=\s*0\)\s*/g,'');const fragment=shader(gl.FRAGMENT_SHADER,adapted),program=gl.createProgram();gl.attachShader(program,vertex);gl.attachShader(program,fragment);gl.linkProgram(program);gl.deleteShader(fragment);if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw Error('WebGL shader link failed: '+gl.getProgramInfoLog(program));for(let i=0;i<gl.getProgramParameter(program,gl.ACTIVE_UNIFORMS);i++){const uniform=gl.getActiveUniform(program,i);if(uniform.name!=='gamepkgTexture_0'||uniform.type!==gl.SAMPLER_2D||uniform.size!==1)throw Error('Forbidden shader resource');}programs.push(program);}gl.deleteShader(vertex);texture=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,texture);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);gl.bindVertexArray(gl.createVertexArray());}
 function shaderFrame(index,width=1,height=1,pixels=new Uint8Array(4)){if(!programs[index]||gl.isContextLost())throw Error('Shader graphics context unavailable');gl.viewport(0,0,640,480);gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT);gl.useProgram(programs[index]);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,texture);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA8,width,height,0,gl.RGBA,gl.UNSIGNED_BYTE,pixels);const sampler=gl.getUniformLocation(programs[index],'gamepkgTexture_0');if(sampler!==null)gl.uniform1i(sampler,0);gl.drawArrays(gl.TRIANGLES,0,3);context.drawImage(shaderSurface,0,0);}
@@ -61,7 +62,7 @@ canvas.addEventListener('keydown',keyboardDown);
 canvas.addEventListener('keyup',keyboardUp);
 window.addEventListener('blur',resetKeyboard);
 document.querySelector('#mute').onclick=()=>{muted=!muted;if(audioGain)audioGain.gain.value=muted?0:.5;document.querySelector('#mute').textContent=muted?'Unmute':'Mute';document.querySelector('#mute').setAttribute('aria-pressed',String(muted));};
-play.onclick=start;restart.onclick=()=>{if(running&&worker){resetKeyboard();worker.postMessage({type:'restart'});}};stop.onclick=()=>halt('Stopped');
+play.onclick=start;restart.onclick=()=>{if(running&&worker){resetSurface();worker.postMessage({type:'restart'});canvas.focus();}};stop.onclick=()=>halt('Stopped');
 try{
  const response=await fetch('game.json',{cache:'no-store'});if(!response.ok)throw Error('Missing export metadata');data=await response.json();if(data.format_version!==1)throw Error('Unsupported web export');
  const binary=await fetch('game.wasm',{cache:'no-store'});if(!binary.ok)throw Error('Missing compiled game');wasm=await binary.arrayBuffer();
@@ -73,3 +74,25 @@ try{
  required.forEach((requirement,index)=>{const label=document.createElement('label');label.textContent=`Select ${requirement.title}`;const input=document.createElement('input');input.type='file';input.onchange=async()=>{const file=input.files[0];if(!file||file.size>67108864){status.textContent='ROM must be at most 64 MiB.';roms[index]=null;return;}const selected=new Uint8Array(await file.arrayBuffer());if(roms.reduce((total,value,i)=>total+(i===index?0:value?.length||0),0)+selected.length>134217728){status.textContent='Combined ROM files must be at most 128 MiB.';roms[index]=null;return;}roms[index]=selected;};label.append(input);document.querySelector('#roms').append(label);});
  status.textContent='Ready to play';play.disabled=false;restart.disabled=false;
 }catch(error){status.textContent=String(error);}
+
+// Ordered input is scoped to this focused canvas, never document-wide typing.
+let surfaceEvents=[];
+const scanKeys={Enter:40,Escape:41,Backspace:42,Tab:43,Space:44,Minus:45,Equal:46,BracketLeft:47,BracketRight:48,Backslash:49,Semicolon:51,Quote:52,Backquote:53,Comma:54,Period:55,Slash:56,CapsLock:57,PrintScreen:70,ScrollLock:71,Pause:72,Insert:73,Home:74,PageUp:75,Delete:76,End:77,PageDown:78,ArrowRight:79,ArrowLeft:80,ArrowDown:81,ArrowUp:82,NumLock:83,NumpadDivide:84,NumpadMultiply:85,NumpadSubtract:86,NumpadAdd:87,NumpadEnter:88,NumpadDecimal:99,ControlLeft:224,ShiftLeft:225,AltLeft:226,MetaLeft:227,ControlRight:228,ShiftRight:229,AltRight:230,MetaRight:231};
+function scan(code){if(/^Key[A-Z]$/.test(code))return code.charCodeAt(3)-65+4;if(/^Digit[1-9]$/.test(code))return Number(code[5])+29;if(code==='Digit0')return 39;if(/^F([1-9]|1[0-2])$/.test(code))return Number(code.slice(1))+57;if(/^Numpad[1-9]$/.test(code))return Number(code.slice(6))+88;if(code==='Numpad0')return 98;return scanKeys[code]??0;}
+function surface(event){if(!running||document.activeElement!==canvas||document.hasFocus?.()===false)return;if(surfaceEvents.length>=2048){surfaceEvents=[[0,0,0,0]];return;}surfaceEvents.push(event);}
+function textInput(text){for(const character of String(text??'').slice(0,4096)){const code=character.codePointAt(0);if(code&&(code<0xd800||code>0xdfff))surface([7,0,0,code]);}}
+function location(event){const rect=canvas.getBoundingClientRect();if(!(rect.width>0&&rect.height>0))return null;return [Math.max(0,Math.min(640,(event.clientX-rect.left)/rect.width*640)),Math.max(0,Math.min(480,(event.clientY-rect.top)/rect.height*480))];}
+function logical(event){const named={Enter:13,Escape:27,Tab:9,Backspace:8,Delete:127,' ':32};if(named[event.key])return named[event.key];const chars=[...event.key];if(chars.length===1){const ch=chars[0];return /^[A-Z]$/.test(ch)?ch.toLowerCase().codePointAt(0):ch.codePointAt(0);}const code=scan(event.code);return code?code|0x40000000:0;}
+canvas.addEventListener('keydown',event=>{const code=scan(event.code);if(code)surface([5,0,0,code|(event.repeat?65536:0)]);const key=logical(event);if(key)surface([9,0,0,(key|(event.repeat?0x80000000:0))>>>0]);if(!event.isComposing&&!event.ctrlKey&&!event.metaKey&&!event.altKey&&[...event.key].length===1)textInput(event.key);});
+canvas.addEventListener('keyup',event=>{const code=scan(event.code);if(code)surface([6,0,0,code]);const key=logical(event);if(key)surface([10,0,0,key]);});
+canvas.addEventListener('compositionend',event=>textInput(event.data));
+canvas.addEventListener('paste',event=>{if(document.activeElement===canvas){event.preventDefault();textInput(event.clipboardData?.getData('text/plain')??'');}});
+canvas.addEventListener('pointermove',event=>{const point=location(event);if(point)surface([1,...point,event.buttons&31]);});
+canvas.addEventListener('pointerdown',event=>{canvas.focus();const point=location(event),code=[1,4,2,8,16][event.button];if(point&&code){surface([2,...point,code]);canvas.setPointerCapture(event.pointerId);}});
+canvas.addEventListener('pointerup',event=>{const point=location(event),code=[1,4,2,8,16][event.button];if(point&&code)surface([3,...point,code]);if(canvas.hasPointerCapture(event.pointerId))canvas.releasePointerCapture(event.pointerId);});
+canvas.addEventListener('pointercancel',()=>surface([8,0,0,0]));
+canvas.addEventListener('pointerleave',event=>{if(!event.buttons)surface([8,0,0,0]);});
+canvas.addEventListener('contextmenu',event=>event.preventDefault());
+canvas.addEventListener('wheel',event=>{if(document.activeElement===canvas){event.preventDefault();surface([4,Math.max(-4096,Math.min(4096,event.deltaX)),Math.max(-4096,Math.min(4096,-event.deltaY)),event.deltaMode===1?0:event.deltaMode===2?2:1]);}},{passive:false});
+function resetSurface(){surfaceEvents=[[0,0,0,0]];resetKeyboard();}
+canvas.addEventListener('blur',resetSurface);window.addEventListener('blur',resetSurface);

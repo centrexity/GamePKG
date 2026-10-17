@@ -1153,3 +1153,42 @@ fn original_campaign_and_all_twelve_procedural_layouts_match_complete_generator(
         "layout generation consumed play randomness"
     );
 }
+
+#[test]
+fn mouse_quantization_velocity_and_original_keyboard_actions_are_ordered() {
+    let mut game = physics::Game::new();
+    game.mode = 1;
+    gamepkg::samples(&[3]);
+    game.source_input(5, 0.0, 0.0, 44);
+    let launch_x = game.balls[0].x;
+    game.source_input(1, 500.4, 200.0, 0);
+    assert_eq!(game.paddle, 465.0);
+    game.update(0);
+    assert_eq!(game.balls[0].x, launch_x - 2.0);
+    assert_eq!(game.last_paddle, 465.0);
+    game.source_input(1, 0.0, 200.0, 0);
+    assert_eq!(game.paddle, 0.0);
+    game.source_input(1, 640.0, 200.0, 0);
+    assert_eq!(game.paddle, 570.0);
+    game.source_input(5, 0.0, 0.0, 41);
+    assert_eq!(game.mode, 2);
+    let paddle = game.paddle;
+    game.source_input(1, 320.0, 200.0, 0);
+    assert_eq!(game.paddle, paddle);
+    game.source_input(5, 0.0, 0.0, 41);
+    assert_eq!(game.mode, 1);
+    game.source_input(5, 0.0, 0.0, 20);
+    game.source_input(9, 0.0, 0.0, 97);
+    assert!(
+        game.blocks.contains(&1),
+        "physical Q with logical A must not trigger Q shortcut"
+    );
+    game.source_input(9, 0.0, 0.0, 113);
+    game.update(0);
+    assert_eq!(game.mode, 3);
+    game.source_input(2, 100.0, 100.0, 1);
+    assert_eq!(game.level, 2);
+    game.mode = 2;
+    game.source_input(9, 0.0, 0.0, 114);
+    assert_eq!((game.mode, game.level, game.lives), (0, 1, 3));
+}

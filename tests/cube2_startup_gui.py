@@ -1,7 +1,8 @@
 """Original menu and preferences: use the private cached engine fixture in place."""
 from pathlib import Path
-import os,subprocess,tempfile,time,struct,re
+import os,subprocess,tempfile,time,struct,re,argparse
 from gui_test_support import start_display,game_window,wait_game_frame,close_game,cube2_choose_test_map
+parser=argparse.ArgumentParser();parser.add_argument('--renderer',choices=['vulkan','opengl'],default='vulkan');args=parser.parse_args()
 PROJECT=Path(__file__).resolve().parents[1]
 proof=PROJECT/'target/cube2-startup-gui';proof.mkdir(exist_ok=True)
 library=PROJECT/'target/cube2-package-test/library'
@@ -21,7 +22,7 @@ save.write_bytes(b'GPS2'+struct.pack('<III',1,len(payload),0)+payload)
 with tempfile.TemporaryDirectory(prefix='gamepkg-startup-') as temporary:
     root=Path(temporary);config=root/'settings.toml'
     config.write_text('memory_ceiling_mib=2048\ntick_deadline_ms=500\ncheck_app_updates_on_startup=false\nautomatic_update_checks=false\nmute_audio=true\n')
-    env=dict(os.environ,GAMEPKG_HOME=str(PROJECT/'target/cube2-package-test/library'),GAMEPKG_CONFIG=str(config),LIBGL_ALWAYS_SOFTWARE='1',LP_NUM_THREADS='2',OMP_THREAD_LIMIT='1',GAMEPKG_RENDERER='vulkan',DBUS_SESSION_BUS_ADDRESS='unix:path=/tmp/gamepkg-no-session-bus')
+    env=dict(os.environ,GAMEPKG_HOME=str(PROJECT/'target/cube2-package-test/library'),GAMEPKG_CONFIG=str(config),LIBGL_ALWAYS_SOFTWARE='1',LP_NUM_THREADS='2',OMP_THREAD_LIMIT='1',GAMEPKG_RENDERER=args.renderer,DBUS_SESSION_BUS_ADDRESS='unix:path=/tmp/gamepkg-no-session-bus')
     env.pop('WAYLAND_DISPLAY',None)
     server=start_display(env,1500,1100);app=None
     def command(*args):return subprocess.run(list(map(str,args)),env=env,check=True,capture_output=True,timeout=30)

@@ -169,7 +169,7 @@ impl Pointer {
     }
 }
 
-fn scancode(key: egui_winit::winit::keyboard::KeyCode) -> Option<u32> {
+pub(super) fn scancode(key: egui_winit::winit::keyboard::KeyCode) -> Option<u32> {
     use egui_winit::winit::keyboard::KeyCode::*;
     Some(match key {
         KeyA => 4,
