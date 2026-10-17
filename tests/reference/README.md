@@ -145,3 +145,31 @@ on both native and Wasm targets, including exact brick coordinates. This does
 not verify custom-pattern import/selection, original editor UI, or full level
 playthroughs. Python and the original Rand dependencies are maintainer tools;
 players use the ordinary GamePKG toolchain and safe host APIs.
+
+Arkanoo editor and custom-pattern pool oracles:
+
+```sh
+python3 tests/reference/arkanoo_editor.py /path/to/pinned/arkanoo > tests/fixtures/arkanoo-editor.json
+python3 tests/reference/arkanoo_levels.py /path/to/pinned/arkanoo --rand-source /path/to/rand-0.8.5 --custom > tests/fixtures/arkanoo-custom-levels.json
+cargo test --test game_arkanoo
+```
+
+The editor harness compiles the complete unchanged original `editor.rs`, using
+its actual temporary-folder ASCII reads/writes. Entities, colors and brick
+construction come from the pinned original. A minimal rectangle/menu-button
+scaffold permits compilation without a window; it does not verify rendering,
+hover, SDL event dispatch or the main menu. Fixtures cover all nine choices,
+integer grid boundaries, duplicate paint, left/right drag priority, erasing,
+loaded versus newly painted health, ASCII old/new symbols and row truncation,
+clear confirmation, Unicode backspace and background cycling.
+
+The custom generator harness compiles the unchanged `create_blocks` and
+`create_blocks_from_pattern`, with pinned rand versions and a controlled
+three-pattern loader. The pool includes all brick types, a diagonal normal
+layout and an empty layout. Its order is fixture input, independent of host
+directory enumeration. All twelve procedural choices and three custom choices
+are represented across the same 106 levels as the procedural oracle. The port
+uses sorted saved-pattern names as its stable pool order. Native and wasm32
+signed runtime fixtures verify resulting cell/color/type values, alongside
+actual editor save/load/test return, denied saving and damaged archives.
+External file import/export and original editor art/fonts remain unverified.

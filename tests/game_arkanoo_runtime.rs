@@ -53,7 +53,7 @@ fn real_gameplay_audio_progress_and_restart() {
         .collect();
     assert_eq!(saves.len(), 1);
     let bytes = std::fs::read(&saves[0]).unwrap();
-    assert_eq!(&bytes[..4], b"ARK1");
+    assert_eq!(&bytes[..4], b"ARK2");
     let score = u32::from_le_bytes(bytes[4..8].try_into().unwrap());
     assert!(score >= 10, "checkpoint did not retain the high score");
     let records = std::fs::read_dir(root.path().join("progress")).unwrap();
@@ -446,4 +446,162 @@ fn actual_source_game_uses_mouse_position_and_original_space_escape_controls() {
     .unwrap();
     game.step(0).unwrap();
     assert!(game.frame().commands.iter().any(|command|matches!(command,Command::Rect{x,y,width,..} if *x==65.0 && *y==395.0 && *width==70.0)));
+}
+
+fn editor_key(game: &mut Game, key: u32) {
+    game.input_event(gamepkg::input_events::Event {
+        kind: 9,
+        x: 0.0,
+        y: 0.0,
+        code: key,
+    })
+    .unwrap();
+    game.step(0).unwrap();
+}
+fn editor_click(game: &mut Game, x: f32, y: f32, code: u32) {
+    game.input_event(gamepkg::input_events::Event {
+        kind: 2,
+        x,
+        y,
+        code,
+    })
+    .unwrap();
+    game.input_event(gamepkg::input_events::Event {
+        kind: 3,
+        x,
+        y,
+        code,
+    })
+    .unwrap();
+    game.step(0).unwrap();
+}
+fn editor_archive(root: &std::path::Path) -> std::path::PathBuf {
+    std::fs::read_dir(root.join("saves"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path()
+}
+#[test]
+#[ignore = "requires signed editor fixtures prepared by tests/arkanoo.py"]
+fn original_editor_workflow_persists_patterns_and_preserves_corrupt_saves_in_real_runtimes() {
+    let root = isolated_library();
+    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo").unwrap();
+    game.step(0).unwrap();
+    editor_key(&mut game, 101);
+    assert!(game.frame().commands.iter().any(|c|matches!(c,Command::Rect{x,y,width,height,..} if *x==20.0 && *y==100.0 && *width==600.0 && *height==0.5)));
+    for (index, key) in [54, 55, 56, 53].iter().enumerate() {
+        editor_key(&mut game, *key);
+        editor_click(&mut game, 20.0 + index as f32 * 30.0, 100.0, 1);
+    }
+    assert!(game.frame().commands.iter().any(|c|matches!(c,Command::Rect{x,y,rgba,..} if *x==110.0 && *y==100.0 && *rgba==0x8a2be2ff)),"original violet brick color was lost");
+    editor_key(&mut game, 115);
+    let path = editor_archive(root.path());
+    let bytes = std::fs::read(&path).unwrap();
+    assert_eq!(&bytes[..4], b"ARK2");
+    assert_eq!(u32::from_le_bytes(bytes[16..20].try_into().unwrap()), 1);
+    let name_len = u32::from_le_bytes(bytes[20..24].try_into().unwrap()) as usize;
+    assert_eq!(&bytes[24..24 + name_len], b"my_pattern");
+    assert_eq!(&bytes[24 + name_len..28 + name_len], &[6, 7, 8, 5]);
+    editor_key(&mut game, 116); // Test the actual edited board, then clear through the original Q action.
+    game.step(8).unwrap(); // Pause and return to editing without completing the test.
+    editor_key(&mut game, 101);
+    assert!(game.frame().commands.iter().any(|c|matches!(c,Command::Rect{x,y,width,height,..} if *x==20.0 && *y==100.0 && *width==600.0 && *height==0.5)));
+    editor_key(&mut game, 116);
+    assert_eq!(
+        game.frame()
+            .commands
+            .iter()
+            .filter(
+                |c| matches!(c,Command::Image{width,height,..} if *width==30.0 && *height==10.0)
+            )
+            .count(),
+        3
+    );
+    editor_key(&mut game, 113);
+    assert!(game.frame().commands.iter().any(|c|matches!(c,Command::Rect{x,y,width,height,..} if *x==20.0 && *y==100.0 && *width==600.0 && *height==0.5)));
+    drop(game);
+    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo").unwrap();
+    game.step(0).unwrap();
+    editor_key(&mut game, 101);
+    editor_key(&mut game, 108);
+    editor_key(&mut game, 13);
+    assert!(game.frame().commands.iter().any(|c|matches!(c,Command::Image{x,y,width,height,image} if *x==20.0 && *y==100.0 && *width==30.0 && *height==10.0 && !image.pixels().chunks_exact(4).any(|pixel|pixel==[255,255,255,220]))),"loaded ice incorrectly appears damaged before being hit");
+    assert_eq!(
+        game.frame()
+            .commands
+            .iter()
+            .filter(
+                |c| matches!(c,Command::Image{width,height,..} if *width==30.0 && *height==10.0)
+            )
+            .count(),
+        3
+    );
+    editor_key(&mut game, 115);
+    let stored_again = std::fs::read(&path).unwrap();
+    assert_eq!(
+        &stored_again[16..],
+        &bytes[16..],
+        "saved pattern changed during test play"
+    );
+    assert_eq!(
+        u32::from_le_bytes(stored_again[8..12].try_into().unwrap()),
+        2
+    );
+    drop(game);
+    let mut damaged = bytes.clone();
+    *damaged.last_mut().unwrap() = 9;
+    std::fs::write(&path, &damaged).unwrap();
+    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo").unwrap();
+    game.step(0).unwrap();
+    editor_key(&mut game, 101);
+    editor_click(&mut game, 20.0, 100.0, 1);
+    editor_key(&mut game, 115);
+    drop(game);
+    assert_eq!(
+        std::fs::read(&path).unwrap(),
+        damaged,
+        "invalid save was overwritten"
+    );
+}
+#[test]
+#[ignore = "requires signed editor fixtures prepared by tests/arkanoo.py"]
+fn denied_editor_saving_does_not_create_a_save_file() {
+    let root = isolated_library();
+    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-nosave").unwrap();
+    game.step(0).unwrap();
+    editor_key(&mut game, 101);
+    editor_click(&mut game, 20.0, 100.0, 1);
+    editor_key(&mut game, 115);
+    game.step(0).unwrap();
+    editor_key(&mut game, 108);
+    assert!(game.frame().commands.iter().any(|c|matches!(c,Command::Image{x,y,width,height,..} if *x==180.0 && *y==148.0 && *width==102.0 && *height==7.0)),"denied save appeared as a saved pattern in the browser");
+    drop(game);
+    assert!(
+        !root.path().join("saves").exists()
+            || std::fs::read_dir(root.path().join("saves"))
+                .unwrap()
+                .next()
+                .is_none()
+    );
+}
+#[test]
+#[ignore = "requires signed custom-level fixtures prepared by tests/arkanoo.py"]
+fn original_custom_and_procedural_pool_matches_in_native_and_32_bit_wasm() {
+    let reference: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-custom-levels.json")).unwrap();
+    let root = isolated_library();
+    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-custom").unwrap();
+    for fixture in reference["layouts"].as_array().unwrap() {
+        let level = fixture["level"].as_u64().unwrap() as u32;
+        let expected = fixture["cells"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .fold(14695981039346656037u64, |hash, cell| {
+                (hash ^ cell.as_u64().unwrap()).wrapping_mul(1099511628211)
+            });
+        assert_eq!(game.step(level).unwrap(), expected, "level {level}");
+    }
 }

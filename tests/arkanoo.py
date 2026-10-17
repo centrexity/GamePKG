@@ -2,7 +2,7 @@
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-import os, shutil, subprocess, tempfile, threading, time, tomllib
+import os, shutil, subprocess, tempfile, threading, time, tomllib, json
 from PIL import Image
 from gui_test_support import start_display
 import argparse
@@ -35,11 +35,20 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-arkanoo-',dir=PROJECT/'target')
     result=run('run','com.gamepkg.arkanoo','--frames',180)
     assert 'Ran 180 frames' in result and 'draw commands: 1024' not in result,result
     run('integrity-check','com.gamepkg.arkanoo')
+    nosave=root/'nosave';shutil.copytree(PROJECT/'ports/arkanoo',nosave)
+    file=nosave/'manifest.toml';file.write_text(file.read_text().replace('com.gamepkg.arkanoo','com.gamepkg.arkanoo-nosave').replace('save = true','save = false'))
+    run('pack',nosave,'-o',root/'nosave.gamepkg','--key',key);run('install',root/'nosave.gamepkg','--trust-creator');run('build','com.gamepkg.arkanoo-nosave')
+    custom=root/'custom';shutil.copytree(PROJECT/'ports/arkanoo',custom)
+    file=custom/'manifest.toml';file.write_text(file.read_text().replace('com.gamepkg.arkanoo','com.gamepkg.arkanoo-custom'))
+    boards=json.loads((PROJECT/'tests/fixtures/arkanoo-custom-levels.json').read_text())['patterns']
+    assert boards==[[i if i<9 else 255 for i in range(200)],[i//20%6 if i//20==i%20 else 255 for i in range(200)],[255]*200]
+    (custom/'source/src/lib.rs').write_text('mod editor;mod levels;mod pattern_rng;mod physics;mod render;pub fn game_tick(input:u32,_:u64)->u64 {let mut game=physics::Game::new();for which in 0..3 {let mut board=[255u8;200];if which==0 {for col in 0..9 {board[col]=col as u8;}}if which==1 {for row in 0..10 {board[row*20+row]=(row%6) as u8;}}game.editor.patterns.push(editor::Pattern{name:String::new(),cells:board});}game.level=input;game.populate();render::draw(&game);let mut result=14695981039346656037u64;for index in 0..200 {let cell=if game.blocks[index]==0 {255} else if game.block_type[index]>0 {game.block_type[index]+5} else {game.block_color[index]};result=(result^u64::from(cell)).wrapping_mul(1099511628211);}result}')
+    run('pack',custom,'-o',root/'custom.gamepkg','--key',key);run('install',root/'custom.gamepkg','--trust-creator');run('build','com.gamepkg.arkanoo-custom')
     # Trigger the production portal at its original speed threshold without
     # depending on a long random play session. Only fixture setup is replaced.
     modes=root/'modes';shutil.copytree(PROJECT/'ports/arkanoo',modes)
     mode_manifest=modes/'manifest.toml';mode_manifest.write_text(mode_manifest.read_text().replace('com.gamepkg.arkanoo','com.gamepkg.arkanoo-modes'))
-    (modes/'source/src/lib.rs').write_text('''mod levels;mod pattern_rng;mod physics;mod render;use std::sync::Mutex;
+    (modes/'source/src/lib.rs').write_text('''mod editor;mod levels;mod pattern_rng;mod physics;mod render;use std::sync::Mutex;
 static GAME:Mutex<Option<physics::Game>>=Mutex::new(None);
 pub fn game_tick(input:u32,state:u64)->u64 {
  if let Ok(mut slot)=GAME.lock(){
@@ -86,7 +95,7 @@ pub fn game_tick(input:u32,state:u64)->u64 {
     run('pack',modes,'-o',root/'modes.gamepkg','--key',key);run('install',root/'modes.gamepkg','--trust-creator');run('build','com.gamepkg.arkanoo-modes')
     layouts=root/'layouts';shutil.copytree(PROJECT/'ports/arkanoo',layouts)
     layout_manifest=layouts/'manifest.toml';layout_manifest.write_text(layout_manifest.read_text().replace('com.gamepkg.arkanoo','com.gamepkg.arkanoo-levels'))
-    (layouts/'source/src/lib.rs').write_text('''mod levels;mod pattern_rng;mod physics;mod render;use std::sync::Mutex;
+    (layouts/'source/src/lib.rs').write_text('''mod editor;mod levels;mod pattern_rng;mod physics;mod render;use std::sync::Mutex;
 static GAME:Mutex<Option<physics::Game>>=Mutex::new(None);
 pub fn game_tick(input:u32,state:u64)->u64 {
  if let Ok(mut slot)=GAME.lock(){
@@ -107,6 +116,8 @@ pub fn game_tick(input:u32,state:u64)->u64 {
     probe_env=dict(env,GAMEPKG_ARKANOO_TEST_ROOT=str(root/'library'))
     subprocess.run(['cargo','test','--test','game_arkanoo_runtime','--','--ignored'],env=probe_env,check=True,timeout=120)
     run('build','com.gamepkg.arkanoo','--target','native')
+    run('build','com.gamepkg.arkanoo-nosave','--target','native')
+    run('build','com.gamepkg.arkanoo-custom','--target','native')
     run('build','com.gamepkg.arkanoo-modes','--target','native')
     run('build','com.gamepkg.arkanoo-levels','--target','native')
     run('build','com.gamepkg.arkanoo-events','--target','native')
@@ -173,7 +184,24 @@ pub fn game_tick(input:u32,state:u64)->u64 {
             time.sleep(.05)
         subprocess.run(['xdotool','key','--window',window,'Escape'],env=env,check=True);time.sleep(.2)
         capture(window,'native-paused.png')
-        print('Native Arkanoo: campaign, keyboard/mouse movement, scaled coordinates and Escape pause passed.')
+        subprocess.run(['xdotool','key','--window',window,'e'],env=env,check=True);time.sleep(.2)
+        editor_screen=capture(window,'native-editor-empty.png');scale=min(editor_screen.width/640,editor_screen.height/480)
+        ox=(editor_screen.width-640*scale)/2;oy=(editor_screen.height-480*scale)/2
+        px=round(ox+35*scale);py=round(oy+105*scale)
+        subprocess.run(['xdotool','key','--window',window,'1'],env=env,check=True)
+        subprocess.run(['xdotool','mousemove','--window',window,str(px),str(py),'click','1'],env=env,check=True)
+        deadline=time.monotonic()+3
+        while True:
+            editor_screen=capture(window,'native-editor-painted.png')
+            if editor_screen.getpixel((px,py))==(255,165,0):break
+            assert time.monotonic()<deadline,'Native editor did not paint the selected color';time.sleep(.05)
+        subprocess.run(['xdotool','key','--window',window,'s'],env=env,check=True)
+        deadline=time.monotonic()+3
+        while True:
+            stored=[p.read_bytes() for p in (root/'library/saves').iterdir()]
+            if any(v[:4]==b'ARK2' and int.from_bytes(v[16:20],'little')==1 for v in stored):break
+            assert time.monotonic()<deadline,'Native editor did not commit its pattern';time.sleep(.05)
+        print('Native Arkanoo: gameplay controls, scaled mouse, editor painting and scoped pattern saving passed.')
     finally:
         if app is not None:
             app.terminate()
@@ -224,7 +252,23 @@ pub fn game_tick(input:u32,state:u64)->u64 {
             browser.find_element(By.ID,'restart').click()
             wait.until(lambda b:pixels()[(270*640+70)*4:(270*640+70)*4+3]==[16,27,53])
             restarted=pixels();time.sleep(.2);assert pixels()==restarted,'Restart retained the active run'
+            canvas.send_keys('e');time.sleep(.15)
+            canvas.send_keys('1')
+            def canvas_click(x,y):
+                ActionChains(browser).move_to_element_with_offset(canvas,(x/640-.5)*bounds['width'],(y/480-.5)*bounds['height']).click().perform()
+            canvas_click(35,105)
+            wait.until(lambda b:pixels()[(105*640+35)*4:(105*640+35)*4+3]==[255,165,0])
+            canvas.send_keys('n');canvas.send_keys(Keys.BACKSPACE)
+            canvas_click(150,400) # Mouse toolbar remains active while editing the name.
+            def saved_pattern():
+                return browser.execute_script('const key=Object.keys(localStorage).find(key=>key.startsWith(arguments[0]));return key?JSON.parse(localStorage.getItem(key)):[];','gamepkg:save:'+game_id+':')
+            wait.until(lambda b:saved_pattern()[:4]==[65,82,75,50] and saved_pattern()[16:20]==[1,0,0,0])
+            browser.find_element(By.ID,'restart').click();time.sleep(.15);canvas.send_keys('e');canvas.send_keys('l');canvas.send_keys(Keys.ENTER)
+            wait.until(lambda b:pixels()[(105*640+35)*4:(105*640+35)*4+3]==[255,165,0])
+            canvas.send_keys('t');time.sleep(.15);canvas.send_keys('q');time.sleep(.15)
+            wait.until(lambda b:pixels()[(105*640+35)*4:(105*640+35)*4+3]==[255,165,0])
+            canvas.screenshot(str(PROOF/('browser-component-editor.png' if component else 'browser-core-editor.png')))
             browser.find_element(By.ID,'stop').click()
             assert 'Stopped' in browser.find_element(By.ID,'status').text
-            print(('Component' if component else 'Core')+' browser Arkanoo: held movement, pause/resume and export passed.')
+            print(('Component' if component else 'Core')+' browser Arkanoo: gameplay, editor paint/save/load, test return and Restart passed.')
         finally:browser.quit();server.shutdown();server.server_close()

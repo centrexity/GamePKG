@@ -436,7 +436,7 @@ product decisions before claiming full parity.
 | Cube 2 | Original startup/menu, HUD/FPS preferences and ordered desktop movement/menu key events have been restored. Physical keys now bypass egui normalization, including Pause, keypad distinctions, modifier sides and media/browser keys with SDL equivalents. Initial OS lock state and remaining uncommon-key/platform behavior still need verification. LAN broadcast, arbitrary master/authentication TCP traffic and public server registration are not provided. Persistence accepts selected file types, so arbitrary custom assets, movie recordings and other output formats are not equivalent to the desktop engine. Rendering inside the engine remains software OpenGL; Vulkan presents its frames. Native isolation currently requires Linux. | `src/cube2/session.rs`, `src/gui/cube2_input.rs`, `src/cube2/discovery.rs`, `engines/cube2/adapters/network.h`, `engines/cube2/adapters/persistence.h` |
 | DOOM | Original WAD music, spatial stereo effects, all six original save slots and configuration persistence now work. Original desktop keyboard/mouse input, saved bindings and the quit/ENDOOM flow pass native, Wasm and desktop GUI checks. Music backend selection and broader control/platform coverage remain unfinished. Multiplayer and extra WAD/mod loading are absent. | `engines/doom/adapters/engine.c`, `engines/doom/README.md` |
 | Zelda3 | Normal ROM-based SPC/DSP music and SRAM are supported. External MSU music is disabled; the desktop replay logger is removed. The adapter fixes the view to 256×224, disables extra side area, selects the default language and supplies no desktop configuration UI. Desktop enhancements, replay/save-state tools and alternate resource sets need individual support and tests. | `engines/zelda3/adapters/engine.c`, `engines/zelda3/upstream/src/config.h` |
-| Arkanoo | Gravity, the speed-triggered portal and original ball-to-ball responses are restored and tested. Original world proportions and movement/contact order now match upstream reference checks. Per-ball launch timing, life recovery and victory/endless transitions also match original-code fixtures; prior item/score/level caps are removed. Brick health and original blast rules are also verified. Focused mouse movement and original Space/Escape controls are restored. Editor, cursor/window behavior, menus and music remain unfinished. All twelve original procedural patterns are restored; custom-pattern import/selection is pending. Art and effects remain replacements. Best score/unlocked level/gravity persist; active runs do not. | `ports/arkanoo/CREDITS.md`, `ports/arkanoo/source/src/lib.rs` |
+| Arkanoo | Gravity, the speed-triggered portal and original ball-to-ball responses are restored and tested. Original world proportions and movement/contact order now match upstream reference checks. Per-ball launch timing, life recovery and victory/endless transitions also match original-code fixtures; prior item/score/level caps are removed. Brick health and original blast rules are also verified. Focused mouse movement and original Space/Escape controls are restored. Editor painting/erasing, all nine brick choices, names, save/load, clear confirmation and test return are restored. Saved custom patterns join the original twelve procedural patterns in endless play. External pattern-file import/export, cursor/window behavior, original menus and music remain unfinished. Art and effects remain replacements. Best score/unlocked level/gravity persist; active runs do not. | `ports/arkanoo/CREDITS.md`, `ports/arkanoo/source/src/lib.rs` |
 | 2048 | Original movement/spawn rules, merge scoring/best score, win/continue/game-over UI, restart, 128-step undo and saved board/history are supported. Tiles can merge beyond 32768. Cooperative expectimax assistance/autoplay matches pinned upstream reference decisions; one full deterministic game reaches 2048. Final signed-package delivery and broader platform checks remain open. | `ports/2048/source/src/model.rs`, `ports/2048/CREDITS.md`, `tests/game_2048.rs`, `tests/game_2048_play.rs` |
 
 Cube 2, Zelda and DOOM now preserve stereo through their engine bridges and
@@ -876,11 +876,20 @@ synthesized sound effects, achievements, and saved high scores/level checkpoints
 The exact upstream revision, original license and adaptation credits are included.
 Upstream music and artwork are replaced with original drawing and sound.
 
-Left/right arrows or A/D move. Up/W starts, launches, fires rockets and confirms
-level transitions or restart. Down/S pauses or resumes. Starting a new session
+Mouse movement, left/right arrows or A/D move the paddle. Space launches or fires;
+Escape pauses or resumes. Up/W also starts, launches, fires and confirms level
+transitions or restart; Down/S retains its pause/resume alias. Starting a new session
 continues from the unlocked level; after game over, Up restarts the campaign.
 High scores and unlocked levels save when a life is lost or a level is completed.
-Live state stays in the game's own Wasm memory. No ROM is required.
+Live state stays in the game's own isolated runtime. No ROM is required.
+
+E opens the level editor from the title or pause screen. Select 0–8, then left
+drag to paint or right drag to erase. N edits the name, S saves, C twice clears,
+L opens the saved-pattern browser, and T tests the board. Test completion returns
+to the editor. Saved patterns also join the endless-level pool. Patterns and
+metadata share the scoped save; legacy metadata migrates to `ARK2`. External
+ASCII pattern-file import/export, original art/fonts and native IME activation
+remain unfinished. Names are stored as identifiers and never become host paths.
 
 With a current source-built CLI and GUI:
 

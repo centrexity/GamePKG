@@ -18,6 +18,8 @@ mod gamepkg {
             })
     }
 }
+#[path = "../ports/arkanoo/source/src/editor.rs"]
+mod editor;
 #[path = "../ports/arkanoo/source/src/levels.rs"]
 mod levels;
 #[path = "../ports/arkanoo/source/src/pattern_rng.rs"]
@@ -1191,4 +1193,355 @@ fn mouse_quantization_velocity_and_original_keyboard_actions_are_ordered() {
     game.mode = 2;
     game.source_input(9, 0.0, 0.0, 114);
     assert_eq!((game.mode, game.level, game.lives), (0, 1, 3));
+}
+
+#[test]
+fn editor_actions_ascii_and_loaded_health_match_the_complete_unchanged_original_module() {
+    let reference: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-editor.json")).unwrap();
+    let mut edit = editor::Editor::new();
+    for step in reference["steps"].as_array().unwrap() {
+        let op = step["operation"].as_array().unwrap();
+        let action = op[0].as_str().unwrap();
+        let x = op[1].as_f64().unwrap() as f32 * 0.5;
+        let y = op[2].as_f64().unwrap() as f32 * 0.5 + 60.0;
+        match action {
+            "select" => edit.selected = op[1].as_u64().unwrap() as u8,
+            "add" => edit.editor_paint(x, y, false),
+            "left" => {
+                edit.editor_event(2, x, y, 1);
+            }
+            "right" => {
+                edit.editor_event(2, x, y, 2);
+            }
+            "move" => {
+                edit.editor_event(1, x, y, 0);
+            }
+            "stop" => {
+                edit.editor_event(3, 0.0, 0.0, 1);
+            }
+            _ => panic!("unknown oracle operation"),
+        }
+        for index in 0..200 {
+            assert_eq!(
+                edit.cells[index],
+                step["cells"][index].as_u64().unwrap() as u8,
+                "{action}, cell {index}"
+            );
+            if edit.cells[index] != 255 {
+                assert_eq!(
+                    edit.health[index],
+                    step["health"][index].as_u64().unwrap() as u8
+                );
+            }
+        }
+    }
+    edit.name = "example".into();
+    assert!(edit.editor_store());
+    assert_eq!(
+        edit.patterns[0].ascii_write(),
+        reference["ascii_saved"].as_str().unwrap()
+    );
+    edit.selection = 0;
+    edit.editor_load();
+    for index in 0..200 {
+        assert_eq!(
+            edit.cells[index],
+            reference["loaded"]["cells"][index].as_u64().unwrap() as u8
+        );
+        if edit.cells[index] != 255 {
+            assert_eq!(
+                edit.health[index],
+                reference["loaded"]["health"][index].as_u64().unwrap() as u8
+            );
+        }
+    }
+    edit.editor_clear();
+    assert_eq!(
+        edit.confirm,
+        reference["confirmations"][0].as_bool().unwrap()
+    );
+    edit.editor_cancel();
+    assert_eq!(
+        edit.confirm,
+        reference["confirmations"][1].as_bool().unwrap()
+    );
+    edit.editor_clear();
+    edit.editor_clear();
+    assert_eq!(edit.cells, [255; 200]);
+    edit.naming = true;
+    edit.name = "café😀".into();
+    for text in reference["backspaces"].as_array().unwrap() {
+        edit.editor_key(8);
+        assert_eq!(edit.name, text.as_str().unwrap());
+    }
+    for (index, background) in reference["backgrounds"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .enumerate()
+    {
+        edit.editor_event(2, if index < 8 { 600.0 } else { 530.0 }, 370.0, 1);
+        assert_eq!(edit.background, background.as_u64().unwrap() as u32);
+    }
+    for fixture in reference["imports"].as_array().unwrap() {
+        let pattern = editor::Pattern::ascii_read("example", fixture["source"].as_str().unwrap());
+        for index in 0..200 {
+            assert_eq!(
+                pattern.cells[index],
+                fixture["cells"][index].as_u64().unwrap() as u8
+            );
+        }
+    }
+}
+
+#[test]
+fn editor_archive_migrates_legacy_and_rejects_damage_without_partial_replacement() {
+    let mut edit = editor::Editor::new();
+    edit.name = "../../café😀".into();
+    edit.selected = 6;
+    edit.editor_paint(20.0, 100.0, false);
+    assert!(edit.editor_store());
+    edit.name = "other".into();
+    assert!(edit.editor_store());
+    let bytes = edit.save_encode(u32::MAX, u32::MAX, true);
+    assert_eq!(&bytes[..4], b"ARK2");
+    let mut loaded = editor::Editor::new();
+    assert_eq!(loaded.save_decode(&bytes), Some([u32::MAX, u32::MAX, 1]));
+    assert_eq!(loaded.patterns.len(), 2);
+    assert_eq!(loaded.patterns[0].name, "../../café😀");
+    assert_eq!(loaded.patterns[0].cells[0], 6);
+    for end in 0..bytes.len() {
+        assert!(
+            loaded.save_decode(&bytes[..end]).is_none(),
+            "accepted truncation {end}"
+        );
+        assert_eq!(loaded.patterns.len(), 2);
+    }
+    let mut bad = bytes.clone();
+    bad.extend([0]);
+    assert!(loaded.save_decode(&bad).is_none());
+    for offset in [16, 20] {
+        let mut bad = bytes.clone();
+        bad[offset..offset + 4].copy_from_slice(&u32::MAX.to_le_bytes());
+        assert!(loaded.save_decode(&bad).is_none());
+    }
+    let mut bad = bytes.clone();
+    bad[24] = 255;
+    assert!(loaded.save_decode(&bad).is_none());
+    let mut bad = bytes.clone();
+    bad[24 + loaded.patterns[0].name.len()] = 9;
+    assert!(loaded.save_decode(&bad).is_none());
+    let mut legacy = b"ARK1".to_vec();
+    legacy.extend(u32::MAX.to_le_bytes());
+    legacy.extend(1001u32.to_le_bytes());
+    legacy.extend(1u32.to_le_bytes());
+    assert_eq!(
+        editor::Editor::new().save_decode(&legacy),
+        Some([u32::MAX, 1001, 1])
+    );
+    loaded.readable = false;
+    let before = loaded.save_encode(1, 2, false);
+    assert!(!loaded.editor_store());
+    assert_eq!(before, loaded.save_encode(1, 2, false));
+}
+
+#[test]
+fn editor_focus_reset_clear_confirmation_save_bounds_and_test_return_preserve_the_board() {
+    let mut game = physics::Game::new();
+    game.source_input(9, 0.0, 0.0, 101);
+    assert_eq!(game.mode, 6);
+    game.source_input(9, 0.0, 0.0, 54);
+    game.source_input(2, 20.0, 100.0, 1);
+    game.source_input(1, 50.0, 100.0, 1);
+    assert_eq!(&game.editor.cells[..3], &[6, 6, 255]);
+    game.source_input(0, 0.0, 0.0, 0);
+    game.source_input(1, 80.0, 100.0, 1);
+    assert_eq!(game.editor.cells[2], 255);
+    game.source_input(9, 0.0, 0.0, 116);
+    assert_eq!(game.mode, 1);
+    assert!(game.testing);
+    assert_eq!(game.block_type[0], 1);
+    assert_eq!(game.block_health[0], 2);
+    game.source_input(9, 0.0, 0.0, 113);
+    game.update(0);
+    assert_eq!(game.mode, 6);
+    assert!(!game.testing);
+    assert_eq!(game.editor.cells[0], 6);
+    game.source_input(9, 0.0, 0.0, 99);
+    assert!(game.editor.confirm);
+    game.source_input(9, 0.0, 0.0, 55);
+    assert!(!game.editor.confirm);
+    game.source_input(9, 0.0, 0.0, 99);
+    game.source_input(9, 0.0, 0.0, 99);
+    assert_eq!(game.editor.cells, [255; 200]);
+    let mut edit = editor::Editor::new();
+    assert!(!edit.editor_store());
+    edit.cells[0] = 1;
+    edit.name = "x".repeat(editor::SAVE_BYTES - 224);
+    assert!(edit.editor_store());
+    assert_eq!(edit.save_encode(0, 1, false).len(), editor::SAVE_BYTES);
+    edit.name.push('x');
+    assert!(!edit.editor_store());
+    assert_eq!(edit.patterns.len(), 1);
+    edit.name = "z".into();
+    assert!(!edit.editor_store());
+    assert_eq!(edit.patterns.len(), 1);
+    edit.naming = true;
+    edit.editor_event(7, 0.0, 0.0, 0x1f600);
+    assert_eq!(edit.name, "z😀");
+    edit.editor_key(8);
+    assert_eq!(edit.name, "z");
+}
+
+#[test]
+fn custom_endless_pool_matches_unchanged_original_generator_and_pattern_converter() {
+    let reference: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-custom-levels.json")).unwrap();
+    let mut patterns = Vec::new();
+    for (index, cells) in reference["patterns"].as_array().unwrap().iter().enumerate() {
+        let mut board = [255; 200];
+        for i in 0..200 {
+            board[i] = cells[i].as_u64().unwrap() as u8;
+        }
+        patterns.push(editor::Pattern {
+            name: format!("custom{index}"),
+            cells: board,
+        });
+    }
+    let mut kinds = std::collections::BTreeSet::new();
+    let mut game = physics::Game::new();
+    game.editor.patterns = patterns;
+    for fixture in reference["layouts"].as_array().unwrap() {
+        let level = fixture["level"].as_u64().unwrap() as u32;
+        game.level = level;
+        game.populate();
+        kinds.insert(levels::Recipe::with_patterns(level, 0, 3).kind);
+        let actual = levels::generate_cells(level, &game.editor.patterns);
+        for (i, cell) in actual.iter().enumerate() {
+            let expected = fixture["cells"][i].as_u64().unwrap() as u8;
+            assert_eq!(*cell, expected, "level {level}, cell {i}");
+            assert_eq!(game.blocks[i] != 0, expected != 255);
+            if expected != 255 {
+                assert_eq!(game.block_color[i], if expected < 6 { expected } else { 0 });
+                assert_eq!(
+                    game.block_type[i],
+                    if expected < 6 { 0 } else { expected - 5 }
+                );
+                assert_eq!(
+                    game.block_health[i],
+                    if expected == 6 {
+                        2
+                    } else if expected == 8 {
+                        255
+                    } else {
+                        1
+                    }
+                );
+            }
+        }
+    }
+    assert_eq!(
+        kinds.len(),
+        15,
+        "all twelve procedures and three custom selections must be covered"
+    );
+}
+
+#[test]
+fn leaving_a_paused_editor_test_cannot_turn_a_later_campaign_into_test_play() {
+    let mut game = physics::Game::new();
+    game.source_input(9, 0.0, 0.0, 101);
+    game.editor.cells[0] = 0;
+    game.source_input(9, 0.0, 0.0, 116);
+    assert!(game.testing);
+    game.source_input(5, 0.0, 0.0, 41);
+    assert_eq!(game.mode, 2);
+    game.source_input(9, 0.0, 0.0, 101);
+    assert_eq!(game.mode, 6);
+    assert!(!game.testing);
+    game.source_input(9, 0.0, 0.0, 27);
+    assert_eq!(game.mode, 0);
+    game.update(4);
+    game.blocks = [0; 200];
+    game.update(0);
+    assert_eq!(game.mode, 3);
+}
+
+#[test]
+fn editor_middle_button_release_does_not_cancel_a_left_drag() {
+    let mut edit = editor::Editor::new();
+    edit.editor_event(2, 20.0, 100.0, 1);
+    edit.editor_event(3, 20.0, 100.0, 4);
+    edit.editor_event(1, 50.0, 100.0, 1);
+    assert_eq!(&edit.cells[..3], &[0, 0, 255]);
+    edit.editor_event(3, 50.0, 100.0, 1);
+    edit.editor_event(1, 80.0, 100.0, 0);
+    assert_eq!(edit.cells[2], 255);
+}
+
+#[test]
+fn editor_toolbar_remains_usable_while_the_pattern_name_is_being_edited() {
+    let mut edit = editor::Editor::new();
+    edit.cells[0] = 3;
+    edit.naming = true;
+    edit.editor_key(115);
+    assert!(
+        edit.patterns.is_empty(),
+        "typing S must not trigger its shortcut"
+    );
+    assert_eq!(edit.editor_event(2, 150.0, 400.0, 1), 0);
+    assert_eq!(edit.patterns.len(), 1);
+    assert!(edit.naming);
+    assert_eq!(
+        edit.editor_event(2, 320.0, 400.0, 1),
+        2,
+        "the Test button must work during name editing"
+    );
+    edit.editor_event(2, 235.0, 400.0, 1);
+    assert!(edit.confirm);
+    edit.editor_event(2, 235.0, 400.0, 1);
+    assert_eq!(edit.cells, [255; 200]);
+}
+
+#[test]
+fn failed_editor_saves_roll_back_the_browser_collection_without_losing_the_working_board() {
+    let mut edit = editor::Editor::new();
+    edit.cells[0] = 6;
+    edit.editor_store();
+    edit.editor_commit(false);
+    assert!(edit.patterns.is_empty());
+    assert_eq!(edit.cells[0], 6);
+    assert!(!edit.save_requested);
+    edit.editor_store();
+    edit.editor_commit(true);
+    assert_eq!(edit.patterns.len(), 1);
+    edit.cells[0] = 8;
+    edit.editor_store();
+    edit.editor_commit(false);
+    assert_eq!(edit.patterns[0].cells[0], 6);
+    assert_eq!(edit.cells[0], 8);
+    edit.name = "other".into();
+    edit.editor_store();
+    edit.editor_commit(false);
+    assert_eq!(edit.patterns.len(), 1);
+    assert_eq!(edit.name, "other");
+}
+
+#[test]
+fn campaign_restart_keeps_saved_patterns_and_gravity_preferences() {
+    let mut game = physics::Game::new();
+    game.editor.cells[0] = 7;
+    game.editor.editor_store();
+    game.editor.editor_commit(true);
+    game.gravity = true;
+    game.best = 500;
+    game.unlocked = 12;
+    game.mode = 4;
+    game.update(4);
+    assert_eq!(game.mode, 1);
+    assert_eq!(game.editor.patterns.len(), 1);
+    assert_eq!(game.editor.patterns[0].cells[0], 7);
+    assert!(game.gravity);
+    assert_eq!((game.best, game.unlocked), (500, 12));
 }
