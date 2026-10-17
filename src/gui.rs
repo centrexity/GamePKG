@@ -429,11 +429,13 @@ impl eframe::App for App {
                             self.preview = None;
                             self.gpu = None;
                             self.vulkan = None;
-                            if !game.shader_sources.is_empty() && self.vulkan_state.is_some() {
-                                match crate::gpu_vulkan::Renderer::new(
-                                    self.vulkan_state.as_ref().unwrap(),
-                                    &game.shader_sources,
-                                ) {
+                            if let Some(state) = self
+                                .vulkan_state
+                                .as_ref()
+                                .filter(|_| !game.shader_sources.is_empty())
+                            {
+                                match crate::gpu_vulkan::Renderer::new(state, &game.shader_sources)
+                                {
                                     Ok(renderer) => {
                                         self.vulkan = Some(std::sync::Arc::new(renderer))
                                     }
