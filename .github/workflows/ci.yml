@@ -161,6 +161,9 @@ jobs:
       - name: Verify GitHub project downloads in the desktop library
         if: matrix.features == '--all-features'
         run: python3 tests/github_download.py --gui
+      - name: Verify saved list URLs, refresh and removal confirmation
+        if: matrix.features == '--all-features'
+        run: python3 tests/catalog_sources_gui.py
       - name: Verify library rejection notices and unreadable-folder recovery
         if: matrix.features == '--all-features'
         run: python3 tests/library_gui.py

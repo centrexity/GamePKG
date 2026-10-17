@@ -44,9 +44,7 @@ impl App {
                     if ui.add_enabled(self.result.is_none(),egui::Button::new("Import .gamepkglist (no game downloads)")).clicked() {
                         let source = self.source.trim().to_owned();
                         self.begin_work(move || {
-                            let downloaded;
-                            let path = if source.contains("://") { downloaded = crate::registry::download_catalog(&source)?; downloaded.path() } else { std::path::Path::new(&source) };
-                            let count = crate::catalog::import(&crate::registry::default_root()?, path)?;
+                            let count = crate::catalog::sources::import_source(&crate::registry::default_root()?, &source)?;
                             Ok(Work::Message(format!("Added {count} games to the catalog. No game packages downloaded.")))
                         });
                     }
@@ -57,6 +55,29 @@ impl App {
                         self.inspect_package(source, local);
                     }
                     ui.label(&self.status);
+                    ui.separator();
+                    ui.heading("Saved game lists");
+                    ui.label("Refresh library updates these URLs without downloading games. Lists added earlier take priority when they contain the same game.");
+                    if self.catalog_sources.is_empty() { ui.label("No saved list URLs yet. Import a list URL above to remember it."); }
+                    let mut update = None;
+                    for list in &self.catalog_sources {
+                        ui.push_id(&list.url, |ui| {
+                            ui.group(|ui| {
+                                ui.label(&list.url);
+                                ui.label(format!("{} games", list.games));
+                                ui.horizontal_wrapped(|ui| {
+                                    if ui.add_enabled(self.result.is_none(), egui::Button::new("Update list")).clicked() { update = Some(list.url.clone()); }
+                                    if ui.add_enabled(self.result.is_none(), egui::Button::new("Remove list")).clicked() { self.remove_list = Some(list.url.clone()); }
+                                });
+                            });
+                        });
+                    }
+                    if let Some(url) = update {
+                        self.begin_work(move || {
+                            let count = crate::catalog::sources::update(&crate::registry::default_root()?, &url)?;
+                            Ok(Work::Message(format!("List updated; added {count} games. No game packages downloaded.")))
+                        });
+                    }
                     if let Some(bundle) = &self.pending_store {
                         ui.separator();
                         ui.heading("Verified store bundle");
@@ -88,5 +109,21 @@ impl App {
                     }
                 });
             });
+        if let Some(url) = self.remove_list.clone() {
+            egui::Window::new("Remove saved list?").collapsible(false).resizable(false).show(ctx, |ui| {
+                ui.label(&url);
+                ui.label("Stop refreshing this URL and remove games listed only by this source? Installed games and other lists are kept.");
+                ui.horizontal(|ui| {
+                    if ui.button("Cancel").clicked() { self.remove_list = None; }
+                    if ui.add_enabled(self.result.is_none(), egui::Button::new("Confirm removal")).clicked() {
+                        self.remove_list = None;
+                        self.begin_work(move || {
+                            crate::catalog::sources::remove(&crate::registry::default_root()?, &url)?;
+                            Ok(Work::Message("List removed. Installed games kept.".into()))
+                        });
+                    }
+                });
+            });
+        }
     }
 }

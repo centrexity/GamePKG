@@ -1,12 +1,9 @@
 //! Imported catalogs are untrusted metadata, not installed packages or signer pins.
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::BTreeMap,
-    fs,
-    io::{Read, Write},
-    path::Path,
-};
+use std::{fs, io::Read, path::Path};
+pub mod sources;
+
 const MAX_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_GAMES: usize = 10000;
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
@@ -80,64 +77,18 @@ impl Catalog {
         Self::parse(&bytes)
     }
 }
-pub fn entries(root: &Path) -> Result<Vec<Entry>> {
+fn legacy_entries(root: &Path) -> Result<Vec<Entry>> {
     let path = root.join("catalog.gamepkglist");
     if !path.exists() {
         return Ok(Vec::new());
     }
     Ok(Catalog::read(&path)?.games)
 }
+pub fn entries(root: &Path) -> Result<Vec<Entry>> {
+    sources::entries(root)
+}
 pub fn import(root: &Path, path: &Path) -> Result<usize> {
-    let incoming = Catalog::read(path)?;
-    fs::create_dir_all(root)?;
-    let lock_path = root.join(".catalog-lock");
-    let handle = fs::OpenOptions::new()
-        .create_new(true)
-        .write(true)
-        .open(&lock_path)
-        .context("another catalog import is active")?;
-    struct Lock {
-        path: std::path::PathBuf,
-        handle: Option<fs::File>,
-    }
-    impl Drop for Lock {
-        fn drop(&mut self) {
-            self.handle.take();
-            let _ = fs::remove_file(&self.path);
-        }
-    }
-    let _lock = Lock {
-        path: lock_path,
-        handle: Some(handle),
-    };
-    let mut all: BTreeMap<String, Entry> = entries(root)?
-        .into_iter()
-        .map(|e| (e.id.clone(), e))
-        .collect();
-    let mut added = 0;
-    for entry in incoming.games {
-        match all.get(&entry.id) {
-            Some(existing) if existing == &entry => {}
-            Some(_) => bail!("catalog entry conflicts with existing game: {}", entry.id),
-            None => {
-                all.insert(entry.id.clone(), entry);
-                added += 1;
-            }
-        }
-    }
-    let list = Catalog {
-        format_version: 1,
-        games: all.into_values().collect(),
-    };
-    let bytes = toml::to_string(&list)?.into_bytes();
-    Catalog::parse(&bytes)?;
-    let mut staged = tempfile::NamedTempFile::new_in(root)?;
-    staged.write_all(&bytes)?;
-    staged.as_file().sync_all()?;
-    staged
-        .persist(root.join("catalog.gamepkglist"))
-        .map_err(|e| e.error)?;
-    Ok(added)
+    sources::import_local(root, Catalog::read(path)?)
 }
 pub fn fetch(
     root: &Path,

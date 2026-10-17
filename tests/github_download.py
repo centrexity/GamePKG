@@ -77,6 +77,8 @@ print('200', end='')
                               'browser_download_url': URL + '/releases/download/v1/games.gamepkglist'})
     (root / 'release.json').write_text(json.dumps(release))
     run('import-list', URL)
+    saved_lists=json.loads((root/'library/catalog-sources.json').read_text())['lists']
+    assert [item['url'] for item in saved_lists]==[URL], 'GitHub project URL was replaced with a pinned asset URL'
     assert 'Not downloaded' in run('list').stdout
     assert not list((root / 'library').glob('*.gamepkg'))
     bundle = root / 'games.gamepkgstore'

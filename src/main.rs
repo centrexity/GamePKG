@@ -447,14 +447,10 @@ fn main() -> Result<()> {
             game.finish()?;
         }
         Command::ImportList { source } => {
-            let downloaded;
-            let path = if source.contains("://") {
-                downloaded = gamepkg::registry::download_catalog(&source)?;
-                downloaded.path()
-            } else {
-                std::path::Path::new(&source)
-            };
-            let count = gamepkg::catalog::import(&gamepkg::registry::default_root()?, path)?;
+            let count = gamepkg::catalog::sources::import_source(
+                &gamepkg::registry::default_root()?,
+                &source,
+            )?;
             println!("Added {count} catalog games; no games downloaded");
         }
         Command::Download { id, trust_creator } => {
