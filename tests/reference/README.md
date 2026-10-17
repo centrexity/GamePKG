@@ -116,3 +116,32 @@ requires Rust/SDL2/Python for maintainers. SDL2 and Python are not player
 requirements; player builds use GamePKG's existing Rust toolchain and host APIs.
 This does not prove editor UI,
 original visual effects or full campaign coverage.
+
+Arkanoo procedural-level and portable seeded-stream oracle:
+
+```sh
+python3 tests/reference/arkanoo_levels.py /path/to/pinned/arkanoo --rand-source /path/to/rand-0.8.5 > tests/fixtures/arkanoo-levels.json
+cargo test --test game_arkanoo
+```
+
+The harness compiles the complete unchanged original `create_blocks` function
+with exact rand 0.8.5/rand_chacha 0.3.1/rand_core 0.6.4 dependencies. It runs on
+64-bit hosts to define canonical original layouts. Its custom-pattern loader
+returns an empty list, representing no custom patterns installed. A separate,
+explicitly modified diagnostic copy returns the first attempt to identify retry
+cases; final expected layouts always come from the unchanged original function.
+Fixtures cover all nine campaign levels and 97 procedural levels, all twelve
+types, five low-density retries, large levels and u32::MAX. Six seeds also record
+raw stream words across block boundaries, uniform integer/float values, standard
+unit floats and Bernoulli samples. Dependency versions and source hashes are
+recorded. The reference Cargo project/lockfile and build output are temporary;
+its compiler output stays outside the guest package.
+
+Production uses fixed-width scalar arithmetic and canonical 64-bit sampling so
+wasm32 and native builds produce the same layouts. No Rand crate is a guest
+dependency; the adapted helper's MIT terms and attribution ship with the port.
+The signed-runtime fixture in `tests/arkanoo.py` compares all 106 rendered boards
+on both native and Wasm targets, including exact brick coordinates. This does
+not verify custom-pattern import/selection, original editor UI, or full level
+playthroughs. Python and the original Rand dependencies are maintainer tools;
+players use the ordinary GamePKG toolchain and safe host APIs.

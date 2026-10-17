@@ -39,7 +39,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-arkanoo-',dir=PROJECT/'target')
     # depending on a long random play session. Only fixture setup is replaced.
     modes=root/'modes';shutil.copytree(PROJECT/'ports/arkanoo',modes)
     mode_manifest=modes/'manifest.toml';mode_manifest.write_text(mode_manifest.read_text().replace('com.gamepkg.arkanoo','com.gamepkg.arkanoo-modes'))
-    (modes/'source/src/lib.rs').write_text('''mod physics;mod render;use std::sync::Mutex;
+    (modes/'source/src/lib.rs').write_text('''mod levels;mod pattern_rng;mod physics;mod render;use std::sync::Mutex;
 static GAME:Mutex<Option<physics::Game>>=Mutex::new(None);
 pub fn game_tick(input:u32,state:u64)->u64 {
  if let Ok(mut slot)=GAME.lock(){
@@ -84,10 +84,22 @@ pub fn game_tick(input:u32,state:u64)->u64 {
  }state
 }''')
     run('pack',modes,'-o',root/'modes.gamepkg','--key',key);run('install',root/'modes.gamepkg','--trust-creator');run('build','com.gamepkg.arkanoo-modes')
+    layouts=root/'layouts';shutil.copytree(PROJECT/'ports/arkanoo',layouts)
+    layout_manifest=layouts/'manifest.toml';layout_manifest.write_text(layout_manifest.read_text().replace('com.gamepkg.arkanoo','com.gamepkg.arkanoo-levels'))
+    (layouts/'source/src/lib.rs').write_text('''mod levels;mod pattern_rng;mod physics;mod render;use std::sync::Mutex;
+static GAME:Mutex<Option<physics::Game>>=Mutex::new(None);
+pub fn game_tick(input:u32,state:u64)->u64 {
+ if let Ok(mut slot)=GAME.lock(){
+  if slot.is_none(){*slot=Some(physics::Game::new());}
+  if let Some(game)=slot.as_mut(){game.level=input.max(1);game.populate();game.mode=1;render::draw(game);return u64::from(game.level);}
+ }state
+}''')
+    run('pack',layouts,'-o',root/'layouts.gamepkg','--key',key);run('install',root/'layouts.gamepkg','--trust-creator');run('build','com.gamepkg.arkanoo-levels')
     probe_env=dict(env,GAMEPKG_ARKANOO_TEST_ROOT=str(root/'library'))
     subprocess.run(['cargo','test','--test','game_arkanoo_runtime','--','--ignored'],env=probe_env,check=True,timeout=120)
     run('build','com.gamepkg.arkanoo','--target','native')
     run('build','com.gamepkg.arkanoo-modes','--target','native')
+    run('build','com.gamepkg.arkanoo-levels','--target','native')
     run('integrity-check','com.gamepkg.arkanoo')
     subprocess.run(['cargo','test','--test','game_arkanoo_runtime','--','--ignored'],env=probe_env,check=True,timeout=120)
     # Real native window: locate the cyan paddle, hold movement, start, pause.

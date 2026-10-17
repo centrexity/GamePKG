@@ -294,3 +294,45 @@ fn special_bricks_ice_damage_and_world_radius_blasts_reach_real_renderers() {
         "special bricks exceeded drawing limits"
     );
 }
+
+#[test]
+#[ignore = "requires the production-layout fixture prepared by tests/arkanoo.py"]
+fn original_layouts_match_in_native_and_32_bit_wasm_through_the_real_renderer() {
+    let reference: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-levels.json")).unwrap();
+    let root = isolated_library();
+    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-levels").unwrap();
+    for fixture in reference["layouts"].as_array().unwrap() {
+        let level = fixture["level"].as_u64().unwrap();
+        assert_eq!(game.step(level as u32).unwrap(), level);
+        let mut actual = [0u8; 200];
+        for command in &game.frame().commands {
+            if let Command::Rect {
+                x,
+                y,
+                width,
+                height,
+                ..
+            } = command
+            {
+                if *width == 30.0 && *height == 10.0 {
+                    let col = ((*x - 20.0) / 30.0) as usize;
+                    let row = ((*y - 100.0) / 10.0) as usize;
+                    assert!(col < 20 && row < 10);
+                    assert_eq!(
+                        (*x, *y),
+                        (20.0 + col as f32 * 30.0, 100.0 + row as f32 * 10.0)
+                    );
+                    assert_eq!(actual[row * 20 + col], 0);
+                    actual[row * 20 + col] = 1;
+                }
+            }
+        }
+        for (actual, expected) in actual
+            .iter()
+            .zip(fixture["cells"].as_str().unwrap().bytes())
+        {
+            assert_eq!(*actual, expected - b'0', "level {level}");
+        }
+    }
+}

@@ -18,17 +18,22 @@ mod gamepkg {
             })
     }
 }
+#[path = "../ports/arkanoo/source/src/levels.rs"]
+mod levels;
+#[path = "../ports/arkanoo/source/src/pattern_rng.rs"]
+mod pattern_rng;
 #[path = "../ports/arkanoo/source/src/physics.rs"]
 mod physics;
 #[test]
 fn campaign_and_endless_are_nonempty() {
+    assert_eq!(
+        levels::generate(0),
+        [1; 200],
+        "original level-zero fallback"
+    );
     for level in 1..30 {
-        let mut count = 0;
-        for row in 0..10 {
-            for col in 0..20 {
-                count += physics::pattern(level, row, col) as usize;
-            }
-        }
+        let blocks = levels::generate(level);
+        let count = blocks.iter().filter(|cell| **cell != 0).count();
         assert!(count >= 20, "level {level}: {count}");
     }
 }
@@ -1056,4 +1061,95 @@ fn invalid_editor_brick_types_and_indices_do_not_change_the_level() {
     assert_eq!(game.blocks, blocks);
     assert_eq!(game.block_type, types);
     assert_eq!(game.block_health, health);
+}
+
+#[test]
+fn scalar_pattern_rng_matches_pinned_original_rand_streams_and_distributions() {
+    let reference: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-levels.json")).unwrap();
+    for fixture in reference["rng"].as_array().unwrap() {
+        let seed = fixture["seed"].as_u64().unwrap();
+        let mut rng = pattern_rng::Rng::new(seed);
+        for expected in fixture["words"].as_array().unwrap() {
+            assert_eq!(
+                rng.next_u32(),
+                expected.as_u64().unwrap() as u32,
+                "seed {seed}"
+            );
+        }
+        let mut rng = pattern_rng::Rng::new(seed);
+        for (index, expected) in fixture["ranges"].as_array().unwrap().iter().enumerate() {
+            let (low, high) = [(0, 12), (2, 5), (0, 3), (2, 6)][index % 4];
+            assert_eq!(
+                rng.range(low, high),
+                expected.as_u64().unwrap(),
+                "seed {seed}, range {index}"
+            );
+        }
+        let mut rng = pattern_rng::Rng::new(seed);
+        for (index, expected) in fixture["floats"].as_array().unwrap().iter().enumerate() {
+            let (low, high) = [(0.6, 0.8), (-0.3, 0.3), (1.5, 3.0)][index % 3];
+            assert_eq!(
+                rng.float(low, high).to_bits(),
+                expected.as_u64().unwrap() as u32,
+                "seed {seed}, float {index}"
+            );
+        }
+        let mut rng = pattern_rng::Rng::new(seed);
+        for expected in fixture["units"].as_array().unwrap() {
+            assert_eq!(
+                rng.unit().to_bits(),
+                expected.as_u64().unwrap() as u32,
+                "seed {seed}"
+            );
+        }
+        let mut rng = pattern_rng::Rng::new(seed);
+        for expected in fixture["booleans"].as_array().unwrap() {
+            assert_eq!(
+                u8::from(rng.sixty_percent()),
+                expected.as_u64().unwrap() as u8,
+                "seed {seed}"
+            );
+        }
+    }
+}
+
+#[test]
+fn original_campaign_and_all_twelve_procedural_layouts_match_complete_generator() {
+    let reference: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-levels.json")).unwrap();
+    assert_eq!(reference["canonical_pointer_bits"], 64);
+    let mut kinds = std::collections::BTreeSet::new();
+    let mut retries = 0;
+    for fixture in reference["layouts"].as_array().unwrap() {
+        let level = fixture["level"].as_u64().unwrap() as u32;
+        let actual = levels::generate(level);
+        let expected = fixture["cells"].as_str().unwrap().as_bytes();
+        assert_eq!(expected.len(), 200);
+        for index in 0..200 {
+            assert_eq!(
+                actual[index],
+                expected[index] - b'0',
+                "level {level}, row {}, col {}",
+                index / 20,
+                index % 20
+            );
+        }
+        if level >= 10 {
+            kinds.insert(levels::Recipe::new(level, 0).kind);
+        }
+        if fixture["first_attempt_count"].as_u64().unwrap() < 20 {
+            retries += 1;
+            assert!(actual.iter().filter(|cell| **cell != 0).count() >= 20);
+        }
+    }
+    assert_eq!(kinds.len(), 12);
+    assert!(retries > 0, "no low-density retry was tested");
+    gamepkg::samples(&[100]);
+    let _ = levels::generate(1000);
+    assert_eq!(
+        physics::below(100),
+        0,
+        "layout generation consumed play randomness"
+    );
 }
