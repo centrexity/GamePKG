@@ -1076,7 +1076,10 @@ impl eframe::App for App {
                     self.preview = None;
                 }
                 if ui
-                    .add_enabled(self.result.is_none(), egui::Button::new("Settings"))
+                    .add_enabled(
+                        self.result.is_none(),
+                        egui::SelectableLabel::new(self.show_settings, "Settings"),
+                    )
                     .clicked()
                 {
                     self.show_add = false;
