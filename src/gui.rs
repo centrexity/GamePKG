@@ -83,6 +83,7 @@ pub struct App {
     next_frame: Option<std::time::Instant>,
     pending_input: u32,
     input_devices: input::Devices,
+    keyboard: input::Keyboard,
     audio_player: Option<crate::audio::Player>,
     audio_error: String,
     status: String,
@@ -684,6 +685,7 @@ impl eframe::App for App {
         }
         if self.player.is_none() {
             self.input_devices.reset();
+            self.keyboard.reset();
             self.doom_desktop = Default::default();
             self.cube_desktop = Default::default();
             self.sprite_textures.finish(0);
@@ -692,7 +694,7 @@ impl eframe::App for App {
             let mut image_count = 0;
             let mut failure = None;
             let select_input = ctx.input(|i| {
-                u32::from(i.key_pressed(egui::Key::Tab)) << 7
+                u32::from(input::key_edge(i, egui::Key::Tab)) << 7
                     | u32::from(i.key_down(egui::Key::Tab)) << 15
             });
             if game.builtin_engine && !game.is_cube2() {
@@ -714,50 +716,7 @@ impl eframe::App for App {
             egui::CentralPanel::default()
                 .frame(egui::Frame::NONE.fill(egui::Color32::BLACK))
                 .show(ctx, |ui| {
-                    let input = ctx.input(|i| {
-                        (u32::from(i.key_down(egui::Key::ArrowLeft) || i.key_down(egui::Key::A))
-                            << 8)
-                            | (u32::from(
-                                i.key_down(egui::Key::ArrowRight) || i.key_down(egui::Key::D),
-                            ) << 9)
-                            | (u32::from(
-                                i.key_down(egui::Key::ArrowUp) || i.key_down(egui::Key::W),
-                            ) << 10)
-                            | (u32::from(
-                                i.key_down(egui::Key::ArrowDown) || i.key_down(egui::Key::S),
-                            ) << 11)
-                            | u32::from(
-                                i.key_pressed(egui::Key::ArrowLeft) || i.key_pressed(egui::Key::A),
-                            )
-                            | (u32::from(
-                                i.key_pressed(egui::Key::ArrowRight) || i.key_pressed(egui::Key::D),
-                            ) << 1)
-                            | (u32::from(
-                                i.key_pressed(egui::Key::ArrowUp) || i.key_pressed(egui::Key::W),
-                            ) << 2)
-                            | (u32::from(
-                                i.key_pressed(egui::Key::ArrowDown) || i.key_pressed(egui::Key::S),
-                            ) << 3)
-                    });
-                    let input = input
-                        | select_input
-                        | ctx.input(|i| {
-                            let mut buttons = 0u32;
-                            for (key, press, held) in [
-                                (egui::Key::Z, 4, 12),
-                                (egui::Key::X, 5, 13),
-                                (egui::Key::Enter, 6, 14),
-                                (egui::Key::Tab, 7, 15),
-                                (egui::Key::C, 16, 20),
-                                (egui::Key::V, 17, 21),
-                                (egui::Key::Q, 18, 22),
-                                (egui::Key::E, 19, 23),
-                            ] {
-                                buttons |= u32::from(i.key_pressed(key)) << press;
-                                buttons |= u32::from(i.key_down(key)) << held;
-                            }
-                            buttons
-                        });
+                    let input = select_input | ctx.input(|i| self.keyboard.poll(i));
                     let device_input = self.input_devices.poll(ui);
                     let input = if ctx.input(|i| i.focused) {
                         input | device_input

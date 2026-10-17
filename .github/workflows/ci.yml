@@ -57,6 +57,8 @@ jobs:
         run: node tests/web_path_attacks.mjs
       - name: Verify browser random-value imports
         run: node tests/web_randomness.mjs
+      - name: Verify browser keyboard edges and shared bindings
+        run: node tests/web_keyboard.mjs
       - name: Test support links and clipboard behavior
         run: node tests/support_page.mjs
       - name: Lint

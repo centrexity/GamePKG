@@ -1,8 +1,25 @@
 const canvas=document.querySelector('#game'),context=canvas.getContext('2d'),status=document.querySelector('#status'),play=document.querySelector('#play'),stop=document.querySelector('#stop'),restart=document.querySelector('#restart');
 let data,wasm,worker,timer,frameTimer,pressed=0,held=0,roms=[],running=false,saveKey,historyKey,lastFrame=0,audioContext,audioGain,audioNext=0,muted=false,audioNodes=new Set(),shaderSurface,gl,programs=[],texture;
 const keys={ArrowLeft:1,a:1,ArrowRight:2,d:2,ArrowUp:4,w:4,ArrowDown:8,s:8,z:16,x:32,Enter:64,Tab:128,c:65536,v:131072,q:262144,e:524288};
+const heldKeys=new Map();
+function resetKeyboard(){heldKeys.clear();held=pressed=0;}
+function keyboardDown(event){
+ const bit=keys[event.key]??keys[event.key.toLowerCase()];
+ if(!bit)return;
+ event.preventDefault();
+ const id=event.code||event.key.toLowerCase();
+ if(event.repeat||heldKeys.has(id))return;
+ if(!(held&bit))pressed|=bit;
+ heldKeys.set(id,bit);held|=bit;
+}
+function keyboardUp(event){
+ const id=event.code||event.key.toLowerCase();
+ if(!heldKeys.has(id))return;
+ event.preventDefault();heldKeys.delete(id);held=0;
+ for(const bit of heldKeys.values())held|=bit;
+}
 function color(rgba){return `rgba(${rgba>>>24},${rgba>>>16&255},${rgba>>>8&255},${(rgba&255)/255})`;}
-function halt(message){for(const node of audioNodes){try{node.stop();}catch{}}audioNodes.clear();audioNext=0;clearTimeout(timer);clearTimeout(frameTimer);worker?.terminate();worker=null;running=false;held=pressed=0;play.disabled=false;stop.disabled=true;restart.disabled=true;status.textContent=message;}
+function halt(message){for(const node of audioNodes){try{node.stop();}catch{}}audioNodes.clear();audioNext=0;clearTimeout(timer);clearTimeout(frameTimer);worker?.terminate();worker=null;running=false;resetKeyboard();play.disabled=false;stop.disabled=true;restart.disabled=true;status.textContent=message;}
 function watch(delay){clearTimeout(timer);const active=worker;timer=setTimeout(()=>{if(worker===active)halt('Game stopped: execution deadline exceeded.');},delay);}
 function stored(key,fallback){try{return JSON.parse(localStorage.getItem(key))??fallback;}catch{return fallback;}}
 function persist(key,value){try{localStorage.setItem(key,JSON.stringify(value));}catch{status.textContent='Browser storage is unavailable; progress may not persist.';}}
@@ -40,11 +57,11 @@ async function start(){
  let saved=stored(saveKey,[]);if(!Array.isArray(saved)||saved.length>1048576||saved.some(v=>!Number.isInteger(v)||v<0||v>255))saved=[];
  worker.postMessage({type:'start',wasm,manifest:data.manifest,assets:data.assets,shaderCount:(data.shaders||[]).length,roms,save:saved});
 }
-canvas.addEventListener('keydown',event=>{const bit=keys[event.key]??keys[event.key.toLowerCase()];if(bit){event.preventDefault();if(!(held&bit))pressed|=bit;held|=bit;}});
-canvas.addEventListener('keyup',event=>{const bit=keys[event.key]??keys[event.key.toLowerCase()];if(bit){event.preventDefault();held&=~bit;}});
-window.addEventListener('blur',()=>{held=pressed=0;});
+canvas.addEventListener('keydown',keyboardDown);
+canvas.addEventListener('keyup',keyboardUp);
+window.addEventListener('blur',resetKeyboard);
 document.querySelector('#mute').onclick=()=>{muted=!muted;if(audioGain)audioGain.gain.value=muted?0:.5;document.querySelector('#mute').textContent=muted?'Unmute':'Mute';document.querySelector('#mute').setAttribute('aria-pressed',String(muted));};
-play.onclick=start;restart.onclick=()=>{if(running&&worker){held=pressed=0;worker.postMessage({type:'restart'});}};stop.onclick=()=>halt('Stopped');
+play.onclick=start;restart.onclick=()=>{if(running&&worker){resetKeyboard();worker.postMessage({type:'restart'});}};stop.onclick=()=>halt('Stopped');
 try{
  const response=await fetch('game.json',{cache:'no-store'});if(!response.ok)throw Error('Missing export metadata');data=await response.json();if(data.format_version!==1)throw Error('Unsupported web export');
  const binary=await fetch('game.wasm',{cache:'no-store'});if(!binary.ok)throw Error('Missing compiled game');wasm=await binary.arrayBuffer();

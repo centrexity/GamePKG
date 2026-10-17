@@ -87,6 +87,13 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-web-export-') as temporary:
             canvas.send_keys(Keys.ARROW_LEFT);time.sleep(.15);assert saved_board()==fixture
             canvas.screenshot(str(win_proof/('2048-component-game-over.png' if args.component else '2048-game-over.png')))
             canvas.send_keys(Keys.ENTER);wait.until(lambda b:sum(cell!=0 for cell in saved_board()[24:40])==2)
+            # Assistance follows the same saved-board path as manual turns;
+            # autoplay must stop immediately when toggled off.
+            canvas.send_keys('x');wait.until(lambda b:len(saved_board())>=80)
+            assisted=saved_board();time.sleep(.15);assert saved_board()==assisted
+            canvas.send_keys('v');wait.until(lambda b:int.from_bytes(bytes(saved_board()[16:20]),'little')>=3)
+            canvas.send_keys('v');stopped_auto=saved_board();time.sleep(.2);assert saved_board()==stopped_auto
+            canvas.send_keys('z');wait.until(lambda b:len(saved_board())<len(stopped_auto))
             proof=PROJECT/'target/web-export-proof';proof.mkdir(parents=True,exist_ok=True);browser.execute_script('window.scrollTo(0,0)');browser.save_screenshot(str(proof/('2048-component-playing.png' if args.component else '2048-playing.png')))
             browser.find_element(By.ID,'stop').click();state=canvas.get_attribute('data-state');time.sleep(.1);assert canvas.get_attribute('data-state')==state
             assert browser.find_element(By.ID,'status').text=='Stopped'

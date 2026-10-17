@@ -109,6 +109,12 @@ pub fn game_tick(input: u32, state: u64) -> u64 {
 
 `pressed` detects newly pressed buttons; `held` detects continuing presses. Constants are `LEFT`, `RIGHT`, `UP`, `DOWN`, `A`, `B`, `X`, `Y`, `L`, `R`, `START`, and `SELECT`. These are digital controls; this API does not expose raw touch coordinates, pressure, controller identities, or analog values to games.
 
+Keyboard press bits ignore OS key repeat. If two keyboard bindings share an
+action (such as Left and A), it stays held until both are released and pressing
+the second binding does not create another edge. A quick press/release within
+one frame still supplies a press bit. Browser exports use the same behavior and
+held-bit layout as the desktop app; losing focus clears pending keyboard input.
+
 The desktop host uses pinned `gilrs 0.10.10` for Linux/Windows controller input and the existing `egui 0.31.1` input layer for touch. These are host dependencies, not allowed guest dependencies: games cannot open devices or windows. D-pad and the left stick map to directions with a deadzone; face buttons map by position (south=B, west=Y, east=A, north=X). Shoulder buttons, Start and Select map to their names. Multiple connected controllers contribute to the same input. The game window contains only the game. Invisible touch regions occupy the bottom third of its client area, in twelve equal columns from left to right: Left, Right, Up, Down, B, Y, A, X, L, R, Start, Select. Movement and action buttons can be held simultaneously. Losing window focus clears device input. Android controller device access and an Android GUI are not supplied by this desktop integration.
 
 ## Source restrictions

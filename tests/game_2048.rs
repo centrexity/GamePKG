@@ -263,3 +263,119 @@ fn maximum_history_and_mutated_saves_remain_bounded_and_canonical() {
     too_many[16] = 129;
     assert!(Game::decode(&too_many).is_none());
 }
+
+mod solver {
+    include!("../ports/2048/source/src/solver.rs");
+}
+mod model {
+    pub use super::adapted::model::*;
+}
+fn solved(board: [u8; 16], chunk: u32) -> (Option<u32>, Option<f32>) {
+    let mut search = solver::Search::new(board);
+    assert_eq!(search.board, board);
+    let mut frames = 0;
+    while !search.done() {
+        search.advance(chunk);
+        frames += 1;
+        assert!(frames < 100000, "cooperative search did not finish");
+    }
+    (search.chosen_move(), search.evaluation_score())
+}
+#[test]
+fn solver_finishes_cooperatively_and_keeps_ties_legality_and_original_depth() {
+    let board = cells(0x0001000000000010);
+    assert_eq!(solver::search_depth(&board), 3);
+    let result = solved(board, 512);
+    assert_eq!(result, solved(board, 1));
+    assert_eq!(result, solved(board, 37));
+    let direction = result.0.unwrap();
+    assert_ne!(slide(&board, direction).0, board);
+    let lost = [1, 2, 1, 2, 2, 1, 2, 1, 1, 2, 1, 2, 2, 1, 2, 1];
+    assert_eq!(solved(lost, 1), (None, None));
+    assert_eq!(solver::row_value(&[0, 0, 0, 0]), 800.0);
+    assert_eq!(solver::row_value(&[1, 1, 1, 1]), 1500.0);
+    let high = [15, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 0];
+    assert_eq!(solver::search_depth(&high), 15);
+}
+
+#[test]
+fn solver_and_evaluator_match_the_pinned_original_executable() {
+    let reference: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/2048-solver.json")).unwrap();
+    assert_eq!(
+        reference["revision"],
+        "9e972c43e51b153f66b31a08c37eee140a0d2e57"
+    );
+    for fixture in reference["fixtures"].as_array().unwrap() {
+        let mut board = [0u8; 16];
+        for (index, value) in fixture["cells"].as_array().unwrap().iter().enumerate() {
+            board[index] = value.as_u64().unwrap() as u8;
+        }
+        assert_eq!(
+            solver::evaluate(&board),
+            fixture["evaluation"].as_f64().unwrap() as f32
+        );
+        let expected = fixture["direction"].as_u64().map(|value| value as u32);
+        assert_eq!(solved(board, 512).0, expected, "board {board:?}");
+    }
+}
+
+#[test]
+fn original_adaptive_depth_tiers_and_random_stream_are_preserved() {
+    for (maximum, expected) in [(11, 7), (12, 10), (13, 11), (14, 13), (15, 15), (16, 16)] {
+        let mut board = [0u8; 16];
+        for value in 1..=maximum {
+            board[(value - 1) as usize] = value;
+        }
+        assert_eq!(solver::search_depth(&board), expected);
+    }
+    adapted::gamepkg::samples(&[10, 16]);
+    solved(cells(0x11), 512);
+    let mut empty = [0; 16];
+    spawn(&mut empty);
+    assert_eq!(empty[0], 2, "solver consumed spawning randomness");
+}
+
+#[test]
+#[ignore = "long deterministic full-game solver exercise"]
+fn deterministic_solver_game_reaches_a_real_win_or_game_over() {
+    let mut game = Game::new(0);
+    for turn in 0..10000 {
+        if game.won() || game.over() {
+            let maximum = game.position.cells.iter().copied().max().unwrap();
+            println!(
+                "Finished after {turn} turns: score {}, maximum tile {}, won {}",
+                game.position.score,
+                1u64 << maximum,
+                game.won()
+            );
+            assert!(turn > 10);
+            assert!(game.position.score > 0);
+            let restored = Game::decode(&game.encode()).unwrap();
+            assert_eq!(restored.position, game.position);
+            return;
+        }
+        let before = game.position.cells;
+        let direction = solved(before, 512).0.expect("solver skipped a legal move");
+        let previous_score = game.position.score;
+        game.update(1 << direction);
+        assert_ne!(game.position.cells, before);
+        assert!(game.position.score >= previous_score);
+        let mass = |cells: &[u8; 16]| {
+            cells
+                .iter()
+                .filter(|value| **value != 0)
+                .map(|value| 1u64 << value)
+                .sum::<u64>()
+        };
+        assert!([2, 4].contains(&(mass(&game.position.cells) - mass(&before))));
+        if turn % 25 == 0 {
+            println!(
+                "Turn {turn}: score {}, maximum tile {}",
+                game.position.score,
+                1u64 << game.position.cells.iter().copied().max().unwrap()
+            );
+        }
+    }
+    panic!("full deterministic game did not finish");
+}

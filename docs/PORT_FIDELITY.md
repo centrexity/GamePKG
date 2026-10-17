@@ -13,7 +13,7 @@ work stays open until behavior is verified.
 | DOOM | Original WAD music, spatial stereo effects, six save slots, configuration, desktop controls and the original quit/ENDOOM flow are runtime verified. Music backend selection, multiplayer, additional WADs/mods and broader control/platform coverage remain unfinished. |
 | Zelda3 | External MSU music, replay tools, save states, widescreen, language selection and desktop enhancement settings need support. The adapter fixes the view to 256×224. Original DSP stereo is verified in native and Wasm gameplay/save tests. |
 | Arkanoo | Editor, mouse controls, original menus/music and portal/gravity mechanics are omitted. Art, effects and endless generation are replacements. Current runs do not persist; high score and unlocked level do. |
-| 2048 | Random spawning, merge scoring/best score, win/continue/game-over UI, restart, 128-step undo and persistent boards/history are implemented and tested. Byte-sized tile exponents remove the old 32768 cap. Solver assistance and autoplay remain missing; longer gameplay and final signed-package delivery remain open. |
+| 2048 | Random spawning, merge scoring/best score, win/continue/game-over UI, restart, 128-step undo and persistent boards/history are implemented and tested. Byte-sized tile exponents remove the old 32768 cap. Cooperative expectimax assistance/autoplay matches independent upstream reference fixtures; a deterministic 932-turn game reaches 2048. Final signed-package delivery and broader platform verification remain open. |
 
 Evidence: [README coverage table](../README.md#port-feature-coverage),
 [DOOM adapter](../engines/doom/adapters/engine.c),

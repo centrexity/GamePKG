@@ -2,6 +2,71 @@
 use crate::input_buttons as buttons;
 use eframe::egui;
 
+pub fn key_edge(input: &egui::InputState, key: egui::Key) -> bool {
+    input.events.iter().any(|event| matches!(event,egui::Event::Key {key:actual,pressed:true,repeat:false,..} if *actual==key))
+}
+#[derive(Default)]
+pub struct Keyboard {
+    keys: std::collections::HashMap<egui::Key, u32>,
+}
+fn key_button(key: egui::Key) -> u32 {
+    use egui::Key::*;
+    match key {
+        ArrowLeft | A => buttons::LEFT,
+        ArrowRight | D => buttons::RIGHT,
+        ArrowUp | W => buttons::UP,
+        ArrowDown | S => buttons::DOWN,
+        Z => buttons::B,
+        X => buttons::Y,
+        Enter => buttons::START,
+        Tab => buttons::SELECT,
+        C => buttons::A,
+        V => buttons::X,
+        Q => buttons::L,
+        E => buttons::R,
+        _ => 0,
+    }
+}
+impl Keyboard {
+    pub fn reset(&mut self) {
+        self.keys.clear();
+    }
+    pub fn poll(&mut self, input: &egui::InputState) -> u32 {
+        if !input.focused {
+            self.reset();
+            return 0;
+        }
+        let mut pressed = 0;
+        for event in &input.events {
+            if let egui::Event::Key {
+                key,
+                physical_key,
+                pressed: down,
+                repeat: false,
+                ..
+            } = event
+            {
+                let id = physical_key.unwrap_or(*key);
+                if *down {
+                    let bit = key_button(*key);
+                    if bit == 0 || self.keys.contains_key(&id) {
+                        continue;
+                    }
+                    let previously_down = self.keys.values().any(|held| *held == bit);
+                    self.keys.insert(id, bit);
+                    if !previously_down {
+                        pressed |= bit;
+                    }
+                } else {
+                    self.keys.remove(&id);
+                }
+            }
+        }
+        let held = self.keys.values().fold(0, |mask, bit| mask | *bit);
+        pressed | buttons::held_bits(held)
+    }
+}
+
 #[derive(Default)]
 pub struct Devices {
     #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
@@ -248,5 +313,91 @@ mod tests {
         assert_eq!(stick(f32::NAN, f32::NAN), 0);
         assert_eq!(stick(-1.0, 1.0), buttons::LEFT | buttons::UP);
         assert_eq!(stick(1.0, -1.0), buttons::RIGHT | buttons::DOWN);
+    }
+}
+
+#[cfg(test)]
+mod keyboard_tests {
+    use super::*;
+    fn event(key: egui::Key, pressed: bool, repeat: bool) -> egui::Event {
+        egui::Event::Key {
+            key,
+            physical_key: Some(key),
+            pressed,
+            repeat,
+            modifiers: egui::Modifiers::default(),
+        }
+    }
+    fn frame(
+        ctx: &egui::Context,
+        keyboard: &mut Keyboard,
+        events: Vec<egui::Event>,
+        focused: bool,
+    ) -> u32 {
+        let raw = egui::RawInput {
+            events,
+            focused,
+            ..Default::default()
+        };
+        let mut result = 0;
+        let _ = ctx.run(raw, |ctx| result = ctx.input(|input| keyboard.poll(input)));
+        result
+    }
+    #[test]
+    fn physical_edges_ignore_repeat_and_keep_shared_bindings_down_until_all_release() {
+        let ctx = egui::Context::default();
+        let mut keyboard = Keyboard::default();
+        use egui::Key::*;
+        assert_eq!(
+            frame(
+                &ctx,
+                &mut keyboard,
+                vec![event(ArrowLeft, true, false)],
+                true
+            ),
+            1 | 256
+        );
+        assert_eq!(
+            frame(
+                &ctx,
+                &mut keyboard,
+                vec![event(ArrowLeft, true, true)],
+                true
+            ),
+            256
+        );
+        assert_eq!(
+            frame(&ctx, &mut keyboard, vec![event(A, true, false)], true),
+            256
+        );
+        assert_eq!(
+            frame(
+                &ctx,
+                &mut keyboard,
+                vec![event(ArrowLeft, false, false)],
+                true
+            ),
+            256
+        );
+        assert_eq!(
+            frame(&ctx, &mut keyboard, vec![event(A, false, false)], true),
+            0
+        );
+        assert_eq!(
+            frame(
+                &ctx,
+                &mut keyboard,
+                vec![event(X, true, false), event(X, false, false)],
+                true
+            ),
+            32
+        );
+        assert_eq!(frame(&ctx, &mut keyboard, vec![], true), 0);
+        assert_eq!(
+            frame(&ctx, &mut keyboard, vec![event(C, true, false)], true),
+            65536 | 1048576
+        );
+        assert_eq!(frame(&ctx, &mut keyboard, vec![], false), 0);
+        assert_eq!(frame(&ctx, &mut keyboard, vec![], true), 0);
     }
 }

@@ -38,6 +38,30 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-2048-gui-') as temporary:
         assert tiles>10000,tiles
         changed=sum(1 for pixel in ImageChops.difference(first,second).getdata() if max(pixel)>30)
         assert changed>1000,changed
+        saved_path=next((root/'library/saves').glob('*.blob'))
+        def turns():return int.from_bytes(saved_path.read_bytes()[16:20],'little')
+        def wait_turns(count):
+            deadline=time.monotonic()+15
+            while turns()<count:
+                assert app.poll() is None,'Native game exited while thinking'
+                assert time.monotonic()<deadline,'Native solver did not finish'
+                time.sleep(.03)
+        previous=turns()
+        subprocess.run(['xdotool','windowfocus',window,'keydown','x'],env=env,check=True)
+        wait_turns(previous+1)
+        time.sleep(1.1)
+        assert turns()==previous+1,'OS key repeat requested extra solver moves'
+        subprocess.run(['xdotool','keyup','x'],env=env,check=True)
+        subprocess.run(['xdotool','key','--window',window,'v'],env=env,check=True)
+        wait_turns(previous+3)
+        subprocess.run(['xdotool','key','--window',window,'v'],env=env,check=True)
+        time.sleep(.15);paused=saved_path.read_bytes();time.sleep(.25)
+        assert saved_path.read_bytes()==paused,'Native autoplay did not stop'
+        subprocess.run(['xdotool','key','--window',window,'z'],env=env,check=True)
+        deadline=time.monotonic()+5
+        while len(saved_path.read_bytes())>=len(paused):
+            assert time.monotonic()<deadline,'Native undo did not cancel assistance'
+            time.sleep(.03)
         app.terminate();app.wait(timeout=10)
         app=subprocess.Popen([str(Path(os.environ.get('GAMEPKG_TEST_BINARY_DIR',PROJECT/'target/release'))/'gamepkg-gui')],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
         deadline=time.monotonic()+15
@@ -60,7 +84,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-2048-gui-') as temporary:
             time.sleep(.1)
         assert len(exported)==1
         assert (exported[0].parent/'source.gamepkg').is_file()
-        print('Native 2048 GUI passed: visible tiles, keyboard board changes and the web export button.')
+        print('Native 2048 GUI passed: visible tiles, keyboard board changes, solver assistance, autoplay stop, undo and the web export button.')
     finally:
         if app is not None:
             app.terminate()

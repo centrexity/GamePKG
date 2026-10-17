@@ -437,7 +437,7 @@ product decisions before claiming full parity.
 | DOOM | Original WAD music, spatial stereo effects, all six original save slots and configuration persistence now work. Original desktop keyboard/mouse input, saved bindings and the quit/ENDOOM flow pass native, Wasm and desktop GUI checks. Music backend selection and broader control/platform coverage remain unfinished. Multiplayer and extra WAD/mod loading are absent. | `engines/doom/adapters/engine.c`, `engines/doom/README.md` |
 | Zelda3 | Normal ROM-based SPC/DSP music and SRAM are supported. External MSU music is disabled; the desktop replay logger is removed. The adapter fixes the view to 256×224, disables extra side area, selects the default language and supplies no desktop configuration UI. Desktop enhancements, replay/save-state tools and alternate resource sets need individual support and tests. | `engines/zelda3/adapters/engine.c`, `engines/zelda3/upstream/src/config.h` |
 | Arkanoo | The upstream editor, mouse controls, menus, portal/gravity effects and music are omitted. Art, effects and endless level generation are replacements. Only high score/unlocked level persist, not the current run. | `ports/arkanoo/CREDITS.md`, `ports/arkanoo/source/src/lib.rs` |
-| 2048 | Original movement/spawn rules, merge scoring/best score, win/continue/game-over UI, restart, 128-step undo and saved board/history are supported. Tiles can merge beyond 32768. Solver assistance/autoplay and deeper gameplay/delivery checks remain unfinished. | `ports/2048/source/src/model.rs`, `ports/2048/CREDITS.md`, `tests/game_2048.rs`, `tests/game_2048_play.rs` |
+| 2048 | Original movement/spawn rules, merge scoring/best score, win/continue/game-over UI, restart, 128-step undo and saved board/history are supported. Tiles can merge beyond 32768. Cooperative expectimax assistance/autoplay matches pinned upstream reference decisions; one full deterministic game reaches 2048. Final signed-package delivery and broader platform checks remain open. | `ports/2048/source/src/model.rs`, `ports/2048/CREDITS.md`, `tests/game_2048.rs`, `tests/game_2048_play.rs` |
 
 Cube 2, Zelda and DOOM now preserve stereo through their engine bridges and
 shared host output. Zelda and DOOM pass native and Wasm channel-separation and
@@ -445,7 +445,7 @@ actual gameplay/save-reload tests. DOOM's mixer follows the original quadratic
 separation curve; its original attract demo also verifies spatial sound.
 
 Next priorities include remaining Cube 2 input/platform behavior and controller/touch
-equivalence; DOOM music backend selection; and 2048 solver assistance/autoplay.
+equivalence; DOOM music backend selection; and final 2048 package delivery/platform checks.
 Arkanoo's omitted mechanics and Zelda's optional desktop enhancements require
 separate feature work. Keep tests for supported paths, add a regression for each
 restored feature, and test full campaigns and cross-version saves independently.
