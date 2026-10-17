@@ -54,6 +54,25 @@ collision logic. Minimal stand-ins record particle counts and ignore audio.
 Seven cases cover overlap, strict touching boundaries, exact coincidences,
 multiple simultaneous pairs, portal exclusion and diagonal distance. Fixtures
 use original top-left coordinates; tests convert to half-scale ball centers.
-The oracle proves contact responses, not full world geometry, collision ordering
+The contact oracle proves contact responses, not full world geometry, collision ordering
 or particle rendering/lifetime parity. The Python script is a maintainer tool;
 players do not need Python.
+
+Arkanoo world and paddle oracles:
+
+```sh
+python3 tests/reference/arkanoo_world.py /path/to/pinned/arkanoo > tests/fixtures/arkanoo-world.json
+cargo test --test game_arkanoo
+```
+
+This compiles the unchanged original `Ball::update` and complete `Paddle` code.
+Unattached ball trajectories cover wall clamps, the bottom loss boundary,
+minimum horizontal velocity, spin and both gravity directions/speeds. Paddle
+sequences cover movement, per-direction edge clamping, repeated long bonuses,
+center preservation, velocity history, expiry and ghost timers. A minimal SDL
+rectangle wrapper calls the actual system `SDL_IntersectRect` to record integer
+edge-contact behavior. The unchanged original brick-resolution fragment is also
+compiled against SDL intersections for all four sides, corner ties, fractional
+coordinates, strict misses and ghost pass-through. Regenerating this maintainer fixture needs SDL2 development
+libraries and Rust; players need neither SDL2 nor Python. Rendering, launch RNG,
+attached-ball timing and other full-game transitions need separate coverage.

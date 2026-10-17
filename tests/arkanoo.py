@@ -49,9 +49,16 @@ pub fn game_tick(input:u32,state:u64)->u64 {
     game.balls.push(physics::Ball{x:100.0,y:250.0,vx:1.0,vy:2.0,spin:0.0,attached:false});
     game.balls.push(physics::Ball{x:104.0,y:250.0,vx:-1.0,vy:-2.0,spin:0.0,attached:false});
    }
+   if input&1024!=0 {game.portal=false;game.gravity=false;game.max_speed=0.0;game.mode=1;game.blocks=[0;200];game.blocks[0]=1;game.balls.clear();game.balls.push(physics::Ball{x:34.0,y:114.0,vx:0.0,vy:-4.0,spin:0.0,attached:false});}
+   if input&2048!=0 {game.portal=false;game.gravity=false;game.max_speed=0.0;game.mode=1;game.blocks=[0;200];game.blocks[0]=1;game.balls.clear();
+    game.balls.push(physics::Ball{x:300.0,y:396.0,vx:1.0,vy:2.0,spin:0.0,attached:false});
+    game.balls.push(physics::Ball{x:304.0,y:396.0,vx:-1.0,vy:-2.0,spin:0.0,attached:false});
+   }
    if input&64!=0 {game.blocks=[0;200];}game.update(input);render::draw(game);
+   let brick=game.balls.len()==1 && game.balls[0].y==113.0 && game.balls[0].vy==4.0 && game.blocks[0]==0;
+   let ordered=game.balls.len()==2 && (game.balls[0].vx+4.4).abs()<0.001 && (game.balls[1].vx-0.8).abs()<0.001 && game.score==10;
    let contact=game.balls.len()==2 && game.balls[0].vx == -2.5 && game.balls[1].vx == 2.5 && game.balls[0].vy == -4.0 && game.balls[1].vy == -4.0;
-   return (u64::from(game.score)<<32)|u64::from(game.portal)|(u64::from(game.gravity)<<1)|(u64::from(game.mode==3)<<2)|(u64::from(contact)<<3)|(u64::from(game.lives)<<8)|(u64::from(game.level)<<16);
+   return (u64::from(game.score)<<32)|u64::from(game.portal)|(u64::from(game.gravity)<<1)|(u64::from(game.mode==3)<<2)|(u64::from(contact)<<3)|(u64::from(brick)<<4)|(u64::from(ordered)<<5)|(u64::from(game.lives)<<8)|(u64::from(game.level)<<16);
   }
  }state
 }''')
@@ -87,13 +94,22 @@ pub fn game_tick(input:u32,state:u64)->u64 {
         while True:
             if app.poll() is not None:raise RuntimeError(app.stderr.read().decode())
             try:
-                paddle(capture(window,'native-title.png'))
+                title=capture(window,'native-title.png')
+                assert sum(count for count,color in title.getcolors(title.width*title.height) if color==(104,229,255))>100
                 break
             except AssertionError:
                 assert time.monotonic()<ready,'The actual game frame did not become ready'
                 time.sleep(.1)
         subprocess.run(['xdotool','key','--window',window,'Up'],env=env,check=True);time.sleep(.2)
-        before=capture(window,'native-start.png')
+        ready=time.monotonic()+10
+        while True:
+            before=capture(window,'native-start.png')
+            try:
+                paddle(before)
+                break
+            except AssertionError:
+                assert time.monotonic()<ready,'The original-sized paddle was not visible after start'
+                time.sleep(.05)
         subprocess.run(['xdotool','keydown','--window',window,'Right'],env=env,check=True)
         try:
             moved=time.monotonic()+3
@@ -139,7 +155,7 @@ pub fn game_tick(input:u32,state:u64)->u64 {
             canvas.send_keys('v');wait.until(lambda b:saved_gravity()==0)
             def pixels():return browser.execute_script('return Array.from(document.querySelector("#game").getContext("2d").getImageData(0,0,640,480).data)')
             def center(data):
-                xs=[i%640 for i in range(420*640,440*640) if data[i*4:i*4+3]==[99,220,255]]
+                xs=[i%640 for i in range(395*640,406*640) if data[i*4:i*4+3]==[99,220,255]]
                 assert len(xs)>100
                 return sum(xs)/len(xs)
             left=center(pixels())

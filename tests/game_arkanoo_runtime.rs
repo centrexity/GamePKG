@@ -18,7 +18,7 @@ fn real_gameplay_audio_progress_and_restart() {
         game.step(0).unwrap();
         audio |= game.audio_frame().iter().any(|sample| *sample != 0);
         let bricks = game.frame().commands.iter().filter(|command| {
-            matches!(command, Command::Rect {width,height,..} if *width==28.0 && *height==16.0)
+            matches!(command, Command::Rect {width,height,..} if *width==30.0 && *height==10.0)
         }).count();
         broken |= bricks < 200;
         assert!(game.frame().commands.len() < 600);
@@ -154,4 +154,25 @@ fn multiball_ejection_and_shockwave_reach_the_real_renderer() {
         .filter(|command| matches!(command, Command::Rect { rgba, .. } if *rgba == 0xc8ffffff))
         .count();
     assert_eq!(shockwave, 36, "missing original 36-particle shockwave");
+}
+
+#[test]
+#[ignore = "requires the production-physics fixture prepared by tests/arkanoo.py"]
+fn original_brick_geometry_and_pair_before_paddle_order_reach_real_runtime() {
+    let root = std::path::PathBuf::from(std::env::var_os("GAMEPKG_ARKANOO_TEST_ROOT").unwrap());
+    let mut game = Game::load(&root, "com.gamepkg.arkanoo-modes").unwrap();
+    let state = game.step(1024).unwrap();
+    assert_eq!(
+        state & 16,
+        16,
+        "integer brick collision did not match original geometry"
+    );
+    assert!(game.frame().commands.iter().any(|command|matches!(command,Command::Circle{x,y,radius,..} if *x==34.0 && *y==113.0 && *radius==3.0)));
+    drop(game);
+    let mut game = Game::load(&root, "com.gamepkg.arkanoo-modes").unwrap();
+    assert_eq!(
+        game.step(2048).unwrap() & 32,
+        32,
+        "pair contacts did not precede original paddle response"
+    );
 }

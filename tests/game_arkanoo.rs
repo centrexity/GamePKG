@@ -20,7 +20,7 @@ fn controls_pause_and_paddle_bounds() {
     for _ in 0..200 {
         game.update(256);
     }
-    assert_eq!(game.paddle, 8.0);
+    assert_eq!(game.paddle, 0.0);
     game.update(8);
     let x = game.balls[0].x;
     game.update(512);
@@ -33,7 +33,7 @@ fn bonuses_are_bounded_and_expire() {
     let mut game = physics::Game::new();
     game.mode = 1;
     game.collect(0);
-    assert_eq!(game.width, 100.0);
+    assert_eq!(game.width, 90.0);
     for _ in 0..10 {
         game.collect(1);
         game.collect(3);
@@ -54,7 +54,7 @@ fn collisions_score_and_checkpoint_level_completion() {
     game.blocks[0] = 1;
     game.balls[0].attached = false;
     game.balls[0].x = 34.0;
-    game.balls[0].y = 94.0;
+    game.balls[0].y = 114.0;
     game.balls[0].vx = 0.0;
     game.balls[0].vy = -4.0;
     game.update(0);
@@ -92,13 +92,15 @@ fn ghost_passes_through_and_rockets_clear_neighbours() {
     game.ghost = 600;
     game.balls[0].attached = false;
     game.balls[0].x = 34.0;
-    game.balls[0].y = 94.0;
+    game.balls[0].y = 114.0;
     game.balls[0].vx = 0.0;
     game.balls[0].vy = -4.0;
     game.update(0);
+    assert_eq!(game.blocks[0], 0);
     assert_eq!(game.blocks[20], 0);
+    assert_eq!(game.score, 20);
     assert!(game.balls[0].vy < 0.0);
-    game.rockets.push((334.0, 94.0));
+    game.rockets.push((334.0, 114.0));
     let before = game.score;
     game.update(0);
     assert!(game.score >= before + 30);
@@ -202,12 +204,12 @@ fn portal_pull_preserves_integer_world_motion_and_delays_completion() {
     game.portal = true;
     game.blocks = [0; 200];
     game.blocks[0] = 1;
-    game.block_x[0] = 266.0;
-    game.block_y[0] = 232.0;
+    game.block_x[0] = 265.0;
+    game.block_y[0] = 235.0;
     game.pull_blocks();
-    assert_eq!(game.block_x[0], 270.0);
-    assert_eq!(game.block_y[0], 232.0);
-    game.block_x[0] = 306.0;
+    assert_eq!(game.block_x[0], 269.0);
+    assert_eq!(game.block_y[0], 235.0);
+    game.block_x[0] = 305.0;
     game.pull_blocks();
     assert_eq!(game.blocks[0], 0);
     assert_eq!(game.portal_timer, 0);
@@ -413,5 +415,165 @@ fn contacts_match_unchanged_pinned_original_block() {
             game.particles.len(),
             fixture["particles"].as_u64().unwrap() as usize
         );
+    }
+}
+
+#[test]
+fn world_steps_match_original_update_and_actual_sdl_intersections() {
+    let reference: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-world.json")).unwrap();
+    for fixture in reference["fixtures"].as_array().unwrap() {
+        let values: Vec<f32> = fixture["ball"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|value| value.as_f64().unwrap() as f32)
+            .collect();
+        let mut ball = collision_ball(
+            values[0] * 0.5 + 3.0,
+            values[1] * 0.5 + 63.0,
+            values[2] * 0.5,
+            values[3] * 0.5,
+        );
+        ball.spin = values[4] * 0.5;
+        for expected in fixture["expected"].as_array().unwrap() {
+            if ball.active() {
+                ball.advance(fixture["gravity"].as_bool().unwrap());
+            }
+            let actual = [
+                (ball.x - 3.0) * 2.0,
+                (ball.y - 63.0) * 2.0,
+                ball.vx * 2.0,
+                ball.vy * 2.0,
+                ball.spin * 2.0,
+                if ball.active() { 1.0 } else { 0.0 },
+            ];
+            for (actual, expected) in actual.iter().zip(expected.as_array().unwrap()) {
+                assert!(
+                    (actual - expected.as_f64().unwrap() as f32).abs() < 0.002,
+                    "{actual} != {expected}"
+                );
+            }
+        }
+    }
+    for fixture in reference["intersections"].as_array().unwrap() {
+        fn scaled(value: &serde_json::Value) -> [f32; 4] {
+            let mut result = [0.0; 4];
+            for i in 0..4 {
+                result[i] = value[i].as_f64().unwrap() as f32 * 0.5;
+            }
+            result[1] += physics::TOP;
+            result
+        }
+        let result = physics::overlap(scaled(&fixture["first"]), scaled(&fixture["second"]));
+        assert_eq!(
+            [result.0 * 2.0, result.1 * 2.0],
+            [
+                fixture["expected"][0].as_f64().unwrap() as f32,
+                fixture["expected"][1].as_f64().unwrap() as f32
+            ]
+        );
+    }
+}
+
+#[test]
+fn original_world_geometry_and_paddle_speed_have_uniform_scale() {
+    let mut game = physics::Game::new();
+    assert_eq!((game.block_x[0], game.block_y[0]), (20.0, 100.0));
+    assert_eq!((game.block_x[199], game.block_y[199]), (590.0, 190.0));
+    assert_eq!(game.balls[0].y, 392.0);
+    game.mode = 1;
+    let paddle = game.paddle;
+    game.update(512);
+    assert_eq!(game.paddle - paddle, 9.0);
+    let mut ball = collision_ball(0.0, 61.0, -3.0, -2.0);
+    ball.spin = 0.0;
+    ball.advance(false);
+    assert_eq!((ball.x, ball.y, ball.vx, ball.vy), (3.0, 63.0, 3.0, 2.0));
+}
+
+#[test]
+fn paddle_motion_centered_bonus_and_expiry_match_unchanged_original() {
+    let reference: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-world.json")).unwrap();
+    for fixture in reference["paddles"].as_array().unwrap() {
+        let mut game = physics::Game::new();
+        for (event, expected) in fixture["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .zip(fixture["expected"].as_array().unwrap())
+        {
+            let action = event[0].as_str().unwrap();
+            let mut movement = 0.0;
+            for _ in 0..event[1].as_u64().unwrap() {
+                let input = match action {
+                    "left" => 256,
+                    "right" => 512,
+                    "both" => 768,
+                    "long" => {
+                        game.collect(0);
+                        0
+                    }
+                    "ghost" => {
+                        game.collect(2);
+                        0
+                    }
+                    _ => 0,
+                };
+                movement = game.update_paddle(input);
+            }
+            assert_eq!(
+                [
+                    game.paddle * 2.0,
+                    game.width * 2.0,
+                    movement * 2.0,
+                    game.long as f32,
+                    game.ghost as f32
+                ],
+                expected
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|value| value.as_f64().unwrap() as f32)
+                    .collect::<Vec<_>>()
+                    .as_slice(),
+                "action {action}"
+            );
+        }
+    }
+}
+
+#[test]
+fn brick_resolution_matches_original_code_and_sdl_for_all_sides_and_ghosts() {
+    let reference: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-world.json")).unwrap();
+    for fixture in reference["blocks"].as_array().unwrap() {
+        let values: Vec<f32> = fixture["ball"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|value| value.as_f64().unwrap() as f32)
+            .collect();
+        let mut ball = collision_ball(
+            values[0] * 0.5 + 3.0,
+            values[1] * 0.5 + 63.0,
+            values[2] * 0.5,
+            values[3] * 0.5,
+        );
+        let hit = ball.resolve_block(20.0, 100.0, fixture["ghost"].as_bool().unwrap());
+        let actual = [
+            (ball.x - 3.0) * 2.0,
+            (ball.y - 63.0) * 2.0,
+            ball.vx * 2.0,
+            ball.vy * 2.0,
+            if hit { 1.0 } else { 0.0 },
+        ];
+        for (actual, expected) in actual.iter().zip(fixture["expected"].as_array().unwrap()) {
+            assert!(
+                (actual - expected.as_f64().unwrap() as f32).abs() < 0.0001,
+                "{actual} != {expected}"
+            );
+        }
     }
 }
