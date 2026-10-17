@@ -403,6 +403,9 @@ impl eframe::App for App {
         }
         if !self.loaded {
             self.loaded = true;
+            if !self.game_window {
+                theme::install_click_cursor(ctx);
+            }
             theme::apply(
                 ctx,
                 self.settings_draft.dark_mode,

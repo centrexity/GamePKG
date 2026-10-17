@@ -1,6 +1,25 @@
 use eframe::egui::{self, Color32, FontFamily, FontId, Stroke, TextStyle};
 
 pub(super) const ACCENT: Color32 = Color32::from_rgb(73, 224, 193);
+pub(super) fn install_click_cursor(ctx: &egui::Context) {
+    ctx.on_end_pass(
+        "gamepkg_click_cursor",
+        std::sync::Arc::new(|ctx| {
+            // Respect text, resize and drag cursors chosen by individual widgets.
+            if ctx.output(|output| output.cursor_icon) != egui::CursorIcon::Default {
+                return;
+            }
+            let hovered = ctx.interaction_snapshot(|interaction| interaction.hovered.clone());
+            if hovered.iter().any(|id| {
+                ctx.read_response(*id).is_some_and(|response| {
+                    response.enabled() && response.hovered() && response.sense.senses_click()
+                })
+            }) {
+                ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
+            }
+        }),
+    );
+}
 pub(super) fn apply(ctx: &egui::Context, dark: bool, scale: u16) {
     let mut style = egui::Style::default();
     let mut visuals = if dark {
