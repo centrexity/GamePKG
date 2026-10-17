@@ -299,6 +299,9 @@ fn engine(stage: &Path, profile: &str, optimize: bool) -> Result<Vec<String>> {
             "pinned engine source changed: {name}"
         );
     }
+    if doom {
+        crate::doom::stage_config_source(stage)?;
+    }
     if !doom {
         let path = stage.join("engines/zelda3/upstream/src/zelda_rtl.c");
         let mut source = fs::read_to_string(&path)?;
@@ -472,9 +475,29 @@ fn engine(stage: &Path, profile: &str, optimize: bool) -> Result<Vec<String>> {
     args.extend(["-C".into(), "link-arg=-lm".into()]);
     if doom {
         for name in [
-            "fopen", "fclose", "fread", "fwrite", "fseek", "ftell", "feof", "ferror", "fflush",
-            "fgetc", "fputc", "fprintf", "fgets", "remove", "rename", "mkdir", "getenv", "access",
-            "printf", "puts", "putchar",
+            "fopen",
+            "fclose",
+            "fread",
+            "fwrite",
+            "fseek",
+            "ftell",
+            "feof",
+            "ferror",
+            "fflush",
+            "fgetc",
+            "fputc",
+            "fprintf",
+            "fgets",
+            "fscanf",
+            "__isoc99_fscanf",
+            "remove",
+            "rename",
+            "mkdir",
+            "getenv",
+            "access",
+            "printf",
+            "puts",
+            "putchar",
         ] {
             args.extend(["-C".into(), format!("link-arg=-Wl,--wrap={name}")]);
         }

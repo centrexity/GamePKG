@@ -1,6 +1,10 @@
 // Reviewed host-owned DOOM source kit. No game-provided C is compiled.
 pub const FILES: &[(&str, &[u8])] = &[
     (
+        "engines/doom/adapters/storage.h",
+        include_bytes!("../engines/doom/adapters/storage.h"),
+    ),
+    (
         "engines/doom/music/opl_synth.c",
         include_bytes!("../engines/doom/music/opl_synth.c"),
     ),

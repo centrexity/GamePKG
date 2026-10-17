@@ -14,7 +14,7 @@
             let n=super::save_size().unwrap_or(0) as usize;let mut save=vec![0;n];let mut offset=0;
             while offset<n{let size=(n-offset).min(65536);super::save_read(offset as u32,&mut save[offset..offset+size]).unwrap();offset+=size;}
             unsafe {
-                #[cfg(gamepkg_doom)] {assert!(n<=512*1024);if n>0{std::ptr::copy_nonoverlapping(save.as_ptr(),savedata(),n);}}
+                #[cfg(gamepkg_doom)] {assert!(n<=4*1024*1024);if n>0{std::ptr::copy_nonoverlapping(save.as_ptr(),savedata(),n);}}
                 #[cfg(gamepkg_doom)] assert_eq!(initialize(pointer,len,n as u32),0);
                 #[cfg(gamepkg_zelda)] assert_eq!(initialize(pointer,len),0);
                 #[cfg(gamepkg_zelda)] {if n>0{assert_eq!(n,8192);std::ptr::copy_nonoverlapping(save.as_ptr(),sram(),n);}}
@@ -34,7 +34,7 @@
             #[cfg(gamepkg_doom)] super::draw_image(0.0,0.0,640.0,480.0,w as u32,h as u32,&p);
             #[cfg(gamepkg_zelda)] super::draw_image(64.0,16.0,512.0,448.0,w as u32,h as u32,&p);
             super::__gamepkg_audio_submit_stereo(std::slice::from_raw_parts(audio(),1600));
-            #[cfg(gamepkg_doom)] {if savedirty()!=0{let n=savedlength() as usize;assert!(n<=512*1024);super::save_write(std::slice::from_raw_parts(savedata(),n));}super::rpc(21,&super::u32s(&[status(),position(),controller()]));}
+            #[cfg(gamepkg_doom)] {if savedirty()!=0{let n=savedlength() as usize;assert!(n<=4*1024*1024);assert!(super::__gamepkg_engine_save_write(std::slice::from_raw_parts(savedata(),n)));}super::rpc(21,&super::u32s(&[status(),position(),controller()]));}
             #[cfg(gamepkg_zelda)] {if save_changed()!=0{super::save_write(std::slice::from_raw_parts(sram(),8192));}super::rpc(21,&super::u32s(&[engine_status(),engine_position(),engine_controller()]));}
             state.wrapping_add(1)
         }}

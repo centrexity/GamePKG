@@ -279,7 +279,7 @@ asset reads and path rejection through signing, isolated compilation and play.
 
 Games declaring `permissions.save = true` can use `gamepkg::save_size()`,
 `gamepkg::save_read(offset, &mut buffer)` and `gamepkg::save_write(&bytes)`.
-The host keeps one blob of at most 1 MiB under the library’s `saves` folder,
+The host keeps one ordinary-game blob of at most 1 MiB under the library’s `saves` folder,
 scoped by the signed game ID and creator key. Same-creator updates retain the
 blob; another game or creator cannot select it. Reads are capped at 64 KiB.
 Denied permissions return `None` or `false` without opening save storage.
@@ -287,6 +287,11 @@ Writes replace the blob atomically only after a successful
 tick. A trapped tick discards its pending save. Concurrent sessions use the
 last successfully committed write. The version-one blob format belongs to the
 game; creators should handle migration when changing their save layout.
+
+The reviewed DOOM engine has a separate, permission-checked 4 MiB bundle allowance
+for six original save slots and two configuration files. Ordinary guest save APIs
+retain their 1 MiB limit. Old raw slot-0 saves migrate without changing their
+contents; the new bundle requires an updated engine build.
 
 `examples/good/save-counter` keeps its tick count across sessions. After a
 release build, `python3 tests/runtime_saves.py` verifies persistence, updates,
@@ -429,7 +434,7 @@ product decisions before claiming full parity.
 | Port | Confirmed gaps | Implementation evidence |
 | --- | --- | --- |
 | Cube 2 | Original startup/menu, HUD/FPS preferences and ordered desktop movement/menu key events have been restored. Complete physical-key coverage still requires work beyond the keys exposed by egui. LAN broadcast, arbitrary master/authentication TCP traffic and public server registration are not provided. Persistence accepts selected file types, so arbitrary custom assets, movie recordings and other output formats are not equivalent to the desktop engine. Rendering inside the engine remains software OpenGL; Vulkan presents its frames. Native isolation currently requires Linux. | `src/cube2/session.rs`, `src/gui/cube2_input.rs`, `src/cube2/discovery.rs`, `engines/cube2/adapters/network.h`, `engines/cube2/adapters/persistence.h` |
-| DOOM | Original WAD music now plays through an in-memory OPL2 sequencer/synthesizer, alongside spatial stereo effects. Music backend selection and configuration persistence remain unfinished. Only save slot 0 and its temporary file are exposed; other original save slots are not supported. Input exposes a small action set rather than the full original keyboard/mouse controls. Multiplayer and extra WAD/mod loading are absent. | `engines/doom/adapters/engine.c`, `engines/doom/README.md` |
+| DOOM | Original WAD music, spatial stereo effects, all six original save slots and configuration persistence now work. Music backend selection remains unfinished. Input exposes a small action set rather than the full original keyboard/mouse controls. Multiplayer and extra WAD/mod loading are absent. | `engines/doom/adapters/engine.c`, `engines/doom/README.md` |
 | Zelda3 | Normal ROM-based SPC/DSP music and SRAM are supported. External MSU music is disabled; the desktop replay logger is removed. The adapter fixes the view to 256×224, disables extra side area, selects the default language and supplies no desktop configuration UI. Desktop enhancements, replay/save-state tools and alternate resource sets need individual support and tests. | `engines/zelda3/adapters/engine.c`, `engines/zelda3/upstream/src/config.h` |
 | Arkanoo | The upstream editor, mouse controls, menus, portal/gravity effects and music are omitted. Art, effects and endless level generation are replacements. Only high score/unlocked level persist, not the current run. | `ports/arkanoo/CREDITS.md`, `ports/arkanoo/source/src/lib.rs` |
 | 2048 | This adapts row merging rather than the whole upstream application. New tiles are always 2 and their position is deterministic. There is no score display, win/game-over flow, restart/undo or persistent board in the recipe. The upstream solver/terminal UI are replaced; tile values cap at 32768. | `ports/2048/CREDITS.md`, `ports/2048/source/src/lib.rs` |
@@ -439,8 +444,8 @@ shared host output. Zelda and DOOM pass native and Wasm channel-separation and
 actual gameplay/save-reload tests. DOOM's mixer follows the original quadratic
 separation curve; its original attract demo also verifies spatial sound.
 
-Next priorities include complete physical input in Cube 2; DOOM music settings, save slots,
-configuration and mouse controls; and standard 2048 spawning/scoring/end states.
+Next priorities include complete physical input in Cube 2; DOOM music backend
+selection and full keyboard/mouse controls; and standard 2048 spawning/scoring/end states.
 Arkanoo's omitted mechanics and Zelda's optional desktop enhancements require
 separate feature work. Keep tests for supported paths, add a regression for each
 restored feature, and test full campaigns and cross-version saves independently.
@@ -977,7 +982,7 @@ Guest Cargo dependencies are forbidden. Scoped input, file, drawing, shader, tex
 
 ## DOOM port
 
-The dependency-free DOOM recipe is in [GamePKG_Ports](https://github.com/centrexity/GamePKG_Ports/tree/main/doom). Current main adds a pinned, locally compiled Wasm engine with no host imports, single-player rendering, controller/touch input, sound effects and one scoped quicksave slot. Select your own DOOM.WAD or DOOM2.WAD in the player; no WAD or extracted assets are included. See [engine setup and verification](engines/doom/README.md). Released 0.1.6 binaries predate this engine.
+The dependency-free DOOM recipe is in [GamePKG_Ports](https://github.com/centrexity/GamePKG_Ports/tree/main/doom). Current main supports the pinned engine through native Linux builds and optional import-free Wasm, with single-player rendering, controller/touch input, spatial stereo effects, original WAD music, all six save slots and persisted configuration. Select your own DOOM.WAD or DOOM2.WAD in the player; no WAD or extracted assets are included. These source improvements require an updated host and engine rebuild. See [engine setup and verification](engines/doom/README.md).
 
 ## Drag files into the desktop app
 

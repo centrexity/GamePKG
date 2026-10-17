@@ -768,12 +768,7 @@ impl Game {
             Some(package),
             rom,
             if manifest.permissions.save {
-                Some(crate::saves::Save::open(
-                    root,
-                    &manifest.id,
-                    &manifest.creator_key,
-                    manifest.save_schema,
-                )?)
+                Some(crate::saves::Save::open_for_game(root, &manifest)?)
             } else {
                 None
             },

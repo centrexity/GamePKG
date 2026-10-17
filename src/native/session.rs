@@ -7,6 +7,15 @@ use std::{
     time::{Duration, Instant},
 };
 const PACKET: usize = 8 * 1048576 + 65536;
+fn validate_engine_save(manifest: &crate::manifest::Manifest, length: usize) -> Result<()> {
+    ensure!(
+        manifest.builtin_engine.as_deref() == Some(crate::doom::PROFILE)
+            && manifest.permissions.save,
+        "engine save access denied"
+    );
+    ensure!(length <= crate::doom::SAVE_MAX, "engine save too large");
+    Ok(())
+}
 fn stereo_engine_audio(
     manifest: &crate::manifest::Manifest,
     channels: u32,
@@ -131,12 +140,7 @@ impl Session {
             );
         }
         let save = if manifest.permissions.save {
-            Some(crate::saves::Save::open(
-                root,
-                &manifest.id,
-                &manifest.creator_key,
-                manifest.save_schema,
-            )?)
+            Some(crate::saves::Save::open_for_game(root, &manifest)?)
         } else {
             None
         };
@@ -323,6 +327,13 @@ impl Session {
                     n(b, 0)? as usize,
                     n(b, 4)? as usize,
                 )
+            }
+            24 => {
+                validate_engine_save(&self.manifest, b.len())?;
+                let save = self.save.as_mut().context("save access denied")?;
+                save.bytes = b.to_vec();
+                save.dirty = true;
+                true
             }
             7 => {
                 ensure!(b.len() <= crate::saves::MAX_SAVE, "save too large");
@@ -511,6 +522,21 @@ impl Session {
 #[cfg(test)]
 mod stereo_tests {
     use super::*;
+    #[test]
+    fn large_engine_saves_require_exact_profile_permission_and_limit() {
+        let mut manifest: crate::manifest::Manifest =
+            toml::from_str(include_str!("../../ports/doom/manifest.toml")).unwrap();
+        assert!(validate_engine_save(&manifest, crate::doom::SAVE_MAX).is_ok());
+        assert!(validate_engine_save(&manifest, crate::doom::SAVE_MAX + 1).is_err());
+        assert!(validate_engine_save(&manifest, usize::MAX).is_err());
+        manifest.permissions.save = false;
+        assert!(validate_engine_save(&manifest, 1).is_err());
+        manifest.permissions.save = true;
+        for engine in [None, Some("doom-unreviewed"), Some(crate::zelda3::PROFILE)] {
+            manifest.builtin_engine = engine.map(str::to_owned);
+            assert!(validate_engine_save(&manifest, 1).is_err());
+        }
+    }
     #[test]
     fn stereo_rpc_requires_exact_engine_permission_complete_frames_and_budget() {
         let mut manifest: crate::manifest::Manifest =

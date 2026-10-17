@@ -19,6 +19,7 @@ pub mod gamepkg {
     pub fn rom_read(offset:u32,out:&mut[u8])->Option<u32>{rom_read_at(0,offset,out)}
     pub fn save_size()->Option<u32>{number(rpc(5,&[]))}
     pub fn save_read(offset:u32,out:&mut[u8])->Option<u32>{read(6,&[offset,out.len() as u32],out)}
+    fn __gamepkg_engine_save_write(bytes:&[u8])->bool{bytes.len()<=4*1048576&&accepted(24,bytes)}
     pub fn save_write(bytes:&[u8])->bool{bytes.len()<=1048576&&accepted(7,bytes)}
     pub fn draw_clear(rgba:u32)->bool{accepted(8,&u32s(&[rgba]))}
     pub fn draw_rect(x:f32,y:f32,w:f32,h:f32,rgba:u32)->bool{accepted(9,&u32s(&[x.to_bits(),y.to_bits(),w.to_bits(),h.to_bits(),rgba]))}

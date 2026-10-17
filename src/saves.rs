@@ -9,9 +9,40 @@ pub(crate) struct Save {
     pub bytes: Vec<u8>,
     pub dirty: bool,
     path: PathBuf,
+    max_bytes: usize,
 }
 impl Save {
+    pub fn open_for_game(root: &Path, manifest: &crate::manifest::Manifest) -> Result<Self> {
+        if manifest.builtin_engine.as_deref() == Some(crate::doom::PROFILE) {
+            Self::open_with_limit(
+                root,
+                &manifest.id,
+                &manifest.creator_key,
+                manifest.save_schema,
+                crate::doom::SAVE_MAX,
+            )
+        } else {
+            Self::open(
+                root,
+                &manifest.id,
+                &manifest.creator_key,
+                manifest.save_schema,
+            )
+        }
+    }
     pub fn open(root: &Path, id: &str, creator: &str, schema: u32) -> Result<Self> {
+        Self::open_with_limit(root, id, creator, schema, MAX_SAVE)
+    }
+    pub(crate) fn open_with_limit(
+        root: &Path,
+        id: &str,
+        creator: &str,
+        schema: u32,
+        max_bytes: usize,
+    ) -> Result<Self> {
+        if max_bytes == 0 || max_bytes > crate::doom::SAVE_MAX {
+            bail!("invalid scoped save limit");
+        }
         if schema == 0 {
             bail!("save schema must be positive");
         }
@@ -39,23 +70,27 @@ impl Save {
         let mut bytes = Vec::new();
         match std::fs::File::open(&path) {
             Ok(file) => {
-                file.take(MAX_SAVE as u64 + 1).read_to_end(&mut bytes)?;
+                file.take(max_bytes as u64 + 1).read_to_end(&mut bytes)?;
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
             Err(e) => return Err(e.into()),
         }
-        if bytes.len() > MAX_SAVE {
-            bail!("save exceeds 1 MiB");
+        if bytes.len() > max_bytes {
+            bail!("save exceeds its scoped limit");
         }
         Ok(Self {
             bytes,
             dirty: false,
             path,
+            max_bytes,
         })
     }
     pub fn commit(&mut self) -> Result<()> {
         if !self.dirty {
             return Ok(());
+        }
+        if self.bytes.len() > self.max_bytes {
+            bail!("save exceeds its scoped limit");
         }
         let mut temp = tempfile::NamedTempFile::new_in(self.path.parent().unwrap())?;
         temp.write_all(&self.bytes)?;
@@ -69,6 +104,39 @@ impl Save {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn larger_doom_storage_does_not_expand_ordinary_save_limits() {
+        let root = tempfile::tempdir().unwrap();
+        let mut manifest: crate::manifest::Manifest =
+            toml::from_str(include_str!("../ports/doom/manifest.toml")).unwrap();
+        let mut save = Save::open_for_game(root.path(), &manifest).unwrap();
+        save.bytes = vec![0x5a; MAX_SAVE + 1];
+        save.dirty = true;
+        save.commit().unwrap();
+        assert_eq!(
+            Save::open_for_game(root.path(), &manifest)
+                .unwrap()
+                .bytes
+                .len(),
+            MAX_SAVE + 1
+        );
+        manifest.builtin_engine = None;
+        assert!(Save::open_for_game(root.path(), &manifest).is_err());
+        let ordinary = tempfile::tempdir().unwrap();
+        let mut save = Save::open(ordinary.path(), "ordinary", "creator", 1).unwrap();
+        save.bytes = b"previous save".to_vec();
+        save.dirty = true;
+        save.commit().unwrap();
+        save.bytes = vec![0; MAX_SAVE + 1];
+        save.dirty = true;
+        assert!(save.commit().is_err());
+        assert_eq!(
+            Save::open(ordinary.path(), "ordinary", "creator", 1)
+                .unwrap()
+                .bytes,
+            b"previous save"
+        );
+    }
     #[test]
     fn save_identity_is_scoped_and_oversized_files_are_rejected() {
         let root = tempfile::tempdir().unwrap();

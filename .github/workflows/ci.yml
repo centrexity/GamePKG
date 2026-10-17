@@ -43,6 +43,10 @@ jobs:
             cat target/doom-music-test.log
             exit 1
           fi
+      - name: Verify DOOM virtual save slots and configuration boundaries
+        run: |
+          cc -Wall -Wextra -Werror -fsanitize=address,undefined tests/doom_storage.c -o target/doom-storage-test
+          ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 target/doom-storage-test
       - name: Test browser guest path protections
         run: node tests/web_path_attacks.mjs
       - name: Test support links and clipboard behavior

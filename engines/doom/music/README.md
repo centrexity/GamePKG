@@ -48,5 +48,6 @@ Native cache identity includes the embedded DOOM and Zelda source kits. Engine
 fixes therefore require a rebuild even if the signed package and host version
 have not changed; the GUI reports that a build is needed.
 
-Configuration persistence, optional music-backend/enhancement selection and the
-remaining port gaps stay tracked in [port-parity.toml](../../../docs/port-parity.toml).
+Sound settings now persist through the original configuration files and survive
+relaunch. Optional music-backend/enhancement selection and the remaining port
+gaps stay tracked in [port-parity.toml](../../../docs/port-parity.toml).

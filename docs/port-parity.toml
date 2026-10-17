@@ -36,14 +36,15 @@ notes = "Shared stereo output and Cube 2 stereo verified: callback/encoding, pro
 
 [[work]]
 id = "doom_music"
-requirements = ["Original music playback", "Sound controls and persistence"]
+requirements = ["Original music playback", "Sound controls and persistence", "Music backend selection"]
 status = "in_progress"
-notes = "Original WAD music restored with pinned Chocolate DOOM sequencing/MUS/MIDI parsing and Nuked OPL synthesis using OPL2 defaults. Native and Wasm title-only music, original demo stereo and gameplay/save reload verified. All 45 songs in the selected DOOM WAD produce audio during their first three seconds with address/undefined-behavior sanitizers clean. Generated MIDI/MUS tests verify looping, volume reduction/restoration, pause/resume, tempo/callback bounds, truncations and 9,472 single-byte MIDI mutations; leak checks pass. Full song/campaign coverage, backend selection and configuration persistence remain unfinished."
+notes = "Original WAD music restored with pinned Chocolate DOOM sequencing/MUS/MIDI parsing and Nuked OPL synthesis using OPL2 defaults. Native and Wasm title-only music, original demo stereo and gameplay/save reload verified. All 45 songs in the selected DOOM WAD produce audio during their first three seconds with address/undefined-behavior sanitizers clean. Generated MIDI/MUS tests verify looping, volume reduction/restoration, pause/resume, tempo/callback bounds, truncations and 9,472 single-byte MIDI mutations; leak checks pass. Sound settings now persist and survive relaunch through the original menus in both targets. Full song/campaign coverage and backend selection remain unfinished."
 
 [[work]]
 id = "doom_saves_config_input"
 requirements = ["All original save slots", "Saved configuration", "Full keyboard and mouse controls"]
-status = "pending"
+status = "in_progress"
+notes = "Six original save slots and both configuration files now persist through a versioned, creator/game-scoped bundle. Native and Wasm original-menu tests cover all slots, distinct last-slot resume, sound-setting changes/reload, legacy raw-slot migration and >3 MiB bundle read/commit. Exact virtual paths, bundle/header limits, maximum slot storage, atomic config staging and ordinary-game limit isolation have regression coverage. Full keyboard/mouse controls remain unfinished."
 
 [[work]]
 id = "doom_network_mods"

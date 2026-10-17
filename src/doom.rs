@@ -5,7 +5,7 @@ use wasmtime::{
 };
 pub const PROFILE: &str = "doom-e257a095";
 pub const MEMORY: u64 = 64 * 1048576;
-pub const SAVE_MAX: usize = 512 * 1024;
+pub const SAVE_MAX: usize = 4 * 1024 * 1024;
 #[cfg(target_os = "linux")]
 pub(crate) const MUSIC_SOURCES: &[&str] = &[
     "music_opl.c",
@@ -29,6 +29,22 @@ pub(crate) fn verify_music_sources(root: &std::path::Path) -> Result<()> {
             bail!("pinned DOOM music source changed: {name}");
         }
     }
+    Ok(())
+}
+#[cfg(target_os = "linux")]
+pub(crate) fn stage_config_source(root: &std::path::Path) -> Result<()> {
+    let path = root.join("engines/doom/upstream/m_config.c");
+    let mut source = std::fs::read_to_string(&path)?;
+    for function in ["SaveDefaultCollection", "LoadDefaultCollection"] {
+        let original =
+            format!("static void {function}(default_collection_t *collection)\n{{\n#if ORIGCODE");
+        anyhow::ensure!(
+            source.matches(&original).count() == 1,
+            "pinned configuration function changed"
+        );
+        source = source.replace(&original, &original.replace("#if ORIGCODE", "#if 1"));
+    }
+    std::fs::write(path, source)?;
     Ok(())
 }
 pub fn validate_wad(wad: &[u8]) -> Result<()> {
@@ -112,6 +128,7 @@ pub fn build() -> Result<Vec<u8>> {
             }
         }
         verify_music_sources(kit.path())?;
+        stage_config_source(kit.path())?;
         let sysroot =
             crate::c_toolchain::resolve(&["GAMEPKG_DOOM_SYSROOT", "GAMEPKG_ZELDA3_SYSROOT"])?;
         let prefix = if sysroot.join("usr/include/wasm32-wasi").is_dir() {
@@ -205,7 +222,7 @@ pub fn build() -> Result<Vec<u8>> {
                     "-Wl,--no-entry",
                     "-Wl,--export-memory",
                     "-Wl,--gc-sections",
-                    "-Wl,--initial-memory=4194304",
+                    "-Wl,--initial-memory=16777216",
                     "-Wl,--max-memory=67108864",
                     "-Wl,-z,stack-size=1048576",
                     "-o",
@@ -225,6 +242,8 @@ pub fn build() -> Result<Vec<u8>> {
                     "fputc",
                     "fprintf",
                     "fgets",
+                    "fscanf",
+                    "__isoc99_fscanf",
                     "remove",
                     "rename",
                     "mkdir",
@@ -264,6 +283,7 @@ pub struct Doom {
     audio_channels: u32,
     save: TypedFunc<(), i32>,
     save_length: TypedFunc<(), i32>,
+    save_capacity: usize,
     dirty: TypedFunc<(), i32>,
     status: TypedFunc<(), i32>,
     position: TypedFunc<(), i32>,
@@ -300,8 +320,19 @@ impl Doom {
             instance.get_typed_func::<(i32, i32, i32), i32>(&mut store, "initialize")?;
         let saved = instance.get_typed_func::<(), i32>(&mut store, "save")?;
         let save = save.unwrap_or(&[]);
-        if save.len() > SAVE_MAX {
-            bail!("DOOM save exceeds 512 KiB");
+        let save_capacity = if let Some(function) = instance.get_func(&mut store, "save_capacity") {
+            store.set_epoch_deadline(deadline);
+            function.typed::<(), i32>(&store)?.call(&mut store, ())? as usize
+        } else {
+            512 * 1024
+        };
+        if !(512 * 1024..=SAVE_MAX).contains(&save_capacity) {
+            bail!("Invalid DOOM save capacity");
+        }
+        if save.len() > save_capacity
+            || (save_capacity < SAVE_MAX && save.starts_with(b"\x89GPD2\r\n\x1a"))
+        {
+            bail!("Rebuild DOOM to open this multi-slot save bundle");
         }
         // Host instantiation and export lookup are outside the guest call budget.
         store.set_epoch_deadline(deadline);
@@ -313,8 +344,12 @@ impl Doom {
         }
         memory.write(&mut store, pointer as usize, wad)?;
         store.set_epoch_deadline(deadline);
-        if let Err(e) = initialize.call(&mut store, (pointer, wad.len() as i32, save.len() as i32))
-        {
+        let initialized =
+            initialize.call(&mut store, (pointer, wad.len() as i32, save.len() as i32));
+        if initialized.as_ref().is_ok_and(|code| *code != 0) {
+            bail!("DOOM save bundle is invalid or damaged");
+        }
+        if let Err(e) = initialized {
             let logs = instance.get_typed_func::<(), i32>(&mut store, "diagnostics")?;
             store.set_epoch_deadline(deadline);
             let p = logs.call(&mut store, ())?;
@@ -343,6 +378,7 @@ impl Doom {
             audio: instance.get_typed_func(&mut store, "audio")?,
             audio_channels,
             save: saved,
+            save_capacity,
             save_length: instance.get_typed_func(&mut store, "save_length")?,
             dirty: instance.get_typed_func(&mut store, "save_dirty")?,
             status: instance.get_typed_func(&mut store, "status")?,
@@ -382,7 +418,7 @@ impl Doom {
             .collect();
         let save = if self.dirty.call(&mut self.store, ())? != 0 {
             let n = self.save_length.call(&mut self.store, ())? as usize;
-            if n > SAVE_MAX {
+            if n > self.save_capacity {
                 bail!("DOOM save exceeds its limit");
             }
             let p = self.save.call(&mut self.store, ())?;

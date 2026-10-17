@@ -15,163 +15,16 @@
 #include <sys/stat.h>
 #include <wasi/api.h>
 #define EXPORT(name) __attribute__((export_name(name)))
-#define SAVE_MAX (512 * 1024)
 static uint8_t *wad;
 static uint32_t wad_length;
-static uint8_t save_data[SAVE_MAX], temp_data[SAVE_MAX];
-static uint32_t save_length, temp_length;
-static int dirty;
 static char diagnostics[4096];
 static uint32_t diagnostic_length;
 static uint32_t ticks = 1, previous, buttons, accumulator;
 static unsigned keyqueue[64], qr, qw;
 #include "audio.h"
-/* stdio is an entirely private virtual filesystem, never a host descriptor. */
-typedef struct {
-  uint8_t *data;
-  uint32_t size, capacity, pos;
-  int used, writing, kind;
-} File;
-static File files[8];
-static File *file(FILE *stream) {
-  for (int i = 0; i < 8; i++)
-    if (stream == (FILE *)&files[i] && files[i].used)
-      return &files[i];
-  return NULL;
-}
-static int kind(const char *path) {
-  if (!strcmp(path, "doom.wad"))
-    return 1;
-  if (!strcmp(path, "./.savegame/temp.dsg"))
-    return 2;
-  if (!strcmp(path, "./.savegame/doomsav0.dsg"))
-    return 3;
-  return 0;
-}
-FILE *__wrap_fopen(const char *path, const char *mode) {
-  int k = kind(path), writing = strchr(mode, 'w') != NULL;
-  if (!k || (k == 1 && writing) || (k == 3 && !writing && !save_length)) {
-    errno = ENOENT;
-    return NULL;
-  }
-  for (int i = 0; i < 8; i++)
-    if (!files[i].used) {
-      File *f = &files[i];
-      *f = (File){.used = 1, .kind = k, .writing = writing};
-      f->data = k == 1 ? wad : k == 2 ? temp_data : save_data;
-      f->size = writing  ? 0
-                : k == 1 ? wad_length
-                : k == 2 ? temp_length
-                         : save_length;
-      f->capacity = k == 1 ? wad_length : SAVE_MAX;
-      return (FILE *)f;
-    }
-  errno = EMFILE;
-  return NULL;
-}
-int __wrap_fclose(FILE *s) {
-  File *f = file(s);
-  if (!f)
-    return EOF;
-  if (f->writing) {
-    if (f->kind == 2)
-      temp_length = f->size;
-    else if (f->kind == 3) {
-      save_length = f->size;
-      dirty = 1;
-    }
-  }
-  f->used = 0;
-  return 0;
-}
-size_t __wrap_fread(void *out, size_t size, size_t count, FILE *s) {
-  File *f = file(s);
-  if (!f || f->writing || !size || count > SIZE_MAX / size)
-    return 0;
-  size_t n = size * count;
-  if (n > f->size - f->pos)
-    n = f->size - f->pos;
-  memcpy(out, f->data + f->pos, n);
-  f->pos += n;
-  return n / size;
-}
-size_t __wrap_fwrite(const void *in, size_t size, size_t count, FILE *s) {
-  File *f = file(s);
-  if (!f || !f->writing || !size || count > SIZE_MAX / size)
-    return 0;
-  size_t n = size * count;
-  if (n > f->capacity - f->pos) {
-    errno = ENOSPC;
-    return 0;
-  }
-  memcpy(f->data + f->pos, in, n);
-  f->pos += n;
-  if (f->pos > f->size)
-    f->size = f->pos;
-  return count;
-}
-int __wrap_fseek(FILE *s, long offset, int whence) {
-  File *f = file(s);
-  if (!f)
-    return -1;
-  int64_t n = offset + (whence == SEEK_CUR   ? f->pos
-                        : whence == SEEK_END ? f->size
-                                             : 0);
-  if (n < 0 || n > f->size)
-    return -1;
-  f->pos = n;
-  return 0;
-}
-long __wrap_ftell(FILE *s) {
-  File *f = file(s);
-  return f ? (long)f->pos : -1;
-}
-int __wrap_feof(FILE *s) {
-  File *f = file(s);
-  return !f || f->pos == f->size;
-}
-int __wrap_ferror(FILE *s) { return file(s) ? 0 : 1; }
-int __wrap_fflush(FILE *s) { return 0; }
-int __wrap_fgetc(FILE *s) {
-  unsigned char ch;
-  return __wrap_fread(&ch, 1, 1, s) == 1 ? ch : EOF;
-}
-int __wrap_fputc(int ch, FILE *s) {
-  unsigned char c = ch;
-  return __wrap_fwrite(&c, 1, 1, s) == 1 ? c : EOF;
-}
-int __wrap_fprintf(FILE *s, const char *fmt, ...) { return 0; }
-char *__wrap_fgets(char *out, int n, FILE *s) {
-  if (n <= 1)
-    return NULL;
-  int i = 0, ch;
-  while (i < n - 1 && (ch = __wrap_fgetc(s)) != EOF) {
-    out[i++] = ch;
-    if (ch == '\n')
-      break;
-  }
-  out[i] = 0;
-  return i ? out : NULL;
-}
-int __wrap_remove(const char *p) {
-  if (kind(p) == 3) {
-    save_length = 0;
-    return 0;
-  }
-  return -1;
-}
-int __wrap_rename(const char *a, const char *b) {
-  if (kind(a) != 2 || kind(b) != 3)
-    return -1;
-  memcpy(save_data, temp_data, temp_length);
-  save_length = temp_length;
-  dirty = 1;
-  return 0;
-}
-int __wrap_mkdir(const char *p, mode_t mode) { return -1; }
-char *__wrap_getenv(const char *p) { return NULL; }
-int system(const char *command) { return -1; }
-int __wrap_access(const char *p, int mode) { return kind(p) == 1 ? 0 : -1; }
+#include "storage.h"
+#include "m_config.h"
+#include "i_system.h"
 /* Any remaining libc/WASI request is denied or captured, never forwarded. */
 __wasi_errno_t __wrap___wasi_fd_write(__wasi_fd_t fd,
                                       const __wasi_ciovec_t *iov, size_t n,
@@ -282,21 +135,23 @@ EXPORT("initialize")
 int initialize(uint8_t *data, uint32_t length, uint32_t saved) {
   wad = data;
   wad_length = length;
-  save_length = saved <= SAVE_MAX ? saved : 0;
+  if (restore_save(saved) != 0) return -1;
+  static char selected_slot[2];
+  selected_slot[0]=(char)('0'+(last_slot<0?0:last_slot));
   static char *args[] = {"gamepkg-doom",
                          "-iwad",
                          "doom.wad",
                          "-config",
-                         "disabled.cfg",
+                         "gamepkg.cfg",
                          "-extraconfig",
-                         "disabled-extra.cfg",
+                         "gamepkg-extra.cfg",
                          "-savedir",
                          "gamepkg",
                          "-mb",
                          "16",
                          "-loadgame",
-                         "0"};
-  doomgeneric_Create(save_length ? 13 : 11, args);
+                         selected_slot};
+  doomgeneric_Create(last_slot >= 0 ? 13 : 11, args);
   return 0;
 }
 EXPORT("step") int step(uint32_t input) {
@@ -322,6 +177,8 @@ EXPORT("step") int step(uint32_t input) {
     ticks += 28;
     doomgeneric_Tick();
   }
+  M_SaveDefaults();
+  if (storage_error) I_Error("DOOM virtual save or configuration storage failed");
   mix();
   int16_t music[1600];
   gamepkg_music_render(music, 800);
@@ -332,9 +189,11 @@ EXPORT("pixels") void *pixels(void) { return DG_ScreenBuffer; }
 EXPORT("audio") void *audio(void) { return pcm; }
 EXPORT("audio_channels") uint32_t audio_channels(void) { return 2; }
 EXPORT("save") void *savedata(void) { return save_data; }
+EXPORT("save_capacity") uint32_t savecapacity(void) { return BUNDLE_MAX; }
 EXPORT("save_length") uint32_t savedlength(void) { return save_length; }
 EXPORT("save_dirty") int savedirty(void) {
   int d = dirty;
+  if (dirty) snapshot_save();
   dirty = 0;
   return d;
 }

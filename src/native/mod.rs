@@ -41,7 +41,9 @@ fn sdk_identity() -> &'static str {
                 include_str!("engine.rs.txt"),
                 include_str!("seccomp.rs.txt"),
                 include_str!("../guest_helpers.rs.txt"),
-                include_str!("../network_guest.rs.txt")
+                include_str!("../network_guest.rs.txt"),
+                include_str!("../doom.rs"),
+                include_str!("../zelda3.rs")
             )
             .as_bytes(),
         );

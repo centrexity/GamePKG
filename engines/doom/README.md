@@ -14,7 +14,31 @@ Both builds check every pinned upstream source hash. The optional Wasm build par
 
 The WAD is selected explicitly, snapshotted read-only and validated for its IWAD header, bounded directory and lump ranges. It is not copied to the game package or unpacked onto disk. The native worker runs the same pinned engine behind OS namespaces, a syscall allowlist, address-space limits and tick deadlines. The optional Wasmtime profile runs the engine with no host imports, a private 64 MiB memory and epoch deadlines. Engine and recipe memory together stay within the lower of the signed cap and player ceiling. Rendering snapshots 320×200 pixels through the bounded host renderer. Audio supplies 800 stereo PCM frames at 48 kHz per 60 Hz host tick. The engine advances at its original 35 Hz tic rate.
 
-The engine's C stdio adapter is a private virtual filesystem: only the selected WAD and one bounded save slot exist. No path can reach the host filesystem. Configuration files, environment access and process execution are denied. Saves commit through the existing per-game/per-creator save blob after successful ticks. The one persistent slot is limited to 512 KiB and can be restored on launch. Engine memory mutations after a trap are not rolled back; close and relaunch a stopped game.
+The engine's C stdio adapter is a private virtual filesystem: only the selected
+WAD, six original save slots, the temporary save file and two configuration
+files exist. No virtual path reaches the host filesystem. Environment access
+and process execution remain denied. Each slot is limited to 512 KiB and each
+configuration file to 64 KiB. A versioned bundle with a 4 MiB upper bound commits
+through the existing creator/game-scoped save storage after successful ticks.
+Ordinary game save APIs retain their 1 MiB limit; the larger operation requires
+the exact approved DOOM profile and save permission.
+
+Configuration changes are snapshotted after engine ticks, so closing the game
+window preserves them. Unchanged configuration does not dirty the save. The
+isolated build enables only the original config read/write functions that
+doomgeneric compiled out, and routes their stdio through checked memory files.
+The last saved slot resumes on launch. Old raw slot-0 saves migrate byte for
+byte into the bundle. Older engine builds cannot read the new bundle; rebuild
+before switching to an old Wasm cache. Engine memory mutations after a trap are
+not rolled back; close and relaunch a stopped game.
+
+The bundle starts with eight magic bytes `89 47 50 44 32 0d 0a 1a`, followed by
+the last saved slot as a little-endian `u32` (`0xffffffff` when none exists).
+Eight little-endian `u32` lengths describe slots 0–5, `gamepkg.cfg` and
+`gamepkg-extra.cfg`. Their unchanged file bytes follow in that order at offset
+44. The decoder checks every length, total size, version and selected-slot
+reference before loading. Truncated or unknown binary versions are rejected.
+The six `.dsg` payloads retain the original engine format.
 
 Sound effects use a bounded 16-channel DMX mixer. Original WAD music uses the
 [in-memory OPL music backend](music/README.md), with instruments read from that
@@ -56,5 +80,14 @@ optional `tests/doom_music_wad.c` proof reads the original WAD in place and chec
 the first three seconds of every music lump. All 45 songs in the local selected
 DOOM WAD passed with address and undefined-behavior sanitizers. This does not
 establish full-song or full-campaign coverage.
+
+`tests/doom_storage.c` verifies exact virtual paths, rejected path attacks,
+configuration read/write, unchanged-config detection, failed-write staging,
+legacy migration, malformed bundle descriptors and maximum slot capacity with
+address/undefined-behavior/leak sanitizers. The real gameplay test uses all six
+original save-menu entries, changes sound volume, relaunches into a distinct
+last-slot position and migrates a real legacy save. Padded valid saves also
+exercise a bundle larger than 3 MiB through worker communication and disk
+commit. Both runtime targets reject a damaged header without rewriting it.
 
 For a separate WASI installation, use **Settings → C/WASI build tools folder**, check the tools and save settings. This persists across app restarts without requiring a launch-time environment variable. Engine-specific sysroot environment overrides take precedence.
