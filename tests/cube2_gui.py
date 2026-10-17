@@ -66,7 +66,12 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-cube2-gui-') as temporary:
   click_text(library_window,env,'Save multiplayer settings',root);time.sleep(.3)
   assert network.exists() and not json.loads(network.read_text())
   command('xdotool','windowfocus',library_window)
-  click_text(library_window,env,'server.example:28785',root)
+  # Saving leaves the nested form scrolled to its bottom; reveal its first field.
+  command('xdotool','mousemove','--window',library_window,'400','800','click','--repeat','20','--delay','20','4')
+  time.sleep(.3)
+  # Target the visible label; placeholder punctuation is unreliable under OCR.
+  x,y=click_text(library_window,env,'Join server',root,click=False)
+  command('xdotool','mousemove','--window',library_window,str(x),str(y+30),'click','1')
   command('xdotool','key','--clearmodifiers','ctrl+a')
   command('xdotool','type','--clearmodifiers','127.0.0.1:28785')
   click_text(library_window,env,'Save multiplayer settings',root);time.sleep(.3)
@@ -112,7 +117,12 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-cube2-gui-') as temporary:
   played_before=json.loads(records[0].read_text())['played_ms'] if records else 0
   saves_before=list((LIBRARY/'saves').glob('*.cube2'))
   saved_before=saves_before[0].stat().st_mtime_ns if saves_before else 0
-  time.sleep(4);before=capture('playing.png')
+  deadline=time.monotonic()+65
+  while True:
+   before=capture('playing.png')
+   if len(before.getcolors(before.width*before.height))>500:break
+   assert time.monotonic()<deadline,'No rendered 3D scene before startup deadline'
+   time.sleep(.2)
   text=subprocess.run(['tesseract',str(proof/'playing.png'),'stdout'],capture_output=True,text=True,check=True).stdout
   for chrome in ['Close game','Restart','Touch controls','Sound on','Score:']:
    assert chrome not in text,(chrome,text)

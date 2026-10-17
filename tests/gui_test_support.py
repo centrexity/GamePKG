@@ -129,7 +129,15 @@ def choose_native_file(env, title, path=None, windows=False):
     else:
         subprocess.run(['xdotool','key','--clearmodifiers','alt+n' if windows else 'ctrl+l'],env=env,check=True)
         time.sleep(.2)
-        subprocess.run(['xdotool','type','--clearmodifiers',str(path)],env=env,check=True)
+        subprocess.run(['xdotool','key','--clearmodifiers','ctrl+a'],env=env,check=True)
+        location=str(path)
+        folder=Path(path).is_dir()
+        if folder and not windows:
+            location=location.rstrip('/')+'/'
+        # Send the path as one burst: GTK4's asynchronous completion can
+        # otherwise rewrite the entry between synthetic character events.
+        subprocess.run(['xdotool','type','--clearmodifiers','--delay','0',location],env=env,check=True)
+        time.sleep(.3)
         subprocess.run(['xdotool','key','--clearmodifiers','Return'],env=env,check=True)
     close_deadline=time.monotonic()+15
     while True:
