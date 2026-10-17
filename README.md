@@ -414,6 +414,37 @@ ALSA_CONFIG_PATH=/tmp/gamepkg-null-alsa.conf cargo test --all-features audio_out
 Hosted privileged build fixtures stage toolchains under `/tmp` so namespace
 root can traverse the compiler paths without access to runner home folders.
 
+## Port feature coverage
+
+Source audit against the pinned engines and checked-in recipes (2026-10-17):
+these ports are playable adaptations, not verified feature-complete replacements.
+Passing startup/gameplay tests does not establish that every upstream feature or
+an entire campaign works. The following gaps need implementation or explicit
+product decisions before claiming full parity.
+
+| Port | Confirmed gaps | Implementation evidence |
+| --- | --- | --- |
+| Cube 2 | Startup forces `mode 0; map complex`, closes the normal startup menu, sets `consize 0`, `miniconsize 0` and `maxfps 60`. The host forwards only selected keyboard/scancode inputs. LAN broadcast, arbitrary master/authentication TCP traffic and public server registration are not provided. Persistence accepts selected file types, so arbitrary custom assets, movie recordings and other output formats are not equivalent to the desktop engine. Rendering inside the engine remains software OpenGL; Vulkan presents its frames. Native isolation currently requires Linux. | `src/cube2/session.rs`, `src/gui/cube2_input.rs`, `src/cube2/discovery.rs`, `engines/cube2/adapters/network.h`, `engines/cube2/adapters/persistence.h` |
+| DOOM | `-nomusic` and an empty music module disable music. Sound effects are mono; the mixer ignores stereo separation. Only save slot 0 and its temporary file are exposed; other original save slots are not supported. Configuration files are denied. Input exposes a small action set rather than the full original keyboard/mouse controls. Multiplayer and extra WAD/mod loading are absent. | `engines/doom/adapters/engine.c`, `engines/doom/README.md` |
+| Zelda3 | Normal ROM-based SPC/DSP music and SRAM are supported. External MSU music is disabled; the desktop replay logger is removed. The adapter fixes the view to 256×224, disables extra side area, selects the default language and supplies no desktop configuration UI. Desktop enhancements, replay/save-state tools and alternate resource sets need individual support and tests. | `engines/zelda3/adapters/engine.c`, `engines/zelda3/upstream/src/config.h` |
+| Arkanoo | The upstream editor, mouse controls, menus, portal/gravity effects and music are omitted. Art, effects and endless level generation are replacements. Only high score/unlocked level persist, not the current run. | `ports/arkanoo/CREDITS.md`, `ports/arkanoo/source/src/lib.rs` |
+| 2048 | This adapts row merging rather than the whole upstream application. New tiles are always 2 and their position is deterministic. There is no score display, win/game-over flow, restart/undo or persistent board in the recipe. The upstream solver/terminal UI are replaced; tile values cap at 32768. | `ports/2048/CREDITS.md`, `ports/2048/source/src/lib.rs` |
+
+The reviewed engine bridges currently send mono audio; preserving stereo needs
+a channel-aware host audio path and regression coverage.
+
+Prioritize original startup/menus and input in Cube 2; DOOM music, save slots,
+configuration and mouse controls; and standard 2048 spawning/scoring/end states.
+Arkanoo's omitted mechanics and Zelda's optional desktop enhancements require
+separate feature work. Keep tests for supported paths, add a regression for each
+restored feature, and test full campaigns and cross-version saves independently.
+
+Filesystem, networking and process isolation must remain in place. Restoring a
+feature means adding a scoped host operation or virtual resource, not exposing
+ambient files, sockets or process execution. Threadless lock/no-device/window
+stubs are not automatically lost gameplay features: inspect their caller and
+host replacement before replacing them.
+
 ## Engine compatibility and save schemas
 
 Signed manifests may declare `engine_version` as a semantic-version requirement
