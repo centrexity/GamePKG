@@ -923,7 +923,7 @@ impl Game {
         if let Some(cube) = &mut self.cube2 {
             let save = cube.finish();
             let progress = if let Some(progress) = &mut self.progress {
-                progress.finish()
+                progress.finish().context("Unable to save play history")
             } else {
                 Ok(())
             };
@@ -932,7 +932,7 @@ impl Game {
             return Ok(());
         }
         if let Some(progress) = &mut self.progress {
-            progress.finish()?;
+            progress.finish().context("Unable to save play history")?;
         }
         Ok(())
     }

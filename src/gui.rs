@@ -60,6 +60,7 @@ pub struct App {
     show_add: bool,
     show_settings: bool,
     focus_memory_settings: bool,
+    focus_tick_settings: bool,
     app_release: Option<crate::app_updates::Release>,
     app_installed: Option<PathBuf>,
     startup_app_check: Option<mpsc::Receiver<Result<Option<crate::app_updates::Release>, String>>>,
@@ -1028,8 +1029,7 @@ impl eframe::App for App {
                 self.cube_mouse_grab = false;
                 if let Some(game) = &mut self.player {
                     if let Err(e) = game.finish() {
-                        self.status = format!("Unable to save play history: {e}");
-                        failure = Some(self.status.clone());
+                        record_shutdown_error(&mut failure, &format!("{e:#}"));
                     }
                 }
                 if self.game_window && failure.is_none() {
@@ -1192,7 +1192,8 @@ impl eframe::App for App {
                     ui.separator();ui.heading("Game resource ceilings");
                     let memory_control = ui.horizontal(|ui| { ui.label("Memory ceiling (MiB)");ui.add(egui::DragValue::new(&mut self.settings_draft.memory_ceiling_mib).range(1..=4096)) }).inner;
                     if self.focus_memory_settings { memory_control.scroll_to_me(Some(egui::Align::Center));self.focus_memory_settings=false; }
-                    ui.horizontal(|ui| { ui.label("Tick deadline (ms)");ui.add(egui::Slider::new(&mut self.settings_draft.tick_deadline_ms,10..=1000).step_by(10.0)); });
+                    let tick_control = ui.horizontal(|ui| { ui.label("Tick deadline (ms)");ui.add(egui::Slider::new(&mut self.settings_draft.tick_deadline_ms,10..=1000).step_by(10.0)) }).inner;
+                    if self.focus_tick_settings { tick_control.scroll_to_me(Some(egui::Align::Center));self.focus_tick_settings=false; }
                     ui.label("Memory uses the lower of your ceiling and the signed game limit. These settings cannot raise a game's hard limit. Changes apply the next time you launch a game.");
                     ui.separator();ui.heading("Builds and appearance");
                     ui.add(egui::Slider::new(&mut self.settings_draft.ui_scale_percent,80..=160).step_by(10.0).text("Interface size (%)"));
@@ -1340,6 +1341,17 @@ pub fn window_icon() -> egui::IconData {
     }
 }
 
+fn record_shutdown_error(failure: &mut Option<String>, detail: &str) {
+    match failure {
+        Some(primary) if primary.contains(detail) => {}
+        Some(primary) => {
+            primary.push_str("\nDuring shutdown: ");
+            primary.push_str(detail);
+        }
+        None => *failure = Some(format!("Unable to finish the game session: {detail}")),
+    }
+}
+
 // Bind remembered files to the library, creator, game and ROM requirements.
 fn rom_identity(root: &std::path::Path, manifest: &crate::manifest::Manifest) -> Option<String> {
     let root = std::fs::canonicalize(root).ok()?;
@@ -1362,5 +1374,32 @@ mod rom_selection_tests {
         assert_ne!(first, rom_identity(b.path(), &m));
         m.creator_key = "changed".into();
         assert_ne!(first, rom_identity(a.path(), &m));
+    }
+}
+
+#[cfg(test)]
+mod shutdown_error_tests {
+    use super::record_shutdown_error;
+    #[test]
+    fn rendering_failure_is_preserved_and_not_mislabeled_as_history() {
+        let detail = "The renderer exceeded your 100 ms tick deadline.";
+        let original = format!("Game stopped: {detail}");
+        let mut failure = Some(original.clone());
+        record_shutdown_error(&mut failure, detail);
+        assert_eq!(failure.as_deref(), Some(original.as_str()));
+        record_shutdown_error(&mut failure, "Unable to save play history: disk full");
+        assert_eq!(
+            failure.unwrap(),
+            format!("{original}\nDuring shutdown: Unable to save play history: disk full")
+        );
+    }
+    #[test]
+    fn shutdown_failure_alone_does_not_claim_history_failed() {
+        let mut failure = None;
+        record_shutdown_error(&mut failure, "renderer stopped");
+        assert_eq!(
+            failure.as_deref(),
+            Some("Unable to finish the game session: renderer stopped")
+        );
     }
 }

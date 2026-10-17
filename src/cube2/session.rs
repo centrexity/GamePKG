@@ -372,7 +372,7 @@ impl Session {
                 deadline,
             })
         })();
-        match self.complete(result)? {
+        match self.complete(result, "render")? {
             protocol::Update::Frame(frame) => Ok(Some(frame)),
             protocol::Update::Quit(saved) => {
                 self.exit_save = Some(saved);
@@ -445,7 +445,7 @@ impl Session {
             return Ok(saved.clone());
         }
         ensure!(!self.stopped, "Cube 2 session has stopped");
-        let deadline = Instant::now() + self.deadline;
+        let deadline = Instant::now() + Duration::from_secs(2);
         let result = (|| {
             self.send(&protocol::SAVE_REQUEST, deadline)?;
             protocol::read_save(Reader {
@@ -453,7 +453,7 @@ impl Session {
                 deadline,
             })
         })();
-        self.complete(result)
+        self.complete(result, "save")
     }
     pub fn close(&mut self) -> Result<()> {
         if self.stopped {
@@ -477,9 +477,9 @@ impl Session {
                 std::thread::sleep(Duration::from_millis(5));
             }
         })();
-        self.complete(result)
+        self.complete(result, "close")
     }
-    fn complete<T>(&mut self, result: Result<T>) -> Result<T> {
+    fn complete<T>(&mut self, result: Result<T>, operation: &str) -> Result<T> {
         match result {
             Ok(value) => Ok(value),
             Err(error) => {
@@ -497,7 +497,8 @@ impl Session {
                         .downcast_ref::<io::Error>()
                         .is_some_and(|e| e.kind() == io::ErrorKind::TimedOut)
                 }) {
-                    return Err(anyhow::anyhow!("The renderer exceeded your tick deadline. Increase Tick deadline in Settings (500 ms is recommended for software rendering)."));
+                    let message = timeout_message(operation, self.deadline);
+                    return Err(anyhow::anyhow!(message));
                 }
                 let lower = message.to_ascii_lowercase();
                 if ["out of memory", "cannot allocate memory", "bad_alloc"]
@@ -526,9 +527,25 @@ impl Session {
         }
     }
 }
+fn timeout_message(operation: &str, deadline: Duration) -> String {
+    match operation {
+        "save" => "The game did not provide a save snapshot within its 2-second shutdown deadline. Existing saves were kept.".to_owned(),
+        "close" => "The game did not close within its 2-second shutdown deadline.".to_owned(),
+        _ => format!("The renderer exceeded your {} ms tick deadline. Increase Tick deadline in Settings (500 ms is recommended for software rendering).", deadline.as_millis()),
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn timeout_guidance_identifies_the_failed_operation() {
+        let deadline = Duration::from_millis(100);
+        assert!(timeout_message("render", deadline).contains("100 ms tick deadline"));
+        assert!(timeout_message("save", deadline).contains("save snapshot"));
+        assert!(timeout_message("save", deadline).contains("Existing saves were kept"));
+        assert!(!timeout_message("save", deadline).contains("renderer"));
+        assert!(timeout_message("close", deadline).contains("did not close"));
+    }
     #[test]
     fn bad_limits_are_rejected_before_compilation() {
         for memory in [0, 1, u64::MAX] {

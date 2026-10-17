@@ -248,6 +248,15 @@ impl App {
                             Err(error) => self.status=format!("Unable to load settings: {error:#}"),
                         }
                     }
+                    if m.game_data.is_some() && self.applied_settings.as_ref().is_none_or(|s|s.tick_deadline_ms<500) {
+                        ui.label("Software rendering may need a 500 ms Tick deadline.");
+                        if ui.add_enabled(self.result.is_none(), egui::Button::new("Open rendering settings")).clicked() {
+                            match crate::settings::load() {
+                                Ok(settings) => { self.settings_draft=settings;self.show_settings=true;self.focus_tick_settings=true;self.show_add=false;self.show_support=false;self.preview=None; }
+                                Err(error) => self.status=format!("Unable to load settings: {error:#}"),
+                            }
+                        }
+                    }
                     if ui.add_enabled(self.result.is_none(), egui::Button::new("Recheck readiness")).clicked() {
                         self.begin_work(|| Ok(Work::Message("Game readiness refreshed.".into())));
                     }
