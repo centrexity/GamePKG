@@ -1,4 +1,5 @@
 use eframe::egui;
+mod add_page;
 mod artwork;
 mod cube2_input;
 mod drops;
@@ -49,6 +50,7 @@ pub struct App {
     rom_game: Option<String>,
     rom_identity: Option<String>,
     additional_rom_paths: Vec<String>,
+    show_add: bool,
     show_settings: bool,
     show_support: bool,
     support_copied: Option<String>,
@@ -88,6 +90,7 @@ impl App {
         self.vulkan_state = state;
     }
     pub fn open_support(&mut self) {
+        self.show_add = false;
         self.show_support = true;
         self.show_settings = false;
         self.preview = None;
@@ -498,6 +501,7 @@ impl eframe::App for App {
                             self.player = Some(game);
                         }
                         Ok(Work::Package(m)) => {
+                            self.show_add = false;
                             self.preview = None;
                             self.status = format!("Verified {} {}", m.id, m.version);
                             self.selected_game = Some(m.id.clone());
@@ -1023,9 +1027,13 @@ impl eframe::App for App {
                 ui.label(egui::RichText::new("GamePKG").size(23.0).strong());
                 ui.add_space(16.0);
                 if ui
-                    .selectable_label(!self.show_settings && !self.show_support, "Library")
+                    .selectable_label(
+                        !self.show_add && !self.show_settings && !self.show_support,
+                        "Library",
+                    )
                     .clicked()
                 {
+                    self.show_add = false;
                     self.show_settings = false;
                     self.show_support = false;
                     self.close_game_page();
@@ -1035,6 +1043,7 @@ impl eframe::App for App {
                     .add_enabled(self.result.is_none(), egui::Button::new("Settings"))
                     .clicked()
                 {
+                    self.show_add = false;
                     self.show_settings = true;
                     self.show_support = false;
                     self.preview = None;
@@ -1205,13 +1214,20 @@ impl eframe::App for App {
             });
             return;
         }
+        if self.show_add {
+            self.show_add_page(ctx);
+            return;
+        }
         if self.selected_game.is_some() {
             self.show_game_page(ctx);
             return;
         }
         egui::CentralPanel::default().frame(egui::Frame::central_panel(&ctx.style()).inner_margin(20)).show(ctx, |ui| {
             egui::ScrollArea::vertical().id_salt("library-page").show(ui, |ui| {
-            ui.heading("Your games");
+            ui.horizontal(|ui| {
+                ui.heading("Your games");
+                if ui.add_enabled(self.result.is_none(), egui::Button::new("Add")).clicked() { self.open_add_page(); }
+            });
             ui.label("Choose a game to build, play or explore.");
             ui.horizontal_wrapped(|ui| {
                 for (label,value) in [("Installed",self.installed.len().to_string()),("Ready to play",self.built.len().to_string()),("Storage used",self.library_bytes.map(crate::storage::bytes).unwrap_or_else(||"—".into()))] {
@@ -1221,90 +1237,22 @@ impl eframe::App for App {
                 }
             });
             ui.add_space(12.0);
-            let mut inspect = None;
+            let inspect = self.library_games(ui);
             let mut integrity = None;
-            egui::ScrollArea::vertical().id_salt("library-games").max_height((ctx.available_rect().height()*0.45).clamp(160.0,440.0)).show(ui, |ui| {
-                inspect = self.library_games(ui);
-            });
             for (name, error) in &self.rejected {
                 ui.colored_label(egui::Color32::from_rgb(240, 130, 100), format!("Unavailable package: {name}"));
                 ui.label(error);
                 if ui.add_enabled(self.result.is_none(), egui::Button::new("Restore verified copy / rebuild")).clicked() { if let Some(id)=name.strip_suffix(".gamepkg") { integrity=Some((id.to_owned(),true,None)); } }
-                if ui.add_enabled(self.result.is_none() && self.source.trim().ends_with(".gamepkgstore") && std::path::Path::new(self.source.trim()).is_file(),egui::Button::new("Repair assets")).on_hover_text("Use the retained verified package and the original local store bundle entered below.").clicked() {if let Some(id)=name.strip_suffix(".gamepkg") {integrity=Some((id.to_owned(),true,Some(PathBuf::from(self.source.trim()))));}}
+                if ui.add_enabled(self.result.is_none() && self.source.trim().ends_with(".gamepkgstore") && std::path::Path::new(self.source.trim()).is_file(),egui::Button::new("Repair assets")).on_hover_text("Use the retained verified package and the original local store bundle entered on the Add page.").clicked() {if let Some(id)=name.strip_suffix(".gamepkg") {integrity=Some((id.to_owned(),true,Some(PathBuf::from(self.source.trim()))));}}
             }
             if self.installed.is_empty() && self.catalog.is_empty() && self.rejected.is_empty() { ui.label("No games yet. Import a game list or install a package."); }
+            ui.label(&self.status);
             if ui.add_enabled(self.result.is_none(), egui::Button::new("Refresh library")).clicked() { self.refresh(ctx); }
             if let Some((id,fix,store)) = integrity {
                 self.begin_work(move || { let root=crate::registry::default_root()?; Ok(Work::Message(if fix {crate::integrity::fix_with_store(&root,&id,store.as_deref())?} else {crate::integrity::check(&root,&id)?})) });
             }
             if let Some(id)=inspect {self.open_game_page(&id);}
             ui.label(format!("Library storage used: {} (file bytes, including shared assets, caches, saves and play history)", self.library_bytes.map(crate::storage::bytes).unwrap_or_else(||"Unavailable".into())));
-            ui.separator();
-            ui.heading("Add games");
-            ui.label("Local package, game list, or store bundle path; HTTPS, GitHub project, or Tor URL");
-            ui.label("Or drop a .gamepkg or .gamepkglist file anywhere in this window (one at a time).");
-            ui.add(egui::TextEdit::singleline(&mut self.source).desired_width(f32::INFINITY).min_size(egui::vec2(0.0,40.0)).margin(egui::Margin::symmetric(12,10)).hint_text("Paste a link or enter a file path…"));
-            ui.horizontal_wrapped(|ui| {
-            if ui.add_enabled(self.result.is_none(), egui::Button::new("Inspect .gamepkgstore bundle")).clicked() {
-                self.pending_store = None;
-                self.pending = None;
-                self.manifest = None;
-                self.preview = None;
-                let source = self.source.trim().to_owned();
-                self.begin_work(move || {
-                    let downloaded;
-                    let path = if source.contains("://") {
-                        downloaded = crate::registry::download_store(&source)?;
-                        downloaded.path()
-                    } else { std::path::Path::new(&source) };
-                    Ok(Work::Store(crate::store::Bundle::open(path)?))
-                });
-            }
-            if ui.add_enabled(self.result.is_none(),egui::Button::new("Import .gamepkglist (no game downloads)")).clicked() {
-                let source = self.source.trim().to_owned();
-                self.begin_work(move || {
-                    let downloaded;
-                    let path = if source.contains("://") { downloaded = crate::registry::download_catalog(&source)?; downloaded.path() } else { std::path::Path::new(&source) };
-                    let count = crate::catalog::import(&crate::registry::default_root()?, path)?;
-                    Ok(Work::Message(format!("Added {count} games to the catalog. No game packages downloaded.")))
-                });
-            }
-            });
-            if ui.add_enabled(self.result.is_none(), egui::Button::new("Download / inspect")).clicked() {
-                let source = self.source.trim().to_owned();
-                let local = (!source.contains("://")).then(|| PathBuf::from(&source));
-                self.inspect_package(source, local);
-            }
-            ui.label(&self.status);
-            if let Some(bundle) = &self.pending_store {
-                ui.separator();
-                ui.heading("Verified store bundle");
-                ui.label("Signatures prove creator-key ownership. Confirm these creators before approving first installations. Existing games retain their creator keys.");
-                egui::ScrollArea::vertical().id_salt("store-review").max_height(220.0).show(ui, |ui| {
-                    for game in bundle.games() {
-                        ui.label(format!("{} — {}{}", game.id, game.version, if game.requires_rom { " • User ROM required" } else { "" }));
-                        ui.label(format!("Creator key: {}", game.creator_key));
-                    }
-                });
-                let mut install = false;
-                let mut cancel = false;
-                ui.horizontal_wrapped(|ui| {
-                    install = ui.add_enabled(self.result.is_none(), egui::Button::new("Trust listed creators and install store")).clicked();
-                    cancel = ui.add_enabled(self.result.is_none(), egui::Button::new("Cancel store import")).clicked();
-                });
-                if install {
-                    if let Some(bundle) = self.pending_store.take() {
-                        let root = crate::registry::default_root();
-                        self.begin_work(move || {
-                            let count = bundle.install(&root?, true)?;
-                            Ok(Work::Message(format!("Installed {count} store games. Build a game to play.")))
-                        });
-                    }
-                } else if cancel {
-                    self.pending_store = None;
-                    self.status = "Store import cancelled. No games installed.".into();
-                }
-            }
             ui.separator(); ui.label(concat!("GamePKG ", env!("CARGO_PKG_VERSION")));
             ui.hyperlink_to("GamePKG • Apache 2.0", "https://gamepkg.com");
             });

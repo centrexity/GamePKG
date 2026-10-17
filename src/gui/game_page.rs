@@ -21,6 +21,7 @@ impl App {
             self.drop_notice = Some("Finish or cancel the current package review first.".into());
             return;
         }
+        self.show_add = false;
         self.selected_game = Some(id.to_owned());
         self.show_settings = false;
         self.show_support = false;

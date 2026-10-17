@@ -65,6 +65,8 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-library-play-') as directory:
             word=next(word for word in words if word['text'].strip('[](){}|')==label or (label=='Back' and word['text'].strip('[](){}|').startswith('Back')))
             subprocess.run(['xdotool','mousemove','--window',window,str(int(word['left'])+int(word['width'])//2),str(int(word['top'])+int(word['height'])//2),'click','1'],env=env,check=True)
         def enter_source(words, source):
+            click_text(window,env,'Add',root)
+            time.sleep(.2)
             subprocess.run(['xdotool','mousemove','--window',window,'1450','850','click','--repeat','10','--delay','30','5'],env=env,check=True)
             time.sleep(.2)
             _,words=read_screen('library-add-games.png')
@@ -134,6 +136,8 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-library-play-') as directory:
         catalog.write_text("format_version = 1\n[[games]]\nid = 'com.example.offline'\ntitle = 'Offline Catalog Game'\nversion = '2.0.0'\ndownload_url = 'https://unreachable.invalid/game.gamepkg'\nrequires_rom = true\n")
         words=enter_source(words,catalog)
         click_word(words,'Import')
+        wait_screen(lambda text:'No game packages downloaded' in text,'add-catalog-imported.png',20)
+        click_text(window,env,'Back to library',root)
         text,words=wait_screen(lambda text:'Not downloaded' in text and 'No game packages downloaded' in text,'library-catalog-imported.png',20)
         click_word(words,'Offline')
         text,words=wait_screen(lambda text:'Back to library' in text and 'Catalog information is unverified' in text,'game-catalog-page.png',20)

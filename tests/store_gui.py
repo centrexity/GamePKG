@@ -50,6 +50,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-store-gui-') as directory:
             click_text(window,env,label,root)
             time.sleep(.3)
         subprocess.run(['xdotool','windowfocus',window],env=env,check=True)
+        click_text(window,env,'Add',root)
         label=wait_word('Or','store-before.png',exact=True)
         click(100,int(label['top'])+int(label['height'])+20)
         subprocess.run(['xdotool','type','--clearmodifiers',str(bundle)],env=env,check=True)

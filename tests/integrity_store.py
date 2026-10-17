@@ -72,7 +72,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-integrity-store-') as directory
     run('run', game, '--frames', '3'); run('integrity-check', game)
     if '--gui' in sys.argv:
         import csv, io, time
-        from gui_test_support import start_display
+        from gui_test_support import start_display, click_text
         blob.write_bytes(b'damaged again')
         archive.write_bytes(b'damaged archive again')
         env['LIBGL_ALWAYS_SOFTWARE'] = '1'; env.pop('WAYLAND_DISPLAY', None)
@@ -104,10 +104,12 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-integrity-store-') as directory
                 return ' '.join(w['text'] for w in words),words
             def click(w,dy=0):
                 subprocess.run(['xdotool','mousemove','--window',window,str(int(w['left'])+int(w['width'])//2),str(int(w['top'])+int(w['height'])//2+dy),'click','1'],env=env,check=True)
+            click_text(window,env,'Add',root)
             text,words = screen()
             hint=next(w for w in words if w['text']=='Or')
             subprocess.run(['xdotool','mousemove','--window',window,'100',str(int(hint['top'])+int(hint['height'])+20),'click','1'],env=env,check=True)
             subprocess.run(['xdotool','type','--clearmodifiers',str(store)],env=env,check=True); time.sleep(.2)
+            click_text(window,env,'Back to library',root)
             text,words = screen(); click(next(w for w in words if w['text']=='Repair'))
             end = time.monotonic()+30
             while True:

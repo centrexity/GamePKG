@@ -115,7 +115,7 @@ print('200', end='')
         import csv
         import io
         import time
-        from gui_test_support import start_display
+        from gui_test_support import start_display, click_text
         publish('0.1.0')
         (root / 'requests.jsonl').write_text('')
         shutil.rmtree(root / 'library')
@@ -163,6 +163,7 @@ print('200', end='')
                                 str(int(word['top']) + int(word['height']) // 2 + dy), 'click', '1'],
                                env=env, check=True)
 
+            click_text(window,env,'Add',root)
             text, words = screen()
             # The field follows the drop hint, rather than the Local label.
             # Its low-contrast placeholder is not reliably recognized by OCR.

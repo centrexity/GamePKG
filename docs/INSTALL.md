@@ -29,9 +29,9 @@ tar -xzf slang-2026.19.tar.gz -C "$HOME/.local/share/gamepkg/slang-2026.19"
 
 After the checksum passes, extract into the new Slang folder as shown above. No Python installer is needed. Enter that folder in the desktop Settings page, or set GAMEPKG_SLANG_ROOT to it for the CLI. Namespace support is required for isolated builds; a denied sandbox stops compilation. Vulkan with WGSL is the default desktop shader path. DXIL compilation additionally requires the pinned DXC installer; native Metal/DXIL playback remains unfinished.
 
-Install a signed package from a file or HTTPS URL in the desktop library. Review its creator fingerprint and permissions, approve installation, choose Build, then Play. Build creates a native Linux executable only. Use Build Wasm for that separate target. Native C-based ports need Clang 18 and lld-18; only the optional Wasm target needs WASI libraries. Shader-free native games do not require Slang. A game that requires a ROM needs a file you supply explicitly. Open its game page and click each ROM file field to open the system file picker. Choosing a file remembers its location for that game; cancelling keeps the previous choice. Importing a .gamepkglist only adds catalog entries; it does not download games.
+Choose **Add** in the desktop library to install a signed package from a file or HTTPS URL. Review its creator fingerprint and permissions, approve installation, choose Build, then Play. Build creates a native Linux executable only. Use Build Wasm for that separate target. Native C-based ports need Clang 18 and lld-18; only the optional Wasm target needs WASI libraries. Shader-free native games do not require Slang. A game that requires a ROM needs a file you supply explicitly. Open its game page and click each ROM file field to open the system file picker. Choosing a file remembers its location for that game; cancelling keeps the previous choice. Importing a .gamepkglist only adds catalog entries; it does not download games.
 
-To try a ready-to-install game, paste this catalog URL into the desktop library and choose **Import .gamepkglist**:
+To try a ready-to-install game, click **Add** in the desktop library, paste this catalog URL, and choose **Import .gamepkglist**:
 
 ```text
 https://github.com/centrexity/GamePKG/releases/download/v0.1.6/demos.gamepkglist
@@ -53,7 +53,7 @@ Keep private creator keys private. Players do not need a key to install or play 
 
 The browser library is included. Run `./bin/gamepkg web-library` and open its printed session link. It needs no separate storage package. The Rust host retains the native records; standard browser storage optionally caches library information and icons. Use the desktop or CLI for installation, builds, gameplay and repairs.
 
-Open a game’s page and click each ROM file field to select its named file. Their locations are remembered separately across restarts; Play can launch any configured game. To repair damaged shared assets, enter the original local `.gamepkgstore` path in the desktop package field and choose **Repair assets**, or run `./bin/gamepkg integrity-fix GAME_ID --store original.gamepkgstore`.
+Open a game’s page and click each ROM file field to select its named file. Their locations are remembered separately across restarts; Play can launch any configured game. To repair damaged shared assets, open **Add**, enter the original local `.gamepkgstore` path, return to the library, and choose **Repair assets**, or run `./bin/gamepkg integrity-fix GAME_ID --store original.gamepkgstore`.
 
 For separately installed WASI libraries, set **Settings → C/WASI build tools folder** to the sysroot folder (either `/usr` or a folder containing `usr/include/wasm32-wasi` and its matching libraries). Use **Check C/WASI build tools**, then **Save settings**. Leave it empty for system packages. Engine-specific environment overrides still take precedence. The Windows compiler uses the settings saved inside its Linux environment.
 
