@@ -44,8 +44,19 @@ Sound effects use a bounded 16-channel DMX mixer. Original WAD music uses the
 [in-memory OPL music backend](music/README.md), with instruments read from that
 same selected WAD. Multiplayer, mod loading, music backend selection and browser
 export remain unfinished. No microphone, socket, SDL device or native library is
-exposed to the engine. Controller/touch input comes through the same host button
-snapshot as keyboard input.
+exposed to the engine. Controller/touch actions use the host button snapshot;
+desktop keyboard and mouse use ordered, bounded physical events. Original
+arrows, Ctrl, Space, Alt, Shift, function keys, Pause and automap Tab retain
+their engine meanings. Mouse buttons, wheel bindings and relative motion go
+through the original event responder. Focus loss releases held controls;
+Ctrl+Alt releases pointer capture and clicking the game recaptures it.
+
+Quitting preserves the original sound delay and ENDOOM screen, rendered from
+the selected WAD with pinned textscreen font data, colors and blinking. A new
+key or mouse-button press closes that screen. The engine reports normal exit
+to the host rather than terminating the worker mid-packet. A typed wrapper
+preserves the original demo cleanup callback on Wasm, where an incompatible
+upstream function-pointer cast otherwise traps.
 
 The mixer respects world-position separation and changing volume using the
 [original DOOM quadratic panning and PCM gain](https://github.com/id-Software/DOOM/blob/master/linuxdoom-1.10/i_sound.c).

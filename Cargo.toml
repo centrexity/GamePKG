@@ -10,7 +10,7 @@ default-run = "gamepkg"
 
 [features]
 default = []
-gui = ["dep:eframe", "dep:gilrs", "dep:rfd", "dep:pollster", "audio"]
+gui = ["dep:egui-winit", "dep:eframe", "dep:gilrs", "dep:rfd", "dep:pollster", "audio"]
 audio = ["dep:cpal"]
 
 [[bin]]
@@ -23,6 +23,7 @@ path = "src/bin/gui.rs"
 required-features = ["gui"]
 
 [dependencies]
+egui-winit = { version = "=0.31.1", optional = true, default-features = false }
 cpal = { version = "0.18.2", optional = true }
 wit-component = "=0.236.1"
 wit-parser = "=0.236.1"
@@ -59,3 +60,6 @@ wat = "1"
 
 [target.'cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))'.dependencies]
 gilrs = { version = "=0.10.10", optional = true, default-features = false, features = ["xinput"] }
+
+[patch.crates-io]
+egui-winit = { path = "vendor/egui-winit" }

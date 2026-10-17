@@ -300,7 +300,7 @@ fn engine(stage: &Path, profile: &str, optimize: bool) -> Result<Vec<String>> {
         );
     }
     if doom {
-        crate::doom::stage_config_source(stage)?;
+        crate::doom::stage_desktop_sources(stage)?;
     }
     if !doom {
         let path = stage.join("engines/zelda3/upstream/src/zelda_rtl.c");

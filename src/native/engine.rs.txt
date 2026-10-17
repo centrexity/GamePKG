@@ -3,7 +3,7 @@
         #[cfg(gamepkg_doom)] unsafe extern "C" {fn initialize(data:*mut u8,length:u32,save:u32)->i32;}
         #[cfg(gamepkg_zelda)] unsafe extern "C" {fn initialize(data:*mut u8,length:u32)->i32;}
         unsafe extern "C" {fn step(input:u32)->i32;fn pixels()->*mut u8;fn audio()->*mut i16;fn reset_engine();}
-        #[cfg(gamepkg_doom)] unsafe extern "C" {fn savedata()->*mut u8;fn savedlength()->u32;fn savedirty()->i32;fn status()->u32;fn position()->u32;fn controller()->u32;}
+        #[cfg(gamepkg_doom)] unsafe extern "C" {fn engine_input(kind:i32,a:i32,b:i32)->i32;fn quitrequested()->i32;fn savedata()->*mut u8;fn savedlength()->u32;fn savedirty()->i32;fn status()->u32;fn position()->u32;fn controller()->u32;}
         #[cfg(gamepkg_zelda)] unsafe extern "C" {fn sram()->*mut u8;fn save_changed()->i32;fn engine_status()->u32;fn engine_position()->u32;fn engine_controller()->u32;}
         static mut STARTED:bool=false;
         pub(super) fn init(){
@@ -20,6 +20,14 @@
                 #[cfg(gamepkg_zelda)] {if n>0{assert_eq!(n,8192);std::ptr::copy_nonoverlapping(save.as_ptr(),sram(),n);}}
             }
         }
+        #[cfg(gamepkg_doom)] pub(super) fn input(bytes:&[u8]) {
+            for event in bytes.chunks_exact(12) {
+                let kind=i32::from_le_bytes(event[..4].try_into().unwrap());
+                let a=i32::from_le_bytes(event[4..8].try_into().unwrap());
+                let b=i32::from_le_bytes(event[8..].try_into().unwrap());
+                assert_eq!(unsafe{engine_input(kind,a,b)},0);
+            }
+        }
         pub(super) fn tick(input:u32,state:u64)->u64{unsafe{
             #[cfg(gamepkg_doom)] if state==0&&STARTED{reset_engine();}
             #[cfg(gamepkg_zelda)] if state==0{reset_engine();}
@@ -31,10 +39,10 @@
             #[cfg(gamepkg_zelda)] let (w,h)=(256,224);
             let mut p=std::slice::from_raw_parts(pixels(),w*h*4).to_vec();for pixel in p.chunks_exact_mut(4){pixel.swap(0,2);pixel[3]=255;}
             super::draw_clear(0x000000ff);
-            #[cfg(gamepkg_doom)] super::draw_image(0.0,0.0,640.0,480.0,w as u32,h as u32,&p);
+            #[cfg(gamepkg_doom)] {let ending=controller()&(1<<25)!=0;super::draw_image(0.0,if ending{40.0}else{0.0},640.0,if ending{400.0}else{480.0},w as u32,h as u32,&p);}
             #[cfg(gamepkg_zelda)] super::draw_image(64.0,16.0,512.0,448.0,w as u32,h as u32,&p);
             super::__gamepkg_audio_submit_stereo(std::slice::from_raw_parts(audio(),1600));
-            #[cfg(gamepkg_doom)] {if savedirty()!=0{let n=savedlength() as usize;assert!(n<=4*1024*1024);assert!(super::__gamepkg_engine_save_write(std::slice::from_raw_parts(savedata(),n)));}super::rpc(21,&super::u32s(&[status(),position(),controller()]));}
+            #[cfg(gamepkg_doom)] {if savedirty()!=0{let n=savedlength() as usize;assert!(n<=4*1024*1024);assert!(super::__gamepkg_engine_save_write(std::slice::from_raw_parts(savedata(),n)));}super::rpc(21,&super::u32s(&[status(),position(),controller()]));if quitrequested()!=0{super::rpc(25,&[]);}}
             #[cfg(gamepkg_zelda)] {if save_changed()!=0{super::save_write(std::slice::from_raw_parts(sram(),8192));}super::rpc(21,&super::u32s(&[engine_status(),engine_position(),engine_controller()]));}
             state.wrapping_add(1)
         }}

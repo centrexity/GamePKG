@@ -32,7 +32,7 @@ pub(crate) fn verify_music_sources(root: &std::path::Path) -> Result<()> {
     Ok(())
 }
 #[cfg(target_os = "linux")]
-pub(crate) fn stage_config_source(root: &std::path::Path) -> Result<()> {
+pub(crate) fn stage_desktop_sources(root: &std::path::Path) -> Result<()> {
     let path = root.join("engines/doom/upstream/m_config.c");
     let mut source = std::fs::read_to_string(&path)?;
     for function in ["SaveDefaultCollection", "LoadDefaultCollection"] {
@@ -44,6 +44,78 @@ pub(crate) fn stage_config_source(root: &std::path::Path) -> Result<()> {
         );
         source = source.replace(&original, &original.replace("#if ORIGCODE", "#if 1"));
     }
+    std::fs::write(path, source)?;
+    let path = root.join("engines/doom/upstream/m_controls.c");
+    let mut source = std::fs::read_to_string(&path)?;
+    for (old, new) in [
+        ("int key_fire = KEY_FIRE;", "int key_fire = KEY_RCTRL;"),
+        ("int key_use = KEY_USE;", "int key_use = ' ';"),
+        (
+            "int key_strafeleft = KEY_STRAFE_L;",
+            "int key_strafeleft = ',';",
+        ),
+        (
+            "int key_straferight = KEY_STRAFE_R;",
+            "int key_straferight = '.';",
+        ),
+    ] {
+        anyhow::ensure!(
+            source.matches(old).count() == 1,
+            "pinned control defaults changed"
+        );
+        source = source.replace(old, new);
+    }
+    std::fs::write(path, source)?;
+    let path = root.join("engines/doom/upstream/i_system.c");
+    let mut source = std::fs::read_to_string(&path)?;
+    let begin = source
+        .find("void I_Quit (void)")
+        .context("pinned quit function changed")?;
+    let end = source[begin..]
+        .find("\n}\n")
+        .context("pinned quit function end changed")?
+        + begin;
+    source.insert_str(end, "\n    gamepkg_request_quit();");
+    source.insert_str(begin, "void gamepkg_request_quit(void);\n");
+    std::fs::write(path, source)?;
+    let path = root.join("engines/doom/upstream/d_main.c");
+    let mut source = std::fs::read_to_string(&path)?;
+    let old = "    I_Endoom(endoom);\n\n\texit(0);";
+    anyhow::ensure!(
+        source.matches(old).count() == 1,
+        "pinned ending function changed"
+    );
+    source=source.replace(old,"    if(W_LumpLength(W_GetNumForName(DEH_String(\"ENDOOM\")))<4000) I_Error(\"Invalid ENDOOM resource\");\n    gamepkg_show_endoom(endoom);");
+    let marker = "static void D_Endoom(void)";
+    source = source.replace(
+        marker,
+        &format!("void gamepkg_show_endoom(const unsigned char *data);\n{marker}"),
+    );
+    // The upstream cast calls a boolean-returning function through a void
+    // pointer. Wasm checks indirect-call signatures; preserve the callback's
+    // work through a correctly typed wrapper instead.
+    let old = "I_AtExit((atexit_func_t) G_CheckDemoStatus, true);";
+    anyhow::ensure!(
+        source.matches(old).count() == 1,
+        "pinned demo exit callback changed"
+    );
+    source = source.replace(old, "I_AtExit(gamepkg_check_demo_status, true);");
+    source = source.replace(marker, &format!("static void gamepkg_check_demo_status(void) {{ (void)G_CheckDemoStatus(); }}\n{marker}"));
+    std::fs::write(path, source)?;
+    let path = root.join("engines/doom/upstream/m_menu.c");
+    let mut source = std::fs::read_to_string(&path)?;
+    let begin = source
+        .find("void M_QuitResponse(int key)")
+        .context("pinned quit response changed")?;
+    let end = source[begin..]
+        .find("\n}\n")
+        .context("pinned quit response end changed")?
+        + begin;
+    let body = source[begin..end]
+        .replace("I_WaitVBL(105);", "")
+        .replace("I_Quit ();", "gamepkg_begin_quit();");
+    source.replace_range(begin..end, &body);
+    source.insert_str(begin, "void gamepkg_begin_quit(void);\n");
     std::fs::write(path, source)?;
     Ok(())
 }
@@ -128,7 +200,7 @@ pub fn build() -> Result<Vec<u8>> {
             }
         }
         verify_music_sources(kit.path())?;
-        stage_config_source(kit.path())?;
+        stage_desktop_sources(kit.path())?;
         let sysroot =
             crate::c_toolchain::resolve(&["GAMEPKG_DOOM_SYSROOT", "GAMEPKG_ZELDA3_SYSROOT"])?;
         let prefix = if sysroot.join("usr/include/wasm32-wasi").is_dir() {
@@ -276,6 +348,10 @@ pub struct Doom {
     store: Store<StoreLimits>,
     memory: Memory,
     step: TypedFunc<i32, i32>,
+    input: Option<TypedFunc<(i32, i32, i32), i32>>,
+    quit: Option<TypedFunc<(), i32>>,
+    pub(crate) exited: bool,
+    pub(crate) ending: bool,
     reset: TypedFunc<(), ()>,
     started: bool,
     pixels: TypedFunc<(), i32>,
@@ -372,8 +448,18 @@ impl Doom {
         }
         Ok(Self {
             step: instance.get_typed_func(&mut store, "step")?,
+            input: instance
+                .get_func(&mut store, "engine_input")
+                .map(|f| f.typed(&store))
+                .transpose()?,
             reset: instance.get_typed_func(&mut store, "reset")?,
             started: false,
+            quit: instance
+                .get_func(&mut store, "quit_requested")
+                .map(|f| f.typed(&store))
+                .transpose()?,
+            exited: false,
+            ending: false,
             pixels: instance.get_typed_func(&mut store, "pixels")?,
             audio: instance.get_typed_func(&mut store, "audio")?,
             audio_channels,
@@ -388,6 +474,28 @@ impl Doom {
             memory,
         })
     }
+    pub(crate) fn input_events(
+        &mut self,
+        events: &[crate::doom_input::Event],
+        deadline: u64,
+    ) -> Result<()> {
+        if events.is_empty() {
+            return Ok(());
+        }
+        let function = self
+            .input
+            .as_ref()
+            .context("Rebuild DOOM to enable desktop keyboard/mouse input")?;
+        self.store.set_epoch_deadline(deadline);
+        for event in events {
+            let [kind, a, b] = event.words()?;
+            anyhow::ensure!(
+                function.call(&mut self.store, (kind, a, b))? == 0,
+                "invalid DOOM desktop event"
+            );
+        }
+        Ok(())
+    }
     pub fn step(
         &mut self,
         input: u32,
@@ -400,6 +508,10 @@ impl Doom {
         }
         self.started = true;
         self.step.call(&mut self.store, input as i32)?;
+        self.ending = (self.controller.call(&mut self.store, ())? as u32) & (1 << 25) != 0;
+        if let Some(quit) = &self.quit {
+            self.exited = quit.call(&mut self.store, ())? != 0;
+        }
         let p = self.pixels.call(&mut self.store, ())?;
         let mut pixels = vec![0u8; 320 * 200 * 4];
         self.memory.read(&self.store, p as usize, &mut pixels)?;

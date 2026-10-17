@@ -51,3 +51,9 @@ have not changed; the GUI reports that a build is needed.
 Sound settings now persist through the original configuration files and survive
 relaunch. Optional music-backend/enhancement selection and the remaining port
 gaps stay tracked in [port-parity.toml](../../../docs/port-parity.toml).
+
+The same pinned source kit also carries `textscreen/fonts/small.h` and its
+`fonts/README` as `upstream/small_font.h` and `upstream/fonts_README`. The original
+font notices are retained there. The host adapter renders the player's ENDOOM
+text in RAM with its original character cells, color attributes and blinking;
+no ending text or other WAD content is bundled.

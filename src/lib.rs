@@ -72,6 +72,7 @@ mod zelda3_sources;
 
 mod builtin;
 mod doom;
+pub mod doom_input;
 #[cfg(target_os = "linux")]
 mod doom_sources;
 

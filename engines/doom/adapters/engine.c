@@ -20,11 +20,17 @@ static uint32_t wad_length;
 static char diagnostics[4096];
 static uint32_t diagnostic_length;
 static uint32_t ticks = 1, previous, buttons, accumulator;
-static unsigned keyqueue[64], qr, qw;
+static int quit_requested;
+static unsigned quit_countdown;
+static uint8_t pointer_buttons;
+void gamepkg_request_quit(void) { if(!quit_requested) quit_requested=2; }
+
 #include "audio.h"
 #include "storage.h"
 #include "m_config.h"
 #include "i_system.h"
+#include "d_event.h"
+#include "m_controls.h"
 /* Any remaining libc/WASI request is denied or captured, never forwarded. */
 __wasi_errno_t __wrap___wasi_fd_write(__wasi_fd_t fd,
                                       const __wasi_ciovec_t *iov, size_t n,
@@ -72,18 +78,8 @@ void DG_DrawFrame(void) {}
 void DG_SetWindowTitle(const char *title) {}
 void DG_SleepMs(uint32_t ms) { ticks += ms ? ms : 1; }
 uint32_t DG_GetTicksMs(void) { return ticks; }
-int DG_GetKey(int *pressed, unsigned char *key) {
-  if (qr == qw)
-    return 0;
-  unsigned v = keyqueue[qr++ % 64];
-  *pressed = v >> 8;
-  *key = v;
-  return 1;
-}
-static void event(int key, int down) {
-  if (qw - qr < 64)
-    keyqueue[qw++ % 64] = (down << 8) | key;
-}
+#include "input.h"
+#include "endoom.h"
 static boolean snd_init(boolean prefix) { return true; }
 static void snd_shutdown(void) {}
 static int snd_lump(sfxinfo_t *s) {
@@ -152,37 +148,50 @@ int initialize(uint8_t *data, uint32_t length, uint32_t saved) {
                          "-loadgame",
                          selected_slot};
   doomgeneric_Create(last_slot >= 0 ? 13 : 11, args);
+  /* Migrate only the old adapter's four unserializable proxy defaults. */
+  if(!key_fire && !key_use && !key_strafeleft && !key_straferight) {
+    key_fire=KEY_RCTRL; key_use=' '; key_strafeleft=','; key_straferight='.';
+  }
   return 0;
 }
 EXPORT("step") int step(uint32_t input) {
+  if(quit_requested==2) { memset(pcm,0,sizeof(pcm)); return 0; }
   uint32_t now = (input & 0x000f00ff) | ((input >> 8) & 0xff) |
                  ((input >> 4) & 0x000f0000);
+  if(quit_requested==1) {
+    if(now&~ending_mask) quit_requested=2;
+    ending_mask=now; render_ending(); memset(pcm,0,sizeof(pcm)); return 0;
+  }
   buttons = now;
   const uint32_t masks[] = {1,  2,   4,       8,       16,      32,
                             64, 128, 1 << 16, 1 << 17, 1 << 18, 1 << 19};
   const uint8_t keys[] = {
-      KEY_LEFTARROW, KEY_RIGHTARROW, KEY_UPARROW, KEY_DOWNARROW,
-      KEY_FIRE,      KEY_RSHIFT,     KEY_ENTER,   KEY_ESCAPE,
-      KEY_USE,       KEY_TAB,        ',',         '.'};
-  for (int i = 0; i < 12; i++)
-    if ((now ^ previous) & masks[i])
-      event(keys[i], !!(now & masks[i]));
+      key_left, key_right, key_up, key_down,
+      key_fire,      key_speed,     KEY_ENTER,   KEY_ESCAPE,
+      key_use,       KEY_TAB,        key_strafeleft, key_straferight};
+  action_state(keys,masks,12,now);
   if ((now & ((1 << 18) | (1 << 19) | 64)) == ((1 << 18) | (1 << 19) | 64) &&
       !(previous & 64) && gamestate == GS_LEVEL)
     G_SaveGame(0, "GAMEPKG");
   previous = now;
   accumulator += 35;
-  if (accumulator >= 60) {
+  if (!quit_countdown && accumulator >= 60) {
     accumulator -= 60;
     ticks += 28;
+    input_dispatched=0;
     doomgeneric_Tick();
   }
   M_SaveDefaults();
   if (storage_error) I_Error("DOOM virtual save or configuration storage failed");
+  if(quit_countdown) memcpy(DG_ScreenBuffer,quit_frame,sizeof(quit_frame));
   mix();
   int16_t music[1600];
   gamepkg_music_render(music, 800);
   for (int i = 0; i < 1600; i++) pcm[i] = clip_sample((int)pcm[i] + music[i]);
+  if(quit_countdown && --quit_countdown==0) {
+    I_Quit(); ending_mask=now;
+    if(quit_requested==1) render_ending();
+  }
   return 0;
 }
 EXPORT("pixels") void *pixels(void) { return DG_ScreenBuffer; }
@@ -207,11 +216,13 @@ EXPORT("position") uint32_t position(void) {
                     << 16)
              : 0;
 }
-EXPORT("controller") uint32_t controller(void) { return buttons; }
+EXPORT("controller") uint32_t controller(void) { return buttons | (players[consoleplayer].attackdown?1u<<24:0) | (paused?1u<<26:0) | (quit_requested==1?1u<<25:0) | ((uint32_t)players[consoleplayer].readyweapon<<27); }
+EXPORT("quit_requested") int quitrequested(void) { return quit_requested==2; }
 EXPORT("diagnostics") void *logs(void) { return diagnostics; }
 /* Restart the first level through the engine's deferred game action. */
 EXPORT("reset") void reset_engine(void) {
   G_DeferedInitNew(sk_medium, 1, 1);
   previous = 0;
-  qr = qw = 0;
+  engine_input(3,0,0);
+  for(unsigned key=1;key<256;key++) set_key(action_keys,key,0,0);
 }

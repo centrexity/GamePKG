@@ -1,6 +1,22 @@
 // Reviewed host-owned DOOM source kit. No game-provided C is compiled.
 pub const FILES: &[(&str, &[u8])] = &[
     (
+        "engines/doom/adapters/endoom.h",
+        include_bytes!("../engines/doom/adapters/endoom.h"),
+    ),
+    (
+        "engines/doom/music/upstream/small_font.h",
+        include_bytes!("../engines/doom/music/upstream/small_font.h"),
+    ),
+    (
+        "engines/doom/music/upstream/fonts_README",
+        include_bytes!("../engines/doom/music/upstream/fonts_README"),
+    ),
+    (
+        "engines/doom/adapters/input.h",
+        include_bytes!("../engines/doom/adapters/input.h"),
+    ),
+    (
         "engines/doom/adapters/storage.h",
         include_bytes!("../engines/doom/adapters/storage.h"),
     ),

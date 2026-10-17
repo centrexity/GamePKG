@@ -3,6 +3,7 @@ mod add_page;
 mod app_updates;
 mod artwork;
 mod cube2_input;
+mod doom_input;
 mod drops;
 mod game_page;
 mod input;
@@ -76,6 +77,7 @@ pub struct App {
     cube_mouse_capture: cube2_input::MouseCapture,
     confine_mouse: bool,
     cube_pointer: cube2_input::Pointer,
+    doom_desktop: doom_input::Desktop,
     game_processes: Vec<(String, std::process::Child)>,
     next_frame: Option<std::time::Instant>,
     pending_input: u32,
@@ -395,6 +397,15 @@ impl eframe::App for App {
         }
     }
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
+        egui_winit::gamepkg_input::enable(
+            ctx.viewport_id(),
+            !self.game_window_closing
+                && self
+                    .player
+                    .as_ref()
+                    .is_some_and(|game| game.doom_input_allowed()),
+            ctx.input(|i| i.focused),
+        );
         // Closing a viewport can schedule one more update. Do not reopen the
         // loading/error UI after an orderly in-game Quit has saved the session.
         if self.game_window_closing {
@@ -672,6 +683,7 @@ impl eframe::App for App {
         }
         if self.player.is_none() {
             self.input_devices.reset();
+            self.doom_desktop = Default::default();
             self.sprite_textures.finish(0);
         }
         if let Some(game) = self.player.as_mut() {
@@ -830,7 +842,33 @@ impl eframe::App for App {
                             self.cube_pointer = Default::default();
                         }
                     }
-                    let input = if game.is_cube2() {
+                    if game.doom_input_allowed() {
+                        let focused = ctx.input(|i| i.focused);
+                        let (captured, recaptured) = self.cube_mouse_capture.update(
+                            focused,
+                            ctx.input(cube2_input::release_requested),
+                            ctx.input(|i| i.pointer.primary_clicked()),
+                        );
+                        cube2_input::MouseCapture::apply(ctx, captured, self.confine_mouse);
+                        let events = egui_winit::gamepkg_input::take(ctx.viewport_id());
+                        let (look_x, look_y) = self.input_devices.look_delta();
+                        if let Err(error) = self
+                            .doom_desktop
+                            .forward(game, &events, captured, recaptured)
+                        {
+                            failure = Some(format!("Game stopped: {error:#}"));
+                        }
+                        if captured {
+                            if let Err(error) = self.doom_desktop.controller_look(
+                                game,
+                                if recaptured { 0 } else { look_x },
+                                if recaptured { 0 } else { look_y },
+                            ) {
+                                failure = Some(format!("Game stopped: {error:#}"));
+                            }
+                        }
+                    }
+                    let input = if game.doom_engine || game.is_cube2() {
                         if self.cube_mouse_capture.captured() {
                             device_input
                         } else {

@@ -378,3 +378,14 @@ Creative Commons Notice
     this trademark restriction does not form part of this License.
 
     Creative Commons may be contacted at https://creativecommons.org/.
+
+DOOM ending-screen miniature font:
+Pinned Chocolate DOOM revision and source location as above; original notices
+for Thomas A. Fine, the DOSBox Team and Simon Howard are preserved in
+engines/doom/music/upstream/fonts_README and small_font.h. The original
+Thomas A. Fine permission notice and GPL-2.0-or-later enhancements apply.
+
+Desktop physical input integration:
+egui-winit 0.31.1, copyright the egui contributors, MIT OR Apache-2.0.
+Pinned source, both licenses and GamePKG integration notes are included in
+vendor/egui-winit. This is a host dependency, not a guest crate permission.

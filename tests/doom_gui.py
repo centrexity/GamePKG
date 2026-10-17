@@ -23,7 +23,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-doom-gui-',dir=PROJECT/'target'
    time.sleep(.1)
   assert found.returncode==0;window=found.stdout.splitlines()[0]
   subprocess.run(['xdotool','windowsize',window,'1700','1000','windowfocus',window],env=env,check=True)
-  click_text(window,env,'DOOM',root,timeout=20);time.sleep(.3)
+  click_text(window,env,'com.gamepkg.doom',root,timeout=20);time.sleep(.3)
   def capture(name):
    path=proof/name;subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(path)],env=env,check=True,timeout=10);return path
   click_text(window,env,'Choose ROM',root,timeout=20)
@@ -50,18 +50,20 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-doom-gui-',dir=PROJECT/'target'
   after=capture('gameplay-moved.png')
   diff=ImageChops.difference(Image.open(before).convert('RGB'),Image.open(after).convert('RGB'))
   assert sum(max(pixel)>30 for pixel in pixels(diff))>1000,'No visible movement'
-  key('z');key('v');time.sleep(.4);capture('automap.png');key('v')
-  subprocess.run(['xdotool','keydown','--window',window,'q','keydown','--window',window,'e'],env=env,check=True)
-  key('Return');time.sleep(.2)
-  subprocess.run(['xdotool','keyup','--window',window,'q','keyup','--window',window,'e'],env=env,check=True)
-  deadline=time.monotonic()+5
+  key('Control_L');key('Tab');time.sleep(.4);capture('automap.png');key('Tab')
+  key('F2');time.sleep(.3);key('Return');time.sleep(.3)
+  subprocess.run(['xdotool','type','--delay','100','--window',window,'GUI SAVE'],env=env,check=True)
+  time.sleep(.6);key('Return')
+  deadline=time.monotonic()+15
   while time.monotonic()<deadline:
    blobs=list((root/'library/saves').glob('*.blob'))
-   if blobs:break
+   if len(blobs)==1 and b'GUI SAVE\0' in blobs[0].read_bytes():break
    time.sleep(.1)
-  assert len(blobs)==1 and 1000<blobs[0].stat().st_size<=512*1024,'No scoped DOOM quicksave'
+  assert len(blobs)==1 and 1000<blobs[0].stat().st_size<=4*1024*1024,'No scoped DOOM save'
   capture('quicksaved.png')
-  print('Native DOOM passed: WAD selection, visible level/HUD, keyboard movement, fire/map controls and scoped quicksave.')
+  saved=blobs[0].read_bytes()
+  assert b'GUI SAVE\0' in saved,f'Physical keyboard save-name entry failed: {saved[44:68]!r}'
+  print('Native DOOM passed: WAD selection, visible level/HUD, original keyboard movement, fire/map controls and named scoped save.')
  finally:
   if app is not None:
    app.terminate()

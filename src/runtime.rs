@@ -37,6 +37,7 @@ struct Data {
     network: crate::network::Service,
 }
 pub struct Game {
+    doom_events: Vec<crate::doom_input::Event>,
     progress: Option<crate::progress::Session>,
     store: Option<Store<Data>>,
     tick: Option<Tick>,
@@ -568,6 +569,7 @@ impl Game {
             }
         };
         Ok(Self {
+            doom_events: Vec::new(),
             progress: None,
             store: Some(store),
             tick: Some(tick),
@@ -639,6 +641,7 @@ impl Game {
                     &settings,
                 )?;
                 return Ok(Self {
+                    doom_events: Vec::new(),
                     progress: Some(crate::progress::Session::open(
                         root,
                         &manifest.id,
@@ -734,6 +737,7 @@ impl Game {
                     shader_sources.len(),
                 )?;
                 return Ok(Self {
+                    doom_events: Vec::new(),
                     progress: Some(crate::progress::Session::open(
                         root,
                         &manifest.id,
@@ -928,7 +932,14 @@ impl Game {
         if let Some(cube) = &self.cube2 {
             return cube.exited;
         }
-        false
+        #[cfg(target_os = "linux")]
+        if let Some(native) = &self.native {
+            return native.exited;
+        }
+        self.store
+            .as_ref()
+            .and_then(|s| s.data().doom.as_ref())
+            .is_some_and(|doom| doom.exited)
     }
     pub fn finish(&mut self) -> Result<()> {
         #[cfg(target_os = "linux")]
@@ -1022,7 +1033,48 @@ impl Game {
         }
         &self.store.as_ref().unwrap().data().frame
     }
+    pub fn doom_input_allowed(&self) -> bool {
+        self.doom_engine && self.input_allowed
+    }
+    pub fn doom_release_input(&mut self) -> Result<()> {
+        self.doom_events.clear();
+        self.doom_input(crate::doom_input::Event::Release)
+    }
+    pub fn doom_input(&mut self, event: crate::doom_input::Event) -> Result<()> {
+        anyhow::ensure!(
+            self.doom_engine && self.input_allowed,
+            "DOOM desktop input access denied"
+        );
+        event.words()?;
+        if let (
+            Some(crate::doom_input::Event::Mouse {
+                buttons: old_buttons,
+                dx: old_dx,
+                dy: old_dy,
+            }),
+            crate::doom_input::Event::Mouse { buttons, dx, dy },
+        ) = (self.doom_events.last_mut(), event)
+        {
+            if *old_buttons == buttons {
+                if let (Some(x), Some(y)) = (old_dx.checked_add(dx), old_dy.checked_add(dy)) {
+                    *old_dx = x;
+                    *old_dy = y;
+                    return Ok(());
+                }
+            }
+        }
+        anyhow::ensure!(
+            self.doom_events.len() < crate::doom_input::MAX_QUEUED,
+            "DOOM desktop input queue is full"
+        );
+        self.doom_events.push(event);
+        Ok(())
+    }
     pub fn step(&mut self, input: u32) -> Result<u64> {
+        let events: Vec<_> = self
+            .doom_events
+            .drain(..self.doom_events.len().min(crate::doom_input::MAX_PER_TICK))
+            .collect();
         if let Some(progress) = &mut self.progress {
             progress.start();
         }
@@ -1037,11 +1089,25 @@ impl Game {
         }
         #[cfg(target_os = "linux")]
         if let Some(n) = &mut self.native {
-            self.state = n.step(if self.input_allowed { input } else { 0 }, self.state)?;
+            self.state = n.step(
+                if self.input_allowed { input } else { 0 },
+                self.state,
+                &events,
+            )?;
             if let Some(progress) = &mut self.progress {
                 progress.tick(&n.achievements)?;
             }
             return Ok(self.state);
+        }
+        if !events.is_empty() {
+            self.store
+                .as_mut()
+                .unwrap()
+                .data_mut()
+                .doom
+                .as_mut()
+                .context("DOOM engine is unavailable")?
+                .input_events(&events, self.deadline_epochs)?;
         }
         self.store
             .as_mut()
@@ -1364,7 +1430,21 @@ fn doom_tick(mut caller: Caller<'_, Data>, input: i32, state: i64) -> Result<i64
     data.frame.background = Some(0x000000ff);
     let image = crate::drawing::image::Image::new(320, 200, &frame.pixels)
         .context("invalid DOOM engine image")?;
-    if !data.frame.image(0.0, 0.0, 640.0, 480.0, image) {
+    if !data.frame.image(
+        0.0,
+        if data.doom.as_ref().is_some_and(|doom| doom.ending) {
+            40.0
+        } else {
+            0.0
+        },
+        640.0,
+        if data.doom.as_ref().is_some_and(|doom| doom.ending) {
+            400.0
+        } else {
+            480.0
+        },
+        image,
+    ) {
         bail!("DOOM image exceeds the frame budget");
     }
     if data.audio_allowed {
@@ -1612,5 +1692,71 @@ mod adversarial_assets_tests {
         game.store.as_mut().unwrap().data_mut().shader_count = 1;
         assert_eq!(game.step(0).unwrap(), 42);
         assert!(game.frame().commands.is_empty());
+    }
+}
+#[cfg(test)]
+mod doom_input_tests {
+    use super::*;
+    use crate::doom_input::Event;
+    fn fixture(input: bool) -> Game {
+        let mut manifest =
+            Manifest::parse(include_bytes!("../examples/minimal/manifest.toml")).unwrap();
+        manifest.permissions.input = input;
+        let bytes = wat::parse_str(
+            "(module (func (export \"gamepkg_tick\") (param i32 i64) (result i64) local.get 1))",
+        )
+        .unwrap();
+        Game::from_bytes(&bytes, &manifest).unwrap()
+    }
+    #[test]
+    fn desktop_queue_permissions_coalescing_budget_and_release_are_enforced() {
+        let mut ordinary = fixture(true);
+        assert!(ordinary
+            .doom_input(Event::Key {
+                code: b'a',
+                down: true
+            })
+            .is_err());
+        let mut denied = fixture(false);
+        denied.doom_engine = true;
+        assert!(denied
+            .doom_input(Event::Key {
+                code: b'a',
+                down: true
+            })
+            .is_err());
+        let mut game = fixture(true);
+        game.doom_engine = true;
+        for _ in 0..10000 {
+            game.doom_input(Event::Mouse {
+                buttons: 1,
+                dx: 1,
+                dy: -1,
+            })
+            .unwrap();
+        }
+        assert_eq!(
+            game.doom_events,
+            vec![Event::Mouse {
+                buttons: 1,
+                dx: 10000,
+                dy: -10000
+            }]
+        );
+        for _ in 1..crate::doom_input::MAX_QUEUED {
+            game.doom_input(Event::Key {
+                code: b'b',
+                down: true,
+            })
+            .unwrap();
+        }
+        assert!(game
+            .doom_input(Event::Key {
+                code: b'c',
+                down: true
+            })
+            .is_err());
+        game.doom_release_input().unwrap();
+        assert_eq!(game.doom_events, vec![Event::Release]);
     }
 }

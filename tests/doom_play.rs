@@ -76,7 +76,19 @@ fn real_wad_gameplay_audio_save_and_reload() {
     let firing = run(&mut game, 60, 16 << 8);
     assert!(firing, "firing produced no mixed WAD sound effects");
     run(&mut game, 1, (1 << 22) | (1 << 23) | 64);
-    run(&mut game, 60, 0);
+    // Sample the checkpoint when it is committed, before later enemy damage
+    // or movement can change the live player's position.
+    for _ in 0..60 {
+        run(&mut game, 1, 0);
+        if root.join("saves").exists()
+            && std::fs::read_dir(root.join("saves"))
+                .unwrap()
+                .next()
+                .is_some()
+        {
+            break;
+        }
+    }
     let saved_position = game.builtin_state().unwrap().unwrap();
     let saves: Vec<_> = std::fs::read_dir(root.join("saves"))
         .unwrap()
@@ -108,7 +120,12 @@ fn real_wad_gameplay_audio_save_and_reload() {
     assert_ne!((away.1, away.2), (saved_position.1, saved_position.2));
     drop(game);
     let mut resumed = load(&root, &wad);
-    run(&mut resumed, 30, 0);
+    for _ in 0..30 {
+        run(&mut resumed, 1, 0);
+        if resumed.builtin_state().unwrap().unwrap().0 & 0xffff == 0 {
+            break;
+        }
+    }
     let loaded = resumed.builtin_state().unwrap().unwrap();
     assert_eq!(loaded.0 & 0xffff, 0);
     // Saved momentum continues during load; compare within two map units,
@@ -380,4 +397,211 @@ fn all_six_original_save_slots_and_sound_settings_survive_relaunch() {
         corrupt,
         "failed load changed saved state"
     );
+}
+fn desktop_key(game: &mut Game, code: u8) {
+    game.doom_input(gamepkg::doom_input::Event::Key { code, down: true })
+        .unwrap();
+    run(game, 6, 0);
+    game.doom_input(gamepkg::doom_input::Event::Key { code, down: false })
+        .unwrap();
+    run(game, 12, 0);
+}
+fn replace_config(bytes: &[u8], name: &str, value: &str) -> Vec<u8> {
+    let mut found = false;
+    let output = std::str::from_utf8(bytes)
+        .unwrap()
+        .lines()
+        .map(|line| {
+            if line.split_whitespace().next() == Some(name) {
+                found = true;
+                format!("{name:<30}{value}\n")
+            } else {
+                format!("{line}\n")
+            }
+        })
+        .collect::<String>();
+    assert!(found, "missing config {name}");
+    output.into_bytes()
+}
+fn write_bundle(root: &std::path::Path, parts: &[Vec<u8>], selected: u32) {
+    let mut bytes = b"\x89GPD2\r\n\x1a".to_vec();
+    bytes.extend(selected.to_le_bytes());
+    for part in parts {
+        bytes.extend((part.len() as u32).to_le_bytes());
+    }
+    for part in parts {
+        bytes.extend(part);
+    }
+    let path = std::fs::read_dir(root.join("saves"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    std::fs::write(path, bytes).unwrap();
+}
+#[test]
+#[ignore = "requires GAMEPKG_DOOM_TEST_ROOT and GAMEPKG_DOOM_TEST_WAD"]
+fn original_desktop_keyboard_mouse_binding_migration_and_quit() {
+    use gamepkg::doom_input::Event;
+    let source = std::path::PathBuf::from(std::env::var_os("GAMEPKG_DOOM_TEST_ROOT").unwrap());
+    let wad = std::path::PathBuf::from(std::env::var_os("GAMEPKG_DOOM_TEST_WAD").unwrap());
+    let fixture = tempfile::tempdir().unwrap();
+    copy(&source, fixture.path());
+    let root = fixture.path();
+    let mut game = load(root, &wad);
+    run(&mut game, 120, 0);
+    for _ in 0..4 {
+        desktop_key(&mut game, 13);
+    }
+    run(&mut game, 120, 0);
+    assert_eq!(game.builtin_state().unwrap().unwrap().0 & 0xffff, 0);
+    println!("desktop phase: save name");
+    desktop_key(&mut game, 0xbc);
+    desktop_key(&mut game, 13); // Original F2 save menu.
+    for code in b"rust nami" {
+        desktop_key(&mut game, *code);
+    }
+    desktop_key(&mut game, 127);
+    desktop_key(&mut game, b'e');
+    desktop_key(&mut game, 13);
+    run(&mut game, 60, 0);
+    let mut parts = bundle_parts(root);
+    assert!(
+        parts[0].starts_with(b"RUST NAME\0"),
+        "original save-name typing/backspace failed"
+    );
+    for (name, value) in [
+        ("key_fire", "29"),
+        ("key_use", "57"),
+        ("key_strafeleft", "51"),
+        ("key_straferight", "52"),
+    ] {
+        assert_eq!(config_value(&parts[6], name), value);
+        parts[6] = replace_config(&parts[6], name, "0");
+    }
+    parts[7] = replace_config(&parts[7], "mouseb_nextweapon", "3");
+    parts[7] = replace_config(&parts[7], "mouseb_prevweapon", "4");
+    game.finish().unwrap();
+    drop(game);
+    write_bundle(root, &parts, 0);
+    let mut game = load(root, &wad);
+    run(&mut game, 120, 0);
+    println!("desktop phase: reload and fire");
+    let repaired = bundle_parts(root);
+    assert_eq!(config_value(&repaired[6], "key_fire"), "29");
+    game.doom_input(Event::Key {
+        code: 0x9d,
+        down: true,
+    })
+    .unwrap();
+    run(&mut game, 30, 0);
+    assert_ne!(
+        game.builtin_controller().unwrap().unwrap() & (1 << 24),
+        0,
+        "Ctrl did not fire after legacy key migration/reload"
+    );
+    game.doom_release_input().unwrap();
+    run(&mut game, 90, 0);
+    assert_eq!(
+        game.builtin_controller().unwrap().unwrap() & (1 << 24),
+        0,
+        "focus release left fire held"
+    );
+    println!("desktop phase: pause");
+    desktop_key(&mut game, 255);
+    assert_ne!(
+        game.builtin_controller().unwrap().unwrap() & (1 << 26),
+        0,
+        "Pause key did not pause"
+    );
+    desktop_key(&mut game, 255);
+    assert_eq!(
+        game.builtin_controller().unwrap().unwrap() & (1 << 26),
+        0,
+        "Pause key did not resume"
+    );
+    println!("desktop phase: weapons");
+    desktop_key(&mut game, b'1');
+    run(&mut game, 120, 0);
+    assert_eq!(
+        (game.builtin_controller().unwrap().unwrap() >> 27) & 15,
+        0,
+        "weapon 1 was not selected"
+    );
+    game.doom_input(Event::Mouse {
+        buttons: 8,
+        dx: 0,
+        dy: 0,
+    })
+    .unwrap();
+    game.doom_input(Event::Mouse {
+        buttons: 0,
+        dx: 0,
+        dy: 0,
+    })
+    .unwrap();
+    run(&mut game, 120, 0);
+    assert_eq!(
+        (game.builtin_controller().unwrap().unwrap() >> 27) & 15,
+        1,
+        "configured mouse wheel did not select the next weapon"
+    );
+    game.doom_input(Event::Mouse {
+        buttons: 1,
+        dx: 0,
+        dy: 0,
+    })
+    .unwrap();
+    run(&mut game, 30, 0);
+    assert_ne!(
+        game.builtin_controller().unwrap().unwrap() & (1 << 24),
+        0,
+        "left mouse did not fire"
+    );
+    game.doom_input(Event::Mouse {
+        buttons: 0,
+        dx: 0,
+        dy: 0,
+    })
+    .unwrap();
+    run(&mut game, 90, 0);
+    println!("desktop phase: mouse look");
+    let before = game.builtin_state().unwrap().unwrap();
+    game.doom_input(Event::Mouse {
+        buttons: 0,
+        dx: 300,
+        dy: 0,
+    })
+    .unwrap();
+    run(&mut game, 6, 0);
+    game.doom_input(Event::Key {
+        code: 0xad,
+        down: true,
+    })
+    .unwrap();
+    run(&mut game, 30, 0);
+    game.doom_release_input().unwrap();
+    run(&mut game, 60, 0);
+    let after = game.builtin_state().unwrap().unwrap();
+    assert_ne!(
+        before.1, after.1,
+        "relative mouse turning did not change forward movement direction"
+    );
+    println!("desktop phase: quit");
+    desktop_key(&mut game, 0xc4);
+    desktop_key(&mut game, b'y'); // Original F10 + confirmation.
+    run(&mut game, 120, 0);
+    assert!(!game.exited(), "original ENDOOM was skipped");
+    assert_ne!(
+        game.builtin_controller().unwrap().unwrap() & (1 << 25),
+        0,
+        "original ENDOOM screen was not displayed"
+    );
+    desktop_key(&mut game, 13);
+    assert!(
+        game.exited(),
+        "original quit menu did not close the game cleanly"
+    );
+    game.finish().unwrap();
 }

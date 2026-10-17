@@ -64,6 +64,7 @@ pub(crate) struct Session {
     pub audio_channels: u32,
     pub achievements: Vec<String>,
     pub diagnostic: Option<(u32, u32, u32)>,
+    pub exited: bool,
     network: crate::network::Service,
     shader_count: usize,
     deadline: Duration,
@@ -229,6 +230,7 @@ impl Session {
             audio_channels: 1,
             achievements: Vec::new(),
             diagnostic: None,
+            exited: false,
             shader_count,
             deadline: Duration::from_millis(settings.tick_deadline_ms),
         };
@@ -327,6 +329,15 @@ impl Session {
                     n(b, 0)? as usize,
                     n(b, 4)? as usize,
                 )
+            }
+            25 => {
+                ensure!(
+                    self.manifest.builtin_engine.as_deref() == Some(crate::doom::PROFILE)
+                        && b.is_empty(),
+                    "invalid engine quit request"
+                );
+                self.exited = true;
+                true
             }
             24 => {
                 validate_engine_save(&self.manifest, b.len())?;
@@ -473,7 +484,22 @@ impl Session {
         };
         Ok(vec![if ok { 0 } else { 1 }])
     }
-    pub fn step(&mut self, input: u32, state: u64) -> Result<u64> {
+    pub fn step(
+        &mut self,
+        input: u32,
+        state: u64,
+        events: &[crate::doom_input::Event],
+    ) -> Result<u64> {
+        ensure!(
+            events.len() <= crate::doom_input::MAX_PER_TICK,
+            "too many desktop events"
+        );
+        ensure!(
+            events.is_empty()
+                || (self.manifest.builtin_engine.as_deref() == Some(crate::doom::PROFILE)
+                    && self.manifest.permissions.input),
+            "desktop input access denied"
+        );
         self.frame.reset();
         self.audio.clear();
         self.audio_channels = 1;
@@ -483,6 +509,9 @@ impl Session {
             let end = Instant::now() + self.deadline;
             let mut request = input.to_le_bytes().to_vec();
             request.extend(state.to_le_bytes());
+            for event in events {
+                event.encode(&mut request)?;
+            }
             self.send(&request, end)?;
             let mut calls = 0;
             loop {

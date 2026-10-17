@@ -41,5 +41,12 @@ pub mod gamepkg {
     // GAMEPKG_HELPERS
     // GAMEPKG_ENGINE
     pub(super) fn __gamepkg_packet(data:&[u8]) {let mut out=std::io::stdout().lock();out.write_all(&(data.len() as u32).to_le_bytes()).unwrap();out.write_all(data).unwrap();out.flush().unwrap();}
-    pub(super) fn __gamepkg_next_tick()->Option<(u32,u64)>{let mut input=std::io::stdin().lock();let mut len=[0;4];if input.read_exact(&mut len).is_err(){return None;}assert_eq!(u32::from_le_bytes(len),12);let mut b=[0;12];input.read_exact(&mut b).unwrap();Some((u32::from_le_bytes(b[..4].try_into().unwrap()),u64::from_le_bytes(b[4..].try_into().unwrap())))}
+    pub(super) fn __gamepkg_next_tick()->Option<(u32,u64)>{
+        let mut input=std::io::stdin().lock();let mut len=[0;4];if input.read_exact(&mut len).is_err(){return None;}
+        let n=u32::from_le_bytes(len) as usize;assert!(n>=12&&n<=204&&(n-12)%12==0);
+        let mut b=vec![0;n];input.read_exact(&mut b).unwrap();drop(input);
+        #[cfg(gamepkg_doom)] engine::input(&b[12..]);
+        #[cfg(not(gamepkg_doom))] assert_eq!(n,12);
+        Some((u32::from_le_bytes(b[..4].try_into().unwrap()),u64::from_le_bytes(b[4..12].try_into().unwrap())))
+    }
 }

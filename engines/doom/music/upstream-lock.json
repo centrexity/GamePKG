@@ -9,6 +9,12 @@
     "opl3.c": "879237b086d3c6533816f167f81017e3f785f366ef45cb93186475c127d534a7",
     "opl3.h": "de85ea1afe034d5461e9bb7518e569c5cbc5da59133f49242916dc68d70f4e11",
     "opl.h": "82133cff253a2fcce4feee87e0820bf962e7fced247d9920a2cda74196d68315",
-    "COPYING.md": "aef8b4222b79d0dbf6bf17cfff71c90a6a6bb8917a4162abe417b469ed22da2e"
+    "COPYING.md": "aef8b4222b79d0dbf6bf17cfff71c90a6a6bb8917a4162abe417b469ed22da2e",
+    "small_font.h": "62de61f97424adabb6a4851ac757b728412fe1aa8b5217bd7af8043e83cc8a39",
+    "fonts_README": "81db9935f1592f3856af85cb000ac4b25e6066ecc651d5558487d8adc8039dcb"
+  },
+  "source_paths": {
+    "small_font.h": "textscreen/fonts/small.h",
+    "fonts_README": "textscreen/fonts/README"
   }
 }

@@ -47,6 +47,12 @@ jobs:
         run: |
           cc -Wall -Wextra -Werror -fsanitize=address,undefined tests/doom_storage.c -o target/doom-storage-test
           ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 target/doom-storage-test
+      - name: Verify DOOM ordered input and original ending display
+        run: |
+          cc -Wall -Wextra -Werror -fsanitize=address,undefined tests/doom_input.c -o target/doom-input-test
+          ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 target/doom-input-test
+          cc -Wall -Wextra -Werror -fsanitize=address,undefined tests/doom_endoom.c -o target/doom-endoom-test
+          ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 target/doom-endoom-test
       - name: Test browser guest path protections
         run: node tests/web_path_attacks.mjs
       - name: Test support links and clipboard behavior
