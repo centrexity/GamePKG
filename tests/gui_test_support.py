@@ -54,10 +54,11 @@ def click_text(window, env, text, directory, timeout=15, max_y=None, *, click=Tr
     while True:
         screenshot = directory / 'control-screen.png'
         subprocess.run(['import', '-display', env['DISPLAY'], '-window', window, str(screenshot)], env=env, check=True)
-        for name, filters in [('plain', []), ('controls', ['-colorspace', 'Gray', '-negate', '-threshold', '55%'])]:
+        for name, filters in [('plain', []), ('controls', ['-colorspace', 'Gray', '-negate', '-threshold', '55%']), ('text', ['-colorspace', 'Gray', '-threshold', '65%', '-negate'])]:
             enlarged = directory / f'control-{name}.png'
-            subprocess.run(['convert', str(screenshot), *filters, '-resize', '300%', str(enlarged)], env=env, check=True)
-            tsv = subprocess.check_output(['tesseract', str(enlarged), 'stdout', '--psm', '11', 'tsv'], stderr=subprocess.DEVNULL, text=True)
+            crop = ['-crop', f'0x{max_y}+0+0', '+repage'] if max_y is not None else []
+            subprocess.run(['convert', str(screenshot), *crop, *filters, '-resize', '300%', str(enlarged)], env=env, check=True)
+            tsv = subprocess.check_output(['tesseract', str(enlarged), 'stdout', '--psm', '6' if max_y is not None else '11', 'tsv'], stderr=subprocess.DEVNULL, text=True)
             words = [w for w in csv.DictReader(io.StringIO(tsv), delimiter='\t',quoting=csv.QUOTE_NONE) if w['text'].strip() and (max_y is None or int(w['top'])//3 < max_y)]
             last = ' '.join(w['text'] for w in words)
             # OCR may merge adjacent words in a compact button label.
@@ -76,6 +77,8 @@ def click_text(window, env, text, directory, timeout=15, max_y=None, *, click=Tr
                     subprocess.run(['xdotool','mousemove','--window',window,str(x),str(y),'click','1'],env=env,check=True)
                     return
         if time.monotonic() >= deadline:
+            import shutil
+            shutil.copy2(screenshot, Path(__file__).resolve().parents[1] / 'target/gui-control-failed.png')
             raise AssertionError(f'Visible control {text!r} was not found: {last}')
         if max_y is None:
             geometry=subprocess.check_output(['xdotool','getwindowgeometry','--shell',window],env=env,text=True)

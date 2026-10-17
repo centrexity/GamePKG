@@ -102,10 +102,14 @@ fn zip_symlink_entries_and_non_utf8_filesystem_names_are_rejected() {
         if let Err(error) = fs::write(&invalid, b"bytes") {
             // APFS rejects invalid UTF-8 at creation. Accept only that exact
             // macOS rejection; other creation failures still fail this test.
-            assert!(cfg!(target_os = "macos"), "{error}");
-            assert_eq!(error.raw_os_error(), Some(libc::EILSEQ));
-            assert!(!invalid.exists());
-            return;
+            #[cfg(not(target_os = "macos"))]
+            panic!("{error}");
+            #[cfg(target_os = "macos")]
+            {
+                assert_eq!(error.raw_os_error(), Some(libc::EILSEQ));
+                assert!(!invalid.exists());
+                return;
+            }
         }
         let output = temp.path().join("bad.gamepkg");
         assert!(gamepkg::pack::pack(&source, &output, &helper::SEED)

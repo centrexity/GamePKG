@@ -22,14 +22,11 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-settings-gui-') as directory:
             click_text(window, env, label, root, max_y=60 if label == 'Settings' else None)
             time.sleep(.3)
         def open_and_toggle():
-            for attempt in range(5):
-                click('Settings')
-                try:
-                    click_text(window, env, 'Optimize new builds', root, timeout=2)
-                    time.sleep(.3)
-                    return
-                except AssertionError:
-                    if attempt == 4: raise
+            click('Settings')
+            # This preference can be below the fold. Allow the shared control
+            # finder to scroll instead of repeatedly reopening the page.
+            click_text(window, env, 'Optimize new builds', root)
+            time.sleep(.3)
         open_and_toggle(); click('Save settings')
         saved=tomllib.loads(config.read_text())
         assert saved['optimize_builds'] is False, 'Save did not apply optimization preference'

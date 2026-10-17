@@ -1,4 +1,4 @@
-from gui_test_support import start_display
+from gui_test_support import start_display, click_text
 """Local HTTPS download/update integration check. Requires curl and openssl.
 Run after building: python3 tests/https_download.py
 """
@@ -12,7 +12,6 @@ import subprocess
 import tempfile
 import threading
 import time
-from PIL import Image
 
 PROJECT = Path(__file__).resolve().parents[1]
 CLI = PROJECT / 'target/release/gamepkg'
@@ -48,7 +47,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-https-') as directory:
     seed.write_text('05' * 32)
     source = root / 'source'
     shutil.copytree(PROJECT / 'examples/minimal', source)
-    original = (source / 'manifest.toml').read_text()
+    original = 'title = "Update Fixture"\n' + (source / 'manifest.toml').read_text()
     def run(*args, success=True):
         result = subprocess.run([str(CLI), *map(str, args)], env=env,
                                 capture_output=True, text=True, timeout=30)
@@ -84,22 +83,25 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-https-') as directory:
                     time.sleep(.1)
                 assert window,'GUI window did not become visible'
                 subprocess.run(['xdotool','windowsize',window,'1500','850'],env=env,check=True)
+                click_text(window,env,'Update Fixture',root)
                 screenshot=PROJECT/('target/automatic-updates.png' if enabled else 'target/automatic-updates-disabled.png')
-                def green_notice():
+                def update_notice():
                     subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(screenshot)],env=env,check=True)
-                    image=Image.open(screenshot).convert('RGB')
-                    return sum(1 for y in range(min(250,image.height)) for x in range(image.width) if (lambda c:c[0]<50 and c[1]>200 and c[2]<50)(image.getpixel((x,y))))>10
+                    enlarged=root/'update-ocr.png'
+                    subprocess.run(['convert',str(screenshot),'-resize','300%',str(enlarged)],env=env,check=True)
+                    text=subprocess.check_output(['tesseract',str(enlarged),'stdout','--psm','11'],stderr=subprocess.DEVNULL,text=True)
+                    return 'Update 0.2.0 available' in text
                 if enabled:
                     for _ in range(30):
-                        if requests and green_notice():break
+                        if requests and update_notice():break
                         time.sleep(.2)
-                    assert requests and green_notice(),'Verified update notice was not rendered'
+                    assert requests and update_notice(),'Verified update notice was not rendered'
                     assert len(requests)==1,requests
                     time.sleep(.5);assert len(requests)==1,'Update checker retried before its interval'
                 else:
                     time.sleep(1.5)
                     assert not requests,'Disabled update checks contacted the server'
-                    assert not green_notice(),'Disabled fresh session showed an update notice'
+                    assert not update_notice(),'Disabled fresh session showed an update notice'
                 assert installed.read_bytes()==original_installed,'Automatic check installed an update'
             finally:
                 app.terminate();app.wait(timeout=5)

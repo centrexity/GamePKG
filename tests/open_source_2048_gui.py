@@ -50,7 +50,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-2048-gui-') as temporary:
         window=found.stdout.splitlines()[0]
         subprocess.run(['xdotool','windowsize',window,'1850','950'],env=env,check=True)
         subprocess.run(['xdotool','windowfocus',window],env=env,check=True)
-        click_text(window,env,'com.gamepkg.2048',root,timeout=20)
+        click_text(window,env,'2048',root,timeout=20)
         click_text(window,env,'More',root,timeout=20)
         click_text(window,env,'Export',root,timeout=20)
         deadline=time.monotonic()+15

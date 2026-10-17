@@ -32,16 +32,25 @@ try:
  def await_color(color, name):
   screenshot=project/'target'/name
   for _ in range(100):
+   # Loading replaces the panel and may clamp its remembered scroll offset.
+   # Keep the rendered frame visible while waiting, without spending the
+   # short initial-color interval on another OCR search.
+   subprocess.run(['xdotool','mousemove','--window',window,'400','700','click','--repeat','3','--delay','20','5'],env=env,check=True)
    if count_color(color,screenshot)>50000:return
    if app.poll() is not None:raise RuntimeError(app.stderr.read().decode())
    time.sleep(.1)
   raise AssertionError(f'{color} preview did not render')
  click_text(window,env,'Play preview',root)
+ click_text(window,env,'Close preview',root,click=False)
+ # Revealing the panel can outlast its first color. Restart once it is in
+ # view, then observe real initial pixels and their timed progression.
+ click_text(window,env,'Play preview',root)
  await_color('red','preview-av1-first.png')
  await_color('green','preview-av1-later.png')
  click_text(window,env,'Play Theora fallback',root)
+ click_text(window,env,'Close preview',root,click=False)
  await_color('blue','preview-theora.png')
- click_text(window,env,'Settings',root);time.sleep(.3)
+ click_text(window,env,'Settings',root,max_y=60);time.sleep(.3)
  assert count_color('blue',project/'target/settings-after-preview.png')==0, 'preview remained visible in settings'
  assert not (root/'library/builds').exists(), 'preview started a game build'
  print('GUI preview passed: AV1 frames advance and explicit Theora fallback renders.',flush=True)
