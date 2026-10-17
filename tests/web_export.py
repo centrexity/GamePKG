@@ -48,10 +48,45 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-web-export-') as temporary:
             wait.until(lambda b:b.find_element(By.ID,'status').text=='Ready to play')
             browser.find_element(By.ID,'play').click()
             wait.until(lambda b:b.find_element(By.ID,'game').get_attribute('data-state'))
-            canvas=browser.find_element(By.ID,'game');initial=canvas.get_attribute('data-state');canvas.send_keys(Keys.ARROW_RIGHT)
+            canvas=browser.find_element(By.ID,'game');initial=canvas.get_attribute('data-state')
+            def saved_board():
+                return browser.execute_script('return Object.keys(localStorage).filter(key=>key.startsWith("gamepkg:save:com.gamepkg.2048:")).map(key=>JSON.parse(localStorage.getItem(key)))[0];')
+            wait.until(lambda b:saved_board() is not None)
+            initial_board=saved_board()[24:40]
+            canvas.send_keys(Keys.ARROW_RIGHT)
             wait.until(lambda b:b.find_element(By.ID,'game').get_attribute('data-state')!=initial)
             colors=browser.execute_script('const d=document.querySelector("canvas").getContext("2d").getImageData(0,0,640,480).data;let tiles=0;for(let i=0;i<d.length;i+=4)if(d[i]>180&&d[i+1]>120&&d[i+2]>80)tiles++;return tiles;')
             assert colors>10000,colors
+            canvas.send_keys('z')
+            wait.until(lambda b:saved_board()[24:40]==initial_board and saved_board()[40:48]==[0]*8)
+            undo_state=canvas.get_attribute('data-state');canvas.send_keys(Keys.ENTER)
+            wait.until(lambda b:canvas.get_attribute('data-state')!=undo_state)
+            assert sum(cell!=0 for cell in saved_board()[24:40])==2
+            canvas.send_keys(Keys.ARROW_RIGHT);wait.until(lambda b:int(canvas.get_attribute('data-state'))&0xffffffff!=1)
+            browser.find_element(By.ID,'restart').click()
+            wait.until(lambda b:int(canvas.get_attribute('data-state'))&0xffffffff==1)
+            assert sum(cell!=0 for cell in saved_board()[24:40])==2
+            # Player-owned save fixture exercises the actual win/continue UI
+            # without depending on a long random play sequence.
+            fixture=saved_board()[:52];fixture[8:16]=[0]*8;fixture[16:20]=[0]*4;fixture[20:24]=[1,0,0,0]
+            fixture[24:40]=[10,10]+[0]*14;fixture[40:52]=[0]*12
+            browser.find_element(By.ID,'stop').click()
+            browser.execute_script('const key=Object.keys(localStorage).find(key=>key.startsWith("gamepkg:save:com.gamepkg.2048:"));localStorage.setItem(key,JSON.stringify(arguments[0]));',fixture)
+            browser.find_element(By.ID,'play').click();wait.until(lambda b:canvas.get_attribute('data-state')=='1')
+            canvas.send_keys(Keys.ARROW_LEFT)
+            wait.until(lambda b:saved_board()[24:40].count(11)==1)
+            assert int.from_bytes(bytes(saved_board()[40:48]),'little')==2048
+            win_proof=PROJECT/'target/web-export-proof';win_proof.mkdir(parents=True,exist_ok=True)
+            canvas.screenshot(str(win_proof/('2048-component-win.png' if args.component else '2048-win.png')))
+            canvas.send_keys('c');wait.until(lambda b:saved_board()[48:52]==[1,0,0,0])
+            canvas.send_keys('z');wait.until(lambda b:saved_board()[24:40]==fixture[24:40])
+            browser.find_element(By.ID,'stop').click()
+            fixture[24:40]=[1,2,1,2,2,1,2,1,1,2,1,2,2,1,2,1]
+            browser.execute_script('const key=Object.keys(localStorage).find(key=>key.startsWith("gamepkg:save:com.gamepkg.2048:"));localStorage.setItem(key,JSON.stringify(arguments[0]));',fixture)
+            browser.find_element(By.ID,'play').click();wait.until(lambda b:canvas.get_attribute('data-state')=='1')
+            canvas.send_keys(Keys.ARROW_LEFT);time.sleep(.15);assert saved_board()==fixture
+            canvas.screenshot(str(win_proof/('2048-component-game-over.png' if args.component else '2048-game-over.png')))
+            canvas.send_keys(Keys.ENTER);wait.until(lambda b:sum(cell!=0 for cell in saved_board()[24:40])==2)
             proof=PROJECT/'target/web-export-proof';proof.mkdir(parents=True,exist_ok=True);browser.execute_script('window.scrollTo(0,0)');browser.save_screenshot(str(proof/('2048-component-playing.png' if args.component else '2048-playing.png')))
             browser.find_element(By.ID,'stop').click();state=canvas.get_attribute('data-state');time.sleep(.1);assert canvas.get_attribute('data-state')==state
             assert browser.find_element(By.ID,'status').text=='Stopped'

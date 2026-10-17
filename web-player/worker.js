@@ -46,6 +46,8 @@ onmessage=async ({data})=>{try{
   instance=await WebAssembly.instantiate(module,{[namespace]:imports});
   if(typeof instance.exports[manifest.runtime_profile==='component-v1'?'tick':'gamepkg_tick']!=='function')throw Error('Missing game entry');
   postMessage({type:'ready'});
+ }else if(data.type==='restart'){
+  state=0n;
  }else if(data.type==='tick'){
   commands=[];background=null;unlocks=[];saveDirty=false;saveBudget=0;imageBudget=0;audioSamples=[];
   state=instance.exports[manifest.runtime_profile==='component-v1'?'tick':'gamepkg_tick'](manifest.permissions.input?data.input:0,state);

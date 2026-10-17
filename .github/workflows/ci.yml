@@ -249,6 +249,9 @@ jobs:
       - name: Verify adapted open-source 2048 and desktop web export
         if: matrix.features == '--all-features'
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" /usr/bin/python3 tests/open_source_2048_gui.py
+      - name: Verify 2048 scoring, undo and save compatibility in both targets
+        if: matrix.features == '--all-features'
+        run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" /usr/bin/python3 tests/game_2048_state.py
       - name: Verify Arkanoo isolated build, gameplay, audio, saves and native controls
         if: matrix.features == '--all-features'
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" /usr/bin/python3 tests/arkanoo.py --skip-browser
