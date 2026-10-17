@@ -95,13 +95,18 @@ fn zip_symlink_entries_and_non_utf8_filesystem_names_are_rejected() {
         use std::os::unix::ffi::OsStringExt;
         let source = temp.path().join("source");
         helper::write_fixture(&helper::fixture("examples/minimal"), &source);
-        fs::write(
-            source
-                .join("assets")
-                .join(std::ffi::OsString::from_vec(b"bad\xff.txt".to_vec())),
-            b"bytes",
-        )
-        .unwrap();
+        let invalid = source
+            .join("assets")
+            .join(std::ffi::OsString::from_vec(b"bad\xff.txt".to_vec()));
+        assert!(invalid.to_str().is_none());
+        if let Err(error) = fs::write(&invalid, b"bytes") {
+            // APFS rejects invalid UTF-8 at creation. Accept only that exact
+            // macOS rejection; other creation failures still fail this test.
+            assert!(cfg!(target_os = "macos"), "{error}");
+            assert_eq!(error.raw_os_error(), Some(libc::EILSEQ));
+            assert!(!invalid.exists());
+            return;
+        }
         let output = temp.path().join("bad.gamepkg");
         assert!(gamepkg::pack::pack(&source, &output, &helper::SEED)
             .unwrap_err()
