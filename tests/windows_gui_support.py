@@ -8,9 +8,25 @@ def verify_shader_input(project,env,game_id,label):
  assert os.name=='nt'
  user=ctypes.WinDLL('user32',use_last_error=True);gdi=ctypes.WinDLL('gdi32',use_last_error=True)
  callback_type=ctypes.WINFUNCTYPE(W.BOOL,W.HWND,W.LPARAM)
- signatures=[(user,'EnumWindows',[callback_type,W.LPARAM],W.BOOL),(user,'GetWindowThreadProcessId',[W.HWND,ctypes.POINTER(W.DWORD)],W.DWORD),(user,'IsWindowVisible',[W.HWND],W.BOOL),(user,'GetClientRect',[W.HWND,ctypes.POINTER(W.RECT)],W.BOOL),(user,'GetDC',[W.HWND],W.HDC),(user,'ReleaseDC',[W.HWND,W.HDC],ctypes.c_int),(user,'PostMessageW',[W.HWND,W.UINT,W.WPARAM,W.LPARAM],W.BOOL),(user,'SetForegroundWindow',[W.HWND],W.BOOL),(gdi,'CreateCompatibleDC',[W.HDC],W.HDC),(gdi,'SelectObject',[W.HDC,W.HGDIOBJ],W.HGDIOBJ),(gdi,'DeleteObject',[W.HGDIOBJ],W.BOOL),(gdi,'DeleteDC',[W.HDC],W.BOOL),(gdi,'BitBlt',[W.HDC,ctypes.c_int,ctypes.c_int,ctypes.c_int,ctypes.c_int,W.HDC,ctypes.c_int,ctypes.c_int,W.DWORD],W.BOOL)]
+ signatures=[(user,'EnumWindows',[callback_type,W.LPARAM],W.BOOL),(user,'GetWindowThreadProcessId',[W.HWND,ctypes.POINTER(W.DWORD)],W.DWORD),(user,'IsWindowVisible',[W.HWND],W.BOOL),(user,'GetClientRect',[W.HWND,ctypes.POINTER(W.RECT)],W.BOOL),(user,'GetDC',[W.HWND],W.HDC),(user,'ReleaseDC',[W.HWND,W.HDC],ctypes.c_int),(user,'PostMessageW',[W.HWND,W.UINT,W.WPARAM,W.LPARAM],W.BOOL),(user,'SetForegroundWindow',[W.HWND],W.BOOL),(user,'GetForegroundWindow',[],W.HWND),(gdi,'CreateCompatibleDC',[W.HDC],W.HDC),(gdi,'SelectObject',[W.HDC,W.HGDIOBJ],W.HGDIOBJ),(gdi,'DeleteObject',[W.HGDIOBJ],W.BOOL),(gdi,'DeleteDC',[W.HDC],W.BOOL),(gdi,'BitBlt',[W.HDC,ctypes.c_int,ctypes.c_int,ctypes.c_int,ctypes.c_int,W.HDC,ctypes.c_int,ctypes.c_int,W.DWORD],W.BOOL)]
  for library,name,arguments,result in signatures:
   function=getattr(library,name);function.argtypes=arguments;function.restype=result
+ class MouseInput(ctypes.Structure):
+  _fields_=[('dx',W.LONG),('dy',W.LONG),('data',W.DWORD),('flags',W.DWORD),('time',W.DWORD),('extra',W.WPARAM)]
+ class KeyboardInput(ctypes.Structure):
+  _fields_=[('vk',W.WORD),('scan',W.WORD),('flags',W.DWORD),('time',W.DWORD),('extra',W.WPARAM)]
+ class HardwareInput(ctypes.Structure):
+  _fields_=[('message',W.DWORD),('low',W.WORD),('high',W.WORD)]
+ class InputData(ctypes.Union):
+  _fields_=[('mouse',MouseInput),('keyboard',KeyboardInput),('hardware',HardwareInput)]
+ class Input(ctypes.Structure):
+  _fields_=[('kind',W.DWORD),('data',InputData)]
+ assert ctypes.sizeof(Input)==(40 if ctypes.sizeof(ctypes.c_void_p)==8 else 28)
+ user.SendInput.argtypes=[W.UINT,ctypes.POINTER(Input),ctypes.c_int];user.SendInput.restype=W.UINT
+ def right_key(release):
+  event=Input();event.kind=1
+  event.data.keyboard=KeyboardInput(0,0x4d,0x8|0x1|(0x2 if release else 0),0,0)
+  assert user.SendInput(1,ctypes.byref(event),ctypes.sizeof(event))==1,ctypes.get_last_error()
  class Header(ctypes.Structure):
   _fields_=[('size',W.DWORD),('width',W.LONG),('height',W.LONG),('planes',W.WORD),('bits',W.WORD),('compression',W.DWORD),('image_size',W.DWORD),('x',W.LONG),('y',W.LONG),('colors',W.DWORD),('important',W.DWORD)]
  class Info(ctypes.Structure):_fields_=[('header',Header),('colors',W.DWORD*3)]
@@ -27,7 +43,7 @@ def verify_shader_input(project,env,game_id,label):
    return Image.frombytes('RGB',(width,height),ctypes.string_at(pixels,width*height*4),'raw','BGRX')
   finally:gdi.SelectObject(memory,previous);gdi.DeleteObject(bitmap);gdi.DeleteDC(memory);user.ReleaseDC(window,dc)
  proof=Path(project)/'target/windows-gui-proof';proof.mkdir(parents=True,exist_ok=True)
- log_path=proof/(label+'.log');window=None
+ log_path=proof/(label+'.log');window=None;key_held=False
  player_env=dict(env,GALLIUM_DRIVER='llvmpipe',LIBGL_ALWAYS_SOFTWARE='1',GAMEPKG_RENDERER='opengl')
  player_env.pop('GAMEPKG_SLANG_ROOT',None)
  with log_path.open('wb') as log:
@@ -50,7 +66,11 @@ def verify_shader_input(project,env,game_id,label):
     user.EnumWindows(visit,0)
     if found:window=max(found)[1];break
     assert time.monotonic()<deadline,'Native GamePKG window did not appear';time.sleep(.1)
-   user.SetForegroundWindow(window)
+   deadline=time.monotonic()+10
+   while user.GetForegroundWindow()!=window:
+    user.SetForegroundWindow(window)
+    assert time.monotonic()<deadline,'Native game could not receive keyboard focus'
+    time.sleep(.1)
    def require_color(channel,name):
     deadline=time.monotonic()+30
     while True:
@@ -60,12 +80,16 @@ def verify_shader_input(project,env,game_id,label):
      if count>20000:return
      assert time.monotonic()<deadline,f'Native {name} guest pixels missing: {count}';time.sleep(.1)
    require_color(2,'blue')
-   assert user.PostMessageW(window,0x100,0x27,(0x4d<<16)|(1<<24)|1)
+   # Exercise the Windows input queue and keyboard state. Posting WM_KEYDOWN
+   # directly does not establish a real held key for the native event loop.
+   assert user.GetForegroundWindow()==window,'Native game lost keyboard focus'
+   right_key(False);key_held=True
    require_color(1,'green')
-   assert user.PostMessageW(window,0x101,0x27,(0x4d<<16)|(1<<24)|(3<<30)|1)
+   right_key(True);key_held=False
    require_color(2,'released-blue')
    print('Native Windows shader pixels and held/released keyboard input passed:',label)
   finally:
+   if key_held:right_key(True)
    if app.poll() is None:
     if window:user.PostMessageW(window,0x10,0,0)
     try:app.wait(timeout=10)
