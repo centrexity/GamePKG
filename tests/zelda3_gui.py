@@ -1,8 +1,8 @@
 """Actual ROM selection and controller input in the native Zelda3 player."""
 from pathlib import Path
-import argparse,csv,io,os,shutil,subprocess,tempfile,time
+import argparse,os,shutil,subprocess,tempfile,time
 from PIL import Image,ImageChops
-from gui_test_support import start_display,game_window,click_text,choose_native_file
+from gui_test_support import start_display,game_window,click_text,choose_native_file,click_primary_play
 def pixels(image):return image.get_flattened_data() if hasattr(image,"get_flattened_data") else image.getdata()
 PROJECT=Path(__file__).resolve().parents[1]
 p=argparse.ArgumentParser();p.add_argument('rom',type=Path);p.add_argument('--library',type=Path,required=True);p.add_argument('--wine-prefix',type=Path);args=p.parse_args()
@@ -32,24 +32,14 @@ with tempfile.TemporaryDirectory(prefix='zelda3-gui-',dir=PROJECT/'target') as t
         assert found.returncode==0
         window=found.stdout.splitlines()[0]
         subprocess.run(['xdotool','windowsize',window,'1700','1000','windowfocus',window],env=env,check=True);time.sleep(.3)
-        click_text(window,env,'com.gamepkg.zelda3',root,timeout=20);time.sleep(.3)
+        click_text(window,env,'Zelda3',root,timeout=20);time.sleep(.3)
         def capture(name):
             path=PROOF/name;subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(path)],env=env,check=True,timeout=10);return path
-        screen=capture('native-library.png')
-        enlarged=root/'ocr.png';Image.open(screen).resize((5100,3000)).save(enlarged)
-        tsv=subprocess.check_output(['tesseract',str(enlarged),'stdout','--psm','11','tsv'],stderr=subprocess.DEVNULL,text=True)
-        words=[w for w in csv.DictReader(io.StringIO(tsv),delimiter='\t',quoting=csv.QUOTE_NONE) if w['text'].strip()]
-        your=min([w for w in words if w['text']=='Your'],key=lambda w:int(w['top']))
-        y=(int(your['top'])+int(your['height'])//2)//3
-        subprocess.run(['xdotool','mousemove','--window',window,'350',str(y),'click','1'],env=env,check=True)
+        click_text(window,env,'Choose ROM',root,timeout=20)
         choose_native_file(env,'Choose Your Zelda: A Link to the Past (USA) ROM',rom,windows=bool(args.wine_prefix))
         time.sleep(.3);capture('native-rom-selected.png')
         screen=capture('native-before-play.png')
-        Image.open(screen).resize((5100,3000)).save(enlarged)
-        tsv=subprocess.check_output(['tesseract',str(enlarged),'stdout','--psm','11','tsv'],stderr=subprocess.DEVNULL,text=True)
-        words=[w for w in csv.DictReader(io.StringIO(tsv),delimiter='\t',quoting=csv.QUOTE_NONE) if w['text'].strip()]
-        play=min([w for w in words if w['text']=='Play'],key=lambda w:int(w['top']))
-        subprocess.run(['xdotool','mousemove','--window',window,str((int(play['left'])+int(play['width'])//2)//3),str((int(play['top'])+int(play['height'])//2)//3),'click','1'],env=env,check=True)
+        click_primary_play(window,env,root)
         window,pid=game_window(env,'com.gamepkg.zelda3');assert pid != app.pid
         subprocess.run(['xdotool','windowsize',window,'1700','1000','windowfocus',window],env=env,check=True)
         def key(value):subprocess.run(['xdotool','key','--window',window,value],env=env,check=True)

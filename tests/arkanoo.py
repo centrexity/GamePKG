@@ -37,6 +37,9 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-arkanoo-',dir=PROJECT/'target')
     run('integrity-check','com.gamepkg.arkanoo')
     probe_env=dict(env,GAMEPKG_ARKANOO_TEST_ROOT=str(root/'library'))
     subprocess.run(['cargo','test','--test','game_arkanoo_runtime','--','--ignored'],env=probe_env,check=True,timeout=120)
+    run('build','com.gamepkg.arkanoo','--target','native')
+    run('integrity-check','com.gamepkg.arkanoo')
+    subprocess.run(['cargo','test','--test','game_arkanoo_runtime','--','--ignored'],env=probe_env,check=True,timeout=120)
     # Real native window: locate the cyan paddle, hold movement, start, pause.
     display=start_display(env,width=1400,height=900);app=None
     def capture(window,name):

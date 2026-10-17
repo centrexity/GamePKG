@@ -1,8 +1,8 @@
 """Select a private IWAD and verify real native DOOM gameplay and saving."""
 from pathlib import Path
-import argparse,csv,io,os,shutil,subprocess,tempfile,time
+import argparse,os,shutil,subprocess,tempfile,time
 from PIL import Image,ImageChops
-from gui_test_support import start_display,game_window,click_text,choose_native_file
+from gui_test_support import start_display,game_window,click_text,choose_native_file,click_primary_play
 def pixels(im):return im.get_flattened_data() if hasattr(im,'get_flattened_data') else im.getdata()
 PROJECT=Path(__file__).resolve().parents[1]
 p=argparse.ArgumentParser();p.add_argument('wad',type=Path);p.add_argument('--library',type=Path,required=True);args=p.parse_args()
@@ -23,17 +23,12 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-doom-gui-',dir=PROJECT/'target'
    time.sleep(.1)
   assert found.returncode==0;window=found.stdout.splitlines()[0]
   subprocess.run(['xdotool','windowsize',window,'1700','1000','windowfocus',window],env=env,check=True)
-  click_text(window,env,'com.gamepkg.doom',root,timeout=20);time.sleep(.3)
+  click_text(window,env,'DOOM',root,timeout=20);time.sleep(.3)
   def capture(name):
    path=proof/name;subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(path)],env=env,check=True,timeout=10);return path
-  screen=capture('rom-selection.png');large=root/'ocr.png';Image.open(screen).resize((5100,3000)).save(large)
-  tsv=subprocess.check_output(['tesseract',str(large),'stdout','--psm','11','tsv'],stderr=subprocess.DEVNULL,text=True)
-  words=[w for w in csv.DictReader(io.StringIO(tsv),delimiter='\t',quoting=csv.QUOTE_NONE) if w['text'].strip()]
-  your=min([w for w in words if w['text']=='Your'],key=lambda w:int(w['top']))
-  y=(int(your['top'])+int(your['height'])//2)//3
-  subprocess.run(['xdotool','mousemove','--window',window,'350',str(y),'click','1'],env=env,check=True)
+  click_text(window,env,'Choose ROM',root,timeout=20)
   choose_native_file(env,'Choose Your DOOM.WAD or DOOM2.WAD (original PC IWAD)',args.wad.resolve())
-  time.sleep(.3);click_text(window,env,'Play',root,timeout=20)
+  time.sleep(.3);click_primary_play(window,env,root)
   window,pid=game_window(env,'com.gamepkg.doom');assert pid != app.pid
   subprocess.run(['xdotool','windowsize',window,'1700','1000','windowfocus',window],env=env,check=True)
   subprocess.run(['xdotool','windowsize',window,'1000','800','windowfocus',window],env=env,check=True)
@@ -43,8 +38,12 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-doom-gui-',dir=PROJECT/'target'
   for _ in range(4):key('Return');time.sleep(.6)
   time.sleep(3);before=capture('gameplay-before.png')
   screen=Image.open(before).convert('RGB');hud=screen.crop((0,screen.height-120,screen.width-50,screen.height))
-  hud.resize((hud.width*2,hud.height*2)).save(root/'hud.png')
-  text=subprocess.check_output(['tesseract',str(root/'hud.png'),'stdout','--psm','6'],stderr=subprocess.DEVNULL,text=True).upper()
+  # Read the actual HEALTH label rather than asking OCR to segment every HUD
+  # number and its decorative border in one text block.
+  w,h=screen.size
+  health=screen.convert('L').crop((int(w*.15),int(h*.91),int(w*.34),int(h*.97))).resize((760,192))
+  health.point(lambda v:255 if v>140 else 0).save(root/'health.png')
+  text=subprocess.check_output(['tesseract',str(root/'health.png'),'stdout','--psm','7'],stderr=subprocess.DEVNULL,text=True).upper()
   assert 'HEALTH' in text and sum(r>150 and r>g*2 and r>b*2 for r,g,b in pixels(hud))>1000,text
   subprocess.run(['xdotool','keydown','--window',window,'Up'],env=env,check=True);time.sleep(.6)
   subprocess.run(['xdotool','keyup','--window',window,'Up'],env=env,check=True);time.sleep(.2)

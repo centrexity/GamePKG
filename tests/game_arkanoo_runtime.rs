@@ -1,7 +1,7 @@
 use gamepkg::{drawing::Command, runtime::Game};
 #[test]
 #[ignore = "requires the signed, isolated-built fixture prepared by tests/arkanoo.py"]
-fn real_wasm_gameplay_audio_progress_and_restart() {
+fn real_gameplay_audio_progress_and_restart() {
     let root = std::path::PathBuf::from(std::env::var_os("GAMEPKG_ARKANOO_TEST_ROOT").unwrap());
     let mut game = Game::load(&root, "com.gamepkg.arkanoo").unwrap();
     game.step(0).unwrap();
@@ -24,7 +24,7 @@ fn real_wasm_gameplay_audio_progress_and_restart() {
         assert!(game.frame().commands.len() < 600);
     }
     assert!(audio, "no synthesized collision/launch audio");
-    assert!(broken, "no bricks broken by actual Wasm physics");
+    assert!(broken, "no bricks broken by actual game physics");
     drop(game);
     let saves: Vec<_> = std::fs::read_dir(root.join("saves"))
         .unwrap()
