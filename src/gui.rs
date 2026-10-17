@@ -77,6 +77,7 @@ pub struct App {
     cube_mouse_capture: cube2_input::MouseCapture,
     confine_mouse: bool,
     cube_pointer: cube2_input::Pointer,
+    cube_desktop: cube2_input::Desktop,
     doom_desktop: doom_input::Desktop,
     game_processes: Vec<(String, std::process::Child)>,
     next_frame: Option<std::time::Instant>,
@@ -403,7 +404,7 @@ impl eframe::App for App {
                 && self
                     .player
                     .as_ref()
-                    .is_some_and(|game| game.doom_input_allowed()),
+                    .is_some_and(|game| game.doom_input_allowed() || game.is_cube2()),
             ctx.input(|i| i.focused),
         );
         // Closing a viewport can schedule one more update. Do not reopen the
@@ -684,6 +685,7 @@ impl eframe::App for App {
         if self.player.is_none() {
             self.input_devices.reset();
             self.doom_desktop = Default::default();
+            self.cube_desktop = Default::default();
             self.sprite_textures.finish(0);
         }
         if let Some(game) = self.player.as_mut() {
@@ -815,14 +817,15 @@ impl eframe::App for App {
                         );
                         cube2_input::MouseCapture::apply(ctx, captured, self.confine_mouse);
                         let (look_x, look_y) = self.input_devices.look_delta();
+                        let native_events = egui_winit::gamepkg_input::take(ctx.viewport_id());
+                        if let Err(error) =
+                            self.cube_desktop.forward(game, &native_events, captured)
+                        {
+                            failure = Some(format!("Game stopped: {error:#}"));
+                        }
                         if captured {
                             ctx.input(|i| {
-                                cube2_input::forward(
-                                    game,
-                                    &i.events,
-                                    i.modifiers,
-                                    &mut self.cube_pointer,
-                                )
+                                cube2_input::forward(game, &i.events, &mut self.cube_pointer)
                             });
                             game.cube2_desktop_input(
                                 if recaptured { 0 } else { buttons },

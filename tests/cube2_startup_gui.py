@@ -1,13 +1,18 @@
 """Original menu and preferences: use the private cached engine fixture in place."""
 from pathlib import Path
-import os,subprocess,tempfile,time,struct
+import os,subprocess,tempfile,time,struct,re
 from gui_test_support import start_display,game_window,wait_game_frame,close_game,cube2_choose_test_map
 PROJECT=Path(__file__).resolve().parents[1]
 proof=PROJECT/'target/cube2-startup-gui';proof.mkdir(exist_ok=True)
 library=PROJECT/'target/cube2-package-test/library'
 save=next((library/'saves').glob('*.cube2'))
 original_save=save.read_bytes()
-config_bytes=b'exec data/defaults.cfg\nconsize 7\nminiconsize 3\nmaxfps 144\n'
+config_bytes=(b'exec data/defaults.cfg\nconsize 7\nminiconsize 3\nmaxfps 144\n'
+ b'bind PAUSE [name (concatword (getname) _p)]\n'
+ b'bind KP1 [name (concatword (getname) _k)]\n'
+ b'bind 1 [name wrong_keypad_alias]\n'
+ b'bind RCTRL [name (concatword (getname) _r)]\n'
+ b'bind LCTRL [name wrong_modifier_alias]\n')
 name=b'config.cfg'
 payload=struct.pack('<IIII',len(name),len(config_bytes),0,0)+name+config_bytes
 save.write_bytes(b'GPS2'+struct.pack('<III',1,len(payload),0)+payload)
@@ -32,10 +37,25 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-startup-') as temporary:
         command('xdotool','key','slash');time.sleep(.3)
         command('xdotool','type','--clearmodifiers','--delay','20','name (concatword $consize _ $miniconsize _ $maxfps)')
         command('xdotool','key','Return');time.sleep(.5)
+        # These controls were absent or collapsed by egui's normalized keys.
+        # Send actual physical keys without xdotool adding helper modifiers to
+        # produce a keysym (notably Control_R and keypad numbers).
+        from Xlib import X, XK, display as xdisplay
+        from Xlib.ext import xtest
+        connection=xdisplay.Display(env['DISPLAY'])
+        try:
+            for keysym in ['Pause','KP_End','Control_R']:
+                code=connection.keysym_to_keycode(XK.string_to_keysym(keysym))
+                assert code,keysym
+                xtest.fake_input(connection,X.KeyPress,code);connection.sync();time.sleep(.1)
+                xtest.fake_input(connection,X.KeyRelease,code);connection.sync();time.sleep(.3)
+        finally:connection.close()
 
         close_game(window,env);assert app.wait(timeout=15)==0
-        assert b'7_3_144' in save.read_bytes(),'Console HUD/FPS preferences were overwritten'
-        print('Original Cube 2 startup menu is visible; original console selects gameplay; native close succeeds.')
+        saved=save.read_bytes()
+        names=re.findall(rb'name [^\n]*',saved)
+        assert b'7_3_144_p_k_r' in saved, f'Physical bindings or ordered console text failed: {names!r}'
+        print('Original Cube 2 startup/menu/console preferences, physical Pause/keypad/right-modifier bindings and native close pass.')
     finally:
         if app and app.poll() is None:
             command('import','-display',env['DISPLAY'],'-window','root',proof/'failure.png')

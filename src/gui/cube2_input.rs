@@ -1,5 +1,72 @@
 //! Ordered native keyboard/text events; controllers retain the action mask.
-use eframe::egui::{Event, Key, Modifiers, MouseWheelUnit, PointerButton, Vec2};
+use eframe::egui::{Event, Modifiers, MouseWheelUnit, PointerButton, Vec2};
+
+#[derive(Default)]
+pub struct Desktop {
+    keys: std::collections::HashSet<egui_winit::winit::keyboard::KeyCode>,
+}
+impl Desktop {
+    fn modifiers(&self) -> u32 {
+        use egui_winit::winit::keyboard::KeyCode::*;
+        [
+            (ShiftLeft, 1),
+            (ShiftRight, 2),
+            (ControlLeft, 64),
+            (ControlRight, 128),
+            (AltLeft, 256),
+            (AltRight, 512),
+            (SuperLeft, 1024),
+            (SuperRight, 2048),
+        ]
+        .iter()
+        .filter(|(key, _)| self.keys.contains(key))
+        .fold(0, |mods, (_, bit)| mods | bit)
+    }
+    pub fn forward(
+        &mut self,
+        game: &mut crate::runtime::Game,
+        events: &[egui_winit::gamepkg_input::Event],
+        captured: bool,
+    ) -> anyhow::Result<()> {
+        use egui_winit::gamepkg_input::Event as Native;
+        if !captured {
+            self.keys.clear();
+            game.cube2_clear_input();
+            return Ok(());
+        }
+        for event in events {
+            match event {
+                Native::Key {
+                    code,
+                    pressed,
+                    repeat,
+                } => {
+                    if *pressed {
+                        self.keys.insert(*code);
+                    } else {
+                        self.keys.remove(code);
+                    }
+                    if let Some(scan) = scancode(*code) {
+                        game.cube2_key(scan, *pressed, *repeat, self.modifiers());
+                    }
+                }
+                Native::Text(text) => game.cube2_text(text),
+                Native::Focus(false) => {
+                    self.keys.clear();
+                    game.cube2_clear_input();
+                }
+                Native::Overflow => {
+                    self.keys.clear();
+                    game.cube2_clear_input();
+                    anyhow::bail!("desktop input exceeded its bounded queue");
+                }
+                _ => {}
+            }
+        }
+        game.cube2_modifiers(self.modifiers());
+        Ok(())
+    }
+}
 
 /// Preserve the window's physical-pixel aspect ratio within the bridge budget.
 pub fn resolution(size: Vec2, pixels_per_point: f32, limit: Option<(u32, u32)>) -> (u32, u32) {
@@ -102,61 +169,62 @@ impl Pointer {
     }
 }
 
-fn scancode(key: Key) -> Option<u32> {
-    use Key::*;
+fn scancode(key: egui_winit::winit::keyboard::KeyCode) -> Option<u32> {
+    use egui_winit::winit::keyboard::KeyCode::*;
     Some(match key {
-        A => 4,
-        D => 7,
-        E => 8,
-        R => 21,
-        S => 22,
-        W => 26,
-        Num1 => 30,
-        Num2 => 31,
-        Num3 => 32,
-        Num4 => 33,
-        Num5 => 34,
+        KeyA => 4,
+        KeyB => 5,
+        KeyC => 6,
+        KeyD => 7,
+        KeyE => 8,
+        KeyF => 9,
+        KeyG => 10,
+        KeyH => 11,
+        KeyI => 12,
+        KeyJ => 13,
+        KeyK => 14,
+        KeyL => 15,
+        KeyM => 16,
+        KeyN => 17,
+        KeyO => 18,
+        KeyP => 19,
+        KeyQ => 20,
+        KeyR => 21,
+        KeyS => 22,
+        KeyT => 23,
+        KeyU => 24,
+        KeyV => 25,
+        KeyW => 26,
+        KeyX => 27,
+        KeyY => 28,
+        KeyZ => 29,
+        Digit1 => 30,
+        Digit2 => 31,
+        Digit3 => 32,
+        Digit4 => 33,
+        Digit5 => 34,
+        Digit6 => 35,
+        Digit7 => 36,
+        Digit8 => 37,
+        Digit9 => 38,
+        Digit0 => 39,
         Enter => 40,
         Escape => 41,
+        Backspace => 42,
         Tab => 43,
         Space => 44,
-        B => 5,
-        C => 6,
-        F => 9,
-        G => 10,
-        H => 11,
-        I => 12,
-        J => 13,
-        K => 14,
-        L => 15,
-        M => 16,
-        N => 17,
-        O => 18,
-        P => 19,
-        Q => 20,
-        T => 23,
-        U => 24,
-        V => 25,
-        X => 27,
-        Y => 28,
-        Z => 29,
-        Num6 => 35,
-        Num7 => 36,
-        Num8 => 37,
-        Num9 => 38,
-        Num0 => 39,
-        Backspace => 42,
         Minus => 45,
-        Equals | Plus => 46,
-        OpenBracket | OpenCurlyBracket => 47,
-        CloseBracket | CloseCurlyBracket => 48,
-        Backslash | Pipe => 49,
-        Semicolon | Colon => 51,
+        Equal => 46,
+        BracketLeft => 47,
+        BracketRight => 48,
+        Backslash => 49,
+        Semicolon => 51,
         Quote => 52,
-        Backtick => 53,
+        Backquote => 53,
         Comma => 54,
         Period => 55,
-        Slash | Questionmark => 56,
+        Slash => 56,
+        CapsLock => 57,
         F1 => 58,
         F2 => 59,
         F3 => 60,
@@ -169,6 +237,9 @@ fn scancode(key: Key) -> Option<u32> {
         F10 => 67,
         F11 => 68,
         F12 => 69,
+        PrintScreen => 70,
+        ScrollLock => 71,
+        Pause => 72,
         Insert => 73,
         Home => 74,
         PageUp => 75,
@@ -179,6 +250,27 @@ fn scancode(key: Key) -> Option<u32> {
         ArrowLeft => 80,
         ArrowDown => 81,
         ArrowUp => 82,
+        NumLock => 83,
+        NumpadDivide => 84,
+        NumpadMultiply => 85,
+        NumpadSubtract => 86,
+        NumpadAdd => 87,
+        NumpadEnter => 88,
+        Numpad1 => 89,
+        Numpad2 => 90,
+        Numpad3 => 91,
+        Numpad4 => 92,
+        Numpad5 => 93,
+        Numpad6 => 94,
+        Numpad7 => 95,
+        Numpad8 => 96,
+        Numpad9 => 97,
+        Numpad0 => 98,
+        NumpadDecimal => 99,
+        IntlBackslash => 100,
+        ContextMenu => 101,
+        Power => 102,
+        NumpadEqual => 103,
         F13 => 104,
         F14 => 105,
         F15 => 106,
@@ -191,36 +283,61 @@ fn scancode(key: Key) -> Option<u32> {
         F22 => 113,
         F23 => 114,
         F24 => 115,
+        Open => 116,
+        Help => 117,
+        Select => 119,
+        Again => 121,
+        Undo => 122,
+        Cut => 123,
+        Copy => 124,
+        Paste => 125,
+        Find => 126,
+        AudioVolumeMute => 127,
+        AudioVolumeUp => 128,
+        AudioVolumeDown => 129,
+        NumpadComma => 133,
+        IntlRo => 135,
+        KanaMode => 136,
+        IntlYen => 137,
+        Convert => 138,
+        NonConvert => 139,
+        Lang1 => 144,
+        Lang2 => 145,
+        Lang3 => 146,
+        Lang4 => 147,
+        Lang5 => 148,
+        Abort => 155,
+        NumpadParenLeft => 182,
+        NumpadParenRight => 183,
+        NumpadBackspace => 187,
+        NumpadMemoryStore => 208,
+        NumpadMemoryRecall => 209,
+        NumpadMemoryClear => 210,
+        NumpadMemoryAdd => 211,
+        NumpadMemorySubtract => 212,
+        NumpadClear => 216,
+        NumpadClearEntry => 217,
+        ControlLeft => 224,
+        ShiftLeft => 225,
+        AltLeft => 226,
+        SuperLeft => 227,
+        ControlRight => 228,
+        ShiftRight => 229,
+        AltRight => 230,
+        SuperRight => 231,
         _ => return None,
     })
 }
+
 fn modifiers(mods: Modifiers) -> u32 {
     u32::from(mods.shift)
         | (u32::from(mods.ctrl) << 6)
         | (u32::from(mods.alt) << 8)
         | (u32::from(mods.mac_cmd) << 10)
 }
-pub fn forward(
-    game: &mut crate::runtime::Game,
-    events: &[Event],
-    mods: Modifiers,
-    pointer: &mut Pointer,
-) {
-    game.cube2_modifiers(modifiers(mods));
+pub fn forward(game: &mut crate::runtime::Game, events: &[Event], pointer: &mut Pointer) {
     for event in events {
         match event {
-            Event::Key {
-                key,
-                physical_key,
-                pressed,
-                repeat,
-                modifiers: mods,
-            } => {
-                if let Some(code) = scancode(physical_key.unwrap_or(*key)) {
-                    game.cube2_key(code, *pressed, *repeat, modifiers(*mods));
-                }
-            }
-            Event::Text(text) | Event::Paste(text) => game.cube2_text(text),
             Event::PointerButton {
                 button,
                 pressed,
@@ -282,8 +399,8 @@ mod tests {
         let ctx = eframe::egui::Context::default();
         let raw = eframe::egui::RawInput {
             events: vec![Event::Key {
-                key: Key::Escape,
-                physical_key: Some(Key::Escape),
+                key: eframe::egui::Key::Escape,
+                physical_key: Some(eframe::egui::Key::Escape),
                 pressed: true,
                 repeat: false,
                 modifiers: Modifiers {
@@ -342,21 +459,30 @@ mod tests {
     }
     #[test]
     fn desktop_keys_preserve_physical_sdl_codes_including_menu_and_movement_keys() {
-        assert_eq!(scancode(Key::T), Some(23));
-        assert_eq!(scancode(Key::F12), Some(69));
-        assert_eq!(scancode(Key::Backspace), Some(42));
+        assert_eq!(
+            scancode(egui_winit::winit::keyboard::KeyCode::KeyT),
+            Some(23)
+        );
+        assert_eq!(
+            scancode(egui_winit::winit::keyboard::KeyCode::F12),
+            Some(69)
+        );
+        assert_eq!(
+            scancode(egui_winit::winit::keyboard::KeyCode::Backspace),
+            Some(42)
+        );
         for key in [
-            Key::W,
-            Key::A,
-            Key::S,
-            Key::D,
-            Key::E,
-            Key::R,
-            Key::Enter,
-            Key::Space,
-            Key::Tab,
-            Key::Escape,
-            Key::Num1,
+            egui_winit::winit::keyboard::KeyCode::KeyW,
+            egui_winit::winit::keyboard::KeyCode::KeyA,
+            egui_winit::winit::keyboard::KeyCode::KeyS,
+            egui_winit::winit::keyboard::KeyCode::KeyD,
+            egui_winit::winit::keyboard::KeyCode::KeyE,
+            egui_winit::winit::keyboard::KeyCode::KeyR,
+            egui_winit::winit::keyboard::KeyCode::Enter,
+            egui_winit::winit::keyboard::KeyCode::Space,
+            egui_winit::winit::keyboard::KeyCode::Tab,
+            egui_winit::winit::keyboard::KeyCode::Escape,
+            egui_winit::winit::keyboard::KeyCode::Digit1,
         ] {
             assert!(
                 scancode(key).is_some(),
@@ -371,5 +497,39 @@ mod tests {
             }),
             65
         );
+    }
+    #[test]
+    fn physical_keypad_pause_locks_and_modifier_sides_are_distinct() {
+        use egui_winit::winit::keyboard::KeyCode::*;
+        for (key, expected) in [
+            (Pause, 72),
+            (PrintScreen, 70),
+            (CapsLock, 57),
+            (NumLock, 83),
+            (Numpad1, 89),
+            (Digit1, 30),
+            (NumpadEnter, 88),
+            (Enter, 40),
+            (NumpadDecimal, 99),
+            (Delete, 76),
+            (IntlBackslash, 100),
+            (IntlRo, 135),
+            (ControlLeft, 224),
+            (ControlRight, 228),
+            (ShiftLeft, 225),
+            (ShiftRight, 229),
+        ] {
+            assert_eq!(scancode(key), Some(expected), "{key:?}");
+        }
+        let mut desktop = Desktop::default();
+        desktop
+            .keys
+            .extend([ControlLeft, ControlRight, ShiftRight, AltRight]);
+        assert_eq!(desktop.modifiers(), 64 | 128 | 2 | 512);
+        desktop.keys.remove(&ControlLeft);
+        assert_eq!(desktop.modifiers(), 128 | 2 | 512);
+        desktop.keys.clear();
+        assert_eq!(desktop.modifiers(), 0);
+        assert_eq!(scancode(Fn), None);
     }
 }

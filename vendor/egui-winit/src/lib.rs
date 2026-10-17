@@ -365,6 +365,7 @@ impl State {
                             .push(egui::Event::Ime(egui::ImeEvent::Preedit(text.clone())));
                     }
                     winit::event::Ime::Commit(text) => {
+                        gamepkg_input::text(self.viewport_id, text);
                         self.egui_input
                             .events
                             .push(egui::Event::Ime(egui::ImeEvent::Commit(text.clone())));
@@ -776,6 +777,7 @@ impl State {
                     if let Some(contents) = self.clipboard.get() {
                         let contents = contents.replace("\r\n", "\n");
                         if !contents.is_empty() {
+                            gamepkg_input::text(self.viewport_id, &contents);
                             self.egui_input.events.push(egui::Event::Paste(contents));
                         }
                     }
@@ -804,6 +806,7 @@ impl State {
                     || self.egui_input.modifiers.command
                     || self.egui_input.modifiers.mac_cmd;
                 if pressed && !is_cmd {
+                    gamepkg_input::text(self.viewport_id, text);
                     self.egui_input
                         .events
                         .push(egui::Event::Text(text.to_string()));

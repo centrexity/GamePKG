@@ -62,6 +62,9 @@ jobs:
       - name: Build CLI and GUI
         if: matrix.features == '--all-features'
         run: cargo build --locked --release --all-features --bins
+      - name: Verify physical input capture isolation and ordering
+        if: matrix.features == '--all-features'
+        run: python3 tests/desktop_input_capture.py
       - name: Reject excessive Rust parser nesting without aborting the host
         if: matrix.features == '--all-features'
         run: python3 tests/parser_limits.py

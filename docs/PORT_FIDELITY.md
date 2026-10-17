@@ -9,8 +9,8 @@ work stays open until behavior is verified.
 
 | Port | Remaining gaps |
 | --- | --- |
-| Cube 2 | Complete physical keyboard coverage; LAN discovery, master authentication and public server registration; custom asset/mod workflows; demo/movie output and persistence; hardware-accelerated engine rendering; native platforms beyond Linux. Vulkan currently presents software-rendered engine frames. |
-| DOOM | Original WAD music, spatial stereo effects, all six save slots and configuration persistence now work in both runtimes. Full keyboard/mouse controls, music backend selection, multiplayer and additional WADs/mods need implementation. |
+| Cube 2 | Remaining uncommon/extended media keys and full controller/touch equivalence; LAN discovery, master authentication and public server registration; custom asset/mod workflows; demo/movie output and persistence; hardware-accelerated engine rendering; native platforms beyond Linux. Vulkan currently presents software-rendered engine frames. |
+| DOOM | Original WAD music, spatial stereo effects, six save slots, configuration, desktop controls and the original quit/ENDOOM flow are runtime verified. Music backend selection, multiplayer, additional WADs/mods and broader control/platform coverage remain unfinished. |
 | Zelda3 | External MSU music, replay tools, save states, widescreen, language selection and desktop enhancement settings need support. The adapter fixes the view to 256×224. Original DSP stereo is verified in native and Wasm gameplay/save tests. |
 | Arkanoo | Editor, mouse controls, original menus/music and portal/gravity mechanics are omitted. Art, effects and endless generation are replacements. Current runs do not persist; high score and unlocked level do. |
 | 2048 | Deterministic placement and exclusively 2-valued spawns replace randomized spawning. Scoring, win/game-over flow, restart, undo, board persistence and solver functionality are missing. The pinned upstream representation caps tiles at 32768. |
@@ -20,6 +20,12 @@ Evidence: [README coverage table](../README.md#port-feature-coverage),
 [Zelda adapter](../engines/zelda3/adapters/engine.c),
 [Arkanoo credits](../ports/arkanoo/CREDITS.md), and
 [2048 implementation](../ports/2048/source/src/lib.rs).
+
+Cube 2's physical keyboard path now preserves Pause, keypad distinctions and
+left/right modifiers. Actual desktop tests verify their independent bindings,
+the original console and saved preferences. Accepted text stays ordered with
+keys, including paste and committed IME input; preedit text is not captured.
+This does not establish full controller, touch or platform coverage.
 
 ## What GamePKG needs to add
 

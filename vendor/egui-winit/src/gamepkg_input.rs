@@ -18,6 +18,7 @@ pub enum Event {
     },
     Motion(f64, f64),
     Wheel(MouseScrollDelta),
+    Text(String),
     Focus(bool),
     Overflow,
 }
@@ -56,6 +57,22 @@ fn push(capture: &mut Capture, event: Event) {
         capture.events.push(Event::Overflow);
     } else if !matches!(capture.events.first(), Some(Event::Overflow)) {
         capture.events.push(event);
+    }
+}
+/// Capture only text already accepted by the desktop backend's shortcut/IME
+/// rules, in the same order as physical keys. Never retain preedit contents.
+pub(crate) fn text(viewport: ViewportId, value: &str) {
+    let mut guard = CAPTURE.lock().unwrap_or_else(|p| p.into_inner());
+    if let Some(c) = guard
+        .as_mut()
+        .filter(|c| c.viewport == viewport && c.focused)
+    {
+        if value.len() > 4096 {
+            c.events.clear();
+            c.events.push(Event::Overflow);
+        } else if !value.is_empty() {
+            push(c, Event::Text(value.to_owned()));
+        }
     }
 }
 pub(crate) fn window_event(viewport: ViewportId, event: &WindowEvent) {
@@ -120,6 +137,20 @@ mod tests {
         motion(game, (1.0, 2.0));
         assert!(take(game).is_empty());
         enable(game, true, true);
+        text(other, "library secret");
+        assert!(take(game).is_empty());
+        text(game, "console command");
+        push(
+            CAPTURE.lock().unwrap().as_mut().unwrap(),
+            Event::Key {
+                code: KeyCode::Enter,
+                pressed: true,
+                repeat: false,
+            },
+        );
+        assert!(
+            matches!(take(game).as_slice(), [Event::Text(value), Event::Key { code: KeyCode::Enter, .. }] if value == "console command")
+        );
         motion(other, (1.0, 2.0));
         assert!(take(game).is_empty());
         motion(game, (3.0, -4.0));
@@ -127,6 +158,7 @@ mod tests {
         assert!(matches!(take(game).as_slice(), [Event::Motion(3.0, -4.0)]));
         window_event(game, &WindowEvent::Focused(false));
         motion(game, (5.0, 6.0));
+        text(game, "unfocused secret");
         assert!(matches!(take(game).as_slice(), [Event::Focus(false)]));
         window_event(game, &WindowEvent::Focused(true));
         take(game);

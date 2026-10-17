@@ -12,6 +12,7 @@ notes = "Removed forced map/menu/HUD/FPS commands; added explicit bounded 60-sec
 id = "cube2_input"
 requirements = ["Complete original keyboard controls", "Mouse buttons and relative input", "Controller and touch equivalents"]
 status = "in_progress"
+notes = "Desktop keyboard now uses physical events rather than egui's normalized key subset, including Pause, keypad distinctions, international keys and left/right modifiers. Accepted keyboard, paste and committed IME text stay ordered with those keys; preedit text is not captured. Private actual-engine GUI tests verify original menus, console preferences, independent Pause/keypad-1/right-Ctrl bindings and normal saving/close. Unit tests cover SDL scancodes and modifier sides; focused-viewport capture/text isolation and overflow tests pass. Extended media keys beyond the current SDL protocol range and full controller/touch equivalence remain open."
 
 [[work]]
 id = "cube2_network"
