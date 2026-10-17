@@ -1,6 +1,6 @@
 """Direct machine code, no implicit Wasm, native deadlines and controlled TCP/UDP."""
 from pathlib import Path
-import hashlib,os,shutil,socket,subprocess,tempfile,threading
+import hashlib,os,re,shutil,socket,subprocess,tempfile,threading
 PROJECT=Path(__file__).resolve().parents[1];CLI=PROJECT/'target/release/gamepkg'
 with tempfile.TemporaryDirectory(prefix='gamepkg-native-') as temporary:
  root=Path(temporary);config=root/'settings.toml';config.write_text('automatic_update_checks=false\n')
@@ -22,6 +22,12 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-native-') as temporary:
   return 'com.example.'+name
  simple=install('simple','pub fn game_tick(_:u32,state:u64)->u64{state+(1u64<<32)}')
  assert 'score: 4' in run('run',simple,'--frames','4')
+ random_game=install('random','pub fn game_tick(_:u32,_:u64)->u64{gamepkg::random_u64() & 0xffffffff00000000}')
+ scores={int(re.search(r'score: (\d+)',run('run',random_game,'--frames','1')).group(1)) for _ in range(4)}
+ assert len(scores)==4,'Native workers reused fixed or truncated random values'
+ random_loop=install('randomloop','pub fn game_tick(_:u32,_:u64)->u64{loop{gamepkg::random_u64();}}')
+ error=run('run',random_loop,'--frames','1',good=False)
+ assert 'time limit' in error or 'call budget exceeded' in error,error
  loop=install('loop','pub fn game_tick(_:u32,_:u64)->u64{loop{}}')
  assert 'time limit' in run('run',loop,'--frames','1',good=False)
  memory=install('memory','pub fn game_tick(_:u32,_:u64)->u64{let mut memory=Vec::new();memory.resize(32*1024*1024,0u8);gamepkg::rom_read(0,&mut memory[..16]);memory.len() as u64}')
@@ -56,4 +62,4 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-native-') as temporary:
  # A native artifact cannot run after its verified checksum changes.
  binary=artifacts['simple'];binary.write_bytes(binary.read_bytes()+b'corrupt')
  assert 'integrity' in run('run',simple,'--frames','1',good=False)
- print('Native builds passed: ELF machine code only, native gameplay, deadline/memory termination, TCP/UDP echo, denied undeclared networking and corrupt artifact rejection.')
+ print('Native builds passed: ELF machine code only, native gameplay, fresh host randomness and call limits, deadline/memory termination, TCP/UDP echo, denied undeclared networking and corrupt artifact rejection.')

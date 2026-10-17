@@ -65,7 +65,8 @@ status = "pending"
 [[work]]
 id = "2048_parity"
 requirements = ["Accurate randomized tile spawning", "Scoring", "Win and game-over flow", "Restart and undo", "Board persistence", "Solver functionality", "Tile representation fidelity"]
-status = "pending"
+status = "in_progress"
+notes = "Fresh host randomness and unbiased empty-cell sampling replace deterministic always-two spawns. The pinned command-line application starts with a fixed two at row 1/column 2 and uses a 10% probability of fours; those settings are preserved. Unit tests cover all empty-cell ranks and value outcomes, rejection sampling, full boards and upstream row merges. Signed isolated Wasm build/gameplay/integrity, native GUI gameplay/export and actual Chromium core/component gameplay tests pass. Shared randomness preserves all 64 bits, needs no filesystem/device permission, has no fixed fallback and remains under tick/RPC limits. Scoring, end-state UI, restart/undo, saved boards, solver and tile-representation work remain open."
 
 [[work]]
 id = "web_exports"

@@ -1,5 +1,23 @@
 mod adapted {
     pub mod gamepkg {
+        thread_local! {
+            static WORDS: std::cell::RefCell<std::collections::VecDeque<u64>> = const { std::cell::RefCell::new(std::collections::VecDeque::new()) };
+            static NEXT: std::cell::Cell<u64> = const { std::cell::Cell::new(1) };
+        }
+        pub fn samples(values: &[u64]) {
+            WORDS.with(|words| *words.borrow_mut() = values.iter().copied().collect());
+        }
+        pub fn random_u64() -> u64 {
+            WORDS
+                .with(|words| words.borrow_mut().pop_front())
+                .unwrap_or_else(|| {
+                    NEXT.with(|next| {
+                        let value = next.get().wrapping_mul(6364136223846793005).wrapping_add(1);
+                        next.set(value);
+                        value
+                    })
+                })
+        }
         pub fn draw_clear(_: u32) -> bool {
             true
         }
@@ -8,6 +26,30 @@ mod adapted {
         }
     }
     include!("../ports/2048/source/src/lib.rs");
+    pub fn spawn_test(board: u64) -> u64 {
+        spawn(board)
+    }
+    pub fn bounded_test(bound: u64) -> u64 {
+        random_below(bound)
+    }
+}
+#[test]
+fn spawns_sample_empty_squares_and_match_original_cli_four_probability() {
+    for rank in 0..16 {
+        for value in 10..20 {
+            adapted::gamepkg::samples(&[value, rank]);
+            let expected = if value % 10 == 0 { 2 } else { 1 };
+            assert_eq!(adapted::spawn_test(0), expected << (4 * rank));
+        }
+    }
+    // With two empty cells, rank one must select the second empty cell,
+    // without scanning from a biased random starting position.
+    let board = u64::MAX & !(15u64 << 4) & !(15u64 << 52);
+    adapted::gamepkg::samples(&[11, 1]);
+    assert_eq!(adapted::spawn_test(board), board | (1u64 << 52));
+    assert_eq!(adapted::spawn_test(u64::MAX), u64::MAX);
+    adapted::gamepkg::samples(&[0, 5, 6]); // 2^64 % 10 = 6: reject 0 and 5.
+    assert_eq!(adapted::bounded_test(10), 6);
 }
 #[test]
 fn upstream_merges_once_per_move_in_all_directions() {

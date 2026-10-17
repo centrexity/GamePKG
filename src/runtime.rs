@@ -145,6 +145,7 @@ impl Game {
                             | "save_read"
                             | "save_write"
                             | "save_size"
+                            | "random_u64"
                             | "draw_clear"
                             | "draw_asset_image"
                             | "draw_image"
@@ -199,6 +200,7 @@ impl Game {
                                 | "save-read"
                                 | "save-write"
                                 | "save-size"
+                                | "random-u64"
                                 | "draw-clear"
                                 | "draw-asset-image"
                                 | "draw-image"
@@ -538,6 +540,9 @@ impl Game {
             )?;
 
             linker.func_wrap("gamepkg", "save_read", save_read)?;
+            linker.func_wrap("gamepkg", "random_u64", || -> Result<i64> {
+                Ok(crate::random::value()? as i64)
+            })?;
             linker.func_wrap("gamepkg", "save_write", save_write)?;
             linker.func_wrap("gamepkg", "save_size", |caller: Caller<'_, Data>| -> i32 {
                 caller

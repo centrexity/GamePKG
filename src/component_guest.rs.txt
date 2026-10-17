@@ -1,8 +1,10 @@
 // Trusted canonical-ABI bindings for wit/game.wit. Guest sources cannot supply these imports.
 pub mod gamepkg {
+    pub fn random_u64()->u64 {unsafe {host_random_u64()}}
     fn __gamepkg_network_call(operation:u32,input:&[u8],output:&mut[u8])->Result<u32,NetworkError>{if input.len()>65540||output.len()>65536{return Err(NetworkError::PermissionDenied);}let mut r=[0u32;3];unsafe{host_network_call(operation,input.as_ptr(),input.len(),output.len() as u32,r.as_mut_ptr());}let status=r[0]as i32;if status<0{return Err(if status== -2{NetworkError::Pending}else if status== -3{NetworkError::Failed}else{NetworkError::PermissionDenied});}let n=r[2]as usize;if n>output.len(){return Err(NetworkError::Failed);}if n>0{unsafe{let p=r[1]as *mut u8;output[..n].copy_from_slice(std::slice::from_raw_parts(p,n));std::alloc::dealloc(p,std::alloc::Layout::from_size_align(n,1).unwrap());}}Ok(n as u32)}
     #[link(wasm_import_module = "gamepkg:engine/host@0.1.0")]
     unsafe extern "C" {
+        #[link_name="random-u64"] fn host_random_u64()->u64;
         #[link_name="network-call"] fn host_network_call(operation:u32,input:*const u8,length:usize,capacity:u32,result:*mut u32);
         #[link_name="draw-shader-asset-image"] fn host_shader_asset_image(index: u32, path: *const u8, length: usize) -> i32;
         #[link_name="rom-count"] fn host_rom_count()->u32;

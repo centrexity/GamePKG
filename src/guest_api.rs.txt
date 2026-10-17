@@ -2,9 +2,11 @@
 /// Read a chunk from a virtual path relative to the package's assets folder.
 /// Errors (missing asset, invalid path, or invalid offset) return None.
 pub mod gamepkg {
+    pub fn random_u64()->u64 {unsafe {host_random_u64()}}
     fn __gamepkg_network_call(operation:u32,input:&[u8],output:&mut[u8])->Result<u32,NetworkError>{if input.len()>65540||output.len()>65536{return Err(NetworkError::PermissionDenied);}let n=unsafe{host_network_call(operation,input.as_ptr(),input.len(),output.as_mut_ptr(),output.len())};match n{-2=>Err(NetworkError::Pending),-3=>Err(NetworkError::Failed),n if n<0=>Err(NetworkError::PermissionDenied),n=>Ok(n as u32)}}
     #[link(wasm_import_module = "gamepkg")]
     unsafe extern "C" {
+        #[link_name="random_u64"] fn host_random_u64()->u64;
         #[link_name="network_call"] fn host_network_call(operation:u32,input:*const u8,length:usize,output:*mut u8,capacity:usize)->i32;
         #[link_name="draw_shader_asset_image"] fn host_shader_asset_image(index: u32, path: *const u8, length: usize) -> i32;
         #[link_name="doom_tick"] fn host_doom_tick(input:u32,state:u64)->u64;

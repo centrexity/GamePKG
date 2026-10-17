@@ -52,6 +52,15 @@ Keep the name and version identical in both Cargo files. Hash the exact lockfile
 
 Use `gamepkg::asset_read` for package-relative assets, `rom_count`, `rom_size_at` and `rom_read_at` for player-selected ROMs, and `save_size`, `save_read` and `save_write` for the game's save blob. They never open arbitrary host files.
 
+Use `gamepkg::random_u64()` for a fresh 64-bit random value supplied by the host.
+It needs no additional permission and exposes no device, clock, filesystem or
+host identity. Native, core-Wasm and component-Wasm hosts use OS randomness;
+browser exports use `crypto.getRandomValues`. If entropy is unavailable the
+call fails rather than returning a fixed seed. Calls remain subject to normal
+tick deadlines and native RPC limits. For a uniform choice among `n` outcomes,
+use rejection sampling before taking a remainder; `% n` alone can introduce bias.
+This API requires the updated source host; older release binaries may not expose it.
+
 Use `gamepkg::draw_clear`, `draw_rect`, `draw_circle` and `draw_asset_image` for the host-owned viewport. Games cannot create windows or obtain GPU handles. `gamepkg::network_request(url, output)` performs an asynchronous, bounded HTTPS GET only when the signed manifest permits that exact endpoint. TCP and UDP use the same host-controlled network service. See [networking](https://github.com/centrexity/GamePKG/blob/main/docs/NETWORKING.md).
 
 These functions preserve the source checks, signatures, isolated compiler and Wasm restrictions. Games cannot replace the injected implementation or declare their own host imports.

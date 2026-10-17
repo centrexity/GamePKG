@@ -3,6 +3,7 @@ use anyhow::{bail, Context, Result};
 use std::{collections::BTreeMap, fs, io::Write, path::Path};
 
 const SUPPORTED: &[&str] = &[
+    "random_u64",
     "asset_read",
     "rom_count",
     "rom_size",

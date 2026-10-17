@@ -15,6 +15,9 @@ fn chunk(bytes: Option<&[u8]>, offset: u32, length: u32) -> Option<Vec<u8>> {
 pub(super) fn linker(engine: &Engine) -> Result<Linker<Data>> {
     let mut linker = Linker::new(engine);
     let mut host = linker.instance("gamepkg:engine/host@0.1.0")?;
+    host.func_wrap("random-u64", |_: StoreContextMut<'_, Data>, (): ()| {
+        Ok((crate::random::value()?,))
+    })?;
     host.func_wrap(
         "network-call",
         |mut store: StoreContextMut<'_, Data>,

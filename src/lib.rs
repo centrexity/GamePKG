@@ -85,6 +85,7 @@ pub mod native;
 pub mod gpu_vulkan;
 
 mod network;
+mod random;
 
 pub mod app_updates;
 #[doc(hidden)]

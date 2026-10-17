@@ -302,6 +302,10 @@ impl Session {
             Ok(v)
         }
         let ok = match op {
+            26 => {
+                ensure!(b.is_empty(), "invalid random-value request");
+                return Ok(crate::random::value()?.to_le_bytes().to_vec());
+            }
             1 => {
                 let len = n(b, 0)? as usize;
                 ensure!(len <= 1024, "path too long");

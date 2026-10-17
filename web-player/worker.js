@@ -17,6 +17,7 @@ function read(source,offset,pointer,length){if(!source||offset<0||offset>source.
 function finite(...values){return values.every(Number.isFinite)&&values.every(v=>Math.abs(v)<=16384);}
 function command(value){if(commands.length>=1024)return -1;commands.push(value);return 0;}
 const api={
+ random_u64:()=>{const words=new Uint32Array(2);crypto.getRandomValues(words);return BigInt(words[0])|(BigInt(words[1])<<32n);},
  asset_read:(p,n,offset,out,length)=>{const name=assetName(p,n);return name===null?-1:read(assets.get(name),offset,out,length);},
  rom_count:()=>roms.length,rom_size:()=>roms[0]?.length??-1,rom_size_at:index=>roms[index]?.length??-1,
  rom_read:(offset,out,length)=>read(roms[0],offset,out,length),rom_read_at:(index,offset,out,length)=>read(roms[index],offset,out,length),
@@ -64,6 +65,7 @@ function optionBytes(pointer,source,offset,length){
  const view=new DataView(instance.exports.memory.buffer);view.setUint32(pointer,part?1:0,true);view.setUint32(pointer+4,address,true);view.setUint32(pointer+8,part?.length??0,true);
 }
 const canonical={
+ 'random-u64':api.random_u64,
  'rom-count':api.rom_count,
  'rom-size':pointer=>optionSize(pointer,api.rom_size()),
  'rom-size-at':(index,pointer)=>optionSize(pointer,api.rom_size_at(index)),
