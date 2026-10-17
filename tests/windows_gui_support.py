@@ -11,6 +11,8 @@ def verify_shader_input(project,env,game_id,label):
  signatures=[(user,'EnumWindows',[callback_type,W.LPARAM],W.BOOL),(user,'GetWindowThreadProcessId',[W.HWND,ctypes.POINTER(W.DWORD)],W.DWORD),(user,'IsWindowVisible',[W.HWND],W.BOOL),(user,'GetClientRect',[W.HWND,ctypes.POINTER(W.RECT)],W.BOOL),(user,'GetDC',[W.HWND],W.HDC),(user,'ReleaseDC',[W.HWND,W.HDC],ctypes.c_int),(user,'PostMessageW',[W.HWND,W.UINT,W.WPARAM,W.LPARAM],W.BOOL),(user,'SetForegroundWindow',[W.HWND],W.BOOL),(user,'GetForegroundWindow',[],W.HWND),(gdi,'CreateCompatibleDC',[W.HDC],W.HDC),(gdi,'SelectObject',[W.HDC,W.HGDIOBJ],W.HGDIOBJ),(gdi,'DeleteObject',[W.HGDIOBJ],W.BOOL),(gdi,'DeleteDC',[W.HDC],W.BOOL),(gdi,'BitBlt',[W.HDC,ctypes.c_int,ctypes.c_int,ctypes.c_int,ctypes.c_int,W.HDC,ctypes.c_int,ctypes.c_int,W.DWORD],W.BOOL)]
  for library,name,arguments,result in signatures:
   function=getattr(library,name);function.argtypes=arguments;function.restype=result
+ for name,arguments,result in [('ShowWindow',[W.HWND,ctypes.c_int],W.BOOL),('SetWindowPos',[W.HWND,W.HWND,ctypes.c_int,ctypes.c_int,ctypes.c_int,ctypes.c_int,W.UINT],W.BOOL),('ClientToScreen',[W.HWND,ctypes.POINTER(W.POINT)],W.BOOL),('SetCursorPos',[ctypes.c_int,ctypes.c_int],W.BOOL),('WindowFromPoint',[W.POINT],W.HWND)]:
+  function=getattr(user,name);function.argtypes=arguments;function.restype=result
  class MouseInput(ctypes.Structure):
   _fields_=[('dx',W.LONG),('dy',W.LONG),('data',W.DWORD),('flags',W.DWORD),('time',W.DWORD),('extra',W.WPARAM)]
  class KeyboardInput(ctypes.Structure):
@@ -66,6 +68,25 @@ def verify_shader_input(project,env,game_id,label):
     user.EnumWindows(visit,0)
     if found:window=max(found)[1];break
     assert time.monotonic()<deadline,'Native GamePKG window did not appear';time.sleep(.1)
+   # Background automation cannot always call SetForegroundWindow directly.
+   # Activate our own visible client through a real click, as a user would.
+   # https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setforegroundwindow
+   user.ShowWindow(window,9)
+   assert user.SetWindowPos(window,W.HWND(-1),0,0,0,0,0x1|0x2|0x10|0x40)
+   try:
+    rectangle=W.RECT();assert user.GetClientRect(window,ctypes.byref(rectangle))
+    point=W.POINT(rectangle.right//2,rectangle.bottom//2)
+    assert user.ClientToScreen(window,ctypes.byref(point))
+    deadline=time.monotonic()+10
+    while user.WindowFromPoint(point)!=window:
+     assert time.monotonic()<deadline,'Native game client was not available for activation'
+     time.sleep(.1)
+    assert user.SetCursorPos(point.x,point.y)
+    events=(Input*2)()
+    events[0].data.mouse.flags=0x2;events[1].data.mouse.flags=0x4
+    assert user.SendInput(2,events,ctypes.sizeof(Input))==2,ctypes.get_last_error()
+   finally:
+    assert user.SetWindowPos(window,W.HWND(-2),0,0,0,0,0x1|0x2|0x10)
    deadline=time.monotonic()+10
    while user.GetForegroundWindow()!=window:
     user.SetForegroundWindow(window)
