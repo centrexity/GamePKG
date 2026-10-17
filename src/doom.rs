@@ -6,6 +6,31 @@ use wasmtime::{
 pub const PROFILE: &str = "doom-e257a095";
 pub const MEMORY: u64 = 64 * 1048576;
 pub const SAVE_MAX: usize = 512 * 1024;
+#[cfg(target_os = "linux")]
+pub(crate) const MUSIC_SOURCES: &[&str] = &[
+    "music_opl.c",
+    "midi_memory.c",
+    "music_mus.c",
+    "opl_memory.c",
+    "opl_synth.c",
+];
+#[cfg(target_os = "linux")]
+pub(crate) fn verify_music_sources(root: &std::path::Path) -> Result<()> {
+    let lock: serde_json::Value =
+        serde_json::from_slice(include_bytes!("../engines/doom/music/upstream-lock.json"))?;
+    for (name, hash) in lock["files"]
+        .as_object()
+        .context("invalid music source lock")?
+    {
+        if crate::verify::digest(&std::fs::read(
+            root.join("engines/doom/music/upstream").join(name),
+        )?) != hash.as_str().unwrap_or("")
+        {
+            bail!("pinned DOOM music source changed: {name}");
+        }
+    }
+    Ok(())
+}
 pub fn validate_wad(wad: &[u8]) -> Result<()> {
     if wad.len() < 12 || wad.len() > 64 * 1048576 || &wad[..4] != b"IWAD" {
         bail!("select a supported DOOM IWAD (DOOM.WAD or DOOM2.WAD)");
@@ -86,6 +111,7 @@ pub fn build() -> Result<Vec<u8>> {
                 bail!("pinned DOOM source changed: {name}");
             }
         }
+        verify_music_sources(kit.path())?;
         let sysroot =
             crate::c_toolchain::resolve(&["GAMEPKG_DOOM_SYSROOT", "GAMEPKG_ZELDA3_SYSROOT"])?;
         let prefix = if sysroot.join("usr/include/wasm32-wasi").is_dir() {
@@ -114,6 +140,8 @@ pub fn build() -> Result<Vec<u8>> {
                 "-D_DEFAULT_SOURCE",
                 "-I/source/engines/doom/upstream",
                 "-I/source/engines/doom/adapters/include",
+                "-I/source/engines/doom/music",
+                "-I/source/engines/doom/music/upstream",
             ]
             .map(str::to_string),
         );
@@ -127,6 +155,11 @@ pub fn build() -> Result<Vec<u8>> {
             ));
         }
         args.push("/source/engines/doom/adapters/engine.c".into());
+        args.extend(
+            MUSIC_SOURCES
+                .iter()
+                .map(|name| format!("/source/engines/doom/music/{name}")),
+        );
         for syntax in [true, false] {
             let mut cmd = crate::compiler::command(32 * 1048576);
             cmd.args([
@@ -379,6 +412,28 @@ impl Doom {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn music_source_kit_rejects_changed_or_missing_pinned_files() {
+        let root = tempfile::tempdir().unwrap();
+        for (name, bytes) in crate::doom_sources::FILES
+            .iter()
+            .filter(|(name, _)| name.starts_with("engines/doom/music/upstream/"))
+        {
+            let path = root.path().join(name);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, bytes).unwrap();
+        }
+        verify_music_sources(root.path()).unwrap();
+        let path = root.path().join("engines/doom/music/upstream/opl3.c");
+        std::fs::write(&path, "changed emulator").unwrap();
+        assert!(verify_music_sources(root.path())
+            .unwrap_err()
+            .to_string()
+            .contains("source changed"));
+        std::fs::remove_file(path).unwrap();
+        assert!(verify_music_sources(root.path()).is_err());
+    }
     fn wad() -> Vec<u8> {
         let mut w = b"IWAD".to_vec();
         w.extend(1u32.to_le_bytes());

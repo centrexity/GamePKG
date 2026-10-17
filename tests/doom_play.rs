@@ -159,3 +159,32 @@ fn original_attract_demo_has_spatial_stereo() {
     assert!(separated, "original demo sounds lost spatial separation");
     game.finish().unwrap();
 }
+
+#[test]
+#[ignore = "requires GAMEPKG_DOOM_TEST_ROOT and GAMEPKG_DOOM_TEST_WAD"]
+fn original_title_music_plays_before_any_demo_sound_effects() {
+    let root = std::path::PathBuf::from(std::env::var_os("GAMEPKG_DOOM_TEST_ROOT").unwrap());
+    let wad = std::path::PathBuf::from(std::env::var_os("GAMEPKG_DOOM_TEST_WAD").unwrap());
+    let fixture = tempfile::tempdir().unwrap();
+    copy(&root, fixture.path());
+    let mut game = load(fixture.path(), &wad);
+    let mut audible = false;
+    let mut title_frames = 0;
+    for _ in 0..300 {
+        game.step(0).unwrap();
+        if game.builtin_state().unwrap().unwrap().0 & 256 != 0 {
+            break;
+        }
+        title_frames += 1;
+        audible |= game.audio_frame().iter().any(|sample| *sample != 0);
+    }
+    assert!(
+        title_frames >= 30,
+        "title phase did not last long enough to check music"
+    );
+    assert!(
+        audible,
+        "original title music is silent before the attract demo"
+    );
+    game.finish().unwrap();
+}

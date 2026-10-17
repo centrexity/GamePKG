@@ -20,6 +20,15 @@ Engine and adapter: GPL-2.0-or-later. See engines/doom/upstream/LICENSE
 and the source headers for complete copyright notices. Corresponding source
 is included under engines/doom. No WADs or extracted game assets are included.
 
+DOOM music sequencer, MIDI/MUS parsers and Nuked OPL3 software synthesizer:
+Source: https://github.com/chocolate-doom/chocolate-doom
+Pinned revision: 35fb1372d10756ca27eca05665bd8a7cebc71c05 (3.1.0).
+Copyright id Software, Simon Howard and Alexey Khokholov (Nuke.YKT).
+GPL-2.0-or-later. Original sources, complete license and file hashes are in
+engines/doom/music/upstream and upstream-lock.json. Reviewed adaptations use
+memory-only parsing and a bounded synchronous callback queue. Instruments and
+music are read from the player's selected WAD; none are included here.
+
 Bundled library fallback thumbnail artwork:
 2048 original icon by Gabriele Cirulli, MIT (copyright 2014).
 DOOM cover adapts "Skull crack" by Lorc: https://game-icons.net/1x1/lorc/skull-crack.html

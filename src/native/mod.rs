@@ -29,6 +29,37 @@ fn cpu_identity() -> &'static str {
         crate::verify::digest(selected.as_bytes())[..16].to_owned()
     })
 }
+fn sdk_identity() -> &'static str {
+    static ID: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    ID.get_or_init(|| {
+        use sha2::{Digest, Sha256};
+        let mut hash = Sha256::new();
+        hash.update(
+            concat!(
+                include_str!("build.rs"),
+                include_str!("guest.rs.txt"),
+                include_str!("engine.rs.txt"),
+                include_str!("seccomp.rs.txt"),
+                include_str!("../guest_helpers.rs.txt"),
+                include_str!("../network_guest.rs.txt")
+            )
+            .as_bytes(),
+        );
+        // Adapter and engine fixes must invalidate native caches even when the
+        // package signature and host version have not changed.
+        #[cfg(target_os = "linux")]
+        for (name, bytes) in crate::doom_sources::FILES
+            .iter()
+            .chain(crate::zelda3_sources::FILES.iter())
+        {
+            hash.update((name.len() as u64).to_le_bytes());
+            hash.update(name.as_bytes());
+            hash.update((bytes.len() as u64).to_le_bytes());
+            hash.update(bytes);
+        }
+        hex::encode(hash.finalize())[..16].to_owned()
+    })
+}
 pub fn path_for_digest(root: &Path, digest: &str) -> PathBuf {
     root.join("builds")
         .join(digest)
@@ -38,17 +69,7 @@ pub fn path_for_digest(root: &Path, digest: &str) -> PathBuf {
             std::env::consts::OS,
             std::env::consts::ARCH,
             cpu_identity(),
-            &crate::verify::digest(
-                concat!(
-                    include_str!("build.rs"),
-                    include_str!("guest.rs.txt"),
-                    include_str!("engine.rs.txt"),
-                    include_str!("seccomp.rs.txt"),
-                    include_str!("../guest_helpers.rs.txt"),
-                    include_str!("../network_guest.rs.txt")
-                )
-                .as_bytes()
-            )[..16]
+            sdk_identity()
         ))
         .join("game")
 }

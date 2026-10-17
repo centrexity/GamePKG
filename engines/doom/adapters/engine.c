@@ -271,7 +271,7 @@ static snddevice_t devices[] = {SNDDEVICE_SB};
 sound_module_t DG_sound_module = {
     devices,    1,         snd_init, snd_shutdown, snd_lump, snd_update,
     snd_params, snd_start, snd_stop, snd_playing,  snd_cache};
-music_module_t DG_music_module = {0};
+void gamepkg_music_render(int16_t *samples, unsigned frames);
 int use_libsamplerate = 0;
 float libsamplerate_scale = 1;
 void I_InitTimidityConfig(void) {}
@@ -294,10 +294,9 @@ int initialize(uint8_t *data, uint32_t length, uint32_t saved) {
                          "gamepkg",
                          "-mb",
                          "16",
-                         "-nomusic",
                          "-loadgame",
                          "0"};
-  doomgeneric_Create(save_length ? 14 : 12, args);
+  doomgeneric_Create(save_length ? 13 : 11, args);
   return 0;
 }
 EXPORT("step") int step(uint32_t input) {
@@ -324,6 +323,9 @@ EXPORT("step") int step(uint32_t input) {
     doomgeneric_Tick();
   }
   mix();
+  int16_t music[1600];
+  gamepkg_music_render(music, 800);
+  for (int i = 0; i < 1600; i++) pcm[i] = clip_sample((int)pcm[i] + music[i]);
   return 0;
 }
 EXPORT("pixels") void *pixels(void) { return DG_ScreenBuffer; }

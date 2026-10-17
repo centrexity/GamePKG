@@ -403,6 +403,14 @@ fn engine(stage: &Path, profile: &str, optimize: bool) -> Result<Vec<String>> {
         v
     };
     sources.push(format!("/work/engines/{label}/adapters/engine.c"));
+    if doom {
+        crate::doom::verify_music_sources(stage)?;
+        sources.extend(
+            crate::doom::MUSIC_SOURCES
+                .iter()
+                .map(|name| format!("/work/engines/doom/music/{name}")),
+        );
+    }
     fs::create_dir(stage.join("objects"))?;
     let mut cmd = crate::compiler::command(64 * 1048576);
     sandbox(&mut cmd, stage);
@@ -427,6 +435,8 @@ fn engine(stage: &Path, profile: &str, optimize: bool) -> Result<Vec<String>> {
     .arg(format!("-I/work/engines/{label}/adapters/include"));
     if doom {
         cmd.args([
+            "-I/work/engines/doom/music",
+            "-I/work/engines/doom/music/upstream",
             "-DDOOMGENERIC_RESX=320",
             "-DDOOMGENERIC_RESY=200",
             "-DFEATURE_SOUND",

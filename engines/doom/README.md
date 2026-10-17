@@ -16,7 +16,12 @@ The WAD is selected explicitly, snapshotted read-only and validated for its IWAD
 
 The engine's C stdio adapter is a private virtual filesystem: only the selected WAD and one bounded save slot exist. No path can reach the host filesystem. Configuration files, environment access and process execution are denied. Saves commit through the existing per-game/per-creator save blob after successful ticks. The one persistent slot is limited to 512 KiB and can be restored on launch. Engine memory mutations after a trap are not rolled back; close and relaunch a stopped game.
 
-Sound effects use a bounded 16-channel DMX mixer. Music synthesis, multiplayer, mod loading and browser export are not implemented. No microphone, socket, SDL device or native library is exposed to the engine. Controller/touch input comes through the same host button snapshot as keyboard input.
+Sound effects use a bounded 16-channel DMX mixer. Original WAD music uses the
+[in-memory OPL music backend](music/README.md), with instruments read from that
+same selected WAD. Multiplayer, mod loading, music backend selection and browser
+export remain unfinished. No microphone, socket, SDL device or native library is
+exposed to the engine. Controller/touch input comes through the same host button
+snapshot as keyboard input.
 
 The mixer respects world-position separation and changing volume using the
 [original DOOM quadratic panning and PCM gain](https://github.com/id-Software/DOOM/blob/master/linuxdoom-1.10/i_sound.c).
@@ -46,5 +51,10 @@ That test works in a private copy, starts a level from the menus, checks movemen
 The same test file also runs the original attract demo and requires actual
 left/right sample differences. Both tests pass on native and Wasm; select one
 explicitly with `GAMEPKG_DOOM_TEST_TARGET=native` or `wasm`.
+It also requires title music before any attract-demo sound effects. A separate
+optional `tests/doom_music_wad.c` proof reads the original WAD in place and checks
+the first three seconds of every music lump. All 45 songs in the local selected
+DOOM WAD passed with address and undefined-behavior sanitizers. This does not
+establish full-song or full-campaign coverage.
 
 For a separate WASI installation, use **Settings → C/WASI build tools folder**, check the tools and save settings. This persists across app restarts without requiring a launch-time environment variable. Engine-specific sysroot environment overrides take precedence.

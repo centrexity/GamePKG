@@ -1,6 +1,66 @@
 // Reviewed host-owned DOOM source kit. No game-provided C is compiled.
 pub const FILES: &[(&str, &[u8])] = &[
     (
+        "engines/doom/music/opl_synth.c",
+        include_bytes!("../engines/doom/music/opl_synth.c"),
+    ),
+    (
+        "engines/doom/music/midi_memory.c",
+        include_bytes!("../engines/doom/music/midi_memory.c"),
+    ),
+    (
+        "engines/doom/music/music_compat.h",
+        include_bytes!("../engines/doom/music/music_compat.h"),
+    ),
+    (
+        "engines/doom/music/music_mus.c",
+        include_bytes!("../engines/doom/music/music_mus.c"),
+    ),
+    (
+        "engines/doom/music/music_opl.c",
+        include_bytes!("../engines/doom/music/music_opl.c"),
+    ),
+    (
+        "engines/doom/music/opl_memory.c",
+        include_bytes!("../engines/doom/music/opl_memory.c"),
+    ),
+    (
+        "engines/doom/music/upstream/COPYING.md",
+        include_bytes!("../engines/doom/music/upstream/COPYING.md"),
+    ),
+    (
+        "engines/doom/music/upstream/i_oplmusic.c",
+        include_bytes!("../engines/doom/music/upstream/i_oplmusic.c"),
+    ),
+    (
+        "engines/doom/music/upstream/midifile.c",
+        include_bytes!("../engines/doom/music/upstream/midifile.c"),
+    ),
+    (
+        "engines/doom/music/upstream/midifile.h",
+        include_bytes!("../engines/doom/music/upstream/midifile.h"),
+    ),
+    (
+        "engines/doom/music/upstream/mus2mid.c",
+        include_bytes!("../engines/doom/music/upstream/mus2mid.c"),
+    ),
+    (
+        "engines/doom/music/upstream/opl.h",
+        include_bytes!("../engines/doom/music/upstream/opl.h"),
+    ),
+    (
+        "engines/doom/music/upstream/opl3.c",
+        include_bytes!("../engines/doom/music/upstream/opl3.c"),
+    ),
+    (
+        "engines/doom/music/upstream/opl3.h",
+        include_bytes!("../engines/doom/music/upstream/opl3.h"),
+    ),
+    (
+        "engines/doom/music/upstream-lock.json",
+        include_bytes!("../engines/doom/music/upstream-lock.json"),
+    ),
+    (
         "engines/doom/adapters/audio.h",
         include_bytes!("../engines/doom/adapters/audio.h"),
     ),

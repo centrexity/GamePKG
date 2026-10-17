@@ -36,6 +36,13 @@ jobs:
           target/cube2-audio-bridge-test
           cc -Wall -Wextra -Werror tests/doom_audio.c -o target/doom-audio-test
           target/doom-audio-test
+      - name: Verify in-memory DOOM music and parser boundaries
+        run: |
+          cc -O2 -ffunction-sections -Wl,--gc-sections -fsanitize=address,undefined -Iengines/doom/upstream -Iengines/doom/music -Iengines/doom/music/upstream -DFEATURE_SOUND tests/doom_music.c engines/doom/music/music_opl.c engines/doom/music/midi_memory.c engines/doom/music/music_mus.c engines/doom/music/opl_memory.c engines/doom/music/opl_synth.c engines/doom/upstream/memio.c -o target/doom-music-test
+          if ! ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 target/doom-music-test > target/doom-music-test.log 2>&1; then
+            cat target/doom-music-test.log
+            exit 1
+          fi
       - name: Test browser guest path protections
         run: node tests/web_path_attacks.mjs
       - name: Test support links and clipboard behavior

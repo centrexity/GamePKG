@@ -37,7 +37,8 @@ notes = "Shared stereo output and Cube 2 stereo verified: callback/encoding, pro
 [[work]]
 id = "doom_music"
 requirements = ["Original music playback", "Sound controls and persistence"]
-status = "pending"
+status = "in_progress"
+notes = "Original WAD music restored with pinned Chocolate DOOM sequencing/MUS/MIDI parsing and Nuked OPL synthesis using OPL2 defaults. Native and Wasm title-only music, original demo stereo and gameplay/save reload verified. All 45 songs in the selected DOOM WAD produce audio during their first three seconds with address/undefined-behavior sanitizers clean. Generated MIDI/MUS tests verify looping, volume reduction/restoration, pause/resume, tempo/callback bounds, truncations and 9,472 single-byte MIDI mutations; leak checks pass. Full song/campaign coverage, backend selection and configuration persistence remain unfinished."
 
 [[work]]
 id = "doom_saves_config_input"

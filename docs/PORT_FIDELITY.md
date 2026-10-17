@@ -10,7 +10,7 @@ work stays open until behavior is verified.
 | Port | Remaining gaps |
 | --- | --- |
 | Cube 2 | Complete physical keyboard coverage; LAN discovery, master authentication and public server registration; custom asset/mod workflows; demo/movie output and persistence; hardware-accelerated engine rendering; native platforms beyond Linux. Vulkan currently presents software-rendered engine frames. |
-| DOOM | Music is explicitly disabled. Spatial stereo effects are now verified in both runtimes. Only save slot 0 and its temporary file are exposed. Configuration persistence, full keyboard/mouse controls, multiplayer and additional WADs/mods need implementation. |
+| DOOM | Original WAD music and spatial stereo effects now work in both runtimes. Music backend selection and configuration persistence remain unfinished. Only save slot 0 and its temporary file are exposed. Full keyboard/mouse controls, multiplayer and additional WADs/mods need implementation. |
 | Zelda3 | External MSU music, replay tools, save states, widescreen, language selection and desktop enhancement settings need support. The adapter fixes the view to 256×224. Original DSP stereo is verified in native and Wasm gameplay/save tests. |
 | Arkanoo | Editor, mouse controls, original menus/music and portal/gravity mechanics are omitted. Art, effects and endless generation are replacements. Current runs do not persist; high score and unlocked level do. |
 | 2048 | Deterministic placement and exclusively 2-valued spawns replace randomized spawning. Scoring, win/game-over flow, restart, undo, board persistence and solver functionality are missing. The pinned upstream representation caps tiles at 32768. |

@@ -1,0 +1,14 @@
+{
+  "repository": "https://github.com/chocolate-doom/chocolate-doom",
+  "revision": "35fb1372d10756ca27eca05665bd8a7cebc71c05",
+  "files": {
+    "i_oplmusic.c": "599a3513dbc7f71873f9e1ad2833c776f179d06591c5f6978dcec52ff8ae9ac6",
+    "midifile.c": "17c83a9b306c919334dda009f966af0f2d6daeb5687419b3099c5cb821ac4609",
+    "midifile.h": "6df63dc0eb22cdb4082caf342ab68bc24d1c8b3e21de22396d8cc806a6d7d13b",
+    "mus2mid.c": "3206b590b162469bc92bd4d567d37b02eb61d563d2cc54318fa60e4e43b07823",
+    "opl3.c": "879237b086d3c6533816f167f81017e3f785f366ef45cb93186475c127d534a7",
+    "opl3.h": "de85ea1afe034d5461e9bb7518e569c5cbc5da59133f49242916dc68d70f4e11",
+    "opl.h": "82133cff253a2fcce4feee87e0820bf962e7fced247d9920a2cda74196d68315",
+    "COPYING.md": "aef8b4222b79d0dbf6bf17cfff71c90a6a6bb8917a4162abe417b469ed22da2e"
+  }
+}
