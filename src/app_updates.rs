@@ -547,7 +547,7 @@ mod tests {
                 .context("Set GAMEPKG_UPDATE_TEST_ARCHIVES")?,
         );
         for (platform, extension) in [("linux-x86_64", "tar.gz"), ("windows-x86_64", "zip")] {
-            let root = format!("gamepkg-0.1.16-{platform}");
+            let root = format!("gamepkg-{}-{platform}", env!("CARGO_PKG_VERSION"));
             let dir = tempfile::tempdir()?;
             extract(
                 &parent.join(format!("{root}.{extension}")),
@@ -556,7 +556,7 @@ mod tests {
                 extension == "zip",
             )?;
             ensure!(
-                validate_install(dir.path(), "0.1.16", platform)?.is_file(),
+                validate_install(dir.path(), env!("CARGO_PKG_VERSION"), platform)?.is_file(),
                 "Missing GUI"
             );
         }
