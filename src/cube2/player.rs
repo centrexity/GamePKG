@@ -8,6 +8,8 @@ pub(crate) struct Player {
     events: Vec<Vec<u8>>,
     pub frame: crate::drawing::Frame,
     pub audio: Vec<i16>,
+    pub frame_size: (u32, u32),
+    requested_size: (u32, u32),
     desktop: u32,
     desktop_pressed: u32,
     dx: i32,
@@ -70,6 +72,8 @@ impl Player {
             save: Some(save),
             worker: None,
             events: Vec::new(),
+            frame_size: (first.width, first.height),
+            requested_size: (first.width, first.height),
             frame: first.drawing_frame()?,
             audio: Vec::new(),
             desktop: 0,
@@ -81,6 +85,13 @@ impl Player {
             input_error: None,
         })
     }
+    pub fn resize(&mut self, width: u32, height: u32) {
+        if self.requested_size != (width, height) {
+            self.events.retain(|e| !e.starts_with(b"GPD1"));
+            self.queue(super::protocol::resize_event(width, height));
+            self.requested_size = (width, height);
+        }
+    }
     pub fn desktop(&mut self, buttons: u32, dx: i32, dy: i32) {
         let buttons = buttons & super::protocol::MAX_BUTTONS;
         self.desktop_pressed |= buttons & !self.desktop;
@@ -89,7 +100,7 @@ impl Player {
         self.dy = self.dy.saturating_add(dy).clamp(-2048, 2048);
     }
     pub fn clear_input(&mut self) {
-        self.events.clear();
+        self.events.retain(|e| e.starts_with(b"GPD1"));
         if let Some(worker) = &self.worker {
             worker.reset();
         } else {
@@ -191,6 +202,7 @@ impl Player {
                 anyhow::bail!(error);
             }
             if let Some(frame) = output.frame {
+                self.frame_size = output.frame_size;
                 self.frame = frame;
             }
             self.audio = output.audio;
@@ -209,6 +221,7 @@ impl Player {
             self.audio.clear();
             return Ok(());
         };
+        self.frame_size = (frame.width, frame.height);
         self.frame = frame.drawing_frame()?;
         self.audio = frame.audio;
         Ok(())

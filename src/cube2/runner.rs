@@ -18,6 +18,7 @@ struct Input {
     updated: Option<Instant>,
     expired: bool,
     reset_pending: bool,
+    resize: Option<Vec<u8>>,
 }
 impl Input {
     fn submit(&mut self, buttons: u32, dx: i32, dy: i32, events: Vec<Vec<u8>>) -> Result<()> {
@@ -29,7 +30,13 @@ impl Input {
         self.held = buttons;
         self.dx = self.dx.saturating_add(dx).clamp(-2048, 2048);
         self.dy = self.dy.saturating_add(dy).clamp(-2048, 2048);
-        self.events.extend(events);
+        for event in events {
+            if event.starts_with(b"GPD1") {
+                self.resize = Some(event);
+            } else {
+                self.events.push(event);
+            }
+        }
         self.updated = Some(Instant::now());
         self.expired = false;
         Ok(())
@@ -61,6 +68,11 @@ impl Input {
             events.push(protocol::RESET_INPUT.to_vec());
             self.reset_pending = false;
         }
+        if events.len() < protocol::MAX_EVENTS {
+            if let Some(resize) = self.resize.take() {
+                events.push(resize);
+            }
+        }
         (
             buttons,
             std::mem::take(&mut self.dx),
@@ -76,6 +88,7 @@ pub(super) struct Output {
     pub exited: bool,
     pub error: Option<String>,
     pub ticks: u64,
+    pub frame_size: (u32, u32),
 }
 impl Output {
     fn publish(&mut self, frame: crate::drawing::Frame, audio: Vec<i16>) {
@@ -138,6 +151,7 @@ impl Worker {
                                 .exited = true;
                             break;
                         };
+                        let frame_size = (frame.width, frame.height);
                         let drawing = frame.drawing_frame()?;
                         let mut audio = frame.audio;
                         #[cfg(feature = "audio")]
@@ -152,11 +166,13 @@ impl Worker {
                             }
                             audio.clear();
                         }
-                        state
-                            .lock()
-                            .map_err(|_| anyhow::anyhow!("Cube 2 output lock failed"))?
-                            .output
-                            .publish(drawing, std::mem::take(&mut audio));
+                        {
+                            let mut shared = state
+                                .lock()
+                                .map_err(|_| anyhow::anyhow!("Cube 2 output lock failed"))?;
+                            shared.output.frame_size = frame_size;
+                            shared.output.publish(drawing, std::mem::take(&mut audio));
+                        }
                         if let Some(progress) = &mut progress {
                             progress.tick(&[])?;
                         }
@@ -215,6 +231,7 @@ impl Worker {
             exited: state.output.exited,
             error: state.output.error.take(),
             ticks: state.output.ticks,
+            frame_size: state.output.frame_size,
         })
     }
     #[cfg(all(feature = "audio", feature = "gui"))]
@@ -244,6 +261,25 @@ impl Drop for Worker {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn resize_bursts_keep_only_the_latest_size_and_survive_input_release() {
+        let mut input = super::Input::default();
+        for width in 640..800 {
+            input
+                .submit(
+                    0,
+                    0,
+                    0,
+                    vec![super::protocol::resize_event(width, 480).unwrap()],
+                )
+                .unwrap();
+        }
+        input.reset();
+        let (_, _, _, events) = input.take(std::time::Instant::now());
+        assert_eq!(events.iter().filter(|e| e.starts_with(b"GPD1")).count(), 1);
+        assert!(events.contains(&super::protocol::resize_event(799, 480).unwrap()));
+        assert!(input.take(std::time::Instant::now()).3.is_empty());
+    }
     use super::*;
     #[test]
     fn rapid_press_release_is_latched_and_stale_inputs_expire_once() {

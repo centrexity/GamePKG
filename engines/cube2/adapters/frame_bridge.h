@@ -20,6 +20,7 @@ static void gamepkg_prepare();
 static bool gamepkg_running = false;
 static bool gamepkg_closing = false;
 static uint32_t gamepkg_previous = 0;
+static int gamepkg_width = 640, gamepkg_height = 480;
 static bool gamepkg_keys[232] = {};
 static bool gamepkg_mouse[6] = {};
 static bool gamepkg_transfer(int fd, void *data, size_t length, bool output)
@@ -104,6 +105,13 @@ static void gamepkg_input()
         if(!gamepkg_transfer(0, packet, sizeof(packet), false)) { gamepkg_closing = true; quit(); exit(0); }
         if(!memcmp(packet, "GPS1", 4)) { gamepkg_snapshot(); continue; }
         if(!memcmp(packet, "GPE1", 4)) { gamepkg_closing = true; quit(); exit(0); }
+        if(!memcmp(packet, "GPD1", 4))
+        {
+            if(++events > 64) exit(2);
+            uint32_t width=gamepkg_le32(packet+4), height=gamepkg_le32(packet+8);
+            if(width<320 || width>1280 || height<200 || height>960 || gamepkg_le32(packet+12)) exit(2);
+            gamepkg_width=int(width); gamepkg_height=int(height); continue;
+        }
         if(!memcmp(packet, "GPC1", 4))
         {
             if(++events > 64) exit(2);
@@ -227,6 +235,11 @@ static void gamepkg_input()
         event.motion.xrel = mx; event.motion.yrel = my;
         SDL_PushEvent(&event);
     }
+    // The offscreen SDL/EGL surface is allocated once at the maximum bound.
+    // Resizing that native surface is unreliable with the offscreen driver.
+    extern int scr_w, scr_h;
+    screenw = scr_w = gamepkg_width; screenh = scr_h = gamepkg_height;
+    gl_resize();
     gamepkg_running = true;
 }
 // Fixed 100 ms mono ring. SDL's dummy mixer never opens a host audio device.
@@ -261,7 +274,7 @@ void gamepkg_audio_hook()
 static void gamepkg_present()
 {
     if(!gamepkg_running) return;
-    int width, height; SDL_GL_GetDrawableSize(screen, &width, &height);
+    int width = screenw, height = screenh;
     if(width < 1 || width > 1280 || height < 1 || height > 960) exit(2);
     vector<unsigned char> pixels;
     const size_t length = size_t(width)*size_t(height)*4;

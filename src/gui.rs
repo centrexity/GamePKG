@@ -752,6 +752,9 @@ impl eframe::App for App {
                         0
                     };
                     if game.is_cube2() {
+                        let (width, height) =
+                            cube2_input::resolution(ui.available_size(), ctx.pixels_per_point());
+                        game.cube2_resize(width, height);
                         let (buttons, dx, dy, focused) = ctx.input(|i| {
                             let mut buttons = 0u32;
                             for (key, bit) in [
@@ -874,10 +877,17 @@ impl eframe::App for App {
                         let scale = (ui.available_width() / 640.0)
                             .min(ui.available_height() / 480.0)
                             .max(0.0);
-                        let rect = egui::Rect::from_center_size(
-                            ui.max_rect().center(),
-                            egui::vec2(640.0 * scale, 480.0 * scale),
-                        );
+                        let display_size = if let Some((width, height)) = game.cube2_frame_size() {
+                            let native = egui::vec2(width as f32, height as f32);
+                            native
+                                * (ui.available_width() / native.x)
+                                    .min(ui.available_height() / native.y)
+                        } else {
+                            egui::vec2(640.0 * scale, 480.0 * scale)
+                        };
+                        let rect =
+                            egui::Rect::from_center_size(ui.max_rect().center(), display_size);
+                        let image_scale = egui::vec2(rect.width() / 640.0, rect.height() / 480.0);
                         let painter = ui.painter_at(rect);
                         let color = |rgba: u32| {
                             egui::Color32::from_rgba_unmultiplied(
@@ -907,8 +917,12 @@ impl eframe::App for App {
                                     painter.image(
                                         texture,
                                         egui::Rect::from_min_size(
-                                            rect.min + egui::vec2(x * scale, y * scale),
-                                            egui::vec2(width * scale, height * scale),
+                                            rect.min
+                                                + egui::vec2(x * image_scale.x, y * image_scale.y),
+                                            egui::vec2(
+                                                width * image_scale.x,
+                                                height * image_scale.y,
+                                            ),
                                         ),
                                         egui::Rect::from_min_max(
                                             egui::Pos2::ZERO,

@@ -257,8 +257,8 @@ impl Session {
                 "2",
                 "--",
                 "/engine",
-                "-w640",
-                "-h480",
+                "-w1280",
+                "-h960",
                 "-t0",
                 "-q/save",
             ])
@@ -957,6 +957,14 @@ mod tests {
         .unwrap();
         let first = session.tick(0, 0, 0).unwrap();
         assert_eq!((first.width, first.height), (640, 480));
+        for (width, height) in [(960, 540), (800, 600), (640, 480)] {
+            session
+                .queue(protocol::resize_event(width, height).unwrap())
+                .unwrap();
+            let resized = session.tick(0, 0, 0).unwrap();
+            assert_eq!((resized.width, resized.height), (width, height));
+        }
+
         let mut moved = session.tick(1, 80, 0).unwrap();
         let mut sound = moved.audio.iter().any(|s| *s != 0);
         for _ in 0..12 {

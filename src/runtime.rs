@@ -840,6 +840,21 @@ impl Game {
             false
         }
     }
+    pub fn cube2_resize(&mut self, width: u32, height: u32) {
+        #[cfg(target_os = "linux")]
+        if let Some(cube) = &mut self.cube2 {
+            cube.resize(width, height);
+        }
+        #[cfg(not(target_os = "linux"))]
+        let _ = (width, height);
+    }
+    pub fn cube2_frame_size(&self) -> Option<(u32, u32)> {
+        #[cfg(target_os = "linux")]
+        if let Some(cube) = &self.cube2 {
+            return Some(cube.frame_size);
+        }
+        None
+    }
     pub fn cube2_desktop_input(&mut self, buttons: u32, dx: i32, dy: i32) {
         #[cfg(target_os = "linux")]
         if let Some(cube) = &mut self.cube2 {

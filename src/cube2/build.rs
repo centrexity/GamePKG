@@ -90,6 +90,10 @@ pub fn compile_with_options(optimize: bool) -> Result<Vec<u8>> {
             "#include \"engine.h\"\n#include \"gamepkg_bridge.h\"",
         ),
         (
+            "                        SDL_GetWindowSize(screen, &screenw, &screenh);",
+            "                        screenw = gamepkg_width; screenh = gamepkg_height;",
+        ),
+        (
             "int main(int argc, char **argv)\n{",
             "int main(int argc, char **argv)\n{\n    gamepkg_prepare();",
         ),
@@ -105,6 +109,12 @@ pub fn compile_with_options(optimize: bool) -> Result<Vec<u8>> {
         patch_once(&mut text, before, after)?;
     }
     fs::write(main, text)?;
+    let render = stage.path().join("engine/rendergl.cpp");
+    let mut text = fs::read_to_string(&render)?;
+    patch_once(&mut text,
+        "        crosshairs[i] = textureload(name, 3, true);\n    }\n}",
+        "        crosshairs[i] = textureload(name, 3, true);\n        // Older original data uses these names; prefer the modern assets above.\n        if(crosshairs[i] == notexture) crosshairs[i] = textureload(i == 2 ? \"data/hit.png\" : i == 1 ? \"data/teammate.png\" : \"data/crosshair.png\", 3, true);\n    }\n}")?;
+    fs::write(render, text)?;
     let tools = stage.path().join("shared/tools.h");
     let mut text = fs::read_to_string(&tools)?;
     patch_once(&mut text,

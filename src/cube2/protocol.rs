@@ -10,6 +10,18 @@ pub const MAX_MOUSE_DELTA: i32 = 2048;
 pub const MAX_EVENTS: usize = 64;
 pub const MAX_WHEEL_STEPS: i32 = 16;
 
+pub fn resize_event(width: u32, height: u32) -> Result<Vec<u8>> {
+    ensure!(
+        (320..=MAX_WIDTH).contains(&width) && (200..=MAX_HEIGHT).contains(&height),
+        "Cube 2 resolution exceeds its bounds"
+    );
+    let mut packet = b"GPD1".to_vec();
+    for n in [width, height, 0] {
+        packet.extend(n.to_le_bytes());
+    }
+    Ok(packet)
+}
+
 pub fn mouse_button_event(button: u32, pressed: bool, modifiers: u32) -> Result<Vec<u8>> {
     ensure!(
         matches!(button, 2 | 4 | 5),
@@ -378,6 +390,24 @@ pub(crate) fn test_tree(files: &[(&str, &[u8])]) -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn resize_packets_are_portable_and_bounded() {
+        let p = super::resize_event(1280, 720).unwrap();
+        assert_eq!(&p[..4], b"GPD1");
+        assert_eq!(&p[4..8], &1280u32.to_le_bytes());
+        assert_eq!(&p[8..12], &720u32.to_le_bytes());
+        assert_eq!(&p[12..], &[0; 4]);
+        for (w, h) in [
+            (0, 480),
+            (319, 480),
+            (640, 199),
+            (1281, 720),
+            (1280, 961),
+            (u32::MAX, 480),
+        ] {
+            assert!(super::resize_event(w, h).is_err());
+        }
+    }
     use super::*;
     fn header(width: u32, height: u32, length: u32) -> Vec<u8> {
         let mut out = b"GPF2".to_vec();

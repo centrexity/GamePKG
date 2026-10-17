@@ -203,3 +203,24 @@ releases capture before any error dialog.
 pixels through launch, Escape, explicit release, click recapture, focus changes,
 and native close. Run `tests/cube2_package.py` first to prepare its private cached
 engine and remembered original data; no game data is included with the test.
+
+## Resolution and original crosshairs
+
+The desktop host requests the game window's physical pixel size, bounded to
+1280×960 while preserving aspect ratio. The engine renders that size instead of
+stretching a fixed 640×480 image. Larger windows scale the bounded frame; this
+software rendering path does not render at unlimited desktop resolutions. The
+private SDL offscreen surface is allocated once at the maximum size, and the
+engine uses a bounded viewport inside it, avoiding stale EGL buffers on resize.
+Resize requests are validated on both sides and coalesced during window drags.
+
+Modern crosshair files remain preferred. If unavailable, the engine uses the
+older original installation's `data/crosshair.png`, `data/teammate.png` and
+`data/hit.png`. Player crosshair settings remain in effect. These files are read
+from the selected original installation; none are copied into the package.
+
+`python3 tests/cube2_resolution_gui.py` checks actual window resizing, widescreen
+presentation, the engine's saved resolution and visible crosshair pixels. Set
+`GAMEPKG_CUBE2_TEST_DATA` to an older original installation and add `--legacy`
+to test the old crosshair filenames in place. The test uses and restores only
+its private maintainer fixture's selections and saves.
