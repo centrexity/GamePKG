@@ -1092,6 +1092,7 @@ impl eframe::App for App {
                     self.open_support();
                 }
             });
+            ui.add_space(8.0);
         });
         if self.show_support {
             if self.brand_icon.is_none() {
@@ -1263,18 +1264,21 @@ impl eframe::App for App {
         }
         egui::CentralPanel::default().frame(egui::Frame::central_panel(&ctx.style()).inner_margin(20)).show(ctx, |ui| {
             egui::ScrollArea::vertical().id_salt("library-page").show(ui, |ui| {
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 ui.heading("Your games");
                 if ui.add_enabled(self.result.is_none(), egui::Button::new("Add")).clicked() { self.open_add_page(); }
-            });
-            ui.label("Choose a game to build, play or explore.");
-            ui.horizontal_wrapped(|ui| {
                 for (label,value) in [("Installed",self.installed.len().to_string()),("Ready to play",self.installed.iter().filter(|m|self.ready_to_play(m)).count().to_string()),("Storage used",self.library_bytes.map(crate::storage::bytes).unwrap_or_else(||"—".into()))] {
-                    egui::Frame::group(ui.style()).inner_margin(14).corner_radius(10).show(ui,|ui| {
-                        ui.vertical(|ui| {ui.label(egui::RichText::new(value).size(24.0).strong().color(ui.visuals().hyperlink_color));ui.label(label);});
+                    let width = ui.fonts(|fonts| {
+                        fonts.layout_no_wrap(label.to_owned(), egui::TextStyle::Body.resolve(ui.style()), ui.visuals().text_color()).size().x
+                            + fonts.layout_no_wrap(value.clone(), egui::FontId::proportional(18.0), ui.visuals().hyperlink_color).size().x
+                    }) + ui.spacing().item_spacing.x + 24.0;
+                    if ui.available_size_before_wrap().x < width { ui.end_row(); }
+                    egui::Frame::group(ui.style()).inner_margin(egui::Margin::symmetric(10,6)).corner_radius(10).show(ui,|ui| {
+                        ui.horizontal(|ui| {ui.label(label);ui.label(egui::RichText::new(value).size(18.0).strong().color(ui.visuals().hyperlink_color));});
                     });
                 }
             });
+            ui.label("Choose a game to build, play or explore.");
             ui.add_space(12.0);
             self.library_filters(ui);
             let inspect = self.library_games(ui);

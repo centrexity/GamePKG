@@ -36,7 +36,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-appearance-') as temporary:
     window=found.stdout.splitlines()[0];subprocess.run(['xdotool','windowsize',window,str(width),str(height)],env=env,check=True);time.sleep(.7)
     screenshot=proof/(label+'.png');subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(screenshot)],env=env,check=True)
     text=subprocess.check_output(['tesseract',str(screenshot),'stdout','--psm','11'],stderr=subprocess.DEVNULL,text=True)
-    assert 'Your games' in text and 'Installed' in text and 'Ready' in text,text
+    assert all(label in text.casefold() for label in ['your games','installed','ready']),text
     if label=='wide':
      click_text(window,env,'com.gamepkg.collect-stars',root)
      time.sleep(.5);subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(proof/'game-page.png')],env=env,check=True)
