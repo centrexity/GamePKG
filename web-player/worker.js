@@ -28,7 +28,45 @@ function encodeEvents(events){
   if(!valid)return new Uint8Array();view.setUint32(i*16,kind,true);view.setFloat32(i*16+4,x,true);view.setFloat32(i*16+8,y,true);view.setUint32(i*16+12,code,true);
  }return output;
 }
+// Player-selected file service; no worker filesystem or DOM access.
+let fileEntry=null,fileNext=1,fileGeneration=0,fileGesture=false;
+function fileNameAllowed(name,policy){if(typeof name!=='string'||!name||new TextEncoder().encode(name).length>255||/[. ]$/.test(name)||/[<>:"/\\|?*\x00-\x1f\x7f-\x9f]/.test(name))return false;const stem=name.split('.')[0].replace(/ +$/,'').toUpperCase();if(/^(CON|PRN|AUX|NUL|CONIN\$|CONOUT\$|COM[1-9¹²³]|LPT[1-9¹²³])$/.test(stem))return false;const split=name.lastIndexOf('.');return split>=0&&policy.extensions.includes(name.slice(split+1).toLowerCase());}
+function filePolicy(index){
+ const policies=manifest.permissions.files??[];if(!Array.isArray(policies)||policies.length>32||!Number.isInteger(index)||index<0||index>=policies.length)return null;
+ const ids=new Set();for(const p of policies){
+  if(!p||Object.keys(p).some(key=>!['id','title','extensions','max_bytes','read','write'].includes(key))||typeof p.id!=='string'||!/^[A-Za-z0-9_-]{1,64}$/.test(p.id)||ids.has(p.id)||typeof p.title!=='string'||!p.title.trim()||new TextEncoder().encode(p.title).length>128||/[\x00-\x1f\x7f-\x9f]/.test(p.title)||(!p.read&&!p.write)||(p.read!==undefined&&typeof p.read!=='boolean')||(p.write!==undefined&&typeof p.write!=='boolean')||!Number.isSafeInteger(p.max_bytes)||p.max_bytes<1||p.max_bytes>67108864||(p.write&&p.max_bytes>1048576)||!Array.isArray(p.extensions)||!p.extensions.length||p.extensions.length>8||p.extensions.some(e=>typeof e!=='string'||!/^[a-z0-9]{1,16}$/.test(e))||new Set(p.extensions).size!==p.extensions.length)return null;
+  ids.add(p.id);
+ }return policies[index];
+}
+function fileCall(operation,request,capacity){
+ if(!Number.isInteger(operation)||operation<0||operation>5||!Number.isInteger(capacity)||capacity<0||capacity>65536||request.length>1048840)return null;
+ const view=new DataView(request.buffer,request.byteOffset,request.byteLength),number=at=>at+4<=request.length?view.getUint32(at,true):null;
+ if(operation<=1){
+  if(!manifest.permissions.input||!fileGesture||fileEntry||capacity<4||fileNext>=0xffffffff)return null;const index=number(0),policy=filePolicy(index);if(!policy)return null;
+  let name='',payload=new Uint8Array();
+  if(operation===0){if(request.length!==4||!policy.read)return null;}else{
+   const length=number(4);if(!policy.write||length===null||length>256||8+length>request.length)return null;
+   try{name=new TextDecoder('utf-8',{fatal:true}).decode(request.subarray(8,8+length));}catch{return null;}
+   payload=request.slice(8+length);if(!fileNameAllowed(name,policy)||payload.length>1048576||payload.length>policy.max_bytes)return null;
+  }
+  fileEntry={handle:fileNext++,generation:fileGeneration,index,policy,operation,name,bytes:payload,staged:true,status:1};fileGesture=false;const result=new Uint8Array(4);new DataView(result.buffer).setUint32(0,fileEntry.handle,true);return result;
+ }
+ const entry=fileEntry;if(!entry||number(0)!==entry.handle)return null;
+ if(operation===2&&request.length===4&&capacity>=12){const result=new Uint8Array(12),v=new DataView(result.buffer);v.setUint32(0,entry.status,true);v.setUint32(4,entry.status===2?entry.bytes.length:0,true);v.setUint32(8,entry.status===2?new TextEncoder().encode(entry.name).length:0,true);return result;}
+ if(operation===3&&request.length===4&&entry.status===2){const name=new TextEncoder().encode(entry.name);return capacity>=name.length?name:null;}
+ if(operation===4&&request.length===8&&entry.status===2){const offset=number(4);return offset<=entry.bytes.length?entry.bytes.slice(offset,offset+capacity):null;}
+ if(operation===5&&request.length===4&&capacity===0&&entry.status!==1){fileEntry=null;return new Uint8Array();}return null;
+}
+function fileResult(data){const entry=fileEntry;if(!entry||entry.status!==1||entry.staged||data.handle!==entry.handle||data.generation!==entry.generation)return;
+ if(data.status===4||data.status===5){entry.status=data.status;return;}
+ if(entry.operation===1&&data.status===3){entry.status=3;entry.bytes=new Uint8Array();return;}
+ if(entry.operation===0&&data.status===2&&data.bytes instanceof Uint8Array&&data.bytes.length<=entry.policy.max_bytes&&data.bytes.length<=67108864&&fileNameAllowed(data.name,entry.policy)){entry.name=data.name;entry.bytes=data.bytes;entry.status=2;return;}entry.status=5;
+}
+function fileTickBegin(){fileGesture=false;if(manifest.permissions.input){const v=new DataView(eventBytes.buffer,eventBytes.byteOffset,eventBytes.byteLength);for(let at=0;at<eventBytes.length;at+=16){const kind=v.getUint32(at,true),code=v.getUint32(at+12,true);if(kind===2||(kind===5&&!(code&65536))||(kind===9&&!(code&0x80000000)))fileGesture=true;}}}
+function fileTickFinish(success){fileGesture=false;if(fileEntry?.staged){if(!success){fileEntry=null;return;}fileEntry.staged=false;postMessage({type:'file-request',handle:fileEntry.handle,generation:fileEntry.generation,index:fileEntry.index,operation:fileEntry.operation,name:fileEntry.name,bytes:fileEntry.operation===1?fileEntry.bytes:new Uint8Array()});}}
+
 const api={
+ file_call:(operation,pointer,length,output,capacity)=>{const request=bytes(pointer,length,1048840),out=bytes(output,capacity,65536);if(!request||!out)return -1;const reply=fileCall(operation,request.slice(),capacity);if(!reply)return -1;out.set(reply);return reply.length;},
  input_events:(pointer,capacity)=>{const output=bytes(pointer,capacity,32768);if(!output)return -1;const events=takeEvents(capacity);if(!events)return -1;output.set(events);return events.length;},
  random_u64:()=>{const words=new Uint32Array(2);crypto.getRandomValues(words);return BigInt(words[0])|(BigInt(words[1])<<32n);},
  asset_read:(p,n,offset,out,length)=>{const name=assetName(p,n);return name===null?-1:read(assets.get(name),offset,out,length);},
@@ -50,7 +88,9 @@ const api={
 };
 function decode(hex){if(typeof hex!=='string'||hex.length%2||!/^[a-f0-9]*$/.test(hex))throw Error('Invalid packaged bytes');return Uint8Array.from(hex.match(/../g)||[],byte=>parseInt(byte,16));}
 onmessage=async ({data})=>{try{
+ if(data.type==='file-result'){fileResult(data);return;}
  if(data.type==='start'){
+  fileEntry=null;fileNext=1;fileGeneration++;fileGesture=false;
   shaderCount=data.shaderCount||0;manifest=data.manifest;assets=new Map(Object.entries(data.assets).map(([key,value])=>[key,decode(value)]));roms=data.roms.map(value=>new Uint8Array(value));save=new Uint8Array(data.save);state=0n;
   await prepareImages();
   const module=await WebAssembly.compile(data.wasm);
@@ -60,16 +100,17 @@ onmessage=async ({data})=>{try{
   if(typeof instance.exports[manifest.runtime_profile==='component-v1'?'tick':'gamepkg_tick']!=='function')throw Error('Missing game entry');
   postMessage({type:'ready'});
  }else if(data.type==='restart'){
-  eventBytes=new Uint8Array();state=0n;
+  eventBytes=new Uint8Array();state=0n;fileEntry=null;fileGeneration++;fileGesture=false;
  }else if(data.type==='tick'){
   eventBytes=manifest.permissions.input?encodeEvents(data.events??[]):new Uint8Array();
-  commands=[];background=null;unlocks=[];saveDirty=false;saveBudget=0;imageBudget=0;audioSamples=[];
+  commands=[];background=null;unlocks=[];saveDirty=false;saveBudget=0;imageBudget=0;audioSamples=[];fileTickBegin();
   state=instance.exports[manifest.runtime_profile==='component-v1'?'tick':'gamepkg_tick'](manifest.permissions.input?data.input:0,state);
   if(instance.exports.memory&&instance.exports.memory.buffer.byteLength>manifest.limits.hard_memory_bytes)throw Error('Memory limit exceeded');
+  fileTickFinish(true);
   if(saveDirty)postMessage({type:'save',bytes:save});
   postMessage({type:'frame',commands,background,state:String(state),unlocks,audio:audioSamples});
  }
-}catch(error){postMessage({type:'error',error:String(error)});}};
+}catch(error){fileTickFinish(false);postMessage({type:'error',error:String(error)});}};
 
 // Canonical list results are allocated in guest memory through its bounded
 // allocator. Guest bindings copy and free these results immediately.
@@ -81,6 +122,7 @@ function optionBytes(pointer,source,offset,length){
  const view=new DataView(instance.exports.memory.buffer);view.setUint32(pointer,part?1:0,true);view.setUint32(pointer+4,address,true);view.setUint32(pointer+8,part?.length??0,true);
 }
 const canonical={
+ 'file-call':(operation,pointer,length,capacity,result)=>{if(!range(result,12)||result%4)throw Error('Invalid result pointer');const request=bytes(pointer,length,1048840);let reply=null;if(request&&Number.isInteger(capacity)&&capacity>=0&&capacity<=65536)reply=fileCall(operation,request.slice(),capacity);let address=0;if(reply?.length){address=instance.exports.cabi_realloc(0,0,1,reply.length)>>>0;if(!range(address,reply.length))throw Error('Invalid allocation');bytes(address,reply.length).set(reply);}const v=new DataView(instance.exports.memory.buffer);v.setInt32(result,reply?reply.length:-1,true);v.setUint32(result+4,address,true);v.setUint32(result+8,reply?.length??0,true);},
  'input-events':(capacity,pointer)=>{if(!range(pointer,12)||pointer%4)throw Error('Invalid result pointer');const events=takeEvents(capacity);optionBytes(pointer,events,0,events?.length??0);},
  'random-u64':api.random_u64,
  'rom-count':api.rom_count,

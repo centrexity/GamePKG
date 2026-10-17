@@ -21,6 +21,29 @@ pub(super) fn linker(engine: &Engine) -> Result<Linker<Data>> {
             Ok((store.data_mut().input_events.read(capacity as usize),))
         },
     )?;
+    host.func_wrap(
+        "file-call",
+        |mut store: StoreContextMut<'_, Data>,
+         (operation, request, capacity): (u32, WasmList<u8>, u32)| {
+            if operation > 5
+                || request.len() > crate::user_files::MAX_REQUEST
+                || capacity > crate::user_files::MAX_CHUNK as u32
+            {
+                return Ok(((-1i32, Vec::<u8>::new()),));
+            }
+            let request = request.as_le_slice(store.as_context()).to_vec();
+            Ok((
+                match store
+                    .data_mut()
+                    .user_files
+                    .call(operation, &request, capacity as usize)
+                {
+                    Some(bytes) => (bytes.len() as i32, bytes),
+                    None => (-1, Vec::new()),
+                },
+            ))
+        },
+    )?;
     host.func_wrap("random-u64", |_: StoreContextMut<'_, Data>, (): ()| {
         Ok((crate::random::value()?,))
     })?;

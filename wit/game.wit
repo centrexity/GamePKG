@@ -1,6 +1,7 @@
 package gamepkg:engine@0.1.0;
 
 interface host {
+  file-call: func(operation:u32,request:list<u8>,capacity:u32)->tuple<s32,list<u8>>;
   input-events: func(capacity:u32)->option<list<u8>>;
   random-u64: func() -> u64;
   network-call: func(operation: u32, request: list<u8>, capacity: u32) -> tuple<s32, list<u8>>;

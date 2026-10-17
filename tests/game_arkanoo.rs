@@ -1545,3 +1545,19 @@ fn campaign_restart_keeps_saved_patterns_and_gravity_preferences() {
     assert!(game.gravity);
     assert_eq!((game.best, game.unlocked), (500, 12));
 }
+
+#[test]
+fn editor_file_commands_only_queue_intent_until_the_host_binding_accepts() {
+    let mut game = physics::Game::new();
+    game.source_input(9, 0.0, 0.0, 101);
+    game.source_input(9, 0.0, 0.0, 105);
+    assert_eq!(game.editor.file_requested, 1);
+    assert_eq!(game.editor.file_handle, None);
+    assert_eq!(game.editor.file_operation, 0);
+    game.source_input(9, 0.0, 0.0, 120);
+    assert_eq!(game.editor.file_requested, 2);
+    game.editor.file_requested = 0;
+    game.editor.naming = true;
+    game.source_input(9, 0.0, 0.0, 105);
+    assert_eq!(game.editor.file_requested, 0, "typing I started an import");
+}

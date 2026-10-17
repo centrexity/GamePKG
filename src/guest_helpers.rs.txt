@@ -42,3 +42,23 @@ pub fn input_events()->Option<Vec<InputEvent>> {
         code:u32::from_le_bytes([record[12],record[13],record[14],record[15]])});}
     Some(events)
 }
+
+/// One player-selected file operation. Status: pending=1, imported=2,
+/// exported=3, cancelled=4, failed=5. No host paths or directory access.
+pub struct UserFileStatus {pub status:u32,pub size:u32,pub name_bytes:u32}
+pub fn file_import(index:u32)->Option<u32> {
+    let mut out=[0u8;4];let n=__gamepkg_file_call(0,&u32::to_le_bytes(index),&mut out)?;
+    if n!=4 {None}else{Some(u32::from_le_bytes(out))}
+}
+pub fn file_export(index:u32,name:&str,bytes:&[u8])->Option<u32> {
+    if name.len()>256||bytes.len()>1048576{return None;}
+    let mut request=Vec::new();request.extend_from_slice(&u32::to_le_bytes(index));request.extend_from_slice(&u32::to_le_bytes(name.len() as u32));request.extend_from_slice(name.as_bytes());request.extend_from_slice(bytes);
+    let mut out=[0u8;4];let n=__gamepkg_file_call(1,&request,&mut out)?;if n!=4 {None}else{Some(u32::from_le_bytes(out))}
+}
+pub fn file_status(handle:u32)->Option<UserFileStatus> {
+    let mut out=[0u8;12];if __gamepkg_file_call(2,&u32::to_le_bytes(handle),&mut out)?!=12{return None;}
+    Some(UserFileStatus{status:u32::from_le_bytes([out[0],out[1],out[2],out[3]]),size:u32::from_le_bytes([out[4],out[5],out[6],out[7]]),name_bytes:u32::from_le_bytes([out[8],out[9],out[10],out[11]])})
+}
+pub fn file_name(handle:u32,output:&mut[u8])->Option<u32>{__gamepkg_file_call(3,&u32::to_le_bytes(handle),output)}
+pub fn file_read(handle:u32,offset:u32,output:&mut[u8])->Option<u32>{let mut request=Vec::new();request.extend_from_slice(&u32::to_le_bytes(handle));request.extend_from_slice(&u32::to_le_bytes(offset));__gamepkg_file_call(4,&request,output)}
+pub fn file_close(handle:u32)->bool{__gamepkg_file_call(5,&u32::to_le_bytes(handle),&mut[])==Some(0)}

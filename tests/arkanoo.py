@@ -4,7 +4,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import os, shutil, subprocess, tempfile, threading, time, tomllib, json
 from PIL import Image
-from gui_test_support import start_display
+from gui_test_support import start_display,choose_native_file
 import argparse
 parser=argparse.ArgumentParser()
 parser.add_argument('--skip-browser',action='store_true',help='Run native checks on hosts without Chromium/Selenium')
@@ -23,7 +23,7 @@ class Quiet(SimpleHTTPRequestHandler):
     def log_message(self,*args):pass
 with tempfile.TemporaryDirectory(prefix='gamepkg-arkanoo-',dir=PROJECT/'target') as temp:
     root=Path(temp);config=root/'settings.toml';config.write_text('automatic_update_checks=false\n')
-    env=dict(os.environ,GAMEPKG_HOME=str(root/'library'),GAMEPKG_CONFIG=str(config),LIBGL_ALWAYS_SOFTWARE='1');env.pop('WAYLAND_DISPLAY',None)
+    env=dict(os.environ,GAMEPKG_HOME=str(root/'library'),GAMEPKG_CONFIG=str(config),LIBGL_ALWAYS_SOFTWARE='1');env.pop('WAYLAND_DISPLAY',None);env['DBUS_SESSION_BUS_ADDRESS']='unix:path=/tmp/gamepkg-no-session-bus';env['OMP_THREAD_LIMIT']='1'
     key=root/'key';key.write_text('61'*32)
     def run(*args):
         if args and args[0] in ('build','integrity-fix') and '--target' not in args: args=(*args,'--target','wasm')
@@ -109,14 +109,21 @@ pub fn game_tick(input:u32,state:u64)->u64 {
         manifest=fixture/'manifest.toml';text=manifest.read_text().replace('com.gamepkg.arkanoo','com.gamepkg.arkanoo-'+suffix).replace('runtime_profile = "core-v1"','runtime_profile = "'+profile+'"')
         if 'runtime_profile =' not in text:text=text.replace('entry_world = "game"','runtime_profile = "'+profile+'"\nentry_world = "game"')
         assert tomllib.loads(text)['runtime_profile']==profile
-        if not allowed:text=text.replace('input = true','input = false')
+        if not allowed:text=text.split('[[permissions.files]]')[0].replace('input = true','input = false')
         manifest.write_text(text)
         (fixture/'source/src/lib.rs').write_text('pub fn game_tick(_:u32,_:u64)->u64 {if let Some(events)=gamepkg::input_events(){let mut result=0;for event in events {if event.kind==1 {gamepkg::draw_rect(event.x,event.y,1.0,1.0,0xffffffff);}result=(u64::from(event.kind)<<32)|u64::from(event.code);}result}else{u64::MAX}}')
         run('pack',fixture,'-o',root/(suffix+'.gamepkg'),'--key',key);run('install',root/(suffix+'.gamepkg'),'--trust-creator');run('build','com.gamepkg.arkanoo-'+suffix)
+    for suffix,profile,allowed in [('files-component','component-v1',True),('nofiles','core-v1',False)]:
+        fixture=root/suffix;shutil.copytree(PROJECT/'ports/arkanoo',fixture)
+        manifest=fixture/'manifest.toml';text=manifest.read_text().replace('com.gamepkg.arkanoo','com.gamepkg.arkanoo-'+suffix)
+        text='runtime_profile = "'+profile+'"\n'+text
+        if not allowed:text=text.split('[[permissions.files]]')[0]
+        manifest.write_text(text);run('pack',fixture,'-o',root/(suffix+'.gamepkg'),'--key',key);run('install',root/(suffix+'.gamepkg'),'--trust-creator');run('build','com.gamepkg.arkanoo-'+suffix)
     probe_env=dict(env,GAMEPKG_ARKANOO_TEST_ROOT=str(root/'library'))
     subprocess.run(['cargo','test','--test','game_arkanoo_runtime','--','--ignored'],env=probe_env,check=True,timeout=120)
     run('build','com.gamepkg.arkanoo','--target','native')
     run('build','com.gamepkg.arkanoo-nosave','--target','native')
+    run('build','com.gamepkg.arkanoo-nofiles','--target','native')
     run('build','com.gamepkg.arkanoo-custom','--target','native')
     run('build','com.gamepkg.arkanoo-modes','--target','native')
     run('build','com.gamepkg.arkanoo-levels','--target','native')
@@ -201,7 +208,24 @@ pub fn game_tick(input:u32,state:u64)->u64 {
             stored=[p.read_bytes() for p in (root/'library/saves').iterdir()]
             if any(v[:4]==b'ARK2' and int.from_bytes(v[16:20],'little')==1 for v in stored):break
             assert time.monotonic()<deadline,'Native editor did not commit its pattern';time.sleep(.05)
-        print('Native Arkanoo: gameplay controls, scaled mouse, editor painting and scoped pattern saving passed.')
+        picker_title='GamePKG: com.gamepkg.arkanoo — Level pattern text'
+        subprocess.run(['xdotool','key','--window',window,'i'],env=env,check=True)
+        choose_native_file(env,picker_title,None);subprocess.run(['xdotool','windowfocus',window],env=env,check=True);time.sleep(.2)
+        incoming=root/'native-import.txt';incoming.write_text('# Original ASCII pattern\n50******************\n')
+        subprocess.run(['xdotool','key','--window',window,'i'],env=env,check=True);choose_native_file(env,picker_title,incoming)
+        subprocess.run(['xdotool','windowfocus',window],env=env,check=True);deadline=time.monotonic()+5
+        while True:
+            imported=capture(window,'native-pattern-import.png')
+            if imported.getpixel((px,py))==(138,43,226):break
+            assert time.monotonic()<deadline,'Native selected pattern did not appear';time.sleep(.05)
+        assert incoming.read_text()=='# Original ASCII pattern\n50******************\n'
+        outgoing=root/'native-export.txt';subprocess.run(['xdotool','key','--window',window,'x'],env=env,check=True);choose_native_file(env,picker_title,outgoing)
+        deadline=time.monotonic()+5
+        while not outgoing.exists():
+            assert time.monotonic()<deadline,'Native Save dialog did not export the pattern';time.sleep(.05)
+        assert outgoing.read_text().startswith('# Pattern: native-import\n') and '50******************' in outgoing.read_text()
+        print('Native Arkanoo: gameplay/editor plus real file-picker import, cancellation and Save-dialog export passed.')
+
     finally:
         if app is not None:
             app.terminate()
@@ -220,7 +244,9 @@ pub fn game_tick(input:u32,state:u64)->u64 {
             run('pack',source,'-o',root/'component.gamepkg','--key',key);run('install',root/'component.gamepkg','--trust-creator');run('build',game_id)
         out=root/('component-web' if component else 'core-web');run('web-export',game_id,'--output',out)
         server=ThreadingHTTPServer(('127.0.0.1',0),partial(Quiet,directory=str(out)));threading.Thread(target=server.serve_forever,daemon=True).start()
+        downloads=root/('downloads-component' if component else 'downloads-core');downloads.mkdir()
         options=Options();options.binary_location='/usr/bin/chromium'
+        options.add_experimental_option('prefs',{'download.default_directory':str(downloads),'download.prompt_for_download':False,'download.directory_upgrade':True})
         for arg in ['--headless=new','--no-sandbox','--disable-dev-shm-usage','--enable-unsafe-swiftshader','--window-size=1200,1000']:options.add_argument(arg)
         browser=webdriver.Chrome(service=Service('/usr/bin/chromedriver'),options=options)
         try:
@@ -268,7 +294,19 @@ pub fn game_tick(input:u32,state:u64)->u64 {
             canvas.send_keys('t');time.sleep(.15);canvas.send_keys('q');time.sleep(.15)
             wait.until(lambda b:pixels()[(105*640+35)*4:(105*640+35)*4+3]==[255,165,0])
             canvas.screenshot(str(PROOF/('browser-component-editor.png' if component else 'browser-core-editor.png')))
+            canvas.send_keys('i');wait.until(lambda b:b.find_element(By.CSS_SELECTOR,'#user-files input[type=file]').is_displayed())
+            browser.find_element(By.CSS_SELECTOR,'#user-files button').click();wait.until(lambda b:not b.find_element(By.ID,'user-files').is_displayed())
+            assert pixels()[(105*640+35)*4:(105*640+35)*4+3]==[255,165,0]
+            incoming=root/('browser-component.txt' if component else 'browser-core.txt');incoming.write_text('# Original ASCII pattern\n50******************\n')
+            canvas.send_keys('i');upload=wait.until(lambda b:b.find_element(By.CSS_SELECTOR,'#user-files input[type=file]'));upload.send_keys(str(incoming))
+            wait.until(lambda b:pixels()[(105*640+35)*4:(105*640+35)*4+3]==[138,43,226]);assert incoming.read_text()=='# Original ASCII pattern\n50******************\n'
+            browser.execute_script('Object.defineProperty(window,"showSaveFilePicker",{value:undefined,configurable:true})')
+            canvas.send_keys('x');button=wait.until(lambda b:next((v for v in b.find_elements(By.CSS_SELECTOR,'#user-files button') if v.text.startswith('Save ')),None));button.click()
+            outgoing=downloads/incoming.name
+            wait.until(lambda b:outgoing.exists() and '50******************' in outgoing.read_text())
+            assert outgoing.read_text().startswith('# Pattern: '+incoming.stem+'\n')
+            canvas.screenshot(str(PROOF/('browser-component-files.png' if component else 'browser-core-files.png')))
             browser.find_element(By.ID,'stop').click()
             assert 'Stopped' in browser.find_element(By.ID,'status').text
-            print(('Component' if component else 'Core')+' browser Arkanoo: gameplay, editor paint/save/load, test return and Restart passed.')
+            print(('Component' if component else 'Core')+' browser Arkanoo: gameplay/editor, selected-file import, cancellation and explicit download passed.')
         finally:browser.quit();server.shutdown();server.server_close()

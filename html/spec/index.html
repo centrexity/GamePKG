@@ -35,7 +35,7 @@ modules are supported. The host generates the export wrapper. Builds require
 a valid root tick export before publishing their cache.</p>
 <p>Component games use the versioned <code>gamepkg:engine@0.1.0</code> world in
 <code>wit/game.wit</code>. Both profiles receive scoped assets, input, draw commands,
-audio, saves, and explicitly selected ROM reads. They receive no WASI or
+audio, saves, explicitly selected ROM reads and declared file import/export. They receive no WASI or
 ambient filesystem/network imports. <code>engine_version</code> is a semantic-version
 requirement checked against the host during verification and loading.
 <code>save_schema</code> is a positive integer; changing it selects a separate save
@@ -85,5 +85,24 @@ not install or execute games.</p>
 <p>Since 0.1.13, optional signed root fields include <code>title</code> (256 bytes), <code>description</code> (4096 bytes, with line breaks), <code>author</code> (128 bytes), <code>homepage</code> (2048 bytes, HTTPS/Tor), and <code>genres</code> (up to eight unique labels, 32 bytes each). Text is literal, without markup; control sequences and bidirectional formatting controls are rejected. Old packages fall back to their IDs. Catalog entries may also supply unverified descriptions. Installed signed metadata takes precedence. Use <code>engine_version = "&gt;=0.1.13, &lt;0.2.0"</code> and update older hosts first. See the developer guide for the manifest example.</p>
 <h2>User-selected native-server permission</h2>
 <p>Only an exact host-approved folder-backed native selector may sign <code>game_data.user_selected_servers = true</code>. It requires <code>network = "multiplayer"</code>, empty static endpoint lists and no static local-network grant. The host validates and remembers an explicit user-selected join or hosting address and authorizes only its game port and adjacent server-information port for that session. Blank choices remain offline. Local/private addresses require a separate user opt-in. Choices are scoped to the signed game, creator and declaration; game code cannot change them. Ordinary guest packages cannot request this delegation.</p>
+<h2>Explicit file import and export</h2>
+<p>Optional <code>[[permissions.files]]</code> entries declare a unique ASCII <code>id</code>, a short
+<code>title</code>, 1–8 lowercase alphanumeric <code>extensions</code>, <code>max_bytes</code>, and <code>read</code>/<code>write</code>
+booleans. At most 32 purposes are allowed. These permissions require input and
+are default denied. Read-only purposes are limited to 64 MiB; export-enabled
+purposes are limited to 1 MiB. The smaller declared limit always applies.</p>
+<p><code>file_import(index)</code> and <code>file_export(index, suggested_name, bytes)</code> return an
+opaque per-session request handle. Requests require a fresh focused key or
+pointer press and commit only after a successful tick. Poll <code>file_status</code>, then
+use bounded <code>file_name</code>/<code>file_read</code> calls and release completed requests with
+<code>file_close</code>. Reads are limited to 64 KiB per call. Cancellation, errors and
+unavailable headless dialogs are explicit outcomes. The native app opens system
+dialogs; browser exports use explicit upload and save/download controls.</p>
+<p>Only selected bytes and portable basenames reach the game. Names cannot contain
+paths, streams, control characters or Windows device names. File extensions are
+filters and permissions, not proof of the file's actual format. There is no
+ambient directory access, automatic export destination or reusable OS handle.
+See the <a href="../guide/developers.html">developer guide</a>
+for the manifest and polling contract.</p>
 <footer><a href="../support/index.html">Support GamePKG</a> · <a href="../guide/allowlist.html">Game source policy</a> · <a href="https://github.com/centrexity/GamePKG/blob/main/html/spec/index.md">Documentation source</a> · GamePKG · Apache 2.0</footer>
 </main></body></html>

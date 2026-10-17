@@ -49,6 +49,7 @@ fn stereo_engine_audio(
 }
 
 pub(crate) struct Session {
+    pub(crate) user_files: crate::user_files::Service,
     input_events: crate::input_events::Queue,
     child: Child,
     _parent_thread: std::sync::mpsc::Sender<()>,
@@ -223,6 +224,7 @@ impl Session {
             package,
             network: crate::network::Service::new(manifest.permissions.clone()),
             input_events: crate::input_events::Queue::new(manifest.permissions.input),
+            user_files: crate::user_files::Service::new(manifest.permissions.files.clone()),
             manifest,
             roms,
             save,
@@ -304,6 +306,22 @@ impl Session {
             Ok(v)
         }
         let ok = match op {
+            28 => {
+                ensure!(
+                    b.len() >= 8 && b.len() - 8 <= crate::user_files::MAX_REQUEST,
+                    "invalid user-file packet"
+                );
+                return Ok(
+                    match self.user_files.call(n(b, 0)?, &b[8..], n(b, 4)? as usize) {
+                        Some(bytes) => {
+                            let mut reply = vec![0];
+                            reply.extend(bytes);
+                            reply
+                        }
+                        None => vec![255],
+                    },
+                );
+            }
             27 => {
                 ensure!(b.len() == 4, "invalid input request");
                 return Ok(match self.input_events.read(n(b, 0)? as usize) {
@@ -548,11 +566,16 @@ impl Session {
         match result {
             Ok(v) => {
                 if let Some(save) = &mut self.save {
-                    save.commit()?;
+                    if let Err(error) = save.commit() {
+                        self.user_files.finish(false);
+                        return Err(error);
+                    }
                 }
+                self.user_files.finish(true);
                 Ok(v)
             }
             Err(e) => {
+                self.user_files.finish(false);
                 self.frame.reset();
                 self.audio.clear();
                 self.achievements.clear();

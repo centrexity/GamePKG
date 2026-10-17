@@ -204,3 +204,62 @@ A `.gamepkglist` entry can also include `description = "..."` with the same text
 Only exact host-approved built-in engine profiles may request a `[game_data]` folder. The user selects the original installation through the system folder picker. The host remembers it for the signed game and creator, pins directory handles at launch and mounts only the declared data directories read-only. These packages must use their reviewed launcher template; extra Rust modules, C/C++ source, build scripts and dependencies are rejected. See the engine's repository documentation for its profile, source provenance, required tools and resource limits. Ordinary guest memory and image limits remain unchanged.
 
 A host-approved native selector can explicitly sign `game_data.user_selected_servers = true` together with `network = "multiplayer"`, empty endpoint lists and no static local-network grant. The host must support that exact reviewed profile. This lets the user choose an exact join or hosting address, or explicitly delegate discovery to a chosen master, in the library or with `configure-network`; blank choices grant no networking. The host validates and pins the chosen game/server-info endpoints and requires a separate user opt-in for local/private addresses. Ordinary guest source cannot use this declaration or change these host-only choices.
+
+## Player-selected import and export
+
+Declare each file purpose in the signed manifest. This is optional and default
+denied. It also requires `permissions.input = true`:
+
+```toml
+[[permissions.files]]
+id = "patterns"
+title = "Level pattern text"
+extensions = ["txt"]
+max_bytes = 1048576
+read = true
+write = true
+```
+
+Call `gamepkg::file_import(0)` or `file_export(0, "pattern.txt", bytes)` during a
+tick that receives a fresh focused keypress or pointer-button press. The index
+addresses the signed list above. Each action permits at most one request; held
+key repeats and later ticks do not preserve that authorization. Requests become
+visible to the host only after the tick succeeds. The desktop app opens its
+system Open/Save dialog asynchronously. Browser exports show explicit upload or
+save/download controls, requiring another player action. The CLI does not open
+dialogs. Games never receive host paths, directory access or reusable OS handles.
+This API needs the updated source host; older release binaries may not expose it.
+
+The request returns `Some(handle)` or `None` for unavailable, denied or invalid
+requests. Poll `file_status(handle)` each tick:
+
+| Status | Meaning |
+| --- | --- |
+| 1 | Waiting for the player or host |
+| 2 | Imported file ready; `size` and `name_bytes` are available |
+| 3 | Export completed or handed to the browser download manager |
+| 4 | Player cancelled |
+| 5 | Request failed |
+
+`file_name(handle, output)` copies only the selected basename as UTF-8.
+`file_read(handle, offset, output)` reads at most 64 KiB from the selected
+read-only snapshot. Loop over chunks for larger inputs. Reads do not consume
+file bytes. `file_close(handle)` releases a completed request; pending requests
+cannot be closed and replaced to flood the player with dialogs. A request and
+its result belong to one running game instance. Stale replies cannot be applied
+to a replacement game. Cancellation and errors must preserve the working game data.
+
+There are at most 32 purposes, each with a unique ASCII ID, a short title and
+1–8 lowercase alphanumeric extensions. Imports are capped at 64 MiB, or the
+smaller declared limit. Export-enabled purposes are capped at 1 MiB, including
+both directions when `read` and `write` share a purpose. Only one request/result
+is retained at a time. Names must be portable basenames, without traversal,
+streams, control characters or Windows device names. Native selection rejects
+symlinks and non-regular files; exports atomically replace only the explicitly
+chosen destination. The filename supplied by the guest is a suggestion, never
+an automatic output path. No microphone, device, process or network access is
+added. The guest is responsible for validating its actual file format.
+
+These operations do not yet provide a directory/resource browser, remembered
+mod folders, streaming media resources or large recording exports. Those remain
+separate requirements for the engine ports.

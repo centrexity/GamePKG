@@ -227,6 +227,7 @@ pub(crate) fn selected_multiplayer(
     let listeners = endpoints(listen, true)?;
     let enabled = !hosts.is_empty() || !listeners.is_empty();
     let permissions = crate::manifest::Permissions {
+        files: Vec::new(),
         input: false,
         audio: false,
         save: false,

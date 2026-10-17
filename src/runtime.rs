@@ -20,6 +20,7 @@ enum Tick {
     Component(wasmtime::component::TypedFunc<(u32, u64), (u64,)>),
 }
 struct Data {
+    user_files: crate::user_files::Service,
     input_events: crate::input_events::Queue,
     achievements: Vec<String>,
     pending_achievements: Vec<String>,
@@ -149,6 +150,7 @@ impl Game {
                             | "save_size"
                             | "random_u64"
                             | "input_events"
+                            | "file_call"
                             | "draw_clear"
                             | "draw_asset_image"
                             | "draw_image"
@@ -205,6 +207,7 @@ impl Game {
                                 | "save-size"
                                 | "random-u64"
                                 | "input-events"
+                                | "file-call"
                                 | "draw-clear"
                                 | "draw-asset-image"
                                 | "draw-image"
@@ -259,6 +262,7 @@ impl Game {
         let mut store = Store::new(
             &engine,
             Data {
+                user_files: crate::user_files::Service::new(manifest.permissions.files.clone()),
                 input_events: crate::input_events::Queue::new(manifest.permissions.input),
                 achievements: manifest.achievements.iter().map(|a| a.id.clone()).collect(),
                 pending_achievements: Vec::new(),
@@ -573,6 +577,57 @@ impl Game {
                         return -1;
                     }
                     bytes.len() as i32
+                },
+            )?;
+            linker.func_wrap(
+                "gamepkg",
+                "file_call",
+                |mut caller: Caller<'_, Data>,
+                 operation: u32,
+                 pointer: i32,
+                 length: i32,
+                 output: i32,
+                 capacity: i32|
+                 -> i32 {
+                    if operation > 5
+                        || pointer < 0
+                        || length < 0
+                        || length as usize > crate::user_files::MAX_REQUEST
+                        || output < 0
+                        || capacity < 0
+                        || capacity as usize > crate::user_files::MAX_CHUNK
+                    {
+                        return -1;
+                    }
+                    let Some(memory) = caller.get_export("memory").and_then(|e| e.into_memory())
+                    else {
+                        return -1;
+                    };
+                    let size = memory.data_size(&caller);
+                    if (pointer as usize)
+                        .checked_add(length as usize)
+                        .is_none_or(|n| n > size)
+                        || (output as usize)
+                            .checked_add(capacity as usize)
+                            .is_none_or(|n| n > size)
+                    {
+                        return -1;
+                    }
+                    let request = memory.data(&caller)
+                        [pointer as usize..pointer as usize + length as usize]
+                        .to_vec();
+                    let Some(reply) =
+                        caller
+                            .data_mut()
+                            .user_files
+                            .call(operation, &request, capacity as usize)
+                    else {
+                        return -1;
+                    };
+                    if memory.write(&mut caller, output as usize, &reply).is_err() {
+                        return -1;
+                    }
+                    reply.len() as i32
                 },
             )?;
             linker.func_wrap("gamepkg", "random_u64", || -> Result<i64> {
@@ -1123,8 +1178,37 @@ impl Game {
     pub fn input_events_allowed(&self) -> bool {
         self.input_allowed && !self.builtin_engine
     }
+    fn user_files_mut(&mut self) -> Option<&mut crate::user_files::Service> {
+        #[cfg(target_os = "linux")]
+        if let Some(native) = &mut self.native {
+            return Some(&mut native.user_files);
+        }
+        self.store
+            .as_mut()
+            .map(|store| &mut store.data_mut().user_files)
+    }
+    pub fn enable_user_files(&mut self) {
+        if let Some(files) = self.user_files_mut() {
+            files.enable();
+        }
+    }
+    pub fn take_user_file_job(&mut self) -> Option<crate::user_files::Job> {
+        self.user_files_mut()?.take_job()
+    }
+    pub fn complete_user_file(
+        &mut self,
+        job: &crate::user_files::Job,
+        outcome: crate::user_files::Outcome,
+    ) -> bool {
+        self.user_files_mut()
+            .is_some_and(|files| files.complete(job, outcome))
+    }
     pub fn step(&mut self, input: u32) -> Result<u64> {
         let input_events = self.queued_input.drain_events();
+        let file_gesture = crate::user_files::gesture(&input_events);
+        if let Some(files) = self.user_files_mut() {
+            files.begin(file_gesture);
+        }
         let events: Vec<_> = self
             .doom_events
             .drain(..self.doom_events.len().min(crate::doom_input::MAX_PER_TICK))
@@ -1150,7 +1234,10 @@ impl Game {
                 &events,
             )?;
             if let Some(progress) = &mut self.progress {
-                progress.tick(&n.achievements)?;
+                if let Err(error) = progress.tick(&n.achievements) {
+                    n.user_files.finish(false);
+                    return Err(error);
+                }
             }
             return Ok(self.state);
         }
@@ -1219,15 +1306,52 @@ impl Game {
                     save.bytes = bytes;
                     save.dirty = false;
                 }
+                self.store
+                    .as_mut()
+                    .unwrap()
+                    .data_mut()
+                    .user_files
+                    .finish(false);
                 return Err(error);
             }
         };
-        if let Some(save) = self.store.as_mut().unwrap().data_mut().save.as_mut() {
-            save.commit().context("unable to persist game save")?;
+        let commit = self
+            .store
+            .as_mut()
+            .unwrap()
+            .data_mut()
+            .save
+            .as_mut()
+            .map(|save| save.commit())
+            .transpose();
+        if let Err(error) = commit {
+            self.store
+                .as_mut()
+                .unwrap()
+                .data_mut()
+                .user_files
+                .finish(false);
+            return Err(error).context("unable to persist game save");
         }
         if let Some(progress) = &mut self.progress {
-            progress.tick(&self.store.as_ref().unwrap().data().pending_achievements)?;
+            if let Err(error) =
+                progress.tick(&self.store.as_ref().unwrap().data().pending_achievements)
+            {
+                self.store
+                    .as_mut()
+                    .unwrap()
+                    .data_mut()
+                    .user_files
+                    .finish(false);
+                return Err(error);
+            }
         }
+        self.store
+            .as_mut()
+            .unwrap()
+            .data_mut()
+            .user_files
+            .finish(true);
         Ok(self.state)
     }
     pub fn player(&self) -> (u8, u8) {

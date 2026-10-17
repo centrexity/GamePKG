@@ -13,6 +13,7 @@ mod rom_picker;
 mod source_input;
 mod sprites;
 mod theme;
+mod user_files;
 use std::{
     collections::{HashMap, HashSet},
     path::PathBuf,
@@ -73,6 +74,7 @@ pub struct App {
     brand_icon: Option<egui::TextureHandle>,
     settings_draft: crate::settings::Settings,
     player: Option<Box<crate::runtime::Game>>,
+    user_files: user_files::Picker,
     game_window: bool,
     game_window_closing: bool,
     cube_mouse_capture: cube2_input::MouseCapture,
@@ -401,6 +403,7 @@ impl eframe::App for App {
         }
     }
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
+        self.user_files.tick(self.player.as_deref_mut(), ctx);
         egui_winit::gamepkg_input::enable(
             ctx.viewport_id(),
             !self.game_window_closing
@@ -583,6 +586,7 @@ impl eframe::App for App {
                                 self.audio_player.as_ref().map(crate::audio::Player::sink),
                             );
                             self.selected_game = Some(game.id.clone());
+                            game.enable_user_files();
                             self.player = Some(game);
                         }
                         Ok(Work::Package(m)) => {

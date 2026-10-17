@@ -1,5 +1,6 @@
 const canvas=document.querySelector('#game'),context=canvas.getContext('2d'),status=document.querySelector('#status'),play=document.querySelector('#play'),stop=document.querySelector('#stop'),restart=document.querySelector('#restart');
 let data,wasm,worker,timer,frameTimer,pressed=0,held=0,roms=[],running=false,saveKey,historyKey,lastFrame=0,audioContext,audioGain,audioNext=0,muted=false,audioNodes=new Set(),shaderSurface,gl,programs=[],texture;
+let filePending=null;
 const keys={ArrowLeft:1,a:1,ArrowRight:2,d:2,ArrowUp:4,w:4,ArrowDown:8,s:8,z:16,x:32,Enter:64,Tab:128,c:65536,v:131072,q:262144,e:524288};
 const heldKeys=new Map();
 function resetKeyboard(){heldKeys.clear();held=pressed=0;}
@@ -20,7 +21,7 @@ function keyboardUp(event){
  for(const bit of heldKeys.values())held|=bit;
 }
 function color(rgba){return `rgba(${rgba>>>24},${rgba>>>16&255},${rgba>>>8&255},${(rgba&255)/255})`;}
-function halt(message){for(const node of audioNodes){try{node.stop();}catch{}}audioNodes.clear();audioNext=0;clearTimeout(timer);clearTimeout(frameTimer);worker?.terminate();worker=null;running=false;resetKeyboard();surfaceEvents=[];play.disabled=false;stop.disabled=true;restart.disabled=true;status.textContent=message;}
+function halt(message){clearFileUI();for(const node of audioNodes){try{node.stop();}catch{}}audioNodes.clear();audioNext=0;clearTimeout(timer);clearTimeout(frameTimer);worker?.terminate();worker=null;running=false;resetKeyboard();surfaceEvents=[];play.disabled=false;stop.disabled=true;restart.disabled=true;status.textContent=message;}
 function watch(delay){clearTimeout(timer);const active=worker;timer=setTimeout(()=>{if(worker===active)halt('Game stopped: execution deadline exceeded.');},delay);}
 function stored(key,fallback){try{return JSON.parse(localStorage.getItem(key))??fallback;}catch{return fallback;}}
 function persist(key,value){try{localStorage.setItem(key,JSON.stringify(value));}catch{status.textContent='Browser storage is unavailable; progress may not persist.';}}
@@ -49,6 +50,7 @@ async function start(){
   if(['error','ready','frame'].includes(message.type))clearTimeout(timer);
   if(message.type==='error'){halt(message.error);return;}
   if(message.type==='ready'){lastFrame=performance.now();status.textContent='Playing';restart.disabled=false;canvas.focus();tick();}
+  if(message.type==='file-request')showFileRequest(message,active);
   if(message.type==='save')persist(saveKey,Array.from(message.bytes));
   if(message.type==='frame'){
    try{render(message);playAudio(message.audio||[]);}catch(error){halt(String(error));return;}const history=stored(historyKey,{played_ms:0,unlocked:[]});const now=performance.now();history.played_ms+=Math.max(0,Math.min(250,Math.round(now-lastFrame)));lastFrame=now;for(const id of message.unlocks)if(!history.unlocked.includes(id))history.unlocked.push(id);persist(historyKey,history);
@@ -62,7 +64,7 @@ canvas.addEventListener('keydown',keyboardDown);
 canvas.addEventListener('keyup',keyboardUp);
 window.addEventListener('blur',resetKeyboard);
 document.querySelector('#mute').onclick=()=>{muted=!muted;if(audioGain)audioGain.gain.value=muted?0:.5;document.querySelector('#mute').textContent=muted?'Unmute':'Mute';document.querySelector('#mute').setAttribute('aria-pressed',String(muted));};
-play.onclick=start;restart.onclick=()=>{if(running&&worker){resetSurface();worker.postMessage({type:'restart'});canvas.focus();}};stop.onclick=()=>halt('Stopped');
+play.onclick=start;restart.onclick=()=>{if(running&&worker){clearFileUI();resetSurface();worker.postMessage({type:'restart'});canvas.focus();}};stop.onclick=()=>halt('Stopped');
 try{
  const response=await fetch('game.json',{cache:'no-store'});if(!response.ok)throw Error('Missing export metadata');data=await response.json();if(data.format_version!==1)throw Error('Unsupported web export');
  const binary=await fetch('game.wasm',{cache:'no-store'});if(!binary.ok)throw Error('Missing compiled game');wasm=await binary.arrayBuffer();
@@ -74,6 +76,33 @@ try{
  required.forEach((requirement,index)=>{const label=document.createElement('label');label.textContent=`Select ${requirement.title}`;const input=document.createElement('input');input.type='file';input.onchange=async()=>{const file=input.files[0];if(!file||file.size>67108864){status.textContent='ROM must be at most 64 MiB.';roms[index]=null;return;}const selected=new Uint8Array(await file.arrayBuffer());if(roms.reduce((total,value,i)=>total+(i===index?0:value?.length||0),0)+selected.length>134217728){status.textContent='Combined ROM files must be at most 128 MiB.';roms[index]=null;return;}roms[index]=selected;};label.append(input);document.querySelector('#roms').append(label);});
  status.textContent='Ready to play';play.disabled=false;restart.disabled=false;
 }catch(error){status.textContent=String(error);}
+
+// Native browser file selection/downloads remain outside the guest worker.
+function chosenFileName(name,extensions){if(typeof name!=='string'||!name||new TextEncoder().encode(name).length>255||/[. ]$/.test(name)||/[<>:"/\\|?*\x00-\x1f\x7f-\x9f]/.test(name))return false;const stem=name.split('.')[0].replace(/ +$/,'').toUpperCase();if(/^(CON|PRN|AUX|NUL|CONIN\$|CONOUT\$|COM[1-9¹²³]|LPT[1-9¹²³])$/.test(stem))return false;const split=name.lastIndexOf('.');return split>=0&&extensions.includes(name.slice(split+1).toLowerCase());}
+function clearFileUI(){filePending=null;const box=document.querySelector('#user-files');if(box){box.replaceChildren();box.hidden=true;}}
+function showFileRequest(message,active){
+ if(filePending||!Number.isInteger(message.handle)||message.handle<1||!Number.isInteger(message.generation)||!Number.isInteger(message.index))return;
+ const policy=data.manifest.permissions.files?.[message.index];if(!policy||![0,1].includes(message.operation)||!(message.operation===0?policy.read:policy.write))return;
+ if(message.operation===1&&(!(message.bytes instanceof Uint8Array)||message.bytes.length>1048576||message.bytes.length>policy.max_bytes||!chosenFileName(message.name,policy.extensions)))return;
+ const box=document.querySelector('#user-files');if(!box)return;filePending=message;box.replaceChildren();box.hidden=false;
+ const label=document.createElement('p');label.textContent=`${data.manifest.title||data.manifest.id}: ${policy.title}`;box.append(label);
+ const done=(status,name='',bytes=new Uint8Array())=>{if(!running||worker!==active||filePending!==message)return;active.postMessage({type:'file-result',handle:message.handle,generation:message.generation,status,name,bytes});clearFileUI();canvas.focus();};
+ if(message.operation===0){
+  const input=document.createElement('input');input.type='file';input.accept=policy.extensions.map(e=>'.'+e).join(',');input.setAttribute('aria-label',`Choose ${policy.title}`);
+  input.oncancel=()=>done(4);input.onchange=async()=>{const selected=input.files[0];if(!selected){done(4);return;}if(selected.size>policy.max_bytes||selected.size>67108864||!chosenFileName(selected.name,policy.extensions)){done(5);return;}try{const bytes=new Uint8Array(await selected.arrayBuffer());done(2,selected.name,bytes);}catch{done(5);}};box.append(input);
+ }else{
+  const button=document.createElement('button');button.textContent=`Save ${policy.title}`;button.onclick=async()=>{button.disabled=true;try{
+   if(typeof window.showSaveFilePicker==='function'){
+    const handle=await window.showSaveFilePicker({suggestedName:message.name,types:[{description:policy.title,accept:{'application/octet-stream':policy.extensions.map(e=>'.'+e)}}]});
+    if(!running||worker!==active||filePending!==message)return;
+    if(!chosenFileName(handle.name,policy.extensions))throw Error('Selected file type is not permitted');
+    const stream=await handle.createWritable();await stream.write(message.bytes);await stream.close();
+   }else{const link=document.createElement('a'),url=URL.createObjectURL(new Blob([message.bytes],{type:'application/octet-stream'}));link.href=url;link.download=message.name;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+   done(3);
+  }catch(error){done(error?.name==='AbortError'?4:5);}};box.append(button);
+ }
+ const cancel=document.createElement('button');cancel.textContent='Cancel file request';cancel.onclick=()=>done(4);box.append(cancel);
+}
 
 // Ordered input is scoped to this focused canvas, never document-wide typing.
 let surfaceEvents=[];

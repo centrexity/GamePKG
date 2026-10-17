@@ -92,3 +92,5 @@ pub mod app_updates;
 #[doc(hidden)]
 pub mod cube2;
 pub mod game_data;
+
+pub mod user_files;

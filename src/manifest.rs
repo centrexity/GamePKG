@@ -114,6 +114,8 @@ pub struct Limits {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Permissions {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub files: Vec<UserFile>,
     pub input: bool,
     pub audio: bool,
     pub save: bool,
@@ -124,6 +126,18 @@ pub struct Permissions {
     pub network_listen: Vec<String>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub network_allow_local: bool,
+}
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct UserFile {
+    pub id: String,
+    pub title: String,
+    pub extensions: Vec<String>,
+    pub max_bytes: u64,
+    #[serde(default)]
+    pub read: bool,
+    #[serde(default)]
+    pub write: bool,
 }
 impl Manifest {
     pub fn uses_selected_servers(&self) -> bool {
@@ -315,6 +329,10 @@ impl Manifest {
                     "recommended memory must be positive and no greater than the hard memory limit"
                 );
             }
+        }
+        crate::user_files::validate(&m.permissions.files)?;
+        if !m.permissions.files.is_empty() && !m.permissions.input {
+            bail!("user-file dialogs require input permission");
         }
         if m.uses_selected_servers() {
             crate::network::validate_user_selected(&m.permissions)?;

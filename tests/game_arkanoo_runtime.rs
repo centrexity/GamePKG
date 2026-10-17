@@ -605,3 +605,163 @@ fn original_custom_and_procedural_pool_matches_in_native_and_32_bit_wasm() {
         assert_eq!(game.step(level).unwrap(), expected, "level {level}");
     }
 }
+
+#[test]
+#[ignore = "requires signed user-file fixtures prepared by tests/arkanoo.py"]
+fn ascii_file_import_and_export_use_only_player_selected_bytes_across_all_profiles() {
+    use gamepkg::user_files::{self, Kind, Outcome};
+    for id in ["com.gamepkg.arkanoo", "com.gamepkg.arkanoo-files-component"] {
+        let root = isolated_library();
+        let mut game = Game::load(root.path(), id).unwrap();
+        game.enable_user_files();
+        game.step(0).unwrap();
+        editor_key(&mut game, 101);
+        editor_key(&mut game, 105);
+        let cancelled = game.take_user_file_job().expect("import request");
+        assert!(matches!(cancelled.kind, Kind::Import));
+        assert!(game.complete_user_file(&cancelled, Outcome::Cancelled));
+        game.step(0).unwrap();
+        let selected = tempfile::tempdir().unwrap();
+        let input = selected.path().join("Imported.TXT");
+        let original = format!("# {}\n012345678IEU\n", "x".repeat(70000));
+        std::fs::write(&input, &original).unwrap();
+        editor_key(&mut game, 105);
+        let import = game.take_user_file_job().unwrap();
+        assert_ne!(import.handle, cancelled.handle);
+        assert!(game.complete_user_file(&import, user_files::execute(&import, Some(&input))));
+        game.step(0).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&input).unwrap(),
+            original,
+            "import changed the selected source"
+        );
+        editor_key(&mut game, 115);
+        let saved = std::fs::read(editor_archive(root.path())).unwrap();
+        let length = u32::from_le_bytes(saved[20..24].try_into().unwrap()) as usize;
+        assert_eq!(&saved[24..24 + length], b"Imported");
+        assert_eq!(
+            &saved[24 + length..36 + length],
+            &[0, 1, 2, 3, 4, 5, 6, 7, 8, 6, 7, 8]
+        );
+        editor_key(&mut game, 120);
+        let export = game.take_user_file_job().unwrap();
+        let Kind::Export { name, bytes } = &export.kind else {
+            panic!("not an export");
+        };
+        assert_eq!(name, "Imported.txt");
+        let mut expected=String::from("# Pattern: Imported\n# * = empty, 0-5 = normal, 6 = Ice, 7 = Explosive, 8 = Undestroyable\n\n012345678678********\n");
+        for _ in 0..9 {
+            expected.push_str("********************\n");
+        }
+        assert_eq!(bytes, expected.as_bytes());
+        let output = selected.path().join("chosen export.txt");
+        assert!(game.complete_user_file(&export, user_files::execute(&export, Some(&output))));
+        game.step(0).unwrap();
+        assert_eq!(std::fs::read(&output).unwrap(), expected.as_bytes());
+        assert!(!selected.path().join("Imported.txt").exists());
+        editor_key(&mut game, 105);
+        let bad = game.take_user_file_job().unwrap();
+        assert!(game.complete_user_file(
+            &bad,
+            Outcome::Imported {
+                name: "bad.txt".into(),
+                bytes: vec![255, 254]
+            }
+        ));
+        game.step(0).unwrap();
+        editor_key(&mut game, 115);
+        assert_eq!(
+            std::fs::read(editor_archive(root.path())).unwrap(),
+            saved,
+            "invalid imported text replaced the working pattern"
+        );
+    }
+}
+#[test]
+#[ignore = "requires signed user-file fixtures prepared by tests/arkanoo.py"]
+fn editor_file_controls_do_not_grant_undeclared_access_or_open_headless_dialogs() {
+    let root = isolated_library();
+    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-nofiles").unwrap();
+    game.enable_user_files();
+    game.step(0).unwrap();
+    editor_key(&mut game, 101);
+    editor_key(&mut game, 105);
+    assert!(game.take_user_file_job().is_none());
+    editor_key(&mut game, 120);
+    assert!(game.take_user_file_job().is_none());
+    let root = isolated_library();
+    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo").unwrap();
+    game.step(0).unwrap();
+    editor_key(&mut game, 101);
+    editor_key(&mut game, 105);
+    assert!(game.take_user_file_job().is_none());
+    game.enable_user_files();
+    game.step(0).unwrap();
+    assert!(game.take_user_file_job().is_none());
+    editor_key(&mut game, 105);
+    assert!(game.take_user_file_job().is_some());
+}
+#[test]
+#[ignore = "requires signed user-file fixtures prepared by tests/arkanoo.py"]
+fn pattern_archives_larger_than_one_read_chunk_reload_without_being_marked_corrupt() {
+    let root = isolated_library();
+    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo").unwrap();
+    game.step(0).unwrap();
+    editor_key(&mut game, 101);
+    editor_click(&mut game, 20.0, 100.0, 1);
+    editor_key(&mut game, 115);
+    let path = editor_archive(root.path());
+    let initial = std::fs::read(&path).unwrap();
+    drop(game);
+    let length = u32::from_le_bytes(initial[20..24].try_into().unwrap()) as usize;
+    let mut large = initial[..20].to_vec();
+    large.extend(70000u32.to_le_bytes());
+    large.extend(vec![b'x'; 70000]);
+    large.extend(&initial[24 + length..]);
+    std::fs::write(&path, &large).unwrap();
+    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo").unwrap();
+    game.step(0).unwrap();
+    editor_key(&mut game, 101);
+    editor_key(&mut game, 108);
+    editor_key(&mut game, 13);
+    editor_key(&mut game, 115);
+    assert_eq!(std::fs::read(&path).unwrap(), large);
+    assert!(game.frame().commands.iter().any(|c|matches!(c,Command::Rect{x,y,width,height,rgba} if *x==20.0 && *y==100.0 && *width==30.0 && *height==10.0 && *rgba==0xff0000ff)),"large archive's pattern was not loaded");
+}
+
+#[test]
+#[ignore = "requires signed user-file fixtures prepared by tests/arkanoo.py"]
+fn play_history_failure_does_not_open_a_new_file_dialog() {
+    let root = isolated_library();
+    let mut setup = Game::load(root.path(), "com.gamepkg.arkanoo").unwrap();
+    setup.step(0).unwrap();
+    editor_key(&mut setup, 101);
+    editor_click(&mut setup, 20.0, 100.0, 1);
+    editor_key(&mut setup, 115);
+    let path = editor_archive(root.path());
+    drop(setup);
+    let mut bytes = std::fs::read(&path).unwrap();
+    bytes[8..12].copy_from_slice(&2u32.to_le_bytes());
+    std::fs::write(&path, bytes).unwrap();
+    let progress = root.path().join("progress");
+    if progress.exists() {
+        std::fs::remove_dir_all(&progress).unwrap();
+    }
+    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo").unwrap();
+    game.enable_user_files();
+    std::fs::write(&progress, b"block progress commits").unwrap();
+    for code in [101, 105] {
+        game.input_event(gamepkg::input_events::Event {
+            kind: 9,
+            x: 0.0,
+            y: 0.0,
+            code,
+        })
+        .unwrap();
+    }
+    assert!(game.step(0).is_err(), "progress failure was not exercised");
+    assert!(
+        game.take_user_file_job().is_none(),
+        "a failed host tick exposed a file dialog"
+    );
+}

@@ -479,6 +479,16 @@ impl App {
                 "Permissions: input={}, audio={}, save={}, network={}",
                 m.permissions.input, m.permissions.audio, m.permissions.save, m.permissions.network
             ));
+            for permission in &m.permissions.files {
+                ui.label(format!(
+                    "Selected files: {} ({}) — {}{}; up to {}. Each file is chosen by you.",
+                    permission.title,
+                    permission.extensions.join(", "),
+                    if permission.read { "import " } else { "" },
+                    if permission.write { "export" } else { "" },
+                    crate::storage::bytes(permission.max_bytes)
+                ));
+            }
             if m.uses_selected_servers() {
                 ui.label("Network permission: your chosen server or hosting addresses, plus servers listed by a master you explicitly select. Blank choices keep it offline.");
             } else if m.permissions.network != "none" {

@@ -28,7 +28,7 @@ a valid root tick export before publishing their cache.
 
 Component games use the versioned `gamepkg:engine@0.1.0` world in
 `wit/game.wit`. Both profiles receive scoped assets, input, draw commands,
-audio, saves, and explicitly selected ROM reads. They receive no WASI or
+audio, saves, explicitly selected ROM reads and declared file import/export. They receive no WASI or
 ambient filesystem/network imports. `engine_version` is a semantic-version
 requirement checked against the host during verification and loading.
 `save_schema` is a positive integer; changing it selects a separate save
@@ -108,3 +108,27 @@ Since 0.1.13, optional signed root fields include `title` (256 bytes), `descript
 ## User-selected native-server permission
 
 Only an exact host-approved folder-backed native selector may sign `game_data.user_selected_servers = true`. It requires `network = "multiplayer"`, empty static endpoint lists and no static local-network grant. The host validates and remembers an explicit user-selected join or hosting address and authorizes only its game port and adjacent server-information port for that session. Blank choices remain offline. Local/private addresses require a separate user opt-in. Choices are scoped to the signed game, creator and declaration; game code cannot change them. Ordinary guest packages cannot request this delegation.
+
+
+## Explicit file import and export
+
+Optional `[[permissions.files]]` entries declare a unique ASCII `id`, a short
+`title`, 1–8 lowercase alphanumeric `extensions`, `max_bytes`, and `read`/`write`
+booleans. At most 32 purposes are allowed. These permissions require input and
+are default denied. Read-only purposes are limited to 64 MiB; export-enabled
+purposes are limited to 1 MiB. The smaller declared limit always applies.
+
+`file_import(index)` and `file_export(index, suggested_name, bytes)` return an
+opaque per-session request handle. Requests require a fresh focused key or
+pointer press and commit only after a successful tick. Poll `file_status`, then
+use bounded `file_name`/`file_read` calls and release completed requests with
+`file_close`. Reads are limited to 64 KiB per call. Cancellation, errors and
+unavailable headless dialogs are explicit outcomes. The native app opens system
+dialogs; browser exports use explicit upload and save/download controls.
+
+Only selected bytes and portable basenames reach the game. Names cannot contain
+paths, streams, control characters or Windows device names. File extensions are
+filters and permissions, not proof of the file's actual format. There is no
+ambient directory access, automatic export destination or reusable OS handle.
+See the [developer guide](../guide/developers.html)
+for the manifest and polling contract.

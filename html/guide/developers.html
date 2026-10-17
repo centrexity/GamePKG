@@ -55,7 +55,85 @@ version = &quot;0.1.0&quot;
 <p>Keep the name and version identical in both Cargo files. Hash the exact lockfile bytes for the manifest's <code>lockfile_sha256</code>. Do not add dependencies or <code>extern crate</code> declarations. Call <code>gamepkg::</code> directly: it is a host-injected module, not a crate to install, download or list in Cargo.toml. Rust's built-in standard library remains subject to the source restrictions below; it does not grant filesystem or network access.</p>
 <h2>Scoped host functions</h2>
 <p>Use <code>gamepkg::asset_read</code> for package-relative assets, <code>rom_count</code>, <code>rom_size_at</code> and <code>rom_read_at</code> for player-selected ROMs, and <code>save_size</code>, <code>save_read</code> and <code>save_write</code> for the game's save blob. They never open arbitrary host files.</p>
-<p>The updated source host provides <code>gamepkg::random_u64()</code> for fresh random values without device, clock or filesystem access. Native and Wasm hosts use OS randomness; browser exports use the browser's cryptographic random generator. Failure stops the call rather than substituting a fixed seed. Existing time and RPC limits still apply.</p>
+<p>Use <code>gamepkg::random_u64()</code> for a fresh 64-bit random value supplied by the host.
+It needs no additional permission and exposes no device, clock, filesystem or
+host identity. Native, core-Wasm and component-Wasm hosts use OS randomness;
+browser exports use <code>crypto.getRandomValues</code>. If entropy is unavailable the
+call fails rather than returning a fixed seed. Calls remain subject to normal
+tick deadlines and native RPC limits. For a uniform choice among <code>n</code> outcomes,
+use rejection sampling before taking a remainder; <code>% n</code> alone can introduce bias.
+This API requires the updated source host; older release binaries may not expose it.</p>
+<p>Use <code>gamepkg::input_events()</code> for ordered pointer, physical keyboard and committed
+text events. It returns <code>None</code> when the signed <code>input</code> permission is denied and
+<code>Some(Vec&lt;InputEvent&gt;)</code> otherwise. The simple <code>game_tick</code> action-button mask
+continues to work for keyboard, controller and touch actions. This API requires
+the updated source host.</p>
+<p>Each <code>InputEvent</code> has <code>kind: u32</code>, <code>x: f32</code>, <code>y: f32</code>, and <code>code: u32</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Kind</th>
+<th>Meaning</th>
+<th>Coordinates and code</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>Focus/overflow reset</td>
+<td>Release held keys and buttons; zero fields</td>
+</tr>
+<tr>
+<td>1</td>
+<td>Pointer moved</td>
+<td>Position in the 640×480 game canvas; code is held buttons</td>
+</tr>
+<tr>
+<td>2 / 3</td>
+<td>Pointer button down / up</td>
+<td>Canvas position; code identifies one button</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Wheel</td>
+<td>Signed deltas; code 0 = lines, 1 = pixels, 2 = pages</td>
+</tr>
+<tr>
+<td>5 / 6</td>
+<td>Physical key down / up</td>
+<td>Zero coordinates; SDL scancode 1–511; down bit 16 marks repeat</td>
+</tr>
+<tr>
+<td>7</td>
+<td>Committed text</td>
+<td>Zero coordinates; code is one Unicode scalar, excluding NUL</td>
+</tr>
+<tr>
+<td>8</td>
+<td>Pointer left/cancelled</td>
+<td>Release pointer buttons; zero fields</td>
+</tr>
+<tr>
+<td>9 / 10</td>
+<td>Logical key down / up</td>
+<td>Zero coordinates; Unicode or SDL named-key code; down bit 31 marks repeat</td>
+</tr>
+</tbody>
+</table>
+<p>Pointer button bits are left 1, right 2, middle 4, back 8 and forward 16.
+Logical keys preserve the keyboard layout, with ASCII shortcut letters folded to
+lowercase. Named keys use <code>0x40000000 | scancode</code>, except Space 32, Enter 13,
+Escape 27, Tab 9, Backspace 8 and Delete 127. Committed text preserves case.
+Logical keys and committed text follow physical keys in event order. Preedit text and typing
+outside the focused game surface are excluded. Unknown browser physical keys
+are omitted. Initial OS lock/modifier state, native IME activation and full native touch equivalence
+still need further work.</p>
+<p>At most 2,048 events (32 KiB) are queued. Overflow resets held input. Reads
+consume queued events, and unread events expire at the next tick. Coordinates,
+Unicode, button codes and wire lengths are validated by the host. Core,
+component, native and browser bindings use the same fixed-width little-endian
+records internally; game source uses the typed helper and never device handles.
+No new filesystem, network, window-creation or Cargo dependency access is granted.</p>
 <p>Use <code>gamepkg::draw_clear</code>, <code>draw_rect</code>, <code>draw_circle</code> and <code>draw_asset_image</code> for the host-owned viewport. Games cannot create windows or obtain GPU handles. <code>gamepkg::network_request(url, output)</code> performs an asynchronous, bounded HTTPS GET only when the signed manifest permits that exact endpoint. TCP and UDP use the same host-controlled network service. See <a href="https://github.com/centrexity/GamePKG/blob/main/docs/NETWORKING.md">networking</a>.</p>
 <p>These functions preserve the source checks, signatures, isolated compiler and Wasm restrictions. Games cannot replace the injected implementation or declare their own host imports.</p>
 <h2>Slang shaders, textures and audio</h2>
@@ -86,6 +164,11 @@ gamepkg::audio_submit(&amp;[100, -100]);
 }
 </code></pre>
 <p><code>pressed</code> detects newly pressed buttons; <code>held</code> detects continuing presses. Constants are <code>LEFT</code>, <code>RIGHT</code>, <code>UP</code>, <code>DOWN</code>, <code>A</code>, <code>B</code>, <code>X</code>, <code>Y</code>, <code>L</code>, <code>R</code>, <code>START</code>, and <code>SELECT</code>. These are digital controls; this API does not expose raw touch coordinates, pressure, controller identities, or analog values to games.</p>
+<p>Keyboard press bits ignore OS key repeat. If two keyboard bindings share an
+action (such as Left and A), it stays held until both are released and pressing
+the second binding does not create another edge. A quick press/release within
+one frame still supplies a press bit. Browser exports use the same behavior and
+held-bit layout as the desktop app; losing focus clears pending keyboard input.</p>
 <p>The desktop host uses pinned <code>gilrs 0.10.10</code> for Linux/Windows controller input and the existing <code>egui 0.31.1</code> input layer for touch. These are host dependencies, not allowed guest dependencies: games cannot open devices or windows. D-pad and the left stick map to directions with a deadzone; face buttons map by position (south=B, west=Y, east=A, north=X). Shoulder buttons, Start and Select map to their names. Multiple connected controllers contribute to the same input. The game window contains only the game. Invisible touch regions occupy the bottom third of its client area, in twelve equal columns from left to right: Left, Right, Up, Down, B, Y, A, X, L, R, Start, Select. Movement and action buttons can be held simultaneously. Losing window focus clears device input. Android controller device access and an Android GUI are not supplied by this desktop integration.</p>
 <h2>Source restrictions</h2>
 <p>Do not use aliases, renamed/wildcard imports, guest macros, closures, function pointers, dynamic dispatch, indirect calls, unsafe code, foreign declarations, binary includes, custom source paths, or direct filesystem/network/process/environment access. Do not use native-endian encoding, raw pointers, memory layout inspection, architecture-specific intrinsics or shadow primitive type names. Guest code does not receive WASI imports. All packaged Rust files are scanned, even unused files.</p>
@@ -118,6 +201,78 @@ engine_version = &quot;&gt;=0.1.13, &lt;0.2.0&quot;
 <p>A <code>.gamepkglist</code> entry can also include <code>description = "..."</code> with the same text limits. Catalog titles and descriptions are unverified preview text; after installation the signed manifest supplies the displayed information. Importing descriptions downloads no games.</p>
 <h2>Reviewed folder-backed engines</h2>
 <p>Only exact host-approved built-in engine profiles may request a <code>[game_data]</code> folder. The user selects the original installation through the system folder picker. The host remembers it for the signed game and creator, pins directory handles at launch and mounts only the declared data directories read-only. These packages must use their reviewed launcher template; extra Rust modules, C/C++ source, build scripts and dependencies are rejected. See the engine's repository documentation for its profile, source provenance, required tools and resource limits. Ordinary guest memory and image limits remain unchanged.</p>
-<p>A host-approved native selector can explicitly sign <code>game_data.user_selected_servers = true</code> together with <code>network = "multiplayer"</code>, empty endpoint lists and no static local-network grant. The host must support that exact reviewed profile. This lets the user choose an exact join or hosting address in the library or with <code>configure-network</code>; blank choices grant no networking. The host validates and pins the chosen game/server-info endpoints and requires a separate user opt-in for local/private addresses. Ordinary guest source cannot use this declaration or change these host-only choices.</p>
+<p>A host-approved native selector can explicitly sign <code>game_data.user_selected_servers = true</code> together with <code>network = "multiplayer"</code>, empty endpoint lists and no static local-network grant. The host must support that exact reviewed profile. This lets the user choose an exact join or hosting address, or explicitly delegate discovery to a chosen master, in the library or with <code>configure-network</code>; blank choices grant no networking. The host validates and pins the chosen game/server-info endpoints and requires a separate user opt-in for local/private addresses. Ordinary guest source cannot use this declaration or change these host-only choices.</p>
+<h2>Player-selected import and export</h2>
+<p>Declare each file purpose in the signed manifest. This is optional and default
+denied. It also requires <code>permissions.input = true</code>:</p>
+<pre><code class="language-toml">[[permissions.files]]
+id = &quot;patterns&quot;
+title = &quot;Level pattern text&quot;
+extensions = [&quot;txt&quot;]
+max_bytes = 1048576
+read = true
+write = true
+</code></pre>
+<p>Call <code>gamepkg::file_import(0)</code> or <code>file_export(0, "pattern.txt", bytes)</code> during a
+tick that receives a fresh focused keypress or pointer-button press. The index
+addresses the signed list above. Each action permits at most one request; held
+key repeats and later ticks do not preserve that authorization. Requests become
+visible to the host only after the tick succeeds. The desktop app opens its
+system Open/Save dialog asynchronously. Browser exports show explicit upload or
+save/download controls, requiring another player action. The CLI does not open
+dialogs. Games never receive host paths, directory access or reusable OS handles.
+This API needs the updated source host; older release binaries may not expose it.</p>
+<p>The request returns <code>Some(handle)</code> or <code>None</code> for unavailable, denied or invalid
+requests. Poll <code>file_status(handle)</code> each tick:</p>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Waiting for the player or host</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Imported file ready; <code>size</code> and <code>name_bytes</code> are available</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Export completed or handed to the browser download manager</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Player cancelled</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Request failed</td>
+</tr>
+</tbody>
+</table>
+<p><code>file_name(handle, output)</code> copies only the selected basename as UTF-8.
+<code>file_read(handle, offset, output)</code> reads at most 64 KiB from the selected
+read-only snapshot. Loop over chunks for larger inputs. Reads do not consume
+file bytes. <code>file_close(handle)</code> releases a completed request; pending requests
+cannot be closed and replaced to flood the player with dialogs. A request and
+its result belong to one running game instance. Stale replies cannot be applied
+to a replacement game. Cancellation and errors must preserve the working game data.</p>
+<p>There are at most 32 purposes, each with a unique ASCII ID, a short title and
+1–8 lowercase alphanumeric extensions. Imports are capped at 64 MiB, or the
+smaller declared limit. Export-enabled purposes are capped at 1 MiB, including
+both directions when <code>read</code> and <code>write</code> share a purpose. Only one request/result
+is retained at a time. Names must be portable basenames, without traversal,
+streams, control characters or Windows device names. Native selection rejects
+symlinks and non-regular files; exports atomically replace only the explicitly
+chosen destination. The filename supplied by the guest is a suggestion, never
+an automatic output path. No microphone, device, process or network access is
+added. The guest is responsible for validating its actual file format.</p>
+<p>These operations do not yet provide a directory/resource browser, remembered
+mod folders, streaming media resources or large recording exports. Those remain
+separate requirements for the engine ports.</p>
 <footer><a href="../support/index.html">Support GamePKG</a> · <a href="../guide/allowlist.html">Game source policy</a> · <a href="https://github.com/centrexity/GamePKG/blob/main/docs/DEVELOPING_GAMES.md">Documentation source</a> · GamePKG · Apache 2.0</footer>
 </main></body></html>

@@ -642,6 +642,7 @@ mod tests {
         local: bool,
     ) -> crate::manifest::Permissions {
         crate::manifest::Permissions {
+            files: Vec::new(),
             input: true,
             audio: true,
             save: true,

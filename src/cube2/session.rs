@@ -169,6 +169,7 @@ impl Session {
         let bytes = compile()?;
         let permissions = permissions.unwrap_or_else(|| {
             super::network::Config::from(crate::manifest::Permissions {
+                files: Vec::new(),
                 input: false,
                 audio: false,
                 save: false,
@@ -907,6 +908,7 @@ mod tests {
         }
         seed.extend(config);
         let p = crate::manifest::Permissions {
+            files: Vec::new(),
             input: true,
             audio: false,
             save: true,

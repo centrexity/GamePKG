@@ -5,6 +5,7 @@ use std::{collections::BTreeMap, fs, io::Write, path::Path};
 const SUPPORTED: &[&str] = &[
     "random_u64",
     "input_events",
+    "file_call",
     "asset_read",
     "rom_count",
     "rom_size",

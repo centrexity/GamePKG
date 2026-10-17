@@ -50,12 +50,21 @@ mounts, and no user home directory. The host injects its scoped bindings; no gue
 diagnostics. Failed sandbox setup stops the build.
 
 Core and versioned WIT component games receive only scoped asset, input,
-drawing, audio, ROM and save operations. WASI and ambient filesystem/socket
+drawing, audio, ROM, save and explicitly chosen file operations. WASI and ambient filesystem/socket
 imports are unavailable. Wasmtime enforces linear memory and epoch
 deadlines. ROM access uses an explicitly selected read-only session snapshot.
 Save writes commit only after successful ticks. Audio permission permits output
 without microphone access. Shared assets use signed hashes and private
 verified session snapshots.
+
+Optional signed file permissions declare import/export purposes, extensions and
+size limits. A fresh focused input action can request one asynchronous file
+choice. The native app uses system Open/Save dialogs; the browser uses explicit
+upload and save/download controls. Games receive selected bytes and a basename,
+without directory access or host paths. Imports reject non-regular files and
+symlinks; exports replace only the destination explicitly chosen by the player.
+Requests from failed ticks and stale game instances do not open new dialogs.
+The source code must still validate its actual data format.
 
 Optional video previews decode in a separate network-isolated process with
 bounded output. Resource-free compiled fragment shaders can render in the

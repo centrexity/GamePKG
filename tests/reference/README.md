@@ -172,4 +172,4 @@ are represented across the same 106 levels as the procedural oracle. The port
 uses sorted saved-pattern names as its stable pool order. Native and wasm32
 signed runtime fixtures verify resulting cell/color/type values, alongside
 actual editor save/load/test return, denied saving and damaged archives.
-External file import/export and original editor art/fonts remain unverified.
+This reference does not exercise file dialogs or original editor art/fonts. The signed runtime and GUI checks in tests/arkanoo.py separately cover player-selected ASCII file import/export.
