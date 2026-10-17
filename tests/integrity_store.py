@@ -104,7 +104,9 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-integrity-store-') as directory
                 return ' '.join(w['text'] for w in words),words
             def click(w,dy=0):
                 subprocess.run(['xdotool','mousemove','--window',window,str(int(w['left'])+int(w['width'])//2),str(int(w['top'])+int(w['height'])//2+dy),'click','1'],env=env,check=True)
-            text,words = screen(); click(next(w for w in words if w['text']=='Local'),20)
+            text,words = screen()
+            hint=next(w for w in words if w['text']=='Or')
+            subprocess.run(['xdotool','mousemove','--window',window,'100',str(int(hint['top'])+int(hint['height'])+20),'click','1'],env=env,check=True)
             subprocess.run(['xdotool','type','--clearmodifiers',str(store)],env=env,check=True); time.sleep(.2)
             text,words = screen(); click(next(w for w in words if w['text']=='Repair'))
             end = time.monotonic()+30
