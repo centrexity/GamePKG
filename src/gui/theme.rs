@@ -42,10 +42,10 @@ pub(super) fn apply(ctx: &egui::Context, dark: bool, scale: u16) {
     } else {
         Color32::from_rgb(190, 225, 239)
     };
-    visuals.selection.stroke = Stroke::new(1.0, text);
+    visuals.selection.stroke = Stroke::new(1.0_f32, text);
     visuals.widgets.noninteractive.bg_fill = surface;
-    visuals.widgets.noninteractive.fg_stroke = Stroke::new(1.0, muted);
-    visuals.widgets.noninteractive.bg_stroke = Stroke::new(1.0, border);
+    visuals.widgets.noninteractive.fg_stroke = Stroke::new(1.0_f32, muted);
+    visuals.widgets.noninteractive.bg_stroke = Stroke::new(1.0_f32, border);
     for widget in [
         &mut visuals.widgets.inactive,
         &mut visuals.widgets.hovered,
@@ -54,17 +54,17 @@ pub(super) fn apply(ctx: &egui::Context, dark: bool, scale: u16) {
     ] {
         widget.bg_fill = raised;
         widget.weak_bg_fill = raised;
-        widget.fg_stroke = Stroke::new(1.0, text);
-        widget.bg_stroke = Stroke::new(1.0, border);
+        widget.fg_stroke = Stroke::new(1.0_f32, text);
+        widget.bg_stroke = Stroke::new(1.0_f32, border);
         widget.corner_radius = 8.into();
     }
-    visuals.widgets.hovered.bg_stroke = Stroke::new(1.5, visuals.hyperlink_color);
+    visuals.widgets.hovered.bg_stroke = Stroke::new(1.5_f32, visuals.hyperlink_color);
     visuals.widgets.active.bg_fill = if dark {
         Color32::from_rgb(24, 100, 145)
     } else {
         Color32::from_rgb(190, 225, 239)
     };
-    visuals.widgets.active.fg_stroke = Stroke::new(1.0, text);
+    visuals.widgets.active.fg_stroke = Stroke::new(1.0_f32, text);
     style.visuals = visuals;
     style.wrap_mode = Some(egui::TextWrapMode::Wrap);
     style.spacing.item_spacing = egui::vec2(12.0, 12.0);
@@ -144,14 +144,14 @@ pub(super) fn cover(ui: &mut egui::Ui, id: &str, size: f32) -> egui::Response {
             left - egui::vec2(size * 0.07, 0.0),
             left + egui::vec2(size * 0.07, 0.0),
         ],
-        Stroke::new(3.0, dark),
+        Stroke::new(3.0_f32, dark),
     );
     painter.line_segment(
         [
             left - egui::vec2(0.0, size * 0.07),
             left + egui::vec2(0.0, size * 0.07),
         ],
-        Stroke::new(3.0, dark),
+        Stroke::new(3.0_f32, dark),
     );
     for offset in [
         egui::vec2(size * 0.14, size * 0.04),
@@ -160,7 +160,12 @@ pub(super) fn cover(ui: &mut egui::Ui, id: &str, size: f32) -> egui::Response {
         painter.circle_filled(body.center() + offset, size * 0.035, dark);
     }
     if response.hovered() {
-        painter.rect_stroke(rect, 12, Stroke::new(2.0, accent), egui::StrokeKind::Inside);
+        painter.rect_stroke(
+            rect,
+            12,
+            Stroke::new(2.0_f32, accent),
+            egui::StrokeKind::Inside,
+        );
     }
     response
 }

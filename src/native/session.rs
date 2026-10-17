@@ -315,8 +315,12 @@ impl Session {
                     self.audio.len() + b.len() / 2 <= 1600,
                     "audio budget exceeded"
                 );
-                self.audio
-                    .extend(b.chunks_exact(2).map(|s| i16::from_le_bytes([s[0], s[1]])));
+                self.audio.extend(
+                    b.as_chunks::<2>()
+                        .0
+                        .iter()
+                        .map(|s| i16::from_le_bytes([s[0], s[1]])),
+                );
                 true
             }
             13 => {

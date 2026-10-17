@@ -16,7 +16,7 @@ pub fn validate_wad(wad: &[u8]) -> Result<()> {
         bail!("invalid DOOM WAD directory");
     }
     let mut level = false;
-    for entry in wad[offset..offset + count * 16].chunks_exact(16) {
+    for entry in wad[offset..offset + count * 16].as_chunks::<16>().0 {
         let start = u32::from_le_bytes(entry[..4].try_into()?) as usize;
         let length = u32::from_le_bytes(entry[4..8].try_into()?) as usize;
         if start > wad.len() || length > wad.len() - start {
@@ -322,7 +322,7 @@ impl Doom {
         let p = self.pixels.call(&mut self.store, ())?;
         let mut pixels = vec![0u8; 320 * 200 * 4];
         self.memory.read(&self.store, p as usize, &mut pixels)?;
-        for pixel in pixels.chunks_exact_mut(4) {
+        for pixel in pixels.as_chunks_mut::<4>().0 {
             pixel.swap(0, 2);
             pixel[3] = 255;
         }
@@ -330,7 +330,9 @@ impl Doom {
         let mut pcm = vec![0u8; 1600];
         self.memory.read(&self.store, p as usize, &mut pcm)?;
         let audio = pcm
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|b| i16::from_le_bytes([b[0], b[1]]))
             .collect();
         let save = if self.dirty.call(&mut self.store, ())? != 0 {

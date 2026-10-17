@@ -121,9 +121,11 @@ pub(super) fn compile(root: &Path, id: &str) -> Result<()> {
     #[cfg(target_pointer_width = "32")]
     allowed.extend([
         libc::SYS_mmap2,
-        libc::SYS_clock_gettime64,
-        libc::SYS_clock_nanosleep_time64,
-        libc::SYS_futex_time64,
+        // Linux i386 and ARM use the same time64 syscall numbers. libc
+        // does not export these names for every supported 32-bit target.
+        403, // clock_gettime64
+        407, // clock_nanosleep_time64
+        422, // futex_time64
         libc::SYS_fstat64,
         libc::SYS_fcntl64,
     ]);

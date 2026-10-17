@@ -85,7 +85,7 @@ fn real_wad_gameplay_audio_save_and_reload() {
         })
         .unwrap();
     assert_eq!(image.pixels().len(), 320 * 200 * 4);
-    let unique: std::collections::BTreeSet<_> = image.pixels().chunks_exact(4).collect();
+    let unique: std::collections::BTreeSet<_> = image.pixels().as_chunks::<4>().0.iter().collect();
     assert!(unique.len() > 64, "gameplay frame is blank");
     if let Some(path) = std::env::var_os("GAMEPKG_DOOM_PROOF") {
         image::save_buffer(path, image.pixels(), 320, 200, image::ColorType::Rgba8).unwrap();

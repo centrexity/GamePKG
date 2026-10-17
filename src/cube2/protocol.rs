@@ -269,7 +269,9 @@ pub fn read_frame(mut reader: impl Read) -> Result<Frame> {
     let mut pcm = vec![0; samples as usize * 2];
     reader.read_exact(&mut pcm)?;
     let audio = pcm
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|s| i16::from_le_bytes([s[0], s[1]]))
         .collect();
     let stride = width as usize * 4;
@@ -277,7 +279,7 @@ pub fn read_frame(mut reader: impl Read) -> Result<Frame> {
         let (top, bottom) = rgba.split_at_mut((height as usize - 1 - y) * stride);
         top[y * stride..(y + 1) * stride].swap_with_slice(&mut bottom[..stride]);
     }
-    for pixel in rgba.chunks_exact_mut(4) {
+    for pixel in rgba.as_chunks_mut::<4>().0 {
         pixel[3] = 255;
     }
     Ok(Frame {
