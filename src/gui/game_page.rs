@@ -138,7 +138,7 @@ impl App {
             });
             ui.add_space(16.0);
             if let Some(m)=self.manifest.as_ref() {
-                if let Some(description)=&m.description {egui::ScrollArea::vertical().id_salt("description").max_height(160.0).show(ui,|ui|{ui.label(description);});ui.add_space(8.0);}
+                if let Some(description)=&m.description {ui.label(description);ui.add_space(8.0);}
                 if let Some(author)=&m.author {ui.label(format!("By {author}"));}
                 if !m.genres.is_empty() {ui.label(m.genres.join("  •  "));}
                 if let Some(url)=&m.homepage {ui.hyperlink_to("Project website",url);}
@@ -194,10 +194,8 @@ impl App {
             }
             if let Some(notice)=self.updates.notices.get(&id){match notice {crate::updates::Notice::Available(version)=>{ui.label(format!("Update {version} available"));},crate::updates::Notice::Current=>{ui.label("Up to date");},crate::updates::Notice::Failed(error)=>{ui.label("Update check failed").on_hover_text(error);}}}
             ui.add_space(12.0);ui.label(&self.status);
-            egui::ScrollArea::vertical().id_salt("game-page-content").show(ui,|ui|{
-                if self.pending.is_none(){self.game_rom_editor(ui);self.game_data_editor(ui);self.game_network_editor(ui);}
-                self.game_details(ui,ctx);
-            });
+            if self.pending.is_none(){self.game_rom_editor(ui);self.game_data_editor(ui);self.game_network_editor(ui);}
+            self.game_details(ui,ctx);
             });
         });
     }
@@ -304,78 +302,172 @@ impl App {
     }
     fn game_details(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         if let Some(m) = self.manifest.clone() {
-            egui::ScrollArea::vertical().id_salt("game-details").max_height((ui.available_height() - 35.0).max(100.0)).show(ui, |ui| {
-                ui.separator(); ui.heading("About this game"); ui.label(format!("Version: {}", m.version));
-                ui.label(format!("Memory: {:.1} MiB recommended • {:.1} MiB hard limit", m.limits.recommended_memory_bytes() as f64 / 1048576.0, m.limits.hard_memory_bytes as f64 / 1048576.0));
-                ui.label(if m.requires_rom { format!("Requires {} ROM file(s) supplied by you. They are not included in this package.",m.required_rom_count()) } else if m.game_data.is_some(){"Original game-data folder required (read-only).".into()} else { "No user ROM required.".into() });
-                for (index,rom) in m.roms.iter().enumerate() {ui.label(format!("ROM {}: {} ({})",index+1,rom.title,rom.id));}
-                let package_size = self.pending.as_ref().and_then(|file| file.as_file().metadata().ok()).map(|m|m.len()).or_else(||self.usage.get(&m.id).map(|u|u.package_bytes));
-                ui.label(format!("Storage: {} package; {} expected after building", package_size.map(crate::storage::bytes).unwrap_or_else(||"Unknown".into()), m.limits.recommended_storage_bytes.map(|v|v.max(package_size.unwrap_or(0))).map(crate::storage::bytes).unwrap_or_else(||"Unknown (no creator estimate)".into())));
-                ui.label(format!("Creator fingerprint: {}", crate::verify::digest(&hex::decode(&m.creator_key).unwrap_or_default())));
-                ui.label("A valid signature proves key ownership, not a real-world identity. Confirm the creator before first installation.");
-                if !m.achievements.is_empty() {
-                    let same_creator=self.installed.iter().any(|old|old.id==m.id && old.creator_key==m.creator_key);
-                    let record=if same_creator { self.history.get(&m.id) } else { None };
-                    egui::CollapsingHeader::new("Achievements").default_open(true).show(ui, |ui| {
+            ui.separator();
+            ui.heading("About this game");
+            ui.label(format!("Version: {}", m.version));
+            ui.label(format!(
+                "Memory: {:.1} MiB recommended • {:.1} MiB hard limit",
+                m.limits.recommended_memory_bytes() as f64 / 1048576.0,
+                m.limits.hard_memory_bytes as f64 / 1048576.0
+            ));
+            ui.label(if m.requires_rom { format!("Requires {} ROM file(s) supplied by you. They are not included in this package.",m.required_rom_count()) } else if m.game_data.is_some(){"Original game-data folder required (read-only).".into()} else { "No user ROM required.".into() });
+            for (index, rom) in m.roms.iter().enumerate() {
+                ui.label(format!("ROM {}: {} ({})", index + 1, rom.title, rom.id));
+            }
+            let package_size = self
+                .pending
+                .as_ref()
+                .and_then(|file| file.as_file().metadata().ok())
+                .map(|m| m.len())
+                .or_else(|| self.usage.get(&m.id).map(|u| u.package_bytes));
+            ui.label(format!(
+                "Storage: {} package; {} expected after building",
+                package_size
+                    .map(crate::storage::bytes)
+                    .unwrap_or_else(|| "Unknown".into()),
+                m.limits
+                    .recommended_storage_bytes
+                    .map(|v| v.max(package_size.unwrap_or(0)))
+                    .map(crate::storage::bytes)
+                    .unwrap_or_else(|| "Unknown (no creator estimate)".into())
+            ));
+            ui.label(format!(
+                "Creator fingerprint: {}",
+                crate::verify::digest(&hex::decode(&m.creator_key).unwrap_or_default())
+            ));
+            ui.label("A valid signature proves key ownership, not a real-world identity. Confirm the creator before first installation.");
+            if !m.achievements.is_empty() {
+                let same_creator = self
+                    .installed
+                    .iter()
+                    .any(|old| old.id == m.id && old.creator_key == m.creator_key);
+                let record = if same_creator {
+                    self.history.get(&m.id)
+                } else {
+                    None
+                };
+                egui::CollapsingHeader::new("Achievements")
+                    .default_open(true)
+                    .show(ui, |ui| {
                         ui.label("Local progress reported by this game.");
-                        egui::ScrollArea::vertical().id_salt("achievement-details").max_height(160.0).show(ui, |ui| {
-                            for achievement in &m.achievements {
-                                let status=match record { Some(record) if record.unlocked.contains_key(&achievement.id) => "Unlocked", Some(_) => "Locked", None if same_creator => "Unavailable", None => "Locked" };
-                                ui.strong(format!("{status} — {}", achievement.title));
-                                ui.label(&achievement.description);
-                            }
-                        });
+                        for achievement in &m.achievements {
+                            let status = match record {
+                                Some(record) if record.unlocked.contains_key(&achievement.id) => {
+                                    "Unlocked"
+                                }
+                                Some(_) => "Locked",
+                                None if same_creator => "Unavailable",
+                                None => "Locked",
+                            };
+                            ui.strong(format!("{status} — {}", achievement.title));
+                            ui.label(&achievement.description);
+                        }
+                    });
+            }
+            if !m.shared_assets.is_empty() {
+                ui.label(format!(
+                    "Shared store assets: {} (must be available locally to install and play)",
+                    m.shared_assets.len()
+                ));
+            }
+            ui.label(format!(
+                "Runtime: {} • Entry world: {}",
+                m.runtime_profile, m.entry_world
+            ));
+            ui.label(format!(
+                "Engine requirement: {} • Save schema: {}",
+                m.engine_version, m.save_schema
+            ));
+            if self.pending.is_some()
+                && self
+                    .installed
+                    .iter()
+                    .any(|old| old.id == m.id && old.save_schema != m.save_schema)
+            {
+                ui.label("This update uses a different save format. A separate save starts; your earlier save is kept.");
+            }
+            if self.pending.is_none() {
+                if let Some(notice) = self.package_notices.get(&m.id) {
+                    egui::CollapsingHeader::new("Credits and licenses").show(ui, |ui| {
+                        ui.add(egui::Label::new(notice).selectable(true).wrap());
                     });
                 }
-                if !m.shared_assets.is_empty() { ui.label(format!("Shared store assets: {} (must be available locally to install and play)", m.shared_assets.len())); }
-                ui.label(format!("Runtime: {} • Entry world: {}",m.runtime_profile,m.entry_world));
-                ui.label(format!("Engine requirement: {} • Save schema: {}",m.engine_version,m.save_schema));
-                if self.pending.is_some() && self.installed.iter().any(|old| old.id == m.id && old.save_schema != m.save_schema) {
-                    ui.label("This update uses a different save format. A separate save starts; your earlier save is kept.");
-                }
-                if self.pending.is_none() {
-                    if let Some(notice)=self.package_notices.get(&m.id) {
-                        egui::CollapsingHeader::new("Credits and licenses").show(ui,|ui| {
-                            egui::ScrollArea::vertical().id_salt("package-notice").max_height(260.0).show(ui,|ui| {
-                                ui.add(egui::Label::new(notice).selectable(true).wrap());
-                            });
+            }
+            ui.label(format!(
+                "Lockfile / dependency inventory SHA-256: {}",
+                m.lockfile_sha256
+            ));
+            ui.label(format!(
+                "Permissions: input={}, audio={}, save={}, network={}",
+                m.permissions.input, m.permissions.audio, m.permissions.save, m.permissions.network
+            ));
+            if m.uses_selected_servers() {
+                ui.label("Network permission: your chosen server or hosting addresses, plus servers listed by a master you explicitly select. Blank choices keep it offline.");
+            } else if m.permissions.network != "none" {
+                ui.label(format!(
+                    "Network endpoints: {}. Listening: {}. Local network: {}",
+                    m.permissions.network_hosts.join(", "),
+                    m.permissions.network_listen.join(", "),
+                    m.permissions.network_allow_local
+                ));
+            }
+            if let Some(url) = &m.update_url {
+                ui.label(format!("Updates: {url}"));
+            }
+            let preview_id = m.id.clone();
+            ui.horizontal(|ui| {
+                for (label, prefer_theora) in
+                    [("Play preview", false), ("Play Theora fallback", true)]
+                {
+                    if ui
+                        .add_enabled(self.result.is_none(), egui::Button::new(label))
+                        .clicked()
+                    {
+                        self.preview = None;
+                        let snapshot = self.pending.as_ref().and_then(|file| file.reopen().ok());
+                        let id = preview_id.clone();
+                        self.begin_work(move || {
+                            let mut copy = tempfile::NamedTempFile::new()?;
+                            let mut input = match snapshot {
+                                Some(file) => file,
+                                None => std::fs::File::open(
+                                    crate::registry::default_root()?.join(format!("{id}.gamepkg")),
+                                )?,
+                            };
+                            std::io::copy(
+                                &mut std::io::Read::take(&mut input, crate::archive::MAX_TOTAL + 1),
+                                &mut copy,
+                            )?;
+                            let mut pkg = crate::archive::Package::open(copy.path())?;
+                            crate::verify::verify_embedded(&mut pkg)?;
+                            let name =
+                                if !prefer_theora && pkg.entries.contains_key("preview.av1.webm") {
+                                    "preview.av1.webm"
+                                } else {
+                                    "preview.ogv"
+                                };
+                            Ok(Work::Preview(crate::previews::decode(
+                                name,
+                                &pkg.read(name)?,
+                            )?))
                         });
                     }
                 }
-                ui.label(format!("Lockfile / dependency inventory SHA-256: {}",m.lockfile_sha256));
-                ui.label(format!("Permissions: input={}, audio={}, save={}, network={}", m.permissions.input, m.permissions.audio, m.permissions.save, m.permissions.network));
-                if m.uses_selected_servers() {ui.label("Network permission: your chosen server or hosting addresses, plus servers listed by a master you explicitly select. Blank choices keep it offline.");}
-                else if m.permissions.network != "none" {ui.label(format!("Network endpoints: {}. Listening: {}. Local network: {}",m.permissions.network_hosts.join(", "),m.permissions.network_listen.join(", "),m.permissions.network_allow_local));}
-                if let Some(url) = &m.update_url { ui.label(format!("Updates: {url}")); }
-                let preview_id = m.id.clone();
-                ui.horizontal(|ui| {
-                    for (label, prefer_theora) in [("Play preview", false), ("Play Theora fallback", true)] {
-                        if ui.add_enabled(self.result.is_none(), egui::Button::new(label)).clicked() {
-                            self.preview = None;
-                            let snapshot = self.pending.as_ref().and_then(|file| file.reopen().ok());
-                            let id = preview_id.clone();
-                            self.begin_work(move || {
-                                let mut copy = tempfile::NamedTempFile::new()?;
-                                let mut input = match snapshot { Some(file) => file, None => std::fs::File::open(crate::registry::default_root()?.join(format!("{id}.gamepkg")))? };
-                                std::io::copy(&mut std::io::Read::take(&mut input, crate::archive::MAX_TOTAL + 1), &mut copy)?;
-                                let mut pkg = crate::archive::Package::open(copy.path())?;
-                                crate::verify::verify_embedded(&mut pkg)?;
-                                let name = if !prefer_theora && pkg.entries.contains_key("preview.av1.webm") { "preview.av1.webm" } else { "preview.ogv" };
-                                Ok(Work::Preview(crate::previews::decode(name, &pkg.read(name)?)?))
-                            });
-                        }
-                    }
-                });
-                let mut stop_preview = false;
-                if let Some((frames, start, texture)) = &mut self.preview {
-                    let index = ((start.elapsed().as_millis() / 200) as usize).min(frames.len() - 1);
-                    texture.set(egui::ColorImage::from_rgb([320, 240], &frames[index]), egui::TextureOptions::LINEAR);
-                    ui.image((texture.id(), egui::vec2(320.0, 240.0)));
-                    ctx.request_repaint_after(std::time::Duration::from_millis(200));
-                    stop_preview = ui.button("Close preview").clicked();
-                }
-                if stop_preview { self.preview = None; }
-                });
+            });
+            let mut stop_preview = false;
+            if let Some((frames, start, texture)) = &mut self.preview {
+                let index = ((start.elapsed().as_millis() / 200) as usize).min(frames.len() - 1);
+                texture.set(
+                    egui::ColorImage::from_rgb([320, 240], &frames[index]),
+                    egui::TextureOptions::LINEAR,
+                );
+                ui.image((texture.id(), egui::vec2(320.0, 240.0)));
+                ctx.request_repaint_after(std::time::Duration::from_millis(200));
+                stop_preview = ui.button("Close preview").clicked();
+            }
+            if stop_preview {
+                self.preview = None;
+            }
             if self.pending.is_some()
                 && self.result.is_none()
                 && ui.button("Cancel package review").clicked()
