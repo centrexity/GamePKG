@@ -41,3 +41,19 @@ The fixture records full-file and fragment hashes. Expected vectors use original
 units; port tests compare at the port's half velocity/spin scale. This proves
 the force-law fragment, not full collision/world-geometry equivalence. Python
 and the reference compiler harness are maintainer-only tools.
+
+Arkanoo ball-contact oracle:
+
+```sh
+python3 tests/reference/arkanoo_contacts.py /path/to/pinned/arkanoo > tests/fixtures/arkanoo-contacts.json
+cargo test --test game_arkanoo
+```
+
+This extracts and compiles the original contact block without changing its
+collision logic. Minimal stand-ins record particle counts and ignore audio.
+Seven cases cover overlap, strict touching boundaries, exact coincidences,
+multiple simultaneous pairs, portal exclusion and diagonal distance. Fixtures
+use original top-left coordinates; tests convert to half-scale ball centers.
+The oracle proves contact responses, not full world geometry, collision ordering
+or particle rendering/lifetime parity. The Python script is a maintainer tool;
+players do not need Python.

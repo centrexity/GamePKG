@@ -134,3 +134,24 @@ fn portal_threshold_orbit_gravity_and_delayed_transition_reach_the_real_renderer
     assert_eq!((next >> 16) & 255, 2);
     game.finish().unwrap();
 }
+
+#[test]
+#[ignore = "requires the production-physics fixture prepared by tests/arkanoo.py"]
+fn multiball_ejection_and_shockwave_reach_the_real_renderer() {
+    let root = std::path::PathBuf::from(std::env::var_os("GAMEPKG_ARKANOO_TEST_ROOT").unwrap());
+    let mut game = Game::load(&root, "com.gamepkg.arkanoo-modes").unwrap();
+    let state = game.step(4096).unwrap();
+    assert_eq!(
+        state & 8,
+        8,
+        "original upward/separating response did not run"
+    );
+    assert_eq!(state & 1, 0, "contact incorrectly activated the portal");
+    let shockwave = game
+        .frame()
+        .commands
+        .iter()
+        .filter(|command| matches!(command, Command::Rect { rgba, .. } if *rgba == 0xc8ffffff))
+        .count();
+    assert_eq!(shockwave, 36, "missing original 36-particle shockwave");
+}

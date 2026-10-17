@@ -300,3 +300,118 @@ fn scaled_force_steps_match_the_compiled_pinned_upstream_fragment() {
         }
     }
 }
+
+fn collision_ball(x: f32, y: f32, vx: f32, vy: f32) -> physics::Ball {
+    physics::Ball {
+        x,
+        y,
+        vx,
+        vy,
+        spin: 7.0,
+        attached: false,
+    }
+}
+
+#[test]
+fn ball_contacts_restore_original_upward_ejection_and_shockwave() {
+    let mut game = physics::Game::new();
+    game.balls = vec![
+        collision_ball(100.0, 200.0, 8.0, 2.0),
+        collision_ball(105.0, 200.0, -9.0, -6.0),
+    ];
+    game.collide_balls();
+    assert_eq!((game.balls[0].vx, game.balls[0].vy), (-2.5, -4.0));
+    assert_eq!((game.balls[1].vx, game.balls[1].vy), (2.5, -6.0));
+    assert_eq!(game.balls[0].spin, 7.0);
+    assert_eq!(game.particles.len(), 36);
+    assert_eq!(game.sound, 1);
+    for particle in &game.particles {
+        assert_eq!((particle.x, particle.y), (102.5, 200.0));
+        assert_eq!(particle.color, 0xc8ffffff);
+        assert!((particle.vx.hypot(particle.vy) - 3.0).abs() < 0.00001);
+    }
+}
+
+#[test]
+fn ball_contacts_keep_strict_distance_and_original_coincident_response() {
+    let mut game = physics::Game::new();
+    game.balls = vec![
+        collision_ball(100.0, 200.0, 1.0, 2.0),
+        collision_ball(106.0, 200.0, -1.0, 3.0),
+    ];
+    game.collide_balls();
+    assert!(game.particles.is_empty());
+    assert_eq!(game.balls[0].vx, 1.0);
+    game.balls[1].x = 100.0;
+    game.collide_balls();
+    // The unchanged original sends exact coincidences right, not NaN/random.
+    assert_eq!((game.balls[0].vx, game.balls[1].vx), (2.5, 2.5));
+    assert_eq!(game.particles.len(), 36);
+}
+
+#[test]
+fn ball_contacts_snapshot_all_pairs_and_skip_portal_or_lost_balls() {
+    let mut game = physics::Game::new();
+    game.balls = vec![
+        collision_ball(100.0, 200.0, 1.0, 2.0),
+        collision_ball(102.0, 200.0, -1.0, 3.0),
+        collision_ball(104.0, 200.0, 9.0, 10.0),
+    ];
+    game.portal = true;
+    game.collide_balls();
+    assert!(game.particles.is_empty());
+    game.portal = false;
+    game.collide_balls();
+    assert_eq!(game.particles.len(), 108);
+    assert_eq!(
+        game.balls
+            .iter()
+            .map(|ball| (ball.vx, ball.vy))
+            .collect::<Vec<_>>(),
+        vec![(-2.5, -4.0), (-2.5, -4.0), (2.5, -10.0)]
+    );
+    game.particles.clear();
+    for ball in &mut game.balls {
+        ball.y = 490.0;
+    }
+    game.collide_balls();
+    assert!(game.particles.is_empty());
+}
+
+#[test]
+fn contacts_match_unchanged_pinned_original_block() {
+    let reference: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-contacts.json")).unwrap();
+    for fixture in reference["fixtures"].as_array().unwrap() {
+        let mut game = physics::Game::new();
+        game.portal = fixture["portal"].as_bool().unwrap();
+        game.balls.clear();
+        for ball in fixture["balls"].as_array().unwrap() {
+            // Original coordinates are top-left; the port uses half-scale centers.
+            game.balls.push(collision_ball(
+                ball[0].as_f64().unwrap() as f32 * 0.5 + 3.0,
+                ball[1].as_f64().unwrap() as f32 * 0.5 + 3.0,
+                ball[2].as_f64().unwrap() as f32 * 0.5,
+                ball[3].as_f64().unwrap() as f32 * 0.5,
+            ));
+        }
+        game.collide_balls();
+        for (ball, expected) in game
+            .balls
+            .iter()
+            .zip(fixture["expected"].as_array().unwrap())
+        {
+            assert_eq!(
+                [ball.vx * 2.0, ball.vy * 2.0],
+                [
+                    expected[0].as_f64().unwrap() as f32,
+                    expected[1].as_f64().unwrap() as f32
+                ]
+            );
+        }
+        assert_eq!(
+            game.particles.len(),
+            fixture["particles"].as_u64().unwrap() as usize
+        );
+    }
+}

@@ -44,8 +44,14 @@ static GAME:Mutex<Option<physics::Game>>=Mutex::new(None);
 pub fn game_tick(input:u32,state:u64)->u64 {
  if let Ok(mut slot)=GAME.lock(){
   if slot.is_none(){let mut game=physics::Game::new();game.mode=1;game.blocks=[0;200];game.blocks[0]=1;game.balls[0].attached=false;game.balls[0].vx=30.0;game.balls[0].vy=0.0;*slot=Some(game);}
-  if let Some(game)=slot.as_mut(){if input&64!=0 {game.blocks=[0;200];}game.update(input);render::draw(game);
-   return (u64::from(game.score)<<32)|u64::from(game.portal)|(u64::from(game.gravity)<<1)|(u64::from(game.mode==3)<<2)|(u64::from(game.lives)<<8)|(u64::from(game.level)<<16);
+  if let Some(game)=slot.as_mut(){
+   if input&4096!=0 {game.portal=false;game.gravity=false;game.max_speed=0.0;game.mode=1;game.particles.clear();game.balls.clear();
+    game.balls.push(physics::Ball{x:100.0,y:250.0,vx:1.0,vy:2.0,spin:0.0,attached:false});
+    game.balls.push(physics::Ball{x:104.0,y:250.0,vx:-1.0,vy:-2.0,spin:0.0,attached:false});
+   }
+   if input&64!=0 {game.blocks=[0;200];}game.update(input);render::draw(game);
+   let contact=game.balls.len()==2 && game.balls[0].vx == -2.5 && game.balls[1].vx == 2.5 && game.balls[0].vy == -4.0 && game.balls[1].vy == -4.0;
+   return (u64::from(game.score)<<32)|u64::from(game.portal)|(u64::from(game.gravity)<<1)|(u64::from(game.mode==3)<<2)|(u64::from(contact)<<3)|(u64::from(game.lives)<<8)|(u64::from(game.level)<<16);
   }
  }state
 }''')
