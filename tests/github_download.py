@@ -164,9 +164,14 @@ print('200', end='')
                                env=env, check=True)
 
             text, words = screen()
-            label = next(w for w in words if w['text'] == 'Local')
+            # The field follows the drop hint, rather than the Local label.
+            # Its low-contrast placeholder is not reliably recognized by OCR.
+            hint = next(w for w in words if w['text'] == 'Or')
             subprocess.run(['xdotool', 'windowfocus', '--sync', window], env=env, check=True)
-            click(label, 20)
+            subprocess.run(['xdotool', 'mousemove', '--window', window, '100',
+                            str(int(hint['top']) + int(hint['height']) + 20), 'click', '1'],
+                           env=env, check=True)
+            subprocess.run(['xdotool', 'key', '--clearmodifiers', 'ctrl+a'], env=env, check=True)
             subprocess.run(['xdotool', 'type', '--clearmodifiers', '--delay', '20', URL], env=env, check=True)
             time.sleep(.2)
             text, words = screen()

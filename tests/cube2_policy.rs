@@ -95,7 +95,9 @@ fn data_folder_locations_are_scoped_and_failed_changes_preserve_records() {
         gamepkg::game_data::load(library.path(), &manifest)
             .unwrap()
             .unwrap(),
-        data.path()
+        // macOS temporary paths may start at /var, a link to /private/var.
+        // Remembered selections deliberately store the resolved path.
+        std::fs::canonicalize(data.path()).unwrap()
     );
     manifest.creator_key = "11".repeat(32);
     assert!(gamepkg::game_data::load(library.path(), &manifest)
