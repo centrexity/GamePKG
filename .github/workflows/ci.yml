@@ -188,7 +188,7 @@ jobs:
       - name: Verify desktop Settings preference persistence and cancellation
         if: matrix.features == '--all-features'
         run: python3 tests/settings_gui.py
-      - name: Verify app update download, integrity failure, installation and restart
+      - name: Verify startup update notice, saved opt-out, installation and restart
         if: matrix.features == '--all-features'
         run: python3 tests/app_updates_gui.py
       - name: Verify signed and catalog game descriptions

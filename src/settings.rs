@@ -30,6 +30,7 @@ pub struct Settings {
     pub mute_audio: bool,
     pub audio_volume: u8,
     pub automatic_update_checks: bool,
+    pub check_app_updates_on_startup: bool,
     pub update_interval_hours: u64,
 }
 impl Default for Settings {
@@ -55,6 +56,7 @@ impl Default for Settings {
             mute_audio: false,
             audio_volume: 50,
             automatic_update_checks: true,
+            check_app_updates_on_startup: true,
             update_interval_hours: 24,
         }
     }

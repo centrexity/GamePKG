@@ -17,6 +17,7 @@ fn settings_persist_and_failed_saves_preserve_previous_values() {
     settings.mute_audio = true;
     settings.audio_volume = 20;
     settings.automatic_update_checks = false;
+    settings.check_app_updates_on_startup = false;
     settings.update_interval_hours = 12;
     settings.save(&path).unwrap();
     assert_eq!(Settings::read(&path).unwrap(), settings);
@@ -24,6 +25,15 @@ fn settings_persist_and_failed_saves_preserve_previous_values() {
     settings.tor_proxy = "8.8.8.8:9050".into();
     assert!(settings.save(&path).is_err());
     assert_eq!(std::fs::read(path).unwrap(), before);
+}
+#[test]
+fn app_startup_checks_default_on_for_existing_configs_and_are_independent_of_game_checks() {
+    let settings: Settings = toml::from_str("automatic_update_checks = false\n").unwrap();
+    assert!(settings.check_app_updates_on_startup);
+    assert!(!settings.automatic_update_checks);
+    let settings: Settings = toml::from_str("check_app_updates_on_startup = false\n").unwrap();
+    assert!(!settings.check_app_updates_on_startup);
+    assert!(settings.automatic_update_checks);
 }
 #[test]
 fn settings_validate_bounds_and_reject_unknown_or_large_files() {

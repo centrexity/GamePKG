@@ -4,7 +4,7 @@ Only HTTPS transport is replaced with local release fixtures. No user's library
 or installed copy is used. The updated launcher writes a restart receipt.
 """
 from pathlib import Path
-import hashlib, io, json, os, subprocess, tarfile, tempfile, time
+import hashlib, io, json, os, subprocess, tarfile, tempfile, time, tomllib
 from gui_test_support import start_display, click_text, choose_native_file, game_window
 project = Path(__file__).resolve().parents[1]
 with tempfile.TemporaryDirectory(prefix='gamepkg-app-update-gui-') as directory:
@@ -32,6 +32,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-app-update-gui-') as directory:
 import os,sys,shutil
 from pathlib import Path
 args=sys.argv[1:]; url=args[args.index('--url')+1]
+with (Path(os.environ['GAMEPKG_UPDATE_FIXTURES'])/'requests').open('a') as log: log.write(url+'\\n')
 source='metadata' if url.endswith('/latest') else 'checksum' if url.endswith('.sha256') else 'release.tar.gz'
 shutil.copyfile(Path(os.environ['GAMEPKG_UPDATE_FIXTURES'])/source,args[args.index('--output')+1])
 Path(args[args.index('--dump-header')+1]).write_text('HTTP/2 200\\r\\n\\r\\n')
@@ -43,6 +44,20 @@ print('200',end='')
     app=subprocess.Popen([str(Path(os.environ.get('GAMEPKG_TEST_BINARY_DIR',project/'target/release'))/'gamepkg-gui')],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
     try:
         window,_=game_window(env,'GamePKG')
+        # Default-on startup check announces the newer release without a manual check.
+        click_text(window,env,'Review app update',root,max_y=800)
+        time.sleep(.5)
+        click_text(window,env,'Check for app updates when GamePKG opens',root,max_y=650)
+        click_text(window,env,'Save settings',root)
+        assert tomllib.loads(config.read_text())['check_app_updates_on_startup'] is False
+        app.terminate(); app.wait(timeout=10)
+        requests=(root/'requests').read_text()
+        assert requests.count('/latest')==1, requests
+        # Persisted opt-out must suppress the next startup request entirely.
+        app=subprocess.Popen([str(Path(os.environ.get('GAMEPKG_TEST_BINARY_DIR',project/'target/release'))/'gamepkg-gui')],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+        window,_=game_window(env,'GamePKG')
+        time.sleep(1.5)
+        assert (root/'requests').read_text()==requests, 'Disabled startup check made a network request'
         click_text(window,env,'Settings',root,max_y=60)
         time.sleep(.5)
         click_text(window,env,'Check for GamePKG updates',root,max_y=650)
@@ -69,7 +84,7 @@ print('200',end='')
         assert marker.read_text()=='restarted', 'New version was not launched'
         assert (library/'keep').read_text()=='keep my library'
         assert (destination/package/'bin/gamepkg-gui').is_file()
-        print('App updater GUI passed: newer release, native folder picker, corrupt download rejection/cleanup, retry, install, restart, preserved library.')
+        print('App updater GUI passed: automatic startup notice, review action, saved opt-out across restart, manual checks while disabled, newer release, native folder picker, corrupt download rejection/cleanup, retry, install, restart, preserved library.')
     finally:
         if app.poll() is None: app.terminate(); app.wait(timeout=10)
         display.terminate(); display.wait(timeout=10)

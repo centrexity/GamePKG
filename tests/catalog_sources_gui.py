@@ -16,7 +16,7 @@ if url not in responses:sys.exit(23)
 pathlib.Path(args[args.index('--output')+1]).write_text(responses[url]);print('200',end='')
 ''');(tools/'curl').chmod(0o755)
  env=dict(os.environ,LIST_FIXTURE=str(root),PATH=str(tools)+os.pathsep+os.environ['PATH'],GAMEPKG_HOME=str(home),GAMEPKG_CONFIG=str(root/'settings.toml'));env.pop('WAYLAND_DISPLAY',None)
- (root/'settings.toml').write_text('automatic_update_checks=false\n');(root/'key').write_text('49'*32)
+ (root/'settings.toml').write_text('automatic_update_checks=false\ncheck_app_updates_on_startup=false\n');(root/'key').write_text('49'*32)
  def cli(*args):
   result=subprocess.run([str(PROJECT/'target/release/gamepkg'),*map(str,args)],env=env,capture_output=True,text=True,timeout=90);assert result.returncode==0,result.stderr;return result.stdout
  def catalog(names,version='1.0.0'):

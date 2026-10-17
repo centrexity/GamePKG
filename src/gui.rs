@@ -58,6 +58,9 @@ pub struct App {
     show_settings: bool,
     app_release: Option<crate::app_updates::Release>,
     app_installed: Option<PathBuf>,
+    startup_app_check: Option<mpsc::Receiver<Result<Option<crate::app_updates::Release>, String>>>,
+    app_update_notice: bool,
+    app_update_error: Option<String>,
     show_support: bool,
     support_copied: Option<String>,
     brand_icon: Option<egui::TextureHandle>,
@@ -124,6 +127,7 @@ impl App {
             }
             Err(e) => app.status = format!("Unable to load settings: {e:#}"),
         }
+        app.start_app_update_check();
         if let Some(id) = play {
             app.begin_work(move || {
                 let root = crate::registry::default_root()?;
@@ -406,6 +410,7 @@ impl eframe::App for App {
             );
             self.refresh(ctx);
         }
+        self.poll_app_update_check(ctx);
         if let Some(rx) = &self.result {
             match rx.try_recv() {
                 Ok(result) => {
@@ -1235,6 +1240,7 @@ impl eframe::App for App {
                                 Ok(()) => {
                                     theme::apply(ctx, self.settings_draft.dark_mode, self.settings_draft.ui_scale_percent);
                                     self.applied_settings=Some(self.settings_draft.clone());
+                                    if !self.settings_draft.check_app_updates_on_startup { self.startup_app_check=None; self.app_update_notice=false; }
                                     self.pending=None;self.pending_store=None;self.manifest=None;self.installed.clear();self.rejected.clear();self.catalog.clear();self.status="Settings saved.".into();self.refresh(ctx);
                                 }
                                 Err(e) => self.status=format!("Settings not saved: {e:#}"),
