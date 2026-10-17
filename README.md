@@ -245,7 +245,7 @@ Open **Settings** from the desktop library navigation. Save applies validated pr
 - Library folder: choose an absolute path or leave empty for the default. Switching libraries does not move existing packages.
 - Tor proxy: local loopback IP and SOCKS port; Tor remains a separately running service.
 - Game ceilings: memory (1–4096 MiB, default 512 MiB), tick deadline (10–1000 ms, default 100 ms). Memory uses the lower of the saved ceiling and the signed game limit. New sessions use the settings; current games are unaffected.
-- Optimize builds: enables Rust `opt-level=2` for subsequent Build/Rebuild; existing artifacts remain available.
+- Optimize builds: defaults to high native optimization for subsequent Build/Rebuild: Rust `opt-level=3`, thin LTO, one codegen unit, and `target-cpu=native`; native C/C++ engines use `-O3` and native CPU tuning. Disabling it uses level 0 for troubleshooting. Wasm export keeps its separate portable optimization profile. Rebuild existing games to apply the new settings.
 - Appearance: dark or light theme, applied after saving.
 
 Settings persist in `$XDG_CONFIG_HOME/gamepkg/settings.toml`, `%APPDATA%/gamepkg/settings.toml`, or `$HOME/.config/gamepkg/settings.toml`. Set `GAMEPKG_CONFIG` to override the config file. `GAMEPKG_HOME` (including GUI `--library`) and `GAMEPKG_TOR_PROXY` override the saved library and proxy respectively. The CLI shares library, proxy, build and runtime settings. Invalid configuration is reported rather than silently weakening restrictions.

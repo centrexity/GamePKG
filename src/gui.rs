@@ -1190,6 +1190,7 @@ impl eframe::App for App {
                     ui.label("Game packages cannot use Cargo dependencies. The host supplies the gamepkg API for input, files, drawing, shaders and audio.");
                     ui.separator();
                     ui.checkbox(&mut self.settings_draft.optimize_builds,"Optimize new builds");
+                    ui.label("High optimization for this computer: level 3, native CPU tuning, and Rust link-time optimization.");
                     ui.label("Applies on Build/Rebuild; existing compiled games are kept.");
                     ui.checkbox(&mut self.settings_draft.dark_mode,"Dark appearance");
                     ui.separator(); ui.heading("Sound");

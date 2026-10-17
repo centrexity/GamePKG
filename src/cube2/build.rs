@@ -173,6 +173,11 @@ pub fn compile_with_options(optimize: bool) -> Result<Vec<u8>> {
     } else {
         "CXXFLAGS=-O0 -g0 -pthread".into()
     });
+    command.arg(if optimize {
+        format!("CFLAGS=-O3 {cpu}")
+    } else {
+        "CFLAGS=-O0 -g0".into()
+    });
     let output = crate::compiler::run(&mut command)?;
     if !output.status.success() {
         bail!(

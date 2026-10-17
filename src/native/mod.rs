@@ -40,6 +40,7 @@ pub fn path_for_digest(root: &Path, digest: &str) -> PathBuf {
             cpu_identity(),
             &crate::verify::digest(
                 concat!(
+                    include_str!("build.rs"),
                     include_str!("guest.rs.txt"),
                     include_str!("engine.rs.txt"),
                     include_str!("seccomp.rs.txt"),

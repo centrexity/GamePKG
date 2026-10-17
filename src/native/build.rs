@@ -211,8 +211,13 @@ pub(super) fn compile(root: &Path, id: &str) -> Result<()> {
         ])
         .arg(format!(
             "opt-level={}",
-            if settings.optimize_builds { 2 } else { 0 }
+            if settings.optimize_builds { 3 } else { 0 }
         ))
+        .args(if settings.optimize_builds {
+            vec!["-C", "lto=thin", "-C", "codegen-units=1"]
+        } else {
+            Vec::new()
+        })
         .args(["-o", "/work/game"])
         .args(extra);
     let output = crate::compiler::run(&mut cmd)?;
@@ -407,12 +412,16 @@ fn engine(stage: &Path, profile: &str, optimize: bool) -> Result<Vec<String>> {
         "/usr/bin/clang-18",
         "-c",
         "-fPIC",
-        "-march=native",
         "-fno-strict-aliasing",
         "-ffunction-sections",
         "-fdata-sections",
     ])
-    .arg(if optimize { "-O2" } else { "-O0" })
+    .arg(if optimize { "-O3" } else { "-O0" })
+    .arg(if matches!(std::env::consts::ARCH, "arm" | "aarch64") {
+        "-mcpu=native"
+    } else {
+        "-march=native"
+    })
     .arg(format!("-I/work/engines/{label}/upstream"))
     .arg(format!("-I/work/engines/{label}/adapters/include"));
     if doom {
