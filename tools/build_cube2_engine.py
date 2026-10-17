@@ -56,6 +56,7 @@ def main():
     (stage / 'enet/check_cflags.sh').chmod(0o700)
     shutil.copyfile(PROJECT / 'engines/cube2/adapters/syscall_guard.h', stage / 'engine/syscall_guard.h')
     shutil.copyfile(PROJECT / 'engines/cube2/adapters/persistence.h', stage / 'engine/persistence.h')
+    shutil.copyfile(PROJECT / 'engines/cube2/adapters/audio.h', stage / 'engine/audio.h')
     shutil.copyfile(PROJECT / 'engines/cube2/adapters/network.h', stage / 'enet/gamepkg_network.h')
     unix = stage / 'enet/unix.c'
     text = unix.read_text()
@@ -71,7 +72,14 @@ def main():
     text = replace_once(text, 'int main(int argc, char **argv)\n{', 'int main(int argc, char **argv)\n{\n    gamepkg_prepare();')
     text = replace_once(text, '        swapbuffers();\n        renderedframe = inbetweenframes = true;', '        gamepkg_present();\n        swapbuffers();\n        renderedframe = inbetweenframes = true;')
     text = replace_once(text, '    for(;;)\n    {\n        static int frames = 0;', '    for(;;)\n    {\n        gamepkg_input();\n        static int frames = 0;')
+    text = replace_once(text, '                        SDL_GetWindowSize(screen, &screenw, &screenh);', '                        screenw = gamepkg_width; screenh = gamepkg_height;')
     path.write_text(text)
+    render = stage / 'engine/rendergl.cpp'
+    text = replace_once(render.read_text(), '    return SDL_GL_GetProcAddress(name);', '    extern void *gamepkg_glproc(const char *name); return gamepkg_glproc(name);')
+    text = replace_once(text, '        crosshairs[i] = textureload(name, 3, true);\n    }\n}', '        crosshairs[i] = textureload(name, 3, true);\n        if(crosshairs[i] == notexture) crosshairs[i] = textureload(i == 2 ? "data/hit.png" : i == 1 ? "data/teammate.png" : "data/crosshair.png", 3, true);\n    }\n}')
+    render.write_text(text)
+    world=stage / 'engine/worldio.cpp'
+    world.write_text(replace_once(world.read_text(), '    int loadingstart = SDL_GetTicks();', '    extern void gamepkg_loading(); gamepkg_loading();\n    int loadingstart = SDL_GetTicks();'))
     tools = stage / 'shared/tools.h'
     text = replace_once(tools.read_text(), 'inline void *operator new(size_t, void *p) { return p; }\ninline void *operator new[](size_t, void *p) { return p; }\ninline void operator delete(void *, void *) {}\ninline void operator delete[](void *, void *) {}', '#include <new>')
     tools.write_text(text)

@@ -33,7 +33,7 @@ The local build needs a C++ compiler, Make, SDL2, SDL2_image, SDL2_mixer, zlib a
 
 The development bridge runs SDL with its offscreen video driver and Mesa software rendering. Cube 2 renders internally using OpenGL; only bounded RGBA frames cross into the host. This avoids connecting the engine to the user's display server. The production player can present these frames through its existing Vulkan renderer without giving the engine a desktop window or GPU handle.
 
-One input packet authorizes one engine tick and frame. Input is exactly 16 bytes: `GPK1`, a little-endian held-key mask, then little-endian signed relative mouse X/Y deltas. Bits 0–15 map to W/S/A/D, Space, Shift, Enter, Escape, Tab, E, R and weapons 1–5. Bits 16 and 17 are primary and secondary mouse buttons. Mouse deltas are bounded to ±2048; unknown button bits and malformed packet magic stop the bridge. EOF terminates the engine. Output is `GPF2`, little-endian width, height, RGBA byte length and audio sample count, followed by tightly packed RGBA pixels in OpenGL's bottom-up row order and signed 16-bit little-endian mono PCM at 48 kHz. Audio is limited to 4,800 samples (100 ms) per frame; an SDL dummy mixer feeds a fixed-size ring and cannot open a host audio device. Frame dimensions are validated against the original engine's 10000-pixel coordinate range; actual allocation is constrained by the graphics driver and session memory/time limits. Engine diagnostics go to stderr, never into the frame channel.
+One input packet authorizes one engine tick and frame. Input is exactly 16 bytes: `GPK1`, a little-endian held-key mask, then little-endian signed relative mouse X/Y deltas. Bits 0–15 map to W/S/A/D, Space, Shift, Enter, Escape, Tab, E, R and weapons 1–5. Bits 16 and 17 are primary and secondary mouse buttons. Mouse deltas are bounded to ±2048; unknown button bits and malformed packet magic stop the bridge. EOF terminates the engine. Output is `GPF3`, little-endian width, height, RGBA byte length, audio frame count and channel count, followed by tightly packed RGBA pixels in OpenGL's bottom-up row order and interleaved signed 16-bit little-endian stereo PCM at 48 kHz. The reader retains `GPF2` mono compatibility. Audio is limited to 4,800 sample frames per channel (100 ms) per update; an SDL dummy mixer feeds a fixed-size ring and cannot open a host audio device. Frame dimensions are validated against the original engine's 10000-pixel coordinate range; actual allocation is constrained by the graphics driver and session memory/time limits. Engine diagnostics go to stderr, never into the frame channel.
 
 ## Supported integration
 
@@ -254,3 +254,26 @@ stopping a normal map load because idle desktop updates filled the queue.
 original console input, preserves custom console sizes and FPS settings, and
 closes normally. The original-menu framebuffer is initialized before first draw
 so uninitialized depth storage cannot mask menu background pixels.
+
+
+## Stereo audio preservation
+
+The mixer callback preserves SDL's original left/right samples instead of
+averaging them. The 100 ms ring, byte protocol, background worker and host output
+queue carry complete stereo frames; chunk and queue limits count frames rather
+than accidentally halving or doubling latency. Volume and resampling apply to
+both channels together. Stereo devices receive separate left/right samples;
+mono devices receive their average and extra surround channels remain silent.
+Legacy mono guest audio is unchanged.
+
+`tests/cube2_audio_bridge.cpp` exercises the actual production callback and
+encoder with known positive/negative channel pairs, wraparound and malformed
+callback lengths, without SDL or game media. CI compiles and runs this test.
+Rust tests cover stereo wire truncation/channel validation, exact sample values,
+volume, resampling and output-channel mapping. The ignored
+`audio::tests::original_cube2_stereo_reaches_the_output_callback` test loads the
+signed cached selector, chooses a map, checks distinct original engine channels,
+then verifies background audio reaches the real CPAL callback via an ALSA null
+device. Set `GAMEPKG_CUBE2_TEST_ROOT`, the private `GAMEPKG_CONFIG`, and
+`ALSA_CONFIG_PATH` to the maintainer fixture and null-device configuration to
+run it; no speaker output or copied original assets are required.

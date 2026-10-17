@@ -430,10 +430,11 @@ product decisions before claiming full parity.
 | Arkanoo | The upstream editor, mouse controls, menus, portal/gravity effects and music are omitted. Art, effects and endless level generation are replacements. Only high score/unlocked level persist, not the current run. | `ports/arkanoo/CREDITS.md`, `ports/arkanoo/source/src/lib.rs` |
 | 2048 | This adapts row merging rather than the whole upstream application. New tiles are always 2 and their position is deterministic. There is no score display, win/game-over flow, restart/undo or persistent board in the recipe. The upstream solver/terminal UI are replaced; tile values cap at 32768. | `ports/2048/CREDITS.md`, `ports/2048/source/src/lib.rs` |
 
-The reviewed engine bridges currently send mono audio; preserving stereo needs
-a channel-aware host audio path and regression coverage.
+Cube 2 now preserves stereo through the engine bridge and shared host output.
+DOOM and Zelda still need their engine adapters and native/runtime metadata
+updated to use this channel-aware path.
 
-Prioritize original startup/menus and input in Cube 2; DOOM music, save slots,
+Next priorities include complete physical input in Cube 2; DOOM music, save slots,
 configuration and mouse controls; and standard 2048 spawning/scoring/end states.
 Arkanoo's omitted mechanics and Zelda's optional desktop enhancements require
 separate feature work. Keep tests for supported paths, add a regression for each

@@ -50,12 +50,14 @@ def run(malformed=False):
                 app.stdin.write(b'GPK1' + struct.pack('<Iii', buttons, dx, dy))
                 app.stdin.flush()
                 header = exact(20)
-                assert header[:4] == b'GPF2', 'Diagnostics polluted the frame channel'
+                assert header[:4] in [b'GPF2',b'GPF3'], 'Diagnostics polluted the frame channel'
+                channels=struct.unpack('<I',exact(4))[0] if header[:4]==b'GPF3' else 1
+                assert channels in [1,2]
                 width, height, length, samples = struct.unpack('<IIII', header[4:])
                 assert samples <= 4800
                 assert (width, height, length) == (640, 480, 640*480*4)
                 frame = exact(length)
-                audio = exact(samples*2)
+                audio = exact(samples*channels*2)
                 return frame
             try:
                 app.stdin.write(b'GPB1' + bytes(12)); app.stdin.flush()

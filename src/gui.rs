@@ -846,8 +846,11 @@ impl eframe::App for App {
                             Err(e) => failure = Some(format!("Game stopped: {e:#}")),
                             Ok(_) => {
                                 if let Some(audio) = &self.audio_player {
-                                    for chunk in game.audio_frame().chunks(1600) {
-                                        audio.submit(chunk);
+                                    for chunk in game
+                                        .audio_frame()
+                                        .chunks(1600 * game.audio_channels() as usize)
+                                    {
+                                        audio.submit_channels(chunk, game.audio_channels());
                                     }
                                 }
                             }

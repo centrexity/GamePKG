@@ -313,35 +313,7 @@ static void gamepkg_input()
     gl_resize();
     gamepkg_running = true;
 }
-// Fixed 100 ms mono ring. SDL's dummy mixer never opens a host audio device.
-static SDL_SpinLock gamepkg_audio_lock = 0;
-static int16_t gamepkg_audio_ring[4800];
-static unsigned gamepkg_audio_head = 0, gamepkg_audio_count = 0;
-static void gamepkg_mix(void *, Uint8 *bytes, int length)
-{
-    if(length < 0 || length > 1048576 || length%4) return;
-    const int16_t *samples = reinterpret_cast<const int16_t *>(bytes);
-    SDL_AtomicLock(&gamepkg_audio_lock);
-    for(int i=0;i<length/4;i++)
-    {
-        int16_t mono = (int(samples[i*2])+int(samples[i*2+1]))/2;
-        if(gamepkg_audio_count == 4800)
-        {
-            gamepkg_audio_head = (gamepkg_audio_head+1)%4800;
-            gamepkg_audio_count--;
-        }
-        gamepkg_audio_ring[(gamepkg_audio_head+gamepkg_audio_count)%4800] = mono;
-        gamepkg_audio_count++;
-    }
-    SDL_AtomicUnlock(&gamepkg_audio_lock);
-}
-void gamepkg_audio_hook()
-{
-    int frequency, channels; Uint16 format;
-    if(!Mix_QuerySpec(&frequency, &format, &channels) || frequency != 48000 ||
-       format != AUDIO_S16SYS || channels != 2) exit(2);
-    Mix_SetPostMix(gamepkg_mix, NULL);
-}
+#include "audio.h"
 static void gamepkg_present()
 {
     if(!gamepkg_running) return;
@@ -352,20 +324,12 @@ static void gamepkg_present()
     pixels.reserve(length); pixels.advance(length);
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
     glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels.getbuf());
-    unsigned char pcm[4800*2];
-    SDL_AtomicLock(&gamepkg_audio_lock);
-    unsigned count = gamepkg_audio_count;
-    for(unsigned i=0;i<count;i++)
-    {
-        uint16_t sample = uint16_t(gamepkg_audio_ring[(gamepkg_audio_head+i)%4800]);
-        pcm[i*2] = sample&255; pcm[i*2+1] = sample>>8;
-    }
-    gamepkg_audio_count = 0; gamepkg_audio_head = 0;
-    SDL_AtomicUnlock(&gamepkg_audio_lock);
-    unsigned char header[20]; memcpy(header, "GPF2", 4);
+    unsigned char pcm[4800*4];
+    unsigned count=gamepkg_audio_snapshot(pcm);
+    unsigned char header[24]; memcpy(header, "GPF3", 4);
     gamepkg_put32(header+4, width); gamepkg_put32(header+8, height);
-    gamepkg_put32(header+12, length); gamepkg_put32(header+16, count);
+    gamepkg_put32(header+12, length); gamepkg_put32(header+16, count); gamepkg_put32(header+20, 2);
     if(!gamepkg_transfer(gamepkg_output, header, sizeof(header), true) ||
        !gamepkg_transfer(gamepkg_output, pixels.getbuf(), length, true) ||
-       !gamepkg_transfer(gamepkg_output, pcm, count*2, true)) exit(0);
+       !gamepkg_transfer(gamepkg_output, pcm, count*4, true)) exit(0);
 }

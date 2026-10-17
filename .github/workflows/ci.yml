@@ -20,7 +20,7 @@ jobs:
         with:
           submodules: recursive
       - name: Install preview codecs
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg g++
       - name: Install Rust tools
         run: rustup update stable && rustup default stable && rustup component add rustfmt clippy
       - name: Install audio development headers
@@ -30,6 +30,10 @@ jobs:
         run: cargo fmt --all -- --check
       - name: Test
         run: cargo test --locked ${{ matrix.features }}
+      - name: Verify stereo audio callback and wire bounds without game assets
+        run: |
+          g++ -Wall -Wextra -Werror tests/cube2_audio_bridge.cpp -o target/cube2-audio-bridge-test
+          target/cube2-audio-bridge-test
       - name: Test browser guest path protections
         run: node tests/web_path_attacks.mjs
       - name: Test support links and clipboard behavior

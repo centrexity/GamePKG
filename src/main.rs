@@ -402,7 +402,12 @@ fn main() -> Result<()> {
                 game.step(0)?;
                 #[cfg(feature = "audio")]
                 if let Some(audio) = &audio {
-                    audio.submit(game.audio_frame());
+                    for chunk in game
+                        .audio_frame()
+                        .chunks(1600 * game.audio_channels() as usize)
+                    {
+                        audio.submit_channels(chunk, game.audio_channels());
+                    }
                 }
                 loop {
                     let (x, y) = game.player();
@@ -440,7 +445,12 @@ fn main() -> Result<()> {
                     game.step(input)?;
                     #[cfg(feature = "audio")]
                     if let Some(audio) = &audio {
-                        audio.submit(game.audio_frame());
+                        for chunk in game
+                            .audio_frame()
+                            .chunks(1600 * game.audio_channels() as usize)
+                        {
+                            audio.submit_channels(chunk, game.audio_channels());
+                        }
                     }
                 }
             }

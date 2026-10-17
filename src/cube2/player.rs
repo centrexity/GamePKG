@@ -8,6 +8,7 @@ pub(crate) struct Player {
     events: Vec<Vec<u8>>,
     pub frame: crate::drawing::Frame,
     pub audio: Vec<i16>,
+    pub audio_channels: u32,
     pub frame_size: (u32, u32),
     requested_size: (u32, u32),
     desktop: u32,
@@ -76,6 +77,7 @@ impl Player {
             requested_size: (first.width, first.height),
             frame: first.drawing_frame()?,
             audio: Vec::new(),
+            audio_channels: first.audio_channels,
             desktop: 0,
             desktop_pressed: 0,
             dx: 0,
@@ -208,6 +210,9 @@ impl Player {
                 self.frame_size = output.frame_size;
                 self.frame = frame;
             }
+            if output.audio_channels > 0 {
+                self.audio_channels = output.audio_channels;
+            }
             self.audio = output.audio;
             return Ok(());
         }
@@ -226,6 +231,7 @@ impl Player {
         };
         self.frame_size = (frame.width, frame.height);
         self.frame = frame.drawing_frame()?;
+        self.audio_channels = frame.audio_channels;
         self.audio = frame.audio;
         Ok(())
     }

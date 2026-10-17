@@ -59,6 +59,10 @@ pub fn compile_with_options(optimize: bool) -> Result<Vec<u8>> {
         stage.path().join("engine/persistence.h"),
         include_bytes!("../../engines/cube2/adapters/persistence.h"),
     )?;
+    fs::write(
+        stage.path().join("engine/audio.h"),
+        include_bytes!("../../engines/cube2/adapters/audio.h"),
+    )?;
     let main = stage.path().join("engine/main.cpp");
     fs::write(
         stage.path().join("enet/gamepkg_network.h"),

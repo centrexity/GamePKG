@@ -190,7 +190,10 @@ pub fn read_update(mut reader: impl Read) -> Result<Update> {
     if &magic == b"GPQ1" {
         return Ok(Update::Quit(read_save(reader)?));
     }
-    ensure!(&magic == b"GPF2", "invalid Cube 2 update magic");
+    ensure!(
+        &magic == b"GPF2" || &magic == b"GPF3",
+        "invalid Cube 2 update magic"
+    );
     Ok(Update::Frame(read_frame(
         std::io::Cursor::new(magic).chain(reader),
     )?))
@@ -218,8 +221,9 @@ pub struct Frame {
     pub height: u32,
     /// Top-down opaque RGBA, suitable for the bounded host image API.
     pub rgba: Vec<u8>,
-    /// Bounded mono 48 kHz signed PCM, with explicit little-endian wire encoding.
+    /// Bounded interleaved 48 kHz signed PCM, with explicit little-endian wire encoding.
     pub audio: Vec<i16>,
+    pub audio_channels: u32,
 }
 
 impl Frame {
@@ -265,13 +269,27 @@ impl Frame {
 pub fn read_frame(mut reader: impl Read) -> Result<Frame> {
     let mut header = [0; 20];
     reader.read_exact(&mut header)?;
-    ensure!(&header[..4] == b"GPF2", "invalid Cube 2 frame magic");
+    ensure!(
+        &header[..4] == b"GPF2" || &header[..4] == b"GPF3",
+        "invalid Cube 2 frame magic"
+    );
     let number =
         |offset| u32::from_le_bytes(header[offset..offset + 4].try_into().expect("fixed header"));
     let (width, height, length) = (number(4), number(8), number(12));
     ensure!(
         (1..=MAX_WIDTH).contains(&width) && (1..=MAX_HEIGHT).contains(&height),
         "Cube 2 frame dimensions exceed the bound"
+    );
+    let channels = if &header[..4] == b"GPF3" {
+        let mut bytes = [0; 4];
+        reader.read_exact(&mut bytes)?;
+        u32::from_le_bytes(bytes)
+    } else {
+        1
+    };
+    ensure!(
+        matches!(channels, 1 | 2),
+        "Invalid Cube 2 audio channel count"
     );
     let samples = number(16);
     ensure!(
@@ -285,7 +303,7 @@ pub fn read_frame(mut reader: impl Read) -> Result<Frame> {
     ensure!(length == expected, "invalid Cube 2 frame byte length");
     let mut rgba = vec![0; expected as usize];
     reader.read_exact(&mut rgba)?;
-    let mut pcm = vec![0; samples as usize * 2];
+    let mut pcm = vec![0; samples as usize * channels as usize * 2];
     reader.read_exact(&mut pcm)?;
     let audio = pcm
         .as_chunks::<2>()
@@ -306,6 +324,7 @@ pub fn read_frame(mut reader: impl Read) -> Result<Frame> {
         height,
         rgba,
         audio,
+        audio_channels: channels,
     })
 }
 
@@ -669,6 +688,34 @@ mod tests {
         }
     }
     #[test]
+    fn stereo_wire_preserves_left_right_and_rejects_bad_channels_and_lengths() {
+        let mut bytes = header(1, 1, 4);
+        bytes[..4].copy_from_slice(b"GPF3");
+        bytes[16..20].copy_from_slice(&2u32.to_le_bytes());
+        bytes.extend(2u32.to_le_bytes());
+        bytes.extend([1, 2, 3, 255]);
+        for sample in [16384i16, -8192, -32768, 32767] {
+            bytes.extend(sample.to_le_bytes());
+        }
+        let frame = read_frame(bytes.as_slice()).unwrap();
+        assert_eq!(frame.audio_channels, 2);
+        assert_eq!(frame.audio, [16384, -8192, -32768, 32767]);
+        assert!(
+            matches!(read_update(bytes.as_slice()).unwrap(),Update::Frame(frame) if frame.audio_channels==2)
+        );
+        for count in [0u32, 3, u32::MAX] {
+            let mut malformed = bytes.clone();
+            malformed[20..24].copy_from_slice(&count.to_le_bytes());
+            assert!(read_frame(malformed.as_slice()).is_err());
+        }
+        for size in 0..bytes.len() {
+            assert!(read_frame(&bytes[..size]).is_err());
+        }
+        let mut legacy = header(1, 1, 4);
+        legacy.extend([0; 4]);
+        assert_eq!(read_frame(legacy.as_slice()).unwrap().audio_channels, 1);
+    }
+    #[test]
     fn large_engine_frames_use_bounded_tiles_without_expanding_guest_limits() {
         let mut pixels = vec![0; 640 * 480 * 4];
         for y in 0..480 {
@@ -687,6 +734,7 @@ mod tests {
             height: 480,
             rgba: pixels,
             audio: vec![],
+            audio_channels: 1,
         };
         let drawing = frame.drawing_frame().unwrap();
         assert_eq!(drawing.commands.len(), 2);
@@ -711,6 +759,7 @@ mod tests {
             height: 480,
             rgba: vec![],
             audio: vec![],
+            audio_channels: 1,
         }
         .drawing_frame()
         .is_err());
@@ -719,6 +768,7 @@ mod tests {
             height: 480,
             rgba: vec![0; 4],
             audio: vec![],
+            audio_channels: 1,
         }
         .drawing_frame()
         .is_err());

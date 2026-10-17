@@ -992,6 +992,13 @@ impl Game {
             .map(crate::zelda3::Zelda::state)
             .transpose()
     }
+    pub fn audio_channels(&self) -> u32 {
+        #[cfg(target_os = "linux")]
+        if let Some(cube) = &self.cube2 {
+            return cube.audio_channels;
+        }
+        1
+    }
     pub fn audio_frame(&self) -> &[i16] {
         #[cfg(target_os = "linux")]
         if let Some(cube) = &self.cube2 {

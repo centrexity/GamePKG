@@ -802,7 +802,7 @@ mod tests {
             assert!(output.error.is_none(), "{:?}", output.error);
             assert!(output.ticks > 100);
             assert!(output.frame.is_some());
-            assert!(output.audio.len() <= 4800);
+            assert!(output.audio.len() <= 4800 * output.audio_channels as usize);
             assert!(!output.exited);
         }
         server

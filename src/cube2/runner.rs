@@ -105,19 +105,24 @@ impl Input {
 pub(super) struct Output {
     pub frame: Option<crate::drawing::Frame>,
     pub audio: Vec<i16>,
+    pub audio_channels: u32,
     pub exited: bool,
     pub error: Option<String>,
     pub ticks: u64,
     pub frame_size: (u32, u32),
 }
 impl Output {
-    fn publish(&mut self, frame: crate::drawing::Frame, audio: Vec<i16>) {
+    fn publish(&mut self, frame: crate::drawing::Frame, audio: Vec<i16>, channels: u32) {
         self.frame = Some(frame);
         self.ticks = self.ticks.saturating_add(1);
+        if self.audio_channels != channels {
+            self.audio.clear();
+            self.audio_channels = channels;
+        }
         self.audio.extend(audio);
-        if self.audio.len() > protocol::MAX_AUDIO_SAMPLES as usize {
-            self.audio
-                .drain(..self.audio.len() - protocol::MAX_AUDIO_SAMPLES as usize);
+        let maximum = protocol::MAX_AUDIO_SAMPLES as usize * channels as usize;
+        if self.audio.len() > maximum {
+            self.audio.drain(..self.audio.len() - maximum);
         }
     }
 }
@@ -173,6 +178,7 @@ impl Worker {
                         };
                         let frame_size = (frame.width, frame.height);
                         let drawing = frame.drawing_frame()?;
+                        let channels = frame.audio_channels;
                         let mut audio = frame.audio;
                         #[cfg(feature = "audio")]
                         if let Some(sink) = state
@@ -181,8 +187,8 @@ impl Worker {
                             .audio
                             .clone()
                         {
-                            for samples in audio.chunks(1600) {
-                                sink.submit(samples);
+                            for samples in audio.chunks(1600 * channels as usize) {
+                                sink.submit_channels(samples, channels);
                             }
                             audio.clear();
                         }
@@ -191,7 +197,9 @@ impl Worker {
                                 .lock()
                                 .map_err(|_| anyhow::anyhow!("Cube 2 output lock failed"))?;
                             shared.output.frame_size = frame_size;
-                            shared.output.publish(drawing, std::mem::take(&mut audio));
+                            shared
+                                .output
+                                .publish(drawing, std::mem::take(&mut audio), channels);
                         }
                         if let Some(progress) = &mut progress {
                             progress.tick(&[])?;
@@ -246,6 +254,7 @@ impl Worker {
         Ok(Output {
             frame: state.output.frame.take(),
             audio: std::mem::take(&mut state.output.audio),
+            audio_channels: state.output.audio_channels,
             exited: state.output.exited,
             error: state.output.error.take(),
             ticks: state.output.ticks,
@@ -374,7 +383,7 @@ mod tests {
         for i in 0..100 {
             let mut frame = crate::drawing::Frame::default();
             frame.background = Some(i);
-            output.publish(frame, vec![i as i16; 4800]);
+            output.publish(frame, vec![i as i16; 4800], 1);
         }
         assert_eq!(output.frame.unwrap().background, Some(99));
         assert_eq!(output.audio, vec![99; 4800]);
