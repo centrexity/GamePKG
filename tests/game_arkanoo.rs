@@ -139,3 +139,164 @@ fn temporary_bonuses_expire_without_unbounded_entities() {
     assert!(game.particles.len() <= 64);
     assert!(game.drops.len() <= 8);
 }
+
+#[test]
+fn original_gravity_and_spin_equations_use_one_sixtieth_second_steps() {
+    let mut ball = physics::Ball {
+        x: 0.0,
+        y: 0.0,
+        vx: 2.0,
+        vy: 1.0,
+        spin: 3.0,
+        attached: false,
+    };
+    ball.apply_forces(false);
+    assert!((ball.vx - 2.15).abs() < 0.00001);
+    assert!((ball.spin - 2.94).abs() < 0.00001);
+    ball.apply_forces(true);
+    assert_eq!(ball.spin, 0.0);
+    assert!((ball.vy - 1.15).abs() < 0.00001);
+    for _ in 0..100 {
+        ball.apply_forces(true);
+    }
+    assert_eq!(ball.vy, 4.5);
+    ball.vy = -3.0;
+    ball.apply_forces(true);
+    assert_eq!(ball.vy, -3.0);
+    ball.vy = 6.0;
+    ball.apply_forces(true);
+    assert_eq!(
+        ball.vy, 6.0,
+        "original gravity does not slow an already faster ball"
+    );
+}
+#[test]
+fn speed_portal_activates_once_orbits_and_does_not_lose_lives() {
+    let mut game = physics::Game::new();
+    game.mode = 1;
+    game.blocks = [0; 200];
+    game.blocks[0] = 1;
+    game.balls[0].attached = false;
+    game.balls[0].vx = 30.0;
+    game.balls[0].vy = 0.0;
+    game.update(0);
+    assert!(game.portal);
+    assert_eq!(game.score, 5000);
+    let score = game.score;
+    game.update(0);
+    assert_eq!(game.score, score);
+    let angle = game.frame as f32 * 0.1;
+    assert!((game.balls[0].x - (320.0 + angle.cos() * 75.0)).abs() < 0.001);
+    let score = game.score;
+    game.update(0);
+    assert_eq!(game.score, score);
+    game.balls.clear();
+    let lives = game.lives;
+    game.update(0);
+    assert_eq!(game.lives, lives);
+}
+#[test]
+fn portal_pull_preserves_integer_world_motion_and_delays_completion() {
+    let mut game = physics::Game::new();
+    game.mode = 1;
+    game.portal = true;
+    game.blocks = [0; 200];
+    game.blocks[0] = 1;
+    game.block_x[0] = 266.0;
+    game.block_y[0] = 232.0;
+    game.pull_blocks();
+    assert_eq!(game.block_x[0], 270.0);
+    assert_eq!(game.block_y[0], 232.0);
+    game.block_x[0] = 306.0;
+    game.pull_blocks();
+    assert_eq!(game.blocks[0], 0);
+    assert_eq!(game.portal_timer, 0);
+    for _ in 0..269 {
+        game.pull_blocks();
+    }
+    assert_eq!(game.mode, 1);
+    game.pull_blocks();
+    assert_eq!(game.mode, 3);
+    assert_eq!(game.unlocked, 2);
+    game.update(4);
+    assert!(!game.portal);
+    assert_eq!(game.portal_timer, 0);
+    assert_eq!(game.max_speed, 0.0);
+}
+#[test]
+fn gravity_toggle_is_edge_triggered_and_spin_runs_once_per_frame() {
+    let mut game = physics::Game::new();
+    game.mode = 1;
+    game.blocks = [0; 200];
+    game.blocks[0] = 1;
+    game.balls[0].attached = false;
+    game.balls[0].x = 300.0;
+    game.balls[0].y = 350.0;
+    game.balls[0].vx = 2.0;
+    game.balls[0].vy = -1.0;
+    game.balls[0].spin = 3.0;
+    game.update(0);
+    assert!((game.balls[0].vx - 2.15).abs() < 0.00001);
+    assert!((game.balls[0].spin - 2.94).abs() < 0.00001);
+    game.update(131072);
+    assert!(game.gravity);
+    assert_eq!(game.balls[0].spin, 0.0);
+    game.update(131072 << 4);
+    assert!(game.gravity);
+    game.update(131072);
+    assert!(!game.gravity);
+}
+
+#[test]
+fn paused_portal_freezes_orbit_clock_and_absorption() {
+    let mut game = physics::Game::new();
+    game.mode = 1;
+    game.portal = true;
+    game.update(0);
+    game.update(8);
+    assert_eq!(game.mode, 2);
+    let frame = game.frame;
+    let xs = game.block_x;
+    let ys = game.block_y;
+    let timer = game.portal_timer;
+    for _ in 0..30 {
+        game.update(0);
+    }
+    assert_eq!(game.frame, frame);
+    assert_eq!(game.block_x, xs);
+    assert_eq!(game.block_y, ys);
+    assert_eq!(game.portal_timer, timer);
+    game.update(8);
+    assert_eq!(game.mode, 1);
+    assert_eq!(game.frame, frame + 1);
+}
+
+#[test]
+fn scaled_force_steps_match_the_compiled_pinned_upstream_fragment() {
+    let reference: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-forces.json")).unwrap();
+    assert_eq!(
+        reference["revision"],
+        "9d613e78c9ed5657ae7fda9206cd4a82a893b7c8"
+    );
+    for fixture in reference["fixtures"].as_array().unwrap() {
+        let values = fixture["velocity_spin"].as_array().unwrap();
+        let mut ball = physics::Ball {
+            x: 0.0,
+            y: 0.0,
+            vx: values[0].as_f64().unwrap() as f32 * 0.5,
+            vy: values[1].as_f64().unwrap() as f32 * 0.5,
+            spin: values[2].as_f64().unwrap() as f32 * 0.5,
+            attached: false,
+        };
+        for _ in 0..fixture["steps"].as_u64().unwrap() {
+            ball.apply_forces(fixture["gravity"].as_bool().unwrap());
+        }
+        for (actual, expected) in [ball.vx, ball.vy, ball.spin]
+            .iter()
+            .zip(fixture["expected"].as_array().unwrap())
+        {
+            assert!((*actual - expected.as_f64().unwrap() as f32 * 0.5).abs() < 0.00001);
+        }
+    }
+}

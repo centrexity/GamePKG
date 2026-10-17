@@ -26,3 +26,18 @@ cooperative chunk sizes, all original adaptive depth tiers, legal/terminal
 positions, and preservation of the spawning random stream. Tiles beyond the
 old nibble limit use the highest original depth tier and separate extended-tile
 rule tests.
+
+# Arkanoo force-law oracle
+
+`arkanoo_forces.py` extracts and compiles the unchanged gravity/spin fragment
+from pinned revision `9d613e78c9ed5657ae7fda9206cd4a82a893b7c8`. Run it against
+a clean `c0m4r/arkanoo` checkout to reproduce `fixtures/arkanoo-forces.json`:
+
+```sh
+python3 tests/reference/arkanoo_forces.py /path/to/arkanoo
+```
+
+The fixture records full-file and fragment hashes. Expected vectors use original
+units; port tests compare at the port's half velocity/spin scale. This proves
+the force-law fragment, not full collision/world-geometry equivalence. Python
+and the reference compiler harness are maintainer-only tools.

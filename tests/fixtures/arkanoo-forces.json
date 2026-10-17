@@ -1,0 +1,91 @@
+{
+  "revision": "9d613e78c9ed5657ae7fda9206cd4a82a893b7c8",
+  "entities_sha256": "ee6fc52f2ea582900edee90350c0c4608235aeecae6e56cc875cfd7893313545",
+  "fragment_sha256": "7ce071830fdd5efcc48c54d186752f3713c7fed8a811b660debbc897937be920",
+  "fixtures": [
+    {
+      "gravity": false,
+      "velocity_spin": [
+        4.0,
+        2.0,
+        6.0
+      ],
+      "steps": 10,
+      "expected": [
+        6.7439084,
+        2.0,
+        4.902438
+      ]
+    },
+    {
+      "gravity": true,
+      "velocity_spin": [
+        4.0,
+        2.0,
+        6.0
+      ],
+      "steps": 20,
+      "expected": [
+        4.0,
+        8.000002,
+        0.0
+      ]
+    },
+    {
+      "gravity": true,
+      "velocity_spin": [
+        4.0,
+        8.9,
+        6.0
+      ],
+      "steps": 2,
+      "expected": [
+        4.0,
+        9.0,
+        0.0
+      ]
+    },
+    {
+      "gravity": true,
+      "velocity_spin": [
+        4.0,
+        -4.0,
+        6.0
+      ],
+      "steps": 10,
+      "expected": [
+        4.0,
+        -4.0,
+        0.0
+      ]
+    },
+    {
+      "gravity": true,
+      "velocity_spin": [
+        4.0,
+        12.0,
+        6.0
+      ],
+      "steps": 20,
+      "expected": [
+        4.0,
+        12.0,
+        0.0
+      ]
+    },
+    {
+      "gravity": false,
+      "velocity_spin": [
+        -3.0,
+        -2.0,
+        -7.0
+      ],
+      "steps": 25,
+      "expected": [
+        -9.939369,
+        -2.0,
+        -4.2242556
+      ]
+    }
+  ]
+}

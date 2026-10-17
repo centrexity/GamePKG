@@ -2,7 +2,7 @@
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-import os, subprocess, tempfile, threading, time
+import os, shutil, subprocess, tempfile, threading, time
 from PIL import Image
 from gui_test_support import start_display
 import argparse
@@ -35,9 +35,25 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-arkanoo-',dir=PROJECT/'target')
     result=run('run','com.gamepkg.arkanoo','--frames',180)
     assert 'Ran 180 frames' in result and 'draw commands: 1024' not in result,result
     run('integrity-check','com.gamepkg.arkanoo')
+    # Trigger the production portal at its original speed threshold without
+    # depending on a long random play session. Only fixture setup is replaced.
+    modes=root/'modes';shutil.copytree(PROJECT/'ports/arkanoo',modes)
+    mode_manifest=modes/'manifest.toml';mode_manifest.write_text(mode_manifest.read_text().replace('com.gamepkg.arkanoo','com.gamepkg.arkanoo-modes'))
+    (modes/'source/src/lib.rs').write_text('''mod physics;mod render;use std::sync::Mutex;
+static GAME:Mutex<Option<physics::Game>>=Mutex::new(None);
+pub fn game_tick(input:u32,state:u64)->u64 {
+ if let Ok(mut slot)=GAME.lock(){
+  if slot.is_none(){let mut game=physics::Game::new();game.mode=1;game.blocks=[0;200];game.blocks[0]=1;game.balls[0].attached=false;game.balls[0].vx=30.0;game.balls[0].vy=0.0;*slot=Some(game);}
+  if let Some(game)=slot.as_mut(){if input&64!=0 {game.blocks=[0;200];}game.update(input);render::draw(game);
+   return (u64::from(game.score)<<32)|u64::from(game.portal)|(u64::from(game.gravity)<<1)|(u64::from(game.mode==3)<<2)|(u64::from(game.lives)<<8)|(u64::from(game.level)<<16);
+  }
+ }state
+}''')
+    run('pack',modes,'-o',root/'modes.gamepkg','--key',key);run('install',root/'modes.gamepkg','--trust-creator');run('build','com.gamepkg.arkanoo-modes')
     probe_env=dict(env,GAMEPKG_ARKANOO_TEST_ROOT=str(root/'library'))
     subprocess.run(['cargo','test','--test','game_arkanoo_runtime','--','--ignored'],env=probe_env,check=True,timeout=120)
     run('build','com.gamepkg.arkanoo','--target','native')
+    run('build','com.gamepkg.arkanoo-modes','--target','native')
     run('integrity-check','com.gamepkg.arkanoo')
     subprocess.run(['cargo','test','--test','game_arkanoo_runtime','--','--ignored'],env=probe_env,check=True,timeout=120)
     # Real native window: locate the cyan paddle, hold movement, start, pause.
@@ -111,6 +127,10 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-arkanoo-',dir=PROJECT/'target')
             browser.find_element(By.ID,'play').click();canvas=browser.find_element(By.ID,'game')
             wait.until(lambda b:canvas.get_attribute('data-state'))
             ActionChains(browser).click(canvas).send_keys(Keys.ARROW_UP).perform();time.sleep(.15)
+            def saved_gravity():
+                return browser.execute_script('const key=Object.keys(localStorage).find(key=>key.startsWith(arguments[0]));return key?JSON.parse(localStorage.getItem(key))[12]:null;','gamepkg:save:'+game_id+':')
+            canvas.send_keys('v');wait.until(lambda b:saved_gravity()==1)
+            canvas.send_keys('v');wait.until(lambda b:saved_gravity()==0)
             def pixels():return browser.execute_script('return Array.from(document.querySelector("#game").getContext("2d").getImageData(0,0,640,480).data)')
             def center(data):
                 xs=[i%640 for i in range(420*640,440*640) if data[i*4:i*4+3]==[99,220,255]]
