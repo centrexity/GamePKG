@@ -1,8 +1,9 @@
 """Build and play through actual desktop library buttons, without startup shortcuts."""
 from pathlib import Path
 import csv, io, os, shutil, subprocess, tempfile, time
-from gui_test_support import start_display,click_text,game_window
+from gui_test_support import start_display,click_text,game_window,close_game,wait_game_frame,click_primary_play
 from PIL import Image
+os.environ.setdefault('OMP_THREAD_LIMIT','1')
 project=Path(__file__).resolve().parents[1]
 with tempfile.TemporaryDirectory(prefix='gamepkg-library-play-') as directory:
     root=Path(directory);library=root/'library'
@@ -90,21 +91,33 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-library-play-') as directory:
         click_word(words,'integrity')
         text,words=wait_screen(lambda text:'compiled game verified' in text,'library-integrity.png')
         library_window=window
-        click_word(words,'Play')
+        click_primary_play(window,env,root)
         window,game_pid=game_window(env,'com.gamepkg.collect-stars')
         assert game_pid != app.pid
-        text,words=wait_screen(lambda text:'Score:' in text,'library-click-play.png',20)
-        assert 'com.gamepkg.collect-stars' in text, text
+        wait_game_frame(window,env,root)
+        text,words=read_screen('library-click-play.png')
+        assert all(label not in text for label in ['Score:','Close game','Restart']),text
+        assert subprocess.check_output(['xdotool','getwindowname',window],env=env,text=True).strip()=='com.gamepkg.collect-stars'
         time.sleep(1.5)
         subprocess.run(['xdotool','windowfocus','--sync',window],env=env,check=True)
         for direction in ['Left','Up']:
             subprocess.run(['xdotool','key','--clearmodifiers','--repeat','6','--delay','100',direction],env=env,check=True)
         time.sleep(.3)
-        click_text(window,env,'Close game',root)
+        close_game(window,env)
         window=library_window
         text,words=wait_screen(lambda text:'Rebuild' in text and 'Score:' not in text,'library-returned.png',20)
         assert 'Storage' in text and 'Played' in text, text
-        assert 'First star' in text and 'Star collector' in text and 'Locked' in text and 'Unlocked' in text, text
+        point=click_text(window,env,'First star',root,click=False)
+        subprocess.run(['xdotool','mousemove','--window',window,str(point[0]),str(point[1]),'click','4'],env=env,check=True)
+        time.sleep(.2)
+        text,words=read_screen('library-first-achievement.png')
+        assert 'First star' in text and 'Unlocked' in text,text
+        # The achievement list is independently scrollable inside the game page.
+        # Hover its visible first row to reveal the second row without scrolling
+        # the outer page past the list.
+        subprocess.run(['xdotool','click','--repeat','3','--delay','100','5'],env=env,check=True)
+        text,words=wait_screen(lambda text:'Star collector' in text,'library-achievements.png',20)
+        assert 'Locked' in text,text
         import json
         records=list((library/'progress').glob('*.json'))
         assert len(records)==1
@@ -128,7 +141,11 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-library-play-') as directory:
         assert 'com.gamepkg.collect-stars' not in text and 'Import .gamepkglist' not in text, text
         click_word(words,'Back')
         text,words=wait_screen(lambda text:'Offline Catalog Game' in text and 'com.gamepkg.collect-stars' in text,'game-page-return-to-library.png',20)
-        click_text(window,env,'com.gamepkg.collect-stars',root)
+        click_text(window,env,'Collect Stars',root)
+        # Reopening a game preserves its detail scroll position. Return that
+        # content pane to the top before checking its About heading.
+        subprocess.run(['xdotool','mousemove','--window',window,'400','800','click','--repeat','6','--delay','70','4'],env=env,check=True)
+        time.sleep(.2)
         text,words=wait_screen(lambda text:'About this game' in text and 'Rebuild' in text,'game-installed-page.png',20)
         assert 'Offline Catalog Game' not in text and 'Download / inspect' not in text, text
 
@@ -136,24 +153,13 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-library-play-') as directory:
         assert list(library.glob('*.gamepkg')) == [library/'com.gamepkg.collect-stars.gamepkg']
         assert not (library/'com.example.offline.gamepkg').exists()
         read_screen('library-launch-again.png')
-        # The primary action has a filled teal surface; locate that visible control
-        # without relying on OCR's inconsistent reading of dark text on teal.
-        with Image.open(project/'target/library-launch-again.png') as image:
-            image=image.convert('RGB');start=None;point=None
-            for y in range(100,image.height):
-                xs=[x for x in range(image.width) if (lambda c:c[0]<100 and c[1]>170 and c[2]>140)(image.getpixel((x,y)))]
-                if len(xs)>70:
-                    if start is None:start=y
-                    if y-start>=20:point=(sum(xs)//len(xs),y-10);break
-                else:start=None
-        assert point,'Primary Play control was not visible'
-        subprocess.run(['xdotool','mousemove','--window',window,str(point[0]),str(point[1]),'click','1'],env=env,check=True)
+        click_primary_play(window,env,root)
         game,pid=game_window(env,'com.gamepkg.collect-stars');assert pid != app.pid
         app.terminate();app.wait(timeout=10)
         time.sleep(.5)
         os.kill(pid,0)
         assert subprocess.check_output(['xdotool','getwindowname',game],env=env,text=True).strip()=='com.gamepkg.collect-stars'
-        click_text(game,env,'Close game',root)
+        close_game(game,env)
         print('Desktop workflow passed: inspect, creator approval, install, Build, Play, return, Rebuild, and offline catalog import without downloading packages.')
     finally:
         app.terminate();app.wait(timeout=10);display.terminate();display.wait(timeout=10)

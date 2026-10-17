@@ -22,7 +22,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-worker-test-') as directory:
  saved_path=env['PATH'];env['PATH']='/usr/bin:/bin'
  try:run('build-worker',store,output)
  finally:env['PATH']=saved_path
- info=json.loads((output/'exchange.json').read_text());assert info['package_digest']==hashlib.sha256(package.read_bytes()).hexdigest();assert info['id']=='com.gamepkg.shader-switch' and info['backend']=='glsl'
+ info=json.loads((output/'exchange.json').read_text());assert info['package_digest']==hashlib.sha256(package.read_bytes()).hexdigest();assert info['id']=='com.gamepkg.shader-switch' and info['backend']=='wgsl'
  assert {p.name for p in output.iterdir()}=={'exchange.json','builds','shader-builds'}
  assert not list(output.rglob('*.key')) and not (output/'progress').exists() and not (output/'saves').exists()
  run('store-import',store,'--trust-creators')
@@ -38,13 +38,13 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-worker-test-') as directory:
   def change(candidate):
    path=candidate/'exchange.json';data=json.loads(path.read_text());data[field]=value;path.write_text(json.dumps(data))
   return change
- for field,value in [('id','wrong'),('package_digest','0'*64),('backend','wgsl'),('format_version',2),('compiler_host_version','wrong'),('unknown',True)]:reject(metadata(field,value))
+ for field,value in [('id','wrong'),('package_digest','0'*64),('backend','glsl'),('format_version',2),('compiler_host_version','wrong'),('unknown',True)]:reject(metadata(field,value))
  def damage(pattern):
   def change(candidate):
    path=next(candidate.rglob(pattern));path.write_bytes(path.read_bytes()+b'broken')
   return change
  for pattern in ['game.wasm','game.sha256','*.reflection.json','*.shader']:reject(damage(pattern))
- reject(lambda candidate:next(candidate.rglob('shaders-glsl.json')).unlink())
+ reject(lambda candidate:next(candidate.rglob('shaders-wgsl.json')).unlink())
  reject(lambda candidate:(next((candidate/'builds').iterdir())/'extra').write_text('extra'))
  reject(lambda candidate:(next((candidate/'builds').iterdir())/'nested').mkdir())
  def linked(candidate):

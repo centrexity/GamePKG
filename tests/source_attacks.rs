@@ -1,6 +1,7 @@
 #[path = "support/adversarial.rs"]
 mod helper;
 use gamepkg::archive::Package;
+#[cfg(unix)]
 use std::fs;
 
 #[test]

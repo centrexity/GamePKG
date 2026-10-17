@@ -39,12 +39,14 @@ def start_display(env, width=1024, height=900):
         os.close(reader)
 
 
-def click_text(window, env, text, directory, timeout=15, max_y=None):
+def click_text(window, env, text, directory, timeout=15, max_y=None, *, click=True):
     """Locate actual visible control text; never depend on a historical layout."""
     import csv
     import io
     from pathlib import Path
     directory = Path(directory)
+    # Bare Xvfb has no window manager to restore focus after a player/picker closes.
+    subprocess.run(['xdotool','windowfocus',window],env=env,check=True)
     deadline = time.monotonic() + timeout
     wanted = text.split()
     last = ''
@@ -70,6 +72,7 @@ def click_text(window, env, text, directory, timeout=15, max_y=None):
                     first = candidate[0]
                     x = (int(first['left'])+int(first['width'])//2)//3
                     y = (int(first['top'])+int(first['height'])//2)//3
+                    if not click:return x,y
                     subprocess.run(['xdotool','mousemove','--window',window,str(x),str(y),'click','1'],env=env,check=True)
                     return
         if time.monotonic() >= deadline:
@@ -77,7 +80,7 @@ def click_text(window, env, text, directory, timeout=15, max_y=None):
         if max_y is None:
             geometry=subprocess.check_output(['xdotool','getwindowgeometry','--shell',window],env=env,text=True)
             size=dict(line.split('=',1) for line in geometry.splitlines() if '=' in line)
-            subprocess.run(['xdotool','mousemove','--window',window,str(int(size['WIDTH'])-28),str(max(120,int(size['HEIGHT'])-180)),'click','--repeat','3','--delay','35','5' if scroll_attempt%8<4 else '4'],env=env,check=True)
+            subprocess.run(['xdotool','mousemove','--window',window,str(min(400,int(size['WIDTH'])//2)),str(max(120,int(size['HEIGHT'])-180)),'click','--repeat','3','--delay','35','5' if scroll_attempt%8<4 else '4'],env=env,check=True)
             scroll_attempt+=1
         time.sleep(.1)
 
@@ -132,3 +135,61 @@ def game_window(env, game_id, timeout=20):
             return window, pid
         time.sleep(.1)
     raise AssertionError('Separate game window did not open: '+game_id)
+
+
+def close_game(window, env, timeout=15):
+    """Use the normal window-manager close protocol, then await disappearance."""
+    from Xlib import display as xdisplay, protocol
+    connection=xdisplay.Display(env['DISPLAY'])
+    try:
+        target=connection.create_resource_object('window',int(window))
+        target.send_event(protocol.event.ClientMessage(window=target,client_type=connection.intern_atom('WM_PROTOCOLS'),data=(32,[connection.intern_atom('WM_DELETE_WINDOW'),0,0,0,0])),event_mask=0)
+        connection.flush()
+        deadline=time.monotonic()+timeout
+        while subprocess.run(['xdotool','getwindowname',window],env=env,capture_output=True).returncode==0:
+            assert time.monotonic()<deadline,'Game did not close after WM_DELETE_WINDOW'
+            time.sleep(.1)
+    finally:
+        connection.close()
+
+
+def wait_game_frame(window, env, directory, color=None, timeout=20):
+    """Observe rendered gameplay, optionally a ROM-derived fixture color."""
+    from pathlib import Path
+    from PIL import Image
+    import shutil
+    directory=Path(directory)
+    capture=directory/'game-frame.png';deadline=time.monotonic()+timeout
+    while True:
+        result=subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(capture)],env=env,capture_output=True)
+        assert result.returncode==0,'Game window disappeared before rendering'
+        image=Image.open(capture).convert('RGB')
+        center=image.getpixel((image.width//2,image.height//2))
+        if (color is not None and all(abs(a-b)<=2 for a,b in zip(center,color))) or (color is None and len(image.getcolors(image.width*image.height))>4):
+            return capture
+        if time.monotonic()>=deadline:
+            proof=Path(__file__).resolve().parents[1]/'target'/('game-frame-'+directory.name+'.png')
+            shutil.copy2(capture,proof)
+            raise AssertionError(f'Expected rendered game color {color}, got {center}; proof: {proof}')
+        time.sleep(.1)
+
+
+def click_primary_play(window, env, directory, timeout=15):
+    """Find the enabled filled Play control, excluding the separate Wasm action."""
+    from pathlib import Path
+    from PIL import Image
+    deadline=time.monotonic()+timeout
+    while True:
+        path=Path(directory)/'primary-play.png'
+        subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(path)],env=env,check=True)
+        image=Image.open(path).convert('RGB');start=None
+        for y in range(100,image.height):
+            xs=[x for x in range(image.width) if (lambda c:c[0]<100 and c[1]>170 and c[2]>140)(image.getpixel((x,y)))]
+            if len(xs)>70:
+                if start is None:start=y
+                if y-start>=20:
+                    subprocess.run(['xdotool','mousemove','--window',window,str(sum(xs)//len(xs)),str(y-10),'click','1'],env=env,check=True)
+                    return
+            else:start=None
+        assert time.monotonic()<deadline,'Enabled primary Play control was not found'
+        time.sleep(.1)
