@@ -76,3 +76,22 @@ compiled against SDL intersections for all four sides, corner ties, fractional
 coordinates, strict misses and ghost pass-through. Regenerating this maintainer fixture needs SDL2 development
 libraries and Rust; players need neither SDL2 nor Python. Rendering, launch RNG,
 attached-ball timing and other full-game transitions need separate coverage.
+
+Arkanoo launch and transition oracle:
+
+```sh
+python3 tests/reference/arkanoo_transitions.py /path/to/pinned/arkanoo > tests/fixtures/arkanoo-transitions.json
+cargo test --test game_arkanoo
+```
+
+The complete unchanged original Ball implementation supplies six 33-frame
+traces: all three launch directions, each automatic and manual. A small RNG
+stand-in selects the direction; expected countdown/velocity/movement is executed
+by the original code. Unchanged life-loss, level-completion and next-level reset fragments cover
+score deductions, respawn, portal exclusion, recovery, victory, endless mode,
+and clearing items while retaining score/lives across level transitions.
+Minimal audio/animation stand-ins ignore presentation; this does not verify
+penguin rendering, original menus or full run persistence. Production randomness
+comes exclusively from GamePKG's host API. The unit harness injects deterministic
+words, including the modulo rejection tail and the no-relaunch/no-ammo-on-launch
+rules. Python is only needed to regenerate maintainer fixtures.

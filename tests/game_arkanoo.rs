@@ -1,3 +1,23 @@
+mod gamepkg {
+    thread_local! {
+        static WORDS: std::cell::RefCell<std::collections::VecDeque<u64>> = const { std::cell::RefCell::new(std::collections::VecDeque::new()) };
+        static NEXT: std::cell::Cell<u64> = const { std::cell::Cell::new(7) };
+    }
+    pub fn samples(values: &[u64]) {
+        WORDS.with(|words| *words.borrow_mut() = values.iter().copied().collect());
+    }
+    pub fn random_u64() -> u64 {
+        WORDS
+            .with(|words| words.borrow_mut().pop_front())
+            .unwrap_or_else(|| {
+                NEXT.with(|next| {
+                    let value = next.get().wrapping_mul(6364136223846793005).wrapping_add(1);
+                    next.set(value);
+                    value
+                })
+            })
+    }
+}
 #[path = "../ports/arkanoo/source/src/physics.rs"]
 mod physics;
 #[test]
@@ -29,7 +49,7 @@ fn controls_pause_and_paddle_bounds() {
     assert_eq!(game.mode, 1);
 }
 #[test]
-fn bonuses_are_bounded_and_expire() {
+fn original_bonus_counts_and_timers_are_retained() {
     let mut game = physics::Game::new();
     game.mode = 1;
     game.collect(0);
@@ -38,12 +58,18 @@ fn bonuses_are_bounded_and_expire() {
         game.collect(1);
         game.collect(3);
     }
-    assert_eq!(game.balls.len(), 4);
-    assert_eq!(game.ammo, 9);
+    assert_eq!(game.balls.len(), 11);
+    assert_eq!(game.ammo, 10);
     game.collect(2);
     assert_eq!(game.ghost, 600);
     game.update(4);
-    assert_eq!(game.ammo, 8);
+    assert_eq!(
+        game.ammo, 10,
+        "launching attached balls must not also fire a rocket"
+    );
+    assert!(game.rockets.is_empty());
+    game.update(4);
+    assert_eq!(game.ammo, 9);
     assert_eq!(game.rockets.len(), 1);
 }
 #[test]
@@ -115,7 +141,7 @@ fn campaign_can_advance_into_endless_and_resume_checkpoint() {
     assert_eq!(game.level, 9);
     game.blocks = [0; 200];
     game.update(0);
-    assert_eq!(game.mode, 3);
+    assert_eq!(game.mode, 5);
     assert_eq!(game.unlocked, 10);
     game.update(4);
     assert_eq!(game.level, 10);
@@ -123,10 +149,10 @@ fn campaign_can_advance_into_endless_and_resume_checkpoint() {
 }
 
 #[test]
-fn temporary_bonuses_expire_without_unbounded_entities() {
+fn temporary_bonuses_expire_and_drop_cooldown_applies() {
     let mut game = physics::Game::new();
     game.mode = 1;
-    game.launch = u32::MAX;
+    game.balls[0].launch_timer = u32::MAX;
     game.collect(0);
     game.collect(2);
     for _ in 0..600 {
@@ -139,7 +165,7 @@ fn temporary_bonuses_expire_without_unbounded_entities() {
         game.hit(i);
     }
     assert!(game.particles.len() <= 64);
-    assert!(game.drops.len() <= 8);
+    assert!(game.drops.len() <= 1);
 }
 
 #[test]
@@ -151,6 +177,7 @@ fn original_gravity_and_spin_equations_use_one_sixtieth_second_steps() {
         vy: 1.0,
         spin: 3.0,
         attached: false,
+        launch_timer: 0,
     };
     ball.apply_forces(false);
     assert!((ball.vx - 2.15).abs() < 0.00001);
@@ -290,6 +317,7 @@ fn scaled_force_steps_match_the_compiled_pinned_upstream_fragment() {
             vy: values[1].as_f64().unwrap() as f32 * 0.5,
             spin: values[2].as_f64().unwrap() as f32 * 0.5,
             attached: false,
+            launch_timer: 0,
         };
         for _ in 0..fixture["steps"].as_u64().unwrap() {
             ball.apply_forces(fixture["gravity"].as_bool().unwrap());
@@ -311,6 +339,7 @@ fn collision_ball(x: f32, y: f32, vx: f32, vy: f32) -> physics::Ball {
         vy,
         spin: 7.0,
         attached: false,
+        launch_timer: 0,
     }
 }
 
@@ -575,5 +604,282 @@ fn brick_resolution_matches_original_code_and_sdl_for_all_sides_and_ghosts() {
                 "{actual} != {expected}"
             );
         }
+    }
+}
+
+#[test]
+fn automatic_and_manual_launch_frames_match_unchanged_original_for_each_direction() {
+    let reference: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-transitions.json")).unwrap();
+    for fixture in reference["launches"].as_array().unwrap() {
+        let mut game = physics::Game::new();
+        game.mode = 1;
+        let direction = fixture["direction"].as_u64().unwrap();
+        gamepkg::samples(&[3 + direction]);
+        for (frame, expected) in fixture["expected"].as_array().unwrap().iter().enumerate() {
+            game.update(if frame == 0 && fixture["manual"].as_bool().unwrap() {
+                4
+            } else {
+                0
+            });
+            let ball = &game.balls[0];
+            let actual = [
+                (ball.x - 3.0) * 2.0,
+                (ball.y - 63.0) * 2.0,
+                ball.vx * 2.0,
+                ball.vy * 2.0,
+                ball.launch_timer as f32,
+                if ball.attached { 1.0 } else { 0.0 },
+            ];
+            for (actual, expected) in actual.iter().zip(expected.as_array().unwrap()) {
+                assert_eq!(
+                    *actual,
+                    expected.as_f64().unwrap() as f32,
+                    "direction {direction}, frame {frame}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn loss_and_level_completion_match_unchanged_original_fragments() {
+    let reference: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-transitions.json")).unwrap();
+    for fixture in reference["finishes"].as_array().unwrap() {
+        let mut game = physics::Game::new();
+        game.mode = 1;
+        game.level = fixture["level"].as_u64().unwrap() as u32;
+        game.lives = fixture["lives"].as_u64().unwrap() as u32;
+        game.lost_life = fixture["lost"].as_bool().unwrap();
+        game.finish_level();
+        assert_eq!(
+            [game.lives, game.mode],
+            [
+                fixture["expected"][0].as_u64().unwrap() as u32,
+                fixture["expected"][1].as_u64().unwrap() as u32
+            ]
+        );
+    }
+    for fixture in reference["losses"].as_array().unwrap() {
+        let mut game = physics::Game::new();
+        game.mode = 1;
+        game.lives = fixture["lives"].as_u64().unwrap() as u32;
+        game.score = fixture["score"].as_u64().unwrap() as u32;
+        game.portal = fixture["portal"].as_bool().unwrap();
+        game.width = 90.0;
+        game.balls.clear();
+        game.update(0);
+        assert_eq!(
+            [
+                game.lives,
+                game.score,
+                game.balls.len() as u32,
+                u32::from(game.lost_life),
+                game.mode
+            ],
+            fixture["expected"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_u64().unwrap() as u32)
+                .collect::<Vec<_>>()
+                .as_slice()
+        );
+        if let Some(expected) = fixture.get("ball") {
+            let ball = &game.balls[0];
+            assert_eq!(
+                [
+                    (ball.x - 3.0) * 2.0,
+                    (ball.y - 63.0) * 2.0,
+                    ball.vx * 2.0,
+                    ball.vy * 2.0,
+                    ball.launch_timer as f32
+                ],
+                expected
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|v| v.as_f64().unwrap() as f32)
+                    .collect::<Vec<_>>()
+                    .as_slice()
+            );
+        }
+    }
+}
+
+#[test]
+fn life_loss_preserves_items_and_new_level_resets_them_at_original_boundaries() {
+    let mut game = physics::Game::new();
+    game.mode = 1;
+    game.collect(0);
+    game.collect(2);
+    game.collect(3);
+    game.drops.push(physics::Drop {
+        x: 100.0,
+        y: 300.0,
+        kind: 0,
+    });
+    game.rockets.push((500.0, 300.0));
+    game.balls.clear();
+    game.score = 100;
+    game.update(0);
+    assert_eq!(
+        (game.lives, game.score, game.width, game.long, game.ghost, game.ammo),
+        (2, 80, 90.0, 299, 599, 1)
+    );
+    assert_eq!(
+        (game.drops.len(), game.rockets.len(), game.balls.len()),
+        (1, 1, 1)
+    );
+    assert!(game.balls[0].attached);
+    assert_eq!(game.balls[0].launch_timer, 30);
+    game.blocks = [0; 200];
+    game.update(0);
+    assert_eq!((game.mode, game.lives), (3, 3));
+    game.update(4);
+    assert_eq!(
+        (
+            game.level,
+            game.paddle,
+            game.last_paddle,
+            game.width,
+            game.ammo,
+            game.long,
+            game.ghost
+        ),
+        (2, 285.0, 285.0, 70.0, 0, 0, 0)
+    );
+    assert!(!game.lost_life);
+    assert!(game.drops.is_empty());
+    assert!(game.rockets.is_empty());
+}
+
+#[test]
+fn timers_are_per_ball_and_manual_launch_does_not_relaunch_flying_balls() {
+    let mut game = physics::Game::new();
+    game.mode = 1;
+    for _ in 0..10 {
+        game.update(0);
+    }
+    game.collect(1);
+    assert_eq!(
+        (game.balls[0].launch_timer, game.balls[1].launch_timer),
+        (20, 30)
+    );
+    assert!(game.balls[1].attached);
+    game.balls.remove(0);
+    gamepkg::samples(&[3, 4]);
+    game.balls[0].launch();
+    game.balls[0].launch();
+    assert_eq!((game.balls[0].vx, game.balls[0].vy), (-2.0, -2.0));
+    assert_eq!(
+        physics::below(3),
+        1,
+        "flying ball consumed a second launch sample"
+    );
+    gamepkg::samples(&[0, 5]);
+    assert_eq!(
+        physics::below(3),
+        2,
+        "biased modulo sampling accepted the rejection tail"
+    );
+}
+
+#[test]
+fn victory_endless_progression_large_scores_and_simultaneous_final_loss_are_retained() {
+    let mut game = physics::Game::new();
+    game.mode = 1;
+    game.level = 9;
+    game.lost_life = true;
+    game.lives = 2;
+    game.blocks = [0; 200];
+    game.update(0);
+    assert_eq!((game.mode, game.lives), (5, 3));
+    game.update(4);
+    assert_eq!(game.level, 10);
+    game.level = 999;
+    game.blocks = [0; 200];
+    game.update(0);
+    game.update(4);
+    assert_eq!(game.level, 1000);
+    game.score = 9999999;
+    game.award(5);
+    assert_eq!(game.score, 10000004);
+    game.mode = 1;
+    game.lives = 1;
+    game.blocks = [0; 200];
+    game.balls.clear();
+    game.update(0);
+    assert_eq!((game.mode, game.lives), (3, 1));
+}
+
+#[test]
+fn level_reset_matches_unchanged_original_with_items_and_high_level_numbers() {
+    let reference: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-transitions.json")).unwrap();
+    for fixture in reference["resets"].as_array().unwrap() {
+        let mut game = physics::Game::new();
+        game.mode = 3;
+        game.level = fixture["level"].as_u64().unwrap() as u32;
+        game.score = 100;
+        game.lives = 2;
+        game.paddle = 50.0;
+        game.width = 90.0;
+        game.ammo = 3;
+        game.long = 200;
+        game.ghost = 300;
+        game.lost_life = true;
+        game.portal = true;
+        game.portal_timer = 17;
+        game.max_speed = 4000.0;
+        game.drops.push(physics::Drop {
+            x: 100.0,
+            y: 300.0,
+            kind: 0,
+        });
+        game.rockets.push((100.0, 300.0));
+        game.particles.push(physics::Particle {
+            x: 100.0,
+            y: 300.0,
+            vx: 1.0,
+            vy: 1.0,
+            life: 20,
+            color: 0xffffffff,
+        });
+        game.update(4);
+        assert_eq!(game.mode, 1);
+        let ball = &game.balls[0];
+        let actual = [
+            game.level as f32,
+            game.score as f32,
+            game.lives as f32,
+            game.paddle * 2.0,
+            game.width * 2.0,
+            game.ammo as f32,
+            game.long as f32,
+            game.ghost as f32,
+            game.balls.len() as f32,
+            (ball.x - 3.0) * 2.0,
+            (ball.y - 63.0) * 2.0,
+            ball.launch_timer as f32,
+            game.drops.len() as f32,
+            game.rockets.len() as f32,
+            game.particles.len() as f32,
+            if game.lost_life { 1.0 } else { 0.0 },
+            if game.portal { 1.0 } else { 0.0 },
+            game.portal_timer as f32,
+            game.max_speed,
+        ];
+        assert_eq!(
+            actual.as_slice(),
+            fixture["expected"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|value| value.as_f64().unwrap() as f32)
+                .collect::<Vec<_>>()
+                .as_slice()
+        );
     }
 }
