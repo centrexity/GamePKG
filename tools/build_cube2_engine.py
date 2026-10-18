@@ -58,6 +58,7 @@ def main():
     shutil.copyfile(PROJECT / 'engines/cube2/adapters/persistence.h', stage / 'engine/persistence.h')
     shutil.copyfile(PROJECT / 'engines/cube2/adapters/audio.h', stage / 'engine/audio.h')
     shutil.copyfile(PROJECT / 'engines/cube2/adapters/mouse.h', stage / 'engine/gamepkg_mouse.h')
+    shutil.copyfile(PROJECT / 'engines/cube2/adapters/keyboard.h', stage / 'engine/gamepkg_keyboard.h')
     shutil.copyfile(PROJECT / 'engines/cube2/adapters/modifiers.h', stage / 'engine/gamepkg_modifiers.h')
     shutil.copyfile(PROJECT / 'engines/cube2/adapters/network.h', stage / 'enet/gamepkg_network.h')
     unix = stage / 'enet/unix.c'

@@ -458,7 +458,7 @@ initially enabled. No media is published. The X11 test remaps its tenth physical
 original MOUSE10/11/12 as well as the five common buttons. Native Wayland
 additional-button normalization, relative-motion placement within the
 event sequence, recovery of physically held controls after the UI input lease
-expires, physical/controller keyboard overlap, native Wayland state and wider
+expires, physical-controller hardware verification, native Wayland state and wider
 hardware/platform coverage remain open.
 
 
@@ -496,3 +496,32 @@ check. Both Windows all-features build checks, strict lint, formatting, all 125
 pinned Cube 2 source hashes and seven public-page link checks pass. Both app
 entries are rebuilt locally. This closes the reproduced SDL modifier lookahead
 issue; wider input/port parity remains open and no release is created.
+
+
+Keyboard-source overlap follow-up: reviewed input state now tracks physical and
+portable-action keys separately for every accepted SDL scancode, emitting changes
+only when their combined state changes. Either source can release first without
+cancelling the other. Physical repeat key-downs remain explicit; malformed repeat
+key-ups are rejected by both the host encoder and reviewed engine. Focus reset
+releases both sources once, and later stale releases do not create another edge.
+The old held-mask comparison no longer competes with physical key state.
+
+Controller Left Shift also contributes to effective modifier snapshots for
+keyboard, mouse and wheel input. The engine retains the physical modifier base
+separately, preserving right Shift, Caps/Num and other physical modifiers when
+controller Shift changes. The SDL scancode/modifier constants are asserted at
+compile time. A production-header test covers every accepted scancode, both
+source/release orders, repeat, reset, invalid indices and combined Shift masks.
+The unchanged original engine's W and Left Shift bindings verify both overlap
+orders and one focus-reset release through saved callback counters. These tests
+exercise the controller/touch action boundary; full physical-device, gesture,
+lease-recovery, relative-motion and platform coverage remain open.
+
+Keyboard overlap validation: 402 default all-features tests pass with 57 dedicated
+media/platform checks ignored. The original W/Shift overlap and original-console
+modifier-timing regressions pass explicitly. Signed package rebuild/cache,
+playback/save/integrity, all-eight-button/wheel/ordering GUI and initial-lock
+startup/focus/close GUI checks pass. Both Windows all-features checks, strict lint,
+formatting, 125 pinned source hashes and seven public-page link checks pass.
+CLI and GUI are rebuilt locally. This is source-only progress at version 0.1.17;
+full controller/touch hardware and overall port parity are not claimed complete.

@@ -140,6 +140,7 @@ pub fn save_files(bytes: &[u8]) -> Result<Vec<SaveFile<'_>>> {
 /// event structs or pointers. The engine asserts SDL_NUM_SCANCODES is 512.
 pub fn key_event(scancode: u32, pressed: bool, repeat: bool, modifiers: u32) -> Result<Vec<u8>> {
     ensure!((4..512).contains(&scancode), "unsupported Cube 2 key");
+    ensure!(pressed || !repeat, "a Cube 2 key release cannot repeat");
     ensure!(modifiers & !0x3fc3 == 0, "unsupported Cube 2 modifiers");
     let mut bytes = b"GPI1".to_vec();
     for n in [
@@ -414,6 +415,13 @@ pub(crate) fn test_tree(files: &[(&str, &[u8])]) -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn keyboard_repeat_is_valid_only_for_pressed_keys() {
+        assert!(key_event(26, true, true, 0).is_ok());
+        assert!(key_event(26, true, false, 0).is_ok());
+        assert!(key_event(26, false, false, 0).is_ok());
+        assert!(key_event(26, false, true, 0).is_err());
+    }
     #[test]
     fn physical_mouse_packets_accept_all_eight_original_buttons_only() {
         for button in 1..=8 {

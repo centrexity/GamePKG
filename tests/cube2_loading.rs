@@ -51,3 +51,8 @@ fn reviewed_modifiers_restore_event_time_state_in_dispatch_order() {
         ],
     );
 }
+
+#[test]
+fn reviewed_keyboard_sources_preserve_overlap_repeat_and_reset() {
+    compile_bridge("tests/cube2_keyboard_bridge.cpp", &[]);
+}

@@ -1448,3 +1448,6 @@ mod locks;
 
 #[cfg(test)]
 mod modifiers;
+
+#[cfg(test)]
+mod keyboard;

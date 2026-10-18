@@ -6,6 +6,7 @@
 #include <errno.h>
 #include "syscall_guard.h"
 #include "gamepkg_mouse.h"
+#include "gamepkg_keyboard.h"
 #include "gamepkg_modifiers.h"
 #include <SDL_mixer.h>
 #include <dirent.h>
@@ -21,10 +22,16 @@ static int gamepkg_output = -1;
 static void gamepkg_prepare();
 static bool gamepkg_running = false;
 static bool gamepkg_closing = false;
-static uint32_t gamepkg_previous = 0;
 static int gamepkg_width = 640, gamepkg_height = 480;
 static_assert(SDL_NUM_SCANCODES == 512, "Update the host SDL scancode bounds together");
-static bool gamepkg_keys[SDL_NUM_SCANCODES] = {};
+static gamepkg_keyboard_state gamepkg_keys;
+static_assert(SDL_SCANCODE_LSHIFT==225 && KMOD_LSHIFT==1,"Update controller Shift mapping together");
+static uint32_t gamepkg_physical_modifiers=0;
+static uint32_t gamepkg_record_modifiers(uint32_t mods)
+{
+    gamepkg_physical_modifiers=mods;
+    return gamepkg_keys.with_action_shift(mods);
+}
 static gamepkg_mouse_state gamepkg_mouse;
 // Keep rendering independent of SDL's fixed-size offscreen/EGL window surface.
 // The original engine's default framebuffer is a host-owned resizable target.
@@ -192,7 +199,7 @@ static void gamepkg_input()
             if(++events > 64) exit(2);
             uint32_t button=gamepkg_le32(packet+4), pressed=gamepkg_le32(packet+8), mods=gamepkg_le32(packet+12);
             if((button<1 || button>8) || pressed>1 || (mods & ~uint32_t(0x3fc3))) exit(2);
-            gamepkg_set_modifiers(mods);
+            gamepkg_set_modifiers(gamepkg_record_modifiers(mods));
             if(!gamepkg_mouse.update(button,pressed!=0,false)) continue;
             SDL_Event event; memset(&event,0,sizeof(event));
             event.type=gamepkg_mouse.down[button] ? SDL_MOUSEBUTTONDOWN : SDL_MOUSEBUTTONUP;
@@ -206,7 +213,7 @@ static void gamepkg_input()
             if((rawx>16 && rawx<0xfffffff0u) || (rawy>16 && rawy<0xfffffff0u) || (mods & ~uint32_t(0x3fc3))) exit(2);
             int x=rawx<=16 ? int(rawx) : -int(~rawx)-1,y=rawy<=16 ? int(rawy) : -int(~rawy)-1;
             if(abs(x)+abs(y)>16) exit(2);
-            gamepkg_set_modifiers(mods);
+            gamepkg_set_modifiers(gamepkg_record_modifiers(mods));
             for(int axis=0;axis<2;axis++)
             {
                 int steps=axis ? x : y;
@@ -224,26 +231,26 @@ static void gamepkg_input()
             if(++events > 64) exit(2);
             uint32_t mods = gamepkg_le32(packet+4);
             if((mods & ~uint32_t(0x3fc3)) || gamepkg_le32(packet+8) || gamepkg_le32(packet+12)) exit(2);
-            gamepkg_set_modifiers(mods); continue;
+            gamepkg_set_modifiers(gamepkg_record_modifiers(mods)); continue;
         }
         if(!memcmp(packet, "GPR1", 4))
         {
             if(++events > 64) exit(2);
             if(gamepkg_le32(packet+4) || gamepkg_le32(packet+8) || gamepkg_le32(packet+12)) exit(2);
+            gamepkg_physical_modifiers=0;
             gamepkg_set_modifiers(0);
             for(unsigned i=1;i<9;i++) if(gamepkg_mouse.release(i))
             {
                 SDL_Event event;memset(&event,0,sizeof(event));event.type=SDL_MOUSEBUTTONUP;
                 event.button.state=SDL_RELEASED;event.button.button=i;SDL_PushEvent(&event);
             }
-            gamepkg_previous &= ~(3u<<16);
-            for(unsigned i=4;i<SDL_NUM_SCANCODES;i++) if(gamepkg_keys[i])
+            for(unsigned i=4;i<SDL_NUM_SCANCODES;i++) if(gamepkg_keys.release(i))
             {
                 SDL_Event event; memset(&event, 0, sizeof(event));
                 event.type = SDL_KEYUP; event.key.state = SDL_RELEASED;
                 event.key.keysym.scancode = SDL_Scancode(i);
                 event.key.keysym.sym = SDL_GetKeyFromScancode(SDL_Scancode(i));
-                SDL_PushEvent(&event); gamepkg_keys[i] = false;
+                SDL_PushEvent(&event);
             }
             continue;
         }
@@ -251,7 +258,10 @@ static void gamepkg_input()
         {
             if(++events > 64) exit(2);
             uint32_t key = gamepkg_le32(packet+4), flags = gamepkg_le32(packet+8), mods = gamepkg_le32(packet+12);
-            if(key < 4 || key >= SDL_NUM_SCANCODES || flags > 3 || (mods & ~uint32_t(0x3fc3))) exit(2);
+            if(key < 4 || key >= SDL_NUM_SCANCODES || (flags > 3 || flags == 2) || (mods & ~uint32_t(0x3fc3))) exit(2);
+            mods=gamepkg_record_modifiers(mods);
+            gamepkg_set_modifiers(mods);
+            if(!gamepkg_keys.update(key,(flags&1)!=0,false,(flags&2)!=0)) continue;
             SDL_Event event; memset(&event, 0, sizeof(event));
             event.type = flags&1 ? SDL_KEYDOWN : SDL_KEYUP;
             event.key.state = flags&1 ? SDL_PRESSED : SDL_RELEASED;
@@ -259,8 +269,6 @@ static void gamepkg_input()
             event.key.keysym.scancode = SDL_Scancode(key);
             event.key.keysym.sym = SDL_GetKeyFromScancode(SDL_Scancode(key));
             event.key.keysym.mod = mods;
-            gamepkg_set_modifiers(mods);
-            gamepkg_keys[key] = (flags&1) != 0;
             SDL_PushEvent(&event);
             continue;
         }
@@ -280,15 +288,21 @@ static void gamepkg_input()
     if(memcmp(packet, "GPK1", 4)) exit(2);
     const uint32_t buttons = gamepkg_le32(packet+4);
     if(buttons & ~uint32_t(0x3ffff)) exit(2);
+    const uint32_t controller_modifiers=gamepkg_physical_modifiers | ((buttons&(1u<<5)) ? uint32_t(KMOD_LSHIFT) : 0);
+    gamepkg_set_modifiers(controller_modifiers);
     static const SDL_Keycode keys[16] = { SDLK_w, SDLK_s, SDLK_a, SDLK_d,
         SDLK_SPACE, SDLK_LSHIFT, SDLK_RETURN, SDLK_ESCAPE,
         SDLK_TAB, SDLK_e, SDLK_r, SDLK_1, SDLK_2, SDLK_3, SDLK_4, SDLK_5 };
-    for(unsigned i=0;i<16;i++) if((buttons ^ gamepkg_previous)&(1u<<i))
+    for(unsigned i=0;i<16;i++)
     {
+        unsigned key=SDL_GetScancodeFromKey(keys[i]);
+        bool pressed=(buttons&(1u<<i))!=0;
+        if(!gamepkg_keys.update(key,pressed,true)) continue;
         SDL_Event event; memset(&event, 0, sizeof(event));
-        event.type = buttons&(1u<<i) ? SDL_KEYDOWN : SDL_KEYUP;
+        event.type = gamepkg_keys.down[key] ? SDL_KEYDOWN : SDL_KEYUP;
         event.key.state = buttons&(1u<<i) ? SDL_PRESSED : SDL_RELEASED;
         event.key.keysym.sym = keys[i];
+        event.key.keysym.mod = controller_modifiers;
         event.key.keysym.scancode = SDL_GetScancodeFromKey(keys[i]);
         SDL_PushEvent(&event);
     }
@@ -303,7 +317,6 @@ static void gamepkg_input()
         event.button.button = button;
         SDL_PushEvent(&event);
     }
-    gamepkg_previous = buttons;
     // Bounded relative motion, represented explicitly rather than native structs.
     const uint32_t dx = gamepkg_le32(packet+8), dy = gamepkg_le32(packet+12);
     const int mx = dx <= 2048 ? int(dx) : dx >= 0xfffff800u ? -int(~dx)-1 : 0;
