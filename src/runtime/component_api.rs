@@ -188,10 +188,19 @@ pub(super) fn linker(engine: &Engine) -> Result<Linker<Data>> {
     host.func_wrap(
         "draw-clear",
         |mut store: StoreContextMut<'_, Data>, (rgba,): (u32,)| {
-            store.data_mut().frame.reset();
-            store.data_mut().frame.background = Some(rgba);
+            store.data_mut().frame.clear(rgba);
             Ok((true,))
         },
+    )?;
+    host.func_wrap(
+        "draw-clip",
+        |mut store: StoreContextMut<'_, Data>, (x, y, w, h): (f32, f32, f32, f32)| {
+            Ok((store.data_mut().frame.clip(Some([x, y, w, h])),))
+        },
+    )?;
+    host.func_wrap(
+        "draw-clip-reset",
+        |mut store: StoreContextMut<'_, Data>, (): ()| Ok((store.data_mut().frame.clip(None),)),
     )?;
     host.func_wrap(
         "draw-rect",
@@ -246,9 +255,10 @@ pub(super) fn linker(engine: &Engine) -> Result<Linker<Data>> {
             ),))
         },
     )?;
-    host.func_wrap(
-        "draw-image",
-        |mut store: StoreContextMut<'_, Data>,
+    for (image_name, linear) in [("draw-image", false), ("draw-image-linear", true)] {
+        host.func_wrap(
+        image_name,
+        move |mut store: StoreContextMut<'_, Data>,
          (x, y, w, h, pw, ph, pixels): (f32, f32, f32, f32, u32, u32, WasmList<u8>)| {
             let Some(bytes) = crate::drawing::image::Image::byte_length(pw, ph) else {
                 return Ok((false,));
@@ -261,9 +271,10 @@ pub(super) fn linker(engine: &Engine) -> Result<Linker<Data>> {
             else {
                 return Ok((false,));
             };
-            Ok((store.data_mut().frame.image(x, y, w, h, image),))
+            Ok((if linear {store.data_mut().frame.linear_image(x,y,w,h,image)} else {store.data_mut().frame.image(x,y,w,h,image)},))
         },
     )?;
+    }
     host.func_wrap(
         "draw-shader-image",
         |mut store: StoreContextMut<'_, Data>,

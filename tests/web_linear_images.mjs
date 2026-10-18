@@ -11,8 +11,19 @@ for(let i=0;i<1024;i++)assert.equal(api.canonical['draw-asset-image-linear'](0,9
 const bytes=api.state().imageBudget;assert.equal(api.linear(0,9,0,0,10,10),-1);assert.equal(api.state().imageBudget,bytes);
 api.reset();vm.runInContext(`images.set('heart.png',{width:512,height:512,pixels:new Uint8Array(1048576)});`,worker);
 for(let i=0;i<8;i++)assert.equal(api.linear(0,9,0,0,10,10),0);assert.equal(api.nearest(0,9,0,0,10,10),-1);
-const samples=[];const context={imageSmoothingEnabled:false,fillRect(){},drawImage(){samples.push(this.imageSmoothingEnabled);}};
-const ui=vm.createContext({context,color:()=> '#000000',canvas:{dataset:{}},data:{custom_renderer:true},ImageData:class{constructor(){}},document:{createElement:()=>({getContext:()=>({putImageData(){}})}),querySelector:()=>({textContent:''})}});
+const samples=[];const context={save(){},restore(){},imageSmoothingEnabled:false,fillRect(){},drawImage(){samples.push(this.imageSmoothingEnabled);}};
+const ui=vm.createContext({linearSprite(){samples.push('linear');},context,color:()=> '#000000',canvas:{dataset:{}},data:{custom_renderer:true},ImageData:class{constructor(){}},document:{createElement:()=>({getContext:()=>({putImageData(){}})}),querySelector:()=>({textContent:''})}});
 const player=readFileSync(new URL('../web-player/player.js',import.meta.url),'utf8');vm.runInContext(player.slice(player.indexOf('function render(frame)'),player.indexOf('function playAudio(')),ui);
 vm.runInContext(`render({background:null,state:'1',commands:[['linear-image',0,0,10,10,1,1,new Uint8Array(4)],['image',0,0,10,10,1,1,new Uint8Array(4)],['linear-image',0,0,10,10,1,1,new Uint8Array(4)]]});`,ui);
-assert.deepEqual(samples,[true,false,true]);console.log('Filtered assets keep path/memory/queue bounds and switch browser smoothing per draw.');
+assert.deepEqual(samples,['linear',false,'linear']);console.log('Filtered assets keep path/memory/queue bounds and switch browser smoothing per draw.');
+
+api.reset();
+vm.runInContext(`instance={exports:{memory:new WebAssembly.Memory({initial:17})}};new Uint8Array(instance.exports.memory.buffer).set([255,192,0,255]);`,worker);
+const raw=vm.runInContext('({linear:api.draw_image_linear,canonical})',worker);
+assert.equal(raw.linear(0,0,10,10,1,1,0,4),0);
+assert.equal(api.state().commands[0][0],'linear-image');
+assert.equal(raw.canonical['draw-image-linear'](0,0,10,10,1,1,0,4),1);
+for(const values of [[0,0,10,10,0,1,0,0],[0,0,10,10,513,1,0,4],[0,0,10,10,1,1,0,3],[NaN,0,10,10,1,1,0,4],[0,0,10,10,1,1,-1,4],[0,0,10,10,1,1,1114111,4]])assert.equal(raw.linear(...values),-1);
+api.reset();for(let i=0;i<8;i++)assert.equal(raw.linear(0,0,10,10,512,512,0,1048576),0);
+assert.equal(raw.linear(0,0,10,10,1,1,0,4),-1);
+console.log('Generated filtered images preserve canonical bindings, memory checks and cumulative transfer limits.');

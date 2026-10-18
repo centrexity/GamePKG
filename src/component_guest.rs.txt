@@ -20,6 +20,7 @@ pub mod gamepkg {
         #[link_name="draw-shader-image"] fn host_shader_image(index:u32,pw:u32,ph:u32,pixels:*const u8,length:usize)->i32;
         #[link_name="draw-asset-image"] fn host_asset_image(path:*const u8,length:usize,x:f32,y:f32,w:f32,h:f32)->i32;
         #[link_name="draw-asset-image-linear"] fn host_asset_image_linear(path:*const u8,length:usize,x:f32,y:f32,w:f32,h:f32)->i32;
+        #[link_name = "draw-image-linear"] fn host_image_linear(x:f32,y:f32,w:f32,h:f32,pw:u32,ph:u32,pixels:*const u8,length:usize) -> i32;
         #[link_name = "draw-image"] fn host_image(x:f32,y:f32,w:f32,h:f32,pw:u32,ph:u32,pixels:*const u8,length:usize) -> i32;
         #[link_name = "asset-read"] fn asset(path: *const u8, n: usize, offset: u32, length: u32, result: *mut u32);
         #[link_name = "rom-read"] fn rom(offset: u32, length: u32, result: *mut u32);
@@ -28,6 +29,8 @@ pub mod gamepkg {
         #[link_name = "save-size"] fn save_len(result: *mut u32);
         #[link_name = "save-write"] fn write(bytes: *const u8, n: usize) -> i32;
         #[link_name = "draw-clear"] fn clear(rgba: u32) -> i32;
+        #[link_name="draw-clip"] fn host_draw_clip(x:f32,y:f32,w:f32,h:f32)->i32;
+        #[link_name="draw-clip-reset"] fn host_draw_clip_reset()->i32;
         #[link_name = "draw-rect"] fn rect(x: f32,y: f32,w: f32,h: f32,rgba: u32) -> i32;
         #[link_name = "draw-circle"] fn circle(x: f32,y: f32,r: f32,rgba: u32) -> i32;
         #[link_name = "draw-shader"] fn shader(index: u32) -> i32;
@@ -79,6 +82,8 @@ pub mod gamepkg {
         bytes.len() <= 1048576 && unsafe { write(bytes.as_ptr(),bytes.len()) != 0 }
     }
     pub fn draw_clear(rgba: u32) -> bool { unsafe { clear(rgba) != 0 } }
+    pub fn draw_clip(x:f32,y:f32,w:f32,h:f32)->bool {unsafe {host_draw_clip(x,y,w,h)!=0}}
+    pub fn draw_clip_reset()->bool {unsafe {host_draw_clip_reset()!=0}}
     pub fn draw_rect(x: f32,y: f32,w: f32,h: f32,rgba: u32) -> bool { unsafe { rect(x,y,w,h,rgba) != 0 } }
     pub fn draw_circle(x: f32,y: f32,r: f32,rgba: u32) -> bool { unsafe { circle(x,y,r,rgba) != 0 } }
     /// Draw a bounded PNG from the package's virtual assets folder.
@@ -94,6 +99,10 @@ pub mod gamepkg {
     pub fn draw_image(x:f32,y:f32,w:f32,h:f32,pw:u32,ph:u32,pixels:&[u8]) -> bool {
         if pw==0 || ph==0 || pw>512 || ph>512 || pixels.len()!=pw as usize*ph as usize*4 { return false; }
         unsafe { host_image(x,y,w,h,pw,ph,pixels.as_ptr(),pixels.len()) != 0 }
+    }
+    pub fn draw_image_linear(x:f32,y:f32,w:f32,h:f32,pw:u32,ph:u32,pixels:&[u8]) -> bool {
+        if pw==0 || ph==0 || pw>512 || ph>512 || pixels.len()!=pw as usize*ph as usize*4 { return false; }
+        unsafe { host_image_linear(x,y,w,h,pw,ph,pixels.as_ptr(),pixels.len()) != 0 }
     }
     pub fn draw_shader_asset_image(index: u32, path: &str) -> bool {
         if index > i32::MAX as u32 || path.is_empty() || path.len() > 1024 { return false; }

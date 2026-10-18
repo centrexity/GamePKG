@@ -2272,6 +2272,26 @@ fn original_glass_bonus_layers_preserve_types_symbols_order_and_full_drop_budget
         std::collections::BTreeMap::<String, std::sync::Arc<gamepkg::drawing::image::Image>>::new();
     for _ in 0..2 {
         assert_eq!(stress.step(2147485696 | 32).unwrap(), 200);
+        let commands = &stress.frame().commands;
+        let clips: Vec<_> = commands
+            .iter()
+            .enumerate()
+            .filter_map(|(index, command)| {
+                if let Command::Clip { rect } = command {
+                    Some((index, *rect))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert_eq!(clips.len(), 2);
+        assert_eq!(clips[0].1, Some([0.0, 60.0, 640.0, 360.0]));
+        assert_eq!(clips[1].1, None);
+        assert!(
+            clips[0].0 > 0 && clips[1].0 + 1 < commands.len(),
+            "HUD must remain outside the world clip"
+        );
+        assert_eq!(commands[clips[0].0 + 1..clips[1].0].iter().filter(|command| matches!(command, Command::Image { image, .. } if image.size() == [41, 41])).count(), 800, "Every bonus layer must be inside the world clip");
         assert!(stress.frame().commands.len() < gamepkg::drawing::MAX_COMMANDS);
         let mut bytes = 0;
         let mut count = 0;
@@ -2758,4 +2778,68 @@ fn canonical_campaign_backgrounds_preserve_exact_frames_and_full_scene_budgets()
         2281701376,
         &[0, 3, 7, 10, 14, 17],
     );
+}
+
+#[test]
+#[ignore = "requires tests/arkanoo.py fixtures"]
+fn original_ball_speed_font_pixels_and_integer_placement_reach_every_profile() {
+    let root = isolated_library();
+    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
+    let reference: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-speed-font.json")).unwrap();
+    for (index, speed) in [0, 60, 300, 600, 1200, 1800].iter().enumerate() {
+        let label = format!("{speed} px/s");
+        let case = reference["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["text"] == label)
+            .unwrap();
+        let compressed = hex::decode(case["rgba_zlib_hex"].as_str().unwrap()).unwrap();
+        let mut expected = Vec::new();
+        std::io::Read::read_to_end(
+            &mut flate2::read::ZlibDecoder::new(compressed.as_slice()),
+            &mut expected,
+        )
+        .unwrap();
+        let source_width = case["width"].as_u64().unwrap() as u32;
+        let width = (source_width as f32 * 0.6) as u32;
+        let height = (31.0f32 * 0.6) as u32;
+        for (pose, [px, py]) in [
+            [0.0f32, 0.0f32],
+            [320.75, 240.25],
+            [-0.75, -0.75],
+            [-1.75, -1.75],
+        ]
+        .iter()
+        .enumerate()
+        {
+            assert_eq!(
+                game.step(2415919104 | (index as u32 * 4 + pose as u32))
+                    .unwrap(),
+                1
+            );
+            let [Command::LinearImage {
+                x,
+                y,
+                width: w,
+                height: h,
+                image,
+            }] = game.frame().commands.as_slice()
+            else {
+                panic!("Speed label did not use filtered drawing")
+            };
+            assert_eq!(
+                (*x, *y, *w, *h),
+                (
+                    ((*px as i32 + 6) - width as i32 / 2) as f32 * 0.5,
+                    60.0 + (*py as i32 - height as i32 - 5) as f32 * 0.5,
+                    width as f32 * 0.5,
+                    height as f32 * 0.5
+                )
+            );
+            assert_eq!(image.size(), [source_width as usize, 31]);
+            assert_eq!(image.pixels(), expected);
+        }
+    }
 }

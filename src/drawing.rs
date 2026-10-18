@@ -4,6 +4,10 @@ pub const MAX_COMMANDS: usize = 1024;
 pub const MAX_IMAGE_BYTES: usize = 8 * 1024 * 1024;
 #[derive(Debug, Clone, PartialEq)]
 pub enum Command {
+    /// Replace the current clip, or restore the complete virtual canvas.
+    Clip {
+        rect: Option<[f32; 4]>,
+    },
     Image {
         x: f32,
         y: f32,
@@ -50,6 +54,30 @@ impl Frame {
         self.background = None;
         self.commands.clear();
         self.image_bytes = 0;
+    }
+    /// Discard prior drawing, retaining this tick's transfer charges.
+    pub fn clear(&mut self, rgba: u32) {
+        self.commands.clear();
+        self.background = Some(rgba);
+    }
+    pub fn clip(&mut self, rect: Option<[f32; 4]>) -> bool {
+        if self.commands.len() >= MAX_COMMANDS {
+            return false;
+        }
+        if let Some([x, y, w, h]) = rect {
+            if ![x, y, w, h].iter().all(|v| v.is_finite())
+                || x < 0.0
+                || y < 0.0
+                || w < 0.0
+                || h < 0.0
+                || x + w > 640.0
+                || y + h > 480.0
+            {
+                return false;
+            }
+        }
+        self.commands.push(Command::Clip { rect });
+        true
     }
     pub fn can_image(&self, x: f32, y: f32, width: f32, height: f32, bytes: usize) -> bool {
         valid_position(x, y)
@@ -165,4 +193,62 @@ fn valid_position(x: f32, y: f32) -> bool {
         && y.is_finite()
         && (-640.0..=1280.0).contains(&x)
         && (-480.0..=960.0).contains(&y)
+}
+
+#[cfg(test)]
+mod clip_tests {
+    use super::*;
+    #[test]
+    fn clip_replacement_reset_and_empty_regions_are_bounded_commands() {
+        let mut frame = Frame::default();
+        for rect in [
+            [0.0, 60.0, 640.0, 360.0],
+            [640.0, 480.0, 0.0, 0.0],
+            [10.5, 20.25, 1.5, 0.5],
+        ] {
+            assert!(frame.clip(Some(rect)));
+            assert_eq!(
+                frame.commands.last(),
+                Some(&Command::Clip { rect: Some(rect) })
+            );
+        }
+        for rect in [
+            [-1.0, 0.0, 1.0, 1.0],
+            [0.0, 0.0, -1.0, 1.0],
+            [0.0, 0.0, 641.0, 480.0],
+            [640.0, 0.0, 1.0, 1.0],
+            [0.0, 480.0, 0.0, 1.0],
+            [f32::NAN, 0.0, 1.0, 1.0],
+            [0.0, f32::INFINITY, 0.0, 0.0],
+            [f32::MAX, 0.0, f32::MAX, 1.0],
+        ] {
+            let count = frame.commands.len();
+            assert!(!frame.clip(Some(rect)));
+            assert_eq!(frame.commands.len(), count);
+        }
+        assert!(frame.clip(None));
+        assert_eq!(frame.commands.last(), Some(&Command::Clip { rect: None }));
+        while frame.commands.len() < MAX_COMMANDS {
+            assert!(frame.clip(None));
+        }
+        assert!(!frame.clip(None));
+        assert!(!frame.clip(Some([0.0, 0.0, 1.0, 1.0])));
+        frame.reset();
+        assert!(frame.clip(None));
+    }
+    #[test]
+    fn clearing_discards_clip_but_does_not_refund_invisible_image_transfers() {
+        let mut frame = Frame::default();
+        let image = image::Image::new(512, 512, &vec![255; image::MAX_BYTES]).unwrap();
+        assert!(frame.clip(Some([0.0, 0.0, 0.0, 0.0])));
+        for _ in 0..8 {
+            assert!(frame.image(0.0, 0.0, 512.0, 512.0, image.clone()));
+        }
+        frame.clear(0x123456ff);
+        assert!(frame.commands.is_empty());
+        assert_eq!(frame.background, Some(0x123456ff));
+        assert!(!frame.image(0.0, 0.0, 1.0, 1.0, image.clone()));
+        frame.reset();
+        assert!(frame.image(0.0, 0.0, 1.0, 1.0, image));
+    }
 }

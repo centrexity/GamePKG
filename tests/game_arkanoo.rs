@@ -3244,3 +3244,30 @@ fn original_canonical_campaign_backgrounds_match_every_primitive_and_pixel() {
         "fixtures/arkanoo-canonical-campaign.json"
     ));
 }
+
+#[path = "../ports/arkanoo/source/src/speed_font.rs"]
+// Guest code initializes buffers without the forbidden vec! macro.
+#[allow(clippy::slow_vector_initialization)]
+mod speed_font;
+#[test]
+fn original_speed_font_labels_match_complete_sdl_ttf_rasters() {
+    let reference: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-speed-font.json")).unwrap();
+    for case in reference["cases"].as_array().unwrap() {
+        let speed: u32 = case["text"]
+            .as_str()
+            .unwrap()
+            .split(' ')
+            .next()
+            .unwrap()
+            .parse()
+            .unwrap();
+        let actual = speed_font::raster(speed);
+        assert_eq!(actual.width as u64, case["width"].as_u64().unwrap());
+        let compressed = hex::decode(case["rgba_zlib_hex"].as_str().unwrap()).unwrap();
+        let mut decoder = flate2::read::ZlibDecoder::new(compressed.as_slice());
+        let mut expected = Vec::new();
+        std::io::Read::read_to_end(&mut decoder, &mut expected).unwrap();
+        assert_eq!(actual.pixels, expected, "{}", case["text"]);
+    }
+}

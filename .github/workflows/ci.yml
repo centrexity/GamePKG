@@ -55,6 +55,10 @@ jobs:
           ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 target/doom-endoom-test
       - name: Test browser guest path protections
         run: node tests/web_path_attacks.mjs
+      - name: Verify browser drawing clip policy
+        run: node tests/web_clipping.mjs
+      - name: Verify generated and packaged filtered image bounds
+        run: node tests/web_linear_images.mjs
       - name: Verify browser random-value imports
         run: node tests/web_randomness.mjs
       - name: Verify browser keyboard edges and shared bindings
@@ -179,7 +183,7 @@ jobs:
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/drawing_game.py
       - name: Install virtual display tools
         if: matrix.features == '--all-features'
-        run: sudo apt-get install -y xvfb xdotool imagemagick tesseract-ocr python3-pil python3-xlib python3-selenium zenity libsdl2-dev pkg-config libxkbcommon-x11-0 libgl1-mesa-dri libvulkan1 mesa-vulkan-drivers
+        run: sudo apt-get install -y xvfb xdotool imagemagick tesseract-ocr python3-pil python3-xlib python3-selenium zenity libsdl2-dev libsdl2-ttf-dev pkg-config libxkbcommon-x11-0 libgl1-mesa-dri libvulkan1 mesa-vulkan-drivers
       - name: Native package and catalog drag-and-drop
         if: matrix.features == '--all-features'
         run: /usr/bin/python3 tests/drop_files_gui.py
@@ -302,6 +306,20 @@ jobs:
       - name: Verify exact canonical effect backgrounds
         if: matrix.features == '--all-features'
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tests/background_gui.py --canonical-effects
+      - name: Fetch pinned original font reference
+        if: matrix.features == '--all-features'
+        uses: actions/checkout@v4
+        with:
+          repository: c0m4r/arkanoo
+          ref: 9d613e78c9ed5657ae7fda9206cd4a82a893b7c8
+          path: target/reference-arkanoo
+          persist-credentials: false
+      - name: Compare original speed lettering in desktop and browser players
+        if: matrix.features == '--all-features'
+        run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tests/speed_font_gui.py --original target/reference-arkanoo
+      - name: Verify clipping across native, Wasm and browser renderers
+        if: matrix.features == '--all-features'
+        run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tests/clipping_game.py
       - name: Verify guest drawing in the GUI
         if: matrix.features == '--all-features'
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" /usr/bin/python3 tests/drawing_gui.py

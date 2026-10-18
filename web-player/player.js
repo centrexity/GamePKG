@@ -29,12 +29,40 @@ function tick(){if(!running)return;watch(250);worker.postMessage({type:'tick',in
 function shader(type,source){const value=gl.createShader(type);gl.shaderSource(value,source);gl.compileShader(value);if(!gl.getShaderParameter(value,gl.COMPILE_STATUS)){const error=gl.getShaderInfoLog(value);gl.deleteShader(value);throw Error('WebGL shader compilation failed: '+error);}return value;}
 function setupShaders(sources){if(!sources.length)return;shaderSurface=new OffscreenCanvas(640,480);gl=shaderSurface.getContext('webgl2',{alpha:true,depth:false,antialias:false,premultipliedAlpha:false,preserveDrawingBuffer:true});if(!gl)throw Error('This game requires WebGL 2');const vertex=shader(gl.VERTEX_SHADER,'#version 300 es\nvoid main(){vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2);gl_Position=vec4(p*2.0-1.0,0.0,1.0);}');for(const source of sources){const adapted=source.replace(/^#version[^\n]*\n/,'#version 300 es\nprecision highp float;\nprecision highp int;\n').replace(/layout\(row_major\) (uniform|buffer);/g,'').replace(/layout\(binding\s*=\s*0\)\s*/g,'');const fragment=shader(gl.FRAGMENT_SHADER,adapted),program=gl.createProgram();gl.attachShader(program,vertex);gl.attachShader(program,fragment);gl.linkProgram(program);gl.deleteShader(fragment);if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw Error('WebGL shader link failed: '+gl.getProgramInfoLog(program));for(let i=0;i<gl.getProgramParameter(program,gl.ACTIVE_UNIFORMS);i++){const uniform=gl.getActiveUniform(program,i);if(uniform.name!=='gamepkgTexture_0'||uniform.type!==gl.SAMPLER_2D||uniform.size!==1)throw Error('Forbidden shader resource');}programs.push(program);}gl.deleteShader(vertex);texture=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,texture);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);gl.bindVertexArray(gl.createVertexArray());}
 function shaderFrame(index,width=1,height=1,pixels=new Uint8Array(4)){if(!programs[index]||gl.isContextLost())throw Error('Shader graphics context unavailable');gl.viewport(0,0,640,480);gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT);gl.useProgram(programs[index]);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,texture);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA8,width,height,0,gl.RGBA,gl.UNSIGNED_BYTE,pixels);const sampler=gl.getUniformLocation(programs[index],'gamepkgTexture_0');if(sampler!==null)gl.uniform1i(sampler,0);gl.drawArrays(gl.TRIANGLES,0,3);context.drawImage(shaderSurface,0,0);}
+// Use one-level GPU bilinear sampling rather than Canvas2D's implementation-
+// dependent minification filter. Match desktop encoded-byte premultiplication.
+let linearGraphics=null;
+function linearSprite(x,y,w,h,width,height,pixels){
+ if(w<=0||h<=0)return;
+ if(!linearGraphics){
+  const surface=new OffscreenCanvas(640,480),g=surface.getContext('webgl2',{alpha:true,depth:false,antialias:false,premultipliedAlpha:true,preserveDrawingBuffer:true});
+  if(!g)throw Error('Filtered game images require WebGL 2');
+  const compile=(type,source)=>{const shader=g.createShader(type);g.shaderSource(shader,source);g.compileShader(shader);if(!g.getShaderParameter(shader,g.COMPILE_STATUS))throw Error('Filtered image shader failed');return shader;};
+  const vertex=compile(g.VERTEX_SHADER,`#version 300 es
+  uniform vec4 bounds;out vec2 uv;
+  void main(){vec2 p[6]=vec2[6](vec2(0,0),vec2(1,0),vec2(0,1),vec2(0,1),vec2(1,0),vec2(1,1));uv=p[gl_VertexID];vec2 at=bounds.xy+uv*bounds.zw;gl_Position=vec4(at.x/320.0-1.0,1.0-at.y/240.0,0,1);}`);
+  const fragment=compile(g.FRAGMENT_SHADER,`#version 300 es
+  precision highp float;uniform sampler2D image;in vec2 uv;out vec4 result;
+  void main(){result=texture(image,uv);}`);
+  const program=g.createProgram();g.attachShader(program,vertex);g.attachShader(program,fragment);g.linkProgram(program);g.deleteShader(vertex);g.deleteShader(fragment);
+  if(!g.getProgramParameter(program,g.LINK_STATUS))throw Error('Filtered image program failed');
+  const image=g.createTexture();g.bindTexture(g.TEXTURE_2D,image);g.texParameteri(g.TEXTURE_2D,g.TEXTURE_MIN_FILTER,g.LINEAR);g.texParameteri(g.TEXTURE_2D,g.TEXTURE_MAG_FILTER,g.LINEAR);g.texParameteri(g.TEXTURE_2D,g.TEXTURE_WRAP_S,g.CLAMP_TO_EDGE);g.texParameteri(g.TEXTURE_2D,g.TEXTURE_WRAP_T,g.CLAMP_TO_EDGE);g.bindVertexArray(g.createVertexArray());
+  linearGraphics={surface,g,program,image,bounds:g.getUniformLocation(program,'bounds')};
+ }
+ const {surface,g,program,image,bounds}=linearGraphics;if(g.isContextLost())throw Error('Filtered image context unavailable');
+ const premultiplied=new Uint8Array(pixels.length);
+ for(let i=0;i<pixels.length;i+=4){const a=pixels[i+3];for(let c=0;c<3;c++)premultiplied[i+c]=Math.floor((pixels[i+c]*a+127)/255);premultiplied[i+3]=a;}
+ g.viewport(0,0,640,480);g.clearColor(0,0,0,0);g.clear(g.COLOR_BUFFER_BIT);g.useProgram(program);g.activeTexture(g.TEXTURE0);g.bindTexture(g.TEXTURE_2D,image);g.texImage2D(g.TEXTURE_2D,0,g.RGBA8,width,height,0,g.RGBA,g.UNSIGNED_BYTE,premultiplied);g.uniform1i(g.getUniformLocation(program,'image'),0);g.uniform4f(bounds,x,y,w,h);g.drawArrays(g.TRIANGLES,0,6);
+ context.imageSmoothingEnabled=false;context.drawImage(surface,0,0);
+}
 function render(frame){
  // Every tick is a fresh frame, matching the native player's black backdrop.
  const background=frame.background??0x10171dff;
  if((background&255)!==255){context.fillStyle='#000000';context.fillRect(0,0,640,480);}
  context.fillStyle=color(background);context.fillRect(0,0,640,480);
- for(const entry of frame.commands){const [kind,x,y,a,b,rgba]=entry;if(kind==='shader'){shaderFrame(x);}else if(kind==='shader-image'){shaderFrame(x,y,a,b);}else if(kind==='rect'){context.fillStyle=color(rgba);context.fillRect(x,y,a,b);}else if((kind==='image'||kind==='linear-image')){const [,,,,,width,height,pixels]=entry,surface=document.createElement('canvas');surface.width=width;surface.height=height;surface.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(pixels),width,height),0,0);context.imageSmoothingEnabled=kind==='linear-image';context.drawImage(surface,x,y,a,b);}else{context.fillStyle=color(b);context.beginPath();context.arc(x,y,a,0,Math.PI*2);context.fill();}}
+ context.save();
+ try {for(const entry of frame.commands){const [kind,x,y,a,b,rgba]=entry;if(kind==='clip'||kind==='clip-reset'){context.restore();context.save();if(kind==='clip'){context.beginPath();context.rect(x,y,a,b);context.clip();}}else if(kind==='shader'){shaderFrame(x);}else if(kind==='shader-image'){shaderFrame(x,y,a,b);}else if(kind==='rect'){context.fillStyle=color(rgba);context.fillRect(x,y,a,b);}else if(kind==='linear-image'){const [,,,,,width,height,pixels]=entry;linearSprite(x,y,a,b,width,height,pixels);}else if(kind==='image'){const [,,,,,width,height,pixels]=entry,surface=document.createElement('canvas');surface.width=width;surface.height=height;surface.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(pixels),width,height),0,0);context.imageSmoothingEnabled=kind==='linear-image';context.drawImage(surface,x,y,a,b);}else{context.fillStyle=color(b);context.beginPath();context.arc(x,y,a,0,Math.PI*2);context.fill();}}} finally {context.restore();}
+
  if(!data.custom_renderer&&frame.commands.length===0&&frame.background===null){const state=BigInt(frame.state);context.fillStyle='#111a2c';context.fillRect(0,0,640,480);const x=Number(state&15n),y=Number(state>>8n&255n),tx=Number(state>>16n&255n),ty=Number(state>>24n&255n);context.fillStyle='#ffd45d';context.fillRect(tx*40,ty*40,32,32);context.fillStyle='#6ee7ac';context.fillRect(x*40,y*40,32,32);}
  document.querySelector('#score').textContent=data.custom_renderer?'':`Score ${BigInt(frame.state)>>32n}`;
  canvas.dataset.state=frame.state;

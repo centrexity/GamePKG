@@ -310,6 +310,15 @@ impl Session {
             Ok(v)
         }
         let ok = match op {
+            31 => {
+                ensure!(b.len() == 16, "invalid draw-clip packet");
+                self.frame
+                    .clip(Some([f(b, 0)?, f(b, 4)?, f(b, 8)?, f(b, 12)?]))
+            }
+            32 => {
+                ensure!(b.is_empty(), "invalid draw-clip-reset packet");
+                self.frame.clip(None)
+            }
             29 => {
                 ensure!(b.len() == 8, "invalid window-control packet");
                 return Ok(vec![if self.window.request(n(b, 0)?, n(b, 4)?) {
@@ -401,7 +410,8 @@ impl Session {
                 true
             }
             8 => {
-                self.frame.background = Some(n(b, 0)?);
+                ensure!(b.len() == 4, "invalid draw-clear packet");
+                self.frame.clear(n(b, 0)?);
                 true
             }
             9 => self
@@ -436,15 +446,20 @@ impl Session {
                 self.audio.extend(samples);
                 true
             }
-            13 => {
+            13 | 33 => {
                 let image = crate::drawing::image::Image::new(
                     n(b, 16)?,
                     n(b, 20)?,
                     b.get(24..).context("short image")?,
                 )
                 .context("invalid image")?;
-                self.frame
-                    .image(f(b, 0)?, f(b, 4)?, f(b, 8)?, f(b, 12)?, image)
+                if op == 33 {
+                    self.frame
+                        .linear_image(f(b, 0)?, f(b, 4)?, f(b, 8)?, f(b, 12)?, image)
+                } else {
+                    self.frame
+                        .image(f(b, 0)?, f(b, 4)?, f(b, 8)?, f(b, 12)?, image)
+                }
             }
             14 | 30 => {
                 let len = n(b, 0)? as usize;

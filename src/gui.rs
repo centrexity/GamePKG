@@ -986,8 +986,29 @@ impl eframe::App for App {
                             0.0,
                             color(game.frame().background.unwrap_or(0x10171dff)),
                         );
+                        let mut drawing_clip = rect;
                         for command in &game.frame().commands {
+                            if let crate::drawing::Command::Clip { rect: clip } = command {
+                                drawing_clip = clip
+                                    .map(|[x, y, w, h]| {
+                                        egui::Rect::from_min_size(
+                                            rect.min
+                                                + egui::vec2(x * image_scale.x, y * image_scale.y),
+                                            egui::vec2(w * image_scale.x, h * image_scale.y),
+                                        )
+                                    })
+                                    .unwrap_or(rect)
+                                    .intersect(rect);
+                                continue;
+                            }
+                            if !drawing_clip.is_positive() {
+                                continue;
+                            }
+                            let painter = painter.with_clip_rect(drawing_clip);
                             match *command {
+                                crate::drawing::Command::Clip { .. } => {
+                                    unreachable!("clip handled before drawing")
+                                }
                                 crate::drawing::Command::Image {
                                     x,
                                     y,

@@ -158,8 +158,11 @@ impl Game {
                             | "draw_asset_image"
                             | "draw_asset_image_linear"
                             | "draw_image"
+                            | "draw_image_linear"
                             | "draw_shader_image"
                             | "draw_shader_asset_image"
+                            | "draw_clip"
+                            | "draw_clip_reset"
                             | "draw_rect"
                             | "draw_circle"
                             | "draw_shader"
@@ -217,8 +220,11 @@ impl Game {
                                 | "draw-asset-image"
                                 | "draw-asset-image-linear"
                                 | "draw-image"
+                                | "draw-image-linear"
                                 | "draw-shader-image"
                                 | "draw-shader-asset-image"
+                                | "draw-clip"
+                                | "draw-clip-reset"
                                 | "draw-rect"
                                 | "draw-circle"
                                 | "draw-shader"
@@ -434,54 +440,62 @@ impl Game {
                     }
                 },
             )?;
-            linker.func_wrap(
-                "gamepkg",
-                "draw_image",
-                |mut caller: Caller<'_, Data>,
-                 x: f32,
-                 y: f32,
-                 w: f32,
-                 h: f32,
-                 pw: u32,
-                 ph: u32,
-                 pointer: i32,
-                 length: i32|
-                 -> i32 {
-                    let Some(bytes) = crate::drawing::image::Image::byte_length(pw, ph) else {
-                        return -1;
-                    };
-                    if pointer < 0
-                        || length < 0
-                        || length as usize != bytes
-                        || !caller.data().frame.can_image(x, y, w, h, bytes)
-                    {
-                        return -1;
-                    }
-                    let Some(memory) = caller.get_export("memory").and_then(|e| e.into_memory())
-                    else {
-                        return -1;
-                    };
-                    let Some(end) = (pointer as usize).checked_add(bytes) else {
-                        return -1;
-                    };
-                    if end > memory.data_size(&caller) {
-                        return -1;
-                    }
+            for (image_name, linear) in [("draw_image", false), ("draw_image_linear", true)] {
+                linker.func_wrap(
+                    "gamepkg",
+                    image_name,
+                    move |mut caller: Caller<'_, Data>,
+                          x: f32,
+                          y: f32,
+                          w: f32,
+                          h: f32,
+                          pw: u32,
+                          ph: u32,
+                          pointer: i32,
+                          length: i32|
+                          -> i32 {
+                        let Some(bytes) = crate::drawing::image::Image::byte_length(pw, ph) else {
+                            return -1;
+                        };
+                        if pointer < 0
+                            || length < 0
+                            || length as usize != bytes
+                            || !caller.data().frame.can_image(x, y, w, h, bytes)
+                        {
+                            return -1;
+                        }
+                        let Some(memory) =
+                            caller.get_export("memory").and_then(|e| e.into_memory())
+                        else {
+                            return -1;
+                        };
+                        let Some(end) = (pointer as usize).checked_add(bytes) else {
+                            return -1;
+                        };
+                        if end > memory.data_size(&caller) {
+                            return -1;
+                        }
 
-                    let Some(image) = crate::drawing::image::Image::new(
-                        pw,
-                        ph,
-                        &memory.data(&caller)[pointer as usize..end],
-                    ) else {
-                        return -1;
-                    };
-                    if caller.data_mut().frame.image(x, y, w, h, image) {
-                        0
-                    } else {
-                        -1
-                    }
-                },
-            )?;
+                        let Some(image) = crate::drawing::image::Image::new(
+                            pw,
+                            ph,
+                            &memory.data(&caller)[pointer as usize..end],
+                        ) else {
+                            return -1;
+                        };
+                        let accepted = if linear {
+                            caller.data_mut().frame.linear_image(x, y, w, h, image)
+                        } else {
+                            caller.data_mut().frame.image(x, y, w, h, image)
+                        };
+                        if accepted {
+                            0
+                        } else {
+                            -1
+                        }
+                    },
+                )?;
+            }
             linker.func_wrap(
                 "gamepkg",
                 "draw_shader_image",
@@ -536,9 +550,30 @@ impl Game {
                 "gamepkg",
                 "draw_clear",
                 |mut caller: Caller<'_, Data>, rgba: i32| -> i32 {
-                    caller.data_mut().frame.reset();
-                    caller.data_mut().frame.background = Some(rgba as u32);
+                    caller.data_mut().frame.clear(rgba as u32);
                     0
+                },
+            )?;
+            linker.func_wrap(
+                "gamepkg",
+                "draw_clip",
+                |mut caller: Caller<'_, Data>, x: f32, y: f32, w: f32, h: f32| -> i32 {
+                    if caller.data_mut().frame.clip(Some([x, y, w, h])) {
+                        0
+                    } else {
+                        -1
+                    }
+                },
+            )?;
+            linker.func_wrap(
+                "gamepkg",
+                "draw_clip_reset",
+                |mut caller: Caller<'_, Data>| -> i32 {
+                    if caller.data_mut().frame.clip(None) {
+                        0
+                    } else {
+                        -1
+                    }
                 },
             )?;
             linker.func_wrap(
