@@ -3267,3 +3267,107 @@ fn original_editor_palette_colors_borders_digits_and_order_match_sdl_pixels() {
         );
     }
 }
+
+#[test]
+#[ignore = "requires tests/arkanoo.py fixtures"]
+fn editor_original_labels_bounded_overlap_and_toolbar_hover_reach_signed_profiles() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-editor-labels.json")).unwrap();
+    let root = isolated_library();
+    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
+    for state in 0..8u32 {
+        let bg = state % 6;
+        let hovered = if state < 7 { state } else { 255 };
+        assert_eq!(
+            game.step(0xc0000040 | (hovered << 8) | (bg << 16)).unwrap(),
+            64
+        );
+        let commands = &game.frame().commands;
+        let mut labels = vec![
+            (0, 10, 10),
+            (1, 760, 25),
+            (2, 296, 620),
+            (10 + bg, 1084, 570),
+        ];
+        for which in 0..7u32 {
+            let rect = if which < 5 {
+                [225 + which as i32 * 170, 660, 150, 40]
+            } else if which == 5 {
+                [1020, 610, 120, 35]
+            } else {
+                [1150, 610, 120, 35]
+            };
+            let width = fixture["cases"][which as usize + 3]["width"]
+                .as_i64()
+                .unwrap() as i32;
+            labels.push((
+                which + 3,
+                rect[0] + (rect[2] - width) / 2,
+                rect[1] + (rect[3] - 31) / 2,
+            ));
+            let fill = if hovered == which {
+                [100, 100, 150, 200]
+            } else {
+                [60, 60, 100, 180]
+            };
+            assert!(commands.iter().any(|command|matches!(command,Command::Image{x,y,width,height,image} if (*x,*y,*width,*height)==(rect[0] as f32*0.5,60.0+rect[1] as f32*0.5,rect[2] as f32*0.5,rect[3] as f32*0.5) && image.size()==[1,1] && image.pixels()==fill)));
+        }
+        for (which, left, top) in labels {
+            let case = &fixture["cases"][which as usize];
+            let full_width = case["width"].as_u64().unwrap() as usize;
+            let compressed = hex::decode(case["rgba_zlib_hex"].as_str().unwrap()).unwrap();
+            let mut expected = Vec::new();
+            std::io::Read::read_to_end(
+                &mut flate2::read::ZlibDecoder::new(compressed.as_slice()),
+                &mut expected,
+            )
+            .unwrap();
+            let mut column = 0;
+            while column < full_width {
+                let right = (column + 256).min(full_width);
+                let source_left = column.saturating_sub(1);
+                let source_right = (right + 1).min(full_width);
+                let tile_width = source_right - source_left;
+                let rect = [
+                    (left as f32 + column as f32) * 0.5,
+                    60.0 + top as f32 * 0.5,
+                    (right - column) as f32 * 0.5,
+                    15.5,
+                ];
+                let at=commands.iter().position(|command|matches!(command,Command::Clip{rect:Some(actual)} if *actual==rect)).expect("label clip missing");
+                let Command::LinearImage {
+                    x,
+                    y,
+                    width,
+                    height,
+                    image,
+                } = &commands[at + 1]
+                else {
+                    panic!("unfiltered label")
+                };
+                assert_eq!(
+                    (*x, *y, *width, *height),
+                    (
+                        (left as f32 + source_left as f32) * 0.5,
+                        60.0 + top as f32 * 0.5,
+                        tile_width as f32 * 0.5,
+                        15.5
+                    )
+                );
+                assert_eq!(image.size(), [tile_width, 31]);
+                for row in 0..31 {
+                    assert_eq!(
+                        &image.pixels()[row * tile_width * 4..(row + 1) * tile_width * 4],
+                        &expected[(row * full_width + source_left) * 4
+                            ..(row * full_width + source_right) * 4],
+                        "{} row {row}",
+                        case["text"]
+                    );
+                }
+                assert_eq!(commands[at + 2], Command::Clip { rect: None });
+                column = right;
+            }
+        }
+        assert!(commands.len() < 1024);
+    }
+}

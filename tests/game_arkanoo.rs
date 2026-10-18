@@ -3333,3 +3333,47 @@ fn palette_numbers_reuse_original_glyph_alpha_with_black_ink() {
         .iter()
         .all(|value| *value == 0));
 }
+
+#[path = "../ports/arkanoo/source/src/editor_font.rs"]
+#[allow(clippy::slow_vector_initialization)]
+mod editor_font;
+#[test]
+fn editor_static_labels_match_complete_original_sdl_ttf_rasters() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-editor-labels.json")).unwrap();
+    for (index, case) in fixture["cases"].as_array().unwrap().iter().enumerate() {
+        let actual = editor_font::editor_raster(index as u32);
+        assert_eq!(u64::from(actual.width), case["width"].as_u64().unwrap());
+        let compressed = hex::decode(case["rgba_zlib_hex"].as_str().unwrap()).unwrap();
+        let mut expected = Vec::new();
+        std::io::Read::read_to_end(
+            &mut flate2::read::ZlibDecoder::new(compressed.as_slice()),
+            &mut expected,
+        )
+        .unwrap();
+        assert_eq!(actual.pixels, expected, "{}", case["text"]);
+    }
+    let invalid = editor_font::editor_raster(u32::MAX);
+    assert_eq!(invalid.width, 0);
+    assert!(invalid.pixels.is_empty());
+}
+#[test]
+fn editor_toolbar_hover_uses_original_integer_boxes_and_nonmotion_retention() {
+    let mut edit = editor::Editor::new();
+    for index in 0..7 {
+        let [x, y, w, h] = editor::Editor::toolbar_bounds(index);
+        for (px, py, wanted) in [
+            (x, y, index as u8),
+            (x + w - 1, y + h - 1, index as u8),
+            (x + w, y, 255),
+            (x, y + h, 255),
+        ] {
+            edit.editor_event(1, px as f32 * 0.5, 60.0 + py as f32 * 0.5, 0);
+            assert_eq!(edit.hovered_button, wanted);
+            edit.editor_event(0, 0.0, 0.0, 0);
+            assert_eq!(edit.hovered_button, wanted);
+        }
+    }
+    edit.editor_event(1, f32::NAN, 390.0, 0);
+    assert_eq!(edit.hovered_button, 255);
+}

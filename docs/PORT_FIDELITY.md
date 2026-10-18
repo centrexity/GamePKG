@@ -1619,3 +1619,43 @@ and backdrop resampling do not generally commute with rendering to original
 pixels first. Half-size/fractional window and browser whole-frame presentation
 remain open, as do the Colors label and other original editor/menu lettering.
 No graphics, execution, memory or drawing budget has been increased.
+
+
+## Original editor static lettering and toolbar
+
+Recipe 0.1.48 restores the original Roboto Medium 26 title, Colors label,
+seven toolbar captions, six background-counter variants, drawing instruction
+line and browser heading/instruction text. All 18 full RGBA rasters match
+independent SDL_ttf captures byte for byte, and generation is reproducible.
+The source/font/editor hashes guard that oracle. RLE data uses byte strings
+rather than large Rust numeric expressions, retaining the source complexity
+limit and dependency-free guest policy.
+
+The toolbar restores original translucent background colors and alpha,
+opaque borders, centered captions and hover hitboxes. Mouse motion updates
+hover using original integer coordinates; non-motion events retain it.
+Static labels use original positions and order. The 688-pixel instruction
+line uses bounded 256-column pieces with one source pixel of overlap and
+non-overlapping destination clips. Every piece fits the existing image
+limits; each clip is reset before subsequent drawing.
+
+All 85 logic tests and both 59-check signed suites pass, including all seven
+hover choices, six background captions, complete glyph bytes, placement,
+filtered overlap/clip reset, and full 200-metal editor boards within unchanged
+limits. At original pixel size, all six Linux desktop configurations compare
+the complete static-label and toolbar regions over three states and revisit:
+1,760,088 RGB comparisons, maximum original SDL difference two. A separate
+filtered-font test compares the entire old/new label region across three
+labels, movement and revisit in six desktop and two browser players: 408,960
+RGB comparisons, maximum difference one, including both long-line seams and
+stale-pixel clearing.
+
+Dynamic pattern names and messages still use replacement lettering, and the
+browser panel/row appearance is unfinished. Full editor-frame and window/CSS
+scaling parity remain open. These static-text checks do not close those gates.
+
+The final complete run also passes native gameplay/editor, real file-picker
+import/cancel and Save-dialog export, plus core and component browser
+play/editor/import/cancel/explicit-download workflows. Strict all-feature,
+all-target lint and formatting pass. Only source recipes/tests are published;
+this does not create an application or package binary release.
