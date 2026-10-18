@@ -30,6 +30,78 @@ mod menu;
 mod pattern_rng;
 #[path = "../ports/arkanoo/source/src/physics.rs"]
 mod physics;
+fn menu_game() -> physics::Game {
+    let mut game = physics::Game::new();
+    game.source_input(5, 0.0, 0.0, 40);
+    game
+}
+#[test]
+fn splash_restart_and_editor_return_match_pinned_original_state_code() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-flow.json")).unwrap();
+    for row in fixture["startup"].as_array().unwrap() {
+        let mut game = physics::Game::new();
+        for _ in 0..row[0].as_u64().unwrap() {
+            game.update(0);
+        }
+        assert_eq!(u64::from(game.mode), row[1].as_u64().unwrap());
+        assert_eq!(u64::from(game.splash_timer), row[2].as_u64().unwrap());
+        assert_eq!(game.frame, 0, "splash advanced gameplay");
+        assert!(!game.cursor_confined());
+    }
+    for rows in fixture["skip_restart"].as_array().unwrap().chunks(2) {
+        for mouse in [false, true] {
+            let mut game = physics::Game::new();
+            for _ in 0..rows[0][0].as_u64().unwrap() {
+                game.update(0);
+            }
+            if mouse {
+                game.source_input(2, 10.0, 10.0, 1);
+            } else {
+                game.source_input(5, 0.0, 0.0, 40);
+            }
+            assert_eq!(u64::from(game.mode), rows[0][1].as_u64().unwrap());
+            assert_eq!(u64::from(game.splash_timer), rows[0][2].as_u64().unwrap());
+            assert!(!game.started, "splash skip also activated New Game");
+            game.started = true;
+            game.reset_run();
+            game.update(0);
+            assert_eq!(u64::from(game.mode), rows[1][1].as_u64().unwrap());
+            assert_eq!(u64::from(game.splash_timer), rows[1][2].as_u64().unwrap());
+        }
+    }
+    for (index, rows) in fixture["editor_return"]
+        .as_array()
+        .unwrap()
+        .chunks(2)
+        .enumerate()
+    {
+        let mut game = menu_game();
+        game.started = index == 1;
+        game.mode = 6;
+        game.score = 123;
+        game.lives = 2;
+        game.source_input(9, 0.0, 0.0, 27);
+        assert_eq!(
+            [game.mode, game.score, game.lives],
+            [rows[0][0].as_u64().unwrap() as u32, 123, 2]
+        );
+        game.source_input(5, 0.0, 0.0, 41);
+        assert_eq!(
+            [game.mode, game.score, game.lives],
+            [rows[1][0].as_u64().unwrap() as u32, 123, 2]
+        );
+    }
+    let mut splash = physics::Game::new();
+    splash.source_input(2, 320.0, 185.0, 2);
+    splash.source_input(9, 0.0, 0.0, 101);
+    splash.source_input(9, 0.0, 0.0, 113);
+    splash.source_input(5, 0.0, 0.0, 41);
+    assert_eq!(splash.mode, 7);
+    assert!(!splash.quit_requested);
+    splash.source_input(5, 0.0, 0.0, 68);
+    assert_eq!(splash.fullscreen_requests, 1);
+}
 #[test]
 fn campaign_and_endless_are_nonempty() {
     assert_eq!(
@@ -45,7 +117,7 @@ fn campaign_and_endless_are_nonempty() {
 }
 #[test]
 fn controls_pause_and_paddle_bounds() {
-    let mut game = physics::Game::new();
+    let mut game = menu_game();
     game.update(4);
     assert_eq!(game.mode, 1);
     for _ in 0..200 {
@@ -61,7 +133,7 @@ fn controls_pause_and_paddle_bounds() {
 }
 #[test]
 fn original_bonus_counts_and_timers_are_retained() {
-    let mut game = physics::Game::new();
+    let mut game = menu_game();
     game.mode = 1;
     game.collect(0);
     assert_eq!(game.width, 90.0);
@@ -85,7 +157,7 @@ fn original_bonus_counts_and_timers_are_retained() {
 }
 #[test]
 fn collisions_score_and_checkpoint_level_completion() {
-    let mut game = physics::Game::new();
+    let mut game = menu_game();
     game.mode = 1;
     game.blocks = [0; 200];
     game.blocks[0] = 1;
@@ -107,7 +179,7 @@ fn collisions_score_and_checkpoint_level_completion() {
 }
 #[test]
 fn loss_and_restart_do_not_underflow_or_keep_stale_bonuses() {
-    let mut game = physics::Game::new();
+    let mut game = menu_game();
     game.mode = 1;
     game.lives = 1;
     game.balls[0].attached = false;
@@ -124,7 +196,7 @@ fn loss_and_restart_do_not_underflow_or_keep_stale_bonuses() {
 
 #[test]
 fn ghost_passes_through_and_rockets_clear_neighbours() {
-    let mut game = physics::Game::new();
+    let mut game = menu_game();
     game.mode = 1;
     game.ghost = 600;
     game.balls[0].attached = false;
@@ -146,7 +218,7 @@ fn ghost_passes_through_and_rockets_clear_neighbours() {
 
 #[test]
 fn campaign_can_advance_into_endless_and_resume_checkpoint() {
-    let mut game = physics::Game::new();
+    let mut game = menu_game();
     game.unlocked = 9;
     game.update(4);
     assert_eq!(game.level, 9);
@@ -161,7 +233,7 @@ fn campaign_can_advance_into_endless_and_resume_checkpoint() {
 
 #[test]
 fn temporary_bonuses_expire_and_drop_cooldown_applies() {
-    let mut game = physics::Game::new();
+    let mut game = menu_game();
     game.mode = 1;
     game.balls[0].launch_timer = u32::MAX;
     game.collect(0);
@@ -212,7 +284,7 @@ fn original_gravity_and_spin_equations_use_one_sixtieth_second_steps() {
 }
 #[test]
 fn speed_portal_activates_once_orbits_and_does_not_lose_lives() {
-    let mut game = physics::Game::new();
+    let mut game = menu_game();
     game.mode = 1;
     game.blocks = [0; 200];
     game.blocks[0] = 1;
@@ -237,7 +309,7 @@ fn speed_portal_activates_once_orbits_and_does_not_lose_lives() {
 }
 #[test]
 fn portal_pull_preserves_integer_world_motion_and_delays_completion() {
-    let mut game = physics::Game::new();
+    let mut game = menu_game();
     game.mode = 1;
     game.portal = true;
     game.blocks = [0; 200];
@@ -265,7 +337,7 @@ fn portal_pull_preserves_integer_world_motion_and_delays_completion() {
 }
 #[test]
 fn gravity_toggle_is_edge_triggered_and_spin_runs_once_per_frame() {
-    let mut game = physics::Game::new();
+    let mut game = menu_game();
     game.mode = 1;
     game.blocks = [0; 200];
     game.blocks[0] = 1;
@@ -289,7 +361,7 @@ fn gravity_toggle_is_edge_triggered_and_spin_runs_once_per_frame() {
 
 #[test]
 fn paused_portal_freezes_orbit_clock_and_absorption() {
-    let mut game = physics::Game::new();
+    let mut game = menu_game();
     game.mode = 1;
     game.portal = true;
     game.update(0);
@@ -356,7 +428,7 @@ fn collision_ball(x: f32, y: f32, vx: f32, vy: f32) -> physics::Ball {
 
 #[test]
 fn ball_contacts_restore_original_upward_ejection_and_shockwave() {
-    let mut game = physics::Game::new();
+    let mut game = menu_game();
     game.balls = vec![
         collision_ball(100.0, 200.0, 8.0, 2.0),
         collision_ball(105.0, 200.0, -9.0, -6.0),
@@ -376,7 +448,7 @@ fn ball_contacts_restore_original_upward_ejection_and_shockwave() {
 
 #[test]
 fn ball_contacts_keep_strict_distance_and_original_coincident_response() {
-    let mut game = physics::Game::new();
+    let mut game = menu_game();
     game.balls = vec![
         collision_ball(100.0, 200.0, 1.0, 2.0),
         collision_ball(106.0, 200.0, -1.0, 3.0),
@@ -393,7 +465,7 @@ fn ball_contacts_keep_strict_distance_and_original_coincident_response() {
 
 #[test]
 fn ball_contacts_snapshot_all_pairs_and_skip_portal_or_lost_balls() {
-    let mut game = physics::Game::new();
+    let mut game = menu_game();
     game.balls = vec![
         collision_ball(100.0, 200.0, 1.0, 2.0),
         collision_ball(102.0, 200.0, -1.0, 3.0),
@@ -425,7 +497,7 @@ fn contacts_match_unchanged_pinned_original_block() {
     let reference: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/arkanoo-contacts.json")).unwrap();
     for fixture in reference["fixtures"].as_array().unwrap() {
-        let mut game = physics::Game::new();
+        let mut game = menu_game();
         game.portal = fixture["portal"].as_bool().unwrap();
         game.balls.clear();
         for ball in fixture["balls"].as_array().unwrap() {
@@ -518,7 +590,7 @@ fn world_steps_match_original_update_and_actual_sdl_intersections() {
 
 #[test]
 fn original_world_geometry_and_paddle_speed_have_uniform_scale() {
-    let mut game = physics::Game::new();
+    let mut game = menu_game();
     assert_eq!((game.block_x[0], game.block_y[0]), (20.0, 100.0));
     assert_eq!((game.block_x[199], game.block_y[199]), (590.0, 190.0));
     assert_eq!(game.balls[0].y, 392.0);
@@ -537,7 +609,7 @@ fn paddle_motion_centered_bonus_and_expiry_match_unchanged_original() {
     let reference: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/arkanoo-world.json")).unwrap();
     for fixture in reference["paddles"].as_array().unwrap() {
-        let mut game = physics::Game::new();
+        let mut game = menu_game();
         for (event, expected) in fixture["events"]
             .as_array()
             .unwrap()
@@ -623,7 +695,7 @@ fn automatic_and_manual_launch_frames_match_unchanged_original_for_each_directio
     let reference: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/arkanoo-transitions.json")).unwrap();
     for fixture in reference["launches"].as_array().unwrap() {
-        let mut game = physics::Game::new();
+        let mut game = menu_game();
         game.mode = 1;
         let direction = fixture["direction"].as_u64().unwrap();
         gamepkg::samples(&[3 + direction]);
@@ -658,7 +730,7 @@ fn loss_and_level_completion_match_unchanged_original_fragments() {
     let reference: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/arkanoo-transitions.json")).unwrap();
     for fixture in reference["finishes"].as_array().unwrap() {
-        let mut game = physics::Game::new();
+        let mut game = menu_game();
         game.mode = 1;
         game.level = fixture["level"].as_u64().unwrap() as u32;
         game.lives = fixture["lives"].as_u64().unwrap() as u32;
@@ -673,7 +745,7 @@ fn loss_and_level_completion_match_unchanged_original_fragments() {
         );
     }
     for fixture in reference["losses"].as_array().unwrap() {
-        let mut game = physics::Game::new();
+        let mut game = menu_game();
         game.mode = 1;
         game.lives = fixture["lives"].as_u64().unwrap() as u32;
         game.score = fixture["score"].as_u64().unwrap() as u32;
@@ -721,7 +793,7 @@ fn loss_and_level_completion_match_unchanged_original_fragments() {
 
 #[test]
 fn life_loss_preserves_items_and_new_level_resets_them_at_original_boundaries() {
-    let mut game = physics::Game::new();
+    let mut game = menu_game();
     game.mode = 1;
     game.collect(0);
     game.collect(2);
@@ -768,7 +840,7 @@ fn life_loss_preserves_items_and_new_level_resets_them_at_original_boundaries() 
 
 #[test]
 fn timers_are_per_ball_and_manual_launch_does_not_relaunch_flying_balls() {
-    let mut game = physics::Game::new();
+    let mut game = menu_game();
     game.mode = 1;
     for _ in 0..10 {
         game.update(0);
@@ -799,7 +871,7 @@ fn timers_are_per_ball_and_manual_launch_does_not_relaunch_flying_balls() {
 
 #[test]
 fn victory_endless_progression_large_scores_and_simultaneous_final_loss_are_retained() {
-    let mut game = physics::Game::new();
+    let mut game = menu_game();
     game.mode = 1;
     game.level = 9;
     game.lost_life = true;
@@ -830,7 +902,7 @@ fn level_reset_matches_unchanged_original_with_items_and_high_level_numbers() {
     let reference: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/arkanoo-transitions.json")).unwrap();
     for fixture in reference["resets"].as_array().unwrap() {
-        let mut game = physics::Game::new();
+        let mut game = menu_game();
         game.mode = 3;
         game.level = fixture["level"].as_u64().unwrap() as u32;
         game.score = 100;
@@ -900,7 +972,7 @@ fn special_bricks_and_rocket_phases_match_unchanged_original_with_real_sdl() {
     let reference: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/arkanoo-bricks.json")).unwrap();
     for fixture in reference["fixtures"].as_array().unwrap() {
-        let mut game = physics::Game::new();
+        let mut game = menu_game();
         game.blocks = [0; 200];
         game.balls.clear();
         game.cooldown = 60;
@@ -997,7 +1069,7 @@ fn special_bricks_and_rocket_phases_match_unchanged_original_with_real_sdl() {
 #[test]
 fn indirect_damage_never_drops_bonuses_or_consumes_drop_entropy() {
     for rocket in [false, true] {
-        let mut game = physics::Game::new();
+        let mut game = menu_game();
         game.blocks = [0; 200];
         game.cooldown = 60;
         for index in 0..4 {
@@ -1013,7 +1085,7 @@ fn indirect_damage_never_drops_bonuses_or_consumes_drop_entropy() {
         assert_eq!(game.block_health[1], 2);
         assert_eq!(game.block_health[3], 255);
     }
-    let mut game = physics::Game::new();
+    let mut game = menu_game();
     game.blocks = [0; 200];
     game.cooldown = 60;
     assert!(game.set_block(0, 1));
@@ -1030,7 +1102,7 @@ fn indirect_damage_never_drops_bonuses_or_consumes_drop_entropy() {
 
 #[test]
 fn metal_is_ignored_for_level_completion_but_consumed_by_portals() {
-    let mut game = physics::Game::new();
+    let mut game = menu_game();
     game.blocks = [0; 200];
     game.mode = 1;
     assert!(game.set_block(0, 3));
@@ -1038,7 +1110,7 @@ fn metal_is_ignored_for_level_completion_but_consumed_by_portals() {
     assert_eq!(game.mode, 3);
     assert_eq!(game.blocks[0], 1);
     assert_eq!(game.score, 0);
-    let mut game = physics::Game::new();
+    let mut game = menu_game();
     game.blocks = [0; 200];
     game.mode = 1;
     game.portal = true;
@@ -1056,7 +1128,7 @@ fn metal_is_ignored_for_level_completion_but_consumed_by_portals() {
 
 #[test]
 fn invalid_editor_brick_types_and_indices_do_not_change_the_level() {
-    let mut game = physics::Game::new();
+    let mut game = menu_game();
     let blocks = game.blocks;
     let types = game.block_type;
     let health = game.block_health;
@@ -1162,7 +1234,7 @@ fn original_campaign_and_all_twelve_procedural_layouts_match_complete_generator(
 
 #[test]
 fn mouse_quantization_velocity_and_original_keyboard_actions_are_ordered() {
-    let mut game = physics::Game::new();
+    let mut game = menu_game();
     game.mode = 1;
     gamepkg::samples(&[3]);
     game.source_input(5, 0.0, 0.0, 44);
@@ -1196,7 +1268,7 @@ fn mouse_quantization_velocity_and_original_keyboard_actions_are_ordered() {
     assert_eq!(game.level, 2);
     game.mode = 2;
     game.source_input(9, 0.0, 0.0, 114);
-    assert_eq!((game.mode, game.level, game.lives), (0, 1, 3));
+    assert_eq!((game.mode, game.level, game.lives), (7, 1, 3));
 }
 
 #[test]
@@ -1352,7 +1424,7 @@ fn editor_archive_migrates_legacy_and_rejects_damage_without_partial_replacement
 
 #[test]
 fn editor_focus_reset_clear_confirmation_save_bounds_and_test_return_preserve_the_board() {
-    let mut game = physics::Game::new();
+    let mut game = menu_game();
     game.source_input(9, 0.0, 0.0, 101);
     assert_eq!(game.mode, 6);
     game.source_input(9, 0.0, 0.0, 54);
@@ -1414,7 +1486,7 @@ fn custom_endless_pool_matches_unchanged_original_generator_and_pattern_converte
         });
     }
     let mut kinds = std::collections::BTreeSet::new();
-    let mut game = physics::Game::new();
+    let mut game = menu_game();
     game.editor.patterns = patterns;
     for fixture in reference["layouts"].as_array().unwrap() {
         let level = fixture["level"].as_u64().unwrap() as u32;
@@ -1454,7 +1526,7 @@ fn custom_endless_pool_matches_unchanged_original_generator_and_pattern_converte
 
 #[test]
 fn leaving_a_paused_editor_test_cannot_turn_a_later_campaign_into_test_play() {
-    let mut game = physics::Game::new();
+    let mut game = menu_game();
     game.source_input(9, 0.0, 0.0, 101);
     game.editor.cells[0] = 0;
     game.source_input(9, 0.0, 0.0, 116);
@@ -1534,7 +1606,7 @@ fn failed_editor_saves_roll_back_the_browser_collection_without_losing_the_worki
 
 #[test]
 fn campaign_restart_keeps_saved_patterns_and_gravity_preferences() {
-    let mut game = physics::Game::new();
+    let mut game = menu_game();
     game.editor.cells[0] = 7;
     game.editor.editor_store();
     game.editor.editor_commit(true);
@@ -1552,7 +1624,7 @@ fn campaign_restart_keeps_saved_patterns_and_gravity_preferences() {
 
 #[test]
 fn editor_file_commands_only_queue_intent_until_the_host_binding_accepts() {
-    let mut game = physics::Game::new();
+    let mut game = menu_game();
     game.source_input(9, 0.0, 0.0, 101);
     game.source_input(9, 0.0, 0.0, 105);
     assert_eq!(game.editor.file_requested, 1);
@@ -1568,7 +1640,7 @@ fn editor_file_commands_only_queue_intent_until_the_host_binding_accepts() {
 
 #[test]
 fn window_controls_follow_original_gameplay_pause_editor_and_quit_bindings() {
-    let mut game = physics::Game::new();
+    let mut game = menu_game();
     assert!(!game.cursor_confined());
     for mode in 0..7 {
         game.mode = mode;
@@ -1599,7 +1671,7 @@ fn window_controls_follow_original_gameplay_pause_editor_and_quit_bindings() {
         game.update(4);
         assert_eq!(game.mode, before, "events after Quit still ran");
     }
-    let mut game = physics::Game::new();
+    let mut game = menu_game();
     game.mode = 1;
     game.source_input(9, 0.0, 0.0, 113);
     assert!(!game.quit_requested);
@@ -1634,7 +1706,7 @@ fn main_menu_primary_actions_match_unchanged_original_mouse_rectangles() {
 }
 #[test]
 fn menu_actions_preserve_pause_state_and_apply_controls_without_playing_behind_settings() {
-    let mut game = physics::Game::new();
+    let mut game = menu_game();
     game.unlocked = 9;
     game.source_input(2, 320.0, 185.0, 1);
     assert_eq!(
@@ -1664,7 +1736,7 @@ fn menu_actions_preserve_pause_state_and_apply_controls_without_playing_behind_s
     game.source_input(2, 320.0, 260.0, 1);
     assert_eq!(game.mode, 6);
     game.source_input(9, 0.0, 0.0, 27);
-    assert_eq!(game.mode, 0);
+    assert_eq!(game.mode, 2);
     assert!(!game.menu.settings);
     game.score = 999;
     game.lives = 1;
@@ -1674,27 +1746,29 @@ fn menu_actions_preserve_pause_state_and_apply_controls_without_playing_behind_s
     game.source_input(2, 320.0, 185.0, 1);
     assert_eq!(
         (game.mode, game.score, game.lives, game.ammo, game.long),
-        (1, 0, 3, 0, 0)
+        (1, 999, 1, 20, 10)
     );
-    assert!(!game.portal);
+    assert!(game.portal, "Resume discarded the run after editor return");
     assert_eq!(game.unlocked, 9);
     assert!(game.gravity);
     game.mode = 2;
     game.source_input(2, 320.0, 210.0, 1);
-    assert_eq!((game.mode, game.level, game.score), (0, 1, 0));
+    assert_eq!((game.mode, game.level, game.score), (7, 1, 0));
+    game.source_input(5, 0.0, 0.0, 40);
     assert_eq!(game.unlocked, 9);
     assert!(game.gravity);
     game.source_input(2, 320.0, 310.0, 1);
     assert!(game.quit_requested);
     game.source_input(2, 320.0, 185.0, 1);
     game.update(4);
-    assert_eq!(game.mode, 0);
-    let mut title = physics::Game::new();
+    assert_eq!(game.mode, 2);
+    let mut title = menu_game();
     title.score = 99;
     title.menu.settings = true;
     title.source_input(9, 0.0, 0.0, 114);
     assert_eq!(title.score, 0);
     assert!(!title.menu.settings);
+    title.source_input(5, 0.0, 0.0, 40);
     title.source_input(9, 0.0, 0.0, 113);
     assert!(title.quit_requested);
 }
@@ -1733,7 +1807,7 @@ fn effects_slider_matches_original_motion_drag_quantization_and_release() {
     controls.menu_event(1, 300.0, 245.0, 1);
     controls.menu_event(1, f32::NAN, 245.0, 1);
     assert!(!controls.dragging_volume);
-    let mut game = physics::Game::new();
+    let mut game = menu_game();
     game.menu.settings = true;
     game.source_input(2, 320.0, 225.0, 1);
     assert!(game.menu.sfx_muted && game.dirty);

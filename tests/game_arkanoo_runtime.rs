@@ -20,11 +20,122 @@ fn isolated_library() -> tempfile::TempDir {
     copy_library(&source, root.path());
     root
 }
+fn load_menu(root: &std::path::Path, id: &str) -> anyhow::Result<Game> {
+    let mut game = Game::load(root, id)?;
+    if [
+        "com.gamepkg.arkanoo",
+        "com.gamepkg.arkanoo-files-component",
+        "com.gamepkg.arkanoo-nofiles",
+        "com.gamepkg.arkanoo-nosave",
+        "com.gamepkg.arkanoo-nosave-component",
+    ]
+    .contains(&id)
+    {
+        game.input_event(gamepkg::input_events::Event {
+            kind: 5,
+            x: 0.0,
+            y: 0.0,
+            code: 40,
+        })?;
+        game.step(0)?;
+    }
+    Ok(game)
+}
+#[test]
+#[ignore = "requires the signed, isolated-built fixture prepared by tests/arkanoo.py"]
+fn actual_splash_timer_skip_restart_and_editor_resume_preserve_original_flow() {
+    use gamepkg::input_events::Event;
+    for id in ["com.gamepkg.arkanoo", "com.gamepkg.arkanoo-files-component"] {
+        let root = isolated_library();
+        let mut game = Game::load(root.path(), id).unwrap();
+        for _ in 0..269 {
+            game.step(0).unwrap();
+            assert_eq!(game.frame().background, Some(0x0b1020ff));
+            assert!(!game
+                .frame()
+                .commands
+                .iter()
+                .any(|command| matches!(command, Command::Circle { .. })));
+            assert!(game.window_state().visible && !game.window_state().confined);
+        }
+        game.step(0).unwrap();
+        assert_eq!(game.frame().background, Some(0x101b35ff));
+        game.input_event(Event {
+            kind: 2,
+            x: 320.0,
+            y: 210.0,
+            code: 1,
+        })
+        .unwrap();
+        game.step(0).unwrap();
+        // The original main-loop timer has already expired, so restart returns
+        // immediately to the paused menu rather than replaying a fresh splash.
+        assert_eq!(game.frame().background, Some(0x101b35ff));
+        drop(game);
+        let mut game = Game::load(root.path(), id).unwrap();
+        game.input_event(Event {
+            kind: 2,
+            x: 320.0,
+            y: 185.0,
+            code: 1,
+        })
+        .unwrap();
+        game.step(0).unwrap();
+        assert_eq!(
+            game.frame().background,
+            Some(0x101b35ff),
+            "skip click also started the game"
+        );
+        game.input_event(Event {
+            kind: 2,
+            x: 320.0,
+            y: 185.0,
+            code: 1,
+        })
+        .unwrap();
+        game.step(0).unwrap();
+        assert!(game
+            .frame()
+            .commands
+            .iter()
+            .any(|command| matches!(command, Command::Circle { .. })));
+        game.input_event(Event {
+            kind: 5,
+            x: 0.0,
+            y: 0.0,
+            code: 41,
+        })
+        .unwrap();
+        game.step(0).unwrap();
+        let paused = game.frame().commands.clone();
+        game.input_event(Event {
+            kind: 2,
+            x: 320.0,
+            y: 260.0,
+            code: 1,
+        })
+        .unwrap();
+        game.step(0).unwrap();
+        game.input_event(Event {
+            kind: 9,
+            x: 0.0,
+            y: 0.0,
+            code: 27,
+        })
+        .unwrap();
+        game.step(0).unwrap();
+        assert_eq!(
+            game.frame().commands,
+            paused,
+            "editor return lost the Resume menu/run"
+        );
+    }
+}
 #[test]
 #[ignore = "requires the signed, isolated-built fixture prepared by tests/arkanoo.py"]
 fn real_gameplay_audio_progress_and_restart() {
     let root = isolated_library();
-    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo").unwrap();
+    let mut game = load_menu(root.path(), "com.gamepkg.arkanoo").unwrap();
     game.step(0).unwrap();
     assert!(game.frame().commands.len() < 600);
     game.step(4).unwrap();
@@ -60,7 +171,7 @@ fn real_gameplay_audio_progress_and_restart() {
     assert!(records.filter_map(Result::ok).any(|entry| {
         std::fs::read_to_string(entry.path()).is_ok_and(|text| text.contains("first_brick"))
     }));
-    let mut reloaded = Game::load(root.path(), "com.gamepkg.arkanoo").unwrap();
+    let mut reloaded = load_menu(root.path(), "com.gamepkg.arkanoo").unwrap();
     reloaded.step(0).unwrap();
     reloaded.step(4).unwrap();
     assert!(reloaded
@@ -77,7 +188,7 @@ fn gravity_option_is_visible_and_persists_through_the_real_save_api() {
     let root = tempfile::tempdir().unwrap();
 
     copy_library(&source, root.path());
-    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo").unwrap();
+    let mut game = load_menu(root.path(), "com.gamepkg.arkanoo").unwrap();
     game.step(131072).unwrap();
     let path = std::fs::read_dir(root.path().join("saves"))
         .unwrap()
@@ -91,7 +202,7 @@ fn gravity_option_is_visible_and_persists_through_the_real_save_api() {
     );
     game.finish().unwrap();
     drop(game);
-    let mut resumed = Game::load(root.path(), "com.gamepkg.arkanoo").unwrap();
+    let mut resumed = load_menu(root.path(), "com.gamepkg.arkanoo").unwrap();
     resumed.step(0).unwrap();
     assert!(
         resumed
@@ -113,7 +224,7 @@ fn gravity_option_is_visible_and_persists_through_the_real_save_api() {
 #[ignore = "requires the production-physics portal fixture prepared by tests/arkanoo.py"]
 fn portal_threshold_orbit_gravity_and_delayed_transition_reach_the_real_renderer() {
     let root = isolated_library();
-    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
+    let mut game = load_menu(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
     let state = game.step(0).unwrap();
     assert_eq!(state >> 32, 5000);
     assert_eq!(state & 1, 1);
@@ -146,7 +257,7 @@ fn portal_threshold_orbit_gravity_and_delayed_transition_reach_the_real_renderer
 #[ignore = "requires the production-physics fixture prepared by tests/arkanoo.py"]
 fn multiball_ejection_and_shockwave_reach_the_real_renderer() {
     let root = isolated_library();
-    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
+    let mut game = load_menu(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
     let state = game.step(4096).unwrap();
     assert_eq!(
         state & 8,
@@ -167,7 +278,7 @@ fn multiball_ejection_and_shockwave_reach_the_real_renderer() {
 #[ignore = "requires the production-physics fixture prepared by tests/arkanoo.py"]
 fn original_brick_geometry_and_pair_before_paddle_order_reach_real_runtime() {
     let root = isolated_library();
-    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
+    let mut game = load_menu(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
     let state = game.step(1024).unwrap();
     assert_eq!(
         state & 16,
@@ -176,7 +287,7 @@ fn original_brick_geometry_and_pair_before_paddle_order_reach_real_runtime() {
     );
     assert!(game.frame().commands.iter().any(|command|matches!(command,Command::Circle{x,y,radius,..} if *x==34.0 && *y==113.0 && *radius==3.0)));
     drop(game);
-    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
+    let mut game = load_menu(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
     assert_eq!(
         game.step(2048).unwrap() & 32,
         32,
@@ -188,7 +299,7 @@ fn original_brick_geometry_and_pair_before_paddle_order_reach_real_runtime() {
 #[ignore = "requires the production-physics fixture prepared by tests/arkanoo.py"]
 fn per_ball_launch_delay_and_life_victory_flow_work_in_real_runtime() {
     let root = isolated_library();
-    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
+    let mut game = load_menu(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
     assert_ne!(game.step(8192).unwrap() & 64, 0);
     for _ in 1..30 {
         assert_ne!(game.step(0).unwrap() & 64, 0);
@@ -227,7 +338,7 @@ fn legacy_save_keeps_large_best_score_and_levels_above_the_old_cap() {
     let source = std::path::PathBuf::from(std::env::var_os("GAMEPKG_ARKANOO_TEST_ROOT").unwrap());
     let root = tempfile::tempdir().unwrap();
     copy_library(&source, root.path());
-    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo").unwrap();
+    let mut game = load_menu(root.path(), "com.gamepkg.arkanoo").unwrap();
     game.step(131072).unwrap();
     game.finish().unwrap();
     drop(game);
@@ -242,7 +353,7 @@ fn legacy_save_keeps_large_best_score_and_levels_above_the_old_cap() {
     bytes.extend_from_slice(&1000u32.to_le_bytes());
     bytes.extend_from_slice(&0u32.to_le_bytes());
     std::fs::write(&save, bytes).unwrap();
-    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo").unwrap();
+    let mut game = load_menu(root.path(), "com.gamepkg.arkanoo").unwrap();
     game.step(4).unwrap();
     assert!(game.frame().commands.iter().any(|command|matches!(command,Command::Image{x,y,width,..} if *x==240.0 && *y==23.0 && *width==48.0)),"best score was clamped or truncated");
     game.step(4).unwrap();
@@ -262,7 +373,7 @@ fn legacy_save_keeps_large_best_score_and_levels_above_the_old_cap() {
 #[ignore = "requires the production-physics fixture prepared by tests/arkanoo.py"]
 fn special_bricks_ice_damage_and_world_radius_blasts_reach_real_renderers() {
     let root = isolated_library();
-    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
+    let mut game = load_menu(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
     let state = game.step(65536).unwrap();
     assert_ne!(state & 4096, 0);
     assert_eq!(state >> 32, 0);
@@ -301,7 +412,7 @@ fn original_layouts_match_in_native_and_32_bit_wasm_through_the_real_renderer() 
     let reference: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/arkanoo-levels.json")).unwrap();
     let root = isolated_library();
-    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-levels").unwrap();
+    let mut game = load_menu(root.path(), "com.gamepkg.arkanoo-levels").unwrap();
     for fixture in reference["layouts"].as_array().unwrap() {
         let level = fixture["level"].as_u64().unwrap();
         assert_eq!(game.step(level as u32).unwrap(), level);
@@ -344,7 +455,7 @@ fn sdk_input_events_preserve_pointer_keys_unicode_and_permission_on_every_profil
     for suffix in ["events", "events-component"] {
         let root = isolated_library();
         let id = format!("com.gamepkg.arkanoo-{suffix}");
-        let mut game = Game::load(root.path(), &id).unwrap();
+        let mut game = load_menu(root.path(), &id).unwrap();
         game.input_event(Event {
             kind: 1,
             x: 123.5,
@@ -375,7 +486,7 @@ fn sdk_input_events_preserve_pointer_keys_unicode_and_permission_on_every_profil
         }
         assert_eq!(game.step(0).unwrap(), 0);
         drop(game);
-        let mut denied = Game::load(root.path(), &format!("{id}-denied")).unwrap();
+        let mut denied = load_menu(root.path(), &format!("{id}-denied")).unwrap();
         assert!(denied.input_event(Event::RESET).is_err());
         assert_eq!(denied.step(0).unwrap(), u64::MAX);
     }
@@ -386,7 +497,7 @@ fn sdk_input_events_preserve_pointer_keys_unicode_and_permission_on_every_profil
 fn actual_source_game_uses_mouse_position_and_original_space_escape_controls() {
     use gamepkg::input_events::Event;
     let root = isolated_library();
-    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo").unwrap();
+    let mut game = load_menu(root.path(), "com.gamepkg.arkanoo").unwrap();
     game.step(4).unwrap();
     game.input_event(Event {
         kind: 1,
@@ -487,7 +598,7 @@ fn editor_archive(root: &std::path::Path) -> std::path::PathBuf {
 #[ignore = "requires signed editor fixtures prepared by tests/arkanoo.py"]
 fn original_editor_workflow_persists_patterns_and_preserves_corrupt_saves_in_real_runtimes() {
     let root = isolated_library();
-    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo").unwrap();
+    let mut game = load_menu(root.path(), "com.gamepkg.arkanoo").unwrap();
     game.step(0).unwrap();
     editor_key(&mut game, 101);
     assert!(game.frame().commands.iter().any(|c|matches!(c,Command::Rect{x,y,width,height,..} if *x==20.0 && *y==100.0 && *width==600.0 && *height==0.5)));
@@ -522,7 +633,7 @@ fn original_editor_workflow_persists_patterns_and_preserves_corrupt_saves_in_rea
     editor_key(&mut game, 113);
     assert!(game.frame().commands.iter().any(|c|matches!(c,Command::Rect{x,y,width,height,..} if *x==20.0 && *y==100.0 && *width==600.0 && *height==0.5)));
     drop(game);
-    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo").unwrap();
+    let mut game = load_menu(root.path(), "com.gamepkg.arkanoo").unwrap();
     game.step(0).unwrap();
     editor_key(&mut game, 101);
     editor_key(&mut game, 108);
@@ -553,7 +664,7 @@ fn original_editor_workflow_persists_patterns_and_preserves_corrupt_saves_in_rea
     let mut damaged = bytes.clone();
     *damaged.last_mut().unwrap() = 9;
     std::fs::write(&path, &damaged).unwrap();
-    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo").unwrap();
+    let mut game = load_menu(root.path(), "com.gamepkg.arkanoo").unwrap();
     game.step(0).unwrap();
     editor_key(&mut game, 101);
     editor_click(&mut game, 20.0, 100.0, 1);
@@ -569,7 +680,7 @@ fn original_editor_workflow_persists_patterns_and_preserves_corrupt_saves_in_rea
 #[ignore = "requires signed editor fixtures prepared by tests/arkanoo.py"]
 fn denied_editor_saving_does_not_create_a_save_file() {
     let root = isolated_library();
-    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-nosave").unwrap();
+    let mut game = load_menu(root.path(), "com.gamepkg.arkanoo-nosave").unwrap();
     game.step(0).unwrap();
     editor_key(&mut game, 101);
     editor_click(&mut game, 20.0, 100.0, 1);
@@ -592,7 +703,7 @@ fn original_custom_and_procedural_pool_matches_in_native_and_32_bit_wasm() {
     let reference: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/arkanoo-custom-levels.json")).unwrap();
     let root = isolated_library();
-    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-custom").unwrap();
+    let mut game = load_menu(root.path(), "com.gamepkg.arkanoo-custom").unwrap();
     for fixture in reference["layouts"].as_array().unwrap() {
         let level = fixture["level"].as_u64().unwrap() as u32;
         let expected = fixture["cells"]
@@ -612,7 +723,7 @@ fn ascii_file_import_and_export_use_only_player_selected_bytes_across_all_profil
     use gamepkg::user_files::{self, Kind, Outcome};
     for id in ["com.gamepkg.arkanoo", "com.gamepkg.arkanoo-files-component"] {
         let root = isolated_library();
-        let mut game = Game::load(root.path(), id).unwrap();
+        let mut game = load_menu(root.path(), id).unwrap();
         game.enable_user_files();
         game.step(0).unwrap();
         editor_key(&mut game, 101);
@@ -681,7 +792,7 @@ fn ascii_file_import_and_export_use_only_player_selected_bytes_across_all_profil
 #[ignore = "requires signed user-file fixtures prepared by tests/arkanoo.py"]
 fn editor_file_controls_do_not_grant_undeclared_access_or_open_headless_dialogs() {
     let root = isolated_library();
-    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-nofiles").unwrap();
+    let mut game = load_menu(root.path(), "com.gamepkg.arkanoo-nofiles").unwrap();
     game.enable_user_files();
     game.step(0).unwrap();
     editor_key(&mut game, 101);
@@ -690,7 +801,7 @@ fn editor_file_controls_do_not_grant_undeclared_access_or_open_headless_dialogs(
     editor_key(&mut game, 120);
     assert!(game.take_user_file_job().is_none());
     let root = isolated_library();
-    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo").unwrap();
+    let mut game = load_menu(root.path(), "com.gamepkg.arkanoo").unwrap();
     game.step(0).unwrap();
     editor_key(&mut game, 101);
     editor_key(&mut game, 105);
@@ -705,7 +816,7 @@ fn editor_file_controls_do_not_grant_undeclared_access_or_open_headless_dialogs(
 #[ignore = "requires signed user-file fixtures prepared by tests/arkanoo.py"]
 fn pattern_archives_larger_than_one_read_chunk_reload_without_being_marked_corrupt() {
     let root = isolated_library();
-    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo").unwrap();
+    let mut game = load_menu(root.path(), "com.gamepkg.arkanoo").unwrap();
     game.step(0).unwrap();
     editor_key(&mut game, 101);
     editor_click(&mut game, 20.0, 100.0, 1);
@@ -719,7 +830,7 @@ fn pattern_archives_larger_than_one_read_chunk_reload_without_being_marked_corru
     large.extend(vec![b'x'; 70000]);
     large.extend(&initial[24 + length..]);
     std::fs::write(&path, &large).unwrap();
-    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo").unwrap();
+    let mut game = load_menu(root.path(), "com.gamepkg.arkanoo").unwrap();
     game.step(0).unwrap();
     editor_key(&mut game, 101);
     editor_key(&mut game, 108);
@@ -733,7 +844,7 @@ fn pattern_archives_larger_than_one_read_chunk_reload_without_being_marked_corru
 #[ignore = "requires signed user-file fixtures prepared by tests/arkanoo.py"]
 fn play_history_failure_does_not_open_a_new_file_dialog() {
     let root = isolated_library();
-    let mut setup = Game::load(root.path(), "com.gamepkg.arkanoo").unwrap();
+    let mut setup = load_menu(root.path(), "com.gamepkg.arkanoo").unwrap();
     setup.step(0).unwrap();
     editor_key(&mut setup, 101);
     editor_click(&mut setup, 20.0, 100.0, 1);
@@ -749,6 +860,13 @@ fn play_history_failure_does_not_open_a_new_file_dialog() {
     }
     let mut game = Game::load(root.path(), "com.gamepkg.arkanoo").unwrap();
     game.enable_user_files();
+    game.input_event(gamepkg::input_events::Event {
+        kind: 5,
+        x: 0.0,
+        y: 0.0,
+        code: 40,
+    })
+    .unwrap();
     std::fs::write(&progress, b"block progress commits").unwrap();
     for code in [101, 105] {
         game.input_event(gamepkg::input_events::Event {
@@ -772,7 +890,7 @@ fn original_window_bindings_work_across_runtime_profiles() {
     use gamepkg::input_events::Event;
     for id in ["com.gamepkg.arkanoo", "com.gamepkg.arkanoo-files-component"] {
         let root = isolated_library();
-        let mut game = Game::load(root.path(), id).unwrap();
+        let mut game = load_menu(root.path(), id).unwrap();
         game.step(0).unwrap();
         assert!(game.window_state().visible);
         game.step(4).unwrap();
@@ -828,7 +946,7 @@ fn actual_menu_clicks_start_resume_restart_gravity_editor_settings_fullscreen_an
     use gamepkg::input_events::Event;
     for id in ["com.gamepkg.arkanoo", "com.gamepkg.arkanoo-files-component"] {
         let root = isolated_library();
-        let mut game = Game::load(root.path(), id).unwrap();
+        let mut game = load_menu(root.path(), id).unwrap();
         game.step(0).unwrap();
         assert_eq!(game.frame().background, Some(0x101b35ff));
         game.input_event(Event {
@@ -953,8 +1071,17 @@ fn actual_menu_clicks_start_resume_restart_gravity_editor_settings_fullscreen_an
         })
         .unwrap();
         game.step(0).unwrap();
+        assert_eq!(game.frame().background, Some(0x0b1020ff));
+        game.input_event(Event {
+            kind: 5,
+            x: 0.0,
+            y: 0.0,
+            code: 40,
+        })
+        .unwrap();
+        game.step(0).unwrap();
         assert_eq!(game.frame().background, Some(0x101b35ff));
-        assert!(game.frame().commands.iter().any(|command|matches!(command,Command::Image{x,y,width,..} if *x==278.0 && *y==150.0 && *width==84.0)),"Restart did not leave the paused menu for a fresh game");
+        assert!(game.frame().commands.iter().any(|command|matches!(command,Command::Image{x,y,width,..} if *x==284.0 && *y==150.0 && *width==72.0)),"Restart did not restore the original paused Resume menu");
         game.input_event(Event {
             kind: 2,
             x: 320.0,
@@ -1001,6 +1128,7 @@ fn effects_settings_change_pcm_and_survive_restarts_across_runtime_profiles() {
     fn launch(game: &mut Game) {
         event(game, 2, 320.0, 450.0, 1);
         event(game, 2, 320.0, 210.0, 1);
+        event(game, 5, 0.0, 0.0, 40);
         event(game, 2, 320.0, 185.0, 1);
         event(game, 5, 0.0, 0.0, 44);
     }
@@ -1010,7 +1138,7 @@ fn effects_settings_change_pcm_and_survive_restarts_across_runtime_profiles() {
     }
     for id in ["com.gamepkg.arkanoo", "com.gamepkg.arkanoo-files-component"] {
         let root = isolated_library();
-        let mut game = Game::load(root.path(), id).unwrap();
+        let mut game = load_menu(root.path(), id).unwrap();
         game.step(0).unwrap();
         event(&mut game, 2, 320.0, 285.0, 1);
         slider(&mut game, 295.0);
@@ -1039,7 +1167,7 @@ fn effects_settings_change_pcm_and_survive_restarts_across_runtime_profiles() {
         let bytes = std::fs::read(&save).unwrap();
         assert_eq!(&bytes[..4], b"ARK3");
         assert_eq!(u32::from_le_bytes(bytes[12..16].try_into().unwrap()), 640);
-        let mut game = Game::load(root.path(), id).unwrap();
+        let mut game = load_menu(root.path(), id).unwrap();
         game.step(0).unwrap();
         event(&mut game, 2, 320.0, 185.0, 1);
         event(&mut game, 5, 0.0, 0.0, 44);
@@ -1063,7 +1191,7 @@ fn effects_settings_change_pcm_and_survive_restarts_across_runtime_profiles() {
         drop(game);
         let bytes = std::fs::read(&save).unwrap();
         assert_eq!(u32::from_le_bytes(bytes[12..16].try_into().unwrap()), 0);
-        let mut game = Game::load(root.path(), id).unwrap();
+        let mut game = load_menu(root.path(), id).unwrap();
         game.step(0).unwrap();
         event(&mut game, 2, 320.0, 185.0, 1);
         event(&mut game, 5, 0.0, 0.0, 44);
@@ -1083,7 +1211,7 @@ fn legacy_audio_defaults_migrate_and_denied_or_damaged_settings_preserve_data() 
     }
     for id in ["com.gamepkg.arkanoo", "com.gamepkg.arkanoo-files-component"] {
         let root = isolated_library();
-        let mut seed = Game::load(root.path(), id).unwrap();
+        let mut seed = load_menu(root.path(), id).unwrap();
         seed.step(131072).unwrap();
         seed.finish().unwrap();
         drop(seed);
@@ -1102,7 +1230,7 @@ fn legacy_audio_defaults_migrate_and_denied_or_damaged_settings_preserve_data() 
                 legacy.extend(0u32.to_le_bytes());
             }
             std::fs::write(&save, &legacy).unwrap();
-            let mut game = Game::load(root.path(), id).unwrap();
+            let mut game = load_menu(root.path(), id).unwrap();
             game.step(0).unwrap();
             event(&mut game, 2, 320.0, 185.0, 1);
             event(&mut game, 5, 0.0, 0.0, 44);
@@ -1122,7 +1250,7 @@ fn legacy_audio_defaults_migrate_and_denied_or_damaged_settings_preserve_data() 
             damaged.extend(value.to_le_bytes());
         }
         std::fs::write(&save, &damaged).unwrap();
-        let mut game = Game::load(root.path(), id).unwrap();
+        let mut game = load_menu(root.path(), id).unwrap();
         game.step(0).unwrap();
         event(&mut game, 2, 320.0, 285.0, 1);
         event(&mut game, 2, 320.0, 245.0, 1);
@@ -1144,7 +1272,7 @@ fn legacy_audio_defaults_migrate_and_denied_or_damaged_settings_preserve_data() 
         "com.gamepkg.arkanoo-nosave-component",
     ] {
         let root = isolated_library();
-        let mut game = Game::load(root.path(), id).unwrap();
+        let mut game = load_menu(root.path(), id).unwrap();
         game.step(0).unwrap();
         event(&mut game, 2, 320.0, 285.0, 1);
         event(&mut game, 2, 320.0, 245.0, 1);
@@ -1172,7 +1300,7 @@ fn legacy_audio_defaults_migrate_and_denied_or_damaged_settings_preserve_data() 
 #[ignore = "requires the production audio fixture prepared by tests/arkanoo.py"]
 fn effects_phase_at_maximum_frame_matches_in_native_and_wasm32() {
     let root = isolated_library();
-    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
+    let mut game = load_menu(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
     assert_eq!(game.step(16777216).unwrap(), 1);
     assert_eq!(game.audio_channels(), 1);
     assert_eq!(game.audio_frame().len(), 800);

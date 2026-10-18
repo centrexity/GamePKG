@@ -42,7 +42,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-arkanoo-',dir=PROJECT/'target')
     file=custom/'manifest.toml';file.write_text(file.read_text().replace('com.gamepkg.arkanoo','com.gamepkg.arkanoo-custom'))
     boards=json.loads((PROJECT/'tests/fixtures/arkanoo-custom-levels.json').read_text())['patterns']
     assert boards==[[i if i<9 else 255 for i in range(200)],[i//20%6 if i//20==i%20 else 255 for i in range(200)],[255]*200]
-    (custom/'source/src/lib.rs').write_text('mod audio;mod editor;mod levels;mod menu;mod pattern_rng;mod physics;mod render;pub fn game_tick(input:u32,_:u64)->u64 {let mut game=physics::Game::new();for which in 0..3 {let mut board=[255u8;200];if which==0 {for col in 0..9 {board[col]=col as u8;}}if which==1 {for row in 0..10 {board[row*20+row]=(row%6) as u8;}}game.editor.patterns.push(editor::Pattern{name:String::new(),cells:board});}game.level=input;game.populate();render::draw(&game);let mut result=14695981039346656037u64;for index in 0..200 {let cell=if game.blocks[index]==0 {255} else if game.block_type[index]>0 {game.block_type[index]+5} else {game.block_color[index]};result=(result^u64::from(cell)).wrapping_mul(1099511628211);}result}')
+    (custom/'source/src/lib.rs').write_text('mod audio;mod editor;mod levels;mod menu;mod pattern_rng;mod physics;mod render;pub fn game_tick(input:u32,_:u64)->u64 {let mut game=physics::Game::new();for which in 0..3 {let mut board=[255u8;200];if which==0 {for col in 0..9 {board[col]=col as u8;}}if which==1 {for row in 0..10 {board[row*20+row]=(row%6) as u8;}}game.editor.patterns.push(editor::Pattern{name:String::new(),cells:board});}game.level=input;game.populate();game.mode=1;render::draw(&game);let mut result=14695981039346656037u64;for index in 0..200 {let cell=if game.blocks[index]==0 {255} else if game.block_type[index]>0 {game.block_type[index]+5} else {game.block_color[index]};result=(result^u64::from(cell)).wrapping_mul(1099511628211);}result}')
     run('pack',custom,'-o',root/'custom.gamepkg','--key',key);run('install',root/'custom.gamepkg','--trust-creator');run('build','com.gamepkg.arkanoo-custom')
     # Trigger the production portal at its original speed threshold without
     # depending on a long random play session. Only fixture setup is replaced.
@@ -197,6 +197,7 @@ pub fn game_tick(input:u32,state:u64)->u64 {
             except AssertionError:
                 assert time.monotonic()<ready,'The actual game frame did not become ready'
                 time.sleep(.1)
+        subprocess.run(['xdotool','key','Return'],env=env,check=True);time.sleep(.15)
         native_click(window,320,285) # Original Settings button.
         native_slider(window,295);native_sfx(32,False)
         native_click(window,320,225);native_sfx(32,True)
@@ -317,6 +318,10 @@ pub fn game_tick(input:u32,state:u64)->u64 {
             wait.until(lambda b:b.find_element(By.ID,'status').text=='Ready to play')
             browser.find_element(By.ID,'play').click();canvas=browser.find_element(By.ID,'game')
             wait.until(lambda b:canvas.get_attribute('data-state'))
+            canvas.send_keys(Keys.ENTER);time.sleep(.15)
+            def restart_menu():
+                browser.find_element(By.ID,'restart').click();time.sleep(.15)
+                canvas.send_keys(Keys.ENTER);time.sleep(.15)
             def canvas_click(x,y):
                 # Click the visible image, including fullscreen aspect-ratio bars.
                 rect=browser.execute_script('const c=arguments[0],r=c.getBoundingClientRect(),w=c.clientWidth,h=c.clientHeight,s=Math.min(w/640,h/480);return {x:r.left+c.clientLeft+(w-640*s)/2,y:r.top+c.clientTop+(h-480*s)/2,w:640*s,h:480*s};',canvas)
@@ -346,7 +351,7 @@ pub fn game_tick(input:u32,state:u64)->u64 {
             ActionChains(browser).move_to_element_with_offset(canvas,0,0).perform()
             stamp=int(canvas.get_attribute('data-state'));wait.until(lambda b:int(canvas.get_attribute('data-state'))>stamp+2)
             muted_view=sfx_view()
-            browser.find_element(By.ID,'restart').click();time.sleep(.15);canvas_click(320,285)
+            restart_menu();time.sleep(.15);canvas_click(320,285)
             wait.until(lambda b:sfx_view()==muted_view)
             canvas_click(320,225);canvas_drag(320);expect_sfx(64,False)
             canvas_click(320,270)
@@ -378,7 +383,7 @@ pub fn game_tick(input:u32,state:u64)->u64 {
             canvas.screenshot(str(PROOF/('browser-component.png' if component else 'browser-core.png')))
             canvas.send_keys(Keys.ESCAPE)
             wait.until(lambda b:b.execute_script('return document.pointerLockElement===null'))
-            browser.find_element(By.ID,'restart').click()
+            restart_menu()
             wait.until(lambda b:pixels()[(270*640+70)*4:(270*640+70)*4+3]==[16,27,53])
             restarted=pixels();time.sleep(.2);assert pixels()==restarted,'Restart retained the active run'
             canvas.send_keys('e');time.sleep(.15)
@@ -390,7 +395,7 @@ pub fn game_tick(input:u32,state:u64)->u64 {
             def saved_pattern():
                 return browser.execute_script('const key=Object.keys(localStorage).find(key=>key.startsWith(arguments[0]));return key?JSON.parse(localStorage.getItem(key)):[];','gamepkg:save:'+game_id+':')
             wait.until(lambda b:saved_pattern()[:4]==[65,82,75,51] and saved_pattern()[16:20]==[1,0,0,0])
-            browser.find_element(By.ID,'restart').click();time.sleep(.15);canvas.send_keys('e');canvas.send_keys('l');canvas.send_keys(Keys.ENTER)
+            restart_menu();time.sleep(.15);canvas.send_keys('e');canvas.send_keys('l');canvas.send_keys(Keys.ENTER)
             wait.until(lambda b:pixels()[(105*640+35)*4:(105*640+35)*4+3]==[255,165,0])
             canvas.send_keys('t');time.sleep(.15);canvas.send_keys('q');time.sleep(.15)
             wait.until(lambda b:pixels()[(105*640+35)*4:(105*640+35)*4+3]==[255,165,0])
@@ -411,7 +416,7 @@ pub fn game_tick(input:u32,state:u64)->u64 {
             wait.until(lambda b:b.execute_script('return document.fullscreenElement===document.querySelector("#game")'))
             canvas.send_keys(Keys.F11)
             wait.until(lambda b:b.execute_script('return document.fullscreenElement===null'))
-            browser.find_element(By.ID,'restart').click();time.sleep(.15)
+            restart_menu();time.sleep(.15)
             canvas.send_keys(Keys.ARROW_UP);time.sleep(.15)
             canvas.click()
             wait.until(lambda b:b.execute_script('return document.pointerLockElement===document.querySelector("#game")'))

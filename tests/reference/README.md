@@ -173,3 +173,10 @@ uses sorted saved-pattern names as its stable pool order. Native and wasm32
 signed runtime fixtures verify resulting cell/color/type values, alongside
 actual editor save/load/test return, denied saving and damaged archives.
 This reference does not exercise file dialogs or original editor art/fonts. The signed runtime and GUI checks in tests/arkanoo.py separately cover player-selected ASCII file import/export.
+
+`arkanoo_flow.py /path/to/pinned/arkanoo` regenerates `arkanoo-flow.json` by
+compiling unchanged original constructors/reset/pause and main-loop splash,
+Enter-skip and editor-exit fragments. Full-file SHA-256 guards pin both sources.
+Seventeen observations cover startup boundaries, skipped and expired restart
+timers, and editor return before/after starting play. SDL calls and entity
+allocation are stubs; this verifies state flow, not artwork/audio or physics.
