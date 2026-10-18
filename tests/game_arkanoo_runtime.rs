@@ -3802,3 +3802,65 @@ fn original_splash_pixels_and_all_fade_alphas_reach_real_runtimes() {
         assert!(delta <= 2, "splash timer {timer}, delta {delta}");
     }
 }
+
+#[test]
+#[ignore = "requires tests/arkanoo.py fixtures"]
+fn original_end_state_overlay_frames_and_dense_scene_suffix_are_preserved() {
+    use std::io::Read;
+    let reference: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-end-screens.json")).unwrap();
+    let root = isolated_library();
+    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
+    for (index, case) in reference["cases"].as_array().unwrap().iter().enumerate() {
+        assert_eq!(game.step(0xc0000046 | ((index as u32) << 8)).unwrap(), 70);
+        let actual = canonical_menu_pixels(game.frame());
+        let compressed = hex::decode(case["rgba_zlib_hex"].as_str().unwrap()).unwrap();
+        let mut expected = Vec::new();
+        flate2::read::ZlibDecoder::new(compressed.as_slice())
+            .read_to_end(&mut expected)
+            .unwrap();
+        assert_eq!(actual.len(), expected.len());
+        let delta = actual
+            .iter()
+            .zip(expected)
+            .map(|(a, b)| a.abs_diff(b))
+            .max()
+            .unwrap();
+        assert!(delta <= 2, "end screen {index}: {case}, delta {delta}");
+    }
+    for (phase, mode, level, empty) in [(0, 3, 9, 0), (1, 4, 1, 0), (2, 4, 1, 1), (3, 5, 9, 0)] {
+        let index = reference["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .position(|c| {
+                c["mode"] == mode
+                    && c["level"] == level
+                    && c["score"] == u32::MAX
+                    && c["empty"] == empty
+            })
+            .unwrap();
+        game.step(0xc0000046 | ((index as u32) << 8)).unwrap();
+        let isolated = game.frame().commands[1..].to_vec();
+        assert_eq!(game.step(0xc0000047 | (phase << 8)).unwrap(), 71);
+        let full = &game.frame().commands;
+        let alpha = if mode == 3 { 150 } else { 180 };
+        let first=full.iter().rposition(|c|matches!(c,Command::Rect{x,y,width,height,rgba} if (*x,*y,*width,*height,*rgba)==(0.0,60.0,640.0,360.0,alpha))).unwrap();
+        assert_eq!(
+            &full[first..],
+            isolated.as_slice(),
+            "full scene silently dropped end-screen commands for phase {phase}"
+        );
+        assert!(full.len() < 1024);
+        let bytes: usize = full
+            .iter()
+            .map(|c| match c {
+                Command::Image { image, .. } | Command::LinearImage { image, .. } => {
+                    image.pixels().len()
+                }
+                _ => 0,
+            })
+            .sum();
+        assert!(bytes <= 8 * 1024 * 1024);
+    }
+}

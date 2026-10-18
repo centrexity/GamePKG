@@ -1841,3 +1841,48 @@ pass with the restored startup screen. Both signed suites pass 63 checks; strict
 lint and formatting pass. Measured installed storage with native/Wasm builds
 and the recovery copy is 48.3 MiB, so the advisory estimate is 56 MiB. No runtime
 budget changes or binary releases are included.
+
+### Original end-state overlay composition (recipe 0.1.53)
+
+Level transition, game-over and campaign-victory overlays now use their original
+full-world black dimming, Roboto text, colors, integer centering and vertical
+positions. Level completion shows the actual level and score plus the click
+prompt. Game-over chooses red GAME OVER or green VICTORY! from all blocks'
+activity, independently of campaign victory. Campaign victory restores its gold
+congratulations, green subtitle, final score and both original instructions.
+The replacement opaque panel and invented end-screen tips are removed. Portable
+explicit decimal formatting preserves zero and the complete u32 score/level
+range without a guest dependency or formatting macro.
+
+An independent SHA-guarded SDL/TTF oracle captures 28 complete overlay frames on
+a fixed two-color contrast backdrop, including zero, one, ten-digit scores and
+u32::MAX scores/levels. The fixture regenerates byte-identically. Signed runtime
+checks compare each complete canonical RGBA frame within the existing two-level
+tolerance. Full game-renderer probes require the complete isolated overlay
+command suffix for every end-state variant; populated probes use 200 metal
+bricks and the level-transition probe uses the animated ninth background. All
+suffixes must survive under the unchanged 1,024-command and 8 MiB image limits.
+
+Six desktop renderer/runtime configurations match complete canonical overlay
+frames within one level; both web profiles match separately captured half-size
+native frames within two levels. These are end-screen-layer comparisons over a
+fixed backdrop, not proof of whole-game HUD or arbitrary scaled-original parity.
+The original R/Q/Enter/click state transitions remain covered by existing logic
+and signed tests. Original HUD/FPS presentation, recorded audio/music, remaining
+settings/project/version controls, external fullscreen readback, arbitrary
+viewport scaling and untested platforms remain open.
+
+The broader parallel suite exposed execution-deadline failures in existing
+3,000-particle background stress scenes. Shard rotation now computes sine and
+cosine once per particle rather than repeatedly per diamond point; fully
+transparent tiles are checked before allocating/copying a temporary pixel
+buffer. Visible tile dimensions, bytes, ordering and command charging remain
+unchanged. All 87 logic checks, including original shard geometry, pass. Both
+64-check signed suites then pass at their original default parallelism and
+unchanged memory, command, image and execution limits. Strict lint and formatting
+pass. No timing tolerance or runtime cap was increased.
+
+Final native gameplay/editor/system import/cancel/Save-dialog export and both
+browser-profile gameplay/editor/import/cancel/explicit-download workflows pass
+with the end-screen and particle changes. Publication is source only; application
+version 0.1.17 and binary/package releases remain unchanged.
