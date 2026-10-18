@@ -105,7 +105,9 @@ impl Renderer {
                 let [w, h] = i.size();
                 (w as u32, h as u32, i.pixels())
             })
-            .unwrap_or((1, 1, &[255, 255, 255, 255]));
+            // Plain shader draws must not inherit a previous pass's pixels.
+            // Keep the documented transparent-black fallback shared with OpenGL.
+            .unwrap_or((1, 1, &[0, 0, 0, 0]));
         let texture = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("GamePKG bounded texture"),
             size: wgpu::Extent3d {

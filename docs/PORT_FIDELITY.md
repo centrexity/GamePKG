@@ -710,7 +710,21 @@ pixels; callback resources remain alive until queued draws finish. The existing
 source-over comparison now interleaves filtered sprites with shapes and nearest
 sprites. Transparent SDL straight-alpha interpolation, rare sRGB-only surface
 blending, edge rasterization and complete original-game frames remain open.
-A separate source inspection also found inconsistent plain-shader fallback
-textures between Vulkan and OpenGL; the existing shader test checks only that
-previous blue/green pixels disappear, so it does not yet establish transparent
-fallback parity. That needs a stronger reference test before a correction.
+
+### Plain-shader fallback texture
+
+Vulkan used an opaque white fallback while OpenGL and the documented API used
+transparent black. The previous test only rejected the last blue/green texture,
+which allowed white to pass. Before correction, the strengthened WGSL test
+reproduced a white `(255, 255, 255)` sample instead of black.
+
+Vulkan now supplies a transparent black 1×1 image. The private shader test makes
+sampled RGB and alpha observable through opaque output, checks nine interior
+locations after the plain draw, then verifies that a textured draw recovers.
+All twelve configurations pass: GLSL/SPIR-V/WGSL across core Wasm, component
+Wasm and native execution, plus wrapped API checks in OpenGL core, Vulkan
+component and Vulkan native. Receipt tampering, reflection/entry/stage/resource
+rejection and malformed translated caches remain checked in those runs. Seven
+shader unit tests, strict lint, formatting and Python syntax checks also pass.
+CI now includes native texture/fallback tests for all three backends. This does
+not establish arbitrary shader alpha-compositing or complete game-frame parity.

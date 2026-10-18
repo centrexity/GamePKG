@@ -239,3 +239,10 @@ id = "sdk_opaque_linear_sampling"
 requirements = ["Encoded-RGB interpolation separate from UI textures", "Nearest controls, clipped and minified sprites", "Moving bounds and changed source dimensions", "Live SDL comparison in native/core/component and browser players", "Retain limits and original-port workflows"]
 status = "implemented_window_verified_linux_vulkan_opengl_browser"
 notes = "The current source uses host-owned raw-Unorm textures for native linear sprites. The 46-sample SDL reference across three frame phases and eight configurations yields 1,104 RGB comparisons: OpenGL maximum delta zero, Vulkan/browser one. Forced Mesa OpenGL 2.1 static comparison passes; a true no-VAO path remains unverified because Mesa refused extension removal. The source-over regression interleaves filtered sprites with rectangles and nearest sprites. All 417 default tests pass; all 32 signed Arkanoo checks pass in native/Wasm, with native GUI and both browser workflows. Windows 32/64 compilation, strict lint, formatting, site links and the desktop-only CI comparison pass. Transparent straight-alpha SDL filtering, rare sRGB-only surfaces and complete original frames remain open."
+
+
+[[work]]
+id = "sdk_plain_shader_fallback"
+requirements = ["Transparent-black fallback for plain shader draws", "Match Vulkan and OpenGL", "Observe fallback RGBA and texture recovery", "Core/component/native and GLSL/SPIR-V/WGSL checks", "Keep shader resource and receipt validation"]
+status = "implemented_window_verified_linux_vulkan_opengl"
+notes = "The stronger opaque-output probe reproduced Vulkan's white fallback before correction. Vulkan now binds transparent black. All nine backend/runtime combinations and three wrapped API configurations pass nine interior fallback samples and subsequent texture recovery. Existing receipt/reflection/resource/malformed-cache rejection checks remain active in the runs. Seven shader unit tests, strict lint, formatting and Python syntax checks pass. CI includes native texture/fallback checks for all backends. General shader alpha-compositing and complete game-frame fidelity remain separate work."
