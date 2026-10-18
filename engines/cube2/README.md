@@ -159,8 +159,8 @@ own connection state for error queries; it is not an arbitrary TCP connection.
 Blocking mode and unrecognized/excessive options are denied. Broadcast accepts the original boolean enable/disable option.
 These changes require rebuilding the source host and engine cache; the cache
 fingerprint includes the adapter. The original authentication/registration exchange now passes the private-master
-checks below. End-to-end LAN discovery and further service/error/platform
-interoperability remain open.
+checks below. Private Linux LAN discovery is verified below; further service,
+fault and platform interoperability remain open.
 
 ## Background desktop execution
 
@@ -343,8 +343,8 @@ extra grant. Saved join/host/master choices are launch preferences; blank
 choices no longer force offline mode. Disabled networking still blocks every
 broker operation. Socket, packet, time and transfer limits remain enforced.
 The bounded master-list snapshot remains separate from real TCP used for
-authentication/registration. Full LAN and further service/platform fidelity
-remain unfinished.
+authentication/registration. Private Linux LAN discovery is verified below; further fault/service/platform
+coverage remains unfinished.
 
 
 ## TCP lifecycle and original authentication
@@ -379,3 +379,40 @@ These checks cover a private protocol fixture, not every public master, invalid
 credential path or platform. Existing edited-map/config/demo saves, bounded
 browser snapshots and direct/discovered multiplayer remain separate regressions.
 Rebuild the source host and game cache to use the updated adapter.
+
+
+## Isolated original LAN discovery and authentication failures
+
+```sh
+GAMEPKG_CUBE2_DATA=/path/to/original/sauerbraten \
+  cargo test --all-features --lib original_lan_discovery_on_private_network -- --ignored
+```
+
+This maintainer test needs Python, iproute2 (`ip`), `unshare` and `nsenter`, plus
+user/network namespace support. Player builds and gameplay still use Rust/C only.
+It compiles the pinned engine once, creates a private user/network namespace and
+connects separate client/server network namespaces with virtual Ethernet and a
+bridge. The helper checks namespace identity before configuring interfaces or
+capturing traffic. It never connects to a physical network.
+
+Networking-off and search-LAN-off both leave the original browser empty and
+produce no discovery datagrams. With both enabled, capture verifies the real
+255.255.255.255:28784 broadcast and original token echoed by the server's custom
+information port. The browser saves the correct IP/game port, its actual row
+is clicked using normal relative-pointer/left-click input, and both original
+engines confirm the remote identity. Saves and normal process close also pass.
+Screenshots, logs and packet metadata are local ignored proof files under
+`target/cube2-lan-proof/`; no original media is published.
+
+The test waits for game welcome and the other player's identity before renaming
+the client: the original `addmsg` ignores commands issued before that state.
+First remote-model/shader warmup keeps the bounded startup budget, matching the
+existing two-engine fixture; steady server frames then use 500 ms. This does
+not establish first-use software rendering under every ordinary tick deadline.
+
+The original registration/authentication regression additionally starts with a
+wrong private test key. It verifies an unrelated success cannot grant privilege,
+checks the wrong challenge response is rejected, retries with the correct key
+under a new request ID and verifies only the corrected key is saved/reloaded.
+Registration refusal/retry, master disconnect/backoff, multiple domains/users,
+further services and platforms remain separate fidelity work.

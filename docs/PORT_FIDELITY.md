@@ -9,7 +9,7 @@ work stays open until behavior is verified.
 
 | Port | Remaining gaps |
 | --- | --- |
-| Cube 2 | Initial OS lock-key state, remaining uncommon-key/platform behavior and full controller/touch equivalence; LAN discovery, further master authentication/registration error and service compatibility; custom asset/mod workflows; demo/movie output and persistence; hardware-accelerated engine rendering; native platforms beyond Linux. Vulkan currently presents software-rendered engine frames. |
+| Cube 2 | Initial OS lock-key state, remaining uncommon-key/platform behavior and full controller/touch equivalence; further LAN/platform and master authentication/registration fault/service coverage; custom asset/mod workflows; demo/movie output and persistence; hardware-accelerated engine rendering; native platforms beyond Linux. Vulkan currently presents software-rendered engine frames. |
 | DOOM | Original WAD music, spatial stereo effects, six save slots, configuration, desktop controls and the original quit/ENDOOM flow are runtime verified. Music backend selection, multiplayer, additional WADs/mods and broader control/platform coverage remain unfinished. |
 | Zelda3 | External MSU music, replay tools, save states, widescreen, language selection and desktop enhancement settings need support. The adapter fixes the view to 256×224. Original DSP stereo is verified in native and Wasm gameplay/save tests. |
 | Arkanoo | Gravity, speed-triggered portal behavior and ball-to-ball responses are restored with upstream reference and actual-engine tests. Original world proportions and movement/contact order now match upstream reference checks. Per-ball launch timing, life recovery and victory/endless transitions also match original-code fixtures; prior item/score/level caps are removed. Brick health and original blast rules are also verified. All twelve original procedural patterns are restored. Focused mouse movement and original Space/Escape controls are restored. Editor painting/erasing, brick selection, names, save/load, clear confirmation, test return and the custom endless pool are restored. Original ASCII pattern import/export now uses player-selected files. Gameplay cursor confinement/hiding, F11 fullscreen and Q-to-quit outside play are verified in native and browser runtime checks. Normal-size/fullscreen/maximized preferences now persist through the native host. The six main menu actions and fullscreen/effects settings controls are restored. Remaining menu presentation and music/resolution/VSync controls, project-link action and original menus/music still need work. Original shard particles are restored; remaining ball artwork/speed lettering, other art/effects still need work; original penguin/heart-loss behavior is now verified. Current runs do not persist; high score, unlocked level, gravity and effects preferences do. |
@@ -85,8 +85,8 @@ matching a few screenshots is insufficient for animated or stateful effects.
 
 The same rule applies to engine adapters: unavailable features must report failure
 or remain visibly unsupported. Cube 2 shutdown/listen/accept now reach owned TCP
-sockets; UDP broadcast also reaches the host socket. Full LAN discovery still
-needs actual-engine verification. Zelda's ignored MSU enable remains a confirmed
+sockets; UDP broadcast also reaches the host socket. Private IPv4 LAN discovery now has actual-engine verification below; platform
+and further fault coverage remain open. Zelda's ignored MSU enable remains a confirmed
 gap. Shared host work still needed is:
 
 - Selected resource collections/directories and bounded streaming for mods,
@@ -288,8 +288,8 @@ networking no longer restricts destinations, sources, DNS names or listening
 addresses to endpoint lists, and local/private addresses need no extra opt-in.
 Legacy transport names map to enabled/disabled and legacy endpoint fields are
 read-only compatibility data. This removes policy restrictions, not missing
-adapter functionality: complete LAN discovery, broader authentication/registration failures and public
-service/platform interoperability still need engine tests; the TCP lifecycle and
+adapter functionality: broader LAN/platform coverage, authentication/registration faults and public
+service interoperability still need engine tests; the TCP lifecycle and
 private successful exchange are restored below.
 
 
@@ -317,8 +317,7 @@ original UDP information ping, original cryptographic challenge/response and
 authenticated privilege. Original `saveauthkeys` and offline relaunch restore
 `auth.cfg` through an exact C++/Rust save-name allowlist entry. An independent
 fixture compiles unchanged hash-verified original cryptography with a public
-test credential; no real account key is packaged or published. Remaining LAN,
-invalid-authentication/service/error cases, platforms and release delivery stay
+test credential; no real account key is packaged or published. Further LAN/platform, authentication/service fault cases and release delivery stay
 on the open checklist.
 
 
@@ -331,3 +330,46 @@ variants retain background play for 35 seconds and save cleanly. Production C++
 network framing and hostile saved-file tests, source hashes, lint, formatting,
 browser unit checks and the seven-page site-link check pass. CLI and GUI binaries
 are rebuilt locally; this is source validation without a new package release.
+
+
+Private-LAN validation now runs two original engines in separate network
+namespaces joined only by a private Ethernet bridge. The helper refuses the
+calling host's network namespace, never attaches a physical interface and tears
+down its owned processes/namespaces. The networking-disabled and LAN-search-off
+runs leave the browser empty and produce no captured discovery datagrams. The
+enabled run sends a real limited broadcast to port 28784, receives the same
+original ping token from the custom server's information port, saves the
+correct discovered address/port, clicks its original browser row and joins.
+Both sides confirm the remote identity and close successfully. Packet metadata,
+phase screenshots and server lists stay under ignored `target/cube2-lan-proof/`.
+
+The fixture waits for the original game welcome/player identity, not merely the
+ENet transport connection: changing a name before welcome is discarded by the
+unchanged original `addmsg` guard. First remote-model/shader use retains the
+existing bounded startup warmup budget; the server then uses a 500 ms steady
+frame deadline. This is not evidence that every first-use software-rendering
+frame fits an ordinary tick deadline. Renderer loading/performance remains open.
+
+Authentication coverage now rejects a valid response generated with the wrong
+private test key, ignores a success for an unrelated request ID, verifies no
+privilege was granted, and retries with the correct key under a new request ID.
+The corrected key authenticates, replaces the bad key in `auth.cfg` and survives
+offline relaunch. Master disconnection/backoff, registration refusal/retry,
+multiple users/domains, further service interoperability and platforms remain
+separate open requirements.
+
+The selected local media fixture also reports a missing
+`data/menus/browse_textures2.cfg`, referenced by its own `data/menus.cfg`.
+Network validation does not establish texture-browser/editor completeness with
+that incomplete fixture. Complete matching media and asset-version validation
+remain part of the content/editor work; these tests do not alter selected media.
+
+
+Latest validation for these checks: 390 regular Rust tests pass, with 54
+fixture/platform tests ignored by that command. The original authentication
+failure/retry/key-reload test and the private Ethernet LAN test run separately
+and pass. The LAN scenario has repeated successful runs after correcting its
+welcome-state synchronization. Proof directories are unique per run so concurrent
+attempts cannot overwrite packet evidence; `verified.txt` identifies a successful
+run. Lint, formatting and all seven public-page link checks pass. No production
+network policy or runtime permissions were changed by these test additions.

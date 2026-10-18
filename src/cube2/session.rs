@@ -920,27 +920,52 @@ mod tests {
                 std::thread::sleep(Duration::from_millis(1));
             }
             events.send(0).unwrap();
-            line.clear();
-            reader.read_line(&mut line).unwrap();
-            let fields = line.split_whitespace().collect::<Vec<_>>();
-            assert_eq!(fields.len(), 3);
-            assert_eq!(fields[0], "reqauth");
-            assert_eq!(fields[2], "PortAuth");
-            let id = fields[1].parse::<u32>().unwrap();
-            for fragment in format!("chalauth {id} {challenge}\n").as_bytes().chunks(7) {
-                reader.get_mut().write_all(fragment).unwrap();
-                std::thread::sleep(Duration::from_millis(1));
+            let mut previous_id = 0;
+            for attempt in 0..2 {
+                line.clear();
+                reader.read_line(&mut line).unwrap();
+                let fields = line.split_whitespace().collect::<Vec<_>>();
+                assert_eq!(fields.len(), 3);
+                assert_eq!(fields[0], "reqauth");
+                assert_eq!(fields[2], "PortAuth");
+                let id = fields[1].parse::<u32>().unwrap();
+                assert!(id > previous_id);
+                previous_id = id;
+                // A success for another request must not grant this client's role.
+                reader
+                    .get_mut()
+                    .write_all(format!("succauth {}\n", id + 1000).as_bytes())
+                    .unwrap();
+                for fragment in format!("chalauth {id} {challenge}\n").as_bytes().chunks(7) {
+                    reader.get_mut().write_all(fragment).unwrap();
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+                line.clear();
+                reader.read_line(&mut line).unwrap();
+                let fields = line.split_whitespace().collect::<Vec<_>>();
+                assert_eq!(fields.len(), 3);
+                assert_eq!(fields[0], "confauth");
+                assert_eq!(fields[1], id.to_string());
+                if attempt == 0 {
+                    assert_ne!(
+                        fields[2], response,
+                        "wrong private key unexpectedly authenticated"
+                    );
+                    reader
+                        .get_mut()
+                        .write_all(format!("failauth {id}\n").as_bytes())
+                        .unwrap();
+                } else {
+                    assert_eq!(fields[2], response);
+                    reader
+                        .get_mut()
+                        .write_all(format!("succauth {id}\n").as_bytes())
+                        .unwrap();
+                }
+                events.send(attempt + 1).unwrap();
             }
-            line.clear();
-            reader.read_line(&mut line).unwrap();
-            assert_eq!(line, format!("confauth {id} {response}\n"));
-            reader
-                .get_mut()
-                .write_all(format!("succauth {id}\n").as_bytes())
-                .unwrap();
-            events.send(1).unwrap();
         });
-        let config = format!("exec data/defaults.cfg\nname PortTransport\nauthkey PortAuth {private} \"\"\nbind F10 [auth \"\"]\nbind F11 [name (concatword Auth (isauth (getclientnum)))]\nbind F12 [saveauthkeys; name (concatword Key (hasauthkey PortAuth \"\"))]\n");
+        let config = format!("exec data/defaults.cfg\nname PortTransport\nauthkey PortAuth 1 \"\"\nbind F9 [authkey PortAuth {private} \"\"; auth \"\"]\nbind F10 [auth \"\"]\nbind F11 [name (concatword Auth (isauth (getclientnum)))]\nbind F12 [saveauthkeys; name (concatword Key (hasauthkey PortAuth \"\"))]\n");
         let mut seed = b"GPS1".to_vec();
         seed.extend((config.len() as u32).to_le_bytes());
         seed.extend([0; 8]);
@@ -959,7 +984,7 @@ mod tests {
             session.key(key, false, false, 0).unwrap();
             session.tick(0, 0, 0).unwrap();
         };
-        for expected in [0, 1] {
+        for expected in [0, 1, 2] {
             let deadline = Instant::now() + Duration::from_secs(20);
             loop {
                 if let Ok(phase) = phases.try_recv() {
@@ -975,6 +1000,22 @@ mod tests {
             }
             if expected == 0 {
                 press(&mut session, 67);
+            }
+            if expected == 1 {
+                for _ in 0..20 {
+                    session.tick(0, 0, 0).unwrap();
+                }
+                press(&mut session, 68);
+                let saved = session.snapshot().unwrap();
+                let files = protocol::save_files(&saved).unwrap();
+                let config = files.iter().find(|f| f.path == "config.cfg").unwrap();
+                assert!(
+                    std::str::from_utf8(config.bytes)
+                        .unwrap()
+                        .contains("name \"Auth0\""),
+                    "rejected or unrelated authentication granted privilege"
+                );
+                press(&mut session, 66);
             }
         }
         mock.join().unwrap();
@@ -1002,7 +1043,16 @@ mod tests {
             .iter()
             .find(|f| f.path == "auth.cfg")
             .expect("auth keys were not persisted");
-        assert!(std::str::from_utf8(auth.bytes).unwrap().contains(private));
+        let auth_text = std::str::from_utf8(auth.bytes).unwrap();
+        assert!(auth_text.contains(private));
+        assert_eq!(
+            auth_text
+                .lines()
+                .filter(|line| line.starts_with("authkey "))
+                .count(),
+            1,
+            "replaced bad key was retained"
+        );
         drop(session);
         let mut offline = p;
         offline.network = false;
@@ -1371,3 +1421,6 @@ mod tests {
         assert_eq!(unsafe { libc::kill(pid as i32, 0) }, -1);
     }
 }
+
+#[cfg(test)]
+mod lan;
