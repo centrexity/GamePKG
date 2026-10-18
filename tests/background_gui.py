@@ -9,12 +9,12 @@ parser=argparse.ArgumentParser();parser.add_argument('--canonical-particles',act
 PROJECT=Path(__file__).resolve().parents[1];PROOF=PROJECT/('target/canonical-particles-proof' if args.canonical_particles else 'target/canonical-effects-proof' if args.canonical_effects else 'target/night-circuit-maze-proof' if args.night_circuit_maze else 'target/hex-bubbles-proof' if args.hex_bubbles else 'target/matrix-nebula-proof' if args.matrix_nebula else 'target/cyber-aurora-proof' if args.cyber_aurora else 'target/rain-warp-proof' if args.rain_warp else 'target/kaleidoscope-proof' if args.kaleidoscope else 'target/star-voyage-proof' if args.voyage else 'target/space-proof' if args.space else 'target/fire-sea-proof' if args.fire_sea else 'target/procedural-proof' if args.procedural else 'target/background-proof');PROOF.mkdir(parents=True,exist_ok=True)
 import zlib
 REFERENCE=json.loads((PROJECT/('tests/fixtures/arkanoo-canonical-particles.json' if args.canonical_particles else 'tests/fixtures/arkanoo-canonical-effects.json' if args.canonical_effects else 'tests/fixtures/arkanoo-night-circuit-maze.json' if args.night_circuit_maze else 'tests/fixtures/arkanoo-hex-bubbles.json' if args.hex_bubbles else 'tests/fixtures/arkanoo-matrix-nebula.json' if args.matrix_nebula else 'tests/fixtures/arkanoo-cyber-aurora.json' if args.cyber_aurora else 'tests/fixtures/arkanoo-rain-warp.json' if args.rain_warp else 'tests/fixtures/arkanoo-kaleidoscope.json' if args.kaleidoscope else 'tests/fixtures/arkanoo-star-voyage.json' if args.voyage else 'tests/fixtures/arkanoo-space-background.json' if args.space else 'tests/fixtures/arkanoo-fire-sea-background.json' if args.fire_sea else 'tests/fixtures/arkanoo-procedural.json' if args.procedural else 'tests/fixtures/arkanoo-background.json')).read_text())['cases']
-if args.procedural and any('opengl_rgba_zlib_hex' not in case for case in REFERENCE):
+if any('opengl_rgba_zlib_hex' not in case for case in REFERENCE):
  canonical={}
- for filename in ['arkanoo-canonical-particles.json','arkanoo-canonical-effects.json']:
+ for filename in ['arkanoo-canonical-particles.json','arkanoo-canonical-effects.json','arkanoo-canonical-campaign.json']:
   for case in json.loads((PROJECT/'tests/fixtures'/filename).read_text())['cases']:canonical[(case['level'],case['frame'])]=case
  REFERENCE=[canonical[(case['level'],case['frame'])] if 'opengl_rgba_zlib_hex' not in case else case for case in REFERENCE]
-ORIGINAL=[zlib.decompress(bytes.fromhex(case.get('opengl_rgba_zlib_hex',case['sdl_rgba_zlib_hex']))) for case in REFERENCE]
+ORIGINAL=[zlib.decompress(bytes.fromhex(case['opengl_rgba_zlib_hex'])) for case in REFERENCE]
 PHASES=[0,3,7,10,14,17,0]
 KEYS={3:'Right',7:'Up',10:'z',14:'Left',17:'Down'}
 if args.procedural:PHASES=[0,3,11,14,22,25,0];KEYS={3:'Right',11:'Up',14:'z',22:'Left',25:'Down'}
@@ -40,10 +40,7 @@ def points(case):
  if args.canonical_effects and not visible:return points(22)+points(25)
  if args.matrix_nebula and not visible:return points(0)+points(3)
  import struct
- if args.procedural:left,top,_,_=REFERENCE[case]['bounds']
- else:
-  dots=[(x,y) for x,y,color in struct.iter_unpack('<iiI',zlib.decompress(bytes.fromhex(REFERENCE[case]['trace_zlib_hex']))) if color&255 and 0<=x<1280 and 0<=y<720]
-  left=min(x for x,y in dots);top=min(y for x,y in dots)
+ left,top,_,_=REFERENCE[case]['bounds']
  # Sample inside geometry tiles; clipping/raster edges have their own open audit.
  visible=[i for i in visible if 5<i%1280<1275 and 5<i//1280<715 and 4<((i%1280-left)%64)<60 and (0 if (args.space or args.canonical_effects) and REFERENCE[case]['theme']==17 else 4)<((i//1280-top)%64)<(63 if (args.space or args.canonical_effects) and REFERENCE[case]['theme']==17 else 60)]
  assert visible
@@ -62,7 +59,7 @@ def expected(case,width,height):
  return values
 def check(actual,wanted,label):
  deltas=[min(max(abs(a-b) for a,b in zip(p,q)) for q in choices) for p,choices in zip(actual,wanted)];delta=max(deltas);print(label,'maximum original SDL channel difference (nearest boundaries accounted):',delta,flush=True)
- assert delta<=(1 if args.procedural else 3),(label,[(i,a,b) for i,(a,b) in enumerate(zip(actual,wanted)) if deltas[i]>(1 if args.procedural else 3)])
+ assert delta<=1,(label,[(i,a,b) for i,(a,b) in enumerate(zip(actual,wanted)) if deltas[i]>1])
 class Quiet(SimpleHTTPRequestHandler):
  def log_message(self,*args):pass
 with tempfile.TemporaryDirectory(prefix='gamepkg-background-ui-',dir=PROJECT/'target') as directory:
@@ -100,7 +97,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-background-ui-',dir=PROJECT/'ta
        while True:
         path=PROOF/(label+'.png');subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(path)],env=env,check=True,timeout=10);im=Image.open(path).convert('RGB');scale=min(im.width/640,im.height/480);ox=(im.width-640*scale)/2;oy=(im.height-480*scale)/2
         actual=[list(im.getpixel((round(ox+x*scale),round(oy+y*scale)))) for _,x,y in points(shift)]
-        if all(min(max(abs(a-b) for a,b in zip(pixel,choice)) for choice in choices)<=(1 if args.procedural else 3) for pixel,choices in zip(actual,expected(shift,im.width,im.height))):break
+        if all(min(max(abs(a-b) for a,b in zip(pixel,choice)) for choice in choices)<=1 for pixel,choices in zip(actual,expected(shift,im.width,im.height))):break
         if app.poll() is not None:raise RuntimeError(app.stderr.read().decode())
         assert time.monotonic()<deadline,(label,shift,actual);time.sleep(.05)
        check(actual,expected(shift,im.width,im.height),label+'-'+str(shift))

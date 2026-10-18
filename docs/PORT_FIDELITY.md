@@ -1462,3 +1462,38 @@ bounds and remain the next canonical-composition gate. Image/editor artwork,
 viewport, fonts/HUD/menus/audio and the other port requirements remain open.
 Recipe 0.1.41 is source-only; host version and binary/package releases are
 unchanged.
+
+
+### Exact canonical campaign 7–9 composition
+
+The animated starfield, pulsing circles and digital rain now use the same
+known-background compositor as the procedural themes. Twenty-one captures run
+the unchanged original function with real SDL 2.30 point/fill calls at every
+existing reference phase, including f32 precision loss, i32 saturation/release
+wrap and u64::MAX. All 392 independently measured grouped primitive contribution
+maps, clipped ordered pixels and complete canonical default OpenGL framebuffer
+bytes match production exactly.
+
+Existing full unclipped point traces/hashes and release-overflow tests remain
+active. The old signed campaign probe retains its original case selector and
+stress bit, while delegating to the shared exact-frame verifier. Both old and
+new probes enforce the original 64-pixel campaign tile bound and exact canonical
+pixels; the previous two-level grouped-image approximation is removed. Actual
+original software SDL frames differ from original OpenGL by at most two RGB
+levels, measured separately rather than treated as port error tolerance.
+
+All 80 logic tests and 53 signed checks per run pass under unchanged source,
+portability, time, memory, command and image-byte limits. Cold/warm complete
+scenes retain all 200 fire-brick overlays and all four corner layers with 3,000
+particles. Eight players pass both animation frames for each campaign background
+and revisit: browser samples exact, desktop rounding at most one level. Reference
+regeneration, the unchanged default recorder output, strict lint and formatting
+also pass. Interior sampling with explicit nearest-boundary choices does not
+prove complete scaled-window, viewport/edge or other-platform fidelity.
+
+All twenty procedural themes and all three animated campaign backgrounds now
+have exact canonical logical-frame evidence. Original image backgrounds 1–6,
+editor artwork, whole-window proportions/clipping, fonts/HUD/menus/audio and the
+other port requirements remain open. The broader composition tracker keeps its
+explicit whole-window clipping requirement open. Recipe 0.1.42 is source-only;
+host version and binary/package releases are unchanged.

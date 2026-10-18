@@ -45,9 +45,10 @@ SDL_SetRenderDrawColor(r,layer>=0?0:bg[3],layer>=0?0:bg[2],layer>=0?0:bg[1],255)
 int index=0;uint8_t p[24];while(fread(p,1,24,stdin)==24){int selected=index++/48;if(layer>=0&&(selected!=layer||p[20]==0))continue;SDL_SetRenderDrawColor(r,layer>=0?1:p[23],layer>=0?0:p[22],layer>=0?0:p[21],layer>=0?255:p[20]);int kind=integer(p);int x=integer(p+4),y=integer(p+8),a=integer(p+12),b=integer(p+16);SDL_Rect rect={x,y,a,b};int error=kind==0?SDL_RenderDrawPoint(r,x,y):kind==1?SDL_RenderDrawLine(r,x,y,a,b):kind==2?SDL_RenderDrawRect(r,&rect):kind==3?SDL_RenderFillRect(r,&rect):-1;if(error)return 6;}
 uint8_t*pixels=malloc(1280*720*4);if(SDL_RenderReadPixels(r,NULL,SDL_PIXELFORMAT_RGBA32,pixels,1280*4))return 7;if(fwrite(pixels,1,1280*720*4,stdout)!=1280*720*4)return 8;free(pixels);SDL_DestroyRenderer(r);if(s)SDL_FreeSurface(s);if(w)SDL_DestroyWindow(w);SDL_Quit();return 0;}
 '''
-themes=[int(value) for value in sys.argv[3].split(',')] if len(sys.argv)>3 else [2,10]
-assert themes and len(set(themes))==len(themes) and all(value in [1,2,7,8,9,10,11,12,15,16,17,18,19] for value in themes)
-body=body.replace('[7,9,19]',str(themes).replace(' ',''))
+campaign=len(sys.argv)>3 and sys.argv[3]=='campaign'
+themes=[] if campaign else [int(value) for value in sys.argv[3].split(',')] if len(sys.argv)>3 else [2,10]
+assert campaign or (themes and len(set(themes))==len(themes) and all(value in [1,2,7,8,9,10,11,12,15,16,17,18,19] for value in themes))
+body=body.replace('[7,9,19]',str(themes or [2,10]).replace(' ',''))
 rand_source=Path(sys.argv[2]);assert tomllib.loads((rand_source/'Cargo.toml').read_text())['package']['version']=='0.8.5'
 with tempfile.TemporaryDirectory(prefix='gamepkg-procedural-reference-') as temporary:
  folder=Path(temporary);(folder/'src').mkdir();(folder/'src/main.rs').write_text(body);(folder/'raster.c').write_text(c)
@@ -58,12 +59,12 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-procedural-reference-') as temp
  oracle=Path(env['CARGO_TARGET_DIR'])/'release/arkanoo-procedural-reference'
  subprocess.run(['cc',folder/'raster.c','-o',folder/'raster',*subprocess.check_output(['pkg-config','--cflags','--libs','sdl2'],text=True).split()],check=True)
  import ast
- levels=sorted(ast.literal_eval(subprocess.check_output([oracle],text=True)),key=lambda item:(item[1],item[0]));cases=[]
+ levels=[(level,-1) for level in [7,8,9]] if campaign else sorted(ast.literal_eval(subprocess.check_output([oracle],text=True)),key=lambda item:(item[1],item[0]));cases=[]
  env['LIBGL_ALWAYS_SOFTWARE']='1';env.pop('WAYLAND_DISPLAY',None);env.pop('SDL_RENDER_LINE_METHOD',None)
  display=start_display(env,width=1280,height=720)
  try:
   for index,(level,theme) in enumerate(levels):
-   frames=[0,1,29,30,59,60,120,199,200,201,259,260,399,400,16777217,4294967295,18446744073709551615] if theme==8 and index%3==0 else [0,1,59,120,16777217,4294967295,18446744073709551615] if index%3==0 else [0,120]
+   frames=[0,1,29,30,59,60,120,199,200,201,259,260,399,400,16777217,4294967295,18446744073709551615] if theme==8 and index%3==0 else [0,1,59,120,16777217,4294967295,18446744073709551615] if campaign or index%3==0 else [0,120]
    for frame in frames:
     raw=subprocess.check_output([oracle,str(level),str(frame)]);background=struct.unpack('<I',raw[:4])[0];trace=raw[4:]
     commands=list(struct.iter_unpack('<IiiiiI',trace));images={mode:subprocess.check_output([folder/'raster',mode],input=raw,env=env) for mode in ['software','opengl']}

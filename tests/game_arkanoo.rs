@@ -2477,28 +2477,7 @@ fn original_campaign_background_points_colors_and_release_overflow_match() {
             scene.points.len(),
             case["point_count"].as_u64().unwrap() as usize
         );
-        let compressed = hex::decode(case["sdl_rgba_zlib_hex"].as_str().unwrap()).unwrap();
-        let mut original = Vec::new();
-        flate2::read::ZlibDecoder::new(compressed.as_slice())
-            .read_to_end(&mut original)
-            .unwrap();
-        let mut delta = 0;
-        if let Some(image) = physics::effect_image(&scene.points) {
-            for (index, pixel) in image.pixels.chunks_exact(4).enumerate() {
-                let x = image.left as usize + index % image.width as usize;
-                let y = image.top as usize + index / image.width as usize;
-                for channel in 0..3 {
-                    let bg = (scene.color >> (24 - channel * 8)) & 255;
-                    let value = (u32::from(pixel[channel]) * u32::from(pixel[3])
-                        + bg * (255 - u32::from(pixel[3])))
-                        / 255;
-                    delta = delta
-                        .max(value.abs_diff(u32::from(original[(y * 1280 + x) * 4 + channel])));
-                }
-            }
-        }
-        println!("background level {level} frame {frame}: maximum SDL grouping delta {delta}");
-        assert!(delta <= 2);
+        assert_canonical_point_frame(&scene, canonical::case(level, frame));
     }
     for level in [0, 1, 6, 10, u32::MAX] {
         assert!(background::campaign(level, 0).is_none());
@@ -3172,11 +3151,16 @@ fn check_point_background_canonical_fixture(text: &str) {
     for case in fixture["cases"].as_array().unwrap() {
         let level = case["level"].as_u64().unwrap() as u32;
         let frame = case["frame"].as_u64().unwrap();
-        assert_eq!(
-            u64::from(procedural::procedural_theme(level)),
-            case["theme"].as_u64().unwrap()
-        );
-        let scene = procedural::procedural_background(level, frame).unwrap();
+        let scene = if level <= 9 {
+            assert_eq!(case["theme"].as_i64(), Some(-1));
+            background::campaign(level, frame).unwrap()
+        } else {
+            assert_eq!(
+                u64::from(procedural::procedural_theme(level)),
+                case["theme"].as_u64().unwrap()
+            );
+            procedural::procedural_background(level, frame).unwrap()
+        };
         let commands = case["commands"].as_array().unwrap();
         assert_eq!(
             commands.len(),
@@ -3251,5 +3235,12 @@ fn original_canonical_star_voyage_snow_smoke_and_tornado_match_every_primitive_a
 fn original_canonical_fire_supernova_space_wars_and_deep_sea_match_every_primitive_and_pixel() {
     check_point_background_canonical_fixture(include_str!(
         "fixtures/arkanoo-canonical-effects.json"
+    ));
+}
+
+#[test]
+fn original_canonical_campaign_backgrounds_match_every_primitive_and_pixel() {
+    check_point_background_canonical_fixture(include_str!(
+        "fixtures/arkanoo-canonical-campaign.json"
     ));
 }

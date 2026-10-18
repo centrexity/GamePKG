@@ -9,6 +9,7 @@ pub fn case(level: u32, frame: u64) -> &'static Value {
         for text in [
             include_str!("../fixtures/arkanoo-canonical-particles.json"),
             include_str!("../fixtures/arkanoo-canonical-effects.json"),
+            include_str!("../fixtures/arkanoo-canonical-campaign.json"),
         ] {
             let mut fixture: Value = serde_json::from_str(text).unwrap();
             cases.append(fixture["cases"].as_array_mut().unwrap());
