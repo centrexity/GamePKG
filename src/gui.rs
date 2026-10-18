@@ -1062,16 +1062,21 @@ impl eframe::App for App {
                                         ),
                                     );
                                     image_count += 1;
+                                    let image_rect = egui::Rect::from_min_size(
+                                        rect.min + egui::vec2(x * image_scale.x, y * image_scale.y),
+                                        egui::vec2(width * image_scale.x, height * image_scale.y),
+                                    );
+                                    let image_rect = if image.size() == [1, 1] {
+                                        sprites::single_texel_bounds(
+                                            image_rect,
+                                            ctx.pixels_per_point(),
+                                        )
+                                    } else {
+                                        image_rect
+                                    };
                                     painter.image(
                                         texture,
-                                        egui::Rect::from_min_size(
-                                            rect.min
-                                                + egui::vec2(x * image_scale.x, y * image_scale.y),
-                                            egui::vec2(
-                                                width * image_scale.x,
-                                                height * image_scale.y,
-                                            ),
-                                        ),
+                                        image_rect,
                                         egui::Rect::from_min_max(
                                             egui::Pos2::ZERO,
                                             egui::pos2(1.0, 1.0),

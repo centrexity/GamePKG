@@ -1715,3 +1715,51 @@ native gameplay/editor/file-picker import/cancel/Save-dialog export and core/
 component browser play/editor/import/cancel/explicit downloads. Strict lint and
 formatting pass. Source recipes and tests are published without a new binary
 release or host-version change.
+
+
+## Original saved-pattern browser composition
+
+Recipe 0.1.50 restores the browser's original black alpha-200 world overlay,
+opaque (40,45,52) panel, graphite border, all unselected row fills and blue
+selected row. Original Roboto headings, row names and footer retain their
+source placement/order. Empty lists have the original empty panel instead of
+invented placeholder lettering. Existing paging beyond ten patterns is retained;
+canonical comparisons cover the original first ten visible rows.
+
+A font/render/editor hash-guarded actual SDL OpenGL oracle records twelve
+complete 1280x720 RGBA frames: empty, one entry and all ten selected-row states.
+Signed native/core-Wasm command composition matches the entire frames within
+two levels. Original odd-width centering uses window-left plus half the remaining
+width, which differs by one pixel from subtracting half the text width. The
+reference follows the original integer arithmetic. A full 200-metal board plus
+ten mixed/long-name rows retains every isolated browser command under unchanged
+command, image, time and memory limits. Both 61-check signed suites pass.
+The denied-save regression now checks an empty actual row list and no persisted
+save, replacing its old dependency on removed placeholder text.
+
+Six desktop configurations compare complete original-size world frames over
+empty/first/last selection and revisit: 22,118,400 RGB comparisons, maximum
+original difference one. Both web profiles compare complete 640x360 world frames
+with a separately captured 640x480 native player: 1,843,200 comparisons within
+two levels. The latter proves backend consistency at that size, not direct
+scaled-original SDL equivalence. Total: 23,961,600 complete-frame RGB comparisons.
+The twelve-frame original fixture regenerates byte-identically.
+
+Whole-frame comparisons exposed a desktop/browser mismatch of 68 levels at
+half-pixel panel borders. Native one-texel nearest images previously relied on
+backend-sensitive quad-edge ties, and thin strips could disappear. Their native
+destination bounds now use the browser's deterministic pixel-center rule after
+viewport translation and physical DPI scaling. This does not affect filtered
+sprites or image/command charging. Tests cover negative and adjacent half strips,
+translated coordinates and integer/fractional DPI. The complete frame matrix
+passes afterward. Shared clip/image/shader/resize checks remain exact (924 RGB
+samples), and the eight-player editor grid matrix plus three desktop sizes stays
+within one level across all 7,320 samples. Strict lint and formatting pass.
+
+Full editor/menu composition, arbitrary original viewport/CSS scaling and native
+platforms beyond the tested Linux configurations remain separate unfinished work.
+
+Final native gameplay/editor/system import/cancel/Save-dialog export and core/
+component browser play/editor/import/cancel/explicit-download workflows pass
+with the panel and native coverage changes. Source-only publication leaves
+application/package binary releases and host version unchanged.

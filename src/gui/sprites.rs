@@ -108,3 +108,48 @@ mod tests {
         assert!(cache.textures.is_empty());
     }
 }
+
+/// Give one-texel nearest images deterministic physical-pixel coverage.
+/// Fractional quads otherwise put sample centers on backend-sensitive edges.
+pub(super) fn single_texel_bounds(rect: egui::Rect, pixels_per_point: f32) -> egui::Rect {
+    let snap = |value: f32| ((value * pixels_per_point - 0.5).floor() + 1.0) / pixels_per_point;
+    egui::Rect::from_min_max(
+        egui::pos2(snap(rect.min.x), snap(rect.min.y)),
+        egui::pos2(snap(rect.max.x), snap(rect.max.y)),
+    )
+}
+
+#[cfg(test)]
+mod pixel_coverage_tests {
+    use super::*;
+    #[test]
+    fn half_pixel_strips_and_negative_bounds_match_browser_coverage() {
+        for (min, max, wanted_min, wanted_max) in [
+            ([20.0, 100.0], [620.5, 100.5], [20.0, 100.0], [621.0, 101.0]),
+            ([20.5, 100.5], [21.0, 201.0], [21.0, 101.0], [21.0, 201.0]),
+            ([-0.25, -0.25], [0.75, 0.75], [0.0, 0.0], [1.0, 1.0]),
+            ([-0.5, -0.5], [0.5, 0.5], [0.0, 0.0], [1.0, 1.0]),
+            ([0.0, 30.0], [0.5, 31.0], [0.0, 30.0], [1.0, 31.0]),
+            ([0.5, 30.0], [1.0, 31.0], [1.0, 30.0], [1.0, 31.0]),
+        ] {
+            let actual = single_texel_bounds(egui::Rect::from_min_max(min.into(), max.into()), 1.0);
+            assert_eq!(actual.min, egui::Pos2::from(wanted_min));
+            assert_eq!(actual.max, egui::Pos2::from(wanted_max));
+        }
+    }
+    #[test]
+    fn coverage_is_snapped_after_viewport_translation_and_dpi_scale() {
+        let actual = single_texel_bounds(
+            egui::Rect::from_min_max(egui::pos2(10.25, 20.25), egui::pos2(10.75, 20.75)),
+            2.0,
+        );
+        assert_eq!(actual.min, egui::pos2(10.5, 20.5));
+        assert_eq!(actual.max, egui::pos2(11.0, 21.0));
+        let fractional = single_texel_bounds(
+            egui::Rect::from_min_max(egui::pos2(10.0, 20.0), egui::pos2(11.0, 21.0)),
+            1.25,
+        );
+        assert_eq!(fractional.min, egui::pos2(10.4, 20.0));
+        assert_eq!(fractional.max, egui::pos2(11.2, 20.8));
+    }
+}

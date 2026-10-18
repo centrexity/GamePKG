@@ -1071,7 +1071,8 @@ fn denied_editor_saving_does_not_create_a_save_file() {
     editor_key(&mut game, 115);
     game.step(0).unwrap();
     editor_key(&mut game, 108);
-    assert!(game.frame().commands.iter().any(|c|matches!(c,Command::Image{x,y,width,height,..} if *x==180.0 && *y==148.0 && *width==102.0 && *height==7.0)),"denied save appeared as a saved pattern in the browser");
+    assert!(game.frame().commands.iter().any(|c|matches!(c,Command::Image{x,y,width,height,image} if (*x,*y,*width,*height)==(170.0,115.0,300.0,250.0) && image.pixels()==[40,45,52,255])),"saved-pattern browser did not open");
+    assert!(!game.frame().commands.iter().any(|c|matches!(c,Command::Image{x,y,width,height,image} if *x==180.0 && (145.0..320.0).contains(y) && *width==280.0 && *height==15.0 && image.size()==[1,1])),"denied save appeared as a saved pattern row");
     drop(game);
     assert!(
         !root.path().join("saves").exists()
@@ -3485,4 +3486,139 @@ fn dynamic_unicode_editor_names_rows_messages_and_viewport_clips_match_original_
             }
         }
     }
+}
+
+#[test]
+#[ignore = "requires tests/arkanoo.py fixtures"]
+fn original_pattern_browser_complete_pixels_and_dense_board_budget_match() {
+    let reference: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-pattern-browser.json")).unwrap();
+    let root = isolated_library();
+    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
+    for case in reference["cases"].as_array().unwrap() {
+        assert_eq!(
+            game.step(
+                0xc0000042
+                    | ((case["count"].as_u64().unwrap() as u32) << 8)
+                    | ((case["selected"].as_u64().unwrap() as u32) << 16)
+            )
+            .unwrap(),
+            66
+        );
+        let mut actual = vec![0u8; 1280 * 720 * 4];
+        for pixel in actual.chunks_exact_mut(4) {
+            pixel.copy_from_slice(&[120, 180, 240, 255]);
+        }
+        let mut clip = [0, 0, 1280, 720];
+        for command in &game.frame().commands {
+            if let Command::Clip { rect } = command {
+                clip = rect
+                    .map(|r| {
+                        [
+                            (r[0] * 2.0).round() as i32,
+                            ((r[1] - 60.0) * 2.0).round() as i32,
+                            ((r[0] + r[2]) * 2.0).round() as i32,
+                            ((r[1] + r[3] - 60.0) * 2.0).round() as i32,
+                        ]
+                    })
+                    .unwrap_or([0, 0, 1280, 720]);
+                continue;
+            }
+            let (x, y, w, h, pixels, iw, ih) = match command {
+                Command::Rect {
+                    x,
+                    y,
+                    width,
+                    height,
+                    rgba,
+                } => (*x, *y, *width, *height, rgba.to_be_bytes().to_vec(), 1, 1),
+                Command::Image {
+                    x,
+                    y,
+                    width,
+                    height,
+                    image,
+                }
+                | Command::LinearImage {
+                    x,
+                    y,
+                    width,
+                    height,
+                    image,
+                } => (
+                    *x,
+                    *y,
+                    *width,
+                    *height,
+                    image.pixels().to_vec(),
+                    image.size()[0],
+                    image.size()[1],
+                ),
+                _ => panic!("unexpected browser command"),
+            };
+            let left = (x * 2.0).round() as i32;
+            let top = ((y - 60.0) * 2.0).round() as i32;
+            let width = (w * 2.0).round() as i32;
+            let height = (h * 2.0).round() as i32;
+            assert!(iw == 1 || (iw == width as usize && ih == height as usize));
+            for row in top.max(0).max(clip[1])..(top + height).min(720).min(clip[3]) {
+                for col in left.max(0).max(clip[0])..(left + width).min(1280).min(clip[2]) {
+                    let src = if iw == 1 {
+                        0
+                    } else {
+                        ((row - top) as usize * iw + (col - left) as usize) * 4
+                    };
+                    let dst = (row as usize * 1280 + col as usize) * 4;
+                    let alpha = u32::from(pixels[src + 3]);
+                    for c in 0..3 {
+                        actual[dst + c] = ((u32::from(pixels[src + c]) * alpha
+                            + u32::from(actual[dst + c]) * (255 - alpha)
+                            + 127)
+                            / 255) as u8;
+                    }
+                }
+            }
+        }
+        let compressed = hex::decode(case["rgba_zlib_hex"].as_str().unwrap()).unwrap();
+        let mut expected = Vec::new();
+        std::io::Read::read_to_end(
+            &mut flate2::read::ZlibDecoder::new(compressed.as_slice()),
+            &mut expected,
+        )
+        .unwrap();
+        assert_eq!(actual.len(), expected.len());
+        let delta = actual
+            .iter()
+            .zip(&expected)
+            .map(|(a, b)| a.abs_diff(*b))
+            .max()
+            .unwrap();
+        assert!(
+            delta <= 2,
+            "count {} selected {}, max {delta}",
+            case["count"],
+            case["selected"]
+        );
+    }
+    game.step(0xc0090a42).unwrap();
+    let isolated = game.frame().commands[1..].to_vec();
+    assert_eq!(game.step(0xc0000043).unwrap(), 67);
+    let full = &game.frame().commands;
+    let first=full.iter().position(|c|matches!(c,Command::Image{x,y,width,height,image} if (*x,*y,*width,*height)==(0.0,60.0,640.0,360.0) && image.pixels()==[0,0,0,200])).unwrap();
+    assert_eq!(
+        &full[first..first + isolated.len()],
+        isolated.as_slice(),
+        "dense board silently dropped browser commands"
+    );
+    assert!(full.len() < 1024);
+    let bytes: usize = full
+        .iter()
+        .map(|c| match c {
+            Command::Image { image, .. } | Command::LinearImage { image, .. } => {
+                image.pixels().len()
+            }
+            _ => 0,
+        })
+        .sum();
+    assert!(bytes <= 8 * 1024 * 1024);
 }
