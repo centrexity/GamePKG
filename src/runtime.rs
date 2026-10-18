@@ -172,6 +172,7 @@ impl Game {
                             | "draw_shader"
                             | "achievement_unlock"
                             | "audio_submit"
+                            | "audio_submit_stereo"
                     )
             }) {
                 bail!("games cannot import functions outside the scoped GamePKG API");
@@ -237,6 +238,7 @@ impl Game {
                                 | "draw-shader"
                                 | "achievement-unlock"
                                 | "audio-submit"
+                                | "audio-submit-stereo"
                         ) {
                             bail!("games cannot import functions outside the scoped GamePKG API");
                         }
@@ -345,7 +347,16 @@ impl Game {
             )?;
 
             linker.func_wrap("gamepkg", "asset_read", asset_read)?;
-            linker.func_wrap("gamepkg", "audio_submit", audio_submit)?;
+            linker.func_wrap(
+                "gamepkg",
+                "audio_submit",
+                |caller: Caller<'_, Data>, p: i32, n: i32| audio_submit(caller, p, n, 1),
+            )?;
+            linker.func_wrap(
+                "gamepkg",
+                "audio_submit_stereo",
+                |caller: Caller<'_, Data>, p: i32, n: i32| audio_submit(caller, p, n, 2),
+            )?;
             linker.func_wrap(
                 "gamepkg",
                 "draw_shader_asset_image",
@@ -1453,6 +1464,7 @@ impl Game {
             Err(error) => {
                 self.store.as_mut().unwrap().data_mut().frame.reset();
                 self.store.as_mut().unwrap().data_mut().audio.clear();
+                self.store.as_mut().unwrap().data_mut().audio_channels = 1;
                 if let (Some(save), Some(bytes)) = (
                     self.store.as_mut().unwrap().data_mut().save.as_mut(),
                     previous_save,
@@ -1480,6 +1492,8 @@ impl Game {
             .map(|save| save.commit())
             .transpose();
         if let Err(error) = commit {
+            self.store.as_mut().unwrap().data_mut().audio.clear();
+            self.store.as_mut().unwrap().data_mut().audio_channels = 1;
             self.store
                 .as_mut()
                 .unwrap()
@@ -1729,11 +1743,13 @@ fn decode_asset_image(
     )
 }
 
-/// Signed 16-bit little-endian mono PCM at 48 kHz; at most 1,600 samples per tick.
-fn audio_submit(mut caller: Caller<'_, Data>, pointer: i32, count: i32) -> i32 {
+/// Signed 16-bit PCM at 48 kHz; mono/stereo share 1,600 sample values per tick.
+fn audio_submit(mut caller: Caller<'_, Data>, pointer: i32, count: i32, channels: u32) -> i32 {
     if !caller.data().audio_allowed
-        || (!caller.data().audio.is_empty() && caller.data().audio_channels != 1)
+        || !matches!(channels, 1 | 2)
+        || (!caller.data().audio.is_empty() && caller.data().audio_channels != channels)
         || pointer < 0
+        || count % channels as i32 != 0
         || !(0..=1600).contains(&count)
         || caller.data().audio.len() + count as usize > 1600
     {
@@ -1753,14 +1769,24 @@ fn audio_submit(mut caller: Caller<'_, Data>, pointer: i32, count: i32) -> i32 {
     if memory.read(&caller, pointer as usize, &mut bytes).is_err() {
         return -1;
     }
-    caller.data_mut().audio.extend(
-        bytes
-            .as_chunks::<2>()
-            .0
-            .iter()
-            .map(|b| i16::from_le_bytes([b[0], b[1]])),
-    );
-    0
+    let samples: Vec<_> = bytes
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|b| i16::from_le_bytes(*b))
+        .collect();
+    let data = caller.data_mut();
+    if crate::audio_frame::append(
+        &mut data.audio,
+        &mut data.audio_channels,
+        &samples,
+        channels,
+        data.audio_allowed,
+    ) {
+        0
+    } else {
+        -1
+    }
 }
 
 fn doom_tick(mut caller: Caller<'_, Data>, input: i32, state: i64) -> Result<i64> {

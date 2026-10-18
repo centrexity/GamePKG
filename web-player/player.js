@@ -71,7 +71,7 @@ function render(frame){
  document.querySelector('#score').textContent=data.custom_renderer?'':`Score ${BigInt(frame.state)>>32n}`;
  canvas.dataset.state=frame.state;
 }
-function playAudio(samples){if(!audioContext||audioContext.state!=='running'||!samples.length||samples.length>1600)return;audioNext=Math.max(audioContext.currentTime,audioNext);if(audioNext>audioContext.currentTime+.1)return;const buffer=audioContext.createBuffer(1,samples.length,48000),channel=buffer.getChannelData(0);for(let i=0;i<samples.length;i++)channel[i]=samples[i]/32768;const source=audioContext.createBufferSource();source.buffer=buffer;source.connect(audioGain);audioNodes.add(source);source.onended=()=>audioNodes.delete(source);source.start(audioNext);audioNext+=samples.length/48000;canvas.dataset.audioSamples=String(Number(canvas.dataset.audioSamples||0)+samples.length);}
+function playAudio(samples,channels=1){if(!audioContext||audioContext.state!=='running'||!samples.length||samples.length>1600||![1,2].includes(channels)||samples.length%channels)return;audioNext=Math.max(audioContext.currentTime,audioNext);if(audioNext>audioContext.currentTime+.1)return;const frames=samples.length/channels,buffer=audioContext.createBuffer(channels,frames,48000);for(let c=0;c<channels;c++){const channel=buffer.getChannelData(c);for(let i=0;i<frames;i++)channel[i]=samples[i*channels+c]/32768;}const source=audioContext.createBufferSource();source.buffer=buffer;source.connect(audioGain);audioNodes.add(source);source.onended=()=>audioNodes.delete(source);source.start(audioNext);audioNext+=frames/48000;canvas.dataset.audioSamples=String(Number(canvas.dataset.audioSamples||0)+samples.length);canvas.dataset.audioChannels=String(channels);}
 async function start(){
  if(!data)return;
  if(roms.some(value=>!value)){status.textContent='Select all required ROM files before playing.';return;}
@@ -88,7 +88,7 @@ async function start(){
   if(message.type==='file-request')showFileRequest(message,active);
   if(message.type==='save')persist(saveKey,Array.from(message.bytes));
   if(message.type==='frame'){
-   try{render(message);if(!message.window?.closed)playAudio(message.audio||[]);}catch(error){halt(String(error));return;}const history=stored(historyKey,{played_ms:0,unlocked:[]});const now=performance.now();history.played_ms+=Math.max(0,Math.min(250,Math.round(now-lastFrame)));lastFrame=now;for(const id of message.unlocks)if(!history.unlocked.includes(id))history.unlocked.push(id);persist(historyKey,history);
+   try{render(message);if(!message.window?.closed)playAudio(message.audio||[],message.audioChannels??1);}catch(error){halt(String(error));return;}const history=stored(historyKey,{played_ms:0,unlocked:[]});const now=performance.now();history.played_ms+=Math.max(0,Math.min(250,Math.round(now-lastFrame)));lastFrame=now;for(const id of message.unlocks)if(!history.unlocked.includes(id))history.unlocked.push(id);persist(historyKey,history);
    if(!applyWindowControls(message.window))return;
    frameTimer=setTimeout(tick,16);
   }

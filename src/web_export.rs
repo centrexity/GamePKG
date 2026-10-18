@@ -30,6 +30,7 @@ const SUPPORTED: &[&str] = &[
     "draw_asset_image_linear",
     "draw_asset_image_linear_straight",
     "audio_submit",
+    "audio_submit_stereo",
     "draw_shader",
     "draw_shader_image",
     "draw_shader_asset_image",

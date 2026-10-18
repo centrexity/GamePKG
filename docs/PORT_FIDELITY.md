@@ -2069,3 +2069,19 @@ of a pending request. Final native/core/component SDK and real-window tests,
 headed browser API/native-Escape exits and saved-window regressions pass with
 this controller; strict lint, formatting and both Windows compile checks pass.
 Test configurations disable both game and app startup update checks.
+
+Portable source audio now has `audio_submit_stereo`, accepting interleaved
+48 kHz signed 16-bit left/right values. Mono and stereo share the existing
+1,600-value per-tick budget; stereo does not increase it. One nonempty format
+is allowed per tick, malformed or denied calls leave staging unchanged, and
+failed ticks clear both samples and channel metadata. Output remains device-only.
+
+`tests/stereo_audio.rs` verifies core/component memory errors, odd lengths,
+shared budget, format conflicts, permission denial, per-game isolation, rollback
+and execution deadlines. `tests/stereo_audio_game.py` verifies generated bindings
+in signed native/core/component games and actual Chromium core/component exports:
+WebAudio buffers contain the exact independent left/right samples at 48 kHz.
+`tests/stereo_audio_web.cjs` checks browser memory/budget/permission rejection,
+channel deinterleaving and duration measured in frames. Existing mono runtime
+tests and strict GUI lint pass. This is transport support, not restoration of
+Arkanoo's original compressed recordings or its music controls; those remain open.

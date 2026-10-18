@@ -7,7 +7,7 @@ function frameClockBegin(now=performance.now()){
 }
 let eventBytes=new Uint8Array();
 // The guest sees only these typed imports, never JavaScript objects or browser APIs.
-let instance, manifest, assets, roms, save, state=0n, commands=[], background=null, unlocks=[],saveDirty=false,saveBudget=0,images=new Map(),imageBudget=0,audioSamples=[],shaderCount=0;
+let instance, manifest, assets, roms, save, state=0n, commands=[], background=null, unlocks=[],saveDirty=false,saveBudget=0,images=new Map(),imageBudget=0,audioSamples=[],audioChannels=1,shaderCount=0;
 function imageCommand(x,y,w,h,pw,ph,pixels,kind='image'){if(commands.length>=1024||!finite(x,y,w,h)||w<0||h<0||!Number.isInteger(pw)||!Number.isInteger(ph)||pw<1||ph<1||pw>512||ph>512||pixels.length!==pw*ph*4||imageBudget+pixels.length>8388608)return -1;imageBudget+=pixels.length;return command([kind,x,y,w,h,pw,ph,pixels.slice()]);}
 async function prepareImages(precise={}){
  images=new Map();let total=0;
@@ -108,6 +108,11 @@ function fileResult(data){const entry=fileEntry;if(!entry||entry.status!==1||ent
 function fileTickBegin(input=0){fileGesture=false;if(manifest.permissions.input){fileGesture=(input&0x000f00ff)!==0;const v=new DataView(eventBytes.buffer,eventBytes.byteOffset,eventBytes.byteLength);for(let at=0;at<eventBytes.length;at+=16){const kind=v.getUint32(at,true),code=v.getUint32(at+12,true);if(kind===2||(kind===5&&!(code&65536))||(kind===9&&!(code&0x80000000)))fileGesture=true;}}}
 function fileTickFinish(success){fileGesture=false;if(fileEntry?.staged){if(!success){fileEntry=null;return;}fileEntry.staged=false;postMessage({type:'file-request',handle:fileEntry.handle,generation:fileEntry.generation,index:fileEntry.index,operation:fileEntry.operation,name:fileEntry.name,bytes:fileEntry.operation===1?fileEntry.bytes:new Uint8Array()});}}
 
+function audioSubmit(pointer,count,channels){
+ if(!manifest.permissions.audio||!Number.isInteger(count)||count<0||count>1600||count%channels||audioSamples.length+count>1600||(audioSamples.length&&audioChannels!==channels))return -1;
+ const samples=bytes(pointer,count*2,3200);if(!samples)return -1;
+ if(count){audioChannels=channels;const view=new DataView(samples.buffer,samples.byteOffset,samples.byteLength);for(let i=0;i<count;i++)audioSamples.push(view.getInt16(i*2,true));}return 0;
+}
 const api={
  window_control:windowRequest,
  window_state:windowObservation,
@@ -134,7 +139,8 @@ const api={
  draw_shader:index=>Number.isInteger(index)&&index>=0&&index<shaderCount?command(['shader',index]):-1,
  draw_shader_asset_image:(index,pointer,length)=>{const image=images.get(assetName(pointer,length));if(!Number.isInteger(index)||index<0||index>=shaderCount||!image||imageBudget+image.pixels.length>8388608||commands.length>=1024)return -1;imageBudget+=image.pixels.length;return command(['shader-image',index,image.width,image.height,image.pixels.slice()]);},
  draw_shader_image:(index,pw,ph,pointer,length)=>{const pixels=bytes(pointer,length,1048576);if(!Number.isInteger(index)||index<0||index>=shaderCount||!pixels||!Number.isInteger(pw)||!Number.isInteger(ph)||pw<1||ph<1||pw>512||ph>512||length!==pw*ph*4||imageBudget+length>8388608)return -1;imageBudget+=length;return command(['shader-image',index,pw,ph,pixels.slice()]);},
- audio_submit:(pointer,count)=>{const samples=bytes(pointer,count*2,3200);if(!manifest.permissions.audio||!Number.isInteger(count)||count<0||count>1600||audioSamples.length+count>1600||!samples)return -1;const view=new DataView(samples.buffer,samples.byteOffset,samples.byteLength);for(let index=0;index<count;index++)audioSamples.push(view.getInt16(index*2,true));return 0;},
+ audio_submit:(pointer,count)=>audioSubmit(pointer,count,1),
+ audio_submit_stereo:(pointer,count)=>audioSubmit(pointer,count,2),
  achievement_unlock:index=>{const item=manifest.achievements?.[index];if(!item||unlocks.length>=1024)return 0;unlocks.push(item.id);return 1;}
 };
 function decode(hex){if(typeof hex!=='string'||hex.length%2||!/^[a-f0-9]*$/.test(hex))throw Error('Invalid packaged bytes');const out=new Uint8Array(hex.length/2);for(let i=0;i<out.length;i++){const a=hex.charCodeAt(i*2),b=hex.charCodeAt(i*2+1);out[i]=((a<=57?a-48:a-87)<<4)|(b<=57?b-48:b-87);}return out;}
@@ -157,14 +163,14 @@ onmessage=async ({data})=>{try{
  }else if(data.type==='tick'){
   frameClockBegin();windowObserve(data.fullscreen);
   eventBytes=manifest.permissions.input?encodeEvents(data.events??[]):new Uint8Array();
-  commands=[];background=null;unlocks=[];saveDirty=false;saveBudget=0;imageBudget=0;audioSamples=[];fileTickBegin(data.input);windowBegin(fileGesture);
+  commands=[];background=null;unlocks=[];saveDirty=false;saveBudget=0;imageBudget=0;audioSamples=[];audioChannels=1;fileTickBegin(data.input);windowBegin(fileGesture);
   state=instance.exports[manifest.runtime_profile==='component-v1'?'tick':'gamepkg_tick'](manifest.permissions.input?data.input:0,state);
   if(instance.exports.memory&&instance.exports.memory.buffer.byteLength>manifest.limits.hard_memory_bytes)throw Error('Memory limit exceeded');
   const windowState=windowFinish(true);fileTickFinish(!windowState.closed);
   if(saveDirty)postMessage({type:'save',bytes:save});
-  postMessage({type:'frame',commands,background,state:String(state),unlocks,audio:audioSamples,window:windowState});
+  postMessage({type:'frame',commands,background,state:String(state),unlocks,audio:audioSamples,audioChannels,window:windowState});
  }
-}catch(error){windowFinish(false);fileTickFinish(false);postMessage({type:'error',error:String(error)});}};
+}catch(error){audioSamples=[];audioChannels=1;windowFinish(false);fileTickFinish(false);postMessage({type:'error',error:String(error)});}};
 
 // Canonical list results are allocated in guest memory through its bounded
 // allocator. Guest bindings copy and free these results immediately.
@@ -203,6 +209,7 @@ const canonical={
  'draw-asset-image-linear':(...args)=>api.draw_asset_image_linear(...args)===0?1:0,
  'draw-asset-image-linear-straight':(...args)=>api.draw_asset_image_linear_straight(...args)===0?1:0,
  'audio-submit':(...args)=>api.audio_submit(...args)===0?1:0,
+ 'audio-submit-stereo':(...args)=>api.audio_submit_stereo(...args)===0?1:0,
  'draw-shader':index=>api.draw_shader(index)===0?1:0,
  'draw-shader-asset-image':(...args)=>api.draw_shader_asset_image(...args)===0?1:0,
  'draw-shader-image':(...args)=>api.draw_shader_image(...args)===0?1:0

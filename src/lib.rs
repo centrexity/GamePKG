@@ -1,4 +1,5 @@
 pub mod archive;
+mod audio_frame;
 #[cfg(feature = "gui")]
 pub mod gui;
 pub mod manifest;

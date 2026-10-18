@@ -510,3 +510,9 @@ id = "lossless_sparse_particle_and_background_buffers"
 requirements = ["Original particle grid and ordered overlap pixels", "Exact row-major visible tile bytes/dimensions", "No full-screen temporary for sparse corner fields", "Exact encoded background initialization", "Full parallel signed stress suites", "Unchanged command/image/memory/time caps"]
 status = "implemented_runtime_verified_linux_and_web"
 notes = "Dense renderer deadlines prompted direct composition into occupied 128px tiles, retaining the original bounding-grid anchor, row-major command order and all RGBA. The 3000-particle corner fixture retains exactly four tiles/212992 bytes while avoiding a 3686400-byte full temporary. Mixed/clipped/overlap reconstruction is byte-exact. Background filling uses bounded repetitions of the same encoded RGBA instead of per-pixel append. All 91 logic and both 67-check signed suites pass at default parallelism and unchanged limits, with native/core/component browser gameplay/editor/file workflows passing. This does not establish performance guarantees for all hardware/platforms."
+
+[[work]]
+id = "portable_stereo_pcm"
+requirements = ["Signed portable stereo output without guest crates", "Shared mono/stereo budget", "Native/core/component/browser channel fidelity", "Existing mono compatibility"]
+status = "implemented_runtime_verified"
+notes = "Public audio_submit_stereo provides interleaved 48 kHz i16 output. The existing 1600 sample-value limit is shared by mono and stereo, with one nonempty format per tick. Signed generated SDK fixtures pass in native/core/component; actual browser Wasm exports preserve exact independent channels in WebAudio buffers. Raw ABI tests cover malformed memory/lengths, permissions, mixed formats, atomic rejection, isolation, rollback and deadlines. Browser output tests verify frame-based duration. Original compressed recordings, mixing and music controls remain separate unfinished work."

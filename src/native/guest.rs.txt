@@ -34,6 +34,7 @@ pub mod gamepkg {
     pub fn draw_rect(x:f32,y:f32,w:f32,h:f32,rgba:u32)->bool{accepted(9,&u32s(&[x.to_bits(),y.to_bits(),w.to_bits(),h.to_bits(),rgba]))}
     pub fn draw_circle(x:f32,y:f32,r:f32,rgba:u32)->bool{accepted(10,&u32s(&[x.to_bits(),y.to_bits(),r.to_bits(),rgba]))}
     pub fn draw_shader(index:u32)->bool{accepted(11,&u32s(&[index]))}
+    pub fn audio_submit_stereo(samples:&[i16])->bool{if samples.len()>1600||samples.len()%2!=0{return false;}let b:Vec<u8>=samples.iter().flat_map(|v|v.to_le_bytes()).collect();accepted(37,&b)}
     pub fn audio_submit(samples:&[i16])->bool{if samples.len()>1600{return false;}let b:Vec<u8>=samples.iter().flat_map(|v|v.to_le_bytes()).collect();accepted(12,&b)}
     fn __gamepkg_audio_submit_stereo(samples:&[i16])->bool{if samples.len()>3200||samples.len()%2!=0{return false;}let b:Vec<u8>=samples.iter().flat_map(|v|v.to_le_bytes()).collect();accepted(23,&b)}
     pub fn draw_image(x:f32,y:f32,w:f32,h:f32,pw:u32,ph:u32,pixels:&[u8])->bool{if pw==0||ph==0||pw>512||ph>512||pixels.len()!=pw as usize*ph as usize*4{return false;}let mut b=u32s(&[x.to_bits(),y.to_bits(),w.to_bits(),h.to_bits(),pw,ph]);b.extend(pixels);accepted(13,&b)}

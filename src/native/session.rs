@@ -433,25 +433,24 @@ impl Session {
                 .rect(f(b, 0)?, f(b, 4)?, f(b, 8)?, f(b, 12)?, n(b, 16)?),
             10 => self.frame.circle(f(b, 0)?, f(b, 4)?, f(b, 8)?, n(b, 12)?),
             11 => self.frame.shader(n(b, 0)? as i32, self.shader_count),
-            12 => {
+            12 | 37 => {
                 ensure!(
-                    b.len() <= 3200
-                        && b.len() % 2 == 0
-                        && self.manifest.permissions.audio
-                        && (self.audio.is_empty() || self.audio_channels == 1),
-                    "audio access denied"
+                    b.len() <= 3200 && b.len() % 2 == 0,
+                    "invalid portable audio packet"
                 );
-                ensure!(
-                    self.audio.len() + b.len() / 2 <= 1600,
-                    "audio budget exceeded"
-                );
-                self.audio.extend(
-                    b.as_chunks::<2>()
-                        .0
-                        .iter()
-                        .map(|s| i16::from_le_bytes([s[0], s[1]])),
-                );
-                true
+                let samples: Vec<_> = b
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
+                    .map(|s| i16::from_le_bytes(*s))
+                    .collect();
+                crate::audio_frame::append(
+                    &mut self.audio,
+                    &mut self.audio_channels,
+                    &samples,
+                    if op == 37 { 2 } else { 1 },
+                    self.manifest.permissions.audio,
+                )
             }
             23 => {
                 let samples =
@@ -624,6 +623,8 @@ impl Session {
             Ok(v) => {
                 if let Some(save) = &mut self.save {
                     if let Err(error) = save.commit() {
+                        self.audio.clear();
+                        self.audio_channels = 1;
                         self.user_files.finish(false);
                         self.window.finish(false);
                         return Err(error);
@@ -638,6 +639,7 @@ impl Session {
                 self.window.finish(false);
                 self.frame.reset();
                 self.audio.clear();
+                self.audio_channels = 1;
                 self.achievements.clear();
                 if let (Some(save), Some(bytes)) = (&mut self.save, previous) {
                     save.bytes = bytes;

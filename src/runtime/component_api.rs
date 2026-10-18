@@ -328,18 +328,20 @@ pub(super) fn linker(engine: &Engine) -> Result<Linker<Data>> {
             Ok((store.data_mut().frame.shader(index as i32, count),))
         },
     )?;
-    host.func_wrap(
-        "audio-submit",
-        |mut store: StoreContextMut<'_, Data>, (samples,): (Vec<i16>,)| {
-            if !store.data().audio_allowed
-                || (!store.data().audio.is_empty() && store.data().audio_channels != 1)
-                || samples.len() + store.data().audio.len() > 1600
-            {
-                return Ok((false,));
-            }
-            store.data_mut().audio.extend(samples);
-            Ok((true,))
-        },
-    )?;
+    for (name, channels) in [("audio-submit", 1u32), ("audio-submit-stereo", 2u32)] {
+        host.func_wrap(
+            name,
+            move |mut store: StoreContextMut<'_, Data>, (samples,): (Vec<i16>,)| {
+                let data = store.data_mut();
+                Ok((crate::audio_frame::append(
+                    &mut data.audio,
+                    &mut data.audio_channels,
+                    &samples,
+                    channels,
+                    data.audio_allowed,
+                ),))
+            },
+        )?;
+    }
     Ok(linker)
 }

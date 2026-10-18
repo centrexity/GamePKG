@@ -32,6 +32,7 @@ interface host {
     draw-shader-asset-image: func(index: u32, path: string) -> bool;
     draw-shader: func(index: u32) -> bool;
     audio-submit: func(samples: list<s16>) -> bool;
+    audio-submit-stereo: func(samples: list<s16>) -> bool;
 }
 
 world game {
