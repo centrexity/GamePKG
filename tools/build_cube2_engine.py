@@ -58,6 +58,7 @@ def main():
     shutil.copyfile(PROJECT / 'engines/cube2/adapters/persistence.h', stage / 'engine/persistence.h')
     shutil.copyfile(PROJECT / 'engines/cube2/adapters/audio.h', stage / 'engine/audio.h')
     shutil.copyfile(PROJECT / 'engines/cube2/adapters/mouse.h', stage / 'engine/gamepkg_mouse.h')
+    shutil.copyfile(PROJECT / 'engines/cube2/adapters/modifiers.h', stage / 'engine/gamepkg_modifiers.h')
     shutil.copyfile(PROJECT / 'engines/cube2/adapters/network.h', stage / 'enet/gamepkg_network.h')
     unix = stage / 'enet/unix.c'
     text = unix.read_text()
@@ -76,6 +77,7 @@ def main():
     (stage / 'engine/gamepkg_bridge.h').write_bytes(bridge)
     path = stage / 'engine/main.cpp'
     text = path.read_text()
+    text = replace_once(text, '        SDL_Event &event = events.remove();', '        SDL_Event &event = events.remove();\n        if(gamepkg_apply_modifiers(event)) continue;')
     text = replace_once(text, '#include "engine.h"', '#include "engine.h"\n#include "gamepkg_bridge.h"')
     text = replace_once(text, 'void quit()                     // normal exit\n{', 'void quit()                     // normal exit\n{\n    gamepkg_quit();')
     text = replace_once(text, 'int main(int argc, char **argv)\n{', 'int main(int argc, char **argv)\n{\n    gamepkg_prepare();')

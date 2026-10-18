@@ -1445,3 +1445,6 @@ mod loading;
 
 #[cfg(test)]
 mod locks;
+
+#[cfg(test)]
+mod modifiers;

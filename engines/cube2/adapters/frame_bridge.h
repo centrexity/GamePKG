@@ -6,6 +6,7 @@
 #include <errno.h>
 #include "syscall_guard.h"
 #include "gamepkg_mouse.h"
+#include "gamepkg_modifiers.h"
 #include <SDL_mixer.h>
 #include <dirent.h>
 #include <fcntl.h>
@@ -191,7 +192,7 @@ static void gamepkg_input()
             if(++events > 64) exit(2);
             uint32_t button=gamepkg_le32(packet+4), pressed=gamepkg_le32(packet+8), mods=gamepkg_le32(packet+12);
             if((button<1 || button>8) || pressed>1 || (mods & ~uint32_t(0x3fc3))) exit(2);
-            SDL_SetModState(SDL_Keymod(mods));
+            gamepkg_set_modifiers(mods);
             if(!gamepkg_mouse.update(button,pressed!=0,false)) continue;
             SDL_Event event; memset(&event,0,sizeof(event));
             event.type=gamepkg_mouse.down[button] ? SDL_MOUSEBUTTONDOWN : SDL_MOUSEBUTTONUP;
@@ -205,7 +206,7 @@ static void gamepkg_input()
             if((rawx>16 && rawx<0xfffffff0u) || (rawy>16 && rawy<0xfffffff0u) || (mods & ~uint32_t(0x3fc3))) exit(2);
             int x=rawx<=16 ? int(rawx) : -int(~rawx)-1,y=rawy<=16 ? int(rawy) : -int(~rawy)-1;
             if(abs(x)+abs(y)>16) exit(2);
-            SDL_SetModState(SDL_Keymod(mods));
+            gamepkg_set_modifiers(mods);
             for(int axis=0;axis<2;axis++)
             {
                 int steps=axis ? x : y;
@@ -223,12 +224,13 @@ static void gamepkg_input()
             if(++events > 64) exit(2);
             uint32_t mods = gamepkg_le32(packet+4);
             if((mods & ~uint32_t(0x3fc3)) || gamepkg_le32(packet+8) || gamepkg_le32(packet+12)) exit(2);
-            SDL_SetModState(SDL_Keymod(mods)); continue;
+            gamepkg_set_modifiers(mods); continue;
         }
         if(!memcmp(packet, "GPR1", 4))
         {
             if(++events > 64) exit(2);
             if(gamepkg_le32(packet+4) || gamepkg_le32(packet+8) || gamepkg_le32(packet+12)) exit(2);
+            gamepkg_set_modifiers(0);
             for(unsigned i=1;i<9;i++) if(gamepkg_mouse.release(i))
             {
                 SDL_Event event;memset(&event,0,sizeof(event));event.type=SDL_MOUSEBUTTONUP;
@@ -243,7 +245,6 @@ static void gamepkg_input()
                 event.key.keysym.sym = SDL_GetKeyFromScancode(SDL_Scancode(i));
                 SDL_PushEvent(&event); gamepkg_keys[i] = false;
             }
-            SDL_SetModState(KMOD_NONE);
             continue;
         }
         if(!memcmp(packet, "GPI1", 4))
@@ -258,7 +259,7 @@ static void gamepkg_input()
             event.key.keysym.scancode = SDL_Scancode(key);
             event.key.keysym.sym = SDL_GetKeyFromScancode(SDL_Scancode(key));
             event.key.keysym.mod = mods;
-            SDL_SetModState(SDL_Keymod(mods));
+            gamepkg_set_modifiers(mods);
             gamepkg_keys[key] = (flags&1) != 0;
             SDL_PushEvent(&event);
             continue;

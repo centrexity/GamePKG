@@ -71,6 +71,10 @@ pub fn compile_with_options(optimize: bool) -> Result<Vec<u8>> {
         stage.path().join("engine/gamepkg_mouse.h"),
         include_bytes!("../../engines/cube2/adapters/mouse.h"),
     )?;
+    fs::write(
+        stage.path().join("engine/gamepkg_modifiers.h"),
+        include_bytes!("../../engines/cube2/adapters/modifiers.h"),
+    )?;
     #[derive(serde::Deserialize)]
     #[serde(deny_unknown_fields)]
     struct LoadingPatch {
@@ -126,6 +130,7 @@ pub fn compile_with_options(optimize: bool) -> Result<Vec<u8>> {
     fs::write(server, text)?;
     let mut text = fs::read_to_string(&main)?;
     for (before, after) in [
+        ("        SDL_Event &event = events.remove();", "        SDL_Event &event = events.remove();\n        if(gamepkg_apply_modifiers(event)) continue;"),
         (
             "void quit()                     // normal exit\n{",
             "void quit()                     // normal exit\n{\n    gamepkg_quit();",

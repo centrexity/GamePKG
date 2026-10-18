@@ -462,12 +462,24 @@ expires, physical/controller keyboard overlap, native Wayland state and wider
 hardware/platform coverage remain open.
 
 
-Modifier timing qualification: native host packets retain event-time modifier
-snapshots, and the GUI regression proves original key-binding state order. The
-bridge still sets SDL's global modifier state while assembling its queued events.
-Restoring that global state at dispatch time for every original SDL_GetModState
-consumer remains open; the binding-order test does not establish that stronger
-property. This is separate from the already verified host packet fields.
+Modifier timing follow-up: native host packets retain event-time modifier
+snapshots, and the bridge now queues private SDL state markers in the same order.
+The staged original event loop consumes those markers before dispatching each
+following input event. SDL_GetModState consumers therefore receive the recorded
+state during dispatch rather than the final state of the entire input batch.
+The producer also retains the final snapshot outside dispatch. Focus reset queues
+its zero snapshot before generated release events. Foreign user
+events are not consumed; invalid internal markers and failed/filtered marker
+queue writes stop the engine instead of silently changing input semantics.
+
+A deterministic original-console regression failed before the fix in both
+directions: plain Left followed by Ctrl produced Xabcdef, while Ctrl+Left followed
+by Ctrl release produced abcdeYf. The unchanged console now produces abcdeXf and
+Yabcdef respectively, proving both the later-press and later-release cases. The
+production-header regression independently checks keyboard/mouse/wheel ordering,
+Caps/Num snapshots, standalone snapshots, foreign events and six rejected
+marker/queue cases. Both engine builders stage the same hook and helper; cache
+identity and the signed-package cache regression include the helper's contents.
 
 Ordered-pointer validation: the final all-features suite passes 399 tests with
 55 dedicated media/platform checks ignored. Production loading/mouse C++ state
@@ -475,3 +487,12 @@ checks run through the normal suite. The signed package and eight-button origina
 GUI regressions run separately and pass; strict lint and formatting pass. Both
 app entries are rebuilt locally. This is source progress, without a new release
 and without a claim of complete input, rendering or cross-platform parity.
+
+Modifier validation on the final source: 400 default all-features tests pass with
+56 dedicated media/platform checks ignored. The original-console before/after
+regression passes explicitly, as do the signed-package cache/integrity test,
+eight-button/wheel/ordering GUI check and original startup/lock/focus/close GUI
+check. Both Windows all-features build checks, strict lint, formatting, all 125
+pinned Cube 2 source hashes and seven public-page link checks pass. Both app
+entries are rebuilt locally. This closes the reproduced SDL modifier lookahead
+issue; wider input/port parity remains open and no release is created.
