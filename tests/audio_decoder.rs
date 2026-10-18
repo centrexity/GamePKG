@@ -57,6 +57,13 @@ fn companion() -> Factory {
         std::env::var_os("GAMEPKG_AUDIO_DECODER_WASM").expect("set GAMEPKG_AUDIO_DECODER_WASM");
     Factory::new(&std::fs::read(path).unwrap()).unwrap()
 }
+fn open_music(factory: &Factory, input: &[u8]) -> anyhow::Result<gamepkg::audio_decode::Stream> {
+    if let Ok(rate) = std::env::var("GAMEPKG_AUDIO_OUTPUT_RATE") {
+        factory.open_resampled(input, rate.parse()?)
+    } else {
+        factory.open(input)
+    }
+}
 #[test]
 #[ignore = "requires built companion and GAMEPKG_MUSIC_INPUT_DIR"]
 fn original_tracks_stream_with_fixed_memory_chunk_invariance_and_rewind() {
@@ -72,7 +79,7 @@ fn original_tracks_stream_with_fixed_memory_chunk_invariance_and_rewind() {
     assert!(!paths.is_empty());
     for path in paths {
         let input = std::fs::read(&path).unwrap();
-        let mut stream = factory.open(&input).unwrap();
+        let mut stream = open_music(&factory, &input).unwrap();
         let mut samples = 0u64;
         let mut fnv = 2166136261u32;
         let mut witness: Option<(u64, Vec<i16>)> = None;
@@ -159,7 +166,7 @@ fn original_tracks_stream_with_fixed_memory_chunk_invariance_and_rewind() {
         let (witness_offset, witness) = witness.expect("recording has no audible witness");
         println!(
             "MUSIC_JSON {}",
-            serde_json::json!({"name":path.file_name().unwrap().to_string_lossy(),"rate":stream.sample_rate(),"channels":stream.channels(),"samples":samples,"sha256":first_hash,"fnv32":fnv,"sdl_samples":reference_samples,"sdl_different":different,"sdl_maximum_delta":maximum_delta,"witness_offset":witness_offset,"witness":witness})
+            serde_json::json!({"output_rate":std::env::var("GAMEPKG_AUDIO_OUTPUT_RATE").ok().map(|v| v.parse::<u32>().unwrap()),"name":path.file_name().unwrap().to_string_lossy(),"rate":stream.sample_rate(),"channels":stream.channels(),"samples":samples,"sha256":first_hash,"fnv32":fnv,"sdl_samples":reference_samples,"sdl_different":different,"sdl_maximum_delta":maximum_delta,"witness_offset":witness_offset,"witness":witness})
         );
     }
 }
@@ -167,15 +174,15 @@ fn original_tracks_stream_with_fixed_memory_chunk_invariance_and_rewind() {
 #[ignore = "requires built companion and GAMEPKG_MUSIC_INPUT_DIR"]
 fn malformed_music_and_buffer_requests_fail_bounded_without_changing_output() {
     let factory = companion();
-    assert!(factory.open(&[]).is_err());
-    assert!(factory.open(&vec![0; 8 * 1024 * 1024 + 1]).is_err());
+    assert!(open_music(&factory, &[]).is_err());
+    assert!(open_music(&factory, &vec![0; 8 * 1024 * 1024 + 1]).is_err());
     for bytes in [
         vec![0; 4096],
         vec![255; 4096],
         b"ID3\x04\0\0\x7f\x7f\x7f\x7f".to_vec(),
         vec![0; 8 * 1024 * 1024],
     ] {
-        assert!(factory.open(&bytes).is_err());
+        assert!(open_music(&factory, &bytes).is_err());
     }
     let root = std::path::PathBuf::from(std::env::var_os("GAMEPKG_MUSIC_INPUT_DIR").unwrap());
     let path = std::fs::read_dir(root)
@@ -184,7 +191,7 @@ fn malformed_music_and_buffer_requests_fail_bounded_without_changing_output() {
         .find(|p| p.extension().is_some_and(|s| s == "mp3"))
         .unwrap();
     let bytes = std::fs::read(path).unwrap();
-    let mut stream = factory.open(&bytes).unwrap();
+    let mut stream = open_music(&factory, &bytes).unwrap();
     let mut bad = [123i16; 1602];
     assert!(stream.read(&mut bad).is_err());
     assert!(bad.iter().all(|v| *v == 123));
@@ -193,7 +200,7 @@ fn malformed_music_and_buffer_requests_fail_bounded_without_changing_output() {
     }
     assert!(stream.read(&mut bad[..1600]).unwrap() > 0);
     for n in [1usize, 2, 3, 4, 8, 10, 31, 127, 511, 1023, 2047, 4095] {
-        if let Ok(mut stream) = factory.open(&bytes[..n.min(bytes.len())]) {
+        if let Ok(mut stream) = open_music(&factory, &bytes[..n.min(bytes.len())]) {
             for _ in 0..32 {
                 if stream.read(&mut bad[..1600]).unwrap_or(0) == 0 {
                     break;

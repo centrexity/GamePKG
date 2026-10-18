@@ -2,6 +2,8 @@ pub mod archive;
 #[doc(hidden)]
 pub mod audio_decode;
 mod audio_frame;
+#[doc(hidden)]
+pub mod audio_resample;
 #[cfg(feature = "gui")]
 pub mod gui;
 pub mod manifest;

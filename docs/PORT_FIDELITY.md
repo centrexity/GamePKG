@@ -2218,3 +2218,24 @@ oracle verifies the existing effect-loading reference at source and original
 This foundation does not yet enable music playback: conversion to the output
 rate, asynchronous mixing, playlist/menu behavior and platform/device tests
 remain required. No music recordings or compiled decoder binaries are added.
+
+The decoder now also supports requested 44.1/48 kHz stereo output through a
+shared streaming Rust adaptation of SDL 2.30's bandlimited filter. A fixed
+2,048-frame ring retains edge history/lookahead; each append/render is bounded
+to 800 frames. Global integer phase preserves all fractional time across calls.
+SDL's original coefficient values and license notice remain intact. Independent
+actual SDL float conversion matches every sample bit across 18 input/output-rate
+pairs, including stereo separation and edge impulses. Variable-size reads,
+short/empty streams, exact duration, invalid formats, nonfinite input, bounded
+backpressure and unmodified rejected buffers have tests. The same converter is
+compiled into the import-free companion; rewind retains its requested rate.
+
+This is not a claim of matching SDL_AudioStream scheduling. Full-track testing
+found its chunk phase truncation changes duration: one 44.1-to-48 kHz track has
+17,753,782 sample values through SDL_mixer versus 17,763,784 with global phase.
+The converted corpus oracle therefore explicitly uses native-rate SDL decode
+followed by whole-buffer SDL conversion. Original chunked-playback behavior
+remains a separate open fidelity item. New decoder rounding differences remain
+observable and can become two integer units after filtering; no tolerance is
+relaxed or bit-exact claim made. Game API, asynchronous playback/mixing, combined
+memory accounting, playlist controls and platform/device verification remain open.
