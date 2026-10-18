@@ -95,13 +95,7 @@ fn gravity_option_is_visible_and_persists_through_the_real_save_api() {
             .frame()
             .commands
             .iter()
-            .any(|command| match command {
-                Command::Image { image, .. } => image
-                    .pixels()
-                    .chunks_exact(4)
-                    .any(|pixel| pixel == [255, 205, 96, 255]),
-                _ => false,
-            }),
+            .any(|command| matches!(command, Command::Rect{x,y,width,height,rgba} if *x==272.0 && *y==229.5 && *width==2.0 && *height==16.0 && *rgba==0x64c864ff)),
         "saved gravity indicator was absent after relaunch"
     );
     resumed.step(131072).unwrap();
@@ -243,7 +237,7 @@ fn legacy_save_keeps_large_best_score_and_levels_above_the_old_cap() {
     bytes.extend_from_slice(&0u32.to_le_bytes());
     std::fs::write(&save, bytes).unwrap();
     let mut game = Game::load(root.path(), "com.gamepkg.arkanoo").unwrap();
-    game.step(0).unwrap();
+    game.step(4).unwrap();
     assert!(game.frame().commands.iter().any(|command|matches!(command,Command::Image{x,y,width,..} if *x==240.0 && *y==23.0 && *width==48.0)),"best score was clamped or truncated");
     game.step(4).unwrap();
     assert!(game.frame().commands.iter().any(|command|matches!(command,Command::Image{x,y,width,..} if *x==352.0 && *y==23.0 && *width==48.0)),"saved level 1000 was clamped");
@@ -819,5 +813,167 @@ fn original_window_bindings_work_across_runtime_profiles() {
         game.step(0).unwrap();
         assert!(game.exited(), "original Q-to-quit was ignored in pause");
         assert!(game.take_user_file_job().is_none());
+    }
+}
+
+#[test]
+#[ignore = "requires the signed, isolated-built fixture prepared by tests/arkanoo.py"]
+fn actual_menu_clicks_start_resume_restart_gravity_editor_settings_fullscreen_and_quit() {
+    use gamepkg::input_events::Event;
+    for id in ["com.gamepkg.arkanoo", "com.gamepkg.arkanoo-files-component"] {
+        let root = isolated_library();
+        let mut game = Game::load(root.path(), id).unwrap();
+        game.step(0).unwrap();
+        assert_eq!(game.frame().background, Some(0x101b35ff));
+        game.input_event(Event {
+            kind: 2,
+            x: 320.0,
+            y: 235.0,
+            code: 1,
+        })
+        .unwrap();
+        game.step(0).unwrap();
+        assert!(game.frame().commands.iter().any(|command|matches!(command,Command::Rect{x,y,rgba,..} if *x==272.0 && *y==229.5 && *rgba==0x64c864ff)));
+        game.input_event(Event {
+            kind: 2,
+            x: 320.0,
+            y: 285.0,
+            code: 1,
+        })
+        .unwrap();
+        game.step(0).unwrap();
+        game.input_event(Event {
+            kind: 2,
+            x: 320.0,
+            y: 270.0,
+            code: 1,
+        })
+        .unwrap();
+        game.step(0).unwrap();
+        assert!(game.window_state().fullscreen_toggle);
+        assert!(game.window_state().visible && !game.window_state().confined);
+        game.input_event(Event {
+            kind: 2,
+            x: 320.0,
+            y: 450.0,
+            code: 1,
+        })
+        .unwrap();
+        game.step(0).unwrap();
+        game.input_event(Event {
+            kind: 2,
+            x: 320.0,
+            y: 185.0,
+            code: 1,
+        })
+        .unwrap();
+        game.step(0).unwrap();
+        assert!(!game.window_state().visible && game.window_state().confined);
+        game.step(512).unwrap();
+        let positions = game
+            .frame()
+            .commands
+            .iter()
+            .filter(|command| matches!(command,Command::Circle{radius,..} if *radius==3.0))
+            .cloned()
+            .collect::<Vec<_>>();
+        assert_eq!(positions.len(), 1);
+        game.input_event(Event {
+            kind: 5,
+            x: 0.0,
+            y: 0.0,
+            code: 41,
+        })
+        .unwrap();
+        game.step(0).unwrap();
+        game.input_event(Event {
+            kind: 2,
+            x: 320.0,
+            y: 185.0,
+            code: 1,
+        })
+        .unwrap();
+        game.step(0).unwrap();
+        assert!(game.window_state().confined);
+        assert_eq!(
+            game.frame()
+                .commands
+                .iter()
+                .filter(|command| matches!(command,Command::Circle{radius,..} if *radius==3.0))
+                .cloned()
+                .collect::<Vec<_>>(),
+            positions,
+            "Resume reset or moved the paused ball"
+        );
+        game.input_event(Event {
+            kind: 5,
+            x: 0.0,
+            y: 0.0,
+            code: 41,
+        })
+        .unwrap();
+        game.step(0).unwrap();
+        game.input_event(Event {
+            kind: 2,
+            x: 320.0,
+            y: 260.0,
+            code: 1,
+        })
+        .unwrap();
+        game.step(0).unwrap();
+        assert!(game.frame().commands.iter().any(|command|matches!(command,Command::Rect{x,y,width,height,..} if *x==20.0 && *y==100.0 && *width==600.0 && *height==0.5)));
+        game.input_event(Event {
+            kind: 9,
+            x: 0.0,
+            y: 0.0,
+            code: 27,
+        })
+        .unwrap();
+        game.step(0).unwrap();
+        game.step(4).unwrap();
+        game.input_event(Event {
+            kind: 5,
+            x: 0.0,
+            y: 0.0,
+            code: 41,
+        })
+        .unwrap();
+        game.step(0).unwrap();
+        game.input_event(Event {
+            kind: 2,
+            x: 320.0,
+            y: 210.0,
+            code: 1,
+        })
+        .unwrap();
+        game.step(0).unwrap();
+        assert_eq!(game.frame().background, Some(0x101b35ff));
+        assert!(game.frame().commands.iter().any(|command|matches!(command,Command::Image{x,y,width,..} if *x==278.0 && *y==150.0 && *width==84.0)),"Restart did not leave the paused menu for a fresh game");
+        game.input_event(Event {
+            kind: 2,
+            x: 320.0,
+            y: 185.0,
+            code: 1,
+        })
+        .unwrap();
+        game.step(0).unwrap();
+        assert!(game.frame().commands.iter().any(|command|matches!(command,Command::Circle{x,radius,..} if *x==320.0 && *radius==3.0)),"Restart kept the old paddle/ball position");
+        game.input_event(Event {
+            kind: 5,
+            x: 0.0,
+            y: 0.0,
+            code: 41,
+        })
+        .unwrap();
+        game.step(0).unwrap();
+        game.input_event(Event {
+            kind: 2,
+            x: 320.0,
+            y: 310.0,
+            code: 1,
+        })
+        .unwrap();
+        game.step(0).unwrap();
+        assert!(game.exited());
     }
 }

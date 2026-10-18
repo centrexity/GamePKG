@@ -1,0 +1,661 @@
+{
+  "revision": "9d613e78c9ed5657ae7fda9206cd4a82a893b7c8",
+  "menu_sha256": "63bcc800d4d7b50eaf89a87c4c2e1c074d76b2cf578c777ce38edb0806903f28",
+  "cases": [
+    {
+      "settings": false,
+      "point": [
+        270.0,
+        177.5
+      ],
+      "button": 1,
+      "action": 1
+    },
+    {
+      "settings": false,
+      "point": [
+        269.5,
+        177.5
+      ],
+      "button": 1,
+      "action": 0
+    },
+    {
+      "settings": false,
+      "point": [
+        369.5,
+        197.0
+      ],
+      "button": 1,
+      "action": 1
+    },
+    {
+      "settings": false,
+      "point": [
+        370.0,
+        177.5
+      ],
+      "button": 1,
+      "action": 0
+    },
+    {
+      "settings": false,
+      "point": [
+        270.0,
+        197.5
+      ],
+      "button": 1,
+      "action": 0
+    },
+    {
+      "settings": false,
+      "point": [
+        320.0,
+        187.5
+      ],
+      "button": 1,
+      "action": 1
+    },
+    {
+      "settings": false,
+      "point": [
+        269.875,
+        177.5
+      ],
+      "button": 1,
+      "action": 0
+    },
+    {
+      "settings": false,
+      "point": [
+        270.0,
+        177.375
+      ],
+      "button": 1,
+      "action": 0
+    },
+    {
+      "settings": false,
+      "point": [
+        369.875,
+        197.375
+      ],
+      "button": 1,
+      "action": 1
+    },
+    {
+      "settings": false,
+      "point": [
+        270.0,
+        202.5
+      ],
+      "button": 2,
+      "action": 2
+    },
+    {
+      "settings": false,
+      "point": [
+        269.5,
+        202.5
+      ],
+      "button": 2,
+      "action": 0
+    },
+    {
+      "settings": false,
+      "point": [
+        369.5,
+        222.0
+      ],
+      "button": 2,
+      "action": 2
+    },
+    {
+      "settings": false,
+      "point": [
+        370.0,
+        202.5
+      ],
+      "button": 2,
+      "action": 0
+    },
+    {
+      "settings": false,
+      "point": [
+        270.0,
+        222.5
+      ],
+      "button": 2,
+      "action": 0
+    },
+    {
+      "settings": false,
+      "point": [
+        320.0,
+        212.5
+      ],
+      "button": 2,
+      "action": 2
+    },
+    {
+      "settings": false,
+      "point": [
+        269.875,
+        202.5
+      ],
+      "button": 2,
+      "action": 0
+    },
+    {
+      "settings": false,
+      "point": [
+        270.0,
+        202.375
+      ],
+      "button": 2,
+      "action": 0
+    },
+    {
+      "settings": false,
+      "point": [
+        369.875,
+        222.375
+      ],
+      "button": 2,
+      "action": 2
+    },
+    {
+      "settings": false,
+      "point": [
+        270.0,
+        227.5
+      ],
+      "button": 3,
+      "action": 3
+    },
+    {
+      "settings": false,
+      "point": [
+        269.5,
+        227.5
+      ],
+      "button": 3,
+      "action": 0
+    },
+    {
+      "settings": false,
+      "point": [
+        369.5,
+        247.0
+      ],
+      "button": 3,
+      "action": 3
+    },
+    {
+      "settings": false,
+      "point": [
+        370.0,
+        227.5
+      ],
+      "button": 3,
+      "action": 0
+    },
+    {
+      "settings": false,
+      "point": [
+        270.0,
+        247.5
+      ],
+      "button": 3,
+      "action": 0
+    },
+    {
+      "settings": false,
+      "point": [
+        320.0,
+        237.5
+      ],
+      "button": 3,
+      "action": 3
+    },
+    {
+      "settings": false,
+      "point": [
+        269.875,
+        227.5
+      ],
+      "button": 3,
+      "action": 0
+    },
+    {
+      "settings": false,
+      "point": [
+        270.0,
+        227.375
+      ],
+      "button": 3,
+      "action": 0
+    },
+    {
+      "settings": false,
+      "point": [
+        369.875,
+        247.375
+      ],
+      "button": 3,
+      "action": 3
+    },
+    {
+      "settings": false,
+      "point": [
+        270.0,
+        252.5
+      ],
+      "button": 4,
+      "action": 4
+    },
+    {
+      "settings": false,
+      "point": [
+        269.5,
+        252.5
+      ],
+      "button": 4,
+      "action": 0
+    },
+    {
+      "settings": false,
+      "point": [
+        369.5,
+        272.0
+      ],
+      "button": 4,
+      "action": 4
+    },
+    {
+      "settings": false,
+      "point": [
+        370.0,
+        252.5
+      ],
+      "button": 4,
+      "action": 0
+    },
+    {
+      "settings": false,
+      "point": [
+        270.0,
+        272.5
+      ],
+      "button": 4,
+      "action": 0
+    },
+    {
+      "settings": false,
+      "point": [
+        320.0,
+        262.5
+      ],
+      "button": 4,
+      "action": 4
+    },
+    {
+      "settings": false,
+      "point": [
+        269.875,
+        252.5
+      ],
+      "button": 4,
+      "action": 0
+    },
+    {
+      "settings": false,
+      "point": [
+        270.0,
+        252.375
+      ],
+      "button": 4,
+      "action": 0
+    },
+    {
+      "settings": false,
+      "point": [
+        369.875,
+        272.375
+      ],
+      "button": 4,
+      "action": 4
+    },
+    {
+      "settings": false,
+      "point": [
+        270.0,
+        277.5
+      ],
+      "button": 5,
+      "action": 5
+    },
+    {
+      "settings": false,
+      "point": [
+        269.5,
+        277.5
+      ],
+      "button": 5,
+      "action": 0
+    },
+    {
+      "settings": false,
+      "point": [
+        369.5,
+        297.0
+      ],
+      "button": 5,
+      "action": 5
+    },
+    {
+      "settings": false,
+      "point": [
+        370.0,
+        277.5
+      ],
+      "button": 5,
+      "action": 0
+    },
+    {
+      "settings": false,
+      "point": [
+        270.0,
+        297.5
+      ],
+      "button": 5,
+      "action": 0
+    },
+    {
+      "settings": false,
+      "point": [
+        320.0,
+        287.5
+      ],
+      "button": 5,
+      "action": 5
+    },
+    {
+      "settings": false,
+      "point": [
+        269.875,
+        277.5
+      ],
+      "button": 5,
+      "action": 0
+    },
+    {
+      "settings": false,
+      "point": [
+        270.0,
+        277.375
+      ],
+      "button": 5,
+      "action": 0
+    },
+    {
+      "settings": false,
+      "point": [
+        369.875,
+        297.375
+      ],
+      "button": 5,
+      "action": 5
+    },
+    {
+      "settings": false,
+      "point": [
+        270.0,
+        302.5
+      ],
+      "button": 6,
+      "action": 6
+    },
+    {
+      "settings": false,
+      "point": [
+        269.5,
+        302.5
+      ],
+      "button": 6,
+      "action": 0
+    },
+    {
+      "settings": false,
+      "point": [
+        369.5,
+        322.0
+      ],
+      "button": 6,
+      "action": 6
+    },
+    {
+      "settings": false,
+      "point": [
+        370.0,
+        302.5
+      ],
+      "button": 6,
+      "action": 0
+    },
+    {
+      "settings": false,
+      "point": [
+        270.0,
+        322.5
+      ],
+      "button": 6,
+      "action": 0
+    },
+    {
+      "settings": false,
+      "point": [
+        320.0,
+        312.5
+      ],
+      "button": 6,
+      "action": 6
+    },
+    {
+      "settings": false,
+      "point": [
+        269.875,
+        302.5
+      ],
+      "button": 6,
+      "action": 0
+    },
+    {
+      "settings": false,
+      "point": [
+        270.0,
+        302.375
+      ],
+      "button": 6,
+      "action": 0
+    },
+    {
+      "settings": false,
+      "point": [
+        369.875,
+        322.375
+      ],
+      "button": 6,
+      "action": 6
+    },
+    {
+      "settings": true,
+      "point": [
+        270.0,
+        260.0
+      ],
+      "button": 7,
+      "action": 7
+    },
+    {
+      "settings": true,
+      "point": [
+        269.5,
+        260.0
+      ],
+      "button": 7,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "point": [
+        369.5,
+        279.5
+      ],
+      "button": 7,
+      "action": 7
+    },
+    {
+      "settings": true,
+      "point": [
+        370.0,
+        260.0
+      ],
+      "button": 7,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "point": [
+        270.0,
+        280.0
+      ],
+      "button": 7,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "point": [
+        320.0,
+        270.0
+      ],
+      "button": 7,
+      "action": 7
+    },
+    {
+      "settings": true,
+      "point": [
+        269.875,
+        260.0
+      ],
+      "button": 7,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "point": [
+        270.0,
+        259.875
+      ],
+      "button": 7,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "point": [
+        369.875,
+        279.875
+      ],
+      "button": 7,
+      "action": 7
+    },
+    {
+      "settings": true,
+      "point": [
+        270.0,
+        440.0
+      ],
+      "button": 8,
+      "action": 8
+    },
+    {
+      "settings": true,
+      "point": [
+        269.5,
+        440.0
+      ],
+      "button": 8,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "point": [
+        369.5,
+        459.5
+      ],
+      "button": 8,
+      "action": 8
+    },
+    {
+      "settings": true,
+      "point": [
+        370.0,
+        440.0
+      ],
+      "button": 8,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "point": [
+        270.0,
+        460.0
+      ],
+      "button": 8,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "point": [
+        320.0,
+        450.0
+      ],
+      "button": 8,
+      "action": 8
+    },
+    {
+      "settings": true,
+      "point": [
+        269.875,
+        440.0
+      ],
+      "button": 8,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "point": [
+        270.0,
+        439.875
+      ],
+      "button": 8,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "point": [
+        369.875,
+        459.875
+      ],
+      "button": 8,
+      "action": 8
+    }
+  ],
+  "remaining": [
+    "Original splash/menu transitions",
+    "Music and SFX settings",
+    "Resolution/VSync controls and confirm/revert",
+    "Project-homepage button",
+    "Original fonts/background artwork"
+  ]
+}

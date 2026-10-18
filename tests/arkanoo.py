@@ -42,13 +42,13 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-arkanoo-',dir=PROJECT/'target')
     file=custom/'manifest.toml';file.write_text(file.read_text().replace('com.gamepkg.arkanoo','com.gamepkg.arkanoo-custom'))
     boards=json.loads((PROJECT/'tests/fixtures/arkanoo-custom-levels.json').read_text())['patterns']
     assert boards==[[i if i<9 else 255 for i in range(200)],[i//20%6 if i//20==i%20 else 255 for i in range(200)],[255]*200]
-    (custom/'source/src/lib.rs').write_text('mod editor;mod levels;mod pattern_rng;mod physics;mod render;pub fn game_tick(input:u32,_:u64)->u64 {let mut game=physics::Game::new();for which in 0..3 {let mut board=[255u8;200];if which==0 {for col in 0..9 {board[col]=col as u8;}}if which==1 {for row in 0..10 {board[row*20+row]=(row%6) as u8;}}game.editor.patterns.push(editor::Pattern{name:String::new(),cells:board});}game.level=input;game.populate();render::draw(&game);let mut result=14695981039346656037u64;for index in 0..200 {let cell=if game.blocks[index]==0 {255} else if game.block_type[index]>0 {game.block_type[index]+5} else {game.block_color[index]};result=(result^u64::from(cell)).wrapping_mul(1099511628211);}result}')
+    (custom/'source/src/lib.rs').write_text('mod editor;mod levels;mod menu;mod pattern_rng;mod physics;mod render;pub fn game_tick(input:u32,_:u64)->u64 {let mut game=physics::Game::new();for which in 0..3 {let mut board=[255u8;200];if which==0 {for col in 0..9 {board[col]=col as u8;}}if which==1 {for row in 0..10 {board[row*20+row]=(row%6) as u8;}}game.editor.patterns.push(editor::Pattern{name:String::new(),cells:board});}game.level=input;game.populate();render::draw(&game);let mut result=14695981039346656037u64;for index in 0..200 {let cell=if game.blocks[index]==0 {255} else if game.block_type[index]>0 {game.block_type[index]+5} else {game.block_color[index]};result=(result^u64::from(cell)).wrapping_mul(1099511628211);}result}')
     run('pack',custom,'-o',root/'custom.gamepkg','--key',key);run('install',root/'custom.gamepkg','--trust-creator');run('build','com.gamepkg.arkanoo-custom')
     # Trigger the production portal at its original speed threshold without
     # depending on a long random play session. Only fixture setup is replaced.
     modes=root/'modes';shutil.copytree(PROJECT/'ports/arkanoo',modes)
     mode_manifest=modes/'manifest.toml';mode_manifest.write_text(mode_manifest.read_text().replace('com.gamepkg.arkanoo','com.gamepkg.arkanoo-modes'))
-    (modes/'source/src/lib.rs').write_text('''mod editor;mod levels;mod pattern_rng;mod physics;mod render;use std::sync::Mutex;
+    (modes/'source/src/lib.rs').write_text('''mod editor;mod levels;mod menu;mod pattern_rng;mod physics;mod render;use std::sync::Mutex;
 static GAME:Mutex<Option<physics::Game>>=Mutex::new(None);
 pub fn game_tick(input:u32,state:u64)->u64 {
  if let Ok(mut slot)=GAME.lock(){
@@ -95,7 +95,7 @@ pub fn game_tick(input:u32,state:u64)->u64 {
     run('pack',modes,'-o',root/'modes.gamepkg','--key',key);run('install',root/'modes.gamepkg','--trust-creator');run('build','com.gamepkg.arkanoo-modes')
     layouts=root/'layouts';shutil.copytree(PROJECT/'ports/arkanoo',layouts)
     layout_manifest=layouts/'manifest.toml';layout_manifest.write_text(layout_manifest.read_text().replace('com.gamepkg.arkanoo','com.gamepkg.arkanoo-levels'))
-    (layouts/'source/src/lib.rs').write_text('''mod editor;mod levels;mod pattern_rng;mod physics;mod render;use std::sync::Mutex;
+    (layouts/'source/src/lib.rs').write_text('''mod editor;mod levels;mod menu;mod pattern_rng;mod physics;mod render;use std::sync::Mutex;
 static GAME:Mutex<Option<physics::Game>>=Mutex::new(None);
 pub fn game_tick(input:u32,state:u64)->u64 {
  if let Ok(mut slot)=GAME.lock(){
@@ -149,6 +149,11 @@ pub fn game_tick(input:u32,state:u64)->u64 {
         path=PROOF/name
         subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(path)],env=env,check=True,timeout=10)
         return Image.open(path).convert('RGB')
+    def native_click(window,x,y):
+        screenshot=capture(window,'native-menu.png');scale=min(screenshot.width/640,screenshot.height/480)
+        px=round((screenshot.width-640*scale)/2+x*scale);py=round((screenshot.height-480*scale)/2+y*scale)
+        subprocess.run(['xdotool','mousemove','--window',window,str(px),str(py),'click','1'],env=env,check=True)
+        time.sleep(.15)
     def paddle(image):
         points=[(x,y) for y in range(image.height//2,image.height-20) for x in range(image.width)
                 if image.getpixel((x,y))==(99,220,255)]
@@ -178,7 +183,18 @@ pub fn game_tick(input:u32,state:u64)->u64 {
             except AssertionError:
                 assert time.monotonic()<ready,'The actual game frame did not become ready'
                 time.sleep(.1)
-        subprocess.run(['xdotool','key','--window',window,'Up'],env=env,check=True);time.sleep(.2)
+        native_click(window,320,285) # Original Settings button.
+        native_click(window,320,270) # Its fullscreen action affects the real window.
+        deadline=time.monotonic()+5
+        while '_NET_WM_STATE_FULLSCREEN' not in subprocess.run(['xprop','-id',window,'_NET_WM_STATE'],env=env,capture_output=True,text=True).stdout:
+            assert time.monotonic()<deadline,'Settings did not enter actual fullscreen';time.sleep(.05)
+        native_click(window,320,270)
+        deadline=time.monotonic()+5
+        while '_NET_WM_STATE_FULLSCREEN' in subprocess.run(['xprop','-id',window,'_NET_WM_STATE'],env=env,capture_output=True,text=True).stdout:
+            assert time.monotonic()<deadline,'Settings did not leave actual fullscreen';time.sleep(.05)
+        native_click(window,320,450)
+        native_click(window,320,185) # Original New Game button.
+
         ready=time.monotonic()+10
         while True:
             before=capture(window,'native-start.png')
@@ -240,6 +256,7 @@ pub fn game_tick(input:u32,state:u64)->u64 {
         while not outgoing.exists():
             assert time.monotonic()<deadline,'Native Save dialog did not export the pattern';time.sleep(.05)
         assert outgoing.read_text().startswith('# Pattern: native-import\n') and '50******************' in outgoing.read_text()
+        subprocess.run(['xdotool','windowactivate','--sync',window],env=env,check=True);time.sleep(.2)
         subprocess.run(['xdotool','key','--window',window,'F11'],env=env,check=True)
         deadline=time.monotonic()+5
         while '_NET_WM_STATE_FULLSCREEN' not in subprocess.run(['xprop','-id',window,'_NET_WM_STATE'],env=env,capture_output=True,text=True).stdout:
@@ -283,7 +300,19 @@ pub fn game_tick(input:u32,state:u64)->u64 {
             wait.until(lambda b:b.find_element(By.ID,'status').text=='Ready to play')
             browser.find_element(By.ID,'play').click();canvas=browser.find_element(By.ID,'game')
             wait.until(lambda b:canvas.get_attribute('data-state'))
-            ActionChains(browser).click(canvas).send_keys(Keys.ARROW_UP).perform();time.sleep(.15)
+            def canvas_click(x,y):
+                # Click the visible image, including fullscreen aspect-ratio bars.
+                rect=browser.execute_script('const c=arguments[0],r=c.getBoundingClientRect(),w=c.clientWidth,h=c.clientHeight,s=Math.min(w/640,h/480);return {x:r.left+c.clientLeft+(w-640*s)/2,y:r.top+c.clientTop+(h-480*s)/2,w:640*s,h:480*s};',canvas)
+                bounds=canvas.rect
+                ActionChains(browser).move_to_element_with_offset(canvas,rect['x']+x/640*rect['w']-(bounds['x']+bounds['width']/2),rect['y']+y/480*rect['h']-(bounds['y']+bounds['height']/2)).click().perform()
+            canvas_click(320,285)
+            canvas_click(320,270)
+            wait.until(lambda b:b.execute_script('return document.fullscreenElement===document.querySelector("#game")'))
+            canvas_click(320,270)
+            wait.until(lambda b:b.execute_script('return document.fullscreenElement===null'))
+            canvas_click(320,450)
+            canvas_click(320,185);time.sleep(.15)
+
             def saved_gravity():
                 return browser.execute_script('const key=Object.keys(localStorage).find(key=>key.startsWith(arguments[0]));return key?JSON.parse(localStorage.getItem(key))[12]:null;','gamepkg:save:'+game_id+':')
             canvas.send_keys('v');wait.until(lambda b:saved_gravity()==1)
@@ -311,8 +340,6 @@ pub fn game_tick(input:u32,state:u64)->u64 {
             restarted=pixels();time.sleep(.2);assert pixels()==restarted,'Restart retained the active run'
             canvas.send_keys('e');time.sleep(.15)
             canvas.send_keys('1')
-            def canvas_click(x,y):
-                ActionChains(browser).move_to_element_with_offset(canvas,(x/640-.5)*bounds['width'],(y/480-.5)*bounds['height']).click().perform()
             canvas_click(35,105)
             wait.until(lambda b:pixels()[(105*640+35)*4:(105*640+35)*4+3]==[255,165,0])
             canvas.send_keys('n');canvas.send_keys(Keys.BACKSPACE)

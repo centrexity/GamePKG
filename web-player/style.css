@@ -1,3 +1,5 @@
 :root{color-scheme:dark;font-family:system-ui,sans-serif;background:#151922;color:#eef1f8}body{margin:0}main{max-width:760px;margin:auto;padding:24px}h1{font-size:28px}canvas{width:100%;max-width:640px;background:#090c12;display:block;border:1px solid #4b5670;border-radius:8px;outline-offset:4px}button{font:inherit;padding:10px 20px;border:1px solid #7b8dae;border-radius:6px;background:#25324b;color:inherit;cursor:pointer}button:disabled{opacity:.5;cursor:default}.controls{display:flex;gap:12px;margin:16px 0}p{line-height:1.5;overflow-wrap:anywhere}label{display:block;margin:12px 0}input{display:block;margin:8px 0}button:focus-visible,canvas:focus-visible{outline:3px solid #8cbdff}
 
 a{color:#9dcaff}
+
+canvas:fullscreen{width:100vw;height:100vh;max-width:none;border:0;border-radius:0;object-fit:contain;background:#090c12}

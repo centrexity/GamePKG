@@ -12,7 +12,7 @@ work stays open until behavior is verified.
 | Cube 2 | Initial OS lock-key state, remaining uncommon-key/platform behavior and full controller/touch equivalence; LAN discovery, master authentication and public server registration; custom asset/mod workflows; demo/movie output and persistence; hardware-accelerated engine rendering; native platforms beyond Linux. Vulkan currently presents software-rendered engine frames. |
 | DOOM | Original WAD music, spatial stereo effects, six save slots, configuration, desktop controls and the original quit/ENDOOM flow are runtime verified. Music backend selection, multiplayer, additional WADs/mods and broader control/platform coverage remain unfinished. |
 | Zelda3 | External MSU music, replay tools, save states, widescreen, language selection and desktop enhancement settings need support. The adapter fixes the view to 256×224. Original DSP stereo is verified in native and Wasm gameplay/save tests. |
-| Arkanoo | Gravity, speed-triggered portal behavior and ball-to-ball responses are restored with upstream reference and actual-engine tests. Original world proportions and movement/contact order now match upstream reference checks. Per-ball launch timing, life recovery and victory/endless transitions also match original-code fixtures; prior item/score/level caps are removed. Brick health and original blast rules are also verified. All twelve original procedural patterns are restored. Focused mouse movement and original Space/Escape controls are restored. Editor painting/erasing, brick selection, names, save/load, clear confirmation, test return and the custom endless pool are restored. Original ASCII pattern import/export now uses player-selected files. Gameplay cursor confinement/hiding, F11 fullscreen and Q-to-quit outside play are verified in native and browser runtime checks. Normal-size/fullscreen/maximized preferences now persist through the native host. Original splash/menu behavior, resolution/VSync settings UI and original menus/music still need work. Art/effects remain replacements. Current runs do not persist; high score, unlocked level and gravity selection do. |
+| Arkanoo | Gravity, speed-triggered portal behavior and ball-to-ball responses are restored with upstream reference and actual-engine tests. Original world proportions and movement/contact order now match upstream reference checks. Per-ball launch timing, life recovery and victory/endless transitions also match original-code fixtures; prior item/score/level caps are removed. Brick health and original blast rules are also verified. All twelve original procedural patterns are restored. Focused mouse movement and original Space/Escape controls are restored. Editor painting/erasing, brick selection, names, save/load, clear confirmation, test return and the custom endless pool are restored. Original ASCII pattern import/export now uses player-selected files. Gameplay cursor confinement/hiding, F11 fullscreen and Q-to-quit outside play are verified in native and browser runtime checks. Normal-size/fullscreen/maximized preferences now persist through the native host. The six main menu actions and fullscreen settings control are restored. Original splash/complete menu transitions, audio/resolution/VSync controls, project-link action and original menus/music still need work. Art/effects remain replacements. Current runs do not persist; high score, unlocked level and gravity selection do. |
 | 2048 | Random spawning, merge scoring/best score, win/continue/game-over UI, restart, 128-step undo and persistent boards/history are implemented and tested. Byte-sized tile exponents remove the old 32768 cap. Cooperative expectimax assistance/autoplay matches independent upstream reference fixtures; a deterministic 932-turn game reaches 2048. Final signed-package delivery and broader platform verification remain open. |
 
 Evidence: [README coverage table](../README.md#port-feature-coverage),
@@ -85,9 +85,9 @@ tests. Test cross-version saves and each claimed native platform. Rebuild and
 verify the packages and catalog users import after source changes. Record
 unverified behavior explicitly; do not silently skip it or describe it as done.
 
-Latest local validation: the full Rust suite passes 361 tests. Its 43
+Latest local validation: the full Rust suite passes 363 tests. Its 44
 fixture-dependent or platform-specific ignored tests are not counted as passed.
-The signed isolated Arkanoo harness separately executes 19 fixture tests on Wasm
+The signed isolated Arkanoo harness separately executes 20 fixture tests on Wasm
 and again with native builds, plus actual native-window and core/component
 browser checks. Both Windows word sizes pass compilation checks; Windows gameplay,
 full campaigns and updated signed-package delivery remain separate requirements.
@@ -103,3 +103,15 @@ invalid dimensions, minimized-state handling and storage accounting have regress
 This restores window persistence, not the original resolution/VSync menu, default
 presentation, splash or remaining original menu/music/artwork behavior. Windows
 32/64-bit compilation checks pass; Windows window-lifecycle behavior remains unverified.
+
+The six main-menu actions now have mouse targets projected from the pinned
+original menu: New Game/Resume, Restart, Gravity Mode, Level Editor, Settings and
+Quit. Seventy-two independent cases compile the complete unchanged original menu
+module and verify integer hit boundaries for these buttons and the supported
+fullscreen/back controls. Actual native/core/component tests verify activation,
+pause preservation, settings, editor entry and quit. Linux native and both browser
+profiles also click Settings/fullscreen/back/New Game through their actual windows.
+Browser fullscreen now preserves the canvas aspect ratio and maps absolute/locked
+pointer motion to the displayed image, excluding borders and aspect-ratio bars.
+Original splash and complete menu transitions, audio/resolution/VSync controls,
+project-homepage action, fonts/background artwork and music remain open.

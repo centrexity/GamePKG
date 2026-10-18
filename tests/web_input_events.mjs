@@ -14,4 +14,10 @@ const source=readFileSync(new URL('../web-player/player.js',import.meta.url),'ut
 handlers.get('pointermove')({clientX:740,clientY:530,buttons:0});handlers.get('keydown')({code:'KeyN',key:'n',repeat:false});handlers.get('compositionend')({data:'é😀'});
 assert.deepEqual(Array.from(recorder.values(),v=>v[0]),[1,5,9,7,7,7]);assert.deepEqual(Array.from(recorder.values()[0]),[1,320,240,0]);assert.equal(recorder.values()[5][3],0x1f600);
 recorder.reset();focused=false;handlers.get('keydown')({code:'KeyN',key:'n'});assert.equal(recorder.values().length,0);focused=true;document.activeElement={};handlers.get('keydown')({code:'KeyN',key:'n'});assert.equal(recorder.values().length,0);handlers.get('blur')();assert.deepEqual(Array.from(recorder.values(),v=>Array.from(v)),[[0,0,0,0]]);assert.equal(resets,1);
+document.activeElement=canvas;
+for (const [rect,point,expected] of [[{left:100,top:50,width:1800,height:900},[700,275],[160,120]],[{left:100,top:50,width:900,height:1800},[550,950],[320,240]]]) {
+ canvas.getBoundingClientRect=()=>rect;recorder.reset();handlers.get('pointermove')({clientX:point[0],clientY:point[1],buttons:0});assert.deepEqual(Array.from(recorder.values()[0]),[1,...expected,0]);
+}
+canvas.getBoundingClientRect=()=>({left:100,top:50,width:1284,height:964});Object.assign(canvas,{clientLeft:2,clientTop:2,clientWidth:1280,clientHeight:960});recorder.reset();handlers.get('pointermove')({clientX:742,clientY:532,buttons:0});assert.deepEqual(Array.from(recorder.values()[0]),[1,320,240,0]);
+canvas.getBoundingClientRect=()=>({left:100,top:50,width:1800,height:900});Object.assign(canvas,{clientLeft:0,clientTop:0,clientWidth:1800,clientHeight:900});document.pointerLockElement=canvas;recorder.reset();handlers.get('pointermove')({movementX:300,movementY:225,buttons:0});assert.deepEqual(Array.from(recorder.values()[0]),[1,480,360,0]);handlers.get('pointerdown')({movementX:300,movementY:225,button:0,pointerId:1});assert.deepEqual(Array.from(recorder.values()[1]),[2,480,360,1],'locked button press counted movement twice');
 console.log('Ordered browser input preserves coordinates, Unicode and focus; denied/malformed reads stay bounded.');

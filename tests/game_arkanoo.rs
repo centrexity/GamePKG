@@ -22,6 +22,8 @@ mod gamepkg {
 mod editor;
 #[path = "../ports/arkanoo/source/src/levels.rs"]
 mod levels;
+#[path = "../ports/arkanoo/source/src/menu.rs"]
+mod menu;
 #[path = "../ports/arkanoo/source/src/pattern_rng.rs"]
 mod pattern_rng;
 #[path = "../ports/arkanoo/source/src/physics.rs"]
@@ -1600,4 +1602,97 @@ fn window_controls_follow_original_gameplay_pause_editor_and_quit_bindings() {
     game.source_input(9, 0.0, 0.0, 113);
     assert!(!game.quit_requested);
     assert_eq!(game.blocks, [0; 200]);
+}
+
+#[test]
+fn main_menu_primary_actions_match_unchanged_original_mouse_rectangles() {
+    let reference: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-menu.json")).unwrap();
+    let mut controls = menu::Menu::new();
+    for case in reference["cases"].as_array().unwrap() {
+        controls.settings = case["settings"].as_bool().unwrap();
+        let x = case["point"][0].as_f64().unwrap() as f32;
+        let y = case["point"][1].as_f64().unwrap() as f32;
+        let expected = case["action"].as_u64().unwrap() as u32;
+        assert_eq!(controls.hit(x, y), expected, "{case}");
+        assert_eq!(controls.menu_event(1, x, y, 0), 0);
+        assert_eq!(controls.hover, expected);
+        assert_eq!(
+            controls.menu_event(2, x, y, 2),
+            0,
+            "right click activated menu"
+        );
+        assert_eq!(controls.menu_event(2, x, y, 1), expected);
+        controls.menu_event(0, 0.0, 0.0, 0);
+        assert_eq!(controls.hover, 0);
+    }
+    for (x, y) in [(f32::NAN, 200.0), (320.0, f32::INFINITY)] {
+        assert_eq!(controls.hit(x, y), 0);
+    }
+}
+#[test]
+fn menu_actions_preserve_pause_state_and_apply_controls_without_playing_behind_settings() {
+    let mut game = physics::Game::new();
+    game.unlocked = 9;
+    game.source_input(2, 320.0, 185.0, 1);
+    assert_eq!(
+        (game.mode, game.level),
+        (1, 1),
+        "New Game skipped original campaign levels"
+    );
+    game.score = 321;
+    game.balls[0].x = 123.0;
+    game.mode = 2;
+    game.source_input(2, 320.0, 285.0, 1);
+    assert!(game.menu.settings);
+    let frame = game.frame;
+    game.update(0);
+    assert_eq!(game.frame, frame);
+    game.source_input(2, 320.0, 270.0, 1);
+    assert_eq!(game.fullscreen_requests, 1);
+    assert!(game.menu.settings);
+    assert_eq!(game.mode, 2);
+    game.source_input(2, 320.0, 450.0, 1);
+    assert!(!game.menu.settings);
+    game.source_input(2, 320.0, 235.0, 1);
+    assert!(game.gravity && game.dirty);
+    game.source_input(2, 320.0, 185.0, 1);
+    assert_eq!((game.mode, game.score, game.balls[0].x), (1, 321, 123.0));
+    game.mode = 2;
+    game.source_input(2, 320.0, 260.0, 1);
+    assert_eq!(game.mode, 6);
+    game.source_input(9, 0.0, 0.0, 27);
+    assert_eq!(game.mode, 0);
+    assert!(!game.menu.settings);
+    game.score = 999;
+    game.lives = 1;
+    game.ammo = 20;
+    game.long = 10;
+    game.portal = true;
+    game.source_input(2, 320.0, 185.0, 1);
+    assert_eq!(
+        (game.mode, game.score, game.lives, game.ammo, game.long),
+        (1, 0, 3, 0, 0)
+    );
+    assert!(!game.portal);
+    assert_eq!(game.unlocked, 9);
+    assert!(game.gravity);
+    game.mode = 2;
+    game.source_input(2, 320.0, 210.0, 1);
+    assert_eq!((game.mode, game.level, game.score), (0, 1, 0));
+    assert_eq!(game.unlocked, 9);
+    assert!(game.gravity);
+    game.source_input(2, 320.0, 310.0, 1);
+    assert!(game.quit_requested);
+    game.source_input(2, 320.0, 185.0, 1);
+    game.update(4);
+    assert_eq!(game.mode, 0);
+    let mut title = physics::Game::new();
+    title.score = 99;
+    title.menu.settings = true;
+    title.source_input(9, 0.0, 0.0, 114);
+    assert_eq!(title.score, 0);
+    assert!(!title.menu.settings);
+    title.source_input(9, 0.0, 0.0, 113);
+    assert!(title.quit_requested);
 }
