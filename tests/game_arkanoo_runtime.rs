@@ -251,7 +251,7 @@ fn actual_splash_timer_skip_restart_and_editor_resume_preserve_original_flow() {
         let mut game = Game::load(root.path(), id).unwrap();
         for _ in 0..269 {
             game.step(0).unwrap();
-            assert_eq!(game.frame().background, Some(0x0b1020ff));
+            assert_eq!(game.frame().background, Some(0xffffffff));
             assert!(!game.frame().commands.iter().any(is_ball));
             assert!(game.window_state().visible && !game.window_state().confined);
         }
@@ -1477,7 +1477,7 @@ fn actual_menu_clicks_start_resume_restart_gravity_editor_settings_fullscreen_an
         })
         .unwrap();
         game.step(0).unwrap();
-        assert_eq!(game.frame().background, Some(0x0b1020ff));
+        assert_eq!(game.frame().background, Some(0xffffffff));
         game.input_event(Event {
             kind: 5,
             x: 0.0,
@@ -3750,5 +3750,55 @@ fn implemented_menu_controls_and_original_backdrop_match_captured_sdl_frames() {
             6,
             "original backdrop missing"
         );
+    }
+}
+
+#[test]
+#[ignore = "requires tests/arkanoo.py fixtures"]
+fn original_splash_pixels_and_all_fade_alphas_reach_real_runtimes() {
+    use std::io::Read;
+    let reference: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-splash.json")).unwrap();
+    let compressed = hex::decode(reference["full_rgba_zlib_hex"].as_str().unwrap()).unwrap();
+    let mut full = Vec::new();
+    flate2::read::ZlibDecoder::new(compressed.as_slice())
+        .read_to_end(&mut full)
+        .unwrap();
+    let root = isolated_library();
+    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
+    for (timer, alpha) in reference["alphas"].as_array().unwrap().iter().enumerate() {
+        assert_eq!(
+            game.step(0xc0000045 | ((timer as u32) << 8)).unwrap(),
+            alpha.as_u64().unwrap(),
+            "splash timer {timer}"
+        );
+        assert_eq!(game.frame().background, Some(0xffffffff));
+        assert_eq!(
+            game.frame()
+                .commands
+                .iter()
+                .filter(|c| matches!(c, Command::LinearImage { .. }))
+                .count(),
+            6
+        );
+    }
+    for case in reference["cases"].as_array().unwrap() {
+        let timer = case["timer"].as_u64().unwrap() as u32;
+        game.step(0xc0000045 | (timer << 8)).unwrap();
+        let actual = canonical_menu_pixels(game.frame());
+        let compressed = hex::decode(case["xor_zlib_hex"].as_str().unwrap()).unwrap();
+        let mut difference = Vec::new();
+        flate2::read::ZlibDecoder::new(compressed.as_slice())
+            .read_to_end(&mut difference)
+            .unwrap();
+        assert_eq!(difference.len(), full.len());
+        assert_eq!(actual.len(), full.len());
+        let delta = actual
+            .iter()
+            .zip(full.iter().zip(difference))
+            .map(|(a, (b, d))| a.abs_diff(b ^ d))
+            .max()
+            .unwrap();
+        assert!(delta <= 2, "splash timer {timer}, delta {delta}");
     }
 }

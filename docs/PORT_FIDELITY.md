@@ -1809,3 +1809,35 @@ pass. The restart workflow now checks independently captured original backdrop
 pixels instead of the removed flat placeholder color. Strict all-feature/all-
 target lint and formatting pass. Publication is source only; the host remains
 0.1.17 and no package/application binary releases are created.
+
+### Original startup artwork and fade (recipe 0.1.52)
+
+The placeholder startup lettering is replaced by upstream `antigravity.webp`
+(the original game's development-tool acknowledgment image), rendered over
+white with the original 60-frame fade-in, hold through frame 210 and fade-out
+through frame 270. The captured opaque artwork uses six overlapping filtered
+PNG tiles within the existing image limits. A white source-over fade preserves
+the original texture-alpha composition without adding a guest graphics API.
+Skip, expiry and restart continue to use the original timer lifetime; the
+startup frame does not advance gameplay or capture the cursor.
+
+A guarded SDL/OpenGL oracle independently captures 17 full canonical frames and
+all 271 original float-to-byte alpha values. Both signed execution modes verify
+those values and the full frames, including timer boundaries. The fixture and
+six artwork tiles reproduce byte-identically. All six desktop runtime/renderer
+configurations match the captured canonical RGB frames exactly; both browser
+profiles agree with a separately captured half-size native player within the
+unchanged two-level tolerance. Half-size checks establish backend consistency,
+not arbitrary original viewport equivalence. The original artwork's upstream
+credits remain part of the game, with provenance in the port credits.
+
+Original HUD and end-state screens, recorded sounds/music, missing settings and
+project/version controls, external fullscreen readback and other platform/scale
+requirements remain open. No execution, memory or drawing limits are raised.
+
+Final native gameplay/editor/system file-picker import/cancel/Save-dialog export
+and both browser-profile gameplay/editor/import/cancel/explicit-download flows
+pass with the restored startup screen. Both signed suites pass 63 checks; strict
+lint and formatting pass. Measured installed storage with native/Wasm builds
+and the recovery copy is 48.3 MiB, so the advisory estimate is 56 MiB. No runtime
+budget changes or binary releases are included.
