@@ -119,6 +119,8 @@ Use `gamepkg::draw_clear`, `draw_rect`, `draw_circle` and `draw_asset_image` for
 
 Native linear sprite sampling interpolates premultiplied encoded RGB bytes using host-owned textures, separately from UI rendering. This matches the browser sprite API’s premultiplied interpolation convention. Transparent straight-alpha filtering is a different operation: original engines that interpolate RGB before applying alpha need their sampling semantics considered explicitly.
 
+Each tick supplies a fresh frame. With no `draw_clear` call, the viewport uses opaque dark RGB `#10171d`. A clear color with alpha below 255 is composited against opaque black for that frame, including a fully transparent clear. Redraw every visible primitive each tick; earlier frames do not supply retained pixels. Native and browser players use the same rule.
+
 Game rectangle/circle colors and sprite pixels use straight RGBA bytes. Native game drawing premultiplies encoded RGB bytes for source-over compositing, with a conversion separate from the app's UI styling. The conversion retains supplied opaque-color bytes. Maintainers can run `tests/blending_gui.py` to compare rectangles, nearest sprites and ordered overlaps with SDL in native and browser players.
 
 These functions preserve the source checks, signatures, isolated compiler and Wasm restrictions. Games cannot replace the injected implementation or declare their own host imports.

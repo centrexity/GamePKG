@@ -808,3 +808,45 @@ mixing only white reflections into the magma color; the native check samples
 all physical pixels so the subpixel-height core cannot fall between logical
 sample rows. Strict lint, formatting, Python syntax and exact reference
 regeneration pass. No binary/package release is produced.
+
+
+### Fresh frames and background parity
+
+The browser player kept old pixels when a custom frame had no clear call. A
+translucent clear repeatedly accumulated against the previous frame, and a
+transparent clear preserved prior geometry. The native player already rebuilt
+each frame against its black panel, with opaque RGB #10171d when no clear color
+was supplied. The browser now follows that same rule: opaque backgrounds replace
+the canvas directly, while alpha backgrounds composite over fresh opaque black.
+Completely empty custom frames show the default background rather than retained
+pixels or the legacy grid fallback. Every visible primitive belongs to its tick.
+
+`tests/frame_reset_gui.py` builds and runs a signed input-controlled source probe.
+Before correction, the real core browser retained red RGB 200/48/32 where the
+next frame required dark RGB 16/23/29. The corrected host passes all eight
+configurations: native and core Wasm across Vulkan/OpenGL, component Wasm across
+both renderers, and both browser profiles. Each configuration checks eight phases
+and delayed stability, including alpha-128 and fully transparent clear colors,
+absent backgrounds, zero commands, disappearing geometry and phase revisits.
+Browser pixels remain opaque. Samples are taken inside flat regions; this does
+not establish edge rasterization, arbitrary shader blending or complete original
+frames. The API still supplies complete frames, not an automatic retained target.
+
+The browser code is embedded into exports at build time, so old exports need
+regeneration to receive this correction. Player builds, source policy, signatures,
+permissions and all command/image/time/memory limits are unchanged. The CI step
+runs the actual desktop/browser regression; the local script discovers Chrome or
+Chromium and the matching installed driver. Python/Selenium/display tools remain
+maintainer-only dependencies.
+
+
+Validation: the red/green browser reproduction and all eight rendering
+configurations pass after correction, including delayed samples. The final
+CI-compatible browser/driver discovery path passes both browser profiles.
+Existing complete browser-export checks pass in core and component modes,
+covering real tile gameplay, scoped resources/saves/ROMs, sprites, audio,
+shaders, watchdog and corrupt-export rejection. All 34 signed port checks pass
+in native and Wasm; its actual native and both browser gameplay/editor/file,
+fullscreen and visible-effect workflows pass. Node smoothing/keyboard checks,
+strict lint, formatting, Python syntax and seven public-page link checks pass.
+No package or binary release is created.

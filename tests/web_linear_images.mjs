@@ -11,8 +11,8 @@ for(let i=0;i<1024;i++)assert.equal(api.canonical['draw-asset-image-linear'](0,9
 const bytes=api.state().imageBudget;assert.equal(api.linear(0,9,0,0,10,10),-1);assert.equal(api.state().imageBudget,bytes);
 api.reset();vm.runInContext(`images.set('heart.png',{width:512,height:512,pixels:new Uint8Array(1048576)});`,worker);
 for(let i=0;i<8;i++)assert.equal(api.linear(0,9,0,0,10,10),0);assert.equal(api.nearest(0,9,0,0,10,10),-1);
-const samples=[];const context={imageSmoothingEnabled:false,drawImage(){samples.push(this.imageSmoothingEnabled);}};
-const ui=vm.createContext({context,canvas:{dataset:{}},data:{custom_renderer:true},ImageData:class{constructor(){}},document:{createElement:()=>({getContext:()=>({putImageData(){}})}),querySelector:()=>({textContent:''})}});
+const samples=[];const context={imageSmoothingEnabled:false,fillRect(){},drawImage(){samples.push(this.imageSmoothingEnabled);}};
+const ui=vm.createContext({context,color:()=> '#000000',canvas:{dataset:{}},data:{custom_renderer:true},ImageData:class{constructor(){}},document:{createElement:()=>({getContext:()=>({putImageData(){}})}),querySelector:()=>({textContent:''})}});
 const player=readFileSync(new URL('../web-player/player.js',import.meta.url),'utf8');vm.runInContext(player.slice(player.indexOf('function render(frame)'),player.indexOf('function playAudio(')),ui);
 vm.runInContext(`render({background:null,state:'1',commands:[['linear-image',0,0,10,10,1,1,new Uint8Array(4)],['image',0,0,10,10,1,1,new Uint8Array(4)],['linear-image',0,0,10,10,1,1,new Uint8Array(4)]]});`,ui);
 assert.deepEqual(samples,[true,false,true]);console.log('Filtered assets keep path/memory/queue bounds and switch browser smoothing per draw.');
