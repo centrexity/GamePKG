@@ -18,6 +18,8 @@ mod gamepkg {
             })
     }
 }
+#[path = "../ports/arkanoo/source/src/audio.rs"]
+mod audio;
 #[path = "../ports/arkanoo/source/src/editor.rs"]
 mod editor;
 #[path = "../ports/arkanoo/source/src/levels.rs"]
@@ -1695,4 +1697,139 @@ fn menu_actions_preserve_pause_state_and_apply_controls_without_playing_behind_s
     assert!(!title.menu.settings);
     title.source_input(9, 0.0, 0.0, 113);
     assert!(title.quit_requested);
+}
+
+#[test]
+fn effects_slider_matches_original_motion_drag_quantization_and_release() {
+    let reference: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-menu.json")).unwrap();
+    let mut controls = menu::Menu::new();
+    controls.settings = true;
+    assert_eq!(controls.sfx_volume, 64);
+    assert!(!controls.sfx_muted);
+    assert!(!controls.save_failed);
+    for case in reference["slider"].as_array().unwrap() {
+        let e = &case["event"];
+        controls.menu_event(
+            e[0].as_u64().unwrap() as u32,
+            e[1].as_f64().unwrap() as f32,
+            e[2].as_f64().unwrap() as f32,
+            e[3].as_u64().unwrap() as u32,
+        );
+        assert_eq!(
+            controls.sfx_volume,
+            case["volume"].as_u64().unwrap() as u32,
+            "{case}"
+        );
+    }
+    controls.menu_event(2, 320.0, 245.0, 1);
+    controls.menu_event(1, 300.0, 245.0, 1);
+    assert!(controls.dragging_volume);
+    controls.menu_event(0, 0.0, 0.0, 0);
+    let volume = controls.sfx_volume;
+    controls.menu_event(1, 370.0, 245.0, 1);
+    assert_eq!(controls.sfx_volume, volume, "focus reset left a live drag");
+    controls.menu_event(2, 320.0, 245.0, 1);
+    controls.menu_event(1, 300.0, 245.0, 1);
+    controls.menu_event(1, f32::NAN, 245.0, 1);
+    assert!(!controls.dragging_volume);
+    let mut game = physics::Game::new();
+    game.menu.settings = true;
+    game.source_input(2, 320.0, 225.0, 1);
+    assert!(game.menu.sfx_muted && game.dirty);
+    game.source_input(2, 320.0, 245.0, 1);
+    game.source_input(1, 295.0, 245.0, 1);
+    assert_eq!(game.menu.sfx_volume, 32);
+    assert!(game.menu.sfx_muted, "moving a muted slider unmuted effects");
+    game.reset_run();
+    assert_eq!(game.menu.sfx_volume, 32);
+    assert!(game.menu.sfx_muted);
+}
+#[test]
+fn synthesized_effect_gain_mute_and_phase_are_bounded_and_word_size_independent() {
+    for kind in 1..=4 {
+        let period = match kind {
+            1 => 100,
+            2 => 64,
+            3 => 48,
+            _ => 180,
+        };
+        for frame in [0, 1, 99, 123456789, u32::MAX] {
+            let normal = audio::effect_samples(kind, frame, 64, false);
+            let quiet = audio::effect_samples(kind, frame, 32, false);
+            let loud = audio::effect_samples(kind, frame, 128, false);
+            for index in 0..800 {
+                let sign = if (u64::from(frame) + index as u64) % period < period / 2 {
+                    1
+                } else {
+                    -1
+                };
+                let original = (sign * (800 - index) as i32 * 5) as i16;
+                assert_eq!(normal[index], original);
+                assert_eq!(quiet[index], original / 2);
+                assert_eq!(loud[index], original * 2);
+            }
+            assert_eq!(audio::effect_samples(kind, frame, u32::MAX, false), loud);
+            assert_eq!(audio::effect_samples(kind, frame, 0, false), [0; 800]);
+            assert_eq!(audio::effect_samples(kind, frame, 128, true), [0; 800]);
+        }
+    }
+}
+#[test]
+fn effects_archive_migrates_old_formats_preserves_capacity_and_rejects_bad_settings() {
+    let mut edit = editor::Editor::new();
+    edit.cells[0] = 7;
+    edit.name = "café".into();
+    assert!(edit.editor_store());
+    let legacy = edit.save_encode(123, 999, true);
+    let mut loaded = editor::Editor::new();
+    for volume in 0..=128 {
+        for muted in [false, true] {
+            let bytes = edit.save_encode_settings(123, 999, true, volume, muted);
+            assert_eq!(&bytes[..4], b"ARK3");
+            assert_eq!(bytes.len(), legacy.len());
+            assert_eq!(loaded.save_decode(&bytes), Some([123, 999, 1]));
+            assert_eq!((loaded.sfx_volume, loaded.sfx_muted), (volume, muted));
+            assert_eq!(loaded.patterns[0].cells[0], 7);
+        }
+    }
+    assert_eq!(loaded.save_decode(&legacy), Some([123, 999, 1]));
+    assert_eq!((loaded.sfx_volume, loaded.sfx_muted), (64, false));
+    let mut ark1 = b"ARK1".to_vec();
+    for value in [123u32, 999, 1] {
+        ark1.extend(value.to_le_bytes());
+    }
+    assert_eq!(loaded.save_decode(&ark1), Some([123, 999, 1]));
+    assert_eq!((loaded.sfx_volume, loaded.sfx_muted), (64, false));
+    let valid = edit.save_encode_settings(123, 999, true, 17, true);
+    loaded.save_decode(&valid).unwrap();
+    for invalid_flags in (10..32)
+        .map(|bit| 1u32 << bit)
+        .chain((129..=255).map(|value| value << 1))
+    {
+        let mut bad = valid.clone();
+        bad[12..16].copy_from_slice(&invalid_flags.to_le_bytes());
+        assert!(loaded.save_decode(&bad).is_none());
+        assert_eq!((loaded.sfx_volume, loaded.sfx_muted), (17, true));
+        assert_eq!(loaded.patterns[0].cells[0], 7);
+    }
+    for end in 0..valid.len() {
+        assert!(loaded.save_decode(&valid[..end]).is_none());
+        assert_eq!((loaded.sfx_volume, loaded.sfx_muted), (17, true));
+    }
+    let mut future = valid.clone();
+    future[3] = b'4';
+    assert!(loaded.save_decode(&future).is_none());
+    let mut full = editor::Editor::new();
+    full.name = "x".repeat(editor::SAVE_BYTES - 224);
+    full.cells[0] = 6;
+    assert!(full.editor_store());
+    let old = full.save_encode(1, 2, false);
+    let new = full.save_encode_settings(1, 2, false, 0, true);
+    assert_eq!(old.len(), editor::SAVE_BYTES);
+    assert_eq!(new.len(), editor::SAVE_BYTES);
+    assert_eq!(loaded.save_decode(&old), Some([1, 2, 0]));
+    assert_eq!(loaded.save_decode(&new), Some([1, 2, 0]));
+    assert_eq!((loaded.sfx_volume, loaded.sfx_muted), (0, true));
+    assert_eq!(loaded.patterns[0].name.len(), editor::SAVE_BYTES - 224);
 }

@@ -12,7 +12,7 @@ work stays open until behavior is verified.
 | Cube 2 | Initial OS lock-key state, remaining uncommon-key/platform behavior and full controller/touch equivalence; LAN discovery, master authentication and public server registration; custom asset/mod workflows; demo/movie output and persistence; hardware-accelerated engine rendering; native platforms beyond Linux. Vulkan currently presents software-rendered engine frames. |
 | DOOM | Original WAD music, spatial stereo effects, six save slots, configuration, desktop controls and the original quit/ENDOOM flow are runtime verified. Music backend selection, multiplayer, additional WADs/mods and broader control/platform coverage remain unfinished. |
 | Zelda3 | External MSU music, replay tools, save states, widescreen, language selection and desktop enhancement settings need support. The adapter fixes the view to 256×224. Original DSP stereo is verified in native and Wasm gameplay/save tests. |
-| Arkanoo | Gravity, speed-triggered portal behavior and ball-to-ball responses are restored with upstream reference and actual-engine tests. Original world proportions and movement/contact order now match upstream reference checks. Per-ball launch timing, life recovery and victory/endless transitions also match original-code fixtures; prior item/score/level caps are removed. Brick health and original blast rules are also verified. All twelve original procedural patterns are restored. Focused mouse movement and original Space/Escape controls are restored. Editor painting/erasing, brick selection, names, save/load, clear confirmation, test return and the custom endless pool are restored. Original ASCII pattern import/export now uses player-selected files. Gameplay cursor confinement/hiding, F11 fullscreen and Q-to-quit outside play are verified in native and browser runtime checks. Normal-size/fullscreen/maximized preferences now persist through the native host. The six main menu actions and fullscreen settings control are restored. Original splash/complete menu transitions, audio/resolution/VSync controls, project-link action and original menus/music still need work. Art/effects remain replacements. Current runs do not persist; high score, unlocked level and gravity selection do. |
+| Arkanoo | Gravity, speed-triggered portal behavior and ball-to-ball responses are restored with upstream reference and actual-engine tests. Original world proportions and movement/contact order now match upstream reference checks. Per-ball launch timing, life recovery and victory/endless transitions also match original-code fixtures; prior item/score/level caps are removed. Brick health and original blast rules are also verified. All twelve original procedural patterns are restored. Focused mouse movement and original Space/Escape controls are restored. Editor painting/erasing, brick selection, names, save/load, clear confirmation, test return and the custom endless pool are restored. Original ASCII pattern import/export now uses player-selected files. Gameplay cursor confinement/hiding, F11 fullscreen and Q-to-quit outside play are verified in native and browser runtime checks. Normal-size/fullscreen/maximized preferences now persist through the native host. The six main menu actions and fullscreen/effects settings controls are restored. Original splash/complete menu transitions, music/resolution/VSync controls, project-link action and original menus/music still need work. Art/effects remain replacements. Current runs do not persist; high score, unlocked level, gravity and effects preferences do. |
 | 2048 | Random spawning, merge scoring/best score, win/continue/game-over UI, restart, 128-step undo and persistent boards/history are implemented and tested. Byte-sized tile exponents remove the old 32768 cap. Cooperative expectimax assistance/autoplay matches independent upstream reference fixtures; a deterministic 932-turn game reaches 2048. Final signed-package delivery and broader platform verification remain open. |
 
 Evidence: [README coverage table](../README.md#port-feature-coverage),
@@ -85,9 +85,9 @@ tests. Test cross-version saves and each claimed native platform. Rebuild and
 verify the packages and catalog users import after source changes. Record
 unverified behavior explicitly; do not silently skip it or describe it as done.
 
-Latest local validation: the full Rust suite passes 363 tests. Its 44
+Latest local validation: the full Rust suite passes 366 tests. Its 47
 fixture-dependent or platform-specific ignored tests are not counted as passed.
-The signed isolated Arkanoo harness separately executes 20 fixture tests on Wasm
+The signed isolated Arkanoo harness separately executes 23 fixture tests on Wasm
 and again with native builds, plus actual native-window and core/component
 browser checks. Both Windows word sizes pass compilation checks; Windows gameplay,
 full campaigns and updated signed-package delivery remain separate requirements.
@@ -113,5 +113,15 @@ pause preservation, settings, editor entry and quit. Linux native and both brows
 profiles also click Settings/fullscreen/back/New Game through their actual windows.
 Browser fullscreen now preserves the canvas aspect ratio and maps absolute/locked
 pointer motion to the displayed image, excluding borders and aspect-ratio bars.
-Original splash and complete menu transitions, audio/resolution/VSync controls,
+Original splash and complete menu transitions, music/resolution/VSync controls,
 project-homepage action, fonts/background artwork and music remain open.
+
+Effects settings now preserve original range/default, mute, integer dragging and
+clamping. The `ARK3` codec stores effects flags without reducing the 1 MiB pattern
+capacity and migrates valid `ARK1`/`ARK2` archives. Tests preserve malformed/future
+records and show warnings for unavailable saving. Actual native/core/component
+PCM verifies gain, mute/zero and relaunch; native/wasm32 output at the maximum
+frame value verifies the fixed 32-bit phase overflow. Linux native controls and
+both browser profiles pass real pointer drags, mute, persisted flags and rendered
+settings restoration after Restart. Original recorded effects/music and broader
+settings/platform fidelity remain open.

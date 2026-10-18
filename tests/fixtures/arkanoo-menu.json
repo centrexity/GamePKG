@@ -649,11 +649,319 @@
       ],
       "button": 8,
       "action": 8
+    },
+    {
+      "settings": true,
+      "point": [
+        270.0,
+        215.0
+      ],
+      "button": 10,
+      "action": 10
+    },
+    {
+      "settings": true,
+      "point": [
+        269.5,
+        215.0
+      ],
+      "button": 10,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "point": [
+        369.5,
+        234.5
+      ],
+      "button": 10,
+      "action": 10
+    },
+    {
+      "settings": true,
+      "point": [
+        370.0,
+        215.0
+      ],
+      "button": 10,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "point": [
+        270.0,
+        235.0
+      ],
+      "button": 10,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "point": [
+        320.0,
+        225.0
+      ],
+      "button": 10,
+      "action": 10
+    },
+    {
+      "settings": true,
+      "point": [
+        269.875,
+        215.0
+      ],
+      "button": 10,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "point": [
+        270.0,
+        214.875
+      ],
+      "button": 10,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "point": [
+        369.875,
+        234.875
+      ],
+      "button": 10,
+      "action": 10
+    }
+  ],
+  "slider": [
+    {
+      "event": [
+        1,
+        320,
+        245,
+        0
+      ],
+      "volume": 64
+    },
+    {
+      "event": [
+        2,
+        320,
+        245,
+        1
+      ],
+      "volume": 64
+    },
+    {
+      "event": [
+        1,
+        295,
+        245,
+        1
+      ],
+      "volume": 32
+    },
+    {
+      "event": [
+        1,
+        390,
+        245,
+        1
+      ],
+      "volume": 128
+    },
+    {
+      "event": [
+        1,
+        250,
+        245,
+        1
+      ],
+      "volume": 0
+    },
+    {
+      "event": [
+        3,
+        250,
+        245,
+        1
+      ],
+      "volume": 0
+    },
+    {
+      "event": [
+        1,
+        320,
+        245,
+        0
+      ],
+      "volume": 0
+    },
+    {
+      "event": [
+        2,
+        260,
+        245,
+        1
+      ],
+      "volume": 0
+    },
+    {
+      "event": [
+        1,
+        280,
+        245,
+        1
+      ],
+      "volume": 12
+    },
+    {
+      "event": [
+        1,
+        345.25,
+        245,
+        1
+      ],
+      "volume": 96
+    },
+    {
+      "event": [
+        3,
+        345.25,
+        245,
+        1
+      ],
+      "volume": 96
+    },
+    {
+      "event": [
+        1,
+        270,
+        245,
+        0
+      ],
+      "volume": 96
+    },
+    {
+      "event": [
+        2,
+        320,
+        245,
+        2
+      ],
+      "volume": 96
+    },
+    {
+      "event": [
+        1,
+        350,
+        245,
+        0
+      ],
+      "volume": 96
+    },
+    {
+      "event": [
+        2,
+        320,
+        245,
+        1
+      ],
+      "volume": 96
+    },
+    {
+      "event": [
+        3,
+        320,
+        245,
+        4
+      ],
+      "volume": 96
+    },
+    {
+      "event": [
+        1,
+        330,
+        245,
+        1
+      ],
+      "volume": 76
+    },
+    {
+      "event": [
+        3,
+        330,
+        245,
+        1
+      ],
+      "volume": 76
+    },
+    {
+      "event": [
+        1,
+        350,
+        245,
+        0
+      ],
+      "volume": 76
+    },
+    {
+      "event": [
+        2,
+        320,
+        245,
+        1
+      ],
+      "volume": 76
+    },
+    {
+      "event": [
+        1,
+        390,
+        245,
+        1
+      ],
+      "volume": 76
+    },
+    {
+      "event": [
+        1,
+        320,
+        245,
+        1
+      ],
+      "volume": 64
+    },
+    {
+      "event": [
+        1,
+        390,
+        245,
+        1
+      ],
+      "volume": 128
+    },
+    {
+      "event": [
+        3,
+        390,
+        245,
+        1
+      ],
+      "volume": 128
+    },
+    {
+      "event": [
+        1,
+        350,
+        245,
+        0
+      ],
+      "volume": 128
     }
   ],
   "remaining": [
     "Original splash/menu transitions",
-    "Music and SFX settings",
+    "Original music settings and recorded effects",
     "Resolution/VSync controls and confirm/revert",
     "Project-homepage button",
     "Original fonts/background artwork"

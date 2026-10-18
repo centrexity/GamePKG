@@ -53,7 +53,7 @@ fn real_gameplay_audio_progress_and_restart() {
         .collect();
     assert_eq!(saves.len(), 1);
     let bytes = std::fs::read(&saves[0]).unwrap();
-    assert_eq!(&bytes[..4], b"ARK2");
+    assert_eq!(&bytes[..4], b"ARK3");
     let score = u32::from_le_bytes(bytes[4..8].try_into().unwrap());
     assert!(score >= 10, "checkpoint did not retain the high score");
     let records = std::fs::read_dir(root.path().join("progress")).unwrap();
@@ -85,7 +85,10 @@ fn gravity_option_is_visible_and_persists_through_the_real_save_api() {
         .unwrap()
         .unwrap()
         .path();
-    assert_eq!(&std::fs::read(&path).unwrap()[12..16], &[1, 0, 0, 0]);
+    assert_eq!(
+        u32::from_le_bytes(std::fs::read(&path).unwrap()[12..16].try_into().unwrap()) & 1,
+        1
+    );
     game.finish().unwrap();
     drop(game);
     let mut resumed = Game::load(root.path(), "com.gamepkg.arkanoo").unwrap();
@@ -99,7 +102,10 @@ fn gravity_option_is_visible_and_persists_through_the_real_save_api() {
         "saved gravity indicator was absent after relaunch"
     );
     resumed.step(131072).unwrap();
-    assert_eq!(&std::fs::read(path).unwrap()[12..16], &[0, 0, 0, 0]);
+    assert_eq!(
+        u32::from_le_bytes(std::fs::read(path).unwrap()[12..16].try_into().unwrap()) & 1,
+        0
+    );
     resumed.finish().unwrap();
 }
 
@@ -493,7 +499,7 @@ fn original_editor_workflow_persists_patterns_and_preserves_corrupt_saves_in_rea
     editor_key(&mut game, 115);
     let path = editor_archive(root.path());
     let bytes = std::fs::read(&path).unwrap();
-    assert_eq!(&bytes[..4], b"ARK2");
+    assert_eq!(&bytes[..4], b"ARK3");
     assert_eq!(u32::from_le_bytes(bytes[16..20].try_into().unwrap()), 1);
     let name_len = u32::from_le_bytes(bytes[20..24].try_into().unwrap()) as usize;
     assert_eq!(&bytes[24..24 + name_len], b"my_pattern");
@@ -975,5 +981,211 @@ fn actual_menu_clicks_start_resume_restart_gravity_editor_settings_fullscreen_an
         .unwrap();
         game.step(0).unwrap();
         assert!(game.exited());
+    }
+}
+
+#[test]
+#[ignore = "requires the signed isolated fixtures prepared by tests/arkanoo.py"]
+fn effects_settings_change_pcm_and_survive_restarts_across_runtime_profiles() {
+    fn event(game: &mut Game, kind: u32, x: f32, y: f32, code: u32) {
+        game.input_event(gamepkg::input_events::Event { kind, x, y, code })
+            .unwrap();
+        game.step(0).unwrap();
+    }
+    fn slider(game: &mut Game, x: f32) {
+        event(game, 2, 320.0, 245.0, 1);
+        event(game, 1, 320.0, 245.0, 1);
+        event(game, 1, x, 245.0, 1);
+        event(game, 3, x, 245.0, 1);
+    }
+    fn launch(game: &mut Game) {
+        event(game, 2, 320.0, 450.0, 1);
+        event(game, 2, 320.0, 210.0, 1);
+        event(game, 2, 320.0, 185.0, 1);
+        event(game, 5, 0.0, 0.0, 44);
+    }
+    fn settings(game: &mut Game) {
+        event(game, 5, 0.0, 0.0, 41);
+        event(game, 2, 320.0, 285.0, 1);
+    }
+    for id in ["com.gamepkg.arkanoo", "com.gamepkg.arkanoo-files-component"] {
+        let root = isolated_library();
+        let mut game = Game::load(root.path(), id).unwrap();
+        game.step(0).unwrap();
+        event(&mut game, 2, 320.0, 285.0, 1);
+        slider(&mut game, 295.0);
+        launch(&mut game);
+        assert_eq!(game.audio_frame().len(), 800);
+        assert_eq!(
+            game.audio_frame().iter().map(|s| i32::from(*s).abs()).max(),
+            Some(2000)
+        );
+        settings(&mut game);
+        event(&mut game, 2, 320.0, 225.0, 1);
+        slider(&mut game, 320.0);
+        launch(&mut game);
+        assert!(
+            game.audio_frame().is_empty(),
+            "muted effects were submitted"
+        );
+        game.finish().unwrap();
+        drop(game);
+        let save = std::fs::read_dir(root.path().join("saves"))
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        let bytes = std::fs::read(&save).unwrap();
+        assert_eq!(&bytes[..4], b"ARK3");
+        assert_eq!(u32::from_le_bytes(bytes[12..16].try_into().unwrap()), 640);
+        let mut game = Game::load(root.path(), id).unwrap();
+        game.step(0).unwrap();
+        event(&mut game, 2, 320.0, 185.0, 1);
+        event(&mut game, 5, 0.0, 0.0, 44);
+        assert!(
+            game.audio_frame().is_empty(),
+            "muting did not survive reopen/New Game"
+        );
+        settings(&mut game);
+        event(&mut game, 2, 320.0, 225.0, 1);
+        slider(&mut game, 390.0);
+        launch(&mut game);
+        assert_eq!(
+            game.audio_frame().iter().map(|s| i32::from(*s).abs()).max(),
+            Some(8000)
+        );
+        settings(&mut game);
+        slider(&mut game, 250.0);
+        launch(&mut game);
+        assert!(game.audio_frame().is_empty(), "zero volume was audible");
+        game.finish().unwrap();
+        drop(game);
+        let bytes = std::fs::read(&save).unwrap();
+        assert_eq!(u32::from_le_bytes(bytes[12..16].try_into().unwrap()), 0);
+        let mut game = Game::load(root.path(), id).unwrap();
+        game.step(0).unwrap();
+        event(&mut game, 2, 320.0, 185.0, 1);
+        event(&mut game, 5, 0.0, 0.0, 44);
+        assert!(
+            game.audio_frame().is_empty(),
+            "saved zero volume became the legacy default"
+        );
+    }
+}
+#[test]
+#[ignore = "requires the signed isolated fixtures prepared by tests/arkanoo.py"]
+fn legacy_audio_defaults_migrate_and_denied_or_damaged_settings_preserve_data() {
+    fn event(game: &mut Game, kind: u32, x: f32, y: f32, code: u32) {
+        game.input_event(gamepkg::input_events::Event { kind, x, y, code })
+            .unwrap();
+        game.step(0).unwrap();
+    }
+    for id in ["com.gamepkg.arkanoo", "com.gamepkg.arkanoo-files-component"] {
+        let root = isolated_library();
+        let mut seed = Game::load(root.path(), id).unwrap();
+        seed.step(131072).unwrap();
+        seed.finish().unwrap();
+        drop(seed);
+        let save = std::fs::read_dir(root.path().join("saves"))
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        for magic in [b"ARK1", b"ARK2"] {
+            let mut legacy = magic.to_vec();
+            for value in [17u32, 7, 0] {
+                legacy.extend(value.to_le_bytes());
+            }
+            if magic == b"ARK2" {
+                legacy.extend(0u32.to_le_bytes());
+            }
+            std::fs::write(&save, &legacy).unwrap();
+            let mut game = Game::load(root.path(), id).unwrap();
+            game.step(0).unwrap();
+            event(&mut game, 2, 320.0, 185.0, 1);
+            event(&mut game, 5, 0.0, 0.0, 44);
+            assert_eq!(
+                game.audio_frame().iter().map(|s| i32::from(*s).abs()).max(),
+                Some(4000)
+            );
+            game.finish().unwrap();
+            drop(game);
+            let bytes = std::fs::read(&save).unwrap();
+            assert_eq!(&bytes[..4], b"ARK3");
+            assert_eq!(u32::from_le_bytes(bytes[4..8].try_into().unwrap()), 17);
+            assert_eq!(u32::from_le_bytes(bytes[8..12].try_into().unwrap()), 7);
+        }
+        let mut damaged = b"ARK3".to_vec();
+        for value in [17u32, 7, 2048, 0] {
+            damaged.extend(value.to_le_bytes());
+        }
+        std::fs::write(&save, &damaged).unwrap();
+        let mut game = Game::load(root.path(), id).unwrap();
+        game.step(0).unwrap();
+        event(&mut game, 2, 320.0, 285.0, 1);
+        event(&mut game, 2, 320.0, 245.0, 1);
+        event(&mut game, 1, 295.0, 245.0, 1);
+        game.step(0).unwrap();
+        assert!(
+            game.frame()
+                .commands
+                .iter()
+                .any(|command| matches!(command,Command::Image{y,..} if *y==330.0)),
+            "damaged-save warning is absent"
+        );
+        game.finish().unwrap();
+        drop(game);
+        assert_eq!(std::fs::read(&save).unwrap(), damaged);
+    }
+    for id in [
+        "com.gamepkg.arkanoo-nosave",
+        "com.gamepkg.arkanoo-nosave-component",
+    ] {
+        let root = isolated_library();
+        let mut game = Game::load(root.path(), id).unwrap();
+        game.step(0).unwrap();
+        event(&mut game, 2, 320.0, 285.0, 1);
+        event(&mut game, 2, 320.0, 245.0, 1);
+        event(&mut game, 1, 295.0, 245.0, 1);
+        game.step(0).unwrap();
+        assert!(
+            game.frame()
+                .commands
+                .iter()
+                .any(|command| matches!(command,Command::Image{y,..} if *y==330.0)),
+            "denied-save warning is absent"
+        );
+        game.finish().unwrap();
+        assert!(
+            !root.path().join("saves").exists()
+                || std::fs::read_dir(root.path().join("saves"))
+                    .unwrap()
+                    .next()
+                    .is_none()
+        );
+    }
+}
+
+#[test]
+#[ignore = "requires the production audio fixture prepared by tests/arkanoo.py"]
+fn effects_phase_at_maximum_frame_matches_in_native_and_wasm32() {
+    let root = isolated_library();
+    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
+    assert_eq!(game.step(16777216).unwrap(), 1);
+    assert_eq!(game.audio_channels(), 1);
+    assert_eq!(game.audio_frame().len(), 800);
+    for (index, sample) in game.audio_frame().iter().enumerate() {
+        let sign = if (u64::from(u32::MAX) + index as u64) % 100 < 50 {
+            1
+        } else {
+            -1
+        };
+        assert_eq!(
+            *sample,
+            (sign * (800 - index) as i32 * 10) as i16,
+            "sample {index}"
+        );
     }
 }

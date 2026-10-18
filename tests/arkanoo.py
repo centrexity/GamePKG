@@ -5,7 +5,7 @@ from pathlib import Path
 import os, shutil, subprocess, tempfile, threading, time, tomllib, json
 from PIL import Image
 from gui_test_support import start_display,choose_native_file
-import argparse
+import argparse, math
 parser=argparse.ArgumentParser()
 parser.add_argument('--skip-browser',action='store_true',help='Run native checks on hosts without Chromium/Selenium')
 args=parser.parse_args()
@@ -42,15 +42,16 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-arkanoo-',dir=PROJECT/'target')
     file=custom/'manifest.toml';file.write_text(file.read_text().replace('com.gamepkg.arkanoo','com.gamepkg.arkanoo-custom'))
     boards=json.loads((PROJECT/'tests/fixtures/arkanoo-custom-levels.json').read_text())['patterns']
     assert boards==[[i if i<9 else 255 for i in range(200)],[i//20%6 if i//20==i%20 else 255 for i in range(200)],[255]*200]
-    (custom/'source/src/lib.rs').write_text('mod editor;mod levels;mod menu;mod pattern_rng;mod physics;mod render;pub fn game_tick(input:u32,_:u64)->u64 {let mut game=physics::Game::new();for which in 0..3 {let mut board=[255u8;200];if which==0 {for col in 0..9 {board[col]=col as u8;}}if which==1 {for row in 0..10 {board[row*20+row]=(row%6) as u8;}}game.editor.patterns.push(editor::Pattern{name:String::new(),cells:board});}game.level=input;game.populate();render::draw(&game);let mut result=14695981039346656037u64;for index in 0..200 {let cell=if game.blocks[index]==0 {255} else if game.block_type[index]>0 {game.block_type[index]+5} else {game.block_color[index]};result=(result^u64::from(cell)).wrapping_mul(1099511628211);}result}')
+    (custom/'source/src/lib.rs').write_text('mod audio;mod editor;mod levels;mod menu;mod pattern_rng;mod physics;mod render;pub fn game_tick(input:u32,_:u64)->u64 {let mut game=physics::Game::new();for which in 0..3 {let mut board=[255u8;200];if which==0 {for col in 0..9 {board[col]=col as u8;}}if which==1 {for row in 0..10 {board[row*20+row]=(row%6) as u8;}}game.editor.patterns.push(editor::Pattern{name:String::new(),cells:board});}game.level=input;game.populate();render::draw(&game);let mut result=14695981039346656037u64;for index in 0..200 {let cell=if game.blocks[index]==0 {255} else if game.block_type[index]>0 {game.block_type[index]+5} else {game.block_color[index]};result=(result^u64::from(cell)).wrapping_mul(1099511628211);}result}')
     run('pack',custom,'-o',root/'custom.gamepkg','--key',key);run('install',root/'custom.gamepkg','--trust-creator');run('build','com.gamepkg.arkanoo-custom')
     # Trigger the production portal at its original speed threshold without
     # depending on a long random play session. Only fixture setup is replaced.
     modes=root/'modes';shutil.copytree(PROJECT/'ports/arkanoo',modes)
     mode_manifest=modes/'manifest.toml';mode_manifest.write_text(mode_manifest.read_text().replace('com.gamepkg.arkanoo','com.gamepkg.arkanoo-modes'))
-    (modes/'source/src/lib.rs').write_text('''mod editor;mod levels;mod menu;mod pattern_rng;mod physics;mod render;use std::sync::Mutex;
+    (modes/'source/src/lib.rs').write_text('''mod audio;mod editor;mod levels;mod menu;mod pattern_rng;mod physics;mod render;use std::sync::Mutex;
 static GAME:Mutex<Option<physics::Game>>=Mutex::new(None);
 pub fn game_tick(input:u32,state:u64)->u64 {
+ if input&16777216!=0 {let samples=audio::effect_samples(1,u32::MAX,128,false);gamepkg::audio_submit(&samples);return 1;}
  if let Ok(mut slot)=GAME.lock(){
   if slot.is_none(){let mut game=physics::Game::new();game.mode=1;game.blocks=[0;200];game.blocks[0]=1;game.balls[0].attached=false;game.balls[0].vx=30.0;game.balls[0].vy=0.0;*slot=Some(game);}
   if let Some(game)=slot.as_mut(){
@@ -95,7 +96,7 @@ pub fn game_tick(input:u32,state:u64)->u64 {
     run('pack',modes,'-o',root/'modes.gamepkg','--key',key);run('install',root/'modes.gamepkg','--trust-creator');run('build','com.gamepkg.arkanoo-modes')
     layouts=root/'layouts';shutil.copytree(PROJECT/'ports/arkanoo',layouts)
     layout_manifest=layouts/'manifest.toml';layout_manifest.write_text(layout_manifest.read_text().replace('com.gamepkg.arkanoo','com.gamepkg.arkanoo-levels'))
-    (layouts/'source/src/lib.rs').write_text('''mod editor;mod levels;mod menu;mod pattern_rng;mod physics;mod render;use std::sync::Mutex;
+    (layouts/'source/src/lib.rs').write_text('''mod audio;mod editor;mod levels;mod menu;mod pattern_rng;mod physics;mod render;use std::sync::Mutex;
 static GAME:Mutex<Option<physics::Game>>=Mutex::new(None);
 pub fn game_tick(input:u32,state:u64)->u64 {
  if let Ok(mut slot)=GAME.lock(){
@@ -113,11 +114,12 @@ pub fn game_tick(input:u32,state:u64)->u64 {
         manifest.write_text(text)
         (fixture/'source/src/lib.rs').write_text('pub fn game_tick(_:u32,_:u64)->u64 {if let Some(events)=gamepkg::input_events(){let mut result=0;for event in events {if event.kind==1 {gamepkg::draw_rect(event.x,event.y,1.0,1.0,0xffffffff);}result=(u64::from(event.kind)<<32)|u64::from(event.code);}result}else{u64::MAX}}')
         run('pack',fixture,'-o',root/(suffix+'.gamepkg'),'--key',key);run('install',root/(suffix+'.gamepkg'),'--trust-creator');run('build','com.gamepkg.arkanoo-'+suffix)
-    for suffix,profile,allowed in [('files-component','component-v1',True),('nofiles','core-v1',False)]:
+    for suffix,profile,allowed in [('files-component','component-v1',True),('nosave-component','component-v1',True),('nofiles','core-v1',False)]:
         fixture=root/suffix;shutil.copytree(PROJECT/'ports/arkanoo',fixture)
         manifest=fixture/'manifest.toml';text=manifest.read_text().replace('com.gamepkg.arkanoo','com.gamepkg.arkanoo-'+suffix)
         text='runtime_profile = "'+profile+'"\n'+text
         if not allowed:text=text.split('[[permissions.files]]')[0]
+        if suffix=='nosave-component':text=text.replace('save = true','save = false')
         manifest.write_text(text);run('pack',fixture,'-o',root/(suffix+'.gamepkg'),'--key',key);run('install',root/(suffix+'.gamepkg'),'--trust-creator');run('build','com.gamepkg.arkanoo-'+suffix)
     probe_env=dict(env,GAMEPKG_ARKANOO_TEST_ROOT=str(root/'library'))
     subprocess.run(['cargo','test','--test','game_arkanoo_runtime','--','--ignored'],env=probe_env,check=True,timeout=120)
@@ -154,6 +156,18 @@ pub fn game_tick(input:u32,state:u64)->u64 {
         px=round((screenshot.width-640*scale)/2+x*scale);py=round((screenshot.height-480*scale)/2+y*scale)
         subprocess.run(['xdotool','mousemove','--window',window,str(px),str(py),'click','1'],env=env,check=True)
         time.sleep(.15)
+    def native_slider(window,x):
+        screenshot=capture(window,'native-sfx-settings.png');scale=min(screenshot.width/640,screenshot.height/480)
+        ox=(screenshot.width-640*scale)/2;oy=(screenshot.height-480*scale)/2
+        subprocess.run(['xdotool','mousemove','--window',window,str(math.ceil(ox+(319 if x==320 else 320)*scale)),str(round(oy+245*scale)),'mousedown','1'],env=env,check=True)
+        subprocess.run(['xdotool','mousemove','--window',window,str(math.ceil(ox+x*scale)),str(round(oy+245*scale))],env=env,check=True);time.sleep(.15)
+        subprocess.run(['xdotool','mouseup','1'],env=env,check=True)
+    def native_sfx(volume,muted):
+        deadline=time.monotonic()+5
+        while True:
+            values=[int.from_bytes(path.read_bytes()[12:16],'little') for path in (root/'library/saves').glob('*.blob')]
+            if any(((value>>1)&255)==volume and bool(value&512)==muted for value in values):return
+            assert time.monotonic()<deadline,('Native audio settings did not persist',values,volume,muted);time.sleep(.05)
     def paddle(image):
         points=[(x,y) for y in range(image.height//2,image.height-20) for x in range(image.width)
                 if image.getpixel((x,y))==(99,220,255)]
@@ -184,6 +198,9 @@ pub fn game_tick(input:u32,state:u64)->u64 {
                 assert time.monotonic()<ready,'The actual game frame did not become ready'
                 time.sleep(.1)
         native_click(window,320,285) # Original Settings button.
+        native_slider(window,295);native_sfx(32,False)
+        native_click(window,320,225);native_sfx(32,True)
+        native_click(window,320,225);native_slider(window,320);native_sfx(64,False)
         native_click(window,320,270) # Its fullscreen action affects the real window.
         deadline=time.monotonic()+5
         while '_NET_WM_STATE_FULLSCREEN' not in subprocess.run(['xprop','-id',window,'_NET_WM_STATE'],env=env,capture_output=True,text=True).stdout:
@@ -238,7 +255,7 @@ pub fn game_tick(input:u32,state:u64)->u64 {
         deadline=time.monotonic()+3
         while True:
             stored=[p.read_bytes() for p in (root/'library/saves').iterdir()]
-            if any(v[:4]==b'ARK2' and int.from_bytes(v[16:20],'little')==1 for v in stored):break
+            if any(v[:4]==b'ARK3' and int.from_bytes(v[16:20],'little')==1 for v in stored):break
             assert time.monotonic()<deadline,'Native editor did not commit its pattern';time.sleep(.05)
         picker_title='GamePKG: com.gamepkg.arkanoo — Level pattern text'
         subprocess.run(['xdotool','key','--window',window,'i'],env=env,check=True)
@@ -305,7 +322,33 @@ pub fn game_tick(input:u32,state:u64)->u64 {
                 rect=browser.execute_script('const c=arguments[0],r=c.getBoundingClientRect(),w=c.clientWidth,h=c.clientHeight,s=Math.min(w/640,h/480);return {x:r.left+c.clientLeft+(w-640*s)/2,y:r.top+c.clientTop+(h-480*s)/2,w:640*s,h:480*s};',canvas)
                 bounds=canvas.rect
                 ActionChains(browser).move_to_element_with_offset(canvas,rect['x']+x/640*rect['w']-(bounds['x']+bounds['width']/2),rect['y']+y/480*rect['h']-(bounds['y']+bounds['height']/2)).click().perform()
+            def canvas_drag(x):
+                rect=browser.execute_script('const c=arguments[0],r=c.getBoundingClientRect(),w=c.clientWidth,h=c.clientHeight,s=Math.min(w/640,h/480);return {x:r.left+c.clientLeft+(w-640*s)/2,y:r.top+c.clientTop+(h-480*s)/2,w:640*s,h:480*s};',canvas)
+                cy=math.ceil(rect['y']+245/480*rect['h'])
+                cx=math.ceil(rect['x']+(319 if x==320 else 320)/640*rect['w'])
+                tx=math.ceil(rect['x']+x/640*rect['w'])
+                actions=ActionChains(browser)
+                actions.w3c_actions.pointer_action.move_to_location(cx,cy)
+                actions.click_and_hold()
+                actions.w3c_actions.pointer_action.move_to_location(tx,cy)
+                actions.pause(.15).release().perform()
+            def saved_sfx():
+                return browser.execute_script('const key=Object.keys(localStorage).find(key=>key.startsWith(arguments[0]));if(!key)return null;const a=JSON.parse(localStorage.getItem(key)),v=(a[12]|a[13]<<8)>>>0;return [(v>>>1)&255,!!(v&512)];','gamepkg:save:'+game_id+':')
+            def expect_sfx(volume,muted):
+                try:wait.until(lambda b:saved_sfx()==[volume,muted])
+                except Exception:
+                    canvas.screenshot(str(PROOF/'browser-sfx-failed.png'))
+                    raise AssertionError(('Browser audio setting did not persist',saved_sfx(),volume,muted))
+            def sfx_view():return browser.execute_script('return Array.from(arguments[0].getContext("2d").getImageData(290,219,60,31).data)',canvas)
             canvas_click(320,285)
+            canvas_drag(295);expect_sfx(32,False)
+            canvas_click(320,225);expect_sfx(32,True)
+            ActionChains(browser).move_to_element_with_offset(canvas,0,0).perform()
+            stamp=int(canvas.get_attribute('data-state'));wait.until(lambda b:int(canvas.get_attribute('data-state'))>stamp+2)
+            muted_view=sfx_view()
+            browser.find_element(By.ID,'restart').click();time.sleep(.15);canvas_click(320,285)
+            wait.until(lambda b:sfx_view()==muted_view)
+            canvas_click(320,225);canvas_drag(320);expect_sfx(64,False)
             canvas_click(320,270)
             wait.until(lambda b:b.execute_script('return document.fullscreenElement===document.querySelector("#game")'))
             canvas_click(320,270)
@@ -314,7 +357,7 @@ pub fn game_tick(input:u32,state:u64)->u64 {
             canvas_click(320,185);time.sleep(.15)
 
             def saved_gravity():
-                return browser.execute_script('const key=Object.keys(localStorage).find(key=>key.startsWith(arguments[0]));return key?JSON.parse(localStorage.getItem(key))[12]:null;','gamepkg:save:'+game_id+':')
+                return browser.execute_script('const key=Object.keys(localStorage).find(key=>key.startsWith(arguments[0]));return key?(JSON.parse(localStorage.getItem(key))[12]&1):null;','gamepkg:save:'+game_id+':')
             canvas.send_keys('v');wait.until(lambda b:saved_gravity()==1)
             canvas.send_keys('v');wait.until(lambda b:saved_gravity()==0)
             def pixels():return browser.execute_script('return Array.from(document.querySelector("#game").getContext("2d").getImageData(0,0,640,480).data)')
@@ -346,7 +389,7 @@ pub fn game_tick(input:u32,state:u64)->u64 {
             canvas_click(150,400) # Mouse toolbar remains active while editing the name.
             def saved_pattern():
                 return browser.execute_script('const key=Object.keys(localStorage).find(key=>key.startsWith(arguments[0]));return key?JSON.parse(localStorage.getItem(key)):[];','gamepkg:save:'+game_id+':')
-            wait.until(lambda b:saved_pattern()[:4]==[65,82,75,50] and saved_pattern()[16:20]==[1,0,0,0])
+            wait.until(lambda b:saved_pattern()[:4]==[65,82,75,51] and saved_pattern()[16:20]==[1,0,0,0])
             browser.find_element(By.ID,'restart').click();time.sleep(.15);canvas.send_keys('e');canvas.send_keys('l');canvas.send_keys(Keys.ENTER)
             wait.until(lambda b:pixels()[(105*640+35)*4:(105*640+35)*4+3]==[255,165,0])
             canvas.send_keys('t');time.sleep(.15);canvas.send_keys('q');time.sleep(.15)
