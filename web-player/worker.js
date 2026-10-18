@@ -57,6 +57,9 @@ function encodeEvents(events){
 // Transactional commands for the player's own window; no DOM/device handles.
 function defaultWindow(){return {visible:true,confined:false,fullscreen_toggle:false,closed:false};}
 let windowCurrent=defaultWindow(),windowPrevious=defaultWindow(),windowStaged=defaultWindow(),windowGesture=false;
+let windowObserved=0;
+function windowObserve(fullscreen){windowObserved=typeof fullscreen==='boolean'?(fullscreen?3:1):0;}
+function windowObservation(){return manifest.permissions.input&&!windowCurrent.closed?windowObserved:0;}
 function windowBegin(gesture){windowPrevious={...windowCurrent};windowStaged={...windowCurrent};windowGesture=gesture;}
 function windowRequest(operation,value){
  if(!manifest.permissions.input||windowStaged.closed||!Number.isInteger(operation)||!Number.isInteger(value))return 0;
@@ -107,6 +110,7 @@ function fileTickFinish(success){fileGesture=false;if(fileEntry?.staged){if(!suc
 
 const api={
  window_control:windowRequest,
+ window_state:windowObservation,
  file_call:(operation,pointer,length,output,capacity)=>{const request=bytes(pointer,length,1048840),out=bytes(output,capacity,65536);if(!request||!out)return -1;const reply=fileCall(operation,request.slice(),capacity);if(!reply)return -1;out.set(reply);return reply.length;},
  input_events:(pointer,capacity)=>{const output=bytes(pointer,capacity,32768);if(!output)return -1;const events=takeEvents(capacity);if(!events)return -1;output.set(events);return events.length;},
  frame_time_us:()=>frameClockValue,
@@ -137,7 +141,7 @@ function decode(hex){if(typeof hex!=='string'||hex.length%2||!/^[a-f0-9]*$/.test
 onmessage=async ({data})=>{try{
  if(data.type==='file-result'){fileResult(data);return;}
  if(data.type==='start'){
-  frameClockReset();
+  frameClockReset();windowObserve(null);
   fileEntry=null;fileNext=1;fileGeneration++;fileGesture=false;windowCurrent=defaultWindow();windowPrevious=defaultWindow();windowStaged=defaultWindow();
   shaderCount=data.shaderCount||0;manifest=data.manifest;assets=new Map(Object.entries(data.assets).map(([key,value])=>[key,decode(value)]));roms=data.roms.map(value=>new Uint8Array(value));save=new Uint8Array(data.save);state=0n;
   await prepareImages(data.precise_images??{});
@@ -148,10 +152,10 @@ onmessage=async ({data})=>{try{
   if(typeof instance.exports[manifest.runtime_profile==='component-v1'?'tick':'gamepkg_tick']!=='function')throw Error('Missing game entry');
   postMessage({type:'ready'});
  }else if(data.type==='restart'){
-  frameClockReset();
+  frameClockReset();windowObserve(null);
   eventBytes=new Uint8Array();state=0n;fileEntry=null;fileGeneration++;fileGesture=false;windowCurrent=defaultWindow();windowPrevious=defaultWindow();windowStaged=defaultWindow();
  }else if(data.type==='tick'){
-  frameClockBegin();
+  frameClockBegin();windowObserve(data.fullscreen);
   eventBytes=manifest.permissions.input?encodeEvents(data.events??[]):new Uint8Array();
   commands=[];background=null;unlocks=[];saveDirty=false;saveBudget=0;imageBudget=0;audioSamples=[];fileTickBegin(data.input);windowBegin(fileGesture);
   state=instance.exports[manifest.runtime_profile==='component-v1'?'tick':'gamepkg_tick'](manifest.permissions.input?data.input:0,state);
@@ -173,6 +177,7 @@ function optionBytes(pointer,source,offset,length){
 }
 const canonical={
  'window-control':windowRequest,
+ 'window-state':windowObservation,
  'file-call':(operation,pointer,length,capacity,result)=>{if(!range(result,12)||result%4)throw Error('Invalid result pointer');const request=bytes(pointer,length,1048840);let reply=null;if(request&&Number.isInteger(capacity)&&capacity>=0&&capacity<=65536)reply=fileCall(operation,request.slice(),capacity);let address=0;if(reply?.length){address=instance.exports.cabi_realloc(0,0,1,reply.length)>>>0;if(!range(address,reply.length))throw Error('Invalid allocation');bytes(address,reply.length).set(reply);}const v=new DataView(instance.exports.memory.buffer);v.setInt32(result,reply?reply.length:-1,true);v.setUint32(result+4,address,true);v.setUint32(result+8,reply?.length??0,true);},
  'input-events':(capacity,pointer)=>{if(!range(pointer,12)||pointer%4)throw Error('Invalid result pointer');const events=takeEvents(capacity);optionBytes(pointer,events,0,events?.length??0);},
  'frame-time-us':api.frame_time_us,

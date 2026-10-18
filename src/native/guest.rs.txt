@@ -2,6 +2,7 @@
 pub mod gamepkg {
     /// Relative microseconds sampled by the parent once per tick.
     pub fn frame_time_us()->u64{let d=rpc(34,&[]);assert!(d.len()==9&&d[0]==0,"invalid frame-time response");u64::from_le_bytes(d[1..].try_into().unwrap())}
+    pub fn window_fullscreen()->Option<bool>{let d=rpc(36,&[]);if d.len()!=5||d[0]!=0{return None;}match u32::from_le_bytes(d[1..].try_into().unwrap()){1=>Some(false),3=>Some(true),_=>None}}
     pub fn window_control(operation:u32,value:u32)->bool{accepted(29,&u32s(&[operation,value]))}
     fn __gamepkg_file_call(op:u32,input:&[u8],output:&mut[u8])->Option<u32>{if input.len()>1048840||output.len()>65536{return None;}let mut bytes=u32s(&[op,output.len() as u32]);bytes.extend(input);let data=rpc(28,&bytes);if data.first()!=Some(&0)||data.len()-1>output.len(){return None;}let n=data.len()-1;output[..n].copy_from_slice(&data[1..]);Some(n as u32)}
     fn __gamepkg_input_events(output:&mut[u8])->Option<u32>{let data=rpc(27,&(output.len() as u32).to_le_bytes());if data.first()!=Some(&0)||data.len()-1>output.len(){return None;}let n=data.len()-1;output[..n].copy_from_slice(&data[1..]);Some(n as u32)}

@@ -312,6 +312,12 @@ impl Session {
             Ok(v)
         }
         let ok = match op {
+            36 => {
+                ensure!(b.is_empty(), "invalid window-state packet");
+                let mut reply = vec![0];
+                reply.extend(self.window.observation().to_le_bytes());
+                return Ok(reply);
+            }
             34 => {
                 ensure!(b.is_empty(), "invalid frame-time packet");
                 let mut reply = vec![0];

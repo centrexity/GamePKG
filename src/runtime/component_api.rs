@@ -51,6 +51,10 @@ pub(super) fn linker(engine: &Engine) -> Result<Linker<Data>> {
         },
     )?;
     host.func_wrap(
+        "window-state",
+        |store: StoreContextMut<'_, Data>, (): ()| Ok((store.data().window.observation(),)),
+    )?;
+    host.func_wrap(
         "frame-time-us",
         |store: StoreContextMut<'_, Data>, (): ()| Ok((store.data().clock.micros(),)),
     )?;

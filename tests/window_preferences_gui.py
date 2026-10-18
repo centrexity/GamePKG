@@ -1,17 +1,19 @@
 """Maintainer check: real game window preferences, scoped storage and safe fallback."""
 from pathlib import Path
-import json, os, subprocess, tempfile, time
+import json, os, subprocess, tempfile, time, zlib, math
 from PIL import Image
 from gui_test_support import start_display
 
 PROJECT = Path(__file__).resolve().parents[1]
 BIN = Path(os.environ.get('GAMEPKG_TEST_BINARY_DIR', PROJECT / 'target/release'))
 GAME = 'com.gamepkg.arkanoo'
+TITLE=json.loads((PROJECT/'tests/fixtures/arkanoo-menu-controls.json').read_text())['labels']['ARKANOO']
+TITLE_ALPHA=Image.frombytes('RGBA',(TITLE['width'],TITLE['height']),zlib.decompress(bytes.fromhex(TITLE['rgba_zlib_hex']))).getchannel('A')
 
 with tempfile.TemporaryDirectory(prefix='gamepkg-window-preferences-', dir=PROJECT / 'target') as temporary:
     root = Path(temporary)
     config = root / 'settings.toml'
-    config.write_text('automatic_update_checks=false\nrenderer="opengl"\nui_scale_percent=150\n')
+    config.write_text('automatic_update_checks=false\ncheck_app_updates_on_startup=false\nrenderer="opengl"\nui_scale_percent=150\n')
     env = dict(os.environ, GAMEPKG_HOME=str(root / 'library'), GAMEPKG_CONFIG=str(config),
                LIBGL_ALWAYS_SOFTWARE='1', DBUS_SESSION_BUS_ADDRESS='unix:path=/tmp/gamepkg-no-session-bus', OMP_THREAD_LIMIT='1')
     env.pop('WAYLAND_DISPLAY', None)
@@ -54,8 +56,24 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-window-preferences-', dir=PROJE
                 screenshot=root/'frame.png'
                 run('import','-display',env['DISPLAY'],'-window',window,screenshot)
                 with Image.open(screenshot) as picture:
-                    return sum(count for count,color in picture.convert('RGB').getcolors(picture.width*picture.height) if color==(104,229,255))>100
-            wait_for(rendered,'game title rendered')
+                    picture=picture.convert('RGB');scale=min(picture.width/640,picture.height/480)
+                    left=(picture.width-640*scale)/2+290*scale;top=(picture.height-480*scale)/2+150*scale
+                    positive=negative=0
+                    for py in range(max(0,math.floor(top)),min(picture.height,math.ceil(top+15.5*scale))):
+                        for px in range(max(0,math.floor(left)),min(picture.width,math.ceil(left+60*scale))):
+                            sx=max(0,min(119,(px+.5-left)*2/scale-.5));sy=max(0,min(30,(py+.5-top)*2/scale-.5));ix=int(sx);iy=int(sy);fx=sx-ix;fy=sy-iy
+                            alpha=sum(TITLE_ALPHA.getpixel((xx,yy))*wx*wy for xx,wx in [(ix,1-fx),(min(ix+1,119),fx)] for yy,wy in [(iy,1-fy),(min(iy+1,30),fy)])
+                            color=picture.getpixel((px,py))
+                            if alpha>=254:
+                                positive+=1
+                                if min(color)<252:return False
+                            elif alpha==0:
+                                negative+=1
+                                if max(color)>107:return False
+                    return positive>10 and negative>10
+            # Skip the independently tested splash through its real original input.
+            time.sleep(.15);run('xdotool','key','--window',window,'Return')
+            wait_for(rendered,'original ARKANOO title glyphs rendered')
         return window
     def close(window, quit_key=True):
         global app

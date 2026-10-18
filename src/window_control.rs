@@ -18,6 +18,7 @@ impl Default for State {
 }
 pub struct Service {
     allowed: bool,
+    observed_fullscreen: Option<bool>,
     current: State,
     previous: State,
     staged: State,
@@ -27,10 +28,25 @@ impl Service {
     pub fn new(allowed: bool) -> Self {
         Self {
             allowed,
+            observed_fullscreen: None,
             current: State::default(),
             previous: State::default(),
             staged: State::default(),
             gesture: false,
+        }
+    }
+    pub fn observe_fullscreen(&mut self, fullscreen: Option<bool>) {
+        self.observed_fullscreen = fullscreen;
+    }
+    /// Zero is unavailable; bit 0 marks an observation, bit 1 fullscreen.
+    pub fn observation(&self) -> u32 {
+        if !self.allowed || self.current.closed {
+            return 0;
+        }
+        match self.observed_fullscreen {
+            None => 0,
+            Some(false) => 1,
+            Some(true) => 3,
         }
     }
     pub fn begin(&mut self, gesture: bool) {
@@ -121,5 +137,42 @@ mod tests {
         assert!(service.state().closed);
         service.begin(true);
         assert!(!service.request(1, 1));
+    }
+}
+
+#[cfg(test)]
+mod observation_tests {
+    use super::Service;
+    #[test]
+    fn actual_feedback_is_independent_of_requests_rollbacks_and_other_games() {
+        let mut service = Service::new(true);
+        assert_eq!(service.observation(), 0);
+        service.observe_fullscreen(Some(false));
+        assert_eq!(service.observation(), 1);
+        service.begin(true);
+        assert!(service.request(2, 0));
+        service.finish(true);
+        assert_eq!(
+            service.observation(),
+            1,
+            "toggle acceptance predicted physical fullscreen"
+        );
+        service.observe_fullscreen(Some(true));
+        assert_eq!(service.observation(), 3);
+        service.begin(true);
+        assert!(service.request(3, 0));
+        service.finish(false);
+        assert_eq!(service.observation(), 3);
+        let mut denied = Service::new(false);
+        denied.observe_fullscreen(Some(true));
+        assert_eq!(denied.observation(), 0);
+        assert_eq!(Service::new(true).observation(), 0);
+        service.observe_fullscreen(None);
+        assert_eq!(service.observation(), 0);
+        service.observe_fullscreen(Some(true));
+        service.begin(true);
+        service.request(3, 0);
+        service.finish(true);
+        assert_eq!(service.observation(), 0);
     }
 }

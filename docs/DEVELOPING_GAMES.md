@@ -76,6 +76,8 @@ held buttons and repeated keys do not qualify. The return value means the host
 accepted the request, not that the operating system fulfilled it. Requests commit
 only after a successful tick and persistence; failed ticks roll them back.
 
+`gamepkg::window_fullscreen()` returns `Some(true)` or `Some(false)` for the host's latest observation of this game's own window, or `None` when no observation is available, input permission is denied, or the game has closed. Reads need no fresh input gesture and remain stable during a tick. Use this value for fullscreen captions; accepting a toggle request does not establish that fullscreen changed. Keep the last confirmed state while observation is unavailable. The native window controller keeps a pending toggle until the current mode is known; unavailable does not imply windowed. Native/core/component and browser bindings expose the same result without native handles or access to other windows. Browsers observe their game canvas's DOM fullscreen state, including external exits.
+
 Focus loss, file dialogs and Ctrl+Alt+Escape release the pointer. Click the game
 to resume capture after emergency release. Desktop absolute confinement preserves
 pointer position. Browsers use pointer lock with a bounded virtual canvas position

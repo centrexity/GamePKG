@@ -4,6 +4,7 @@ use std::{collections::BTreeMap, fs, io::Write, path::Path};
 
 const SUPPORTED: &[&str] = &[
     "frame_time_us",
+    "window_state",
     "random_u64",
     "input_events",
     "file_call",

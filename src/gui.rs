@@ -930,6 +930,7 @@ impl eframe::App for App {
                             }
                         }
                     }
+                    game.observe_fullscreen(ctx.input(|i| i.viewport().fullscreen));
                     self.pending_input |= input & 0xf00ff;
                     let now = std::time::Instant::now();
                     if self.next_frame.is_none_or(|next| now >= next) {

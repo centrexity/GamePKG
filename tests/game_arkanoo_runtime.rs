@@ -1414,8 +1414,39 @@ fn actual_menu_clicks_start_resume_restart_gravity_editor_settings_fullscreen_an
         game.step(0).unwrap();
         assert!(game.window_state().fullscreen_toggle);
         assert!(game.window_state().visible && !game.window_state().confined);
+        let labels: serde_json::Value =
+            serde_json::from_str(include_str!("fixtures/arkanoo-menu-controls.json")).unwrap();
+        let caption_matches = |commands: &[Command], fullscreen: bool| {
+            let label = &labels["labels"][if fullscreen { "Fullscreen" } else { "Windowed" }];
+            let width = label["width"].as_u64().unwrap() as usize;
+            let compressed = hex::decode(label["rgba_zlib_hex"].as_str().unwrap()).unwrap();
+            let mut rgba = Vec::new();
+            std::io::Read::read_to_end(
+                &mut flate2::read::ZlibDecoder::new(compressed.as_slice()),
+                &mut rgba,
+            )
+            .unwrap();
+            commands.iter().any(|c|matches!(c,Command::LinearImage{x,y,width:w,height:h,image} if (*x,*y,*w,*h)==((640-width as i32/2) as f32*0.5,262.0,width as f32*0.5,15.5) && image.size()==[width,31] && image.pixels().chunks_exact(4).zip(rgba.chunks_exact(4)).all(|(a,b)|a[3]==b[3])))
+        };
         game.step(0).unwrap();
-        assert!(game.frame().commands.iter().any(|command|matches!(command,Command::LinearImage{x,y,width,height,image} if (*x,*y,*width,*height)==(290.0,262.0,60.0,15.5) && image.size()==[120,31])),"accepted fullscreen request did not update its caption");
+        assert!(
+            caption_matches(&game.frame().commands, false),
+            "accepted request falsely predicted fullscreen without observation"
+        );
+        for (observation, expected) in [
+            (Some(false), false),
+            (Some(true), true),
+            (None, true),
+            (Some(false), false),
+            (Some(true), true),
+        ] {
+            game.observe_fullscreen(observation);
+            game.step(0).unwrap();
+            assert!(
+                caption_matches(&game.frame().commands, expected),
+                "fullscreen caption did not follow actual observation {observation:?}"
+            );
+        }
         game.input_event(Event {
             kind: 2,
             x: 320.0,

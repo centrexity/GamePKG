@@ -3511,3 +3511,87 @@ fn original_record_and_gravity_indicator_colors_match_captured_sdl_values() {
         );
     }
 }
+
+#[test]
+fn sparse_particle_tiles_preserve_every_original_rgba_byte_grid_and_order() {
+    let mut seed = 0x7d45c3b2u64;
+    for count in [0, 1, 12, 137, 3000] {
+        let mut particles = Vec::new();
+        for index in 0..count {
+            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+            particles.push(physics::Particle {
+                x: if index % 4 == 0 {
+                    -2.75
+                } else {
+                    (seed % 1320) as f32 - 20.25
+                },
+                y: if index % 4 == 1 {
+                    719.75
+                } else {
+                    ((seed >> 16) % 760) as f32 - 20.5
+                },
+                vx: 0.0,
+                vy: 0.0,
+                life: (index % 31) as u32,
+                max_life: 31,
+                rotation: (seed % 1000) as f32 * 0.01,
+                rotation_speed: 0.0,
+                size: index % 7 + 1,
+                color: ((seed as u32) & 0xffffff00) | 255,
+            });
+        }
+        let original = physics::particle_image(&particles);
+        let tiles = physics::particle_tiles(&particles);
+        if let Some(original) = original {
+            let mut restored = vec![0; original.pixels.len()];
+            let mut previous = None;
+            for tile in &tiles {
+                let key = (tile.top, tile.left);
+                assert!(previous.is_none_or(|p| p < key));
+                previous = Some(key);
+                assert!(
+                    (tile.left - original.left) % 128 == 0 && (tile.top - original.top) % 128 == 0
+                );
+                assert!(tile.width <= 128 && tile.height <= 128);
+                assert!(tile.pixels.chunks_exact(4).any(|p| p[3] > 0));
+                for row in 0..tile.height as usize {
+                    let offset =
+                        ((tile.top - original.top) as usize + row) * original.width as usize * 4
+                            + (tile.left - original.left) as usize * 4;
+                    restored[offset..offset + tile.width as usize * 4].copy_from_slice(
+                        &tile.pixels
+                            [row * tile.width as usize * 4..(row + 1) * tile.width as usize * 4],
+                    );
+                }
+            }
+            assert_eq!(
+                restored, original.pixels,
+                "{count} ordered overlapping shards"
+            );
+        } else {
+            assert!(tiles.is_empty());
+        }
+    }
+    let mut particles = Vec::new();
+    for index in 0..3000 {
+        particles.push(physics::Particle {
+            x: if index % 2 == 0 { 0.0 } else { 1279.0 },
+            y: if index % 4 < 2 { 0.0 } else { 719.0 },
+            vx: 0.0,
+            vy: 0.0,
+            life: 30,
+            max_life: 30,
+            rotation: 0.0,
+            rotation_speed: 0.0,
+            size: 7,
+            color: 0x1964c8ff,
+        });
+    }
+    let tiles = physics::particle_tiles(&particles);
+    assert_eq!(tiles.len(), 4);
+    assert_eq!(tiles.iter().map(|t| t.pixels.len()).sum::<usize>(), 212992);
+    for p in &mut particles {
+        p.life = 0;
+    }
+    assert!(physics::particle_tiles(&particles).is_empty());
+}

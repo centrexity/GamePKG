@@ -153,6 +153,7 @@ impl Game {
                             | "save_size"
                             | "random_u64"
                             | "frame_time_us"
+                            | "window_state"
                             | "input_events"
                             | "file_call"
                             | "window_control"
@@ -217,6 +218,7 @@ impl Game {
                                 | "save-size"
                                 | "random-u64"
                                 | "frame-time-us"
+                                | "window-state"
                                 | "input-events"
                                 | "file-call"
                                 | "window-control"
@@ -732,6 +734,11 @@ impl Game {
                 |mut caller: Caller<'_, Data>, operation: u32, value: u32| -> i32 {
                     i32::from(caller.data_mut().window.request(operation, value))
                 },
+            )?;
+            linker.func_wrap(
+                "gamepkg",
+                "window_state",
+                |caller: Caller<'_, Data>| -> u32 { caller.data().window.observation() },
             )?;
             linker.func_wrap(
                 "gamepkg",
@@ -1297,6 +1304,16 @@ impl Game {
         self.store
             .as_mut()
             .map(|store| &mut store.data_mut().user_files)
+    }
+    pub fn observe_fullscreen(&mut self, fullscreen: Option<bool>) {
+        #[cfg(target_os = "linux")]
+        if let Some(native) = &mut self.native {
+            native.window.observe_fullscreen(fullscreen);
+            return;
+        }
+        if let Some(store) = &mut self.store {
+            store.data_mut().window.observe_fullscreen(fullscreen);
+        }
     }
     pub fn window_state(&self) -> crate::window_control::State {
         #[cfg(target_os = "linux")]

@@ -1993,3 +1993,79 @@ frames pass all existing desktop/browser profiles within unchanged thresholds.
 The 120 original cannon captures and nine solid-edge cases regenerate
 byte-identically; translated fractional-DPI tests, strict lint and formatting pass.
 Publication remains source only, application version 0.1.17 unchanged.
+
+
+### Actual fullscreen observation and caption accuracy (recipe 0.1.56)
+
+The port no longer treats an accepted fullscreen request as a completed OS
+change. Before drawing, it reads the host's latest own-window observation and
+updates the original Fullscreen/Windowed caption only from confirmed state.
+Unknown observation retains the last confirmed value. Startup restoration,
+external X11 WM changes and browser fullscreen exits now reach the same source
+path, including after new-game/restart transitions.
+
+The bounded `window_fullscreen()` SDK returns optional boolean state under signed
+input permission in native/core/component and browser runtimes. The underlying
+fixed-width wire value distinguishes unavailable, windowed and fullscreen.
+Observations are stable during the tick, scoped per game/session, independent of
+outgoing command commit/rollback and available without fresh gesture. Denied or
+closed games return unavailable. Request gesture checks and every execution,
+memory, command and network/file restriction remain unchanged.
+
+Actual X11 testing found that winit's fullscreen getter and setter can use stale
+cached state after an external WM change. The trusted UI now queries only its
+owned window's `_NET_WM_STATE` property on the existing display connection, bounded
+to 64 native-width atoms. Missing state means windowed; wrong types/formats,
+oversized properties and errors mean unavailable. Fullscreen commands also repeat
+the same idempotent own-window EWMH request, covering winit's cached no-op path.
+No handles, arbitrary window IDs or new crates become available to guest source.
+Other desktop backends keep their platform window report; Wayland's winit
+implementation reads its last compositor configure. Windows/Wayland runtime
+verification remains separate from the verified X11/browser paths.
+
+Real production source fixtures verify the actual menu boolean alongside the SDK
+value while external WM changes and F11 change the window, then close/reopen in
+saved fullscreen. Native Rust, core Wasm and component Wasm all pass. Both browser
+profiles follow real canvas fullscreen, external API exit, native Escape on a
+private browser desktop and Restart; denied variants stay unavailable even in
+real fullscreen. Raw core/component and generated SDK checks cover unknown vs
+false, repeated reads, independent games, permissions and unchanged deadlines.
+Private X11 tests also cover empty/64/65 atoms, incorrect types/formats, deleted
+properties and a separate hidden window. The original signed caption check now
+requires original Windowed glyphs after mere acceptance, original Fullscreen
+glyphs after observation, external exit updates and last-confirmed preservation.
+
+The full parallel run also exposed execution deadlines in dense rendering scenes.
+Particle composition now allocates only occupied 128-pixel tiles, preserving the
+original full-image grid anchor, row-major command order, every RGBA byte and
+ordered overlap blending. The four-corner/3,000-particle case stores 212,992 bytes
+instead of constructing and scanning a 3,686,400-byte full-screen temporary first;
+all visible image dimensions and transfer charges remain identical. Background
+RGBA initialization repeats the same encoded bytes with bounded block copies
+instead of appending one pixel at a time. Hidden RGB and alpha remain exact.
+
+All 91 logic checks pass, including byte-exact reconstruction of sparse tiles for
+empty, mixed/clipped/overlapping and 3,000-particle fields. Both 67-test signed
+suites pass at their original default parallelism and unchanged caps/deadlines,
+followed by native and both browser gameplay/editor and import/cancel/export
+workflows. Real saved-window tests pass resize/fullscreen/maximized combinations,
+F11, reopen, normal-size preservation, game/OS close, library isolation and damaged
+record fallback. Their obsolete cyan placeholder-title readiness check now uses
+the original independently captured ARKANOO glyph mask and real splash-skip input;
+it retains the existing timeout and rendering-rounding bounds.
+
+Window-specific raw/WIT/SDK/Node checks, actual native and headed-browser exits,
+bounded X11 tests, strict lint and formatting pass. Windows 32/64-bit GNU GUI
+compile checks pass; this is not Windows runtime verification. Source publication
+keeps application version 0.1.17 and binary/package releases unchanged. Other
+native platforms, recorded audio/music, remaining settings/project/version
+controls, arbitrary whole-game scaling and broader port work remain open.
+
+The native controller also defers an accepted pending toggle while window mode
+is unavailable, retaining its parity until a confirmed observation arrives.
+It no longer interprets unavailable as windowed. Six service/GUI controller tests
+include unknown-to-known transitions, both toggle directions and preservation
+of a pending request. Final native/core/component SDK and real-window tests,
+headed browser API/native-Escape exits and saved-window regressions pass with
+this controller; strict lint, formatting and both Windows compile checks pass.
+Test configurations disable both game and app startup update checks.

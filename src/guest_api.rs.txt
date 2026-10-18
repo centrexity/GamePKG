@@ -4,6 +4,8 @@
 pub mod gamepkg {
     /// Relative microseconds at this tick's start; stable throughout the tick.
     pub fn frame_time_us()->u64 {unsafe {host_frame_time_us()}}
+    /// Actual fullscreen observation for this game's window; None if unavailable.
+    pub fn window_fullscreen()->Option<bool>{match unsafe{host_window_state()}{1=>Some(false),3=>Some(true),_=>None}}
     pub fn window_control(operation:u32,value:u32)->bool{unsafe{host_window_control(operation,value)==1}}
     fn __gamepkg_file_call(op:u32,input:&[u8],output:&mut[u8])->Option<u32>{if input.len()>1048840||output.len()>65536{return None;}let n=unsafe{host_file_call(op,input.as_ptr(),input.len() as i32,output.as_mut_ptr(),output.len() as i32)};if n<0{None}else{Some(n as u32)}}
     fn __gamepkg_input_events(output:&mut[u8])->Option<u32>{let n=unsafe{host_input_events(output.as_mut_ptr(),output.len() as i32)};if n<0{None}else{Some(n as u32)}}
@@ -11,6 +13,7 @@ pub mod gamepkg {
     fn __gamepkg_network_call(operation:u32,input:&[u8],output:&mut[u8])->Result<u32,NetworkError>{if input.len()>65540||output.len()>65536{return Err(NetworkError::PermissionDenied);}let n=unsafe{host_network_call(operation,input.as_ptr(),input.len(),output.as_mut_ptr(),output.len())};match n{-2=>Err(NetworkError::Pending),-3=>Err(NetworkError::Failed),n if n<0=>Err(NetworkError::PermissionDenied),n=>Ok(n as u32)}}
     #[link(wasm_import_module = "gamepkg")]
     unsafe extern "C" {
+        #[link_name="window_state"] fn host_window_state()->u32;
         #[link_name="draw_asset_image_linear_straight"] fn host_asset_image_linear_straight(path:*const u8,length:usize,x:f32,y:f32,w:f32,h:f32)->i32;
         #[link_name="frame_time_us"] fn host_frame_time_us()->u64;
         #[link_name="window_control"] fn host_window_control(operation:u32,value:u32)->i32;

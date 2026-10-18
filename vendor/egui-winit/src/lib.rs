@@ -19,6 +19,8 @@ pub use winit;
 
 pub mod clipboard;
 pub mod gamepkg_input;
+#[allow(unsafe_code)] // Trusted UI-only query of its own existing window.
+mod gamepkg_window;
 mod window_settings;
 
 pub use window_settings::WindowSettings;
@@ -1027,7 +1029,7 @@ pub fn update_viewport_info(
         viewport_info.minimized = Some(window.is_minimized().unwrap_or(false));
     }
 
-    viewport_info.fullscreen = Some(window.fullscreen().is_some());
+    viewport_info.fullscreen = gamepkg_window::fullscreen(window);
     viewport_info.focused = Some(window.has_focus());
 }
 
@@ -1473,6 +1475,7 @@ fn process_viewport_command(
         }
         ViewportCommand::Fullscreen(v) => {
             window.set_fullscreen(v.then_some(winit::window::Fullscreen::Borderless(None)));
+            gamepkg_window::set_fullscreen(window, v);
         }
         ViewportCommand::Decorations(v) => window.set_decorations(v),
         ViewportCommand::WindowLevel(l) => window.set_window_level(match l {
