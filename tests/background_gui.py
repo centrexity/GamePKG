@@ -5,8 +5,9 @@ from http.server import SimpleHTTPRequestHandler,ThreadingHTTPServer
 import argparse,json,math,os,shutil,subprocess,tempfile,threading,time
 from PIL import Image
 from gui_test_support import start_display
-parser=argparse.ArgumentParser();parser.add_argument('--images',action='store_true');parser.add_argument('--canonical-particles',action='store_true');parser.add_argument('--canonical-effects',action='store_true');parser.add_argument('--night-circuit-maze',action='store_true');parser.add_argument('--hex-bubbles',action='store_true');parser.add_argument('--matrix-nebula',action='store_true');parser.add_argument('--cyber-aurora',action='store_true');parser.add_argument('--rain-warp',action='store_true');parser.add_argument('--kaleidoscope',action='store_true');parser.add_argument('--voyage',action='store_true');parser.add_argument('--space',action='store_true');parser.add_argument('--fire-sea',action='store_true');parser.add_argument('--procedural',action='store_true');parser.add_argument('--skip-browser',action='store_true');args=parser.parse_args();assert sum([args.images,args.procedural,args.fire_sea,args.space,args.voyage,args.kaleidoscope,args.rain_warp,args.cyber_aurora,args.matrix_nebula,args.hex_bubbles,args.night_circuit_maze,args.canonical_particles,args.canonical_effects])<=1;args.procedural=args.procedural or args.fire_sea or args.space or args.voyage or args.kaleidoscope or args.rain_warp or args.cyber_aurora or args.matrix_nebula or args.hex_bubbles or args.night_circuit_maze or args.canonical_particles or args.canonical_effects
-PROJECT=Path(__file__).resolve().parents[1];PROOF=PROJECT/('target/image-background-proof' if args.images else 'target/canonical-particles-proof' if args.canonical_particles else 'target/canonical-effects-proof' if args.canonical_effects else 'target/night-circuit-maze-proof' if args.night_circuit_maze else 'target/hex-bubbles-proof' if args.hex_bubbles else 'target/matrix-nebula-proof' if args.matrix_nebula else 'target/cyber-aurora-proof' if args.cyber_aurora else 'target/rain-warp-proof' if args.rain_warp else 'target/kaleidoscope-proof' if args.kaleidoscope else 'target/star-voyage-proof' if args.voyage else 'target/space-proof' if args.space else 'target/fire-sea-proof' if args.fire_sea else 'target/procedural-proof' if args.procedural else 'target/background-proof');PROOF.mkdir(parents=True,exist_ok=True)
+parser=argparse.ArgumentParser();parser.add_argument('--images',action='store_true');parser.add_argument('--editor-images',action='store_true');parser.add_argument('--canonical-particles',action='store_true');parser.add_argument('--canonical-effects',action='store_true');parser.add_argument('--night-circuit-maze',action='store_true');parser.add_argument('--hex-bubbles',action='store_true');parser.add_argument('--matrix-nebula',action='store_true');parser.add_argument('--cyber-aurora',action='store_true');parser.add_argument('--rain-warp',action='store_true');parser.add_argument('--kaleidoscope',action='store_true');parser.add_argument('--voyage',action='store_true');parser.add_argument('--space',action='store_true');parser.add_argument('--fire-sea',action='store_true');parser.add_argument('--procedural',action='store_true');parser.add_argument('--skip-browser',action='store_true');args=parser.parse_args();assert sum([args.editor_images,args.images,args.procedural,args.fire_sea,args.space,args.voyage,args.kaleidoscope,args.rain_warp,args.cyber_aurora,args.matrix_nebula,args.hex_bubbles,args.night_circuit_maze,args.canonical_particles,args.canonical_effects])<=1;args.procedural=args.procedural or args.fire_sea or args.space or args.voyage or args.kaleidoscope or args.rain_warp or args.cyber_aurora or args.matrix_nebula or args.hex_bubbles or args.night_circuit_maze or args.canonical_particles or args.canonical_effects
+args.images=args.images or args.editor_images
+PROJECT=Path(__file__).resolve().parents[1];PROOF=PROJECT/('target/editor-image-background-proof' if args.editor_images else 'target/image-background-proof' if args.images else 'target/canonical-particles-proof' if args.canonical_particles else 'target/canonical-effects-proof' if args.canonical_effects else 'target/night-circuit-maze-proof' if args.night_circuit_maze else 'target/hex-bubbles-proof' if args.hex_bubbles else 'target/matrix-nebula-proof' if args.matrix_nebula else 'target/cyber-aurora-proof' if args.cyber_aurora else 'target/rain-warp-proof' if args.rain_warp else 'target/kaleidoscope-proof' if args.kaleidoscope else 'target/star-voyage-proof' if args.voyage else 'target/space-proof' if args.space else 'target/fire-sea-proof' if args.fire_sea else 'target/procedural-proof' if args.procedural else 'target/background-proof');PROOF.mkdir(parents=True,exist_ok=True)
 import zlib
 REFERENCE=json.loads((PROJECT/('tests/fixtures/arkanoo-image-backgrounds.json' if args.images else 'tests/fixtures/arkanoo-canonical-particles.json' if args.canonical_particles else 'tests/fixtures/arkanoo-canonical-effects.json' if args.canonical_effects else 'tests/fixtures/arkanoo-night-circuit-maze.json' if args.night_circuit_maze else 'tests/fixtures/arkanoo-hex-bubbles.json' if args.hex_bubbles else 'tests/fixtures/arkanoo-matrix-nebula.json' if args.matrix_nebula else 'tests/fixtures/arkanoo-cyber-aurora.json' if args.cyber_aurora else 'tests/fixtures/arkanoo-rain-warp.json' if args.rain_warp else 'tests/fixtures/arkanoo-kaleidoscope.json' if args.kaleidoscope else 'tests/fixtures/arkanoo-star-voyage.json' if args.voyage else 'tests/fixtures/arkanoo-space-background.json' if args.space else 'tests/fixtures/arkanoo-fire-sea-background.json' if args.fire_sea else 'tests/fixtures/arkanoo-procedural.json' if args.procedural else 'tests/fixtures/arkanoo-background.json')).read_text())['cases']
 if args.images:
@@ -17,6 +18,17 @@ if any('opengl_rgba_zlib_hex' not in case for case in REFERENCE):
   for case in json.loads((PROJECT/'tests/fixtures'/filename).read_text())['cases']:canonical[(case['level'],case['frame'])]=case
  REFERENCE=[canonical[(case['level'],case['frame'])] if 'opengl_rgba_zlib_hex' not in case else case for case in REFERENCE]
 ORIGINAL=[zlib.decompress(bytes.fromhex(case['opengl_rgba_zlib_hex'])) for case in REFERENCE]
+if args.editor_images:
+ import hashlib
+ ORIGINAL=[]
+ for case in REFERENCE:
+  image=Image.new('RGBA',(1280,720))
+  for tile in case['tiles']:
+   with Image.open(PROJECT/'ports/arkanoo/assets'/tile['path']) as part:image.paste(part,tile['origin'])
+  assert hashlib.sha256(image.tobytes()).hexdigest()==case['bright_rgba_sha256']
+  image=image.point([(value*102+127)//255 for value in range(256)]*3+list(range(256)));raw=image.tobytes()
+  assert hashlib.sha256(raw).hexdigest()==case['editor_rgba_sha256'];ORIGINAL.append(raw)
+
 PHASES=[0,3,7,10,14,17,0]
 KEYS={3:'Right',7:'Up',10:'z',14:'Left',17:'Down'}
 if args.procedural:PHASES=[0,3,11,14,22,25,0];KEYS={3:'Right',11:'Up',14:'z',22:'Left',25:'Down'}
@@ -30,6 +42,7 @@ if args.cyber_aurora:PHASES=[0,3,11,14,20,21,0];KEYS={3:'Right',11:'Up',14:'z',2
 if args.space:PHASES=[0,3,11,14,21,0];KEYS={3:'Right',11:'Up',14:'z',21:'Left'}
 if args.voyage or args.kaleidoscope:PHASES=[0,3,7,8,9,10,0];KEYS={3:'Right',7:'Up',8:'z',9:'Left',10:'Down'}
 if args.images:PHASES=[0,1,2,3,4,5,0];KEYS={1:'Right',2:'Up',3:'z',4:'Left',5:'Down'}
+if args.editor_images:PHASES=[0,1,2,3,4,5,0,5,4,3,2,1,0]
 def source_pixel(case,x,y):
  if 0<=x<1280 and 0<=y<720:
   at=(y*1280+x)*4;return list(ORIGINAL[case][at:at+3])
@@ -37,7 +50,7 @@ def source_pixel(case,x,y):
 from functools import lru_cache
 @lru_cache(maxsize=None)
 def points(case):
- if args.images:return [(0,x,y) for y in [60,61,120,315,316,317,418,419] for x in [0,1,127,255,256,257,511,512,513,638,639]]
+ if args.images:return [(0,x,y) for y in ([60,61,250,315,316,317,418,419] if args.editor_images else [60,61,120,315,316,317,418,419]) for x in [0,1,127,255,256,257,511,512,513,638,639]]
  raw=ORIGINAL[case];bg=REFERENCE[case]['background'].to_bytes(4,'big')[:3]
  visible=[i for i in range(1280*720) if raw[i*4:i*4+3]!=bg]
  if args.space and not visible:return points(11)+points(14)
@@ -76,6 +89,10 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-background-ui-',dir=PROJECT/'ta
   masks={'Right':'HELD_RIGHT','Up':'HELD_UP','z':'HELD_B','Left':'HELD_LEFT','Down':'HELD_DOWN','x':'HELD_Y','Return':'HELD_START','c':'HELD_A'}
   which=''.join('if input&gamepkg::'+masks[key]+'!=0 {'+str(index)+'} else ' for index,key in KEYS.items())+'{0}'
   prefix,rest=entry.read_text().split('let which=',1);_,suffix=rest.split(';let cases=',1);entry.write_text(prefix+'let which='+which+';let cases='+suffix)
+  if args.editor_images:
+   entry.write_text(modules+"""use std::sync::Mutex;static EDITOR:Mutex<Option<physics::Game>>=Mutex::new(None);
+   pub fn game_tick(_:u32,state:u64)->u64 {if let Ok(mut slot)=EDITOR.lock(){if slot.is_none(){let mut game=physics::Game::new();game.mode=6;*slot=Some(game);}if let Some(game)=slot.as_mut(){if let Some(events)=gamepkg::input_events(){for event in events {game.source_input(event.kind,event.x,event.y,event.code);}}game.update(0);render::draw(game);return u64::from(game.editor.background-1);}}state}
+   """)
   base=(source/'manifest.toml').read_text().replace('com.gamepkg.arkanoo','com.gamepkg.background-scene');cli=PROJECT/'target/release/gamepkg';gui=PROJECT/'target/release/gamepkg-gui'
   def run(*arguments):
    r=subprocess.run([str(cli),*map(str,arguments)],env=env,capture_output=True,text=True,timeout=180);assert r.returncode==0,r.stderr
@@ -94,9 +111,14 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-background-ui-',dir=PROJECT/'ta
        if found.returncode==0:window=found.stdout.splitlines()[0];break
        assert time.monotonic()<deadline;time.sleep(.05)
       subprocess.run(['xdotool','windowfocus',window],env=env,check=True)
-      for shift in PHASES:
+      previous_shift=0
+      for phase_index,shift in enumerate(PHASES):
        if held:subprocess.run(['xdotool','keyup',held],env=env,check=True);held=False
-       if shift:held=KEYS[shift];subprocess.run(['xdotool','keydown',held],env=env,check=True)
+       if args.editor_images and phase_index:
+        x=600 if shift==(previous_shift+1)%6 else 530
+        subprocess.run(['xdotool','mousemove','--window',window,str(round(ox+x*scale)),str(round(oy+370*scale)),'click','1'],env=env,check=True)
+       elif shift and not args.editor_images:held=KEYS[shift];subprocess.run(['xdotool','keydown',held],env=env,check=True)
+       previous_shift=shift
        deadline=time.monotonic()+10
        while True:
         path=PROOF/(label+'.png');subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(path)],env=env,check=True,timeout=10);im=Image.open(path).convert('RGB');scale=min(im.width/640,im.height/480);ox=(im.width-640*scale)/2;oy=(im.height-480*scale)/2
@@ -117,14 +139,19 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-background-ui-',dir=PROJECT/'ta
     from selenium.webdriver.common.action_chains import ActionChains
     from selenium.webdriver.common.keys import Keys
     output=root/(profile+'-web');run('web-export',game_id,'--output',output);server=ThreadingHTTPServer(('127.0.0.1',0),partial(Quiet,directory=str(output)));threading.Thread(target=server.serve_forever,daemon=True).start();options=Options();chrome=shutil.which('google-chrome') or shutil.which('google-chrome-stable') or shutil.which('chromium');assert chrome,'Install Chrome or Chromium for browser checks';options.binary_location=chrome
-    for value in ['--headless=new','--no-sandbox','--disable-dev-shm-usage','--enable-unsafe-swiftshader']:options.add_argument(value)
+    for value in ['--headless=new','--no-sandbox','--disable-dev-shm-usage','--enable-unsafe-swiftshader','--window-size=1200,1000']:options.add_argument(value)
     driver=shutil.which('chromedriver') or str(Path(os.environ.get('CHROMEWEBDRIVER','/nonexistent'))/'chromedriver');assert Path(driver).is_file(),'Install matching ChromeDriver'
     browser=webdriver.Chrome(service=Service(driver),options=options);held=False
     try:
      browser.get(f'http://127.0.0.1:{server.server_port}/');wait=WebDriverWait(browser,20);wait.until(lambda b:b.find_element('id','status').text=='Ready to play');browser.find_element('id','play').click();wait.until(lambda b:b.find_element('id','game').get_attribute('data-state'));browser.find_element('id','game').click()
-     for shift in PHASES:
+     previous_shift=0
+     for phase_index,shift in enumerate(PHASES):
       if held:ActionChains(browser).key_up(held).perform();held=False
-      if shift:held={'Right':Keys.ARROW_RIGHT,'Up':Keys.ARROW_UP,'z':'z','Left':Keys.ARROW_LEFT,'Down':Keys.ARROW_DOWN,'x':'x','Return':Keys.ENTER,'c':'c'}[KEYS[shift]];ActionChains(browser).key_down(held).perform()
+      if args.editor_images and phase_index:
+       x=600 if shift==(previous_shift+1)%6 else 530;canvas=browser.find_element('id','game');size=browser.execute_script('return arguments[0].getBoundingClientRect().toJSON()',canvas)
+       ActionChains(browser).move_to_element_with_offset(canvas,(x/640-.5)*size['width'],(370/480-.5)*size['height']).click().perform()
+      elif shift and not args.editor_images:held={'Right':Keys.ARROW_RIGHT,'Up':Keys.ARROW_UP,'z':'z','Left':Keys.ARROW_LEFT,'Down':Keys.ARROW_DOWN,'x':'x','Return':Keys.ENTER,'c':'c'}[KEYS[shift]];ActionChains(browser).key_down(held).perform()
+      previous_shift=shift
       wait.until(lambda b:b.find_element('id','game').get_attribute('data-state')==str(shift))
       actual=browser.execute_script('const c=document.querySelector("#game").getContext("2d");return arguments[0].map(p=>Array.from(c.getImageData(p[1],p[2],1,1).data).slice(0,3));',[(kind,round(x),round(y)) for kind,x,y in points(shift)]);check(actual,expected(shift,640,480),'browser-'+profile+'-'+str(shift))
     finally:

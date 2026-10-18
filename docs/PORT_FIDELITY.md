@@ -12,7 +12,7 @@ work stays open until behavior is verified.
 | Cube 2 | Wayland lock-state access, Windows lock-state runtime validation, remaining uncommon-key/platform behavior and full controller/touch equivalence; further LAN/platform and master authentication/registration fault/service coverage; custom asset/mod workflows; demo/movie output and persistence; hardware-accelerated engine rendering; native platforms beyond Linux. Vulkan currently presents software-rendered engine frames. |
 | DOOM | Original WAD music, spatial stereo effects, six save slots, configuration, desktop controls and the original quit/ENDOOM flow are runtime verified. Music backend selection, multiplayer, additional WADs/mods and broader control/platform coverage remain unfinished. |
 | Zelda3 | External MSU music, replay tools, save states, widescreen, language selection and desktop enhancement settings need support. The adapter fixes the view to 256×224. Original DSP stereo is verified in native and Wasm gameplay/save tests. |
-| Arkanoo | Gravity, speed-triggered portal behavior and ball-to-ball responses are restored with upstream reference and actual-engine tests. Original world proportions and movement/contact order now match upstream reference checks. Per-ball launch timing, life recovery and victory/endless transitions also match original-code fixtures; prior item/score/level caps are removed. Brick health and original blast rules are also verified. All twelve original procedural patterns are restored. Focused mouse movement and original Space/Escape controls are restored. Editor painting/erasing, brick selection, names, save/load, clear confirmation, test return and the custom endless pool are restored. Original ASCII pattern import/export now uses player-selected files. Gameplay cursor confinement/hiding, F11 fullscreen and Q-to-quit outside play are verified in native and browser runtime checks. Normal-size/fullscreen/maximized preferences now persist through the native host. The six main menu actions and fullscreen/effects settings controls are restored. Remaining menu presentation and music/resolution/VSync controls, project-link action and original menus/music still need work. Original shard particles are restored; the metallic ball, glass paddle and normal-brick textures are restored; speed lettering and six campaign image backgrounds are restored and directly verified; editor/menu artwork, whole-window scaling and other art/effects still need work; original penguin/heart-loss behavior is now verified. Current runs do not persist; high score, unlocked level, gravity and effects preferences do. |
+| Arkanoo | Gravity, speed-triggered portal behavior and ball-to-ball responses are restored with upstream reference and actual-engine tests. Original world proportions and movement/contact order now match upstream reference checks. Per-ball launch timing, life recovery and victory/endless transitions also match original-code fixtures; prior item/score/level caps are removed. Brick health and original blast rules are also verified. All twelve original procedural patterns are restored. Focused mouse movement and original Space/Escape controls are restored. Editor painting/erasing, brick selection, names, save/load, clear confirmation, test return and the custom endless pool are restored. Original ASCII pattern import/export now uses player-selected files. Gameplay cursor confinement/hiding, F11 fullscreen and Q-to-quit outside play are verified in native and browser runtime checks. Normal-size/fullscreen/maximized preferences now persist through the native host. The six main menu actions and fullscreen/effects settings controls are restored. Remaining menu presentation and music/resolution/VSync controls, project-link action and original menus/music still need work. Original shard particles are restored; the metallic ball, glass paddle and normal-brick textures are restored; speed lettering and six campaign image backgrounds are restored and directly verified; editor image selection is restored; grid composition, editor/menu lettering, whole-window scaling and other art/effects still need work; original penguin/heart-loss behavior is now verified. Current runs do not persist; high score, unlocked level, gravity and effects preferences do. |
 | 2048 | Random spawning, merge scoring/best score, win/continue/game-over UI, restart, 128-step undo and persistent boards/history are implemented and tested. Byte-sized tile exponents remove the old 32768 cap. Cooperative expectimax assistance/autoplay matches independent upstream reference fixtures; a deterministic 932-turn game reaches 2048. Final signed-package delivery and broader platform verification remain open. |
 
 Evidence: [README coverage table](../README.md#port-feature-coverage),
@@ -1543,3 +1543,27 @@ existing three-level bound) and rockets (672 comparisons, at most one level),
 including stale-pixel clearing. Both 55-check signed runs pass the stricter
 whole-frame bonus-transfer sum. Editor/menu artwork and whole-window scaling
 remain open; these samples do not prove arbitrary-size presentation.
+
+## Original editor backdrops and bounded decoding
+
+The editor replaces its flat-color placeholders with the same six original
+image tiles used by gameplay, followed by the original black alpha-153 overlay.
+The independent actual SDL oracle verifies all complete 1280×720 RGBA hashes.
+Both 56-check signed runs pass, including full 200-metal-brick boards, complete
+outside layers and footer under unchanged transfer/command/memory/time limits.
+Real Previous/Next controls, forward/backward wraparound and original brightness
+pass in all six desktop and both browser configurations: 9,152 sampled RGB
+pixels, maximum difference one. A source-input check preserves selection when
+testing a board and returning; this is session state, as in the original.
+
+A concurrent native particle test exposed repeated PNG decoding cost after the
+backdrop restoration. The tiles now encode identical opaque RGB pixels with
+stored, unfiltered PNG scanlines. The production decoder benchmark preserves
+all RGBA bytes and measures roughly 2.23 ms versus 0.14 ms per 512×512 tile.
+All 56-check runs and native/browser editor/file workflows pass afterward,
+including a repeat of signed checks concurrently with the eight-player editor
+matrix,
+without increasing the native deadline or any quota. The larger encoded files
+have a 40 MiB storage recommendation, verified against a clean native install.
+Original grid blend mode/inclusive endpoints, editor/menu lettering and whole-
+window scaling remain open; restored backdrops do not establish those features.

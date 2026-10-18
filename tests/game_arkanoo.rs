@@ -1867,6 +1867,9 @@ fn editor_focus_reset_clear_confirmation_save_bounds_and_test_return_preserve_th
     let mut game = menu_game();
     game.source_input(9, 0.0, 0.0, 101);
     assert_eq!(game.mode, 6);
+    game.source_input(2, 600.0, 370.0, 1);
+    game.source_input(2, 600.0, 370.0, 1);
+    assert_eq!(game.editor.background, 3);
     game.source_input(9, 0.0, 0.0, 54);
     game.source_input(2, 20.0, 100.0, 1);
     game.source_input(1, 50.0, 100.0, 1);
@@ -1883,6 +1886,10 @@ fn editor_focus_reset_clear_confirmation_save_bounds_and_test_return_preserve_th
     game.update(0);
     assert_eq!(game.mode, 6);
     assert!(!game.testing);
+    assert_eq!(
+        game.editor.background, 3,
+        "Testing a board discarded the selected background"
+    );
     assert_eq!(game.editor.cells[0], 6);
     game.source_input(9, 0.0, 0.0, 99);
     assert!(game.editor.confirm);

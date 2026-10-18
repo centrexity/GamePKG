@@ -2977,3 +2977,104 @@ fn original_six_campaign_image_backgrounds_preserve_full_pixels_and_dense_scene_
         }
     }
 }
+
+#[test]
+#[ignore = "requires tests/arkanoo.py fixtures"]
+fn original_editor_background_brightness_and_full_metal_boards_reach_native_and_core_wasm() {
+    use sha2::Digest;
+    let reference: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-image-backgrounds.json")).unwrap();
+    for (index, case) in reference["cases"].as_array().unwrap().iter().enumerate() {
+        let root = isolated_library();
+        let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
+        for dense in [false, true, true] {
+            assert_eq!(
+                game.step(2684354560 | 512 | if dense { 1024 } else { 0 } | index as u32)
+                    .unwrap(),
+                index as u64 + 1
+            );
+            let commands = &game.frame().commands;
+            assert!(matches!(
+                commands[6],
+                Command::Rect {
+                    x: 0.0,
+                    y: 60.0,
+                    width: 640.0,
+                    height: 360.0,
+                    rgba: 153
+                }
+            ));
+            let mut pixels = vec![0u8; 1280 * 720 * 4];
+            for (command, tile) in commands[..6].iter().zip(case["tiles"].as_array().unwrap()) {
+                let Command::Image {
+                    x,
+                    y,
+                    width,
+                    height,
+                    image,
+                } = command
+                else {
+                    panic!("Editor image tile missing")
+                };
+                let left = tile["origin"][0].as_u64().unwrap() as usize;
+                let top = tile["origin"][1].as_u64().unwrap() as usize;
+                let w = tile["size"][0].as_u64().unwrap() as usize;
+                let h = tile["size"][1].as_u64().unwrap() as usize;
+                assert_eq!(
+                    (*x, *y, *width, *height),
+                    (
+                        left as f32 * 0.5,
+                        60.0 + top as f32 * 0.5,
+                        w as f32 * 0.5,
+                        h as f32 * 0.5
+                    )
+                );
+                assert_eq!(image.size(), [w, h]);
+                for row in 0..h {
+                    pixels[((top + row) * 1280 + left) * 4..((top + row) * 1280 + left + w) * 4]
+                        .copy_from_slice(&image.pixels()[row * w * 4..(row + 1) * w * 4]);
+                }
+            }
+            for pixel in pixels.chunks_exact_mut(4) {
+                for channel in &mut pixel[..3] {
+                    *channel = ((u16::from(*channel) * 102 + 127) / 255) as u8;
+                }
+            }
+            assert_eq!(
+                hex::encode(sha2::Sha256::digest(&pixels)),
+                case["editor_rgba_sha256"].as_str().unwrap()
+            );
+            let bytes: usize = commands
+                .iter()
+                .filter_map(|command| match command {
+                    Command::Image { image, .. } | Command::LinearImage { image, .. } => {
+                        Some(image.pixels().len())
+                    }
+                    _ => None,
+                })
+                .sum();
+            assert!(bytes <= gamepkg::drawing::MAX_IMAGE_BYTES);
+            assert!(commands.len() < gamepkg::drawing::MAX_COMMANDS);
+            assert!(
+                commands.iter().any(|c| matches!(
+                    c,
+                    Command::Image {
+                        x: 110.0,
+                        y: 432.0,
+                        ..
+                    }
+                )),
+                "Editor footer dropped"
+            );
+            if dense {
+                assert_eq!(
+                    commands
+                        .iter()
+                        .filter(|c| matches!(c,Command::Image{image,..} if image.size()==[91,21]))
+                        .count(),
+                    400
+                );
+            }
+        }
+    }
+}

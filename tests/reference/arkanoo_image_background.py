@@ -1,6 +1,6 @@
 """Pinned original image backgrounds through actual SDL_image/OpenGL; maintainer only."""
 from pathlib import Path
-import argparse,hashlib,json,os,subprocess,sys,tempfile,zlib
+import argparse,hashlib,json,os,subprocess,sys,tempfile,zlib,struct
 from PIL import Image
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from gui_test_support import start_display
@@ -15,12 +15,12 @@ c=r'''
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-int main(int argc,char**argv){if(argc!=3||SDL_Init(SDL_INIT_VIDEO))return 1;
+int main(int argc,char**argv){if((argc!=3&&argc!=4)||SDL_Init(SDL_INIT_VIDEO))return 1;
 SDL_Window*w=SDL_CreateWindow("background-reference",0,0,1280,720,SDL_WINDOW_HIDDEN);if(!w)return 2;
 SDL_Renderer*r=SDL_CreateRenderer(w,-1,0);if(!r)return 3;SDL_RendererInfo info;if(SDL_GetRendererInfo(r,&info)||strcmp(info.name,"opengl"))return 4;
 SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY,"linear");SDL_Texture*t=IMG_LoadTexture(r,argv[1]);if(!t)return 5;
 SDL_SetRenderDrawColor(r,0,0,0,255);SDL_RenderClear(r);SDL_SetTextureBlendMode(t,SDL_BLENDMODE_BLEND);SDL_SetTextureAlphaMod(t,atoi(argv[2]));
-if(SDL_RenderCopy(r,t,NULL,NULL))return 6;unsigned char*p=malloc(1280*720*4);if(!p)return 7;
+if(SDL_RenderCopy(r,t,NULL,NULL))return 6;if(argc==4){SDL_SetRenderDrawBlendMode(r,SDL_BLENDMODE_BLEND);SDL_SetRenderDrawColor(r,0,0,0,atoi(argv[3]));if(SDL_RenderFillRect(r,NULL))return 10;}unsigned char*p=malloc(1280*720*4);if(!p)return 7;
 if(SDL_RenderReadPixels(r,NULL,SDL_PIXELFORMAT_RGBA32,p,1280*4))return 8;
 if(fwrite(p,1,1280*720*4,stdout)!=1280*720*4)return 9;
 free(p);SDL_DestroyTexture(t);SDL_DestroyRenderer(r);SDL_DestroyWindow(w);SDL_Quit();return 0;}
@@ -33,13 +33,25 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-image-background-reference-') a
   for level in range(1,7):
    path=args.original/f'assets/background{level}.png';assert hashlib.sha256(path.read_bytes()).hexdigest()==HASHES[level-1]
    bright=subprocess.check_output([root/'reference',path,'255'],env=env);game=subprocess.check_output([root/'reference',path,'64'],env=env)
-   assert len(bright)==len(game)==1280*720*4
+   editor=subprocess.check_output([root/'reference',path,'255','153'],env=env)
+   assert len(bright)==len(game)==len(editor)==1280*720*4
+   projected=bytearray(bright)
+   for at in range(0,len(projected),4):
+    for channel in range(3):projected[at+channel]=(projected[at+channel]*102+127)//255
+   assert bytes(projected)==editor
    image=Image.frombytes('RGBA',(1280,720),bright);tiles=[]
    for top in [0,512]:
     for left in [0,512,1024]:
      box=(left,top,min(left+512,1280),min(top+512,720));tile=image.crop(box);name=f'background{level}-{len(tiles)}.png';pixels=tile.tobytes()
      tiles.append(dict(path=name,origin=[left,top],size=list(tile.size),rgba_sha256=hashlib.sha256(pixels).hexdigest()))
-     if args.write_assets:args.write_assets.mkdir(parents=True,exist_ok=True);tile.save(args.write_assets/name)
-   cases.append(dict(level=level,original_sha256=HASHES[level-1],bright_rgba_sha256=hashlib.sha256(bright).hexdigest(),game_rgba_sha256=hashlib.sha256(game).hexdigest(),game_rgba_zlib_hex=zlib.compress(game).hex(),tiles=tiles))
-  print(json.dumps(dict(revision='9d613e78c9ed5657ae7fda9206cd4a82a893b7c8',rendering_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),main_sha256=hashlib.sha256(main.read_bytes()).hexdigest(),scale_quality='linear',width=1280,height=720,original_size=[2816,1536],alpha_mod=64,cases=cases),indent=2))
+     if args.write_assets:
+      args.write_assets.mkdir(parents=True,exist_ok=True);assert all(alpha==255 for alpha in pixels[3::4])
+      # Opaque RGB with unfiltered stored scanlines avoids repeated Deflate and
+      # PNG-predictor work when these large images exceed the bounded LRU.
+      rgb=tile.convert('RGB').tobytes();w,h=tile.size
+      scanlines=b''.join(b'\0'+rgb[row*w*3:(row+1)*w*3] for row in range(h))
+      def chunk(kind,data):return struct.pack('>I',len(data))+kind+data+struct.pack('>I',zlib.crc32(kind+data))
+      (args.write_assets/name).write_bytes(b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',struct.pack('>IIBBBBB',w,h,8,2,0,0,0))+chunk(b'IDAT',zlib.compress(scanlines,0))+chunk(b'IEND',b''))
+   cases.append(dict(level=level,original_sha256=HASHES[level-1],bright_rgba_sha256=hashlib.sha256(bright).hexdigest(),editor_rgba_sha256=hashlib.sha256(editor).hexdigest(),game_rgba_sha256=hashlib.sha256(game).hexdigest(),game_rgba_zlib_hex=zlib.compress(game).hex(),tiles=tiles))
+  print(json.dumps(dict(revision='9d613e78c9ed5657ae7fda9206cd4a82a893b7c8',rendering_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),main_sha256=hashlib.sha256(main.read_bytes()).hexdigest(),scale_quality='linear',width=1280,height=720,original_size=[2816,1536],alpha_mod=64,editor_overlay=153,cases=cases),indent=2))
  finally:display.terminate();display.wait(timeout=10)
