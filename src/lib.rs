@@ -9,6 +9,8 @@ pub mod gui;
 pub mod manifest;
 #[doc(hidden)]
 pub mod memory_budget;
+#[doc(hidden)]
+pub mod music;
 pub mod pack;
 mod portability;
 pub mod source;

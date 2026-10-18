@@ -6,6 +6,25 @@ use std::{
     path::Path,
 };
 use zip::ZipArchive;
+#[path = "archive_file.rs"]
+mod archive_file;
+use archive_file::CursorFile;
+use std::sync::Arc;
+
+#[derive(Clone)]
+struct SharedSnapshot {
+    // Close the last cursor before deleting the private snapshot on Windows.
+    cursor: CursorFile,
+    _owner: Arc<tempfile::NamedTempFile>,
+}
+impl SharedSnapshot {
+    fn new(file: tempfile::NamedTempFile) -> Result<Self> {
+        Ok(Self {
+            cursor: CursorFile::new(file.as_file().try_clone()?),
+            _owner: Arc::new(file),
+        })
+    }
+}
 
 pub const MAX_FILE: u64 = 64 * 1024 * 1024;
 pub const MAX_TOTAL: u64 = 256 * 1024 * 1024;
@@ -65,20 +84,20 @@ fn register_path(paths: &mut BTreeMap<String, (String, bool)>, name: &str) -> Re
     Ok(())
 }
 pub struct Package {
-    archive: ZipArchive<File>,
+    archive: ZipArchive<CursorFile>,
     pub entries: BTreeMap<String, u64>,
-    raw: File,
+    raw: CursorFile,
     verified: bool,
     shared_refs: BTreeMap<String, crate::pool::Reference>,
-    shared_files: BTreeMap<String, tempfile::NamedTempFile>,
+    shared_files: BTreeMap<String, SharedSnapshot>,
 }
 impl Package {
     pub fn open(path: &Path) -> Result<Self> {
-        let raw_file = File::open(path)?;
-        let mut archive = ZipArchive::new(raw_file.try_clone()?)?;
+        let raw_file = CursorFile::new(File::open(path)?);
+        let mut archive = ZipArchive::new(raw_file.clone())?;
         // zip's name index collapses duplicates. Count raw central records before
         // using that index, so duplicate names cannot disappear during parsing.
-        let mut raw = File::open(path)?;
+        let mut raw = raw_file.clone();
         raw.seek(SeekFrom::Start(archive.central_directory_start()))?;
         let mut count = 0usize;
         loop {
@@ -165,6 +184,21 @@ impl Package {
         }
         Ok(data)
     }
+    /// Share verified descriptors and snapshots with a background reader.
+    /// No archive path is reopened, and each reader has independent positions.
+    pub fn try_clone_verified(&self) -> Result<Self> {
+        if !self.verified {
+            bail!("package reader clone requires verification");
+        }
+        Ok(Self {
+            archive: self.archive.clone(),
+            entries: self.entries.clone(),
+            raw: self.raw.clone(),
+            verified: true,
+            shared_refs: self.shared_refs.clone(),
+            shared_files: self.shared_files.clone(),
+        })
+    }
     pub fn has_shared_assets(&self) -> bool {
         !self.shared_refs.is_empty()
     }
@@ -189,7 +223,7 @@ impl Package {
             let bytes = pool.read(reference)?;
             let mut snapshot = tempfile::NamedTempFile::new()?;
             std::io::Write::write_all(&mut snapshot, &bytes)?;
-            files.insert(reference.sha256.clone(), snapshot);
+            files.insert(reference.sha256.clone(), SharedSnapshot::new(snapshot)?);
         }
         self.shared_files = files;
         Ok(())
@@ -206,11 +240,11 @@ impl Package {
             if offset > reference.size {
                 bail!("shared asset offset exceeds size");
             }
-            let file = self
+            let file = &mut self
                 .shared_files
                 .get_mut(&reference.sha256)
                 .context("shared asset is not resolved")?
-                .as_file_mut();
+                .cursor;
             file.seek(SeekFrom::Start(offset))?;
             let mut bytes = vec![0; length.min((reference.size - offset) as usize)];
             file.read_exact(&mut bytes)?;
@@ -254,6 +288,22 @@ impl Package {
             .copied()
             .context("asset is missing")
     }
+    pub(crate) fn asset_compression(
+        &mut self,
+        path: &str,
+    ) -> Result<Option<zip::CompressionMethod>> {
+        self.asset_size(path)?;
+        if self.shared_refs.contains_key(path) {
+            return Ok(None);
+        }
+        let index = self
+            .archive
+            .index_for_name(&format!("assets/{path}"))
+            .context("asset is missing")?;
+        // Inspect metadata without constructing a decompressor. Callers use
+        // this result before reserving any codec workspace.
+        Ok(Some(self.archive.by_index_raw(index)?.compression()))
+    }
     /// Borrow a bounded reader over a verified asset without extracting it or
     /// allocating a complete host-side copy. The borrow ends before returning.
     pub fn with_asset_reader<T>(
@@ -268,12 +318,12 @@ impl Package {
         }
         let length = usize::try_from(size).context("asset length exceeds address space")?;
         if let Some(reference) = self.shared_refs.get(path) {
-            let file = self
+            let file = &mut self
                 .shared_files
                 .get_mut(&reference.sha256)
                 .context("shared asset is not resolved")?
-                .as_file_mut();
-            if file.metadata()?.len() != size {
+                .cursor;
+            if file.length()? != size {
                 bail!("shared asset size changed");
             }
             file.seek(SeekFrom::Start(0))?;
@@ -315,6 +365,127 @@ impl Package {
 mod tests {
     use super::*;
     use std::io::Write;
+    #[test]
+    fn verified_clones_read_concurrently_without_reopening_or_sharing_positions() {
+        for method in [zip::CompressionMethod::Stored, zip::CompressionMethod::Zstd] {
+            let temporary = tempfile::tempdir().unwrap();
+            let path = temporary.path().join("parallel.gamepkg");
+            let a = Arc::new((0..262147).map(|i| (i % 251) as u8).collect::<Vec<_>>());
+            let b = Arc::new(
+                (0..131123)
+                    .map(|i| (255 - i % 239) as u8)
+                    .collect::<Vec<_>>(),
+            );
+            let mut writer = zip::ZipWriter::new(File::create(&path).unwrap());
+            for (name, bytes) in [("a", &a), ("b", &b)] {
+                writer
+                    .start_file(
+                        format!("assets/{name}"),
+                        zip::write::SimpleFileOptions::default().compression_method(method),
+                    )
+                    .unwrap();
+                writer.write_all(bytes).unwrap();
+            }
+            writer.finish().unwrap();
+            let mut package = Package::open(&path).unwrap();
+            assert!(package.try_clone_verified().is_err());
+            assert!(package.asset_compression("a").is_err());
+            package.mark_verified();
+            assert_eq!(package.asset_compression("a").unwrap(), Some(method));
+            assert!(package.asset_compression("missing").is_err());
+            assert!(package.asset_compression("../a").is_err());
+            let first = package.try_clone_verified().unwrap();
+            let second = package.try_clone_verified().unwrap();
+            let barrier = Arc::new(std::sync::Barrier::new(3));
+            let workers = [first, second]
+                .into_iter()
+                .enumerate()
+                .map(|(worker, mut reader)| {
+                    let a = a.clone();
+                    let b = b.clone();
+                    let barrier = barrier.clone();
+                    std::thread::spawn(move || {
+                        barrier.wait();
+                        for n in 0..128 {
+                            let (name, expected) = if (n + worker) % 2 == 0 {
+                                ("a", &a)
+                            } else {
+                                ("b", &b)
+                            };
+                            let start = n * 7919 % expected.len();
+                            let length = 1024.min(expected.len() - start);
+                            assert_eq!(
+                                reader.asset_chunk(name, start as u64, length).unwrap(),
+                                expected[start..start + length]
+                            );
+                            if n % 16 == 0 {
+                                reader
+                                    .with_asset_reader(name, MAX_FILE, |input, size| {
+                                        let mut bytes = vec![0; size];
+                                        input.read_exact(&mut bytes)?;
+                                        assert_eq!(bytes, **expected);
+                                        Ok(())
+                                    })
+                                    .unwrap();
+                            }
+                        }
+                    })
+                })
+                .collect::<Vec<_>>();
+            barrier.wait();
+            for _ in 0..32 {
+                assert_eq!(package.asset_chunk("a", 1, 4096).unwrap(), a[1..4097]);
+            }
+            for worker in workers {
+                worker.join().unwrap();
+            }
+            // Cache-path replacement must not redirect a verified clone's descriptor.
+            let mut clone = package.try_clone_verified().unwrap();
+            let replacement = temporary.path().join("replacement");
+            std::fs::write(&replacement, b"not the verified archive").unwrap();
+            std::fs::rename(&replacement, &path).unwrap();
+            drop(package);
+            assert_eq!(clone.asset_chunk("b", 0, 16).unwrap(), b[..16]);
+        }
+    }
+    #[test]
+    fn cloned_shared_snapshots_live_until_the_last_reader_drops() {
+        let temporary = tempfile::tempdir().unwrap();
+        let path = temporary.path().join("shared.gamepkg");
+        zip::ZipWriter::new(File::create(&path).unwrap())
+            .finish()
+            .unwrap();
+        let mut package = Package::open(&path).unwrap();
+        package.mark_verified();
+        let digest = "12".repeat(32);
+        package.set_shared_refs(BTreeMap::from([(
+            "data".to_owned(),
+            crate::pool::Reference {
+                sha256: digest.clone(),
+                size: 10,
+            },
+        )]));
+        let mut snapshot = tempfile::NamedTempFile::new().unwrap();
+        snapshot.write_all(b"abcdefghij").unwrap();
+        let snapshot_path = snapshot.path().to_owned();
+        package
+            .shared_files
+            .insert(digest, SharedSnapshot::new(snapshot).unwrap());
+        let mut clone = package.try_clone_verified().unwrap();
+        drop(package);
+        assert!(snapshot_path.exists());
+        assert_eq!(clone.asset_chunk("data", 3, 4).unwrap(), b"defg");
+        clone
+            .with_asset_reader("data", 10, |input, _| {
+                let mut bytes = [0; 10];
+                input.read_exact(&mut bytes)?;
+                assert_eq!(&bytes, b"abcdefghij");
+                Ok(())
+            })
+            .unwrap();
+        drop(clone);
+        assert!(!snapshot_path.exists());
+    }
     #[test]
     fn complete_asset_reader_checks_crc_without_a_consumer_eof_probe() {
         let temp = tempfile::tempdir().unwrap();
@@ -461,7 +632,9 @@ mod tests {
             assert!(!called);
             let mut snapshot = tempfile::NamedTempFile::new().unwrap();
             snapshot.write_all(b"abc").unwrap();
-            package.shared_files.insert(digest, snapshot);
+            package
+                .shared_files
+                .insert(digest, SharedSnapshot::new(snapshot).unwrap());
             for _ in 0..2 {
                 package
                     .with_asset_reader("shared", 3, |input, length| {
@@ -474,13 +647,17 @@ mod tests {
                     })
                     .unwrap();
             }
-            package
+            let mut changed = package
                 .shared_files
                 .values_mut()
                 .next()
                 .unwrap()
-                .write_all(b" beyond signed size")
+                ._owner
+                .as_file()
+                .try_clone()
                 .unwrap();
+            changed.seek(SeekFrom::End(0)).unwrap();
+            changed.write_all(b" beyond signed size").unwrap();
             assert!(package
                 .with_asset_reader("shared", MAX_FILE, |_, _| {
                     called = true;

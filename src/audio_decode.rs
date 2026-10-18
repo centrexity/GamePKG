@@ -7,12 +7,32 @@ use std::sync::{
 };
 use wasmtime::{
     Config, Engine, ExternType, Instance, Memory, Module, Store, StoreLimits, StoreLimitsBuilder,
-    TypedFunc,
+    TypedFunc, UpdateDeadline,
 };
 const MAX_INPUT: usize = 8 * 1024 * 1024;
 const MAX_VALUES: usize = 1600;
 const MAX_MEMORY: usize = 16 * 1024 * 1024;
 const WORK_BYTES: u32 = 512 * 1024;
+struct DecoderData {
+    limits: StoreLimits,
+    expires: std::time::Instant,
+}
+fn check_deadline(data: &DecoderData) -> Result<UpdateDeadline> {
+    ensure!(
+        std::time::Instant::now() < data.expires,
+        "audio decode interrupted: time limit exceeded"
+    );
+    Ok(UpdateDeadline::Continue(1))
+}
+fn arm(store: &mut Store<DecoderData>) {
+    store.data_mut().expires = std::time::Instant::now() + std::time::Duration::from_millis(100);
+    store.set_epoch_deadline(1);
+}
+fn configure(store: &mut Store<DecoderData>) {
+    store.limiter(|data| &mut data.limits);
+    store.epoch_deadline_callback(|context| check_deadline(context.data()));
+    arm(store);
+}
 struct Shared {
     engine: Engine,
     module: Module,
@@ -134,9 +154,14 @@ impl Factory {
             .tables(1)
             .table_elements(4096)
             .build();
-        let mut store = Store::new(&self.0.engine, limits);
-        store.limiter(|limits| limits);
-        store.set_epoch_deadline(20);
+        let mut store = Store::new(
+            &self.0.engine,
+            DecoderData {
+                limits,
+                expires: std::time::Instant::now(),
+            },
+        );
+        configure(&mut store);
         let instance = Instance::new(&mut store, &self.0.module, &[])?;
         let memory = instance
             .get_memory(&mut store, "memory")
@@ -149,7 +174,7 @@ impl Factory {
         let channels = instance.get_typed_func::<(), u32>(&mut store, "decoder_channels")?;
         let work = instance.get_typed_func::<(), u32>(&mut store, "decoder_work")?;
         let rewind = instance.get_typed_func::<(), i32>(&mut store, "decoder_rewind")?;
-        store.set_epoch_deadline(20);
+        arm(&mut store);
         let pointer = reserve.call(&mut store, encoded_len as u32)?;
         ensure!(pointer != 0, "decoder input allocation rejected");
         let start = pointer as usize;
@@ -170,7 +195,7 @@ impl Factory {
             input.read(&mut extra)? == 0,
             "encoded music exceeds declared length"
         );
-        store.set_epoch_deadline(20);
+        arm(&mut store);
         ensure!(
             open.call(&mut store, ())? == 0,
             "invalid or over-budget MPEG audio"
@@ -240,7 +265,7 @@ impl Factory {
 }
 pub struct Stream {
     _factory: Factory,
-    store: Store<StoreLimits>,
+    store: Store<DecoderData>,
     memory: Memory,
     read: TypedFunc<u32, i32>,
     output: TypedFunc<(), u32>,
@@ -275,7 +300,7 @@ impl Stream {
             "invalid decoded output buffer"
         );
         ensure!(!self.failed, "decoder is stopped after an error");
-        self.store.set_epoch_deadline(20);
+        arm(&mut self.store);
         let result = (|| -> Result<usize> {
             let count = self.read.call(&mut self.store, out.len() as u32)?;
             ensure!(
@@ -312,7 +337,7 @@ impl Stream {
         if self.failed {
             bail!("decoder is stopped after an error");
         }
-        self.store.set_epoch_deadline(20);
+        arm(&mut self.store);
         match self.rewind.call(&mut self.store, ()) {
             Ok(0) => Ok(()),
             result => {
@@ -320,5 +345,66 @@ impl Stream {
                 bail!("decoder rewind failed: {result:?}");
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn first_delayed_epoch_observes_the_real_deadline_without_waiting_twenty_more_ticks() {
+        let mut config = Config::new();
+        config.epoch_interruption(true);
+        let engine = Engine::new(&config).unwrap();
+        let module = Module::new(
+            &engine,
+            wat::parse_str("(module(func(export \"spin\")(loop br 0)))").unwrap(),
+        )
+        .unwrap();
+        let mut store = Store::new(
+            &engine,
+            DecoderData {
+                limits: StoreLimits::default(),
+                expires: std::time::Instant::now(),
+            },
+        );
+        configure(&mut store);
+        let ticks = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let seen = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let (send, receive) = std::sync::mpsc::channel();
+        let checked = seen.clone();
+        let clock_ticks = ticks.clone();
+        store.epoch_deadline_callback(move |context| {
+            let result = check_deadline(context.data());
+            if result.is_err() {
+                checked.store(clock_ticks.load(Ordering::SeqCst), Ordering::SeqCst);
+                let _ = send.send(());
+            }
+            result
+        });
+        let spin = Instance::new(&mut store, &module, &[])
+            .unwrap()
+            .get_typed_func::<(), ()>(&mut store, "spin")
+            .unwrap();
+        arm(&mut store);
+        let clock = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(125));
+            ticks.store(1, Ordering::SeqCst);
+            engine.increment_epoch();
+            if receive
+                .recv_timeout(std::time::Duration::from_millis(500))
+                .is_err()
+            {
+                // Release a regressed nominal-tick implementation so the test
+                // fails instead of leaving an infinite Wasm call behind.
+                ticks.store(21, Ordering::SeqCst);
+                for _ in 0..20 {
+                    engine.increment_epoch();
+                }
+            }
+        });
+        assert!(spin.call(&mut store, ()).is_err());
+        clock.join().unwrap();
+        assert_eq!(seen.load(Ordering::SeqCst), 1);
     }
 }

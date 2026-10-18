@@ -181,3 +181,67 @@ permission integration and browser/desktop SDK calls remain unfinished. Existing
 game limits are not increased.
 The browser harness still fetches encoded ArrayBuffers; streaming browser input
 and its separate buffer accounting remain required before exposing playback.
+
+## Native background playback service
+
+`music::Service` now connects verified assets to a background decoder and a
+bounded output-clock queue. It accepts a permission flag from its trusted host
+caller, keeps one pending request (latest wins), and provides play, pause,
+resume, volume and stop. No game tick is needed to advance playback. The existing
+`audio::Player::music_source` consumes this output at source-frame boundaries,
+preserves stereo and device phase, clips PCM addition and applies master gain.
+
+Package clones use independent logical cursors over the same already-open file,
+with each seek/read protected as one operation and reads bounded to 64 KiB.
+They never reopen the cache path. A clone shares private snapshot ownership, so
+dropping the parent cannot delete assets still needed by a worker. Tests cover
+concurrent stored/Zstd reads, cache-path replacement and last-reader cleanup.
+
+The handoff uses six atomic blocks of up to 800 stereo frames, retaining the
+existing 4,800-frame/100 ms queue bound. It uses safe Rust only. Output reads
+never acquire the producer/control mutex; a regression holds that mutex while
+requiring queued PCM to remain readable. Generation tags discard replaced tracks
+without consuming a newer track's data. One guarded consumer owns the output
+clock; cloned handles are not independent playback copies. Sticky thread-unpark
+tokens prevent missed capacity/control wakeups. Pause freezes consumption, while
+zero volume advances silently. End is reported after queued samples are consumed.
+
+The worker reserves 64 KiB for audio staging/queue data and the chosen decoder
+ceiling separately. Tests reserve 9.9375 MiB for the guest, 6 MiB for the decoder
+and 64 KiB for staging under a 16 MiB total. Decoder errors, insufficient memory,
+replacement bursts and shutdown release reservations in ownership order. Output
+handles retain the queue's reservation until the last handle drops. These are
+managed-data reservations, not a total host-process/JIT/metadata memory limit.
+
+Decoder execution now checks a monotonic 100 ms deadline at epoch wakeups,
+without fuel. A delayed-first-epoch regression verifies interruption at that
+first expired wakeup, rather than waiting another twenty nominal timer ticks.
+Trusted file loading resets the execution deadline before decoding.
+
+```sh
+python3 tools/check_music_worker.py /path/to/original/music --null-device
+```
+
+The pinned nine-track corpus uses signed temporary fixtures, simultaneous drawing
+asset reads and no game ticks. Complete output lengths match original SDL_mixer
+at 44.1 kHz followed by whole-buffer SDL conversion to 48 kHz. Full PCM regression
+hashes and input hashes are required; remaining one/two-unit SDL decoder
+differences are reported separately. The private ALSA null device additionally
+verifies actual CPAL callback consumption, muted-master progress, nonzero output,
+pause/resume and cleanup while the main thread is idle. This is not physical
+speaker or other-platform verification. Users need none of these maintainer tools.
+
+The service currently supports stored embedded assets and resolved raw shared
+snapshots. It explicitly rejects compressed embedded music until decompressor
+workspace can be reserved. The generic archive reader still supports Zstd.
+Game runtime/SDK wiring, helper bundling, playlist/menu controls, browser playback
+and streaming input remain unfinished. Existing PCM device-rate conversion also
+needs broader fidelity verification.
+
+Combined original music/effect mixing remains open. The generic callback adds
+music to already mixed guest PCM, whereas [SDL_mixer mixes music before individual
+effect channels](https://github.com/libsdl-org/SDL_mixer/blob/release-2.8.0/src/mixer.c).
+Intermediate saturation makes these different: music 30,000 followed by effects
++30,000 and -30,000 yields 2,767 in that order, versus 30,000 if effects are
+premixed first. Faithful combined playback needs the original per-voice mixing
+and independent effect timing; the current ports are not migrated to this service.

@@ -14,6 +14,7 @@ struct Buffer {
     phase: f64,
     current: [i16; 2],
     gain: f32,
+    music: Option<crate::music::Output>,
 }
 impl Buffer {
     fn new(volume: u8) -> Self {
@@ -22,6 +23,7 @@ impl Buffer {
             phase: 1.0,
             current: [0; 2],
             gain: volume as f32 / 100.0,
+            music: None,
         }
     }
     fn append(&mut self, samples: &[i16]) -> bool {
@@ -46,6 +48,17 @@ impl Buffer {
     fn next(&mut self, rate: u32) -> [f32; 2] {
         while self.phase >= 1.0 {
             self.current = self.samples.pop_front().unwrap_or([0; 2]);
+            if let Some(music) = &self.music {
+                let mut frame = [[0; 2]; 1];
+                if music.read(&mut frame) == 1 {
+                    for channel in 0..2 {
+                        self.current[channel] = (i32::from(self.current[channel])
+                            + i32::from(frame[0][channel]))
+                        .clamp(i16::MIN as i32, i16::MAX as i32)
+                            as i16;
+                    }
+                }
+            }
             self.phase -= 1.0;
         }
         self.phase += 48000.0 / rate as f64;
@@ -82,6 +95,13 @@ impl Sink {
     }
 }
 impl Player {
+    /// Host-only continuous source consumed by the device clock, outside game ticks.
+    pub fn music_source(&self, output: Option<crate::music::Output>) -> bool {
+        self.sink.buffer.lock().is_ok_and(|mut buffer| {
+            buffer.music = output;
+            true
+        })
+    }
     #[cfg(any(feature = "gui", test))]
     pub(crate) fn sink(&self) -> Sink {
         self.sink.clone()
@@ -202,6 +222,21 @@ fn output<T: cpal::SizedSample + cpal::FromSample<f32>>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn continuous_music_uses_device_phase_and_mixes_stereo_before_master_gain() {
+        let source = crate::music::fixture_output(&[[30000, -30000], [123, -456]]);
+        let mut buffer = Buffer::new(50);
+        buffer.music = Some(source.clone());
+        assert!(buffer.append_stereo(&[30000, -30000, 1000, 2000]));
+        let first = [32767.0 / 65536.0, -0.5];
+        assert_eq!(buffer.next(96000), first);
+        assert_eq!(buffer.next(96000), first);
+        assert_eq!(source.played_frames(), 1);
+        assert_eq!(buffer.next(96000), [1123.0 / 65536.0, 1544.0 / 65536.0]);
+        assert_eq!(source.played_frames(), 2);
+        buffer.next(96000);
+        assert_eq!(buffer.next(96000), [0.0; 2]);
+    }
     #[test]
     fn queue_volume_silence_and_resampling_are_bounded() {
         let mut buffer = Buffer::new(50);

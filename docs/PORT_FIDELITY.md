@@ -2302,3 +2302,39 @@ An existing asset is denied before verification. Full decode/rewind, original
 mixer lengths and native/browser comparisons pass; no music files, user/release
 signing keys or compiled helpers are published. Browser tests still fetch encoded ArrayBuffers,
 so streaming browser input and its additional buffer accounting remain open.
+
+The native host now has a background music service and output-clock handoff.
+Verified package clones share the original open descriptor and private snapshot
+ownership while retaining independent logical cursors. Seek/read operations are
+atomic with respect to other readers and bounded to 64 KiB. Concurrent stored/
+Zstd reads, cache-path replacement and parent/last-reader snapshot lifetimes have
+regressions. No archive path is reopened or asset extracted for the worker.
+
+The service has one pending latest-request slot, 6 MiB decoder accounting in the
+corpus and a separate 64 KiB staging reservation. Its six-block atomic handoff
+retains a 4,800-stereo-frame maximum. An observed try-lock defect could substitute
+silence for queued PCM while a control lock was held; the positive regression
+first failed and now requires the actual frame during that contention. Safe
+atomics, generation tags and sticky unpark notifications remove that dependency
+and prevent stale/future track corruption or lost capacity wakeups. Concurrent
+stereo-block tests cover wraparound, partial blocks, bounds and exhausted counters.
+Pause, gain, silent advancement, replacement bursts, decode faults, stop and
+ownership cleanup have checks. Decoder deadlines now use monotonic elapsed time
+and interrupt on the first expired epoch wakeup without instruction fuel.
+
+All nine full tracks pass signed-package output-clock playback while another
+thread reads drawing assets, with zero game ticks. Complete lengths match the
+original 44.1 kHz mixer then 48 kHz output conversion; input and full PCM hashes
+are pinned in the regression fixture. Remaining one/two-unit decoder differences
+are measured rather than treated as bit-exact SDL parity. Actual CPAL callbacks
+through a private ALSA null device advance at zero master gain, produce nonzero
+output when unmuted, and pause/resume without main-thread ticks. Physical speakers,
+native graphical gameplay and other platforms were not verified here.
+
+This host backend does not yet expose music to the ports. Runtime/SDK permission
+and guest-memory wiring, helper bundling, browser playback, original playlist/
+settings controls and decompressor workspace accounting remain required. Compressed
+embedded music fails explicitly until its workspace is charged. The generic PCM
+callback also cannot reproduce original music-first per-effect saturation from
+already clipped guest effect PCM; original per-voice mixing and fully independent
+effect timing remain open. No existing cap, game recipe or host version is raised.

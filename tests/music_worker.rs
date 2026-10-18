@@ -1,0 +1,267 @@
+#[path = "common/music_fixture.rs"]
+mod music_fixture;
+use gamepkg::{
+    audio_decode::Factory,
+    memory_budget::Budget,
+    music::{Service, Status, HOST_BYTES},
+};
+use std::{
+    io::Read,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+};
+struct Drawing {
+    stop: Arc<AtomicBool>,
+    thread: Option<std::thread::JoinHandle<u64>>,
+}
+impl Drop for Drawing {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Relaxed);
+        if let Some(thread) = self.thread.take() {
+            assert!(thread.join().unwrap() > 0);
+        }
+    }
+}
+#[cfg(feature = "audio")]
+#[test]
+#[ignore = "requires the private ALSA null configuration from tools/check_music_worker.py --null-device"]
+fn actual_device_callback_drives_music_while_the_game_thread_is_idle() {
+    assert!(std::env::var_os("ALSA_CONFIG_PATH").is_some());
+    let root = std::path::PathBuf::from(std::env::var_os("GAMEPKG_MUSIC_INPUT_DIR").unwrap());
+    let mut paths = std::fs::read_dir(root)
+        .unwrap()
+        .map(|p| p.unwrap().path())
+        .filter(|p| p.extension().is_some_and(|extension| extension == "mp3"))
+        .collect::<Vec<_>>();
+    paths.sort();
+    let paths = &paths[..1];
+    let (_temporary, package) = music_fixture::signed_music_package(paths);
+    let factory = Factory::new(
+        &std::fs::read(std::env::var_os("GAMEPKG_AUDIO_DECODER_WASM").unwrap()).unwrap(),
+    )
+    .unwrap();
+    let budget = Budget::new(16 * 1048576);
+    let guest = budget
+        .reserve(budget.limit() - 6 * 1048576 - HOST_BYTES)
+        .unwrap();
+    let service = Service::new(factory, &package, true, budget.clone(), 6 * 1048576).unwrap();
+    let output = service.output();
+    let muted = gamepkg::audio::Player::new(0).unwrap();
+    assert!(muted.music_source(Some(output.clone())));
+    service
+        .play(&format!(
+            "music/{}",
+            paths[0].file_name().unwrap().to_str().unwrap()
+        ))
+        .unwrap();
+    let start = std::time::Instant::now();
+    while output.played_frames() < 4800 {
+        assert_ne!(
+            output.status(),
+            Status::Failed,
+            "{}",
+            service.error().unwrap_or_default()
+        );
+        assert!(start.elapsed() < std::time::Duration::from_secs(5));
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    assert_eq!(muted.non_silent_frames(), 0);
+    assert!(muted.error().is_none());
+    assert!(muted.music_source(None));
+    drop(muted);
+    let player = gamepkg::audio::Player::new(100).unwrap();
+    assert!(player.music_source(Some(output.clone())));
+    let start = std::time::Instant::now();
+    while player.non_silent_frames() == 0 {
+        assert_ne!(
+            output.status(),
+            Status::Failed,
+            "{}",
+            service.error().unwrap_or_default()
+        );
+        assert!(start.elapsed() < std::time::Duration::from_secs(5));
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    service.pause(true).unwrap();
+    let paused = output.played_frames();
+    std::thread::sleep(std::time::Duration::from_millis(10));
+    assert_eq!(output.played_frames(), paused);
+    service.pause(false).unwrap();
+    let start = std::time::Instant::now();
+    while output.played_frames() == paused {
+        assert!(start.elapsed() < std::time::Duration::from_secs(5));
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    assert!(player.error().is_none());
+    assert!(player.music_source(None));
+    drop(player);
+    drop(service);
+    assert_eq!(budget.used(), guest.bytes() + HOST_BYTES);
+    drop(output);
+    assert_eq!(budget.used(), guest.bytes());
+    drop(guest);
+    assert_eq!(budget.used(), 0);
+    println!("MUSIC_CALLBACK_OK");
+}
+#[test]
+#[ignore = "requires built decoder, original music and SDL references from tools/check_music_worker.py"]
+fn original_tracks_play_from_signed_package_on_the_output_clock_without_game_ticks() {
+    use sha2::{Digest, Sha256};
+    let root = std::path::PathBuf::from(std::env::var_os("GAMEPKG_MUSIC_INPUT_DIR").unwrap());
+    let mut paths = std::fs::read_dir(root)
+        .unwrap()
+        .map(|p| p.unwrap().path())
+        .filter(|p| p.extension().is_some_and(|extension| extension == "mp3"))
+        .collect::<Vec<_>>();
+    paths.sort();
+    assert!(!paths.is_empty());
+    let golden: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-music-worker-reference.json")).unwrap();
+    let cases = golden["cases"].as_array().unwrap();
+    assert_eq!(
+        paths.len(),
+        cases.len(),
+        "the complete pinned original corpus is required"
+    );
+    let wasm = std::fs::read(std::env::var_os("GAMEPKG_AUDIO_DECODER_WASM").unwrap()).unwrap();
+    let factory = Factory::new(&wasm).unwrap();
+    assert!(factory.maximum_memory_bytes() <= 6 * 1048576);
+    let (_temporary, package) = music_fixture::signed_music_package(&paths);
+    let budget = Budget::new(16 * 1048576);
+    let guest = budget
+        .reserve(budget.limit() - 6 * 1048576 - HOST_BYTES)
+        .unwrap();
+    let service = Service::new(factory, &package, true, budget.clone(), 6 * 1048576).unwrap();
+    let output = service.output();
+    let mut rendering = package.try_clone_verified().unwrap();
+    let expected_hello = package.entries["assets/hello.txt"];
+    let expected = std::fs::read(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/minimal/assets/hello.txt"),
+    )
+    .unwrap();
+    let stop = Arc::new(AtomicBool::new(false));
+    let flag = stop.clone();
+    let thread = std::thread::spawn(move || {
+        let mut count = 0;
+        while !flag.load(Ordering::Relaxed) {
+            assert_eq!(
+                rendering
+                    .asset_chunk("hello.txt", 0, expected_hello as usize)
+                    .unwrap(),
+                expected
+            );
+            count += 1;
+            std::thread::sleep(std::time::Duration::from_micros(100));
+        }
+        count
+    });
+    let drawing = Drawing {
+        stop,
+        thread: Some(thread),
+    };
+    drop(package);
+    for path in paths {
+        let name = path.file_name().unwrap().to_str().unwrap();
+        let expected = cases
+            .iter()
+            .find(|case| case["name"].as_str() == Some(name))
+            .expect("unknown music corpus entry");
+        let mut input = std::fs::File::open(&path).unwrap();
+        let mut input_hash = Sha256::new();
+        let mut input_block = [0u8; 65536];
+        loop {
+            let count = input.read(&mut input_block).unwrap();
+            if count == 0 {
+                break;
+            }
+            input_hash.update(&input_block[..count]);
+        }
+        assert_eq!(
+            hex::encode(input_hash.finalize()),
+            expected["input_sha256"].as_str().unwrap()
+        );
+        let reference =
+            std::path::PathBuf::from(std::env::var_os("GAMEPKG_AUDIO_REFERENCE_ROOT").unwrap())
+                .join(name)
+                .with_extension("s16");
+        let mut reference = std::fs::File::open(reference).unwrap();
+        let expected_samples = reference.metadata().unwrap().len() / 2;
+        service.play(&format!("music/{name}")).unwrap();
+        let mut samples = 0u64;
+        let mut hash = Sha256::new();
+        let mut different = 0u64;
+        let mut maximum_delta = 0u32;
+        let mut audible = false;
+        let mut stereo = false;
+        let mut block = [[0i16; 2]; 800];
+        let mut original = [0u8; 3200];
+        let mut step = 0;
+        let start = std::time::Instant::now();
+        loop {
+            let count = output.read(&mut block[..[1, 113, 7, 799, 800][step % 5]]);
+            step += 1;
+            if count > 0 {
+                reference.read_exact(&mut original[..count * 4]).unwrap();
+                for (sample, bytes) in block[..count]
+                    .iter()
+                    .flatten()
+                    .zip(original.chunks_exact(2))
+                {
+                    hash.update(sample.to_le_bytes());
+                    let expected = i16::from_le_bytes([bytes[0], bytes[1]]);
+                    let delta = (i32::from(*sample) - i32::from(expected)).unsigned_abs();
+                    different += u64::from(delta != 0);
+                    maximum_delta = maximum_delta.max(delta);
+                    audible |= *sample != 0;
+                }
+                stereo |= block[..count].iter().any(|frame| frame[0] != frame[1]);
+                samples += count as u64 * 2;
+            }
+            assert!(budget.used() <= budget.limit());
+            assert_ne!(
+                output.status(),
+                Status::Failed,
+                "{}",
+                service.error().unwrap_or_default()
+            );
+            if output.status() == Status::Ended {
+                break;
+            }
+            assert!(
+                start.elapsed() < std::time::Duration::from_secs(10),
+                "worker stalled on {name}"
+            );
+            if count == 0 {
+                std::thread::sleep(std::time::Duration::from_micros(100));
+            }
+        }
+        assert_eq!(
+            samples, expected_samples,
+            "complete output-clock length: {name}"
+        );
+        assert_eq!(output.played_frames() * 2, samples);
+        assert!(audible && stereo);
+        assert_eq!(reference.read(&mut [0]).unwrap(), 0);
+        let actual_hash = hex::encode(hash.finalize());
+        assert_eq!(samples, expected["samples"].as_u64().unwrap());
+        assert_eq!(
+            actual_hash,
+            expected["sha256"].as_str().unwrap(),
+            "complete output PCM: {name}"
+        );
+        println!(
+            "MUSIC_WORKER_JSON {}",
+            serde_json::json!({"name":name,"samples":samples,
+                "sha256":actual_hash,"sdl_different":different,"sdl_maximum_delta":maximum_delta})
+        );
+    }
+    drop(drawing);
+    drop(service);
+    assert_eq!(budget.used(), guest.bytes() + HOST_BYTES);
+    drop(output);
+    assert_eq!(budget.used(), guest.bytes());
+    drop(guest);
+    assert_eq!(budget.used(), 0);
+}
