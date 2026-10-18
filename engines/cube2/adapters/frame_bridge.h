@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <errno.h>
 #include "syscall_guard.h"
+#include "gamepkg_mouse.h"
 #include <SDL_mixer.h>
 #include <dirent.h>
 #include <fcntl.h>
@@ -23,7 +24,7 @@ static uint32_t gamepkg_previous = 0;
 static int gamepkg_width = 640, gamepkg_height = 480;
 static_assert(SDL_NUM_SCANCODES == 512, "Update the host SDL scancode bounds together");
 static bool gamepkg_keys[SDL_NUM_SCANCODES] = {};
-static bool gamepkg_mouse[6] = {};
+static gamepkg_mouse_state gamepkg_mouse;
 // Keep rendering independent of SDL's fixed-size offscreen/EGL window surface.
 // The original engine's default framebuffer is a host-owned resizable target.
 static GLuint gamepkg_framebuffer = 0, gamepkg_colorbuffer = 0, gamepkg_depthbuffer = 0;
@@ -189,12 +190,13 @@ static void gamepkg_input()
         {
             if(++events > 64) exit(2);
             uint32_t button=gamepkg_le32(packet+4), pressed=gamepkg_le32(packet+8), mods=gamepkg_le32(packet+12);
-            if((button!=2 && button!=4 && button!=5) || pressed>1 || (mods & ~uint32_t(0x3fc3))) exit(2);
+            if((button<1 || button>8) || pressed>1 || (mods & ~uint32_t(0x3fc3))) exit(2);
             SDL_SetModState(SDL_Keymod(mods));
+            if(!gamepkg_mouse.update(button,pressed!=0,false)) continue;
             SDL_Event event; memset(&event,0,sizeof(event));
-            event.type=pressed ? SDL_MOUSEBUTTONDOWN : SDL_MOUSEBUTTONUP;
+            event.type=gamepkg_mouse.down[button] ? SDL_MOUSEBUTTONDOWN : SDL_MOUSEBUTTONUP;
             event.button.state=pressed ? SDL_PRESSED : SDL_RELEASED;event.button.button=button;
-            gamepkg_mouse[button]=pressed!=0;SDL_PushEvent(&event);continue;
+            SDL_PushEvent(&event);continue;
         }
         if(!memcmp(packet, "GPW1", 4))
         {
@@ -227,11 +229,12 @@ static void gamepkg_input()
         {
             if(++events > 64) exit(2);
             if(gamepkg_le32(packet+4) || gamepkg_le32(packet+8) || gamepkg_le32(packet+12)) exit(2);
-            for(unsigned i=0;i<6;i++) if(gamepkg_mouse[i])
+            for(unsigned i=1;i<9;i++) if(gamepkg_mouse.release(i))
             {
                 SDL_Event event;memset(&event,0,sizeof(event));event.type=SDL_MOUSEBUTTONUP;
-                event.button.state=SDL_RELEASED;event.button.button=i;SDL_PushEvent(&event);gamepkg_mouse[i]=false;
+                event.button.state=SDL_RELEASED;event.button.button=i;SDL_PushEvent(&event);
             }
+            gamepkg_previous &= ~(3u<<16);
             for(unsigned i=4;i<SDL_NUM_SCANCODES;i++) if(gamepkg_keys[i])
             {
                 SDL_Event event; memset(&event, 0, sizeof(event));
@@ -288,12 +291,15 @@ static void gamepkg_input()
         event.key.keysym.scancode = SDL_GetScancodeFromKey(keys[i]);
         SDL_PushEvent(&event);
     }
-    for(unsigned i=0;i<2;i++) if((buttons ^ gamepkg_previous)&(1u<<(16+i)))
+    for(unsigned i=0;i<2;i++)
     {
+        unsigned button = i ? SDL_BUTTON_RIGHT : SDL_BUTTON_LEFT;
+        if(!gamepkg_mouse.update(button,(buttons&(1u<<(16+i)))!=0,true)) continue;
         SDL_Event event; memset(&event, 0, sizeof(event));
-        event.type = buttons&(1u<<(16+i)) ? SDL_MOUSEBUTTONDOWN : SDL_MOUSEBUTTONUP;
-        event.button.state = buttons&(1u<<(16+i)) ? SDL_PRESSED : SDL_RELEASED;
-        event.button.button = i ? SDL_BUTTON_RIGHT : SDL_BUTTON_LEFT;
+        bool pressed=gamepkg_mouse.down[button];
+        event.type = pressed ? SDL_MOUSEBUTTONDOWN : SDL_MOUSEBUTTONUP;
+        event.button.state = pressed ? SDL_PRESSED : SDL_RELEASED;
+        event.button.button = button;
         SDL_PushEvent(&event);
     }
     gamepkg_previous = buttons;

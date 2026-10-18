@@ -429,3 +429,49 @@ bindings, focus changes and close with Caps/Num enabled before launch on its
 private X11 display. Both i686 and x86_64 Windows all-features build checks pass;
 these are compilation evidence only. Strict lint, formatting and public-site link
 checks pass. Source-only publication retains app version 0.1.17.
+
+
+Ordered pointer follow-up: Cube 2 now consumes all eight original physical mouse buttons on X11
+and both wheel axes from the same native event sequence as physical keys and
+accepted text. Mouse/wheel events carry the held modifier sides and current lock
+snapshot at their position in that sequence. Primary/secondary clicks no longer
+collapse into a once-per-paint held mask. The click used to regain mouse capture
+is suppressed. Fractional wheel movement retains logical-pixel scaling and clears
+on focus loss. The host resets this state when starting a new game.
+
+The portable keyboard mapper also no longer feeds Cube 2 alongside its physical
+key path. This removes unexpected controller actions from original keys such as
+Z and avoids fabricating left-Shift while right-Shift is held. Controller/touch
+actions still use their existing portable mapping. Reviewed mouse state combines
+physical and controller sources; either source can release without releasing the
+other, and focus reset releases their shared effective state once. The production
+C++ state regression covers both overlap orders, complete clicks and reset.
+
+A signed private package rebuild/cache/integrity regression passes. With the
+freshly rebuilt Vulkan GUI and original engine, all eight original mouse bindings,
+four wheel directions, physical Z without an extra fire action and a rapid
+right-Ctrl/middle-click/key-release/wheel burst produce the exact saved result.
+Original script state observes right=1/left=0 during the click and 0/0 at the
+following wheel event. Original menus, console preferences, physical Pause,
+keypad, right-Ctrl, media-key focus reset and close still pass with Caps/Num
+initially enabled. No media is published. The X11 test remaps its tenth physical button to logical 10/11/12 to exercise
+original MOUSE10/11/12 as well as the five common buttons. Native Wayland
+additional-button normalization, relative-motion placement within the
+event sequence, recovery of physically held controls after the UI input lease
+expires, physical/controller keyboard overlap, native Wayland state and wider
+hardware/platform coverage remain open.
+
+
+Modifier timing qualification: native host packets retain event-time modifier
+snapshots, and the GUI regression proves original key-binding state order. The
+bridge still sets SDL's global modifier state while assembling its queued events.
+Restoring that global state at dispatch time for every original SDL_GetModState
+consumer remains open; the binding-order test does not establish that stronger
+property. This is separate from the already verified host packet fields.
+
+Ordered-pointer validation: the final all-features suite passes 399 tests with
+55 dedicated media/platform checks ignored. Production loading/mouse C++ state
+checks run through the normal suite. The signed package and eight-button original
+GUI regressions run separately and pass; strict lint and formatting pass. Both
+app entries are rebuilt locally. This is source progress, without a new release
+and without a claim of complete input, rendering or cross-platform parity.

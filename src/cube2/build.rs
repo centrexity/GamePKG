@@ -67,6 +67,10 @@ pub fn compile_with_options(optimize: bool) -> Result<Vec<u8>> {
         stage.path().join("engine/gamepkg_loading.h"),
         include_bytes!("../../engines/cube2/adapters/loading.h"),
     )?;
+    fs::write(
+        stage.path().join("engine/gamepkg_mouse.h"),
+        include_bytes!("../../engines/cube2/adapters/mouse.h"),
+    )?;
     #[derive(serde::Deserialize)]
     #[serde(deny_unknown_fields)]
     struct LoadingPatch {

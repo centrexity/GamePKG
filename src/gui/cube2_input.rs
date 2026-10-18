@@ -1,17 +1,24 @@
-//! Ordered native keyboard/text events; controllers retain the action mask.
-use eframe::egui::{Event, Modifiers, MouseWheelUnit, PointerButton, Vec2};
+//! Ordered native keyboard, text, button and wheel events.
+use eframe::egui::{Event, MouseWheelUnit, Vec2};
 
+#[derive(Debug, PartialEq)]
+enum Action<'a> {
+    Key(u32, bool, bool, u32),
+    Modifiers(u32),
+    Text(&'a str),
+    Button(u32, bool, u32),
+    Wheel(i32, i32, u32),
+    Clear,
+}
 #[derive(Default)]
 pub struct Desktop {
     locks: u32,
     keys: std::collections::HashSet<egui_winit::winit::keyboard::KeyCode>,
+    pointer: Pointer,
 }
 impl Desktop {
     fn set_locks(&mut self, caps: bool, num: bool) {
         self.locks = (u32::from(caps) * 0x2000) | (u32::from(num) * 0x1000);
-    }
-    pub fn lock_modifiers(&self) -> u32 {
-        self.locks
     }
     fn modifiers(&self) -> u32 {
         use egui_winit::winit::keyboard::KeyCode::*;
@@ -29,13 +36,18 @@ impl Desktop {
         .filter(|(key, _)| self.keys.contains(key))
         .fold(self.locks, |mods, (_, bit)| mods | bit)
     }
-    pub fn forward(
+    fn translate<'a>(
         &mut self,
-        game: &mut crate::runtime::Game,
-        events: &[egui_winit::gamepkg_input::Event],
+        events: &'a [egui_winit::gamepkg_input::Event],
         captured: bool,
-    ) -> anyhow::Result<()> {
-        use egui_winit::gamepkg_input::Event as Native;
+        recaptured: bool,
+        pixels_per_point: f32,
+    ) -> anyhow::Result<Vec<Action<'a>>> {
+        use egui_winit::{
+            gamepkg_input::Event as Native,
+            winit::event::{MouseButton, MouseScrollDelta},
+        };
+        let mut actions = Vec::new();
         if !captured {
             for event in events {
                 if let Native::Locks { caps, num } = event {
@@ -43,8 +55,8 @@ impl Desktop {
                 }
             }
             self.keys.clear();
-            game.cube2_clear_input();
-            return Ok(());
+            self.pointer = Pointer::default();
+            return Ok(vec![Action::Clear]);
         }
         for event in events {
             match event {
@@ -59,27 +71,98 @@ impl Desktop {
                         self.keys.remove(code);
                     }
                     if let Some(scan) = scancode(*code) {
-                        game.cube2_key(scan, *pressed, *repeat, self.modifiers());
+                        actions.push(Action::Key(scan, *pressed, *repeat, self.modifiers()));
                     }
                 }
                 Native::Locks { caps, num } => {
                     self.set_locks(*caps, *num);
-                    game.cube2_modifiers(self.modifiers());
+                    actions.push(Action::Modifiers(self.modifiers()));
                 }
-                Native::Text(text) => game.cube2_text(text),
+                Native::Text(text) => actions.push(Action::Text(text)),
+                Native::Button { button, pressed } => {
+                    // The click used to regain capture belongs to the host window.
+                    if recaptured && *button == MouseButton::Left && *pressed {
+                        continue;
+                    }
+                    let button = match button {
+                        MouseButton::Left => 1,
+                        MouseButton::Middle => 2,
+                        MouseButton::Right => 3,
+                        MouseButton::Back => 4,
+                        MouseButton::Forward => 5,
+                        // X11 reserves logical buttons 4..7 for wheel axes.
+                        MouseButton::Other(number @ 10..=12) => u32::from(*number - 4),
+                        _ => continue,
+                    };
+                    actions.push(Action::Button(button, *pressed, self.modifiers()));
+                }
+                Native::Wheel(delta) => {
+                    let (unit, delta) = match delta {
+                        MouseScrollDelta::LineDelta(x, y) => {
+                            (MouseWheelUnit::Line, Vec2::new(*x, *y))
+                        }
+                        MouseScrollDelta::PixelDelta(p) => {
+                            let scale = if pixels_per_point.is_finite() && pixels_per_point > 0.0 {
+                                pixels_per_point
+                            } else {
+                                1.0
+                            };
+                            (
+                                MouseWheelUnit::Point,
+                                Vec2::new(p.x as f32, p.y as f32) / scale,
+                            )
+                        }
+                    };
+                    let (x, y) = self.pointer.wheel(unit, delta);
+                    if x != 0 || y != 0 {
+                        actions.push(Action::Wheel(x, y, self.modifiers()));
+                    }
+                }
                 Native::Focus(false) => {
                     self.keys.clear();
-                    game.cube2_clear_input();
+                    self.pointer = Pointer::default();
+                    actions.push(Action::Clear);
                 }
                 Native::Overflow => {
                     self.keys.clear();
-                    game.cube2_clear_input();
+                    self.pointer = Pointer::default();
                     anyhow::bail!("desktop input exceeded its bounded queue");
                 }
                 _ => {}
             }
         }
-        game.cube2_modifiers(self.modifiers());
+        actions.push(Action::Modifiers(self.modifiers()));
+        Ok(actions)
+    }
+    pub fn forward(
+        &mut self,
+        game: &mut crate::runtime::Game,
+        events: &[egui_winit::gamepkg_input::Event],
+        captured: bool,
+        recaptured: bool,
+        pixels_per_point: f32,
+    ) -> anyhow::Result<()> {
+        let actions = match self.translate(events, captured, recaptured, pixels_per_point) {
+            Ok(actions) => actions,
+            Err(error) => {
+                game.cube2_clear_input();
+                return Err(error);
+            }
+        };
+        for action in actions {
+            match action {
+                Action::Key(scan, pressed, repeat, mods) => {
+                    game.cube2_key(scan, pressed, repeat, mods)
+                }
+                Action::Modifiers(mods) => game.cube2_modifiers(mods),
+                Action::Text(text) => game.cube2_text(text),
+                Action::Button(button, pressed, mods) => {
+                    game.cube2_mouse_button(button, pressed, mods)
+                }
+                Action::Wheel(x, y, mods) => game.cube2_wheel(x, y, mods),
+                Action::Clear => game.cube2_clear_input(),
+            }
+        }
         Ok(())
     }
 }
@@ -367,54 +450,147 @@ pub(super) fn scancode(key: egui_winit::winit::keyboard::KeyCode) -> Option<u32>
     })
 }
 
-fn modifiers(mods: Modifiers) -> u32 {
-    u32::from(mods.shift)
-        | (u32::from(mods.ctrl) << 6)
-        | (u32::from(mods.alt) << 8)
-        | (u32::from(mods.mac_cmd) << 10)
-}
-pub fn forward(
-    game: &mut crate::runtime::Game,
-    events: &[Event],
-    pointer: &mut Pointer,
-    locks: u32,
-) {
-    for event in events {
-        match event {
-            Event::PointerButton {
-                button,
-                pressed,
-                modifiers: mods,
-                ..
-            } => {
-                let button = match button {
-                    PointerButton::Middle => Some(2),
-                    PointerButton::Extra1 => Some(4),
-                    PointerButton::Extra2 => Some(5),
-                    _ => None,
-                };
-                if let Some(button) = button {
-                    game.cube2_mouse_button(button, *pressed, modifiers(*mods) | locks);
-                }
-            }
-            Event::MouseWheel {
-                unit,
-                delta,
-                modifiers: mods,
-            } => {
-                let (x, y) = pointer.wheel(*unit, *delta);
-                if x != 0 || y != 0 {
-                    game.cube2_wheel(x, y, modifiers(*mods) | locks);
-                }
-            }
-            _ => {}
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use eframe::egui::Modifiers;
+    #[test]
+    fn mouse_and_wheel_keep_keyboard_order_and_right_side_modifiers() {
+        use egui_winit::{
+            gamepkg_input::Event as N,
+            winit::{
+                event::{MouseButton as B, MouseScrollDelta as W},
+                keyboard::KeyCode as K,
+            },
+        };
+        let events = [
+            N::Locks {
+                caps: true,
+                num: true,
+            },
+            N::Key {
+                code: K::ControlRight,
+                pressed: true,
+                repeat: false,
+            },
+            N::Button {
+                button: B::Middle,
+                pressed: true,
+            },
+            N::Button {
+                button: B::Middle,
+                pressed: false,
+            },
+            N::Key {
+                code: K::ControlRight,
+                pressed: false,
+                repeat: false,
+            },
+            N::Wheel(W::LineDelta(-1.0, 2.0)),
+        ];
+        let actual = Desktop::default()
+            .translate(&events, true, false, 1.0)
+            .unwrap();
+        assert_eq!(
+            actual,
+            [
+                Action::Modifiers(0x3000),
+                Action::Key(228, true, false, 0x3080),
+                Action::Button(2, true, 0x3080),
+                Action::Button(2, false, 0x3080),
+                Action::Key(228, false, false, 0x3000),
+                Action::Wheel(1, 2, 0x3000),
+                Action::Modifiers(0x3000)
+            ]
+        );
+    }
+    #[test]
+    fn all_eight_original_buttons_keep_complete_clicks_and_recapture_does_not_fire() {
+        use egui_winit::{gamepkg_input::Event as N, winit::event::MouseButton as B};
+        let mut desktop = Desktop::default();
+        for (button, number) in [
+            (B::Left, 1),
+            (B::Middle, 2),
+            (B::Right, 3),
+            (B::Back, 4),
+            (B::Forward, 5),
+            (B::Other(10), 6),
+            (B::Other(11), 7),
+            (B::Other(12), 8),
+        ] {
+            let events = [
+                N::Button {
+                    button,
+                    pressed: true,
+                },
+                N::Button {
+                    button,
+                    pressed: false,
+                },
+            ];
+            assert_eq!(
+                desktop.translate(&events, true, false, 1.0).unwrap(),
+                [
+                    Action::Button(number, true, 0),
+                    Action::Button(number, false, 0),
+                    Action::Modifiers(0)
+                ]
+            );
+        }
+        let click = [
+            N::Button {
+                button: B::Left,
+                pressed: true,
+            },
+            N::Button {
+                button: B::Left,
+                pressed: false,
+            },
+        ];
+        assert_eq!(
+            desktop.translate(&click, true, true, 1.0).unwrap(),
+            [Action::Button(1, false, 0), Action::Modifiers(0)]
+        );
+        assert_eq!(
+            desktop.translate(&click, false, false, 1.0).unwrap(),
+            [Action::Clear]
+        );
+    }
+    #[test]
+    fn physical_wheel_scaling_and_focus_reset_do_not_leak_fractional_motion() {
+        use egui_winit::{
+            gamepkg_input::Event as N,
+            winit::{dpi::PhysicalPosition, event::MouseScrollDelta as W},
+        };
+        let mut desktop = Desktop::default();
+        let wheel = N::Wheel(W::PixelDelta(PhysicalPosition::new(0.0, 40.0)));
+        assert_eq!(
+            desktop
+                .translate(std::slice::from_ref(&wheel), true, false, 2.0)
+                .unwrap(),
+            [Action::Modifiers(0)]
+        );
+        assert_eq!(
+            desktop
+                .translate(
+                    &[N::Focus(false), N::Focus(true), wheel.clone()],
+                    true,
+                    false,
+                    2.0
+                )
+                .unwrap(),
+            [Action::Clear, Action::Modifiers(0)]
+        );
+        assert_eq!(
+            desktop.translate(&[wheel], true, false, 2.0).unwrap(),
+            [Action::Wheel(0, 1, 0), Action::Modifiers(0)]
+        );
+        assert!(desktop.translate(&[N::Overflow], true, false, 1.0).is_err());
+        assert_eq!(
+            desktop.translate(&[], true, false, 1.0).unwrap(),
+            [Action::Modifiers(0)]
+        );
+    }
     #[test]
     fn resolution_uses_physical_pixels_and_preserves_widescreen_aspect() {
         assert_eq!(resolution(Vec2::new(960.0, 720.0), 1.0, None), (960, 720));
@@ -532,14 +708,6 @@ mod tests {
                 "desktop key must carry ordered events: {key:?}"
             );
         }
-        assert_eq!(
-            modifiers(Modifiers {
-                ctrl: true,
-                shift: true,
-                ..Default::default()
-            }),
-            65
-        );
     }
     #[test]
     fn desktop_lock_snapshots_survive_key_release_and_combine_with_modifier_sides() {
@@ -556,7 +724,7 @@ mod tests {
             assert_eq!(desktop.modifiers(), expected | 128 | 1);
             desktop.keys.clear();
             assert_eq!(desktop.modifiers(), expected);
-            assert_eq!(desktop.lock_modifiers(), expected);
+            assert_eq!(desktop.locks, expected);
         }
     }
     #[test]

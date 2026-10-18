@@ -169,3 +169,9 @@ id = "cube2_desktop_lock_state"
 requirements = ["Initial Caps Lock and Num Lock state", "Focus-return resynchronization", "Preserve lock bits on keyboard/mouse/wheel events", "Reject unknown modifier bits", "Native Wayland and Windows behavior"]
 status = "in_progress"
 notes = "Trusted host hook reads the existing X11 connection's XKB locked modifiers using actual Caps/Num keysym masks, or Windows GetKeyState toggle bits. State is scoped to the active focused game viewport and deduplicated. A private X11 desktop verifies four initial combinations and focus changes; host protocol and modifier-state unit tests pass. Native Wayland, rapidly queued X11 lock ordering and Windows runtime coverage remain open. Guest source policy is unchanged."
+
+[[work]]
+id = "cube2_ordered_pointer_and_single_keyboard_path"
+requirements = ["All eight original physical mouse buttons on X11", "Ordered keyboard/button/wheel delivery", "Preserve modifier sides and lock snapshots", "Physical/controller mouse overlap", "No duplicate portable keyboard actions", "DPI-aware wheel fractions and capture/reset behavior"]
+status = "implemented_runtime_verified_linux_x11"
+notes = "Native host translation tests cover complete clicks, right-side modifiers, wheel DPI/fractions, recapture and focus reset. Production C++ state tests cover effective physical/controller button overlap in both release orders. The signed package and original Vulkan GUI regressions pass all eight original mouse bindings, four wheel directions, original Z without extra fire, and right-Ctrl/middle-click/release/wheel ordering through original script state and scoped saving. Initial-lock startup also passes. SDL global modifier restoration at event dispatch, Wayland additional-button normalization, relative-motion ordering, lease recovery, physical/controller keyboard overlap, hardware devices and wider platform verification remain open."

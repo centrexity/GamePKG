@@ -83,7 +83,6 @@ pub struct App {
     pending_window_maximize: bool,
     cube_mouse_capture: cube2_input::MouseCapture,
     confine_mouse: bool,
-    cube_pointer: cube2_input::Pointer,
     source_input: source_input::Capture,
     source_window: window_control::Controller,
     cube_desktop: cube2_input::Desktop,
@@ -575,7 +574,7 @@ impl eframe::App for App {
                         }
                         Ok(Work::Game(mut game)) => {
                             self.cube_mouse_capture = Default::default();
-                            self.cube_pointer = Default::default();
+                            self.cube_desktop = Default::default();
                             self.preview = None;
                             self.gpu = None;
                             self.vulkan = None;
@@ -789,7 +788,13 @@ impl eframe::App for App {
             egui::CentralPanel::default()
                 .frame(egui::Frame::NONE.fill(egui::Color32::BLACK))
                 .show(ctx, |ui| {
-                    let input = select_input | ctx.input(|i| self.keyboard.poll(i));
+                    // Cube 2 receives physical keys once through its native queue.
+                    // Only controller/touch devices use the portable action mapping.
+                    let input = if game.is_cube2() {
+                        0
+                    } else {
+                        select_input | ctx.input(|i| self.keyboard.poll(i))
+                    };
                     let device_input = self.input_devices.poll(ui);
                     let input = if ctx.input(|i| i.focused) && !file_dialog_open {
                         input | device_input
@@ -807,23 +812,7 @@ impl eframe::App for App {
                                 .map(|s| (s.render_max_width, s.render_max_height)),
                         );
                         game.cube2_resize(width, height);
-                        let (buttons, dx, dy, focused) = ctx.input(|i| {
-                            let mut buttons = 0u32;
-                            // Desktop keys use ordered press/release events. The
-                            // held mask remains for controller/touch actions.
-                            if i.modifiers.shift {
-                                buttons |= 1 << 5;
-                            }
-                            if i.pointer.primary_down()
-                                || i.pointer.button_pressed(egui::PointerButton::Primary)
-                            {
-                                buttons |= 1 << 16;
-                            }
-                            if i.pointer.secondary_down()
-                                || i.pointer.button_pressed(egui::PointerButton::Secondary)
-                            {
-                                buttons |= 1 << 17;
-                            }
+                        let (dx, dy, focused) = ctx.input(|i| {
                             let motion = i
                                 .events
                                 .iter()
@@ -835,12 +824,7 @@ impl eframe::App for App {
                                     }
                                 })
                                 .fold(egui::Vec2::ZERO, |a, b| a + b);
-                            (
-                                buttons,
-                                motion.x.round() as i32,
-                                motion.y.round() as i32,
-                                i.focused,
-                            )
+                            (motion.x.round() as i32, motion.y.round() as i32, i.focused)
                         });
                         let (captured, recaptured) = self.cube_mouse_capture.update(
                             focused && !file_dialog_open,
@@ -850,22 +834,18 @@ impl eframe::App for App {
                         cube2_input::MouseCapture::apply(ctx, captured, self.confine_mouse);
                         let (look_x, look_y) = self.input_devices.look_delta();
                         let native_events = egui_winit::gamepkg_input::take(ctx.viewport_id());
-                        if let Err(error) =
-                            self.cube_desktop.forward(game, &native_events, captured)
-                        {
+                        if let Err(error) = self.cube_desktop.forward(
+                            game,
+                            &native_events,
+                            captured,
+                            recaptured,
+                            ctx.pixels_per_point(),
+                        ) {
                             failure = Some(format!("Game stopped: {error:#}"));
                         }
                         if captured {
-                            ctx.input(|i| {
-                                cube2_input::forward(
-                                    game,
-                                    &i.events,
-                                    &mut self.cube_pointer,
-                                    self.cube_desktop.lock_modifiers(),
-                                )
-                            });
                             game.cube2_desktop_input(
-                                if recaptured { 0 } else { buttons },
+                                0,
                                 if recaptured {
                                     0
                                 } else {
@@ -879,7 +859,6 @@ impl eframe::App for App {
                             );
                         } else {
                             game.cube2_clear_input();
-                            self.cube_pointer = Default::default();
                         }
                     }
                     if game.doom_input_allowed() {

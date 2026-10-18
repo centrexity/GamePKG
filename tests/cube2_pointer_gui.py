@@ -2,7 +2,8 @@
 from pathlib import Path
 import json,os,re,shutil,struct,subprocess,tempfile,time
 from PIL import Image
-from Xlib import display as xdisplay,protocol
+from Xlib import X,XK,display as xdisplay,protocol
+from Xlib.ext import xtest
 from gui_test_support import start_display,game_window,cube2_choose_test_map
 PROJECT=Path(__file__).resolve().parents[1]
 FIXTURE=PROJECT/'target/cube2-package-test/library'
@@ -30,18 +31,49 @@ with tempfile.TemporaryDirectory(prefix='cube2-pointer-ui-') as temporary:
    assert app.poll() is None and time.monotonic()<deadline,'No playable pointer-test scene'
    time.sleep(.1)
   cube2_choose_test_map(window,env)
-  console('name Input')
+  console('name I')
   # The labels come from the original keymap: the physical middle button is
-  # MOUSE3, the two side buttons MOUSE6/7, and wheels MOUSE4/5/8/9.
-  for name,tag in [('MOUSE3','M'),('MOUSE6','A'),('MOUSE7','B'),('MOUSE4','U'),('MOUSE5','D'),('MOUSE8','R'),('MOUSE9','L')]:
+  # MOUSE3, side buttons MOUSE6/7, extra buttons MOUSE10/11/12,
+  # and wheels MOUSE4/5/8/9.
+  for name,tag in [('MOUSE1','P'),('MOUSE2','S'),('MOUSE3','M'),('MOUSE6','A'),('MOUSE7','B'),('MOUSE10','E'),('MOUSE11','F'),('MOUSE12','G'),('MOUSE4','U'),('MOUSE5','D'),('MOUSE8','R'),('MOUSE9','L')]:
    console(f'bind {name} [name (concatword (getclientname (getclientnum)) {tag})]')
+  # Z is a physical original binding, not the portable B/fire action.
+  console('bind Z [name (concatword (getclientname (getclientnum)) Z)]')
+  command('xdotool','key','z');time.sleep(.2)
+  for button in [1,3,2,8,9]:
+   command('xdotool','click',str(button));time.sleep(.15)
+  connection=xdisplay.Display(env['DISPLAY'])
+  mapping=list(connection.get_pointer_mapping());assert len(mapping)>=10
+  try:
+   for logical in [10,11,12]:
+    remapped=mapping.copy();remapped[9]=logical
+    assert connection.set_pointer_mapping(remapped)==X.MappingSuccess
+    connection.sync()
+    xtest.fake_input(connection,X.ButtonPress,10);xtest.fake_input(connection,X.ButtonRelease,10)
+    connection.sync();time.sleep(.15)
+  finally:
+   assert connection.set_pointer_mapping(mapping)==X.MappingSuccess
+   connection.sync()
   # X wheel-left (6) is SDL x=-1, hence MOUSE9; wheel-right is MOUSE8.
-  for button in [2,8,9,4,5,6,7]:
-   # XInput's synthetic wheel button releases also become wheel events in
-   # winit. Send only the press for one notch; real wheel axes have no release.
-   command('xdotool','mousedown' if button in [4,5,6,7] else 'click',str(button));time.sleep(.15)
-  time.sleep(.2);command('import','-display',env['DISPLAY'],'-window',window,proof/'after.png')
-  connection=xdisplay.Display(env['DISPLAY']);target=connection.create_resource_object('window',int(window))
+  # Synthetic wheel releases also become wheel events; send one press/notch.
+  for button in [4,5,6,7]:
+   command('xdotool','mousedown',str(button));time.sleep(.15)
+  console('defsvarp pointermatrix (getclientname (getclientnum)) ""')
+  console('name Order')
+  # Send one burst so physical modifier/key/button order is preserved even
+  # when the whole sequence lands between two paints. Inspect original script
+  # state during the middle click (right=1,left=0), then after release (0,0).
+  console('rstate = 0; lstate = 0')
+  console('bind RCTRL [rstate = 1; onrelease [rstate = 0]]')
+  console('bind LCTRL [lstate = 1; onrelease [lstate = 0]]')
+  console('bind MOUSE3 [name (concatword (getclientname (getclientnum)) $rstate $lstate)]')
+  console('bind MOUSE4 [name (concatword (getclientname (getclientnum)) $rstate $lstate)]')
+  right=connection.keysym_to_keycode(XK.string_to_keysym('Control_R'));assert right
+  for kind,detail in [(X.KeyPress,right),(X.ButtonPress,2),(X.ButtonRelease,2),(X.KeyRelease,right),(X.ButtonPress,4)]:
+   xtest.fake_input(connection,kind,detail)
+  connection.sync()
+  time.sleep(.4);command('import','-display',env['DISPLAY'],'-window',window,proof/'after.png')
+  target=connection.create_resource_object('window',int(window))
   target.send_event(protocol.event.ClientMessage(window=target,client_type=connection.intern_atom('WM_PROTOCOLS'),data=(32,[connection.intern_atom('WM_DELETE_WINDOW'),0,0,0,0])),event_mask=0);connection.flush()
   assert app.wait(timeout=10)==0,app.stderr.read().decode()
   saves=list((library/'saves').glob('*.cube2'));assert len(saves)==1
@@ -53,8 +85,10 @@ with tempfile.TemporaryDirectory(prefix='cube2-pointer-ui-') as temporary:
    if name=='config.cfg':config=body
   assert config is not None
   actual=re.search(rb'^name "([^"]*)"',config,re.M).group(1)
-  assert actual==b'InputMABUDLR',('Native pointer event sequence',actual)
-  print('Cube 2 native pointer passed: physical middle/side buttons, both vertical and horizontal wheel directions, original bindings and saved results.')
+  assert actual==b'Order1000',('Native pointer event sequence',actual)
+  matrix=re.search(rb'^pointermatrix \"([^\"]*)\"',config,re.M)
+  assert matrix and matrix.group(1)==b'IZPSMABEFGUDLR',('Original eight-button matrix',matrix.group(1) if matrix else config)
+  print('Cube 2 native pointer passed: all eight original physical buttons, original Z without a synthetic fire action, both wheel axes, rapid right-Ctrl/click/release/wheel order, original bindings and saved results.')
  finally:
   if app and app.poll() is None:
    subprocess.run(['import','-display',env['DISPLAY'],'-window','root',str(proof/'failure.png')],env=env,capture_output=True)

@@ -21,7 +21,7 @@ if not package.exists():run('pack',PROJECT/'ports/cube2','-o',package,'--key',ke
 if not (root/'library/com.gamepkg.cube2.gamepkg').exists():run('install',package,'--trust-creator')
 if '--reuse-build' not in sys.argv:run('build','com.gamepkg.cube2')
 version=run('--version').strip().split()[-1]
-fingerprint=hashlib.sha256(b''.join((PROJECT/p).read_bytes() for p in ['engines/cube2/upstream-lock.json','engines/cube2/adapters/frame_bridge.h','engines/cube2/adapters/audio.h','engines/cube2/adapters/loading.h','engines/cube2/adapters/loading-patches.json','engines/cube2/adapters/persistence.h','engines/cube2/adapters/network.h','engines/cube2/adapters/syscall_guard.h','src/cube2/build.rs'])).hexdigest()[:16]
+fingerprint=hashlib.sha256(b''.join((PROJECT/p).read_bytes() for p in ['engines/cube2/upstream-lock.json','engines/cube2/adapters/frame_bridge.h','engines/cube2/adapters/audio.h','engines/cube2/adapters/mouse.h','engines/cube2/adapters/loading.h','engines/cube2/adapters/loading-patches.json','engines/cube2/adapters/persistence.h','engines/cube2/adapters/network.h','engines/cube2/adapters/syscall_guard.h','src/cube2/build.rs'])).hexdigest()[:16]
 artifacts=[p for p in (root/'library/builds').rglob('cube2-*') if p.name=='cube2-'+fingerprint and any(part.startswith('native-v1-'+version+'-') for part in p.parts)]
 assert len(artifacts)==1,artifacts
 binary=artifacts[0];stamp=binary.stat().st_mtime_ns;digest=hashlib.sha256(binary.read_bytes()).hexdigest()

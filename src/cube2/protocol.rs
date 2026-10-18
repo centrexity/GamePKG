@@ -26,10 +26,7 @@ pub fn resize_event(width: u32, height: u32) -> Result<Vec<u8>> {
 }
 
 pub fn mouse_button_event(button: u32, pressed: bool, modifiers: u32) -> Result<Vec<u8>> {
-    ensure!(
-        matches!(button, 2 | 4 | 5),
-        "unsupported Cube 2 mouse button"
-    );
+    ensure!((1..=8).contains(&button), "unsupported Cube 2 mouse button");
     ensure!(modifiers & !0x3fc3 == 0, "unsupported Cube 2 modifiers");
     let mut bytes = b"GPC1".to_vec();
     for n in [button, u32::from(pressed), modifiers] {
@@ -418,6 +415,15 @@ pub(crate) fn test_tree(files: &[(&str, &[u8])]) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn physical_mouse_packets_accept_all_eight_original_buttons_only() {
+        for button in 1..=8 {
+            assert!(mouse_button_event(button, true, 0x3000).is_ok());
+        }
+        for button in [0, 9, 255, u32::MAX] {
+            assert!(mouse_button_event(button, true, 0).is_err());
+        }
+    }
+    #[test]
     fn lock_modifiers_round_trip_on_every_event_and_unknown_bits_stay_rejected() {
         for bits in [0x1000u32, 0x2000, 0x3000, 0x3fc3] {
             let key = key_event(57, true, false, bits).unwrap();
@@ -486,7 +492,7 @@ mod tests {
             wheel_event(-2, 3, 0).unwrap(),
             b"GPW1\xfe\xff\xff\xff\x03\0\0\0\0\0\0\0"
         );
-        for button in [0, 1, 3, 6, u32::MAX] {
+        for button in [0, 9, u32::MAX] {
             assert!(mouse_button_event(button, true, 0).is_err());
         }
         for (x, y) in [(17, 0), (-17, 0), (9, 8), (i32::MIN, 0), (0, i32::MAX)] {
