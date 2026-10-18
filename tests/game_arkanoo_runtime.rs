@@ -1645,7 +1645,8 @@ fn effects_settings_change_pcm_and_survive_restarts_across_runtime_profiles() {
         slider(&mut game, 295.0);
         launch(&mut game);
         advance_until_brick_break(&mut game);
-        assert_eq!(game.audio_frame().len(), 800);
+        assert_eq!(game.audio_frame().len(), 1600);
+        assert_eq!(game.audio_channels(), 2);
         assert_eq!(
             game.audio_frame().iter().map(|s| i32::from(*s).abs()).max(),
             Some(2000)
@@ -1813,6 +1814,7 @@ fn effects_phase_at_maximum_frame_matches_in_native_and_wasm32() {
         assert_eq!(game.step(input).unwrap(), 1);
         assert_eq!(game.audio_channels(), 1);
         assert_eq!(game.audio_frame().len(), 800);
+        assert_eq!(game.audio_channels(), 1);
         for (index, sample) in game.audio_frame().iter().enumerate() {
             let sign = if (u128::from(frame) + index as u128) % 100 < 50 {
                 1
@@ -4304,6 +4306,40 @@ fn signed_sound_requests_match_original_brick_and_rocket_callbacks() {
                 case["name"],
                 step
             );
+        }
+    }
+}
+
+#[test]
+#[ignore = "requires signed fixtures prepared by tests/arkanoo.py"]
+fn signed_four_channel_mixer_preserves_tails_capacity_and_stereo_output() {
+    let root = isolated_library();
+    let target = std::env::var("GAMEPKG_ARKANOO_MIXER_NATIVE")
+        .ok()
+        .map(|v| v.parse::<bool>().unwrap());
+    let mut game =
+        Game::load_target(root.path(), "com.gamepkg.arkanoo-modes", &[], target).unwrap();
+    for case in 0..6 {
+        assert_eq!(game.step(0x00fb0000 | case).unwrap(), u64::from(case + 1));
+        if case == 2 {
+            assert!(game.audio_frame().is_empty());
+            continue;
+        }
+        assert_eq!(game.audio_channels(), 2);
+        assert_eq!(game.audio_frame().len(), 1600);
+        if case >= 4 {
+            assert_eq!(&game.audio_frame()[..4], &[8000, 8000, 7990, 7990]);
+            assert_eq!(&game.audio_frame()[48..50], &[0, 0]);
+            continue;
+        }
+        let expected = match case {
+            0 => [4600, -2600, 4600, -2600],
+            1 => [11800, -11050, 1800, -1050],
+            _ => [1800, -1050, 1800, -1050],
+        };
+        assert_eq!(&game.audio_frame()[..4], &expected);
+        if case != 0 {
+            assert!(game.audio_frame()[60..].iter().all(|v| *v == 0));
         }
     }
 }

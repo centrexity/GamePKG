@@ -523,3 +523,10 @@ id = "arkanoo_audio_requests"
 requirements = ["Original effect categories", "Original silence for launch and non-audio transitions", "Recorded effects and music", "Original overlapping playback and event/update ordering"]
 status = "in_progress"
 notes = "Recipe 0.1.57 restores original Bounce/BreakingGlass/Explosion/Oh categories and removes invented launch, bonus, completion and portal activation requests. Ten unchanged-original brick/rocket cases record thirteen last-callback frames, with all previous physics fields unchanged. All 93 logic checks and both 68-check signed suites pass at default parallelism and unchanged caps/tolerances. Audio settings tests now trigger actual brick breaks. Exact font RLE/opaque blend simplifications reduce rendering work while preserving original SDL fixtures and independent old/new raster comparisons. Original recordings/provenance, sustained mixing, music and complete event-versus-update audio ordering remain unfinished; effects are still synthesized."
+
+
+[[work]]
+id = "arkanoo_effect_channels"
+requirements = ["Four independent stereo effect channels", "Gain and clipping match SDL", "Input and physics requests remain separate", "Recorded clips and asynchronous timing parity"]
+status = "in_progress"
+notes = "Recipe 0.1.58 implements a four-slot PCM mixer with independent tails, first-free channel allocation, saturation in channel order, silent advancement while muted and voice preservation through run reset. Actual SDL_MixAudioFormat comparisons verify gain/clipping. Production captures input and final physics callbacks separately. Six signed native/Wasm cases and real core/component WebAudio verify tails, slot reuse and both keyboard/controller rocket-plus-collision paths. All 96 logic, four source-attack and both 69-check signed suites pass at unchanged limits/concurrency/tolerances. Clips remain temporary one-frame synthesized effects; original recordings/provenance, compressed playback, music and full asynchronous callback timing remain unfinished."

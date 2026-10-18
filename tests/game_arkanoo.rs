@@ -3656,3 +3656,110 @@ fn effect_blend_fast_paths_match_original_integer_equation() {
         }
     }
 }
+
+#[test]
+fn four_effect_channels_keep_stereo_tails_slot_order_mute_and_capacity() {
+    let mut mixer = audio::Mixer::new();
+    assert!(!mixer.effect_start(vec![7], false));
+    assert!(!mixer.effect_start(vec![7, -7], true));
+    for channel in 0..4 {
+        let pair = [1000 + channel * 100, -500 - channel * 100];
+        let mut clip = Vec::new();
+        for _ in 0..(800 + channel as usize * 10) {
+            clip.extend(pair);
+        }
+        assert!(mixer.effect_start(clip, false));
+    }
+    assert!(!mixer.effect_start(vec![1, 2], false));
+    let first = mixer.effect_render(128, false).unwrap();
+    assert_eq!(&first[..4], &[4600, -2600, 4600, -2600]);
+    // The first channel ended; a new clip reuses that slot without replacing tails.
+    assert!(mixer.effect_start(vec![20000, -20000], false));
+    let second = mixer.effect_render(64, false).unwrap();
+    assert_eq!(&second[..4], &[11800, -11050, 1800, -1050]);
+    assert_eq!(&second[20..22], &[1250, -750]);
+    assert_eq!(&second[40..42], &[650, -400]);
+    assert!(second[60..].iter().all(|v| *v == 0));
+    assert!(mixer.effect_render(128, false).is_none());
+    assert!(mixer.effect_start(vec![1000; 3200], false));
+    assert!(mixer.effect_render(128, true).is_none());
+    assert!(mixer.effect_render(0, false).is_none());
+    assert!(mixer.effect_render(128, false).is_none());
+}
+
+#[test]
+#[cfg(target_os = "linux")]
+fn effect_mix_matches_actual_sdl_channel_gain_clipping_and_order() {
+    #[link(name = "SDL2")]
+    unsafe extern "C" {
+        fn SDL_MixAudioFormat(dst: *mut u8, src: *const u8, format: u16, len: u32, volume: i32);
+    }
+    for gain in [0u32, 1, 32, 64, 127, 128, u32::MAX] {
+        let mut mixer = audio::Mixer::new();
+        let mut expected = [0u8; 3200];
+        for channel in 0..4 {
+            let samples: Vec<i16> = (0..1600)
+                .map(|index| {
+                    let values = [32767i16, -32768, 30000, -20000, 1, -1, 0, 8123];
+                    values[(index + channel * 3) % values.len()]
+                })
+                .collect();
+            let bytes: Vec<u8> = samples
+                .iter()
+                .flat_map(|sample| sample.to_le_bytes())
+                .collect();
+            unsafe {
+                SDL_MixAudioFormat(
+                    expected.as_mut_ptr(),
+                    bytes.as_ptr(),
+                    0x8010,
+                    bytes.len() as u32,
+                    gain.min(128) as i32,
+                );
+            }
+            assert!(mixer.effect_start(samples, false));
+        }
+        let actual = mixer.effect_render(gain, false);
+        if gain == 0 {
+            assert!(actual.is_none());
+        } else {
+            let expected: Vec<i16> = expected
+                .chunks_exact(2)
+                .map(|b| i16::from_le_bytes([b[0], b[1]]))
+                .collect();
+            assert_eq!(actual.unwrap().as_slice(), expected, "gain {gain}");
+        }
+    }
+}
+
+#[test]
+fn rocket_input_and_physics_callbacks_are_independent_and_reset_keeps_playing_effects() {
+    let mut game = menu_game();
+    game.mode = 1;
+    game.balls.clear();
+    game.ammo = 1;
+    game.fire_or_launch();
+    game.capture_sound();
+    assert_eq!(game.sound, 0);
+    game.sound = 2;
+    game.capture_sound();
+    let output = game.effects.effect_render(64, false).unwrap();
+    let load = audio::effect_samples(3, game.frame, 64, false);
+    let glass = audio::effect_samples(2, game.frame, 64, false);
+    for index in 0..800 {
+        let wanted = (i32::from(load[index]) + i32::from(glass[index])).clamp(-32768, 32767) as i16;
+        assert_eq!(&output[index * 2..index * 2 + 2], &[wanted, wanted]);
+    }
+    assert!(game.effects.effect_start([1000, -2000].repeat(1600), false));
+    game.reset_run();
+    assert_eq!(
+        &game.effects.effect_render(128, false).unwrap()[..2],
+        &[1000, -2000]
+    );
+    game.mode = 2;
+    game.update(0);
+    assert_eq!(
+        &game.effects.effect_render(64, false).unwrap()[..2],
+        &[500, -1000]
+    );
+}

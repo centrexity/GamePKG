@@ -75,7 +75,8 @@ fn concealed_filesystem_calls_macros_aliases_and_callbacks_fail_even_when_signed
         let output = temp.path().join("rejected.gamepkg");
         let error = gamepkg::pack::pack(&source, &output, &helper::SEED).unwrap_err();
         assert!(
-            error.to_string().contains("forbidden construct"),
+            error.to_string().contains("forbidden construct")
+                && error.to_string().contains("source/src/lib.rs"),
             "wrong rejection for {snippet}: {error:#}"
         );
         assert!(!output.exists() && !output.with_extension("gamepkg.partial").exists());
@@ -83,7 +84,8 @@ fn concealed_filesystem_calls_macros_aliases_and_callbacks_fail_even_when_signed
         let error =
             gamepkg::verify::verify_embedded(&mut Package::open(&signed).unwrap()).unwrap_err();
         assert!(
-            error.to_string().contains("forbidden construct"),
+            error.to_string().contains("forbidden construct")
+                && error.to_string().contains("source/src/lib.rs"),
             "signed source accepted or wrong rejection: {snippet}: {error:#}"
         );
     }

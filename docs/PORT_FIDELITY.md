@@ -2115,3 +2115,27 @@ SDL text fixtures remain exact. A separate old/new raster comparison passes
 strict lint/formatting pass. Window/GUI/platform workflows were not repeated in
 this round. Recordings, music, simultaneous playback and complete event/update
 audio ordering remain open.
+
+
+Recipe 0.1.58 introduces four independent stereo effect channels, retaining clip
+positions across tick outputs and preserving active clips through a Game reset.
+The first free channel is reused; a fifth active request is rejected. Mixer gain,
+sequential clipping and channel order match actual SDL_MixAudioFormat output.
+Mute prevents new voices and advances existing voices silently. Input callbacks
+are captured independently before the final physics callback; keyboard and
+controller rocket launches can sound alongside a same-tick brick collision.
+
+Production uses the temporary synthesized clips. Longer stereo fixture clips
+exercise multi-tick tails; original recordings, their duration/provenance,
+compressed playback, music and full asynchronous callback timing remain open.
+All 96 logic checks, four source-attack checks and both 69-check signed suites
+pass. Expanded six-case mixer/input checks pass with explicit native and Wasm
+selection. Actual core/component Chromium WebAudio buffers contain the expected
+channel samples for tails, free-slot reuse, silent advancement and both input
+paths overlapping a collision. Limits, test parallelism and visual tolerances
+are unchanged. Strict lint/formatting pass; this round does not establish new
+native device, graphical window or platform coverage.
+
+Source-policy rejection messages now identify the offending packaged Rust file.
+The existing adversarial signed and packing checks verify this diagnostic while
+retaining every rejection. No source-policy restriction was relaxed.

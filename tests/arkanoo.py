@@ -125,6 +125,23 @@ with (nullcontext(tempfile.mkdtemp(prefix='gamepkg-arkanoo-',dir=PROJECT/'target
 static GAME:Mutex<Option<physics::Game>>=Mutex::new(None);
 pub fn game_tick(input:u32,state:u64)->u64 {
 SOUND_BRANCHES
+ if input&4294901760==16449536 {
+  let case=input&65535;
+  if case==4 || case==5 {
+   let mut g=physics::Game::new();g.mode=1;g.blocks=[0;200];g.set_block(0,0);g.ammo=1;g.balls.clear();g.balls.push(physics::Ball{x:34.0,y:114.0,vx:0.0,vy:-4.0,spin:0.0,attached:false,launch_timer:0,trail:Vec::new()});
+   if case==4 {g.source_input(5,0.0,0.0,44);g.capture_sound();g.update(0);}else {g.update(4);}
+   g.capture_sound();if let Some(pcm)=g.effects.effect_render(64,false) {gamepkg::audio_submit_stereo(&pcm);}return u64::from(case+1);
+  }
+  let mut mixer=audio::Mixer::new();
+  for channel in 0..4 {let mut clip=Vec::new();for _ in 0..(800+channel*10) {clip.push((1000+channel*100) as i16);clip.push((-500-channel*100) as i16);}if !mixer.effect_start(clip,false) {return 18446744073709551615;}}
+  let mut extra=Vec::new();extra.push(1);extra.push(2);if mixer.effect_start(extra,false) {return 18446744073709551615;}
+  let first=mixer.effect_render(128,case==3);
+  if case==0 {if let Some(pcm)=first {gamepkg::audio_submit_stereo(&pcm);}return 1;}
+  if case==1 {let mut clip=Vec::new();clip.push(20000);clip.push(-20000);mixer.effect_start(clip,false);}
+  let second=mixer.effect_render(64,false);
+  if case==2 {if mixer.effect_render(128,false).is_some() {return 18446744073709551615;}return 3;}
+  if let Some(pcm)=second {gamepkg::audio_submit_stereo(&pcm);}return u64::from(case+1);
+ }
  if input&268435456!=0 && input&2147483648==0 {let mut game=physics::Game::new();game.mode=if input&1!=0 {2} else {1};game.frame=u64::from(u32::MAX);game.update(0);return game.frame;};
  if input&67108864!=0 {
   let mut game=physics::Game::new();game.mode=1;

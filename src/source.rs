@@ -423,7 +423,7 @@ pub fn scan(pkg: &mut Package) -> Result<()> {
             .parse::<proc_macro2::TokenStream>()
             .map_err(|error| anyhow::anyhow!("invalid source tokens: {error}"))?;
         if forbidden_tokens(tokens, false) {
-            bail!("source uses a forbidden construct");
+            bail!("source uses a forbidden construct in {name}");
         }
         let ast = syn::parse_file(text)?;
         crate::portability::validate(&ast)?;
@@ -455,7 +455,7 @@ pub fn scan(pkg: &mut Package) -> Result<()> {
         modules.visit_file(&ast);
         scanner.rejected |= modules.rejected;
         if scanner.rejected {
-            bail!("source uses a forbidden construct");
+            bail!("source uses a forbidden construct in {name}");
         }
     }
     Ok(())
