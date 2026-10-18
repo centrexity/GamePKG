@@ -135,7 +135,7 @@ notes = "SHA-guarded unchanged-original fixtures cover 337 loss/animation frames
 id = "arkanoo_remaining_presentation"
 requirements = ["Original shiny ball and speed font", "Glass paddle and bonus icons", "Block gradient/refraction/fire/shine effects", "Animated backgrounds and portal", "Original HUD/FPS and menu/editor presentation", "Recorded sound/music and controls"]
 status = "pending"
-notes = "The pinned rendering module has distinct implementations for these paths. Current simplified shapes, bitmap text, portal circles and synthesized audio are replacements. Restoring shards, comet points and penguin/hearts does not close these paths. Verify original drawing/state transitions and licensed assets independently, including animated boundaries and interaction with host budgets."
+notes = "The pinned rendering module has distinct implementations for these paths. Bitmap text, background/menu/HUD presentation and synthesized audio still contain replacements. Original object art and the four portal stages are restored with the measured grouping/sampling limits documented below; these do not close complete-frame or audio fidelity. Verify original drawing/state transitions and licensed assets independently, including animated boundaries and interaction with host budgets."
 
 
 [[work]]
@@ -286,3 +286,9 @@ id = "arkanoo_original_rocket_art"
 requirements = ["Original ordered body/nose/fins/flame pixels", "Original integer-truncated projected coordinates", "Production gameplay integration", "Cold/warm shared asset and unchanged draw limits", "Signed native/Wasm and actual desktop/browser rendering"]
 status = "implemented_runtime_and_window_verified_linux_browser"
 notes = "The unchanged pinned rocket draw loop is captured and rasterized by real SDL into a 10x20 opaque/transparent source sprite. The production renderer replaces the old yellow rectangle with one nearest image; five fractional/negative/edge origins and 200-projectile cold/warm scenes are exercised through signed runtimes. All six desktop and both browser configurations pass three poses with seven samples per rocket (672 RGB comparisons); desktop channel difference at most one, browsers exact in this run. Transparent and nose samples avoid background-grid geometry edges, with explicit adjacent-texel handling at exact nearest boundaries. Original world-edge clipping and whole-frame presentation remain separate pending requirements."
+
+[[work]]
+id = "arkanoo_original_portal_stages"
+requirements = ["Original four portal stages and boundaries", "Ordered point geometry and colors", "Original f32 phase and large frame counts", "Production portal timer integration", "Signed native/Wasm budget checks", "Desktop/browser stage transitions and clearing", "Quantify grouping and sampling differences"]
+status = "implemented_geometry_and_bounded_layer_verified_linux_browser"
+notes = "Eighteen cases execute the complete unchanged SHA-guarded original draw_portal, including phase boundaries, f32 precision loss and u64::MAX. Every ordered point/color matches the adapted production functions. Full grouped images are compared with real software SDL over dark: maximum channel delta four, explicitly retained as a limit rather than exact framebuffer parity. Actual native and core/component desktop Vulkan/OpenGL and browser scenes pass swirl/close/flash/fade/empty/restore; sampled desktop delta at most three and browser at most two, with explicit nearest-boundary choices. All 38 signed checks pass native and Wasm, including complete Game.draw scenes and unchanged budgets. Original viewport, whole-frame comparison and cross-platform rendering remain open."

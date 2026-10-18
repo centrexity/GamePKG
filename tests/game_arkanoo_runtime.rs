@@ -430,7 +430,12 @@ fn portal_threshold_orbit_gravity_and_delayed_transition_reach_the_real_renderer
         .iter()
         .filter(|command| matches!(command, Command::Circle { .. }))
         .count();
-    assert_eq!(circles, 48, "portal ring was not rendered");
+    assert_eq!(circles, 0, "simplified portal circles are still rendered");
+    assert!(
+        game.frame().commands.iter().any(|command| matches!(command,
+        Command::Image { width, height, .. } if *width > 100.0 && *height > 100.0)),
+        "original portal layer was not rendered"
+    );
     assert!(
         game.frame().commands.iter().any(is_ball),
         "orbiting ball was not rendered"
@@ -2349,5 +2354,81 @@ fn production_rocket_rendering_uses_shared_art_within_unchanged_frame_budgets() 
         }
         assert_eq!(count, 200);
         assert!(bytes < gamepkg::drawing::MAX_IMAGE_BYTES);
+    }
+}
+
+#[test]
+#[ignore = "requires the signed production fixture prepared by tests/arkanoo.py"]
+fn original_four_portal_stages_reach_signed_runtimes_with_unchanged_budgets() {
+    use std::io::Read;
+    let root = isolated_library();
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-portal.json")).unwrap();
+    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
+    for (index, case) in fixture["cases"].as_array().unwrap().iter().enumerate() {
+        assert_eq!(game.step(2147487744 | index as u32).unwrap(), 1);
+        if case["bounds"].is_null() {
+            assert!(game.frame().commands.is_empty());
+            continue;
+        }
+        let [Command::Image {
+            x,
+            y,
+            width,
+            height,
+            image,
+        }] = game.frame().commands.as_slice()
+        else {
+            panic!("Each original portal layer fits one bounded nearest image")
+        };
+        let bounds: Vec<_> = case["bounds"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_i64().unwrap() as f32)
+            .collect();
+        assert_eq!(
+            (*x, *y, *width, *height),
+            (
+                bounds[0] * 0.5,
+                60.0 + bounds[1] * 0.5,
+                bounds[2] * 0.5,
+                bounds[3] * 0.5
+            )
+        );
+        assert_eq!(image.size(), [bounds[2] as usize, bounds[3] as usize]);
+        let compressed = hex::decode(case["sdl_dark_rgba_zlib_hex"].as_str().unwrap()).unwrap();
+        let mut original = Vec::new();
+        flate2::read::ZlibDecoder::new(compressed.as_slice())
+            .read_to_end(&mut original)
+            .unwrap();
+        assert_eq!(original.len(), image.pixels().len());
+        let mut delta = 0;
+        for (pixel, source) in image.pixels().chunks_exact(4).zip(original.chunks_exact(4)) {
+            for channel in 0..3 {
+                let value = (u32::from(pixel[channel]) * u32::from(pixel[3])
+                    + [11, 16, 32][channel] * (255 - u32::from(pixel[3])))
+                    / 255;
+                delta = delta.max(value.abs_diff(u32::from(source[channel])));
+            }
+        }
+        assert!(
+            delta <= 4,
+            "portal SDL rounding delta {delta}, case {index}"
+        );
+        assert!(image.pixels().len() < gamepkg::drawing::MAX_IMAGE_BYTES);
+    }
+    for index in [0, 4, 5, 7, 8, 9, 10, 12] {
+        for _ in 0..2 {
+            assert_eq!(game.step(2147487744 | 32 | index).unwrap(), 1);
+            assert!(game.frame().commands.len() < gamepkg::drawing::MAX_COMMANDS);
+            let mut bytes = 0;
+            for command in &game.frame().commands {
+                if let Command::Image { image, .. } | Command::LinearImage { image, .. } = command {
+                    bytes += image.pixels().len();
+                }
+            }
+            assert!(bytes < gamepkg::drawing::MAX_IMAGE_BYTES);
+        }
     }
 }

@@ -2380,3 +2380,66 @@ fn signed_i32_refraction_ranges_match_unchanged_original_rand_calls() {
         }
     }
 }
+
+#[test]
+fn original_portal_stages_preserve_every_ordered_point_color_and_frame_precision() {
+    use std::io::Read;
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-portal.json")).unwrap();
+    let mut maximum = 0;
+    for case in fixture["cases"].as_array().unwrap() {
+        let frame = case["frame"].as_u64().unwrap();
+        let timer = case["timer"].as_u64().unwrap();
+        let dots = physics::portal_points(frame, timer);
+        let mut trace = Vec::new();
+        for dot in &dots {
+            trace.extend(dot.x.to_le_bytes());
+            trace.extend(dot.y.to_le_bytes());
+            trace.extend(dot.color.to_le_bytes());
+        }
+        let compressed = hex::decode(case["trace_zlib_hex"].as_str().unwrap()).unwrap();
+        let mut expected = Vec::new();
+        flate2::read::ZlibDecoder::new(compressed.as_slice())
+            .read_to_end(&mut expected)
+            .unwrap();
+        assert_eq!(dots.len(), case["point_count"].as_u64().unwrap() as usize);
+        assert_eq!(trace, expected, "portal frame {frame} timer {timer}");
+        assert_eq!(gamepkg_digest(&trace), case["trace_sha256"]);
+        if let Some(image) = physics::effect_image(&dots) {
+            assert_eq!(
+                serde_json::json!([
+                    image.left,
+                    image.top,
+                    image.width as i32,
+                    image.height as i32
+                ]),
+                case["bounds"]
+            );
+            let compressed = hex::decode(case["sdl_dark_rgba_zlib_hex"].as_str().unwrap()).unwrap();
+            let mut original = Vec::new();
+            flate2::read::ZlibDecoder::new(compressed.as_slice())
+                .read_to_end(&mut original)
+                .unwrap();
+            let mut delta = 0;
+            for (pixel, source) in image.pixels.chunks_exact(4).zip(original.chunks_exact(4)) {
+                for channel in 0..3 {
+                    let value = (u32::from(pixel[channel]) * u32::from(pixel[3])
+                        + [11, 16, 32][channel] * (255 - u32::from(pixel[3])))
+                        / 255;
+                    delta = delta.max(value.abs_diff(u32::from(source[channel])));
+                }
+            }
+            println!("portal frame {frame} timer {timer}: grouped layer vs original software SDL maximum channel delta {delta}");
+            assert!(delta <= 4, "original software SDL grouping bound exceeded");
+            maximum = maximum.max(delta);
+        } else {
+            assert!(case["bounds"].is_null());
+        }
+    }
+    println!("portal software SDL worst grouping delta {maximum}");
+}
+
+fn gamepkg_digest(bytes: &[u8]) -> String {
+    use sha2::Digest;
+    hex::encode(sha2::Sha256::digest(bytes))
+}

@@ -77,9 +77,9 @@ when a verified host replacement provides the same observable behavior.
 Arkanoo's pinned `rendering.rs` also has dedicated implementations for ball
 speed lettering,
 bonus icons, animated backgrounds, portal rendering, HUD/FPS, pause/settings,
-game-over, level-transition/victory and editor presentation. The current simple
-shapes, bitmap lettering and portal circles are replacements. Restored mechanics,
-shards, comet points and penguin/hearts do not verify those other drawing paths.
+game-over, level-transition/victory and editor presentation. Background/menu/HUD presentation, bitmap lettering and synthesized audio still
+contain replacements. Restored object art and portal stages have the measured
+grouping and sampling limits below; they do not verify those remaining paths.
 Keep each original drawing path open until its behavior has reference evidence;
 matching a few screenshots is insufficient for animated or stateful effects.
 
@@ -937,3 +937,38 @@ two). Original sprite sampling at exact nearest boundaries explicitly permits
 adjacent texels; full geometry-edge rasterization and original viewport clipping
 remain open. Reference regeneration is byte-identical. Source-only recipe 0.1.28
 does not change the app version or publish binary/package releases.
+
+### Four original portal stages
+
+The old 48-circle approximation is replaced with the original ten rings of 32
+filled discs, shrinking rings with faster rotation, expanding radial flash with
+white core, and final purple fade. The production Game.draw passes its actual
+frame and completion timer into these helpers. The existing 270-frame state
+transition, pause and resume checks retain their production paths.
+
+The maintainer oracle compiles the complete unchanged pinned draw_portal, records
+every ordered integer coordinate and RGBA value, then rasterizes those commands
+through real SDL software rendering. Eighteen compressed fixtures cover the
+0/30/31/149/150/151/180/181/269/270/271 boundaries, f32 phase precision beyond
+2^24, and u64::MAX. Their traces match production exactly. Alpha-zero points are
+preserved in the geometry trace; invisible layers produce no draw command.
+
+GamePKG groups these ordered points through its existing effect-image compositor.
+Original software SDL versus the complete resulting layer over the dark backdrop
+has maximum channel delta four in these fixtures, including dense closing-ring
+overlaps. The tests enforce that measured bound. This is a quantified rounding
+limitation, not an exact original framebuffer claim. Layers fit one image below
+512x512; no command, memory, image-byte, source-policy or deadline limit changes.
+Players need no new dependencies or generation tools.
+
+All 64 logic checks and all 38 signed native/Wasm checks pass. The latter compare
+all layer pixels with real SDL and also run cold/warm complete Game.draw scenes.
+The live scene checks six poses (swirl, closing, flash, fade, empty, swirl again)
+in six desktop configurations and both browser profiles. Desktop sample channel
+difference is at most three; browsers at most two. Exact nearest boundaries
+permit adjacent texels explicitly. Browser samples use explicit pixel rounding,
+matching desktop sample coordinates. Existing gameplay/editor/file workflows
+also run separately. Original viewport clipping, whole-frame matching, remaining
+background/menu/HUD/audio and platform requirements stay open. Recipe 0.1.29 is a
+source-only change; the host version and published binary/package releases stay
+unchanged.
