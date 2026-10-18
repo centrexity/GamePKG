@@ -7,9 +7,13 @@ use std::{
     time::{Duration, Instant},
 };
 
+mod held;
+
 const INPUT_LEASE: Duration = Duration::from_millis(250);
 #[derive(Default)]
 struct Input {
+    physical: held::Physical,
+    stale_remaining: usize,
     held: u32,
     pressed: u32,
     dx: i32,
@@ -24,7 +28,23 @@ struct Input {
 impl Input {
     fn submit(&mut self, buttons: u32, dx: i32, dy: i32, events: Vec<Vec<u8>>) -> Result<()> {
         ensure!(
+            events.len() <= protocol::MAX_QUEUED_EVENTS,
+            "Cube 2 input batch exceeded its bound"
+        );
+        let held::Prepared {
+            physical,
+            events,
+            restore,
+        } = self.physical.prepare(events, self.expired)?;
+        let recovery_modifiers = if self.expired {
+            Some(protocol::modifiers_event(physical.modifiers())?)
+        } else {
+            None
+        };
+        ensure!(
             self.events.len()
+                + usize::from(self.expired)
+                + restore.len()
                 + events
                     .iter()
                     .filter(|e| !e.starts_with(b"GPD1") && !e.starts_with(b"GPM1"))
@@ -32,6 +52,13 @@ impl Input {
                 <= protocol::MAX_QUEUED_EVENTS,
             "Cube 2 input event queue exceeded its bound"
         );
+        self.physical = physical;
+        if self.expired {
+            self.stale_remaining = self.events.len();
+            self.events.push(protocol::RESET_INPUT.to_vec());
+            self.reset_pending = false;
+            self.modifiers = recovery_modifiers;
+        }
         self.pressed |= buttons & !self.held;
         self.held = buttons;
         self.dx = self.dx.saturating_add(dx).clamp(-2048, 2048);
@@ -45,11 +72,14 @@ impl Input {
                 self.events.push(event);
             }
         }
+        self.events.extend(restore);
         self.updated = Some(Instant::now());
         self.expired = false;
         Ok(())
     }
     fn reset(&mut self) {
+        self.physical = held::Physical::default();
+        self.stale_remaining = 0;
         self.held = 0;
         self.pressed = 0;
         self.dx = 0;
@@ -68,17 +98,19 @@ impl Input {
             // Release stale held controls, while preserving queued one-shot
             // inputs that arrived during a slow engine tick.
             self.held = 0;
+            self.stale_remaining = 0;
             self.modifiers = None;
             self.expired = true;
             self.reset_pending = true;
         }
-        let buttons = self.held | std::mem::take(&mut self.pressed);
-        let reserved = usize::from(self.reset_pending)
+        let reserved = usize::from(self.reset_pending || self.stale_remaining > 0)
             + usize::from(self.resize.is_some())
             + usize::from(self.modifiers.is_some());
         let count = self.events.len().min(protocol::MAX_EVENTS - reserved);
+        let stale_only = self.stale_remaining > 0 && count <= self.stale_remaining;
+        self.stale_remaining = self.stale_remaining.saturating_sub(count);
         let mut events: Vec<_> = self.events.drain(..count).collect();
-        if self.reset_pending && events.len() < protocol::MAX_EVENTS {
+        if (self.reset_pending || stale_only) && events.len() < protocol::MAX_EVENTS {
             events.push(protocol::RESET_INPUT.to_vec());
             self.reset_pending = false;
         }
@@ -93,12 +125,18 @@ impl Input {
         if self.expired && !self.events.is_empty() {
             self.reset_pending = true;
         }
-        (
-            buttons,
-            std::mem::take(&mut self.dx),
-            std::mem::take(&mut self.dy),
-            events,
-        )
+        if stale_only {
+            // Fresh controller edges and look belong after the old event tail.
+            // Keep their latches until the queued recovery boundary is reached.
+            (0, 0, 0, events)
+        } else {
+            (
+                self.held | std::mem::take(&mut self.pressed),
+                std::mem::take(&mut self.dx),
+                std::mem::take(&mut self.dy),
+                events,
+            )
+        }
     }
 }
 #[derive(Default)]
@@ -288,6 +326,175 @@ impl Drop for Worker {
 
 #[cfg(test)]
 mod tests {
+    fn expire(input: &mut super::Input) -> Vec<Vec<u8>> {
+        input.updated = Some(std::time::Instant::now() - super::INPUT_LEASE);
+        input.take(std::time::Instant::now()).3
+    }
+    #[test]
+    fn fresh_input_restores_still_held_keys_buttons_and_modifiers_once() {
+        use super::*;
+        let mut input = Input::default();
+        input
+            .submit(
+                0,
+                0,
+                0,
+                vec![
+                    protocol::key_event(228, true, false, 128).unwrap(),
+                    protocol::key_event(26, true, false, 128).unwrap(),
+                    protocol::mouse_button_event(1, true, 128).unwrap(),
+                ],
+            )
+            .unwrap();
+        input.take(Instant::now());
+        assert_eq!(expire(&mut input), [protocol::RESET_INPUT.to_vec()]);
+        assert!(input.take(Instant::now()).3.is_empty());
+        input.submit(0, 0, 0, vec![]).unwrap();
+        assert_eq!(
+            input.take(Instant::now()).3,
+            vec![
+                protocol::RESET_INPUT.to_vec(),
+                protocol::key_event(228, true, false, 128).unwrap(),
+                protocol::key_event(26, true, false, 128).unwrap(),
+                protocol::mouse_button_event(1, true, 128).unwrap(),
+                protocol::modifiers_event(128).unwrap()
+            ]
+        );
+        assert!(input.take(Instant::now()).3.is_empty());
+        input.reset();
+        input.take(Instant::now());
+        input.submit(0, 0, 0, vec![]).unwrap();
+        assert!(input
+            .take(Instant::now())
+            .3
+            .iter()
+            .all(|e| !e.starts_with(b"GPI1") && !e.starts_with(b"GPC1")));
+    }
+    #[test]
+    fn released_controls_and_completed_taps_are_not_replayed_on_resume() {
+        use super::*;
+        let mut input = Input::default();
+        input
+            .submit(
+                0,
+                0,
+                0,
+                vec![
+                    protocol::key_event(26, true, false, 0).unwrap(),
+                    protocol::mouse_button_event(1, true, 0).unwrap(),
+                ],
+            )
+            .unwrap();
+        input.take(Instant::now());
+        expire(&mut input);
+        let fresh = vec![
+            protocol::key_event(26, false, false, 0).unwrap(),
+            protocol::key_event(40, true, false, 0).unwrap(),
+            protocol::key_event(40, false, false, 0).unwrap(),
+            protocol::mouse_button_event(1, false, 0).unwrap(),
+        ];
+        input.submit(0, 0, 0, fresh.clone()).unwrap();
+        let mut expected = vec![protocol::RESET_INPUT.to_vec()];
+        expected.extend(fresh);
+        expected.push(protocol::modifiers_event(0).unwrap());
+        assert_eq!(input.take(Instant::now()).3, expected);
+    }
+    #[test]
+    fn first_repeat_after_expiry_resumes_press_without_losing_later_repeats() {
+        use super::*;
+        let mut input = Input::default();
+        let repeat = protocol::key_event(26, true, true, 0).unwrap();
+        input
+            .submit(
+                0,
+                0,
+                0,
+                vec![protocol::key_event(26, true, false, 0).unwrap()],
+            )
+            .unwrap();
+        input.take(Instant::now());
+        expire(&mut input);
+        input
+            .submit(0, 0, 0, vec![repeat.clone(), repeat.clone()])
+            .unwrap();
+        assert_eq!(
+            input.take(Instant::now()).3,
+            vec![
+                protocol::RESET_INPUT.to_vec(),
+                protocol::key_event(26, true, false, 0).unwrap(),
+                repeat.clone(),
+                protocol::modifiers_event(0).unwrap()
+            ]
+        );
+        input.submit(0, 0, 0, vec![repeat.clone()]).unwrap();
+        assert_eq!(input.take(Instant::now()).3, vec![repeat]);
+    }
+    #[test]
+    fn expired_backlogs_stay_released_until_the_recovery_boundary_is_drained() {
+        use super::*;
+        let mut input = Input::default();
+        let text = protocol::text_event("x").unwrap();
+        let mut original = vec![protocol::key_event(26, true, false, 0).unwrap()];
+        original.extend(vec![text.clone(); 200]);
+        input.submit(0, 0, 0, original).unwrap();
+        let mut delivered = input.take(Instant::now()).3;
+        delivered.extend(expire(&mut input));
+        input.submit(1, 17, 19, vec![]).unwrap();
+        let mut restored = false;
+        while !input.events.is_empty() {
+            let (buttons, dx, dy, batch) = input.take(Instant::now());
+            assert!(batch.len() <= protocol::MAX_EVENTS);
+            if let Some(at) = batch.iter().position(|e| e.starts_with(b"GPI1")) {
+                assert!(batch[..at]
+                    .iter()
+                    .any(|e| e.as_slice() == protocol::RESET_INPUT));
+                assert!(!batch[at + 1..]
+                    .iter()
+                    .any(|e| e.as_slice() == protocol::RESET_INPUT));
+                assert_eq!((buttons, dx, dy), (1, 17, 19));
+                restored = true;
+            } else {
+                assert_eq!((buttons, dx, dy), (0, 0, 0));
+                assert!(batch.iter().any(|e| e.as_slice() == protocol::RESET_INPUT));
+            }
+            delivered.extend(batch);
+        }
+        assert!(restored);
+        assert_eq!(delivered.iter().filter(|e| **e == text).count(), 200);
+    }
+    #[test]
+    fn recovery_quota_and_invalid_packets_cannot_replace_the_last_good_state() {
+        use super::*;
+        let mut input = Input::default();
+        let down = protocol::key_event(26, true, false, 0).unwrap();
+        input.submit(0, 0, 0, vec![down.clone()]).unwrap();
+        input.take(Instant::now());
+        expire(&mut input);
+        input.events = vec![protocol::text_event("x").unwrap(); protocol::MAX_QUEUED_EVENTS];
+        assert!(input
+            .submit(
+                0,
+                0,
+                0,
+                vec![protocol::key_event(26, false, false, 0).unwrap()]
+            )
+            .is_err());
+        assert_eq!(input.events.len(), protocol::MAX_QUEUED_EVENTS);
+        input.events.clear();
+        assert!(input
+            .submit(
+                0,
+                0,
+                0,
+                vec![protocol::modifiers_event(1).unwrap(); protocol::MAX_QUEUED_EVENTS + 1]
+            )
+            .is_err());
+        let mut malformed = protocol::key_event(26, false, false, 0).unwrap();
+        malformed[8] = 2;
+        assert!(input.submit(0, 0, 0, vec![malformed]).is_err());
+        input.submit(0, 0, 0, vec![]).unwrap();
+        assert!(input.take(Instant::now()).3.contains(&down));
+    }
     #[test]
     fn resize_bursts_keep_only_the_latest_size_and_survive_input_release() {
         let mut input = super::Input::default();
@@ -390,3 +597,6 @@ mod tests {
         assert_eq!(output.ticks, 100);
     }
 }
+
+#[cfg(test)]
+mod native_tests;

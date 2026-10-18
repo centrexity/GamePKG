@@ -457,8 +457,7 @@ keypad, right-Ctrl, media-key focus reset and close still pass with Caps/Num
 initially enabled. No media is published. The X11 test remaps its tenth physical button to logical 10/11/12 to exercise
 original MOUSE10/11/12 as well as the five common buttons. Native Wayland
 additional-button normalization, relative-motion placement within the
-event sequence, recovery of physically held controls after the UI input lease
-expires, physical-controller hardware verification, native Wayland state and wider
+event sequence, broader held-input recovery and OS-event-loss behavior, physical-controller hardware verification, native Wayland state and wider
 hardware/platform coverage remain open.
 
 
@@ -515,7 +514,7 @@ source/release orders, repeat, reset, invalid indices and combined Shift masks.
 The unchanged original engine's W and Left Shift bindings verify both overlap
 orders and one focus-reset release through saved callback counters. These tests
 exercise the controller/touch action boundary; full physical-device, gesture,
-lease-recovery, relative-motion and platform coverage remain open.
+broader lease-recovery, relative-motion and platform coverage remain open.
 
 Keyboard overlap validation: 402 default all-features tests pass with 57 dedicated
 media/platform checks ignored. The original W/Shift overlap and original-console
@@ -525,3 +524,44 @@ startup/focus/close GUI checks pass. Both Windows all-features checks, strict li
 formatting, 125 pinned source hashes and seven public-page link checks pass.
 CLI and GUI are rebuilt locally. This is source-only progress at version 0.1.17;
 full controller/touch hardware and overall port parity are not claimed complete.
+
+
+Input-lease recovery follow-up: the 250 ms stale-input release is unchanged. The
+background worker now retains bounded, UI-observed physical key/button state
+through lease expiry, but clears it on explicit focus/input reset. Only a fresh UI
+submission can resume it. Fresh transitions are processed first; still-held,
+untouched controls are then reasserted once, with modifier keys before other
+keys and mouse buttons. Completed taps and controls released in the fresh batch
+are not restored. The first repeat for a previously held key can resume an
+effective press; subsequent repeats keep their normal semantics. Recovery is a
+new effective press after the safety release, not a reconstruction of every
+historical input condition across that discontinuity.
+
+Old queued events retain their order and stay released at stale-only frame
+boundaries. A queued recovery boundary separates that history from fresh input;
+fresh controller edges and look deltas wait for it, preserving their latches
+without repeated reset/repress cycles. Existing 64-event/frame and 1024-event
+queue bounds remain; oversized batches, malformed recovery-state packets and
+recovery overflow fail before replacing the last good input state. The cache
+contains at most the accepted scancodes/buttons and stays in memory only.
+
+Deterministic queue tests cover release/resume, modifier/button snapshots,
+completed taps, repeat, focus reset, multi-frame backlogs, deferred controller/look
+input, quota failure and rejected-state atomicity. An original-engine test feeds
+the actual queue output into original W/mouse/function-key bindings, verifying
+exact saved callback counts including the backlog/controller boundary. A second
+test runs the real background worker with no UI submissions until wall-clock
+expiry, confirms rendering continues, resumes held controls, releases them and
+saves the expected callback count without replaying a completed tap. Physical
+hotplug/lost OS-event detection, broader recovery bindings and remaining input,
+controller/touch/platform parity still require coverage.
+
+Lease-recovery validation: 407 default all-features tests pass with 59 dedicated
+media/platform checks ignored. Both original-engine recovery checks pass
+explicitly, including real worker expiry and scoped save persistence. Signed
+cached playback/integrity, uncontended eight-button/wheel/ordering GUI and
+initial-lock startup/focus/close GUI checks pass. Both Windows all-features
+checks, strict lint, formatting and seven public-page links pass. Both app entries
+are rebuilt locally; the unchanged reviewed engine is reused by its verified
+cache. This is source progress without a new release or a claim of full port,
+physical-device or every stalled-UI/input-history equivalence.
