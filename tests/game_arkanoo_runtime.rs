@@ -2284,3 +2284,70 @@ fn original_glass_bonus_layers_preserve_types_symbols_order_and_full_drop_budget
         assert!(bytes < gamepkg::drawing::MAX_IMAGE_BYTES);
     }
 }
+
+#[test]
+#[ignore = "requires the signed production fixture prepared by tests/arkanoo.py"]
+fn original_rocket_art_and_integer_positions_reach_the_signed_runtime() {
+    let root = isolated_library();
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-rocket.json")).unwrap();
+    let expected = hex::decode(fixture["rgba_hex"].as_str().unwrap()).unwrap();
+    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
+    for (index, case) in fixture["cases"].as_array().unwrap().iter().enumerate() {
+        assert_eq!(game.step(2147485696 | 64 | index as u32).unwrap(), 1);
+        let [Command::Image {
+            x,
+            y,
+            width: 5.0,
+            height: 10.0,
+            image,
+        }] = game.frame().commands.as_slice()
+        else {
+            panic!("Rocket must use one nearest-sampled original sprite")
+        };
+        assert_eq!(
+            (*x, *y),
+            (
+                case["origin"][0].as_i64().unwrap() as f32 * 0.5,
+                60.0 + case["origin"][1].as_i64().unwrap() as f32 * 0.5
+            )
+        );
+        assert_eq!(image.size(), [10, 20]);
+        assert_eq!(image.pixels(), expected);
+    }
+}
+
+#[test]
+#[ignore = "requires the signed production fixture prepared by tests/arkanoo.py"]
+fn production_rocket_rendering_uses_shared_art_within_unchanged_frame_budgets() {
+    let root = isolated_library();
+    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
+    let mut previous = None;
+    for _ in 0..2 {
+        assert_eq!(game.step(2147485696 | 128).unwrap(), 200);
+        let mut count = 0;
+        let mut bytes = 0;
+        assert!(game.frame().commands.len() < gamepkg::drawing::MAX_COMMANDS);
+        for command in &game.frame().commands {
+            if let Command::Image {
+                image,
+                width: 5.0,
+                height: 10.0,
+                ..
+            } = command
+            {
+                assert_eq!(image.size(), [10, 20]);
+                if let Some(ref old) = previous {
+                    assert!(std::sync::Arc::ptr_eq(old, image));
+                }
+                previous = Some(image.clone());
+                count += 1;
+            }
+            if let Command::Image { image, .. } | Command::LinearImage { image, .. } = command {
+                bytes += image.pixels().len();
+            }
+        }
+        assert_eq!(count, 200);
+        assert!(bytes < gamepkg::drawing::MAX_IMAGE_BYTES);
+    }
+}

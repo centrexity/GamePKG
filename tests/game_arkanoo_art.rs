@@ -145,3 +145,27 @@ fn original_metal_body_and_unclipped_layers_match_sdl_source_pixels() {
         );
     }
 }
+
+#[test]
+fn original_rocket_body_nose_fins_and_flame_match_real_sdl_pixels() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-rocket.json")).unwrap();
+    let image = image::load_from_memory(include_bytes!("../ports/arkanoo/assets/rocket.png"))
+        .unwrap()
+        .into_rgba8();
+    assert_eq!(image.dimensions(), (10, 20));
+    let expected = hex::decode(fixture["rgba_hex"].as_str().unwrap()).unwrap();
+    assert_eq!(image.as_raw(), &expected);
+    assert_eq!(gamepkg::verify::digest(&expected), fixture["rgba_sha256"]);
+    for (x, y, rgba) in [
+        (0, 0, [0, 0, 0, 0]),
+        (5, 0, [255, 50, 50, 255]),
+        (4, 8, [255, 100, 0, 255]),
+        (0, 13, [200, 80, 0, 255]),
+        (9, 13, [200, 80, 0, 255]),
+        (4, 16, [255, 255, 100, 255]),
+        (4, 19, [255, 200, 50, 255]),
+    ] {
+        assert_eq!(image.get_pixel(x, y).0, rgba);
+    }
+}

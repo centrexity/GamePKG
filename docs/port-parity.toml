@@ -280,3 +280,9 @@ id = "arkanoo_original_world_viewport"
 requirements = ["Original world viewport and aspect under window resizing", "World-object clipping at original window edges", "Partial bonus/particle visibility near boundaries", "Keep HUD and letterbox semantics faithful", "Original-frame comparison in native/browser players"]
 status = "pending"
 notes = "The source-art fixtures normalize each object and establish layer pixels/geometry, not whole-window clipping. Source currently projects the original 1280x720 world at half scale with a vertical offset into the fixed 640x480 SDK canvas. Original viewport/aspect and edge behavior need direct complete-frame evidence and any necessary scoped rendering support; restored object art does not close this requirement."
+
+[[work]]
+id = "arkanoo_original_rocket_art"
+requirements = ["Original ordered body/nose/fins/flame pixels", "Original integer-truncated projected coordinates", "Production gameplay integration", "Cold/warm shared asset and unchanged draw limits", "Signed native/Wasm and actual desktop/browser rendering"]
+status = "implemented_runtime_and_window_verified_linux_browser"
+notes = "The unchanged pinned rocket draw loop is captured and rasterized by real SDL into a 10x20 opaque/transparent source sprite. The production renderer replaces the old yellow rectangle with one nearest image; five fractional/negative/edge origins and 200-projectile cold/warm scenes are exercised through signed runtimes. All six desktop and both browser configurations pass three poses with seven samples per rocket (672 RGB comparisons); desktop channel difference at most one, browsers exact in this run. Transparent and nose samples avoid background-grid geometry edges, with explicit adjacent-texel handling at exact nearest boundaries. Original world-edge clipping and whole-frame presentation remain separate pending requirements."

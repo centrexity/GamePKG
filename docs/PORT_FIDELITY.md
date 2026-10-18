@@ -898,3 +898,42 @@ The final CI-compatible browser discovery path passes both browser profiles.
 Strict lint, formatting, Python syntax, tracker/CI parsing and byte-for-byte
 reference regeneration pass. CI runs the actual bonus scene in desktop/browser
 players. PNGs and notices are source-only; no signed package/binary release is made.
+
+### Original rocket projectiles
+
+The previous flat yellow projectile is replaced with the original orange body,
+red nose built from eight ordered SDL lines, dark-orange fins and both flame
+colors. A SHA-guarded maintainer oracle extracts the complete unchanged draw loop
+from pinned rendering.rs and executes its primitives through real SDL software
+rasterization. These thirteen opaque primitives fit a 10x20 source image, drawn
+nearest at 5x10 after the original integer truncation. Transparent corners retain
+the underlying game frame. The source-derived PNG has the original WTFPL notice;
+players need no asset-generation tools or added dependencies.
+
+Five origins include positive fractional, negative fractional and bottom-right
+edge cases. Signed runtime tests compare complete RGBA data and exact positions.
+A separate production Game.draw stress scene checks 200 projectiles across cold
+and warm frames, shared immutable image identity and unchanged frame limits.
+The real-player bonus scene harness also supports `--rocket`, checking corners,
+nose, body, both fins and both flame colors, movement and cleared old positions.
+Original viewport clipping remains unimplemented; normalized sprite pixels and
+commands do not establish complete-window equivalence.
+
+Viewport investigation: pinned main.rs independently scales x/y on window resize
+using window dimensions divided by 1280/720. It does not uniformly letterbox all
+resizes. Pinned Menu::new also puts Back at original y=760, below the 720-pixel
+window; cropping the current projected canvas wholesale would hide that working
+control. Full viewport restoration must reconcile these original behaviors,
+HUD/editor layout and pointer transforms with explicit evidence rather than
+assuming a fixed aspect-ratio crop is faithful.
+
+Rocket validation: all five source-art tests and 63 port logic checks pass. All
+37 signed runtime checks pass in both Wasm and native execution. Existing native
+and both browser gameplay/editor/file workflows also pass. The eight-player
+rocket matrix passes 24 poses and 672 RGB comparisons: desktop maximum channel
+difference one; both browser profiles exact for these samples. The existing
+bonus matrix also passes after the shared harness extension (maximum difference
+two). Original sprite sampling at exact nearest boundaries explicitly permits
+adjacent texels; full geometry-edge rasterization and original viewport clipping
+remain open. Reference regeneration is byte-identical. Source-only recipe 0.1.28
+does not change the app version or publish binary/package releases.
