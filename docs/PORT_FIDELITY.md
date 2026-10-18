@@ -12,7 +12,7 @@ work stays open until behavior is verified.
 | Cube 2 | Wayland lock-state access, Windows lock-state runtime validation, remaining uncommon-key/platform behavior and full controller/touch equivalence; further LAN/platform and master authentication/registration fault/service coverage; custom asset/mod workflows; demo/movie output and persistence; hardware-accelerated engine rendering; native platforms beyond Linux. Vulkan currently presents software-rendered engine frames. |
 | DOOM | Original WAD music, spatial stereo effects, six save slots, configuration, desktop controls and the original quit/ENDOOM flow are runtime verified. Music backend selection, multiplayer, additional WADs/mods and broader control/platform coverage remain unfinished. |
 | Zelda3 | External MSU music, replay tools, save states, widescreen, language selection and desktop enhancement settings need support. The adapter fixes the view to 256×224. Original DSP stereo is verified in native and Wasm gameplay/save tests. |
-| Arkanoo | Gravity, speed-triggered portal behavior and ball-to-ball responses are restored with upstream reference and actual-engine tests. Original world proportions and movement/contact order now match upstream reference checks. Per-ball launch timing, life recovery and victory/endless transitions also match original-code fixtures; prior item/score/level caps are removed. Brick health and original blast rules are also verified. All twelve original procedural patterns are restored. Focused mouse movement and original Space/Escape controls are restored. Editor painting/erasing, brick selection, names, save/load, clear confirmation, test return and the custom endless pool are restored. Original ASCII pattern import/export now uses player-selected files. Gameplay cursor confinement/hiding, F11 fullscreen and Q-to-quit outside play are verified in native and browser runtime checks. Normal-size/fullscreen/maximized preferences now persist through the native host. The six main menu actions and fullscreen/effects settings controls are restored. Remaining menu presentation and music/resolution/VSync controls, project-link action and original menus/music still need work. Original shard particles are restored; the metallic ball, glass paddle and normal-brick textures are restored; speed lettering is restored and directly verified; other art/effects still need work; original penguin/heart-loss behavior is now verified. Current runs do not persist; high score, unlocked level, gravity and effects preferences do. |
+| Arkanoo | Gravity, speed-triggered portal behavior and ball-to-ball responses are restored with upstream reference and actual-engine tests. Original world proportions and movement/contact order now match upstream reference checks. Per-ball launch timing, life recovery and victory/endless transitions also match original-code fixtures; prior item/score/level caps are removed. Brick health and original blast rules are also verified. All twelve original procedural patterns are restored. Focused mouse movement and original Space/Escape controls are restored. Editor painting/erasing, brick selection, names, save/load, clear confirmation, test return and the custom endless pool are restored. Original ASCII pattern import/export now uses player-selected files. Gameplay cursor confinement/hiding, F11 fullscreen and Q-to-quit outside play are verified in native and browser runtime checks. Normal-size/fullscreen/maximized preferences now persist through the native host. The six main menu actions and fullscreen/effects settings controls are restored. Remaining menu presentation and music/resolution/VSync controls, project-link action and original menus/music still need work. Original shard particles are restored; the metallic ball, glass paddle and normal-brick textures are restored; speed lettering and six campaign image backgrounds are restored and directly verified; editor/menu artwork, whole-window scaling and other art/effects still need work; original penguin/heart-loss behavior is now verified. Current runs do not persist; high score, unlocked level, gravity and effects preferences do. |
 | 2048 | Random spawning, merge scoring/best score, win/continue/game-over UI, restart, 128-step undo and persistent boards/history are implemented and tested. Byte-sized tile exponents remove the old 32768 cap. Cooperative expectimax assistance/autoplay matches independent upstream reference fixtures; a deterministic 932-turn game reaches 2048. Final signed-package delivery and broader platform verification remain open. |
 
 Evidence: [README coverage table](../README.md#port-feature-coverage),
@@ -1521,3 +1521,25 @@ the original frame verify clearing. Browser Canvas2D minification initially
 differed by up to 45 levels; explicit one-level WebGL bilinear sampling fixes it.
 Clipping/reset/resizing regressions pass after the change. This closes the
 Linux/browser speed-label gate, not other fonts, HUD or whole-window fidelity.
+
+## Campaign image background restoration
+
+The six licensed bundled images now replace gameplay's placeholder backgrounds.
+The oracle checks original asset hashes, rendering/main sources and the original
+linear texture hint. Six bounded tiles per image reconstruct all original
+1280×720 logical RGBA bytes exactly; the overlay reproduces every byte of the
+original alpha-64 gameplay capture. The 8 MiB frame-transfer and 1 MiB texture
+cache limits remain unchanged. Dense-scene testing found that full bonus layers
+plus the background exceeded that transfer cap. Cropping only zero-RGBA margins
+preserves every original bonus byte, offset and all four original layers while
+restoring all 800 dense-scene bonus draws. Small repeated sprites retain within-
+frame cache identity; backgrounds may legitimately evict earlier LRU entries.
+Both rounds of 55 signed checks and native/core/component browser gameplay,
+editor and selected-file workflows pass. All six desktop and both browser configurations pass image changes and revisit:
+4,928 samples cover tile seams and world edges, with at most one RGB level
+difference from original canonical pixels. Independent original primitive
+captures over the restored image also verify cropped bonuses (480 comparisons,
+existing three-level bound) and rockets (672 comparisons, at most one level),
+including stale-pixel clearing. Both 55-check signed runs pass the stricter
+whole-frame bonus-transfer sum. Editor/menu artwork and whole-window scaling
+remain open; these samples do not prove arbitrary-size presentation.

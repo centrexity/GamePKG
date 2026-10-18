@@ -1,7 +1,7 @@
 """Extract unchanged bonus art with real pinned SDL constructors and SDL rasterization."""
 from pathlib import Path
 import argparse,hashlib,json,os,subprocess,tempfile,tarfile,sys
-parser=argparse.ArgumentParser();parser.add_argument('upstream');parser.add_argument('--sdl-crate',required=True);parser.add_argument('--sdl-sys-crate',required=True);parser.add_argument('--write-assets');args=parser.parse_args()
+parser=argparse.ArgumentParser();parser.add_argument('upstream');parser.add_argument('--sdl-crate',required=True);parser.add_argument('--sdl-sys-crate',required=True);parser.add_argument('--write-assets');parser.add_argument('--commands-only',action='store_true');args=parser.parse_args()
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]));from gui_test_support import start_display
 source=Path(args.upstream)/'src/rendering.rs';text=source.read_text();assert hashlib.sha256(source.read_bytes()).hexdigest()=='51b6c75d19ed56c67412daee59f5cae90ace2586902c753c2598935f2702fb83'
 entities=Path(args.upstream)/'src/entities.rs';assert hashlib.sha256(entities.read_bytes()).hexdigest()=='ee6fc52f2ea582900edee90350c0c4608235aeecae6e56cc875cfd7893313545'
@@ -42,6 +42,8 @@ struct Bonus{x:f32,y:f32,bonus_type:BonusType}impl Bonus{
   if row[0]=='CASE':
    which,position,x,y=map(int,row[1:]);cases.append(dict(kind=which,position=position,x=x,y=y,commands=[]))
   else:cases[-1]['commands'].append(line)
+ if args.commands_only:
+  print(json.dumps(dict(revision='9d613e78c9ed5657ae7fda9206cd4a82a893b7c8',fragment_sha256=hashlib.sha256(fragment.encode()).hexdigest(),cases=[case for case in cases if case['position']==0]),indent=2));raise SystemExit(0)
  raster=Path(__file__).with_name('sdl_bonus_layers.c');flags=subprocess.check_output(['pkg-config','--cflags','--libs','sdl2'],text=True).split();subprocess.run(['cc',str(raster),'-o',str(work/'raster'),*flags],check=True)
  layers={};records=[];originals={}
  for case in cases:
@@ -75,5 +77,6 @@ struct Bonus{x:f32,y:f32,bonus_type:BonusType}impl Bonus{
  if args.write_assets:
   from PIL import Image
   destination=Path(args.write_assets);assert destination.is_dir()
-  for name,value in layers.items():Image.frombytes('RGBA',(41,41),bytes.fromhex(value['rgba_hex'])).save(destination/name)
+  for name,value in layers.items():
+   image=Image.frombytes('RGBA',(41,41),bytes.fromhex(value['rgba_hex']));a=image.getchannel('A').getbbox();b=image.convert('RGB').getbbox();bounds=(min(a[0],b[0]),min(a[1],b[1]),max(a[2],b[2]),max(a[3],b[3]));image.crop(bounds).save(destination/name)
  print(json.dumps(dict(revision='9d613e78c9ed5657ae7fda9206cd4a82a893b7c8',rendering_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),entities_sha256=hashlib.sha256(entities.read_bytes()).hexdigest(),fragment_sha256=hashlib.sha256(fragment.encode()).hexdigest(),sdl2_version='0.37.0',canonical_renderer='opengl',original_dark_rgba=originals,layers=layers,cases=records),indent=2))

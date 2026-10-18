@@ -2,7 +2,7 @@
 from pathlib import Path
 from functools import partial
 from http.server import SimpleHTTPRequestHandler,ThreadingHTTPServer
-import argparse,json,math,os,shutil,subprocess,tempfile,threading,time
+import argparse,json,math,os,shutil,subprocess,tempfile,threading,time,zlib
 from PIL import Image
 from gui_test_support import start_display
 parser=argparse.ArgumentParser();parser.add_argument('--rocket',action='store_true');parser.add_argument('--skip-browser',action='store_true');parser.add_argument('--browser-only',action='store_true');args=parser.parse_args()
@@ -16,6 +16,23 @@ if args.rocket:
  assert all(alpha in [0,255] for alpha in pixels[3::4])
  ORIGINAL=[bytes(value if pixels[index//4*4+3] else background[index%4] if index%4<3 else 255 for index,value in enumerate(pixels))]*4
  TEX_W=10;TEX_H=20;RELATIVE=[(0,3),(2.5,1),(2,4),(0,6),(4,6),(2,8),(2,9)]
+BACKGROUND=zlib.decompress(bytes.fromhex(json.loads((PROJECT/'tests/fixtures/arkanoo-image-backgrounds.json').read_text())['cases'][0]['game_rgba_zlib_hex']))
+SCENES={shift:[bytes.fromhex(value) for value in values] for shift,values in json.loads((PROJECT/'tests/fixtures/arkanoo-bonus-background.json').read_text())['scenes'].items()}
+def background_pixel(x,y):
+ at=(y*1280+x)*4;return list(BACKGROUND[at:at+3])
+def original_pixel(kind,x,y,shift):
+ if args.rocket:
+  at=(y*TEX_W+x)*4
+  return list(pixels[at:at+3]) if pixels[at+3] else background_pixel((200+kind*50+shift)*2+x,320+y)
+ at=(y*TEX_W+x)*4;return list(SCENES[str(shift)][kind][at:at+3])
+def background_choices(width,height,x,y):
+ scale=min(width/640,height/480);ox=(width-640*scale)/2;oy=(height-480*scale)/2
+ sx=(round(ox+x*scale)+.5-ox)*2/scale;sy=((round(oy+y*scale)+.5-oy)/scale-60)*2
+ xs=[math.floor(sx)]+([round(sx)-1] if abs(sx-round(sx))<.00001 else []);ys=[math.floor(sy)]+([round(sy)-1] if abs(sy-round(sy))<.00001 else [])
+ return [background_pixel(x,y) for x in xs for y in ys]
+CLEARING=[((202 if args.rocket else 210)+kind*50,224 if args.rocket else 230) for kind in range(4)]
+def check_clearing(actual,width,height):
+ for pixel,(x,y) in zip(actual,CLEARING):assert min(max(abs(a-b) for a,b in zip(pixel,choice)) for choice in background_choices(width,height,x,y))<=1,('Stale sprite pixels',pixel,x,y)
 def points(shift):return [(kind,200+kind*50+shift+x,220+y) for kind in range(4) for x,y in RELATIVE]
 def expected(shift,width,height):
  scale=min(width/640,height/480);ox=(width-640*scale)/2;oy=(height-480*scale)/2;values=[]
@@ -26,7 +43,7 @@ def expected(shift,width,height):
    value=math.floor(coordinate);choices=[value]
    if abs(coordinate-round(coordinate))<0.00001:choices.append(round(coordinate)-1)
    return sorted({max(0,min(extent-1,c)) for c in choices})
-  values.append([list(ORIGINAL[kind][(sy*TEX_W+sx)*4:(sy*TEX_W+sx)*4+3]) for sx in texels((px+.5-left)*2/scale,TEX_W) for sy in texels((py+.5-top)*2/scale,TEX_H)])
+  values.append([original_pixel(kind,sx,sy,shift) for sx in texels((px+.5-left)*2/scale,TEX_W) for sy in texels((py+.5-top)*2/scale,TEX_H)])
  return values
 def check(actual,wanted,label):
  deltas=[min(max(abs(a-b) for a,b in zip(p,q)) for q in choices) for p,choices in zip(actual,wanted)];delta=max(deltas);print(label,'maximum original SDL channel difference (nearest boundaries accounted):',delta,flush=True)
@@ -70,7 +87,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-bonus-ui-',dir=PROJECT/'target'
         if app.poll() is not None:raise RuntimeError(app.stderr.read().decode())
         assert time.monotonic()<deadline,(label,shift,actual);time.sleep(.05)
        check(actual,expected(shift,im.width,im.height),label+'-'+str(shift))
-       if shift:assert all(im.getpixel((round(ox+((202 if args.rocket else 210)+kind*50)*scale),round(oy+(224 if args.rocket else 230)*scale)))==(11,16,32) for kind in range(4))
+       if shift:check_clearing([im.getpixel((round(ox+x*scale),round(oy+y*scale))) for x,y in CLEARING],im.width,im.height)
      finally:
       if held:subprocess.run(['xdotool','keyup','Right'],env=env,check=True)
       if app.poll() is None:app.terminate()
@@ -93,7 +110,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-bonus-ui-',dir=PROJECT/'target'
       if shift:ActionChains(browser).key_down(Keys.ARROW_RIGHT).perform();held=True
       wait.until(lambda b:b.find_element('id','game').get_attribute('data-state')==str(int(shift>0)))
       actual=browser.execute_script('const c=document.querySelector("#game").getContext("2d");return arguments[0].map(p=>Array.from(c.getImageData(p[1],p[2],1,1).data).slice(0,3));',points(shift));check(actual,expected(shift,640,480),'browser-'+profile+'-'+str(shift))
-      if shift:assert browser.execute_script('const c=document.querySelector("#game").getContext("2d");return arguments[0].every(x=>JSON.stringify(Array.from(c.getImageData(x,arguments[1],1,1).data).slice(0,3))==="[11,16,32]");',[202,252,302,352] if args.rocket else [210,260,310,360],224 if args.rocket else 230)
+      if shift:check_clearing(browser.execute_script('const c=document.querySelector("#game").getContext("2d");return arguments[0].map(p=>Array.from(c.getImageData(p[0],p[1],1,1).data).slice(0,3));',CLEARING),640,480)
     finally:
      if held:ActionChains(browser).key_up(Keys.ARROW_RIGHT).perform()
      browser.quit();server.shutdown();server.server_close()

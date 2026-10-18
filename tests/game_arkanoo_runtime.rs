@@ -480,7 +480,7 @@ fn multiball_ejection_and_shockwave_reach_the_real_renderer() {
         .frame()
         .commands
         .iter()
-        .filter(|command| matches!(command, Command::Image { image, .. } if image.pixels().chunks_exact(4).any(|p|p[..3]==[200,255,255] && p[3]>0)))
+        .filter(|command| matches!(command, Command::Image { image, .. } if image.pixels().chunks_exact(4).any(|p|p[3]==0) && image.pixels().chunks_exact(4).any(|p|p[..3]==[200,255,255] && p[3]>0)))
         .count();
     assert_eq!(shockwave, 1, "missing batched original shockwave shards");
 }
@@ -557,7 +557,7 @@ fn original_particle_points_and_alpha_reach_native_and_wasm_renderers_without_ca
     for command in &game.frame().commands {
         if let Command::Image { x, y, image, .. } = command {
             let [w, h] = image.size();
-            if h <= 50 {
+            if h <= 50 || image.pixels().chunks_exact(4).all(|pixel| pixel[3] == 255) {
                 continue;
             }
             tiles += 1;
@@ -1953,9 +1953,9 @@ fn original_metal_layers_preserve_outside_pixels_order_and_full_board_budgets() 
             assert_eq!(image.pixels(), expected.as_slice());
         }
     }
-    let mut identities: [Option<std::sync::Arc<gamepkg::drawing::image::Image>>; 3] =
-        [None, None, None];
     for _ in 0..2 {
+        let mut identities: [Option<std::sync::Arc<gamepkg::drawing::image::Image>>; 3] =
+            [None, None, None];
         assert_eq!(game.step(2147483776 | 8).unwrap(), 200);
         let mut bodies = 0;
         let mut outside = 0;
@@ -2243,25 +2243,27 @@ fn original_glass_bonus_layers_preserve_types_symbols_order_and_full_drop_budget
             let Command::Image {
                 x,
                 y,
-                width: 20.5,
-                height: 20.5,
+                width,
+                height,
                 image,
             } = command
             else {
                 panic!("Bonus primitives must retain inclusive nearest-sampled bounds")
             };
-            assert_eq!(
-                (*x, *y),
-                (
-                    case["x"].as_i64().unwrap() as f32 * 0.5,
-                    60.0 + case["y"].as_i64().unwrap() as f32 * 0.5
-                )
-            );
             let expected = &reference["layers"][case["layers"][layer].as_str().unwrap()];
-            assert_eq!(image.size(), [41, 41]);
+            let raw = hex::decode(expected["rgba_hex"].as_str().unwrap()).unwrap();
+            let left = ((*x - case["x"].as_i64().unwrap() as f32 * 0.5) * 2.0) as usize;
+            let top = ((*y - 60.0 - case["y"].as_i64().unwrap() as f32 * 0.5) * 2.0) as usize;
+            let [w, h] = image.size();
+            assert_eq!((*width, *height), (w as f32 * 0.5, h as f32 * 0.5));
+            let mut restored = vec![0u8; 41 * 41 * 4];
+            for row in 0..h {
+                restored[((top + row) * 41 + left) * 4..((top + row) * 41 + left + w) * 4]
+                    .copy_from_slice(&image.pixels()[row * w * 4..(row + 1) * w * 4]);
+            }
             assert_eq!(
-                image.pixels(),
-                hex::decode(expected["rgba_hex"].as_str().unwrap()).unwrap()
+                restored, raw,
+                "Cropped bonus must preserve all original RGBA bytes and offsets"
             );
         }
     }
@@ -2271,6 +2273,7 @@ fn original_glass_bonus_layers_preserve_types_symbols_order_and_full_drop_budget
     let mut identities =
         std::collections::BTreeMap::<String, std::sync::Arc<gamepkg::drawing::image::Image>>::new();
     for _ in 0..2 {
+        identities.clear(); // Background legitimately evicts earlier LRU entries.
         assert_eq!(stress.step(2147485696 | 32).unwrap(), 200);
         let commands = &stress.frame().commands;
         let clips: Vec<_> = commands
@@ -2291,14 +2294,33 @@ fn original_glass_bonus_layers_preserve_types_symbols_order_and_full_drop_budget
             clips[0].0 > 0 && clips[1].0 + 1 < commands.len(),
             "HUD must remain outside the world clip"
         );
-        assert_eq!(commands[clips[0].0 + 1..clips[1].0].iter().filter(|command| matches!(command, Command::Image { image, .. } if image.size() == [41, 41])).count(), 800, "Every bonus layer must be inside the world clip");
+        let bonus_start = commands
+            .iter()
+            .position(|command| matches!(command,Command::Image{image,..} if image.size()==[41,41]))
+            .unwrap();
+        let bonus_end = bonus_start + 800;
+        assert!(
+            bonus_start > clips[0].0 && bonus_end <= clips[1].0,
+            "Every bonus layer must be inside the world clip"
+        );
+        assert!(commands[bonus_start..bonus_end].iter().all(|command|matches!(command,Command::Image{image,..} if image.size()[0]<=41 && image.size()[1]<=41)));
         assert!(stress.frame().commands.len() < gamepkg::drawing::MAX_COMMANDS);
-        let mut bytes = 0;
+        let bytes: usize = commands
+            .iter()
+            .filter_map(|command| match command {
+                Command::Image { image, .. } | Command::LinearImage { image, .. } => {
+                    Some(image.pixels().len())
+                }
+                _ => None,
+            })
+            .sum();
         let mut count = 0;
-        for command in &stress.frame().commands {
+        for command in &stress.frame().commands[bonus_start..bonus_end] {
             if let Command::Image { image, .. } | Command::LinearImage { image, .. } = command {
-                bytes += image.pixels().len();
-                if image.size() == [41, 41] {
+                if matches!(command, Command::Image { .. })
+                    && image.size()[0] <= 41
+                    && image.size()[1] <= 41
+                {
                     let name = reference["cases"][(count / 4 % 4) * 4]["layers"][count % 4]
                         .as_str()
                         .unwrap()
@@ -2358,8 +2380,8 @@ fn original_rocket_art_and_integer_positions_reach_the_signed_runtime() {
 fn production_rocket_rendering_uses_shared_art_within_unchanged_frame_budgets() {
     let root = isolated_library();
     let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
-    let mut previous = None;
     for _ in 0..2 {
+        let mut previous = None; // Background legitimately evicts earlier LRU entries.
         assert_eq!(game.step(2147485696 | 128).unwrap(), 200);
         let mut count = 0;
         let mut bytes = 0;
@@ -2840,6 +2862,118 @@ fn original_ball_speed_font_pixels_and_integer_placement_reach_every_profile() {
             );
             assert_eq!(image.size(), [source_width as usize, 31]);
             assert_eq!(image.pixels(), expected);
+        }
+    }
+}
+
+#[test]
+#[ignore = "requires tests/arkanoo.py fixtures"]
+fn original_six_campaign_image_backgrounds_preserve_full_pixels_and_dense_scene_budgets() {
+    use sha2::Digest;
+    let reference: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-image-backgrounds.json")).unwrap();
+    for (index, case) in reference["cases"].as_array().unwrap().iter().enumerate() {
+        let root = isolated_library();
+        let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
+        assert_eq!(game.step(2684354560 | index as u32).unwrap(), 1);
+        let commands = &game.frame().commands;
+        assert_eq!(commands.len(), 7);
+        assert!(matches!(
+            commands[6],
+            Command::Rect {
+                x: 0.0,
+                y: 60.0,
+                width: 640.0,
+                height: 360.0,
+                rgba: 191
+            }
+        ));
+        let mut bright = vec![0u8; 1280 * 720 * 4];
+        for (command, tile) in commands[..6].iter().zip(case["tiles"].as_array().unwrap()) {
+            let Command::Image {
+                x,
+                y,
+                width,
+                height,
+                image,
+            } = command
+            else {
+                panic!("Image background tile missing")
+            };
+            let left = tile["origin"][0].as_u64().unwrap() as usize;
+            let top = tile["origin"][1].as_u64().unwrap() as usize;
+            let w = tile["size"][0].as_u64().unwrap() as usize;
+            let h = tile["size"][1].as_u64().unwrap() as usize;
+            assert_eq!(
+                (*x, *y, *width, *height),
+                (
+                    left as f32 * 0.5,
+                    60.0 + top as f32 * 0.5,
+                    w as f32 * 0.5,
+                    h as f32 * 0.5
+                )
+            );
+            assert_eq!(image.size(), [w, h]);
+            assert_eq!(
+                hex::encode(sha2::Sha256::digest(image.pixels())),
+                tile["rgba_sha256"].as_str().unwrap()
+            );
+            for row in 0..h {
+                bright[((top + row) * 1280 + left) * 4..((top + row) * 1280 + left + w) * 4]
+                    .copy_from_slice(&image.pixels()[row * w * 4..(row + 1) * w * 4]);
+            }
+        }
+        assert_eq!(
+            hex::encode(sha2::Sha256::digest(&bright)),
+            case["bright_rgba_sha256"].as_str().unwrap()
+        );
+        let compressed = hex::decode(case["game_rgba_zlib_hex"].as_str().unwrap()).unwrap();
+        let mut expected = Vec::new();
+        std::io::Read::read_to_end(
+            &mut flate2::read::ZlibDecoder::new(compressed.as_slice()),
+            &mut expected,
+        )
+        .unwrap();
+        for pixel in bright.chunks_exact_mut(4) {
+            for channel in &mut pixel[..3] {
+                *channel = ((u16::from(*channel) * 64 + 127) / 255) as u8;
+            }
+        }
+        assert_eq!(
+            bright,
+            expected,
+            "Canonical original campaign image {}",
+            index + 1
+        );
+        for _ in 0..2 {
+            assert_eq!(game.step(2684354560 | 256 | index as u32).unwrap(), 3000);
+            let commands = &game.frame().commands;
+            assert!(commands.len() < gamepkg::drawing::MAX_COMMANDS);
+            assert!(commands[..6].iter().all(|c| matches!(c,Command::Image{image,..} if image.size()[0]>=256 && image.size()[1]>=208)));
+            let bytes: usize = commands
+                .iter()
+                .filter_map(|c| match c {
+                    Command::Image { image, .. } | Command::LinearImage { image, .. } => {
+                        Some(image.pixels().len())
+                    }
+                    _ => None,
+                })
+                .sum();
+            assert!(bytes <= gamepkg::drawing::MAX_IMAGE_BYTES);
+            assert_eq!(
+                commands
+                    .iter()
+                    .filter(|c| matches!(c,Command::Image{image,..} if image.size()==[61,21]))
+                    .count(),
+                200,
+                "Dense fire overlays were dropped"
+            );
+            assert!(
+                commands
+                    .iter()
+                    .any(|c| matches!(c, Command::Clip { rect: None })),
+                "Full-scene drawing ended before clip reset"
+            );
         }
     }
 }
