@@ -5,13 +5,14 @@ from http.server import SimpleHTTPRequestHandler,ThreadingHTTPServer
 import argparse,json,math,os,shutil,subprocess,tempfile,threading,time
 from PIL import Image
 from gui_test_support import start_display
-parser=argparse.ArgumentParser();parser.add_argument('--skip-browser',action='store_true');args=parser.parse_args()
-PROJECT=Path(__file__).resolve().parents[1];PROOF=PROJECT/'target/background-proof';PROOF.mkdir(parents=True,exist_ok=True)
+parser=argparse.ArgumentParser();parser.add_argument('--procedural',action='store_true');parser.add_argument('--skip-browser',action='store_true');args=parser.parse_args()
+PROJECT=Path(__file__).resolve().parents[1];PROOF=PROJECT/('target/procedural-proof' if args.procedural else 'target/background-proof');PROOF.mkdir(parents=True,exist_ok=True)
 import zlib
-REFERENCE=json.loads((PROJECT/'tests/fixtures/arkanoo-background.json').read_text())['cases']
+REFERENCE=json.loads((PROJECT/('tests/fixtures/arkanoo-procedural.json' if args.procedural else 'tests/fixtures/arkanoo-background.json')).read_text())['cases']
 ORIGINAL=[zlib.decompress(bytes.fromhex(case['sdl_rgba_zlib_hex'])) for case in REFERENCE]
 PHASES=[0,3,7,10,14,17,0]
 KEYS={3:'Right',7:'Up',10:'z',14:'Left',17:'Down'}
+if args.procedural:PHASES=[0,3,11,14,22,25,0];KEYS={3:'Right',11:'Up',14:'z',22:'Left',25:'Down'}
 def source_pixel(case,x,y):
  if 0<=x<1280 and 0<=y<720:
   at=(y*1280+x)*4;return list(ORIGINAL[case][at:at+3])
@@ -22,8 +23,10 @@ def points(case):
  raw=ORIGINAL[case];bg=REFERENCE[case]['background'].to_bytes(4,'big')[:3]
  visible=[i for i in range(1280*720) if raw[i*4:i*4+3]!=bg]
  import struct
- dots=[(x,y) for x,y,color in struct.iter_unpack('<iiI',zlib.decompress(bytes.fromhex(REFERENCE[case]['trace_zlib_hex']))) if color&255 and 0<=x<1280 and 0<=y<720]
- left=min(x for x,y in dots);top=min(y for x,y in dots)
+ if args.procedural:left,top,_,_=REFERENCE[case]['bounds']
+ else:
+  dots=[(x,y) for x,y,color in struct.iter_unpack('<iiI',zlib.decompress(bytes.fromhex(REFERENCE[case]['trace_zlib_hex']))) if color&255 and 0<=x<1280 and 0<=y<720]
+  left=min(x for x,y in dots);top=min(y for x,y in dots)
  # Sample inside geometry tiles; clipping/raster edges have their own open audit.
  visible=[i for i in visible if 5<i%1280<1275 and 5<i//1280<715 and 4<((i%1280-left)%64)<60 and 4<((i//1280-top)%64)<60]
  assert visible
@@ -42,7 +45,7 @@ def expected(case,width,height):
  return values
 def check(actual,wanted,label):
  deltas=[min(max(abs(a-b) for a,b in zip(p,q)) for q in choices) for p,choices in zip(actual,wanted)];delta=max(deltas);print(label,'maximum original SDL channel difference (nearest boundaries accounted):',delta,flush=True)
- assert delta<=3,(label,[(i,a,b) for i,(a,b) in enumerate(zip(actual,wanted)) if deltas[i]>3])
+ assert delta<=(5 if args.procedural else 3),(label,[(i,a,b) for i,(a,b) in enumerate(zip(actual,wanted)) if deltas[i]>(5 if args.procedural else 3)])
 class Quiet(SimpleHTTPRequestHandler):
  def log_message(self,*args):pass
 with tempfile.TemporaryDirectory(prefix='gamepkg-background-ui-',dir=PROJECT/'target') as directory:
@@ -51,7 +54,8 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-background-ui-',dir=PROJECT/'ta
  display=start_display(env,width=1100,height=850)
  try:
   source=root/'source';shutil.copytree(PROJECT/'ports/arkanoo',source);entry=source/'source/src/lib.rs';modules=entry.read_text().split('use std::sync::Mutex;')[0]
-  entry.write_text(modules+'pub fn game_tick(input:u32,_:u64)->u64 {let which=if input&gamepkg::HELD_RIGHT!=0 {3} else if input&gamepkg::HELD_UP!=0 {7} else if input&gamepkg::HELD_B!=0 {10} else if input&gamepkg::HELD_LEFT!=0 {14} else if input&gamepkg::HELD_DOWN!=0 {17} else {0};let cases='+str([[c['level'],c['frame']] for c in REFERENCE]).replace(' ', '')+';gamepkg::draw_clear(0x0b1020ff);render::draw_campaign_background(cases[which][0] as u32,cases[which][1]);which as u64}')
+  entry.write_text(modules+'pub fn game_tick(input:u32,_:u64)->u64 {let which=if input&gamepkg::HELD_RIGHT!=0 {3} else if input&gamepkg::HELD_UP!=0 {7} else if input&gamepkg::HELD_B!=0 {10} else if input&gamepkg::HELD_LEFT!=0 {14} else if input&gamepkg::HELD_DOWN!=0 {17} else {0};let cases='+str([[c['level'],c['frame']] for c in REFERENCE]).replace(' ', '')+';gamepkg::draw_clear(0x0b1020ff);render::draw_background(cases[which][0] as u32,cases[which][1]);which as u64}')
+  if args.procedural:entry.write_text(entry.read_text().replace('{7} else','{11} else').replace('{10} else','{14} else').replace('{14} else if input&gamepkg::HELD_DOWN','{22} else if input&gamepkg::HELD_DOWN').replace('{17} else','{25} else'))
   base=(source/'manifest.toml').read_text().replace('com.gamepkg.arkanoo','com.gamepkg.background-scene');cli=PROJECT/'target/release/gamepkg';gui=PROJECT/'target/release/gamepkg-gui'
   def run(*arguments):
    r=subprocess.run([str(cli),*map(str,arguments)],env=env,capture_output=True,text=True,timeout=180);assert r.returncode==0,r.stderr
@@ -77,7 +81,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-background-ui-',dir=PROJECT/'ta
        while True:
         path=PROOF/(label+'.png');subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(path)],env=env,check=True,timeout=10);im=Image.open(path).convert('RGB');scale=min(im.width/640,im.height/480);ox=(im.width-640*scale)/2;oy=(im.height-480*scale)/2
         actual=[list(im.getpixel((round(ox+x*scale),round(oy+y*scale)))) for _,x,y in points(shift)]
-        if all(min(max(abs(a-b) for a,b in zip(pixel,choice)) for choice in choices)<=3 for pixel,choices in zip(actual,expected(shift,im.width,im.height))):break
+        if all(min(max(abs(a-b) for a,b in zip(pixel,choice)) for choice in choices)<=(5 if args.procedural else 3) for pixel,choices in zip(actual,expected(shift,im.width,im.height))):break
         if app.poll() is not None:raise RuntimeError(app.stderr.read().decode())
         assert time.monotonic()<deadline,(label,shift,actual);time.sleep(.05)
        check(actual,expected(shift,im.width,im.height),label+'-'+str(shift))
@@ -100,7 +104,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-background-ui-',dir=PROJECT/'ta
      browser.get(f'http://127.0.0.1:{server.server_port}/');wait=WebDriverWait(browser,20);wait.until(lambda b:b.find_element('id','status').text=='Ready to play');browser.find_element('id','play').click();wait.until(lambda b:b.find_element('id','game').get_attribute('data-state'));browser.find_element('id','game').click()
      for shift in PHASES:
       if held:ActionChains(browser).key_up(held).perform();held=False
-      if shift:held={3:Keys.ARROW_RIGHT,7:Keys.ARROW_UP,10:'z',14:Keys.ARROW_LEFT,17:Keys.ARROW_DOWN}[shift];ActionChains(browser).key_down(held).perform()
+      if shift:held=({3:Keys.ARROW_RIGHT,11:Keys.ARROW_UP,14:'z',22:Keys.ARROW_LEFT,25:Keys.ARROW_DOWN} if args.procedural else {3:Keys.ARROW_RIGHT,7:Keys.ARROW_UP,10:'z',14:Keys.ARROW_LEFT,17:Keys.ARROW_DOWN})[shift];ActionChains(browser).key_down(held).perform()
       wait.until(lambda b:b.find_element('id','game').get_attribute('data-state')==str(shift))
       actual=browser.execute_script('const c=document.querySelector("#game").getContext("2d");return arguments[0].map(p=>Array.from(c.getImageData(p[1],p[2],1,1).data).slice(0,3));',[(kind,round(x),round(y)) for kind,x,y in points(shift)]);check(actual,expected(shift,640,480),'browser-'+profile+'-'+str(shift))
     finally:

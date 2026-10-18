@@ -75,13 +75,13 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-arkanoo-',dir=PROJECT/'target')
     file=custom/'manifest.toml';file.write_text(file.read_text().replace('com.gamepkg.arkanoo','com.gamepkg.arkanoo-custom'))
     boards=json.loads((PROJECT/'tests/fixtures/arkanoo-custom-levels.json').read_text())['patterns']
     assert boards==[[i if i<9 else 255 for i in range(200)],[i//20%6 if i//20==i%20 else 255 for i in range(200)],[255]*200]
-    (custom/'source/src/lib.rs').write_text('mod background;mod audio;mod editor;mod levels;mod menu;mod pattern_rng;mod physics;mod render;pub fn game_tick(input:u32,_:u64)->u64 {let mut game=physics::Game::new();for which in 0..3 {let mut board=[255u8;200];if which==0 {for col in 0..9 {board[col]=col as u8;}}if which==1 {for row in 0..10 {board[row*20+row]=(row%6) as u8;}}game.editor.patterns.push(editor::Pattern{name:String::new(),cells:board});}game.level=input;game.populate();game.mode=1;render::draw(&game);let mut result=14695981039346656037u64;for index in 0..200 {let cell=if game.blocks[index]==0 {255} else if game.block_type[index]>0 {game.block_type[index]+5} else {game.block_color[index]};result=(result^u64::from(cell)).wrapping_mul(1099511628211);}result}')
+    (custom/'source/src/lib.rs').write_text('mod procedural;mod background;mod audio;mod editor;mod levels;mod menu;mod pattern_rng;mod physics;mod render;pub fn game_tick(input:u32,_:u64)->u64 {let mut game=physics::Game::new();for which in 0..3 {let mut board=[255u8;200];if which==0 {for col in 0..9 {board[col]=col as u8;}}if which==1 {for row in 0..10 {board[row*20+row]=(row%6) as u8;}}game.editor.patterns.push(editor::Pattern{name:String::new(),cells:board});}game.level=input;game.populate();game.mode=1;render::draw(&game);let mut result=14695981039346656037u64;for index in 0..200 {let cell=if game.blocks[index]==0 {255} else if game.block_type[index]>0 {game.block_type[index]+5} else {game.block_color[index]};result=(result^u64::from(cell)).wrapping_mul(1099511628211);}result}')
     run('pack',custom,'-o',root/'custom.gamepkg','--key',key);run('install',root/'custom.gamepkg','--trust-creator');run('build','com.gamepkg.arkanoo-custom')
     # Trigger the production portal at its original speed threshold without
     # depending on a long random play session. Only fixture setup is replaced.
     modes=root/'modes';shutil.copytree(PROJECT/'ports/arkanoo',modes)
     mode_manifest=modes/'manifest.toml';mode_manifest.write_text(mode_manifest.read_text().replace('com.gamepkg.arkanoo','com.gamepkg.arkanoo-modes'))
-    (modes/'source/src/lib.rs').write_text('''mod background;mod audio;mod editor;mod levels;mod menu;mod pattern_rng;mod physics;mod render;use std::sync::Mutex;
+    (modes/'source/src/lib.rs').write_text('''mod procedural;mod background;mod audio;mod editor;mod levels;mod menu;mod pattern_rng;mod physics;mod render;use std::sync::Mutex;
 static GAME:Mutex<Option<physics::Game>>=Mutex::new(None);
 pub fn game_tick(input:u32,state:u64)->u64 {
  if input&268435456!=0 {let mut game=physics::Game::new();game.mode=if input&1!=0 {2} else {1};game.frame=u64::from(u32::MAX);game.update(0);return game.frame;};
@@ -151,8 +151,11 @@ pub fn game_tick(input:u32,state:u64)->u64 {
     portal_cases=json.loads((PROJECT/'tests/fixtures/arkanoo-portal.json').read_text())['cases']
     portal_probe='fn portal_probe(input:u32)->u64 {let cases=['+','.join('['+str(case['frame'])+'u64,'+str(case['timer'])+'u64]' for case in portal_cases)+'];let at=cases[(input&31) as usize];if input&32!=0 {let mut game=physics::Game::new();game.mode=1;game.portal=true;game.frame=at[0];game.portal_timer=at[1] as u32;render::draw(&game);}else {gamepkg::draw_clear(0x0b1020ff);render::draw_portal(at[0],at[1]);}1}\n'
     background_cases=json.loads((PROJECT/'tests/fixtures/arkanoo-background.json').read_text())['cases']
-    background_probe='fn background_probe(input:u32)->u64 {let cases=['+','.join('['+str(case['level'])+'u64,'+str(case['frame'])+'u64]' for case in background_cases)+'];let at=cases[(input&31) as usize];if input&32!=0 {let mut game=physics::Game::new();game.mode=1;game.level=at[0] as u32;game.frame=at[1];for index in 0..200 {game.set_block(index,2);}for index in 0..3000 {game.particles.push(physics::Particle{x:if index%2==0 {0.0} else {1279.0},y:if index%4<2 {0.0} else {719.0},vx:0.0,vy:0.0,life:30,max_life:30,rotation:0.0,rotation_speed:0.0,size:7,color:0x1964c8ff});}render::draw(&game);3000}else {u64::from(render::draw_campaign_background(at[0] as u32,at[1]))}}\n'
-    probe=' if input&2147491840==2147491840 {return background_probe(input); }\n'
+    background_probe='fn background_probe(input:u32)->u64 {let cases=['+','.join('['+str(case['level'])+'u64,'+str(case['frame'])+'u64]' for case in background_cases)+'];let at=cases[(input&31) as usize];if input&32!=0 {let mut game=physics::Game::new();game.mode=1;game.level=at[0] as u32;game.frame=at[1];for index in 0..200 {game.set_block(index,2);}for index in 0..3000 {game.particles.push(physics::Particle{x:if index%2==0 {0.0} else {1279.0},y:if index%4<2 {0.0} else {719.0},vx:0.0,vy:0.0,life:30,max_life:30,rotation:0.0,rotation_speed:0.0,size:7,color:0x1964c8ff});}render::draw(&game);3000}else {u64::from(render::draw_background(at[0] as u32,at[1]))}}\n'
+    procedural_cases=json.loads((PROJECT/'tests/fixtures/arkanoo-procedural.json').read_text())['cases']
+    procedural_probe='fn procedural_probe(input:u32)->u64 {let cases=['+','.join('['+str(case['level'])+'u64,'+str(case['frame'])+'u64]' for case in procedural_cases)+'];let at=cases[(input&63) as usize];if input&64!=0 {let mut game=physics::Game::new();game.mode=1;game.level=at[0] as u32;game.frame=at[1];for index in 0..200 {game.set_block(index,2);}for index in 0..3000 {game.particles.push(physics::Particle{x:if index%2==0 {0.0} else {1279.0},y:if index%4<2 {0.0} else {719.0},vx:0.0,vy:0.0,life:30,max_life:30,rotation:0.0,rotation_speed:0.0,size:7,color:0x1964c8ff});}render::draw(&game);3000}else {u64::from(render::draw_background(at[0] as u32,at[1]))}}\n'
+    probe=' if input&2147500032==2147500032 {return procedural_probe(input); }\n'
+    probe+=' if input&2147491840==2147491840 {return background_probe(input); }\n'
     probe+=' if input&2147487744==2147487744 {return portal_probe(input); }\n'
     probe+=' if input&2147485696==2147485696 {return bonus_probe(input); }\n'
     probe+=' if input&2147484672==2147484672 {return fire_probe(input); }\n'
@@ -171,7 +174,7 @@ pub fn game_tick(input:u32,state:u64)->u64 {
         probe+=f'gamepkg::draw_clear(0x000000ff);render::draw_ball_effects(&ball,{case["frame"]});return 1;}};\n'
     probe+='return 0;}\n'
     probe_file=modes/'source/src/lib.rs'
-    text=probe_file.read_text();text=text.replace(' if input&67108864!=0 {',probe+' if input&67108864!=0 {');probe_file.write_text(text+metal_probe+ice_probe+fire_probe+bonus_probe+portal_probe+background_probe+visual_probe)
+    text=probe_file.read_text();text=text.replace(' if input&67108864!=0 {',probe+' if input&67108864!=0 {');probe_file.write_text(text+metal_probe+ice_probe+fire_probe+bonus_probe+portal_probe+background_probe+procedural_probe+visual_probe)
     penguin_probe='''
 static HEART:Mutex<Option<physics::Game>>=Mutex::new(None);
 fn penguin_probe(input:u32)->u64 {
@@ -205,7 +208,7 @@ fn penguin_probe(input:u32)->u64 {
     run('pack',modes,'-o',root/'modes.gamepkg','--key',key);run('install',root/'modes.gamepkg','--trust-creator');run('build','com.gamepkg.arkanoo-modes')
     layouts=root/'layouts';shutil.copytree(PROJECT/'ports/arkanoo',layouts)
     layout_manifest=layouts/'manifest.toml';layout_manifest.write_text(layout_manifest.read_text().replace('com.gamepkg.arkanoo','com.gamepkg.arkanoo-levels'))
-    (layouts/'source/src/lib.rs').write_text('''mod background;mod audio;mod editor;mod levels;mod menu;mod pattern_rng;mod physics;mod render;use std::sync::Mutex;
+    (layouts/'source/src/lib.rs').write_text('''mod procedural;mod background;mod audio;mod editor;mod levels;mod menu;mod pattern_rng;mod physics;mod render;use std::sync::Mutex;
 static GAME:Mutex<Option<physics::Game>>=Mutex::new(None);
 pub fn game_tick(input:u32,state:u64)->u64 {
  if let Ok(mut slot)=GAME.lock(){

@@ -34,6 +34,8 @@ mod pattern_rng;
 // Guest source cannot use vec!; its bounded allocation uses capacity + resize.
 #[allow(clippy::slow_vector_initialization)]
 mod physics;
+#[path = "../ports/arkanoo/source/src/procedural.rs"]
+mod procedural;
 fn menu_game() -> physics::Game {
     let mut game = physics::Game::new();
     game.source_input(5, 0.0, 0.0, 40);
@@ -2498,5 +2500,65 @@ fn original_campaign_background_points_colors_and_release_overflow_match() {
     }
     for level in [0, 1, 6, 10, u32::MAX] {
         assert!(background::campaign(level, 0).is_none());
+    }
+}
+
+#[test]
+fn original_procedural_snow_smoke_tornado_and_typed_color_rng_match() {
+    use std::io::Read;
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-procedural.json")).unwrap();
+    for case in fixture["cases"].as_array().unwrap() {
+        let level = case["level"].as_u64().unwrap() as u32;
+        let frame = case["frame"].as_u64().unwrap();
+        assert_eq!(
+            procedural::procedural_theme(level),
+            case["theme"].as_u64().unwrap() as u32
+        );
+        let scene = procedural::procedural_background(level, frame).unwrap();
+        assert_eq!(u64::from(scene.color), case["background"].as_u64().unwrap());
+        let mut actual = Vec::new();
+        for dot in &scene.points {
+            actual.extend(dot.x.to_le_bytes());
+            actual.extend(dot.y.to_le_bytes());
+            actual.extend(dot.color.to_le_bytes());
+        }
+        assert_eq!(gamepkg_digest(&actual), case["trace_sha256"]);
+        assert_eq!(
+            scene.points.len(),
+            case["point_count"].as_u64().unwrap() as usize
+        );
+        let compressed = hex::decode(case["sdl_rgba_zlib_hex"].as_str().unwrap()).unwrap();
+        let mut original = Vec::new();
+        flate2::read::ZlibDecoder::new(compressed.as_slice())
+            .read_to_end(&mut original)
+            .unwrap();
+        let mut delta = 0;
+        if let Some(image) = physics::effect_image(&scene.points) {
+            for (index, pixel) in image.pixels.chunks_exact(4).enumerate() {
+                let x = image.left as usize + index % image.width as usize;
+                let y = image.top as usize + index / image.width as usize;
+                for channel in 0..3 {
+                    let bg = (scene.color >> (24 - channel * 8)) & 255;
+                    let value = (u32::from(pixel[channel]) * u32::from(pixel[3])
+                        + bg * (255 - u32::from(pixel[3])))
+                        / 255;
+                    delta = delta
+                        .max(value.abs_diff(u32::from(original[(y * 1280 + x) * 4 + channel])));
+                }
+            }
+        }
+        assert!(delta <= 4);
+        println!("background level {level} frame {frame}: maximum SDL grouping delta {delta}");
+    }
+    for record in fixture["rng_u8"].as_array().unwrap() {
+        let mut rng = pattern_rng::Rng::new(record["seed"].as_u64().unwrap());
+        for (index, value) in record["values"].as_array().unwrap().iter().enumerate() {
+            let (low, high) = [(0u8, 255u8), (100, 200), (100, 255), (0, 17)][index % 4];
+            assert_eq!(u64::from(rng.range_u8(low, high)), value.as_u64().unwrap());
+        }
+    }
+    for level in [0, 1, 6, 7, 8, 9] {
+        assert!(procedural::procedural_background(level, 0).is_none());
     }
 }

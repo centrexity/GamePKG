@@ -1014,3 +1014,44 @@ unit tests, strict lint, formatting and byte-identical reference regeneration
 pass. Source recipe 0.1.30 retains host version 0.1.17. Original image backgrounds
 1–6, editor artwork, twenty endless procedural themes, fonts/HUD/menu/audio,
 viewport and remaining platform work are still unfinished.
+
+### Procedural snow, smoke and tornado
+
+Endless levels now select their original theme from the original level seed and
+i32 random draw. The Snow, Smoke and Tornado paths are adapted with original
+positions, sizes, phase calculations, alpha and draw order. Seventeen other
+selected themes still use the previous grid fallback and remain explicitly open.
+This change does not substitute those three themes for the original twenty.
+
+Color sampling needed a separate Rand-compatible u8 sampler. Rand 0.8.5 uses a
+near-exact modulus rejection zone for small integer types, unlike its wider i32
+approximation. Using the i32 sampler for colors would change later random values
+and background positions. Four seeded streams compare 1,024 typed u8 samples
+with real Rand; no game dependencies or source-policy exceptions are added.
+
+The oracle compiles the complete unchanged draw_animated_background against exact
+Rand 0.8.5, rand_chacha 0.3.1 and rand_core 0.6.4. It finds actual level seeds for
+each theme instead of forcing the selection. Thirty-three cases cover three
+levels per theme, ordinary animation, f32 phase loss, 32-bit frame overflow and
+u64::MAX. Production ordered-point counts and complete trace hashes match;
+compressed real-SDL framebuffers independently verify all composed pixels.
+Transparent layer grouping retains a measured four-color-level bound against
+software SDL. It is not exact framebuffer equivalence.
+
+Dense smoke uses 128-pixel tiles; sparse backgrounds retain 64-pixel tiles. Tiles
+never overlap. Full scenes preserve all 200 fire-brick overlays and particles at
+all four window corners with 3,000 active particles, cold and warm, under the
+unchanged command/image-byte/time/memory limits. Source functions remain direct,
+portable and dependency-free. The previous campaign background helper is renamed
+to draw_background to cover both branches.
+
+Validation: all 66 logic checks and all 40 signed checks pass native and Wasm.
+The eight-player procedural matrix checks both animation frames for each restored
+theme and a revisit: maximum sampled channel difference three on desktop and two
+in browsers. Samples stay inside tile/world edges and nearest boundaries allow
+adjacent texels explicitly. The existing campaign matrix is also checked after
+extending its shared harness. Native/both-browser gameplay/editor/file workflows,
+strict lint, formatting and byte-identical oracle regeneration also pass.
+Whole-frame/edge comparisons, seventeen other themes, original image/editor
+artwork, fonts/HUD/menus/audio and remaining platforms are unfinished. Recipe
+0.1.31 changes source only; host version and binary/package releases are unchanged.
