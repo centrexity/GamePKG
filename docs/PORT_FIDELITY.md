@@ -1158,3 +1158,48 @@ repeating GUI workflows; CI retains the full default workflow. Twelve procedural
 themes, image/editor artwork, viewport, fonts/HUD/menus/audio and remaining
 platforms are unfinished. Recipe 0.1.34 is source-only, with unchanged host version
 and no binary/package release.
+
+### First integrated line theme: Kaleidoscope
+
+Kaleidoscope now renders the original five layers of twelve diamonds through the
+attributed default-SDL point-line helper. Alternating rotation, layer colors,
+240 line commands and inclusive endpoint/corner blending are preserved. Endpoints
+cast after the original floating-point size offsets; subtracting an integer size
+from an already truncated negative position would change clipped geometry.
+
+The new maintainer recorder compiles the complete unchanged original procedure
+with pinned real Rand. It records raw line commands and passes them to actual
+SDL 2.30 OpenGL/software RenderDrawLine calls. It never calls the guest rasterizer.
+Eleven frame/level cases compare every original command field, order and complete
+command hash. Independent additive OpenGL passes also count pixel contributions
+for each of the five layers; all 55 full per-layer count maps match production
+exactly, including collapsed f32 phases and heavily repeated extreme-frame lines.
+
+The first transparent-layer grouping had up to four levels of rounding difference
+at u32::MAX/u64::MAX. Backgrounds have a known opaque starting color, so the final
+kaleidoscope path precomposes each point over that color using the recorded default
+OpenGL convention: source and destination products round separately before adding.
+Painted pixels become opaque; untouched pixels remain transparent. Sparse tile
+counts, image charges, source policy, time and memory limits stay unchanged.
+All eleven complete logical framebuffers now match original default OpenGL
+byte-for-byte in unit and signed native/Wasm checks. Original software SDL differs
+by up to four levels from that default renderer; this backend distinction remains
+explicit rather than defining both outputs as identical. Other background paths
+retain their previous compositor and verification bounds.
+
+All 71 logic tests and all 45 signed checks pass. Dense scenes retain all 200
+fire-brick overlays and four corner particle tiles with 3,000 active particles,
+cold and warm. Eight actual player configurations pass both animation frames at
+all three selected level seeds and a revisit. With original default OpenGL as the
+canonical reference, browser samples match exactly and desktop samples differ by
+at most one level. The test enforces that tighter display-rounding bound. Interior
+sampling and adjacent-texel choices at exact nearest boundaries remain explicit;
+this does not establish complete scaled-window or other-platform equivalence.
+
+Existing native/both-browser gameplay/editor/file workflows, strict lint,
+formatting and byte-identical reference regeneration also pass. The recorder needs
+pinned original source, Rand 0.8.5, SDL development files and private-display test
+dependencies; players need none of those tools. Eleven procedural themes, original
+image/editor artwork, viewport, fonts/HUD/menus/audio and remaining platforms are
+unfinished. Recipe 0.1.35 is source-only; no host version or binary/package release
+changes.

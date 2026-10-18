@@ -2574,6 +2574,19 @@ fn check_procedural_runtime_fixture(text: &str, flag: u32, scenes: &[u32]) {
             actual.iter().zip(expected).all(|(a, b)| a.abs_diff(b) <= 4),
             "Original SDL pixels differ, case {index}"
         );
+        if let Some(encoded) = case.get("opengl_rgba_zlib_hex") {
+            let data = hex::decode(encoded.as_str().unwrap()).unwrap();
+            let mut pixels = Vec::new();
+            flate2::read::ZlibDecoder::new(data.as_slice())
+                .read_to_end(&mut pixels)
+                .unwrap();
+            assert_eq!(actual.len(), pixels.len());
+            let differing = actual.iter().zip(pixels).position(|(a, b)| *a != b);
+            assert!(
+                differing.is_none(),
+                "Original default GL pixels differ, case {index}, byte {differing:?}"
+            );
+        }
     }
     for &index in scenes {
         for _ in 0..2 {
@@ -2696,4 +2709,14 @@ fn sdl_default_line_coverage_and_clipping_reach_native_and_wasm() {
         }
         assert_eq!(actual, expected, "SDL line case {index}");
     }
+}
+
+#[test]
+#[ignore = "requires the signed production fixture prepared by tests/arkanoo.py"]
+fn original_kaleidoscope_preserves_line_pixels_and_full_scene_budgets() {
+    check_procedural_runtime_fixture(
+        include_str!("fixtures/arkanoo-kaleidoscope.json"),
+        2148007936,
+        &[0, 3, 7, 8, 9, 10],
+    );
 }

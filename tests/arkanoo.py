@@ -168,7 +168,11 @@ pub fn game_tick(input:u32,state:u64)->u64 {
     line_cases=json.loads((PROJECT/'tests/fixtures/sdl-background-lines.json').read_text())['cases']
     line_values='['+','.join('['+','.join(str(value)+'i32' for value in case['segment'])+']' for case in line_cases)+']'
     line_probe='fn line_probe(input:u32)->u64 {let cases='+line_values+';let at=cases[(input&31) as usize];let mut dots=Vec::new();background::background_line_points(&mut dots,[at[0],at[1]],[at[2],at[3]],[64,64],0xc864ff96);gamepkg::draw_clear(0x0b1020ff);if let Some(image)=physics::effect_image(&dots){gamepkg::draw_image(image.left as f32*0.5,60.0+image.top as f32*0.5,image.width as f32*0.5,image.height as f32*0.5,image.width,image.height,&image.pixels);}dots.len() as u64}\n'
-    probe=' if input&2147745792==2147745792 {return line_probe(input); }\n'
+    kaleidoscope_cases=json.loads((PROJECT/'tests/fixtures/arkanoo-kaleidoscope.json').read_text())['cases']
+    kaleidoscope_values='['+','.join('['+str(case['level'])+'u64,'+str(case['frame'])+'u64]' for case in kaleidoscope_cases)+']'
+    kaleidoscope_probe=procedural_probe.replace('fn procedural_probe','fn kaleidoscope_probe').replace(old_cases,kaleidoscope_values)
+    probe=' if input&2148007936==2148007936 {return kaleidoscope_probe(input); }\n'
+    probe+=' if input&2147745792==2147745792 {return line_probe(input); }\n'
     probe+=' if input&2147614720==2147614720 {return voyage_probe(input); }\n'
     probe+=' if input&2147549184==2147549184 {return space_probe(input); }\n'
     probe+=' if input&2147516416==2147516416 {return fire_sea_probe(input); }\n'
@@ -192,7 +196,7 @@ pub fn game_tick(input:u32,state:u64)->u64 {
         probe+=f'gamepkg::draw_clear(0x000000ff);render::draw_ball_effects(&ball,{case["frame"]});return 1;}};\n'
     probe+='return 0;}\n'
     probe_file=modes/'source/src/lib.rs'
-    text=probe_file.read_text();text=text.replace(' if input&67108864!=0 {',probe+' if input&67108864!=0 {');probe_file.write_text(text+metal_probe+ice_probe+fire_probe+bonus_probe+portal_probe+background_probe+procedural_probe+fire_sea_probe+space_probe+voyage_probe+line_probe+visual_probe)
+    text=probe_file.read_text();text=text.replace(' if input&67108864!=0 {',probe+' if input&67108864!=0 {');probe_file.write_text(text+metal_probe+ice_probe+fire_probe+bonus_probe+portal_probe+background_probe+procedural_probe+fire_sea_probe+space_probe+voyage_probe+line_probe+kaleidoscope_probe+visual_probe)
     penguin_probe='''
 static HEART:Mutex<Option<physics::Game>>=Mutex::new(None);
 fn penguin_probe(input:u32)->u64 {

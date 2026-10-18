@@ -2643,3 +2643,98 @@ fn background_line_points_match_sdl_default_and_record_software_degenerate_edges
         }
     }
 }
+
+#[test]
+fn original_kaleidoscope_preserves_line_commands_and_actual_sdl_framebuffers() {
+    use std::io::Read;
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-kaleidoscope.json")).unwrap();
+    for case in fixture["cases"].as_array().unwrap() {
+        let frame = case["frame"].as_u64().unwrap();
+        let level = case["level"].as_u64().unwrap() as u32;
+        assert_eq!(procedural::procedural_theme(level), 13);
+        let segments = procedural::kaleidoscope_segments(frame);
+        assert_eq!(segments.len(), 240);
+        let mut trace = Vec::new();
+        for (segment, original) in segments.iter().zip(case["segments"].as_array().unwrap()) {
+            let values = [
+                i64::from(segment.start[0]),
+                i64::from(segment.start[1]),
+                i64::from(segment.end[0]),
+                i64::from(segment.end[1]),
+                i64::from(segment.color),
+            ];
+            assert_eq!(serde_json::json!(values), *original);
+            for value in [
+                segment.start[0],
+                segment.start[1],
+                segment.end[0],
+                segment.end[1],
+            ] {
+                trace.extend(value.to_le_bytes());
+            }
+            trace.extend(segment.color.to_le_bytes());
+        }
+        assert_eq!(gamepkg_digest(&trace), case["segment_sha256"]);
+        assert_eq!(case["coverage_backend_differences"], 0);
+        let scene = procedural::procedural_background(level, frame).unwrap();
+        assert_eq!(u64::from(scene.color), case["background"].as_u64().unwrap());
+        let mut counts = vec![vec![0u8; 1280 * 720]; 5];
+        for dot in &scene.points {
+            let layer = ((dot.color >> 24) - 100) / 30;
+            counts[layer as usize][dot.y as usize * 1280 + dot.x as usize] += 1;
+        }
+        for (layer, encoded) in case["opengl_layer_counts_zlib_hex"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .enumerate()
+        {
+            let data = hex::decode(encoded.as_str().unwrap()).unwrap();
+            let mut expected = Vec::new();
+            flate2::read::ZlibDecoder::new(data.as_slice())
+                .read_to_end(&mut expected)
+                .unwrap();
+            assert_eq!(
+                counts[layer], expected,
+                "Actual default GL layer {layer}, frame {frame}"
+            );
+        }
+        let image = background::composited_background(&scene).unwrap();
+        let mut actual = Vec::new();
+        for _ in 0..1280 * 720 {
+            actual.extend(scene.color.to_be_bytes());
+        }
+        for (index, pixel) in image.pixels.chunks_exact(4).enumerate() {
+            let at = ((image.top as usize + index / image.width as usize) * 1280
+                + image.left as usize
+                + index % image.width as usize)
+                * 4;
+            for channel in 0..3 {
+                actual[at + channel] = ((u32::from(pixel[channel]) * u32::from(pixel[3])
+                    + u32::from(actual[at + channel]) * (255 - u32::from(pixel[3])))
+                    / 255) as u8;
+            }
+        }
+        for backend in ["sdl_rgba_zlib_hex", "opengl_rgba_zlib_hex"] {
+            let data = hex::decode(case[backend].as_str().unwrap()).unwrap();
+            let mut expected = Vec::new();
+            flate2::read::ZlibDecoder::new(data.as_slice())
+                .read_to_end(&mut expected)
+                .unwrap();
+            assert_eq!(actual.len(), expected.len());
+            let delta = actual
+                .iter()
+                .zip(expected)
+                .map(|(a, b)| a.abs_diff(b))
+                .max()
+                .unwrap();
+            println!("kaleidoscope frame {frame}, {backend}, maximum grouping delta {delta}");
+            if backend == "opengl_rgba_zlib_hex" {
+                assert_eq!(delta, 0, "Original default GL composition differs");
+            } else {
+                assert!(delta <= 4);
+            }
+        }
+    }
+}
