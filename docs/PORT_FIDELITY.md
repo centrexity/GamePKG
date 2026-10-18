@@ -2378,7 +2378,34 @@ This remains host-only integration. Signed SDK/runtime commands, original-rate
 port recordings, helper bundling, browser playback and actual game migration
 are still required. Commands currently affect source frames not yet buffered by
 the converter; exact original block/event timing and stop/pause tails need
-independent verification. The CPAL buffer still uses a shared host-control lock
-and can output silence under contention; a nonblocking command handoff remains
-needed. Device-rate conversion beyond the 48 kHz intermediate, physical speakers
+independent verification. Device-rate conversion beyond the 48 kHz intermediate, physical speakers
 and Windows/Android gameplay remain unverified. No cap or version is increased.
+
+
+The device callback now exclusively owns playback state. Host producers write to
+one fixed atomic PCM ring with the unchanged 4,800-frame/100 ms capacity and
+1,600-frame packet maximum; no second PCM copy or unbounded channel is added.
+Source/effect controls use a separate 32-entry queue. The callback attempts a
+brief command handoff, releases that lock before applying commands, and keeps
+rendering current state and queued PCM whenever producers hold the lock. A
+regression requires exact stereo PCM plus music under a held control lock. The
+actual CPAL/ALSA null callback consumes all 1,600 submitted frames before that
+lock is released; the reusable music check runs this gate explicitly.
+
+Clear commands capture a producer boundary so later PCM survives. A requested
+source detach preserves future PCM until the callback applies it, instead of
+consuming it beneath the old combined source. Bounded queue rejection, ordered
+commands, full-voice rejection reporting, producer closure, counter exhaustion,
+concurrent stereo packet integrity and ring wrap have regressions. Host effect
+methods now acknowledge enqueueing; later voice exhaustion is reported through
+Player::error rather than silently replacing a channel. Source changes apply at
+callback boundaries and remain subject to original event-timing verification.
+
+Shared budget reservations now use atomic compare/exchange and lease releases
+use one atomic subtraction, removing the reservation mutex from last-clip drops
+on the callback. Full library verification passes 178 tests with 17 explicitly
+ignored environment checks; selected null-device and all nine full-track tests
+pass separately. This removes host-control/ledger-lock contention from normal
+rendering, not allocator or OS scheduling latency. Signed SDK integration,
+browser playback, exact event timing, platform/device proof and the broader port
+fidelity requirements remain unfinished. No package/binary release is made.

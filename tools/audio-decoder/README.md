@@ -273,5 +273,20 @@ input/output chunk schedules. `check_music_worker.py --null-device` additionally
 requires the actual original-rate callback test: music reaches output, effects
 pause/mute and continue with music stopped, and all reservations release without
 a game tick. It retains the full nine-track 48 kHz regression. Physical output,
-browser integration, original block/event/stop timing and nonblocking host-control
-handoff remain open; the CPAL buffer lock can still cause contention silence.
+browser integration and original block/event/stop timing remain open.
+
+
+CPAL playback state is now callback-owned. A fixed atomic 4,800-frame PCM ring
+preserves the existing packet/capacity limits; producer controls use a separate
+32-entry queue. Busy producer/control locks delay applying commands but do not
+silence ready PCM/music. Effect methods acknowledge enqueueing, with callback
+voice exhaustion surfaced through `Player::error`. Clear boundaries preserve
+later PCM, and pending combined-source detaches cannot consume newly submitted
+legacy PCM. Closed consumers reject further producer submissions.
+
+The shared reservation ledger is atomic, so releasing a last recording owner
+cannot wait for a budget mutex. The null-device maintainer check explicitly runs
+`audio::tests::audio_output_null_device`, which requires all 1,600 queued PCM
+frames to reach the actual callback while the producer/control lock stays held.
+This is a host-lock regression, not proof of hard real-time allocator/OS behavior
+or physical-speaker/platform fidelity. SDK/browser/event-timing work remains.

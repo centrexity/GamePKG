@@ -22,6 +22,11 @@ artifacts = cargo(['test', '--release', '--test', 'music_worker', '--no-run',
                    *(['--features', 'audio'] if args.null_device else [])])
 executable = next(item['executable'] for item in artifacts if item.get('reason') == 'compiler-artifact'
                   and item.get('target', {}).get('name') == 'music_worker' and item.get('executable'))
+library = None
+if args.null_device:
+    artifacts = cargo(['test', '--release', '--lib', '--features', 'audio', '--no-run'])
+    library = next(item['executable'] for item in artifacts if item.get('reason') == 'compiler-artifact'
+                   and item.get('target', {}).get('name') == 'gamepkg' and item.get('executable'))
 with tempfile.TemporaryDirectory(prefix='gamepkg-worker-reference-') as temporary:
     root = Path(temporary)
     flags = subprocess.check_output(['pkg-config', '--cflags', '--libs', 'SDL2_mixer', 'sdl2'], text=True).split()
@@ -35,6 +40,12 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-worker-reference-') as temporar
         null = root/'null-alsa.conf'
         null.write_text('pcm.!default { type null }\n')
         environment['ALSA_CONFIG_PATH'] = str(null)
+        held_lock = subprocess.run([library, 'audio::tests::audio_output_null_device',
+                                    '--ignored', '--exact', '--nocapture'], cwd=project, env=environment,
+                                   capture_output=True, text=True, timeout=30)
+        assert held_lock.returncode == 0, held_lock.stdout + '\n' + held_lock.stderr
+        assert '1 passed' in held_lock.stdout, 'held-control callback test did not run'
+        print('Actual null-device callback consumes all 1600 queued frames while the producer/control lock remains held.', flush=True)
     result = subprocess.run([executable, '--ignored', '--nocapture'], cwd=project, env=environment,
                             capture_output=True, text=True, timeout=120)
     assert result.returncode == 0, result.stdout + '\n' + result.stderr

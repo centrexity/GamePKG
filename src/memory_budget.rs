@@ -1,9 +1,12 @@
 //! Shared reservations for bounded game data, released by ownership.
 use anyhow::{ensure, Context, Result};
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc,
+};
 struct Shared {
     limit: u64,
-    used: Mutex<u64>,
+    used: AtomicU64,
 }
 #[derive(Clone)]
 pub struct Budget(Arc<Shared>);
@@ -15,30 +18,35 @@ impl Budget {
     pub fn new(limit: u64) -> Self {
         Self(Arc::new(Shared {
             limit,
-            used: Mutex::new(0),
+            used: AtomicU64::new(0),
         }))
     }
     pub fn limit(&self) -> u64 {
         self.0.limit
     }
     pub fn used(&self) -> u64 {
-        self.0.used.lock().map_or(self.0.limit, |used| *used)
+        self.0.used.load(Ordering::Acquire)
     }
     pub fn reserve(&self, bytes: u64) -> Result<Lease> {
         ensure!(
             bytes > 0 && bytes <= self.0.limit,
             "invalid memory reservation"
         );
-        let mut used = self
-            .0
-            .used
-            .lock()
-            .map_err(|_| anyhow::anyhow!("memory budget is unavailable"))?;
-        let next = used
-            .checked_add(bytes)
-            .filter(|next| *next <= self.0.limit)
-            .context("game memory budget exceeded")?;
-        *used = next;
+        let mut used = self.0.used.load(Ordering::Acquire);
+        loop {
+            let next = used
+                .checked_add(bytes)
+                .filter(|next| *next <= self.0.limit)
+                .context("game memory budget exceeded")?;
+            match self
+                .0
+                .used
+                .compare_exchange_weak(used, next, Ordering::AcqRel, Ordering::Acquire)
+            {
+                Ok(_) => break,
+                Err(current) => used = current,
+            }
+        }
         Ok(Lease {
             shared: self.0.clone(),
             bytes,
@@ -52,11 +60,10 @@ impl Lease {
 }
 impl Drop for Lease {
     fn drop(&mut self) {
-        if let Ok(mut used) = self.shared.used.lock() {
-            *used = used
-                .checked_sub(self.bytes)
-                .expect("memory reservation invariant");
-        }
+        // The audio callback may release the last clip owner. It must never
+        // wait for a host reservation lock while freeing that recording.
+        let previous = self.shared.used.fetch_sub(self.bytes, Ordering::AcqRel);
+        assert!(previous >= self.bytes, "memory reservation invariant");
     }
 }
 #[cfg(test)]
