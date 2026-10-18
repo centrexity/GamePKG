@@ -34,7 +34,7 @@ int main(int argc, char **argv) {
         fprintf(stderr, "SDL music reference: %s\n", SDL_GetError());
         return 3;
     }
-    SDL_PauseAudio(1);
+    Mix_PauseAudio(1);
     int actual, channels;
     Uint16 format;
     if (!Mix_QuerySpec(&actual, &format, &channels) || actual != rate || channels != 2 || format != AUDIO_S16LSB) return 4;
@@ -46,10 +46,10 @@ int main(int argc, char **argv) {
     /* Match the original game's play(1) argument, rather than its comment. */
     if (Mix_PlayMusic(music, 1)) return 6;
     Uint64 start = SDL_GetTicks64();
-    SDL_PauseAudio(0);
+    Mix_PauseAudio(0);
     while (!atomic_load(&captured_end) && !atomic_load(&failed) && SDL_GetTicks64() - start < 30000)
         SDL_Delay(1);
-    SDL_PauseAudio(1);
+    Mix_PauseAudio(1);
     int ok = atomic_load(&captured_end) && !atomic_load(&failed) && written > 0;
     Mix_SetPostMix(NULL, NULL);
     Mix_HookMusicFinished(NULL);

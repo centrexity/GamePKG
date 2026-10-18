@@ -1,4 +1,101 @@
-use gamepkg::audio_resample::Resampler;
+use gamepkg::audio_resample::{MixerResampler, Resampler};
+
+fn convert_mixer(input: &[[f32; 2]], source: u32, target: u32, small: bool) -> Vec<[f32; 2]> {
+    let mut mixer = MixerResampler::new(source, target).unwrap();
+    let mut output = [[0.0; 2]; 800];
+    let mut result = Vec::new();
+    let mut at = 0;
+    let mut step = 0;
+    loop {
+        let size = if small {
+            [1, 7, 31, 799, 2][step % 5]
+        } else {
+            800
+        };
+        let count = mixer.render(&mut output[..size]).unwrap();
+        result.extend_from_slice(&output[..count]);
+        if count == 0 {
+            if at == input.len() {
+                break;
+            }
+            let count = size.min(mixer.input_capacity()).min(input.len() - at);
+            assert!(count > 0, "full queue cannot progress");
+            mixer.append(&input[at..at + count]).unwrap();
+            at += count;
+            if at == input.len() {
+                mixer.finish();
+            }
+        }
+        step += 1;
+    }
+    result
+}
+
+#[test]
+fn original_mixer_boundaries_are_independent_of_consumer_buffers() {
+    let input = recording(4097);
+    for source in [8000, 11025, 12000, 16000, 22050, 24000, 32000, 44100, 48000] {
+        for target in [44100, 48000] {
+            let a = convert_mixer(&input, source, target, false);
+            assert_eq!(
+                a,
+                convert_mixer(&input, source, target, true),
+                "{source} to {target}"
+            );
+            if source == target {
+                assert_eq!(a, input);
+            }
+        }
+    }
+}
+
+#[test]
+#[ignore = "set GAMEPKG_SDL_RESAMPLE_REFERENCE to the compiled maintainer oracle"]
+fn original_mixer_staging_and_flush_match_actual_sdl_stream_exactly() {
+    let executable = std::env::var_os("GAMEPKG_SDL_RESAMPLE_REFERENCE").unwrap();
+    for length in [
+        1, 5, 511, 512, 513, 557, 558, 559, 1023, 1024, 1025, 1535, 1536, 2047, 2048, 4096, 8192,
+    ] {
+        let input = recording(length);
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let bytes = input
+            .iter()
+            .flatten()
+            .flat_map(|v| v.to_le_bytes())
+            .collect::<Vec<_>>();
+        std::fs::write(file.path(), bytes).unwrap();
+        for source in [8000, 11025, 12000, 16000, 22050, 24000, 32000, 44100, 48000] {
+            for target in [44100, 48000] {
+                let original = std::process::Command::new(&executable)
+                    .arg(file.path())
+                    .arg(source.to_string())
+                    .arg(target.to_string())
+                    .arg("stream")
+                    .output()
+                    .unwrap();
+                assert!(original.status.success());
+                let actual = convert_mixer(&input, source, target, true);
+                assert_eq!(
+                    actual.len() * 8,
+                    original.stdout.len(),
+                    "{length} frames, {source} to {target} length"
+                );
+                for (index, (sample, expected)) in actual
+                    .iter()
+                    .flatten()
+                    .zip(original.stdout.chunks_exact(4))
+                    .enumerate()
+                {
+                    assert_eq!(
+                        sample.to_bits(),
+                        u32::from_le_bytes(expected.try_into().unwrap()),
+                        "{length} frames, {source} to {target}, sample {index}"
+                    );
+                }
+            }
+        }
+    }
+}
 
 fn recording(count: usize) -> Vec<[f32; 2]> {
     let mut state = 0x9e3779b9u32;

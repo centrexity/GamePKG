@@ -3,7 +3,7 @@
 compile_error!("build this companion for wasm32-unknown-unknown");
 #[path = "../../../src/audio_resample.rs"]
 mod resample;
-use resample::Resampler;
+use resample::{MixerResampler, Resampler};
 use std::{
     io::{self, Read, Seek, SeekFrom},
     sync::{
@@ -52,6 +52,36 @@ impl Seek for Input {
     }
 }
 type Reader = nanomp3::Reader<Input, f32>;
+enum Converter {
+    Global(Resampler),
+    Mixer(MixerResampler),
+}
+impl Converter {
+    fn render(&mut self, out: &mut [[f32; 2]]) -> Result<usize, &'static str> {
+        match self {
+            Self::Global(r) => r.render(out),
+            Self::Mixer(r) => r.render(out),
+        }
+    }
+    fn append(&mut self, input: &[[f32; 2]]) -> Result<(), &'static str> {
+        match self {
+            Self::Global(r) => r.append(input),
+            Self::Mixer(r) => r.append(input),
+        }
+    }
+    fn finish(&mut self) {
+        match self {
+            Self::Global(r) => r.finish(),
+            Self::Mixer(r) => r.finish(),
+        }
+    }
+    fn input_capacity(&self) -> usize {
+        match self {
+            Self::Global(r) => r.input_capacity(),
+            Self::Mixer(r) => r.input_capacity(),
+        }
+    }
+}
 struct Context {
     input: Vec<u8>,
     reader: Option<Reader>,
@@ -65,9 +95,10 @@ struct Context {
     channels: u32,
     failed: bool,
     output_rate: u32,
+    mixer_mode: bool,
     started: bool,
     eof: bool,
-    resampler: Option<Resampler>,
+    resampler: Option<Converter>,
     converted: [[f32; 2]; MAX_VALUES / 2],
 }
 impl Context {
@@ -85,6 +116,7 @@ impl Context {
             channels: 0,
             failed: false,
             output_rate: 0,
+            mixer_mode: false,
             started: false,
             eof: false,
             resampler: None,
@@ -107,6 +139,7 @@ impl Context {
         self.pending_len = 0;
         self.failed = false;
         self.output_rate = 0;
+        self.mixer_mode = false;
         self.started = false;
         self.eof = false;
         self.resampler = None;
@@ -144,13 +177,25 @@ impl Context {
         self.reader = Some(reader);
         0
     }
-    fn configure(&mut self, rate: u32) -> i32 {
+    fn configure(&mut self, rate: u32, mixer: bool) -> i32 {
         if self.failed || self.reader.is_none() || self.started {
             return -1;
         }
-        let Ok(resampler) = Resampler::new(self.rate, rate) else {
+        if mixer && self.channels != 2 {
             return -1;
+        }
+        let resampler = if mixer {
+            match MixerResampler::new(self.rate, rate) {
+                Ok(r) => Converter::Mixer(r),
+                Err(_) => return -1,
+            }
+        } else {
+            match Resampler::new(self.rate, rate) {
+                Ok(r) => Converter::Global(r),
+                Err(_) => return -1,
+            }
         };
+        self.mixer_mode = mixer;
         self.output_rate = rate;
         self.resampler = Some(resampler);
         0
@@ -190,7 +235,11 @@ impl Context {
             }
             // A native mono buffer can contain 1,600 frames, while the shared
             // converter accepts at most 800 stereo frames per append.
-            let n = self.read_decoded((MAX_VALUES / 2) * self.channels as usize)?;
+            let frames = resampler.input_capacity();
+            if frames == 0 {
+                return Err(());
+            }
+            let n = self.read_decoded(frames * self.channels as usize)?;
             if n == 0 {
                 self.eof = true;
                 resampler.finish();
@@ -329,9 +378,10 @@ pub extern "C" fn decoder_rewind() -> i32 {
         return -1;
     };
     let rate = context.output_rate;
+    let mixer = context.mixer_mode;
     let result = context.open(reader.into_inner().bytes);
     if result == 0 && rate != 0 {
-        context.configure(rate)
+        context.configure(rate, mixer)
     } else {
         result
     }
@@ -339,5 +389,10 @@ pub extern "C" fn decoder_rewind() -> i32 {
 
 #[no_mangle]
 pub extern "C" fn decoder_set_output_rate(rate: u32) -> i32 {
-    CONTEXT.lock().map_or(-1, |mut c| c.configure(rate))
+    CONTEXT.lock().map_or(-1, |mut c| c.configure(rate, false))
+}
+
+#[no_mangle]
+pub extern "C" fn decoder_set_mixer_rate(rate: u32) -> i32 {
+    CONTEXT.lock().map_or(-1, |mut c| c.configure(rate, true))
 }

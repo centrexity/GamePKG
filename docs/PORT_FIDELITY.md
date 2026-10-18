@@ -2239,3 +2239,32 @@ remains a separate open fidelity item. New decoder rounding differences remain
 observable and can become two integer units after filtering; no tolerance is
 relaxed or bit-exact claim made. Game API, asynchronous playback/mixing, combined
 memory accounting, playlist controls and platform/device verification remain open.
+
+Original mixer block conversion is now available separately from global-phase
+conversion. A trace of the actual original Music API establishes S16 stereo
+4,096-byte/1,024-frame input puts. The compatibility mode reproduces SDL 2.30's
+phase restarts, retained padding, short-put staging and flush behavior, including
+its omission of a final padding flush when nothing is staged. Independent actual
+SDL_AudioStream comparisons match every float sample bit and output length in
+306 cases across nine rates, both output rates and 17 boundary-sensitive lengths.
+The same 2,048-frame ring uses explicit backpressure; no cap is raised. Consumer
+read sizes do not affect original block boundaries. Stereo source is required;
+the nine current original recordings meet that requirement. Mono sources are
+rejected rather than using incorrect original byte/frame boundaries.
+
+Complete corpus checks now use the actual original chunked SDL reference when
+original-mixer mode is selected, retaining the strict length assertion. All nine
+tracks match the original 44.1 kHz mixer's full output lengths and retain chunk
+invariance and rewind; native and Chromium streams agree. Original decoder PCM
+differences of one/two integer units remain and are reported without tolerance
+relaxation or a bit-exact decoding claim. This resolves the isolated original
+block-conversion mismatch, not asynchronous game playback. Public game APIs,
+playback/mixing, playlist controls, combined memory accounting and platform/device
+verification remain open.
+
+The reference capture itself now pauses SDL_mixer's actual device with
+Mix_PauseAudio during setup/shutdown, fixing a leading-silence race caused by
+pausing SDL's unrelated legacy device. All 13 original source/mixer-rate cases
+pass exact PCM comparison after this correction. A bounded metadata-only trace
+checks the actual source/destination formats and first 16 input put sizes in
+every case. The versioned reference metadata and oracle hashes are refreshed.

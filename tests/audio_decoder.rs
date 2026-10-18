@@ -59,7 +59,11 @@ fn companion() -> Factory {
 }
 fn open_music(factory: &Factory, input: &[u8]) -> anyhow::Result<gamepkg::audio_decode::Stream> {
     if let Ok(rate) = std::env::var("GAMEPKG_AUDIO_OUTPUT_RATE") {
-        factory.open_resampled(input, rate.parse()?)
+        if std::env::var_os("GAMEPKG_AUDIO_ORIGINAL_MIXER").is_some() {
+            factory.open_original_mixer(input, rate.parse()?)
+        } else {
+            factory.open_resampled(input, rate.parse()?)
+        }
     } else {
         factory.open(input)
     }
@@ -166,7 +170,7 @@ fn original_tracks_stream_with_fixed_memory_chunk_invariance_and_rewind() {
         let (witness_offset, witness) = witness.expect("recording has no audible witness");
         println!(
             "MUSIC_JSON {}",
-            serde_json::json!({"output_rate":std::env::var("GAMEPKG_AUDIO_OUTPUT_RATE").ok().map(|v| v.parse::<u32>().unwrap()),"name":path.file_name().unwrap().to_string_lossy(),"rate":stream.sample_rate(),"channels":stream.channels(),"samples":samples,"sha256":first_hash,"fnv32":fnv,"sdl_samples":reference_samples,"sdl_different":different,"sdl_maximum_delta":maximum_delta,"witness_offset":witness_offset,"witness":witness})
+            serde_json::json!({"original_mixer":std::env::var_os("GAMEPKG_AUDIO_ORIGINAL_MIXER").is_some(),"output_rate":std::env::var("GAMEPKG_AUDIO_OUTPUT_RATE").ok().map(|v| v.parse::<u32>().unwrap()),"name":path.file_name().unwrap().to_string_lossy(),"rate":stream.sample_rate(),"channels":stream.channels(),"samples":samples,"sha256":first_hash,"fnv32":fnv,"sdl_samples":reference_samples,"sdl_different":different,"sdl_maximum_delta":maximum_delta,"witness_offset":witness_offset,"witness":witness})
         );
     }
 }
@@ -174,6 +178,30 @@ fn original_tracks_stream_with_fixed_memory_chunk_invariance_and_rewind() {
 #[ignore = "requires built companion and GAMEPKG_MUSIC_INPUT_DIR"]
 fn malformed_music_and_buffer_requests_fail_bounded_without_changing_output() {
     let factory = companion();
+    if let Some(path) = std::env::var_os("GAMEPKG_AUDIO_MONO_INPUT") {
+        let input = std::fs::read(path).unwrap();
+        let mut native = factory.open(&input).unwrap();
+        assert_eq!(native.channels(), 1);
+        assert!(native.read(&mut [0; 1600]).unwrap() > 0);
+        for rate in [44100, 48000] {
+            assert!(factory.open_original_mixer(&input, rate).is_err());
+            let mut converted = factory.open_resampled(&input, rate).unwrap();
+            assert_eq!(converted.channels(), 2);
+            let mut output = [0; 1600];
+            let mut heard = false;
+            loop {
+                let count = converted.read(&mut output).unwrap();
+                if count == 0 {
+                    break;
+                }
+                heard |= output[..count].iter().any(|sample| *sample != 0);
+                assert!(output[..count]
+                    .chunks_exact(2)
+                    .all(|pair| pair[0] == pair[1]));
+            }
+            assert!(heard, "mono conversion must include audible PCM");
+        }
+    }
     assert!(open_music(&factory, &[]).is_err());
     assert!(open_music(&factory, &vec![0; 8 * 1024 * 1024 + 1]).is_err());
     for bytes in [

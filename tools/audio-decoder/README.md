@@ -28,7 +28,7 @@ Build with Rust's wasm32-unknown-unknown target installed:
 cargo build --locked --release --target wasm32-unknown-unknown --manifest-path tools/audio-decoder/Cargo.toml
 cargo test --release --test audio_decoder
 python3 tools/check_audio_decoder.py /path/to/original/music --sdl-reference
-python3 tools/check_sdl_music_reference.py /path/to/original/music
+python3 tools/check_sdl_music_reference.py /path/to/original/music --trace
 python3 tools/check_audio_decoder.py /path/to/original/music --sdl-reference --output-rate 48000
 ```
 
@@ -54,6 +54,9 @@ stops after that callback, avoiding timing-dependent extra silence. This verifie
 the codec oracle against the original music API; it does not make the new
 decoder bit-exact. The disk driver and postmix capture write private temporary
 files which the script removes on exit.
+Capture setup and shutdown use `Mix_PauseAudio`, which controls SDL_mixer's
+actual device. Pausing SDL's separate legacy device does not synchronize these
+callbacks and can introduce leading silence; the oracle no longer does that.
 
 ## Streaming conversion
 
@@ -85,3 +88,44 @@ original 44.1 kHz playback pipeline and its asynchronous scheduling remains open
 The float kernel matches SDL exactly; decoder integer differences can propagate
 to two-unit differences after filtering. Those are reported, not accepted as
 bit-exact parity.
+
+## Original mixer compatibility
+
+`Factory::open_original_mixer` and the companion's `decoder_set_mixer_rate`
+select SDL_mixer 2.8 / SDL 2.30's original block schedule. This is distinct from
+the global-phase mode. An actual original-API trace establishes signed 16-bit
+stereo input with 4,096-byte puts (1,024 frames). The compatibility converter
+restarts phase at those internal boundaries, retains SDL's padding, stages short
+last puts and reproduces its flush/truncation behavior. Consumer read sizes do
+not alter those boundaries. It uses the existing 2,048-frame ring and reports
+input capacity so the decoder observes backpressure without enlarging it.
+
+The optional Linux `--trace` check builds a temporary SDL interposition library
+and verifies stream formats and the first 16 put sizes in each original-API
+capture. It records bounded metadata only, never PCM, and is not part of the app.
+
+An independent actual `SDL_AudioStream` oracle matches every float sample bit
+and complete length across 306 cases: 17 lengths around staging/put boundaries,
+nine input rates and both output rates. This includes the surprising behavior
+that a final non-staged put does not flush retained padding. Tests preserve that
+behavior explicitly. `Mix_PlayMusic(1)` is one traversal, as checked by the
+original-API capture and its complete reference length.
+
+```sh
+python3 tools/check_audio_decoder.py /path/to/original/music --sdl-reference --output-rate 44100 --original-mixer
+```
+
+In this mode the corpus reference uses SDL_mixer's actual chunked conversion,
+previously verified against `Mix_LoadMUS`/postmix capture. Full native and browser
+passes check chunk invariance, retained output rate on rewind, rejected rate
+changes and full-track length. The original mode currently requires stereo
+source recordings, as used by all nine tracks. Mono source is rejected because
+the original decoder's byte-sized puts imply different frame boundaries; no
+claim is made for that unimplemented path. New decoder PCM differences remain
+observable. Game playback, controls, scheduling and combined memory accounting
+still require integration.
+
+Pass `--mono-input /path/to/mono.mp3` to check the explicit original-mode
+rejection alongside complete audible ordinary stereo conversion in native and
+Chromium execution. The channel check includes nonzero PCM and the ending, so
+it cannot pass solely on the recording's initial silence.

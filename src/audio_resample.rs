@@ -38,6 +38,149 @@ pub struct Resampler {
     produced: u64,
     finished: bool,
 }
+
+/// SDL_mixer 2.8's 1,024-frame source puts into SDL 2.30 AudioStream.
+/// Phase restarts at the original internal boundaries, including its final
+/// staging/flush behavior. Consumer read sizes never move those boundaries.
+pub struct MixerResampler {
+    inner: Resampler,
+    put: u64,
+    processed: u64,
+    first_put: bool,
+    stage: MixerStage,
+    block_start: u64,
+    block_out: u64,
+    block_at: u64,
+}
+enum MixerStage {
+    Puts,
+    FlushFirst(u64),
+    FlushSecond(u64),
+    Done,
+}
+impl MixerResampler {
+    pub fn new(input_rate: u32, output_rate: u32) -> Result<Self, &'static str> {
+        Ok(Self {
+            inner: Resampler::new(input_rate, output_rate)?,
+            put: 0,
+            processed: 0,
+            first_put: true,
+            stage: MixerStage::Puts,
+            block_start: 0,
+            block_out: 0,
+            block_at: 0,
+        })
+    }
+    pub fn input_capacity(&self) -> usize {
+        if self.inner.finished {
+            return 0;
+        }
+        (CAPACITY - (self.inner.received - self.inner.first) as usize).min(MAX_FRAMES)
+    }
+    pub fn append(&mut self, input: &[[f32; 2]]) -> Result<(), &'static str> {
+        self.inner.append(input)
+    }
+    pub fn finish(&mut self) {
+        self.inner.finish();
+    }
+    fn padding(&self) -> u64 {
+        if self.inner.input_rate > self.inner.output_rate {
+            (512 * u64::from(self.inner.input_rate)).div_ceil(u64::from(self.inner.output_rate))
+        } else {
+            512
+        }
+    }
+    fn block(&mut self, frames: u64, limit: u64) -> Result<(), &'static str> {
+        self.block_start = self.processed;
+        self.processed = self
+            .processed
+            .checked_add(frames)
+            .ok_or("music block overflow")?;
+        self.block_out = ((u128::from(frames) * u128::from(self.inner.output_rate)
+            / u128::from(self.inner.input_rate)) as u64)
+            .min(limit);
+        self.block_at = 0;
+        Ok(())
+    }
+    fn prepare(&mut self) -> Result<bool, &'static str> {
+        while self.block_at == self.block_out {
+            let padding = self.padding();
+            match self.stage {
+                MixerStage::Done => return Ok(false),
+                MixerStage::Puts => {
+                    let tail = self.inner.received - self.put;
+                    let amount = if tail >= 1024 {
+                        1024
+                    } else {
+                        if !self.inner.finished {
+                            return Ok(false);
+                        }
+                        if tail == 0 {
+                            self.stage = MixerStage::Done;
+                            continue;
+                        }
+                        if tail < padding {
+                            let actual = tail + if self.first_put { 0 } else { padding };
+                            let remaining = (actual * u64::from(self.inner.output_rate))
+                                .div_ceil(u64::from(self.inner.input_rate));
+                            self.stage = MixerStage::FlushFirst(remaining);
+                            continue;
+                        }
+                        self.stage = MixerStage::Done;
+                        tail
+                    };
+                    self.put += amount;
+                    let frames = amount - if self.first_put { padding } else { 0 };
+                    self.first_put = false;
+                    self.block(frames, u64::MAX)?;
+                }
+                MixerStage::FlushFirst(remaining) => {
+                    self.block(if self.first_put { 0 } else { padding }, remaining)?;
+                    self.first_put = false;
+                    self.stage = MixerStage::FlushSecond(remaining - self.block_out);
+                }
+                MixerStage::FlushSecond(remaining) => {
+                    self.block(padding, remaining)?;
+                    self.stage = MixerStage::Done;
+                }
+            }
+            // If a zero-length block was consumed, release its obsolete history.
+            if self.block_out == 0 {
+                self.inner.first = self.processed.saturating_sub(5).min(self.inner.received);
+            }
+        }
+        Ok(true)
+    }
+    pub fn render(&mut self, output: &mut [[f32; 2]]) -> Result<usize, &'static str> {
+        if self.inner.input_rate == self.inner.output_rate {
+            return self.inner.render(output);
+        }
+        if output.is_empty() || output.len() > MAX_FRAMES {
+            return Err("invalid mixer output buffer");
+        }
+        let mut count = 0;
+        for frame in output {
+            if !self.prepare()? {
+                break;
+            }
+            let numerator = self.block_at * u64::from(self.inner.input_rate);
+            let relative = numerator / u64::from(self.inner.output_rate);
+            let fraction = (numerator % u64::from(self.inner.output_rate)) as u32;
+            *frame = self.inner.filtered(self.block_start + relative, fraction);
+            self.block_at += 1;
+            count += 1;
+            let next = if self.block_at == self.block_out {
+                self.processed
+            } else {
+                self.block_start
+                    + self.block_at * u64::from(self.inner.input_rate)
+                        / u64::from(self.inner.output_rate)
+            };
+            self.inner.first = next.saturating_sub(5).min(self.inner.received);
+        }
+        Ok(count)
+    }
+}
 impl Resampler {
     pub fn new(input_rate: u32, output_rate: u32) -> Result<Self, &'static str> {
         if !RATES.contains(&input_rate) || ![44100, 48000].contains(&output_rate) {
@@ -78,6 +221,12 @@ impl Resampler {
         self.received = end;
         Ok(())
     }
+    pub fn input_capacity(&self) -> usize {
+        if self.finished {
+            return 0;
+        }
+        (CAPACITY - (self.received - self.first) as usize).min(MAX_FRAMES)
+    }
     pub fn finish(&mut self) {
         self.finished = true;
     }
@@ -92,6 +241,34 @@ impl Resampler {
             }
             _ => 0.0,
         }
+    }
+    fn filtered(&self, source: u64, fraction: u32) -> [f32; 2] {
+        let left = fraction as f32 / self.output_rate as f32;
+        let right = 1.0 - left;
+        let left_index = (fraction * 512 / self.output_rate) as usize;
+        let right_index = ((self.output_rate - fraction) * 512 / self.output_rate) as usize;
+        let mut frame = [0.0; 2];
+        for (channel, value) in frame.iter_mut().enumerate() {
+            let mut sum = 0.0;
+            for (index, fraction, right_wing) in
+                [(left_index, left, false), (right_index, right, true)]
+            {
+                let mut j = 0usize;
+                while index + j * 512 < FILTER.len() {
+                    let filter = index + j * 512;
+                    let at = if right_wing {
+                        source.checked_add(1 + j as u64)
+                    } else {
+                        source.checked_sub(j as u64)
+                    };
+                    sum +=
+                        self.sample(at, channel) * (FILTER[filter] + fraction * DIFFERENCE[filter]);
+                    j += 1;
+                }
+            }
+            *value = sum;
+        }
+        frame
     }
     /// Zero means more input is needed, or the finished stream is drained.
     /// Phase is global integer time, independent of append/render chunk sizes.
@@ -117,30 +294,7 @@ impl Resampler {
                 }
                 let fraction = ((u128::from(self.produced) * u128::from(self.input_rate))
                     % u128::from(self.output_rate)) as u32;
-                let left = fraction as f32 / self.output_rate as f32;
-                let right = 1.0 - left;
-                let left_index = (fraction * 512 / self.output_rate) as usize;
-                let right_index = ((self.output_rate - fraction) * 512 / self.output_rate) as usize;
-                for (channel, value) in frame.iter_mut().enumerate() {
-                    let mut sum = 0.0;
-                    for (index, fraction, right_wing) in
-                        [(left_index, left, false), (right_index, right, true)]
-                    {
-                        let mut j = 0usize;
-                        while index + j * 512 < FILTER.len() {
-                            let filter = index + j * 512;
-                            let at = if right_wing {
-                                source.checked_add(1 + j as u64)
-                            } else {
-                                source.checked_sub(j as u64)
-                            };
-                            sum += self.sample(at, channel)
-                                * (FILTER[filter] + fraction * DIFFERENCE[filter]);
-                            j += 1;
-                        }
-                    }
-                    *value = sum;
-                }
+                *frame = self.filtered(source, fraction);
             }
             self.produced += 1;
             count += 1;

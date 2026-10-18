@@ -68,13 +68,17 @@ impl Factory {
         })))
     }
     pub fn open(&self, input: &[u8]) -> Result<Stream> {
-        self.open_inner(input, None)
+        self.open_inner(input, None, false)
     }
     pub fn open_resampled(&self, input: &[u8], rate: u32) -> Result<Stream> {
         ensure!([44100, 48000].contains(&rate), "invalid music output rate");
-        self.open_inner(input, Some(rate))
+        self.open_inner(input, Some(rate), false)
     }
-    fn open_inner(&self, input: &[u8], output_rate: Option<u32>) -> Result<Stream> {
+    pub fn open_original_mixer(&self, input: &[u8], rate: u32) -> Result<Stream> {
+        ensure!([44100, 48000].contains(&rate), "invalid music output rate");
+        self.open_inner(input, Some(rate), true)
+    }
+    fn open_inner(&self, input: &[u8], output_rate: Option<u32>, mixer: bool) -> Result<Stream> {
         ensure!(
             !input.is_empty() && input.len() <= MAX_INPUT,
             "encoded music must be 1 byte to 8 MiB"
@@ -111,8 +115,14 @@ impl Factory {
             "invalid or over-budget MPEG audio"
         );
         if let Some(rate) = output_rate {
-            let configure =
-                instance.get_typed_func::<u32, i32>(&mut store, "decoder_set_output_rate")?;
+            let configure = instance.get_typed_func::<u32, i32>(
+                &mut store,
+                if mixer {
+                    "decoder_set_mixer_rate"
+                } else {
+                    "decoder_set_output_rate"
+                },
+            )?;
             ensure!(
                 configure.call(&mut store, rate)? == 0,
                 "music conversion rejected"

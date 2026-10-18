@@ -2,7 +2,7 @@
   "purpose": "Private original streamed-music API versus effect-loading oracle; not new decoder parity",
   "sdl": "2.30.0",
   "sdl_mixer": "2.8.0",
-  "oracle_sha256": "f606b256fd8b400a65851fe5e69ff9a7766b9d6508563bf125441b282787b680",
+  "oracle_sha256": "40992465d03544297c53b5768c59559991b30cc6c6546a4e4f5bd7936caecae2",
   "cases": [
     {
       "name": "ambient-sad-piano-313614.mp3",
@@ -15,6 +15,34 @@
       "different": 0,
       "maximum_delta": 0,
       "music_tail_nonzero": 0,
+      "traced_format": [
+        [
+          32784,
+          2,
+          44100,
+          32784,
+          2,
+          44100
+        ]
+      ],
+      "traced_first_put_bytes": [
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096
+      ],
       "music_compared_sha256": "e7bea5ed649600c2d9aa416a7bc939d30d4447505899642bdb05c4d826c0d14c"
     },
     {
@@ -28,6 +56,34 @@
       "different": 0,
       "maximum_delta": 0,
       "music_tail_nonzero": 0,
+      "traced_format": [
+        [
+          32784,
+          2,
+          44100,
+          32784,
+          2,
+          44100
+        ]
+      ],
+      "traced_first_put_bytes": [
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096
+      ],
       "music_compared_sha256": "ec6894735ff8c59c97b9a35016ceca0d5b99af615e110ed35be6b9cc6961c91d"
     },
     {
@@ -41,6 +97,34 @@
       "different": 0,
       "maximum_delta": 0,
       "music_tail_nonzero": 0,
+      "traced_format": [
+        [
+          32784,
+          2,
+          48000,
+          32784,
+          2,
+          44100
+        ]
+      ],
+      "traced_first_put_bytes": [
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096
+      ],
       "music_compared_sha256": "697037781b9c1934f83e22b8b6d6fc0c07bbe81212aa0e0fce9e137df5fb3cc5"
     },
     {
@@ -54,6 +138,34 @@
       "different": 0,
       "maximum_delta": 0,
       "music_tail_nonzero": 0,
+      "traced_format": [
+        [
+          32784,
+          2,
+          48000,
+          32784,
+          2,
+          48000
+        ]
+      ],
+      "traced_first_put_bytes": [
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096
+      ],
       "music_compared_sha256": "7abe4e042d9e73c375d23ea27b707b0a7fa4484039cf6c5a8a6326a2e25918a8"
     },
     {
@@ -67,6 +179,34 @@
       "different": 0,
       "maximum_delta": 0,
       "music_tail_nonzero": 0,
+      "traced_format": [
+        [
+          32784,
+          2,
+          44100,
+          32784,
+          2,
+          44100
+        ]
+      ],
+      "traced_first_put_bytes": [
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096
+      ],
       "music_compared_sha256": "1844eeb10944dd1d488eacd1e6889818c0add6b4d4f0e158fa922c2ff046a88d"
     },
     {
@@ -80,6 +220,34 @@
       "different": 0,
       "maximum_delta": 0,
       "music_tail_nonzero": 0,
+      "traced_format": [
+        [
+          32784,
+          2,
+          48000,
+          32784,
+          2,
+          44100
+        ]
+      ],
+      "traced_first_put_bytes": [
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096
+      ],
       "music_compared_sha256": "668958f4e4e7528d8293f2e88943c45344d14a038b595befcfd9b5850234ce6c"
     },
     {
@@ -93,6 +261,34 @@
       "different": 0,
       "maximum_delta": 0,
       "music_tail_nonzero": 0,
+      "traced_format": [
+        [
+          32784,
+          2,
+          48000,
+          32784,
+          2,
+          48000
+        ]
+      ],
+      "traced_first_put_bytes": [
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096
+      ],
       "music_compared_sha256": "47cc12d22f16d2cf3267c6ef8b98288677cb86b0ee6ef1d2669948d1dcf79385"
     },
     {
@@ -106,6 +302,34 @@
       "different": 0,
       "maximum_delta": 0,
       "music_tail_nonzero": 0,
+      "traced_format": [
+        [
+          32784,
+          2,
+          48000,
+          32784,
+          2,
+          44100
+        ]
+      ],
+      "traced_first_put_bytes": [
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096
+      ],
       "music_compared_sha256": "080b39ce08a0ba58c7335715cf467e00bebd7fb0d22d7931cc0f4b67dcf5481d"
     },
     {
@@ -119,6 +343,34 @@
       "different": 0,
       "maximum_delta": 0,
       "music_tail_nonzero": 0,
+      "traced_format": [
+        [
+          32784,
+          2,
+          48000,
+          32784,
+          2,
+          48000
+        ]
+      ],
+      "traced_first_put_bytes": [
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096
+      ],
       "music_compared_sha256": "d3ce6f2c604d402d4266e6aa57198d86fba6694e1798338cb1b77faf3ae02f7e"
     },
     {
@@ -132,6 +384,34 @@
       "different": 0,
       "maximum_delta": 0,
       "music_tail_nonzero": 0,
+      "traced_format": [
+        [
+          32784,
+          2,
+          44100,
+          32784,
+          2,
+          44100
+        ]
+      ],
+      "traced_first_put_bytes": [
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096
+      ],
       "music_compared_sha256": "5e99116cb1c269618f7db8ac6c90f32bdf2139d89de55ec7b370bf796f4beb9f"
     },
     {
@@ -145,6 +425,34 @@
       "different": 0,
       "maximum_delta": 0,
       "music_tail_nonzero": 0,
+      "traced_format": [
+        [
+          32784,
+          2,
+          44100,
+          32784,
+          2,
+          44100
+        ]
+      ],
+      "traced_first_put_bytes": [
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096
+      ],
       "music_compared_sha256": "b55291b8f68c7dcd7aa79d2f1eb45e1dd6c8d6bf6d1a40c1e2475e8be98453d0"
     },
     {
@@ -158,6 +466,34 @@
       "different": 0,
       "maximum_delta": 0,
       "music_tail_nonzero": 0,
+      "traced_format": [
+        [
+          32784,
+          2,
+          48000,
+          32784,
+          2,
+          44100
+        ]
+      ],
+      "traced_first_put_bytes": [
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096
+      ],
       "music_compared_sha256": "10986e2ec8e183041ae9161966ba9416a79f22e714e890e119dbc416b31a0cf6"
     },
     {
@@ -171,7 +507,36 @@
       "different": 0,
       "maximum_delta": 0,
       "music_tail_nonzero": 0,
+      "traced_format": [
+        [
+          32784,
+          2,
+          48000,
+          32784,
+          2,
+          48000
+        ]
+      ],
+      "traced_first_put_bytes": [
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096
+      ],
       "music_compared_sha256": "1097ca69d5bad88967abaa12420f4df0206ac6e630924b8a1651cae8985c5d16"
     }
-  ]
+  ],
+  "trace_sha256": "80be8184af29cf762b3becaa7177147560df3911396d7ec4808ca6f58b7b017e"
 }
