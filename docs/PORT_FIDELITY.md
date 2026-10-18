@@ -1084,3 +1084,35 @@ workflows, lint, formatting and reference regeneration are checked separately.
 Fifteen procedural themes, image/editor backgrounds, viewport, fonts/HUD/menus,
 audio and remaining platforms are unfinished. Recipe 0.1.32 is source-only;
 there is no binary/package release or host version change.
+
+### Procedural supernova and space battle
+
+Supernova restores the original alpha-blended core, five ordered shockwaves and
+seeded colored debris. Space Wars restores the original random interval/offset
+choices, firing test, red/green selection and 100x4 source laser rectangles. The
+clock first converts to f32 and then to u64; the subsequent offset addition now
+wraps explicitly like the original release binary. Changing that order would
+change extreme-frame firing behavior.
+
+A scalar half-probability method matches real Rand 0.8.5's next-u64 threshold.
+Four seeded streams check 1,024 bool values; the existing u8/i32/f32/u64 samplers
+remain unchanged. Twenty-two original-function/real-Rand/SDL cases cover three
+actual selected levels per theme and frame precision extremes, including a real
+empty firing interval. Complete ordered-point hashes/counts and all composed
+framebuffer pixels pass the existing four-level software-SDL grouping bound.
+Previous procedural reference files still regenerate byte-for-byte.
+
+All 68 logic tests and all 42 signed checks pass native and Wasm. Full scenes
+retain 200 fire-brick overlays and all corner particle tiles with 3,000 active
+particles. The eight-player matrix checks both animation frames, the empty
+interval and a revisit: maximum sampled difference two on desktop, one in
+browsers; empty-interval samples are exact. Samples for the original four-pixel
+laser bars use a one-pixel vertical margin, since a five-pixel inset has no
+interior. Other tile/world margins and explicit nearest-boundary choices remain.
+The empty interval also samples earlier laser locations to verify clearing.
+
+Existing gameplay/editor/file workflows, strict lint, formatting and reference
+regeneration also pass. Thirteen procedural themes, image/editor
+artwork, viewport, fonts/HUD/menus/audio and remaining platforms remain open.
+Recipe 0.1.33 changes source only; host version and binary/package releases are
+unchanged.

@@ -2624,3 +2624,13 @@ fn original_fire_and_deep_sea_backgrounds_preserve_pixels_and_full_scene_budgets
         &[0, 3, 11, 14],
     );
 }
+
+#[test]
+#[ignore = "requires the signed production fixture prepared by tests/arkanoo.py"]
+fn original_supernova_and_space_wars_preserve_pixels_and_full_scene_budgets() {
+    check_procedural_runtime_fixture(
+        include_str!("fixtures/arkanoo-space-background.json"),
+        2147549184,
+        &[0, 3, 11, 14],
+    );
+}

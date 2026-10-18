@@ -313,12 +313,18 @@ notes = "The complete unchanged original animated-background function compiles a
 
 [[work]]
 id = "arkanoo_remaining_procedural_themes"
-requirements = ["Cyber grid", "Star voyage", "Hex pulse", "Aurora waves", "Matrix rain", "Nebula clouds", "Rain and thunder", "Starry night", "Bubbles", "Digital circuit", "Kaleidoscope", "Warp", "Maze", "Supernova", "Space wars"]
+requirements = ["Cyber grid", "Star voyage", "Hex pulse", "Aurora waves", "Matrix rain", "Nebula clouds", "Rain and thunder", "Starry night", "Bubbles", "Digital circuit", "Kaleidoscope", "Warp", "Maze"]
 status = "pending"
-notes = "The source now selects the original theme deterministically, but only Snow, Smoke, Tornado, Fire and Deep Sea draw paths are adapted. Other selected themes still reach the previous grid fallback. Their original RNG types, line/outline rasterization, blend order, clipping, frame timing and resource use need independent reference evidence; the five restored themes do not establish their completion."
+notes = "The source now selects the original theme deterministically, but only Snow, Smoke, Tornado, Fire, Deep Sea, Supernova and Space Wars draw paths are adapted. Other selected themes still reach the previous grid fallback. Their original RNG types, line/outline rasterization, blend order, clipping, frame timing and resource use need independent reference evidence; the seven restored themes do not establish their completion."
 
 [[work]]
 id = "arkanoo_procedural_fire_and_deep_sea"
 requirements = ["Original seeded flame motion gradient and sizes", "Original integer-truncated light shafts", "Original ordered shaft bands and drifting plankton", "Multiple actual selected level seeds", "Frame precision extremes", "Native/Wasm complete pixel and full-scene budget checks", "Real desktop/browser animation and revisit"]
 status = "implemented_two_themes_verified_linux_browser"
 notes = "Twenty-two cases run the complete unchanged original function with exact real Rand and actual selected levels; point counts/trace hashes and every composed framebuffer pixel are verified under the existing four-level software-SDL grouping bound. The generalized shared unit/runtime verifiers retain all prior snow/smoke/tornado evidence. All 41 signed checks pass native and Wasm, including dense 200-fire-brick/3,000-particle scenes with all later art present. Eight real players pass both animation frames/theme and a revisit: sampled desktop maximum delta three, browser two, with explicit nearest/interior sampling limits. Original helper cast order is retained. Fifteen other themes, image/editor artwork, whole-frame/edge/platform parity and remaining presentation/audio are unfinished."
+
+[[work]]
+id = "arkanoo_procedural_supernova_and_space_wars"
+requirements = ["Original core shockwave and seeded debris", "Original interval/offset laser selection", "Exact half-probability RNG consumption", "Release wrapping after f32-to-u64 conversion", "Empty intervals clear earlier shots", "Native/Wasm pixels and full-scene limits", "Real desktop/browser animation and clearing"]
+status = "implemented_two_themes_verified_linux_browser"
+notes = "Twenty-two complete-original/real-Rand/SDL cases compare every ordered point/color hash and full framebuffer under the existing four-level grouping bound. Four real Rand streams verify 1,024 half-probability values. All 42 signed checks pass native and Wasm, preserving full fire-brick/particle scenes and empty backgrounds. Eight player configurations verify both animation frames/theme, a genuinely empty interval and a revisit. Desktop sampled delta at most two and browsers one; empty-interval samples match exactly. Laser samples use a one-pixel vertical interior margin because the original bars are only four pixels high; ordinary nearest-boundary choices remain explicit. Thirteen themes, original image/editor artwork, complete-window/edge/platform fidelity and remaining presentation/audio are unfinished."

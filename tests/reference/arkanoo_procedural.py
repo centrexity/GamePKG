@@ -25,6 +25,7 @@ if args.len()==1 {
  for level in 10u64..10000 {let seed=level.wrapping_mul(12345).wrapping_add((level/3).wrapping_mul(67890)).wrapping_add((level%7).wrapping_mul(11111));let theme=rand::rngs::StdRng::seed_from_u64(seed).gen_range(0i32..20);if [7,9,19].contains(&theme)&&found[theme as usize]<3 {levels.push((level,theme));found[theme as usize]+=1;}if [7,9,19].iter().all(|v|found[*v]==3){break;}}
  println!("{:?}",levels);return;
 }
+if args[1]=="half" {use rand::{Rng,SeedableRng};let seed:u64=args[2].parse().unwrap();let mut rng=rand::rngs::StdRng::seed_from_u64(seed);let samples:Vec<bool>=(0..256).map(|_|rng.gen_bool(0.5)).collect();println!("{:?}",samples);return;}
 if args[1]=="rng" {use rand::{Rng,SeedableRng};let seed:u64=args[2].parse().unwrap();let mut rng=rand::rngs::StdRng::seed_from_u64(seed);let samples:Vec<u8>=(0..256).map(|i|{let(low,high)=[(0u8,255u8),(100,200),(100,255),(0,17)][i%4];rng.gen_range(low..high)}).collect();println!("{:?}",samples);return;}
 let mut c=Canvas{points:Vec::new(),color:0,background:0,marker:std::marker::PhantomData};draw_animated_background(&mut c,args[1].parse().unwrap(),args[2].parse().unwrap());let mut out=std::io::BufWriter::new(std::io::stdout().lock());out.write_all(&c.background.to_le_bytes()).unwrap();for(x,y,color)in c.points{out.write_all(&x.to_le_bytes()).unwrap();out.write_all(&y.to_le_bytes()).unwrap();out.write_all(&color.to_le_bytes()).unwrap();}}
 '''
@@ -38,7 +39,7 @@ uint8_t*pixels=malloc(1280*720*4);if(SDL_RenderReadPixels(r,NULL,SDL_PIXELFORMAT
 '''
 themes=[int(value) for value in sys.argv[3].split(',')] if len(sys.argv)>3 else [7,9,19]
 assert themes and len(set(themes))==len(themes) and all(0<=theme<20 for theme in themes)
-assert all(theme in [7,9,11,18,19] for theme in themes), 'This recorder covers the adapted point/filled-rectangle themes; line and outline recording remains pending'
+assert all(theme in [7,9,11,16,17,18,19] for theme in themes), 'This recorder covers the adapted point/filled-rectangle themes; line and outline recording remains pending'
 body=body.replace('[7,9,19]',str(themes).replace(' ',''))
 rand_source=Path(sys.argv[2]);assert tomllib.loads((rand_source/'Cargo.toml').read_text())['package']['version']=='0.8.5'
 with tempfile.TemporaryDirectory(prefix='gamepkg-procedural-reference-') as temporary:
@@ -55,7 +56,8 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-procedural-reference-') as temp
   for frame in ([0,1,59,120,16777217,4294967295,18446744073709551615] if index%3==0 else [0,120]):
    raw=subprocess.check_output([oracle,str(level),str(frame)]);background=struct.unpack('<I',raw[:4])[0];trace=raw[4:];pixels=subprocess.check_output([folder/'raster'],input=raw)
    visible=[(x,y) for x,y,color in struct.iter_unpack('<iiI',trace) if color&255 and 0<=x<1280 and 0<=y<720]
-   bounds=[min(x for x,y in visible),min(y for x,y in visible),max(x for x,y in visible),max(y for x,y in visible)]
+   bounds=[min(x for x,y in visible),min(y for x,y in visible),max(x for x,y in visible),max(y for x,y in visible)] if visible else None
    cases.append(dict(level=level,theme=theme,frame=frame,background=background,point_count=len(trace)//12,trace_sha256=hashlib.sha256(trace).hexdigest(),bounds=bounds,sdl_rgba_zlib_hex=zlib.compress(pixels).hex()))
  rng=[dict(seed=seed,values=json.loads(subprocess.check_output([oracle,'rng',str(seed)],text=True))) for seed in [0,1,12345,18446744073709551615]]
- print(json.dumps(dict(revision='9d613e78c9ed5657ae7fda9206cd4a82a893b7c8',rendering_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),fragment_sha256=hashlib.sha256(fragment.encode()).hexdigest(),rng_u8=rng,cases=cases),indent=2))
+ half=[dict(seed=seed,values=json.loads(subprocess.check_output([oracle,'half',str(seed)],text=True))) for seed in [0,1,12345,18446744073709551615]] if 17 in themes else None
+ print(json.dumps(dict(revision='9d613e78c9ed5657ae7fda9206cd4a82a893b7c8',rendering_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),fragment_sha256=hashlib.sha256(fragment.encode()).hexdigest(),rng_u8=rng,**({'rng_half':half} if half is not None else {}),cases=cases),indent=2))

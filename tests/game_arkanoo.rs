@@ -2556,6 +2556,14 @@ fn check_procedural_background_fixture(text: &str) {
             assert_eq!(u64::from(rng.range_u8(low, high)), value.as_u64().unwrap());
         }
     }
+    if let Some(records) = fixture.get("rng_half") {
+        for record in records.as_array().unwrap() {
+            let mut rng = pattern_rng::Rng::new(record["seed"].as_u64().unwrap());
+            for value in record["values"].as_array().unwrap() {
+                assert_eq!(rng.half_probability(), value.as_bool().unwrap());
+            }
+        }
+    }
     for level in [0, 1, 6, 7, 8, 9] {
         assert!(procedural::procedural_background(level, 0).is_none());
     }
@@ -2568,4 +2576,9 @@ fn original_procedural_snow_smoke_tornado_and_typed_color_rng_match() {
 #[test]
 fn original_procedural_fire_and_deep_sea_match_ordered_pixels_and_rng() {
     check_procedural_background_fixture(include_str!("fixtures/arkanoo-fire-sea-background.json"));
+}
+
+#[test]
+fn original_supernova_and_space_wars_preserve_ordered_pixels_and_half_probability() {
+    check_procedural_background_fixture(include_str!("fixtures/arkanoo-space-background.json"));
 }

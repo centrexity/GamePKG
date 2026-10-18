@@ -5,15 +5,16 @@ from http.server import SimpleHTTPRequestHandler,ThreadingHTTPServer
 import argparse,json,math,os,shutil,subprocess,tempfile,threading,time
 from PIL import Image
 from gui_test_support import start_display
-parser=argparse.ArgumentParser();parser.add_argument('--fire-sea',action='store_true');parser.add_argument('--procedural',action='store_true');parser.add_argument('--skip-browser',action='store_true');args=parser.parse_args();assert not(args.procedural and args.fire_sea);args.procedural=args.procedural or args.fire_sea
-PROJECT=Path(__file__).resolve().parents[1];PROOF=PROJECT/('target/fire-sea-proof' if args.fire_sea else 'target/procedural-proof' if args.procedural else 'target/background-proof');PROOF.mkdir(parents=True,exist_ok=True)
+parser=argparse.ArgumentParser();parser.add_argument('--space',action='store_true');parser.add_argument('--fire-sea',action='store_true');parser.add_argument('--procedural',action='store_true');parser.add_argument('--skip-browser',action='store_true');args=parser.parse_args();assert sum([args.procedural,args.fire_sea,args.space])<=1;args.procedural=args.procedural or args.fire_sea or args.space
+PROJECT=Path(__file__).resolve().parents[1];PROOF=PROJECT/('target/space-proof' if args.space else 'target/fire-sea-proof' if args.fire_sea else 'target/procedural-proof' if args.procedural else 'target/background-proof');PROOF.mkdir(parents=True,exist_ok=True)
 import zlib
-REFERENCE=json.loads((PROJECT/('tests/fixtures/arkanoo-fire-sea-background.json' if args.fire_sea else 'tests/fixtures/arkanoo-procedural.json' if args.procedural else 'tests/fixtures/arkanoo-background.json')).read_text())['cases']
+REFERENCE=json.loads((PROJECT/('tests/fixtures/arkanoo-space-background.json' if args.space else 'tests/fixtures/arkanoo-fire-sea-background.json' if args.fire_sea else 'tests/fixtures/arkanoo-procedural.json' if args.procedural else 'tests/fixtures/arkanoo-background.json')).read_text())['cases']
 ORIGINAL=[zlib.decompress(bytes.fromhex(case['sdl_rgba_zlib_hex'])) for case in REFERENCE]
 PHASES=[0,3,7,10,14,17,0]
 KEYS={3:'Right',7:'Up',10:'z',14:'Left',17:'Down'}
 if args.procedural:PHASES=[0,3,11,14,22,25,0];KEYS={3:'Right',11:'Up',14:'z',22:'Left',25:'Down'}
 if args.fire_sea:PHASES=[0,3,11,14,0]
+if args.space:PHASES=[0,3,11,14,21,0];KEYS[21]='Left'
 def source_pixel(case,x,y):
  if 0<=x<1280 and 0<=y<720:
   at=(y*1280+x)*4;return list(ORIGINAL[case][at:at+3])
@@ -23,13 +24,14 @@ from functools import lru_cache
 def points(case):
  raw=ORIGINAL[case];bg=REFERENCE[case]['background'].to_bytes(4,'big')[:3]
  visible=[i for i in range(1280*720) if raw[i*4:i*4+3]!=bg]
+ if args.space and not visible:return points(11)+points(14)
  import struct
  if args.procedural:left,top,_,_=REFERENCE[case]['bounds']
  else:
   dots=[(x,y) for x,y,color in struct.iter_unpack('<iiI',zlib.decompress(bytes.fromhex(REFERENCE[case]['trace_zlib_hex']))) if color&255 and 0<=x<1280 and 0<=y<720]
   left=min(x for x,y in dots);top=min(y for x,y in dots)
  # Sample inside geometry tiles; clipping/raster edges have their own open audit.
- visible=[i for i in visible if 5<i%1280<1275 and 5<i//1280<715 and 4<((i%1280-left)%64)<60 and 4<((i//1280-top)%64)<60]
+ visible=[i for i in visible if 5<i%1280<1275 and 5<i//1280<715 and 4<((i%1280-left)%64)<60 and (0 if args.space and REFERENCE[case]['theme']==17 else 4)<((i//1280-top)%64)<(63 if args.space and REFERENCE[case]['theme']==17 else 60)]
  assert visible
  positions=[(i%1280,i//1280) for i in visible[::max(1,len(visible)//64)]]
  positions += [(640,360),(480,200),(800,520)]
@@ -57,6 +59,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-background-ui-',dir=PROJECT/'ta
   source=root/'source';shutil.copytree(PROJECT/'ports/arkanoo',source);entry=source/'source/src/lib.rs';modules=entry.read_text().split('use std::sync::Mutex;')[0]
   entry.write_text(modules+'pub fn game_tick(input:u32,_:u64)->u64 {let which=if input&gamepkg::HELD_RIGHT!=0 {3} else if input&gamepkg::HELD_UP!=0 {7} else if input&gamepkg::HELD_B!=0 {10} else if input&gamepkg::HELD_LEFT!=0 {14} else if input&gamepkg::HELD_DOWN!=0 {17} else {0};let cases='+str([[c['level'],c['frame']] for c in REFERENCE]).replace(' ', '')+';gamepkg::draw_clear(0x0b1020ff);render::draw_background(cases[which][0] as u32,cases[which][1]);which as u64}')
   if args.procedural:entry.write_text(entry.read_text().replace('{7} else','{11} else').replace('{10} else','{14} else').replace('{14} else if input&gamepkg::HELD_DOWN','{22} else if input&gamepkg::HELD_DOWN').replace('{17} else','{25} else'))
+  if args.space:entry.write_text(entry.read_text().replace('{22} else','{21} else'))
   base=(source/'manifest.toml').read_text().replace('com.gamepkg.arkanoo','com.gamepkg.background-scene');cli=PROJECT/'target/release/gamepkg';gui=PROJECT/'target/release/gamepkg-gui'
   def run(*arguments):
    r=subprocess.run([str(cli),*map(str,arguments)],env=env,capture_output=True,text=True,timeout=180);assert r.returncode==0,r.stderr
@@ -105,7 +108,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-background-ui-',dir=PROJECT/'ta
      browser.get(f'http://127.0.0.1:{server.server_port}/');wait=WebDriverWait(browser,20);wait.until(lambda b:b.find_element('id','status').text=='Ready to play');browser.find_element('id','play').click();wait.until(lambda b:b.find_element('id','game').get_attribute('data-state'));browser.find_element('id','game').click()
      for shift in PHASES:
       if held:ActionChains(browser).key_up(held).perform();held=False
-      if shift:held=({3:Keys.ARROW_RIGHT,11:Keys.ARROW_UP,14:'z',22:Keys.ARROW_LEFT,25:Keys.ARROW_DOWN} if args.procedural else {3:Keys.ARROW_RIGHT,7:Keys.ARROW_UP,10:'z',14:Keys.ARROW_LEFT,17:Keys.ARROW_DOWN})[shift];ActionChains(browser).key_down(held).perform()
+      if shift:held=({3:Keys.ARROW_RIGHT,11:Keys.ARROW_UP,14:'z',21:Keys.ARROW_LEFT,22:Keys.ARROW_LEFT,25:Keys.ARROW_DOWN} if args.procedural else {3:Keys.ARROW_RIGHT,7:Keys.ARROW_UP,10:'z',14:Keys.ARROW_LEFT,17:Keys.ARROW_DOWN})[shift];ActionChains(browser).key_down(held).perform()
       wait.until(lambda b:b.find_element('id','game').get_attribute('data-state')==str(shift))
       actual=browser.execute_script('const c=document.querySelector("#game").getContext("2d");return arguments[0].map(p=>Array.from(c.getImageData(p[1],p[2],1,1).data).slice(0,3));',[(kind,round(x),round(y)) for kind,x,y in points(shift)]);check(actual,expected(shift,640,480),'browser-'+profile+'-'+str(shift))
     finally:

@@ -158,7 +158,11 @@ pub fn game_tick(input:u32,state:u64)->u64 {
     old_cases='['+','.join('['+str(case['level'])+'u64,'+str(case['frame'])+'u64]' for case in procedural_cases)+']'
     new_cases='['+','.join('['+str(case['level'])+'u64,'+str(case['frame'])+'u64]' for case in fire_sea_cases)+']'
     fire_sea_probe=procedural_probe.replace('fn procedural_probe','fn fire_sea_probe').replace(old_cases,new_cases)
-    probe=' if input&2147516416==2147516416 {return fire_sea_probe(input); }\n'
+    space_cases=json.loads((PROJECT/'tests/fixtures/arkanoo-space-background.json').read_text())['cases']
+    space_values='['+','.join('['+str(case['level'])+'u64,'+str(case['frame'])+'u64]' for case in space_cases)+']'
+    space_probe=procedural_probe.replace('fn procedural_probe','fn space_probe').replace(old_cases,space_values)
+    probe=' if input&2147549184==2147549184 {return space_probe(input); }\n'
+    probe+=' if input&2147516416==2147516416 {return fire_sea_probe(input); }\n'
     probe+=' if input&2147500032==2147500032 {return procedural_probe(input); }\n'
     probe+=' if input&2147491840==2147491840 {return background_probe(input); }\n'
     probe+=' if input&2147487744==2147487744 {return portal_probe(input); }\n'
@@ -179,7 +183,7 @@ pub fn game_tick(input:u32,state:u64)->u64 {
         probe+=f'gamepkg::draw_clear(0x000000ff);render::draw_ball_effects(&ball,{case["frame"]});return 1;}};\n'
     probe+='return 0;}\n'
     probe_file=modes/'source/src/lib.rs'
-    text=probe_file.read_text();text=text.replace(' if input&67108864!=0 {',probe+' if input&67108864!=0 {');probe_file.write_text(text+metal_probe+ice_probe+fire_probe+bonus_probe+portal_probe+background_probe+procedural_probe+fire_sea_probe+visual_probe)
+    text=probe_file.read_text();text=text.replace(' if input&67108864!=0 {',probe+' if input&67108864!=0 {');probe_file.write_text(text+metal_probe+ice_probe+fire_probe+bonus_probe+portal_probe+background_probe+procedural_probe+fire_sea_probe+space_probe+visual_probe)
     penguin_probe='''
 static HEART:Mutex<Option<physics::Game>>=Mutex::new(None);
 fn penguin_probe(input:u32)->u64 {
