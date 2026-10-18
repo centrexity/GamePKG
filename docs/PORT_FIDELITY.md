@@ -74,8 +74,8 @@ when a verified host replacement provides the same observable behavior.
 
 ## Remaining original presentation is not cosmetic completion
 
-Arkanoo's pinned `rendering.rs` also has dedicated implementations for shiny-ball
-textures and speed lettering, glass paddle, block gradients/refraction/fire/shine,
+Arkanoo's pinned `rendering.rs` also has dedicated implementations for ball
+speed lettering, explosive fire/glass,
 bonus icons, animated backgrounds, portal rendering, HUD/FPS, pause/settings,
 game-over, level-transition/victory and editor presentation. The current simple
 shapes, bitmap lettering and portal circles are replacements. Restored mechanics,
@@ -620,9 +620,9 @@ bricks share the same textures; the original flat-color palette is retained.
 The 106-layout regression checks the textured boards without dropping occupancy,
 coordinate or uniqueness assertions. Editor color/archive checks compare complete
 texture pixels. The gameplay test requires a real partially destroyed board with
-a rendered ball, so a menu cannot count as broken bricks. Ice refraction/glints,
-fire/glass detail, graphite stripes/bevels and other art/audio/settings remain
-unfinished.
+a rendered ball, so a menu cannot count as broken bricks. Later sections cover
+graphite stripes/bevels and ice refraction/glints/shine. Fire/glass detail and
+other art/audio/settings remain unfinished.
 
 Normal-brick validation: all 410 all-features tests pass with 62 dedicated checks
 ignored by default. The signed harness explicitly passes all 31 runtime checks
@@ -641,7 +641,7 @@ Every decoded layer byte is checked, including the transparent interior masks.
 Six real-SDL backdrop comparisons keep opaque pixels exact and record one/two
 8-bit-level software line/copy rounding differences outside. This comparison does
 not establish native/browser framebuffer equivalence; full frame alpha/color-space
-semantics remain explicitly open, alongside ice/fire and other presentation work.
+semantics remain explicitly open, alongside fire and other presentation work.
 
 The full-board test exposed repeated decoding in the old one-entry asset cache.
 Native and core/component Wasm now share a session-scoped LRU cache capped at
@@ -728,3 +728,40 @@ rejection and malformed translated caches remain checked in those runs. Seven
 shader unit tests, strict lint, formatting and Python syntax checks also pass.
 CI now includes native texture/fallback tests for all three backends. This does
 not establish arbitrary shader alpha-compositing or complete game-frame parity.
+
+
+### Ice glints, refraction, cracks and moving shine
+
+Recipe 0.1.25 restores all drawing steps of the pinned ice branch: f32 pulse,
+inclusive top/left glints, three position-seeded refraction segments, the five
+health-dependent crack segments and ten clipped moving diagonals. The original
+integer geometry is projected at half scale. A dependency-free i32 range sampler
+matches pinned Rand 0.8.5 without changing the established u64 level sampler.
+The editor now advances and uses its own animation clock, rather than a frozen
+gameplay clock; leaving the editor pauses that clock.
+
+The unchanged original branch is compiled by `tests/reference/arkanoo_ice.py`.
+It verifies rendering/entities source hashes, uses pinned Rand dependencies,
+and records 96 cases (twelve frames, four positions, two health states). The
+reference includes shine wrap, f32 precision-boundary and u64-maximum frames.
+Real SDL supplies independent alpha masks: the 61×21 overlay preserves inclusive
+outside endpoints and the 60×20 shine stays clipped. Signed runtime checks compare
+every mask alpha and exact pulse color; the separate editor-clock probe checks
+that the editor draws its own fifth frame while gameplay has advanced once.
+A complete damaged 200-ice board still fits unchanged 1,024-command/8 MiB image
+and tick limits, using three commands per brick. Guest crates remain forbidden.
+
+Grouping white lines into ordered overlay masks introduces software SDL rounding
+differences of at most three 8-bit levels in the 576 original-versus-grouped
+backdrop comparisons. This is a measured SDL reference bound, not a claim of
+native/browser framebuffer equivalence. Complete original-game frames and
+explosive fire/glass remain unfinished alongside the other tracked work.
+
+
+Validation: all 63 port logic tests and all 33 signed checks in each of native
+and Wasm pass. The real native editor and both core/component browser editors
+paint and animate ice, erase/repaint the original normal brick, and finish the
+existing gameplay, save/reload, import/cancel/export, cursor and fullscreen
+workflows. Strict lint, formatting, Python syntax and byte-for-byte reference
+regeneration pass. These checks use temporary libraries/displays; no player
+library, private media or release packages are published.

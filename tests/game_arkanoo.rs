@@ -2349,3 +2349,34 @@ fn effects_archive_migrates_old_formats_preserves_capacity_and_rejects_bad_setti
     assert_eq!((loaded.sfx_volume, loaded.sfx_muted), (0, true));
     assert_eq!(loaded.patterns[0].name.len(), editor::SAVE_BYTES - 224);
 }
+
+#[test]
+fn signed_i32_refraction_ranges_match_unchanged_original_rand_calls() {
+    let reference: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-ice.json")).unwrap();
+    let cases: Vec<_> = reference["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|v| v["frame"] == 0 && v["health"] == 2)
+        .collect();
+    assert_eq!(cases.len(), 4);
+    for case in cases {
+        let x = case["x"].as_i64().unwrap() as i32;
+        let y = case["y"].as_i64().unwrap() as i32;
+        let mut rng = pattern_rng::Rng::new((x * y) as u64);
+        for line in case["commands"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|v| v[0] == "L")
+            .skip(2)
+            .take(3)
+        {
+            assert_eq!(rng.range_i32(5, 55), line[1].as_i64().unwrap() as i32 - x);
+            assert_eq!(rng.range_i32(5, 15), line[2].as_i64().unwrap() as i32 - y);
+            assert_eq!(rng.range_i32(5, 55), line[3].as_i64().unwrap() as i32 - x);
+            assert_eq!(rng.range_i32(5, 15), line[4].as_i64().unwrap() as i32 - y);
+        }
+    }
+}

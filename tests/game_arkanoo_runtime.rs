@@ -752,7 +752,7 @@ fn special_bricks_ice_damage_and_world_radius_blasts_reach_real_renderers() {
     let state = game.step(65536).unwrap();
     assert_ne!(state & 4096, 0);
     assert_eq!(state >> 32, 0);
-    assert!(game.frame().commands.iter().any(|command|matches!(command,Command::Image{x,y,width,height,image} if *x==20.0 && *y==100.0 && *width==30.0 && *height==10.0 && image.pixels().chunks_exact(4).any(|pixel|pixel==[255,255,255,220]))),"damaged ice crack missing");
+    assert!(game.frame().commands.iter().any(|command|matches!(command,Command::Image{x,y,width,height,image} if *x==20.0 && *y==100.0 && *width==30.5 && *height==10.5 && image.pixels().chunks_exact(4).any(|pixel|pixel==[255,255,255,220]))),"damaged ice crack missing");
     assert!(game.frame().commands.iter().any(|command|matches!(command,Command::Image{x,y,image,..} if *x==50.0 && *y==100.0 && image.pixels().chunks_exact(4).any(|pixel|pixel==[30,35,40,255]) && image.pixels().chunks_exact(4).any(|pixel|pixel==[150,150,160,255]))),"metal brick/rivets missing");
     assert!(game.frame().commands.iter().any(|command|matches!(command,Command::Image{x,y,image,..} if *x==80.0 && *y==100.0 && image.pixels().chunks_exact(4).any(|pixel|pixel[0]>=220 && pixel[1]>=80 && pixel[2]==0 && pixel[3]==255))),"explosive brick missing");
     let state = game.step(262144).unwrap();
@@ -776,8 +776,8 @@ fn special_bricks_ice_damage_and_world_radius_blasts_reach_real_renderers() {
     game.step(0).unwrap();
     assert_eq!(game.frame().commands.iter().filter(|command|matches!(command,Command::Image{width,height,..} if *width==30.0 && *height==10.0)).count(),200);
     assert!(
-        game.frame().commands.len() < 400,
-        "special bricks exceeded drawing limits"
+        game.frame().commands.len() < gamepkg::drawing::MAX_COMMANDS,
+        "special brick layers exceeded the existing drawing limits"
     );
 }
 
@@ -1975,5 +1975,122 @@ fn original_metal_layers_preserve_outside_pixels_order_and_full_board_budgets() 
         assert_eq!((bodies, outside), (200, 400));
         assert!(game.frame().commands.len() < gamepkg::drawing::MAX_COMMANDS);
         assert!(bytes < gamepkg::drawing::MAX_IMAGE_BYTES);
+    }
+}
+
+#[test]
+#[ignore = "requires the signed production fixture prepared by tests/arkanoo.py"]
+fn original_ice_glints_refractions_cracks_and_clipped_shine_reach_real_runtimes() {
+    let root = isolated_library();
+    let reference: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-ice.json")).unwrap();
+    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
+    assert_eq!(reference["cases"].as_array().unwrap().len(), 96);
+    for (index, case) in reference["cases"].as_array().unwrap().iter().enumerate() {
+        assert_eq!(game.step(2147483904 | index as u32).unwrap(), 1);
+        let commands = &game.frame().commands;
+        assert_eq!(commands.len(), 3);
+        let x = case["x"].as_i64().unwrap() as f32 * 0.5;
+        let y = 60.0 + case["y"].as_i64().unwrap() as f32 * 0.5;
+        let expected_alpha = case["commands"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|v| v[0] == "C")
+            .unwrap()[4]
+            .as_u64()
+            .unwrap();
+        assert!(
+            matches!(commands[0], Command::Rect{x:left,y:top,width:30.0,height:10.0,rgba} if left==x && top==y && rgba==(0xc8f0ff00 | expected_alpha as u32))
+        );
+        for (layer, name) in [(1, "overlay"), (2, "shine")] {
+            let Command::Image {
+                x: left,
+                y: top,
+                width,
+                height,
+                image,
+            } = &commands[layer]
+            else {
+                panic!("Ice primitives must use nearest sampling")
+            };
+            let size = if layer == 1 { [61, 21] } else { [60, 20] };
+            assert_eq!(
+                (*left, *top, *width, *height),
+                (x, y, size[0] as f32 * 0.5, size[1] as f32 * 0.5)
+            );
+            assert_eq!(image.size(), size);
+            let expected = hex::decode(
+                reference["masks"][case[name].as_str().unwrap()]
+                    .as_str()
+                    .unwrap(),
+            )
+            .unwrap();
+            let actual: Vec<_> = image.pixels().chunks_exact(4).map(|p| p[3]).collect();
+            let mismatch = actual.iter().zip(&expected).position(|(a, b)| a != b);
+            assert!(
+                mismatch.is_none(),
+                "Ice mask case {index}, layer {name}: {:?}",
+                mismatch.map(|at| (at, actual[at], expected[at]))
+            );
+            assert!(image
+                .pixels()
+                .chunks_exact(4)
+                .all(|p| p[..3] == [255, 255, 255]));
+        }
+    }
+    assert_eq!(game.step(2147483904 | 512).unwrap(), (5u64 << 32) | 1);
+    let clock_case = &reference["cases"][16];
+    assert_eq!(clock_case["frame"], 5);
+    let expected = hex::decode(
+        reference["masks"][clock_case["shine"].as_str().unwrap()]
+            .as_str()
+            .unwrap(),
+    )
+    .unwrap();
+    let image = game
+        .frame()
+        .commands
+        .iter()
+        .find_map(|c| match c {
+            Command::Image {
+                x: 20.0,
+                y: 100.0,
+                image,
+                ..
+            } if image.size() == [60, 20] => Some(image),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(
+        image
+            .pixels()
+            .chunks_exact(4)
+            .map(|p| p[3])
+            .collect::<Vec<_>>(),
+        expected,
+        "Editor must use its own animation clock"
+    );
+    for _ in 0..2 {
+        assert_eq!(game.step(2147483904 | 128).unwrap(), 200);
+        assert!(game.frame().commands.len() < gamepkg::drawing::MAX_COMMANDS);
+        let images: Vec<_> = game
+            .frame()
+            .commands
+            .iter()
+            .filter_map(|c| match c {
+                Command::Image { image, .. }
+                    if image.size() == [61, 21] || image.size() == [60, 20] =>
+                {
+                    Some(image)
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(images.len(), 400);
+        assert!(
+            images.iter().map(|i| i.pixels().len()).sum::<usize>()
+                < gamepkg::drawing::MAX_IMAGE_BYTES
+        );
     }
 }

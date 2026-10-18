@@ -137,7 +137,9 @@ pub fn game_tick(input:u32,state:u64)->u64 {
 }''')
     trail_cases=json.loads((PROJECT/'tests/fixtures/arkanoo-trails.json').read_text())['cases']
     metal_probe='fn metal_probe(input:u32)->u64 {if input&8!=0 {let mut game=physics::Game::new();game.mode=1;for index in 0..200 {game.set_block(index,3);}render::draw(&game);return 200;}let positions=[[0.0f32,0.0f32],[200.75,80.25],[-0.75,-0.75],[-1.75,-1.75]];let at=positions[(input&3) as usize];gamepkg::draw_clear(0x000000ff);u64::from(render::draw_metal_brick(at[0]*0.5,60.0+at[1]*0.5))}\n'
-    probe=' if input&2147483776==2147483776 {return metal_probe(input);}\n'
+    ice_probe='fn ice_probe(input:u32)->u64 {if input&512!=0 {let mut game=physics::Game::new();game.mode=6;for _ in 0..3 {game.update(0);}game.mode=1;game.update(0);game.mode=6;for _ in 0..2 {game.update(0);}game.mode=2;game.update(0);game.mode=6;game.editor.cells[0]=6;game.editor.health[0]=2;render::draw(&game);return (game.editor.frame_count<<32)|game.frame;}if input&128!=0 {let mut game=physics::Game::new();game.mode=1;game.frame=20;for index in 0..200 {game.set_block(index,1);game.block_health[index]=1;}render::draw(&game);return 200;}let case=input&127;let frames=[0u64,1,5,10,20,30,59,60,119,120,16777217,18446744073709551615];let positions=[[40.0f32,80.0f32],[100.0,80.0],[640.0,260.0],[-1.0,-1.0]];let at=positions[((case/2)%4) as usize];let health=if case%2==0 {2} else {1};gamepkg::draw_clear(0x000000ff);u64::from(render::draw_ice_brick(health,2,frames[(case/8) as usize],at[0]*0.5,60.0+at[1]*0.5))}\n'
+    probe=' if input&2147483904==2147483904 {return ice_probe(input); }\n'
+    probe+=' if input&2147483776==2147483776 {return metal_probe(input);}\n'
     probe+=' if input&2147483664==2147483664 {let positions=[[0.0f32,0.0f32],[200.75,80.25],[-0.75,-0.75],[-1.75,-1.75]];let at=positions[((input>>5)&3) as usize];gamepkg::draw_clear(0x000000ff);return u64::from(render::draw_normal_brick((input&7) as u8,at[0]*0.5,60.0+at[1]*0.5));}\n'
     probe+=' if input&2147483656==2147483656 {let mut game=physics::Game::new();game.paddle=100.75;let variant=input&7;if variant==1 {game.width=90.0;}if variant==2 {game.ghost=600;}if variant>=3 {game.paddle_glow=1.0;}if variant==5 {game.paddle_glow=0.1;}if variant==6 {game.paddle_glow=0.2;}if variant==4 {game.last_paddle=game.paddle;game.update_paddle(0);}if variant==7 {game.paddle_glow=0.0;game.mode=1;game.last_paddle=game.paddle-2.0;game.balls.clear();game.balls.push(physics::Ball{x:game.paddle+35.0,y:394.0,vx:0.0,vy:2.0,spin:0.0,attached:false,launch_timer:0,trail:Vec::new()});game.update(0);}gamepkg::draw_clear(0x000000ff);return u64::from(render::draw_paddle(&game));}\n'
     probe+=' if input&2147483648!=0 {let positions=[[0.0f32,0.0f32],[320.75,240.25],[-0.75,-0.75],[-1.75,-1.75]];let at=positions[(input&3) as usize];let ball=physics::Ball::new(at[0]*0.5+3.0,at[1]*0.5+63.0);gamepkg::draw_clear(0x000000ff);return u64::from(render::draw_ball(&ball));}\n'
@@ -149,7 +151,7 @@ pub fn game_tick(input:u32,state:u64)->u64 {
         probe+=f'gamepkg::draw_clear(0x000000ff);render::draw_ball_effects(&ball,{case["frame"]});return 1;}};\n'
     probe+='return 0;}\n'
     probe_file=modes/'source/src/lib.rs'
-    text=probe_file.read_text();text=text.replace(' if input&67108864!=0 {',probe+' if input&67108864!=0 {');probe_file.write_text(text+metal_probe)
+    text=probe_file.read_text();text=text.replace(' if input&67108864!=0 {',probe+' if input&67108864!=0 {');probe_file.write_text(text+metal_probe+ice_probe)
     penguin_probe='''
 static HEART:Mutex<Option<physics::Game>>=Mutex::new(None);
 fn penguin_probe(input:u32)->u64 {
@@ -238,10 +240,10 @@ pub fn game_tick(input:u32,state:u64)->u64 {
         path=PROOF/name
         subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(path)],env=env,check=True,timeout=10)
         return Image.open(path).convert('RGB')
-    def native_click(window,x,y):
+    def native_click(window,x,y,button=1):
         screenshot=capture(window,'native-menu.png');scale=min(screenshot.width/640,screenshot.height/480)
         px=round((screenshot.width-640*scale)/2+x*scale);py=round((screenshot.height-480*scale)/2+y*scale)
-        subprocess.run(['xdotool','mousemove','--window',window,str(px),str(py),'click','1'],env=env,check=True)
+        subprocess.run(['xdotool','mousemove','--window',window,str(px),str(py),'click',str(button)],env=env,check=True)
         time.sleep(.15)
     def native_slider(window,x):
         screenshot=capture(window,'native-sfx-settings.png');scale=min(screenshot.width/640,screenshot.height/480)
@@ -346,6 +348,19 @@ pub fn game_tick(input:u32,state:u64)->u64 {
             editor_screen=capture(window,'native-editor-painted.png')
             if native_brick_matches(editor_screen,1):break
             assert time.monotonic()<deadline,'Native editor did not paint the selected color';time.sleep(.05)
+        subprocess.run(['xdotool','key','--window',window,'6'],env=env,check=True)
+        native_click(window,35,105,3);native_click(window,35,105)
+        deadline=time.monotonic()+3
+        while True:
+            icy=capture(window,'native-editor-ice.png');r,g,b=icy.getpixel((px,py))
+            if b>150 and g>130 and r>80 and b>=g>=r:break
+            assert time.monotonic()<deadline,'Native editor ice pixels missing';time.sleep(.05)
+        crop=(round(ox+21*scale),round(oy+101*scale),round(ox+49*scale),round(oy+110*scale))
+        initial=icy.crop(crop).tobytes();deadline=time.monotonic()+3
+        while capture(window,'native-editor-ice-animated.png').crop(crop).tobytes()==initial:
+            assert time.monotonic()<deadline,'Native editor ice animation is frozen';time.sleep(.1)
+        subprocess.run(['xdotool','key','--window',window,'1'],env=env,check=True);native_click(window,35,105,3);native_click(window,35,105)
+        assert native_brick_matches(capture(window,'native-editor-painted.png'),1)
         subprocess.run(['xdotool','key','--window',window,'s'],env=env,check=True)
         deadline=time.monotonic()+3
         while True:
@@ -416,11 +431,12 @@ pub fn game_tick(input:u32,state:u64)->u64 {
             def restart_menu():
                 browser.find_element(By.ID,'restart').click();time.sleep(.15)
                 canvas.send_keys(Keys.ENTER);time.sleep(.15)
-            def canvas_click(x,y):
+            def canvas_click(x,y,button=1):
                 # Click the visible image, including fullscreen aspect-ratio bars.
                 rect=browser.execute_script('const c=arguments[0],r=c.getBoundingClientRect(),w=c.clientWidth,h=c.clientHeight,s=Math.min(w/640,h/480);return {x:r.left+c.clientLeft+(w-640*s)/2,y:r.top+c.clientTop+(h-480*s)/2,w:640*s,h:480*s};',canvas)
                 bounds=canvas.rect
-                ActionChains(browser).move_to_element_with_offset(canvas,rect['x']+x/640*rect['w']-(bounds['x']+bounds['width']/2),rect['y']+y/480*rect['h']-(bounds['y']+bounds['height']/2)).click().perform()
+                action=ActionChains(browser).move_to_element_with_offset(canvas,rect['x']+x/640*rect['w']-(bounds['x']+bounds['width']/2),rect['y']+y/480*rect['h']-(bounds['y']+bounds['height']/2))
+                (action.context_click() if button==3 else action.click()).perform()
             def canvas_drag(x):
                 rect=browser.execute_script('const c=arguments[0],r=c.getBoundingClientRect(),w=c.clientWidth,h=c.clientHeight,s=Math.min(w/640,h/480);return {x:r.left+c.clientLeft+(w-640*s)/2,y:r.top+c.clientTop+(h-480*s)/2,w:640*s,h:480*s};',canvas)
                 cy=math.ceil(rect['y']+245/480*rect['h'])
@@ -487,6 +503,14 @@ pub fn game_tick(input:u32,state:u64)->u64 {
             canvas.send_keys('1')
             canvas_click(35,105)
             wait.until(lambda b:browser_brick_matches(pixels(),1))
+            canvas.send_keys('6');canvas_click(35,105,3);canvas_click(35,105)
+            def ice_visible(data):
+                r,g,b=data[(105*640+35)*4:(105*640+35)*4+3]
+                return b>150 and g>130 and r>80 and b>=g>=r
+            wait.until(lambda b:ice_visible(pixels()))
+            def ice_region(data):return [data[(y*640+x)*4+c] for y in range(101,110) for x in range(21,49) for c in range(4)]
+            initial=ice_region(pixels());wait.until(lambda b:ice_region(pixels())!=initial)
+            canvas.send_keys('1');canvas_click(35,105,3);canvas_click(35,105);wait.until(lambda b:browser_brick_matches(pixels(),1))
             canvas.send_keys('n');canvas.send_keys(Keys.BACKSPACE)
             canvas_click(150,400) # Mouse toolbar remains active while editing the name.
             def saved_pattern():
