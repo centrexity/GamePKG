@@ -795,7 +795,11 @@ fn original_layouts_match_in_native_and_32_bit_wasm_through_the_real_renderer() 
     let mut game = load_menu(root.path(), "com.gamepkg.arkanoo-levels").unwrap();
     for fixture in reference["layouts"].as_array().unwrap() {
         let level = fixture["level"].as_u64().unwrap();
-        assert_eq!(game.step(level as u32).unwrap(), level);
+        assert_eq!(
+            game.step(level as u32)
+                .unwrap_or_else(|error| panic!("Original layout level {level}: {error:#}")),
+            level
+        );
         let mut actual = [0u8; 200];
         for command in &game.frame().commands {
             if let Some((x, y)) = normal_brick_position(command) {
@@ -1091,7 +1095,12 @@ fn original_custom_and_procedural_pool_matches_in_native_and_32_bit_wasm() {
             .fold(14695981039346656037u64, |hash, cell| {
                 (hash ^ cell.as_u64().unwrap()).wrapping_mul(1099511628211)
             });
-        assert_eq!(game.step(level).unwrap(), expected, "level {level}");
+        assert_eq!(
+            game.step(level)
+                .unwrap_or_else(|error| panic!("Custom layout level {level}: {error:#}")),
+            expected,
+            "level {level}"
+        );
     }
 }
 
@@ -2762,5 +2771,15 @@ fn original_matrix_and_nebula_preserve_rectangle_pixels_and_full_scene_budgets()
         include_str!("fixtures/arkanoo-matrix-nebula.json"),
         2151677952,
         &[0, 3, 5, 11, 14, 20],
+    );
+}
+
+#[test]
+#[ignore = "requires the signed production fixture prepared by tests/arkanoo.py"]
+fn original_hex_and_bubbles_preserve_pixels_and_full_scene_budgets() {
+    check_procedural_runtime_fixture(
+        include_str!("fixtures/arkanoo-hex-bubbles.json"),
+        2155872256,
+        &[0, 3, 9, 11, 14],
     );
 }

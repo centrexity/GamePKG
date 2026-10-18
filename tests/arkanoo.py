@@ -6,8 +6,10 @@ import os, shutil, subprocess, tempfile, threading, time, tomllib, json
 from PIL import Image
 from gui_test_support import start_display,choose_native_file
 import argparse, math
+from contextlib import nullcontext
 from collections import Counter
 parser=argparse.ArgumentParser()
+parser.add_argument('--keep-fixtures',action='store_true',help='Retain the isolated test directory for diagnosing failed signed checks')
 parser.add_argument('--runtime-only',action='store_true',help='Run both signed execution profiles without starting GUI workflows')
 parser.add_argument('--skip-browser',action='store_true',help='Run native checks on hosts without Chromium/Selenium')
 args=parser.parse_args()
@@ -21,9 +23,10 @@ if not args.skip_browser and not args.runtime_only:
     from selenium.webdriver.support.ui import WebDriverWait
 PROJECT=Path(__file__).resolve().parents[1];CLI=Path(os.environ.get('GAMEPKG_TEST_BINARY_DIR',PROJECT/'target/release'))/'gamepkg'
 PROOF=PROJECT/'target/arkanoo-proof';PROOF.mkdir(parents=True,exist_ok=True)
-# Compile outside the timed gameplay run. Running the returned test executable
-# avoids Cargo lock/compile waits consuming the actual test execution allowance.
-compiled=subprocess.run(['cargo','test','--test','game_arkanoo_runtime','--no-run','--message-format=json'],capture_output=True,text=True,timeout=300)
+# Compile outside the timed gameplay run. Timed native IPC/rendering checks
+# use the optimized production host; debug-host overhead is not game execution.
+# Running the returned executable also excludes Cargo compile/lock waits.
+compiled=subprocess.run(['cargo','test','--release','--test','game_arkanoo_runtime','--no-run','--message-format=json'],capture_output=True,text=True,timeout=300)
 assert compiled.returncode==0,compiled.stderr+'\n'+compiled.stdout
 executables=[value['executable'] for line in compiled.stdout.splitlines() if (value:=json.loads(line)).get('reason')=='compiler-artifact' and value.get('target',{}).get('name')=='game_arkanoo_runtime' and value.get('executable')]
 assert len(executables)==1,executables
@@ -55,7 +58,8 @@ def browser_brick_matches(pixels,color):
     return all(brick_rgb_matches(pixels[(y*640+x)*4:(y*640+x)*4+3],original_brick_sample(color,(x+.5-20)*2-.5,(y+.5-100)*2-.5)) for x,y in BRICK_SAMPLES)
 class Quiet(SimpleHTTPRequestHandler):
     def log_message(self,*args):pass
-with tempfile.TemporaryDirectory(prefix='gamepkg-arkanoo-',dir=PROJECT/'target') as temp:
+with (nullcontext(tempfile.mkdtemp(prefix='gamepkg-arkanoo-',dir=PROJECT/'target')) if args.keep_fixtures else tempfile.TemporaryDirectory(prefix='gamepkg-arkanoo-',dir=PROJECT/'target')) as temp:
+    if args.keep_fixtures:print('Retained isolated fixture directory:',temp,flush=True)
     root=Path(temp);config=root/'settings.toml';config.write_text('automatic_update_checks=false\n')
     env=dict(os.environ,GAMEPKG_HOME=str(root/'library'),GAMEPKG_CONFIG=str(config),LIBGL_ALWAYS_SOFTWARE='1');env.pop('WAYLAND_DISPLAY',None);env['DBUS_SESSION_BUS_ADDRESS']='unix:path=/tmp/gamepkg-no-session-bus';env['OMP_THREAD_LIMIT']='1'
     key=root/'key';key.write_text('61'*32)
@@ -180,7 +184,11 @@ pub fn game_tick(input:u32,state:u64)->u64 {
     matrix_nebula_cases=json.loads((PROJECT/'tests/fixtures/arkanoo-matrix-nebula.json').read_text())['cases']
     matrix_nebula_values='['+','.join('['+str(case['level'])+'u64,'+str(case['frame'])+'u64]' for case in matrix_nebula_cases)+']'
     matrix_nebula_probe=procedural_probe.replace('fn procedural_probe','fn matrix_nebula_probe').replace(old_cases,matrix_nebula_values)
-    probe=' if input&2151677952==2151677952 {return matrix_nebula_probe(input); }\n'
+    hex_bubble_cases=json.loads((PROJECT/'tests/fixtures/arkanoo-hex-bubbles.json').read_text())['cases']
+    hex_bubble_values='['+','.join('['+str(case['level'])+'u64,'+str(case['frame'])+'u64]' for case in hex_bubble_cases)+']'
+    hex_bubble_probe=procedural_probe.replace('fn procedural_probe','fn hex_bubble_probe').replace(old_cases,hex_bubble_values)
+    probe=' if input&2155872256==2155872256 {return hex_bubble_probe(input); }\n'
+    probe+=' if input&2151677952==2151677952 {return matrix_nebula_probe(input); }\n'
     probe+=' if input&2149580800==2149580800 {return cyber_aurora_probe(input); }\n'
     probe+=' if input&2148532224==2148532224 {return rain_warp_probe(input); }\n'
     probe+=' if input&2148007936==2148007936 {return kaleidoscope_probe(input); }\n'
@@ -208,7 +216,7 @@ pub fn game_tick(input:u32,state:u64)->u64 {
         probe+=f'gamepkg::draw_clear(0x000000ff);render::draw_ball_effects(&ball,{case["frame"]});return 1;}};\n'
     probe+='return 0;}\n'
     probe_file=modes/'source/src/lib.rs'
-    text=probe_file.read_text();text=text.replace(' if input&67108864!=0 {',probe+' if input&67108864!=0 {');probe_file.write_text(text+metal_probe+ice_probe+fire_probe+bonus_probe+portal_probe+background_probe+procedural_probe+fire_sea_probe+space_probe+voyage_probe+line_probe+kaleidoscope_probe+rain_warp_probe+cyber_aurora_probe+matrix_nebula_probe+visual_probe)
+    text=probe_file.read_text();text=text.replace(' if input&67108864!=0 {',probe+' if input&67108864!=0 {');probe_file.write_text(text+metal_probe+ice_probe+fire_probe+bonus_probe+portal_probe+background_probe+procedural_probe+fire_sea_probe+space_probe+voyage_probe+line_probe+kaleidoscope_probe+rain_warp_probe+cyber_aurora_probe+matrix_nebula_probe+hex_bubble_probe+visual_probe)
     penguin_probe='''
 static HEART:Mutex<Option<physics::Game>>=Mutex::new(None);
 fn penguin_probe(input:u32)->u64 {

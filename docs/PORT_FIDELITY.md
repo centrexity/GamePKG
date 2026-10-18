@@ -1318,3 +1318,55 @@ still does not establish complete scaled-window or other-platform fidelity.
 Five procedural themes, image/editor art, viewport, fonts/HUD/menus/audio and
 the other open port requirements remain unfinished. Recipe 0.1.38 is source-only;
 the host version and published binary/package releases are unchanged.
+
+
+### Hex Pulse and Bubbles
+
+Hex Pulse now retains the original staggered rectangular grid (the upstream
+implementation uses outlines, despite its theme name), shared typed random
+background/size/pulse-speed/tint draws, per-cell phase and float/cast order.
+Bubbles retains its 150 seeded positions/speeds/sizes/phases, sway, original
+rectangular outlines and separately ordered shine points. Neither effect is
+replaced with a different geometric interpretation.
+
+The new mixed-primitive recorder compiles the complete unchanged original
+function with pinned real Rand and sends the original point/line/outline/fill
+commands to real SDL calls. For these two themes, 22 selected-level/frame cases
+verify every ordered outline/point command and 306 independently measured
+48-command-group contribution maps. The level selector deliberately includes
+Hex Pulse's smallest original grid size (20, or 18-pixel outlines), yielding
+2,508 original commands before viewport clipping. Nineteen separate real SDL
+outline baselines cover corners, edge clipping, fully absent shapes, complete
+viewport borders and one-pixel degenerate dimensions.
+
+The scalar outline helper follows SDL's default four endpoint-exclusive strips,
+including degenerate behavior, rather than drawing each corner twice. This is
+an explicitly altered adaptation of RenderDrawLinesWithRectsF under the existing
+SDL zlib notice. All outline contribution maps and every complete canonical
+default OpenGL framebuffer byte match production. Original software frames have
+the same visible coverage in the game cases and differ by at most two RGB levels;
+those measured differences remain checked separately.
+
+Direct ordered-strip composition avoids retaining an expanded outline pixel
+list; 128-pixel non-overlapping tiles preserve the full grid, bubble shine and
+all later art. The shared transparency helper also cancels its original formula
+exactly when the destination alpha is zero, avoiding redundant divisions for
+first pixel contributions. Timed runtime checks use the optimized production
+host rather than charging debug-host processing overhead as game execution.
+Deep Sea also reserves its original maximum of five 120×720 shafts plus 200
+plankton points in one allocation. This avoids intermediate growing buffers; the
+complete 106-level private native sequence passes with the same 16 MiB cap.
+The default 100 ms deadline is unchanged. Dense native/Wasm scenes retain all 200
+fire-brick overlays and four corner particle tiles with 3,000 active particles,
+cold and warm. All source, portability, time, memory, command and image-byte
+limits remain unchanged, including the 16 MiB package memory cap.
+
+All 75 logic tests and 49 signed runtime checks per profile pass. Eight actual
+players cover animation for both themes, the densest grid and revisit, with
+exact browser samples and desktop rounding at most one color level. Reference
+regeneration, strict lint and formatting pass. Interior sampling and explicit
+nearest-boundary choices do not prove complete scaled-window/platform parity.
+Three procedural themes (Starry Night, Digital Circuit and Maze), image/editor
+art, viewport, fonts/HUD/menus/audio and other port requirements remain open.
+Recipe 0.1.39 is source-only; the host version and binary/package releases are
+unchanged.
