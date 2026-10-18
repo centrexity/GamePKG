@@ -111,7 +111,8 @@ pub fn game_tick(input:u32,state:u64)->u64 {
  }state
 }''')
     trail_cases=json.loads((PROJECT/'tests/fixtures/arkanoo-trails.json').read_text())['cases']
-    probe=' if input&2147483648!=0 {let positions=[[0.0f32,0.0f32],[320.75,240.25],[-0.75,-0.75],[-1.75,-1.75]];let at=positions[(input&3) as usize];let ball=physics::Ball::new(at[0]*0.5+3.0,at[1]*0.5+63.0);gamepkg::draw_clear(0x000000ff);return u64::from(render::draw_ball(&ball));}\n'
+    probe=' if input&2147483656==2147483656 {let mut game=physics::Game::new();game.paddle=100.75;let variant=input&7;if variant==1 {game.width=90.0;}if variant==2 {game.ghost=600;}if variant>=3 {game.paddle_glow=1.0;}if variant==5 {game.paddle_glow=0.1;}if variant==6 {game.paddle_glow=0.2;}if variant==4 {game.last_paddle=game.paddle;game.update_paddle(0);}if variant==7 {game.paddle_glow=0.0;game.mode=1;game.last_paddle=game.paddle-2.0;game.balls.clear();game.balls.push(physics::Ball{x:game.paddle+35.0,y:394.0,vx:0.0,vy:2.0,spin:0.0,attached:false,launch_timer:0,trail:Vec::new()});game.update(0);}gamepkg::draw_clear(0x000000ff);return u64::from(render::draw_paddle(&game));}\n'
+    probe+=' if input&2147483648!=0 {let positions=[[0.0f32,0.0f32],[320.75,240.25],[-0.75,-0.75],[-1.75,-1.75]];let at=positions[(input&3) as usize];let ball=physics::Ball::new(at[0]*0.5+3.0,at[1]*0.5+63.0);gamepkg::draw_clear(0x000000ff);return u64::from(render::draw_ball(&ball));}\n'
     probe+=' if input&134217728!=0 {\n'
     for index,case in enumerate(trail_cases):
         x,y,vx,vy=case['ball']
@@ -191,7 +192,7 @@ pub fn game_tick(input:u32,state:u64)->u64 {
     run('build','com.gamepkg.arkanoo-events-denied','--target','native')
     run('integrity-check','com.gamepkg.arkanoo')
     subprocess.run(['cargo','test','--test','game_arkanoo_runtime','--','--ignored'],env=probe_env,check=True,timeout=120)
-    # Real native window: locate the cyan paddle, hold movement, start, pause.
+    # Real native window: locate the original cyan core, hold movement, start, pause.
     display=start_display(env,width=1400,height=900);app=None;wm=None
     from Xlib import display as xdisplay
     from Xlib.ext import xfixes
@@ -227,9 +228,16 @@ pub fn game_tick(input:u32,state:u64)->u64 {
             if any(((value>>1)&255)==volume and bool(value&512)==muted for value in values):return
             assert time.monotonic()<deadline,('Native audio settings did not persist',values,volume,muted);time.sleep(.05)
     def paddle(image):
-        points=[(x,y) for y in range(image.height//2,image.height-20) for x in range(image.width)
-                if image.getpixel((x,y))==(99,220,255)]
-        assert len(points)>100,len(points)
+        scale=min(image.width/640,image.height/480);oy=(image.height-480*scale)/2
+        # The original alpha-blended cyan core replaces the flat opaque body.
+        # Restrict the scan to its world-space strip; tolerate host color-space
+        # blending and filtered scaling while retaining the movement assertion.
+        points=[]
+        for y in range(math.ceil(oy+399*scale),math.floor(oy+401*scale)):
+            for x in range(image.width):
+                r,g,b=image.getpixel((x,y))
+                if r<50 and g>140 and b>190 and g-r>80 and b-g>20:points.append((x,y))
+        assert len(points)>40*scale*scale,len(points)
         return sum(x for x,y in points)/len(points)
     try:
         wm=subprocess.Popen(['metacity','--sm-disable','--replace','--no-composite'],env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
@@ -425,8 +433,11 @@ pub fn game_tick(input:u32,state:u64)->u64 {
             canvas.send_keys('v');wait.until(lambda b:saved_gravity()==0)
             def pixels():return browser.execute_script('return Array.from(document.querySelector("#game").getContext("2d").getImageData(0,0,640,480).data)')
             def center(data):
-                xs=[i%640 for i in range(395*640,406*640) if data[i*4:i*4+3]==[99,220,255]]
-                assert len(xs)>100
+                xs=[]
+                for i in range(399*640,401*640):
+                    r,g,b=data[i*4:i*4+3]
+                    if r<50 and g>140 and b>190 and g-r>80 and b-g>20:xs.append(i%640)
+                assert len(xs)>80,len(xs)
                 return sum(xs)/len(xs)
             bounds=canvas.rect
             ActionChains(browser).move_to_element_with_offset(canvas,-bounds['width']*.25,0).perform()

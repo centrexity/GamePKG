@@ -199,3 +199,9 @@ id = "arkanoo_original_metallic_ball"
 requirements = ["Original procedural ball pixels and SDL clipping", "Original integer rectangle positioning", "Filtered half-scale draw in native/Wasm", "Preserve gameplay, effects and heart rendering"]
 status = "implemented_runtime_verified_native_wasm_browsers"
 notes = "A reference generator compiles the unchanged pinned drawing function and uses real SDL rasterization to produce the 12x12 RGBA fixture. The source-derived PNG matches all decoded bytes. All 29 signed runtime checks pass in Wasm and native builds, including original rectangle placement and exact source pixels. Native GUI and core/component browser gameplay/editor/file workflows pass. Original speed font/lettering and other presentation work remain open."
+
+[[work]]
+id = "arkanoo_original_glass_paddle"
+requirements = ["Original rounded normal and extended paddle pixels", "Original core, thruster and spin aura geometry/colors", "Fast paddle collision trigger and original glow decay", "Ghost bonus leaves paddle appearance unchanged", "Native/Wasm drawing and desktop/browser gameplay"]
+status = "implemented_runtime_verified_native_wasm_browsers"
+notes = "The unchanged pinned paddle procedure is rasterized through SDL into two source-derived textures with full decoded-pixel comparisons. The unchanged original overlay function supplies independent geometry/color fixtures, including spin thresholds. The signed runtime fixture checks normal, extended, ghost, full/decayed glow and collision-triggered discharge. All 30 signed runtime checks pass in native and Wasm builds, and native GUI plus core/component browser gameplay/editor/file workflows pass. The full all-features suite passes 409 tests with 61 dedicated checks ignored; strict lint and formatting pass. Remaining bonus/block/background/HUD/menu art, audio and settings still need fidelity work."

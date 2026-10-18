@@ -854,7 +854,7 @@ fn actual_source_game_uses_mouse_position_and_original_space_escape_controls() {
     })
     .unwrap();
     game.step(0).unwrap();
-    assert!(game.frame().commands.iter().any(|command|matches!(command,Command::Rect{x,y,width,height,..} if *x==465.0 && *y==395.0 && *width==70.0 && *height==11.0)));
+    assert!(game.frame().commands.iter().any(|command|matches!(command,Command::LinearImage{x,y,width,height,image} if *x==465.0 && *y==395.0 && *width==70.0 && *height==11.0 && image.size()==[140,22])));
     assert!(
         game.frame()
             .commands
@@ -897,7 +897,7 @@ fn actual_source_game_uses_mouse_position_and_original_space_escape_controls() {
     })
     .unwrap();
     game.step(0).unwrap();
-    assert!(game.frame().commands.iter().any(|command|matches!(command,Command::Rect{x,y,width,..} if *x==65.0 && *y==395.0 && *width==70.0)));
+    assert!(game.frame().commands.iter().any(|command|matches!(command,Command::LinearImage{x,y,width,height,image} if *x==65.0 && *y==395.0 && *width==70.0 && *height==11.0 && image.size()==[140,22])));
 }
 
 fn editor_key(game: &mut Game, key: u32) {
@@ -1714,5 +1714,112 @@ fn original_ball_texture_and_integer_geometry_reach_native_and_wasm() {
             .commands
             .iter()
             .any(|c| matches!(c, Command::Circle { .. })));
+    }
+}
+
+#[test]
+#[ignore = "requires the signed production fixture prepared by tests/arkanoo.py"]
+fn original_paddle_body_ghost_independence_and_spin_overlays_reach_native_and_wasm() {
+    let root = isolated_library();
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-paddle.json")).unwrap();
+    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
+    let mut normal = Vec::new();
+    for variant in 0..8 {
+        assert_eq!(game.step(2147483656 | variant).unwrap(), 1);
+        let commands = &game.frame().commands;
+        let images: Vec<_> = commands
+            .iter()
+            .filter_map(|c| {
+                if let Command::LinearImage {
+                    x,
+                    y,
+                    width,
+                    height,
+                    image,
+                } = c
+                {
+                    Some((*x, *y, *width, *height, image))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert_eq!(images.len(), 1);
+        let (x, y, width, height, image) = images[0];
+        let long = usize::from(variant == 1);
+        assert_eq!(
+            (x, y, width, height),
+            (100.5, 395.0, if long == 1 { 90.0 } else { 70.0 }, 11.0)
+        );
+        assert_eq!(image.size(), [if long == 1 { 180 } else { 140 }, 22]);
+        let expected: Vec<u8> = fixture["images"][long]["rgba"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_u64().unwrap() as u8)
+            .collect();
+        assert_eq!(image.pixels(), expected.as_slice());
+        let rects: Vec<_> = commands
+            .iter()
+            .filter_map(|c| {
+                if let Command::Rect {
+                    x,
+                    y,
+                    width,
+                    height,
+                    rgba,
+                } = c
+                {
+                    Some((*x, *y, *width, *height, *rgba))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let reference_index = match variant {
+            0 | 2 => 0,
+            1 => 1,
+            3 | 7 => 2,
+            4 => 3,
+            5 => 4,
+            _ => 5,
+        };
+        let mut expected_rects = Vec::new();
+        for rectangle in fixture["overlays"][reference_index]["rectangles"]
+            .as_array()
+            .unwrap()
+        {
+            let r = rectangle["rect"].as_array().unwrap();
+            let x = r[0].as_f64().unwrap() as f32 * 0.5;
+            let y = 60.0 + r[1].as_f64().unwrap() as f32 * 0.5;
+            let width = r[2].as_f64().unwrap() as f32 * 0.5;
+            let height = r[3].as_f64().unwrap() as f32 * 0.5;
+            let color = rectangle["rgba"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .fold(0u32, |v, c| (v << 8) | c.as_u64().unwrap() as u32);
+            if rectangle["outline"].as_bool().unwrap() {
+                expected_rects.extend([
+                    (x, y, width, 0.5, color),
+                    (x, y + height - 0.5, width, 0.5, color),
+                    (x, y + 0.5, 0.5, height - 1.0, color),
+                    (x + width - 0.5, y + 0.5, 0.5, height - 1.0, color),
+                ]);
+            } else {
+                expected_rects.push((x, y, width, height, color));
+            }
+        }
+        assert_eq!(
+            rects, expected_rects,
+            "Original overlay commands differ for variant {variant}"
+        );
+        if variant == 0 {
+            normal = rects.clone();
+        }
+        if variant == 2 {
+            assert_eq!(rects, normal, "Ghost ball must not recolor the paddle");
+        }
     }
 }

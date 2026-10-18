@@ -12,7 +12,7 @@ work stays open until behavior is verified.
 | Cube 2 | Wayland lock-state access, Windows lock-state runtime validation, remaining uncommon-key/platform behavior and full controller/touch equivalence; further LAN/platform and master authentication/registration fault/service coverage; custom asset/mod workflows; demo/movie output and persistence; hardware-accelerated engine rendering; native platforms beyond Linux. Vulkan currently presents software-rendered engine frames. |
 | DOOM | Original WAD music, spatial stereo effects, six save slots, configuration, desktop controls and the original quit/ENDOOM flow are runtime verified. Music backend selection, multiplayer, additional WADs/mods and broader control/platform coverage remain unfinished. |
 | Zelda3 | External MSU music, replay tools, save states, widescreen, language selection and desktop enhancement settings need support. The adapter fixes the view to 256×224. Original DSP stereo is verified in native and Wasm gameplay/save tests. |
-| Arkanoo | Gravity, speed-triggered portal behavior and ball-to-ball responses are restored with upstream reference and actual-engine tests. Original world proportions and movement/contact order now match upstream reference checks. Per-ball launch timing, life recovery and victory/endless transitions also match original-code fixtures; prior item/score/level caps are removed. Brick health and original blast rules are also verified. All twelve original procedural patterns are restored. Focused mouse movement and original Space/Escape controls are restored. Editor painting/erasing, brick selection, names, save/load, clear confirmation, test return and the custom endless pool are restored. Original ASCII pattern import/export now uses player-selected files. Gameplay cursor confinement/hiding, F11 fullscreen and Q-to-quit outside play are verified in native and browser runtime checks. Normal-size/fullscreen/maximized preferences now persist through the native host. The six main menu actions and fullscreen/effects settings controls are restored. Remaining menu presentation and music/resolution/VSync controls, project-link action and original menus/music still need work. Original shard particles are restored; the metallic ball texture is restored; speed lettering and other art/effects still need work; original penguin/heart-loss behavior is now verified. Current runs do not persist; high score, unlocked level, gravity and effects preferences do. |
+| Arkanoo | Gravity, speed-triggered portal behavior and ball-to-ball responses are restored with upstream reference and actual-engine tests. Original world proportions and movement/contact order now match upstream reference checks. Per-ball launch timing, life recovery and victory/endless transitions also match original-code fixtures; prior item/score/level caps are removed. Brick health and original blast rules are also verified. All twelve original procedural patterns are restored. Focused mouse movement and original Space/Escape controls are restored. Editor painting/erasing, brick selection, names, save/load, clear confirmation, test return and the custom endless pool are restored. Original ASCII pattern import/export now uses player-selected files. Gameplay cursor confinement/hiding, F11 fullscreen and Q-to-quit outside play are verified in native and browser runtime checks. Normal-size/fullscreen/maximized preferences now persist through the native host. The six main menu actions and fullscreen/effects settings controls are restored. Remaining menu presentation and music/resolution/VSync controls, project-link action and original menus/music still need work. Original shard particles are restored; the metallic ball and glass paddle textures are restored; speed lettering and other art/effects still need work; original penguin/heart-loss behavior is now verified. Current runs do not persist; high score, unlocked level, gravity and effects preferences do. |
 | 2048 | Random spawning, merge scoring/best score, win/continue/game-over UI, restart, 128-step undo and persistent boards/history are implemented and tested. Byte-sized tile exponents remove the old 32768 cap. Cooperative expectimax assistance/autoplay matches independent upstream reference fixtures; a deterministic 932-turn game reaches 2048. Final signed-package delivery and broader platform verification remain open. |
 
 Evidence: [README coverage table](../README.md#port-feature-coverage),
@@ -587,3 +587,25 @@ players pass. The reference generator checks both pinned source-file hashes befo
 compiling its unchanged drawing fragment. Arkanoo's source recipe is 0.1.21;
 no signed package or app release is created. Other art, speed lettering, audio,
 settings and broader platform/pixel-compositing coverage remain open.
+
+Arkanoo glass-paddle follow-up: the flat body and incorrect ghost-bonus tint are
+replaced with the original rounded metallic normal/extended textures. The
+unchanged pinned procedure is rasterized by real SDL, retaining corner clipping,
+line endpoints and alpha blending. Both source-derived PNGs match every decoded
+reference byte. The unchanged original overlay function supplies independent
+core, thruster and aura geometry/colors at normal, extended, full/decayed spin
+and threshold states. Fast paddle contacts now trigger the original discharge;
+its intensity decays by 0.9 per active frame with the original cutoff. Ghost-ball
+bonuses leave the paddle appearance unchanged. Integer world geometry is retained
+before half-scale projection. This restores paddle art and discharge only; bonus
+icons, other artwork, fonts, recorded audio, menus/settings and full platform
+coverage remain open.
+
+Glass-paddle validation: 409 all-features tests pass with 61 dedicated checks
+ignored by default. The signed harness explicitly passes all 30 checks in Wasm
+and native builds, including both complete textures, original overlay commands,
+spin thresholds, one-frame decay, a real fast-paddle collision and ghost-bonus
+independence. Native GUI and both core/component browser gameplay/editor/file
+workflows pass with movement checks against the restored cyan core. Reference
+regeneration is byte-identical; strict lint and formatting pass. The source
+recipe advances to 0.1.22 without a signed-package or app release.
