@@ -4128,3 +4128,100 @@ fn actual_production_fps_uses_host_time_and_renders_original_counter_glyphs() {
         }
     }
 }
+
+#[test]
+#[ignore = "requires tests/arkanoo.py fixtures"]
+fn original_cannon_and_blink_caption_match_unchanged_sdl_and_full_scene() {
+    use std::io::Read;
+    let reference: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-cannon.json")).unwrap();
+    assert_eq!(reference["cases"].as_array().unwrap().len(), 60);
+    let root = isolated_library();
+    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
+    for (index, case) in reference["cases"].as_array().unwrap().iter().enumerate() {
+        assert_eq!(game.step(0xc000004c | ((index as u32) << 8)).unwrap(), 76);
+        let commands = &game.frame().commands;
+        let enabled = case["ammo"].as_u64().unwrap() > 0;
+        let visible = (case["frame"].as_u64().unwrap() / 30).is_multiple_of(2);
+        assert_eq!(
+            commands
+                .iter()
+                .filter(|c| matches!(
+                    c,
+                    Command::Rect {
+                        rgba: 0x646464ff | 0x969696ff,
+                        ..
+                    }
+                ))
+                .count(),
+            if enabled { 2 } else { 0 }
+        );
+        assert_eq!(
+            commands
+                .iter()
+                .filter(|c| matches!(c, Command::LinearImage { .. }))
+                .count(),
+            usize::from(enabled && visible)
+        );
+        let actual = canonical_menu_pixels(game.frame());
+        let compressed = hex::decode(case["rgba_zlib_hex"].as_str().unwrap()).unwrap();
+        let mut expected = Vec::new();
+        flate2::read::ZlibDecoder::new(compressed.as_slice())
+            .read_to_end(&mut expected)
+            .unwrap();
+        assert_eq!(actual.len(), expected.len());
+        let (at, delta) = actual
+            .iter()
+            .zip(&expected)
+            .enumerate()
+            .map(|(at, (a, b))| (at, a.abs_diff(*b)))
+            .max_by_key(|(_, d)| *d)
+            .unwrap();
+        assert!(
+            delta <= 2,
+            "Cannon case {index}, pixel {}, channel {}, delta {delta}",
+            at / 4,
+            at % 4
+        );
+    }
+    for (phase, index) in [1u32, 3, 5, 9].into_iter().enumerate() {
+        game.step(0xc000004c | (index << 8)).unwrap();
+        let isolated = game.frame().commands[1..].to_vec();
+        game.step(0xc000004d | ((phase as u32) << 8)).unwrap();
+        let commands = &game.frame().commands;
+        let start = commands
+            .iter()
+            .position(|c| {
+                matches!(
+                    c,
+                    Command::Rect {
+                        rgba: 0x646464ff,
+                        ..
+                    }
+                )
+            })
+            .unwrap();
+        assert!(
+            commands[start..start + isolated.len()] == isolated,
+            "Dense scene lost original cannon/caption, phase {phase}"
+        );
+        let hearts = commands
+            .iter()
+            .filter(
+                |c| matches!(c,Command::StraightLinearImage{image,..} if image.size()==[512,472]),
+            )
+            .count();
+        assert_eq!(hearts, 3, "Cannon crowded out HUD hearts");
+        let bytes: usize = commands
+            .iter()
+            .map(|c| match c {
+                Command::Image { image, .. }
+                | Command::LinearImage { image, .. }
+                | Command::StraightLinearImage { image, .. } => image.pixels().len(),
+                _ => 0,
+            })
+            .sum();
+        assert!(bytes <= gamepkg::drawing::MAX_IMAGE_BYTES);
+        assert!(commands.len() < gamepkg::drawing::MAX_COMMANDS);
+    }
+}

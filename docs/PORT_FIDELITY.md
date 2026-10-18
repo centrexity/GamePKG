@@ -1948,3 +1948,48 @@ HUD, filtered-edge, fire and bonus reference regeneration is byte-identical. Str
 formatting, generated clock SDK checks and all 940 hostile browser paths pass.
 An earlier run hit the existing Wasm deadline while separate GPU captures ran;
 the final full run passes unchanged limits and test parallelism.
+
+
+### Original cannon and launch caption (recipe 0.1.55)
+
+The original ammo-gated cannon barrel and highlight now draw immediately after
+the glass paddle and before balls, bonuses and rockets. Original integer paddle
+coordinates, integer half-width centering, RGB colors and source-world rectangle
+sizes are retained. The original yellow `press space to launch` Roboto caption
+appears on even 30-frame intervals; zero ammo draws neither cannon nor caption.
+Drawing restores the world clip after the self-clipped text before later objects.
+
+The independent reference executes the unchanged cannon branch extracted from
+the SHA-guarded upstream rendering source, using pinned original SDL 0.37 and
+actual SDL_ttf/Roboto rendering. Sixty states cover zero/max-u32 ammo, normal/
+long/odd-width paddles, left/right clipping, blink boundaries and max-u64 frame
+counts. Each state is captured at original 1280x720 and scaled 640x360. Canonical
+signed-runtime comparisons retain the two-level tolerance; dense renderer probes
+require every cannon/caption command and all three original heart PNGs with 200
+fire bricks and 3,000 corner particles under unchanged limits.
+
+Actual smaller-size checks exposed a shared rectangle problem: egui rounded
+solid rectangle edges, while Canvas antialiased them. Both differed from original
+SDL at sample-center ties. Game rectangles now use the same measured SDL edge
+coverage as filtered quads, with physical viewport/DPI handling on desktop.
+Only coverage is snapped; color, alpha, ordering, clipping, command and memory
+charges are retained. App UI shapes are unchanged. Nine independent actual SDL
+solid-rectangle cases cover scaled, negative, thin and empty rectangles, with
+additional translated fractional-DPI assertions. This is a rectangle fix and
+cannon-layer gate, not proof of arbitrary whole-game viewport fidelity.
+
+Final checks pass both 67-test signed suites at default parallelism and unchanged
+limits, plus native and both browser gameplay/editor and real file import/cancel/
+export workflows with the rebuilt host. Six desktop runtime/renderer combinations
+compare directly with original frames at both sizes: canonical Vulkan max one,
+OpenGL exact; half-size Vulkan max two and OpenGL max one. Both browser profiles
+compare directly with original half-size frames within one level. These are four
+selected states plus the initial-state revisit on each graphical path; all sixty
+states are checked by signed canonical runtime comparisons.
+
+All 924 shared clipping/image/shader/resize samples remain exact. Blending
+comparisons, original HUD, implemented menu controls, pattern-browser and end-state
+frames pass all existing desktop/browser profiles within unchanged thresholds.
+The 120 original cannon captures and nine solid-edge cases regenerate
+byte-identically; translated fractional-DPI tests, strict lint and formatting pass.
+Publication remains source only, application version 0.1.17 unchanged.

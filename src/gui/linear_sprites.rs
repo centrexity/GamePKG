@@ -550,6 +550,22 @@ impl Drop for Gl {
     }
 }
 
+pub(super) fn solid_rectangle(bounds: [f32; 4], viewport: egui::Rect, ppp: f32) -> egui::Rect {
+    let (coverage, _) = sampling_quad(bounds, viewport, ppp);
+    let left = (viewport.left() * ppp).round();
+    let top = (viewport.top() * ppp).round();
+    let width = (viewport.right() * ppp).round() - left;
+    let height = (viewport.bottom() * ppp).round() - top;
+    let x0 = (left + (coverage[0] + 1.0) * width * 0.5).round();
+    let y0 = (top + (1.0 - coverage[1]) * height * 0.5).round();
+    let x1 = (x0 + coverage[2] * width * 0.5).round();
+    let y1 = (y0 - coverage[3] * height * 0.5).round();
+    egui::Rect::from_min_max(
+        egui::pos2(x0 / ppp, y0 / ppp),
+        egui::pos2(x1 / ppp, y1 / ppp),
+    )
+}
+
 // SDL/OpenGL includes the left and lower edge at exact pixel centers. Move only
 // raster coverage to whole pixel edges; original bounds still determine UVs.
 fn sampling_quad(bounds: [f32; 4], viewport: egui::Rect, ppp: f32) -> ([f32; 4], [f32; 4]) {

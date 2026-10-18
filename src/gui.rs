@@ -1127,14 +1127,12 @@ impl eframe::App for App {
                                     height,
                                     rgba,
                                 } => {
-                                    painter.rect_filled(
-                                        egui::Rect::from_min_size(
-                                            rect.min + egui::vec2(x * scale, y * scale),
-                                            egui::vec2(width * scale, height * scale),
-                                        ),
-                                        0.0,
-                                        color(rgba),
+                                    let covered = linear_sprites::solid_rectangle(
+                                        [x, y, width, height], rect, ctx.pixels_per_point(),
                                     );
+                                    if covered.is_positive() {
+                                        painter.rect_filled(covered, 0.0, color(rgba));
+                                    }
                                 }
                                 crate::drawing::Command::Circle { x, y, radius, rgba } => {
                                     painter.circle_filled(

@@ -56,3 +56,34 @@ fn translated_fractional_dpi_coverage_keeps_original_sampling_coordinates() {
         assert_eq!(coverage[2] * coverage[3], 0.0);
     }
 }
+
+#[test]
+fn solid_rectangles_match_independent_sdl_pixel_centers() {
+    let reference: serde_json::Value = serde_json::from_str(include_str!(
+        "../../tests/fixtures/sdl-rectangle-edges.json"
+    ))
+    .unwrap();
+    let viewport = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(640.0, 480.0));
+    for case in reference["cases"].as_array().unwrap() {
+        let scale = case["scale"].as_f64().unwrap() as f32;
+        let bounds = std::array::from_fn(|i| case["rect"][i].as_i64().unwrap() as f32 * scale);
+        let rectangle = super::solid_rectangle(bounds, viewport, 1.0);
+        let actual: Vec<_> = (0..64)
+            .flat_map(|y| (0..64).map(move |x| [x, y]))
+            .filter(|[x, y]| rectangle.contains(egui::pos2(*x as f32 + 0.5, *y as f32 + 0.5)))
+            .collect();
+        let expected: Vec<[u32; 2]> = serde_json::from_value(case["pixels"].clone()).unwrap();
+        assert_eq!(actual, expected, "{case}");
+    }
+    for ppp in [1.0, 1.25, 2.0] {
+        let viewport = egui::Rect::from_min_size(egui::pos2(3.25, 5.5), egui::vec2(640.0, 480.0));
+        let bounds = [10.5, 20.5, 2.0, 2.0];
+        let covered = super::solid_rectangle(bounds, viewport, ppp);
+        let width = (viewport.right() * ppp).round() - (viewport.left() * ppp).round();
+        let height = (viewport.bottom() * ppp).round() - (viewport.top() * ppp).round();
+        let x = (viewport.left() * ppp).round() + bounds[0] * width / 640.0;
+        let y = (viewport.top() * ppp).round() + bounds[1] * height / 480.0;
+        assert!((covered.left() * ppp - (x - 0.5).ceil()).abs() < 0.0001);
+        assert!((covered.top() * ppp - ((y - 0.5).floor() + 1.0)).abs() < 0.0001);
+    }
+}
