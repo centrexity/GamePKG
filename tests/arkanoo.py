@@ -19,6 +19,13 @@ if not args.skip_browser:
     from selenium.webdriver.support.ui import WebDriverWait
 PROJECT=Path(__file__).resolve().parents[1];CLI=Path(os.environ.get('GAMEPKG_TEST_BINARY_DIR',PROJECT/'target/release'))/'gamepkg'
 PROOF=PROJECT/'target/arkanoo-proof';PROOF.mkdir(parents=True,exist_ok=True)
+# Compile outside the timed gameplay run. Running the returned test executable
+# avoids Cargo lock/compile waits consuming the actual test execution allowance.
+compiled=subprocess.run(['cargo','test','--test','game_arkanoo_runtime','--no-run','--message-format=json'],capture_output=True,text=True,timeout=300)
+assert compiled.returncode==0,compiled.stderr+'\n'+compiled.stdout
+executables=[value['executable'] for line in compiled.stdout.splitlines() if (value:=json.loads(line)).get('reason')=='compiler-artifact' and value.get('target',{}).get('name')=='game_arkanoo_runtime' and value.get('executable')]
+assert len(executables)==1,executables
+RUNTIME_TEST=Path(executables[0])
 BRICK_REFERENCE=[bytes.fromhex(image['rgba_hex']) for image in json.loads((PROJECT/'tests/fixtures/arkanoo-blocks.json').read_text())['images']]
 BRICK_SAMPLES=[(x,y) for y in [103,105,107] for x in [25,35,45]]
 def original_brick_sample(color,x,y):
@@ -129,7 +136,9 @@ pub fn game_tick(input:u32,state:u64)->u64 {
  }state
 }''')
     trail_cases=json.loads((PROJECT/'tests/fixtures/arkanoo-trails.json').read_text())['cases']
-    probe=' if input&2147483664==2147483664 {let positions=[[0.0f32,0.0f32],[200.75,80.25],[-0.75,-0.75],[-1.75,-1.75]];let at=positions[((input>>5)&3) as usize];gamepkg::draw_clear(0x000000ff);return u64::from(render::draw_normal_brick((input&7) as u8,at[0]*0.5,60.0+at[1]*0.5));}\n'
+    metal_probe='fn metal_probe(input:u32)->u64 {if input&8!=0 {let mut game=physics::Game::new();game.mode=1;for index in 0..200 {game.set_block(index,3);}render::draw(&game);return 200;}let positions=[[0.0f32,0.0f32],[200.75,80.25],[-0.75,-0.75],[-1.75,-1.75]];let at=positions[(input&3) as usize];gamepkg::draw_clear(0x000000ff);u64::from(render::draw_metal_brick(at[0]*0.5,60.0+at[1]*0.5))}\n'
+    probe=' if input&2147483776==2147483776 {return metal_probe(input);}\n'
+    probe+=' if input&2147483664==2147483664 {let positions=[[0.0f32,0.0f32],[200.75,80.25],[-0.75,-0.75],[-1.75,-1.75]];let at=positions[((input>>5)&3) as usize];gamepkg::draw_clear(0x000000ff);return u64::from(render::draw_normal_brick((input&7) as u8,at[0]*0.5,60.0+at[1]*0.5));}\n'
     probe+=' if input&2147483656==2147483656 {let mut game=physics::Game::new();game.paddle=100.75;let variant=input&7;if variant==1 {game.width=90.0;}if variant==2 {game.ghost=600;}if variant>=3 {game.paddle_glow=1.0;}if variant==5 {game.paddle_glow=0.1;}if variant==6 {game.paddle_glow=0.2;}if variant==4 {game.last_paddle=game.paddle;game.update_paddle(0);}if variant==7 {game.paddle_glow=0.0;game.mode=1;game.last_paddle=game.paddle-2.0;game.balls.clear();game.balls.push(physics::Ball{x:game.paddle+35.0,y:394.0,vx:0.0,vy:2.0,spin:0.0,attached:false,launch_timer:0,trail:Vec::new()});game.update(0);}gamepkg::draw_clear(0x000000ff);return u64::from(render::draw_paddle(&game));}\n'
     probe+=' if input&2147483648!=0 {let positions=[[0.0f32,0.0f32],[320.75,240.25],[-0.75,-0.75],[-1.75,-1.75]];let at=positions[(input&3) as usize];let ball=physics::Ball::new(at[0]*0.5+3.0,at[1]*0.5+63.0);gamepkg::draw_clear(0x000000ff);return u64::from(render::draw_ball(&ball));}\n'
     probe+=' if input&134217728!=0 {\n'
@@ -140,7 +149,7 @@ pub fn game_tick(input:u32,state:u64)->u64 {
         probe+=f'gamepkg::draw_clear(0x000000ff);render::draw_ball_effects(&ball,{case["frame"]});return 1;}};\n'
     probe+='return 0;}\n'
     probe_file=modes/'source/src/lib.rs'
-    text=probe_file.read_text();text=text.replace(' if input&67108864!=0 {',probe+' if input&67108864!=0 {');probe_file.write_text(text)
+    text=probe_file.read_text();text=text.replace(' if input&67108864!=0 {',probe+' if input&67108864!=0 {');probe_file.write_text(text+metal_probe)
     penguin_probe='''
 static HEART:Mutex<Option<physics::Game>>=Mutex::new(None);
 fn penguin_probe(input:u32)->u64 {
@@ -200,7 +209,7 @@ pub fn game_tick(input:u32,state:u64)->u64 {
         if suffix=='nosave-component':text=text.replace('save = true','save = false')
         manifest.write_text(text);run('pack',fixture,'-o',root/(suffix+'.gamepkg'),'--key',key);run('install',root/(suffix+'.gamepkg'),'--trust-creator');run('build','com.gamepkg.arkanoo-'+suffix)
     probe_env=dict(env,GAMEPKG_ARKANOO_TEST_ROOT=str(root/'library'))
-    subprocess.run(['cargo','test','--test','game_arkanoo_runtime','--','--ignored'],env=probe_env,check=True,timeout=120)
+    subprocess.run([str(RUNTIME_TEST),'--ignored'],env=probe_env,check=True,timeout=120)
     run('build','com.gamepkg.arkanoo','--target','native')
     run('build','com.gamepkg.arkanoo-nosave','--target','native')
     run('build','com.gamepkg.arkanoo-nofiles','--target','native')
@@ -210,7 +219,7 @@ pub fn game_tick(input:u32,state:u64)->u64 {
     run('build','com.gamepkg.arkanoo-events','--target','native')
     run('build','com.gamepkg.arkanoo-events-denied','--target','native')
     run('integrity-check','com.gamepkg.arkanoo')
-    subprocess.run(['cargo','test','--test','game_arkanoo_runtime','--','--ignored'],env=probe_env,check=True,timeout=120)
+    subprocess.run([str(RUNTIME_TEST),'--ignored'],env=probe_env,check=True,timeout=120)
     # Real native window: locate the original cyan core, hold movement, start, pause.
     display=start_display(env,width=1400,height=900);app=None;wm=None
     from Xlib import display as xdisplay

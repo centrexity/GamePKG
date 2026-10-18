@@ -632,3 +632,30 @@ reload and imported-color checks compare nine samples from the original textures
 with a three-level 8-bit renderer/capture rounding tolerance; runtime source pixels
 are exact. Strict lint, formatting and byte-identical reference regeneration pass.
 The source recipe advances to 0.1.23; no package or app release is created.
+
+Graphite-brick follow-up: the original opaque body, rivets, diagonal stripes and
+bevels are restored from the unchanged pinned branch. Two separate transparent
+outside layers retain the original non-clipped x=-20..70/y=20 pixel coverage,
+straight alpha and order; nearest sampling retains the primitive pixel grid.
+Every decoded layer byte is checked, including the transparent interior masks.
+Six real-SDL backdrop comparisons keep opaque pixels exact and record one/two
+8-bit-level software line/copy rounding differences outside. This comparison does
+not establish native/browser framebuffer equivalence; full frame alpha/color-space
+semantics remain explicitly open, alongside ice/fire and other presentation work.
+
+The full-board test exposed repeated decoding in the old one-entry asset cache.
+Native and core/component Wasm now share a session-scoped LRU cache capped at
+32 paths (each at most 1,024 bytes) and the existing 1 MiB decoded-pixel budget.
+Frames still charge every draw against unchanged image/command/time limits.
+Eviction preserves live immutable frames; replacement, byte/entry bounds and
+cross-draw/frame identity have dedicated checks. The signed stress fixture renders
+all 200 metal bricks on cold and warm frames without extending the game deadline.
+
+Graphite/cache validation: 414 all-features tests pass, with 63 dedicated checks
+ignored by default. All 32 signed checks explicitly pass in Wasm and native builds.
+Both local app entries are rebuilt; native GUI and core/component browser
+regressions pass. Windows 32/64 all-features compilation checks, strict lint,
+formatting, reference regeneration and seven public-page link checks pass.
+The maintainer harness compiles its test executable first and runs it directly;
+compiler/lock waits no longer consume the runtime test allowance. Arkanoo's source
+recipe is 0.1.24; no signed package or app release is created.

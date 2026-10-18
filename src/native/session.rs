@@ -58,7 +58,7 @@ pub(crate) struct Session {
     output: ChildStdout,
     _binary: tempfile::TempDir,
     package: crate::archive::Package,
-    asset_image: Option<(String, std::sync::Arc<crate::drawing::image::Image>)>,
+    asset_image: crate::drawing::image::Cache,
     manifest: crate::manifest::Manifest,
     roms: Vec<Vec<u8>>,
     save: Option<crate::saves::Save>,
@@ -224,7 +224,7 @@ impl Session {
             output,
             _binary: binary,
             package,
-            asset_image: None,
+            asset_image: crate::drawing::image::Cache::default(),
             network: crate::network::Service::new(manifest.permissions.clone()),
             input_events: crate::input_events::Queue::new(manifest.permissions.input),
             window: crate::window_control::Service::new(manifest.permissions.input),
@@ -454,15 +454,7 @@ impl Session {
                 );
                 let path = std::str::from_utf8(b.get(4..4 + len).context("short path")?)?;
                 ensure!(crate::archive::valid_path(path), "invalid asset path");
-                let image = if let Some((name, image)) = &self.asset_image {
-                    if name == path {
-                        Some(image.clone())
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                };
+                let image = self.asset_image.get(path);
                 let image = if let Some(image) = image {
                     image
                 } else {
@@ -470,7 +462,7 @@ impl Session {
                         crate::drawing::image::Image::from_png(&self.package.asset(path)?)
                             .context("invalid PNG")?,
                     );
-                    self.asset_image = Some((path.to_owned(), image.clone()));
+                    self.asset_image.insert(path, image.clone());
                     image
                 };
                 let (x, y, w, h) = (

@@ -2,6 +2,39 @@
 pub const MAX_DIMENSION: u32 = 512;
 pub const MAX_BYTES: usize = 512 * 512 * 4;
 pub const MAX_PNG_BYTES: usize = 2 * 1024 * 1024;
+/// Session-scoped immutable assets: retain at most one image's maximum pixel
+/// budget across up to 32 bounded paths. Frames own separate Arc references and
+/// still charge every draw against their normal transfer/command budgets.
+#[derive(Default)]
+pub(crate) struct Cache {
+    entries: std::collections::VecDeque<(String, std::sync::Arc<Image>)>,
+    bytes: usize,
+}
+impl Cache {
+    pub(crate) fn get(&mut self, path: &str) -> Option<std::sync::Arc<Image>> {
+        let index = self.entries.iter().position(|(name, _)| name == path)?;
+        let entry = self.entries.remove(index)?;
+        let image = entry.1.clone();
+        self.entries.push_back(entry);
+        Some(image)
+    }
+    pub(crate) fn insert(&mut self, path: &str, image: std::sync::Arc<Image>) {
+        let bytes = image.pixels().len();
+        if path.len() > 1024 || bytes > MAX_BYTES {
+            return;
+        }
+        if let Some(index) = self.entries.iter().position(|(name, _)| name == path) {
+            let (_, old) = self.entries.remove(index).unwrap();
+            self.bytes -= old.pixels().len();
+        }
+        while self.entries.len() >= 32 || self.bytes + bytes > MAX_BYTES {
+            let (_, old) = self.entries.pop_front().unwrap();
+            self.bytes -= old.pixels().len();
+        }
+        self.bytes += bytes;
+        self.entries.push_back((path.to_owned(), image));
+    }
+}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Image {
     width: u32,
@@ -114,5 +147,74 @@ mod tests {
             assert!(Image::new(width, height, &vec![0; bytes]).is_none());
         }
         assert!(Image::new(512, 512, &vec![0; MAX_BYTES]).is_some());
+    }
+}
+
+#[cfg(test)]
+mod cache_tests {
+    use super::{Cache, Image, MAX_BYTES};
+    use std::sync::Arc;
+    fn image(width: u32, height: u32) -> Arc<Image> {
+        Arc::new(
+            Image::new(
+                width,
+                height,
+                &vec![37; width as usize * height as usize * 4],
+            )
+            .unwrap(),
+        )
+    }
+    #[test]
+    fn alternating_assets_retain_identity_and_entry_eviction_is_lru() {
+        let mut cache = Cache::default();
+        let first = image(1, 1);
+        cache.insert("0", first.clone());
+        for i in 1..32 {
+            cache.insert(&i.to_string(), image(1, 1));
+        }
+        assert!(Arc::ptr_eq(&first, &cache.get("0").unwrap()));
+        cache.insert("32", image(1, 1));
+        assert_eq!(cache.entries.len(), 32);
+        assert!(cache.get("1").is_none());
+        assert!(Arc::ptr_eq(&first, &cache.get("0").unwrap()));
+    }
+    #[test]
+    fn pixel_budget_evicts_oldest_without_invalidating_live_frames() {
+        let mut cache = Cache::default();
+        let retained = image(512, 128);
+        for name in ["a", "b", "c", "d"] {
+            cache.insert(
+                name,
+                if name == "b" {
+                    retained.clone()
+                } else {
+                    image(512, 128)
+                },
+            );
+        }
+        assert_eq!(cache.bytes, MAX_BYTES);
+        cache.get("a").unwrap();
+        cache.insert("e", image(1, 1));
+        assert!(cache.get("b").is_none());
+        assert!(cache.get("a").is_some());
+        assert_eq!(cache.bytes, MAX_BYTES - 512 * 128 * 4 + 4);
+        assert_eq!(retained.pixels()[0], 37);
+        assert_eq!(Arc::strong_count(&retained), 1);
+    }
+    #[test]
+    fn replacement_accounting_maximum_images_and_path_bounds_are_bounded() {
+        let mut cache = Cache::default();
+        cache.insert("same", image(2, 2));
+        let small = image(1, 1);
+        cache.insert("same", small.clone());
+        assert_eq!((cache.entries.len(), cache.bytes), (1, 4));
+        assert!(Arc::ptr_eq(&cache.get("same").unwrap(), &small));
+        cache.insert(&"x".repeat(1025), image(1, 1));
+        assert_eq!(cache.entries.len(), 1);
+        let maximum = image(512, 512);
+        cache.insert("large", maximum.clone());
+        assert_eq!((cache.entries.len(), cache.bytes), (1, MAX_BYTES));
+        assert!(cache.get("same").is_none());
+        assert!(Arc::ptr_eq(&maximum, &cache.get("large").unwrap()));
     }
 }

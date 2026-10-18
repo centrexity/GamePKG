@@ -1898,3 +1898,82 @@ fn original_normal_brick_pixels_filtering_and_integer_rectangles_reach_native_an
         }
     }
 }
+
+#[test]
+#[ignore = "requires the signed production fixture prepared by tests/arkanoo.py"]
+fn original_metal_layers_preserve_outside_pixels_order_and_full_board_budgets() {
+    let root = isolated_library();
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-metal.json")).unwrap();
+    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
+    for (position, (left, top)) in [(0.0, 60.0), (100.0, 100.0), (0.0, 60.0), (-0.5, 59.5)]
+        .into_iter()
+        .enumerate()
+    {
+        assert_eq!(game.step(2147483776 | position as u32).unwrap(), 1);
+        assert_eq!(game.frame().commands.len(), 3);
+        for (index, command) in game.frame().commands.iter().enumerate() {
+            let Command::Image {
+                x,
+                y,
+                width,
+                height,
+                image,
+            } = command
+            else {
+                panic!("Metal primitive layers must use nearest sampling")
+            };
+            let layer = &fixture["layers"][index];
+            let expected = hex::decode(layer["rgba_hex"].as_str().unwrap()).unwrap();
+            assert_eq!(
+                (*x, *y, *width, *height),
+                if index == 0 {
+                    (left, top, 30.0, 10.0)
+                } else {
+                    (left - 10.0, top, 45.5, 10.5)
+                }
+            );
+            assert_eq!(image.size(), if index == 0 { [60, 20] } else { [91, 21] });
+            assert_eq!(image.pixels(), expected.as_slice());
+        }
+    }
+    let mut identities: [Option<std::sync::Arc<gamepkg::drawing::image::Image>>; 3] =
+        [None, None, None];
+    for _ in 0..2 {
+        assert_eq!(game.step(2147483776 | 8).unwrap(), 200);
+        let mut bodies = 0;
+        let mut outside = 0;
+        let mut bytes = 0;
+        for command in &game.frame().commands {
+            if let Command::Image { image, .. } | Command::LinearImage { image, .. } = command {
+                bytes += image.pixels().len();
+                let index = if image.size() == [60, 20] {
+                    bodies += 1;
+                    Some(0)
+                } else if image.size() == [91, 21] {
+                    outside += 1;
+                    Some(if image.pixels()[80 * 4 + 3] == 30 {
+                        1
+                    } else {
+                        2
+                    })
+                } else {
+                    None
+                };
+                if let Some(index) = index {
+                    if let Some(previous) = &identities[index] {
+                        assert!(
+                            std::sync::Arc::ptr_eq(previous, image),
+                            "Alternating immutable assets were decoded again"
+                        );
+                    } else {
+                        identities[index] = Some(image.clone());
+                    }
+                }
+            }
+        }
+        assert_eq!((bodies, outside), (200, 400));
+        assert!(game.frame().commands.len() < gamepkg::drawing::MAX_COMMANDS);
+        assert!(bytes < gamepkg::drawing::MAX_IMAGE_BYTES);
+    }
+}

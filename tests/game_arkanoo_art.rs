@@ -83,3 +83,65 @@ fn original_normal_brick_textures_match_unchanged_source_and_sdl_reference() {
         assert_ne!(image.get_pixel(30, 0), image.get_pixel(30, 19));
     }
 }
+
+#[test]
+fn original_metal_body_and_unclipped_layers_match_sdl_source_pixels() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-metal.json")).unwrap();
+    for (index, bytes) in [
+        include_bytes!("../ports/arkanoo/assets/metal-body.png").as_slice(),
+        include_bytes!("../ports/arkanoo/assets/metal-stripes.png").as_slice(),
+        include_bytes!("../ports/arkanoo/assets/metal-bevel.png").as_slice(),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let layer = &fixture["layers"][index];
+        let image = image::load_from_memory(bytes).unwrap().into_rgba8();
+        let expected = hex::decode(layer["rgba_hex"].as_str().unwrap()).unwrap();
+        assert_eq!(
+            image.dimensions(),
+            (
+                layer["width"].as_u64().unwrap() as u32,
+                layer["height"].as_u64().unwrap() as u32
+            )
+        );
+        assert_eq!(image.as_raw(), &expected);
+        assert_eq!(
+            gamepkg::verify::digest(&expected),
+            layer["rgba_sha256"].as_str().unwrap()
+        );
+        if index == 0 {
+            assert!(image.pixels().all(|p| p.0[3] == 255));
+            assert!(image.pixels().any(|p| p.0 == [150, 150, 160, 255]));
+        } else {
+            for y in 0..20 {
+                for x in 20..80 {
+                    assert_eq!(image.get_pixel(x, y).0, [0, 0, 0, 0]);
+                }
+            }
+        }
+        if index == 1 {
+            assert_eq!(image.get_pixel(0, 20).0, [255, 255, 255, 30]);
+            assert_eq!(image.get_pixel(90, 0).0, [255, 255, 255, 30]);
+        }
+        if index == 2 {
+            assert_eq!(image.get_pixel(80, 0).0, [200, 200, 210, 100]);
+            assert_eq!(image.get_pixel(79, 20).0, [0, 0, 0, 150]);
+        }
+    }
+    for (index, composition) in fixture["composites"].as_array().unwrap().iter().enumerate() {
+        assert_eq!(
+            composition["max_channel_delta"].as_u64().unwrap(),
+            [2, 2, 2, 2, 1, 1][index]
+        );
+        assert!(
+            composition["differing_bytes"].as_u64().unwrap() > 0,
+            "Do not hide SDL line/copy rounding differences"
+        );
+        assert_ne!(
+            composition["original_rgba_sha256"],
+            composition["layered_rgba_sha256"]
+        );
+    }
+}

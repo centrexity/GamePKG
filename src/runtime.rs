@@ -27,7 +27,7 @@ struct Data {
     pending_achievements: Vec<String>,
     limits: StoreLimits,
     package: Option<crate::archive::Package>,
-    asset_image: Option<(String, std::sync::Arc<crate::drawing::image::Image>)>,
+    asset_image: crate::drawing::image::Cache,
     rom: Option<Vec<Vec<u8>>>,
     save: Option<crate::saves::Save>,
     frame: crate::drawing::Frame,
@@ -276,7 +276,7 @@ impl Game {
                 network: crate::network::Service::new(manifest.permissions.clone()),
                 limits,
                 package,
-                asset_image: None,
+                asset_image: crate::drawing::image::Cache::default(),
                 rom,
                 save,
                 frame: crate::drawing::Frame::default(),
@@ -1641,13 +1641,11 @@ fn decode_asset_image(
         return None;
     }
     data.package.as_ref()?;
-    if let Some((name, image)) = &data.asset_image {
-        if name == path {
-            return data
-                .frame
-                .can_image(x, y, w, h, image.pixels().len())
-                .then(|| image.clone());
-        }
+    if let Some(image) = data.asset_image.get(path) {
+        return data
+            .frame
+            .can_image(x, y, w, h, image.pixels().len())
+            .then_some(image);
     }
     let package = data.package.as_mut()?;
     let Ok(size) = package.asset_size(path) else {
@@ -1675,7 +1673,7 @@ fn decode_asset_image(
         return None;
     }
     let image = std::sync::Arc::new(image);
-    data.asset_image = Some((path.to_owned(), image.clone()));
+    data.asset_image.insert(path, image.clone());
     Some(image)
 }
 
