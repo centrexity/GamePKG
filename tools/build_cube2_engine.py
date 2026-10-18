@@ -67,6 +67,10 @@ def main():
     text = replace_once(server.read_text(), '#include "engine.h"', '#include "engine.h"\nextern "C" ENetSocket gamepkg_master_socket(int snapshot);')
     text = replace_once(text, 'ENetSocket sock = enet_socket_create(ENET_SOCKET_TYPE_STREAM);', 'ENetSocket sock = gamepkg_master_socket(wait ? 1 : 0);')
     server.write_text(text)
+    shutil.copyfile(PROJECT / 'engines/cube2/adapters/loading.h',stage / 'engine/gamepkg_loading.h')
+    for patch in json.loads((PROJECT / 'engines/cube2/adapters/loading-patches.json').read_text()):
+        if not patch['file'].startswith('engine/') or '..' in Path(patch['file']).parts:raise ValueError('Invalid loading adaptation path')
+        path=stage / patch['file'];path.write_text(replace_once(path.read_text(),patch['before'],patch['after']))
     bridge = (PROJECT / 'engines/cube2/adapters/frame_bridge.h').read_bytes()
     (stage / 'engine/gamepkg_bridge.h').write_bytes(bridge)
     path = stage / 'engine/main.cpp'

@@ -42,8 +42,8 @@ fn role(role: &str, state: &Path, proof: &Path, binary: &[u8], data: &Path) {
         let mut session = Session::start(data, 2 * 1024 * 1048576, Duration::from_secs(60), &config, || Ok(binary.to_vec()), Some(permissions.into()),
             format!("; mastername \"\"; serverip \"\"; serverport {PORT}; serverdesc GamePKGLANTest; mode 0; map complex; startlistenserver 0")).unwrap();
         session.tick(0, 0, 0).unwrap();
-        // Keep the bounded startup budget through first remote-model/shader use,
-        // matching the existing two-engine fixture's warmup sequence.
+        // Cold remote resources must announce loading under the normal tick budget.
+        session.set_deadline(Duration::from_millis(500)).unwrap();
         fs::write(state.join("server-ready"), b"ready").unwrap();
         let deadline = Instant::now() + Duration::from_secs(100);
         let mut observed = false;
@@ -64,10 +64,6 @@ fn role(role: &str, state: &Path, proof: &Path, binary: &[u8], data: &Path) {
                 )
                 .unwrap();
                 if saved_text(&saved, "config.cfg").contains("name \"LANClient1\"") {
-                    for _ in 0..20 {
-                        session.tick(0, 0, 0).unwrap();
-                    }
-                    session.set_deadline(Duration::from_millis(500)).unwrap();
                     observed = true;
                     fs::write(state.join("server-observed"), b"ready").unwrap();
                 }

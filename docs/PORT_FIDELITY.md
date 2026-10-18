@@ -345,10 +345,11 @@ phase screenshots and server lists stay under ignored `target/cube2-lan-proof/`.
 
 The fixture waits for the original game welcome/player identity, not merely the
 ENet transport connection: changing a name before welcome is discarded by the
-unchanged original `addmsg` guard. First remote-model/shader use retains the
-existing bounded startup warmup budget; the server then uses a 500 ms steady
-frame deadline. This is not evidence that every first-use software-rendering
-frame fits an ordinary tick deadline. Renderer loading/performance remains open.
+unchanged original `addmsg` guard. After the first startup frame, both sides now use a 500 ms ordinary tick
+deadline, including the first remote-model/shader use. The original-engine LAN
+regression passes without a separate server warmup period. Reviewed cold-resource
+notifications use a fixed loading allowance; this does not prove that every
+software-rendered frame meets 500 ms. Broader renderer performance remains open.
 
 Authentication coverage now rejects a valid response generated with the wrong
 private test key, ignores a success for an unrelated request ID, verifies no
@@ -373,3 +374,24 @@ welcome-state synchronization. Proof directories are unique per run so concurren
 attempts cannot overwrite packet evidence; `verified.txt` identifies a successful
 run. Lint, formatting and all seven public-page link checks pass. No production
 network policy or runtime permissions were changed by these test additions.
+
+Resource-loading follow-up: the staged, pinned Cube 2 engine now announces cold
+model loads, first geometry/material use, shader compilation/first binding,
+texture/cubemap uploads and surface reallocations. Model and shader cleanup reset
+the first-use state. Notifications coalesce once per input frame; the existing
+fixed 60-second allowance cannot be renewed by additional markers. Cached
+resources retain the ordinary tick deadline. A production-header regression
+covers cold/hot frames, shadow-before-material use, cleanup and shutdown guards;
+the original-engine sanitized server-browser regression also passes after a fresh
+build. The isolated original-engine LAN regression also passes with the server warmup
+removed and a 500 ms ordinary deadline on both sides after startup. Host-reader
+tests verify delayed cold-frame success, ordinary-frame timeout, fixed loading
+timeout, duplicate-marker rejection and ordinary-deadline restoration. Worst-case
+first-use timing and graphics-driver coverage remain unverified.
+
+Loading follow-up validation: the complete default all-features suite passes
+392 tests with 54 dedicated media/platform checks ignored. The original-engine
+browser and cold private-LAN checks were run explicitly and passed separately.
+Strict lint, formatting and the seven-page public-site link check pass. These
+results establish the tested Linux software-renderer paths, not full port parity
+or hardware/platform coverage. No binary/package release is created.

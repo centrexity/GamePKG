@@ -63,6 +63,30 @@ pub fn compile_with_options(optimize: bool) -> Result<Vec<u8>> {
         stage.path().join("engine/audio.h"),
         include_bytes!("../../engines/cube2/adapters/audio.h"),
     )?;
+    fs::write(
+        stage.path().join("engine/gamepkg_loading.h"),
+        include_bytes!("../../engines/cube2/adapters/loading.h"),
+    )?;
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct LoadingPatch {
+        file: String,
+        before: String,
+        after: String,
+    }
+    let patches: Vec<LoadingPatch> = serde_json::from_str(include_str!(
+        "../../engines/cube2/adapters/loading-patches.json"
+    ))?;
+    for patch in patches {
+        ensure!(
+            patch.file.starts_with("engine/") && crate::archive::valid_path(&patch.file),
+            "invalid loading adaptation path"
+        );
+        let path = stage.path().join(patch.file);
+        let mut text = fs::read_to_string(&path)?;
+        patch_once(&mut text, &patch.before, &patch.after)?;
+        fs::write(path, text)?;
+    }
     let main = stage.path().join("engine/main.cpp");
     fs::write(
         stage.path().join("enet/gamepkg_network.h"),

@@ -72,11 +72,39 @@ fn wait(fd: RawFd, events: i16, deadline: Instant) -> io::Result<()> {
         return Ok(());
     }
 }
-struct Reader<'a> {
-    pipe: &'a mut ChildStdout,
+// Only the reviewed engine can emit this marker. The second read has one fixed
+// deadline, and duplicate markers are errors rather than deadline extensions.
+fn read_tick_update<P: Read + AsRawFd>(
+    pipe: &mut P,
+    deadline: Instant,
+    load_limit: Duration,
+    loading: &mut bool,
+) -> Result<protocol::Update> {
+    ensure!(
+        !load_limit.is_zero() && load_limit <= Duration::from_secs(60),
+        "invalid resource-loading limit"
+    );
+    *loading = false;
+    let update = protocol::read_update(Reader { pipe, deadline })?;
+    if !matches!(update, protocol::Update::Loading) {
+        return Ok(update);
+    }
+    *loading = true;
+    let update = protocol::read_update(Reader {
+        pipe,
+        deadline: Instant::now() + load_limit,
+    })?;
+    ensure!(
+        !matches!(update, protocol::Update::Loading),
+        "Duplicate Cube 2 loading marker"
+    );
+    Ok(update)
+}
+struct Reader<'a, P> {
+    pipe: &'a mut P,
     deadline: Instant,
 }
-impl Read for Reader<'_> {
+impl<P: Read + AsRawFd> Read for Reader<'_, P> {
     fn read(&mut self, out: &mut [u8]) -> io::Result<usize> {
         loop {
             wait(self.pipe.as_raw_fd(), libc::POLLIN, self.deadline)?;
@@ -375,25 +403,12 @@ impl Session {
                 self.send(&event, deadline)?;
             }
             self.send(&packet, deadline)?;
-            let update = protocol::read_update(Reader {
-                pipe: &mut self.output,
+            read_tick_update(
+                &mut self.output,
                 deadline,
-            })?;
-            if matches!(update, protocol::Update::Loading) {
-                loading = true;
-                // One fixed allowance per tick; repeated markers cannot renew it.
-                let update = protocol::read_update(Reader {
-                    pipe: &mut self.output,
-                    deadline: Instant::now() + Duration::from_secs(60),
-                })?;
-                ensure!(
-                    !matches!(update, protocol::Update::Loading),
-                    "Duplicate Cube 2 loading marker"
-                );
-                Ok(update)
-            } else {
-                Ok(update)
-            }
+                Duration::from_secs(60),
+                &mut loading,
+            )
         })();
         match self.complete(result, if loading { "load" } else { "render" })? {
             protocol::Update::Loading => anyhow::bail!("Unexpected Cube 2 loading marker"),
@@ -553,7 +568,7 @@ impl Session {
 }
 fn timeout_message(operation: &str, deadline: Duration) -> String {
     match operation {
-        "load" => "The game exceeded its 60-second map-loading deadline.".to_owned(),
+        "load" => "The game exceeded its 60-second resource-loading deadline.".to_owned(),
         "save" => "The game did not provide a save snapshot within its 2-second shutdown deadline. Existing saves were kept.".to_owned(),
         "close" => "The game did not close within its 2-second shutdown deadline.".to_owned(),
         _ => format!("The renderer exceeded your {} ms tick deadline. Increase Tick deadline in Settings (500 ms is recommended for software rendering).", deadline.as_millis()),
@@ -1424,3 +1439,6 @@ mod tests {
 
 #[cfg(test)]
 mod lan;
+
+#[cfg(test)]
+mod loading;

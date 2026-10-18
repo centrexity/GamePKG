@@ -53,6 +53,7 @@ static void gamepkg_resize_surface()
         GLint maximum=0; glGetIntegerv(GL_MAX_RENDERBUFFER_SIZE, &maximum);
         if(gamepkg_width>maximum || gamepkg_height>maximum)
         { fprintf(stderr,"Requested game resolution exceeds the graphics driver's renderbuffer size. Enable a render resolution limit in Settings.\n"); exit(2); }
+        gamepkg_loading();
         if(!gamepkg_framebuffer)
         {
             glGenFramebuffers_(1,&gamepkg_framebuffer);
@@ -157,19 +158,18 @@ static void gamepkg_quit()
     if(!gamepkg_transfer(gamepkg_output, magic, sizeof(magic), true)) return;
     gamepkg_snapshot();
 }
-static bool gamepkg_loading_notified = false;
+static gamepkg_load_frame gamepkg_loading_frame;
 void gamepkg_loading()
 {
-    if(gamepkg_running && !gamepkg_loading_notified)
+    if(gamepkg_loading_frame.request(gamepkg_running && !gamepkg_closing))
     {
         unsigned char marker[4] = { 'G', 'P', 'L', '1' };
         if(!gamepkg_transfer(gamepkg_output,marker,sizeof(marker),true)) exit(2);
-        gamepkg_loading_notified = true;
     }
 }
 static void gamepkg_input()
 {
-    gamepkg_loading_notified = false;
+    gamepkg_loading_frame.reset();
     // Fixed 16-byte input: GPK1, held-key mask, signed mouse dx and dy.
     unsigned char packet[16];
     unsigned events = 0;

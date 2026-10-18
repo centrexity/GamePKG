@@ -39,6 +39,8 @@ pub fn cache_path(root: &std::path::Path, digest: &str) -> std::path::PathBuf {
             include_str!("../../engines/cube2/upstream-lock.json"),
             include_str!("../../engines/cube2/adapters/frame_bridge.h"),
             include_str!("../../engines/cube2/adapters/audio.h"),
+            include_str!("../../engines/cube2/adapters/loading.h"),
+            include_str!("../../engines/cube2/adapters/loading-patches.json"),
             include_str!("../../engines/cube2/adapters/persistence.h"),
             include_str!("../../engines/cube2/adapters/network.h"),
             include_str!("../../engines/cube2/adapters/syscall_guard.h"),

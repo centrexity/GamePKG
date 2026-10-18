@@ -1,0 +1,57 @@
+[
+  {
+    "file": "engine/engine.h",
+    "before": "#include \"texture.h\"",
+    "after": "#include \"gamepkg_loading.h\"\n#include \"texture.h\""
+  },
+  {
+    "file": "engine/texture.h",
+    "before": "    bool standard, forced, used;",
+    "after": "    bool standard, forced, used;\n    gamepkg_resource_use gamepkg_use;"
+  },
+  {
+    "file": "engine/shader.cpp",
+    "before": "bool Shader::compile()\n{",
+    "after": "bool Shader::compile()\n{\n    gamepkg_use.reset();\n    gamepkg_loading();"
+  },
+  {
+    "file": "engine/shader.cpp",
+    "before": "    glUseProgram_(program);\n    lastshader = this;",
+    "after": "    gamepkg_use.prepare();\n    glUseProgram_(program);\n    lastshader = this;"
+  },
+  {
+    "file": "engine/shader.cpp",
+    "before": "void Shader::cleanup(bool invalid)\n{",
+    "after": "void Shader::cleanup(bool invalid)\n{\n    gamepkg_use.reset();"
+  },
+  {
+    "file": "engine/rendermodel.cpp",
+    "before": "        if(!name[0] || loadingmodel || lightmapping > 1) return NULL;",
+    "after": "        if(!name[0] || loadingmodel || lightmapping > 1) return NULL;\n        gamepkg_loading();"
+  },
+  {
+    "file": "engine/animmodel.h",
+    "before": "        animmodel *model;",
+    "after": "        animmodel *model;\n        gamepkg_resource_use gamepkg_use;"
+  },
+  {
+    "file": "engine/animmodel.h",
+    "before": "        virtual void cleanup()\n        {",
+    "after": "        virtual void cleanup()\n        {\n            gamepkg_use.reset();"
+  },
+  {
+    "file": "engine/animmodel.h",
+    "before": "            meshes->render(as, pitch, oaxis, oforward, d, this);",
+    "after": "            if(!(anim&ANIM_NORENDER)) gamepkg_use.prepare(!(anim&ANIM_NOSKIN));\n            meshes->render(as, pitch, oaxis, oforward, d, this);"
+  },
+  {
+    "file": "engine/texture.cpp",
+    "before": "    bool swizzle = !(clamp&0x10000);",
+    "after": "    gamepkg_loading();\n    bool swizzle = !(clamp&0x10000);"
+  },
+  {
+    "file": "engine/texture.cpp",
+    "before": "    t->type = Texture::CUBEMAP;",
+    "after": "    gamepkg_loading();\n    t->type = Texture::CUBEMAP;"
+  }
+]

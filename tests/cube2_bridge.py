@@ -49,7 +49,11 @@ def run(malformed=False):
             def tick(buttons=0, dx=0, dy=0):
                 app.stdin.write(b'GPK1' + struct.pack('<Iii', buttons, dx, dy))
                 app.stdin.flush()
-                header = exact(20)
+                magic = exact(4)
+                if magic == b'GPL1':
+                    magic = exact(4)
+                    assert magic != b'GPL1', 'Duplicate loading notification'
+                header = magic + exact(16)
                 assert header[:4] in [b'GPF2',b'GPF3'], 'Diagnostics polluted the frame channel'
                 channels=struct.unpack('<I',exact(4))[0] if header[:4]==b'GPF3' else 1
                 assert channels in [1,2]
