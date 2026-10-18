@@ -1,4 +1,6 @@
 pub mod archive;
+#[doc(hidden)]
+pub mod audio_decode;
 mod audio_frame;
 #[cfg(feature = "gui")]
 pub mod gui;

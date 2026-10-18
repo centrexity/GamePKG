@@ -3,6 +3,12 @@ objective = "Restore accurate feature behavior across every current port"
 status = "in_progress"
 
 [[work]]
+id = "arkanoo_streamed_music_decoder"
+requirements = ["Original compressed recordings", "Bounded streaming decode", "Matching native/browser PCM", "Original mixer conversion", "Playback and menu controls", "Shared memory accounting"]
+status = "in_progress"
+notes = "An import-free scalar Wasm decoder prototype streams all nine original MP3 tracks with fixed memory, bounded reads and native epoch deadlines without instruction fuel. Complete native passes are chunk-invariant and rewindable; Chromium matches full-track fingerprints and exact audible windows. SDL decoded lengths match, but some PCM values differ by one integer unit. An independent original Music API capture checks the codec reference at source and original 44.1 kHz rates. Resampling, game API integration, asynchronous playback, controls and combined game/decoder memory accounting remain open; no guest dependencies or music playback are enabled by this prototype."
+
+[[work]]
 id = "cube2_startup"
 requirements = ["Original startup menus", "Saved HUD/console preferences", "Saved FPS preference"]
 status = "implemented_runtime_verified"

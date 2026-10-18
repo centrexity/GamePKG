@@ -2197,3 +2197,24 @@ profiles also match all five full PCM hashes. Strict lint/fmt and the existing
 fractional-clock check pass. Music, fully asynchronous timing, individual item/
 artist identification for three files and broader native platform/device/window
 verification remain open.
+
+The host-only music decoder prototype in tools/audio-decoder streams all nine
+original MP3 tracks through the same import-free scalar Wasm companion in native
+Wasmtime and Chromium. Game source still has no Cargo dependencies or direct
+decoder API. The companion declares a 16 MiB memory maximum, accepts at most
+8 MiB encoded input, bounds encoded reads to 512 KiB per operation and returns
+at most 1,600 sample values per read. Native execution adds epoch deadlines;
+instruction fuel remains absent. These prototype bounds have not yet been
+integrated into combined game memory accounting.
+
+Complete native decoding is invariant across different output chunk sizes and
+rewind; malformed inputs, hostile companion results and an infinite decoder
+loop have bounded failure checks. Chromium matches full-track fingerprints and
+exact audible sample windows. All nine SDL decoded lengths match. Some integer
+samples differ by one unit, including after nearest-even final conversion, so
+bit-exact SDL decoding remains unproven. The independent streamed Music API
+oracle verifies the existing effect-loading reference at source and original
+44.1 kHz mixer rates, with final silent callback padding recorded separately.
+This foundation does not yet enable music playback: conversion to the output
+rate, asynchronous mixing, playlist/menu behavior and platform/device tests
+remain required. No music recordings or compiled decoder binaries are added.
