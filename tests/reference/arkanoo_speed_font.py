@@ -65,6 +65,16 @@ pub fn raster(speed:u32)->Label {
     }
     Label{width:width as u32,pixels}
 }
+pub fn palette_number(index:u8)->Label {
+    let mut pixels=Vec::new();pixels.resize(15*31*4,0u8);
+    if index<10 {
+        let mut offset=0;
+        for pair in glyph(48+index).chunks(2) {
+            for _ in 0..pair[0] {pixels[offset*4+3]=pair[1];offset+=1;}
+        }
+    }
+    Label{width:15,pixels}
+}
 """)
  if args.write_source:subprocess.run(['rustfmt','--edition','2021',args.write_source],check=True)
  print(json.dumps(dict(revision='9d613e78c9ed5657ae7fda9206cd4a82a893b7c8',font_sha256=hashlib.sha256(font.read_bytes()).hexdigest(),fragment_sha256=hashlib.sha256(fragment.encode()).hexdigest(),font_size=26,color=[200,200,200,255],display_scale=0.6,sdl_ttf_version=subprocess.check_output(['pkg-config','--modversion','SDL2_ttf'],text=True).strip(),glyphs=glyphs,cases=cases),indent=2))

@@ -263,7 +263,7 @@ fn penguin_probe(input:u32)->u64 {
  let guard=[0u8];value+=u64::from(guard[(input&1) as usize]);return value;
  };
 '''
-    text=probe_file.read_text();text=text.replace('pub fn game_tick(input:u32,state:u64)->u64 {','pub fn game_tick(input:u32,state:u64)->u64 {\n if input&1073741824!=0 {return penguin_probe(input);};\n'+api_probe)
+    text=probe_file.read_text();text=text.replace('pub fn game_tick(input:u32,state:u64)->u64 {','pub fn game_tick(input:u32,state:u64)->u64 {\n if input&3221225472==3221225472 {let case=input&255;let mut game=physics::Game::new();game.mode=6;game.editor.selected=if case<27 {(case/3) as u8} else {255};game.editor.hovered_color=if case<27 {match case%3 {1=>((case/3+1)%9) as u8,2=>(case/3) as u8,_=>255}} else {255};render::draw(&game);return u64::from(case);}; if input&1073741824!=0 {return penguin_probe(input);};\n'+api_probe)
     probe_file.write_text(text+penguin_probe)
     run('pack',modes,'-o',root/'modes.gamepkg','--key',key);run('install',root/'modes.gamepkg','--trust-creator');run('build','com.gamepkg.arkanoo-modes')
     layouts=root/'layouts';shutil.copytree(PROJECT/'ports/arkanoo',layouts)

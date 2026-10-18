@@ -3159,3 +3159,111 @@ fn original_editor_grid_and_backdrop_match_sdl_logical_pixels_and_endpoints() {
         );
     }
 }
+
+#[test]
+#[ignore = "requires tests/arkanoo.py fixtures"]
+fn original_editor_palette_colors_borders_digits_and_order_match_sdl_pixels() {
+    let reference: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-editor-palette.json")).unwrap();
+    let backgrounds: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-image-backgrounds.json")).unwrap();
+    let root = isolated_library();
+    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
+    for (index, case) in reference["cases"].as_array().unwrap().iter().enumerate() {
+        assert_eq!(game.step(0xc0000000 | index as u32).unwrap(), index as u64);
+        let commands = &game.frame().commands;
+        let mut pixels = vec![0u8; 1280 * 720 * 4];
+        for (command, tile) in commands[..6]
+            .iter()
+            .zip(backgrounds["cases"][0]["tiles"].as_array().unwrap())
+        {
+            let Command::Image { image, .. } = command else {
+                panic!("missing editor backdrop")
+            };
+            let left = tile["origin"][0].as_u64().unwrap() as usize;
+            let top = tile["origin"][1].as_u64().unwrap() as usize;
+            let [w, h] = image.size();
+            for row in 0..h {
+                pixels[((top + row) * 1280 + left) * 4..((top + row) * 1280 + left + w) * 4]
+                    .copy_from_slice(&image.pixels()[row * w * 4..(row + 1) * w * 4]);
+            }
+        }
+        for pixel in pixels.chunks_exact_mut(4) {
+            for channel in &mut pixel[..3] {
+                *channel = ((u16::from(*channel) * 102 + 127) / 255) as u8;
+            }
+        }
+        let first=commands.iter().position(|command|matches!(command,Command::Image{x,image,..} if *x>=429.0 && *x<=430.0 && image.size()==[1,1])).expect("palette outer border");
+        let last_grid=commands.iter().rposition(|command|matches!(command,Command::Image{image,..} if image.size()==[1,1] && image.pixels()==[80,80,100,255])).unwrap();
+        assert!(first > last_grid, "palette follows grid and board");
+        for (slot, command) in commands[first..first + 27].iter().enumerate() {
+            let (x, y, width, height, image) = match command {
+                Command::Image {
+                    x,
+                    y,
+                    width,
+                    height,
+                    image,
+                } if slot % 3 != 2 => (*x, *y, *width, *height, image),
+                Command::LinearImage {
+                    x,
+                    y,
+                    width,
+                    height,
+                    image,
+                } if slot % 3 == 2 => (*x, *y, *width, *height, image),
+                _ => panic!("palette command order changed at {slot}"),
+            };
+            let left = (x * 2.0) as usize;
+            let top = ((y - 60.0) * 2.0) as usize;
+            let w = (width * 2.0) as usize;
+            let h = (height * 2.0) as usize;
+            assert_eq!(image.size(), if slot % 3 == 2 { [15, 31] } else { [1, 1] });
+            for row in 0..h {
+                for col in 0..w {
+                    let source = if slot % 3 == 2 {
+                        (row * w + col) * 4
+                    } else {
+                        0
+                    };
+                    let dst = ((top + row) * 1280 + left + col) * 4;
+                    let alpha = u32::from(image.pixels()[source + 3]);
+                    for channel in 0..3 {
+                        pixels[dst + channel] = ((u32::from(image.pixels()[source + channel])
+                            * alpha
+                            + u32::from(pixels[dst + channel]) * (255 - alpha)
+                            + 127)
+                            / 255) as u8;
+                    }
+                }
+            }
+        }
+        let compressed = hex::decode(case["rgba_zlib_hex"].as_str().unwrap()).unwrap();
+        let mut expected = Vec::new();
+        std::io::Read::read_to_end(
+            &mut flate2::read::ZlibDecoder::new(compressed.as_slice()),
+            &mut expected,
+        )
+        .unwrap();
+        let actual: Vec<u8> = (18..52)
+            .flat_map(|row| {
+                pixels[(row * 1280 + 858) * 4..(row * 1280 + 1262) * 4]
+                    .iter()
+                    .copied()
+            })
+            .collect();
+        assert_eq!(actual.len(), expected.len());
+        let max = actual
+            .iter()
+            .zip(&expected)
+            .map(|(a, b)| a.abs_diff(*b))
+            .max()
+            .unwrap();
+        assert!(
+            max <= 1,
+            "case {index}, selected {} hovered {}, max pixel difference {max}",
+            case["selected"],
+            case["hovered"]
+        );
+    }
+}

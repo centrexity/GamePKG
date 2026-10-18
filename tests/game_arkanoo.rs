@@ -3278,3 +3278,58 @@ fn original_speed_font_labels_match_complete_sdl_ttf_rasters() {
         assert_eq!(actual.pixels, expected, "{}", case["text"]);
     }
 }
+
+#[test]
+fn editor_palette_hover_matches_original_hitboxes_and_preserves_selection() {
+    let mut edit = editor::Editor::new();
+    assert_eq!(edit.hovered_color, 255);
+    for index in 0..9u8 {
+        let left = 430.0 + f32::from(index) * 22.5;
+        for (x, y, expected) in [
+            (left, 70.0, index),
+            (left + 19.5, 84.5, index),
+            (left + 20.0, 75.0, 255),
+            (left, 69.5, 255),
+            (left, 85.0, 255),
+        ] {
+            edit.editor_event(1, x, y, 0);
+            assert_eq!(edit.hovered_color, expected);
+            assert_eq!(edit.selected, if index == 0 { 0 } else { index - 1 });
+        }
+        edit.editor_event(1, left + 10.0, 75.0, 0);
+        edit.editor_event(2, left + 10.0, 75.0, 1);
+        assert_eq!((edit.selected, edit.hovered_color), (index, index));
+        edit.editor_event(8, 0.0, 0.0, 0);
+        assert_eq!(edit.hovered_color, index);
+    }
+    for invalid in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+        edit.editor_event(1, invalid, 75.0, 0);
+        assert_eq!(edit.hovered_color, 255);
+        edit.editor_event(1, 430.0, invalid, 0);
+        assert_eq!(edit.hovered_color, 255);
+    }
+}
+
+#[test]
+fn palette_numbers_reuse_original_glyph_alpha_with_black_ink() {
+    for number in 0..10 {
+        let actual = speed_font::palette_number(number);
+        let label = speed_font::raster(u32::from(number));
+        assert_eq!(actual.width, 15);
+        assert_eq!(actual.pixels.len(), 15 * 31 * 4);
+        for row in 0..31 {
+            for col in 0..15 {
+                let at = (row * 15 + col) * 4;
+                assert_eq!(&actual.pixels[at..at + 3], &[0, 0, 0]);
+                assert_eq!(
+                    actual.pixels[at + 3],
+                    label.pixels[(row * label.width as usize + col) * 4 + 3]
+                );
+            }
+        }
+    }
+    assert!(speed_font::palette_number(255)
+        .pixels
+        .iter()
+        .all(|value| *value == 0));
+}

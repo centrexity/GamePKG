@@ -1590,3 +1590,32 @@ clipping, reset, image/shader and resize regressions also pass afterward.
 This verifies canonical grid geometry, color and supported client samples.
 Original palette/lettering composition, browser CSS scaling and full original
 viewport behavior remain open. It does not establish complete editor parity.
+
+
+## Canonical editor palette restoration
+
+Recipe 0.1.47 restores the original nine swatch colors (including orange
+explosive and dark metal choices), selected white three-outline border,
+ordinary gray and hovered gray borders, and black Roboto Medium 26 digits.
+The original placement and draw order are retained: backdrop, grid and placed
+blocks precede the palette. Mouse hover uses original integer hitboxes and
+selected borders take precedence. It remains ephemeral rather than saved.
+
+A hash-guarded SDL_image/SDL_ttf/OpenGL oracle records the complete 404x34
+original region for 28 selection/hover combinations. Signed production draws
+reconstruct that complete region within one channel level in native and core
+Wasm. All 58 signed checks pass in each execution mode. Pure input tests cover
+all nine choices, gaps, upper/lower edges, click selection, non-motion hover
+retention and non-finite input; digit alpha matches the existing original
+font glyphs with black ink. Font regeneration remains byte-identical.
+
+`tests/editor_palette_gui.py` checks every pixel in the original palette
+region at a 1280x960 client size (original world pixels plus letterboxing),
+including three selection/hover states and a revisit. All six Linux desktop
+configurations pass: 329,664 RGB pixel comparisons, maximum difference one.
+This intentionally verifies canonical pixel size. A first half-size comparison
+against directly scaled original SDL rendering failed; thin primitive borders
+and backdrop resampling do not generally commute with rendering to original
+pixels first. Half-size/fractional window and browser whole-frame presentation
+remain open, as do the Colors label and other original editor/menu lettering.
+No graphics, execution, memory or drawing budget has been increased.
