@@ -3377,3 +3377,52 @@ fn editor_toolbar_hover_uses_original_integer_boxes_and_nonmotion_retention() {
     edit.editor_event(1, f32::NAN, 390.0, 0);
     assert_eq!(edit.hovered_button, 255);
 }
+
+#[path = "../ports/arkanoo/source/src/dynamic_font.rs"]
+#[allow(clippy::slow_vector_initialization)]
+mod dynamic_font;
+#[path = "../ports/arkanoo/source/src/dynamic_font_data.rs"]
+mod dynamic_font_data;
+#[test]
+fn dynamic_unicode_font_matches_every_recorded_original_sdl_text_surface() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-dynamic-font.json")).unwrap();
+    for case in fixture["cases"].as_array().unwrap() {
+        let text = case["text"].as_str().unwrap();
+        let label = dynamic_font::unicode_layout(text).unwrap();
+        assert_eq!(
+            i64::from(label.width),
+            case["width"].as_i64().unwrap(),
+            "{text:?}"
+        );
+        assert_eq!(
+            i64::from(label.height),
+            case["height"].as_i64().unwrap(),
+            "{text:?}"
+        );
+        if !case["rendered"].as_bool().unwrap() {
+            continue;
+        }
+        let mut actual = vec![0u8; label.width as usize * label.height as usize * 4];
+        for column in (0..label.width).step_by(256) {
+            let width = (label.width - column).min(256);
+            let tile = dynamic_font::unicode_raster_slice(&label, [200, 200, 200], column, width);
+            for row in 0..label.height as usize {
+                actual[(row * label.width as usize + column as usize) * 4
+                    ..(row * label.width as usize + column as usize + width as usize) * 4]
+                    .copy_from_slice(
+                        &tile[row * width as usize * 4..(row + 1) * width as usize * 4],
+                    );
+            }
+        }
+        let compressed = hex::decode(case["rgba_zlib_hex"].as_str().unwrap()).unwrap();
+        let mut expected = Vec::new();
+        std::io::Read::read_to_end(
+            &mut flate2::read::ZlibDecoder::new(compressed.as_slice()),
+            &mut expected,
+        )
+        .unwrap();
+        assert_eq!(actual, expected, "{text:?}");
+    }
+    assert!(dynamic_font::unicode_layout("bad\0name").is_none());
+}

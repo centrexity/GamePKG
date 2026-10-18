@@ -1659,3 +1659,59 @@ import/cancel and Save-dialog export, plus core and component browser
 play/editor/import/cancel/explicit-download workflows. Strict all-feature,
 all-target lint and formatting pass. Only source recipes/tests are published;
 this does not create an application or package binary release.
+
+
+## Original dynamic editor text and browser clip boundaries
+
+Recipe 0.1.49 replaces the uppercase, question-mark and 78-character editor
+name display with the original Roboto Medium 26 text path. Names keep their
+case and Unicode contents, the full Name/finish/edit suffixes and original
+colors/positions. Saved pattern rows retain original white lettering and
+integer vertical centering. Messages use original green lettering and whole-
+label centering. Long strings retain their full measured width while only
+visible viewport slices are allocated/drawn; they are not shortened in storage.
+
+The dependency-free guest embeds captured alpha for all 1,321 font glyphs,
+explicit-endian metrics and the pinned font's substitutions and GPOS kerning.
+Font-aware canonical decomposition/recomposition preserves the original missing-
+glyph fallback rather than claiming additional character coverage. The oracle
+captures 3,268 original SDL_ttf cases: 3,259 complete surfaces and nine empty
+results. Cases include every non-NUL mapped scalar, random mixed names,
+combining boundaries, kerning, long names, space/filler behavior and a further
+1,205 compound joiner/variation-selector sequences. That compound audit caught
+64 initial mismatches; cluster-sensitive normalization, contextual dotless
+forms and distinct joiner/combining-joiner barriers now match them all.
+All recorded full RGBA bytes match production, including negative bearings,
+height expansion, overlapping alpha and partial raster slices. Actual original
+HarfBuzz calls classify every one of the 4,174 default-ignorable candidates:
+4,165 are hidden for this font/runtime; the other nine retain original behavior.
+Special unmapped Unicode spaces retain captured original advances. Unicode data
+license is bundled beside the existing font license. Python/C/FreeType/HarfBuzz
+are maintainer reference tools; players need none of them for these glyphs.
+
+A signed probe verifies complete original source bytes, destinations, viewport
+clips/reset and colors for ordinary, editing, multilingual and 200-character
+names, browser rows and messages in native and core Wasm. Both 60-check suites
+pass, including existing 70,000-byte saved-name and dense editor regressions.
+The 86-test logic suite passes, including full font-reference comparisons.
+
+The eight-player Unicode text matrix covers whole old/new regions, centered
+oversized messages, names past the previous cutoff, kerning, combining accents,
+negative bearings, top/side clipping and revisit: 1,576,960 RGB comparisons.
+Maximum difference is two on desktop and one in browsers. The first browser run
+exposed a 44-level error: Canvas2D antialiased fractional clip edges, halving
+some glyph pixels. Browser clips now round both endpoints to hard pixels, as
+both existing desktop scissor backends do. A direct fractional/empty/replace/
+reset/fresh-frame regression passes, as do all 924 existing shared clip/image/
+shader/resize samples across six desktop and two browser configurations (exact
+RGB in this run). Drawing/transfer/deadline/memory/source budgets stay unchanged.
+
+This closes the recorded dynamic editor lettering gap, not complete editor
+presentation. Original browser panel/rows/overlay, remaining menu/HUD art and
+whole-window/CSS scaling still require their own reference and runtime gates.
+
+Final verification after the compound fixes passes both 60-check signed suites,
+native gameplay/editor/file-picker import/cancel/Save-dialog export and core/
+component browser play/editor/import/cancel/explicit downloads. Strict lint and
+formatting pass. Source recipes and tests are published without a new binary
+release or host-version change.

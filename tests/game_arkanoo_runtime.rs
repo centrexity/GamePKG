@@ -3371,3 +3371,118 @@ fn editor_original_labels_bounded_overlap_and_toolbar_hover_reach_signed_profile
         assert!(commands.len() < 1024);
     }
 }
+
+#[test]
+#[ignore = "requires tests/arkanoo.py fixtures"]
+fn dynamic_unicode_editor_names_rows_messages_and_viewport_clips_match_original_surfaces() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-dynamic-font.json")).unwrap();
+    let root = isolated_library();
+    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
+    let long = "a".repeat(200);
+    let names = [
+        "my_pattern",
+        "cafe\u{301}",
+        "Ελληνικά Привет 日本語 🎮 // “Δ",
+        long.as_str(),
+    ];
+    for (which, name) in names.iter().enumerate() {
+        assert_eq!(game.step(0xc0000041 | ((which as u32) << 8)).unwrap(), 65);
+        let heading = format!(
+            "Name: {name}{}",
+            if which == 1 {
+                "_ (ESC to finish)"
+            } else {
+                " (N to edit)"
+            }
+        );
+        for (text, x, y, color, centered, row_height) in [
+            (
+                heading.as_str(),
+                10,
+                40,
+                if which == 1 {
+                    [100, 255, 100]
+                } else {
+                    [200, 200, 200]
+                },
+                false,
+                -1,
+            ),
+            (*name, 370, 170, [255, 255, 255], false, 30),
+            ("Saved: café", 640, 590, [100, 255, 100], true, -1),
+        ] {
+            let case = fixture["cases"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|case| case["text"].as_str() == Some(text))
+                .unwrap_or_else(|| panic!("missing original {text:?}"));
+            let full_width = case["width"].as_i64().unwrap() as i32;
+            let h = case["height"].as_i64().unwrap() as i32;
+            let left = if centered { x - full_width / 2 } else { x };
+            let top = if row_height >= 0 {
+                y + (row_height - h) / 2
+            } else {
+                y
+            };
+            let compressed = hex::decode(case["rgba_zlib_hex"].as_str().unwrap()).unwrap();
+            let mut expected = Vec::new();
+            std::io::Read::read_to_end(
+                &mut flate2::read::ZlibDecoder::new(compressed.as_slice()),
+                &mut expected,
+            )
+            .unwrap();
+            for pixel in expected.chunks_exact_mut(4) {
+                pixel[..3].copy_from_slice(&color);
+            }
+            let mut column = (-left).clamp(0, full_width);
+            let right = (1280 - left).clamp(0, full_width);
+            let commands = &game.frame().commands;
+            while column < right {
+                let core_right = (column + 256).min(right);
+                let source_left = (column - 1).max(0);
+                let source_right = (core_right + 1).min(full_width);
+                let tile_width = source_right - source_left;
+                let rect = [
+                    (left + column) as f32 * 0.5,
+                    60.0 + top as f32 * 0.5,
+                    (core_right - column) as f32 * 0.5,
+                    h as f32 * 0.5,
+                ];
+                let at=commands.iter().position(|command|matches!(command,Command::Clip{rect:Some(actual)} if *actual==rect)).unwrap_or_else(||panic!("missing clip for {text:?} column {column}"));
+                let Command::LinearImage {
+                    x,
+                    y,
+                    width,
+                    height,
+                    image,
+                } = &commands[at + 1]
+                else {
+                    panic!("unfiltered dynamic label")
+                };
+                assert_eq!(
+                    (*x, *y, *width, *height),
+                    (
+                        (left + source_left) as f32 * 0.5,
+                        60.0 + top as f32 * 0.5,
+                        tile_width as f32 * 0.5,
+                        h as f32 * 0.5
+                    )
+                );
+                assert_eq!(image.size(), [tile_width as usize, h as usize]);
+                for row in 0..h as usize {
+                    assert_eq!(
+                        &image.pixels()
+                            [row * tile_width as usize * 4..(row + 1) * tile_width as usize * 4],
+                        &expected[(row * full_width as usize + source_left as usize) * 4
+                            ..(row * full_width as usize + source_right as usize) * 4],
+                        "{text:?} row {row}"
+                    );
+                }
+                assert_eq!(commands[at + 2], Command::Clip { rect: None });
+                column = core_right;
+            }
+        }
+    }
+}
