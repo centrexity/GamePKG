@@ -46,7 +46,7 @@ int index=0;uint8_t p[24];while(fread(p,1,24,stdin)==24){int selected=index++/48
 uint8_t*pixels=malloc(1280*720*4);if(SDL_RenderReadPixels(r,NULL,SDL_PIXELFORMAT_RGBA32,pixels,1280*4))return 7;if(fwrite(pixels,1,1280*720*4,stdout)!=1280*720*4)return 8;free(pixels);SDL_DestroyRenderer(r);if(s)SDL_FreeSurface(s);if(w)SDL_DestroyWindow(w);SDL_Quit();return 0;}
 '''
 themes=[int(value) for value in sys.argv[3].split(',')] if len(sys.argv)>3 else [2,10]
-assert themes and len(set(themes))==len(themes) and all(value in [2,8,10,12,15] for value in themes)
+assert themes and len(set(themes))==len(themes) and all(value in [1,2,7,8,9,10,11,12,15,16,17,18,19] for value in themes)
 body=body.replace('[7,9,19]',str(themes).replace(' ',''))
 rand_source=Path(sys.argv[2]);assert tomllib.loads((rand_source/'Cargo.toml').read_text())['package']['version']=='0.8.5'
 with tempfile.TemporaryDirectory(prefix='gamepkg-procedural-reference-') as temporary:

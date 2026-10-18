@@ -190,7 +190,15 @@ pub fn game_tick(input:u32,state:u64)->u64 {
     night_circuit_maze_cases=json.loads((PROJECT/'tests/fixtures/arkanoo-night-circuit-maze.json').read_text())['cases']
     night_circuit_maze_values='['+','.join('['+str(case['level'])+'u64,'+str(case['frame'])+'u64]' for case in night_circuit_maze_cases)+']'
     night_circuit_maze_probe=procedural_probe.replace('fn procedural_probe','fn night_circuit_maze_probe').replace(old_cases,night_circuit_maze_values)
-    probe=' if input&2164260864==2164260864 {return night_circuit_maze_probe(input); }\n'
+    canonical_particle_cases=json.loads((PROJECT/'tests/fixtures/arkanoo-canonical-particles.json').read_text())['cases']
+    canonical_particle_values='['+','.join('['+str(case['level'])+'u64,'+str(case['frame'])+'u64]' for case in canonical_particle_cases)+']'
+    canonical_particle_probe=procedural_probe.replace('fn procedural_probe','fn canonical_particle_probe').replace(old_cases,canonical_particle_values)
+    canonical_effect_cases=json.loads((PROJECT/'tests/fixtures/arkanoo-canonical-effects.json').read_text())['cases']
+    canonical_effect_values='['+','.join('['+str(case['level'])+'u64,'+str(case['frame'])+'u64]' for case in canonical_effect_cases)+']'
+    canonical_effect_probe=procedural_probe.replace('fn procedural_probe','fn canonical_effect_probe').replace(old_cases,canonical_effect_values)
+    probe=' if input&2214592512==2214592512 {return canonical_effect_probe(input); }\n'
+    probe+=' if input&2181038080==2181038080 {return canonical_particle_probe(input); }\n'
+    probe+=' if input&2164260864==2164260864 {return night_circuit_maze_probe(input); }\n'
     probe+=' if input&2155872256==2155872256 {return hex_bubble_probe(input); }\n'
     probe+=' if input&2151677952==2151677952 {return matrix_nebula_probe(input); }\n'
     probe+=' if input&2149580800==2149580800 {return cyber_aurora_probe(input); }\n'
@@ -220,7 +228,7 @@ pub fn game_tick(input:u32,state:u64)->u64 {
         probe+=f'gamepkg::draw_clear(0x000000ff);render::draw_ball_effects(&ball,{case["frame"]});return 1;}};\n'
     probe+='return 0;}\n'
     probe_file=modes/'source/src/lib.rs'
-    text=probe_file.read_text();text=text.replace(' if input&67108864!=0 {',probe+' if input&67108864!=0 {');probe_file.write_text(text+metal_probe+ice_probe+fire_probe+bonus_probe+portal_probe+background_probe+procedural_probe+fire_sea_probe+space_probe+voyage_probe+line_probe+kaleidoscope_probe+rain_warp_probe+cyber_aurora_probe+matrix_nebula_probe+hex_bubble_probe+night_circuit_maze_probe+visual_probe)
+    text=probe_file.read_text();text=text.replace(' if input&67108864!=0 {',probe+' if input&67108864!=0 {');probe_file.write_text(text+metal_probe+ice_probe+fire_probe+bonus_probe+portal_probe+background_probe+procedural_probe+fire_sea_probe+space_probe+voyage_probe+line_probe+kaleidoscope_probe+rain_warp_probe+cyber_aurora_probe+matrix_nebula_probe+hex_bubble_probe+night_circuit_maze_probe+canonical_particle_probe+canonical_effect_probe+visual_probe)
     penguin_probe='''
 static HEART:Mutex<Option<physics::Game>>=Mutex::new(None);
 fn penguin_probe(input:u32)->u64 {

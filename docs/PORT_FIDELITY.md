@@ -1415,3 +1415,50 @@ those paths remains an explicit tracker gate. Image/editor artwork, viewport,
 fonts/HUD/menus/audio, other platforms and the broader port requirements remain
 open. Recipe 0.1.40 is source-only; no host version or binary/package release
 changes.
+
+
+### Exact canonical frames for the eight earlier procedural backgrounds
+
+Star Voyage, Snow, Smoke, Tornado, Fire, Supernova, Space Wars and Deep Sea now
+compose against their original known background using the canonical default
+OpenGL blend convention. This replaces their former grouped transparent image
+approximation. Other effects still using transparent layers are separate work;
+no renderer-wide tolerance or policy relaxation is introduced.
+
+The extended recorder compiles the complete unchanged original function with
+pinned real Rand and sends its point/fill commands directly to actual SDL 2.30.
+Two captures provide 88 selected-level/frame cases and 452 independent grouped
+primitive-contribution maps. Guest point generation matches every clipped
+ordered original primitive pixel/color, and every contribution map matches the
+independent SDL pass. Existing full unclipped point hashes/counts and u8/boolean
+RNG vectors remain active; canonical coverage adds to that evidence.
+
+Every canonical logical framebuffer byte matches in unit and signed native/Wasm
+checks. Old signed background tests also resolve their same seed/frame to these
+new original captures and now require exact OpenGL pixels; they no longer accept
+a four-level grouping bound. Separate actual software SDL frames differ from the
+original default OpenGL renderer by up to six RGB levels. Faint smoke can also
+change the RGB-visible mask solely through those rounding differences. These are
+measured original-renderer differences, not a larger allowed error in the port.
+
+Smoke now emits its 100 original ordered rectangles directly to the compositor,
+avoiding the large expanded pixel list during production rendering. The legacy
+point generator derives from those same rectangle commands for independent hash
+checks. This preserves the original timing, clipping, color, dimensions and
+blend order while retaining the 16 MiB cap and default 100 ms deadline. All other
+source, portability, command, image-byte and time limits remain unchanged.
+
+All 79 logic tests and 52 signed checks per run pass, including full 200-fire-brick
+and 3,000-particle corner layers in cold/warm scenes. Two eight-player matrices
+cover both animated frames for all eight themes, empty Space Wars clearing and
+revisit. Browser samples are exact and desktop rounding is at most one level;
+older procedural player checks now use the same strict canonical bound. Interior
+sampling and explicit nearest-boundary choices still do not establish complete
+scaled-window, viewport/edge or other-platform fidelity.
+
+All twenty procedural themes now have exact canonical logical-frame evidence.
+Campaign backgrounds 7–9 still have their documented software-SDL grouped-image
+bounds and remain the next canonical-composition gate. Image/editor artwork,
+viewport, fonts/HUD/menus/audio and the other port requirements remain open.
+Recipe 0.1.41 is source-only; host version and binary/package releases are
+unchanged.

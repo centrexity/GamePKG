@@ -1,3 +1,5 @@
+#[path = "support/arkanoo_canonical.rs"]
+mod canonical;
 use gamepkg::{drawing::Command, runtime::Game};
 fn ball_position(command: &Command) -> Option<(f32, f32)> {
     if let Command::LinearImage {
@@ -2536,7 +2538,7 @@ fn check_procedural_runtime_fixture(text: &str, flag: u32, scenes: &[u32]) {
     let fixture: serde_json::Value = serde_json::from_str(text).unwrap();
     let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
     for (index, case) in fixture["cases"].as_array().unwrap().iter().enumerate() {
-        assert_eq!(game.step(flag | index as u32).unwrap(), 1);
+        assert_eq!(game.step(flag | index as u32).unwrap_or_else(|error|panic!("Canonical background flag {flag:#x}, case {index}, level {}, frame {}: {error:#}",case["level"],case["frame"])), 1);
         let color = case["background"].as_u64().unwrap() as u32;
         assert!(
             matches!(game.frame().commands.first(),Some(Command::Rect{x:0.0,y:60.0,width:640.0,height:360.0,rgba}) if *rgba==color)
@@ -2573,43 +2575,47 @@ fn check_procedural_runtime_fixture(text: &str, flag: u32, scenes: &[u32]) {
                 }
             }
         }
-        let compressed = hex::decode(case["sdl_rgba_zlib_hex"].as_str().unwrap()).unwrap();
+        let reference = if case.get("opengl_rgba_zlib_hex").is_some() {
+            case
+        } else {
+            canonical::case(
+                case["level"].as_u64().unwrap() as u32,
+                case["frame"].as_u64().unwrap(),
+            )
+        };
+        let compressed = hex::decode(reference["sdl_rgba_zlib_hex"].as_str().unwrap()).unwrap();
         let mut expected = Vec::new();
         flate2::read::ZlibDecoder::new(compressed.as_slice())
             .read_to_end(&mut expected)
             .unwrap();
         assert_eq!(actual.len(), expected.len());
-        if case.get("opengl_rgba_zlib_hex").is_some() {
-            let delta = actual
-                .chunks_exact(4)
-                .zip(expected.chunks_exact(4))
-                .flat_map(|(a, b)| (0..3).map(move |channel| a[channel].abs_diff(b[channel])))
-                .max()
-                .unwrap();
-            assert_eq!(
-                u64::from(delta),
-                case["maximum_backend_rgb_delta"].as_u64().unwrap(),
-                "Original SDL renderer difference changed, case {index}"
-            );
-        } else {
-            assert!(
-                actual.iter().zip(expected).all(|(a, b)| a.abs_diff(b) <= 4),
-                "Original SDL pixels differ, case {index}"
-            );
-        }
-        if let Some(encoded) = case.get("opengl_rgba_zlib_hex") {
-            let data = hex::decode(encoded.as_str().unwrap()).unwrap();
-            let mut pixels = Vec::new();
-            flate2::read::ZlibDecoder::new(data.as_slice())
-                .read_to_end(&mut pixels)
-                .unwrap();
-            assert_eq!(actual.len(), pixels.len());
-            let differing = actual.iter().zip(pixels).position(|(a, b)| *a != b);
-            assert!(
-                differing.is_none(),
-                "Original default GL pixels differ, case {index}, byte {differing:?}"
-            );
-        }
+        let delta = actual
+            .chunks_exact(4)
+            .zip(expected.chunks_exact(4))
+            .flat_map(|(a, b)| (0..3).map(move |channel| a[channel].abs_diff(b[channel])))
+            .max()
+            .unwrap();
+        assert_eq!(
+            u64::from(delta),
+            reference["maximum_backend_rgb_delta"].as_u64().unwrap(),
+            "Original SDL renderer difference changed, case {index}"
+        );
+        let data = hex::decode(
+            reference["opengl_rgba_zlib_hex"]
+                .as_str()
+                .expect("Canonical original OpenGL reference required"),
+        )
+        .unwrap();
+        let mut pixels = Vec::new();
+        flate2::read::ZlibDecoder::new(data.as_slice())
+            .read_to_end(&mut pixels)
+            .unwrap();
+        assert_eq!(actual.len(), pixels.len());
+        let differing = actual.iter().zip(pixels).position(|(a, b)| *a != b);
+        assert!(
+            differing.is_none(),
+            "Original default GL pixels differ, case {index}, byte {differing:?}"
+        );
     }
     for &index in scenes {
         for _ in 0..2 {
@@ -2791,5 +2797,24 @@ fn original_night_circuit_and_maze_preserve_pixels_and_full_scene_budgets() {
         include_str!("fixtures/arkanoo-night-circuit-maze.json"),
         2164260864,
         &[0, 5, 21, 24, 32, 35],
+    );
+}
+
+#[test]
+#[ignore = "requires the signed production fixture prepared by tests/arkanoo.py"]
+fn canonical_particle_backgrounds_preserve_exact_frames_and_full_scene_budgets() {
+    check_procedural_runtime_fixture(
+        include_str!("fixtures/arkanoo-canonical-particles.json"),
+        2181038080,
+        &[0, 3, 11, 14, 22, 25, 33, 36],
+    );
+}
+#[test]
+#[ignore = "requires the signed production fixture prepared by tests/arkanoo.py"]
+fn canonical_effect_backgrounds_preserve_exact_frames_and_full_scene_budgets() {
+    check_procedural_runtime_fixture(
+        include_str!("fixtures/arkanoo-canonical-effects.json"),
+        2214592512,
+        &[0, 3, 11, 14, 22, 25, 32, 33, 36],
     );
 }

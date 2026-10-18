@@ -1,3 +1,5 @@
+#[path = "support/arkanoo_canonical.rs"]
+mod canonical;
 mod gamepkg {
     thread_local! {
         static WORDS: std::cell::RefCell<std::collections::VecDeque<u64>> = const { std::cell::RefCell::new(std::collections::VecDeque::new()) };
@@ -2504,7 +2506,6 @@ fn original_campaign_background_points_colors_and_release_overflow_match() {
 }
 
 fn check_procedural_background_fixture(text: &str) {
-    use std::io::Read;
     let fixture: serde_json::Value = serde_json::from_str(text).unwrap();
     for case in fixture["cases"].as_array().unwrap() {
         let level = case["level"].as_u64().unwrap() as u32;
@@ -2526,28 +2527,7 @@ fn check_procedural_background_fixture(text: &str) {
             scene.points.len(),
             case["point_count"].as_u64().unwrap() as usize
         );
-        let compressed = hex::decode(case["sdl_rgba_zlib_hex"].as_str().unwrap()).unwrap();
-        let mut original = Vec::new();
-        flate2::read::ZlibDecoder::new(compressed.as_slice())
-            .read_to_end(&mut original)
-            .unwrap();
-        let mut delta = 0;
-        if let Some(image) = physics::effect_image(&scene.points) {
-            for (index, pixel) in image.pixels.chunks_exact(4).enumerate() {
-                let x = image.left as usize + index % image.width as usize;
-                let y = image.top as usize + index / image.width as usize;
-                for channel in 0..3 {
-                    let bg = (scene.color >> (24 - channel * 8)) & 255;
-                    let value = (u32::from(pixel[channel]) * u32::from(pixel[3])
-                        + bg * (255 - u32::from(pixel[3])))
-                        / 255;
-                    delta = delta
-                        .max(value.abs_diff(u32::from(original[(y * 1280 + x) * 4 + channel])));
-                }
-            }
-        }
-        assert!(delta <= 4);
-        println!("background level {level} frame {frame}: maximum SDL grouping delta {delta}");
+        assert_canonical_point_frame(&scene, canonical::case(level, frame));
     }
     for record in fixture["rng_u8"].as_array().unwrap() {
         let mut rng = pattern_rng::Rng::new(record["seed"].as_u64().unwrap());
@@ -3126,4 +3106,150 @@ fn original_rand_bernoulli_thresholds_preserve_ten_thirty_and_seventy_percent_st
             assert_eq!(actual, expected.as_bool().unwrap());
         }
     }
+}
+
+fn assert_canonical_point_frame(scene: &background::Background, case: &serde_json::Value) {
+    use std::io::Read;
+    assert_eq!(u64::from(scene.color), case["background"].as_u64().unwrap());
+    let mut actual = Vec::new();
+    for _ in 0..1280 * 720 {
+        actual.extend(scene.color.to_be_bytes());
+    }
+    let image = if case["theme"] == 9 {
+        let (color, rectangles) = procedural::smoke_rectangles(
+            case["level"].as_u64().unwrap() as u32,
+            case["frame"].as_u64().unwrap(),
+        );
+        assert_eq!(color, scene.color);
+        background::composited_rectangles(&rectangles, color)
+    } else {
+        background::composited_background(scene)
+    };
+    if let Some(image) = image {
+        for (index, pixel) in image.pixels.chunks_exact(4).enumerate() {
+            let at = ((image.top as usize + index / image.width as usize) * 1280
+                + image.left as usize
+                + index % image.width as usize)
+                * 4;
+            for channel in 0..3 {
+                actual[at + channel] = ((u32::from(pixel[channel]) * u32::from(pixel[3])
+                    + u32::from(actual[at + channel]) * (255 - u32::from(pixel[3])))
+                    / 255) as u8;
+            }
+        }
+    }
+    for backend in ["opengl_rgba_zlib_hex", "sdl_rgba_zlib_hex"] {
+        let data = hex::decode(case[backend].as_str().unwrap()).unwrap();
+        let mut expected = Vec::new();
+        flate2::read::ZlibDecoder::new(data.as_slice())
+            .read_to_end(&mut expected)
+            .unwrap();
+        assert_eq!(actual.len(), expected.len());
+        let delta = actual
+            .iter()
+            .zip(expected)
+            .map(|(a, b)| a.abs_diff(b))
+            .max()
+            .unwrap();
+        if backend == "opengl_rgba_zlib_hex" {
+            assert_eq!(
+                delta, 0,
+                "Canonical original frame differs: level {} frame {}",
+                case["level"], case["frame"]
+            );
+        } else {
+            assert_eq!(
+                u64::from(delta),
+                case["maximum_backend_rgb_delta"].as_u64().unwrap(),
+                "Recorded original renderer difference changed"
+            );
+        }
+    }
+}
+fn check_point_background_canonical_fixture(text: &str) {
+    use std::io::Read;
+    let fixture: serde_json::Value = serde_json::from_str(text).unwrap();
+    for case in fixture["cases"].as_array().unwrap() {
+        let level = case["level"].as_u64().unwrap() as u32;
+        let frame = case["frame"].as_u64().unwrap();
+        assert_eq!(
+            u64::from(procedural::procedural_theme(level)),
+            case["theme"].as_u64().unwrap()
+        );
+        let scene = procedural::procedural_background(level, frame).unwrap();
+        let commands = case["commands"].as_array().unwrap();
+        assert_eq!(
+            commands.len(),
+            case["command_count"].as_u64().unwrap() as usize
+        );
+        let groups = case["opengl_layer_counts_zlib_hex"].as_array().unwrap();
+        assert_eq!(groups.len(), commands.len().div_ceil(48));
+        let mut expected_points = Vec::new();
+        let mut trace = Vec::new();
+        for (group, commands) in commands.chunks(48).enumerate() {
+            let mut counts = vec![0u8; 1280 * 720];
+            for original in commands {
+                let command = background::BackgroundCommand {
+                    kind: original[0].as_u64().unwrap() as u32,
+                    values: [
+                        original[1].as_i64().unwrap() as i32,
+                        original[2].as_i64().unwrap() as i32,
+                        original[3].as_i64().unwrap() as i32,
+                        original[4].as_i64().unwrap() as i32,
+                    ],
+                    color: original[5].as_u64().unwrap() as u32,
+                };
+                assert!(
+                    matches!(command.kind, 0 | 3),
+                    "Expected original point/fill primitives"
+                );
+                trace.extend(command.kind.to_le_bytes());
+                for value in command.values {
+                    trace.extend(value.to_le_bytes());
+                }
+                trace.extend(command.color.to_le_bytes());
+                let start = expected_points.len();
+                background::background_command_points(&mut expected_points, &command);
+                if command.color & 255 != 0 {
+                    for dot in &expected_points[start..] {
+                        counts[dot.y as usize * 1280 + dot.x as usize] += 1;
+                    }
+                }
+            }
+            let data = hex::decode(groups[group].as_str().unwrap()).unwrap();
+            let mut expected = Vec::new();
+            flate2::read::ZlibDecoder::new(data.as_slice())
+                .read_to_end(&mut expected)
+                .unwrap();
+            assert_eq!(
+                counts, expected,
+                "Original SDL contribution map: level {level} frame {frame} group {group}"
+            );
+        }
+        assert_eq!(gamepkg_digest(&trace), case["command_sha256"]);
+        let actual_points: Vec<_> = scene
+            .points
+            .iter()
+            .filter(|dot| (0..1280).contains(&dot.x) && (0..720).contains(&dot.y))
+            .collect();
+        assert_eq!(actual_points.len(), expected_points.len());
+        let mismatch = actual_points
+            .iter()
+            .zip(&expected_points)
+            .position(|(a, b)| (a.x, a.y, a.color) != (b.x, b.y, b.color));
+        assert!(mismatch.is_none(),"Original ordered primitive pixels differ: level {level} frame {frame} point {mismatch:?}");
+        assert_canonical_point_frame(&scene, case);
+    }
+}
+#[test]
+fn original_canonical_star_voyage_snow_smoke_and_tornado_match_every_primitive_and_pixel() {
+    check_point_background_canonical_fixture(include_str!(
+        "fixtures/arkanoo-canonical-particles.json"
+    ));
+}
+#[test]
+fn original_canonical_fire_supernova_space_wars_and_deep_sea_match_every_primitive_and_pixel() {
+    check_point_background_canonical_fixture(include_str!(
+        "fixtures/arkanoo-canonical-effects.json"
+    ));
 }
