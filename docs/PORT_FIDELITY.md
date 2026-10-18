@@ -850,3 +850,51 @@ in native and Wasm; its actual native and both browser gameplay/editor/file,
 fullscreen and visible-effect workflows pass. Node smoothing/keyboard checks,
 strict lint, formatting, Python syntax and seven public-page link checks pass.
 No package or binary release is created.
+
+
+### Original glass bonus capsules
+
+Recipe 0.1.27 restores the original four glass capsules and their symbols in
+place of colored rectangles and letter labels. The unchanged original function
+supplies radial alpha/tint, top-left reflection, all 720 interleaved ring points,
+shadow and repeated white symbol passes. In particular, the long-paddle symbol
+retains the union of its two offset white bars; the ghost and rocket symbols
+retain their actual rectangular drawing geometry. Their existing falling physics
+and 40×40 original collision boxes are unchanged. Inclusive point endpoints use
+41×41 textures at 20.5×20.5 logical size after original integer truncation.
+
+The reference uses the unchanged rendering procedure and Bonus::rect, pinned
+rendering/entities hashes and checksum-verified real Rust SDL constructors.
+Four tints share highlight/ring layers; four symbols retain original shadow and
+white overwrite order. Direct source RGBA is used for non-overlapping layers;
+interleaved ring points are captured in a transparent OpenGL target and converted
+back to straight RGBA. Ten immutable source-derived PNGs remain within the existing
+32-entry/1 MiB decoder cache. Every draw still charges its full frame image budget.
+
+All sixteen kind/position fixtures compare every decoded RGBA byte, nearest
+sampling, layer order and exact projected geometry in signed native/Wasm runtimes.
+An invalid-kind probe emits no commands. Cold/warm full 200-item scenes retain
+800 bonus draws, per-asset Arc identity and unchanged 1,024-command/8 MiB/tick limits.
+Ninety-six original-versus-layered backdrop comparisons have maximum channel delta
+one under default SDL OpenGL. The independent software SDL path records delta five;
+its texture-copy rounding differs from direct point drawing and is not hidden.
+
+The live scene test invokes the production game renderer with all four items in
+six desktop configurations and both browser profiles. It checks transparent
+corners, tint, symbol, rim and highlight against original SDL pixels, then moves
+the fixtures and verifies old positions clear. Exact nearest-neighbor boundaries
+allow adjacent source texels because interpolated f32 UVs can land on either side
+of a boundary. This is an explicit sampling limitation, not proof of exact scaled
+framebuffers. Stable sample differences are at most two levels in the tested poses.
+Complete original frames, original world-viewport clipping/aspect, fonts, background
+and remaining presentation/platform requirements remain open.
+
+
+Validation: all 63 port logic tests and all 35 signed checks in native and Wasm
+pass. Existing native and both browser gameplay/editor/file workflows pass.
+The eight-configuration bonus scene passes all 24 poses (480 RGB sample checks),
+with explicit nearest-boundary handling and a maximum observed channel delta two.
+The final CI-compatible browser discovery path passes both browser profiles.
+Strict lint, formatting, Python syntax, tracker/CI parsing and byte-for-byte
+reference regeneration pass. CI runs the actual bonus scene in desktop/browser
+players. PNGs and notices are source-only; no signed package/binary release is made.

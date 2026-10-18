@@ -2209,3 +2209,78 @@ fn original_fire_glass_blob_and_clipped_shine_match_real_sdl_wrappers() {
         }
     }
 }
+
+#[test]
+#[ignore = "requires the signed production fixture prepared by tests/arkanoo.py"]
+fn original_glass_bonus_layers_preserve_types_symbols_order_and_full_drop_budgets() {
+    let root = isolated_library();
+    let reference: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-bonus.json")).unwrap();
+    assert_eq!(reference["canonical_renderer"], "opengl");
+    let cases = reference["cases"].as_array().unwrap();
+    assert_eq!(cases.len(), 16);
+    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
+    for (index, case) in cases.iter().enumerate() {
+        assert_eq!(game.step(2147485696 | index as u32).unwrap(), 1);
+        assert_eq!(game.frame().commands.len(), 4);
+        for (layer, command) in game.frame().commands.iter().enumerate() {
+            let Command::Image {
+                x,
+                y,
+                width: 20.5,
+                height: 20.5,
+                image,
+            } = command
+            else {
+                panic!("Bonus primitives must retain inclusive nearest-sampled bounds")
+            };
+            assert_eq!(
+                (*x, *y),
+                (
+                    case["x"].as_i64().unwrap() as f32 * 0.5,
+                    60.0 + case["y"].as_i64().unwrap() as f32 * 0.5
+                )
+            );
+            let expected = &reference["layers"][case["layers"][layer].as_str().unwrap()];
+            assert_eq!(image.size(), [41, 41]);
+            assert_eq!(
+                image.pixels(),
+                hex::decode(expected["rgba_hex"].as_str().unwrap()).unwrap()
+            );
+        }
+    }
+    assert_eq!(game.step(2147485696 | 16).unwrap(), 0);
+    assert!(game.frame().commands.is_empty());
+    let mut stress = Game::load(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
+    let mut identities =
+        std::collections::BTreeMap::<String, std::sync::Arc<gamepkg::drawing::image::Image>>::new();
+    for _ in 0..2 {
+        assert_eq!(stress.step(2147485696 | 32).unwrap(), 200);
+        assert!(stress.frame().commands.len() < gamepkg::drawing::MAX_COMMANDS);
+        let mut bytes = 0;
+        let mut count = 0;
+        for command in &stress.frame().commands {
+            if let Command::Image { image, .. } | Command::LinearImage { image, .. } = command {
+                bytes += image.pixels().len();
+                if image.size() == [41, 41] {
+                    let name = reference["cases"][(count / 4 % 4) * 4]["layers"][count % 4]
+                        .as_str()
+                        .unwrap()
+                        .to_owned();
+                    if let Some(previous) = identities.get(&name) {
+                        assert!(
+                            std::sync::Arc::ptr_eq(previous, image),
+                            "Bonus asset was decoded again: {name}"
+                        );
+                    } else {
+                        identities.insert(name, image.clone());
+                    }
+                    count += 1;
+                }
+            }
+        }
+        assert_eq!(count, 800);
+        assert_eq!(identities.len(), 10);
+        assert!(bytes < gamepkg::drawing::MAX_IMAGE_BYTES);
+    }
+}
