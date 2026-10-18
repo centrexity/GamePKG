@@ -5,7 +5,7 @@ from pathlib import Path
 import os, shutil, subprocess, tempfile, threading, time, tomllib, json
 from PIL import Image
 from gui_test_support import start_display,choose_native_file
-import argparse, math
+import argparse, math, zlib
 from contextlib import nullcontext
 from collections import Counter
 parser=argparse.ArgumentParser()
@@ -33,6 +33,17 @@ assert len(executables)==1,executables
 RUNTIME_TEST=Path(executables[0])
 BRICK_REFERENCE=[bytes.fromhex(image['rgba_hex']) for image in json.loads((PROJECT/'tests/fixtures/arkanoo-blocks.json').read_text())['images']]
 BRICK_SAMPLES=[(x,y) for y in [103,105,107] for x in [25,35,45]]
+MENU_REFERENCE=zlib.decompress(bytes.fromhex(json.loads((PROJECT/'tests/fixtures/arkanoo-menu-controls.json').read_text())['base_rgba_zlib_hex']))
+def original_menu_backdrop_matches(pixels):
+    # Independent canonical SDL pixels, filtered down by two. Sample outside
+    # controls; retain the same two-level renderer rounding bound as menu GUI QA.
+    for x,y in [(70,270),(100,180),(490,120)]:
+        sx=x*2;sy=(y-60)*2
+        for channel in range(3):
+            expected=sum(MENU_REFERENCE[((sy+dy)*1280+sx+dx)*4+channel] for dy in [0,1] for dx in [0,1])/4
+            if abs(pixels[(y*640+x)*4+channel]-expected)>2:return False
+    return True
+
 def fire_core_visible(samples):
     # Reflections mix only white into the magma color. The orange/blue core
     # changes its hue, so it must create pixels off that white-reflection axis.
@@ -263,7 +274,7 @@ fn penguin_probe(input:u32)->u64 {
  let guard=[0u8];value+=u64::from(guard[(input&1) as usize]);return value;
  };
 '''
-    text=probe_file.read_text();text=text.replace('pub fn game_tick(input:u32,state:u64)->u64 {','pub fn game_tick(input:u32,state:u64)->u64 {\n if input&3221225472==3221225472 {let case=input&255;if case==66 || case==67 {let names=["café","j́","Ελληνικά","Привет","日本語 🎮","// “Δ","aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","ä́","last","x"];let mut game=physics::Game::new();game.mode=6;game.editor.browser=true;game.editor.selection=if case==67 {9} else {((input>>16)&15) as usize};let count=if case==67 {10} else {((input>>8)&15) as usize};for label in names.iter().take(count) {game.editor.patterns.push(editor::Pattern{name:String::from(*label),cells:[255;200]});}if case==67 {for index in 0..200 {game.editor.cells[index]=8;game.editor.health[index]=1;}render::draw(&game);} else {gamepkg::draw_clear(0x78b4f0ff);gamepkg::draw_rect(0.0,135.0,640.0,100.0,0xe6325aff);render::draw_pattern_browser(&game.editor);}return u64::from(case);};let mut game=physics::Game::new();game.mode=6;if case==65 {let name_choice=(input>>8)&3;let chosen_name=match name_choice {0=>"my_pattern",1=>"café",2=>"Ελληνικά Привет 日本語 🎮 // “Δ",_=>"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"};game.editor.name=String::from(chosen_name);game.editor.naming=name_choice==1;game.editor.message=String::from("Saved: café");game.editor.message_time=180;game.editor.patterns.push(editor::Pattern{name:String::from(chosen_name),cells:[255;200]});game.editor.browser=true;}if case==64 {game.editor.hovered_button=((input>>8)&255) as u8;game.editor.background=((input>>16)&7)+1;}game.editor.selected=if case<27 {(case/3) as u8} else {255};game.editor.hovered_color=if case<27 {match case%3 {1=>((case/3+1)%9) as u8,2=>(case/3) as u8,_=>255}} else {255};render::draw(&game);return u64::from(case);}; if input&1073741824!=0 {return penguin_probe(input);};\n'+api_probe)
+    text=probe_file.read_text();text=text.replace('pub fn game_tick(input:u32,state:u64)->u64 {','pub fn game_tick(input:u32,state:u64)->u64 {\n if input&3221225472==3221225472 {let case=input&255;if case==68 {let states=[[0u32,0u32,0u32,64u32,0u32,0u32],[0u32,0u32,1u32,64u32,0u32,0u32],[0u32,0u32,2u32,64u32,0u32,0u32],[0u32,0u32,3u32,64u32,0u32,0u32],[0u32,0u32,4u32,64u32,0u32,0u32],[0u32,0u32,5u32,64u32,0u32,0u32],[0u32,0u32,6u32,64u32,0u32,0u32],[0u32,1u32,0u32,64u32,0u32,0u32],[0u32,1u32,1u32,64u32,0u32,0u32],[0u32,1u32,2u32,64u32,0u32,0u32],[0u32,1u32,3u32,64u32,0u32,0u32],[0u32,1u32,4u32,64u32,0u32,0u32],[0u32,1u32,5u32,64u32,0u32,0u32],[0u32,1u32,6u32,64u32,0u32,0u32],[1u32,0u32,0u32,0u32,0u32,0u32],[1u32,0u32,7u32,0u32,0u32,1u32],[1u32,0u32,10u32,0u32,1u32,0u32],[1u32,0u32,8u32,0u32,1u32,1u32],[1u32,0u32,0u32,1u32,0u32,0u32],[1u32,0u32,7u32,1u32,0u32,1u32],[1u32,0u32,10u32,1u32,1u32,0u32],[1u32,0u32,8u32,1u32,1u32,1u32],[1u32,0u32,0u32,63u32,0u32,0u32],[1u32,0u32,7u32,63u32,0u32,1u32],[1u32,0u32,10u32,63u32,1u32,0u32],[1u32,0u32,8u32,63u32,1u32,1u32],[1u32,0u32,0u32,64u32,0u32,0u32],[1u32,0u32,7u32,64u32,0u32,1u32],[1u32,0u32,10u32,64u32,1u32,0u32],[1u32,0u32,8u32,64u32,1u32,1u32],[1u32,0u32,0u32,127u32,0u32,0u32],[1u32,0u32,7u32,127u32,0u32,1u32],[1u32,0u32,10u32,127u32,1u32,0u32],[1u32,0u32,8u32,127u32,1u32,1u32],[1u32,0u32,0u32,128u32,0u32,0u32],[1u32,0u32,7u32,128u32,0u32,1u32],[1u32,0u32,10u32,128u32,1u32,0u32],[1u32,0u32,8u32,128u32,1u32,1u32]];let index=((input>>8)&63) as usize;if index>=states.len() {return 0;}let values=states[index];let mut game=physics::Game::new();game.mode=0;game.menu.settings=values[0]!=0;game.started=values[1]!=0;game.menu.hover=values[2];game.menu.sfx_volume=values[3];game.menu.sfx_muted=values[4]!=0;game.menu.fullscreen=values[5]!=0;render::draw_menu(&game);return 68;};if case==66 || case==67 {let names=["café","j́","Ελληνικά","Привет","日本語 🎮","// “Δ","aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","ä́","last","x"];let mut game=physics::Game::new();game.mode=6;game.editor.browser=true;game.editor.selection=if case==67 {9} else {((input>>16)&15) as usize};let count=if case==67 {10} else {((input>>8)&15) as usize};for label in names.iter().take(count) {game.editor.patterns.push(editor::Pattern{name:String::from(*label),cells:[255;200]});}if case==67 {for index in 0..200 {game.editor.cells[index]=8;game.editor.health[index]=1;}render::draw(&game);} else {gamepkg::draw_clear(0x78b4f0ff);gamepkg::draw_rect(0.0,135.0,640.0,100.0,0xe6325aff);render::draw_pattern_browser(&game.editor);}return u64::from(case);};let mut game=physics::Game::new();game.mode=6;if case==65 {let name_choice=(input>>8)&3;let chosen_name=match name_choice {0=>"my_pattern",1=>"café",2=>"Ελληνικά Привет 日本語 🎮 // “Δ",_=>"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"};game.editor.name=String::from(chosen_name);game.editor.naming=name_choice==1;game.editor.message=String::from("Saved: café");game.editor.message_time=180;game.editor.patterns.push(editor::Pattern{name:String::from(chosen_name),cells:[255;200]});game.editor.browser=true;}if case==64 {game.editor.hovered_button=((input>>8)&255) as u8;game.editor.background=((input>>16)&7)+1;}game.editor.selected=if case<27 {(case/3) as u8} else {255};game.editor.hovered_color=if case<27 {match case%3 {1=>((case/3+1)%9) as u8,2=>(case/3) as u8,_=>255}} else {255};render::draw(&game);return u64::from(case);}; if input&1073741824!=0 {return penguin_probe(input);};\n'+api_probe)
     probe_file.write_text(text+penguin_probe)
     run('pack',modes,'-o',root/'modes.gamepkg','--key',key);run('install',root/'modes.gamepkg','--trust-creator');run('build','com.gamepkg.arkanoo-modes')
     layouts=root/'layouts';shutil.copytree(PROJECT/'ports/arkanoo',layouts)
@@ -599,7 +610,7 @@ pub fn game_tick(input:u32,state:u64)->u64 {
             canvas.send_keys(Keys.ESCAPE)
             wait.until(lambda b:b.execute_script('return document.pointerLockElement===null'))
             restart_menu()
-            wait.until(lambda b:pixels()[(270*640+70)*4:(270*640+70)*4+3]==[16,27,53])
+            wait.until(lambda b:original_menu_backdrop_matches(pixels()))
             restarted=pixels();time.sleep(.2);assert pixels()==restarted,'Restart retained the active run'
             canvas.send_keys('e');time.sleep(.15)
             canvas.send_keys('1')

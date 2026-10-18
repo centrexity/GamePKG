@@ -1763,3 +1763,49 @@ Final native gameplay/editor/system import/cancel/Save-dialog export and core/
 component browser play/editor/import/cancel/explicit-download workflows pass
 with the panel and native coverage changes. Source-only publication leaves
 application/package binary releases and host version unchanged.
+
+### Original implemented menu control layer (recipe 0.1.51)
+
+The implemented main-menu actions and SFX/fullscreen/back controls now use the
+original Roboto lettering, captions, integer centering, hover/normal fills,
+borders and title positions. The menu uses the original background-one image
+and alpha-150 dimming. Six independently reproduced, overlapping filtered tiles
+preserve its canonical SDL pixels while staying within the existing image-size
+and per-frame budgets. These tiles derive from the upstream WTFPL background;
+no font compiler or image tools are needed by users. The accessible Back button
+in the port's extra vertical space remains an extension. Removed the invented
+gravity indicator; tests instead verify the original caption and actual saved
+mode. Accepted fullscreen toggles update the caption, and restart preserves that
+state; external window-manager changes are not yet read back into the menu.
+
+A guarded original-source SDL oracle captures 38 complete canonical frames for
+the implemented control layer, covering New Game/Resume, every main hover,
+settings volume boundaries, mute and fullscreen captions. Missing original
+controls are deliberately excluded from this partial-layer oracle. The fixture
+and all six artwork tiles reproduce byte-identically. Both signed suites pass
+62 checks with full-frame reference differences at most two levels. Six desktop
+renderer/runtime configurations match complete canonical world frames within
+two levels; both browser profiles match separately captured smaller native
+frames within the same unchanged tolerance. This smaller-size comparison proves
+backend consistency, not arbitrary scaled-original equivalence.
+
+Browser filtered images now blend with the current framebuffer before sample
+quantization, matching the desktop operation. Compositing a quantized transparent
+intermediate had accumulated a three-level menu text error. The complete menu
+matrix passes after the correction, and shared clipping/image/shader/resize
+checks retain exact output across all eight players (924 RGB comparisons).
+
+Music controls/playback, resolution and VSync controls, the safe project-link
+and version display, splash/HUD presentation, arbitrary original viewport
+scaling, fullscreen state readback and untested native platforms remain open.
+
+Measured native-plus-Wasm library storage is 43.0 MiB including the signed
+package, recovery copy and current builds. The advisory storage estimate is
+therefore 48 MiB; execution, memory, image, command and source caps are unchanged.
+
+Final native gameplay/editor/system import/cancel/Save-dialog export and both
+core/component browser gameplay/editor/import/cancel/explicit-download workflows
+pass. The restart workflow now checks independently captured original backdrop
+pixels instead of the removed flat placeholder color. Strict all-feature/all-
+target lint and formatting pass. Publication is source only; the host remains
+0.1.17 and no package/application binary releases are created.

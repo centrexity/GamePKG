@@ -1,6 +1,9 @@
 #[path = "support/arkanoo_canonical.rs"]
 mod canonical;
 use gamepkg::{drawing::Command, runtime::Game};
+fn original_gravity_caption(commands: &[Command]) -> bool {
+    commands.iter().any(|command|matches!(command,Command::LinearImage{x,y,width,height,image} if (*x,*y,*width,*height)==(281.0,229.5,78.0,15.5) && image.size()==[156,31]))
+}
 fn ball_position(command: &Command) -> Option<(f32, f32)> {
     if let Command::LinearImage {
         x,
@@ -402,12 +405,8 @@ fn gravity_option_is_visible_and_persists_through_the_real_save_api() {
     let mut resumed = load_menu(root.path(), "com.gamepkg.arkanoo").unwrap();
     resumed.step(0).unwrap();
     assert!(
-        resumed
-            .frame()
-            .commands
-            .iter()
-            .any(|command| matches!(command, Command::Rect{x,y,width,height,rgba} if *x==272.0 && *y==229.5 && *width==2.0 && *height==16.0 && *rgba==0x64c864ff)),
-        "saved gravity indicator was absent after relaunch"
+        original_gravity_caption(&resumed.frame().commands),
+        "original gravity caption absent after relaunch"
     );
     resumed.step(131072).unwrap();
     assert_eq!(
@@ -1353,7 +1352,16 @@ fn actual_menu_clicks_start_resume_restart_gravity_editor_settings_fullscreen_an
         })
         .unwrap();
         game.step(0).unwrap();
-        assert!(game.frame().commands.iter().any(|command|matches!(command,Command::Rect{x,y,rgba,..} if *x==272.0 && *y==229.5 && *rgba==0x64c864ff)));
+        assert!(original_gravity_caption(&game.frame().commands));
+        assert_eq!(
+            u32::from_le_bytes(
+                std::fs::read(editor_archive(root.path())).unwrap()[12..16]
+                    .try_into()
+                    .unwrap()
+            ) & 1,
+            1,
+            "gravity click did not persist its value"
+        );
         game.input_event(Event {
             kind: 2,
             x: 320.0,
@@ -1372,6 +1380,8 @@ fn actual_menu_clicks_start_resume_restart_gravity_editor_settings_fullscreen_an
         game.step(0).unwrap();
         assert!(game.window_state().fullscreen_toggle);
         assert!(game.window_state().visible && !game.window_state().confined);
+        game.step(0).unwrap();
+        assert!(game.frame().commands.iter().any(|command|matches!(command,Command::LinearImage{x,y,width,height,image} if (*x,*y,*width,*height)==(290.0,262.0,60.0,15.5) && image.size()==[120,31])),"accepted fullscreen request did not update its caption");
         game.input_event(Event {
             kind: 2,
             x: 320.0,
@@ -1477,7 +1487,8 @@ fn actual_menu_clicks_start_resume_restart_gravity_editor_settings_fullscreen_an
         .unwrap();
         game.step(0).unwrap();
         assert_eq!(game.frame().background, Some(0x101b35ff));
-        assert!(game.frame().commands.iter().any(|command|matches!(command,Command::Image{x,y,width,..} if *x==284.0 && *y==150.0 && *width==72.0)),"Restart did not restore the original paused Resume menu");
+        assert!(game.frame().commands.iter().any(|command|matches!(command,Command::LinearImage{x,y,width,height,image} if (*x,*y,*width,*height)==(295.5,150.0,49.5,15.5) && image.size()==[99,31])),"Restart did not restore original PAUSED title");
+        assert!(game.frame().commands.iter().any(|command|matches!(command,Command::LinearImage{x,y,width,height,image} if (*x,*y,*width,*height)==(296.5,179.5,47.0,15.5) && image.size()==[94,31])),"Restart did not restore original Resume caption");
         game.input_event(Event {
             kind: 2,
             x: 320.0,
@@ -3621,4 +3632,123 @@ fn original_pattern_browser_complete_pixels_and_dense_board_budget_match() {
         })
         .sum();
     assert!(bytes <= 8 * 1024 * 1024);
+}
+
+fn canonical_menu_pixels(frame: &gamepkg::drawing::Frame) -> Vec<u8> {
+    let mut output = vec![0u8; 1280 * 720 * 4];
+    for pixel in output.chunks_exact_mut(4) {
+        pixel.copy_from_slice(&frame.background.unwrap_or(0x10171dff).to_be_bytes());
+    }
+    let mut clip = [0, 0, 1280, 720];
+    for command in &frame.commands {
+        if let Command::Clip { rect } = command {
+            clip = rect
+                .map(|r| {
+                    [
+                        (r[0] * 2.0).round() as i32,
+                        ((r[1] - 60.0) * 2.0).round() as i32,
+                        ((r[0] + r[2]) * 2.0).round() as i32,
+                        ((r[1] + r[3] - 60.0) * 2.0).round() as i32,
+                    ]
+                })
+                .unwrap_or([0, 0, 1280, 720]);
+            continue;
+        }
+        let (x, y, w, h, pixels, iw, ih) = match command {
+            Command::Rect {
+                x,
+                y,
+                width,
+                height,
+                rgba,
+            } => (*x, *y, *width, *height, rgba.to_be_bytes().to_vec(), 1, 1),
+            Command::Image {
+                x,
+                y,
+                width,
+                height,
+                image,
+            }
+            | Command::LinearImage {
+                x,
+                y,
+                width,
+                height,
+                image,
+            } => (
+                *x,
+                *y,
+                *width,
+                *height,
+                image.pixels().to_vec(),
+                image.size()[0],
+                image.size()[1],
+            ),
+            _ => panic!("unexpected menu command"),
+        };
+        let left = (x * 2.0).round() as i32;
+        let top = ((y - 60.0) * 2.0).round() as i32;
+        let width = (w * 2.0).round() as i32;
+        let height = (h * 2.0).round() as i32;
+        assert!(iw == 1 || (iw == width as usize && ih == height as usize));
+        for row in top.max(0).max(clip[1])..(top + height).min(720).min(clip[3]) {
+            for col in left.max(0).max(clip[0])..(left + width).min(1280).min(clip[2]) {
+                let src = if iw == 1 {
+                    0
+                } else {
+                    ((row - top) as usize * iw + (col - left) as usize) * 4
+                };
+                let dst = (row as usize * 1280 + col as usize) * 4;
+                let a = u32::from(pixels[src + 3]);
+                for c in 0..3 {
+                    output[dst + c] = ((u32::from(pixels[src + c]) * a
+                        + u32::from(output[dst + c]) * (255 - a)
+                        + 127)
+                        / 255) as u8;
+                }
+            }
+        }
+    }
+    output
+}
+#[test]
+#[ignore = "requires tests/arkanoo.py fixtures"]
+fn implemented_menu_controls_and_original_backdrop_match_captured_sdl_frames() {
+    use std::io::Read;
+    let reference: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-menu-controls.json")).unwrap();
+    let compressed = hex::decode(reference["base_rgba_zlib_hex"].as_str().unwrap()).unwrap();
+    let mut base = Vec::new();
+    flate2::read::ZlibDecoder::new(compressed.as_slice())
+        .read_to_end(&mut base)
+        .unwrap();
+    let root = isolated_library();
+    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
+    for (index, case) in reference["cases"].as_array().unwrap().iter().enumerate() {
+        assert_eq!(game.step(0xc0000044 | ((index as u32) << 8)).unwrap(), 68);
+        let actual = canonical_menu_pixels(game.frame());
+        let compressed = hex::decode(case["xor_zlib_hex"].as_str().unwrap()).unwrap();
+        let mut difference = Vec::new();
+        flate2::read::ZlibDecoder::new(compressed.as_slice())
+            .read_to_end(&mut difference)
+            .unwrap();
+        assert_eq!(base.len(), difference.len());
+        let expected: Vec<_> = base.iter().zip(difference).map(|(a, b)| a ^ b).collect();
+        let delta = actual
+            .iter()
+            .zip(expected)
+            .map(|(a, b)| a.abs_diff(b))
+            .max()
+            .unwrap();
+        assert!(delta <= 2, "menu controls case {index}, delta {delta}");
+        assert_eq!(
+            game.frame()
+                .commands
+                .iter()
+                .filter(|c| matches!(c,Command::LinearImage{image,..} if image.size()[0]>1 && image.size()[1]>32))
+                .count(),
+            6,
+            "original backdrop missing"
+        );
+    }
 }

@@ -3426,3 +3426,11 @@ fn dynamic_unicode_font_matches_every_recorded_original_sdl_text_surface() {
     }
     assert!(dynamic_font::unicode_layout("bad\0name").is_none());
 }
+
+#[test]
+fn menu_fullscreen_caption_state_survives_run_restart() {
+    let mut game = menu_game();
+    game.menu.fullscreen = true;
+    game.reset_run();
+    assert!(game.menu.fullscreen);
+}

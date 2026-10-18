@@ -52,7 +52,11 @@ function linearSprite(x,y,w,h,width,height,pixels){
  const {surface,g,program,image,bounds}=linearGraphics;if(g.isContextLost())throw Error('Filtered image context unavailable');
  const premultiplied=new Uint8Array(pixels.length);
  for(let i=0;i<pixels.length;i+=4){const a=pixels[i+3];for(let c=0;c<3;c++)premultiplied[i+c]=Math.floor((pixels[i+c]*a+127)/255);premultiplied[i+3]=a;}
- g.viewport(0,0,640,480);g.clearColor(0,0,0,0);g.clear(g.COLOR_BUFFER_BIT);g.useProgram(program);g.activeTexture(g.TEXTURE0);g.bindTexture(g.TEXTURE_2D,image);g.texImage2D(g.TEXTURE_2D,0,g.RGBA8,width,height,0,g.RGBA,g.UNSIGNED_BYTE,premultiplied);g.uniform1i(g.getUniformLocation(program,'image'),0);g.uniform4f(bounds,x,y,w,h);g.drawArrays(g.TRIANGLES,0,6);
+ // Blend before framebuffer quantization, matching the desktop GPU. A
+ // transparent intermediate rounds sampled color and alpha before compositing.
+ g.viewport(0,0,640,480);g.useProgram(program);g.activeTexture(g.TEXTURE0);g.bindTexture(g.TEXTURE_2D,image);g.uniform1i(g.getUniformLocation(program,'image'),0);
+ g.disable(g.BLEND);g.texImage2D(g.TEXTURE_2D,0,g.RGBA8,g.RGBA,g.UNSIGNED_BYTE,context.canvas);g.uniform4f(bounds,0,0,640,480);g.drawArrays(g.TRIANGLES,0,6);
+ g.enable(g.BLEND);g.blendFunc(g.ONE,g.ONE_MINUS_SRC_ALPHA);g.texImage2D(g.TEXTURE_2D,0,g.RGBA8,width,height,0,g.RGBA,g.UNSIGNED_BYTE,premultiplied);g.uniform4f(bounds,x,y,w,h);g.drawArrays(g.TRIANGLES,0,6);
  context.imageSmoothingEnabled=false;context.drawImage(surface,0,0);
 }
 function render(frame){
