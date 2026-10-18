@@ -52,10 +52,11 @@ impl Buffer {
                 let mut frame = [[0; 2]; 1];
                 if music.read(&mut frame) == 1 {
                     for channel in 0..2 {
-                        self.current[channel] = (i32::from(self.current[channel])
-                            + i32::from(frame[0][channel]))
-                        .clamp(i16::MIN as i32, i16::MAX as i32)
-                            as i16;
+                        self.current[channel] = crate::audio_voices::mix_sample(
+                            frame[0][channel],
+                            self.current[channel],
+                            128,
+                        );
                     }
                 }
             }

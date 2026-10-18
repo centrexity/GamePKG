@@ -2338,3 +2338,18 @@ embedded music fails explicitly until its workspace is charged. The generic PCM
 callback also cannot reproduce original music-first per-effect saturation from
 already clipped guest effect PCM; original per-voice mixing and fully independent
 effect timing remain open. No existing cap, game recipe or host version is raised.
+
+A host-only four-voice mixer now accepts immutable, budget-reserved stereo clips,
+allocates the first free slot, and mixes music followed by each effect with
+per-channel S16 saturation. It consumes no per-frame allocations and retains one
+recording charge across shared voices until the last owner drops. Pause freezes
+positions; zero volume advances them. Slot exhaustion, reuse, invalid clips,
+volume rounding, clipping order and reservation cleanup have regressions.
+An independent SDL 2.30.0 `SDL_MixAudioFormat` oracle covers every S16 source,
+all 129 legal volume levels and seven destinations spanning clipping boundaries:
+59,179,008 samples match exact pinned hashes. The existing single-layer callback
+uses the same arithmetic. This establishes the mixing primitive, not end-to-end
+port integration: the host mixer is not game-visible or connected to effect
+commands yet. Original 44.1 kHz combined mixing must precede shared output-rate
+conversion; independently converted music/effects and tick-driven premixed PCM
+cannot establish that parity. Browser, command timing and device proof remain open.

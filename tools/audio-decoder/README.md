@@ -245,3 +245,16 @@ Intermediate saturation makes these different: music 30,000 followed by effects
 +30,000 and -30,000 yields 2,767 in that order, versus 30,000 if effects are
 premixed first. Faithful combined playback needs the original per-voice mixing
 and independent effect timing; the current ports are not migrated to this service.
+
+The host-only `audio_voices` module implements four first-free effect slots with
+shared, immutable, budget-reserved stereo recordings and sequential S16 clipping
+after the supplied music frame. It performs no allocation while mixing; pause,
+zero-volume advancement, slot exhaustion/reuse and ownership cleanup are tested.
+`python3 tools/check_audio_mix.py` independently checks the pinned SDL 2.30.0
+oracle (all 65,536 S16 sources, all 129 volumes, seven destination values). The
+normal Rust test checks all 59,179,008 results through per-volume full hashes.
+The oracle needs only maintainer SDL headers/library and a C compiler; players
+need neither. The module is still host-only: effect-command SDK integration,
+original-rate combined mixing before resampling, browser playback and actual
+port migration remain unfinished. The current premixed guest PCM path cannot
+recover individual-channel clipping order.
