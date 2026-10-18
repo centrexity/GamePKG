@@ -75,7 +75,7 @@ when a verified host replacement provides the same observable behavior.
 ## Remaining original presentation is not cosmetic completion
 
 Arkanoo's pinned `rendering.rs` also has dedicated implementations for ball
-speed lettering, explosive fire/glass,
+speed lettering,
 bonus icons, animated backgrounds, portal rendering, HUD/FPS, pause/settings,
 game-over, level-transition/victory and editor presentation. The current simple
 shapes, bitmap lettering and portal circles are replacements. Restored mechanics,
@@ -621,8 +621,8 @@ The 106-layout regression checks the textured boards without dropping occupancy,
 coordinate or uniqueness assertions. Editor color/archive checks compare complete
 texture pixels. The gameplay test requires a real partially destroyed board with
 a rendered ball, so a menu cannot count as broken bricks. Later sections cover
-graphite stripes/bevels and ice refraction/glints/shine. Fire/glass detail and
-other art/audio/settings remain unfinished.
+graphite stripes/bevels and ice refraction/glints/shine. Other art/audio/settings and full-frame fidelity remain unfinished; the
+explosive fire/glass layers are covered below.
 
 Normal-brick validation: all 410 all-features tests pass with 62 dedicated checks
 ignored by default. The signed harness explicitly passes all 31 runtime checks
@@ -641,7 +641,7 @@ Every decoded layer byte is checked, including the transparent interior masks.
 Six real-SDL backdrop comparisons keep opaque pixels exact and record one/two
 8-bit-level software line/copy rounding differences outside. This comparison does
 not establish native/browser framebuffer equivalence; full frame alpha/color-space
-semantics remain explicitly open, alongside fire and other presentation work.
+semantics remain explicitly open, alongside other presentation work.
 
 The full-board test exposed repeated decoding in the old one-entry asset cache.
 Native and core/component Wasm now share a session-scoped LRU cache capped at
@@ -755,7 +755,7 @@ Grouping white lines into ordered overlay masks introduces software SDL rounding
 differences of at most three 8-bit levels in the 576 original-versus-grouped
 backdrop comparisons. This is a measured SDL reference bound, not a claim of
 native/browser framebuffer equivalence. Complete original-game frames and
-explosive fire/glass remain unfinished alongside the other tracked work.
+the other tracked presentation/platform requirements remain unfinished.
 
 
 Validation: all 63 port logic tests and all 33 signed checks in each of native
@@ -765,3 +765,46 @@ existing gameplay, save/reload, import/cancel/export, cursor and fullscreen
 workflows. Strict lint, formatting, Python syntax and byte-for-byte reference
 regeneration pass. These checks use temporary libraries/displays; no player
 library, private media or release packages are published.
+
+
+### Explosive magma, moving core and glass layers
+
+Recipe 0.1.26 restores the original f64 magma pulse, moving bright core,
+top-half glossy fill, top/left glints, two stationary reflections and eight
+clipped moving shine diagonals. It retains the separate original f32 shine phase
+and inclusive 61×21 outside coverage. The shared white-mask helper keeps ice's
+existing behavior, and editor painting uses its independent active clock.
+
+The moving core illustrates why source tracing must preserve library semantics:
+`BLOCK_HEIGHT - 20` appears to produce a zero-height rectangle, but the original
+Rust SDL 0.37.0 constructor clamps it to one pixel. The reference therefore uses
+the actual crate, not a simplified rectangle stub. Both SDL archives are verified
+against the pinned original Cargo.lock checksums before compilation. This is a
+maintainer-only build; no guest crate, host capability or player dependency is
+added. Other oracles using constructor stubs still need dimension-edge auditing
+before broader full-frame equivalence can be claimed.
+
+The unchanged explosive branch supplies 64 cases across sixteen frame values and
+four positions, including shine wrap, f32/f64 precision boundaries and u64 maximum.
+Signed native/Wasm checks compare exact magma colors, real core coordinates and
+one-pixel height, both complete alpha masks, draw order and nearest sampling.
+Real SDL comparisons over six backdrops verify that removing the core changes
+pixels in every case (384 comparisons). Grouping white overlays records at most
+three 8-bit levels of software SDL rounding difference; that does not establish
+native/browser framebuffer equivalence. Complete original-game frames remain open.
+
+Full 200-fire and mixed ice/fire/metal boards are checked cold and warm at three
+animation phases, within unchanged 1,024-command, 8 MiB image and tick limits.
+Each explosive brick uses four commands, preserving its core as a separate opaque
+rectangle before the glass layers. The expanded visual test fixture dispatches
+through direct helpers to retain the existing source complexity policy.
+
+
+Validation: all 63 port logic tests and all 34 signed checks in each of native
+and Wasm pass. Native and both browser editors paint and animate fire/glass,
+then restore the normal brick for existing save/reload and import/export tests.
+The window checks also require visible core pixels that cannot be produced by
+mixing only white reflections into the magma color; the native check samples
+all physical pixels so the subpixel-height core cannot fall between logical
+sample rows. Strict lint, formatting, Python syntax and exact reference
+regeneration pass. No binary/package release is produced.

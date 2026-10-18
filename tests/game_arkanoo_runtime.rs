@@ -754,7 +754,7 @@ fn special_bricks_ice_damage_and_world_radius_blasts_reach_real_renderers() {
     assert_eq!(state >> 32, 0);
     assert!(game.frame().commands.iter().any(|command|matches!(command,Command::Image{x,y,width,height,image} if *x==20.0 && *y==100.0 && *width==30.5 && *height==10.5 && image.pixels().chunks_exact(4).any(|pixel|pixel==[255,255,255,220]))),"damaged ice crack missing");
     assert!(game.frame().commands.iter().any(|command|matches!(command,Command::Image{x,y,image,..} if *x==50.0 && *y==100.0 && image.pixels().chunks_exact(4).any(|pixel|pixel==[30,35,40,255]) && image.pixels().chunks_exact(4).any(|pixel|pixel==[150,150,160,255]))),"metal brick/rivets missing");
-    assert!(game.frame().commands.iter().any(|command|matches!(command,Command::Image{x,y,image,..} if *x==80.0 && *y==100.0 && image.pixels().chunks_exact(4).any(|pixel|pixel[0]>=220 && pixel[1]>=80 && pixel[2]==0 && pixel[3]==255))),"explosive brick missing");
+    assert!(game.frame().commands.iter().any(|command|matches!(command,Command::Rect{x:80.0,y:100.0,width:30.0,height:10.0,rgba} if rgba>>24>=220 && (rgba>>16)&255>=80 && rgba&65535==255)),"explosive brick missing");
     let state = game.step(262144).unwrap();
     assert_eq!(state >> 32, 10);
     assert_eq!(state & 4096, 0);
@@ -2092,5 +2092,120 @@ fn original_ice_glints_refractions_cracks_and_clipped_shine_reach_real_runtimes(
             images.iter().map(|i| i.pixels().len()).sum::<usize>()
                 < gamepkg::drawing::MAX_IMAGE_BYTES
         );
+    }
+}
+
+#[test]
+#[ignore = "requires the signed production fixture prepared by tests/arkanoo.py"]
+fn original_fire_glass_blob_and_clipped_shine_match_real_sdl_wrappers() {
+    let root = isolated_library();
+    let reference: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-fire.json")).unwrap();
+    assert_eq!(reference["sdl2_version"], "0.37.0");
+    let cases = reference["cases"].as_array().unwrap();
+    assert_eq!(cases.len(), 64);
+    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
+    for (index, case) in cases.iter().enumerate() {
+        assert_eq!(game.step(2147484672 | index as u32).unwrap(), 1);
+        let commands = &game.frame().commands;
+        assert_eq!(commands.len(), 4);
+        let x = case["x"].as_i64().unwrap() as f32 * 0.5;
+        let y = 60.0 + case["y"].as_i64().unwrap() as f32 * 0.5;
+        let color = case["commands"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c[0] == "C")
+            .unwrap();
+        let packed = ((color[1].as_u64().unwrap() as u32) << 24)
+            | ((color[2].as_u64().unwrap() as u32) << 16)
+            | 255;
+        assert!(
+            matches!(commands[0],Command::Rect{x:left,y:top,width:30.0,height:10.0,rgba} if left==x&&top==y&&rgba==packed)
+        );
+        let blob = case["commands"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|c| c[0] == "R")
+            .nth(1)
+            .unwrap();
+        assert_eq!(
+            (blob[3].as_u64().unwrap(), blob[4].as_u64().unwrap()),
+            (40, 1),
+            "Real SDL wrapper must clamp the original zero-height rectangle"
+        );
+        let blob_x = blob[1].as_i64().unwrap() as f32 * 0.5;
+        let blob_y = 60.0 + blob[2].as_i64().unwrap() as f32 * 0.5;
+        assert!(
+            matches!(commands[1],Command::Rect{x:left,y:top,width:20.0,height:0.5,rgba:0xff9632ff} if left==blob_x&&top==blob_y)
+        );
+        for (layer, name) in [(2, "overlay"), (3, "shine")] {
+            let Command::Image {
+                x: left,
+                y: top,
+                width,
+                height,
+                image,
+            } = &commands[layer]
+            else {
+                panic!("Fire/glass primitives must use nearest sampling")
+            };
+            let size = if layer == 2 { [61, 21] } else { [60, 20] };
+            assert_eq!(
+                (*left, *top, *width, *height),
+                (x, y, size[0] as f32 * 0.5, size[1] as f32 * 0.5)
+            );
+            assert_eq!(image.size(), size);
+            let expected = hex::decode(
+                reference["masks"][case[name].as_str().unwrap()]
+                    .as_str()
+                    .unwrap(),
+            )
+            .unwrap();
+            let actual: Vec<_> = image.pixels().chunks_exact(4).map(|p| p[3]).collect();
+            let mismatch = actual.iter().zip(&expected).position(|(a, b)| a != b);
+            assert!(
+                mismatch.is_none(),
+                "Fire mask case {index}, layer {name}: {:?}",
+                mismatch.map(|at| (at, actual[at], expected[at]))
+            );
+            assert!(image
+                .pixels()
+                .chunks_exact(4)
+                .all(|p| p[..3] == [255, 255, 255]));
+        }
+        assert_eq!(case["composites"].as_array().unwrap().len(), 6);
+        for composite in case["composites"].as_array().unwrap() {
+            assert!(composite["blob_changed_bytes"].as_u64().unwrap() > 0);
+            assert!(composite["max_channel_delta"].as_u64().unwrap() <= 3);
+        }
+    }
+    for mixed in [0, 64] {
+        for phase in 0..3 {
+            for _ in 0..2 {
+                assert_eq!(game.step(2147484672 | 128 | mixed | phase).unwrap(), 200);
+                assert!(game.frame().commands.len() < gamepkg::drawing::MAX_COMMANDS);
+                let images: Vec<_> = game
+                    .frame()
+                    .commands
+                    .iter()
+                    .filter_map(|c| match c {
+                        Command::Image { image, .. } | Command::LinearImage { image, .. } => {
+                            Some(image)
+                        }
+                        _ => None,
+                    })
+                    .collect();
+                assert!(
+                    images.iter().map(|i| i.pixels().len()).sum::<usize>()
+                        < gamepkg::drawing::MAX_IMAGE_BYTES
+                );
+                if mixed == 0 {
+                    assert_eq!(images.iter().filter(|i| i.size() == [61, 21]).count(), 200);
+                    assert_eq!(images.iter().filter(|i| i.size() == [60, 20]).count(), 200);
+                }
+            }
+        }
     }
 }

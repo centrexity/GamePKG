@@ -6,6 +6,7 @@ import os, shutil, subprocess, tempfile, threading, time, tomllib, json
 from PIL import Image
 from gui_test_support import start_display,choose_native_file
 import argparse, math
+from collections import Counter
 parser=argparse.ArgumentParser()
 parser.add_argument('--skip-browser',action='store_true',help='Run native checks on hosts without Chromium/Selenium')
 args=parser.parse_args()
@@ -28,6 +29,13 @@ assert len(executables)==1,executables
 RUNTIME_TEST=Path(executables[0])
 BRICK_REFERENCE=[bytes.fromhex(image['rgba_hex']) for image in json.loads((PROJECT/'tests/fixtures/arkanoo-blocks.json').read_text())['images']]
 BRICK_SAMPLES=[(x,y) for y in [103,105,107] for x in [25,35,45]]
+def fire_core_visible(samples):
+    # Reflections mix only white into the magma color. The orange/blue core
+    # changes its hue, so it must create pixels off that white-reflection axis.
+    candidates=Counter(c for c in samples if c[0]>=200 and 75<=c[1]<=125 and c[2]<=2)
+    if not candidates:return False
+    base=candidates.most_common(1)[0][0]
+    return sum(c[2]>5 and max(abs(c[i]-(base[i]*(1-c[2]/255)+c[2])) for i in [0,1])>9 for c in samples)>=3
 def original_brick_sample(color,x,y):
     # Opaque source pixels, bilinear filtering at the actual captured pixel center.
     left=math.floor(x);top=math.floor(y);fx=x-left;fy=y-top;pixels=BRICK_REFERENCE[color]
@@ -138,11 +146,15 @@ pub fn game_tick(input:u32,state:u64)->u64 {
     trail_cases=json.loads((PROJECT/'tests/fixtures/arkanoo-trails.json').read_text())['cases']
     metal_probe='fn metal_probe(input:u32)->u64 {if input&8!=0 {let mut game=physics::Game::new();game.mode=1;for index in 0..200 {game.set_block(index,3);}render::draw(&game);return 200;}let positions=[[0.0f32,0.0f32],[200.75,80.25],[-0.75,-0.75],[-1.75,-1.75]];let at=positions[(input&3) as usize];gamepkg::draw_clear(0x000000ff);u64::from(render::draw_metal_brick(at[0]*0.5,60.0+at[1]*0.5))}\n'
     ice_probe='fn ice_probe(input:u32)->u64 {if input&512!=0 {let mut game=physics::Game::new();game.mode=6;for _ in 0..3 {game.update(0);}game.mode=1;game.update(0);game.mode=6;for _ in 0..2 {game.update(0);}game.mode=2;game.update(0);game.mode=6;game.editor.cells[0]=6;game.editor.health[0]=2;render::draw(&game);return (game.editor.frame_count<<32)|game.frame;}if input&128!=0 {let mut game=physics::Game::new();game.mode=1;game.frame=20;for index in 0..200 {game.set_block(index,1);game.block_health[index]=1;}render::draw(&game);return 200;}let case=input&127;let frames=[0u64,1,5,10,20,30,59,60,119,120,16777217,18446744073709551615];let positions=[[40.0f32,80.0f32],[100.0,80.0],[640.0,260.0],[-1.0,-1.0]];let at=positions[((case/2)%4) as usize];let health=if case%2==0 {2} else {1};gamepkg::draw_clear(0x000000ff);u64::from(render::draw_ice_brick(health,2,frames[(case/8) as usize],at[0]*0.5,60.0+at[1]*0.5))}\n'
-    probe=' if input&2147483904==2147483904 {return ice_probe(input); }\n'
+    fire_probe='fn fire_probe(input:u32)->u64 {if input&128!=0 {let mut game=physics::Game::new();game.mode=1;game.frame=[0u64,40,80][(input&3) as usize];for index in 0..200 {let kind=if input&64!=0 {(index%3+1) as u8} else {2};game.set_block(index,kind);if kind==1 {game.block_health[index]=1;}}render::draw(&game);return 200;}let case=input&63;let frames=[0u64,1,5,10,20,30,40,60,79,80,119,120,126,16777217,9007199254740993,18446744073709551615];let positions=[[40.0f32,80.0f32],[100.0,80.0],[640.0,260.0],[-1.0,-1.0]];let at=positions[(case%4) as usize];gamepkg::draw_clear(0x000000ff);u64::from(render::draw_fire_brick(frames[(case/4) as usize],at[0]*0.5,60.0+at[1]*0.5))}\n'
+    probe=' if input&2147484672==2147484672 {return fire_probe(input); }\n'
+    probe+=' if input&2147483904==2147483904 {return ice_probe(input); }\n'
     probe+=' if input&2147483776==2147483776 {return metal_probe(input);}\n'
     probe+=' if input&2147483664==2147483664 {let positions=[[0.0f32,0.0f32],[200.75,80.25],[-0.75,-0.75],[-1.75,-1.75]];let at=positions[((input>>5)&3) as usize];gamepkg::draw_clear(0x000000ff);return u64::from(render::draw_normal_brick((input&7) as u8,at[0]*0.5,60.0+at[1]*0.5));}\n'
     probe+=' if input&2147483656==2147483656 {let mut game=physics::Game::new();game.paddle=100.75;let variant=input&7;if variant==1 {game.width=90.0;}if variant==2 {game.ghost=600;}if variant>=3 {game.paddle_glow=1.0;}if variant==5 {game.paddle_glow=0.1;}if variant==6 {game.paddle_glow=0.2;}if variant==4 {game.last_paddle=game.paddle;game.update_paddle(0);}if variant==7 {game.paddle_glow=0.0;game.mode=1;game.last_paddle=game.paddle-2.0;game.balls.clear();game.balls.push(physics::Ball{x:game.paddle+35.0,y:394.0,vx:0.0,vy:2.0,spin:0.0,attached:false,launch_timer:0,trail:Vec::new()});game.update(0);}gamepkg::draw_clear(0x000000ff);return u64::from(render::draw_paddle(&game));}\n'
     probe+=' if input&2147483648!=0 {let positions=[[0.0f32,0.0f32],[320.75,240.25],[-0.75,-0.75],[-1.75,-1.75]];let at=positions[(input&3) as usize];let ball=physics::Ball::new(at[0]*0.5+3.0,at[1]*0.5+63.0);gamepkg::draw_clear(0x000000ff);return u64::from(render::draw_ball(&ball));}\n'
+    visual_probe='fn visual_probe(input:u32)->u64 {'+probe+'0}\n'
+    probe=' if input&2147483648!=0 {return visual_probe(input);}\n'
     probe+=' if input&134217728!=0 {\n'
     for index,case in enumerate(trail_cases):
         x,y,vx,vy=case['ball']
@@ -151,7 +163,7 @@ pub fn game_tick(input:u32,state:u64)->u64 {
         probe+=f'gamepkg::draw_clear(0x000000ff);render::draw_ball_effects(&ball,{case["frame"]});return 1;}};\n'
     probe+='return 0;}\n'
     probe_file=modes/'source/src/lib.rs'
-    text=probe_file.read_text();text=text.replace(' if input&67108864!=0 {',probe+' if input&67108864!=0 {');probe_file.write_text(text+metal_probe+ice_probe)
+    text=probe_file.read_text();text=text.replace(' if input&67108864!=0 {',probe+' if input&67108864!=0 {');probe_file.write_text(text+metal_probe+ice_probe+fire_probe+visual_probe)
     penguin_probe='''
 static HEART:Mutex<Option<physics::Game>>=Mutex::new(None);
 fn penguin_probe(input:u32)->u64 {
@@ -359,6 +371,22 @@ pub fn game_tick(input:u32,state:u64)->u64 {
         initial=icy.crop(crop).tobytes();deadline=time.monotonic()+3
         while capture(window,'native-editor-ice-animated.png').crop(crop).tobytes()==initial:
             assert time.monotonic()<deadline,'Native editor ice animation is frozen';time.sleep(.1)
+        subprocess.run(['xdotool','key','--window',window,'7'],env=env,check=True)
+        native_click(window,35,105,3);native_click(window,35,105)
+        deadline=time.monotonic()+3
+        while True:
+            fire=capture(window,'native-editor-fire.png');r,g,b=fire.getpixel((px,py))
+            if r>180 and r>g+30 and b<170:break
+            assert time.monotonic()<deadline,'Native editor fire/glass pixels missing';time.sleep(.05)
+        core_crop=(round(ox+22*scale),round(oy+101*scale),round(ox+49*scale),round(oy+109*scale))
+        deadline=time.monotonic()+3
+        def native_core_samples(image):return [image.getpixel((x,y)) for y in range(core_crop[1],core_crop[3]) for x in range(core_crop[0],core_crop[2])]
+        while not fire_core_visible(native_core_samples(fire)):
+            assert time.monotonic()<deadline,'Native renderer omitted the moving one-pixel core'
+            time.sleep(.05);fire=capture(window,'native-editor-fire-core.png')
+        initial=fire.crop(crop).tobytes();deadline=time.monotonic()+3
+        while capture(window,'native-editor-fire-animated.png').crop(crop).tobytes()==initial:
+            assert time.monotonic()<deadline,'Native editor fire/glass animation is frozen';time.sleep(.1)
         subprocess.run(['xdotool','key','--window',window,'1'],env=env,check=True);native_click(window,35,105,3);native_click(window,35,105)
         assert native_brick_matches(capture(window,'native-editor-painted.png'),1)
         subprocess.run(['xdotool','key','--window',window,'s'],env=env,check=True)
@@ -509,6 +537,14 @@ pub fn game_tick(input:u32,state:u64)->u64 {
                 return b>150 and g>130 and r>80 and b>=g>=r
             wait.until(lambda b:ice_visible(pixels()))
             def ice_region(data):return [data[(y*640+x)*4+c] for y in range(101,110) for x in range(21,49) for c in range(4)]
+            initial=ice_region(pixels());wait.until(lambda b:ice_region(pixels())!=initial)
+            canvas.send_keys('7');canvas_click(35,105,3);canvas_click(35,105)
+            def fire_visible(data):
+                r,g,b=data[(105*640+35)*4:(105*640+35)*4+3]
+                return r>180 and r>g+30 and b<170
+            wait.until(lambda b:fire_visible(pixels()))
+            def core_samples(data):return [tuple(data[(y*640+x)*4:(y*640+x)*4+3]) for y in range(101,109) for x in range(22,49)]
+            wait.until(lambda b:fire_core_visible(core_samples(pixels())))
             initial=ice_region(pixels());wait.until(lambda b:ice_region(pixels())!=initial)
             canvas.send_keys('1');canvas_click(35,105,3);canvas_click(35,105);wait.until(lambda b:browser_brick_matches(pixels(),1))
             canvas.send_keys('n');canvas.send_keys(Keys.BACKSPACE)
