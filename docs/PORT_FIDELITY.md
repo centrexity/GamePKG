@@ -2268,3 +2268,37 @@ pausing SDL's unrelated legacy device. All 13 original source/mixer-rate cases
 pass exact PCM comparison after this correction. A bounded metadata-only trace
 checks the actual source/destination formats and first 16 input put sizes in
 every case. The versioned reference metadata and oracle hashes are refreshed.
+
+Music input now has an exact-length reader path into companion memory, with
+64 KiB read requests and no complete duplicate encoded buffer. Verified package
+assets supply borrowed readers without extraction, retaining path/size checks,
+stored/Zstd support, resolved shared-snapshot bounds, restart after cancellation
+and a final ZIP CRC check for complete reads. A post-consumer CRC failure destroys
+the returned resource. Tests cover corrupt stored data, unverified/invalid/
+missing paths, oversize requests, changed shared-snapshot sizes, consumer errors
+and repeated readers.
+
+Native per-stream ceilings and optional page-aligned build maxima support smaller
+budgets. All nine original-mixer tracks complete native/browser checks under
+8 MiB and 6 MiB limits; the largest observed native linear allocation is 5,373,952
+bytes. Output lengths and stream comparisons retain their previous assertions;
+malformed/over-budget inputs fail without poisoning the factory. The corpus
+loads files directly and checks limits through rewind. Shared reservations
+reject concurrent overcommit and release ownership on drop. Budgeted decoding
+charges the full ceiling before reading and holds it until after store destruction;
+tests combine 10 MiB guest and 6 MiB decoder reservations under a 16 MiB total
+and reject an extra stream before loading.
+
+These host-only mechanisms are not yet connected to the game runtime. It must
+reserve guest/decoder/host-buffer memory together, account for decompressor
+workspace, enforce signed audio permission, and connect asynchronous playback
+and SDK controls. Decoder sample differences and broader platform/device proof
+remain open. No existing game cap, recipe version or application version changes.
+
+The package-reader corpus option now builds a temporary fixture using a fixed
+synthetic signing seed, verifies its embedded signature, and loads all nine
+tracks directly through the verified archive reader at a 6 MiB decoder ceiling.
+An existing asset is denied before verification. Full decode/rewind, original
+mixer lengths and native/browser comparisons pass; no music files, user/release
+signing keys or compiled helpers are published. Browser tests still fetch encoded ArrayBuffers,
+so streaming browser input and its additional buffer accounting remain open.

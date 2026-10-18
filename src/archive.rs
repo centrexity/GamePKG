@@ -254,6 +254,46 @@ impl Package {
             .copied()
             .context("asset is missing")
     }
+    /// Borrow a bounded reader over a verified asset without extracting it or
+    /// allocating a complete host-side copy. The borrow ends before returning.
+    pub fn with_asset_reader<T>(
+        &mut self,
+        path: &str,
+        maximum: u64,
+        read: impl FnOnce(&mut dyn Read, usize) -> Result<T>,
+    ) -> Result<T> {
+        let size = self.asset_size(path)?;
+        if maximum > MAX_FILE || size > maximum {
+            bail!("asset exceeds reader limit");
+        }
+        let length = usize::try_from(size).context("asset length exceeds address space")?;
+        if let Some(reference) = self.shared_refs.get(path) {
+            let file = self
+                .shared_files
+                .get_mut(&reference.sha256)
+                .context("shared asset is not resolved")?
+                .as_file_mut();
+            if file.metadata()?.len() != size {
+                bail!("shared asset size changed");
+            }
+            file.seek(SeekFrom::Start(0))?;
+            return read(&mut file.take(size), length);
+        }
+        let mut entry = self.archive.by_name(&format!("assets/{path}"))?;
+        if entry.size() != size {
+            bail!("asset size changed");
+        }
+        let mut bounded = entry.by_ref().take(size);
+        let value = read(&mut bounded, length)?;
+        let complete = bounded.limit() == 0;
+        // Take's EOF must not suppress the ZIP reader's final CRC check.
+        // Partial consumers may return early; complete consumers must see the
+        // underlying EOF before a result (such as a decoder) is published.
+        if complete && entry.read(&mut [0u8; 1])? != 0 {
+            bail!("asset exceeds declared size");
+        }
+        Ok(value)
+    }
     pub fn asset(&mut self, path: &str) -> Result<Vec<u8>> {
         if !valid_path(path) {
             bail!("invalid asset path");
@@ -275,6 +315,181 @@ impl Package {
 mod tests {
     use super::*;
     use std::io::Write;
+    #[test]
+    fn complete_asset_reader_checks_crc_without_a_consumer_eof_probe() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("crc.gamepkg");
+        let mut writer = zip::ZipWriter::new(File::create(&path).unwrap());
+        writer
+            .start_file(
+                "assets/data",
+                zip::write::SimpleFileOptions::default()
+                    .compression_method(zip::CompressionMethod::Stored),
+            )
+            .unwrap();
+        writer.write_all(b"valid").unwrap();
+        writer.finish().unwrap();
+        let mut package = Package::open(&path).unwrap();
+        package.mark_verified();
+        let start = package.archive.by_name("assets/data").unwrap().data_start();
+        let mut changed = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
+        changed.seek(SeekFrom::Start(start)).unwrap();
+        changed.write_all(b"X").unwrap();
+        let budget = crate::memory_budget::Budget::new(1);
+        let mut resource_created = false;
+        assert!(package
+            .with_asset_reader("data", 5, |input, size| {
+                assert_eq!(size, 5);
+                let mut bytes = [0; 5];
+                input.read_exact(&mut bytes)?;
+                // Do not request EOF. A post-consumer CRC failure must also
+                // destroy the returned resource and release its reservation.
+                resource_created = true;
+                budget.reserve(1)
+            })
+            .is_err());
+        assert!(resource_created);
+        assert_eq!(budget.used(), 0);
+        changed.seek(SeekFrom::Start(start)).unwrap();
+        changed.write_all(b"v").unwrap();
+        assert_eq!(
+            package
+                .with_asset_reader("data", 5, |input, _| {
+                    let mut bytes = [0; 5];
+                    input.read_exact(&mut bytes)?;
+                    Ok(bytes)
+                })
+                .unwrap(),
+            *b"valid"
+        );
+    }
+    #[test]
+    fn borrowed_asset_readers_require_verification_limits_and_scoped_paths() {
+        for method in [zip::CompressionMethod::Stored, zip::CompressionMethod::Zstd] {
+            let temp = tempfile::tempdir().unwrap();
+            let path = temp.path().join("reader.gamepkg");
+            let bytes = (0..200123).map(|i| (i % 251) as u8).collect::<Vec<_>>();
+            let mut writer = zip::ZipWriter::new(File::create(&path).unwrap());
+            writer
+                .start_file(
+                    "assets/data",
+                    zip::write::SimpleFileOptions::default().compression_method(method),
+                )
+                .unwrap();
+            writer.write_all(&bytes).unwrap();
+            writer.finish().unwrap();
+            let mut package = Package::open(&path).unwrap();
+            let mut called = false;
+            assert!(package
+                .with_asset_reader("data", MAX_FILE, |_, _| {
+                    called = true;
+                    Ok(())
+                })
+                .is_err());
+            assert!(!called);
+            package.mark_verified();
+            for bad in [
+                "../data",
+                "/data",
+                "data\\..",
+                "C:data",
+                "data/../data",
+                "source/Cargo.toml",
+                "assets/data",
+                "missing",
+            ] {
+                assert!(
+                    package
+                        .with_asset_reader(bad, MAX_FILE, |_, _| {
+                            called = true;
+                            Ok(())
+                        })
+                        .is_err(),
+                    "{bad}"
+                );
+                assert!(!called);
+            }
+            for limit in [0, bytes.len() as u64 - 1, MAX_FILE + 1] {
+                assert!(package
+                    .with_asset_reader("data", limit, |_, _| {
+                        called = true;
+                        Ok(())
+                    })
+                    .is_err());
+                assert!(!called);
+            }
+            assert!(package
+                .with_asset_reader::<()>("data", MAX_FILE, |input, _| {
+                    input.read_exact(&mut [0; 7])?;
+                    bail!("injected reader cancellation")
+                })
+                .is_err());
+            for _ in 0..2 {
+                package
+                    .with_asset_reader("data", bytes.len() as u64, |input, length| {
+                        assert_eq!(length, bytes.len());
+                        let mut chunk = [0; 65536];
+                        let mut at = 0;
+                        loop {
+                            let count = input.read(&mut chunk)?;
+                            if count == 0 {
+                                break;
+                            }
+                            assert_eq!(&chunk[..count], &bytes[at..at + count]);
+                            at += count;
+                        }
+                        assert_eq!(at, bytes.len());
+                        Ok(())
+                    })
+                    .unwrap();
+            }
+            assert_eq!(std::fs::read_dir(temp.path()).unwrap().count(), 1);
+            let digest = "12".repeat(32);
+            package.set_shared_refs(BTreeMap::from([(
+                "shared".to_owned(),
+                crate::pool::Reference {
+                    sha256: digest.clone(),
+                    size: 3,
+                },
+            )]));
+            assert!(package
+                .with_asset_reader("shared", MAX_FILE, |_, _| {
+                    called = true;
+                    Ok(())
+                })
+                .is_err());
+            assert!(!called);
+            let mut snapshot = tempfile::NamedTempFile::new().unwrap();
+            snapshot.write_all(b"abc").unwrap();
+            package.shared_files.insert(digest, snapshot);
+            for _ in 0..2 {
+                package
+                    .with_asset_reader("shared", 3, |input, length| {
+                        assert_eq!(length, 3);
+                        let mut output = [0; 3];
+                        input.read_exact(&mut output)?;
+                        assert_eq!(&output, b"abc");
+                        assert_eq!(input.read(&mut [0])?, 0);
+                        Ok(())
+                    })
+                    .unwrap();
+            }
+            package
+                .shared_files
+                .values_mut()
+                .next()
+                .unwrap()
+                .write_all(b" beyond signed size")
+                .unwrap();
+            assert!(package
+                .with_asset_reader("shared", MAX_FILE, |_, _| {
+                    called = true;
+                    Ok(())
+                })
+                .is_err());
+            assert!(!called);
+        }
+    }
     #[test]
     fn asset_ranges_are_bounded_and_require_verification() {
         for method in [zip::CompressionMethod::Stored, zip::CompressionMethod::Zstd] {

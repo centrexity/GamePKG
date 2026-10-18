@@ -7,6 +7,8 @@ pub mod audio_resample;
 #[cfg(feature = "gui")]
 pub mod gui;
 pub mod manifest;
+#[doc(hidden)]
+pub mod memory_budget;
 pub mod pack;
 mod portability;
 pub mod source;

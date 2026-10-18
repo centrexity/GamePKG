@@ -1,8 +1,11 @@
-use gamepkg::audio_decode::Factory;
+use gamepkg::audio_decode::{Factory, Output};
 fn hostile(body: &str, output: u32) -> Vec<u8> {
+    hostile_pages(body, output, 1)
+}
+fn hostile_pages(body: &str, output: u32, pages: u32) -> Vec<u8> {
     wat::parse_str(format!(
         r#"(module
-      (memory(export "memory") 1 256)
+      (memory(export "memory") {pages} 256)
       (func(export "decoder_reserve")(param i32)(result i32)i32.const 1)
       (func(export "decoder_open")(result i32)i32.const 0)
       (func(export "decoder_read")(param i32)(result i32){body})
@@ -13,6 +16,132 @@ fn hostile(body: &str, output: u32) -> Vec<u8> {
       (func(export "decoder_rewind")(result i32)i32.const 0))"#
     ))
     .unwrap()
+}
+#[test]
+fn exact_length_reader_loads_directly_in_bounded_chunks() {
+    struct Counting<'a> {
+        input: &'a [u8],
+        calls: usize,
+        largest: usize,
+    }
+    impl std::io::Read for Counting<'_> {
+        fn read(&mut self, output: &mut [u8]) -> std::io::Result<usize> {
+            self.calls += 1;
+            self.largest = self.largest.max(output.len());
+            self.input.read(output)
+        }
+    }
+    let check = "i32.const 1 i32.load8_u i32.const 90 i32.ne
+        i32.const 65537 i32.load8_u i32.const 90 i32.ne i32.or
+        i32.const 131073 i32.load8_u i32.const 90 i32.ne i32.or
+        if (result i32) i32.const -1 else i32.const 0 end";
+    let factory = Factory::new(&hostile_pages(check, 1, 3)).unwrap();
+    let bytes = vec![90; 131073];
+    let mut input = Counting {
+        input: &bytes,
+        calls: 0,
+        largest: 0,
+    };
+    let mut stream = factory
+        .open_reader(&mut input, bytes.len(), Output::Native, 3 * 65536)
+        .unwrap();
+    assert_eq!(input.calls, 4);
+    assert_eq!(input.largest, 65536);
+    assert!(input.input.is_empty());
+    assert_eq!(stream.memory_limit_bytes(), 3 * 65536);
+    assert_eq!(stream.read(&mut [123; 1600]).unwrap(), 0);
+}
+#[test]
+fn rejected_reader_requests_never_read_and_io_failures_do_not_poison_the_factory() {
+    struct NeverRead;
+    impl std::io::Read for NeverRead {
+        fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+            panic!("unexpected input read")
+        }
+    }
+    let factory = Factory::new(&hostile("i32.const 0", 1)).unwrap();
+    for (length, output, memory) in [
+        (0, Output::Native, 65536),
+        (8 * 1048576 + 1, Output::Native, 65536),
+        (1, Output::Native, 0),
+        (1, Output::Native, 65535),
+        (1, Output::Native, 16 * 1048576 + 65536),
+        (1, Output::Stereo(0), 65536),
+        (1, Output::OriginalMixer(96000), 65536),
+        (65536, Output::Native, 65536), // reserve pointer + length exceeds memory
+    ] {
+        assert!(factory
+            .open_reader(&mut NeverRead, length, output, memory)
+            .is_err());
+    }
+    struct Broken;
+    impl std::io::Read for Broken {
+        fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::other("injected read failure"))
+        }
+    }
+    assert!(factory
+        .open_reader(&mut Broken, 1, Output::Native, 65536)
+        .is_err());
+    assert!(factory
+        .open_reader(&mut &b""[..], 1, Output::Native, 65536)
+        .is_err());
+    assert!(factory
+        .open_reader(&mut &b"ab"[..], 1, Output::Native, 65536)
+        .is_err());
+    assert!(factory
+        .open_reader(&mut &b"a"[..], 1, Output::Native, 65536)
+        .is_ok());
+}
+#[test]
+fn smaller_per_stream_memory_limit_rejects_growth_without_publishing_audio() {
+    let body = "i32.const 1 memory.grow i32.const -1 i32.eq
+        if (result i32) i32.const -1 else i32.const 0 end";
+    let factory = Factory::new(&hostile(body, 1)).unwrap();
+    let mut limited = factory
+        .open_reader(&mut &b"a"[..], 1, Output::Native, 65536)
+        .unwrap();
+    let mut output = [123; 1600];
+    assert!(limited.read(&mut output).is_err());
+    assert_eq!(output, [123; 1600]);
+    assert_eq!(limited.memory_bytes(), 65536);
+    assert!(limited.rewind().is_err());
+    let mut larger = factory
+        .open_reader(&mut &b"a"[..], 1, Output::Native, 131072)
+        .unwrap();
+    assert_eq!(larger.read(&mut output).unwrap(), 0);
+    assert_eq!(larger.memory_bytes(), 131072);
+}
+#[test]
+fn decoder_and_guest_reservations_share_one_ceiling_and_failures_release_their_charge() {
+    struct NeverRead;
+    impl std::io::Read for NeverRead {
+        fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+            panic!("over-budget input was read")
+        }
+    }
+    let factory = Factory::new(&hostile("i32.const 0", 1)).unwrap();
+    let budget = gamepkg::memory_budget::Budget::new(16 * 1048576);
+    let guest = budget.reserve(10 * 1048576).unwrap();
+    let stream = factory
+        .open_budgeted(&mut &b"a"[..], 1, Output::Native, &budget, 6 * 1048576)
+        .unwrap();
+    assert_eq!(budget.used(), budget.limit());
+    assert!(factory
+        .open_budgeted(&mut NeverRead, 1, Output::Native, &budget, 65536)
+        .is_err());
+    drop(stream);
+    assert_eq!(budget.used(), guest.bytes());
+    assert!(factory
+        .open_budgeted(&mut &b""[..], 1, Output::Native, &budget, 6 * 1048576)
+        .is_err());
+    assert_eq!(budget.used(), guest.bytes());
+    let replacement = factory
+        .open_budgeted(&mut &b"a"[..], 1, Output::Native, &budget, 6 * 1048576)
+        .unwrap();
+    drop(replacement);
+    drop(guest);
+    assert_eq!(budget.used(), 0);
 }
 #[test]
 fn decoder_companions_cannot_import_capabilities_or_have_unbounded_memory() {
@@ -58,15 +187,87 @@ fn companion() -> Factory {
     Factory::new(&std::fs::read(path).unwrap()).unwrap()
 }
 fn open_music(factory: &Factory, input: &[u8]) -> anyhow::Result<gamepkg::audio_decode::Stream> {
-    if let Ok(rate) = std::env::var("GAMEPKG_AUDIO_OUTPUT_RATE") {
+    open_music_reader(factory, &mut std::io::Cursor::new(input), input.len())
+}
+fn open_music_reader<R: std::io::Read + ?Sized>(
+    factory: &Factory,
+    input: &mut R,
+    length: usize,
+) -> anyhow::Result<gamepkg::audio_decode::Stream> {
+    let memory = std::env::var("GAMEPKG_AUDIO_MEMORY_BYTES")
+        .map(|v| v.parse::<usize>().unwrap())
+        .unwrap_or(16 * 1048576);
+    assert!(
+        factory.maximum_memory_bytes() <= memory,
+        "companion declaration exceeds selected budget"
+    );
+    let output = if let Ok(rate) = std::env::var("GAMEPKG_AUDIO_OUTPUT_RATE") {
         if std::env::var_os("GAMEPKG_AUDIO_ORIGINAL_MIXER").is_some() {
-            factory.open_original_mixer(input, rate.parse()?)
+            Output::OriginalMixer(rate.parse()?)
         } else {
-            factory.open_resampled(input, rate.parse()?)
+            Output::Stereo(rate.parse()?)
         }
     } else {
-        factory.open(input)
+        Output::Native
+    };
+    let budget = gamepkg::memory_budget::Budget::new(memory as u64);
+    factory.open_budgeted(input, length, output, &budget, memory)
+}
+fn signed_music_package(
+    paths: &[std::path::PathBuf],
+) -> (tempfile::TempDir, gamepkg::archive::Package) {
+    let temporary = tempfile::tempdir().unwrap();
+    let recipe = temporary.path().join("recipe");
+    let minimal = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/minimal");
+    for relative in [
+        "manifest.toml",
+        "LICENSE",
+        "NOTICE",
+        "CREDITS.md",
+        "thumbnail.png",
+        "source/Cargo.toml",
+        "source/Cargo.lock",
+        "source/src/lib.rs",
+        "shaders/main.slang",
+        "assets/hello.txt",
+    ] {
+        let target = recipe.join(relative);
+        std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+        std::fs::copy(minimal.join(relative), target).unwrap();
     }
+    let manifest = recipe.join("manifest.toml");
+    let text = std::fs::read_to_string(&manifest)
+        .unwrap()
+        .replace("audio = false", "audio = true");
+    std::fs::write(manifest, text).unwrap();
+    std::fs::create_dir_all(recipe.join("assets/music")).unwrap();
+    for path in paths {
+        std::fs::copy(
+            path,
+            recipe.join("assets/music").join(path.file_name().unwrap()),
+        )
+        .unwrap();
+    }
+    let archive = temporary.path().join("private-music-fixture.gamepkg");
+    // Synthetic fixture key only. No user or release signing key is read.
+    gamepkg::pack::pack(&recipe, &archive, &[0x53; 32]).unwrap();
+    let mut package = gamepkg::archive::Package::open(&archive).unwrap();
+    let first = format!("music/{}", paths[0].file_name().unwrap().to_str().unwrap());
+    let mut called = false;
+    assert!(package
+        .with_asset_reader(&first, 8 * 1048576, |_, _| {
+            called = true;
+            Ok(())
+        })
+        .is_err());
+    assert!(!called);
+    assert!(
+        gamepkg::verify::verify_embedded(&mut package)
+            .unwrap()
+            .permissions
+            .audio
+    );
+    (temporary, package)
 }
 #[test]
 #[ignore = "requires built companion and GAMEPKG_MUSIC_INPUT_DIR"]
@@ -81,9 +282,22 @@ fn original_tracks_stream_with_fixed_memory_chunk_invariance_and_rewind() {
         .collect::<Vec<_>>();
     paths.sort();
     assert!(!paths.is_empty());
+    let mut packaged =
+        std::env::var_os("GAMEPKG_AUDIO_PACKAGE_READERS").map(|_| signed_music_package(&paths));
     for path in paths {
-        let input = std::fs::read(&path).unwrap();
-        let mut stream = open_music(&factory, &input).unwrap();
+        let mut stream = if let Some((_, package)) = &mut packaged {
+            let name = format!("music/{}", path.file_name().unwrap().to_str().unwrap());
+            package
+                .with_asset_reader(&name, 8 * 1048576, |input, length| {
+                    open_music_reader(&factory, input, length)
+                })
+                .unwrap()
+        } else {
+            let mut input = std::fs::File::open(&path).unwrap();
+            let length = usize::try_from(input.metadata().unwrap().len()).unwrap();
+            open_music_reader(&factory, &mut input, length).unwrap()
+        };
+        let mut memory_peak = stream.memory_bytes();
         let mut samples = 0u64;
         let mut fnv = 2166136261u32;
         let mut witness: Option<(u64, Vec<i16>)> = None;
@@ -136,7 +350,8 @@ fn original_tracks_stream_with_fixed_memory_chunk_invariance_and_rewind() {
             stereo |= stream.channels() == 2 && output[..n].chunks_exact(2).any(|p| p[0] != p[1]);
             samples += n as u64;
             assert!(samples < 1_000_000_000);
-            assert!(stream.memory_bytes() <= 16 * 1024 * 1024);
+            memory_peak = memory_peak.max(stream.memory_bytes());
+            assert!(memory_peak <= stream.memory_limit_bytes());
         }
         assert!(audible);
         assert!(stream.channels() == 1 || stereo);
@@ -164,13 +379,15 @@ fn original_tracks_stream_with_fixed_memory_chunk_invariance_and_rewind() {
                 second_digest.update(sample.to_le_bytes());
             }
             second_count += n as u64;
+            memory_peak = memory_peak.max(stream.memory_bytes());
+            assert!(memory_peak <= stream.memory_limit_bytes());
         }
         assert_eq!(second_count, samples);
         assert_eq!(hex::encode(second_digest.finalize()), first_hash);
         let (witness_offset, witness) = witness.expect("recording has no audible witness");
         println!(
             "MUSIC_JSON {}",
-            serde_json::json!({"original_mixer":std::env::var_os("GAMEPKG_AUDIO_ORIGINAL_MIXER").is_some(),"output_rate":std::env::var("GAMEPKG_AUDIO_OUTPUT_RATE").ok().map(|v| v.parse::<u32>().unwrap()),"name":path.file_name().unwrap().to_string_lossy(),"rate":stream.sample_rate(),"channels":stream.channels(),"samples":samples,"sha256":first_hash,"fnv32":fnv,"sdl_samples":reference_samples,"sdl_different":different,"sdl_maximum_delta":maximum_delta,"witness_offset":witness_offset,"witness":witness})
+            serde_json::json!({"memory_budget":stream.memory_limit_bytes(),"memory_peak":memory_peak,"original_mixer":std::env::var_os("GAMEPKG_AUDIO_ORIGINAL_MIXER").is_some(),"output_rate":std::env::var("GAMEPKG_AUDIO_OUTPUT_RATE").ok().map(|v| v.parse::<u32>().unwrap()),"name":path.file_name().unwrap().to_string_lossy(),"rate":stream.sample_rate(),"channels":stream.channels(),"samples":samples,"sha256":first_hash,"fnv32":fnv,"sdl_samples":reference_samples,"sdl_different":different,"sdl_maximum_delta":maximum_delta,"witness_offset":witness_offset,"witness":witness})
         );
     }
 }

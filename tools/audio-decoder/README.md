@@ -129,3 +129,55 @@ Pass `--mono-input /path/to/mono.mp3` to check the explicit original-mode
 rejection alongside complete audible ordinary stereo conversion in native and
 Chromium execution. The channel check includes nonzero PCM and the ending, so
 it cannot pass solely on the recording's initial silence.
+
+## Loading and shared memory reservations
+
+`Factory::open_reader` writes exact-length trusted input directly into companion
+memory using reads of at most 64 KiB. It rejects short input, I/O errors, trailing
+bytes and invalid destination ranges without allocating another complete encoded
+buffer. `Package::with_asset_reader` supplies a scoped verified-asset reader for
+stored/Zstd entries or resolved shared snapshots. It checks paths and sizes
+before invoking the consumer, resets snapshot position on each borrow, and
+completes the ZIP CRC check after a consumer reads all bytes. A returned resource
+is destroyed if that final integrity check fails. The method extracts no files.
+
+The native store accepts a ceiling below the companion's absolute 16 MiB maximum.
+The build can also lower the declared maximum, so browsers enforce the same
+ceiling rather than checking only after allocation:
+
+```sh
+GAMEPKG_AUDIO_MAX_MEMORY_BYTES=6291456 cargo build --locked --release --target wasm32-unknown-unknown --manifest-path tools/audio-decoder/Cargo.toml
+python3 tools/check_audio_decoder.py /path/to/original/music --sdl-reference --output-rate 44100 --original-mixer --memory-mib 6 --package-readers
+```
+
+The override must be page-aligned and cannot exceed 16 MiB. All nine tracks
+complete both passes at enforced 8 MiB and 6 MiB ceilings, including rewind,
+malformed input and memory-growth rejection. The largest measured native linear
+allocation is 5,373,952 bytes. Browser probes reject growth beyond the selected
+declaration. The corpus test loads files directly rather than retaining another
+full encoded input vector.
+
+`--package-readers` creates a private signed fixture with a fixed synthetic test
+key, verifies it, then loads every track directly through the asset reader. It
+also checks that an existing asset is unavailable before verification. Fixture
+creation is maintainer work; the archive and copied inputs stay temporary and
+are deleted when the test finishes. No user/release key or installed library is
+accessed. This exercises loading through a real signed package without enabling
+the unfinished game music API.
+
+`Factory::open_budgeted` reserves the complete chosen ceiling from a shared
+`memory_budget::Budget` before loading. The non-cloneable reservation stays with
+the stream until after its Wasm store is destroyed. Failed loads release it;
+concurrent reservations cannot overcommit. Tests combine a 10 MiB guest and
+6 MiB decoder reservation under one 16 MiB ceiling and reject another decoder
+before reading input.
+
+This provides the loading/reservation mechanism, not completed runtime
+accounting. The runtime must reserve guest, decoder and host queues together
+before exposing music calls. Archive decompressor workspace and playback buffers
+also require accounting; the decoder ceiling describes linear memory, not total
+host-process memory or shared JIT code. Asynchronous playback, signed audio
+permission integration and browser/desktop SDK calls remain unfinished. Existing
+game limits are not increased.
+The browser harness still fetches encoded ArrayBuffers; streaming browser input
+and its separate buffer accounting remain required before exposing playback.

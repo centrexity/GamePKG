@@ -1,5 +1,6 @@
 //! Host-only, import-free music decoder companion. Not exposed to game source yet.
 use anyhow::{bail, ensure, Context, Result};
+use std::io::Read;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
@@ -10,10 +11,12 @@ use wasmtime::{
 };
 const MAX_INPUT: usize = 8 * 1024 * 1024;
 const MAX_VALUES: usize = 1600;
+const MAX_MEMORY: usize = 16 * 1024 * 1024;
 const WORK_BYTES: u32 = 512 * 1024;
 struct Shared {
     engine: Engine,
     module: Module,
+    memory_maximum: usize,
     stop: Arc<AtomicBool>,
     clock: Option<std::thread::JoinHandle<()>>,
 }
@@ -27,6 +30,12 @@ impl Drop for Shared {
 }
 #[derive(Clone)]
 pub struct Factory(Arc<Shared>);
+#[derive(Clone, Copy)]
+pub enum Output {
+    Native,
+    Stereo(u32),
+    OriginalMixer(u32),
+}
 impl Factory {
     pub fn new(wasm: &[u8]) -> Result<Self> {
         ensure!(wasm.len() <= 4 * 1024 * 1024, "decoder module too large");
@@ -51,6 +60,7 @@ impl Factory {
                 && memory_type.maximum().is_some_and(|pages| pages <= 256),
             "decoder must declare a bounded 32-bit memory"
         );
+        let memory_maximum = memory_type.maximum().unwrap() as usize * 65536;
         let stop = Arc::new(AtomicBool::new(false));
         let thread_stop = stop.clone();
         let thread_engine = engine.clone();
@@ -63,28 +73,62 @@ impl Factory {
         Ok(Self(Arc::new(Shared {
             engine,
             module,
+            memory_maximum,
             stop,
             clock: Some(clock),
         })))
     }
+    pub fn maximum_memory_bytes(&self) -> usize {
+        self.0.memory_maximum
+    }
     pub fn open(&self, input: &[u8]) -> Result<Stream> {
-        self.open_inner(input, None, false)
+        self.open_reader(&mut &input[..], input.len(), Output::Native, MAX_MEMORY)
     }
     pub fn open_resampled(&self, input: &[u8], rate: u32) -> Result<Stream> {
-        ensure!([44100, 48000].contains(&rate), "invalid music output rate");
-        self.open_inner(input, Some(rate), false)
+        self.open_reader(
+            &mut &input[..],
+            input.len(),
+            Output::Stereo(rate),
+            MAX_MEMORY,
+        )
     }
     pub fn open_original_mixer(&self, input: &[u8], rate: u32) -> Result<Stream> {
-        ensure!([44100, 48000].contains(&rate), "invalid music output rate");
-        self.open_inner(input, Some(rate), true)
+        self.open_reader(
+            &mut &input[..],
+            input.len(),
+            Output::OriginalMixer(rate),
+            MAX_MEMORY,
+        )
     }
-    fn open_inner(&self, input: &[u8], output_rate: Option<u32>, mixer: bool) -> Result<Stream> {
+    /// Host-only exact-length reader. Input goes directly into companion memory
+    /// in at most 64 KiB reads; no second complete encoded buffer is allocated.
+    /// The caller reserves this memory from the game's shared hard budget before
+    /// opening. Reading an archive is trusted host work, not a guest capability.
+    pub fn open_reader<R: Read + ?Sized>(
+        &self,
+        input: &mut R,
+        encoded_len: usize,
+        output: Output,
+        memory_budget: usize,
+    ) -> Result<Stream> {
+        let (output_rate, mixer) = match output {
+            Output::Native => (None, false),
+            Output::Stereo(rate) => (Some(rate), false),
+            Output::OriginalMixer(rate) => (Some(rate), true),
+        };
+        if let Some(rate) = output_rate {
+            ensure!([44100, 48000].contains(&rate), "invalid music output rate");
+        }
         ensure!(
-            !input.is_empty() && input.len() <= MAX_INPUT,
+            encoded_len > 0 && encoded_len <= MAX_INPUT,
             "encoded music must be 1 byte to 8 MiB"
         );
+        ensure!(
+            (65536..=MAX_MEMORY).contains(&memory_budget),
+            "invalid decoder memory budget"
+        );
         let limits = StoreLimitsBuilder::new()
-            .memory_size(16 * 1024 * 1024)
+            .memory_size(memory_budget)
             .memories(1)
             .instances(1)
             .tables(1)
@@ -106,9 +150,26 @@ impl Factory {
         let work = instance.get_typed_func::<(), u32>(&mut store, "decoder_work")?;
         let rewind = instance.get_typed_func::<(), i32>(&mut store, "decoder_rewind")?;
         store.set_epoch_deadline(20);
-        let pointer = reserve.call(&mut store, input.len() as u32)?;
+        let pointer = reserve.call(&mut store, encoded_len as u32)?;
         ensure!(pointer != 0, "decoder input allocation rejected");
-        memory.write(&mut store, pointer as usize, input)?;
+        let start = pointer as usize;
+        let end = start
+            .checked_add(encoded_len)
+            .context("decoder input offset overflow")?;
+        let destination = memory
+            .data_mut(&mut store)
+            .get_mut(start..end)
+            .context("decoder input is outside its memory")?;
+        for chunk in destination.chunks_mut(65536) {
+            input
+                .read_exact(chunk)
+                .context("encoded music read failed")?;
+        }
+        let mut extra = [0u8; 1];
+        ensure!(
+            input.read(&mut extra)? == 0,
+            "encoded music exceeds declared length"
+        );
         store.set_epoch_deadline(20);
         ensure!(
             open.call(&mut store, ())? == 0,
@@ -156,8 +217,25 @@ impl Factory {
             rate,
             channels,
             failed: false,
+            memory_budget,
             scratch: [0; MAX_VALUES * 2],
+            _reservation: None,
         })
+    }
+    /// Charge the decoder's entire memory ceiling before loading or decoding.
+    /// Keep the charge until after its Wasm store has been destroyed.
+    pub fn open_budgeted<R: Read + ?Sized>(
+        &self,
+        input: &mut R,
+        encoded_len: usize,
+        output: Output,
+        budget: &crate::memory_budget::Budget,
+        memory_bytes: usize,
+    ) -> Result<Stream> {
+        let reservation = budget.reserve(memory_bytes as u64)?;
+        let mut stream = self.open_reader(input, encoded_len, output, memory_bytes)?;
+        stream._reservation = Some(reservation);
+        Ok(stream)
     }
 }
 pub struct Stream {
@@ -171,7 +249,10 @@ pub struct Stream {
     rate: u32,
     channels: u32,
     failed: bool,
+    memory_budget: usize,
     scratch: [u8; MAX_VALUES * 2],
+    // Fields drop in declaration order: release only after the store and buffers.
+    _reservation: Option<crate::memory_budget::Lease>,
 }
 impl Stream {
     pub fn sample_rate(&self) -> u32 {
@@ -182,6 +263,9 @@ impl Stream {
     }
     pub fn memory_bytes(&self) -> usize {
         self.memory.data_size(&self.store)
+    }
+    pub fn memory_limit_bytes(&self) -> usize {
+        self.memory_budget
     }
     pub fn read(&mut self, out: &mut [i16]) -> Result<usize> {
         ensure!(

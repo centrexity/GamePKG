@@ -6,21 +6,22 @@ from pathlib import Path
 from functools import partial
 from http.server import SimpleHTTPRequestHandler,ThreadingHTTPServer
 import argparse,json,os,shutil,subprocess,tempfile,threading
-parser=argparse.ArgumentParser();parser.add_argument('music',type=Path);parser.add_argument('--sdl-reference',action='store_true');parser.add_argument('--output-rate',type=int,choices=[44100,48000]);parser.add_argument('--original-mixer',action='store_true');parser.add_argument('--mono-input',type=Path);args=parser.parse_args()
+parser=argparse.ArgumentParser();parser.add_argument('music',type=Path);parser.add_argument('--sdl-reference',action='store_true');parser.add_argument('--output-rate',type=int,choices=[44100,48000]);parser.add_argument('--original-mixer',action='store_true');parser.add_argument('--mono-input',type=Path);parser.add_argument('--memory-mib',type=int,choices=range(1,17),default=16);parser.add_argument('--package-readers',action='store_true');args=parser.parse_args()
 if args.original_mixer and not args.output_rate:parser.error('--original-mixer requires --output-rate')
 PROJECT=Path(__file__).resolve().parents[1]
-def cargo(arguments):
- p=subprocess.run(['cargo',*arguments,'--message-format=json'],cwd=PROJECT,capture_output=True,text=True,timeout=300)
+def cargo(arguments,environment=None):
+ p=subprocess.run(['cargo',*arguments,'--message-format=json'],cwd=PROJECT,capture_output=True,text=True,timeout=300,env=environment)
  assert p.returncode==0,p.stderr
  return [json.loads(line) for line in p.stdout.splitlines() if line.startswith('{')]
-artifacts=cargo(['build','--locked','--manifest-path','tools/audio-decoder/Cargo.toml','--target','wasm32-unknown-unknown','--release'])
+artifacts=cargo(['build','--locked','--manifest-path','tools/audio-decoder/Cargo.toml','--target','wasm32-unknown-unknown','--release'],dict(os.environ,GAMEPKG_AUDIO_MAX_MEMORY_BYTES=str(args.memory_mib*1048576)))
 wasm=next(Path(name) for v in artifacts if v.get('reason')=='compiler-artifact' for name in v.get('filenames',[]) if name.endswith('.wasm'))
 artifacts=cargo(['test','--release','--test','audio_decoder','--no-run'])
 executable=next(v['executable'] for v in artifacts if v.get('reason')=='compiler-artifact' and v.get('target',{}).get('name')=='audio_decoder' and v.get('executable'))
-env=dict(os.environ,GAMEPKG_AUDIO_DECODER_WASM=str(wasm),GAMEPKG_MUSIC_INPUT_DIR=str(args.music.resolve()))
+env=dict(os.environ,GAMEPKG_AUDIO_DECODER_WASM=str(wasm),GAMEPKG_MUSIC_INPUT_DIR=str(args.music.resolve()),GAMEPKG_AUDIO_MEMORY_BYTES=str(args.memory_mib*1048576))
 if args.output_rate:env['GAMEPKG_AUDIO_OUTPUT_RATE']=str(args.output_rate)
 if args.original_mixer:env['GAMEPKG_AUDIO_ORIGINAL_MIXER']='1'
 if args.mono_input:env['GAMEPKG_AUDIO_MONO_INPUT']=str(args.mono_input.resolve())
+if args.package_readers:env['GAMEPKG_AUDIO_PACKAGE_READERS']='1'
 reference_temp=None
 if args.sdl_reference:
  reference_temp=tempfile.TemporaryDirectory(prefix='gamepkg-decoder-reference-');reference_root=Path(reference_temp.name);env['GAMEPKG_AUDIO_REFERENCE_ROOT']=str(reference_root)
@@ -32,7 +33,9 @@ if args.sdl_reference:
 p=subprocess.run([executable,'--ignored','--nocapture'],cwd=PROJECT,env=env,capture_output=True,text=True,timeout=120)
 assert p.returncode==0,p.stdout+'\n'+p.stderr
 records=[json.loads(line.split('MUSIC_JSON ',1)[1]) for line in p.stdout.splitlines() if 'MUSIC_JSON ' in line];assert records
+if args.package_readers:print('Native input: verified signed package asset readers; private synthetic key; no extraction.',flush=True)
 print('Native sandbox: complete streaming, chunk invariance, rewind, malformed input and bounded memory passed for',len(records),'tracks.',flush=True)
+for record in records:print('Decoder memory:',record['name'],record['memory_peak'],'of',record['memory_budget'],'bytes.',flush=True)
 if reference_temp:
  for record in records:print('SDL comparison:',record['name'],record.get('sdl_samples'),record['samples'],record.get('sdl_different'),record.get('sdl_maximum_delta'),flush=True)
  reference_temp.cleanup()
@@ -57,7 +60,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-music-decoder-') as temporary:
    const binary=await(await fetch('decoder.wasm')).arrayBuffer(),expected=await(await fetch('expected.json')).json(),results=[];
    for(const item of expected){
     const {instance}=await WebAssembly.instantiate(binary,{}),e=instance.exports,input=await(await fetch(item.url)).arrayBuffer(),pointer=e.decoder_reserve(input.byteLength);
-    if(!pointer)throw Error('input allocation');new Uint8Array(e.memory.buffer,pointer,input.byteLength).set(new Uint8Array(input));
+    if(!pointer)throw Error('input allocation');let exceeded=false;try{e.memory.grow(item.memory_budget/65536);}catch(error){if(!(error instanceof RangeError))throw error;exceeded=true;}if(!exceeded)throw Error('declared memory bound');new Uint8Array(e.memory.buffer,pointer,input.byteLength).set(new Uint8Array(input));
     if(e.decoder_open()!==0)throw Error('open '+item.name);
     if(item.output_rate&&(item.original_mixer?e.decoder_set_mixer_rate(item.output_rate):e.decoder_set_output_rate(item.output_rate))!==0)throw Error('conversion '+item.name);
     if(e.decoder_rate()!==item.rate||e.decoder_channels()!==item.channels)throw Error('format '+item.name);
@@ -66,7 +69,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-music-decoder-') as temporary:
     let samples=0,fnv=2166136261,witness=0,calls=0;const out=e.decoder_output();
     for(;;){const count=e.decoder_read(1600);if(count<0||count>1600||count%item.channels)throw Error('invalid output');if(!count)break;
      if(calls===0&&(e.decoder_set_output_rate(44100)!==-1||e.decoder_set_mixer_rate(44100)!==-1||e.decoder_rate()!==item.rate||e.decoder_channels()!==item.channels))throw Error('midstream rate change');
-     if(e.memory.buffer.byteLength>16777216||e.decoder_work()>524288)throw Error('resource budget');
+     if(e.memory.buffer.byteLength>item.memory_budget||e.decoder_work()>524288)throw Error('resource budget');
      const bytes=new Uint8Array(e.memory.buffer,out,count*2);for(const byte of bytes)fnv=Math.imul(fnv^byte,16777619)>>>0;
      const view=new DataView(e.memory.buffer,out,count*2),first=Math.max(0,item.witness_offset-samples),last=Math.min(count,item.witness_offset+item.witness.length-samples);
      for(let i=first;i<last;i++){if(view.getInt16(i*2,true)!==item.witness[samples+i-item.witness_offset])throw Error('audible PCM '+item.name);witness++;}
