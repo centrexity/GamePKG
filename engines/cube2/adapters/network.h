@@ -93,7 +93,21 @@ int enet_socket_get_address(ENetSocket socket, ENetAddress *address)
     unsigned char request[4], reply[8];gp_net_put32(request,(uint32_t)socket);
     return gp_net_call(5,request,4,reply,8)==8 ? gp_net_read_address(address,reply) : -1;
 }
-int enet_socket_listen(ENetSocket socket, int backlog) { (void)socket;(void)backlog;return -1; }
+int enet_socket_listen(ENetSocket socket, int backlog)
+{
+    unsigned char request[8];
+    if(socket<32 || socket>=1024 || backlog < -1 || backlog > 128) return -1;
+    gp_net_put32(request,(uint32_t)socket);gp_net_put32(request+4,(uint32_t)backlog);
+    return gp_net_call(9,request,8,NULL,0)==0 ? 0 : -1;
+}
+// Only the original synchronous list browser uses the sanitized snapshot path.
+ENetSocket gamepkg_master_socket(int snapshot)
+{
+    unsigned char reply[4];uint32_t id;
+    if(!snapshot) return enet_socket_create(ENET_SOCKET_TYPE_STREAM);
+    if(gp_net_call(16,NULL,0,reply,4)!=4) return ENET_SOCKET_NULL;
+    id=gp_net_get32(reply);return id>=32 && id<1024 ? (ENetSocket)id : ENET_SOCKET_NULL;
+}
 int enet_socket_set_option(ENetSocket socket, ENetSocketOption option, int value)
 {
     if(socket<32 || socket>=1024) return -1;
@@ -120,9 +134,23 @@ int enet_socket_connect(ENetSocket socket, const ENetAddress *address)
     return 0;
 }
 ENetSocket enet_socket_accept(ENetSocket socket, ENetAddress *address)
-{ (void)socket;(void)address;return ENET_SOCKET_NULL; }
+{
+    unsigned char request[4],reply[12];uint32_t id;ENetAddress peer;
+    if(socket<32 || socket>=1024) return ENET_SOCKET_NULL;
+    gp_net_put32(request,(uint32_t)socket);
+    if(gp_net_call(14,request,4,reply,12)!=12) return ENET_SOCKET_NULL;
+    id=gp_net_get32(reply);
+    if(id<32 || id>=1024 || gp_net_read_address(&peer,reply+4)) return ENET_SOCKET_NULL;
+    if(address) *address=peer;
+    return (ENetSocket)id;
+}
 int enet_socket_shutdown(ENetSocket socket, ENetSocketShutdown how)
-{ (void)socket;(void)how;return 0; }
+{
+    unsigned char request[8];
+    if(socket<32 || socket>=1024 || (unsigned)how>2) return -1;
+    gp_net_put32(request,(uint32_t)socket);gp_net_put32(request+4,(uint32_t)how);
+    return gp_net_call(13,request,8,NULL,0)==0 ? 0 : -1;
+}
 void enet_socket_destroy(ENetSocket socket)
 {
     unsigned char request[4];if(socket<32 || socket>=1024) return;
@@ -180,7 +208,7 @@ int enet_socketset_select(ENetSocket maxSocket, ENetSocketSet *reads, ENetSocket
     {
         enet_uint32 wanted=(reads && FD_ISSET(i,reads) ? 2 : 0) | (writes && FD_ISSET(i,writes) ? 1 : 0), actual=wanted;
         if(!wanted) continue;
-        if(enet_socket_wait(i,&actual,0)<0) actual=0;
+        if(enet_socket_wait(i,&actual,0)<0) return -1;
         if(reads && !(actual&2)) FD_CLR(i,reads);
         if(writes && !(actual&1)) FD_CLR(i,writes);
         if(actual) ready++;

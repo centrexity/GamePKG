@@ -9,7 +9,7 @@ work stays open until behavior is verified.
 
 | Port | Remaining gaps |
 | --- | --- |
-| Cube 2 | Initial OS lock-key state, remaining uncommon-key/platform behavior and full controller/touch equivalence; LAN discovery, master authentication and public server registration; custom asset/mod workflows; demo/movie output and persistence; hardware-accelerated engine rendering; native platforms beyond Linux. Vulkan currently presents software-rendered engine frames. |
+| Cube 2 | Initial OS lock-key state, remaining uncommon-key/platform behavior and full controller/touch equivalence; LAN discovery, further master authentication/registration error and service compatibility; custom asset/mod workflows; demo/movie output and persistence; hardware-accelerated engine rendering; native platforms beyond Linux. Vulkan currently presents software-rendered engine frames. |
 | DOOM | Original WAD music, spatial stereo effects, six save slots, configuration, desktop controls and the original quit/ENDOOM flow are runtime verified. Music backend selection, multiplayer, additional WADs/mods and broader control/platform coverage remain unfinished. |
 | Zelda3 | External MSU music, replay tools, save states, widescreen, language selection and desktop enhancement settings need support. The adapter fixes the view to 256×224. Original DSP stereo is verified in native and Wasm gameplay/save tests. |
 | Arkanoo | Gravity, speed-triggered portal behavior and ball-to-ball responses are restored with upstream reference and actual-engine tests. Original world proportions and movement/contact order now match upstream reference checks. Per-ball launch timing, life recovery and victory/endless transitions also match original-code fixtures; prior item/score/level caps are removed. Brick health and original blast rules are also verified. All twelve original procedural patterns are restored. Focused mouse movement and original Space/Escape controls are restored. Editor painting/erasing, brick selection, names, save/load, clear confirmation, test return and the custom endless pool are restored. Original ASCII pattern import/export now uses player-selected files. Gameplay cursor confinement/hiding, F11 fullscreen and Q-to-quit outside play are verified in native and browser runtime checks. Normal-size/fullscreen/maximized preferences now persist through the native host. The six main menu actions and fullscreen/effects settings controls are restored. Remaining menu presentation and music/resolution/VSync controls, project-link action and original menus/music still need work. Original shard particles are restored; remaining ball artwork/speed lettering, other art/effects still need work; original penguin/heart-loss behavior is now verified. Current runs do not persist; high score, unlocked level, gravity and effects preferences do. |
@@ -39,7 +39,7 @@ the original operation happened.
 
 | Source | Observed behavior | Required follow-up |
 | --- | --- | --- |
-| `engines/cube2/adapters/network.h` | Broadcast now reaches the owned UDP socket; TCP listen/accept are still rejected. Reverse lookup returns a numeric address. Bounded buffer sizes, timeouts, address reuse and TTL now reach the actual host socket; error/TTL queries read host results. Shutdown still returns success without a host call. | Audit each original ENet caller; finish the host operations it needs and test real discovery, authentication, server registration, disconnect and error handling. Keep permission denial explicit. Do not infer complete networking from ordinary packet exchange. |
+| `engines/cube2/adapters/network.h` | Broadcast reaches the owned UDP socket; real nonblocking TCP now supports bind/connect/listen/accept/poll/shutdown. Reverse lookup returns a numeric address. Bounded buffer sizes, timeouts, address reuse and TTL now reach the actual host socket; error/TTL queries read host results. Socket shutdown now reaches the OS; bounded browser snapshots use explicit virtual EOF/half-close semantics. | Audit each original ENet caller; finish the host operations it needs and test real discovery, authentication, server registration, disconnect and error handling. Keep permission denial explicit. Do not infer complete networking from ordinary packet exchange. |
 | `engines/zelda3/adapters/engine.c` | MSU enable is ignored and MSU track playback falls back to the internal audio path. Initialization fixes extra horizontal area to zero and selects the default language. The frame scheduler omits the desktop replay log. | Add selected optional resources, enhancement/language configuration, and bounded replay/save-state persistence with actual engine tests. Ordinary ROM gameplay does not verify these features. |
 | `ports/arkanoo/source/src/menu.rs` and `render.rs` | The current menu and synthesized effects cover only part of the original presentation/settings. | Restore the remaining transitions, resolution confirmation/revert, VSync, homepage action and licensed art/audio; verify each against the pinned original. Window-size persistence alone does not implement a resolution menu. |
 | `ports/2048/CREDITS.md` | Tile exponents stop at 63 and scores use checked fixed-width storage; the reference implementation has a smaller tile representation. | Retain explicit bounds in documentation and boundary tests. Verified solver/gameplay behavior does not establish unlimited arithmetic, package delivery or every-platform support. |
@@ -84,10 +84,10 @@ Keep each original drawing path open until its behavior has reference evidence;
 matching a few screenshots is insufficient for animated or stateful effects.
 
 The same rule applies to engine adapters: unavailable features must report failure
-or remain visibly unsupported. In particular, Cube 2 shutdown currently reports
-success without doing work, while TCP listen/accept reject the operation. UDP broadcast now reaches the
-host socket; full LAN discovery still needs actual-engine verification. Zelda's MSU enable ignores its argument. These are confirmed fidelity
-gaps, not completed compatibility functions. Shared host work still needed is:
+or remain visibly unsupported. Cube 2 shutdown/listen/accept now reach owned TCP
+sockets; UDP broadcast also reaches the host socket. Full LAN discovery still
+needs actual-engine verification. Zelda's ignored MSU enable remains a confirmed
+gap. Shared host work still needed is:
 
 - Selected resource collections/directories and bounded streaming for mods,
   optional music, recordings and language assets, retaining user files in place.
@@ -288,8 +288,9 @@ networking no longer restricts destinations, sources, DNS names or listening
 addresses to endpoint lists, and local/private addresses need no extra opt-in.
 Legacy transport names map to enabled/disabled and legacy endpoint fields are
 read-only compatibility data. This removes policy restrictions, not missing
-adapter functionality: complete discovery/authentication/registration, engine TCP
-and shutdown/listen/accept semantics still need implementation and engine tests.
+adapter functionality: complete LAN discovery, broader authentication/registration failures and public
+service/platform interoperability still need engine tests; the TCP lifecycle and
+private successful exchange are restored below.
 
 
 Network-switch validation: the full Rust command passes 383 tests with 52
@@ -301,3 +302,32 @@ core/component packages pass unlisted local TCP echo and disabled HTTPS/TCP/UDP/
 listener denial. The production C++ ENet shim's malformed/framing checks pass.
 Lint, both Windows compilation targets, browser unit checks and site links pass.
 These tests do not establish the unfinished full engine networking features.
+
+
+The TCP broker now restores original nonblocking connect, bind/listen/accept,
+readiness, OS error/option queries, partial streams, peer EOF and shutdown.
+UDP now starts unbound and binds its existing descriptor rather than silently
+replacing it; repeat-bind, connected-peer and shutdown behavior reaches the OS.
+The original list browser explicitly requests its bounded sanitized snapshot;
+authentication/registration uses real streams. Snapshot target changes discard
+late old results. Shared handle/open/message/transfer limits remain unchanged.
+
+A private original-engine regression passes registration plus the master's
+original UDP information ping, original cryptographic challenge/response and
+authenticated privilege. Original `saveauthkeys` and offline relaunch restore
+`auth.cfg` through an exact C++/Rust save-name allowlist entry. An independent
+fixture compiles unchanged hash-verified original cryptography with a public
+test credential; no real account key is packaged or published. Remaining LAN,
+invalid-authentication/service/error cases, platforms and release delivery stay
+on the open checklist.
+
+
+Latest TCP restoration validation: the full Rust suite passes 390 tests with 53
+fixture/platform tests ignored. The eleven focused broker regressions pass again
+after the failed-reconnect side-effect fix. Four ignored original-engine checks
+run separately and pass: registration/authentication/key reload, sanitized browser,
+direct two-engine multiplayer and discovered-server multiplayer. Both connection
+variants retain background play for 35 seconds and save cleanly. Production C++
+network framing and hostile saved-file tests, source hashes, lint, formatting,
+browser unit checks and the seven-page site-link check pass. CLI and GUI binaries
+are rebuilt locally; this is source validation without a new package release.

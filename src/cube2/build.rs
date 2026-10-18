@@ -83,6 +83,19 @@ pub fn compile_with_options(optimize: bool) -> Result<Vec<u8>> {
         unix,
         format!("{prefix}#include \"gamepkg_network.h\"\n#endif\n"),
     )?;
+    let server = stage.path().join("engine/server.cpp");
+    let mut text = fs::read_to_string(&server)?;
+    patch_once(
+        &mut text,
+        "#include \"engine.h\"",
+        "#include \"engine.h\"\nextern \"C\" ENetSocket gamepkg_master_socket(int snapshot);",
+    )?;
+    patch_once(
+        &mut text,
+        "ENetSocket sock = enet_socket_create(ENET_SOCKET_TYPE_STREAM);",
+        "ENetSocket sock = gamepkg_master_socket(wait ? 1 : 0);",
+    )?;
+    fs::write(server, text)?;
     let mut text = fs::read_to_string(&main)?;
     for (before, after) in [
         (

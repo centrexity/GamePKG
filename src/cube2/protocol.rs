@@ -71,7 +71,7 @@ pub fn save_path(path: &str) -> bool {
     {
         return false;
     }
-    matches!(path, "config.cfg" | "init.cfg" | "servers.cfg")
+    matches!(path, "config.cfg" | "init.cfg" | "servers.cfg" | "auth.cfg")
         || (path.starts_with("packages/")
             && parts.len() >= 3
             && [".ogz", ".cfg", ".BAK", ".jpg", ".png"]
@@ -517,6 +517,7 @@ mod tests {
     #[test]
     fn saved_file_paths_reject_escape_encodings_hidden_files_and_other_content() {
         for path in [
+            "auth.cfg",
             "config.cfg",
             "init.cfg",
             "servers.cfg",

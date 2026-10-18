@@ -25,7 +25,7 @@ static bool gamepkg_save_path(const std::string &name)
         else if(!((name[i]>='a' && name[i]<='z') || (name[i]>='A' && name[i]<='Z') ||
                   (name[i]>='0' && name[i]<='9') || name[i]=='.' || name[i]=='_' || name[i]=='-')) return false;
     }
-    if(name=="config.cfg" || name=="init.cfg" || name=="servers.cfg") return true;
+    if(name=="config.cfg" || name=="init.cfg" || name=="servers.cfg" || name=="auth.cfg") return true;
     const char *extensions[] = { ".ogz", ".cfg", ".BAK", ".jpg", ".png", ".dmo" };
     for(unsigned i=0;i<6;i++)
     {

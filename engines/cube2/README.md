@@ -68,7 +68,7 @@ This test builds the engine with Rust, starts the original `complex` map under a
 
 ## Configuration persistence and data handles
 
-The host restores a validated `GPB2` archive into the engine's private `/save` filesystem before initialization. `GPS1` still requests a snapshot without advancing a game tick; the response is now `GPS2`, with explicit little-endian entry counts, byte lengths and reserved fields. The archive permits at most 256 files, 16 MiB per file, and 32 MiB including metadata. Preferences (`config.cfg`, `init.cfg`, `servers.cfg`), map files and companions under `packages/` (`.ogz`, `.cfg`, `.BAK`, `.jpg`, `.png`), and `.dmo` files under `demo/` or `demos/` are eligible. Names use ASCII letters/digits, underscore, hyphen and dot, with at most six path components and 240 bytes. Absolute paths, parent/current components, hidden names, encoded separators, backslashes, duplicate entries, file/directory collisions and other file types are rejected. The C++ adapter and Rust reader both validate these rules.
+The host restores a validated `GPB2` archive into the engine's private `/save` filesystem before initialization. `GPS1` still requests a snapshot without advancing a game tick; the response is now `GPS2`, with explicit little-endian entry counts, byte lengths and reserved fields. The archive permits at most 256 files, 16 MiB per file, and 32 MiB including metadata. Preferences and authentication keys (`config.cfg`, `init.cfg`, `servers.cfg`, `auth.cfg`), map files and companions under `packages/` (`.ogz`, `.cfg`, `.BAK`, `.jpg`, `.png`), and `.dmo` files under `demo/` or `demos/` are eligible. Names use ASCII letters/digits, underscore, hyphen and dot, with at most six path components and 240 bytes. Absolute paths, parent/current components, hidden names, encoded separators, backslashes, duplicate entries, file/directory collisions and other file types are rejected. The C++ adapter and Rust reader both validate these rules.
 
 Snapshot traversal opens directories and regular files with `O_NOFOLLOW`, rejects hard links and special files, and limits traversal work. Restoration validates the whole archive before writing into the empty private filesystem, then creates files exclusively through directory handles. The host never extracts paths supplied by the engine into the user's filesystem. It atomically commits one validated `.cube2` archive under a pinned save-directory handle, scoped to game, signed creator and save schema. Invalid snapshots preserve the previous archive. Storage reporting includes this archive. Old three-slot `GPS1` preference blobs migrate automatically without being overwritten; ordinary games retain their existing 1 MiB save limit.
 
@@ -125,7 +125,7 @@ cargo test --all-features --lib cube2
 
 The staged ENet `unix.c` keeps its initialization and time helpers but replaces its socket/address operations with the reviewed `adapters/network.h` transport. The engine receives a private Unix socketpair on descriptor 3; frames and saved-file responses use descriptor 4. Data directory descriptors are pinned above these slots, consumed by the namespace launcher, then closed before game code runs. The mandatory syscall guard still denies creating sockets, process creation and execution. No external socket descriptor reaches the engine.
 
-`GPN1` requests and `GPR2` responses have explicit little-endian operation/status/length/reserved fields and an 8192-byte envelope cap. The current broker implements IPv4 UDP, with at most 16 virtual sockets, eight opens per second, 4096-byte datagrams, 2048 operations and 1 MiB of payload traffic per second. It closes channels that exceed the hard request-flood ceiling or send malformed framing. A mutex serializes ENet calls from the main and resolver threads. RPC transport failures do not enable any raw-socket fallback.
+`GPN1` requests and `GPR2` responses have explicit little-endian operation/status/length/reserved fields and an 8192-byte envelope cap. The current broker implements IPv4 UDP and nonblocking TCP, with at most 16 combined virtual sockets/snapshots, eight opens per second, 4096-byte datagrams, 2048 operations and 1 MiB of payload traffic per second. It closes channels that exceed the hard request-flood ceiling or send malformed framing. A mutex serializes ENet calls from the main and resolver threads. RPC transport failures do not enable any raw-socket fallback.
 
 The signed `network = true` enables the broker and `false` disables it. Enabled
 UDP has no hostname, destination, source or bind allowlist; LAN/private addresses
@@ -134,7 +134,7 @@ master fields supply launch commands rather than capability grants. DNS resolves
 game-requested hostnames with bounded jobs and a 500 ms broker wait; lookup failure
 is explicit and never leaves a late reply in the engine RPC stream. Master-list
 TCP is still a bounded snapshot of the chosen master's fixed `list\n` request;
-general engine TCP authentication/registration remains unfinished.
+registration/authentication use real nonblocking TCP.
 
 The ignored Rust test `two_original_engines_connect_through_the_host_broker` compiles the pinned engine once, runs two isolated original engines, starts a private loopback listener, connects the client, then stops UI polling for 35 seconds. It verifies both workers continue ticking with bounded frame/audio queues, the server receives the client's game identity, the remote connection survives, and shutdown commits preferences and the background play clock. No public server is contacted.
 
@@ -148,9 +148,9 @@ python3 tests/cube2_network_bridge.py
 Broker unit tests cover unlisted peers/sources/listeners, hostname lookup, broadcast options, stale handles, malformed framing, packet/handle/open/rate bounds and disabled-network denial. The C++ shim test verifies raw sockets remain denied, malformed/truncated/oversized replies cannot overrun receive buffers, oversized sends fail before reading their buffers, and concurrent requests retain their framing.
 
 The updated source host also applies ENet's bounded receive/send buffer sizes,
-address reuse, read/write timeouts and TTL to its owned UDP sockets. Settings
-survive replacement of the ephemeral socket with a listening endpoint;
-address reuse is applied before binding. Error and TTL queries read the host
+address reuse, read/write timeouts and TTL to its owned UDP sockets. Settings remain on the same owned socket during bind; address reuse is applied
+before binding. UDP starts unbound and numeric ephemeral binds work without
+replacing a live socket. Repeated bind and connect/shutdown errors reach the OS. Error and TTL queries read the host
 socket instead of returning fixed placeholder values. IPC operations 11 and 12
 carry set/query requests with exact lengths and validated virtual handles.
 Queries leave the engine's output untouched if the host denies or malforms a
@@ -158,8 +158,9 @@ reply. The virtual master-list snapshot supports nonblocking mode and checks its
 own connection state for error queries; it is not an arbitrary TCP connection.
 Blocking mode and unrecognized/excessive options are denied. Broadcast accepts the original boolean enable/disable option.
 These changes require rebuilding the source host and engine cache; the cache
-fingerprint includes the adapter. LAN discovery, master authentication, public
-registration and complete shutdown/listen/accept behavior remain open.
+fingerprint includes the adapter. The original authentication/registration exchange now passes the private-master
+checks below. End-to-end LAN discovery and further service/error/platform
+interoperability remain open.
 
 ## Background desktop execution
 
@@ -175,38 +176,69 @@ The real desktop test starts a private window manager, verifies an actual minimi
 
 ## Choose a server or host a game
 
-On the game page, **Multiplayer** accepts either a join `hostname:port` or a hosting `local-IPv4:port`, with a separate local/private-address opt-in. The game port and the adjacent server-information port are authorized. Ports must be 1–65534; wildcard binds, IPv6, credentials, paths, queries, script syntax and control characters are rejected. Joining and hosting cannot be selected simultaneously. **Save multiplayer settings** persists without starting a connection; **Play** also saves the visible choices and applies them at launch. **Use offline play** removes the grant for the next launch. Existing sessions keep their pinned policy. Hosting uses `startlistenserver 0`, so it does not advertise on a public master server.
+On the game page, **Multiplayer** remembers a join `hostname:port`, a hosting
+`local-IPv4:port` and an optional browser master. Ports are 1–65534 because the
+adjacent information port is used too. IPv6 and command-injection syntax are
+rejected by this IPv4 engine's launch form. Joining and hosting cannot be chosen
+together. These fields are launch preferences, not network allowlists; local
+addresses need no extra opt-in. **Clear launch addresses** or `--clear` removes
+startup commands. Only the signed `network = false` disables networking.
+Hosting through this form uses `startlistenserver 0`, which does not advertise;
+the original console's `startlistenserver 1` enables registration.
 
-The signed selector and creator identity scope the bounded host-only `network-selections.json` record. Versions with the same declaration retain choices; changed creators or declarations do not inherit them. Malformed settings fail closed, invalid edits preserve the prior file, and the game cannot read or modify the host settings file. DNS is resolved and checked before the engine starts, once per selected hostname; game and server-info ports share the pinned address.
+Choices remain bounded, host-only and scoped to game/creator/declaration.
+Malformed settings preserve the prior file. Earlier signed selection identities
+migrate without reusing another creator's choices. Disabled networking ignores
+saved addresses before resolving a master, even if the preference file is damaged.
 
 ```sh
 gamepkg configure-network com.gamepkg.cube2 --server play.example:28785
-gamepkg configure-network com.gamepkg.cube2 --server 127.0.0.1:28785 --allow-local
-gamepkg configure-network com.gamepkg.cube2 --listen 192.168.1.20:28785 --allow-local
+gamepkg configure-network com.gamepkg.cube2 --server 127.0.0.1:28785
+gamepkg configure-network com.gamepkg.cube2 --listen 192.168.1.20:28785
 gamepkg configure-network com.gamepkg.cube2 --clear
 ```
 
-No signing key is needed for these end-user choices. The original creator signature remains intact. The real two-engine test now saves host/client selections and exercises automatic join/hosting startup commands, then verifies the connection and independent background clocks. CLI and desktop tests exercise denial before local opt-in, persistence, and clearing to offline.
+No signing key is needed for these user choices. The creator signature remains
+intact. Original-engine tests verify saved join/hosting startup commands and
+independent background networking.
 
 ## Host-selected master server
 
-The Multiplayer form also accepts an optional **Server browser master** `hostname:port`. This explicitly permits discovering and joining the IPv4 servers listed by that master. No master is contacted by default. The CLI equivalent is:
+The **Server browser master** field supplies an optional `hostname:port`:
 
 ```sh
 gamepkg configure-network com.gamepkg.cube2 --master master.example:28787
 ```
 
-Use the actual master address you trust. Local/private masters and discovered servers require the separate local/private-address opt-in. **Use offline play** / `configure-network --clear` clears discovery as well as direct join/hosting choices. Hosting remains unadvertised.
+The host prefetches a selected master's `list\n` asynchronously, with a two-second
+connect timeout, five-second total deadline, 64 KiB response and 512 unique
+servers. At most 16 retrieval jobs run process-wide. Only numeric IPv4
+`addserver IP port` records reach the original browser. Script fragments, DNS
+names, invalid ports and malformed framing are rejected or ignored as documented
+by the parser tests. This sanitation does not restrict ordinary TCP/UDP addresses.
 
-The host resolves and pins the selected master before the engine starts, then retrieves `list\n` asynchronously through a host-owned TCP socket. Connect timeout is two seconds; total retrieval is limited to five seconds, 64 KiB and 512 unique servers. At most 16 retrieval jobs can run process-wide. Only validated numeric IPv4 `addserver IP port` records are forwarded. Echo text, script fragments, DNS names, invalid ports and disallowed addresses grant nothing; malformed framing, control characters and quota overflows reject the response. Game ports must be 1–65534; their adjacent information ports are also granted.
+The original synchronous browser explicitly requests a virtual snapshot socket.
+Other stream creates are real TCP, so registration and authentication can use
+the original protocol. Snapshot handles accept the exact list request; changing
+the connected master invalidates the old result receiver. A pending refresh
+returns the last-good list or an empty snapshot; refreshing later obtains the
+completed list. Cache refresh is limited to once per 30 seconds for one master
+and expires after ten minutes. Slow masters stay outside the game tick deadline.
 
-The original in-game browser receives an immediate last-good snapshot through virtual stream handles. These handles accept only the chosen master endpoint and exact list request; they cannot open arbitrary TCP sessions, register a public server or send authentication/chat data. The host starts discovery at launch and refreshes its cache at most once every 30 seconds while network RPCs are active. A browser refresh during a pending fetch uses the previous snapshot (or reports no reply if no snapshot exists); refresh again after retrieval completes. A failed refresh retains the previous list until its ten-minute expiry. Discovered grants are session-local, replaced with the next valid list, and expire with the snapshot. This keeps slow masters outside the game tick deadline.
+`original_server_browser_reads_only_the_host_master_snapshot` runs the original
+browser against a private mock under a 500 ms tick deadline and verifies all 512
+records, including reads beyond its 4 KiB/8 KiB buffers. Broker tests cover
+asynchronous snapshots, stale results, shutdown, caching and quotas. Parser tests
+cover injection, malformed/truncated lists and duplicate/excessive entries.
 
-The ignored `original_server_browser_reads_only_the_host_master_snapshot` test runs the original browser against a private mock master under the ordinary 500 ms tick deadline, then checks all 512 approved records in its saved server list, including reads beyond the original 4 KiB/8 KiB buffers. Broker tests cover asynchronous empty/ready snapshots, exact requests/endpoints, unauthorized sends, TTL and caching. Parser tests cover injection, malformed/truncated lists, duplicate and excessive entries, and private-address opt-in. No public server is contacted by these tests.
+`two_original_engines_join_through_the_discovered_server_list` verifies browser
+results, a real two-engine connection and 35 seconds of continued background
+networking/play-time accounting. Tests use private local services.
 
-The ignored `two_original_engines_join_through_the_discovered_server_list` test verifies the original browser, the discovered grant (without a static destination), a real two-engine connection, and 35 seconds of continued background networking/play-time accounting.
-
-`python3 tests/cube2_readiness_gui.py` exercises an actual desktop Build with a 512 MiB ceiling, verifies the visible 2048 MiB requirement, changes and saves the ceiling through Settings, and launches the built game without a manual refresh. It requires the original data fixture at `target/cube2-test-data/` and keeps its library and configuration in a temporary directory.
+`python3 tests/cube2_readiness_gui.py` exercises desktop Build with a 512 MiB
+ceiling, the visible 2048 MiB requirement, saving a larger ceiling through
+Settings and Play without a manual refresh. It uses the original fixture at
+`target/cube2-test-data/` with a temporary library/configuration.
 
 ## Native mouse capture
 
@@ -310,5 +342,40 @@ enabled through the original socket option. Local/private addresses need no
 extra grant. Saved join/host/master choices are launch preferences; blank
 choices no longer force offline mode. Disabled networking still blocks every
 broker operation. Socket, packet, time and transfer limits remain enforced.
-The bounded master-list snapshot remains separate from general engine TCP,
-authentication/registration and full LAN fidelity, which are unfinished.
+The bounded master-list snapshot remains separate from real TCP used for
+authentication/registration. Full LAN and further service/platform fidelity
+remain unfinished.
+
+
+## TCP lifecycle and original authentication
+
+The original synchronous list-browser call explicitly selects a sanitized
+snapshot socket. Other stream creates use real host-owned nonblocking TCP,
+including the original authentication and registration code. Bind/connect,
+listen/accept, readiness and OS error queries, partial send/receive, peer EOF,
+and read/write/both shutdown are implemented. TCP options include bounded
+buffers/timeouts/reuse, no-delay and TTL. Accepts share the existing open/handle
+limits; no extra quotas or filesystem/socket privileges are granted to the engine.
+Receive-budget rejection happens before consuming data. Snapshot master changes
+discard the old result receiver so a late response cannot populate another list.
+
+`original_registration_authentication_and_saved_keys_use_real_tcp` rebuilds the
+pinned engine, registers its original listen server with a private TCP master,
+answers the original one-byte UDP information ping, exchanges a real original
+cryptographic challenge/response, and verifies authenticated privilege. The
+fixture is generated with unchanged hash-verified upstream cryptography and
+public deterministic test credentials. It saves `auth.cfg`, restarts offline
+and verifies the original key loader restores it. Keys remain in the game's
+existing creator-scoped private save bundle; only this exact root filename was
+added to the C++ and Rust save allowlists. Player Python is not involved.
+
+```sh
+GAMEPKG_CUBE2_DATA=/path/to/original/sauerbraten \
+  cargo test --all-features --lib \
+  original_registration_authentication_and_saved_keys_use_real_tcp -- --ignored
+```
+
+These checks cover a private protocol fixture, not every public master, invalid
+credential path or platform. Existing edited-map/config/demo saves, bounded
+browser snapshots and direct/discovered multiplayer remain separate regressions.
+Rebuild the source host and game cache to use the updated adapter.

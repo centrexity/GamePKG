@@ -1,4 +1,5 @@
 //! ENet's sockets remain host-owned; the reviewed engine receives virtual handles.
+mod tcp;
 use anyhow::{ensure, Context, Result};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -33,6 +34,8 @@ struct MasterSocket {
     request: usize,
     response: Option<Vec<u8>>,
     cursor: usize,
+    read_closed: bool,
+    write_closed: bool,
 }
 static WORKERS: AtomicUsize = AtomicUsize::new(0);
 struct Slot;
@@ -53,7 +56,6 @@ impl Drop for Worker {
 }
 struct Socket {
     udp: UdpSocket,
-    options: BTreeMap<u32, u32>,
     connected: Option<SocketAddr>,
 }
 // ENet option numbers are protocol values, never raw platform constants supplied
@@ -115,22 +117,26 @@ fn set_option(socket: &UdpSocket, option: u32, value: u32) -> Result<()> {
     }
     Ok(())
 }
-fn bind_socket(address: SocketAddr, options: &BTreeMap<u32, u32>) -> Result<UdpSocket> {
-    use std::os::fd::{AsRawFd, FromRawFd};
-    let SocketAddr::V4(address) = address else {
-        anyhow::bail!("IPv4 required");
+fn unbound_udp() -> Result<UdpSocket> {
+    use std::os::fd::FromRawFd;
+    // SAFETY: adopt every successful descriptor immediately, closing on error.
+    let fd = unsafe {
+        libc::socket(
+            libc::AF_INET,
+            libc::SOCK_DGRAM | libc::SOCK_CLOEXEC | libc::SOCK_NONBLOCK,
+            0,
+        )
     };
-    // SAFETY: socket has no pointer arguments; successful descriptor is adopted
-    // immediately so every later error closes it.
-    let fd = unsafe { libc::socket(libc::AF_INET, libc::SOCK_DGRAM | libc::SOCK_CLOEXEC, 0) };
     if fd < 0 {
         return Err(std::io::Error::last_os_error().into());
     }
-    let socket = unsafe { UdpSocket::from_raw_fd(fd) };
-    socket.set_nonblocking(true)?;
-    for (&option, &value) in options {
-        set_option(&socket, option, value)?;
-    }
+    Ok(unsafe { UdpSocket::from_raw_fd(fd) })
+}
+fn bind_socket(socket: &UdpSocket, address: SocketAddr) -> Result<()> {
+    use std::os::fd::AsRawFd;
+    let SocketAddr::V4(address) = address else {
+        anyhow::bail!("IPv4 required");
+    };
     // Zero initialization covers platform padding; all meaningful IPv4 fields
     // are then filled in native/network order as required by the socket ABI.
     let mut raw: libc::sockaddr_in = unsafe { std::mem::zeroed() };
@@ -147,7 +153,7 @@ fn bind_socket(address: SocketAddr, options: &BTreeMap<u32, u32>) -> Result<UdpS
     if result != 0 {
         return Err(std::io::Error::last_os_error().into());
     }
-    Ok(socket)
+    Ok(())
 }
 struct State {
     master: Option<super::discovery::Master>,
@@ -159,6 +165,7 @@ struct State {
     discovered: BTreeSet<SocketAddr>,
     enabled: bool,
     sockets: BTreeMap<u32, Socket>,
+    tcp: BTreeMap<u32, tcp::Socket>,
     next: u32,
     window: Instant,
     calls: usize,
@@ -214,6 +221,7 @@ impl State {
             discovered: BTreeSet::new(),
             enabled,
             sockets: BTreeMap::new(),
+            tcp: BTreeMap::new(),
             next: 32,
             window: Instant::now(),
             calls: 0,
@@ -235,10 +243,10 @@ impl State {
             "network rate limited"
         );
         ensure!(self.enabled, "network permission denied");
-        if op == 1 && bytes.len() == 4 && number(bytes, 0)? == 1 {
-            ensure!(self.master.is_some(), "master discovery not authorized");
+        if op == 16 {
+            ensure!(bytes.is_empty(), "invalid snapshot socket request");
             ensure!(
-                self.sockets.len() + self.streams.len() < MAX_HANDLES
+                self.sockets.len() + self.streams.len() + self.tcp.len() < MAX_HANDLES
                     && self.next < 1024
                     && self.opens < 8,
                 "network handle limit"
@@ -253,6 +261,8 @@ impl State {
                     request: 0,
                     response: None,
                     cursor: 0,
+                    read_closed: false,
+                    write_closed: false,
                 },
             );
             return Ok(id.to_le_bytes().to_vec());
@@ -260,19 +270,57 @@ impl State {
         if op != 1 && bytes.len() >= 4 && self.streams.contains_key(&number(bytes, 0)?) {
             return self.stream_call(op, bytes);
         }
-        match op {
-            1 => {
+        if bytes.len() >= 4 && self.tcp.contains_key(&number(bytes, 0)?) {
+            let id = number(bytes, 0)?;
+            if op == 7 {
+                ensure!(bytes.len() == 4, "invalid stream close");
+                self.tcp.remove(&id);
+                return Ok(Vec::new());
+            }
+            if op == 14 {
+                ensure!(bytes.len() == 4, "invalid accept request");
                 ensure!(
-                    bytes.len() == 4 && number(bytes, 0)? == 2,
-                    "only datagram sockets supported"
-                );
-                ensure!(
-                    self.sockets.len() + self.streams.len() < MAX_HANDLES
+                    self.sockets.len() + self.streams.len() + self.tcp.len() < MAX_HANDLES
                         && self.next < 1024
                         && self.opens < 8,
                     "network handle limit"
                 );
-                let udp = UdpSocket::bind("0.0.0.0:0")?;
+                let (socket, peer) = self.tcp[&id].accept()?;
+                let accepted = self.next;
+                self.next += 1;
+                self.opens += 1;
+                self.tcp.insert(accepted, socket);
+                let mut reply = accepted.to_le_bytes().to_vec();
+                reply.extend(encoded_address(peer)?);
+                return Ok(reply);
+            }
+            return self
+                .tcp
+                .get_mut(&id)
+                .unwrap()
+                .call(op, bytes, &mut self.bytes);
+        }
+        match op {
+            1 => {
+                ensure!(
+                    bytes.len() == 4 && matches!(number(bytes, 0)?, 1 | 2),
+                    "invalid socket type"
+                );
+                ensure!(
+                    self.sockets.len() + self.streams.len() + self.tcp.len() < MAX_HANDLES
+                        && self.next < 1024
+                        && self.opens < 8,
+                    "network handle limit"
+                );
+                if number(bytes, 0)? == 1 {
+                    let socket = tcp::Socket::new()?;
+                    let id = self.next;
+                    self.next += 1;
+                    self.opens += 1;
+                    self.tcp.insert(id, socket);
+                    return Ok(id.to_le_bytes().to_vec());
+                }
+                let udp = unbound_udp()?;
                 udp.set_nonblocking(true)?;
                 let id = self.next;
                 self.next += 1;
@@ -281,7 +329,6 @@ impl State {
                     id,
                     Socket {
                         udp,
-                        options: BTreeMap::new(),
                         connected: None,
                     },
                 );
@@ -293,22 +340,9 @@ impl State {
                 ensure!(self.sockets.contains_key(&id), "unknown socket");
                 let port = number(bytes, 8)?;
                 ensure!(port <= 65535, "invalid bind port");
-                if port == 0 {
-                    ensure!(bytes[4..8] == [0; 4], "ephemeral bind must use any address");
-                    return Ok(Vec::new());
-                }
-                let requested = address(bytes, 4)?;
-                let bind = requested;
-                let options = self.sockets[&id].options.clone();
-                let udp = bind_socket(bind, &options)?;
-                self.sockets.insert(
-                    id,
-                    Socket {
-                        udp,
-                        options,
-                        connected: None,
-                    },
-                );
+                let ip: [u8; 4] = bytes[4..8].try_into()?;
+                let requested = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::from(ip), port as u16));
+                bind_socket(&self.sockets[&id].udp, requested)?;
                 Ok(Vec::new())
             }
             3 => {
@@ -340,6 +374,7 @@ impl State {
                     .sockets
                     .get_mut(&number(bytes, 0)?)
                     .context("unknown socket")?;
+                ensure!(self.bytes + capacity <= 1048576, "network rate limited");
                 let mut packet = [0; MAX_DATAGRAM + 1];
                 for _ in 0..8 {
                     let (size, from) = socket.udp.recv_from(&mut packet)?;
@@ -409,7 +444,6 @@ impl State {
                     .get_mut(&number(bytes, 0)?)
                     .context("unknown socket")?;
                 set_option(&socket.udp, option, value)?;
-                socket.options.insert(option, value);
                 Ok(Vec::new())
             }
             12 => {
@@ -432,10 +466,28 @@ impl State {
             10 => {
                 ensure!(bytes.len() == 12, "invalid connect request");
                 let peer = address(bytes, 4)?;
-                self.sockets
+                let socket = self
+                    .sockets
                     .get_mut(&number(bytes, 0)?)
+                    .context("unknown socket")?;
+                socket.udp.connect(peer)?;
+                socket.connected = Some(peer);
+                Ok(Vec::new())
+            }
+            13 => {
+                ensure!(bytes.len() == 8, "invalid shutdown request");
+                let how = number(bytes, 4)?;
+                ensure!(how <= 2, "invalid shutdown direction");
+                use std::os::fd::AsRawFd;
+                let socket = &self
+                    .sockets
+                    .get(&number(bytes, 0)?)
                     .context("unknown socket")?
-                    .connected = Some(peer);
+                    .udp;
+                // SAFETY: live owned socket and validated ENet shutdown direction.
+                if unsafe { libc::shutdown(socket.as_raw_fd(), how as i32) } != 0 {
+                    return Err(std::io::Error::last_os_error().into());
+                }
                 Ok(Vec::new())
             }
             _ => anyhow::bail!("unknown network operation"),
@@ -513,10 +565,19 @@ impl State {
             }
             10 => {
                 ensure!(bytes.len() == 12, "invalid master connect");
-                ensure!(
-                    Some(address(bytes, 4)?) == self.master.as_ref().map(|m| m.address),
-                    "master endpoint not authorized"
-                );
+                let peer = address(bytes, 4)?;
+                ensure!(!self.streams[&id].connected, "already connected");
+                if self.master.as_ref().map(|m| m.address) != Some(peer) {
+                    // Drop the old receiver so a late result cannot populate the
+                    // new master's snapshot. Outstanding work keeps its deadline.
+                    self.fetching = None;
+                    self.attempted = None;
+                    self.master = Some(super::discovery::Master { address: peer });
+                    self.list = None;
+                    self.discovered.clear();
+                    self.refreshed = None;
+                }
+                self.begin_refresh()?;
                 let s = self.streams.get_mut(&id).unwrap();
                 ensure!(!s.connected, "already connected");
                 s.connected = true;
@@ -528,7 +589,10 @@ impl State {
                     "master only accepts list request"
                 );
                 let s = self.streams.get_mut(&id).unwrap();
-                ensure!(s.connected && s.request < 5, "invalid master state");
+                ensure!(
+                    s.connected && !s.write_closed && s.request < 5,
+                    "invalid master state"
+                );
                 let part = &bytes[12..];
                 ensure!(
                     !part.is_empty()
@@ -551,6 +615,9 @@ impl State {
                 );
                 let s = self.streams.get_mut(&id).unwrap();
                 ensure!(s.connected, "master retrieval failed");
+                if s.read_closed {
+                    return Ok(vec![0; 8]);
+                }
                 let data = s
                     .response
                     .as_ref()
@@ -572,7 +639,12 @@ impl State {
                 ensure!(wanted & !3 == 0, "invalid poll flags");
                 let s = &self.streams[&id];
                 let ready = if s.connected {
-                    wanted & 1 | if s.response.is_some() { wanted & 2 } else { 0 }
+                    wanted & 1
+                        | if s.response.is_some() || s.read_closed {
+                            wanted & 2
+                        } else {
+                            0
+                        }
                 } else {
                     0
                 };
@@ -581,6 +653,20 @@ impl State {
             7 => {
                 ensure!(bytes.len() == 4, "invalid master close");
                 self.streams.remove(&id);
+                Ok(Vec::new())
+            }
+            13 => {
+                ensure!(bytes.len() == 8, "invalid snapshot shutdown");
+                let how = number(bytes, 4)?;
+                ensure!(how <= 2, "invalid shutdown direction");
+                let s = self.streams.get_mut(&id).unwrap();
+                ensure!(s.connected, "snapshot is not connected");
+                if how == 0 || how == 2 {
+                    s.read_closed = true;
+                }
+                if how == 1 || how == 2 {
+                    s.write_closed = true;
+                }
                 Ok(Vec::new())
             }
             _ => anyhow::bail!("operation not supported for master discovery"),
@@ -694,6 +780,281 @@ mod tests {
         let mut b = id.to_le_bytes().to_vec();
         b.extend(encoded_address(address).unwrap());
         b
+    }
+    fn create_tcp(state: &mut State) -> u32 {
+        number(&state.dispatch(1, &1u32.to_le_bytes()).unwrap(), 0).unwrap()
+    }
+    fn pair(id: u32, value: u32) -> Vec<u8> {
+        [id.to_le_bytes(), value.to_le_bytes()].concat()
+    }
+    fn retry(state: &mut State, op: u32, bytes: &[u8]) -> Vec<u8> {
+        let deadline = Instant::now() + Duration::from_secs(3);
+        loop {
+            match state.call(op, bytes) {
+                (0, reply) => return reply,
+                (2, _) => {
+                    assert!(Instant::now() < deadline, "operation {op} timed out");
+                    std::thread::sleep(Duration::from_millis(2));
+                }
+                other => panic!("operation {op} failed: {other:?}"),
+            }
+        }
+    }
+    fn connected(state: &mut State, id: u32) -> u32 {
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while number(&state.dispatch(8, &pair(id, 3)).unwrap(), 0).unwrap() == 0 {
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        number(&state.dispatch(12, &pair(id, 8)).unwrap(), 0).unwrap()
+    }
+    #[test]
+    fn tcp_connect_partial_reads_options_half_close_and_eof_reach_real_sockets() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let target = listener.local_addr().unwrap();
+        let expected = (0..12001).map(|n| (n % 251) as u8).collect::<Vec<_>>();
+        let sent = expected.clone();
+        let worker = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(3)))
+                .unwrap();
+            stream
+                .set_write_timeout(Some(Duration::from_secs(3)))
+                .unwrap();
+            let mut request = [0; 5];
+            stream.read_exact(&mut request).unwrap();
+            assert_eq!(&request, b"auth\n");
+            assert_eq!(
+                stream.read(&mut [0; 1]).unwrap(),
+                0,
+                "write shutdown did not reach peer"
+            );
+            for chunk in sent.chunks(137) {
+                stream.write_all(chunk).unwrap();
+            }
+        });
+        let mut state = State::new(permissions(Vec::new(), Vec::new(), false)).unwrap();
+        let id = create_tcp(&mut state);
+        for (option, value) in [
+            (1u32, 1u32),
+            (3, 32768),
+            (4, 32768),
+            (5, 1),
+            (6, 500),
+            (7, 500),
+            (9, 1),
+            (10, 42),
+        ] {
+            let request = [id.to_le_bytes(), option.to_le_bytes(), value.to_le_bytes()].concat();
+            state.dispatch(11, &request).unwrap();
+        }
+        state.dispatch(10, &destination(id, target)).unwrap();
+        assert_eq!(connected(&mut state, id), 0);
+        assert_eq!(
+            state.dispatch(12, &pair(id, 9)).unwrap(),
+            1u32.to_le_bytes()
+        );
+        assert_eq!(
+            state.dispatch(12, &pair(id, 10)).unwrap(),
+            42u32.to_le_bytes()
+        );
+        let mut request = pair(id, 0);
+        request.extend([0; 4]);
+        request.extend(b"auth\n");
+        assert_eq!(retry(&mut state, 3, &request), 5u32.to_le_bytes());
+        state.dispatch(13, &pair(id, 1)).unwrap();
+        assert!(state.dispatch(3, &request).is_err());
+        let mut received = Vec::new();
+        while received.len() < expected.len() {
+            let reply = retry(&mut state, 4, &pair(id, 257));
+            assert!(reply.len() > 8);
+            received.extend_from_slice(&reply[8..]);
+        }
+        assert_eq!(received, expected);
+        assert_eq!(retry(&mut state, 4, &pair(id, 257)), [0; 8]);
+        worker.join().unwrap();
+        state.dispatch(7, &id.to_le_bytes()).unwrap();
+        assert!(state.dispatch(13, &pair(id, 2)).is_err());
+    }
+    #[test]
+    fn tcp_listener_accept_peer_identity_quota_preservation_and_shutdown_are_real() {
+        let mut state = State::new(permissions(Vec::new(), Vec::new(), false)).unwrap();
+        let listener = create_tcp(&mut state);
+        state
+            .dispatch(2, &destination(listener, "127.0.0.1:0".parse().unwrap()))
+            .unwrap();
+        state.dispatch(9, &pair(listener, u32::MAX)).unwrap();
+        assert_eq!(state.call(14, &listener.to_le_bytes()).0, 2);
+        let target = address(&state.dispatch(5, &listener.to_le_bytes()).unwrap(), 0).unwrap();
+        let mut peer = std::net::TcpStream::connect(target).unwrap();
+        peer.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        peer.write_all(b"data").unwrap();
+        state.opens = 8;
+        assert_eq!(state.call(14, &listener.to_le_bytes()).0, 1);
+        state.window = Instant::now() - Duration::from_secs(2);
+        let accepted = retry(&mut state, 14, &listener.to_le_bytes());
+        assert_eq!(address(&accepted, 4).unwrap(), peer.local_addr().unwrap());
+        let id = number(&accepted, 0).unwrap();
+        state.bytes = 1048576;
+        assert_eq!(state.call(4, &pair(id, 4)).0, 2);
+        state.bytes = 0;
+        assert_eq!(&retry(&mut state, 4, &pair(id, 4))[8..], b"data");
+        let mut reply = pair(id, 0);
+        reply.extend([0; 4]);
+        reply.extend(b"pong");
+        state.dispatch(3, &reply).unwrap();
+        let mut bytes = [0; 4];
+        peer.read_exact(&mut bytes).unwrap();
+        assert_eq!(&bytes, b"pong");
+        state.dispatch(13, &pair(id, 0)).unwrap();
+        assert_eq!(state.dispatch(4, &pair(id, 4)).unwrap(), [0; 8]);
+        reply[12..].copy_from_slice(b"next");
+        state.dispatch(3, &reply).unwrap();
+        peer.read_exact(&mut bytes).unwrap();
+        assert_eq!(&bytes, b"next", "read shutdown also closed writes");
+        state.dispatch(13, &pair(id, 2)).unwrap();
+        assert_eq!(peer.read(&mut bytes).unwrap(), 0);
+        for (op, packet) in [
+            (9, pair(id, 129)),
+            (13, pair(id, 3)),
+            (8, pair(id, 4)),
+            (11, [pair(id, 9), 2u32.to_le_bytes().to_vec()].concat()),
+        ] {
+            assert!(state.dispatch(op, &packet).is_err());
+            let mut oversized = packet;
+            oversized.push(0);
+            assert!(state.dispatch(op, &oversized).is_err());
+        }
+        state.dispatch(7, &id.to_le_bytes()).unwrap();
+        state.dispatch(7, &listener.to_le_bytes()).unwrap();
+        assert!(state.tcp.is_empty());
+    }
+    #[test]
+    fn tcp_connect_refusal_queries_the_os_and_offline_rejects_before_opening() {
+        let mut held = tcp::Socket::new().unwrap();
+        let bind = destination(32, "127.0.0.1:0".parse().unwrap());
+        held.call(2, &bind, &mut 0).unwrap();
+        let target = address(&held.call(5, &32u32.to_le_bytes(), &mut 0).unwrap(), 0).unwrap();
+        let mut state = State::new(permissions(Vec::new(), Vec::new(), false)).unwrap();
+        let id = create_tcp(&mut state);
+        state.dispatch(10, &destination(id, target)).unwrap();
+        assert_eq!(connected(&mut state, id), libc::ECONNREFUSED as u32);
+        assert_eq!(
+            state.dispatch(12, &pair(id, 8)).unwrap(),
+            0u32.to_le_bytes()
+        );
+        let mut p = permissions(Vec::new(), Vec::new(), false);
+        p.network = false;
+        let mut offline = State::new(p).unwrap();
+        for (op, bytes) in [
+            (1, 1u32.to_le_bytes().to_vec()),
+            (16, Vec::new()),
+            (9, pair(32, 1)),
+            (13, pair(32, 2)),
+            (14, 32u32.to_le_bytes().to_vec()),
+        ] {
+            assert_eq!(offline.call(op, &bytes).0, 1);
+        }
+        assert!(offline.tcp.is_empty() && offline.streams.is_empty());
+        assert_eq!(offline.next, 32);
+    }
+    #[test]
+    fn udp_bind_connect_and_shutdown_preserve_original_socket_semantics() {
+        let peer = UdpSocket::bind("127.0.0.1:0").unwrap();
+        peer.set_read_timeout(Some(Duration::from_millis(100)))
+            .unwrap();
+        let target = peer.local_addr().unwrap();
+        let mut state = State::new(permissions(Vec::new(), Vec::new(), false)).unwrap();
+        let id = create(&mut state);
+        assert_eq!(
+            number(&state.dispatch(5, &id.to_le_bytes()).unwrap(), 4).unwrap(),
+            0
+        );
+        let bind = destination(id, "127.0.0.1:0".parse().unwrap());
+        state.dispatch(2, &bind).unwrap();
+        assert!(
+            state.dispatch(2, &bind).is_err(),
+            "second bind silently replaced a live socket"
+        );
+        state.dispatch(10, &destination(id, target)).unwrap();
+        let mut request = pair(id, 0);
+        request.extend([0; 4]);
+        request.extend(b"hello");
+        state.dispatch(3, &request).unwrap();
+        let mut bytes = [0; 16];
+        let (length, _) = peer.recv_from(&mut bytes).unwrap();
+        assert_eq!(&bytes[..length], b"hello");
+        state.dispatch(13, &pair(id, 1)).unwrap();
+        assert!(state.dispatch(3, &request).is_err());
+        assert!(peer.recv_from(&mut bytes).is_err());
+    }
+    #[test]
+    fn changing_snapshot_master_discards_late_results_and_shutdown_has_eof_semantics() {
+        let first = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let second = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let a = first.local_addr().unwrap();
+        let b = second.local_addr().unwrap();
+        let (started, ready) = mpsc::channel();
+        let (release, wait) = mpsc::channel();
+        let old = std::thread::spawn(move || {
+            let (mut stream, _) = first.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(3)))
+                .unwrap();
+            let mut request = [0; 5];
+            stream.read_exact(&mut request).unwrap();
+            assert_eq!(&request, b"list\n");
+            started.send(()).unwrap();
+            wait.recv_timeout(Duration::from_secs(5)).unwrap();
+            stream.write_all(b"addserver 127.0.0.1 1111\n").unwrap();
+        });
+        let new = std::thread::spawn(move || {
+            let (mut stream, _) = second.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(3)))
+                .unwrap();
+            let mut request = [0; 5];
+            stream.read_exact(&mut request).unwrap();
+            assert_eq!(&request, b"list\n");
+            stream.write_all(b"addserver 127.0.0.1 2222\n").unwrap();
+        });
+        let mut state = State::configured(Config {
+            permissions: permissions(Vec::new(), Vec::new(), false),
+            master: Some(super::super::discovery::Master { address: a }),
+        })
+        .unwrap();
+        ready.recv_timeout(Duration::from_secs(3)).unwrap();
+        let id = number(&state.dispatch(16, &[]).unwrap(), 0).unwrap();
+        state.dispatch(10, &destination(id, b)).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while state.list.is_none() {
+            state.collect_master();
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        new.join().unwrap();
+        assert!(state.dispatch(10, &destination(id, a)).is_err());
+        assert_eq!(state.master.as_ref().unwrap().address, b);
+        assert!(state.fetching.is_none(), "failed reconnect started a fetch");
+        release.send(()).unwrap();
+        old.join().unwrap();
+        state.collect_master();
+        assert_eq!(
+            state.list.as_deref().unwrap(),
+            b"addserver 127.0.0.1 2222\n"
+        );
+        let mut send = pair(id, 0);
+        send.extend([0; 4]);
+        send.extend(b"list\n");
+        state.dispatch(3, &send).unwrap();
+        state.dispatch(13, &pair(id, 0)).unwrap();
+        assert_eq!(state.dispatch(4, &pair(id, 4096)).unwrap(), [0; 8]);
+        let next = number(&state.dispatch(16, &[]).unwrap(), 0).unwrap();
+        state.dispatch(10, &destination(next, b)).unwrap();
+        state.dispatch(13, &pair(next, 1)).unwrap();
+        send[..4].copy_from_slice(&next.to_le_bytes());
+        assert!(state.dispatch(3, &send).is_err());
     }
     #[test]
     fn socket_options_reach_os_survive_rebind_and_reject_invalid_values() {
@@ -824,10 +1185,7 @@ mod tests {
         let mut packet = destination(udp, peer_addr);
         packet.extend(b"test");
         state.dispatch(3, &packet).unwrap();
-        let stream = number(&state.dispatch(1, &1u32.to_le_bytes()).unwrap(), 0).unwrap();
-        assert!(state
-            .dispatch(10, &destination(stream, unrelated.local_addr().unwrap()))
-            .is_err());
+        let stream = number(&state.dispatch(16, &[]).unwrap(), 0).unwrap();
         state.dispatch(10, &destination(stream, addr)).unwrap();
         let mut request = stream.to_le_bytes().to_vec();
         request.extend([0; 8]);
@@ -857,7 +1215,7 @@ mod tests {
         state.dispatch(3, &denied).unwrap();
         assert!(state.dispatch(6, b"bad/host").is_err());
         state.dispatch(7, &stream.to_le_bytes()).unwrap();
-        let stream = number(&state.dispatch(1, &1u32.to_le_bytes()).unwrap(), 0).unwrap();
+        let stream = number(&state.dispatch(16, &[]).unwrap(), 0).unwrap();
         state.dispatch(10, &destination(stream, addr)).unwrap();
         request[..4].copy_from_slice(&stream.to_le_bytes());
         state.dispatch(3, &request).unwrap();
@@ -946,7 +1304,8 @@ mod tests {
         for op in [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 99] {
             assert!(state.dispatch(op, &[]).is_err());
         }
-        assert!(state.dispatch(1, &1u32.to_le_bytes()).is_err());
+        let stream = number(&state.dispatch(1, &1u32.to_le_bytes()).unwrap(), 0).unwrap();
+        state.dispatch(7, &stream.to_le_bytes()).unwrap();
         let mut huge = destination(id, peer.local_addr().unwrap());
         huge.extend(vec![0; MAX_DATAGRAM + 1]);
         assert!(state.dispatch(3, &huge).is_err());

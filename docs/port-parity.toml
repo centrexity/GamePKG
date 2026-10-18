@@ -16,9 +16,9 @@ notes = "Desktop keyboard uses physical events rather than egui's normalized key
 
 [[work]]
 id = "cube2_network"
-requirements = ["LAN discovery", "Master browsing/authentication", "Public server registration", "Scoped multiplayer permissions"]
-status = "pending"
-notes = "Current UDP broker accepts unlisted destinations/sources/listeners/DNS and broadcast under the signed boolean permission. TCP listen/accept remain rejected; reverse lookup is numeric. Bounded buffer/timeout/reuse/TTL settings now reach host UDP sockets and survive rebinding; error/TTL queries return host results. Production shim framing and real OS option values are tested. Shutdown remains a no-op. Existing bounded packet/framing tests do not establish discovery, authentication, server registration or complete disconnect/error semantics. Audit original callers and implement required host operations with the signed on/off networking permission and unchanged isolation/quotas."
+requirements = ["LAN discovery", "Master browsing/authentication", "Public server registration", "Signed on/off networking"]
+status = "in_progress"
+notes = "Nonblocking host TCP now implements connect/bind/listen/accept/poll, socket options/errors, partial transfers and shutdown. UDP bind/connect/shutdown uses actual socket state. The synchronous list browser explicitly selects the sanitized snapshot; ordinary streams no longer masquerade as list-only sockets. Original private-master registration, UDP information ping, cryptographic challenge/response, authenticated privilege and auth.cfg save/reload pass. End-to-end LAN discovery, invalid credential/retry/error paths, further service interoperability and platforms remain open. Fixed shared quotas and signed on/off networking remain enforced."
 
 [[work]]
 id = "cube2_content"
@@ -142,4 +142,11 @@ notes = "The pinned rendering module has distinct implementations for these path
 id = "network_on_off_permission"
 requirements = ["Signed network boolean", "No IP/hostname/endpoint allowlists when enabled", "No separate LAN opt-in", "Legacy manifest and saved-choice compatibility", "Disabled access denial", "Keep host-owned sockets and quotas"]
 status = "implemented_runtime_verified_native_core_component"
-notes = "Boolean permission applies to HTTPS/TCP/UDP. Legacy transport names map to enabled/disabled and endpoint fields no longer restrict destinations. Cube 2 UDP supports unlisted sources/destinations/binds, bounded DNS and broadcast options; general engine TCP remains separate unfinished work. Signed native TCP/UDP and core/component TCP tests pass without endpoint/local grants, with disabled-open checks. Old signed server-choice identities migrate without creator reuse. Host isolation, handle, message, job, transfer and time limits remain. Documentation and app wording reflect the on/off policy."
+notes = "Boolean permission applies to HTTPS/TCP/UDP. Legacy transport names map to enabled/disabled and endpoint fields no longer restrict destinations. Cube 2 UDP supports unlisted sources/destinations/binds, bounded DNS and broadcast options; real TCP lifecycle and private authentication/registration are restored; broader LAN/service/platform verification remains open. Signed native TCP/UDP and core/component TCP tests pass without endpoint/local grants, with disabled-open checks. Old signed server-choice identities migrate without creator reuse. Host isolation, handle, message, job, transfer and time limits remain. Documentation and app wording reflect the on/off policy."
+
+
+[[work]]
+id = "cube2_tcp_lifecycle_and_auth_keys"
+requirements = ["Host-owned nonblocking TCP", "Real connect/bind/listen/accept/poll/error/options", "Partial streams and EOF", "Real read/write/both shutdown", "Unbound UDP and original bind errors", "Original registration and cryptographic authentication", "Scoped auth.cfg persistence and reload", "Preserve sanitized browser and shared quotas"]
+status = "implemented_runtime_verified_linux_private_network"
+notes = "Real socket tests cover streams, half-close, refusal, options, listener peer identities, quota preservation, invalid/stale handles and disabled access. Snapshot mode is explicitly selected only by the original synchronous browser; changed masters discard stale results and failed reconnects have no side effects. The original engine registers with a private master, answers its UDP information ping, authenticates with an unchanged-source cryptographic fixture and reloads saved auth keys offline. Direct and discovered two-engine regressions retain background connections and clean saves. Full suite: 390 passed, 53 ignored; four original-engine checks run separately. LAN discovery, invalid-auth/retry/service interoperability, platforms and updated signed delivery remain open."

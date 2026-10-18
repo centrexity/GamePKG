@@ -63,6 +63,10 @@ def main():
     anchor = 'int\nenet_address_set_host_ip (ENetAddress * address, const char * name)\n{'
     if text.count(anchor) != 1:raise ValueError('Cube 2 ENet adaptation anchor changed')
     unix.write_text(text.split(anchor, 1)[0]+'#include "gamepkg_network.h"\n#endif\n')
+    server = stage / 'engine/server.cpp'
+    text = replace_once(server.read_text(), '#include "engine.h"', '#include "engine.h"\nextern "C" ENetSocket gamepkg_master_socket(int snapshot);')
+    text = replace_once(text, 'ENetSocket sock = enet_socket_create(ENET_SOCKET_TYPE_STREAM);', 'ENetSocket sock = gamepkg_master_socket(wait ? 1 : 0);')
+    server.write_text(text)
     bridge = (PROJECT / 'engines/cube2/adapters/frame_bridge.h').read_bytes()
     (stage / 'engine/gamepkg_bridge.h').write_bytes(bridge)
     path = stage / 'engine/main.cpp'

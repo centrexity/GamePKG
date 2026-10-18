@@ -29,7 +29,7 @@ def read_tree(data):
  return files
 with tempfile.TemporaryDirectory(prefix='cube2-saved-files-') as temporary:
  root=Path(temporary)
- valid=[('config.cfg',b'name test'),('demos/match.dmo',b'demo'),('packages/base/map.ogz',b'edited map'),('packages/custom/map.cfg',b'map settings')]
+ valid=[('auth.cfg',b'authkey public-test 123 ""'),('config.cfg',b'name test'),('demos/match.dmo',b'demo'),('packages/base/map.ogz',b'edited map'),('packages/custom/map.cfg',b'map settings')]
  folder=root/'roundtrip';folder.mkdir()
  assert read_tree(call(folder,'restore',archive(valid)))==dict(valid)
  assert read_tree(call(folder,'collect'))==dict(valid)

@@ -209,3 +209,13 @@ Recorded SDL calls preserve rectangle/color order rather than recreating the
 reference algorithm. Runtime fixtures separately check native/wasm32 state,
 rectangles, original PNG bytes and linear-filtered HUD destinations. This does
 not verify remaining original fonts, menus or audio.
+
+
+`cube2_auth.py` regenerates `cube2-auth.json` by verifying the complete pinned
+Cube 2 source kit and compiling unchanged `shared/crypto.cpp` with the small
+`cube2_auth.cpp` driver. Only the known placement-new header compatibility patch
+is applied. The deterministic public test phrase produces a private test key,
+challenge and independently checked response. These are public regression inputs,
+not a real account. The original-engine TCP test uses the challenge/response to
+verify actual authentication, granted privilege and saved-key reload; it does
+not contact a public master or publish player credentials.

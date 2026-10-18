@@ -862,6 +862,174 @@ mod tests {
     }
     #[test]
     #[ignore = "requires original Cube 2 data and compiler/runtime namespaces"]
+    fn original_registration_authentication_and_saved_keys_use_real_tcp() {
+        use std::io::{BufRead, BufReader};
+        use std::net::{TcpListener, UdpSocket};
+        let data = std::env::var_os("GAMEPKG_CUBE2_DATA").expect("select original game data");
+        let binary = super::super::build::compile().unwrap();
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../tests/fixtures/cube2-auth.json")).unwrap();
+        let private = fixture["private_key"].as_str().unwrap();
+        let challenge = fixture["challenge"].as_str().unwrap().to_owned();
+        let response = fixture["response"].as_str().unwrap().to_owned();
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let master_address = listener.local_addr().unwrap();
+        let (port, first, second) = loop {
+            let first = UdpSocket::bind("127.0.0.1:0").unwrap();
+            let port = first.local_addr().unwrap().port();
+            if port < 65535 && port != master_address.port() {
+                if let Ok(second) = UdpSocket::bind(("127.0.0.1", port + 1)) {
+                    break (port, first, second);
+                }
+            }
+        };
+        let (events, phases) = std::sync::mpsc::channel();
+        let mock = std::thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(60);
+            let stream = loop {
+                match listener.accept() {
+                    Ok((stream, _)) => break stream,
+                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                        assert!(Instant::now() < deadline);
+                        std::thread::sleep(Duration::from_millis(2));
+                    }
+                    Err(e) => panic!("mock master: {e}"),
+                }
+            };
+            stream
+                .set_read_timeout(Some(Duration::from_secs(15)))
+                .unwrap();
+            stream
+                .set_write_timeout(Some(Duration::from_secs(3)))
+                .unwrap();
+            let mut reader = BufReader::new(stream);
+            let mut line = String::new();
+            reader.read_line(&mut line).unwrap();
+            assert_eq!(line, format!("regserv {port}\n"));
+            // The original master validates registration with a one-byte UDP ping.
+            let ping = UdpSocket::bind("127.0.0.1:0").unwrap();
+            ping.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+            ping.send_to(&[1], ("127.0.0.1", port + 1)).unwrap();
+            let mut pong = [0; 4096];
+            let (size, peer) = ping.recv_from(&mut pong).unwrap();
+            assert_eq!(peer.port(), port + 1);
+            assert!(size > 1 && pong[0] == 1);
+            for fragment in b"succreg\n".chunks(2) {
+                reader.get_mut().write_all(fragment).unwrap();
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            events.send(0).unwrap();
+            line.clear();
+            reader.read_line(&mut line).unwrap();
+            let fields = line.split_whitespace().collect::<Vec<_>>();
+            assert_eq!(fields.len(), 3);
+            assert_eq!(fields[0], "reqauth");
+            assert_eq!(fields[2], "PortAuth");
+            let id = fields[1].parse::<u32>().unwrap();
+            for fragment in format!("chalauth {id} {challenge}\n").as_bytes().chunks(7) {
+                reader.get_mut().write_all(fragment).unwrap();
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            line.clear();
+            reader.read_line(&mut line).unwrap();
+            assert_eq!(line, format!("confauth {id} {response}\n"));
+            reader
+                .get_mut()
+                .write_all(format!("succauth {id}\n").as_bytes())
+                .unwrap();
+            events.send(1).unwrap();
+        });
+        let config = format!("exec data/defaults.cfg\nname PortTransport\nauthkey PortAuth {private} \"\"\nbind F10 [auth \"\"]\nbind F11 [name (concatword Auth (isauth (getclientnum)))]\nbind F12 [saveauthkeys; name (concatword Key (hasauthkey PortAuth \"\"))]\n");
+        let mut seed = b"GPS1".to_vec();
+        seed.extend((config.len() as u32).to_le_bytes());
+        seed.extend([0; 8]);
+        seed.extend(config.as_bytes());
+        let p = crate::manifest::Manifest::parse(include_bytes!("../../ports/cube2/manifest.toml"))
+            .unwrap()
+            .permissions;
+        drop(first);
+        drop(second);
+        let mut session = Session::start(Path::new(&data), 2 * 1024 * 1048576, Duration::from_secs(60), &seed, || Ok(binary.clone()), Some(p.clone().into()),
+            format!("; mastername \"127.0.0.1\"; masterport {}; mode 0; map complex; serverip \"127.0.0.1\"; serverport {port}; startlistenserver 1",master_address.port())).unwrap();
+        session.tick(0, 0, 0).unwrap();
+        let press = |session: &mut Session, key| {
+            session.key(key, true, false, 0).unwrap();
+            session.tick(0, 0, 0).unwrap();
+            session.key(key, false, false, 0).unwrap();
+            session.tick(0, 0, 0).unwrap();
+        };
+        for expected in [0, 1] {
+            let deadline = Instant::now() + Duration::from_secs(20);
+            loop {
+                if let Ok(phase) = phases.try_recv() {
+                    assert_eq!(phase, expected);
+                    break;
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "phase {expected}: {}",
+                    String::from_utf8_lossy(&session.diagnostics.lock().unwrap())
+                );
+                session.tick(0, 0, 0).unwrap();
+            }
+            if expected == 0 {
+                press(&mut session, 67);
+            }
+        }
+        mock.join().unwrap();
+        for _ in 0..20 {
+            session.tick(0, 0, 0).unwrap();
+        }
+        press(&mut session, 68);
+        let saved = session.snapshot().unwrap();
+        let files = protocol::save_files(&saved).unwrap();
+        let config = files.iter().find(|f| f.path == "config.cfg").unwrap();
+        assert!(
+            std::str::from_utf8(config.bytes)
+                .unwrap()
+                .contains("name \"Auth1\""),
+            "authentication did not grant original auth privilege"
+        );
+        assert!(
+            String::from_utf8_lossy(&session.diagnostics.lock().unwrap())
+                .contains("master server registration succeeded")
+        );
+        press(&mut session, 69);
+        let saved = session.snapshot().unwrap();
+        let files = protocol::save_files(&saved).unwrap();
+        let auth = files
+            .iter()
+            .find(|f| f.path == "auth.cfg")
+            .expect("auth keys were not persisted");
+        assert!(std::str::from_utf8(auth.bytes).unwrap().contains(private));
+        drop(session);
+        let mut offline = p;
+        offline.network = false;
+        let mut reopened = Session::start(
+            Path::new(&data),
+            2 * 1024 * 1048576,
+            Duration::from_secs(60),
+            &saved,
+            || Ok(binary.clone()),
+            Some(offline.into()),
+            String::new(),
+        )
+        .unwrap();
+        reopened.tick(0, 0, 0).unwrap();
+        press(&mut reopened, 69);
+        let saved = reopened.snapshot().unwrap();
+        let files = protocol::save_files(&saved).unwrap();
+        let config = files.iter().find(|f| f.path == "config.cfg").unwrap();
+        assert!(
+            std::str::from_utf8(config.bytes)
+                .unwrap()
+                .contains("name \"Key1\""),
+            "saved auth key did not load on relaunch"
+        );
+    }
+    #[test]
+    #[ignore = "requires original Cube 2 data and compiler/runtime namespaces"]
     fn original_server_browser_reads_only_the_host_master_snapshot() {
         use std::io::{Read, Write};
         let data = std::env::var_os("GAMEPKG_CUBE2_DATA").expect("select original game data");

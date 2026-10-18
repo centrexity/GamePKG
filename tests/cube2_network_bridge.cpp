@@ -24,6 +24,32 @@ int main(int argc,char **argv)
     errno=0;
     if(socket(AF_INET,SOCK_DGRAM,0)!=-1 || errno!=EPERM) return 3;
     if(!strcmp(argv[1],"create")) printf("%d\n",enet_socket_create(ENET_SOCKET_TYPE_DATAGRAM));
+    else if(!strcmp(argv[1],"create-stream")) printf("%d\n",enet_socket_create(ENET_SOCKET_TYPE_STREAM));
+    else if(!strcmp(argv[1],"snapshot")) printf("%d\n",gamepkg_master_socket(1));
+    else if(!strcmp(argv[1],"normal-master")) printf("%d\n",gamepkg_master_socket(0));
+    else if(!strcmp(argv[1],"listen")) printf("%d\n",enet_socket_listen(32,-1));
+    else if(!strncmp(argv[1],"shutdown-",9))
+    {
+        int how=argv[1][9]-'0';
+        printf("%d\n",enet_socket_shutdown(32,(ENetSocketShutdown)how));
+    }
+    else if(!strcmp(argv[1],"invalid-local"))
+    {
+        if(enet_socket_shutdown(32,(ENetSocketShutdown)3)!=-1 || enet_socket_shutdown(-1,ENET_SOCKET_SHUTDOWN_READ)!=-1 || enet_socket_listen(32,129)!=-1 || enet_socket_accept(1024,NULL)!=ENET_SOCKET_NULL) return 13;
+    }
+    else if(!strcmp(argv[1],"accept") || !strcmp(argv[1],"accept-null"))
+    {
+        ENetAddress address={0x01020304,555};
+        ENetSocket result=enet_socket_accept(32,!strcmp(argv[1],"accept-null") ? NULL : &address);
+        if(result==ENET_SOCKET_NULL && (address.host!=0x01020304 || address.port!=555)) return 14;
+        if(result!=ENET_SOCKET_NULL && !strcmp(argv[1],"accept") && (memcmp(&address.host,"\x7f\0\0\1",4) || address.port!=1234)) return 15;
+        printf("%d\n",result);
+    }
+    else if(!strcmp(argv[1],"select"))
+    {
+        ENetSocketSet reads,writes;FD_ZERO(&reads);FD_ZERO(&writes);FD_SET(32,&reads);FD_SET(32,&writes);
+        printf("%d\n",enet_socketset_select(32,&reads,&writes,0));
+    }
     else if(!strcmp(argv[1],"set-option"))
         printf("%d\n",enet_socket_set_option(32,ENET_SOCKOPT_TTL,37));
     else if(!strcmp(argv[1],"get-option"))

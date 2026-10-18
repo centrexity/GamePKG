@@ -60,10 +60,17 @@ preferences, not networking restrictions. Clearing them clears startup commands;
 it does not disable an enabled network permission. `network = false` remains
 off regardless of saved launch preferences. Local addresses need no extra opt-in.
 
-The reviewed engine's master browser still reads only a bounded server-list
-snapshot from the chosen master; it never executes returned text. Its general
-TCP authentication/registration support remains unfinished. UDP connections,
-listening, DNS and broadcast are host-owned and have no destination allowlist.
+The reviewed engine's master browser reads a bounded, sanitized server-list
+snapshot and never executes arbitrary returned text. Its original registration
+and authentication paths use real nonblocking TCP sockets through the broker.
+Connect, bind, listen, accept, polling, socket error/options and shutdown all
+operate on host-owned sockets. Combined UDP/TCP/snapshot handles retain the
+16-handle/eight-opens-per-second bounds; stream transfers are limited to 4 KiB per
+RPC and share the engine's 1 MiB/second budget. The listen backlog is capped at 128.
+No OS descriptor reaches game code.
+
+Original-engine tests verify registration, the master's UDP information ping,
+cryptographic challenge/response, authenticated privilege and saved-key reload
+using a private local master. This is not a live public-service compatibility
+claim. LAN discovery and further multiplayer/error/platform fidelity remain open.
 DNS work is bounded and a lookup exceeding the broker deadline fails explicitly.
-The networking flag does not implement missing adapter operations or establish
-full multiplayer fidelity; see the port fidelity audit for outstanding work.
