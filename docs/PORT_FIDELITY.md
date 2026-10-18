@@ -1243,3 +1243,40 @@ is not established by those samples. Existing native/both-browser gameplay/edito
 file workflows, strict lint, formatting and reference regeneration also pass. Nine procedural themes, image/editor artwork, viewport, fonts/HUD/
 menus/audio and other platforms remain open. Recipe 0.1.36 is source-only; host
 version and published binary/package releases are unchanged.
+
+
+### Cyber Grid and Aurora Waves
+
+These two original line backgrounds now preserve the complete shared typed RNG
+stream after theme selection. Cyber Grid retains its randomized background,
+line tint, horizon, spacing, perspective endpoints and moving horizontal lines.
+Aurora retains its randomized wave count, orientation, per-wave colors/alpha,
+speed/amplitude, 5-pixel strip spacing and original float/cast operation order.
+The reference selector explicitly includes both aurora orientations; its first
+three natural seeds otherwise only exercised horizontal strips.
+
+The unchanged complete original function and real pinned Rand supply 22 cases
+across three selected levels per theme and extreme frame phases. All raw ordered
+line fields and hashes match. Real SDL 2.30 default OpenGL supplies 185 independent
+48-command-group contribution maps and all complete logical framebuffers; every
+map and canonical framebuffer byte matches production. Original software SDL
+has identical coverage in these cases but differs from default OpenGL by up to
+six RGB levels; those separate original images and measured differences remain
+verified without relaxing the exact canonical comparison.
+
+Both themes reuse the attributed clipped line rasterizer and known-background
+compositor. Existing density-based sparse tiles preserve all 200 fire-brick
+layers and all four full-window particle tiles with 3,000 particles in cold/warm
+signed native/Wasm scenes. Command, byte, source, portability, time and memory
+limits are unchanged. A local opacity binding was renamed to avoid conflicting
+with an existing function under the conservative source scanner; its policy was
+not changed.
+
+All 73 logic tests and 47 signed checks per execution profile pass. Eight actual
+player configurations verify animation, theme changes, both aurora orientations
+and revisit: browser samples are exact, desktop samples differ by at most one
+color level. These interior samples with explicit nearest-boundary choices do
+not prove complete scaled-window or other-platform fidelity. Seven procedural
+themes, image/editor artwork, viewport, fonts/HUD/menus/audio and the other port
+requirements remain open. Recipe 0.1.37 is source-only; the host remains 0.1.17
+and no binary/package release is created.

@@ -23,8 +23,8 @@ fn fill_rect(&mut self,_:Rect)->Result<(),()>{panic!("unexpected rectangle primi
 body=header+fragment+'''
 fn main(){let args:Vec<String>=std::env::args().collect();
 if args.len()==1 {
- use rand::{Rng,SeedableRng};let mut found=[0;20];let mut levels=Vec::new();
- for level in 10u64..10000 {let seed=level.wrapping_mul(12345).wrapping_add((level/3).wrapping_mul(67890)).wrapping_add((level%7).wrapping_mul(11111));let theme=rand::rngs::StdRng::seed_from_u64(seed).gen_range(0i32..20);if [7,9,19].contains(&theme)&&found[theme as usize]<3 {levels.push((level,theme));found[theme as usize]+=1;}if [7,9,19].iter().all(|v|found[*v]==3){break;}}
+ use rand::{Rng,SeedableRng};let mut found=[0;20];let mut levels=Vec::new();let mut aurora_orientations=[false;2];
+ for level in 10u64..10000 {let seed=level.wrapping_mul(12345).wrapping_add((level/3).wrapping_mul(67890)).wrapping_add((level%7).wrapping_mul(11111));let mut rng=rand::rngs::StdRng::seed_from_u64(seed);let theme=rng.gen_range(0i32..20);if [7,9,19].contains(&theme)&&found[theme as usize]<3 {if theme==3 {let _:u8=rng.gen_range(5..25);let _:u8=rng.gen_range(5..25);let _:u8=rng.gen_range(10..35);let _:i32=rng.gen_range(3..8);let orientation=usize::from(rng.gen_bool(0.5));if found[3]==2&&aurora_orientations[orientation]&&!aurora_orientations[1-orientation]{continue;}aurora_orientations[orientation]=true;}levels.push((level,theme));found[theme as usize]+=1;}if [7,9,19].iter().all(|v|found[*v]==3){break;}}
  println!("{:?}",levels);return;
 }
 if args[1]=="half" {use rand::{Rng,SeedableRng};let seed:u64=args[2].parse().unwrap();let mut rng=rand::rngs::StdRng::seed_from_u64(seed);let samples:Vec<bool>=(0..256).map(|_|rng.gen_bool(0.5)).collect();println!("{:?}",samples);return;}
@@ -45,7 +45,7 @@ int index=0;uint8_t p[20];while(fread(p,1,20,stdin)==20){int selected=index++/48
 uint8_t*pixels=malloc(1280*720*4);if(SDL_RenderReadPixels(r,NULL,SDL_PIXELFORMAT_RGBA32,pixels,1280*4))return 7;if(fwrite(pixels,1,1280*720*4,stdout)!=1280*720*4)return 8;free(pixels);SDL_DestroyRenderer(r);if(s)SDL_FreeSurface(s);if(w)SDL_DestroyWindow(w);SDL_Quit();return 0;}
 '''
 themes=[int(value) for value in sys.argv[3].split(',')] if len(sys.argv)>3 else [13]
-assert themes and len(set(themes))==len(themes) and all(value in [6,13,14] for value in themes)
+assert themes and len(set(themes))==len(themes) and all(value in [0,3,6,13,14] for value in themes)
 body=body.replace('[7,9,19]',str(themes).replace(' ',''))
 rand_source=Path(sys.argv[2]);assert tomllib.loads((rand_source/'Cargo.toml').read_text())['package']['version']=='0.8.5'
 with tempfile.TemporaryDirectory(prefix='gamepkg-procedural-reference-') as temporary:

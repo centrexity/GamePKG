@@ -2653,6 +2653,8 @@ fn check_line_background_fixture(text: &str) {
         let theme = case["theme"].as_u64().unwrap() as u32;
         assert_eq!(procedural::procedural_theme(level), theme);
         let segments = match theme {
+            0 => procedural::cyber_segments(level, frame).1,
+            3 => procedural::aurora_segments(level, frame).1,
             6 => procedural::rain_segments(level, frame),
             13 => procedural::kaleidoscope_segments(frame),
             14 => procedural::warp_segments(level, frame),
@@ -2777,4 +2779,23 @@ fn original_kaleidoscope_preserves_line_commands_and_actual_sdl_framebuffers() {
 #[test]
 fn original_rain_and_warp_preserve_line_commands_and_actual_sdl_framebuffers() {
     check_line_background_fixture(include_str!("fixtures/arkanoo-rain-warp.json"));
+}
+
+#[test]
+fn original_cyber_and_aurora_preserve_line_commands_and_actual_sdl_framebuffers() {
+    let text = include_str!("fixtures/arkanoo-cyber-aurora.json");
+    let fixture: serde_json::Value = serde_json::from_str(text).unwrap();
+    let mut orientations = [false; 2];
+    for case in fixture["cases"].as_array().unwrap() {
+        if case["theme"] == 3 {
+            let first = &case["segments"][0];
+            orientations[usize::from(first[0] == first[2])] = true;
+        }
+    }
+    assert_eq!(
+        orientations,
+        [true, true],
+        "Both original aurora branches need reference coverage"
+    );
+    check_line_background_fixture(text);
 }

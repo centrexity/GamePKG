@@ -2744,3 +2744,13 @@ fn original_rain_and_warp_preserve_line_pixels_and_full_scene_budgets() {
         &[0, 3, 11, 14],
     );
 }
+
+#[test]
+#[ignore = "requires the signed production fixture prepared by tests/arkanoo.py"]
+fn original_cyber_and_aurora_preserve_line_pixels_and_full_scene_budgets() {
+    check_procedural_runtime_fixture(
+        include_str!("fixtures/arkanoo-cyber-aurora.json"),
+        2149580800,
+        &[0, 3, 11, 14, 20, 21],
+    );
+}

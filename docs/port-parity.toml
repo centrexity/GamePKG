@@ -313,9 +313,9 @@ notes = "The complete unchanged original animated-background function compiles a
 
 [[work]]
 id = "arkanoo_remaining_procedural_themes"
-requirements = ["Cyber grid", "Hex pulse", "Aurora waves", "Matrix rain", "Nebula clouds", "Starry night", "Bubbles", "Digital circuit", "Maze"]
+requirements = ["Hex pulse", "Matrix rain", "Nebula clouds", "Starry night", "Bubbles", "Digital circuit", "Maze"]
 status = "pending"
-notes = "The source now selects the original theme deterministically, but only Star Voyage, Snow, Smoke, Tornado, Fire, Deep Sea, Supernova, Space Wars, Kaleidoscope, Rain and Warp draw paths are adapted. Other selected themes still reach the previous grid fallback. Their original RNG types, line/outline rasterization, blend order, clipping, frame timing and resource use need independent reference evidence; the eleven restored themes do not establish their completion."
+notes = "The source now selects the original theme deterministically, but only Star Voyage, Snow, Smoke, Tornado, Fire, Deep Sea, Supernova, Space Wars, Kaleidoscope, Rain, Warp, Cyber Grid and Aurora Waves draw paths are adapted. Other selected themes still reach the previous grid fallback. Their original RNG types, line/outline rasterization, blend order, clipping, frame timing and resource use need independent reference evidence; the thirteen restored themes do not establish their completion."
 
 [[work]]
 id = "arkanoo_procedural_fire_and_deep_sea"
@@ -352,3 +352,9 @@ id = "arkanoo_procedural_rain_and_warp"
 requirements = ["Original seeded rain slant speed and length", "Preserve upstream disabled lightning behavior", "Original exponential warp distance tint alpha and tails", "All ordered commands and clipped pixel contributions", "Exact default OpenGL logical framebuffers", "Native/Wasm full-scene limits", "Real desktop/browser animation and revisit"]
 status = "implemented_and_verified_linux_browser"
 notes = "The unchanged complete original function supplies 22 actual level/frame cases and raw ordered line commands with pinned real Rand. Actual default SDL 2.30 OpenGL frames and 116 independent segment-group contribution maps match production exactly. Both signed native and Wasm compare every canonical framebuffer byte; all 46 signed checks pass. The original software renderer itself differs from default OpenGL by up to 15 RGB levels on faint overlapping warp streaks; tests verify that recorded difference separately instead of weakening exact canonical checks. Rain uses 128-pixel sparse tiles to preserve all fire-brick and 3,000-particle layers within unchanged budgets. Eight actual player configurations pass both animation frames/theme and a revisit: browser samples exact, desktop maximum difference one. Nine themes, original image/editor art, full scaled-window/edge/platform fidelity and remaining presentation/audio are unfinished."
+
+[[work]]
+id = "arkanoo_procedural_cyber_and_aurora"
+requirements = ["Original shared typed RNG stream and colors", "Perspective horizon spacing and scanline motion", "Both aurora orientations and wave parameters", "Exact ordered lines and contribution maps", "Exact original default OpenGL logical frames", "Signed native/Wasm dense-scene budgets", "Actual desktop/browser animation and revisit"]
+status = "implemented_and_verified_linux_browser"
+notes = "The complete unchanged original function with pinned Rand supplies 22 selected-level/frame cases including both aurora branches and extreme phases. All ordered commands, 185 independently recorded SDL 2.30 default OpenGL contribution maps and complete canonical framebuffers match production exactly in logic and signed native/Wasm checks. Separate original software frames have identical coverage and at most six RGB levels of renderer difference. The existing attributed clipped-line helper, precompositor and density-based tiles preserve all 200 fire-brick layers and 3,000-particle corner layers within unchanged limits. All 73 logic tests and 47 signed checks per profile pass. Eight actual players pass animation/theme/orientation/revisit checks with exact browser samples and desktop delta at most one. Seven procedural themes, other artwork and complete scaled-window/platform fidelity remain open."

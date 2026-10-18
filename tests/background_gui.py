@@ -5,15 +5,16 @@ from http.server import SimpleHTTPRequestHandler,ThreadingHTTPServer
 import argparse,json,math,os,shutil,subprocess,tempfile,threading,time
 from PIL import Image
 from gui_test_support import start_display
-parser=argparse.ArgumentParser();parser.add_argument('--rain-warp',action='store_true');parser.add_argument('--kaleidoscope',action='store_true');parser.add_argument('--voyage',action='store_true');parser.add_argument('--space',action='store_true');parser.add_argument('--fire-sea',action='store_true');parser.add_argument('--procedural',action='store_true');parser.add_argument('--skip-browser',action='store_true');args=parser.parse_args();assert sum([args.procedural,args.fire_sea,args.space,args.voyage,args.kaleidoscope,args.rain_warp])<=1;args.procedural=args.procedural or args.fire_sea or args.space or args.voyage or args.kaleidoscope or args.rain_warp
-PROJECT=Path(__file__).resolve().parents[1];PROOF=PROJECT/('target/rain-warp-proof' if args.rain_warp else 'target/kaleidoscope-proof' if args.kaleidoscope else 'target/star-voyage-proof' if args.voyage else 'target/space-proof' if args.space else 'target/fire-sea-proof' if args.fire_sea else 'target/procedural-proof' if args.procedural else 'target/background-proof');PROOF.mkdir(parents=True,exist_ok=True)
+parser=argparse.ArgumentParser();parser.add_argument('--cyber-aurora',action='store_true');parser.add_argument('--rain-warp',action='store_true');parser.add_argument('--kaleidoscope',action='store_true');parser.add_argument('--voyage',action='store_true');parser.add_argument('--space',action='store_true');parser.add_argument('--fire-sea',action='store_true');parser.add_argument('--procedural',action='store_true');parser.add_argument('--skip-browser',action='store_true');args=parser.parse_args();assert sum([args.procedural,args.fire_sea,args.space,args.voyage,args.kaleidoscope,args.rain_warp,args.cyber_aurora])<=1;args.procedural=args.procedural or args.fire_sea or args.space or args.voyage or args.kaleidoscope or args.rain_warp or args.cyber_aurora
+PROJECT=Path(__file__).resolve().parents[1];PROOF=PROJECT/('target/cyber-aurora-proof' if args.cyber_aurora else 'target/rain-warp-proof' if args.rain_warp else 'target/kaleidoscope-proof' if args.kaleidoscope else 'target/star-voyage-proof' if args.voyage else 'target/space-proof' if args.space else 'target/fire-sea-proof' if args.fire_sea else 'target/procedural-proof' if args.procedural else 'target/background-proof');PROOF.mkdir(parents=True,exist_ok=True)
 import zlib
-REFERENCE=json.loads((PROJECT/('tests/fixtures/arkanoo-rain-warp.json' if args.rain_warp else 'tests/fixtures/arkanoo-kaleidoscope.json' if args.kaleidoscope else 'tests/fixtures/arkanoo-star-voyage.json' if args.voyage else 'tests/fixtures/arkanoo-space-background.json' if args.space else 'tests/fixtures/arkanoo-fire-sea-background.json' if args.fire_sea else 'tests/fixtures/arkanoo-procedural.json' if args.procedural else 'tests/fixtures/arkanoo-background.json')).read_text())['cases']
+REFERENCE=json.loads((PROJECT/('tests/fixtures/arkanoo-cyber-aurora.json' if args.cyber_aurora else 'tests/fixtures/arkanoo-rain-warp.json' if args.rain_warp else 'tests/fixtures/arkanoo-kaleidoscope.json' if args.kaleidoscope else 'tests/fixtures/arkanoo-star-voyage.json' if args.voyage else 'tests/fixtures/arkanoo-space-background.json' if args.space else 'tests/fixtures/arkanoo-fire-sea-background.json' if args.fire_sea else 'tests/fixtures/arkanoo-procedural.json' if args.procedural else 'tests/fixtures/arkanoo-background.json')).read_text())['cases']
 ORIGINAL=[zlib.decompress(bytes.fromhex(case.get('opengl_rgba_zlib_hex',case['sdl_rgba_zlib_hex']))) for case in REFERENCE]
 PHASES=[0,3,7,10,14,17,0]
 KEYS={3:'Right',7:'Up',10:'z',14:'Left',17:'Down'}
 if args.procedural:PHASES=[0,3,11,14,22,25,0];KEYS={3:'Right',11:'Up',14:'z',22:'Left',25:'Down'}
-if args.fire_sea or args.rain_warp:PHASES=[0,3,11,14,0];KEYS={3:'Right',11:'Up',14:'z'}
+if args.fire_sea or args.rain_warp or args.cyber_aurora:PHASES=[0,3,11,14,0];KEYS={3:'Right',11:'Up',14:'z'}
+if args.cyber_aurora:PHASES=[0,3,11,14,20,21,0];KEYS={3:'Right',11:'Up',14:'z',20:'Left',21:'Down'}
 if args.space:PHASES=[0,3,11,14,21,0];KEYS={3:'Right',11:'Up',14:'z',21:'Left'}
 if args.voyage or args.kaleidoscope:PHASES=[0,3,7,8,9,10,0];KEYS={3:'Right',7:'Up',8:'z',9:'Left',10:'Down'}
 def source_pixel(case,x,y):
@@ -49,7 +50,7 @@ def expected(case,width,height):
  return values
 def check(actual,wanted,label):
  deltas=[min(max(abs(a-b) for a,b in zip(p,q)) for q in choices) for p,choices in zip(actual,wanted)];delta=max(deltas);print(label,'maximum original SDL channel difference (nearest boundaries accounted):',delta,flush=True)
- assert delta<=(1 if args.kaleidoscope or args.rain_warp else 5 if args.procedural else 3),(label,[(i,a,b) for i,(a,b) in enumerate(zip(actual,wanted)) if deltas[i]>(1 if args.kaleidoscope or args.rain_warp else 5 if args.procedural else 3)])
+ assert delta<=(1 if args.kaleidoscope or args.rain_warp or args.cyber_aurora else 5 if args.procedural else 3),(label,[(i,a,b) for i,(a,b) in enumerate(zip(actual,wanted)) if deltas[i]>(1 if args.kaleidoscope or args.rain_warp or args.cyber_aurora else 5 if args.procedural else 3)])
 class Quiet(SimpleHTTPRequestHandler):
  def log_message(self,*args):pass
 with tempfile.TemporaryDirectory(prefix='gamepkg-background-ui-',dir=PROJECT/'target') as directory:
@@ -87,7 +88,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-background-ui-',dir=PROJECT/'ta
        while True:
         path=PROOF/(label+'.png');subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(path)],env=env,check=True,timeout=10);im=Image.open(path).convert('RGB');scale=min(im.width/640,im.height/480);ox=(im.width-640*scale)/2;oy=(im.height-480*scale)/2
         actual=[list(im.getpixel((round(ox+x*scale),round(oy+y*scale)))) for _,x,y in points(shift)]
-        if all(min(max(abs(a-b) for a,b in zip(pixel,choice)) for choice in choices)<=(1 if args.kaleidoscope or args.rain_warp else 5 if args.procedural else 3) for pixel,choices in zip(actual,expected(shift,im.width,im.height))):break
+        if all(min(max(abs(a-b) for a,b in zip(pixel,choice)) for choice in choices)<=(1 if args.kaleidoscope or args.rain_warp or args.cyber_aurora else 5 if args.procedural else 3) for pixel,choices in zip(actual,expected(shift,im.width,im.height))):break
         if app.poll() is not None:raise RuntimeError(app.stderr.read().decode())
         assert time.monotonic()<deadline,(label,shift,actual);time.sleep(.05)
        check(actual,expected(shift,im.width,im.height),label+'-'+str(shift))

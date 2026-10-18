@@ -174,7 +174,11 @@ pub fn game_tick(input:u32,state:u64)->u64 {
     rain_warp_cases=json.loads((PROJECT/'tests/fixtures/arkanoo-rain-warp.json').read_text())['cases']
     rain_warp_values='['+','.join('['+str(case['level'])+'u64,'+str(case['frame'])+'u64]' for case in rain_warp_cases)+']'
     rain_warp_probe=procedural_probe.replace('fn procedural_probe','fn rain_warp_probe').replace(old_cases,rain_warp_values)
-    probe=' if input&2148532224==2148532224 {return rain_warp_probe(input); }\n'
+    cyber_aurora_cases=json.loads((PROJECT/'tests/fixtures/arkanoo-cyber-aurora.json').read_text())['cases']
+    cyber_aurora_values='['+','.join('['+str(case['level'])+'u64,'+str(case['frame'])+'u64]' for case in cyber_aurora_cases)+']'
+    cyber_aurora_probe=procedural_probe.replace('fn procedural_probe','fn cyber_aurora_probe').replace(old_cases,cyber_aurora_values)
+    probe=' if input&2149580800==2149580800 {return cyber_aurora_probe(input); }\n'
+    probe+=' if input&2148532224==2148532224 {return rain_warp_probe(input); }\n'
     probe+=' if input&2148007936==2148007936 {return kaleidoscope_probe(input); }\n'
     probe+=' if input&2147745792==2147745792 {return line_probe(input); }\n'
     probe+=' if input&2147614720==2147614720 {return voyage_probe(input); }\n'
@@ -200,7 +204,7 @@ pub fn game_tick(input:u32,state:u64)->u64 {
         probe+=f'gamepkg::draw_clear(0x000000ff);render::draw_ball_effects(&ball,{case["frame"]});return 1;}};\n'
     probe+='return 0;}\n'
     probe_file=modes/'source/src/lib.rs'
-    text=probe_file.read_text();text=text.replace(' if input&67108864!=0 {',probe+' if input&67108864!=0 {');probe_file.write_text(text+metal_probe+ice_probe+fire_probe+bonus_probe+portal_probe+background_probe+procedural_probe+fire_sea_probe+space_probe+voyage_probe+line_probe+kaleidoscope_probe+rain_warp_probe+visual_probe)
+    text=probe_file.read_text();text=text.replace(' if input&67108864!=0 {',probe+' if input&67108864!=0 {');probe_file.write_text(text+metal_probe+ice_probe+fire_probe+bonus_probe+portal_probe+background_probe+procedural_probe+fire_sea_probe+space_probe+voyage_probe+line_probe+kaleidoscope_probe+rain_warp_probe+cyber_aurora_probe+visual_probe)
     penguin_probe='''
 static HEART:Mutex<Option<physics::Game>>=Mutex::new(None);
 fn penguin_probe(input:u32)->u64 {
