@@ -47,7 +47,7 @@ impl App {
                 ui.add(egui::TextEdit::singleline(&mut draft.master).id_salt("multiplayer-master").hint_text("master.example:28787").char_limit(256).desired_width(480.0));
                 ui.weak("Allows browsing and joining IPv4 servers listed by this master. Its list is read by the host; the game receives only validated server addresses.");
 
-                ui.label("The selected game port and the next port for server information are allowed. Hosting stays off public master-server lists.");
+                ui.label("These addresses are launch preferences. Networking can reach other addresses too. Hosting stays off public master-server lists.");
                 ui.horizontal(|ui| {
                     if ui.button("Save multiplayer settings").clicked() {chosen=Some(draft.clone());}
                     if ui.button("Clear launch addresses").clicked() {*draft=Default::default();chosen=Some(draft.clone());}
