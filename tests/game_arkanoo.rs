@@ -2503,11 +2503,9 @@ fn original_campaign_background_points_colors_and_release_overflow_match() {
     }
 }
 
-#[test]
-fn original_procedural_snow_smoke_tornado_and_typed_color_rng_match() {
+fn check_procedural_background_fixture(text: &str) {
     use std::io::Read;
-    let fixture: serde_json::Value =
-        serde_json::from_str(include_str!("fixtures/arkanoo-procedural.json")).unwrap();
+    let fixture: serde_json::Value = serde_json::from_str(text).unwrap();
     for case in fixture["cases"].as_array().unwrap() {
         let level = case["level"].as_u64().unwrap() as u32;
         let frame = case["frame"].as_u64().unwrap();
@@ -2561,4 +2559,13 @@ fn original_procedural_snow_smoke_tornado_and_typed_color_rng_match() {
     for level in [0, 1, 6, 7, 8, 9] {
         assert!(procedural::procedural_background(level, 0).is_none());
     }
+}
+
+#[test]
+fn original_procedural_snow_smoke_tornado_and_typed_color_rng_match() {
+    check_procedural_background_fixture(include_str!("fixtures/arkanoo-procedural.json"));
+}
+#[test]
+fn original_procedural_fire_and_deep_sea_match_ordered_pixels_and_rng() {
+    check_procedural_background_fixture(include_str!("fixtures/arkanoo-fire-sea-background.json"));
 }

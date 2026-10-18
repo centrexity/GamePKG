@@ -5,14 +5,15 @@ from http.server import SimpleHTTPRequestHandler,ThreadingHTTPServer
 import argparse,json,math,os,shutil,subprocess,tempfile,threading,time
 from PIL import Image
 from gui_test_support import start_display
-parser=argparse.ArgumentParser();parser.add_argument('--procedural',action='store_true');parser.add_argument('--skip-browser',action='store_true');args=parser.parse_args()
-PROJECT=Path(__file__).resolve().parents[1];PROOF=PROJECT/('target/procedural-proof' if args.procedural else 'target/background-proof');PROOF.mkdir(parents=True,exist_ok=True)
+parser=argparse.ArgumentParser();parser.add_argument('--fire-sea',action='store_true');parser.add_argument('--procedural',action='store_true');parser.add_argument('--skip-browser',action='store_true');args=parser.parse_args();assert not(args.procedural and args.fire_sea);args.procedural=args.procedural or args.fire_sea
+PROJECT=Path(__file__).resolve().parents[1];PROOF=PROJECT/('target/fire-sea-proof' if args.fire_sea else 'target/procedural-proof' if args.procedural else 'target/background-proof');PROOF.mkdir(parents=True,exist_ok=True)
 import zlib
-REFERENCE=json.loads((PROJECT/('tests/fixtures/arkanoo-procedural.json' if args.procedural else 'tests/fixtures/arkanoo-background.json')).read_text())['cases']
+REFERENCE=json.loads((PROJECT/('tests/fixtures/arkanoo-fire-sea-background.json' if args.fire_sea else 'tests/fixtures/arkanoo-procedural.json' if args.procedural else 'tests/fixtures/arkanoo-background.json')).read_text())['cases']
 ORIGINAL=[zlib.decompress(bytes.fromhex(case['sdl_rgba_zlib_hex'])) for case in REFERENCE]
 PHASES=[0,3,7,10,14,17,0]
 KEYS={3:'Right',7:'Up',10:'z',14:'Left',17:'Down'}
 if args.procedural:PHASES=[0,3,11,14,22,25,0];KEYS={3:'Right',11:'Up',14:'z',22:'Left',25:'Down'}
+if args.fire_sea:PHASES=[0,3,11,14,0]
 def source_pixel(case,x,y):
  if 0<=x<1280 and 0<=y<720:
   at=(y*1280+x)*4;return list(ORIGINAL[case][at:at+3])

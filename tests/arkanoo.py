@@ -154,7 +154,12 @@ pub fn game_tick(input:u32,state:u64)->u64 {
     background_probe='fn background_probe(input:u32)->u64 {let cases=['+','.join('['+str(case['level'])+'u64,'+str(case['frame'])+'u64]' for case in background_cases)+'];let at=cases[(input&31) as usize];if input&32!=0 {let mut game=physics::Game::new();game.mode=1;game.level=at[0] as u32;game.frame=at[1];for index in 0..200 {game.set_block(index,2);}for index in 0..3000 {game.particles.push(physics::Particle{x:if index%2==0 {0.0} else {1279.0},y:if index%4<2 {0.0} else {719.0},vx:0.0,vy:0.0,life:30,max_life:30,rotation:0.0,rotation_speed:0.0,size:7,color:0x1964c8ff});}render::draw(&game);3000}else {u64::from(render::draw_background(at[0] as u32,at[1]))}}\n'
     procedural_cases=json.loads((PROJECT/'tests/fixtures/arkanoo-procedural.json').read_text())['cases']
     procedural_probe='fn procedural_probe(input:u32)->u64 {let cases=['+','.join('['+str(case['level'])+'u64,'+str(case['frame'])+'u64]' for case in procedural_cases)+'];let at=cases[(input&63) as usize];if input&64!=0 {let mut game=physics::Game::new();game.mode=1;game.level=at[0] as u32;game.frame=at[1];for index in 0..200 {game.set_block(index,2);}for index in 0..3000 {game.particles.push(physics::Particle{x:if index%2==0 {0.0} else {1279.0},y:if index%4<2 {0.0} else {719.0},vx:0.0,vy:0.0,life:30,max_life:30,rotation:0.0,rotation_speed:0.0,size:7,color:0x1964c8ff});}render::draw(&game);3000}else {u64::from(render::draw_background(at[0] as u32,at[1]))}}\n'
-    probe=' if input&2147500032==2147500032 {return procedural_probe(input); }\n'
+    fire_sea_cases=json.loads((PROJECT/'tests/fixtures/arkanoo-fire-sea-background.json').read_text())['cases']
+    old_cases='['+','.join('['+str(case['level'])+'u64,'+str(case['frame'])+'u64]' for case in procedural_cases)+']'
+    new_cases='['+','.join('['+str(case['level'])+'u64,'+str(case['frame'])+'u64]' for case in fire_sea_cases)+']'
+    fire_sea_probe=procedural_probe.replace('fn procedural_probe','fn fire_sea_probe').replace(old_cases,new_cases)
+    probe=' if input&2147516416==2147516416 {return fire_sea_probe(input); }\n'
+    probe+=' if input&2147500032==2147500032 {return procedural_probe(input); }\n'
     probe+=' if input&2147491840==2147491840 {return background_probe(input); }\n'
     probe+=' if input&2147487744==2147487744 {return portal_probe(input); }\n'
     probe+=' if input&2147485696==2147485696 {return bonus_probe(input); }\n'
@@ -174,7 +179,7 @@ pub fn game_tick(input:u32,state:u64)->u64 {
         probe+=f'gamepkg::draw_clear(0x000000ff);render::draw_ball_effects(&ball,{case["frame"]});return 1;}};\n'
     probe+='return 0;}\n'
     probe_file=modes/'source/src/lib.rs'
-    text=probe_file.read_text();text=text.replace(' if input&67108864!=0 {',probe+' if input&67108864!=0 {');probe_file.write_text(text+metal_probe+ice_probe+fire_probe+bonus_probe+portal_probe+background_probe+procedural_probe+visual_probe)
+    text=probe_file.read_text();text=text.replace(' if input&67108864!=0 {',probe+' if input&67108864!=0 {');probe_file.write_text(text+metal_probe+ice_probe+fire_probe+bonus_probe+portal_probe+background_probe+procedural_probe+fire_sea_probe+visual_probe)
     penguin_probe='''
 static HEART:Mutex<Option<physics::Game>>=Mutex::new(None);
 fn penguin_probe(input:u32)->u64 {

@@ -2521,16 +2521,13 @@ fn original_campaign_background_tiles_preserve_pixels_and_full_scene_budgets() {
     }
 }
 
-#[test]
-#[ignore = "requires the signed production fixture prepared by tests/arkanoo.py"]
-fn original_procedural_background_tiles_preserve_pixels_and_full_scene_budgets() {
+fn check_procedural_runtime_fixture(text: &str, flag: u32, scenes: &[u32]) {
     use std::io::Read;
     let root = isolated_library();
-    let fixture: serde_json::Value =
-        serde_json::from_str(include_str!("fixtures/arkanoo-procedural.json")).unwrap();
+    let fixture: serde_json::Value = serde_json::from_str(text).unwrap();
     let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
     for (index, case) in fixture["cases"].as_array().unwrap().iter().enumerate() {
-        assert_eq!(game.step(2147500032 | index as u32).unwrap(), 1);
+        assert_eq!(game.step(flag | index as u32).unwrap(), 1);
         let color = case["background"].as_u64().unwrap() as u32;
         assert!(
             matches!(game.frame().commands.first(),Some(Command::Rect{x:0.0,y:60.0,width:640.0,height:360.0,rgba}) if *rgba==color)
@@ -2578,9 +2575,9 @@ fn original_procedural_background_tiles_preserve_pixels_and_full_scene_budgets()
             "Original SDL pixels differ, case {index}"
         );
     }
-    for index in [0, 3, 11, 14, 22, 25] {
+    for &index in scenes {
         for _ in 0..2 {
-            assert_eq!(game.step(2147500032 | 64 | index).unwrap(), 3000);
+            assert_eq!(game.step(flag | 64 | index).unwrap(), 3000);
             assert!(game.frame().commands.len() < gamepkg::drawing::MAX_COMMANDS);
             let mut bytes = 0;
             let mut fire = 0;
@@ -2607,4 +2604,23 @@ fn original_procedural_background_tiles_preserve_pixels_and_full_scene_budgets()
             assert!(bytes < gamepkg::drawing::MAX_IMAGE_BYTES);
         }
     }
+}
+
+#[test]
+#[ignore = "requires the signed production fixture prepared by tests/arkanoo.py"]
+fn original_procedural_background_tiles_preserve_pixels_and_full_scene_budgets() {
+    check_procedural_runtime_fixture(
+        include_str!("fixtures/arkanoo-procedural.json"),
+        2147500032,
+        &[0, 3, 11, 14, 22, 25],
+    );
+}
+#[test]
+#[ignore = "requires the signed production fixture prepared by tests/arkanoo.py"]
+fn original_fire_and_deep_sea_backgrounds_preserve_pixels_and_full_scene_budgets() {
+    check_procedural_runtime_fixture(
+        include_str!("fixtures/arkanoo-fire-sea-background.json"),
+        2147516416,
+        &[0, 3, 11, 14],
+    );
 }

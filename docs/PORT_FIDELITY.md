@@ -1055,3 +1055,32 @@ strict lint, formatting and byte-identical oracle regeneration also pass.
 Whole-frame/edge comparisons, seventeen other themes, original image/editor
 artwork, fonts/HUD/menus/audio and remaining platforms are unfinished. Recipe
 0.1.31 changes source only; host version and binary/package releases are unchanged.
+
+### Procedural fire and deep sea
+
+Fire now follows the original seeded rising flames, four color/alpha bands,
+sine wiggle and phase-dependent sizes. Deep Sea follows the original five light
+shafts, ordered fading bands and 200 drifting plankton points. Its sine/cosine
+values are cast to integers before multiplying by 50/20; that original behavior
+is deliberately retained rather than smoothed into a different animation.
+
+The complete original-function oracle now accepts an explicit theme list while
+retaining byte-identical default snow/smoke/tornado output. Twenty-two new cases
+cover three actual selected levels per theme, ordinary frames, f32 precision
+loss, 32-bit overflow and u64::MAX. Every ordered point/color is verified by
+count and trace hash; real SDL supplies full independent framebuffer data.
+Unit and signed-runtime verifiers are shared with the previous themes and keep
+the existing measured four-level grouping bound. Source code remains direct,
+dependency-free and inside the same source/resource policy.
+
+All 67 logic tests and all 41 signed checks pass native and Wasm. Cold/warm
+complete scenes retain all 200 fire-brick overlays and all four corner particle
+tiles with 3,000 active particles. The eight-player visual matrix checks both
+animation frames/theme and a revisit, with desktop sample difference at most
+three and browser at most two. Interior samples and adjacent nearest-boundary
+choices remain explicit; these checks do not establish world-edge or complete
+original-window equivalence. Existing native/both-browser gameplay/editor/file
+workflows, lint, formatting and reference regeneration are checked separately.
+Fifteen procedural themes, image/editor backgrounds, viewport, fonts/HUD/menus,
+audio and remaining platforms are unfinished. Recipe 0.1.32 is source-only;
+there is no binary/package release or host version change.

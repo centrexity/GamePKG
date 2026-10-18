@@ -313,6 +313,12 @@ notes = "The complete unchanged original animated-background function compiles a
 
 [[work]]
 id = "arkanoo_remaining_procedural_themes"
-requirements = ["Cyber grid", "Star voyage", "Hex pulse", "Aurora waves", "Matrix rain", "Nebula clouds", "Rain and thunder", "Starry night", "Bubbles", "Fire", "Digital circuit", "Kaleidoscope", "Warp", "Maze", "Supernova", "Space wars", "Deep sea"]
+requirements = ["Cyber grid", "Star voyage", "Hex pulse", "Aurora waves", "Matrix rain", "Nebula clouds", "Rain and thunder", "Starry night", "Bubbles", "Digital circuit", "Kaleidoscope", "Warp", "Maze", "Supernova", "Space wars"]
 status = "pending"
-notes = "The source now selects the original theme deterministically, but only Snow, Smoke and Tornado draw paths are adapted. Other selected themes still reach the previous grid fallback. Their original RNG types, line/outline rasterization, blend order, clipping, frame timing and resource use need independent reference evidence; the three restored themes do not establish their completion."
+notes = "The source now selects the original theme deterministically, but only Snow, Smoke, Tornado, Fire and Deep Sea draw paths are adapted. Other selected themes still reach the previous grid fallback. Their original RNG types, line/outline rasterization, blend order, clipping, frame timing and resource use need independent reference evidence; the five restored themes do not establish their completion."
+
+[[work]]
+id = "arkanoo_procedural_fire_and_deep_sea"
+requirements = ["Original seeded flame motion gradient and sizes", "Original integer-truncated light shafts", "Original ordered shaft bands and drifting plankton", "Multiple actual selected level seeds", "Frame precision extremes", "Native/Wasm complete pixel and full-scene budget checks", "Real desktop/browser animation and revisit"]
+status = "implemented_two_themes_verified_linux_browser"
+notes = "Twenty-two cases run the complete unchanged original function with exact real Rand and actual selected levels; point counts/trace hashes and every composed framebuffer pixel are verified under the existing four-level software-SDL grouping bound. The generalized shared unit/runtime verifiers retain all prior snow/smoke/tornado evidence. All 41 signed checks pass native and Wasm, including dense 200-fire-brick/3,000-particle scenes with all later art present. Eight real players pass both animation frames/theme and a revisit: sampled desktop maximum delta three, browser two, with explicit nearest/interior sampling limits. Original helper cast order is retained. Fifteen other themes, image/editor artwork, whole-frame/edge/platform parity and remaining presentation/audio are unfinished."

@@ -36,6 +36,10 @@ SDL_Renderer*r=SDL_CreateSoftwareRenderer(s);if(!r)return 3;SDL_SetRenderDrawCol
 uint8_t p[12];while(fread(p,1,12,stdin)==12){int32_t x=(int32_t)((uint32_t)p[0]|(uint32_t)p[1]<<8|(uint32_t)p[2]<<16|(uint32_t)p[3]<<24);int32_t y=(int32_t)((uint32_t)p[4]|(uint32_t)p[5]<<8|(uint32_t)p[6]<<16|(uint32_t)p[7]<<24);SDL_SetRenderDrawColor(r,p[11],p[10],p[9],p[8]);if(SDL_RenderDrawPoint(r,x,y))return 4;}
 uint8_t*pixels=malloc(1280*720*4);if(SDL_RenderReadPixels(r,NULL,SDL_PIXELFORMAT_RGBA32,pixels,1280*4))return 5;if(fwrite(pixels,1,1280*720*4,stdout)!=1280*720*4)return 6;free(pixels);SDL_DestroyRenderer(r);SDL_FreeSurface(s);return 0;}
 '''
+themes=[int(value) for value in sys.argv[3].split(',')] if len(sys.argv)>3 else [7,9,19]
+assert themes and len(set(themes))==len(themes) and all(0<=theme<20 for theme in themes)
+assert all(theme in [7,9,11,18,19] for theme in themes), 'This recorder covers the adapted point/filled-rectangle themes; line and outline recording remains pending'
+body=body.replace('[7,9,19]',str(themes).replace(' ',''))
 rand_source=Path(sys.argv[2]);assert tomllib.loads((rand_source/'Cargo.toml').read_text())['package']['version']=='0.8.5'
 with tempfile.TemporaryDirectory(prefix='gamepkg-procedural-reference-') as temporary:
  folder=Path(temporary);(folder/'src').mkdir();(folder/'src/main.rs').write_text(body);(folder/'raster.c').write_text(c)
