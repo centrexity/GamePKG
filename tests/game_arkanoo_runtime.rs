@@ -1,4 +1,22 @@
 use gamepkg::{drawing::Command, runtime::Game};
+fn ball_position(command: &Command) -> Option<(f32, f32)> {
+    if let Command::LinearImage {
+        x,
+        y,
+        width,
+        height,
+        image,
+    } = command
+    {
+        if (*width, *height) == (6.0, 6.0) && image.size() == [12, 12] {
+            return Some((*x + 3.0, *y + 3.0));
+        }
+    }
+    None
+}
+fn is_ball(command: &Command) -> bool {
+    ball_position(command).is_some()
+}
 fn copy_library(from: &std::path::Path, to: &std::path::Path) {
     std::fs::create_dir_all(to).unwrap();
     for entry in std::fs::read_dir(from).unwrap() {
@@ -111,6 +129,9 @@ fn original_heart_loss_states_rectangle_art_and_texture_positions_reach_runtime(
                         image,
                     } = c
                     {
+                        if image.size() != [512, 472] {
+                            return None;
+                        }
                         Some((*x, *y, *width, *height, image))
                     } else {
                         None
@@ -178,6 +199,9 @@ fn filtered_asset_sdk_preserves_pixels_cache_budgets_paths_and_failed_tick_rollb
             .iter()
             .filter_map(|c| {
                 if let Command::LinearImage { image, .. } = c {
+                    if image.size() != [512, 472] {
+                        return None;
+                    }
                     Some(image)
                 } else {
                     None
@@ -199,11 +223,7 @@ fn actual_splash_timer_skip_restart_and_editor_resume_preserve_original_flow() {
         for _ in 0..269 {
             game.step(0).unwrap();
             assert_eq!(game.frame().background, Some(0x0b1020ff));
-            assert!(!game
-                .frame()
-                .commands
-                .iter()
-                .any(|command| matches!(command, Command::Circle { .. })));
+            assert!(!game.frame().commands.iter().any(is_ball));
             assert!(game.window_state().visible && !game.window_state().confined);
         }
         game.step(0).unwrap();
@@ -242,11 +262,7 @@ fn actual_splash_timer_skip_restart_and_editor_resume_preserve_original_flow() {
         })
         .unwrap();
         game.step(0).unwrap();
-        assert!(game
-            .frame()
-            .commands
-            .iter()
-            .any(|command| matches!(command, Command::Circle { .. })));
+        assert!(game.frame().commands.iter().any(is_ball));
         game.input_event(Event {
             kind: 5,
             x: 0.0,
@@ -322,11 +338,7 @@ fn real_gameplay_audio_progress_and_restart() {
     let mut reloaded = load_menu(root.path(), "com.gamepkg.arkanoo").unwrap();
     reloaded.step(0).unwrap();
     reloaded.step(4).unwrap();
-    assert!(reloaded
-        .frame()
-        .commands
-        .iter()
-        .any(|command| matches!(command, Command::Circle { .. })));
+    assert!(reloaded.frame().commands.iter().any(is_ball));
 }
 
 #[test]
@@ -383,7 +395,11 @@ fn portal_threshold_orbit_gravity_and_delayed_transition_reach_the_real_renderer
         .iter()
         .filter(|command| matches!(command, Command::Circle { .. }))
         .count();
-    assert!(circles >= 49, "portal ring/orbit was not rendered");
+    assert_eq!(circles, 48, "portal ring was not rendered");
+    assert!(
+        game.frame().commands.iter().any(is_ball),
+        "orbiting ball was not rendered"
+    );
     assert_eq!(game.step(131072).unwrap() & 2, 2);
     game.step(8).unwrap();
     let paused = game.frame().commands.clone();
@@ -603,7 +619,11 @@ fn original_brick_geometry_and_pair_before_paddle_order_reach_real_runtime() {
         16,
         "integer brick collision did not match original geometry"
     );
-    assert!(game.frame().commands.iter().any(|command|matches!(command,Command::Circle{x,y,radius,..} if *x==34.0 && *y==113.0 && *radius==3.0)));
+    assert!(game
+        .frame()
+        .commands
+        .iter()
+        .any(|command| ball_position(command) == Some((34.0, 113.0))));
     drop(game);
     let mut game = load_menu(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
     assert_eq!(
@@ -630,9 +650,11 @@ fn per_ball_launch_delay_and_life_victory_flow_work_in_real_runtime() {
         "auto-launch moved before the original next frame"
     );
     game.step(0).unwrap();
-    assert!(game.frame().commands.iter().any(
-        |command| matches!(command,Command::Circle{y,radius,..} if *y==390.0 && *radius==3.0)
-    ));
+    assert!(game
+        .frame()
+        .commands
+        .iter()
+        .any(|command| ball_position(command).is_some_and(|(_, y)| y == 390.0)));
     let state = game.step(16384).unwrap();
     assert_eq!(state >> 32, 80);
     assert_eq!((state >> 8) & 3, 2);
@@ -834,9 +856,10 @@ fn actual_source_game_uses_mouse_position_and_original_space_escape_controls() {
     game.step(0).unwrap();
     assert!(game.frame().commands.iter().any(|command|matches!(command,Command::Rect{x,y,width,height,..} if *x==465.0 && *y==395.0 && *width==70.0 && *height==11.0)));
     assert!(
-        game.frame().commands.iter().any(
-            |command| matches!(command,Command::Circle{y,radius,..} if *y==390.0 && *radius==3.0)
-        ),
+        game.frame()
+            .commands
+            .iter()
+            .any(|command| ball_position(command).is_some_and(|(_, y)| y == 390.0)),
         "Space did not launch immediately"
     );
     game.input_event(Event {
@@ -1316,7 +1339,7 @@ fn actual_menu_clicks_start_resume_restart_gravity_editor_settings_fullscreen_an
             .frame()
             .commands
             .iter()
-            .filter(|command| matches!(command,Command::Circle{radius,..} if *radius==3.0))
+            .filter(|command| is_ball(command))
             .cloned()
             .collect::<Vec<_>>();
         assert_eq!(positions.len(), 1);
@@ -1341,7 +1364,7 @@ fn actual_menu_clicks_start_resume_restart_gravity_editor_settings_fullscreen_an
             game.frame()
                 .commands
                 .iter()
-                .filter(|command| matches!(command,Command::Circle{radius,..} if *radius==3.0))
+                .filter(|command| is_ball(command))
                 .cloned()
                 .collect::<Vec<_>>(),
             positions,
@@ -1408,7 +1431,13 @@ fn actual_menu_clicks_start_resume_restart_gravity_editor_settings_fullscreen_an
         })
         .unwrap();
         game.step(0).unwrap();
-        assert!(game.frame().commands.iter().any(|command|matches!(command,Command::Circle{x,radius,..} if *x==320.0 && *radius==3.0)),"Restart kept the old paddle/ball position");
+        assert!(
+            game.frame()
+                .commands
+                .iter()
+                .any(|command| ball_position(command).is_some_and(|(x, _)| x == 320.0)),
+            "Restart kept the old paddle/ball position"
+        );
         game.input_event(Event {
             kind: 5,
             x: 0.0,
@@ -1635,5 +1664,55 @@ fn effects_phase_at_maximum_frame_matches_in_native_and_wasm32() {
                 "sample {index}"
             );
         }
+    }
+}
+
+#[test]
+#[ignore = "requires the signed production fixture prepared by tests/arkanoo.py"]
+fn original_ball_texture_and_integer_geometry_reach_native_and_wasm() {
+    let root = isolated_library();
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-ball.json")).unwrap();
+    let expected: Vec<u8> = fixture["rgba"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_u64().unwrap() as u8)
+        .collect();
+    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
+    for (index, (x, y)) in [(0.0, 60.0), (160.0, 180.0), (0.0, 60.0), (-0.5, 59.5)]
+        .into_iter()
+        .enumerate()
+    {
+        assert_eq!(game.step(2147483648 | index as u32).unwrap(), 1);
+        let images: Vec<_> = game
+            .frame()
+            .commands
+            .iter()
+            .filter_map(|command| {
+                if let Command::LinearImage {
+                    x,
+                    y,
+                    width,
+                    height,
+                    image,
+                } = command
+                {
+                    Some((*x, *y, *width, *height, image))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert_eq!(images.len(), 1);
+        let (left, top, width, height, image) = images[0];
+        assert_eq!((left, top, width, height), (x, y, 6.0, 6.0));
+        assert_eq!(image.size(), [12, 12]);
+        assert_eq!(image.pixels(), expected.as_slice());
+        assert!(!game
+            .frame()
+            .commands
+            .iter()
+            .any(|c| matches!(c, Command::Circle { .. })));
     }
 }

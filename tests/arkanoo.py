@@ -111,7 +111,8 @@ pub fn game_tick(input:u32,state:u64)->u64 {
  }state
 }''')
     trail_cases=json.loads((PROJECT/'tests/fixtures/arkanoo-trails.json').read_text())['cases']
-    probe=' if input&134217728!=0 {\n'
+    probe=' if input&2147483648!=0 {let positions=[[0.0f32,0.0f32],[320.75,240.25],[-0.75,-0.75],[-1.75,-1.75]];let at=positions[(input&3) as usize];let ball=physics::Ball::new(at[0]*0.5+3.0,at[1]*0.5+63.0);gamepkg::draw_clear(0x000000ff);return u64::from(render::draw_ball(&ball));}\n'
+    probe+=' if input&134217728!=0 {\n'
     for index,case in enumerate(trail_cases):
         x,y,vx,vy=case['ball']
         probe+=f'if input&255=={index} {{let mut ball=physics::Ball::new({x}f32*0.5+3.0,{y}f32*0.5+63.0);ball.vx={vx}f32*0.5;ball.vy={vy}f32*0.5;'

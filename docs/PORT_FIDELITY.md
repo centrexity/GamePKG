@@ -12,7 +12,7 @@ work stays open until behavior is verified.
 | Cube 2 | Wayland lock-state access, Windows lock-state runtime validation, remaining uncommon-key/platform behavior and full controller/touch equivalence; further LAN/platform and master authentication/registration fault/service coverage; custom asset/mod workflows; demo/movie output and persistence; hardware-accelerated engine rendering; native platforms beyond Linux. Vulkan currently presents software-rendered engine frames. |
 | DOOM | Original WAD music, spatial stereo effects, six save slots, configuration, desktop controls and the original quit/ENDOOM flow are runtime verified. Music backend selection, multiplayer, additional WADs/mods and broader control/platform coverage remain unfinished. |
 | Zelda3 | External MSU music, replay tools, save states, widescreen, language selection and desktop enhancement settings need support. The adapter fixes the view to 256×224. Original DSP stereo is verified in native and Wasm gameplay/save tests. |
-| Arkanoo | Gravity, speed-triggered portal behavior and ball-to-ball responses are restored with upstream reference and actual-engine tests. Original world proportions and movement/contact order now match upstream reference checks. Per-ball launch timing, life recovery and victory/endless transitions also match original-code fixtures; prior item/score/level caps are removed. Brick health and original blast rules are also verified. All twelve original procedural patterns are restored. Focused mouse movement and original Space/Escape controls are restored. Editor painting/erasing, brick selection, names, save/load, clear confirmation, test return and the custom endless pool are restored. Original ASCII pattern import/export now uses player-selected files. Gameplay cursor confinement/hiding, F11 fullscreen and Q-to-quit outside play are verified in native and browser runtime checks. Normal-size/fullscreen/maximized preferences now persist through the native host. The six main menu actions and fullscreen/effects settings controls are restored. Remaining menu presentation and music/resolution/VSync controls, project-link action and original menus/music still need work. Original shard particles are restored; remaining ball artwork/speed lettering, other art/effects still need work; original penguin/heart-loss behavior is now verified. Current runs do not persist; high score, unlocked level, gravity and effects preferences do. |
+| Arkanoo | Gravity, speed-triggered portal behavior and ball-to-ball responses are restored with upstream reference and actual-engine tests. Original world proportions and movement/contact order now match upstream reference checks. Per-ball launch timing, life recovery and victory/endless transitions also match original-code fixtures; prior item/score/level caps are removed. Brick health and original blast rules are also verified. All twelve original procedural patterns are restored. Focused mouse movement and original Space/Escape controls are restored. Editor painting/erasing, brick selection, names, save/load, clear confirmation, test return and the custom endless pool are restored. Original ASCII pattern import/export now uses player-selected files. Gameplay cursor confinement/hiding, F11 fullscreen and Q-to-quit outside play are verified in native and browser runtime checks. Normal-size/fullscreen/maximized preferences now persist through the native host. The six main menu actions and fullscreen/effects settings controls are restored. Remaining menu presentation and music/resolution/VSync controls, project-link action and original menus/music still need work. Original shard particles are restored; the metallic ball texture is restored; speed lettering and other art/effects still need work; original penguin/heart-loss behavior is now verified. Current runs do not persist; high score, unlocked level, gravity and effects preferences do. |
 | 2048 | Random spawning, merge scoring/best score, win/continue/game-over UI, restart, 128-step undo and persistent boards/history are implemented and tested. Byte-sized tile exponents remove the old 32768 cap. Cooperative expectimax assistance/autoplay matches independent upstream reference fixtures; a deterministic 932-turn game reaches 2048. Final signed-package delivery and broader platform verification remain open. |
 
 Evidence: [README coverage table](../README.md#port-feature-coverage),
@@ -565,3 +565,25 @@ checks, strict lint, formatting and seven public-page links pass. Both app entri
 are rebuilt locally; the unchanged reviewed engine is reused by its verified
 cache. This is source progress without a new release or a claim of full port,
 physical-device or every stalled-UI/input-history equivalence.
+
+
+Arkanoo metallic-ball follow-up: the old plain white circle is replaced by the
+original procedural metallic texture. The unchanged pinned Rust drawing function
+is compiled to emit its point/color calls; real SDL software rasterization and
+target clipping produce the independent 12×12 RGBA fixture. The generated PNG
+matches all 576 decoded bytes. Rendering uses the existing filtered asset API at
+original integer-truncated rectangle positions and half world scale, including
+fractional and negative-coordinate probes. No external font, music or selected
+player media is added. The speed label, other artwork/settings/audio and overall
+port parity remain unfinished.
+
+Metallic-ball validation: the independent PNG/SDL reference test and full default
+suite pass (408 tests, 60 dedicated checks ignored). The signed harness separately
+passes all 29 runtime tests in Wasm and native builds, including exact ball pixels,
+linear draw kind, fractional/negative integer rectangles, heart texture separation,
+portal ring/orbit, physics, menus, input, persistence and bounded asset behavior.
+Native GUI gameplay/editor/file-picker workflows and both core/component browser
+players pass. The reference generator checks both pinned source-file hashes before
+compiling its unchanged drawing fragment. Arkanoo's source recipe is 0.1.21;
+no signed package or app release is created. Other art, speed lettering, audio,
+settings and broader platform/pixel-compositing coverage remain open.
