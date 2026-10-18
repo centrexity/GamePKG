@@ -2085,3 +2085,33 @@ WebAudio buffers contain the exact independent left/right samples at 48 kHz.
 channel deinterleaving and duration measured in frames. Existing mono runtime
 tests and strict GUI lint pass. This is transport support, not restoration of
 Arkanoo's original compressed recordings or its music controls; those remain open.
+
+The original audio-trigger audit found that normal/final ice-brick destruction
+requests Bounce, a first ice crack requests BreakingGlass, rockets request
+BreakingGlass and explosive-brick blasts request Explosion. Losing the final
+ball requests Oh. The port now preserves those categories and stops inventing
+sounds for launch, bonus collection, level completion and portal activation.
+The original main loop deliberately retains the last callback in each physics
+update; collision requests keep that behavior.
+
+The pinned unchanged original brick/rocket fragments now record their last
+callback alongside all existing physics results: ten cases and thirteen frames,
+including ghost order, repeated ice hits, metal and blast boundaries. Regenerating
+these fixtures reproduces them byte-for-byte; all earlier physics fields remain
+identical. Signed fixture comparisons exercise the production port methods.
+Original recordings, their provenance, sustained playback/mixing and music remain
+unfinished. The synthesized effects are still explicitly temporary.
+
+
+Final recipe 0.1.57 checks: 93 logic tests and 68 signed tests per native/Wasm
+execution profile pass, including original callback categories and real-brick
+volume/mute/persistence tests. Earlier launch-beep tests now wait for a real
+visible brick break. No execution cap, test parallelism or pixel tolerance changed.
+Deadline failures during earlier full runs prompted two exact rendering changes:
+transparent glyph RLE runs are skipped and row coordinates are shared; opaque
+particle contributions use the simplified original blend equation. All original
+SDL text fixtures remain exact. A separate old/new raster comparison passes
+122,870 cases with clipping and hidden RGB; alpha/color equation checks and
+strict lint/formatting pass. Window/GUI/platform workflows were not repeated in
+this round. Recordings, music, simultaneous playback and complete event/update
+audio ordering remain open.

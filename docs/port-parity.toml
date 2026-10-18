@@ -516,3 +516,10 @@ id = "portable_stereo_pcm"
 requirements = ["Signed portable stereo output without guest crates", "Shared mono/stereo budget", "Native/core/component/browser channel fidelity", "Existing mono compatibility"]
 status = "implemented_runtime_verified"
 notes = "Public audio_submit_stereo provides interleaved 48 kHz i16 output. The existing 1600 sample-value limit is shared by mono and stereo, with one nonempty format per tick. Signed generated SDK fixtures pass in native/core/component; actual browser Wasm exports preserve exact independent channels in WebAudio buffers. Raw ABI tests cover malformed memory/lengths, permissions, mixed formats, atomic rejection, isolation, rollback and deadlines. Browser output tests verify frame-based duration. Original compressed recordings, mixing and music controls remain separate unfinished work."
+
+
+[[work]]
+id = "arkanoo_audio_requests"
+requirements = ["Original effect categories", "Original silence for launch and non-audio transitions", "Recorded effects and music", "Original overlapping playback and event/update ordering"]
+status = "in_progress"
+notes = "Recipe 0.1.57 restores original Bounce/BreakingGlass/Explosion/Oh categories and removes invented launch, bonus, completion and portal activation requests. Ten unchanged-original brick/rocket cases record thirteen last-callback frames, with all previous physics fields unchanged. All 93 logic checks and both 68-check signed suites pass at default parallelism and unchanged caps/tolerances. Audio settings tests now trigger actual brick breaks. Exact font RLE/opaque blend simplifications reduce rendering work while preserving original SDL fixtures and independent old/new raster comparisons. Original recordings/provenance, sustained mixing, music and complete event-versus-update audio ordering remain unfinished; effects are still synthesized."

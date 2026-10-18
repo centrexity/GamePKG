@@ -7,6 +7,8 @@ import sys
 import tempfile
 
 root=Path(sys.argv[1]);entities=(root/'src/entities.rs').read_text();game=(root/'src/game.rs').read_text()
+assert hashlib.sha256(game.encode()).hexdigest()=='d18322f0eac76abc14dfe12a542f0dcf6b154282e3fd8cf5c8c5773d1dc278f1'
+assert hashlib.sha256(entities.encode()).hexdigest()=='ee6fc52f2ea582900edee90350c0c4608235aeecae6e56cc875cfd7893313545'
 def method(source,name):
     begin=source.index('pub fn '+name+'(');opening=source.index('{',begin);depth=1;end=opening+1
     while depth:
@@ -51,7 +53,9 @@ use rand::Rng;
 struct Ball{x:f32,y:f32,vel_x:f32,vel_y:f32,active:bool}
 '''
 body=header+'impl Ball{'+ball_rect+'}\n'+types+block+rocket+check+'''
-enum SoundEffect{Bounce,BreakingGlass,Explosion}fn play_sound(_:SoundEffect){}
+enum SoundEffect{Bounce,BreakingGlass,Explosion}
+static SOUND:std::sync::atomic::AtomicU32=std::sync::atomic::AtomicU32::new(0);
+fn play_sound(effect:SoundEffect){SOUND.store(match effect {SoundEffect::Bounce=>1,SoundEffect::BreakingGlass=>2,SoundEffect::Explosion=>4},std::sync::atomic::Ordering::Relaxed);}
 struct Paddle{ghost_timer:u32}struct Bonus;impl Bonus{fn new(_:f32,_:f32,_:BonusType)->Self{Self}}
 struct Game{blocks:Vec<Block>,balls:Vec<Ball>,rockets:Vec<Rocket>,paddle:Paddle,bonuses:Vec<Bonus>,bonus_cooldown:u64,score:u32}
 impl Game{fn collisions(&mut self){let mut particles_to_spawn=Vec::new();for ball in &mut self.balls {
@@ -65,7 +69,7 @@ for case in cases:
         if 'ball' in case:
             x,y,vx,vy=case['ball'];body+=f'g.balls=vec![Ball{{x:{x}f32,y:{y}f32,vel_x:{vx}f32,vel_y:{vy}f32,active:true}}];g.collisions();\n'
         else:body+='g.rockets();\n'
-        body+='println!("{:?}",[g.score,g.rockets.iter().filter(|r|r.active).count() as u32,g.bonuses.len() as u32]);for b in &g.blocks{println!("{:?}",[if b.active{1}else{0},b.health as u32]);}for b in &g.balls{println!("{:?}",[b.x,b.y,b.vel_x,b.vel_y]);}for r in &g.rockets{if r.active{println!("{:?}",[r.x,r.y]);}}\n'
+        body+='println!("{:?}",[g.score,g.rockets.iter().filter(|r|r.active).count() as u32,g.bonuses.len() as u32]);for b in &g.blocks{println!("{:?}",[if b.active{1}else{0},b.health as u32]);}for b in &g.balls{println!("{:?}",[b.x,b.y,b.vel_x,b.vel_y]);}for r in &g.rockets{if r.active{println!("{:?}",[r.x,r.y]);}}println!("{}",SOUND.swap(0,std::sync::atomic::Ordering::Relaxed));\n'
 body+='}\n'
 with tempfile.TemporaryDirectory(prefix='arkanoo-brick-reference-') as temporary:
     directory=Path(temporary);rust=directory/'reference.rs';rust.write_text(body);binary=directory/'reference'
@@ -78,5 +82,6 @@ with tempfile.TemporaryDirectory(prefix='arkanoo-brick-reference-') as temporary
             expected=dict(state=state,blocks=blocks)
             if 'ball' in case:expected['ball']=json.loads(next(lines))
             expected['rockets']=[json.loads(next(lines)) for _ in range(state[1])]
+            expected['sound']=json.loads(next(lines))
             case['expected'].append(expected)
     print(json.dumps(dict(revision='9d613e78c9ed5657ae7fda9206cd4a82a893b7c8',entities_sha256=hashlib.sha256(entities.encode()).hexdigest(),game_sha256=hashlib.sha256(game.encode()).hexdigest(),collision_sha256=hashlib.sha256(collision.encode()).hexdigest(),rockets_sha256=hashlib.sha256(rockets.encode()).hexdigest(),fixtures=cases),indent=2))

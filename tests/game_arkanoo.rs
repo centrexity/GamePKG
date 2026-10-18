@@ -1172,6 +1172,7 @@ fn loss_and_level_completion_match_unchanged_original_fragments() {
         game.lives = fixture["lives"].as_u64().unwrap() as u32;
         game.lost_life = fixture["lost"].as_bool().unwrap();
         game.finish_level();
+        assert_eq!(game.sound, 0);
         assert_eq!(
             [game.lives, game.mode],
             [
@@ -1189,6 +1190,7 @@ fn loss_and_level_completion_match_unchanged_original_fragments() {
         game.width = 90.0;
         game.balls.clear();
         game.update(0);
+        assert_eq!(game.sound, if game.portal { 0 } else { 5 });
         assert_eq!(
             [
                 game.lives,
@@ -1436,6 +1438,7 @@ fn special_bricks_and_rocket_phases_match_unchanged_original_with_real_sdl() {
         }
         gamepkg::samples(&[199; 100]); // Original oracle suppresses random bonus drops.
         for expected in fixture["expected"].as_array().unwrap() {
+            game.sound = 0;
             if let Some(ball) = fixture["ball"].as_array() {
                 game.balls.clear();
                 game.balls.push(collision_ball(
@@ -1475,6 +1478,12 @@ fn special_bricks_and_rocket_phases_match_unchanged_original_with_real_sdl() {
                     .map(|v| v.as_u64().unwrap() as u32)
                     .collect::<Vec<_>>()
                     .as_slice(),
+                "{}",
+                fixture["name"]
+            );
+            assert_eq!(
+                game.sound,
+                expected["sound"].as_u64().unwrap() as u32,
                 "{}",
                 fixture["name"]
             );
@@ -3594,4 +3603,56 @@ fn sparse_particle_tiles_preserve_every_original_rgba_byte_grid_and_order() {
         p.life = 0;
     }
     assert!(physics::particle_tiles(&particles).is_empty());
+}
+
+#[test]
+fn launches_bonuses_and_completion_do_not_invent_original_sound_requests() {
+    let mut game = menu_game();
+    game.attach();
+    game.sound = 0;
+    game.fire_or_launch();
+    assert_eq!(game.sound, 0);
+    for kind in 0..4 {
+        game.collect(kind);
+        assert_eq!(game.sound, 0);
+    }
+    game.finish_level();
+    assert_eq!(game.sound, 0);
+    game.ammo = 2;
+    game.balls.clear();
+    game.fire_or_launch();
+    assert_eq!(game.sound, 3);
+    game.sound = 0;
+    game.ammo = 0;
+    game.fire_or_launch();
+    assert_eq!(game.sound, 0);
+}
+
+#[test]
+fn effect_blend_fast_paths_match_original_integer_equation() {
+    for old_alpha in 0u32..=255 {
+        for color in 0u32..=255 {
+            for old in [0u8, 1, 63, 127, 128, 254, 255] {
+                for opacity in [0u32, 1, 127, 254, 255] {
+                    let before = [old, 255 - old, old / 2, old_alpha as u8];
+                    let incoming = [color, 255 - color, color / 2];
+                    let rgba = (incoming[0] << 24) | (incoming[1] << 16) | (incoming[2] << 8) | 255;
+                    let mut expected = before;
+                    if opacity != 0 {
+                        let denominator = opacity * 255 + old_alpha * (255 - opacity);
+                        for channel in 0..3 {
+                            expected[channel] = ((incoming[channel] * opacity * 255
+                                + u32::from(before[channel]) * old_alpha * (255 - opacity))
+                                / denominator)
+                                as u8;
+                        }
+                        expected[3] = (denominator / 255) as u8;
+                    }
+                    let mut actual = before;
+                    physics::blend_effect_pixel(&mut actual, 0, rgba, opacity);
+                    assert_eq!(actual, expected);
+                }
+            }
+        }
+    }
 }

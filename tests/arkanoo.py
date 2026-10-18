@@ -108,9 +108,23 @@ with (nullcontext(tempfile.mkdtemp(prefix='gamepkg-arkanoo-',dir=PROJECT/'target
     # depending on a long random play session. Only fixture setup is replaced.
     modes=root/'modes';shutil.copytree(PROJECT/'ports/arkanoo',modes)
     mode_manifest=modes/'manifest.toml';mode_manifest.write_text(mode_manifest.read_text().replace('com.gamepkg.arkanoo','com.gamepkg.arkanoo-modes'))
+    sound_cases=json.loads((PROJECT/'tests/fixtures/arkanoo-bricks.json').read_text())['fixtures']
+    sound_branches=''
+    for case_index,case in enumerate(sound_cases):
+        for step_index in range(case['repeats']):
+            branch=f'if input=={0x00fa0000+case_index*4+step_index} {{let mut g=physics::Game::new();g.blocks=[0;200];g.balls.clear();g.cooldown=60;g.ghost={600 if case.get("ghost") else 0};'
+            for index,(x,y,kind) in enumerate(case['blocks']):branch+=f'g.set_block({index},{kind});g.block_x[{index}]={x}f32*0.5;g.block_y[{index}]={y}f32*0.5+physics::TOP;'
+            for x,y in case.get('rocket',[]):branch+=f'g.rockets.push(({x}f32*0.5,{y}f32*0.5+physics::TOP));'
+            for _ in range(step_index+1):
+                branch+='g.sound=0;'
+                if 'ball' in case:
+                    x,y,vx,vy=case['ball'];branch+=f'g.balls.clear();g.balls.push(physics::Ball{{x:{x}f32*0.5+3.0,y:{y}f32*0.5+63.0,vx:{vx}f32*0.5,vy:{vy}f32*0.5,spin:0.0,attached:false,launch_timer:0,trail:Vec::new()}});g.collide_blocks(0);'
+                else:branch+='g.update_rockets();'
+            sound_branches+=branch+'return u64::from(g.sound);}'
     (modes/'source/src/lib.rs').write_text('''mod procedural;mod background;mod audio;mod editor;mod levels;mod menu;mod pattern_rng;mod physics;mod render;mod speed_font;mod editor_font;mod dynamic_font;mod dynamic_font_data;use std::sync::Mutex;
 static GAME:Mutex<Option<physics::Game>>=Mutex::new(None);
 pub fn game_tick(input:u32,state:u64)->u64 {
+SOUND_BRANCHES
  if input&268435456!=0 && input&2147483648==0 {let mut game=physics::Game::new();game.mode=if input&1!=0 {2} else {1};game.frame=u64::from(u32::MAX);game.update(0);return game.frame;};
  if input&67108864!=0 {
   let mut game=physics::Game::new();game.mode=1;
@@ -169,7 +183,7 @@ pub fn game_tick(input:u32,state:u64)->u64 {
    return (u64::from(score)<<32)|u64::from(game.portal)|(u64::from(game.gravity)<<1)|(u64::from(game.mode==3)<<2)|(u64::from(contact)<<3)|(u64::from(brick)<<4)|(u64::from(ordered)<<5)|(u64::from(waiting)<<6)|(u64::from(stationary)<<7)|(u64::from(game.mode==5)<<10)|(u64::from(preserved)<<11)|(u64::from(ice)<<12)|(u64::from(blast)<<13)|(u64::from(game.lives)<<8)|(u64::from(game.level)<<16);
   }
  }state
-}''')
+}'''.replace('SOUND_BRANCHES',sound_branches))
     trail_cases=json.loads((PROJECT/'tests/fixtures/arkanoo-trails.json').read_text())['cases']
     metal_probe='fn metal_probe(input:u32)->u64 {if input&8!=0 {let mut game=physics::Game::new();game.mode=1;for index in 0..200 {game.set_block(index,3);}render::draw(&game);return 200;}let positions=[[0.0f32,0.0f32],[200.75,80.25],[-0.75,-0.75],[-1.75,-1.75]];let at=positions[(input&3) as usize];gamepkg::draw_clear(0x000000ff);u64::from(render::draw_metal_brick(at[0]*0.5,60.0+at[1]*0.5))}\n'
     ice_probe='fn ice_probe(input:u32)->u64 {if input&512!=0 {let mut game=physics::Game::new();game.mode=6;for _ in 0..3 {game.update(0);}game.mode=1;game.update(0);game.mode=6;for _ in 0..2 {game.update(0);}game.mode=2;game.update(0);game.mode=6;game.editor.cells[0]=6;game.editor.health[0]=2;render::draw(&game);return (game.editor.frame_count<<32)|game.frame;}if input&128!=0 {let mut game=physics::Game::new();game.mode=1;game.frame=20;for index in 0..200 {game.set_block(index,1);game.block_health[index]=1;}render::draw(&game);return 200;}let case=input&127;let frames=[0u64,1,5,10,20,30,59,60,119,120,16777217,18446744073709551615];let positions=[[40.0f32,80.0f32],[100.0,80.0],[640.0,260.0],[-1.0,-1.0]];let at=positions[((case/2)%4) as usize];let health=if case%2==0 {2} else {1};gamepkg::draw_clear(0x000000ff);u64::from(render::draw_ice_brick(health,2,frames[(case/8) as usize],at[0]*0.5,60.0+at[1]*0.5))}\n'

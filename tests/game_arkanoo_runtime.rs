@@ -359,7 +359,7 @@ fn real_gameplay_audio_progress_and_restart() {
         broken |= bricks > 0 && bricks < 200 && game.frame().commands.iter().any(is_ball);
         assert!(game.frame().commands.len() < 600);
     }
-    assert!(audio, "no synthesized collision/launch audio");
+    assert!(audio, "no synthesized collision audio");
     assert!(broken, "no bricks broken by actual game physics");
     drop(game);
     let saves: Vec<_> = std::fs::read_dir(root.path().join("saves"))
@@ -1589,6 +1589,29 @@ fn actual_menu_clicks_start_resume_restart_gravity_editor_settings_fullscreen_an
     }
 }
 
+fn advance_until_brick_break(game: &mut Game) {
+    let before = game
+        .frame()
+        .commands
+        .iter()
+        .filter(|c| normal_brick_position(c).is_some())
+        .count();
+    assert!(before > 0);
+    for _ in 0..480 {
+        game.step(0).unwrap();
+        let after = game
+            .frame()
+            .commands
+            .iter()
+            .filter(|c| normal_brick_position(c).is_some())
+            .count();
+        if after > 0 && after < before && game.frame().commands.iter().any(is_ball) {
+            return;
+        }
+    }
+    panic!("The launched ball did not break a brick within 480 actual ticks");
+}
+
 #[test]
 #[ignore = "requires the signed isolated fixtures prepared by tests/arkanoo.py"]
 fn effects_settings_change_pcm_and_survive_restarts_across_runtime_profiles() {
@@ -1621,6 +1644,7 @@ fn effects_settings_change_pcm_and_survive_restarts_across_runtime_profiles() {
         event(&mut game, 2, 320.0, 285.0, 1);
         slider(&mut game, 295.0);
         launch(&mut game);
+        advance_until_brick_break(&mut game);
         assert_eq!(game.audio_frame().len(), 800);
         assert_eq!(
             game.audio_frame().iter().map(|s| i32::from(*s).abs()).max(),
@@ -1630,6 +1654,7 @@ fn effects_settings_change_pcm_and_survive_restarts_across_runtime_profiles() {
         event(&mut game, 2, 320.0, 225.0, 1);
         slider(&mut game, 320.0);
         launch(&mut game);
+        advance_until_brick_break(&mut game);
         assert!(
             game.audio_frame().is_empty(),
             "muted effects were submitted"
@@ -1649,6 +1674,7 @@ fn effects_settings_change_pcm_and_survive_restarts_across_runtime_profiles() {
         game.step(0).unwrap();
         event(&mut game, 2, 320.0, 185.0, 1);
         event(&mut game, 5, 0.0, 0.0, 44);
+        advance_until_brick_break(&mut game);
         assert!(
             game.audio_frame().is_empty(),
             "muting did not survive reopen/New Game"
@@ -1657,6 +1683,7 @@ fn effects_settings_change_pcm_and_survive_restarts_across_runtime_profiles() {
         event(&mut game, 2, 320.0, 225.0, 1);
         slider(&mut game, 390.0);
         launch(&mut game);
+        advance_until_brick_break(&mut game);
         assert_eq!(
             game.audio_frame().iter().map(|s| i32::from(*s).abs()).max(),
             Some(8000)
@@ -1664,6 +1691,7 @@ fn effects_settings_change_pcm_and_survive_restarts_across_runtime_profiles() {
         settings(&mut game);
         slider(&mut game, 250.0);
         launch(&mut game);
+        advance_until_brick_break(&mut game);
         assert!(game.audio_frame().is_empty(), "zero volume was audible");
         game.finish().unwrap();
         drop(game);
@@ -1673,6 +1701,7 @@ fn effects_settings_change_pcm_and_survive_restarts_across_runtime_profiles() {
         game.step(0).unwrap();
         event(&mut game, 2, 320.0, 185.0, 1);
         event(&mut game, 5, 0.0, 0.0, 44);
+        advance_until_brick_break(&mut game);
         assert!(
             game.audio_frame().is_empty(),
             "saved zero volume became the legacy default"
@@ -1712,6 +1741,7 @@ fn legacy_audio_defaults_migrate_and_denied_or_damaged_settings_preserve_data() 
             game.step(0).unwrap();
             event(&mut game, 2, 320.0, 185.0, 1);
             event(&mut game, 5, 0.0, 0.0, 44);
+            advance_until_brick_break(&mut game);
             assert_eq!(
                 game.audio_frame().iter().map(|s| i32::from(*s).abs()).max(),
                 Some(4000)
@@ -4254,5 +4284,26 @@ fn original_cannon_and_blink_caption_match_unchanged_sdl_and_full_scene() {
             .sum();
         assert!(bytes <= gamepkg::drawing::MAX_IMAGE_BYTES);
         assert!(commands.len() < gamepkg::drawing::MAX_COMMANDS);
+    }
+}
+
+#[test]
+#[ignore = "requires signed fixtures prepared by tests/arkanoo.py"]
+fn signed_sound_requests_match_original_brick_and_rocket_callbacks() {
+    let root = isolated_library();
+    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
+    let reference: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-bricks.json")).unwrap();
+    for (index, case) in reference["fixtures"].as_array().unwrap().iter().enumerate() {
+        for (step, expected) in case["expected"].as_array().unwrap().iter().enumerate() {
+            assert_eq!(
+                game.step(0x00fa0000 + index as u32 * 4 + step as u32)
+                    .unwrap(),
+                expected["sound"].as_u64().unwrap(),
+                "{} step {}",
+                case["name"],
+                step
+            );
+        }
     }
 }
