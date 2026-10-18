@@ -23,21 +23,15 @@ impl Cache {
             if *previous_linear != linear
                 || !Arc::ptr_eq(previous, image) && previous.as_ref() != image.as_ref()
             {
-                texture.set(
-                    egui::ColorImage::from_rgba_unmultiplied(image.size(), image.pixels()),
-                    options,
-                );
+                texture.set(super::game_colors::image(image), options);
                 *previous = image.clone();
                 *previous_linear = linear;
             }
         } else {
             // The renderer requests slots in command order, never guest-supplied indices.
             assert_eq!(index, self.textures.len());
-            let texture = ctx.load_texture(
-                "game-sprite",
-                egui::ColorImage::from_rgba_unmultiplied(image.size(), image.pixels()),
-                options,
-            );
+            let texture =
+                ctx.load_texture("game-sprite", super::game_colors::image(image), options);
             self.textures.push((image.clone(), texture, linear));
         }
         self.textures[index].1.id()

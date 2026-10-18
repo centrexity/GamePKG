@@ -659,3 +659,28 @@ formatting, reference regeneration and seven public-page link checks pass.
 The maintainer harness compiles its test executable first and runs it directly;
 compiler/lock waits no longer consume the runtime test allowance. Arkanoo's source
 recipe is 0.1.24; no signed package or app release is created.
+
+Game-color compositing follow-up: an actual SDL/default-OpenGL comparison exposed
+a native color error of up to 66 8-bit levels. For example, translucent white with
+alpha 30 over black appeared as RGB 96 instead of 30. The game renderer had used
+egui's UI helper, which premultiplies color in linear light. Rectangles/circles
+and ordinary sprites now use an encoded-RGB premultiplication path separate from
+UI styling. Raw immutable source bytes and opaque colors remain unchanged.
+
+`tests/reference/sdl_blending.c` renders six foreground colors over four opaque
+backgrounds using actual SDL rectangles, nearest textures and ordered overlaps;
+`tests/blending_gui.py` checks 72 RGB samples in each tested configuration. Core
+and component Wasm and native-worker playback across Vulkan/OpenGL (six desktop
+combinations) now differ from the live default SDL renderer by at most one level.
+Both core/component browser profiles match exactly. Software SDL is recorded
+separately, preserving the earlier software line/copy rounding observation.
+This corrects solid source-over compositing; filtered interpolation, antialiased
+edges, frame-reset/background semantics and complete original frames remain open.
+
+Game-color validation: 417 all-features tests pass with 63 dedicated checks
+ignored by default. Both local app entries are rebuilt. All 32 signed port tests
+pass in native and Wasm, followed by actual native GUI and core/component browser
+workflow regressions. Windows 32/64 all-features compilation checks, strict lint,
+formatting and site-link checks pass. CI includes the desktop-only SDL comparison,
+which also passes locally; the local full comparison includes both browsers.
+No game dependency, permission, resource limit, package or app release changes.

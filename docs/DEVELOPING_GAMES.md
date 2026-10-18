@@ -117,6 +117,8 @@ Use `gamepkg::draw_clear`, `draw_rect`, `draw_circle` and `draw_asset_image` for
 
 `gamepkg::draw_asset_image_linear(path, x, y, width, height)` draws a package PNG with linear filtering when smooth scaling matches the original art. `draw_asset_image` uses nearest-neighbor filtering. Paths are relative to virtual `assets/`, for example `"heart.png"`, never an OS path. Both helpers share all texture, command and per-frame image limits; repeated cached draws still count fully. Native/Wasm retain up to 32 immutable decoded asset images within a shared 1 MiB pixel budget per instance, with least-recently-used eviction and paths capped at 1,024 bytes. Every draw still spends its full frame budget. The linear helper requires the current source-built host; released 0.1.17 binaries do not provide it.
 
+Game rectangle/circle colors and sprite pixels use straight RGBA bytes. Native game drawing premultiplies encoded RGB bytes for source-over compositing, with a conversion separate from the app's UI styling. The conversion retains supplied opaque-color bytes. Maintainers can run `tests/blending_gui.py` to compare rectangles, nearest sprites and ordered overlaps with SDL in native and browser players.
+
 These functions preserve the source checks, signatures, isolated compiler and Wasm restrictions. Games cannot replace the injected implementation or declare their own host imports.
 
 ## Slang shaders, textures and audio

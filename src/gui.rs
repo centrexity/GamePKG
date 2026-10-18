@@ -5,6 +5,7 @@ mod artwork;
 mod cube2_input;
 mod doom_input;
 mod drops;
+mod game_colors;
 mod game_page;
 mod input;
 mod library_view;
@@ -975,14 +976,7 @@ impl eframe::App for App {
                             egui::Rect::from_center_size(ui.max_rect().center(), display_size);
                         let image_scale = egui::vec2(rect.width() / 640.0, rect.height() / 480.0);
                         let painter = ui.painter_at(rect);
-                        let color = |rgba: u32| {
-                            egui::Color32::from_rgba_unmultiplied(
-                                (rgba >> 24) as u8,
-                                (rgba >> 16) as u8,
-                                (rgba >> 8) as u8,
-                                rgba as u8,
-                            )
-                        };
+                        let color = game_colors::packed;
                         painter.rect_filled(
                             rect,
                             0.0,
