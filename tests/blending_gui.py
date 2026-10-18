@@ -38,7 +38,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-blending-',dir=PROJECT/'target'
  let backgrounds=['''+','.join(hex(packed(c)) for c in BACKGROUNDS)+'''];let colors=['''+','.join(hex(packed(c)) for c in COLORS)+'''];let paths=["c0.png","c1.png","c2.png","c3.png","c4.png","c5.png"];
  for row in 0..4 {for col in 0..6 {let x=16.0+col as f32*100.0;let y=32.0+row as f32*112.0;
  gamepkg::draw_rect(x,y,80.0,90.0,backgrounds[row]);gamepkg::draw_rect(x,y,80.0,30.0,colors[col]);
- gamepkg::draw_asset_image(paths[col],x,y+30.0,80.0,30.0);gamepkg::draw_rect(x,y+60.0,80.0,30.0,colors[col]);gamepkg::draw_asset_image(paths[(col+1)%6],x,y+60.0,80.0,30.0);
+ gamepkg::draw_asset_image(paths[col],x,y+30.0,80.0,30.0);gamepkg::draw_rect(x,y+60.0,80.0,30.0,colors[col]);gamepkg::draw_asset_image_linear(paths[(col+1)%6],x,y+60.0,80.0,30.0);
  }}1}
 '''
   (source/'source/src/lib.rs').write_text(game);manifest=(source/'manifest.toml').read_text().replace('com.gamepkg.minimal','com.gamepkg.blending-probe')

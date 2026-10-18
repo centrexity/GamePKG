@@ -9,6 +9,7 @@ mod game_colors;
 mod game_page;
 mod input;
 mod library_view;
+mod linear_sprites;
 mod multiplayer;
 mod rom_picker;
 mod source_input;
@@ -47,6 +48,7 @@ pub struct App {
     vulkan_state: Option<eframe::egui_wgpu::RenderState>,
     vulkan: Option<std::sync::Arc<crate::gpu_vulkan::Renderer>>,
     sprite_textures: sprites::Cache,
+    linear_sprites: linear_sprites::Cache,
     applied_settings: Option<crate::settings::Settings>,
     updates: crate::updates::Monitor,
     source: String,
@@ -762,9 +764,11 @@ impl eframe::App for App {
             self.doom_desktop = Default::default();
             self.cube_desktop = Default::default();
             self.sprite_textures.finish(0);
+            self.linear_sprites.clear();
         }
         if let Some(game) = self.player.as_mut() {
             let mut image_count = 0;
+            let mut linear_count = 0;
             let mut failure = None;
             let select_input = ctx.input(|i| {
                 u32::from(input::key_edge(i, egui::Key::Tab)) << 7
@@ -998,6 +1002,35 @@ impl eframe::App for App {
                                     height,
                                     ref image,
                                 } => {
+                                    if matches!(
+                                        command,
+                                        crate::drawing::Command::LinearImage { .. }
+                                    ) {
+                                        let bounds = [
+                                            x / 320.0 - 1.0,
+                                            1.0 - y / 240.0,
+                                            width / 320.0,
+                                            -height / 240.0,
+                                        ];
+                                        match self.linear_sprites.callback(
+                                            linear_count,
+                                            image,
+                                            bounds,
+                                            rect,
+                                            self.vulkan_state.as_ref(),
+                                            self.gl.as_ref(),
+                                        ) {
+                                            Ok(callback) => painter.add(callback),
+                                            Err(error) => {
+                                                failure = Some(format!(
+                                                    "Unable to draw game sprite: {error:#}"
+                                                ));
+                                                return;
+                                            }
+                                        };
+                                        linear_count += 1;
+                                        continue;
+                                    }
                                     let texture = self.sprite_textures.texture(
                                         ctx,
                                         image_count,
@@ -1136,6 +1169,7 @@ impl eframe::App for App {
                     );
                 });
             self.sprite_textures.finish(image_count);
+            self.linear_sprites.finish(linear_count);
             if self.player.as_ref().is_some_and(|game| game.is_cube2()) {
                 ctx.request_repaint();
             } else {

@@ -684,3 +684,33 @@ workflow regressions. Windows 32/64 all-features compilation checks, strict lint
 formatting and site-link checks pass. CI includes the desktop-only SDL comparison,
 which also passes locally; the local full comparison includes both browsers.
 No game dependency, permission, resource limit, package or app release changes.
+
+
+### Opaque filtered sprite sampling
+
+Native linear sprites now use host-owned encoded-RGB textures instead of the UI
+renderer’s sRGB texture interpolation. The live SDL reference in
+`tests/reference/sdl_filtering.c` flushes nearest controls before changing their
+sampling mode. `tests/filtering_gui.py` compares 46 RGB samples across static,
+moved and swapped-source frames in six desktop configurations and both browser
+profiles (1,104 comparisons). It includes negative-position clipping and a
+512-pixel alternating texture minified to 128 pixels. OpenGL matches exactly;
+Vulkan and browsers differ by at most one 8-bit channel level. The forced Mesa
+OpenGL 2.1 configuration also passes the static comparison; Mesa refused to
+disable its VAO extension, so the no-VAO path is not verified by that run.
+
+All 417 default all-features tests pass (63 tests remain separately invoked).
+The signed-port harness passes all 32 checks in both native and Wasm, plus the
+native GUI and core/component browser workflows. Windows 32/64 compilation,
+strict lint, formatting and public-page links pass. The desktop-only comparison
+added to CI also passes locally. No binary/package release is created.
+
+The sampler retains existing image/command/frame limits and immutable source
+pixels; callback resources remain alive until queued draws finish. The existing
+source-over comparison now interleaves filtered sprites with shapes and nearest
+sprites. Transparent SDL straight-alpha interpolation, rare sRGB-only surface
+blending, edge rasterization and complete original-game frames remain open.
+A separate source inspection also found inconsistent plain-shader fallback
+textures between Vulkan and OpenGL; the existing shader test checks only that
+previous blue/green pixels disappear, so it does not yet establish transparent
+fallback parity. That needs a stronger reference test before a correction.
