@@ -2139,3 +2139,32 @@ native device, graphical window or platform coverage.
 Source-policy rejection messages now identify the offending packaged Rust file.
 The existing adversarial signed and packing checks verify this diagnostic while
 retaining every rejection. No source-policy restriction was relaxed.
+
+
+Recipe 0.1.59 restores the original life-loss and explosion recordings, credited
+to 11325622 and StereogenicStudio under the Pixabay Content License. Their source
+pages, pinned upstream MP3 hashes, prepared WAV/PCM hashes and conversion reference
+are recorded in tests/fixtures/arkanoo-recorded-effects.json and the port credits.
+Maintainer-only SDL_mixer decoding uses the original 44.1 kHz mixer format, then
+SDL converts to 48 kHz stereo PCM. Players require no conversion or MP3 tools.
+The two cached clips total 1,656,844 decoded bytes and voices share immutable PCM.
+No runtime cap was increased. Three effects remain temporary tones; original
+music, compressed playback and full asynchronous timing remain open.
+
+The canonical WAV loader validates format and lengths, bounds each clip to 2 MiB,
+uses checked-size 64 KiB asset reads and explicit little-endian samples, and rejects
+truncated/trailing data without adding a partial voice or reverting to a tone.
+Failed loads do not repeatedly reread. All 99 logic checks and both 71-check
+signed native/Wasm suites pass, including every sample of both clips through
+completion and four simultaneous voices sharing both cached clips. The SDL
+conversion reproduces the committed fixture byte-for-byte; strict lint/fmt pass.
+
+Actual core/component WebAudio buffers match both complete original PCM hashes,
+including channel separation, exact frame counts and zero-padded endings. The
+longer explosion exposed drift from the old 16 ms browser delay, which could fill
+the unchanged 100 ms queue and drop audio. Fractional 60 Hz fixed-step scheduling
+now retains its phase and avoids catch-up bursts after lateness. A quantized
+600-tick clock check, existing input/window/frame-clock/stereo checks and core/
+component browser gameplay/integrity/shutdown regressions pass. No timing cap,
+visual tolerance or test parallelism changed. Physical device, native graphical
+window and broader platform workflows were not repeated in this round.

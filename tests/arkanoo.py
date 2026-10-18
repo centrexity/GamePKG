@@ -123,8 +123,19 @@ with (nullcontext(tempfile.mkdtemp(prefix='gamepkg-arkanoo-',dir=PROJECT/'target
             sound_branches+=branch+'return u64::from(g.sound);}'
     (modes/'source/src/lib.rs').write_text('''mod procedural;mod background;mod audio;mod editor;mod levels;mod menu;mod pattern_rng;mod physics;mod render;mod speed_font;mod editor_font;mod dynamic_font;mod dynamic_font_data;use std::sync::Mutex;
 static GAME:Mutex<Option<physics::Game>>=Mutex::new(None);
+static RECORDINGS:Mutex<Option<audio::Mixer>>=Mutex::new(None);
 pub fn game_tick(input:u32,state:u64)->u64 {
 SOUND_BRANCHES
+ if input&4294901760==16515072 {
+  if let Ok(mut slot)=RECORDINGS.lock() {
+   if slot.is_none() || input&512!=0 {*slot=Some(audio::Mixer::new());}
+   if let Some(mixer)=slot.as_mut() {
+    if input&256!=0 && !mixer.effect_request(if input&1==0 {4} else {5},0,false) {return 18446744073709551615;}
+    if let Some(pcm)=mixer.effect_render(if input&2048!=0 {64} else {128},input&1024!=0) {gamepkg::audio_submit_stereo(&pcm);return 1;}
+   }
+  }
+  return 0;
+ }
  if input&4294901760==16449536 {
   let case=input&65535;
   if case==4 || case==5 {

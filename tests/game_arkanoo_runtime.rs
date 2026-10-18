@@ -4343,3 +4343,82 @@ fn signed_four_channel_mixer_preserves_tails_capacity_and_stereo_output() {
         }
     }
 }
+
+#[test]
+#[ignore = "requires signed fixtures prepared by tests/arkanoo.py"]
+fn signed_recordings_preserve_full_original_pcm_stereo_duration_and_silence_after_end() {
+    let root = isolated_library();
+    for (which, bytes) in [
+        (
+            0u32,
+            include_bytes!("../ports/arkanoo/assets/audio/explosion.wav").as_slice(),
+        ),
+        (
+            1,
+            include_bytes!("../ports/arkanoo/assets/audio/life-loss.wav").as_slice(),
+        ),
+    ] {
+        let expected: Vec<i16> = bytes[44..]
+            .chunks_exact(2)
+            .map(|b| i16::from_le_bytes([b[0], b[1]]))
+            .collect();
+        let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
+        let mut offset = 0;
+        while offset < expected.len() {
+            assert_eq!(
+                game.step(0x00fc0000 | which | if offset == 0 { 768 } else { 0 })
+                    .unwrap(),
+                1
+            );
+            assert_eq!(game.audio_channels(), 2);
+            let output = game.audio_frame();
+            assert_eq!(output.len(), 1600);
+            let count = 1600.min(expected.len() - offset);
+            assert_eq!(
+                &output[..count],
+                &expected[offset..offset + count],
+                "recording {which}, sample {offset}"
+            );
+            assert!(output[count..].iter().all(|v| *v == 0));
+            offset += count;
+        }
+        assert_eq!(game.step(0x00fc0000 | which).unwrap(), 0);
+        assert!(game.audio_frame().is_empty());
+        assert_eq!(game.audio_channels(), 1);
+    }
+}
+
+#[test]
+#[ignore = "requires signed fixtures prepared by tests/arkanoo.py"]
+fn both_recordings_and_four_shared_voices_fit_the_unchanged_memory_limit() {
+    let root = isolated_library();
+    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
+    let clips: Vec<Vec<i16>> = [
+        include_bytes!("../ports/arkanoo/assets/audio/explosion.wav").as_slice(),
+        include_bytes!("../ports/arkanoo/assets/audio/life-loss.wav").as_slice(),
+    ]
+    .iter()
+    .map(|bytes| {
+        bytes[44..]
+            .chunks_exact(2)
+            .map(|b| i16::from_le_bytes([b[0], b[1]]))
+            .collect()
+    })
+    .collect();
+    for tick in 0..4usize {
+        assert_eq!(
+            game.step(0x00fc0000 | (tick as u32 % 2) | 256 | if tick == 0 { 512 } else { 0 })
+                .unwrap(),
+            1
+        );
+        let mut expected = [0i16; 1600];
+        for voice in 0..=tick {
+            for (at, out) in expected.iter_mut().enumerate() {
+                let sample = clips[voice % 2][(tick - voice) * 1600 + at];
+                *out = (i32::from(*out) + i32::from(sample)).clamp(-32768, 32767) as i16;
+            }
+        }
+        assert_eq!(game.audio_frame(), expected);
+        assert_eq!(game.audio_channels(), 2);
+    }
+}

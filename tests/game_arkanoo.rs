@@ -4,6 +4,37 @@ mod gamepkg {
     thread_local! {
         static WORDS: std::cell::RefCell<std::collections::VecDeque<u64>> = const { std::cell::RefCell::new(std::collections::VecDeque::new()) };
         static NEXT: std::cell::Cell<u64> = const { std::cell::Cell::new(7) };
+        static RECORDING_OVERRIDE: std::cell::RefCell<Option<Vec<u8>>> = const { std::cell::RefCell::new(None) };
+        static RECORDING_READS: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+    }
+    pub fn recording_override(bytes: Option<Vec<u8>>) {
+        RECORDING_OVERRIDE.with(|v| *v.borrow_mut() = bytes);
+        RECORDING_READS.with(|v| v.set(0));
+    }
+    pub fn recording_reads() -> u32 {
+        RECORDING_READS.with(|v| v.get())
+    }
+    pub fn asset_read(path: &str, offset: u32, output: &mut [u8]) -> Option<u32> {
+        RECORDING_READS.with(|v| v.set(v.get() + 1));
+        if let Some(count) = RECORDING_OVERRIDE.with(|v| {
+            let borrowed = v.borrow();
+            let bytes = borrowed.as_ref()?;
+            let start = (offset as usize).min(bytes.len());
+            let count = output.len().min(bytes.len() - start);
+            output[..count].copy_from_slice(&bytes[start..start + count]);
+            Some(count)
+        }) {
+            return Some(count as u32);
+        }
+        let bytes: &[u8] = match path {
+            "audio/life-loss.wav" => include_bytes!("../ports/arkanoo/assets/audio/life-loss.wav"),
+            "audio/explosion.wav" => include_bytes!("../ports/arkanoo/assets/audio/explosion.wav"),
+            _ => return None,
+        };
+        let start = (offset as usize).min(bytes.len());
+        let count = output.len().min(bytes.len() - start);
+        output[..count].copy_from_slice(&bytes[start..start + count]);
+        Some(count as u32)
     }
     pub fn samples(values: &[u64]) {
         WORDS.with(|words| *words.borrow_mut() = values.iter().copied().collect());
@@ -3762,4 +3793,117 @@ fn rocket_input_and_physics_callbacks_are_independent_and_reset_keeps_playing_ef
         &game.effects.effect_render(64, false).unwrap()[..2],
         &[500, -1000]
     );
+}
+
+#[test]
+fn recorded_effects_preserve_every_original_sdl_sample_and_full_stereo_duration() {
+    let reference: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-recorded-effects.json")).unwrap();
+    for (kind, bytes) in [
+        (
+            5u32,
+            include_bytes!("../ports/arkanoo/assets/audio/life-loss.wav").as_slice(),
+        ),
+        (
+            4,
+            include_bytes!("../ports/arkanoo/assets/audio/explosion.wav").as_slice(),
+        ),
+    ] {
+        let fixture = reference["effects"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|v| v["kind"] == kind)
+            .unwrap();
+        assert_eq!(
+            gamepkg_digest(bytes),
+            fixture["wav_sha256"].as_str().unwrap()
+        );
+        assert_eq!(
+            audio::recording_length(&bytes[..44]),
+            Some((bytes.len() - 44) as u32)
+        );
+        let expected: Vec<i16> = bytes[44..]
+            .chunks_exact(2)
+            .map(|b| i16::from_le_bytes([b[0], b[1]]))
+            .collect();
+        assert_eq!(
+            expected.len() / 2,
+            fixture["frames"].as_u64().unwrap() as usize
+        );
+        assert!(expected.chunks_exact(2).any(|pair| pair[0] != pair[1]));
+        let mut mixer = audio::Mixer::new();
+        assert!(mixer.effect_request(kind, 0, false));
+        let mut actual = Vec::new();
+        while let Some(frame) = mixer.effect_render(128, false) {
+            actual.extend(frame);
+        }
+        assert_eq!(&actual[..expected.len()], expected);
+        assert!(actual[expected.len()..].iter().all(|v| *v == 0));
+        assert!(mixer.effect_render(128, false).is_none());
+    }
+}
+
+#[test]
+fn recording_headers_reject_truncation_wrong_formats_sizes_and_overflow() {
+    let original = include_bytes!("../ports/arkanoo/assets/audio/life-loss.wav");
+    for length in 0..44 {
+        assert!(audio::recording_length(&original[..length]).is_none());
+    }
+    for at in 0..44 {
+        let mut header = original[..44].to_vec();
+        header[at] ^= 255;
+        assert!(
+            audio::recording_length(&header).is_none(),
+            "header offset {at}"
+        );
+    }
+    for size in [0u32, 1, 2, 3, 2097156, u32::MAX] {
+        let mut header = original[..44].to_vec();
+        header[40..44].copy_from_slice(&size.to_le_bytes());
+        header[4..8].copy_from_slice(&size.wrapping_add(36).to_le_bytes());
+        assert!(audio::recording_length(&header).is_none());
+    }
+    let shared = std::sync::Arc::new(vec![1000, -2000]);
+    let mut mixer = audio::Mixer::new();
+    assert!(mixer.effect_start_shared(shared.clone(), false));
+    assert!(mixer.effect_start_shared(shared.clone(), false));
+    assert_eq!(std::sync::Arc::strong_count(&shared), 3);
+    assert_eq!(
+        &mixer.effect_render(128, false).unwrap()[..2],
+        &[2000, -4000]
+    );
+    assert_eq!(std::sync::Arc::strong_count(&shared), 1);
+}
+
+#[test]
+fn truncated_and_trailing_recordings_fail_atomically_and_cache_does_not_repeat_reads() {
+    let original = include_bytes!("../ports/arkanoo/assets/audio/life-loss.wav");
+    for length in [0usize, 20, 43, 44, 65580, original.len() - 1] {
+        gamepkg::recording_override(Some(original[..length].to_vec()));
+        let mut mixer = audio::Mixer::new();
+        assert!(!mixer.effect_request(5, 0, false));
+        let reads = gamepkg::recording_reads();
+        assert!(reads > 0);
+        assert!(!mixer.effect_request(5, 1, false));
+        assert_eq!(gamepkg::recording_reads(), reads);
+        assert!(mixer.effect_render(128, false).is_none());
+    }
+    let mut trailing = original.to_vec();
+    trailing.push(7);
+    gamepkg::recording_override(Some(trailing));
+    let mut mixer = audio::Mixer::new();
+    assert!(!mixer.effect_request(5, 0, false));
+    assert!(mixer.effect_render(128, false).is_none());
+    gamepkg::recording_override(None);
+    let mut mixer = audio::Mixer::new();
+    assert!(!mixer.effect_request(5, 0, true));
+    assert_eq!(gamepkg::recording_reads(), 0);
+    assert!(mixer.effect_request(5, 0, false));
+    let reads = gamepkg::recording_reads();
+    assert!(reads > 1);
+    assert!(mixer.effect_request(5, 1, false));
+    assert_eq!(gamepkg::recording_reads(), reads);
+    assert!(mixer.effect_render(128, false).is_some());
+    gamepkg::recording_override(None);
 }

@@ -5,7 +5,7 @@ Python/Selenium are maintainer test tools, never player dependencies.
 from pathlib import Path
 from functools import partial
 from http.server import SimpleHTTPRequestHandler,ThreadingHTTPServer
-import argparse,os,shutil,subprocess,tempfile,threading
+import argparse,json,os,shutil,subprocess,tempfile,threading
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
@@ -37,4 +37,14 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-mixer-browser-') as temporary:
      return b.execute_script('return window.mixerBuffers.some(b=>b.numberOfChannels===2&&b.length===800&&b.sampleRate===48000&&arguments[0].every((s,i)=>b.getChannelData(i%2)[Math.floor(i/2)]===s/32768));',wanted)
     wait.until(matches)
    print(profile,'actual signed Wasm/WebAudio: stereo tails, free-channel reuse, muted progress and keyboard/controller collision overlap passed.',flush=True)
+   recordings=json.loads((PROJECT/'tests/fixtures/arkanoo-recorded-effects.json').read_text())['effects']
+   for recording in recordings:
+    which=0 if recording['kind']==4 else 1
+    browser.get(f'http://127.0.0.1:{server.server_port}/');wait.until(lambda b:b.find_element('id','status').text=='Ready to play')
+    browser.execute_script("window.recordBuffers=[];window.firstRecording=true;const which=arguments[0],post=Worker.prototype.postMessage;Worker.prototype.postMessage=function(data,...rest){if(data.type==='tick'){data={...data,input:0xfc0000|which|(window.firstRecording?768:0)};window.firstRecording=false;}return post.call(this,data,...rest);};const p=AudioContext.prototype,old=p.createBuffer;p.createBuffer=function(...args){const b=old.apply(this,args);window.recordBuffers.push(b);return b;};",which)
+    browser.find_element('id','play').click();wait.until(lambda b:b.find_element('id','game').get_attribute('data-state')=='1');wait.until(lambda b:b.find_element('id','game').get_attribute('data-state')=='0')
+    result=browser.execute_async_script("const frames=arguments[0],done=arguments[arguments.length-1],count=frames*2,buffers=window.recordBuffers;if(buffers.length!==Math.ceil(count/1600)){done({error:'buffer count',count:buffers.length});return;}const pcm=new Uint8Array(count*2),view=new DataView(pcm.buffer);let at=0;for(const b of buffers){if(b.numberOfChannels!==2||b.length!==800||b.sampleRate!==48000){done({error:'audio format'});return;}for(let i=0;i<b.length;i++)for(let c=0;c<2;c++){const sample=Math.round(b.getChannelData(c)[i]*32768);if(at<count)view.setInt16(at*2,sample,true);else if(sample!==0){done({error:'nonzero tail'});return;}at++;}}crypto.subtle.digest('SHA-256',pcm).then(hash=>done({sha256:Array.from(new Uint8Array(hash),v=>v.toString(16).padStart(2,'0')).join('')}));",recording['frames'])
+    assert result=={'sha256':recording['pcm_sha256']},(profile,recording['asset'],result)
+    print(profile,recording['asset'],'entire original PCM matches real WebAudio buffers, including stereo, duration and zero-padded ending.',flush=True)
+
   finally:browser.quit();server.shutdown();server.server_close()
