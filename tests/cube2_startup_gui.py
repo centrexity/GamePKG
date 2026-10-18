@@ -2,7 +2,7 @@
 from pathlib import Path
 import os,subprocess,tempfile,time,struct,re,argparse
 from gui_test_support import start_display,game_window,wait_game_frame,close_game,cube2_choose_test_map
-parser=argparse.ArgumentParser();parser.add_argument('--renderer',choices=['vulkan','opengl'],default='vulkan');args=parser.parse_args()
+parser=argparse.ArgumentParser();parser.add_argument('--renderer',choices=['vulkan','opengl'],default='vulkan');parser.add_argument('--locks-enabled',action='store_true');args=parser.parse_args()
 PROJECT=Path(__file__).resolve().parents[1]
 proof=PROJECT/'target/cube2-startup-gui';proof.mkdir(exist_ok=True)
 library=PROJECT/'target/cube2-package-test/library'
@@ -27,6 +27,12 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-startup-') as temporary:
     server=start_display(env,1500,1100);app=None
     def command(*args):return subprocess.run(list(map(str,args)),env=env,check=True,capture_output=True,timeout=30)
     try:
+        if args.locks_enabled:
+            subprocess.run(['xdotool','key','Caps_Lock','Num_Lock'],env=env,check=True)
+            # This private Xvfb fixture uses its default XKB map: Caps/Num LEDs 0/1.
+            state=subprocess.check_output(['xset','q'],env=env,text=True)
+            leds=re.search(r'LED mask:\s*([0-9a-fA-F]+)',state)
+            assert leds and int(leds.group(1),16)&3==3,state
         app=subprocess.Popen([str(PROJECT/'target/release/gamepkg-gui'),'--play','com.gamepkg.cube2'],env=env,stdout=(proof/'player.log').open('wb'),stderr=subprocess.STDOUT)
         window,_=game_window(env,'com.gamepkg.cube2',timeout=30)
         command('xdotool','windowfocus',window)
@@ -69,7 +75,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-startup-') as temporary:
         names=re.findall(rb'name [^\n]*',saved)
         assert b'7_3_144_p_k_r_n' in saved, f'Physical bindings or ordered console text failed: {names!r}'
         assert b'maxfps 145' in saved,'Extended media key was not released and persisted'
-        print('Original Cube 2 startup/menu/console preferences, physical Pause/keypad/right-modifier/media bindings and native close pass.')
+        print('Original Cube 2 startup/menu/console preferences, physical Pause/keypad/right-modifier/media bindings and native close pass.' + (' Caps/Num enabled before launch.' if args.locks_enabled else ''))
     finally:
         if app and app.poll() is None:
             command('import','-display',env['DISPLAY'],'-window','root',proof/'failure.png')

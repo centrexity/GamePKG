@@ -3,9 +3,16 @@ use eframe::egui::{Event, Modifiers, MouseWheelUnit, PointerButton, Vec2};
 
 #[derive(Default)]
 pub struct Desktop {
+    locks: u32,
     keys: std::collections::HashSet<egui_winit::winit::keyboard::KeyCode>,
 }
 impl Desktop {
+    fn set_locks(&mut self, caps: bool, num: bool) {
+        self.locks = (u32::from(caps) * 0x2000) | (u32::from(num) * 0x1000);
+    }
+    pub fn lock_modifiers(&self) -> u32 {
+        self.locks
+    }
     fn modifiers(&self) -> u32 {
         use egui_winit::winit::keyboard::KeyCode::*;
         [
@@ -20,7 +27,7 @@ impl Desktop {
         ]
         .iter()
         .filter(|(key, _)| self.keys.contains(key))
-        .fold(0, |mods, (_, bit)| mods | bit)
+        .fold(self.locks, |mods, (_, bit)| mods | bit)
     }
     pub fn forward(
         &mut self,
@@ -30,6 +37,11 @@ impl Desktop {
     ) -> anyhow::Result<()> {
         use egui_winit::gamepkg_input::Event as Native;
         if !captured {
+            for event in events {
+                if let Native::Locks { caps, num } = event {
+                    self.set_locks(*caps, *num);
+                }
+            }
             self.keys.clear();
             game.cube2_clear_input();
             return Ok(());
@@ -49,6 +61,10 @@ impl Desktop {
                     if let Some(scan) = scancode(*code) {
                         game.cube2_key(scan, *pressed, *repeat, self.modifiers());
                     }
+                }
+                Native::Locks { caps, num } => {
+                    self.set_locks(*caps, *num);
+                    game.cube2_modifiers(self.modifiers());
                 }
                 Native::Text(text) => game.cube2_text(text),
                 Native::Focus(false) => {
@@ -357,7 +373,12 @@ fn modifiers(mods: Modifiers) -> u32 {
         | (u32::from(mods.alt) << 8)
         | (u32::from(mods.mac_cmd) << 10)
 }
-pub fn forward(game: &mut crate::runtime::Game, events: &[Event], pointer: &mut Pointer) {
+pub fn forward(
+    game: &mut crate::runtime::Game,
+    events: &[Event],
+    pointer: &mut Pointer,
+    locks: u32,
+) {
     for event in events {
         match event {
             Event::PointerButton {
@@ -373,7 +394,7 @@ pub fn forward(game: &mut crate::runtime::Game, events: &[Event], pointer: &mut 
                     _ => None,
                 };
                 if let Some(button) = button {
-                    game.cube2_mouse_button(button, *pressed, modifiers(*mods));
+                    game.cube2_mouse_button(button, *pressed, modifiers(*mods) | locks);
                 }
             }
             Event::MouseWheel {
@@ -383,7 +404,7 @@ pub fn forward(game: &mut crate::runtime::Game, events: &[Event], pointer: &mut 
             } => {
                 let (x, y) = pointer.wheel(*unit, *delta);
                 if x != 0 || y != 0 {
-                    game.cube2_wheel(x, y, modifiers(*mods));
+                    game.cube2_wheel(x, y, modifiers(*mods) | locks);
                 }
             }
             _ => {}
@@ -519,6 +540,24 @@ mod tests {
             }),
             65
         );
+    }
+    #[test]
+    fn desktop_lock_snapshots_survive_key_release_and_combine_with_modifier_sides() {
+        use egui_winit::winit::keyboard::KeyCode::*;
+        let mut desktop = Desktop::default();
+        for (caps, num, expected) in [
+            (true, false, 0x2000),
+            (false, true, 0x1000),
+            (true, true, 0x3000),
+            (false, false, 0),
+        ] {
+            desktop.set_locks(caps, num);
+            desktop.keys.extend([ControlRight, ShiftLeft]);
+            assert_eq!(desktop.modifiers(), expected | 128 | 1);
+            desktop.keys.clear();
+            assert_eq!(desktop.modifiers(), expected);
+            assert_eq!(desktop.lock_modifiers(), expected);
+        }
     }
     #[test]
     fn physical_keypad_pause_locks_and_modifier_sides_are_distinct() {

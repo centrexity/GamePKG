@@ -1442,3 +1442,6 @@ mod lan;
 
 #[cfg(test)]
 mod loading;
+
+#[cfg(test)]
+mod locks;

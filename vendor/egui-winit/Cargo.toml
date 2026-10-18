@@ -135,6 +135,7 @@ wayland = [
     "bytemuck",
 ]
 x11 = [
+    "dep:x11-dl",
     "winit/x11",
     "bytemuck",
 ]
@@ -336,3 +337,7 @@ priority = -1
 all = "warn"
 broken_intra_doc_links = "warn"
 missing_crate_level_docs = "warn"
+
+[target.'cfg(target_os="linux")'.dependencies.x11-dl]
+version = "=2.21.0"
+optional = true

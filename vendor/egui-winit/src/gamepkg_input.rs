@@ -1,4 +1,7 @@
 //! GamePKG-only physical input hook. Disabled outside the active game viewport.
+#[path = "gamepkg_locks.rs"]
+#[allow(unsafe_code)] // Trusted UI-only FFI; guest source policy is unchanged.
+mod locks;
 use egui::ViewportId;
 use std::sync::Mutex;
 use winit::{
@@ -28,12 +31,17 @@ pub enum Event {
     Wheel(MouseScrollDelta),
     Text(String),
     Focus(bool),
+    Locks {
+        caps: bool,
+        num: bool,
+    },
     Overflow,
 }
 struct Capture {
     viewport: ViewportId,
     focused: bool,
     surface: bool,
+    locks: Option<(bool, bool)>,
     events: Vec<Event>,
 }
 static CAPTURE: Mutex<Option<Capture>> = Mutex::new(None);
@@ -49,6 +57,7 @@ pub fn enable(viewport: ViewportId, active: bool, focused: bool) {
             viewport,
             focused,
             surface: false,
+            locks: None,
             events: Vec::new(),
         });
     }
@@ -90,6 +99,27 @@ pub(crate) fn text(viewport: ViewportId, value: &str) {
             c.events.push(Event::Overflow);
         } else if !value.is_empty() {
             push(c, Event::Text(value.to_owned()));
+        }
+    }
+}
+pub(crate) fn sync_locks(viewport: ViewportId, window: &winit::window::Window) {
+    let mut guard = CAPTURE.lock().unwrap_or_else(|p| p.into_inner());
+    let Some(c) = guard
+        .as_mut()
+        .filter(|c| c.viewport == viewport && c.focused)
+    else {
+        return;
+    };
+    if let Some(locks) = locks::query(window) {
+        if c.locks != Some(locks) {
+            c.locks = Some(locks);
+            push(
+                c,
+                Event::Locks {
+                    caps: locks.0,
+                    num: locks.1,
+                },
+            );
         }
     }
 }

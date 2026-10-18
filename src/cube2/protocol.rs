@@ -30,7 +30,7 @@ pub fn mouse_button_event(button: u32, pressed: bool, modifiers: u32) -> Result<
         matches!(button, 2 | 4 | 5),
         "unsupported Cube 2 mouse button"
     );
-    ensure!(modifiers & !0x0fc3 == 0, "unsupported Cube 2 modifiers");
+    ensure!(modifiers & !0x3fc3 == 0, "unsupported Cube 2 modifiers");
     let mut bytes = b"GPC1".to_vec();
     for n in [button, u32::from(pressed), modifiers] {
         bytes.extend(n.to_le_bytes());
@@ -42,7 +42,7 @@ pub fn wheel_event(x: i32, y: i32, modifiers: u32) -> Result<Vec<u8>> {
         x.unsigned_abs() as u64 + y.unsigned_abs() as u64 <= MAX_WHEEL_STEPS as u64,
         "Cube 2 wheel movement exceeds its event bound"
     );
-    ensure!(modifiers & !0x0fc3 == 0, "unsupported Cube 2 modifiers");
+    ensure!(modifiers & !0x3fc3 == 0, "unsupported Cube 2 modifiers");
     let mut bytes = b"GPW1".to_vec();
     bytes.extend(x.to_le_bytes());
     bytes.extend(y.to_le_bytes());
@@ -143,7 +143,7 @@ pub fn save_files(bytes: &[u8]) -> Result<Vec<SaveFile<'_>>> {
 /// event structs or pointers. The engine asserts SDL_NUM_SCANCODES is 512.
 pub fn key_event(scancode: u32, pressed: bool, repeat: bool, modifiers: u32) -> Result<Vec<u8>> {
     ensure!((4..512).contains(&scancode), "unsupported Cube 2 key");
-    ensure!(modifiers & !0x0fc3 == 0, "unsupported Cube 2 modifiers");
+    ensure!(modifiers & !0x3fc3 == 0, "unsupported Cube 2 modifiers");
     let mut bytes = b"GPI1".to_vec();
     for n in [
         scancode,
@@ -167,7 +167,7 @@ pub fn text_event(text: &str) -> Result<Vec<u8>> {
 }
 pub const RESET_INPUT: [u8; 16] = *b"GPR1\0\0\0\0\0\0\0\0\0\0\0\0";
 pub fn modifiers_event(modifiers: u32) -> Result<Vec<u8>> {
-    ensure!(modifiers & !0x0fc3 == 0, "unsupported Cube 2 modifiers");
+    ensure!(modifiers & !0x3fc3 == 0, "unsupported Cube 2 modifiers");
     let mut bytes = b"GPM1".to_vec();
     bytes.extend(modifiers.to_le_bytes());
     bytes.extend([0; 8]);
@@ -418,6 +418,28 @@ pub(crate) fn test_tree(files: &[(&str, &[u8])]) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn lock_modifiers_round_trip_on_every_event_and_unknown_bits_stay_rejected() {
+        for bits in [0x1000u32, 0x2000, 0x3000, 0x3fc3] {
+            let key = key_event(57, true, false, bits).unwrap();
+            assert_eq!(&key[12..16], &bits.to_le_bytes());
+            assert_eq!(&modifiers_event(bits).unwrap()[4..8], &bits.to_le_bytes());
+            assert_eq!(
+                &mouse_button_event(2, true, bits).unwrap()[12..16],
+                &bits.to_le_bytes()
+            );
+            assert_eq!(
+                &wheel_event(0, 1, bits).unwrap()[12..16],
+                &bits.to_le_bytes()
+            );
+        }
+        for bits in [4u32, 0x4000, 0x8000, u32::MAX] {
+            assert!(key_event(57, true, false, bits).is_err());
+            assert!(modifiers_event(bits).is_err());
+            assert!(mouse_button_event(2, true, bits).is_err());
+            assert!(wheel_event(0, 1, bits).is_err());
+        }
+    }
+    #[test]
     fn loading_marker_is_explicit_and_truncated_markers_fail() {
         assert!(matches!(
             super::read_update(b"GPL1".as_slice()).unwrap(),
@@ -580,7 +602,7 @@ mod tests {
             assert!(key_event(code, false, false, 0).is_ok());
         }
         assert!(key_event(69, true, false, 1 << 31).is_err());
-        assert!(modifiers_event(0x0fc3).is_ok());
+        assert!(modifiers_event(0x3fc3).is_ok());
         assert!(modifiers_event(1 << 31).is_err());
         let bytes = text_event("héllo").unwrap();
         assert_eq!(&bytes[..4], b"GPT1");

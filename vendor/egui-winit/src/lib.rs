@@ -231,6 +231,7 @@ impl State {
     /// Use [`update_viewport_info`] to update the info for each
     /// viewport.
     pub fn take_egui_input(&mut self, window: &Window) -> egui::RawInput {
+        gamepkg_input::sync_locks(self.viewport_id, window);
         profiling::function_scope!();
 
         self.egui_input.time = Some(self.start_time.elapsed().as_secs_f64());
@@ -267,6 +268,13 @@ impl State {
         event: &winit::event::WindowEvent,
     ) -> EventResponse {
         profiling::function_scope!(short_window_event_description(event));
+        if matches!(
+            event,
+            winit::event::WindowEvent::KeyboardInput { .. }
+                | winit::event::WindowEvent::Focused(true)
+        ) {
+            gamepkg_input::sync_locks(self.viewport_id, window);
+        }
         gamepkg_input::window_event(self.viewport_id, event);
 
         #[cfg(feature = "accesskit")]

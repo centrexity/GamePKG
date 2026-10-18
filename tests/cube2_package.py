@@ -21,7 +21,7 @@ if not package.exists():run('pack',PROJECT/'ports/cube2','-o',package,'--key',ke
 if not (root/'library/com.gamepkg.cube2.gamepkg').exists():run('install',package,'--trust-creator')
 if '--reuse-build' not in sys.argv:run('build','com.gamepkg.cube2')
 version=run('--version').strip().split()[-1]
-fingerprint=hashlib.sha256(b''.join((PROJECT/p).read_bytes() for p in ['engines/cube2/upstream-lock.json','engines/cube2/adapters/frame_bridge.h','engines/cube2/adapters/audio.h','engines/cube2/adapters/persistence.h','engines/cube2/adapters/network.h','engines/cube2/adapters/syscall_guard.h','src/cube2/build.rs'])).hexdigest()[:16]
+fingerprint=hashlib.sha256(b''.join((PROJECT/p).read_bytes() for p in ['engines/cube2/upstream-lock.json','engines/cube2/adapters/frame_bridge.h','engines/cube2/adapters/audio.h','engines/cube2/adapters/loading.h','engines/cube2/adapters/loading-patches.json','engines/cube2/adapters/persistence.h','engines/cube2/adapters/network.h','engines/cube2/adapters/syscall_guard.h','src/cube2/build.rs'])).hexdigest()[:16]
 artifacts=[p for p in (root/'library/builds').rglob('cube2-*') if p.name=='cube2-'+fingerprint and any(part.startswith('native-v1-'+version+'-') for part in p.parts)]
 assert len(artifacts)==1,artifacts
 binary=artifacts[0];stamp=binary.stat().st_mtime_ns;digest=hashlib.sha256(binary.read_bytes()).hexdigest()
@@ -42,9 +42,11 @@ finally:binary.write_bytes(original)
 run('integrity-check','com.gamepkg.cube2')
 network=root/'library/network-selections.json'
 installed=root/'library/com.gamepkg.cube2.gamepkg';signed_digest=hashlib.sha256(installed.read_bytes()).hexdigest()
-before=network.read_bytes() if network.exists() else None
-denied=subprocess.run([str(cli),'configure-network','com.gamepkg.cube2','--server','127.0.0.1:28785'],env=env,capture_output=True,text=True)
-assert denied.returncode!=0 and (network.read_bytes() if network.exists() else None)==before
+run('configure-network','com.gamepkg.cube2','--server','127.0.0.1:28785')
+choices=list(json.loads(network.read_text()).values());assert len(choices)==1 and choices[0]['server']=='127.0.0.1:28785' and not choices[0]['allow_local']
+before=network.read_bytes()
+denied=subprocess.run([str(cli),'configure-network','com.gamepkg.cube2','--server','invalid address'],env=env,capture_output=True,text=True)
+assert denied.returncode!=0 and network.read_bytes()==before
 run('configure-network','com.gamepkg.cube2','--server','127.0.0.1:28785','--allow-local')
 choices=list(json.loads(network.read_text()).values());assert len(choices)==1 and choices[0]['server']=='127.0.0.1:28785' and choices[0]['allow_local']
 run('configure-network','com.gamepkg.cube2','--clear');assert not json.loads(network.read_text())

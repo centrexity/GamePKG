@@ -189,7 +189,7 @@ static void gamepkg_input()
         {
             if(++events > 64) exit(2);
             uint32_t button=gamepkg_le32(packet+4), pressed=gamepkg_le32(packet+8), mods=gamepkg_le32(packet+12);
-            if((button!=2 && button!=4 && button!=5) || pressed>1 || (mods & ~uint32_t(0x0fc3))) exit(2);
+            if((button!=2 && button!=4 && button!=5) || pressed>1 || (mods & ~uint32_t(0x3fc3))) exit(2);
             SDL_SetModState(SDL_Keymod(mods));
             SDL_Event event; memset(&event,0,sizeof(event));
             event.type=pressed ? SDL_MOUSEBUTTONDOWN : SDL_MOUSEBUTTONUP;
@@ -200,7 +200,7 @@ static void gamepkg_input()
         {
             if(++events > 64) exit(2);
             uint32_t rawx=gamepkg_le32(packet+4),rawy=gamepkg_le32(packet+8),mods=gamepkg_le32(packet+12);
-            if((rawx>16 && rawx<0xfffffff0u) || (rawy>16 && rawy<0xfffffff0u) || (mods & ~uint32_t(0x0fc3))) exit(2);
+            if((rawx>16 && rawx<0xfffffff0u) || (rawy>16 && rawy<0xfffffff0u) || (mods & ~uint32_t(0x3fc3))) exit(2);
             int x=rawx<=16 ? int(rawx) : -int(~rawx)-1,y=rawy<=16 ? int(rawy) : -int(~rawy)-1;
             if(abs(x)+abs(y)>16) exit(2);
             SDL_SetModState(SDL_Keymod(mods));
@@ -220,7 +220,7 @@ static void gamepkg_input()
         {
             if(++events > 64) exit(2);
             uint32_t mods = gamepkg_le32(packet+4);
-            if((mods & ~uint32_t(0x0fc3)) || gamepkg_le32(packet+8) || gamepkg_le32(packet+12)) exit(2);
+            if((mods & ~uint32_t(0x3fc3)) || gamepkg_le32(packet+8) || gamepkg_le32(packet+12)) exit(2);
             SDL_SetModState(SDL_Keymod(mods)); continue;
         }
         if(!memcmp(packet, "GPR1", 4))
@@ -247,7 +247,7 @@ static void gamepkg_input()
         {
             if(++events > 64) exit(2);
             uint32_t key = gamepkg_le32(packet+4), flags = gamepkg_le32(packet+8), mods = gamepkg_le32(packet+12);
-            if(key < 4 || key >= SDL_NUM_SCANCODES || flags > 3 || (mods & ~uint32_t(0x0fc3))) exit(2);
+            if(key < 4 || key >= SDL_NUM_SCANCODES || flags > 3 || (mods & ~uint32_t(0x3fc3))) exit(2);
             SDL_Event event; memset(&event, 0, sizeof(event));
             event.type = flags&1 ? SDL_KEYDOWN : SDL_KEYUP;
             event.key.state = flags&1 ? SDL_PRESSED : SDL_RELEASED;

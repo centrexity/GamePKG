@@ -9,7 +9,7 @@ work stays open until behavior is verified.
 
 | Port | Remaining gaps |
 | --- | --- |
-| Cube 2 | Initial OS lock-key state, remaining uncommon-key/platform behavior and full controller/touch equivalence; further LAN/platform and master authentication/registration fault/service coverage; custom asset/mod workflows; demo/movie output and persistence; hardware-accelerated engine rendering; native platforms beyond Linux. Vulkan currently presents software-rendered engine frames. |
+| Cube 2 | Wayland lock-state access, Windows lock-state runtime validation, remaining uncommon-key/platform behavior and full controller/touch equivalence; further LAN/platform and master authentication/registration fault/service coverage; custom asset/mod workflows; demo/movie output and persistence; hardware-accelerated engine rendering; native platforms beyond Linux. Vulkan currently presents software-rendered engine frames. |
 | DOOM | Original WAD music, spatial stereo effects, six save slots, configuration, desktop controls and the original quit/ENDOOM flow are runtime verified. Music backend selection, multiplayer, additional WADs/mods and broader control/platform coverage remain unfinished. |
 | Zelda3 | External MSU music, replay tools, save states, widescreen, language selection and desktop enhancement settings need support. The adapter fixes the view to 256×224. Original DSP stereo is verified in native and Wasm gameplay/save tests. |
 | Arkanoo | Gravity, speed-triggered portal behavior and ball-to-ball responses are restored with upstream reference and actual-engine tests. Original world proportions and movement/contact order now match upstream reference checks. Per-ball launch timing, life recovery and victory/endless transitions also match original-code fixtures; prior item/score/level caps are removed. Brick health and original blast rules are also verified. All twelve original procedural patterns are restored. Focused mouse movement and original Space/Escape controls are restored. Editor painting/erasing, brick selection, names, save/load, clear confirmation, test return and the custom endless pool are restored. Original ASCII pattern import/export now uses player-selected files. Gameplay cursor confinement/hiding, F11 fullscreen and Q-to-quit outside play are verified in native and browser runtime checks. Normal-size/fullscreen/maximized preferences now persist through the native host. The six main menu actions and fullscreen/effects settings controls are restored. Remaining menu presentation and music/resolution/VSync controls, project-link action and original menus/music still need work. Original shard particles are restored; remaining ball artwork/speed lettering, other art/effects still need work; original penguin/heart-loss behavior is now verified. Current runs do not persist; high score, unlocked level, gravity and effects preferences do. |
@@ -395,3 +395,37 @@ browser and cold private-LAN checks were run explicitly and passed separately.
 Strict lint, formatting and the seven-page public-site link check pass. These
 results establish the tested Linux software-renderer paths, not full port parity
 or hardware/platform coverage. No binary/package release is created.
+
+
+Desktop lock-state follow-up: the trusted native input hook now queries Caps Lock
+and Num Lock from its existing X11 window connection, or the UI thread's Windows
+keyboard queue. It emits changed state only to the registered focused game
+viewport. X11 queries use XKB's locked modifiers and the actual keysym modifier
+mapping rather than assuming Num Lock is always Mod2. No XWayland connection is
+used as a substitute for native Wayland state. The X11 virtual-display regression
+verifies all four initial combinations, unchanged-state deduplication, silent
+unfocused sampling and focus-return resynchronization. A narrowly scoped trusted
+UI FFI allowance follows the existing clipboard integration pattern; guest source
+restrictions are unchanged.
+
+Cube 2's protocol and reviewed engine now accept precisely the Caps/Num bits in
+addition to their earlier modifier mask. Host keyboard, mouse and wheel paths
+retain those bits, including after held keys are cleared. Unknown bits remain
+rejected. Windows uses GetKeyState's toggle bit; its runtime behavior and native
+Wayland state access still require verification/implementation. X11 state queries
+are current-state snapshots; exact historical modifier ordering for rapidly
+queued external lock changes remains unverified.
+
+API references: [XKB state and keysym modifier mapping](https://www.x.org/archive/X11R7.7/doc/libX11/XKB/xkblib.html)
+and [Windows toggle state](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getkeystate).
+
+Lock-state validation: 394 default all-features tests pass, with 55 dedicated
+media/platform tests ignored. The original-engine lock-packet/game-binding test
+passes separately with an original-limit player name and clean scoped saving.
+The signed package rebuild/cache/integrity test passes after updating its loading
+fingerprint and obsolete LAN-opt-in expectation. A freshly rebuilt Vulkan GUI
+passes original menus, console preferences, physical Pause/keypad/right-Ctrl/media
+bindings, focus changes and close with Caps/Num enabled before launch on its
+private X11 display. Both i686 and x86_64 Windows all-features build checks pass;
+these are compilation evidence only. Strict lint, formatting and public-site link
+checks pass. Source-only publication retains app version 0.1.17.

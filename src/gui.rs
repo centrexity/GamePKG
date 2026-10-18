@@ -857,7 +857,12 @@ impl eframe::App for App {
                         }
                         if captured {
                             ctx.input(|i| {
-                                cube2_input::forward(game, &i.events, &mut self.cube_pointer)
+                                cube2_input::forward(
+                                    game,
+                                    &i.events,
+                                    &mut self.cube_pointer,
+                                    self.cube_desktop.lock_modifiers(),
+                                )
                             });
                             game.cube2_desktop_input(
                                 if recaptured { 0 } else { buttons },

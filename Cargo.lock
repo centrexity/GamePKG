@@ -1037,6 +1037,7 @@ dependencies = [
  "web-time",
  "webbrowser",
  "winit",
+ "x11-dl",
 ]
 
 [[package]]
