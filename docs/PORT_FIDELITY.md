@@ -1370,3 +1370,48 @@ Three procedural themes (Starry Night, Digital Circuit and Maze), image/editor
 art, viewport, fonts/HUD/menus/audio and other port requirements remain open.
 Recipe 0.1.39 is source-only; the host version and binary/package releases are
 unchanged.
+
+
+### Starry Night, Digital Circuit and Maze
+
+The final three previously missing procedural paths now preserve their original
+mixed primitives and ordering. Starry Night retains 200 per-star seeded size and
+twinkle draws, satellite motion and blinking, and interval-seeded shooting-star
+probability, progress cutoff and trailing endpoints. Circuit retains every node,
+two independent seeded connection decisions and the original moving packet
+phases/order. Maze retains all 627 seeded diagonal commands and its final moving
+6×6 solver rectangle.
+
+The scalar Rand adaptation now also preserves Bernoulli's exact f64-derived
+10%, 30% and 70% u64 thresholds, rather than approximating probabilities with a
+small integer roll. Four independent real-Rand seeds per probability verify
+3,072 successive decisions; complete scene commands also verify interleaving
+with i32/f32 draws. The reference selector includes a naturally selected Starry
+Night seed with an active first shooting interval. Cases around 29/30, 59/60,
+199/200, 259/260 and 399/400 preserve blink and shooting cutoff/interval behavior,
+including the original f32 timing and saturating casts at extreme phases.
+
+The complete unchanged original function and actual SDL 2.30 provide 43 cases,
+349 independent grouped contribution maps and complete canonical default OpenGL
+frames. Every raw command field/order/hash, contribution map and canonical
+framebuffer byte matches in logic and signed native/Wasm checks. Original
+software SDL has identical visible coverage in these cases and differs by at
+most two RGB levels; these separate original images remain explicitly checked.
+The recorder's earlier Hex Pulse/Bubbles output remains byte-identical.
+
+All 77 logic tests and 50 signed checks per run pass within unchanged source,
+portability, time, memory, command and image-byte limits. Dense scenes retain
+all 200 fire-brick overlays and all four corner layers with 3,000 particles,
+cold and warm. Eight actual players cover two frames for each theme plus a
+revisit, with exact browser samples and desktop rounding at most one level.
+These interior samples with explicit nearest-boundary choices do not prove
+complete scaled-window/edge or other-platform fidelity.
+
+All twenty procedural draw paths are now adapted and have per-path reference
+and runtime evidence. This is not a claim that every older background matches
+canonical OpenGL frames exactly: eight earlier point-based themes and campaign
+7–9 retain documented software-SDL grouping bounds. Canonical composition for
+those paths remains an explicit tracker gate. Image/editor artwork, viewport,
+fonts/HUD/menus/audio, other platforms and the broader port requirements remain
+open. Recipe 0.1.40 is source-only; no host version or binary/package release
+changes.

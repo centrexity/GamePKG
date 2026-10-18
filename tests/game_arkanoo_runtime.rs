@@ -2783,3 +2783,13 @@ fn original_hex_and_bubbles_preserve_pixels_and_full_scene_budgets() {
         &[0, 3, 9, 11, 14],
     );
 }
+
+#[test]
+#[ignore = "requires the signed production fixture prepared by tests/arkanoo.py"]
+fn original_night_circuit_and_maze_preserve_pixels_and_full_scene_budgets() {
+    check_procedural_runtime_fixture(
+        include_str!("fixtures/arkanoo-night-circuit-maze.json"),
+        2164260864,
+        &[0, 5, 21, 24, 32, 35],
+    );
+}

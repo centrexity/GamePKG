@@ -2919,19 +2919,24 @@ fn original_matrix_and_nebula_preserve_rectangle_commands_and_actual_sdl_framebu
     }
 }
 
-#[test]
-fn original_hex_and_bubbles_preserve_commands_and_actual_sdl_framebuffers() {
+fn check_command_background_fixture(text: &str) {
     use std::io::Read;
-    let fixture: serde_json::Value =
-        serde_json::from_str(include_str!("fixtures/arkanoo-hex-bubbles.json")).unwrap();
-    assert!(
-        fixture["cases"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|case| case["theme"] == 2 && case["commands"][0][3] == 18),
-        "Smallest original grid size must remain covered"
-    );
+    let fixture: serde_json::Value = serde_json::from_str(text).unwrap();
+    if fixture["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|case| case["theme"] == 2)
+    {
+        assert!(
+            fixture["cases"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|case| case["theme"] == 2 && case["commands"][0][3] == 18),
+            "Smallest original grid size must remain covered"
+        );
+    }
     for case in fixture["outlines"].as_array().unwrap() {
         let rect = &case["rect"];
         let command = background::BackgroundCommand {
@@ -2964,6 +2969,9 @@ fn original_hex_and_bubbles_preserve_commands_and_actual_sdl_framebuffers() {
         assert_eq!(procedural::procedural_theme(level), theme);
         let (color, commands) = match theme {
             2 => procedural::hex_commands(level, frame),
+            8 => procedural::night_commands(level, frame),
+            12 => procedural::circuit_commands(level, frame),
+            15 => procedural::maze_commands(level, frame),
             10 => procedural::bubble_commands(level, frame),
             _ => panic!("Unknown mixed-command theme"),
         };
@@ -3061,6 +3069,61 @@ fn original_hex_and_bubbles_preserve_commands_and_actual_sdl_framebuffers() {
                     "Recorded original SDL renderer difference changed"
                 );
             }
+        }
+    }
+}
+
+#[test]
+fn original_hex_and_bubbles_preserve_commands_and_actual_sdl_framebuffers() {
+    check_command_background_fixture(include_str!("fixtures/arkanoo-hex-bubbles.json"));
+}
+#[test]
+fn original_night_circuit_and_maze_preserve_commands_transitions_and_actual_sdl_framebuffers() {
+    let text = include_str!("fixtures/arkanoo-night-circuit-maze.json");
+    let fixture: serde_json::Value = serde_json::from_str(text).unwrap();
+    let cases = fixture["cases"].as_array().unwrap();
+    let first_level = cases[0]["level"].as_u64().unwrap();
+    for (frame, shooting, blink) in [(59, true, false), (60, false, true)] {
+        let case = cases
+            .iter()
+            .find(|case| {
+                case["level"].as_u64() == Some(first_level) && case["frame"].as_u64() == Some(frame)
+            })
+            .unwrap();
+        assert_eq!(
+            case["commands"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|command| command[0] == 1),
+            shooting
+        );
+        assert_eq!(
+            case["commands"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|command| command[0] == 0 && command[5] == 0xff0000ffu32),
+            blink
+        );
+    }
+    check_command_background_fixture(text);
+}
+#[test]
+fn original_rand_bernoulli_thresholds_preserve_ten_thirty_and_seventy_percent_streams() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-night-circuit-maze.json")).unwrap();
+    for case in fixture["rng_probabilities"].as_array().unwrap() {
+        let mut rng = pattern_rng::Rng::new(case["seed"].as_u64().unwrap());
+        let probability = case["probability"].as_u64().unwrap();
+        for expected in case["values"].as_array().unwrap() {
+            let actual = match probability {
+                0 => rng.ten_percent(),
+                1 => rng.thirty_percent(),
+                2 => rng.seventy_percent(),
+                _ => panic!("Unknown reference probability"),
+            };
+            assert_eq!(actual, expected.as_bool().unwrap());
         }
     }
 }

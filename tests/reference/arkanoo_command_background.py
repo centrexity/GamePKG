@@ -24,9 +24,10 @@ body=header+fragment+'''
 fn main(){let args:Vec<String>=std::env::args().collect();
 if args.len()==1 {
  use rand::{Rng,SeedableRng};let mut found=[0;20];let mut levels=Vec::new();
- for level in 10u64..10000 {let seed=level.wrapping_mul(12345).wrapping_add((level/3).wrapping_mul(67890)).wrapping_add((level%7).wrapping_mul(11111));let mut rng=rand::rngs::StdRng::seed_from_u64(seed);let theme=rng.gen_range(0i32..20);if [7,9,19].contains(&theme)&&found[theme as usize]<3 {if theme==2&&found[2]==2 {let _:u8=rng.gen_range(5..40);let _:u8=rng.gen_range(5..40);let _:u8=rng.gen_range(5..40);let size:u32=rng.gen_range(20..60);if size!=20 {continue;}}levels.push((level,theme));found[theme as usize]+=1;}if [7,9,19].iter().all(|v|found[*v]==3){break;}}
+ for level in 10u64..10000 {let seed=level.wrapping_mul(12345).wrapping_add((level/3).wrapping_mul(67890)).wrapping_add((level%7).wrapping_mul(11111));let mut rng=rand::rngs::StdRng::seed_from_u64(seed);let theme=rng.gen_range(0i32..20);if [7,9,19].contains(&theme)&&found[theme as usize]<3 {if theme==8&&found[8]==0 {let mut shoot=rand::rngs::StdRng::seed_from_u64(level);if !shoot.gen_bool(0.3){continue;}}if theme==2&&found[2]==2 {let _:u8=rng.gen_range(5..40);let _:u8=rng.gen_range(5..40);let _:u8=rng.gen_range(5..40);let size:u32=rng.gen_range(20..60);if size!=20 {continue;}}levels.push((level,theme));found[theme as usize]+=1;}if [7,9,19].iter().all(|v|found[*v]==3){break;}}
  println!("{:?}",levels);return;
 }
+if args[1]=="probabilities" {use rand::{Rng,SeedableRng};let seed:u64=args[2].parse().unwrap();let which:usize=args[3].parse().unwrap();let mut rng=rand::rngs::StdRng::seed_from_u64(seed);let samples:Vec<bool>=(0..256).map(|_|rng.gen_bool([0.1,0.3,0.7][which])).collect();println!("{:?}",samples);return;}
 if args[1]=="half" {use rand::{Rng,SeedableRng};let seed:u64=args[2].parse().unwrap();let mut rng=rand::rngs::StdRng::seed_from_u64(seed);let samples:Vec<bool>=(0..256).map(|_|rng.gen_bool(0.5)).collect();println!("{:?}",samples);return;}
 if args[1]=="rng" {use rand::{Rng,SeedableRng};let seed:u64=args[2].parse().unwrap();let mut rng=rand::rngs::StdRng::seed_from_u64(seed);let samples:Vec<u8>=(0..256).map(|i|{let(low,high)=[(0u8,255u8),(100,200),(100,255),(0,17)][i%4];rng.gen_range(low..high)}).collect();println!("{:?}",samples);return;}
 let mut c=Canvas{commands:Vec::new(),color:0,background:0,marker:std::marker::PhantomData};draw_animated_background(&mut c,args[1].parse().unwrap(),args[2].parse().unwrap());let mut out=std::io::BufWriter::new(std::io::stdout().lock());out.write_all(&c.background.to_le_bytes()).unwrap();for(kind,x1,y1,x2,y2,color)in c.commands{out.write_all(&kind.to_le_bytes()).unwrap();out.write_all(&x1.to_le_bytes()).unwrap();out.write_all(&y1.to_le_bytes()).unwrap();out.write_all(&x2.to_le_bytes()).unwrap();out.write_all(&y2.to_le_bytes()).unwrap();out.write_all(&color.to_le_bytes()).unwrap();}}
@@ -45,7 +46,7 @@ int index=0;uint8_t p[24];while(fread(p,1,24,stdin)==24){int selected=index++/48
 uint8_t*pixels=malloc(1280*720*4);if(SDL_RenderReadPixels(r,NULL,SDL_PIXELFORMAT_RGBA32,pixels,1280*4))return 7;if(fwrite(pixels,1,1280*720*4,stdout)!=1280*720*4)return 8;free(pixels);SDL_DestroyRenderer(r);if(s)SDL_FreeSurface(s);if(w)SDL_DestroyWindow(w);SDL_Quit();return 0;}
 '''
 themes=[int(value) for value in sys.argv[3].split(',')] if len(sys.argv)>3 else [2,10]
-assert themes and len(set(themes))==len(themes) and all(value in [2,10] for value in themes)
+assert themes and len(set(themes))==len(themes) and all(value in [2,8,10,12,15] for value in themes)
 body=body.replace('[7,9,19]',str(themes).replace(' ',''))
 rand_source=Path(sys.argv[2]);assert tomllib.loads((rand_source/'Cargo.toml').read_text())['package']['version']=='0.8.5'
 with tempfile.TemporaryDirectory(prefix='gamepkg-procedural-reference-') as temporary:
@@ -62,7 +63,8 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-procedural-reference-') as temp
  display=start_display(env,width=1280,height=720)
  try:
   for index,(level,theme) in enumerate(levels):
-   for frame in ([0,1,59,120,16777217,4294967295,18446744073709551615] if index%3==0 else [0,120]):
+   frames=[0,1,29,30,59,60,120,199,200,201,259,260,399,400,16777217,4294967295,18446744073709551615] if theme==8 and index%3==0 else [0,1,59,120,16777217,4294967295,18446744073709551615] if index%3==0 else [0,120]
+   for frame in frames:
     raw=subprocess.check_output([oracle,str(level),str(frame)]);background=struct.unpack('<I',raw[:4])[0];trace=raw[4:]
     commands=list(struct.iter_unpack('<IiiiiI',trace));images={mode:subprocess.check_output([folder/'raster',mode],input=raw,env=env) for mode in ['software','opengl']}
     pixels=images['opengl'];bg=background.to_bytes(4,'big')[:3];visible=[i for i in range(1280*720) if pixels[i*4:i*4+3]!=bg]
@@ -76,5 +78,6 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-procedural-reference-') as temp
    raw=struct.pack('<IIiiiiI',0,2,*rect,0xc864ff96)
    masks={mode:subprocess.check_output([folder/'raster',mode,'0'],input=raw,env=env)[::4] for mode in ['software','opengl']}
    outlines.append(dict(rect=rect,**{mode+'_counts_zlib_hex':zlib.compress(value).hex() for mode,value in masks.items()}))
-  print(json.dumps(dict(outlines=outlines,revision='9d613e78c9ed5657ae7fda9206cd4a82a893b7c8',rendering_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),fragment_sha256=hashlib.sha256(fragment.encode()).hexdigest(),sdl_version=subprocess.check_output(['pkg-config','--modversion','sdl2'],text=True).strip(),cases=cases),indent=2))
+  probabilities=[dict(seed=seed,probability=which,values=json.loads(subprocess.check_output([oracle,'probabilities',str(seed),str(which)],text=True))) for which in range(3) for seed in [0,1,12345,18446744073709551615]] if 8 in themes or 12 in themes else None
+  print(json.dumps(dict(**({'rng_probabilities':probabilities} if probabilities is not None else {}),outlines=outlines,revision='9d613e78c9ed5657ae7fda9206cd4a82a893b7c8',rendering_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),fragment_sha256=hashlib.sha256(fragment.encode()).hexdigest(),sdl_version=subprocess.check_output(['pkg-config','--modversion','sdl2'],text=True).strip(),cases=cases),indent=2))
  finally:display.terminate();display.wait(timeout=10)
