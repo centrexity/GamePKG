@@ -1,5 +1,6 @@
 {
   "revision": "9d613e78c9ed5657ae7fda9206cd4a82a893b7c8",
+  "upstream_credits_readme_sha256": "e1eb694228ac43dff523dcc3a38d5717bfcea77ddbec84248d6b9285db6d56f4",
   "decode_rate": 44100,
   "output_rate": 48000,
   "channels": 2,
@@ -9,6 +10,45 @@
   "mixer_version": "2.8.0",
   "effects": [
     {
+      "original": "ball.mp3",
+      "original_sha256": "92c1ab475858749c406d52a16da1fbc1ca613a8dab097225b1c1a56232cb102b",
+      "asset": "audio/bounce.wav",
+      "kind": 1,
+      "creator": null,
+      "url": "https://github.com/c0m4r/arkanoo/blob/9d613e78c9ed5657ae7fda9206cd4a82a893b7c8/README.md#credits",
+      "frames": 52662,
+      "pcm_stereo_differences": 49322,
+      "credit_basis": "pinned upstream README credits sounds and music to Pixabay; individual artist/item page not supplied",
+      "pcm_sha256": "ccf383448b89383ab512f4d3f39e89592660f5b41f5961537a45f9f312d6bba8",
+      "wav_sha256": "12cd14b8d98dd6a95a68e29285aee16468607ff3ab2fdba4ab3e5915c0f76ced"
+    },
+    {
+      "original": "breaking-glass.mp3",
+      "original_sha256": "b05e411ad85db49c496521796c594a88cdce10ac01ae4081909bb02b20d45067",
+      "asset": "audio/glass.wav",
+      "kind": 2,
+      "creator": null,
+      "url": "https://github.com/c0m4r/arkanoo/blob/9d613e78c9ed5657ae7fda9206cd4a82a893b7c8/README.md#credits",
+      "frames": 43309,
+      "pcm_stereo_differences": 0,
+      "credit_basis": "pinned upstream README credits sounds and music to Pixabay; individual artist/item page not supplied",
+      "pcm_sha256": "baed1c51695b37ced8ce12a938daa710b76af87b89da68821615ef761518032d",
+      "wav_sha256": "9ad99a17ded4b0f1ae881e61bc835c5eb4411a31b2bfbb29cff2ed607a66a6c9"
+    },
+    {
+      "original": "load.mp3",
+      "original_sha256": "065142fbe9eec4486b87c24af5e346879ee062374bc98135e6c94112a253377f",
+      "asset": "audio/launch.wav",
+      "kind": 3,
+      "creator": null,
+      "url": "https://github.com/c0m4r/arkanoo/blob/9d613e78c9ed5657ae7fda9206cd4a82a893b7c8/README.md#credits",
+      "frames": 42031,
+      "pcm_stereo_differences": 40284,
+      "credit_basis": "pinned upstream README credits sounds and music to Pixabay; individual artist/item page not supplied",
+      "pcm_sha256": "dc575ec64ed6f8f91ecba03ad97f4f432f07926ab290903b35e57b7f0b103bc3",
+      "wav_sha256": "f1eab8129b03bea255a850bc820412ac1cf37efbe09db00a1cc00fa5c6b8aa36"
+    },
+    {
       "original": "drop-sound-effect-240899.mp3",
       "original_sha256": "ea82c596c2d0d14b912431f7cf886ca1017bdb76d62e173d2104ccf52be896bd",
       "asset": "audio/life-loss.wav",
@@ -16,6 +56,8 @@
       "creator": "11325622",
       "url": "https://pixabay.com/sound-effects/film-special-effects-drop-sound-effect-240899/",
       "frames": 159242,
+      "pcm_stereo_differences": 156257,
+      "credit_basis": "item page",
       "pcm_sha256": "3f8ae53c5e392a79f8c7fb8f411b8ecdda7b5e83de65e8a1804c92f8ca5f5a3b",
       "wav_sha256": "188a9c2dba97afaf08b445e3ab8d8da02b8a990df80361fb734f2d5feb4fc5c8"
     },
@@ -27,6 +69,8 @@
       "creator": "StereogenicStudio",
       "url": "https://pixabay.com/sound-effects/film-special-effects-swish-swoosh-woosh-sfx-27-357164/",
       "frames": 254969,
+      "pcm_stereo_differences": 196255,
+      "credit_basis": "item page",
       "pcm_sha256": "f48128f90f4673fb719bca39ec37a6ebc6fb7d2ae14e79dd10ce0f9b47edd94c",
       "wav_sha256": "74a8abdb2af9eb79a9377dfbd5cdcfd828451973d1bb8413c088510a02e9c76c"
     }

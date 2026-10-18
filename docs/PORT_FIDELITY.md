@@ -2168,3 +2168,32 @@ now retains its phase and avoids catch-up bursts after lateness. A quantized
 component browser gameplay/integrity/shutdown regressions pass. No timing cap,
 visual tolerance or test parallelism changed. Physical device, native graphical
 window and broader platform workflows were not repeated in this round.
+
+
+Recipe 0.1.60 restores all five original recorded effects. The remaining ball,
+glass and launch MP3 files are byte-pinned to the upstream snapshot and its
+README credit identifying sounds/music as Pixabay content. Their generic file
+history supplies no individual item/artist links; metadata uses null artist
+fields and records that exact credit basis. Those identifications remain open
+rather than assigning an invented creator. The original two item-page credits
+remain intact. All conversion hashes reproduce through the SDL reference.
+
+The tone generator and old render::sound path are removed. The five prepared
+clips retain original initial silence, complete duration and channel data;
+SDL duplicates the mono glass source into both output channels. Total cached
+PCM is 2,208,852 bytes. Five immutable entries share a 4 MiB resident budget,
+retaining the earlier two-clip worst-case bound and the existing 2 MiB per-clip
+bound. Four voices share PCM. Exhaustion rejects before allocating the next
+clip; invalid IDs reject before indexing/reads. No runtime cap is increased.
+
+All 100 logic checks and both 71-check signed native/Wasm suites pass at the
+existing limits, visual tolerances and default parallelism. Complete sample
+comparisons load all five into one session and preserve their endings. Gain
+and onset/large-frame checks now inspect an audible fourth buffer, avoiding a
+vacuous assertion on initial silence. Input/physics overlap compares complete
+combined clip output; signed keyboard/controller fixtures and actual core/
+component browser buffers check an audible overlap window. Both browser
+profiles also match all five full PCM hashes. Strict lint/fmt and the existing
+fractional-clock check pass. Music, fully asynchronous timing, individual item/
+artist identification for three files and broader native platform/device/window
+verification remain open.

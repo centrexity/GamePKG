@@ -130,7 +130,7 @@ SOUND_BRANCHES
   if let Ok(mut slot)=RECORDINGS.lock() {
    if slot.is_none() || input&512!=0 {*slot=Some(audio::Mixer::new());}
    if let Some(mixer)=slot.as_mut() {
-    if input&256!=0 && !mixer.effect_request(if input&1==0 {4} else {5},0,false) {return 18446744073709551615;}
+    if input&256!=0 && !mixer.effect_request((input&7)+1,0,false) {return 18446744073709551615;}
     if let Some(pcm)=mixer.effect_render(if input&2048!=0 {64} else {128},input&1024!=0) {gamepkg::audio_submit_stereo(&pcm);return 1;}
    }
   }
@@ -141,7 +141,7 @@ SOUND_BRANCHES
   if case==4 || case==5 {
    let mut g=physics::Game::new();g.mode=1;g.blocks=[0;200];g.set_block(0,0);g.ammo=1;g.balls.clear();g.balls.push(physics::Ball{x:34.0,y:114.0,vx:0.0,vy:-4.0,spin:0.0,attached:false,launch_timer:0,trail:Vec::new()});
    if case==4 {g.source_input(5,0.0,0.0,44);g.capture_sound();g.update(0);}else {g.update(4);}
-   g.capture_sound();if let Some(pcm)=g.effects.effect_render(64,false) {gamepkg::audio_submit_stereo(&pcm);}return u64::from(case+1);
+   g.capture_sound();for _ in 0..3 {let _=g.effects.effect_render(64,false);}if let Some(pcm)=g.effects.effect_render(64,false) {gamepkg::audio_submit_stereo(&pcm);}return u64::from(case+1);
   }
   let mut mixer=audio::Mixer::new();
   for channel in 0..4 {let mut clip=Vec::new();for _ in 0..(800+channel*10) {clip.push((1000+channel*100) as i16);clip.push((-500-channel*100) as i16);}if !mixer.effect_start(clip,false) {return 18446744073709551615;}}
@@ -169,7 +169,7 @@ SOUND_BRANCHES
   for _ in 0..((input>>2)&63) {p.advance();}
   gamepkg::draw_clear(0x000000ff);render::draw_particles(&[p]);return 1;
  }
- if input&16777216!=0 {let frame=if input&1!=0 {u64::from(u32::MAX)} else {u64::MAX};let samples=audio::effect_samples(1,frame,128,false);gamepkg::audio_submit(&samples);return 1;}
+ if input&16777216!=0 {let frame=if input&1!=0 {u64::from(u32::MAX)} else {u64::MAX};let mut mixer=audio::Mixer::new();mixer.effect_request(1,frame,false);for _ in 0..3 {let _=mixer.effect_render(128,false);}if let Some(samples)=mixer.effect_render(128,false) {gamepkg::audio_submit_stereo(&samples);}return 1;}
  if let Ok(mut slot)=GAME.lock(){
   if slot.is_none(){let mut game=physics::Game::new();game.mode=1;game.blocks=[0;200];game.blocks[0]=1;game.balls[0].attached=false;game.balls[0].vx=30.0;game.balls[0].vy=0.0;*slot=Some(game);}
   if let Some(game)=slot.as_mut(){

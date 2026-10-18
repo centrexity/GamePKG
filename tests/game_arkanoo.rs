@@ -27,8 +27,11 @@ mod gamepkg {
             return Some(count as u32);
         }
         let bytes: &[u8] = match path {
-            "audio/life-loss.wav" => include_bytes!("../ports/arkanoo/assets/audio/life-loss.wav"),
-            "audio/explosion.wav" => include_bytes!("../ports/arkanoo/assets/audio/explosion.wav"),
+            "audio/bounce.wav" => super::original_effect_wav(1),
+            "audio/glass.wav" => super::original_effect_wav(2),
+            "audio/launch.wav" => super::original_effect_wav(3),
+            "audio/explosion.wav" => super::original_effect_wav(4),
+            "audio/life-loss.wav" => super::original_effect_wav(5),
             _ => return None,
         };
         let start = (offset as usize).min(bytes.len());
@@ -50,6 +53,22 @@ mod gamepkg {
                 })
             })
     }
+}
+fn original_effect_wav(kind: u32) -> &'static [u8] {
+    match kind {
+        1 => include_bytes!("../ports/arkanoo/assets/audio/bounce.wav"),
+        2 => include_bytes!("../ports/arkanoo/assets/audio/glass.wav"),
+        3 => include_bytes!("../ports/arkanoo/assets/audio/launch.wav"),
+        4 => include_bytes!("../ports/arkanoo/assets/audio/explosion.wav"),
+        5 => include_bytes!("../ports/arkanoo/assets/audio/life-loss.wav"),
+        _ => panic!("unknown test effect"),
+    }
+}
+fn original_effect_pcm(kind: u32) -> Vec<i16> {
+    original_effect_wav(kind)[44..]
+        .chunks_exact(2)
+        .map(|b| i16::from_le_bytes([b[0], b[1]]))
+        .collect()
 }
 #[path = "../ports/arkanoo/source/src/audio.rs"]
 mod audio;
@@ -2307,43 +2326,41 @@ fn effects_slider_matches_original_motion_drag_quantization_and_release() {
     assert!(game.menu.sfx_muted);
 }
 #[test]
-fn synthesized_effect_gain_mute_and_phase_are_bounded_and_word_size_independent() {
-    for kind in 1..=4 {
-        let period = match kind {
-            1 => 100,
-            2 => 64,
-            3 => 48,
-            _ => 180,
-        };
-        for frame in [
-            0,
-            1,
-            99,
-            123456789,
-            u64::from(u32::MAX),
-            u64::from(u32::MAX) + 1,
-            u64::MAX,
-        ] {
-            let normal = audio::effect_samples(kind, frame, 64, false);
-            let quiet = audio::effect_samples(kind, frame, 32, false);
-            let loud = audio::effect_samples(kind, frame, 128, false);
-            for index in 0..800 {
-                let sign = if (u128::from(frame) + index as u128) % period < period / 2 {
-                    1
-                } else {
-                    -1
-                };
-                let original = (sign * (800 - index) as i32 * 5) as i16;
-                assert_eq!(normal[index], original);
-                assert_eq!(quiet[index], original / 2);
-                assert_eq!(loud[index], original * 2);
+fn recorded_effect_gain_mute_and_onset_are_bounded_and_word_size_independent() {
+    gamepkg::recording_override(None);
+    for invalid in [0u32, 6, u32::MAX] {
+        let mut mixer = audio::Mixer::new();
+        assert!(!mixer.effect_request(invalid, 0, false));
+        assert!(mixer.effect_render(128, false).is_none());
+    }
+    assert_eq!(gamepkg::recording_reads(), 0);
+    for kind in 1..=5 {
+        let raw = original_effect_pcm(kind);
+        for frame in [0, 1, u64::from(u32::MAX), u64::MAX] {
+            for gain in [0u32, 32, 64, 128, u32::MAX] {
+                let mut mixer = audio::Mixer::new();
+                assert!(mixer.effect_request(kind, frame, false));
+                for _ in 0..3 {
+                    let _ = mixer.effect_render(128, false);
+                }
+                let output = mixer.effect_render(gain, false);
+                if gain == 0 {
+                    assert!(output.is_none());
+                    continue;
+                }
+                let expected: Vec<i16> = raw[4800..6400]
+                    .iter()
+                    .map(|v| (i32::from(*v) * gain.min(128) as i32 / 128) as i16)
+                    .collect();
+                assert_eq!(output.unwrap().as_slice(), expected);
             }
-            assert_eq!(audio::effect_samples(kind, frame, u32::MAX, false), loud);
-            assert_eq!(audio::effect_samples(kind, frame, 0, false), [0; 800]);
-            assert_eq!(audio::effect_samples(kind, frame, 128, true), [0; 800]);
+            let mut muted = audio::Mixer::new();
+            assert!(!muted.effect_request(kind, frame, true));
+            assert!(muted.effect_render(128, false).is_none());
         }
     }
 }
+
 #[test]
 fn effects_archive_migrates_old_formats_preserves_capacity_and_rejects_bad_settings() {
     let mut edit = editor::Editor::new();
@@ -3774,13 +3791,19 @@ fn rocket_input_and_physics_callbacks_are_independent_and_reset_keeps_playing_ef
     assert_eq!(game.sound, 0);
     game.sound = 2;
     game.capture_sound();
-    let output = game.effects.effect_render(64, false).unwrap();
-    let load = audio::effect_samples(3, game.frame, 64, false);
-    let glass = audio::effect_samples(2, game.frame, 64, false);
-    for index in 0..800 {
-        let wanted = (i32::from(load[index]) + i32::from(glass[index])).clamp(-32768, 32767) as i16;
-        assert_eq!(&output[index * 2..index * 2 + 2], &[wanted, wanted]);
+    let load = original_effect_pcm(3);
+    let glass = original_effect_pcm(2);
+    let mut offset = 0;
+    while let Some(output) = game.effects.effect_render(64, false) {
+        for (index, sample) in output.iter().enumerate() {
+            let a = load.get(offset + index).copied().unwrap_or(0);
+            let b = glass.get(offset + index).copied().unwrap_or(0);
+            let wanted = (i32::from(a) / 2 + i32::from(b) / 2).clamp(-32768, 32767) as i16;
+            assert_eq!(*sample, wanted);
+        }
+        offset += 1600;
     }
+    assert!(offset >= load.len().max(glass.len()));
     assert!(game.effects.effect_start([1000, -2000].repeat(1600), false));
     game.reset_run();
     assert_eq!(
@@ -3799,16 +3822,8 @@ fn rocket_input_and_physics_callbacks_are_independent_and_reset_keeps_playing_ef
 fn recorded_effects_preserve_every_original_sdl_sample_and_full_stereo_duration() {
     let reference: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/arkanoo-recorded-effects.json")).unwrap();
-    for (kind, bytes) in [
-        (
-            5u32,
-            include_bytes!("../ports/arkanoo/assets/audio/life-loss.wav").as_slice(),
-        ),
-        (
-            4,
-            include_bytes!("../ports/arkanoo/assets/audio/explosion.wav").as_slice(),
-        ),
-    ] {
+    for kind in 1..=5 {
+        let bytes = original_effect_wav(kind);
         let fixture = reference["effects"]
             .as_array()
             .unwrap()
@@ -3831,7 +3846,13 @@ fn recorded_effects_preserve_every_original_sdl_sample_and_full_stereo_duration(
             expected.len() / 2,
             fixture["frames"].as_u64().unwrap() as usize
         );
-        assert!(expected.chunks_exact(2).any(|pair| pair[0] != pair[1]));
+        assert_eq!(
+            expected
+                .chunks_exact(2)
+                .filter(|pair| pair[0] != pair[1])
+                .count() as u64,
+            fixture["pcm_stereo_differences"].as_u64().unwrap()
+        );
         let mut mixer = audio::Mixer::new();
         assert!(mixer.effect_request(kind, 0, false));
         let mut actual = Vec::new();
@@ -3905,5 +3926,24 @@ fn truncated_and_trailing_recordings_fail_atomically_and_cache_does_not_repeat_r
     assert!(mixer.effect_request(5, 1, false));
     assert_eq!(gamepkg::recording_reads(), reads);
     assert!(mixer.effect_render(128, false).is_some());
+    gamepkg::recording_override(None);
+}
+
+#[test]
+fn five_recording_slots_retain_the_previous_four_mib_resident_budget() {
+    let mut bytes = original_effect_wav(1)[..44].to_vec();
+    let size = 2097152u32;
+    bytes[40..44].copy_from_slice(&size.to_le_bytes());
+    bytes[4..8].copy_from_slice(&(size + 36).to_le_bytes());
+    bytes.resize(44 + size as usize, 0);
+    gamepkg::recording_override(Some(bytes));
+    let mut mixer = audio::Mixer::new();
+    assert!(mixer.effect_request(1, 0, false));
+    assert!(mixer.effect_request(2, 0, false));
+    let before = gamepkg::recording_reads();
+    assert!(!mixer.effect_request(3, 0, false));
+    assert_eq!(gamepkg::recording_reads(), before + 1);
+    assert!(!mixer.effect_request(3, 1, false));
+    assert_eq!(gamepkg::recording_reads(), before + 1);
     gamepkg::recording_override(None);
 }

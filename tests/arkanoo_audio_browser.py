@@ -5,7 +5,7 @@ Python/Selenium are maintainer test tools, never player dependencies.
 from pathlib import Path
 from functools import partial
 from http.server import SimpleHTTPRequestHandler,ThreadingHTTPServer
-import argparse,json,os,shutil,subprocess,tempfile,threading
+import argparse,json,struct,os,shutil,subprocess,tempfile,threading
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
@@ -30,7 +30,8 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-mixer-browser-') as temporary:
    browser.get(f'http://127.0.0.1:{server.server_port}/');wait=WebDriverWait(browser,20);wait.until(lambda b:b.find_element('id','status').text=='Ready to play')
    browser.execute_script("window.mixerCase=0;window.mixerBuffers=[];const post=Worker.prototype.postMessage;Worker.prototype.postMessage=function(data,...rest){if(data.type==='tick')data={...data,input:0xfb0000|window.mixerCase};return post.call(this,data,...rest);};const p=AudioContext.prototype,old=p.createBuffer;p.createBuffer=function(...args){const b=old.apply(this,args);window.mixerBuffers.push(b);if(window.mixerBuffers.length>60)window.mixerBuffers.shift();return b;};")
    browser.find_element('id','play').click()
-   for case,wanted in [(0,[4600,-2600,4600,-2600]),(1,[11800,-11050,1800,-1050]),(3,[1800,-1050,1800,-1050]),(4,[8000,8000,7990,7990]),(5,[8000,8000,7990,7990])]:
+   launch=struct.unpack('<4h',(PROJECT/'ports/arkanoo/assets/audio/launch.wav').read_bytes()[9644:9652]);bounce=struct.unpack('<4h',(PROJECT/'ports/arkanoo/assets/audio/bounce.wav').read_bytes()[9644:9652]);overlap=[max(-32768,min(32767,int(a/2)+int(b/2))) for a,b in zip(launch,bounce)]
+   for case,wanted in [(0,[4600,-2600,4600,-2600]),(1,[11800,-11050,1800,-1050]),(3,[1800,-1050,1800,-1050]),(4,overlap),(5,overlap)]:
     browser.execute_script('window.mixerCase=arguments[0];window.mixerBuffers=[];',case)
     wait.until(lambda b:b.find_element('id','game').get_attribute('data-state')==str(case+1))
     def matches(b):
@@ -39,10 +40,10 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-mixer-browser-') as temporary:
    print(profile,'actual signed Wasm/WebAudio: stereo tails, free-channel reuse, muted progress and keyboard/controller collision overlap passed.',flush=True)
    recordings=json.loads((PROJECT/'tests/fixtures/arkanoo-recorded-effects.json').read_text())['effects']
    for recording in recordings:
-    which=0 if recording['kind']==4 else 1
+    which=recording['kind']-1
     browser.get(f'http://127.0.0.1:{server.server_port}/');wait.until(lambda b:b.find_element('id','status').text=='Ready to play')
     browser.execute_script("window.recordBuffers=[];window.firstRecording=true;const which=arguments[0],post=Worker.prototype.postMessage;Worker.prototype.postMessage=function(data,...rest){if(data.type==='tick'){data={...data,input:0xfc0000|which|(window.firstRecording?768:0)};window.firstRecording=false;}return post.call(this,data,...rest);};const p=AudioContext.prototype,old=p.createBuffer;p.createBuffer=function(...args){const b=old.apply(this,args);window.recordBuffers.push(b);return b;};",which)
-    browser.find_element('id','play').click();wait.until(lambda b:b.find_element('id','game').get_attribute('data-state')=='1');wait.until(lambda b:b.find_element('id','game').get_attribute('data-state')=='0')
+    browser.find_element('id','play').click();wait.until(lambda b:b.execute_script('return window.recordBuffers.length>0'));wait.until(lambda b:b.find_element('id','game').get_attribute('data-state')=='0')
     result=browser.execute_async_script("const frames=arguments[0],done=arguments[arguments.length-1],count=frames*2,buffers=window.recordBuffers;if(buffers.length!==Math.ceil(count/1600)){done({error:'buffer count',count:buffers.length});return;}const pcm=new Uint8Array(count*2),view=new DataView(pcm.buffer);let at=0;for(const b of buffers){if(b.numberOfChannels!==2||b.length!==800||b.sampleRate!==48000){done({error:'audio format'});return;}for(let i=0;i<b.length;i++)for(let c=0;c<2;c++){const sample=Math.round(b.getChannelData(c)[i]*32768);if(at<count)view.setInt16(at*2,sample,true);else if(sample!==0){done({error:'nonzero tail'});return;}at++;}}crypto.subtle.digest('SHA-256',pcm).then(hash=>done({sha256:Array.from(new Uint8Array(hash),v=>v.toString(16).padStart(2,'0')).join('')}));",recording['frames'])
     assert result=={'sha256':recording['pcm_sha256']},(profile,recording['asset'],result)
     print(profile,recording['asset'],'entire original PCM matches real WebAudio buffers, including stereo, duration and zero-padded ending.',flush=True)

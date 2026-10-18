@@ -359,7 +359,7 @@ fn real_gameplay_audio_progress_and_restart() {
         broken |= bricks > 0 && bricks < 200 && game.frame().commands.iter().any(is_ball);
         assert!(game.frame().commands.len() < 600);
     }
-    assert!(audio, "no synthesized collision audio");
+    assert!(audio, "no recorded collision audio");
     assert!(broken, "no bricks broken by actual game physics");
     drop(game);
     let saves: Vec<_> = std::fs::read_dir(root.path().join("saves"))
@@ -1589,6 +1589,26 @@ fn actual_menu_clicks_start_resume_restart_gravity_editor_settings_fullscreen_an
     }
 }
 
+fn original_effect_pcm(kind: u32) -> Vec<i16> {
+    let bytes: &[u8] = match kind {
+        1 => include_bytes!("../ports/arkanoo/assets/audio/bounce.wav"),
+        2 => include_bytes!("../ports/arkanoo/assets/audio/glass.wav"),
+        3 => include_bytes!("../ports/arkanoo/assets/audio/launch.wav"),
+        4 => include_bytes!("../ports/arkanoo/assets/audio/explosion.wav"),
+        5 => include_bytes!("../ports/arkanoo/assets/audio/life-loss.wav"),
+        _ => panic!("unknown test effect"),
+    };
+    bytes[44..]
+        .chunks_exact(2)
+        .map(|b| i16::from_le_bytes([b[0], b[1]]))
+        .collect()
+}
+fn original_bounce_peak(gain: u32) -> Option<i32> {
+    original_effect_pcm(1)[4800..6400]
+        .iter()
+        .map(|v| (i32::from(*v) * gain as i32 / 128).abs())
+        .max()
+}
 fn advance_until_brick_break(game: &mut Game) {
     let before = game
         .frame()
@@ -1606,6 +1626,10 @@ fn advance_until_brick_break(game: &mut Game) {
             .filter(|c| normal_brick_position(c).is_some())
             .count();
         if after > 0 && after < before && game.frame().commands.iter().any(is_ball) {
+            // The original bounce starts with silence; inspect an audible window.
+            for _ in 0..3 {
+                game.step(0).unwrap();
+            }
             return;
         }
     }
@@ -1649,7 +1673,7 @@ fn effects_settings_change_pcm_and_survive_restarts_across_runtime_profiles() {
         assert_eq!(game.audio_channels(), 2);
         assert_eq!(
             game.audio_frame().iter().map(|s| i32::from(*s).abs()).max(),
-            Some(2000)
+            original_bounce_peak(32)
         );
         settings(&mut game);
         event(&mut game, 2, 320.0, 225.0, 1);
@@ -1687,7 +1711,7 @@ fn effects_settings_change_pcm_and_survive_restarts_across_runtime_profiles() {
         advance_until_brick_break(&mut game);
         assert_eq!(
             game.audio_frame().iter().map(|s| i32::from(*s).abs()).max(),
-            Some(8000)
+            original_bounce_peak(128)
         );
         settings(&mut game);
         slider(&mut game, 250.0);
@@ -1745,7 +1769,7 @@ fn legacy_audio_defaults_migrate_and_denied_or_damaged_settings_preserve_data() 
             advance_until_brick_break(&mut game);
             assert_eq!(
                 game.audio_frame().iter().map(|s| i32::from(*s).abs()).max(),
-                Some(4000)
+                original_bounce_peak(64)
             );
             game.finish().unwrap();
             drop(game);
@@ -1807,26 +1831,14 @@ fn legacy_audio_defaults_migrate_and_denied_or_damaged_settings_preserve_data() 
 
 #[test]
 #[ignore = "requires the production audio fixture prepared by tests/arkanoo.py"]
-fn effects_phase_at_maximum_frame_matches_in_native_and_wasm32() {
+fn recordings_start_at_the_original_onset_even_at_maximum_game_frame() {
     let root = isolated_library();
     let mut game = load_menu(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
-    for (frame, input) in [(u64::MAX, 16777216), (u64::from(u32::MAX), 16777217)] {
+    let expected = original_effect_pcm(1);
+    for input in [16777216, 16777217] {
         assert_eq!(game.step(input).unwrap(), 1);
-        assert_eq!(game.audio_channels(), 1);
-        assert_eq!(game.audio_frame().len(), 800);
-        assert_eq!(game.audio_channels(), 1);
-        for (index, sample) in game.audio_frame().iter().enumerate() {
-            let sign = if (u128::from(frame) + index as u128) % 100 < 50 {
-                1
-            } else {
-                -1
-            };
-            assert_eq!(
-                *sample,
-                (sign * (800 - index) as i32 * 10) as i16,
-                "sample {index}"
-            );
-        }
+        assert_eq!(game.audio_channels(), 2);
+        assert_eq!(game.audio_frame(), &expected[4800..6400]);
     }
 }
 
@@ -4328,8 +4340,14 @@ fn signed_four_channel_mixer_preserves_tails_capacity_and_stereo_output() {
         assert_eq!(game.audio_channels(), 2);
         assert_eq!(game.audio_frame().len(), 1600);
         if case >= 4 {
-            assert_eq!(&game.audio_frame()[..4], &[8000, 8000, 7990, 7990]);
-            assert_eq!(&game.audio_frame()[48..50], &[0, 0]);
+            let launch = original_effect_pcm(3);
+            let bounce = original_effect_pcm(1);
+            let expected: Vec<i16> = launch[4800..6400]
+                .iter()
+                .zip(&bounce[4800..6400])
+                .map(|(a, b)| (i32::from(*a) / 2 + i32::from(*b) / 2).clamp(-32768, 32767) as i16)
+                .collect();
+            assert_eq!(game.audio_frame(), expected);
             continue;
         }
         let expected = match case {
@@ -4348,28 +4366,17 @@ fn signed_four_channel_mixer_preserves_tails_capacity_and_stereo_output() {
 #[ignore = "requires signed fixtures prepared by tests/arkanoo.py"]
 fn signed_recordings_preserve_full_original_pcm_stereo_duration_and_silence_after_end() {
     let root = isolated_library();
-    for (which, bytes) in [
-        (
-            0u32,
-            include_bytes!("../ports/arkanoo/assets/audio/explosion.wav").as_slice(),
-        ),
-        (
-            1,
-            include_bytes!("../ports/arkanoo/assets/audio/life-loss.wav").as_slice(),
-        ),
-    ] {
-        let expected: Vec<i16> = bytes[44..]
-            .chunks_exact(2)
-            .map(|b| i16::from_le_bytes([b[0], b[1]]))
-            .collect();
-        let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
+    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
+    for kind in 1..=5u32 {
+        let expected = original_effect_pcm(kind);
         let mut offset = 0;
         while offset < expected.len() {
-            assert_eq!(
-                game.step(0x00fc0000 | which | if offset == 0 { 768 } else { 0 })
-                    .unwrap(),
-                1
-            );
+            let flags = if offset == 0 {
+                256 | if kind == 1 { 512 } else { 0 }
+            } else {
+                0
+            };
+            assert_eq!(game.step(0x00fc0000 | (kind - 1) | flags).unwrap(), 1);
             assert_eq!(game.audio_channels(), 2);
             let output = game.audio_frame();
             assert_eq!(output.len(), 1600);
@@ -4377,12 +4384,12 @@ fn signed_recordings_preserve_full_original_pcm_stereo_duration_and_silence_afte
             assert_eq!(
                 &output[..count],
                 &expected[offset..offset + count],
-                "recording {which}, sample {offset}"
+                "recording {kind}, sample {offset}"
             );
             assert!(output[count..].iter().all(|v| *v == 0));
             offset += count;
         }
-        assert_eq!(game.step(0x00fc0000 | which).unwrap(), 0);
+        assert_eq!(game.step(0x00fc0000 | (kind - 1)).unwrap(), 0);
         assert!(game.audio_frame().is_empty());
         assert_eq!(game.audio_channels(), 1);
     }
@@ -4407,7 +4414,7 @@ fn both_recordings_and_four_shared_voices_fit_the_unchanged_memory_limit() {
     .collect();
     for tick in 0..4usize {
         assert_eq!(
-            game.step(0x00fc0000 | (tick as u32 % 2) | 256 | if tick == 0 { 512 } else { 0 })
+            game.step(0x00fc0000 | (3 + tick as u32 % 2) | 256 | if tick == 0 { 512 } else { 0 })
                 .unwrap(),
             1
         );
