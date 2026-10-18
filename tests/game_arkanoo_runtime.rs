@@ -2570,10 +2570,24 @@ fn check_procedural_runtime_fixture(text: &str, flag: u32, scenes: &[u32]) {
             .read_to_end(&mut expected)
             .unwrap();
         assert_eq!(actual.len(), expected.len());
-        assert!(
-            actual.iter().zip(expected).all(|(a, b)| a.abs_diff(b) <= 4),
-            "Original SDL pixels differ, case {index}"
-        );
+        if case.get("opengl_rgba_zlib_hex").is_some() {
+            let delta = actual
+                .chunks_exact(4)
+                .zip(expected.chunks_exact(4))
+                .flat_map(|(a, b)| (0..3).map(move |channel| a[channel].abs_diff(b[channel])))
+                .max()
+                .unwrap();
+            assert_eq!(
+                u64::from(delta),
+                case["maximum_backend_rgb_delta"].as_u64().unwrap(),
+                "Original SDL renderer difference changed, case {index}"
+            );
+        } else {
+            assert!(
+                actual.iter().zip(expected).all(|(a, b)| a.abs_diff(b) <= 4),
+                "Original SDL pixels differ, case {index}"
+            );
+        }
         if let Some(encoded) = case.get("opengl_rgba_zlib_hex") {
             let data = hex::decode(encoded.as_str().unwrap()).unwrap();
             let mut pixels = Vec::new();
@@ -2718,5 +2732,15 @@ fn original_kaleidoscope_preserves_line_pixels_and_full_scene_budgets() {
         include_str!("fixtures/arkanoo-kaleidoscope.json"),
         2148007936,
         &[0, 3, 7, 8, 9, 10],
+    );
+}
+
+#[test]
+#[ignore = "requires the signed production fixture prepared by tests/arkanoo.py"]
+fn original_rain_and_warp_preserve_line_pixels_and_full_scene_budgets() {
+    check_procedural_runtime_fixture(
+        include_str!("fixtures/arkanoo-rain-warp.json"),
+        2148532224,
+        &[0, 3, 11, 14],
     );
 }

@@ -1203,3 +1203,43 @@ dependencies; players need none of those tools. Eleven procedural themes, origin
 image/editor artwork, viewport, fonts/HUD/menus/audio and remaining platforms are
 unfinished. Recipe 0.1.35 is source-only; no host version or binary/package release
 changes.
+
+### Rain and Warp streaks
+
+Rain and Warp now preserve their original seeded line commands. Rain retains its
+400 candidate drops, original speed/length ranges, y phase and slant. Upstream
+comments disable its lightning code; the active original behavior is preserved.
+Warp retains its exponential distance, speed-dependent tint, variable alpha and
+trailing endpoints. No sampling type, float operation order or line clipping is
+replaced with an approximation.
+
+The generalized line recorder compiles the complete unchanged original function
+with real pinned Rand. Twenty-two cases cover three actual level seeds per theme
+and frame extremes. All original command fields/order/hashes match. Actual default
+SDL 2.30 OpenGL additive passes independently supply 116 ordered-segment-group
+pixel-count maps, which also match production exactly. Groups contain at most
+48 consecutive original commands; zero-alpha commands contribute no visible count.
+The earlier kaleidoscope recorder remains byte-identically reproducible by default.
+
+Both complete canonical logical framebuffers match original default OpenGL
+byte-for-byte in unit, signed native and signed Wasm checks. Rain also matches
+the previous two-level renderer difference; original software SDL differs from
+OpenGL by up to 15 RGB levels on faint overlapping warp streaks. Tests retain both
+original images and verify their measured difference explicitly. This is not a
+larger tolerance on the port: the default OpenGL comparison still requires exact
+bytes, and previous software-only background bounds remain unchanged.
+
+Rain uses 128-pixel sparse tiles so dense coverage cannot consume the command
+budget before later art. All full-scene fire-brick overlays and corner particle
+tiles remain present with 3,000 active particles, cold and warm. Other sparse
+backgrounds retain their existing tile sizes; no command, image-byte, time,
+memory, source or portability policy limit changes.
+
+All 72 logic tests and 46 signed checks pass in native and Wasm. Eight actual
+player configurations pass both animation frames/theme and a revisit, with exact
+browser samples and desktop rounding at most one level. Interior samples and
+explicit nearest-boundary choices remain; complete scaled-window/platform parity
+is not established by those samples. Existing native/both-browser gameplay/editor/
+file workflows, strict lint, formatting and reference regeneration also pass. Nine procedural themes, image/editor artwork, viewport, fonts/HUD/
+menus/audio and other platforms remain open. Recipe 0.1.36 is source-only; host
+version and published binary/package releases are unchanged.

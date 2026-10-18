@@ -2644,17 +2644,24 @@ fn background_line_points_match_sdl_default_and_record_software_degenerate_edges
     }
 }
 
-#[test]
-fn original_kaleidoscope_preserves_line_commands_and_actual_sdl_framebuffers() {
+fn check_line_background_fixture(text: &str) {
     use std::io::Read;
-    let fixture: serde_json::Value =
-        serde_json::from_str(include_str!("fixtures/arkanoo-kaleidoscope.json")).unwrap();
+    let fixture: serde_json::Value = serde_json::from_str(text).unwrap();
     for case in fixture["cases"].as_array().unwrap() {
         let frame = case["frame"].as_u64().unwrap();
         let level = case["level"].as_u64().unwrap() as u32;
-        assert_eq!(procedural::procedural_theme(level), 13);
-        let segments = procedural::kaleidoscope_segments(frame);
-        assert_eq!(segments.len(), 240);
+        let theme = case["theme"].as_u64().unwrap() as u32;
+        assert_eq!(procedural::procedural_theme(level), theme);
+        let segments = match theme {
+            6 => procedural::rain_segments(level, frame),
+            13 => procedural::kaleidoscope_segments(frame),
+            14 => procedural::warp_segments(level, frame),
+            _ => panic!("Unknown line theme"),
+        };
+        assert_eq!(
+            segments.len(),
+            case["segment_count"].as_u64().unwrap() as usize
+        );
         let mut trace = Vec::new();
         for (segment, original) in segments.iter().zip(case["segments"].as_array().unwrap()) {
             let values = [
@@ -2676,13 +2683,31 @@ fn original_kaleidoscope_preserves_line_commands_and_actual_sdl_framebuffers() {
             trace.extend(segment.color.to_le_bytes());
         }
         assert_eq!(gamepkg_digest(&trace), case["segment_sha256"]);
-        assert_eq!(case["coverage_backend_differences"], 0);
+        if theme == 13 {
+            assert_eq!(case["coverage_backend_differences"], 0);
+        }
         let scene = procedural::procedural_background(level, frame).unwrap();
         assert_eq!(u64::from(scene.color), case["background"].as_u64().unwrap());
-        let mut counts = vec![vec![0u8; 1280 * 720]; 5];
-        for dot in &scene.points {
-            let layer = ((dot.color >> 24) - 100) / 30;
-            counts[layer as usize][dot.y as usize * 1280 + dot.x as usize] += 1;
+        let groups = case["opengl_layer_counts_zlib_hex"]
+            .as_array()
+            .unwrap()
+            .len();
+        let mut counts = vec![vec![0u8; 1280 * 720]; groups];
+        for (index, segment) in segments.iter().enumerate() {
+            if segment.color & 255 == 0 {
+                continue;
+            }
+            let mut dots = Vec::new();
+            background::background_line_points(
+                &mut dots,
+                segment.start,
+                segment.end,
+                [1280, 720],
+                segment.color,
+            );
+            for dot in dots {
+                counts[index / 48][dot.y as usize * 1280 + dot.x as usize] += 1;
+            }
         }
         for (layer, encoded) in case["opengl_layer_counts_zlib_hex"]
             .as_array()
@@ -2729,12 +2754,27 @@ fn original_kaleidoscope_preserves_line_commands_and_actual_sdl_framebuffers() {
                 .map(|(a, b)| a.abs_diff(b))
                 .max()
                 .unwrap();
-            println!("kaleidoscope frame {frame}, {backend}, maximum grouping delta {delta}");
+            println!(
+                "line theme {theme}, frame {frame}, {backend}, maximum grouping delta {delta}"
+            );
             if backend == "opengl_rgba_zlib_hex" {
                 assert_eq!(delta, 0, "Original default GL composition differs");
             } else {
-                assert!(delta <= 4);
+                assert_eq!(
+                    u64::from(delta),
+                    case["maximum_backend_rgb_delta"].as_u64().unwrap(),
+                    "Recorded original SDL renderer difference changed"
+                );
             }
         }
     }
+}
+
+#[test]
+fn original_kaleidoscope_preserves_line_commands_and_actual_sdl_framebuffers() {
+    check_line_background_fixture(include_str!("fixtures/arkanoo-kaleidoscope.json"));
+}
+#[test]
+fn original_rain_and_warp_preserve_line_commands_and_actual_sdl_framebuffers() {
+    check_line_background_fixture(include_str!("fixtures/arkanoo-rain-warp.json"));
 }

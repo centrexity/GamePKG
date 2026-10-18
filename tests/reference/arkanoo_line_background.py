@@ -41,10 +41,11 @@ SDL_Surface*s=NULL;SDL_Window*w=NULL;SDL_Renderer*r=NULL;
 if(strcmp(argv[1],"software")==0){s=SDL_CreateRGBSurfaceWithFormat(0,1280,720,32,SDL_PIXELFORMAT_RGBA32);if(s)r=SDL_CreateSoftwareRenderer(s);}else{if(SDL_Init(SDL_INIT_VIDEO))return 3;w=SDL_CreateWindow("original background reference",0,0,1280,720,SDL_WINDOW_HIDDEN);if(w)r=SDL_CreateRenderer(w,-1,0);}if(!r)return 4;
 SDL_RendererInfo info;if(SDL_GetRendererInfo(r,&info)||strcmp(info.name,argv[1]))return 5;
 SDL_SetRenderDrawColor(r,layer>=0?0:bg[3],layer>=0?0:bg[2],layer>=0?0:bg[1],255);SDL_RenderClear(r);SDL_SetRenderDrawBlendMode(r,layer>=0?SDL_BLENDMODE_ADD:SDL_BLENDMODE_BLEND);
-int index=0;uint8_t p[20];while(fread(p,1,20,stdin)==20){int selected=index++/48;if(layer>=0&&selected!=layer)continue;SDL_SetRenderDrawColor(r,layer>=0?1:p[19],layer>=0?0:p[18],layer>=0?0:p[17],layer>=0?255:p[16]);if(SDL_RenderDrawLine(r,integer(p),integer(p+4),integer(p+8),integer(p+12)))return 6;}
+int index=0;uint8_t p[20];while(fread(p,1,20,stdin)==20){int selected=index++/48;if(layer>=0&&(selected!=layer||p[16]==0))continue;SDL_SetRenderDrawColor(r,layer>=0?1:p[19],layer>=0?0:p[18],layer>=0?0:p[17],layer>=0?255:p[16]);if(SDL_RenderDrawLine(r,integer(p),integer(p+4),integer(p+8),integer(p+12)))return 6;}
 uint8_t*pixels=malloc(1280*720*4);if(SDL_RenderReadPixels(r,NULL,SDL_PIXELFORMAT_RGBA32,pixels,1280*4))return 7;if(fwrite(pixels,1,1280*720*4,stdout)!=1280*720*4)return 8;free(pixels);SDL_DestroyRenderer(r);if(s)SDL_FreeSurface(s);if(w)SDL_DestroyWindow(w);SDL_Quit();return 0;}
 '''
-themes=[13]
+themes=[int(value) for value in sys.argv[3].split(',')] if len(sys.argv)>3 else [13]
+assert themes and len(set(themes))==len(themes) and all(value in [6,13,14] for value in themes)
 body=body.replace('[7,9,19]',str(themes).replace(' ',''))
 rand_source=Path(sys.argv[2]);assert tomllib.loads((rand_source/'Cargo.toml').read_text())['package']['version']=='0.8.5'
 with tempfile.TemporaryDirectory(prefix='gamepkg-procedural-reference-') as temporary:
@@ -68,8 +69,8 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-procedural-reference-') as temp
     bounds=[min(i%1280 for i in visible),min(i//1280 for i in visible),max(i%1280 for i in visible),max(i//1280 for i in visible)] if visible else None
     coverage={mode:{i for i in range(1280*720) if value[i*4:i*4+3]!=bg} for mode,value in images.items()}
     delta=max(abs(images['opengl'][i*4+c]-images['software'][i*4+c]) for i in range(1280*720) for c in range(3))
-    assert len(segments)==240
-    counts=[subprocess.check_output([folder/'raster','opengl',str(layer)],input=raw,env=env)[::4] for layer in range(5)]
+    if theme==13:assert len(segments)==240
+    counts=[subprocess.check_output([folder/'raster','opengl',str(layer)],input=raw,env=env)[::4] for layer in range((len(segments)+47)//48)]
     cases.append(dict(level=level,theme=theme,frame=frame,background=background,segment_count=len(segments),segment_sha256=hashlib.sha256(trace).hexdigest(),segments=segments,bounds=bounds,sdl_rgba_zlib_hex=zlib.compress(images['software']).hex(),opengl_rgba_zlib_hex=zlib.compress(images['opengl']).hex(),coverage_backend_differences=len(coverage['opengl']^coverage['software']),maximum_backend_rgb_delta=delta,opengl_layer_counts_zlib_hex=[zlib.compress(value).hex() for value in counts]))
   print(json.dumps(dict(revision='9d613e78c9ed5657ae7fda9206cd4a82a893b7c8',rendering_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),fragment_sha256=hashlib.sha256(fragment.encode()).hexdigest(),sdl_version=subprocess.check_output(['pkg-config','--modversion','sdl2'],text=True).strip(),cases=cases),indent=2))
  finally:display.terminate();display.wait(timeout=10)
