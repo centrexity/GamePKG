@@ -53,9 +53,106 @@ impl Drop for Worker {
 }
 struct Socket {
     udp: UdpSocket,
+    options: BTreeMap<u32, u32>,
     listening: bool,
     peers: BTreeMap<SocketAddr, Instant>,
     connected: Option<SocketAddr>,
+}
+// ENet option numbers are protocol values, never raw platform constants supplied
+// by the engine. Descriptors stay owned by this process.
+fn set_option(socket: &UdpSocket, option: u32, value: u32) -> Result<()> {
+    match option {
+        1 => {
+            ensure!(value == 1, "blocking sockets are unavailable");
+            socket.set_nonblocking(true)?;
+        }
+        2 => {
+            ensure!(
+                value == 0,
+                "broadcast requires separate discovery authorization"
+            );
+            socket.set_broadcast(false)?;
+        }
+        3..=5 => {
+            ensure!(
+                if option == 5 {
+                    value <= 1
+                } else {
+                    value <= 1048576
+                },
+                "invalid socket option value"
+            );
+            let name = match option {
+                3 => libc::SO_RCVBUF,
+                4 => libc::SO_SNDBUF,
+                _ => libc::SO_REUSEADDR,
+            };
+            let value = value as libc::c_int;
+            use std::os::fd::AsRawFd;
+            // SAFETY: a live owned UDP socket and correctly sized initialized int.
+            let result = unsafe {
+                libc::setsockopt(
+                    socket.as_raw_fd(),
+                    libc::SOL_SOCKET,
+                    name,
+                    (&value as *const libc::c_int).cast(),
+                    std::mem::size_of_val(&value) as libc::socklen_t,
+                )
+            };
+            if result != 0 {
+                return Err(std::io::Error::last_os_error().into());
+            }
+        }
+        6 | 7 => {
+            ensure!(value <= 1000, "socket timeout exceeds limit");
+            let timeout = (value != 0).then(|| Duration::from_millis(u64::from(value)));
+            if option == 6 {
+                socket.set_read_timeout(timeout)?;
+            } else {
+                socket.set_write_timeout(timeout)?;
+            }
+        }
+        10 => {
+            ensure!((1..=255).contains(&value), "invalid TTL");
+            socket.set_ttl(value)?;
+        }
+        _ => anyhow::bail!("unsupported socket option"),
+    }
+    Ok(())
+}
+fn bind_socket(address: SocketAddr, options: &BTreeMap<u32, u32>) -> Result<UdpSocket> {
+    use std::os::fd::{AsRawFd, FromRawFd};
+    let SocketAddr::V4(address) = address else {
+        anyhow::bail!("IPv4 required");
+    };
+    // SAFETY: socket has no pointer arguments; successful descriptor is adopted
+    // immediately so every later error closes it.
+    let fd = unsafe { libc::socket(libc::AF_INET, libc::SOCK_DGRAM | libc::SOCK_CLOEXEC, 0) };
+    if fd < 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    let socket = unsafe { UdpSocket::from_raw_fd(fd) };
+    socket.set_nonblocking(true)?;
+    for (&option, &value) in options {
+        set_option(&socket, option, value)?;
+    }
+    // Zero initialization covers platform padding; all meaningful IPv4 fields
+    // are then filled in native/network order as required by the socket ABI.
+    let mut raw: libc::sockaddr_in = unsafe { std::mem::zeroed() };
+    raw.sin_family = libc::AF_INET as _;
+    raw.sin_port = address.port().to_be();
+    raw.sin_addr.s_addr = u32::from_ne_bytes(address.ip().octets());
+    let result = unsafe {
+        libc::bind(
+            socket.as_raw_fd(),
+            (&raw as *const libc::sockaddr_in).cast(),
+            std::mem::size_of_val(&raw) as libc::socklen_t,
+        )
+    };
+    if result != 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    Ok(socket)
 }
 struct State {
     master: Option<super::discovery::Master>,
@@ -235,6 +332,7 @@ impl State {
                     id,
                     Socket {
                         udp,
+                        options: BTreeMap::new(),
                         listening: false,
                         peers: BTreeMap::new(),
                         connected: None,
@@ -262,12 +360,13 @@ impl State {
                     })
                     .copied()
                     .context("listening endpoint not authorized")?;
-                let udp = UdpSocket::bind(bind)?;
-                udp.set_nonblocking(true)?;
+                let options = self.sockets[&id].options.clone();
+                let udp = bind_socket(bind, &options)?;
                 self.sockets.insert(
                     id,
                     Socket {
                         udp,
+                        options,
                         listening: true,
                         peers: BTreeMap::new(),
                         connected: None,
@@ -408,6 +507,35 @@ impl State {
                 }
                 Ok(ready.to_le_bytes().to_vec())
             }
+            11 => {
+                ensure!(bytes.len() == 12, "invalid set-option request");
+                let option = number(bytes, 4)?;
+                let value = number(bytes, 8)?;
+                let socket = self
+                    .sockets
+                    .get_mut(&number(bytes, 0)?)
+                    .context("unknown socket")?;
+                set_option(&socket.udp, option, value)?;
+                socket.options.insert(option, value);
+                Ok(Vec::new())
+            }
+            12 => {
+                ensure!(bytes.len() == 8, "invalid get-option request");
+                let socket = self
+                    .sockets
+                    .get(&number(bytes, 0)?)
+                    .context("unknown socket")?;
+                let value = match number(bytes, 4)? {
+                    8 => socket
+                        .udp
+                        .take_error()?
+                        .map_or(0, |e| e.raw_os_error().unwrap_or(libc::EIO))
+                        as u32,
+                    10 => socket.udp.ttl()?,
+                    _ => anyhow::bail!("unsupported socket query"),
+                };
+                Ok(value.to_le_bytes().to_vec())
+            }
             10 => {
                 ensure!(bytes.len() == 12, "invalid connect request");
                 let peer = address(bytes, 4)?;
@@ -475,6 +603,25 @@ impl State {
     fn stream_call(&mut self, op: u32, bytes: &[u8]) -> Result<Vec<u8>> {
         let id = number(bytes, 0)?;
         match op {
+            11 => {
+                ensure!(
+                    bytes.len() == 12 && number(bytes, 4)? == 1 && number(bytes, 8)? == 1,
+                    "discovery streams only support nonblocking mode"
+                );
+                Ok(Vec::new())
+            }
+            12 => {
+                ensure!(
+                    bytes.len() == 8 && number(bytes, 4)? == 8,
+                    "invalid discovery query"
+                );
+                // This is a virtual snapshot connection, not an OS TCP socket.
+                ensure!(
+                    self.streams[&id].connected,
+                    "discovery stream is not connected"
+                );
+                Ok(0u32.to_le_bytes().to_vec())
+            }
             10 => {
                 ensure!(bytes.len() == 12, "invalid master connect");
                 ensure!(
@@ -659,6 +806,96 @@ mod tests {
         let mut b = id.to_le_bytes().to_vec();
         b.extend(encoded_address(address).unwrap());
         b
+    }
+    #[test]
+    fn socket_options_reach_os_survive_rebind_and_reject_invalid_values() {
+        let reservation = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let addr = reservation.local_addr().unwrap();
+        drop(reservation);
+        let mut state = State::new(permissions(Vec::new(), vec![addr.to_string()], true)).unwrap();
+        let id = create(&mut state);
+        let request = |option: u32, value: u32| {
+            [id.to_le_bytes(), option.to_le_bytes(), value.to_le_bytes()].concat()
+        };
+        for (option, value) in [
+            (1, 1),
+            (2, 0),
+            (3, 32768),
+            (4, 32768),
+            (5, 1),
+            (6, 250),
+            (7, 500),
+            (10, 37),
+        ] {
+            state.dispatch(11, &request(option, value)).unwrap();
+        }
+        let check = |socket: &UdpSocket| {
+            assert_eq!(socket.ttl().unwrap(), 37);
+            assert!(!socket.broadcast().unwrap());
+            assert_eq!(
+                socket.read_timeout().unwrap(),
+                Some(Duration::from_millis(250))
+            );
+            assert_eq!(
+                socket.write_timeout().unwrap(),
+                Some(Duration::from_millis(500))
+            );
+            use std::os::fd::AsRawFd;
+            for (option, minimum) in [
+                (libc::SO_RCVBUF, 32768),
+                (libc::SO_SNDBUF, 32768),
+                (libc::SO_REUSEADDR, 1),
+            ] {
+                let mut value: libc::c_int = 0;
+                let mut length = std::mem::size_of_val(&value) as libc::socklen_t;
+                let result = unsafe {
+                    libc::getsockopt(
+                        socket.as_raw_fd(),
+                        libc::SOL_SOCKET,
+                        option,
+                        (&mut value as *mut libc::c_int).cast(),
+                        &mut length,
+                    )
+                };
+                assert_eq!(result, 0);
+                assert!(value >= minimum, "option {option} was not applied: {value}");
+            }
+        };
+        check(&state.sockets[&id].udp);
+        state.dispatch(2, &destination(id, addr)).unwrap();
+        check(&state.sockets[&id].udp);
+        assert_eq!(
+            state.dispatch(12, &request(10, 0)[..8]).unwrap(),
+            37u32.to_le_bytes()
+        );
+        assert_eq!(
+            state.dispatch(12, &request(8, 0)[..8]).unwrap(),
+            0u32.to_le_bytes()
+        );
+        for (option, value) in [
+            (1, 0),
+            (2, 1),
+            (3, 1048577),
+            (4, u32::MAX),
+            (5, 2),
+            (6, 1001),
+            (7, u32::MAX),
+            (8, 0),
+            (9, 1),
+            (10, 0),
+            (10, 256),
+            (99, 0),
+        ] {
+            assert!(state.dispatch(11, &request(option, value)).is_err());
+        }
+        for size in [0, 4, 8, 11] {
+            assert!(state.dispatch(11, &request(10, 42)[..size]).is_err());
+        }
+        assert!(state.dispatch(12, &request(3, 0)[..8]).is_err());
+        assert_eq!(state.sockets[&id].udp.ttl().unwrap(), 37);
+        state.dispatch(7, &id.to_le_bytes()).unwrap();
+        assert!(state.dispatch(11, &request(10, 42)).is_err());
+        assert!(state.dispatch(12, &request(10, 0)[..8]).is_err());
     }
     #[test]
     fn master_snapshot_is_async_bounded_and_grants_only_discovered_endpoints() {

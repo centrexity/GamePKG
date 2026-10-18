@@ -97,26 +97,20 @@ int enet_socket_listen(ENetSocket socket, int backlog) { (void)socket;(void)back
 int enet_socket_set_option(ENetSocket socket, ENetSocketOption option, int value)
 {
     if(socket<32 || socket>=1024) return -1;
-    switch(option)
-    {
-        case ENET_SOCKOPT_NONBLOCK: return value ? 0 : -1;
-        case ENET_SOCKOPT_BROADCAST: return value ? -1 : 0;
-        case ENET_SOCKOPT_REUSEADDR: return 0;
-        case ENET_SOCKOPT_RCVBUF: case ENET_SOCKOPT_SNDBUF:
-            return value>=0 && value<=1048576 ? 0 : -1;
-        case ENET_SOCKOPT_RCVTIMEO: case ENET_SOCKOPT_SNDTIMEO:
-            return value>=0 && value<=1000 ? 0 : -1;
-        case ENET_SOCKOPT_TTL: return value==64 ? 0 : -1;
-        default: return -1;
-    }
+    unsigned char request[12];
+    gp_net_put32(request,(uint32_t)socket);gp_net_put32(request+4,(uint32_t)option);gp_net_put32(request+8,(uint32_t)value);
+    return gp_net_call(11,request,sizeof(request),NULL,0)==0 ? 0 : -1;
 }
 int enet_socket_get_option(ENetSocket socket, ENetSocketOption option, int *value)
 {
+    unsigned char request[8],reply[4];uint32_t result;
     if(socket<32 || socket>=1024 || !value) return -1;
-    if(option==ENET_SOCKOPT_ERROR) { *value=0;return 0; }
-    if(option==ENET_SOCKOPT_TTL) { *value=64;return 0; }
-    return -1;
+    gp_net_put32(request,(uint32_t)socket);gp_net_put32(request+4,(uint32_t)option);
+    if(gp_net_call(12,request,sizeof(request),reply,sizeof(reply))!=4) return -1;
+    result=gp_net_get32(reply);if(result>2147483647u) return -1;
+    *value=(int)result;return 0;
 }
+
 int enet_socket_connect(ENetSocket socket, const ENetAddress *address)
 {
     unsigned char request[12];

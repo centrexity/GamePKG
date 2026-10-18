@@ -140,6 +140,20 @@ python3 tests/cube2_network_bridge.py
 
 Broker unit tests cover declared peers, spoofed sources, stale handles, listener reply authorization, malformed framing, endpoint/packet/handle/open/rate bounds and disabled-network denial. The C++ shim test verifies raw sockets remain denied, malformed/truncated/oversized replies cannot overrun receive buffers, oversized sends fail before reading their buffers, and concurrent requests retain their framing.
 
+The updated source host also applies ENet's bounded receive/send buffer sizes,
+address reuse, read/write timeouts and TTL to its owned UDP sockets. Settings
+survive replacement of the ephemeral socket with a signed listening endpoint;
+address reuse is applied before binding. Error and TTL queries read the host
+socket instead of returning fixed placeholder values. IPC operations 11 and 12
+carry set/query requests with exact lengths and validated virtual handles.
+Queries leave the engine's output untouched if the host denies or malforms a
+reply. The virtual master-list snapshot supports nonblocking mode and checks its
+own connection state for error queries; it is not an arbitrary TCP connection.
+Blocking mode, broadcast enabling and unrecognized/excessive options are denied.
+These changes require rebuilding the source host and engine cache; the cache
+fingerprint includes the adapter. LAN discovery, master authentication, public
+registration and complete shutdown/listen/accept behavior remain open.
+
 ## Background desktop execution
 
 The desktop hands the warmed, deadline-limited session, pinned save store and play-history clock to one host worker. It advances the original engine independently of window painting, so networking stays active while minimized. The CLI keeps its synchronous finite-frame behavior unless a host explicitly enables background execution.

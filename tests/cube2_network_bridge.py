@@ -24,6 +24,8 @@ def run(mode,response=None,count=1,expected=None):
     header=read(16);assert header[:4]==b'GPN1';op,n,reserved=struct.unpack_from('<3I',header,4);assert reserved==0 and n<=8192
     payload=read(n)
     if mode in ['create','threads']:assert op==1 and payload==struct.pack('<I',2)
+    elif mode=='set-option':assert op==11 and payload==struct.pack('<3I',32,10,37)
+    elif mode=='get-option':assert op==12 and payload==struct.pack('<2I',32,10)
     else:assert op==4 and payload==struct.pack('<2I',32,4096 if mode=='large-receive' else 32)
     parent.sendall(reply(data=struct.pack('<I',index+32)) if response is None else response)
     if response is not None:parent.shutdown(socket.SHUT_WR)
@@ -33,6 +35,11 @@ def run(mode,response=None,count=1,expected=None):
   parent.close()
   if app.poll() is None:app.kill();app.wait()
 run('create',expected=32)
+run('set-option',reply(),expected=0)
+run('set-option',reply(status=1),expected=-1)
+run('get-option',reply(data=struct.pack('<I',37)),expected=37)
+for data in [reply(status=1),reply(data=b'bad'),reply(data=struct.pack('<I',0xffffffff)),reply(length=5,data=b'abcde')]:
+ run('get-option',data,expected=-1)
 for data in [reply(data=struct.pack('<I',0)),reply(data=struct.pack('<I',1024)),reply(magic=b'BAD!'),reply(reserved=1),reply(length=0xffffffff),reply(status=1),reply(status=2),b'GPR2',reply(length=4,data=b'\0')]:
  run('create',data,expected=-1)
 address=bytes([127,0,0,1])+struct.pack('<I',1234)

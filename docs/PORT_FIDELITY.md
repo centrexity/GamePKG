@@ -31,6 +31,32 @@ This does not establish full controller, touch or platform coverage.
 
 ## What GamePKG needs to add
 
+### Adapter review: behavior that must not be counted as complete
+
+The adapter review below distinguishes intentional isolation from missing original
+behavior. A successful return from a compatibility function is not evidence that
+the original operation happened.
+
+| Source | Observed behavior | Required follow-up |
+| --- | --- | --- |
+| `engines/cube2/adapters/network.h` | Broadcast enabling and socket listen/accept are rejected. Reverse lookup returns a numeric address. Bounded buffer sizes, timeouts, address reuse and TTL now reach the actual host socket; error/TTL queries read host results. Shutdown still returns success without a host call. | Audit each original ENet caller; finish the host operations it needs and test real discovery, authentication, server registration, disconnect and error handling. Keep permission denial explicit. Do not infer complete networking from ordinary packet exchange. |
+| `engines/zelda3/adapters/engine.c` | MSU enable is ignored and MSU track playback falls back to the internal audio path. Initialization fixes extra horizontal area to zero and selects the default language. The frame scheduler omits the desktop replay log. | Add selected optional resources, enhancement/language configuration, and bounded replay/save-state persistence with actual engine tests. Ordinary ROM gameplay does not verify these features. |
+| `ports/arkanoo/source/src/menu.rs` and `render.rs` | The current menu and synthesized effects cover only part of the original presentation/settings. | Restore the remaining transitions, resolution confirmation/revert, VSync, homepage action and licensed art/audio; verify each against the pinned original. Window-size persistence alone does not implement a resolution menu. |
+| `ports/2048/CREDITS.md` | Tile exponents stop at 63 and scores use checked fixed-width storage; the reference implementation has a smaller tile representation. | Retain explicit bounds in documentation and boundary tests. Verified solver/gameplay behavior does not establish unlimited arithmetic, package delivery or every-platform support. |
+
+Single-threaded audio lock no-ops and host-supplied SRAM are intentional
+adaptations, not automatically missing features. They still require evidence
+that audio ordering and save/load behavior match the original. Conversely,
+silently ignored configuration or placeholder success must stay on the open
+checklist until a verified replacement exists.
+
+Prioritize shared resource selection/persistence and complete input first: they
+unblock mods, optional music, recordings and original controls across several
+ports. Next complete the networking adapter and graphics/presentation controls.
+Track each port's remaining assets and menus separately. Full campaigns,
+cross-version saves, Windows/Android gameplay and rebuilt signed catalogs remain
+delivery gates even after individual features pass.
+
 - Complete ordered keyboard, pointer and controller events, including original
   bindings and rebinding, through host-controlled input.
 - Scoped resource import and enumeration for mods, extra WADs, custom maps,
@@ -85,7 +111,7 @@ tests. Test cross-version saves and each claimed native platform. Rebuild and
 verify the packages and catalog users import after source changes. Record
 unverified behavior explicitly; do not silently skip it or describe it as done.
 
-Latest local validation: the full Rust suite passes 366 tests. Its 47
+Latest local validation: the full Rust suite passes 367 tests. Its 47
 fixture-dependent or platform-specific ignored tests are not counted as passed.
 The signed isolated Arkanoo harness separately executes 23 fixture tests on Wasm
 and again with native builds, plus actual native-window and core/component
@@ -106,7 +132,7 @@ presentation, splash or remaining original menu/music/artwork behavior. Windows
 
 The six main-menu actions now have mouse targets projected from the pinned
 original menu: New Game/Resume, Restart, Gravity Mode, Level Editor, Settings and
-Quit. Seventy-two independent cases compile the complete unchanged original menu
+Quit. Eighty-one independent cases compile the complete unchanged original menu
 module and verify integer hit boundaries for these buttons and the supported
 fullscreen/back controls. Actual native/core/component tests verify activation,
 pause preservation, settings, editor entry and quit. Linux native and both browser
@@ -125,3 +151,25 @@ frame value verifies the fixed 32-bit phase overflow. Linux native controls and
 both browser profiles pass real pointer drags, mute, persisted flags and rendered
 settings restoration after Restart. Original recorded effects/music and broader
 settings/platform fidelity remain open.
+
+Cube 2 socket-option regressions now inspect actual OS receive/send buffers,
+address reuse, timeouts and TTL before and after binding a signed listening
+endpoint. Options are reapplied before bind, so address reuse affects binding.
+Malformed requests, invalid/stale handles, excessive values, blocking mode and
+unauthorized broadcast remain rejected. The production C shim is checked for
+option/query framing, denied operations, malformed replies and unchanged query
+outputs on failure. Discovery snapshots explicitly support nonblocking mode and
+connection-error queries without exposing an arbitrary TCP connection. These
+checks do not establish full network feature parity.
+
+After the socket-option update, the separately executed two-original-engine
+regression rebuilds the engine and verifies direct private multiplayer, continued
+background execution for 35 seconds, connection survival and clean saved shutdown.
+The full Rust suite passes 367 tests with 47 fixture/platform tests ignored; the
+explicit engine test is additional evidence, not a claim that all ignored tests ran.
+
+The discovered-server variant also rebuilds and runs both original engines against
+a private local master fixture. It verifies the original browser writes the
+returned server to `servers.cfg`, joins it, preserves the background connection
+and shuts down cleanly. This exercises the snapshot stream's nonblocking/error
+queries as well as the UDP option protocol; no public server is contacted.

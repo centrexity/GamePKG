@@ -24,6 +24,15 @@ int main(int argc,char **argv)
     errno=0;
     if(socket(AF_INET,SOCK_DGRAM,0)!=-1 || errno!=EPERM) return 3;
     if(!strcmp(argv[1],"create")) printf("%d\n",enet_socket_create(ENET_SOCKET_TYPE_DATAGRAM));
+    else if(!strcmp(argv[1],"set-option"))
+        printf("%d\n",enet_socket_set_option(32,ENET_SOCKOPT_TTL,37));
+    else if(!strcmp(argv[1],"get-option"))
+    {
+        int value=123;
+        int result=enet_socket_get_option(32,ENET_SOCKOPT_TTL,&value);
+        if(result<0 && value!=123) return 10;
+        printf("%d\n",result<0 ? -1 : value);
+    }
     else if(!strcmp(argv[1],"receive"))
     {
         unsigned char bytes[80];memset(bytes,0xaa,sizeof(bytes));

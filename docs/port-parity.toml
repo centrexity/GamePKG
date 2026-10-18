@@ -18,6 +18,7 @@ notes = "Desktop keyboard uses physical events rather than egui's normalized key
 id = "cube2_network"
 requirements = ["LAN discovery", "Master browsing/authentication", "Public server registration", "Scoped multiplayer permissions"]
 status = "pending"
+notes = "Adapter audit confirms broadcast enabling and listen/accept are rejected; reverse lookup is numeric. Bounded buffer/timeout/reuse/TTL settings now reach host UDP sockets and survive rebinding; error/TTL queries return host results. Production shim framing and real OS option values are tested. Shutdown remains a no-op. Existing bounded packet/framing tests do not establish discovery, authentication, server registration or complete disconnect/error semantics. Audit original callers and implement required host operations without relaxing signed network permissions."
 
 [[work]]
 id = "cube2_content"
