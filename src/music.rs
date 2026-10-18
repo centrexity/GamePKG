@@ -48,6 +48,7 @@ struct State {
     error: Option<String>,
 }
 struct Shared {
+    sample_rate: u32,
     state: Mutex<State>,
     ring: Ring,
     status: AtomicU64,
@@ -121,6 +122,27 @@ impl Service {
         budget: memory_budget::Budget,
         memory_bytes: usize,
     ) -> Result<Self> {
+        Self::with_rate(factory, package, audio_allowed, budget, memory_bytes, 48000)
+    }
+    /// Original mixer-rate source for combined music/effect mixing before
+    /// conversion. This output must not be attached to a 48 kHz PCM consumer.
+    pub fn new_original_rate(
+        factory: audio_decode::Factory,
+        package: &crate::archive::Package,
+        audio_allowed: bool,
+        budget: memory_budget::Budget,
+        memory_bytes: usize,
+    ) -> Result<Self> {
+        Self::with_rate(factory, package, audio_allowed, budget, memory_bytes, 44100)
+    }
+    fn with_rate(
+        factory: audio_decode::Factory,
+        package: &crate::archive::Package,
+        audio_allowed: bool,
+        budget: memory_budget::Budget,
+        memory_bytes: usize,
+        sample_rate: u32,
+    ) -> Result<Self> {
         ensure!(audio_allowed, "music requires audio permission");
         ensure!(
             (65536..=16 * 1048576).contains(&memory_bytes),
@@ -137,6 +159,7 @@ impl Service {
             "music host staging exceeds its reservation"
         );
         let shared = Arc::new(Shared {
+            sample_rate,
             state: Mutex::new(State {
                 generation: 0,
                 request: None,
@@ -259,6 +282,9 @@ impl Drop for Service {
     }
 }
 impl Output {
+    pub fn sample_rate(&self) -> u32 {
+        self.0.sample_rate
+    }
     pub fn status(&self) -> Status {
         Status::from_tag(self.0.status.load(Ordering::Acquire))
     }
@@ -331,9 +357,10 @@ struct Pipeline {
     output: [[f32; 2]; BLOCK_FRAMES],
     decoded: [i16; 1600],
     eof: bool,
+    original_rate: bool,
 }
 impl Pipeline {
-    fn new(stream: audio_decode::Stream) -> Result<Self> {
+    fn new(stream: audio_decode::Stream, original_rate: bool) -> Result<Self> {
         ensure!(
             stream.sample_rate() == 44100 && stream.channels() == 2,
             "unexpected music mixer format"
@@ -345,9 +372,13 @@ impl Pipeline {
             output: [[0.0; 2]; BLOCK_FRAMES],
             decoded: [0; 1600],
             eof: false,
+            original_rate,
         })
     }
     fn produce(&mut self, output: &mut [i16; 1600]) -> Result<usize> {
+        if self.original_rate {
+            return self.stream.read(output);
+        }
         let mut count = 0;
         while count < BLOCK_FRAMES {
             let n = self
@@ -497,7 +528,7 @@ fn run(
                             memory_bytes,
                         )
                     })?;
-                    Pipeline::new(stream)
+                    Pipeline::new(stream, shared.sample_rate == 44100)
                 })();
                 match loaded {
                     Ok(loaded) => pipeline = Some(loaded),
@@ -542,6 +573,10 @@ fn run(
 }
 #[cfg(all(test, feature = "audio"))]
 pub(crate) fn fixture_output(frames: &[[i16; 2]]) -> Output {
+    fixture_output_at_rate(frames, 48000)
+}
+#[cfg(all(test, feature = "audio"))]
+pub(crate) fn fixture_output_at_rate(frames: &[[i16; 2]], sample_rate: u32) -> Output {
     let budget = memory_budget::Budget::new(HOST_BYTES);
     let ring = Ring::new();
     for chunk in frames.chunks(BLOCK_FRAMES) {
@@ -549,6 +584,7 @@ pub(crate) fn fixture_output(frames: &[[i16; 2]]) -> Output {
         assert!(ring.push(1, &samples));
     }
     Output(Arc::new(Shared {
+        sample_rate,
         state: Mutex::new(State {
             generation: 1,
             request: None,
@@ -677,6 +713,28 @@ mod tests {
                 std::thread::sleep(std::time::Duration::from_micros(100));
             }
         }
+    }
+    #[test]
+    fn original_rate_output_keeps_every_decoded_frame_without_conversion() {
+        let (_temporary, package) = package(zip::CompressionMethod::Stored, true);
+        let budget = memory_budget::Budget::new(HOST_BYTES + 6 * 1048576);
+        let service = Service::new_original_rate(
+            factory(20000, false),
+            &package,
+            true,
+            budget.clone(),
+            6 * 1048576,
+        )
+        .unwrap();
+        let output = service.output();
+        assert_eq!(output.sample_rate(), 44100);
+        service.play("a.mp3").unwrap();
+        let frames = drain(&output);
+        assert_eq!(frames, vec![[1000, -2000]; 20000]);
+        assert_eq!(output.played_frames(), 20000);
+        drop(service);
+        drop(output);
+        assert_eq!(budget.used(), 0);
     }
     #[test]
     fn output_clock_pause_gain_replacement_and_end_preserve_the_complete_stream() {

@@ -265,3 +265,80 @@ fn original_tracks_play_from_signed_package_on_the_output_clock_without_game_tic
     drop(guest);
     assert_eq!(budget.used(), 0);
 }
+
+#[cfg(feature = "audio")]
+#[test]
+#[ignore = "requires original music, decoder and private ALSA null configuration from tools/check_music_worker.py --null-device"]
+fn combined_original_rate_music_and_effects_reach_the_device_without_game_ticks() {
+    assert!(std::env::var_os("ALSA_CONFIG_PATH").is_some());
+    let root = std::path::PathBuf::from(std::env::var_os("GAMEPKG_MUSIC_INPUT_DIR").unwrap());
+    let mut paths = std::fs::read_dir(root)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.extension().is_some_and(|extension| extension == "mp3"))
+        .collect::<Vec<_>>();
+    paths.sort();
+    let (_temporary, package) = music_fixture::signed_music_package(&paths[..1]);
+    let factory = Factory::new(
+        &std::fs::read(std::env::var_os("GAMEPKG_AUDIO_DECODER_WASM").unwrap()).unwrap(),
+    )
+    .unwrap();
+    let budget = Budget::new(16 * 1048576);
+    let guest = budget.reserve(9 * 1048576).unwrap();
+    let service =
+        Service::new_original_rate(factory, &package, true, budget.clone(), 6 * 1048576).unwrap();
+    let output = service.output();
+    assert_eq!(output.sample_rate(), 44100);
+    let player = gamepkg::audio::Player::new(100).unwrap();
+    assert!(
+        !player.music_source(Some(output.clone())),
+        "wrong-rate attachment must fail"
+    );
+    let playback = gamepkg::audio_mix_stream::Playback::new(output.clone(), &budget).unwrap();
+    assert!(player.original_source(Some(playback)));
+    assert!(
+        !player.submit_stereo(&[123, -456]),
+        "premixed audio must not be silently dropped"
+    );
+    service
+        .play(&format!(
+            "music/{}",
+            paths[0].file_name().unwrap().to_str().unwrap()
+        ))
+        .unwrap();
+    let start = std::time::Instant::now();
+    while output.played_frames() < 4800 || player.non_silent_frames() == 0 {
+        assert_ne!(output.status(), Status::Failed, "{:?}", service.error());
+        assert!(start.elapsed() < std::time::Duration::from_secs(5));
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    // Effects have their own output-clock lifetime even with music stopped.
+    service.stop().unwrap();
+    assert!(player.effect_volume(0));
+    assert!(!player.effect_volume(129));
+    assert!(player.effect_pause(true));
+    let clip = gamepkg::audio_voices::Clip::new(&[20000; 32000], &budget).unwrap();
+    assert!(player.effect_play(clip));
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    let silent = player.non_silent_frames();
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    assert_eq!(player.non_silent_frames(), silent);
+    assert!(player.effect_volume(128));
+    assert!(player.effect_pause(false));
+    let start = std::time::Instant::now();
+    while player.non_silent_frames() == silent {
+        assert!(start.elapsed() < std::time::Duration::from_secs(5));
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    assert!(player.error().is_none());
+    assert!(player.effect_stop());
+    assert!(player.original_source(None));
+    assert!(!player.effect_volume(128));
+    drop(player);
+    drop(service);
+    drop(output);
+    assert_eq!(budget.used(), guest.bytes());
+    drop(guest);
+    assert_eq!(budget.used(), 0);
+    println!("ORIGINAL_MIX_CALLBACK_OK");
+}

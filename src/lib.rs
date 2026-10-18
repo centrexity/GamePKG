@@ -3,6 +3,8 @@ pub mod archive;
 pub mod audio_decode;
 mod audio_frame;
 #[doc(hidden)]
+pub mod audio_mix_stream;
+#[doc(hidden)]
 pub mod audio_resample;
 #[doc(hidden)]
 pub mod audio_voices;

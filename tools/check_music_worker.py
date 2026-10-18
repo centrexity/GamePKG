@@ -46,4 +46,6 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-worker-reference-') as temporar
     print('Complete signed-package playback, concurrent asset reads, original mixer/output lengths and reservation cleanup passed for', len(records), 'tracks.', flush=True)
     if args.null_device:
         assert 'MUSIC_CALLBACK_OK' in result.stdout, 'device callback verification did not run'
+        assert 'ORIGINAL_MIX_CALLBACK_OK' in result.stdout, 'combined original-rate callback verification did not run'
         print('CPAL null-device callback: music advances with muted master gain, emits nonzero output when unmuted, and pauses/resumes without game ticks.', flush=True)
+        print('Combined original-rate callback: music and effects reach the device without game ticks; stopped music does not stop effect playback; reservations release.', flush=True)

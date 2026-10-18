@@ -21,7 +21,7 @@
 
 // Altered version: streaming Rust adaptation of SDL 2.30.0 audio conversion.
 //! Fixed-memory streaming form of SDL 2.30's bandlimited stereo conversion.
-//! Host-only foundation; not yet connected to game music playback.
+//! Used by host music and combined original-rate playback; game SDK wiring is pending.
 #[path = "audio_resample_filter.rs"]
 mod coefficients;
 use coefficients::{DIFFERENCE, FILTER};

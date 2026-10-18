@@ -2353,3 +2353,32 @@ port integration: the host mixer is not game-visible or connected to effect
 commands yet. Original 44.1 kHz combined mixing must precede shared output-rate
 conversion; independently converted music/effects and tick-driven premixed PCM
 cannot establish that parity. Browser, command timing and device proof remain open.
+
+The native host now connects original-rate music, the four effect voices and a
+single shared 44.1-to-48 kHz conversion to the device callback. A distinct music
+constructor exposes raw original-mixer PCM with an explicit rate; the old 48 kHz
+attachment rejects it. Combined playback rejects legacy premixed submissions
+instead of silently consuming them. Host play/volume/pause/stop controls operate
+on voices before conversion. The converter and adapter reserve their resident
+storage from the same supplied budget, and shared recording leases remain live
+until their final voice/owner is dropped. Existing 48 kHz music output remains
+covered by the complete nine-track regression.
+
+An independent SDL oracle now mixes four different-length, different-stereo
+recordings after music, then performs the whole-stream output conversion. Full
+lengths and exact PCM hashes match at six effect volumes across three producer/
+consumer chunk schedules, including single-frame chunks. A real private ALSA
+null-device test verifies original-rate music and effects through CPAL with zero
+game ticks, wrong-rate rejection, rejected premixed submissions, paused/muted
+voices, effects after music stops and complete reservation cleanup. Full library
+verification passes 172 tests with 17 explicitly ignored environment-dependent
+checks; the selected ignored music/callback checks run separately.
+
+This remains host-only integration. Signed SDK/runtime commands, original-rate
+port recordings, helper bundling, browser playback and actual game migration
+are still required. Commands currently affect source frames not yet buffered by
+the converter; exact original block/event timing and stop/pause tails need
+independent verification. The CPAL buffer still uses a shared host-control lock
+and can output silence under contention; a nonblocking command handoff remains
+needed. Device-rate conversion beyond the 48 kHz intermediate, physical speakers
+and Windows/Android gameplay remain unverified. No cap or version is increased.

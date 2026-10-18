@@ -258,3 +258,20 @@ need neither. The module is still host-only: effect-command SDK integration,
 original-rate combined mixing before resampling, browser playback and actual
 port migration remain unfinished. The current premixed guest PCM path cannot
 recover individual-channel clipping order.
+
+`music::Service::new_original_rate` now supplies rate-tagged 44.1 kHz PCM for
+`audio_mix_stream::Playback`. It mixes music followed by the four effect voices
+before one shared 48 kHz conversion, driven by the CPAL clock through
+`audio::Player::original_source`. The regular music attachment accepts only
+48 kHz sources. Combined mode rejects legacy PCM submissions. The converter and
+adapter reserve their storage from the caller's shared game budget; clips retain
+separate shared recording leases. Game SDKs still expose neither path.
+
+The SDL mix oracle also checks complete combined conversion at six volumes with
+four unequal stereo clips. Rust requires exact whole-output hashes at three
+input/output chunk schedules. `check_music_worker.py --null-device` additionally
+requires the actual original-rate callback test: music reaches output, effects
+pause/mute and continue with music stopped, and all reservations release without
+a game tick. It retains the full nine-track 48 kHz regression. Physical output,
+browser integration, original block/event/stop timing and nonblocking host-control
+handoff remain open; the CPAL buffer lock can still cause contention silence.

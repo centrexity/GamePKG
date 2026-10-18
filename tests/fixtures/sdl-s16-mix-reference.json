@@ -1,6 +1,6 @@
 {
   "sdl_version": "2.30.0",
-  "source_sha256": "afc1c02a160fa58fe276a50c9c95d276d8574c1861dab9dde0453da6b945853d",
+  "source_sha256": "ae3b0df399eecfc22c25189089b99f7be37c461fc9a79844fccbe50b9a5796dd",
   "destinations": [
     -32768,
     -30000,
@@ -273,5 +273,37 @@
     "e17ceb696ef5e963e15d55b27332155f46f87a657759e5202c5bdbd3ae68a078",
     "89ac9b807bf8553483f65ef76dc6d770505e4740762f7fe7d45b9ff18ac3460d",
     "ab46f8d11faaa803bafa8df4c9ab0e6006d26b8182f582e29e867dbb0e8de62a"
+  ],
+  "combined_streams": [
+    {
+      "volume": 0,
+      "frames": 6530,
+      "sha256": "6a69c72933f96152a1028b28ce8140911c52464cc78f624ce4adcb6188526df0"
+    },
+    {
+      "volume": 1,
+      "frames": 6530,
+      "sha256": "1bc6901359a7e9e3179e569fad014107ac05b3ff2503c1f397f518d7e3081a9f"
+    },
+    {
+      "volume": 63,
+      "frames": 6530,
+      "sha256": "9500be98baa24def960d4453055b9607cae604341c570317293522aa9dd860b0"
+    },
+    {
+      "volume": 64,
+      "frames": 6530,
+      "sha256": "cad20ff2870f9181df456505906bd004ef153cdf50f09a057b561e12c3a0946a"
+    },
+    {
+      "volume": 127,
+      "frames": 6530,
+      "sha256": "30e11bc3530b137a6e8bce9b75a22d927ad008c203947d8dbcd2231bfad11ef1"
+    },
+    {
+      "volume": 128,
+      "frames": 6530,
+      "sha256": "86da3923d6296bb8e369383721d52cdee42ea4ded5c1faa9dcc3f0ca6413b8e7"
+    }
   ]
 }

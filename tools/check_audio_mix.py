@@ -32,12 +32,23 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-mix-reference-') as temporary:
             hashes.append(digest.hexdigest())
         assert not process.stdout.read(1), 'extra reference output'
         assert process.wait(timeout=10) == 0
+    combined = subprocess.check_output([str(executable), '--stream'], timeout=10)
+    streams = []
+    for volume in [0, 1, 63, 64, 127, 128]:
+        assert len(combined) >= 4
+        length = int.from_bytes(combined[:4], 'little')
+        assert 0 < length <= len(combined) - 4 and length % 4 == 0
+        streams.append(dict(volume=volume, frames=length//4,
+                            sha256=hashlib.sha256(combined[4:4+length]).hexdigest()))
+        combined = combined[4+length:]
+    assert not combined
 record = dict(sdl_version=version, source_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
               destinations=[-32768, -30000, -1, 0, 1, 30000, 32767],
               source_minimum=-32768, source_maximum=32767, volumes=list(range(129)),
-              sha256=hashes)
+              sha256=hashes, combined_streams=streams)
 if args.write_fixture:
     fixture.write_text(json.dumps(record, indent=2) + '\n')
 else:
     assert json.loads(fixture.read_text()) == record, 'SDL reference changed'
 print('SDL reference verified: 59,179,008 signed samples, all 129 volume levels.')
+print('Combined four-voice mixing then 44.1-to-48 kHz conversion verified at six volumes.')

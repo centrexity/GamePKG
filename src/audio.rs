@@ -15,6 +15,8 @@ struct Buffer {
     current: [i16; 2],
     gain: f32,
     music: Option<crate::music::Output>,
+    original: Option<Box<crate::audio_mix_stream::Playback>>,
+    original_error: Option<String>,
 }
 impl Buffer {
     fn new(volume: u8) -> Self {
@@ -24,10 +26,15 @@ impl Buffer {
             current: [0; 2],
             gain: volume as f32 / 100.0,
             music: None,
+            original: None,
+            original_error: None,
         }
     }
     fn append(&mut self, samples: &[i16]) -> bool {
-        if samples.len() > 1600 || self.samples.len() + samples.len() > MAX_QUEUED {
+        if self.original.is_some()
+            || samples.len() > 1600
+            || self.samples.len() + samples.len() > MAX_QUEUED
+        {
             return false;
         }
         self.samples
@@ -35,7 +42,8 @@ impl Buffer {
         true
     }
     fn append_stereo(&mut self, samples: &[i16]) -> bool {
-        if !samples.len().is_multiple_of(2)
+        if self.original.is_some()
+            || !samples.len().is_multiple_of(2)
             || samples.len() > 3200
             || self.samples.len() + samples.len() / 2 > MAX_QUEUED
         {
@@ -48,6 +56,16 @@ impl Buffer {
     fn next(&mut self, rate: u32) -> [f32; 2] {
         while self.phase >= 1.0 {
             self.current = self.samples.pop_front().unwrap_or([0; 2]);
+            if let Some(original) = &mut self.original {
+                match original.frame() {
+                    Ok(frame) => self.current = frame,
+                    Err(error) => {
+                        self.original_error = Some(error.to_string().chars().take(1024).collect());
+                        self.original = None;
+                        self.current = [0; 2];
+                    }
+                }
+            }
             if let Some(music) = &self.music {
                 let mut frame = [[0; 2]; 1];
                 if music.read(&mut frame) == 1 {
@@ -98,9 +116,61 @@ impl Sink {
 impl Player {
     /// Host-only continuous source consumed by the device clock, outside game ticks.
     pub fn music_source(&self, output: Option<crate::music::Output>) -> bool {
+        if output
+            .as_ref()
+            .is_some_and(|output| output.sample_rate() != 48000)
+        {
+            return false;
+        }
         self.sink.buffer.lock().is_ok_and(|mut buffer| {
+            buffer.original = None;
             buffer.music = output;
             true
+        })
+    }
+    /// Host-only combined original-rate source. This replaces legacy premixed
+    /// PCM playback; effect controls apply before the shared rate conversion.
+    pub fn original_source(&self, output: Option<crate::audio_mix_stream::Playback>) -> bool {
+        self.sink.buffer.lock().is_ok_and(|mut buffer| {
+            buffer.samples.clear();
+            buffer.current = [0; 2];
+            buffer.phase = 1.0;
+            buffer.music = None;
+            buffer.original_error = None;
+            buffer.original = output.map(Box::new);
+            true
+        })
+    }
+    pub fn effect_play(&self, clip: Arc<crate::audio_voices::Clip>) -> bool {
+        self.sink.buffer.lock().is_ok_and(|mut buffer| {
+            buffer
+                .original
+                .as_mut()
+                .is_some_and(|source| source.effects().play(clip).is_some())
+        })
+    }
+    pub fn effect_volume(&self, volume: u8) -> bool {
+        self.sink.buffer.lock().is_ok_and(|mut buffer| {
+            buffer
+                .original
+                .as_mut()
+                .is_some_and(|source| source.effects().volume(volume))
+        })
+    }
+    pub fn effect_pause(&self, paused: bool) -> bool {
+        self.sink.buffer.lock().is_ok_and(|mut buffer| {
+            buffer.original.as_mut().is_some_and(|source| {
+                source.effects().pause(paused);
+                true
+            })
+        })
+    }
+    pub fn effect_stop(&self) -> bool {
+        self.sink.buffer.lock().is_ok_and(|mut buffer| {
+            buffer.original.as_mut().is_some_and(|source| {
+                source.effects().stop();
+                true
+            })
         })
     }
     #[cfg(any(feature = "gui", test))]
@@ -170,7 +240,12 @@ impl Player {
         }
     }
     pub fn error(&self) -> Option<String> {
-        self.error.lock().ok().and_then(|mut e| e.take())
+        self.sink
+            .buffer
+            .lock()
+            .ok()
+            .and_then(|mut buffer| buffer.original_error.take())
+            .or_else(|| self.error.lock().ok().and_then(|mut e| e.take()))
     }
     pub fn non_silent_frames(&self) -> u64 {
         self.non_silent.load(Ordering::Relaxed)
