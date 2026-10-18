@@ -38,6 +38,159 @@ fn menu_game() -> physics::Game {
     game
 }
 #[test]
+fn penguin_life_loss_grab_clear_flight_and_gameover_freeze_match_original() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-penguin.json")).unwrap();
+    for trace in fixture["traces"].as_array().unwrap() {
+        let mut game = menu_game();
+        game.mode = 1;
+        game.lives = trace["lives"].as_u64().unwrap() as u32;
+        game.score = 100;
+        game.balls.clear();
+        game.update(0);
+        let loss = trace["loss"].as_array().unwrap();
+        assert_eq!(
+            [game.lives, game.score, game.balls.len() as u32, game.mode],
+            [
+                loss[0].as_u64().unwrap() as u32,
+                loss[1].as_u64().unwrap() as u32,
+                loss[2].as_u64().unwrap() as u32,
+                loss[3].as_u64().unwrap() as u32
+            ]
+        );
+        for (index, frame) in trace["frames"].as_array().unwrap().iter().enumerate() {
+            if index > 0 {
+                if let Some(ball) = game.balls.first_mut() {
+                    ball.launch_timer = u32::MAX;
+                }
+                game.update(0);
+            }
+            if frame[2].as_f64().unwrap() == 4.0 {
+                assert!(game.penguin.is_none());
+                continue;
+            }
+            let p = game.penguin.as_ref().unwrap();
+            for (actual, expected) in [
+                p.x,
+                p.y,
+                p.state as f32,
+                p.frame_count as f32,
+                if game.stolen_heart.is_some() {
+                    1.0
+                } else {
+                    0.0
+                },
+            ]
+            .iter()
+            .zip(frame.as_array().unwrap())
+            {
+                assert!(
+                    (*actual - expected.as_f64().unwrap() as f32).abs() < 0.0001,
+                    "life {} frame {index}",
+                    trace["lives"]
+                );
+            }
+        }
+    }
+}
+#[test]
+fn original_penguin_rectangle_art_and_fallback_heart_points_are_preserved() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-penguin.json")).unwrap();
+    for case in fixture["drawings"].as_array().unwrap() {
+        let p = physics::Penguin {
+            x: 1200.75,
+            y: 25.25,
+            target_x: 1200.0,
+            target_y: 25.0,
+            state: case["state"].as_u64().unwrap() as u32,
+            frame_count: case["frame"].as_u64().unwrap() as u32,
+        };
+        let shapes = physics::penguin_rects(&p);
+        let expected = case["rects"].as_array().unwrap();
+        assert_eq!(shapes.len(), expected.len());
+        for (shape, expected) in shapes.iter().zip(expected) {
+            assert_eq!(
+                [
+                    i64::from(shape.x),
+                    i64::from(shape.y),
+                    i64::from(shape.width),
+                    i64::from(shape.height),
+                    i64::from(shape.color)
+                ],
+                [
+                    expected[0].as_i64().unwrap(),
+                    expected[1].as_i64().unwrap(),
+                    expected[2].as_i64().unwrap(),
+                    expected[3].as_i64().unwrap(),
+                    expected[4].as_i64().unwrap()
+                ]
+            );
+        }
+    }
+    for case in fixture["hearts"].as_array().unwrap() {
+        let dots = physics::heart_points(
+            case["x"].as_i64().unwrap() as i32,
+            case["y"].as_i64().unwrap() as i32,
+            12,
+        );
+        let expected = case["points"].as_array().unwrap();
+        assert_eq!(dots.len(), expected.len());
+        for (dot, expected) in dots.iter().zip(expected) {
+            assert_eq!(
+                [i64::from(dot.x), i64::from(dot.y), i64::from(dot.color)],
+                [
+                    expected[0].as_i64().unwrap(),
+                    expected[1].as_i64().unwrap(),
+                    expected[2].as_i64().unwrap()
+                ]
+            );
+        }
+    }
+    assert_eq!(
+        gamepkg_host_heart_hash(),
+        "86b8ef21b5544f39542c247518155f4a856aab70851bbd76cfb67df4bd0fbd71"
+    );
+}
+fn gamepkg_host_heart_hash() -> String {
+    ::gamepkg::verify::digest(include_bytes!("../ports/arkanoo/assets/heart.png"))
+}
+#[test]
+fn penguin_pause_replacement_level_restart_and_editor_test_follow_original_boundaries() {
+    let mut g = menu_game();
+    g.mode = 1;
+    g.balls.clear();
+    g.update(0);
+    for mode in [2, 6, 4] {
+        g.mode = mode;
+        let p = g.penguin.as_ref().unwrap();
+        let old = [p.x, p.y, p.frame_count as f32];
+        g.update(0);
+        let p = g.penguin.as_ref().unwrap();
+        assert_eq!([p.x, p.y, p.frame_count as f32], old);
+    }
+    g.mode = 1;
+    g.balls.clear();
+    g.update(0);
+    assert_eq!(g.lives, 1);
+    let p = g.penguin.as_ref().unwrap();
+    assert_eq!(
+        (p.x, p.y, p.target_x, p.frame_count),
+        (1230.0, 620.0, 1225.0, 0)
+    );
+    g.attach();
+    assert!(g.penguin.is_none() && g.stolen_heart.is_none());
+    g.balls.clear();
+    g.update(0);
+    assert!(g.penguin.is_some());
+    g.reset_run();
+    assert!(g.penguin.is_none() && g.stolen_heart.is_none());
+    g.penguin = Some(physics::Penguin::new(1200.0, 25.0));
+    g.stolen_heart = Some([1200.0, 25.0]);
+    g.editor_test();
+    assert!(g.penguin.is_none() && g.stolen_heart.is_none());
+}
+#[test]
 fn ball_trail_thresholds_history_and_prephysics_timing_match_original() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/arkanoo-trails.json")).unwrap();

@@ -42,6 +42,154 @@ fn load_menu(root: &std::path::Path, id: &str) -> anyhow::Result<Game> {
     Ok(game)
 }
 #[test]
+#[ignore = "requires the signed heart-animation fixture prepared by tests/arkanoo.py"]
+fn original_heart_loss_states_rectangle_art_and_texture_positions_reach_runtime() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-penguin.json")).unwrap();
+    let colors = [
+        0xffc800ff, 0xffff96ff, 0x1e1e28ff, 0xf0f0faff, 0x646478ff, 0xff8c00ff, 0xdc143cff,
+    ];
+    for trace in fixture["traces"].as_array().unwrap() {
+        let root = isolated_library();
+        let mut game = load_menu(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
+        let lives = trace["lives"].as_u64().unwrap() as u32;
+        for (index, frame) in trace["frames"].as_array().unwrap().iter().enumerate() {
+            let state = game
+                .step(1073741824 | if index == 0 { 1 | (lives << 4) } else { 0 })
+                .unwrap();
+            assert_eq!(state & 255, u64::from(lives - 1));
+            assert_eq!((state >> 8) & 1, frame[4].as_f64().unwrap() as u64);
+            let expected_state = frame[2].as_f64().unwrap() as u64;
+            assert_eq!((state >> 16) & 15, expected_state);
+            assert_eq!(state >> 24, frame[3].as_f64().unwrap() as u64);
+            let actual: Vec<_> = game
+                .frame()
+                .commands
+                .iter()
+                .filter_map(|c| match c {
+                    Command::Rect {
+                        x,
+                        y,
+                        width,
+                        height,
+                        rgba,
+                    } if colors.contains(rgba)
+                        || *rgba == 0xffffffff && *width == 1.5 && *height == 1.5 =>
+                    {
+                        Some(([*x, *y, *width, *height], *rgba))
+                    }
+                    _ => None,
+                })
+                .collect();
+            let expected: Vec<_> = trace["art"][index]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|r| {
+                    (
+                        [
+                            r[0].as_i64().unwrap() as f32 * 0.5,
+                            60.0 + r[1].as_i64().unwrap() as f32 * 0.5,
+                            r[2].as_u64().unwrap() as f32 * 0.5,
+                            r[3].as_u64().unwrap() as f32 * 0.5,
+                        ],
+                        r[4].as_u64().unwrap() as u32,
+                    )
+                })
+                .collect();
+            assert_eq!(actual, expected, "life {lives} frame {index}");
+            let hearts: Vec<_> = game
+                .frame()
+                .commands
+                .iter()
+                .filter_map(|c| {
+                    if let Command::LinearImage {
+                        x,
+                        y,
+                        width,
+                        height,
+                        image,
+                    } = c
+                    {
+                        Some((*x, *y, *width, *height, image))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            assert_eq!(
+                hearts.len(),
+                (lives - 1) as usize + frame[4].as_f64().unwrap() as usize
+            );
+            for (i, (x, y, w, h, image)) in hearts.iter().enumerate() {
+                assert_eq!((*y, *w, *h), (67.5, 10.0, 10.0));
+                assert_eq!(image.size(), [512, 472]);
+                assert_eq!(*x, 620.0 - i as f32 * 12.5);
+            }
+            assert!(game.frame().commands.len() < 600);
+        }
+    }
+    let root = isolated_library();
+    let mut game = load_menu(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
+    let before = game.step(1073741824 | 1 | (3 << 4)).unwrap();
+    assert_eq!(
+        game.step(1073741824 | 2).unwrap() & !0xf000,
+        before & !0xf000
+    );
+    let resumed = game.step(1073741824 | 4).unwrap();
+    assert_eq!(resumed >> 24, 1);
+}
+#[test]
+#[ignore = "requires the signed asset-filter fixture prepared by tests/arkanoo.py"]
+fn filtered_asset_sdk_preserves_pixels_cache_budgets_paths_and_failed_tick_rollback() {
+    use gamepkg::drawing::image::Image;
+    let expected = Image::from_png(include_bytes!("../ports/arkanoo/assets/heart.png")).unwrap();
+    let root = isolated_library();
+    let mut game = load_menu(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
+    let mut previous = None;
+    for _ in 0..2 {
+        assert_eq!(game.step(536870912).unwrap(), 63);
+        let Command::LinearImage { image: linear, .. } = &game.frame().commands[0] else {
+            panic!("linear draw lost filtering")
+        };
+        let Command::Image { image: nearest, .. } = &game.frame().commands[1] else {
+            panic!("nearest draw inherited linear filtering")
+        };
+        assert_eq!(linear.as_ref(), &expected);
+        assert!(std::sync::Arc::ptr_eq(linear, nearest));
+        if let Some(old) = &previous {
+            assert!(
+                std::sync::Arc::ptr_eq(old, linear),
+                "immutable asset was decoded again"
+            );
+        }
+        previous = Some(linear.clone());
+        assert_eq!(game.frame().commands.len(), 2);
+    }
+    assert!(game.step(536870913).is_err());
+    assert!(game.frame().commands.is_empty());
+    for id in ["com.gamepkg.arkanoo", "com.gamepkg.arkanoo-files-component"] {
+        let root = isolated_library();
+        let mut game = load_menu(root.path(), id).unwrap();
+        game.step(4).unwrap();
+        let hearts: Vec<_> = game
+            .frame()
+            .commands
+            .iter()
+            .filter_map(|c| {
+                if let Command::LinearImage { image, .. } = c {
+                    Some(image)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert_eq!(hearts.len(), 3);
+        assert_eq!(hearts[0].as_ref(), &expected);
+        assert!(std::sync::Arc::ptr_eq(hearts[0], hearts[1]));
+    }
+}
+#[test]
 #[ignore = "requires the signed, isolated-built fixture prepared by tests/arkanoo.py"]
 fn actual_splash_timer_skip_restart_and_editor_resume_preserve_original_flow() {
     use gamepkg::input_events::Event;

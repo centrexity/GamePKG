@@ -1,7 +1,7 @@
 let eventBytes=new Uint8Array();
 // The guest sees only these typed imports, never JavaScript objects or browser APIs.
 let instance, manifest, assets, roms, save, state=0n, commands=[], background=null, unlocks=[],saveDirty=false,saveBudget=0,images=new Map(),imageBudget=0,audioSamples=[],shaderCount=0;
-function imageCommand(x,y,w,h,pw,ph,pixels){if(!finite(x,y,w,h)||w<0||h<0||!Number.isInteger(pw)||!Number.isInteger(ph)||pw<1||ph<1||pw>512||ph>512||pixels.length!==pw*ph*4||imageBudget+pixels.length>8388608)return -1;imageBudget+=pixels.length;return command(['image',x,y,w,h,pw,ph,pixels.slice()]);}
+function imageCommand(x,y,w,h,pw,ph,pixels,kind='image'){if(commands.length>=1024||!finite(x,y,w,h)||w<0||h<0||!Number.isInteger(pw)||!Number.isInteger(ph)||pw<1||ph<1||pw>512||ph>512||pixels.length!==pw*ph*4||imageBudget+pixels.length>8388608)return -1;imageBudget+=pixels.length;return command([kind,x,y,w,h,pw,ph,pixels.slice()]);}
 async function prepareImages(){images=new Map();let total=0;for(const [name,pixels] of assets){if(!name.toLowerCase().endsWith('.png')||pixels.length>2097152||pixels.length<33)continue;const signature=[137,80,78,71,13,10,26,10];if(!signature.every((byte,index)=>pixels[index]===byte))continue;const header=new DataView(pixels.buffer,pixels.byteOffset,pixels.byteLength),w=header.getUint32(16),h=header.getUint32(20);if(w<1||h<1||w>512||h>512||total+w*h*4>33554432)continue;let bitmap;try{bitmap=await createImageBitmap(new Blob([pixels],{type:'image/png'}));if(bitmap.width!==w||bitmap.height!==h)continue;const surface=new OffscreenCanvas(w,h),context=surface.getContext('2d');context.drawImage(bitmap,0,0);images.set(name,{width:w,height:h,pixels:context.getImageData(0,0,w,h).data});total+=w*h*4;}catch{}finally{bitmap?.close();}}}
 function validAssetPath(name){
  if(!name||new TextEncoder().encode(name).length>1024||name.split('/').length>32||name.startsWith('/')||/[\\:<>"|?*\x00-\x1f\x7f-\x9f]/.test(name))return false;
@@ -95,6 +95,7 @@ const api={
  draw_circle:(x,y,r,rgba)=>finite(x,y,r)&&r>=0?command(['circle',x,y,r,rgba>>>0]):-1,
  draw_image:(x,y,w,h,pw,ph,pointer,length)=>{const pixels=bytes(pointer,length,1048576);return pixels?imageCommand(x,y,w,h,pw,ph,pixels):-1;},
  draw_asset_image:(pointer,length,x,y,w,h)=>{const image=images.get(assetName(pointer,length));return image?imageCommand(x,y,w,h,image.width,image.height,image.pixels):-1;},
+ draw_asset_image_linear:(pointer,length,x,y,w,h)=>{const image=images.get(assetName(pointer,length));return image?imageCommand(x,y,w,h,image.width,image.height,image.pixels,'linear-image'):-1;},
  draw_shader:index=>Number.isInteger(index)&&index>=0&&index<shaderCount?command(['shader',index]):-1,
  draw_shader_asset_image:(index,pointer,length)=>{const image=images.get(assetName(pointer,length));if(!Number.isInteger(index)||index<0||index>=shaderCount||!image||imageBudget+image.pixels.length>8388608||commands.length>=1024)return -1;imageBudget+=image.pixels.length;return command(['shader-image',index,image.width,image.height,image.pixels.slice()]);},
  draw_shader_image:(index,pw,ph,pointer,length)=>{const pixels=bytes(pointer,length,1048576);if(!Number.isInteger(index)||index<0||index>=shaderCount||!pixels||!Number.isInteger(pw)||!Number.isInteger(ph)||pw<1||ph<1||pw>512||ph>512||length!==pw*ph*4||imageBudget+length>8388608)return -1;imageBudget+=length;return command(['shader-image',index,pw,ph,pixels.slice()]);},
@@ -156,6 +157,7 @@ const canonical={
  'draw-circle':(...args)=>api.draw_circle(...args)===0?1:0,
  'draw-image':(...args)=>api.draw_image(...args)===0?1:0,
  'draw-asset-image':(...args)=>api.draw_asset_image(...args)===0?1:0,
+ 'draw-asset-image-linear':(...args)=>api.draw_asset_image_linear(...args)===0?1:0,
  'audio-submit':(...args)=>api.audio_submit(...args)===0?1:0,
  'draw-shader':index=>api.draw_shader(index)===0?1:0,
  'draw-shader-asset-image':(...args)=>api.draw_shader_asset_image(...args)===0?1:0,

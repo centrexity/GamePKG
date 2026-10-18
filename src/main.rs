@@ -21,7 +21,7 @@ enum Command {
         master: Option<String>,
         #[arg(long)]
         listen: Option<String>,
-        #[arg(long)]
+        #[arg(long, hide = true)]
         allow_local: bool,
         #[arg(long,conflicts_with_all=["server","master","listen","allow_local"])]
         clear: bool,
@@ -328,7 +328,7 @@ fn main() -> Result<()> {
                 &id,
                 &selection,
             )?;
-            println!("Multiplayer settings saved. They apply the next time you launch this game; blank addresses keep it offline.");
+            println!("Multiplayer launch settings saved. Blank addresses clear the launch commands; the package networking permission still applies.");
         }
         Command::Keygen { output } => {
             let public = gamepkg::creator::generate(&output)?;

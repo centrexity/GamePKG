@@ -1012,9 +1012,23 @@ impl eframe::App for App {
                                     width,
                                     height,
                                     ref image,
+                                }
+                                | crate::drawing::Command::LinearImage {
+                                    x,
+                                    y,
+                                    width,
+                                    height,
+                                    ref image,
                                 } => {
-                                    let texture =
-                                        self.sprite_textures.texture(ctx, image_count, image);
+                                    let texture = self.sprite_textures.texture(
+                                        ctx,
+                                        image_count,
+                                        image,
+                                        matches!(
+                                            command,
+                                            crate::drawing::Command::LinearImage { .. }
+                                        ),
+                                    );
                                     image_count += 1;
                                     painter.image(
                                         texture,

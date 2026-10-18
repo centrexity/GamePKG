@@ -34,7 +34,7 @@ impl Selection {
             crate::network::selected_multiplayer(&self.server, &self.listen, self.allow_local)?;
         if !self.master.is_empty() {
             crate::network::selected_multiplayer(&self.master, "", self.allow_local)?;
-            policy.network = "multiplayer".into();
+            policy.network = true;
             policy.network_allow_local = self.allow_local;
         }
         Ok(policy)
@@ -106,6 +106,42 @@ pub fn identity(manifest: &Manifest) -> Result<String> {
         &manifest.permissions,
     ))?))
 }
+// Preserve choices saved by the earlier endpoint-based manifest schema.
+// Include the full old signed identity; never reuse choices across creators.
+fn legacy_identity(manifest: &Manifest) -> Result<String> {
+    #[derive(Serialize)]
+    struct LegacyPermissions<'a> {
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        files: &'a Vec<crate::manifest::UserFile>,
+        input: bool,
+        audio: bool,
+        save: bool,
+        network: &'static str,
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        network_hosts: &'a Vec<String>,
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        network_listen: &'a Vec<String>,
+        #[serde(skip_serializing_if = "std::ops::Not::not")]
+        network_allow_local: bool,
+    }
+    let p = &manifest.permissions;
+    Ok(crate::verify::digest(&serde_json::to_vec(&(
+        &manifest.id,
+        &manifest.creator_key,
+        &manifest.builtin_engine,
+        &manifest.game_data,
+        LegacyPermissions {
+            files: &p.files,
+            input: p.input,
+            audio: p.audio,
+            save: p.save,
+            network: if p.network { "multiplayer" } else { "none" },
+            network_hosts: &p.network_hosts,
+            network_listen: &p.network_listen,
+            network_allow_local: p.network_allow_local,
+        },
+    ))?))
+}
 fn read(root: &Path) -> Result<BTreeMap<String, Selection>> {
     let path = root.join("network-selections.json");
     let bytes = match crate::files::read_regular(&path, MAX_BYTES, false) {
@@ -132,12 +168,17 @@ fn read(root: &Path) -> Result<BTreeMap<String, Selection>> {
 }
 pub fn load(root: &Path, manifest: &Manifest) -> Result<Selection> {
     let key = identity(manifest)?;
-    Ok(read(root)?.remove(&key).unwrap_or_default())
+    let mut entries = read(root)?;
+    Ok(entries
+        .remove(&key)
+        .or_else(|| entries.remove(&legacy_identity(manifest).ok()?))
+        .unwrap_or_default())
 }
 pub fn remember(root: &Path, manifest: &Manifest, selection: &Selection) -> Result<Selection> {
     let key = identity(manifest)?;
     let selection = selection.normalized()?;
     let mut entries = read(root)?;
+    entries.remove(&legacy_identity(manifest)?);
     if selection.server.is_empty() && selection.listen.is_empty() && selection.master.is_empty() {
         entries.remove(&key);
     } else {
@@ -169,11 +210,12 @@ pub fn remember_for_game(root: &Path, id: &str, selection: &Selection) -> Result
 }
 #[cfg(any(target_os = "linux", test))]
 pub(crate) fn effective(root: &Path, manifest: &Manifest) -> Result<(Permissions, String)> {
-    if !manifest.uses_selected_servers() {
+    if !manifest.uses_selected_servers() || !manifest.permissions.network {
         return Ok((manifest.permissions.clone(), String::new()));
     }
     let selection = load(root, manifest)?;
     let mut permissions = selection.validated()?;
+    permissions.network = manifest.permissions.network;
     permissions.input = manifest.permissions.input;
     permissions.audio = manifest.permissions.audio;
     permissions.save = manifest.permissions.save;
@@ -195,6 +237,45 @@ mod tests {
         }
     }
     #[test]
+    fn disabled_network_ignores_saved_master_and_corrupt_launch_preferences() {
+        let root = tempfile::tempdir().unwrap();
+        let mut m = manifest();
+        m.permissions.network = false;
+        remember(
+            root.path(),
+            &m,
+            &Selection {
+                master: "127.0.0.1:28787".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let (permissions, commands) = effective(root.path(), &m).unwrap();
+        assert!(!permissions.network);
+        assert!(commands.is_empty());
+        std::fs::write(root.path().join("network-selections.json"), b"invalid").unwrap();
+        assert!(!effective(root.path(), &m).unwrap().0.network);
+    }
+    #[test]
+    fn earlier_signed_selection_identity_migrates_without_cross_creator_reuse() {
+        let root = tempfile::tempdir().unwrap();
+        let m = manifest();
+        let old = legacy_identity(&m).unwrap();
+        std::fs::write(
+            root.path().join("network-selections.json"),
+            serde_json::to_vec(&BTreeMap::from([(old.clone(), join())])).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(load(root.path(), &m).unwrap(), join());
+        let mut changed = m.clone();
+        changed.creator_key = "11".repeat(32);
+        assert_eq!(load(root.path(), &changed).unwrap(), Selection::default());
+        remember(root.path(), &m, &join()).unwrap();
+        let entries = read(root.path()).unwrap();
+        assert!(entries.contains_key(&identity(&m).unwrap()));
+        assert!(!entries.contains_key(&old));
+    }
+    #[test]
     fn master_choices_are_explicit_scoped_and_do_not_become_static_udp_grants() {
         let root = tempfile::tempdir().unwrap();
         let m = manifest();
@@ -205,15 +286,13 @@ mod tests {
         let saved = remember(root.path(), &m, &choice).unwrap();
         assert_eq!(saved.master, "master.example:28787");
         let (p, commands) = effective(root.path(), &m).unwrap();
-        assert_eq!(p.network, "multiplayer");
+        assert!(p.network);
         assert!(p.network_hosts.is_empty() && p.network_listen.is_empty());
         assert_eq!(
             commands,
             "; mastername \"master.example\"; masterport 28787"
         );
         for master in [
-            "127.0.0.1:28787",
-            "0.0.0.0:28787",
             "x:0",
             "x:65535",
             "x:1;quit",
@@ -246,16 +325,16 @@ mod tests {
         assert_eq!(load(root.path(), &m).unwrap(), Selection::default());
     }
     #[test]
-    fn offline_is_default_and_selected_ports_are_explicit() {
+    fn empty_launch_choices_keep_signed_networking_enabled() {
         let root = tempfile::tempdir().unwrap();
         let m = manifest();
         let (p, commands) = effective(root.path(), &m).unwrap();
-        assert_eq!(p.network, "none");
+        assert!(p.network);
         assert!(p.network_hosts.is_empty());
         assert!(commands.is_empty());
         remember(root.path(), &m, &join()).unwrap();
         let (p, commands) = effective(root.path(), &m).unwrap();
-        assert_eq!(p.network, "multiplayer");
+        assert!(p.network);
         assert_eq!(p.network_hosts, ["127.0.0.1:28785", "127.0.0.1:28786"]);
         assert!(p.network_listen.is_empty());
         assert_eq!(commands, "; connect \"127.0.0.1\" 28785");
@@ -298,12 +377,12 @@ mod tests {
         changed.version = "0.1.1".into();
         assert_eq!(load(root.path(), &changed).unwrap(), join());
         changed.game_data.as_mut().unwrap().user_selected_servers = false;
-        changed.permissions.network = "none".into();
+        changed.permissions.network = false;
         assert!(remember(root.path(), &changed, &join()).is_err());
-        assert_eq!(effective(root.path(), &changed).unwrap().0.network, "none");
+        assert!(!effective(root.path(), &changed).unwrap().0.network);
     }
     #[test]
-    fn address_attacks_and_unauthorized_local_access_do_not_replace_good_choices() {
+    fn malformed_addresses_do_not_replace_good_choices_and_local_needs_no_opt_in() {
         let root = tempfile::tempdir().unwrap();
         let m = manifest();
         remember(root.path(), &m, &join()).unwrap();
@@ -324,9 +403,6 @@ mod tests {
             "\";quit;\":28785",
             "*.example:28785",
             "[::1]:28785",
-            "0.0.0.0:28785",
-            "224.0.0.1:28785",
-            "255.255.255.255:28785",
             "$(touch x):28785",
             "`x`:28785",
         ] {
@@ -346,9 +422,11 @@ mod tests {
             );
             assert_eq!(std::fs::read(&path).unwrap(), before);
         }
-        let mut denied = join();
-        denied.allow_local = false;
-        assert!(remember(root.path(), &m, &denied).is_err());
+        let mut local = join();
+        local.allow_local = false;
+        assert!(remember(root.path(), &m, &local).is_ok());
+        remember(root.path(), &m, &join()).unwrap();
+        let mut denied;
         denied = join();
         denied.listen = denied.server.clone();
         assert!(remember(root.path(), &m, &denied).is_err());

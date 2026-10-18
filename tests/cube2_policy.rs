@@ -6,33 +6,27 @@ fn accepts(value: &toml::Value) -> bool {
     Manifest::parse(toml::to_string(value).unwrap().as_bytes()).is_ok()
 }
 #[test]
-fn user_selected_servers_require_a_signed_reviewed_selector_and_no_static_grants() {
+fn network_is_on_or_off_and_legacy_endpoint_fields_do_not_limit_selectors() {
     let valid = cube();
     assert!(accepts(&valid));
-    for mode in ["none", "https", "all"] {
+    for enabled in [false, true] {
+        let mut m = valid.clone();
+        m["permissions"]["network"] = enabled.into();
+        assert!(accepts(&m));
+    }
+    for mode in ["none", "https", "multiplayer", "all"] {
         let mut m = valid.clone();
         m["permissions"]["network"] = mode.into();
-        assert!(!accepts(&m));
+        assert!(accepts(&m));
     }
-    let mut m = valid.clone();
-    m["permissions"]
-        .as_table_mut()
-        .unwrap()
-        .insert("network_allow_local".into(), true.into());
-    assert!(!accepts(&m));
     for field in ["network_hosts", "network_listen"] {
         let mut m = valid.clone();
         m["permissions"].as_table_mut().unwrap().insert(
             field.into(),
             toml::Value::Array(vec!["127.0.0.1:28785".into()]),
         );
-        assert!(!accepts(&m));
+        assert!(accepts(&m));
     }
-    let mut m = valid.clone();
-    m["game_data"]["user_selected_servers"] = false.into();
-    assert!(!accepts(&m));
-    m["permissions"]["network"] = "none".into();
-    assert!(accepts(&m));
     let mut m = valid;
     m["builtin_engine"] = "doom-rust".into();
     assert!(!accepts(&m));

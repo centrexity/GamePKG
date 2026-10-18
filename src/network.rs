@@ -1,4 +1,4 @@
-//! Per-game, signed endpoint capabilities. Only the host owns sockets and HTTPS clients.
+//! Per-game, signed on/off networking permission. Only the host owns sockets and HTTPS clients.
 use anyhow::{bail, ensure, Context, Result};
 use std::{
     collections::BTreeMap,
@@ -52,65 +52,24 @@ impl Endpoint {
     fn resolve(&self, local: bool) -> Result<SocketAddr> {
         Ok(self.resolve_all(local)?[0])
     }
-    fn resolve_all(&self, local: bool) -> Result<Vec<SocketAddr>> {
+    fn resolve_all(&self, _local: bool) -> Result<Vec<SocketAddr>> {
         let hostname = self.host.trim_start_matches('[').trim_end_matches(']');
         let addresses = (hostname, self.port).to_socket_addrs()?.collect::<Vec<_>>();
         ensure!(
             !addresses.is_empty() && addresses.len() <= 64,
             "invalid DNS result"
         );
-        ensure!(
-            addresses.iter().all(|a| allowed_ip(a.ip(), local)),
-            "local, private or reserved network address denied"
-        );
         Ok(addresses)
     }
 }
-pub(crate) fn allowed_ip(ip: IpAddr, local: bool) -> bool {
-    if ip.is_unspecified() || ip.is_multicast() {
-        return false;
-    }
-    match ip {
-        IpAddr::V4(a) => {
-            let [x, y, _, _] = a.octets();
-            if a.is_broadcast() || x == 0 || x >= 224 {
-                return false;
-            }
-            local
-                || !(a.is_loopback()
-                    || a.is_private()
-                    || a.is_link_local()
-                    || x == 100 && (64..=127).contains(&y)
-                    || x == 192 && y == 0
-                    || x == 198 && (18..=19).contains(&y)
-                    || a.is_documentation())
-        }
-        IpAddr::V6(a) => {
-            if let Some(v) = a.to_ipv4_mapped() {
-                return allowed_ip(v.into(), local);
-            }
-            local
-                || !(a.segments()[0] & 0xe000 != 0x2000
-                    || a.segments()[0] == 0x2002
-                    || (a.segments()[0] == 0x2001 && a.segments()[1] == 0)
-                    || a.is_loopback()
-                    || a.is_unique_local()
-                    || a.is_unicast_link_local()
-                    || a.segments()[0] == 0x2001 && a.segments()[1] == 0xdb8)
-        }
-    }
-}
-/// Resolve only signed multiplayer endpoints, once, for a reviewed engine broker.
+/// Resolve saved launch addresses for a reviewed engine; not an allowlist.
 #[cfg(target_os = "linux")]
 pub(crate) fn multiplayer_endpoints(
     p: &crate::manifest::Permissions,
     listen: bool,
 ) -> Result<Vec<(String, SocketAddr)>> {
     validate(p)?;
-    ensure!(
-        matches!(p.network.as_str(), "multiplayer" | "all"),
-        "multiplayer permission denied"
-    );
+    ensure!(p.network, "multiplayer permission denied");
     let entries = if listen {
         &p.network_listen
     } else {
@@ -125,7 +84,7 @@ pub(crate) fn multiplayer_endpoints(
                 *ip
             } else {
                 let ip = endpoint
-                    .resolve_all(p.network_allow_local)?
+                    .resolve_all(true)?
                     .into_iter()
                     .find(SocketAddr::is_ipv4)
                     .context("Cube 2 ENet requires an IPv4 endpoint")?
@@ -138,55 +97,13 @@ pub(crate) fn multiplayer_endpoints(
         })
         .collect()
 }
-pub(crate) fn validate(p: &crate::manifest::Permissions) -> Result<()> {
-    ensure!(
-        matches!(p.network.as_str(), "none" | "https" | "multiplayer" | "all"),
-        "unknown network permission"
-    );
-    ensure!(
-        p.network_hosts.len() <= 16 && p.network_listen.len() <= 4,
-        "too many network endpoints"
-    );
-    if p.network == "none" {
-        ensure!(
-            p.network_hosts.is_empty() && p.network_listen.is_empty() && !p.network_allow_local,
-            "network endpoints require permission"
-        );
-        return Ok(());
-    }
-    ensure!(
-        !p.network_hosts.is_empty() || !p.network_listen.is_empty(),
-        "network permission requires explicit endpoints"
-    );
-    for text in &p.network_hosts {
-        Endpoint::parse(text)?;
-    }
-    for text in &p.network_listen {
-        let e = Endpoint::parse(text)?;
-        let ip: IpAddr = e
-            .host
-            .trim_start_matches('[')
-            .trim_end_matches(']')
-            .parse()
-            .context("listening requires an explicit numeric IP address")?;
-        ensure!(
-            allowed_ip(ip, p.network_allow_local),
-            "listening address requires local-network permission"
-        );
-    }
-    if p.network == "https" {
-        ensure!(
-            p.network_listen.is_empty(),
-            "HTTPS permission cannot listen for peers"
-        );
-    }
+pub(crate) fn validate(_p: &crate::manifest::Permissions) -> Result<()> {
+    // Legacy endpoint fields are retained for reading signed packages and host
+    // launch preferences, but are no longer capability restrictions.
     Ok(())
 }
-/// A signed selector may delegate exact endpoint choice to its host UI only.
 pub(crate) fn validate_user_selected(p: &crate::manifest::Permissions) -> Result<()> {
-    ensure!(p.network=="multiplayer" && p.network_hosts.is_empty() && p.network_listen.is_empty() && !p.network_allow_local,
-        "user-selected servers require multiplayer permission without static endpoints or local-network grants");
-    Ok(())
+    validate(p)
 }
 pub(crate) fn selected_multiplayer(
     server: &str,
@@ -206,12 +123,6 @@ pub(crate) fn selected_multiplayer(
             !endpoint.host.contains(':') && endpoint.port < 65535,
             "use an IPv4 address or hostname and port 1–65534"
         );
-        if let Ok(ip) = endpoint.host.parse::<IpAddr>() {
-            ensure!(
-                allowed_ip(ip, local),
-                "enable local/private addresses for this endpoint"
-            );
-        }
         if hosting {
             ensure!(
                 endpoint.host.parse::<std::net::Ipv4Addr>().is_ok(),
@@ -231,7 +142,7 @@ pub(crate) fn selected_multiplayer(
         input: false,
         audio: false,
         save: false,
-        network: if enabled { "multiplayer" } else { "none" }.into(),
+        network: enabled,
         network_hosts: hosts,
         network_listen: listeners,
         network_allow_local: enabled && local,
@@ -265,6 +176,32 @@ impl Drop for Job {
         JOBS.fetch_sub(1, Ordering::SeqCst);
     }
 }
+#[cfg(target_os = "linux")]
+pub(crate) fn resolve_engine_host(name: &str) -> Result<SocketAddr> {
+    let endpoint = Endpoint::parse(&format!("{name}:1"))?;
+    let previous = JOBS.fetch_add(1, Ordering::SeqCst);
+    if previous >= 16 {
+        JOBS.fetch_sub(1, Ordering::SeqCst);
+        bail!("network workers busy");
+    }
+    let (tx, rx) = mpsc::sync_channel(1);
+    let guard = Job;
+    std::thread::Builder::new()
+        .name("gamepkg-dns".into())
+        .spawn(move || {
+            let _guard = guard;
+            let result = endpoint.resolve_all(true).and_then(|addresses| {
+                addresses
+                    .into_iter()
+                    .find(SocketAddr::is_ipv4)
+                    .context("IPv4 address missing")
+            });
+            let _ = tx.send(result);
+        })?;
+    // Never leave a DNS response queued on the engine RPC channel after timeout.
+    rx.recv_timeout(Duration::from_millis(500))
+        .context("DNS lookup timed out")?
+}
 impl Service {
     pub fn new(permissions: crate::manifest::Permissions) -> Self {
         Self {
@@ -277,27 +214,21 @@ impl Service {
             opens: 0,
         }
     }
-    fn capable(&self, https: bool) -> Result<()> {
-        ensure!(
-            self.permissions.network == "all"
-                || self.permissions.network == if https { "https" } else { "multiplayer" },
-            "network permission denied"
-        );
+    fn capable(&self, _https: bool) -> Result<()> {
+        ensure!(self.permissions.network, "network permission denied");
         Ok(())
     }
     fn endpoint(&self, text: &str, listen: bool) -> Result<Endpoint> {
-        let e = Endpoint::parse(text)?;
-        let list = if listen {
-            &self.permissions.network_listen
-        } else {
-            &self.permissions.network_hosts
-        };
-        ensure!(
-            list.iter()
-                .any(|s| Endpoint::parse(s).is_ok_and(|p| p.key() == e.key())),
-            "endpoint not declared by signed manifest"
-        );
-        Ok(e)
+        self.capable(false)?;
+        let endpoint = Endpoint::parse(text)?;
+        if listen {
+            endpoint
+                .host
+                .trim_matches(['[', ']'])
+                .parse::<IpAddr>()
+                .context("listening requires a numeric bind address")?;
+        }
+        Ok(endpoint)
     }
     fn reset_budget(&mut self) {
         if self.window.elapsed() >= Duration::from_secs(1) {
@@ -375,13 +306,13 @@ impl Service {
             u.scheme() == "https"
                 && u.username().is_empty()
                 && u.password().is_none()
-                && u.port_or_known_default() == Some(443)
                 && u.fragment().is_none(),
-            "only HTTPS port 443 URLs without credentials or fragments are allowed"
+            "only HTTPS URLs without credentials or fragments are allowed"
         );
         let host = u.host_str().context("URL host missing")?.to_owned();
-        let endpoint = self.endpoint(&format!("{host}:443"), false)?;
-        let local = self.permissions.network_allow_local;
+        let port = u.port_or_known_default().context("HTTPS port missing")?;
+        let endpoint = self.endpoint(&format!("{host}:{port}"), false)?;
+        let local = true;
         let url = u.to_string();
         self.spawn(move || {
             let address = endpoint.resolve(local)?;
@@ -416,7 +347,7 @@ impl Service {
                     "65536",
                     "--resolve",
                 ])
-                .arg(format!("{host}:443:{ip}"))
+                .arg(format!("{host}:{port}:{ip}"))
                 .arg("--url")
                 .arg(url);
             let output = crate::compiler::run_timed(&mut command, Duration::from_secs(6))?;
@@ -431,7 +362,7 @@ impl Service {
     fn connect(&mut self, text: &str, udp: bool) -> Result<u32> {
         self.capable(false)?;
         let endpoint = self.endpoint(text, false)?;
-        let local = self.permissions.network_allow_local;
+        let local = true;
         self.spawn(move || {
             let address = endpoint.resolve(local)?;
             if udp {
@@ -440,6 +371,7 @@ impl Service {
                 } else {
                     "[::]:0"
                 })?;
+                socket.set_broadcast(true)?;
                 socket.connect(address)?;
                 socket.set_nonblocking(true)?;
                 Ok(Resource::Udp(socket))
@@ -512,7 +444,7 @@ impl Service {
             7 => {
                 self.capable(false)?;
                 let endpoint = self.endpoint(std::str::from_utf8(b)?, true)?;
-                let address = endpoint.resolve(self.permissions.network_allow_local)?;
+                let address = endpoint.resolve(true)?;
                 let socket = TcpListener::bind(address)?;
                 socket.set_nonblocking(true)?;
                 let id = self.reserve()?;
@@ -595,56 +527,54 @@ mod tests {
         }
     }
     #[test]
-    fn explicit_endpoints_local_permissions_and_no_redirect_or_credential_urls() {
+    fn enabled_network_needs_no_endpoints_and_disabled_network_denies_every_open() {
         let mut p = permissions();
         assert!(validate(&p).is_ok());
-        p.network = "all".into();
-        assert!(validate(&p).is_err());
-        p.network_hosts = vec!["example.com:443".into()];
+        p.network = true;
+        // Legacy restrictions are ignored; no DNS or public traffic in this test.
+        p.network_hosts = vec!["legacy.invalid:443".into()];
+        p.network_listen = vec!["legacy.invalid:1".into()];
+        p.network_allow_local = false;
         assert!(validate(&p).is_ok());
-        for address in [
+        let mut s = Service::new(p);
+        for endpoint in [
+            "127.0.0.1:1234",
+            "10.1.2.3:42",
+            "example.org:8443",
+            "[::1]:1234",
+        ] {
+            assert!(s.endpoint(endpoint, false).is_ok(), "{endpoint}");
+        }
+        for endpoint in [
             "*.example.com:443",
             "user@example.com:443",
-            "example.com:443/path",
-            "example.com:0",
-            "example.com:443?x",
-            "example.com:443#x",
+            "x:1/path",
+            "x:0",
+            "x:1?x",
+            "x:1#x",
         ] {
-            p.network_hosts = vec![address.into()];
-            assert!(validate(&p).is_err(), "{address}");
+            assert!(s.endpoint(endpoint, false).is_err(), "{endpoint}");
         }
-        for ip in [
-            "127.0.0.1",
-            "10.1.2.3",
-            "169.254.169.254",
-            "100.64.0.1",
-            "0.0.0.0",
-            "224.0.0.1",
-            "::1",
-            "::ffff:127.0.0.1",
-            "fe80::1",
-            "fc00::1",
-            "2001:db8::1",
-        ] {
-            assert!(!allowed_ip(ip.parse().unwrap(), false), "{ip}");
-        }
-        p.network_hosts = vec!["example.com:443".into()];
-        let mut s = Service::new(p);
         for url in [
             "http://example.com/",
             "https://user:password@example.com/",
-            "https://example.com:444/",
-            "https://evil.invalid/",
             "https://example.com/#secret",
         ] {
             assert_eq!(s.call(0, url.as_bytes(), 4), [1], "{url}");
         }
         let mut denied = Service::new(permissions());
-        assert_eq!(denied.call(0, b"https://example.com/", 4), [1]);
-        assert_eq!(denied.call(2, b"example.com:443", 4), [1]);
+        for (op, request) in [
+            (0, "https://example.com/"),
+            (2, "127.0.0.1:1234"),
+            (3, "127.0.0.1:1234"),
+            (7, "127.0.0.1:1234"),
+        ] {
+            assert_eq!(denied.call(op, request.as_bytes(), 4), [1]);
+        }
+        assert!(denied.handles.is_empty());
     }
     #[test]
-    fn tcp_and_udp_transfer_only_to_declared_peers_and_handles_are_scoped() {
+    fn enabled_tcp_and_udp_reach_unlisted_local_peers_and_handles_are_scoped() {
         let server = TcpListener::bind("127.0.0.1:0").unwrap();
         let address = server.local_addr().unwrap();
         let worker = std::thread::spawn(move || {
@@ -658,9 +588,9 @@ mod tests {
             stream.write_all(b"pong").unwrap();
         });
         let mut p = permissions();
-        p.network = "multiplayer".into();
-        p.network_hosts = vec![address.to_string()];
-        p.network_allow_local = true;
+        p.network = true;
+        assert!(p.network_hosts.is_empty());
+        assert!(!p.network_allow_local);
         validate(&p).unwrap();
         let mut service = Service::new(p.clone());
         let id = handle(service.call(2, address.to_string().as_bytes(), 4));
@@ -672,7 +602,7 @@ mod tests {
         worker.join().unwrap();
         let mut other = Service::new(p);
         assert_eq!(other.call(5, &id.to_le_bytes(), 16), [1]);
-        assert_eq!(service.call(2, b"127.0.0.1:1", 4), [1]);
+        assert!(service.endpoint("127.0.0.1:1", false).is_ok());
         assert_eq!(service.call(6, &id.to_le_bytes(), 0), [0]);
         assert_eq!(service.call(5, &id.to_le_bytes(), 16), [1]);
         let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
@@ -687,9 +617,9 @@ mod tests {
             socket.send_to(b"pong", peer).unwrap();
         });
         let mut p = permissions();
-        p.network = "multiplayer".into();
-        p.network_hosts = vec![address.to_string()];
-        p.network_allow_local = true;
+        p.network = true;
+        assert!(p.network_hosts.is_empty());
+        assert!(!p.network_allow_local);
         let mut service = Service::new(p);
         let id = handle(service.call(3, address.to_string().as_bytes(), 4));
         assert_eq!(until(|| service.call(1, &id.to_le_bytes(), 0)), [0]);
@@ -700,13 +630,32 @@ mod tests {
         worker.join().unwrap();
     }
     #[test]
-    fn private_endpoints_need_explicit_permission_and_transfer_budgets_are_bounded() {
+    fn enabled_tcp_listener_accepts_without_declared_bind_addresses() {
+        let reservation = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = reservation.local_addr().unwrap();
+        drop(reservation);
         let mut p = permissions();
-        p.network = "multiplayer".into();
-        p.network_hosts = vec!["127.0.0.1:1234".into()];
+        p.network = true;
         let mut service = Service::new(p);
-        let id = handle(service.call(2, b"127.0.0.1:1234", 4));
-        assert_eq!(until(|| service.call(1, &id.to_le_bytes(), 0)), [3]);
+        let listener = handle(service.call(7, address.to_string().as_bytes(), 4));
+        let mut peer = TcpStream::connect(address).unwrap();
+        peer.write_all(b"ping").unwrap();
+        let connection = handle(until(|| service.call(8, &listener.to_le_bytes(), 4)));
+        assert_eq!(
+            until(|| service.call(5, &connection.to_le_bytes(), 16)),
+            b"\0ping"
+        );
+        assert_eq!(service.call(6, &connection.to_le_bytes(), 0), [0]);
+        assert_eq!(service.call(6, &listener.to_le_bytes(), 0), [0]);
+    }
+    #[test]
+    fn local_endpoints_need_only_network_enabled_and_transfer_budgets_are_bounded() {
+        let mut p = permissions();
+        p.network = true;
+        assert!(p.network_hosts.is_empty());
+        let mut service = Service::new(p);
+        let id = handle(service.call(3, b"127.0.0.1:1234", 4));
+        assert_eq!(until(|| service.call(1, &id.to_le_bytes(), 0)), [0]);
         assert_eq!(service.call(5, &id.to_le_bytes(), 65537), [1]);
         for _ in 0..4 {
             service.budget(65536).unwrap();
@@ -717,7 +666,7 @@ mod tests {
     #[ignore = "performs an actual public HTTPS GET"]
     fn real_https_get_preserves_bounded_response() {
         let mut p = permissions();
-        p.network = "https".into();
+        p.network = true;
         p.network_hosts = vec!["example.com:443".into()];
         let mut service = Service::new(p);
         let id = handle(service.call(0, b"https://example.com/", 4));

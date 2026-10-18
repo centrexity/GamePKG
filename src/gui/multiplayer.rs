@@ -37,7 +37,7 @@ impl App {
         let mut chosen = None;
         egui::CollapsingHeader::new("Multiplayer").default_open(true).show(ui,|ui| {
             let draft=&mut self.network_drafts.entry(scope.clone()).or_default().value;
-            ui.label("Join a server or host a game. Leave all addresses blank for offline play.");
+            ui.label("Choose a server, hosting address or master to use on launch. Networking is enabled by this package.");
             ui.add_enabled_ui(self.result.is_none(),|ui| {
                 ui.label("Join server (hostname:port)");
                 ui.add(egui::TextEdit::singleline(&mut draft.server).id_salt("multiplayer-server").hint_text("server.example:28785").char_limit(256).desired_width(480.0));
@@ -46,11 +46,11 @@ impl App {
                 ui.label("Server browser master (hostname:port, optional)");
                 ui.add(egui::TextEdit::singleline(&mut draft.master).id_salt("multiplayer-master").hint_text("master.example:28787").char_limit(256).desired_width(480.0));
                 ui.weak("Allows browsing and joining IPv4 servers listed by this master. Its list is read by the host; the game receives only validated server addresses.");
-                ui.checkbox(&mut draft.allow_local,"Allow local/private addresses for these choices");
+
                 ui.label("The selected game port and the next port for server information are allowed. Hosting stays off public master-server lists.");
                 ui.horizontal(|ui| {
                     if ui.button("Save multiplayer settings").clicked() {chosen=Some(draft.clone());}
-                    if ui.button("Use offline play").clicked() {*draft=Default::default();chosen=Some(draft.clone());}
+                    if ui.button("Clear launch addresses").clicked() {*draft=Default::default();chosen=Some(draft.clone());}
                 });
             });
             ui.weak("Choices apply the next time you press Play. Save remembers them without launching. Running games keep their current connection.");

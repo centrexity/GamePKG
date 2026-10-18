@@ -7,7 +7,7 @@ Start with `examples/minimal` or `examples/good/input-game` in the source reposi
 ## Creator checklist
 
 1. Write `source/src/lib.rs` with `pub fn game_tick(input: u32, state: u64) -> u64`. Use direct function calls and checked source modules. The host adds the runtime bindings and export wrapper; do not add your own imports or export attributes.
-2. Set a unique game ID, semantic version, runtime profile, and source lockfile hash in `manifest.toml`. Declare only the permissions you need, recommended memory, and hard memory limits. Players choose execution deadlines in Settings. Leave networking as `none` unless you declare the exact HTTPS/multiplayer endpoints needed by your game.
+2. Set a unique game ID, semantic version, runtime profile, and source lockfile hash in `manifest.toml`. Declare only the permissions you need, recommended memory, and hard memory limits. Players choose execution deadlines in Settings. Use `network = false` for offline games or `network = true` to enable internet and local-network access. No endpoint allowlist is required.
 3. Put assets under `assets/`, Slang source under `shaders/`, and include a thumbnail, license and credits. Paths must be portable relative paths with forward slashes, no traversal, device names or symlinks.
 4. Declare no Cargo dependencies. Include a root-only `source/Cargo.lock` and put its SHA-256 in `lockfile_sha256`. Do not vendor dependency replacements into your package.
 5. If your game requires ROM files, declare each requirement in the manifest. Players select their own files; read only those ROMs through `gamepkg::rom_count`, `rom_size_at` and `rom_read_at`. Do not fetch ROMs or ask for access to their folders.
@@ -113,7 +113,9 @@ component, native and browser bindings use the same fixed-width little-endian
 records internally; game source uses the typed helper and never device handles.
 No new filesystem, network, window-creation or Cargo dependency access is granted.
 
-Use `gamepkg::draw_clear`, `draw_rect`, `draw_circle` and `draw_asset_image` for the host-owned viewport. Games cannot create windows or obtain GPU handles. `gamepkg::network_request(url, output)` performs an asynchronous, bounded HTTPS GET only when the signed manifest permits that exact endpoint. TCP and UDP use the same host-controlled network service. See [networking](https://github.com/centrexity/GamePKG/blob/main/docs/NETWORKING.md).
+Use `gamepkg::draw_clear`, `draw_rect`, `draw_circle` and `draw_asset_image` for the host-owned viewport. Games cannot create windows or obtain GPU handles. `gamepkg::network_request(url, output)` performs an asynchronous, bounded HTTPS GET only when the signed manifest enables networking. TCP and UDP use the same host-controlled network service. See [networking](https://github.com/centrexity/GamePKG/blob/main/docs/NETWORKING.md).
+
+`gamepkg::draw_asset_image_linear(path, x, y, width, height)` draws a package PNG with linear filtering when smooth scaling matches the original art. `draw_asset_image` uses nearest-neighbor filtering. Paths are relative to virtual `assets/`, for example `"heart.png"`, never an OS path. Both helpers share all texture, command and per-frame image limits; repeated cached draws still count fully. Native/Wasm keep only one decoded asset image (at most 1 MiB) per instance. The linear helper requires the current source-built host; released 0.1.17 binaries do not provide it.
 
 These functions preserve the source checks, signatures, isolated compiler and Wasm restrictions. Games cannot replace the injected implementation or declare their own host imports.
 
@@ -195,7 +197,7 @@ Replace the ID with your manifest ID. For the input example use `com.gamepkg.inp
 
 The default Linux Build compiles directly for the local CPU in an isolated native worker. Build Wasm is an explicit alternative. The same source and no-dependency rules apply to both. Direct standard I/O and thread APIs are also rejected; use the host functions. Vulkan is the default desktop renderer, with WGSL or SPIR-V output compiled from Slang. Guests receive no raw window, Vulkan or socket handles.
 
-See [native runtime and build rules](https://github.com/centrexity/GamePKG/blob/main/docs/NATIVE_RUNTIME.md) and [network permissions and API](https://github.com/centrexity/GamePKG/blob/main/docs/NETWORKING.md). HTTPS GET, TCP and UDP use declared signed endpoints and asynchronous host calls. Existing packages declaring `network = "none"` retain no network access.
+See [native runtime and build rules](https://github.com/centrexity/GamePKG/blob/main/docs/NATIVE_RUNTIME.md) and [network permissions and API](https://github.com/centrexity/GamePKG/blob/main/docs/NETWORKING.md). HTTPS GET, TCP and UDP use asynchronous host calls controlled by the signed `network = true`/`false` permission. Enabled games can use internet and local-network addresses without endpoint lists. Legacy `network = "none"` remains disabled; earlier enabled transport names now enable all supported networking.
 
 ## Describing a game
 
@@ -220,7 +222,7 @@ A `.gamepkglist` entry can also include `description = "..."` with the same text
 
 Only exact host-approved built-in engine profiles may request a `[game_data]` folder. The user selects the original installation through the system folder picker. The host remembers it for the signed game and creator, pins directory handles at launch and mounts only the declared data directories read-only. These packages must use their reviewed launcher template; extra Rust modules, C/C++ source, build scripts and dependencies are rejected. See the engine's repository documentation for its profile, source provenance, required tools and resource limits. Ordinary guest memory and image limits remain unchanged.
 
-A host-approved native selector can explicitly sign `game_data.user_selected_servers = true` together with `network = "multiplayer"`, empty endpoint lists and no static local-network grant. The host must support that exact reviewed profile. This lets the user choose an exact join or hosting address, or explicitly delegate discovery to a chosen master, in the library or with `configure-network`; blank choices grant no networking. The host validates and pins the chosen game/server-info endpoints and requires a separate user opt-in for local/private addresses. Ordinary guest source cannot use this declaration or change these host-only choices.
+A host-approved native selector can sign `game_data.user_selected_servers = true` to expose remembered join, hosting and master launch preferences in the library or `configure-network`. These preferences do not restrict an enabled network permission. Blank fields clear launch commands; `network = false` disables access regardless of those fields. Local/private addresses need no separate opt-in. Ordinary guest source cannot change these host-only launch preferences.
 
 ## Player-selected import and export
 

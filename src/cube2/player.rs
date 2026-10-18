@@ -40,7 +40,7 @@ impl Player {
             manifest.save_schema,
         )?;
         let (permissions, commands) = crate::server_selections::effective(root, manifest)?;
-        let selection = if manifest.uses_selected_servers() {
+        let selection = if manifest.uses_selected_servers() && manifest.permissions.network {
             crate::server_selections::load(root, manifest)?
         } else {
             Default::default()
@@ -48,10 +48,7 @@ impl Player {
         let master = if selection.master.is_empty() {
             None
         } else {
-            Some(super::discovery::Master::resolve(
-                &selection.master,
-                selection.allow_local,
-            )?)
+            Some(super::discovery::Master::resolve(&selection.master, true)?)
         };
         let config = super::network::Config {
             permissions,

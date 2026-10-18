@@ -145,6 +145,26 @@ fn sprite_queue_bounds_memory_and_resets_with_the_frame() {
     assert!(!frame.can_image(0.0, 0.0, -1.0, 1.0, 4));
     assert!(frame.image(0.0, 0.0, 1.0, 1.0, Image::new(1, 1, &[0; 4]).unwrap()));
 }
+#[test]
+fn linear_sprites_share_all_image_and_command_budgets_without_changing_nearest() {
+    use gamepkg::drawing::image::Image;
+    let mut frame = Frame::default();
+    let image = Image::new(512, 512, &vec![255; 512 * 512 * 4]).unwrap();
+    for _ in 0..4 {
+        assert!(frame.linear_image(0.0, 0.0, 10.0, 10.0, image.clone()));
+        assert!(frame.image(0.0, 0.0, 10.0, 10.0, image.clone()));
+    }
+    assert!(matches!(frame.commands[0], Command::LinearImage { .. }));
+    assert!(matches!(frame.commands[1], Command::Image { .. }));
+    assert!(!frame.linear_image(0.0, 0.0, 1.0, 1.0, image.clone()));
+    frame.reset();
+    assert!(!frame.linear_image(f32::NAN, 0.0, 1.0, 1.0, image.clone()));
+    assert!(!frame.linear_image(0.0, 0.0, -1.0, 1.0, image.clone()));
+    for _ in 0..MAX_COMMANDS {
+        assert!(frame.linear_image(0.0, 0.0, 1.0, 1.0, Image::new(1, 1, &[0; 4]).unwrap()));
+    }
+    assert!(!frame.linear_image(0.0, 0.0, 1.0, 1.0, image));
+}
 
 #[test]
 fn core_sprites_snapshot_pixels_and_reject_invalid_guest_ranges() {

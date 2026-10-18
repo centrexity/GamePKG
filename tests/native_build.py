@@ -1,7 +1,7 @@
 """Direct machine code, no implicit Wasm, native deadlines and controlled TCP/UDP."""
 from pathlib import Path
 import hashlib,os,re,shutil,socket,subprocess,tempfile,threading
-PROJECT=Path(__file__).resolve().parents[1];CLI=PROJECT/'target/release/gamepkg'
+PROJECT=Path(__file__).resolve().parents[1];CLI=Path(os.environ.get('GAMEPKG_TEST_BINARY_DIR',PROJECT/'target/release'))/'gamepkg'
 with tempfile.TemporaryDirectory(prefix='gamepkg-native-') as temporary:
  root=Path(temporary);config=root/'settings.toml';config.write_text('automatic_update_checks=false\n')
  env=dict(os.environ,GAMEPKG_CONFIG=str(config),GAMEPKG_HOME=str(root/'library'))
@@ -54,7 +54,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-native-') as temporary:
    else if state>>32==1{{match gamepkg::network_receive(handle,&mut bytes){{Ok(4)=>{{if bytes[..4]==*b"pong"{{(42u64<<32)|u64::from(handle)}}else{{state}}}},_=>state}}}}
    else{{state}}
   }}'''
-  name=install('udp' if udp else 'tcp',code,f'network = "multiplayer"\nnetwork_hosts = ["{endpoint}"]\nnetwork_allow_local = true')
+  name=install('udp' if udp else 'tcp',code,'network = true')
   output=run('run',name,'--frames','1000');assert 'score: 42' in output,output
   worker.join(timeout=12);server.close();assert not errors,errors;assert not worker.is_alive()
  denied=install('denied','pub fn game_tick(_:u32,_:u64)->u64{match gamepkg::tcp_connect("127.0.0.1:1"){Err(gamepkg::NetworkError::PermissionDenied)=>99u64<<32,_=>0}}')
@@ -62,4 +62,4 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-native-') as temporary:
  # A native artifact cannot run after its verified checksum changes.
  binary=artifacts['simple'];binary.write_bytes(binary.read_bytes()+b'corrupt')
  assert 'integrity' in run('run',simple,'--frames','1',good=False)
- print('Native builds passed: ELF machine code only, native gameplay, fresh host randomness and call limits, deadline/memory termination, TCP/UDP echo, denied undeclared networking and corrupt artifact rejection.')
+ print('Native builds passed: ELF machine code only, native gameplay, fresh host randomness and call limits, deadline/memory termination, TCP/UDP echo, disabled networking and corrupt artifact rejection.')

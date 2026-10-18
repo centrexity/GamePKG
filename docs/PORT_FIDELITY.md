@@ -12,7 +12,7 @@ work stays open until behavior is verified.
 | Cube 2 | Initial OS lock-key state, remaining uncommon-key/platform behavior and full controller/touch equivalence; LAN discovery, master authentication and public server registration; custom asset/mod workflows; demo/movie output and persistence; hardware-accelerated engine rendering; native platforms beyond Linux. Vulkan currently presents software-rendered engine frames. |
 | DOOM | Original WAD music, spatial stereo effects, six save slots, configuration, desktop controls and the original quit/ENDOOM flow are runtime verified. Music backend selection, multiplayer, additional WADs/mods and broader control/platform coverage remain unfinished. |
 | Zelda3 | External MSU music, replay tools, save states, widescreen, language selection and desktop enhancement settings need support. The adapter fixes the view to 256×224. Original DSP stereo is verified in native and Wasm gameplay/save tests. |
-| Arkanoo | Gravity, speed-triggered portal behavior and ball-to-ball responses are restored with upstream reference and actual-engine tests. Original world proportions and movement/contact order now match upstream reference checks. Per-ball launch timing, life recovery and victory/endless transitions also match original-code fixtures; prior item/score/level caps are removed. Brick health and original blast rules are also verified. All twelve original procedural patterns are restored. Focused mouse movement and original Space/Escape controls are restored. Editor painting/erasing, brick selection, names, save/load, clear confirmation, test return and the custom endless pool are restored. Original ASCII pattern import/export now uses player-selected files. Gameplay cursor confinement/hiding, F11 fullscreen and Q-to-quit outside play are verified in native and browser runtime checks. Normal-size/fullscreen/maximized preferences now persist through the native host. The six main menu actions and fullscreen/effects settings controls are restored. Remaining menu presentation and music/resolution/VSync controls, project-link action and original menus/music still need work. Original shard particles are restored; remaining ball artwork/speed lettering, heart-loss animation and other art/effects still need work. Current runs do not persist; high score, unlocked level, gravity and effects preferences do. |
+| Arkanoo | Gravity, speed-triggered portal behavior and ball-to-ball responses are restored with upstream reference and actual-engine tests. Original world proportions and movement/contact order now match upstream reference checks. Per-ball launch timing, life recovery and victory/endless transitions also match original-code fixtures; prior item/score/level caps are removed. Brick health and original blast rules are also verified. All twelve original procedural patterns are restored. Focused mouse movement and original Space/Escape controls are restored. Editor painting/erasing, brick selection, names, save/load, clear confirmation, test return and the custom endless pool are restored. Original ASCII pattern import/export now uses player-selected files. Gameplay cursor confinement/hiding, F11 fullscreen and Q-to-quit outside play are verified in native and browser runtime checks. Normal-size/fullscreen/maximized preferences now persist through the native host. The six main menu actions and fullscreen/effects settings controls are restored. Remaining menu presentation and music/resolution/VSync controls, project-link action and original menus/music still need work. Original shard particles are restored; remaining ball artwork/speed lettering, other art/effects still need work; original penguin/heart-loss behavior is now verified. Current runs do not persist; high score, unlocked level, gravity and effects preferences do. |
 | 2048 | Random spawning, merge scoring/best score, win/continue/game-over UI, restart, 128-step undo and persistent boards/history are implemented and tested. Byte-sized tile exponents remove the old 32768 cap. Cooperative expectimax assistance/autoplay matches independent upstream reference fixtures; a deterministic 932-turn game reaches 2048. Final signed-package delivery and broader platform verification remain open. |
 
 Evidence: [README coverage table](../README.md#port-feature-coverage),
@@ -39,7 +39,7 @@ the original operation happened.
 
 | Source | Observed behavior | Required follow-up |
 | --- | --- | --- |
-| `engines/cube2/adapters/network.h` | Broadcast enabling and socket listen/accept are rejected. Reverse lookup returns a numeric address. Bounded buffer sizes, timeouts, address reuse and TTL now reach the actual host socket; error/TTL queries read host results. Shutdown still returns success without a host call. | Audit each original ENet caller; finish the host operations it needs and test real discovery, authentication, server registration, disconnect and error handling. Keep permission denial explicit. Do not infer complete networking from ordinary packet exchange. |
+| `engines/cube2/adapters/network.h` | Broadcast now reaches the owned UDP socket; TCP listen/accept are still rejected. Reverse lookup returns a numeric address. Bounded buffer sizes, timeouts, address reuse and TTL now reach the actual host socket; error/TTL queries read host results. Shutdown still returns success without a host call. | Audit each original ENet caller; finish the host operations it needs and test real discovery, authentication, server registration, disconnect and error handling. Keep permission denial explicit. Do not infer complete networking from ordinary packet exchange. |
 | `engines/zelda3/adapters/engine.c` | MSU enable is ignored and MSU track playback falls back to the internal audio path. Initialization fixes extra horizontal area to zero and selects the default language. The frame scheduler omits the desktop replay log. | Add selected optional resources, enhancement/language configuration, and bounded replay/save-state persistence with actual engine tests. Ordinary ROM gameplay does not verify these features. |
 | `ports/arkanoo/source/src/menu.rs` and `render.rs` | The current menu and synthesized effects cover only part of the original presentation/settings. | Restore the remaining transitions, resolution confirmation/revert, VSync, homepage action and licensed art/audio; verify each against the pinned original. Window-size persistence alone does not implement a resolution menu. |
 | `ports/2048/CREDITS.md` | Tile exponents stop at 63 and scores use checked fixed-width storage; the reference implementation has a smaller tile representation. | Retain explicit bounds in documentation and boundary tests. Verified solver/gameplay behavior does not establish unlimited arithmetic, package delivery or every-platform support. |
@@ -71,6 +71,29 @@ delivery gates even after individual features pass.
 These require bounded host APIs or virtual resources. Keep filesystem, network
 and process isolation while restoring functionality. A stub is only acceptable
 when a verified host replacement provides the same observable behavior.
+
+## Remaining original presentation is not cosmetic completion
+
+Arkanoo's pinned `rendering.rs` also has dedicated implementations for shiny-ball
+textures and speed lettering, glass paddle, block gradients/refraction/fire/shine,
+bonus icons, animated backgrounds, portal rendering, HUD/FPS, pause/settings,
+game-over, level-transition/victory and editor presentation. The current simple
+shapes, bitmap lettering and portal circles are replacements. Restored mechanics,
+shards, comet points and penguin/hearts do not verify those other drawing paths.
+Keep each original drawing path open until its behavior has reference evidence;
+matching a few screenshots is insufficient for animated or stateful effects.
+
+The same rule applies to engine adapters: unavailable features must report failure
+or remain visibly unsupported. In particular, Cube 2 shutdown currently reports
+success without doing work, while TCP listen/accept reject the operation. UDP broadcast now reaches the
+host socket; full LAN discovery still needs actual-engine verification. Zelda's MSU enable ignores its argument. These are confirmed fidelity
+gaps, not completed compatibility functions. Shared host work still needed is:
+
+- Selected resource collections/directories and bounded streaming for mods,
+  optional music, recordings and language assets, retaining user files in place.
+- Complete network lifecycle/discovery/authentication behind signed permissions.
+- Original resolution/VSync controls, hardware graphics and complete input paths.
+- Versioned replay/save-state/resource configuration and import/export.
 
 ## Completion evidence required
 
@@ -201,8 +224,8 @@ uses at most six 512×512 tiles; full-viewport corner coverage prevents silent
 loss through the per-texture dimension limit.
 Disjoint random-word fields and rejection sampling preserve independent uniform
 ranges without per-field host RPCs. Native desktop and both browser profiles pass
-ordinary gameplay/editor checks with the restored effects. Ball trails/fireball
-glows, penguin/heart-loss animation and remaining original art/audio stay open.
+ordinary gameplay/editor checks with the restored effects. Ball trails/fireball glows and penguin/heart-loss behavior are restored below;
+remaining original art/audio stay open.
 
 Arkanoo ball-history trails now follow the original pre-physics 800/1400 px/s
 thresholds and one-entry trimming, including the original tier-drop behavior.
@@ -212,7 +235,7 @@ match unchanged original drawing fragments. Full-file hashes guard the oracle;
 and colors, including negative/edge positions, wide history and u64::MAX frames.
 Actual signed runtime tests compare the resulting clipped RGBA pixels through
 the bounded tiled renderer. The ball's metal artwork, original speed-text font,
-penguin/heart-loss animation and other remaining art/audio stay open.
+other remaining art/audio stay open.
 
 The animation clock now retains the original u64 width, including continued play
 past u32::MAX and pause behavior. Native/wasm32 clock probes and effect cases
@@ -227,3 +250,54 @@ native-window and both core/component browser gameplay/editor/file controls.
 Lint, formatting and the public site's local-link checks pass. These results do
 not establish Windows/Android gameplay, full campaigns, original ball/font art
 or the other open port requirements.
+
+
+Penguin/heart-loss restoration now matches 337 observations compiled from the
+unchanged original loss/update implementation, including the original final-life
+GameOver freeze. Sixteen static poses compare exact ordered RGBA rectangles;
+three fallback hearts compare original points. Native/wasm32 runtime tests verify
+all traces, original heart PNG bytes and HUD destination coordinates. The host
+now supports explicitly linear-filtered asset draws alongside nearest-neighbor
+draws, with unchanged path, texture, command and per-frame budgets. Its one-image
+native/Wasm cache remains instance-scoped and every draw is charged fully.
+Permission/path rejection, malformed calls, cache reuse, filtering changes and
+failed-tick rollback have regressions. Original fonts, metal ball, background,
+remaining menus and recorded audio are still open.
+
+Current validation supersedes the historical totals above: 380 ordinary Rust
+tests pass; 52 fixture/platform tests are ignored by that command and are not
+counted as passed. The isolated signed harness separately passes all 28 Arkanoo
+runtime tests on Wasm and again with native builds where available, followed by
+actual Linux native and core/component browser gameplay/editor/file checks.
+This is source verification, not updated signed-catalog delivery or a claim of
+Windows/Android gameplay, full campaign coverage or complete port fidelity.
+
+
+The final source audit also checked engine-build patches and virtual-file
+allowlists. Cube 2 saves selected config/map/image/demo extensions within fixed
+quotas; movie outputs and arbitrary mod trees must not be assumed persistent.
+Zelda stores SRAM, not desktop replay/save-state files. These limits require
+explicit workflows and behavior tests, not broader ambient filesystem access.
+Both Windows word-size compilation checks, all browser unit scripts, lint,
+formatting and seven-page public-site link validation pass for this source.
+No public package/catalog release was made by these checks.
+
+
+Networking policy update: current source uses a signed on/off flag. Enabled
+networking no longer restricts destinations, sources, DNS names or listening
+addresses to endpoint lists, and local/private addresses need no extra opt-in.
+Legacy transport names map to enabled/disabled and legacy endpoint fields are
+read-only compatibility data. This removes policy restrictions, not missing
+adapter functionality: complete discovery/authentication/registration, engine TCP
+and shutdown/listen/accept semantics still need implementation and engine tests.
+
+
+Network-switch validation: the full Rust command passes 383 tests with 52
+fixture/platform checks ignored. After adding old-identity migration, all seven
+saved-server-choice tests pass separately, including preservation across the
+schema change and rejection of cross-creator reuse. Signed native packages pass
+TCP/UDP echo with no endpoint/local grants and disabled-network denial; signed
+core/component packages pass unlisted local TCP echo and disabled HTTPS/TCP/UDP/
+listener denial. The production C++ ENet shim's malformed/framing checks pass.
+Lint, both Windows compilation targets, browser unit checks and site links pass.
+These tests do not establish the unfinished full engine networking features.

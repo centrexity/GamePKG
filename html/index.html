@@ -92,7 +92,7 @@
         <li><strong>Saves:</strong> host-scoped storage rather than arbitrary filesystem writes.</li>
         <li><strong>ROMs:</strong> a signed manifest declares which ROM files must be supplied by the player. No ROM is fetched automatically; only the files selected by the player are shared read-only in the signed manifest’s order for that session.</li>
         <li><strong>Chosen files:</strong> optional signed permissions declare file types and size limits. Import and export use your explicit file choice; games receive data and a filename, never a host path or access to a whole folder.</li>
-        <li><strong>Networking:</strong> off by default. Signed permissions can allow bounded HTTPS requests and TCP/UDP multiplayer traffic to declared endpoints; games never receive direct socket access.</li>
+        <li><strong>Networking:</strong> off by default. A signed on/off permission enables bounded HTTPS and TCP/UDP operations, including internet and local-network addresses without endpoint allowlists. Games never receive direct socket access.</li>
       </ul>
       <p>Installing a package runs no game code or package-provided install scripts. Source checks reject filesystem, network, process, and environment paths, compile-time file includes, macros, unsafe blocks, and foreign declarations. Source checks, compiler isolation, and runtime limits work together; inspection alone cannot prove a game harmless.</p>
     </section>

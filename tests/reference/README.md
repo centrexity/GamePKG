@@ -197,3 +197,15 @@ and sixteen drawing cases cover thresholds, tier drop, pre-force timing,
 attached-state freezing, pulses/ring, clipping/negative positions, wide history
 and large frame values. It supplies 15,909 ordered point/color operations; cached
 ball artwork and speed text are explicitly outside this fixture's scope.
+
+
+`arkanoo_penguin.py /path/to/pinned/arkanoo` regenerates
+`arkanoo-penguin.json`. Full-file SHA-256 guards pin the original entities,
+rendering and game modules. The unchanged Penguin implementation, complete
+penguin/fallback-heart drawing and original game loss/update fragments supply
+337 observations across all three life losses, including final-life GameOver
+freezing, sixteen rectangle-drawing poses and three fallback-heart point sets.
+Recorded SDL calls preserve rectangle/color order rather than recreating the
+reference algorithm. Runtime fixtures separately check native/wasm32 state,
+rectangles, original PNG bytes and linear-filtered HUD destinations. This does
+not verify remaining original fonts, menus or audio.

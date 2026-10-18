@@ -11,6 +11,13 @@ pub enum Command {
         height: f32,
         image: std::sync::Arc<image::Image>,
     },
+    LinearImage {
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        image: std::sync::Arc<image::Image>,
+    },
     ShaderImage {
         index: usize,
         image: std::sync::Arc<image::Image>,
@@ -54,17 +61,48 @@ impl Frame {
             && bytes <= MAX_IMAGE_BYTES.saturating_sub(self.image_bytes)
     }
     pub fn image(&mut self, x: f32, y: f32, width: f32, height: f32, image: image::Image) -> bool {
+        self.image_arc(x, y, width, height, std::sync::Arc::new(image), false)
+    }
+    pub fn linear_image(
+        &mut self,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        image: image::Image,
+    ) -> bool {
+        self.image_arc(x, y, width, height, std::sync::Arc::new(image), true)
+    }
+    pub fn image_arc(
+        &mut self,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        image: std::sync::Arc<image::Image>,
+        linear: bool,
+    ) -> bool {
         let bytes = image.pixels().len();
         if !self.can_image(x, y, width, height, bytes) {
             return false;
         }
         self.image_bytes += bytes;
-        self.commands.push(Command::Image {
-            x,
-            y,
-            width,
-            height,
-            image: std::sync::Arc::new(image),
+        self.commands.push(if linear {
+            Command::LinearImage {
+                x,
+                y,
+                width,
+                height,
+                image,
+            }
+        } else {
+            Command::Image {
+                x,
+                y,
+                width,
+                height,
+                image,
+            }
         });
         true
     }

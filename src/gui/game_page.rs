@@ -489,16 +489,11 @@ impl App {
                     crate::storage::bytes(permission.max_bytes)
                 ));
             }
-            if m.uses_selected_servers() {
-                ui.label("Network permission: your chosen server or hosting addresses, plus servers listed by a master you explicitly select. Blank choices keep it offline.");
-            } else if m.permissions.network != "none" {
-                ui.label(format!(
-                    "Network endpoints: {}. Listening: {}. Local network: {}",
-                    m.permissions.network_hosts.join(", "),
-                    m.permissions.network_listen.join(", "),
-                    m.permissions.network_allow_local
-                ));
-            }
+            ui.label(if m.permissions.network {
+                "Networking enabled: this game can use the internet and local network."
+            } else {
+                "Networking disabled."
+            });
             if let Some(url) = &m.update_url {
                 ui.label(format!("Updates: {url}"));
             }

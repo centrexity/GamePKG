@@ -54,8 +54,6 @@ impl Drop for Worker {
 struct Socket {
     udp: UdpSocket,
     options: BTreeMap<u32, u32>,
-    listening: bool,
-    peers: BTreeMap<SocketAddr, Instant>,
     connected: Option<SocketAddr>,
 }
 // ENet option numbers are protocol values, never raw platform constants supplied
@@ -67,11 +65,8 @@ fn set_option(socket: &UdpSocket, option: u32, value: u32) -> Result<()> {
             socket.set_nonblocking(true)?;
         }
         2 => {
-            ensure!(
-                value == 0,
-                "broadcast requires separate discovery authorization"
-            );
-            socket.set_broadcast(false)?;
+            ensure!(value <= 1, "invalid broadcast option");
+            socket.set_broadcast(value == 1)?;
         }
         3..=5 => {
             ensure!(
@@ -163,10 +158,6 @@ struct State {
     attempted: Option<Instant>,
     discovered: BTreeSet<SocketAddr>,
     enabled: bool,
-    local: bool,
-    names: Vec<(String, SocketAddr)>,
-    allowed: BTreeSet<SocketAddr>,
-    listen: BTreeSet<SocketAddr>,
     sockets: BTreeMap<u32, Socket>,
     next: u32,
     window: Instant,
@@ -201,56 +192,18 @@ fn encoded_address(address: SocketAddr) -> Result<Vec<u8>> {
 }
 impl State {
     fn configured(config: Config) -> Result<Self> {
-        let mut p = config.permissions;
         ensure!(
-            config.master.is_none() || matches!(p.network.as_str(), "multiplayer" | "all"),
-            "master discovery requires multiplayer permission"
+            config.master.is_none() || config.permissions.network,
+            "master discovery requires networking enabled"
         );
-        let placeholder =
-            config.master.is_some() && p.network_hosts.is_empty() && p.network_listen.is_empty();
-        if let Some(master) = &config.master {
-            ensure!(
-                master.local == p.network_allow_local,
-                "master local policy mismatch"
-            );
-            if placeholder {
-                p.network_hosts.push(master.address.to_string());
-            }
-        }
-        let mut state = Self::new(p)?;
-        // The master is TCP discovery only. It never becomes a UDP grant.
-        if placeholder {
-            state.names.clear();
-            state.allowed.clear();
-        }
+        let mut state = Self::new(config.permissions)?;
         state.master = config.master;
         state.begin_refresh()?;
         Ok(state)
     }
     fn new(p: crate::manifest::Permissions) -> Result<Self> {
         crate::network::validate(&p)?;
-        let enabled = matches!(p.network.as_str(), "multiplayer" | "all");
-        let names = if enabled {
-            crate::network::multiplayer_endpoints(&p, false)?
-        } else {
-            Vec::new()
-        };
-        let listen = if enabled {
-            crate::network::multiplayer_endpoints(&p, true)?
-                .into_iter()
-                .map(|(_, a)| a)
-                .collect()
-        } else {
-            BTreeSet::new()
-        };
-        ensure!(
-            names
-                .iter()
-                .map(|(_, a)| a)
-                .chain(listen.iter())
-                .all(SocketAddr::is_ipv4),
-            "Cube 2 ENet requires IPv4 endpoints"
-        );
+        let enabled = p.network;
         Ok(Self {
             master: None,
             streams: BTreeMap::new(),
@@ -260,10 +213,6 @@ impl State {
             attempted: None,
             discovered: BTreeSet::new(),
             enabled,
-            local: p.network_allow_local,
-            allowed: names.iter().map(|(_, a)| *a).collect(),
-            names,
-            listen,
             sockets: BTreeMap::new(),
             next: 32,
             window: Instant::now(),
@@ -333,8 +282,6 @@ impl State {
                     Socket {
                         udp,
                         options: BTreeMap::new(),
-                        listening: false,
-                        peers: BTreeMap::new(),
                         connected: None,
                     },
                 );
@@ -351,15 +298,7 @@ impl State {
                     return Ok(Vec::new());
                 }
                 let requested = address(bytes, 4)?;
-                let bind = self
-                    .listen
-                    .iter()
-                    .find(|a| {
-                        a.port() == requested.port()
-                            && (requested.ip().is_unspecified() || a.ip() == requested.ip())
-                    })
-                    .copied()
-                    .context("listening endpoint not authorized")?;
+                let bind = requested;
                 let options = self.sockets[&id].options.clone();
                 let udp = bind_socket(bind, &options)?;
                 self.sockets.insert(
@@ -367,8 +306,6 @@ impl State {
                     Socket {
                         udp,
                         options,
-                        listening: true,
-                        peers: BTreeMap::new(),
                         connected: None,
                     },
                 );
@@ -386,15 +323,6 @@ impl State {
                 } else {
                     address(bytes, 4)?
                 };
-                socket
-                    .peers
-                    .retain(|_, time| time.elapsed() < Duration::from_secs(60));
-                ensure!(
-                    self.allowed.contains(&to)
-                        || self.discovered.contains(&to)
-                        || socket.listening && socket.peers.contains_key(&to),
-                    "destination not authorized"
-                );
                 let size = bytes.len() - 12;
                 ensure!(self.bytes + size <= 1048576, "network rate limited");
                 let sent = socket.udp.send_to(&bytes[12..], to)?;
@@ -412,23 +340,11 @@ impl State {
                     .sockets
                     .get_mut(&number(bytes, 0)?)
                     .context("unknown socket")?;
-                socket
-                    .peers
-                    .retain(|_, time| time.elapsed() < Duration::from_secs(60));
                 let mut packet = [0; MAX_DATAGRAM + 1];
                 for _ in 0..8 {
                     let (size, from) = socket.udp.recv_from(&mut packet)?;
                     if size > capacity || size > MAX_DATAGRAM {
                         continue;
-                    }
-                    if !self.allowed.contains(&from) && !self.discovered.contains(&from) {
-                        if !socket.listening || !crate::network::allowed_ip(from.ip(), self.local) {
-                            continue;
-                        }
-                        if socket.peers.len() >= 16 && !socket.peers.contains_key(&from) {
-                            continue;
-                        }
-                        socket.peers.insert(from, Instant::now());
                     }
                     ensure!(self.bytes + size <= 1048576, "network rate limited");
                     self.bytes += size;
@@ -451,35 +367,12 @@ impl State {
             6 => {
                 ensure!(!bytes.is_empty() && bytes.len() <= 253, "invalid hostname");
                 let name = std::str::from_utf8(bytes)?;
-                let address = self
-                    .names
-                    .iter()
-                    .find(|(host, address)| {
-                        host.eq_ignore_ascii_case(name) || address.ip().to_string() == name
-                    })
-                    .map(|(_, a)| *a)
-                    .or_else(|| {
-                        self.listen
-                            .iter()
-                            .find(|a| a.ip().to_string() == name)
-                            .copied()
-                    })
-                    .or_else(|| {
-                        self.master
-                            .as_ref()
-                            .filter(|m| {
-                                m.name.eq_ignore_ascii_case(name)
-                                    || m.address.ip().to_string() == name
-                            })
-                            .map(|m| m.address)
-                    })
-                    .or_else(|| {
-                        self.discovered
-                            .iter()
-                            .find(|a| a.ip().to_string() == name)
-                            .copied()
-                    })
-                    .context("hostname not authorized")?;
+                ensure!(
+                    name.bytes()
+                        .all(|c| c.is_ascii_alphanumeric() || b"-.".contains(&c)),
+                    "invalid hostname"
+                );
+                let address = crate::network::resolve_engine_host(name)?;
                 Ok(encoded_address(address)?[..4].to_vec())
             }
             7 => {
@@ -539,10 +432,6 @@ impl State {
             10 => {
                 ensure!(bytes.len() == 12, "invalid connect request");
                 let peer = address(bytes, 4)?;
-                ensure!(
-                    self.allowed.contains(&peer) || self.discovered.contains(&peer),
-                    "destination not authorized"
-                );
                 self.sockets
                     .get_mut(&number(bytes, 0)?)
                     .context("unknown socket")?
@@ -720,8 +609,7 @@ pub(super) fn start(config: Config) -> Result<(Worker, UnixStream)> {
         anyhow::bail!("too many Cube 2 network workers");
     }
     let slot = Slot;
-    // Resolve approved names before starting the engine. RPCs themselves never
-    // wait for DNS or leave a late reply queued after an engine-side timeout.
+    // The broker owns all sockets; the engine receives only bounded RPC replies.
     let mut state = State::configured(config)?;
     let (mut host, child) = UnixStream::pair()?;
     host.set_read_timeout(Some(Duration::from_millis(250)))?;
@@ -793,7 +681,7 @@ mod tests {
             input: true,
             audio: true,
             save: true,
-            network: "multiplayer".into(),
+            network: true,
             network_hosts: hosts,
             network_listen: listen,
             network_allow_local: local,
@@ -874,7 +762,7 @@ mod tests {
         );
         for (option, value) in [
             (1, 0),
-            (2, 1),
+            (2, 2),
             (3, 1048577),
             (4, u32::MAX),
             (5, 2),
@@ -898,7 +786,7 @@ mod tests {
         assert!(state.dispatch(12, &request(10, 0)[..8]).is_err());
     }
     #[test]
-    fn master_snapshot_is_async_bounded_and_grants_only_discovered_endpoints() {
+    fn master_snapshot_is_async_bounded_without_restricting_udp_destinations() {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
         let peer = UdpSocket::bind("127.0.0.1:0").unwrap();
@@ -935,7 +823,7 @@ mod tests {
         let udp = create(&mut state);
         let mut packet = destination(udp, peer_addr);
         packet.extend(b"test");
-        assert!(state.dispatch(3, &packet).is_err());
+        state.dispatch(3, &packet).unwrap();
         let stream = number(&state.dispatch(1, &1u32.to_le_bytes()).unwrap(), 0).unwrap();
         assert!(state
             .dispatch(10, &destination(stream, unrelated.local_addr().unwrap()))
@@ -966,8 +854,8 @@ mod tests {
         state.dispatch(3, &packet).unwrap();
         let mut denied = destination(udp, unrelated.local_addr().unwrap());
         denied.extend(b"no");
-        assert!(state.dispatch(3, &denied).is_err());
-        assert!(state.dispatch(6, b"evil.invalid").is_err());
+        state.dispatch(3, &denied).unwrap();
+        assert!(state.dispatch(6, b"bad/host").is_err());
         state.dispatch(7, &stream.to_le_bytes()).unwrap();
         let stream = number(&state.dispatch(1, &1u32.to_le_bytes()).unwrap(), 0).unwrap();
         state.dispatch(10, &destination(stream, addr)).unwrap();
@@ -988,13 +876,11 @@ mod tests {
             "cached requests must not refetch within 30 seconds"
         );
         state.refreshed = Some(Instant::now() - Duration::from_secs(601));
-        assert!(
-            state.dispatch(3, &packet).is_err(),
-            "expired discovery grant survived"
-        );
+        state.dispatch(3, &packet).unwrap();
+        assert!(state.list.is_none(), "expired discovery snapshot survived");
     }
     #[test]
-    fn udp_reaches_only_signed_peers_and_rejects_spoofed_sources_and_stale_handles() {
+    fn enabled_udp_reaches_unlisted_peers_and_accepts_unlisted_sources_but_not_stale_handles() {
         let peer = UdpSocket::bind("127.0.0.1:0").unwrap();
         peer.set_read_timeout(Some(Duration::from_millis(100)))
             .unwrap();
@@ -1010,8 +896,8 @@ mod tests {
         assert_eq!(&bytes[..size], b"hello");
         let mut denied = destination(id, other.local_addr().unwrap());
         denied.extend(b"no");
-        assert!(state.dispatch(3, &denied).is_err());
-        other.send_to(b"spoof", from).unwrap();
+        state.dispatch(3, &denied).unwrap();
+        other.send_to(b"other", from).unwrap();
         peer.send_to(b"reply", from).unwrap();
         let mut receive = id.to_le_bytes().to_vec();
         receive.extend(32u32.to_le_bytes());
@@ -1023,15 +909,16 @@ mod tests {
             assert!(Instant::now() < end);
             std::thread::sleep(Duration::from_millis(2));
         };
-        assert_eq!(&result[8..], b"reply");
-        assert!(state.dispatch(6, b"unapproved.invalid").is_err());
+        assert_eq!(&result[8..], b"other");
+        assert!(state.dispatch(6, b"bad/host").is_err());
         assert_eq!(state.dispatch(6, b"127.0.0.1").unwrap(), [127, 0, 0, 1]);
+        assert_eq!(state.dispatch(6, b"localhost").unwrap(), [127, 0, 0, 1]);
         state.dispatch(7, &id.to_le_bytes()).unwrap();
         assert!(state.dispatch(3, &send).is_err());
-        assert!(State::new(permissions(vec![addr.to_string()], Vec::new(), false)).is_err());
+        assert!(State::new(permissions(Vec::new(), Vec::new(), false)).is_ok());
     }
     #[test]
-    fn listeners_reply_only_to_observed_peers_and_requests_have_strict_bounds() {
+    fn unlisted_listeners_and_peers_work_and_requests_have_strict_bounds() {
         let reservation = UdpSocket::bind("127.0.0.1:0").unwrap();
         let addr = reservation.local_addr().unwrap();
         drop(reservation);
@@ -1044,7 +931,7 @@ mod tests {
             .unwrap();
         let mut reply = destination(id, peer.local_addr().unwrap());
         reply.extend(b"reply");
-        assert!(state.dispatch(3, &reply).is_err());
+        state.dispatch(3, &reply).unwrap();
         peer.send_to(b"hello", addr).unwrap();
         let mut recv = id.to_le_bytes().to_vec();
         recv.extend(32u32.to_le_bytes());
@@ -1103,7 +990,7 @@ mod tests {
         state.calls = 2048;
         assert_eq!(state.call(5, &id.to_le_bytes()).0, 2);
         let mut p = permissions(Vec::new(), Vec::new(), false);
-        p.network = "none".into();
+        p.network = false;
         let mut offline = State::new(p).unwrap();
         assert_eq!(offline.call(1, &2u32.to_le_bytes()).0, 1);
         assert!(offline.sockets.is_empty());
@@ -1111,7 +998,7 @@ mod tests {
     #[test]
     fn malformed_ipc_frames_close_without_reading_unbounded_payloads() {
         let mut p = permissions(Vec::new(), Vec::new(), false);
-        p.network = "none".into();
+        p.network = false;
         let (_worker, mut channel) = start(p.into()).unwrap();
         let mut header = b"GPN1".to_vec();
         header.extend(1u32.to_le_bytes());

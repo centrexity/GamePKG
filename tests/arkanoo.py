@@ -120,6 +120,36 @@ pub fn game_tick(input:u32,state:u64)->u64 {
     probe+='return 0;}\n'
     probe_file=modes/'source/src/lib.rs'
     text=probe_file.read_text();text=text.replace(' if input&67108864!=0 {',probe+' if input&67108864!=0 {');probe_file.write_text(text)
+    penguin_probe='''
+static HEART:Mutex<Option<physics::Game>>=Mutex::new(None);
+fn penguin_probe(input:u32)->u64 {
+ if let Ok(mut slot)=HEART.lock(){
+  let reset=input&1!=0;
+  if slot.is_none()||reset {let mut game=physics::Game::new();game.mode=1;game.lives=((input>>4)&3).max(1);game.score=100;game.balls.clear();game.update(0);*slot=Some(game);}
+  if let Some(game)=slot.as_mut(){
+   if input&2!=0 {game.mode=2;}if input&4!=0 {game.mode=1;}
+   if !reset {if let Some(ball)=game.balls.first_mut(){ball.launch_timer=u32::MAX;}game.update(0);}
+   render::draw(game);
+   let mut value=u64::from(game.lives)|(u64::from(game.stolen_heart.is_some())<<8)|(u64::from(game.mode)<<12);
+   if let Some(penguin)=&game.penguin {value|=(u64::from(penguin.state)<<16)|(1<<20)|(u64::from(penguin.frame_count)<<24);}else {value|=4<<16;}
+   return value;
+  }
+ }0
+}
+'''
+    api_probe=''' if input&536870912!=0 {
+ let mut value=0u64;
+ if gamepkg::draw_asset_image_linear("heart.png",0.0,60.0,10.0,10.0){value|=1;}
+ if gamepkg::draw_asset_image("heart.png",20.0,60.0,10.0,10.0){value|=2;}
+ if !gamepkg::draw_asset_image_linear("../heart.png",0.0,0.0,10.0,10.0){value|=4;}
+ if !gamepkg::draw_asset_image_linear("/etc/passwd",0.0,0.0,10.0,10.0){value|=8;}
+ if !gamepkg::draw_asset_image_linear("heart.png",f32::NAN,0.0,10.0,10.0){value|=16;}
+ if !gamepkg::draw_asset_image_linear("heart.png",0.0,0.0,1281.0,10.0){value|=32;}
+ let guard=[0u8];value+=u64::from(guard[(input&1) as usize]);return value;
+ };
+'''
+    text=probe_file.read_text();text=text.replace('pub fn game_tick(input:u32,state:u64)->u64 {','pub fn game_tick(input:u32,state:u64)->u64 {\n if input&1073741824!=0 {return penguin_probe(input);};\n'+api_probe)
+    probe_file.write_text(text+penguin_probe)
     run('pack',modes,'-o',root/'modes.gamepkg','--key',key);run('install',root/'modes.gamepkg','--trust-creator');run('build','com.gamepkg.arkanoo-modes')
     layouts=root/'layouts';shutil.copytree(PROJECT/'ports/arkanoo',layouts)
     layout_manifest=layouts/'manifest.toml';layout_manifest.write_text(layout_manifest.read_text().replace('com.gamepkg.arkanoo','com.gamepkg.arkanoo-levels'))

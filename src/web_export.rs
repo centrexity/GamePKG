@@ -22,6 +22,7 @@ const SUPPORTED: &[&str] = &[
     "achievement_unlock",
     "draw_image",
     "draw_asset_image",
+    "draw_asset_image_linear",
     "audio_submit",
     "draw_shader",
     "draw_shader_image",

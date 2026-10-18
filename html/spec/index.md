@@ -107,7 +107,9 @@ Since 0.1.13, optional signed root fields include `title` (256 bytes), `descript
 
 ## User-selected native-server permission
 
-Only an exact host-approved folder-backed native selector may sign `game_data.user_selected_servers = true`. It requires `network = "multiplayer"`, empty static endpoint lists and no static local-network grant. The host validates and remembers an explicit user-selected join or hosting address and authorizes only its game port and adjacent server-information port for that session. Blank choices remain offline. Local/private addresses require a separate user opt-in. Choices are scoped to the signed game, creator and declaration; game code cannot change them. Ordinary guest packages cannot request this delegation.
+Networking uses a signed boolean: `network = false` disables it and `network = true` enables supported HTTPS/TCP/UDP operations for internet and local-network addresses without IP or endpoint allowlists. Host-owned handles, transfer and job quotas, time limits and process isolation remain enforced. Legacy `none` means disabled; legacy `https`, `multiplayer` and `all` mean enabled. Legacy endpoint/local-grant fields are accepted for reading and omitted on writing. This requires the current source-built host; released 0.1.17 binaries retain the older policy.
+
+Only an exact host-approved folder-backed native selector may sign `game_data.user_selected_servers = true` to expose remembered join, hosting and master launch addresses. These are preferences, not capability restrictions. Blank choices clear launch commands; they do not disable enabled networking. Disabled networking ignores saved choices. Local/private addresses need no separate opt-in. Choices remain scoped to the game/creator and validated against command injection. Ordinary guest packages cannot request these selector-specific launch controls.
 
 
 ## Explicit file import and export

@@ -216,7 +216,7 @@ fn rejects_duplicate_names_and_oversized_entries() {
 }
 
 #[test]
-fn rejects_network_grants_and_preserves_existing_output() {
+fn rejects_invalid_network_permission_and_preserves_existing_output() {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path().join("game");
     fixture(&root);
@@ -225,7 +225,7 @@ fn rejects_network_grants_and_preserves_existing_output() {
         &manifest,
         fs::read_to_string(&manifest)
             .unwrap()
-            .replace("network = \"none\"", "network = \"all\""),
+            .replace("network = \"none\"", "network = \"sometimes\""),
     )
     .unwrap();
     let out = temp.path().join("bad.gamepkg");

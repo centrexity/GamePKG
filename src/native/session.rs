@@ -58,6 +58,7 @@ pub(crate) struct Session {
     output: ChildStdout,
     _binary: tempfile::TempDir,
     package: crate::archive::Package,
+    asset_image: Option<(String, std::sync::Arc<crate::drawing::image::Image>)>,
     manifest: crate::manifest::Manifest,
     roms: Vec<Vec<u8>>,
     save: Option<crate::saves::Save>,
@@ -223,6 +224,7 @@ impl Session {
             output,
             _binary: binary,
             package,
+            asset_image: None,
             network: crate::network::Service::new(manifest.permissions.clone()),
             input_events: crate::input_events::Queue::new(manifest.permissions.input),
             window: crate::window_control::Service::new(manifest.permissions.input),
@@ -444,20 +446,42 @@ impl Session {
                 self.frame
                     .image(f(b, 0)?, f(b, 4)?, f(b, 8)?, f(b, 12)?, image)
             }
-            14 => {
+            14 | 30 => {
                 let len = n(b, 0)? as usize;
-                ensure!(len <= 1024, "path too long");
+                ensure!(
+                    len <= 1024 && b.len() == 20 + len,
+                    "invalid asset-image packet"
+                );
                 let path = std::str::from_utf8(b.get(4..4 + len).context("short path")?)?;
-                let image = crate::drawing::image::Image::from_png(&self.package.asset(path)?)
-                    .context("invalid PNG")?;
-                self.frame.image(
+                ensure!(crate::archive::valid_path(path), "invalid asset path");
+                let image = if let Some((name, image)) = &self.asset_image {
+                    if name == path {
+                        Some(image.clone())
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+                let image = if let Some(image) = image {
+                    image
+                } else {
+                    let image = std::sync::Arc::new(
+                        crate::drawing::image::Image::from_png(&self.package.asset(path)?)
+                            .context("invalid PNG")?,
+                    );
+                    self.asset_image = Some((path.to_owned(), image.clone()));
+                    image
+                };
+                let (x, y, w, h) = (
                     f(b, 4 + len)?,
                     f(b, 8 + len)?,
                     f(b, 12 + len)?,
                     f(b, 16 + len)?,
-                    image,
-                )
+                );
+                self.frame.image_arc(x, y, w, h, image, op == 30)
             }
+
             15 => {
                 let image = crate::drawing::image::Image::new(
                     n(b, 4)?,

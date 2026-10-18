@@ -2,7 +2,7 @@
 from pathlib import Path
 import os, shutil, socket, subprocess, tempfile, threading
 PROJECT=Path(__file__).resolve().parents[1]
-CLI=PROJECT/'target/release/gamepkg'
+CLI=Path(os.environ.get('GAMEPKG_TEST_BINARY_DIR',PROJECT/'target/release'))/'gamepkg'
 with tempfile.TemporaryDirectory(prefix='gamepkg-network-') as directory:
  root=Path(directory);key=root/'key';key.write_text('73'*32)
  env=dict(os.environ,GAMEPKG_HOME=str(root/'library'),GAMEPKG_CONFIG=str(root/'settings.toml'))
@@ -22,7 +22,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-network-') as directory:
   worker=threading.Thread(target=echo);worker.start()
   source=root/profile;shutil.copytree(PROJECT/'examples/minimal',source)
   manifest=source/'manifest.toml';text=manifest.read_text().replace('com.gamepkg.minimal','com.example.'+profile)
-  text=text.replace('network = "none"',f'network = "multiplayer"\nnetwork_hosts = ["{endpoint}"]\nnetwork_allow_local = true')
+  text=text.replace('network = "none"','network = true')
   manifest.write_text(f'runtime_profile = "{profile}"\n'+text)
   (source/'source/src/lib.rs').write_text(f'''pub fn game_tick(_:u32,state:u64)->u64{{
    let handle=state as u32;let mut bytes=[0u8;16];
@@ -35,4 +35,18 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-network-') as directory:
   run('build','com.example.'+profile,'--target','wasm')
   output=run('run','com.example.'+profile,'--frames','1000');assert 'score: 42' in output,output
   worker.join(17);server.close();assert not worker.is_alive();assert not errors,errors
- print('Core and component networking passed: asynchronous TCP echo through bounded host bindings.')
+  # Disabled permission must fail before DNS, connect or bind in both ABIs.
+  disabled='com.example.'+profile+'-disabled'
+  manifest.write_text(manifest.read_text().replace('com.example.'+profile,disabled).replace('network = true','network = false'))
+  (source/'source/src/lib.rs').write_text('''pub fn game_tick(_:u32,_:u64)->u64 {
+   let mut denied=0u32;
+   if let Err(gamepkg::NetworkError::PermissionDenied)=gamepkg::https_get("https://unused.invalid/"){denied+=1;}
+   if let Err(gamepkg::NetworkError::PermissionDenied)=gamepkg::tcp_connect("127.0.0.1:1"){denied+=1;}
+   if let Err(gamepkg::NetworkError::PermissionDenied)=gamepkg::udp_connect("127.0.0.1:1"){denied+=1;}
+   if let Err(gamepkg::NetworkError::PermissionDenied)=gamepkg::tcp_listen("127.0.0.1:1"){denied+=1;}
+   if denied==4 {99u64<<32} else {0}
+  }''')
+  package=root/(profile+'-disabled.gamepkg');run('pack',source,'-o',package,'--key',key);run('install',package,'--trust-creator')
+  run('build',disabled,'--target','wasm')
+  output=run('run',disabled,'--frames','1');assert 'score: 99' in output,output
+ print('Core and component networking passed: unlisted local TCP echo and disabled HTTPS/TCP/UDP/listener denial through bounded bindings.')

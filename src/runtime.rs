@@ -27,6 +27,7 @@ struct Data {
     pending_achievements: Vec<String>,
     limits: StoreLimits,
     package: Option<crate::archive::Package>,
+    asset_image: Option<(String, std::sync::Arc<crate::drawing::image::Image>)>,
     rom: Option<Vec<Vec<u8>>>,
     save: Option<crate::saves::Save>,
     frame: crate::drawing::Frame,
@@ -155,6 +156,7 @@ impl Game {
                             | "window_control"
                             | "draw_clear"
                             | "draw_asset_image"
+                            | "draw_asset_image_linear"
                             | "draw_image"
                             | "draw_shader_image"
                             | "draw_shader_asset_image"
@@ -213,6 +215,7 @@ impl Game {
                                 | "window-control"
                                 | "draw-clear"
                                 | "draw-asset-image"
+                                | "draw-asset-image-linear"
                                 | "draw-image"
                                 | "draw-shader-image"
                                 | "draw-shader-asset-image"
@@ -273,6 +276,7 @@ impl Game {
                 network: crate::network::Service::new(manifest.permissions.clone()),
                 limits,
                 package,
+                asset_image: None,
                 rom,
                 save,
                 frame: crate::drawing::Frame::default(),
@@ -385,6 +389,43 @@ impl Game {
                     };
                     let path = path.to_owned();
                     let result = draw_asset_image(caller.data_mut(), &path, x, y, w, h);
+
+                    if result {
+                        0
+                    } else {
+                        -1
+                    }
+                },
+            )?;
+            linker.func_wrap(
+                "gamepkg",
+                "draw_asset_image_linear",
+                |mut caller: Caller<'_, Data>,
+                 pointer: i32,
+                 length: i32,
+                 x: f32,
+                 y: f32,
+                 w: f32,
+                 h: f32|
+                 -> i32 {
+                    if pointer < 0 || !(1..=1024).contains(&length) {
+                        return -1;
+                    }
+                    let Some(memory) = caller.get_export("memory").and_then(|e| e.into_memory())
+                    else {
+                        return -1;
+                    };
+                    let Some(end) = (pointer as usize).checked_add(length as usize) else {
+                        return -1;
+                    };
+                    let Some(bytes) = memory.data(&caller).get(pointer as usize..end) else {
+                        return -1;
+                    };
+                    let Ok(path) = std::str::from_utf8(bytes) else {
+                        return -1;
+                    };
+                    let path = path.to_owned();
+                    let result = draw_asset_image_linear(caller.data_mut(), &path, x, y, w, h);
 
                     if result {
                         0
@@ -1566,7 +1607,13 @@ fn draw_asset_image(data: &mut Data, path: &str, x: f32, y: f32, w: f32, h: f32)
     let Some(image) = decode_asset_image(data, path, x, y, w, h) else {
         return false;
     };
-    data.frame.image(x, y, w, h, image)
+    data.frame.image_arc(x, y, w, h, image, false)
+}
+fn draw_asset_image_linear(data: &mut Data, path: &str, x: f32, y: f32, w: f32, h: f32) -> bool {
+    let Some(image) = decode_asset_image(data, path, x, y, w, h) else {
+        return false;
+    };
+    data.frame.image_arc(x, y, w, h, image, true)
 }
 fn draw_shader_asset_image(data: &mut Data, index: i32, path: &str) -> bool {
     if index < 0 || index as usize >= data.shader_count {
@@ -1575,7 +1622,8 @@ fn draw_shader_asset_image(data: &mut Data, index: i32, path: &str) -> bool {
     let Some(image) = decode_asset_image(data, path, 0.0, 0.0, 640.0, 480.0) else {
         return false;
     };
-    data.frame.shader_image(index, data.shader_count, image)
+    data.frame
+        .shader_image(index, data.shader_count, image.as_ref().clone())
 }
 fn decode_asset_image(
     data: &mut Data,
@@ -1584,13 +1632,22 @@ fn decode_asset_image(
     y: f32,
     w: f32,
     h: f32,
-) -> Option<crate::drawing::image::Image> {
+) -> Option<std::sync::Arc<crate::drawing::image::Image>> {
     use crate::drawing::image::{Image, MAX_PNG_BYTES};
     if path.len() > 1024
         || !crate::archive::valid_path(path)
         || !data.frame.can_image(x, y, w, h, 0)
     {
         return None;
+    }
+    data.package.as_ref()?;
+    if let Some((name, image)) = &data.asset_image {
+        if name == path {
+            return data
+                .frame
+                .can_image(x, y, w, h, image.pixels().len())
+                .then(|| image.clone());
+        }
     }
     let package = data.package.as_mut()?;
     let Ok(size) = package.asset_size(path) else {
@@ -1617,6 +1674,8 @@ fn decode_asset_image(
     if image.pixels().len() != pixel_bytes {
         return None;
     }
+    let image = std::sync::Arc::new(image);
+    data.asset_image = Some((path.to_owned(), image.clone()));
     Some(image)
 }
 
@@ -1820,6 +1879,7 @@ mod adversarial_assets_tests {
             data.push_str(&format!("(data (i32.const {position}) \"{escaped}\")\n"));
             code.push_str(&format!("i32.const {position} i32.const {} i32.const 0 i32.const 60000 i32.const 8 call $read i32.const -1 i32.ne if unreachable end\n", bytes.len()));
             code.push_str(&format!("i32.const {position} i32.const {} f32.const 0 f32.const 0 f32.const 1 f32.const 1 call $image i32.const -1 i32.ne if unreachable end\n", bytes.len()));
+            code.push_str(&format!("i32.const {position} i32.const {} f32.const 0 f32.const 0 f32.const 1 f32.const 1 call $linear i32.const -1 i32.ne if unreachable end\n", bytes.len()));
             code.push_str(&format!("i32.const 0 i32.const {position} i32.const {} call $texture i32.const -1 i32.ne if unreachable end\n", bytes.len()));
             code.push_str(
                 "i32.const 60000 i64.load i64.const 123456789 i64.ne if unreachable end\n",
@@ -1851,6 +1911,7 @@ mod adversarial_assets_tests {
             (import "gamepkg" "asset_read" (func $read (param i32 i32 i32 i32 i32) (result i32)))
             (import "gamepkg" "draw_shader_asset_image" (func $texture (param i32 i32 i32) (result i32)))
             (import "gamepkg" "draw_asset_image" (func $image (param i32 i32 f32 f32 f32 f32) (result i32)))
+            (import "gamepkg" "draw_asset_image_linear" (func $linear (param i32 i32 f32 f32 f32 f32) (result i32)))
             (memory (export "memory") 1) {data}
             (func (export "gamepkg_tick") (param i32 i64) (result i64) {code} i64.const 42))"#)).unwrap();
         let mut game = Game::with_package(
@@ -1895,6 +1956,7 @@ mod adversarial_assets_tests {
             code.push_str("i32.const 60000 i64.const 123456789 i64.store\n");
             code.push_str(&format!("i32.const {position} i32.const {} i32.const 0 i32.const 8 i32.const 50000 call $read\ni32.const 50000 i32.load if unreachable end\n", path.len()));
             code.push_str(&format!("i32.const {position} i32.const {} f32.const 0 f32.const 0 f32.const 1 f32.const 1 call $image if unreachable end\n", path.len()));
+            code.push_str(&format!("i32.const {position} i32.const {} f32.const 0 f32.const 0 f32.const 1 f32.const 1 call $linear if unreachable end\n", path.len()));
             code.push_str(&format!(
                 "i32.const 0 i32.const {position} i32.const {} call $texture if unreachable end\n",
                 path.len()
@@ -1912,6 +1974,7 @@ mod adversarial_assets_tests {
             (import "gamepkg:engine/host@0.1.0" "asset-read" (func $read (param i32 i32 i32 i32 i32)))
             (import "gamepkg:engine/host@0.1.0" "draw-shader-asset-image" (func $texture (param i32 i32 i32) (result i32)))
             (import "gamepkg:engine/host@0.1.0" "draw-asset-image" (func $image (param i32 i32 f32 f32 f32 f32) (result i32)))
+            (import "gamepkg:engine/host@0.1.0" "draw-asset-image-linear" (func $linear (param i32 i32 f32 f32 f32 f32) (result i32)))
             (memory (export "memory") 1) {data}
             (func (export "cabi_realloc") (param i32 i32 i32 i32) (result i32) i32.const 55000)
             (func (export "tick") (param i32 i64) (result i64) {code} i64.const 42))"#)).unwrap();

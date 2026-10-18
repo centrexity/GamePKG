@@ -119,13 +119,32 @@ pub struct Permissions {
     pub input: bool,
     pub audio: bool,
     pub save: bool,
-    pub network: String,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(deserialize_with = "network_permission")]
+    pub network: bool,
+    #[serde(default, skip_serializing)]
     pub network_hosts: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing)]
     pub network_listen: Vec<String>,
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[serde(default, skip_serializing)]
     pub network_allow_local: bool,
+}
+// Earlier signed manifests used transport names and endpoint lists. Read those
+// names as an on/off permission; new manifests emit a boolean only.
+fn network_permission<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<bool, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Value {
+        Enabled(bool),
+        Legacy(String),
+    }
+    match Value::deserialize(deserializer)? {
+        Value::Enabled(enabled) => Ok(enabled),
+        Value::Legacy(value) => match value.as_str() {
+            "none" => Ok(false),
+            "https" | "multiplayer" | "all" => Ok(true),
+            _ => Err(serde::de::Error::custom("network must be true or false")),
+        },
+    }
 }
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]

@@ -104,7 +104,7 @@ gamepkg build com.gamepkg.cube2
 gamepkg run com.gamepkg.cube2 --game-data /path/to/original/sauerbraten --frames 60
 ```
 
-The engine starts at its original menu and preserves saved console/HUD and FPS preferences. Choose a mode/map through the original menus or console. Original maps, textures and audio remain in the selected folder; original executables are never launched. Edited maps reload from the private saved-file archive. Blank multiplayer settings keep the selector offline. Saved join/hosting choices are applied at the next launch through the host broker.
+The engine starts at its original menu and preserves saved console/HUD and FPS preferences. Choose a mode/map through the original menus or console. Original maps, textures and audio remain in the selected folder; original executables are never launched. Edited maps reload from the private saved-file archive. Blank multiplayer settings clear launch commands; the signed networking flag still applies. Saved join/hosting choices are applied at the next launch through the host broker.
 
 ## Native keyboard, text and pointer input
 
@@ -127,7 +127,14 @@ The staged ENet `unix.c` keeps its initialization and time helpers but replaces 
 
 `GPN1` requests and `GPR2` responses have explicit little-endian operation/status/length/reserved fields and an 8192-byte envelope cap. The current broker implements IPv4 UDP, with at most 16 virtual sockets, eight opens per second, 4096-byte datagrams, 2048 operations and 1 MiB of payload traffic per second. It closes channels that exceed the hard request-flood ceiling or send malformed framing. A mutex serializes ENet calls from the main and resolver threads. RPC transport failures do not enable any raw-socket fallback.
 
-Static selectors authorize only exact signed `network_hosts`/`network_listen` endpoints. The public selector instead signs `[game_data].user_selected_servers = true` and `network = "multiplayer"` with no static endpoints or local-network grant. This narrowly delegates endpoint selection to the host user; ordinary guests and other engine profiles cannot request it. The host materializes a concrete policy from the saved selection before starting the engine. DNS runs only for these names, validates all returned addresses against the existing local/private-address policy, and pins an IPv4 address for the session; arbitrary game-supplied DNS queries are refused. Outgoing datagrams are checked against the pinned endpoint set. Client sockets discard unapproved sources. Explicit listeners bind only to the declared interface, even if ENet requests a wildcard bind, and can reply only to permitted source addresses they have received from (at most 16 peers per socket, expiring after 60 seconds). Static local endpoints require signed `network_allow_local = true`; delegated choices require an explicit host-user local/private-address opt-in. Master-list TCP traffic is restricted to the user-selected master and the fixed `list\n` request. LAN broadcast discovery is not enabled.
+The signed `network = true` enables the broker and `false` disables it. Enabled
+UDP has no hostname, destination, source or bind allowlist; LAN/private addresses
+and the broadcast socket option need no separate permission. Saved join/hosting/
+master fields supply launch commands rather than capability grants. DNS resolves
+game-requested hostnames with bounded jobs and a 500 ms broker wait; lookup failure
+is explicit and never leaves a late reply in the engine RPC stream. Master-list
+TCP is still a bounded snapshot of the chosen master's fixed `list\n` request;
+general engine TCP authentication/registration remains unfinished.
 
 The ignored Rust test `two_original_engines_connect_through_the_host_broker` compiles the pinned engine once, runs two isolated original engines, starts a private loopback listener, connects the client, then stops UI polling for 35 seconds. It verifies both workers continue ticking with bounded frame/audio queues, the server receives the client's game identity, the remote connection survives, and shutdown commits preferences and the background play clock. No public server is contacted.
 
@@ -138,18 +145,18 @@ GAMEPKG_CUBE2_DATA=/path/to/original/sauerbraten \
 python3 tests/cube2_network_bridge.py
 ```
 
-Broker unit tests cover declared peers, spoofed sources, stale handles, listener reply authorization, malformed framing, endpoint/packet/handle/open/rate bounds and disabled-network denial. The C++ shim test verifies raw sockets remain denied, malformed/truncated/oversized replies cannot overrun receive buffers, oversized sends fail before reading their buffers, and concurrent requests retain their framing.
+Broker unit tests cover unlisted peers/sources/listeners, hostname lookup, broadcast options, stale handles, malformed framing, packet/handle/open/rate bounds and disabled-network denial. The C++ shim test verifies raw sockets remain denied, malformed/truncated/oversized replies cannot overrun receive buffers, oversized sends fail before reading their buffers, and concurrent requests retain their framing.
 
 The updated source host also applies ENet's bounded receive/send buffer sizes,
 address reuse, read/write timeouts and TTL to its owned UDP sockets. Settings
-survive replacement of the ephemeral socket with a signed listening endpoint;
+survive replacement of the ephemeral socket with a listening endpoint;
 address reuse is applied before binding. Error and TTL queries read the host
 socket instead of returning fixed placeholder values. IPC operations 11 and 12
 carry set/query requests with exact lengths and validated virtual handles.
 Queries leave the engine's output untouched if the host denies or malforms a
 reply. The virtual master-list snapshot supports nonblocking mode and checks its
 own connection state for error queries; it is not an arbitrary TCP connection.
-Blocking mode, broadcast enabling and unrecognized/excessive options are denied.
+Blocking mode and unrecognized/excessive options are denied. Broadcast accepts the original boolean enable/disable option.
 These changes require rebuilding the source host and engine cache; the cache
 fingerprint includes the adapter. LAN discovery, master authentication, public
 registration and complete shutdown/listen/accept behavior remain open.
@@ -295,3 +302,13 @@ then verifies background audio reaches the real CPAL callback via an ALSA null
 device. Set `GAMEPKG_CUBE2_TEST_ROOT`, the private `GAMEPKG_CONFIG`, and
 `ALSA_CONFIG_PATH` to the maintainer fixture and null-device configuration to
 run it; no speaker output or copied original assets are required.
+
+
+Current source uses the shared signed `network = true`/`false` permission.
+Enabled UDP has no destination, bind or DNS allowlist, and broadcast can be
+enabled through the original socket option. Local/private addresses need no
+extra grant. Saved join/host/master choices are launch preferences; blank
+choices no longer force offline mode. Disabled networking still blocks every
+broker operation. Socket, packet, time and transfer limits remain enforced.
+The bounded master-list snapshot remains separate from general engine TCP,
+authentication/registration and full LAN fidelity, which are unfinished.

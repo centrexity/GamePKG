@@ -28,9 +28,7 @@ impl Drop for Job {
 }
 #[derive(Clone)]
 pub(super) struct Master {
-    pub name: String,
     pub address: SocketAddr,
-    pub local: bool,
 }
 pub(super) struct List {
     pub bytes: Vec<u8>,
@@ -39,15 +37,11 @@ pub(super) struct List {
 impl Master {
     pub fn resolve(text: &str, local: bool) -> Result<Self> {
         let policy = crate::network::selected_multiplayer(text, "", local)?;
-        let (name, address) = crate::network::multiplayer_endpoints(&policy, false)?
+        let (_, address) = crate::network::multiplayer_endpoints(&policy, false)?
             .into_iter()
             .next()
             .context("master address missing")?;
-        Ok(Self {
-            name,
-            address,
-            local,
-        })
+        Ok(Self { address })
     }
     pub fn fetch(&self) -> Result<List> {
         let _job = Job::acquire()?;
@@ -70,10 +64,10 @@ impl Master {
             ensure!(bytes.len() + n <= MAX_BYTES, "master list exceeds quota");
             bytes.extend_from_slice(&part[..n]);
         }
-        parse(&bytes, self.local)
+        parse(&bytes, true)
     }
 }
-fn parse(bytes: &[u8], local: bool) -> Result<List> {
+fn parse(bytes: &[u8], _local: bool) -> Result<List> {
     ensure!(bytes.len() <= MAX_BYTES, "master list exceeds quota");
     let text = std::str::from_utf8(bytes)?;
     ensure!(
@@ -96,10 +90,7 @@ fn parse(bytes: &[u8], local: bool) -> Result<List> {
         let Some(port) = fields.next().and_then(|s| s.parse::<u16>().ok()) else {
             continue;
         };
-        if fields.next().is_some()
-            || !(1..65535).contains(&port)
-            || !crate::network::allowed_ip(ip.into(), local)
-        {
+        if fields.next().is_some() || !(1..65535).contains(&port) {
             continue;
         }
         servers.insert(SocketAddrV4::new(ip, port));
@@ -124,10 +115,10 @@ fn parse(bytes: &[u8], local: bool) -> Result<List> {
 mod tests {
     use super::*;
     #[test]
-    fn untrusted_master_text_cannot_add_commands_names_private_or_unbounded_grants() {
+    fn master_text_accepts_local_addresses_but_not_commands_names_or_unbounded_lists() {
         let list = parse(b"echo hello\nquit\naddserver 8.8.8.8 28785\naddserver 8.8.8.8 28785\naddserver evil.example 1\naddserver 127.0.0.1 2\naddserver 0.0.0.0 2\naddserver 224.0.0.1 2\naddserver 8.8.4.4 0\naddserver 8.8.4.4 65535\naddserver 8.8.4.4 2;quit\naddserver 8.8.4.4 2 extra\n", false).unwrap();
-        assert_eq!(list.bytes, b"addserver 8.8.8.8 28785\n");
-        assert_eq!(list.endpoints.len(), 2);
+        assert_eq!(list.bytes, b"addserver 0.0.0.0 2\naddserver 8.8.8.8 28785\naddserver 127.0.0.1 2\naddserver 224.0.0.1 2\n");
+        assert_eq!(list.endpoints.len(), 8);
         assert!(parse(b"addserver 8.8.8.8 1", false).is_err());
         assert!(parse(b"echo a\0b\n", false).is_err());
         assert!(parse(&[b'x'; MAX_BYTES + 1], false).is_err());
@@ -161,10 +152,10 @@ mod tests {
                 .unwrap();
         });
         let master = Master::resolve(&address.to_string(), true).unwrap();
-        assert_eq!(master.name, "127.0.0.1");
+        assert_eq!(master.address, address);
         let list = master.fetch().unwrap();
         assert_eq!(list.bytes, b"addserver 127.0.0.1 28785\n");
         worker.join().unwrap();
-        assert!(Master::resolve(&address.to_string(), false).is_err());
+        assert!(Master::resolve(&address.to_string(), false).is_ok());
     }
 }
