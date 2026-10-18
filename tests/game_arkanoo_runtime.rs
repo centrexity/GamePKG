@@ -2634,3 +2634,66 @@ fn original_supernova_and_space_wars_preserve_pixels_and_full_scene_budgets() {
         &[0, 3, 11, 14],
     );
 }
+
+#[test]
+#[ignore = "requires the signed production fixture prepared by tests/arkanoo.py"]
+fn original_star_voyage_preserves_pixels_and_full_scene_budgets() {
+    check_procedural_runtime_fixture(
+        include_str!("fixtures/arkanoo-star-voyage.json"),
+        2147614720,
+        &[0, 3, 7, 8, 9, 10],
+    );
+}
+
+#[test]
+#[ignore = "requires the signed production fixture prepared by tests/arkanoo.py"]
+fn sdl_default_line_coverage_and_clipping_reach_native_and_wasm() {
+    use std::io::Read;
+    let root = isolated_library();
+    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
+    let reference: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/sdl-background-lines.json")).unwrap();
+    for (index, case) in reference["cases"].as_array().unwrap().iter().enumerate() {
+        let count = game.step(2147745792 | index as u32).unwrap();
+        let data =
+            hex::decode(case["images"]["opengl"]["rgba_zlib_hex"].as_str().unwrap()).unwrap();
+        let mut pixels = Vec::new();
+        flate2::read::ZlibDecoder::new(data.as_slice())
+            .read_to_end(&mut pixels)
+            .unwrap();
+        let expected: std::collections::BTreeSet<_> = pixels
+            .chunks_exact(4)
+            .enumerate()
+            .filter(|(_, p)| p[..3] != [11, 16, 32])
+            .map(|(i, _)| i)
+            .collect();
+        assert_eq!(count, expected.len() as u64);
+        if expected.is_empty() {
+            assert!(game.frame().commands.is_empty());
+            continue;
+        }
+        let [Command::Image {
+            x,
+            y,
+            width,
+            height,
+            image,
+        }] = game.frame().commands.as_slice()
+        else {
+            panic!("Expected one bounded line layer")
+        };
+        let [w, h] = image.size();
+        assert!(w <= 64 && h <= 64);
+        assert_eq!((*width, *height), (w as f32 * 0.5, h as f32 * 0.5));
+        let left = (*x * 2.0) as usize;
+        let top = ((*y - 60.0) * 2.0) as usize;
+        let mut actual = std::collections::BTreeSet::new();
+        for (i, pixel) in image.pixels().chunks_exact(4).enumerate() {
+            if pixel[3] > 0 {
+                assert_eq!(pixel, [200, 100, 255, 150]);
+                actual.insert((top + i / w) * 64 + left + i % w);
+            }
+        }
+        assert_eq!(actual, expected, "SDL line case {index}");
+    }
+}

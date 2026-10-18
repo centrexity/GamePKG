@@ -8,9 +8,10 @@ from gui_test_support import start_display,choose_native_file
 import argparse, math
 from collections import Counter
 parser=argparse.ArgumentParser()
+parser.add_argument('--runtime-only',action='store_true',help='Run both signed execution profiles without starting GUI workflows')
 parser.add_argument('--skip-browser',action='store_true',help='Run native checks on hosts without Chromium/Selenium')
 args=parser.parse_args()
-if not args.skip_browser:
+if not args.skip_browser and not args.runtime_only:
     from selenium import webdriver
     from selenium.webdriver.chrome.options import Options
     from selenium.webdriver.chrome.service import Service
@@ -161,7 +162,15 @@ pub fn game_tick(input:u32,state:u64)->u64 {
     space_cases=json.loads((PROJECT/'tests/fixtures/arkanoo-space-background.json').read_text())['cases']
     space_values='['+','.join('['+str(case['level'])+'u64,'+str(case['frame'])+'u64]' for case in space_cases)+']'
     space_probe=procedural_probe.replace('fn procedural_probe','fn space_probe').replace(old_cases,space_values)
-    probe=' if input&2147549184==2147549184 {return space_probe(input); }\n'
+    voyage_cases=json.loads((PROJECT/'tests/fixtures/arkanoo-star-voyage.json').read_text())['cases']
+    voyage_values='['+','.join('['+str(case['level'])+'u64,'+str(case['frame'])+'u64]' for case in voyage_cases)+']'
+    voyage_probe=procedural_probe.replace('fn procedural_probe','fn voyage_probe').replace(old_cases,voyage_values)
+    line_cases=json.loads((PROJECT/'tests/fixtures/sdl-background-lines.json').read_text())['cases']
+    line_values='['+','.join('['+','.join(str(value)+'i32' for value in case['segment'])+']' for case in line_cases)+']'
+    line_probe='fn line_probe(input:u32)->u64 {let cases='+line_values+';let at=cases[(input&31) as usize];let mut dots=Vec::new();background::background_line_points(&mut dots,[at[0],at[1]],[at[2],at[3]],[64,64],0xc864ff96);gamepkg::draw_clear(0x0b1020ff);if let Some(image)=physics::effect_image(&dots){gamepkg::draw_image(image.left as f32*0.5,60.0+image.top as f32*0.5,image.width as f32*0.5,image.height as f32*0.5,image.width,image.height,&image.pixels);}dots.len() as u64}\n'
+    probe=' if input&2147745792==2147745792 {return line_probe(input); }\n'
+    probe+=' if input&2147614720==2147614720 {return voyage_probe(input); }\n'
+    probe+=' if input&2147549184==2147549184 {return space_probe(input); }\n'
     probe+=' if input&2147516416==2147516416 {return fire_sea_probe(input); }\n'
     probe+=' if input&2147500032==2147500032 {return procedural_probe(input); }\n'
     probe+=' if input&2147491840==2147491840 {return background_probe(input); }\n'
@@ -183,7 +192,7 @@ pub fn game_tick(input:u32,state:u64)->u64 {
         probe+=f'gamepkg::draw_clear(0x000000ff);render::draw_ball_effects(&ball,{case["frame"]});return 1;}};\n'
     probe+='return 0;}\n'
     probe_file=modes/'source/src/lib.rs'
-    text=probe_file.read_text();text=text.replace(' if input&67108864!=0 {',probe+' if input&67108864!=0 {');probe_file.write_text(text+metal_probe+ice_probe+fire_probe+bonus_probe+portal_probe+background_probe+procedural_probe+fire_sea_probe+space_probe+visual_probe)
+    text=probe_file.read_text();text=text.replace(' if input&67108864!=0 {',probe+' if input&67108864!=0 {');probe_file.write_text(text+metal_probe+ice_probe+fire_probe+bonus_probe+portal_probe+background_probe+procedural_probe+fire_sea_probe+space_probe+voyage_probe+line_probe+visual_probe)
     penguin_probe='''
 static HEART:Mutex<Option<physics::Game>>=Mutex::new(None);
 fn penguin_probe(input:u32)->u64 {
@@ -254,6 +263,9 @@ pub fn game_tick(input:u32,state:u64)->u64 {
     run('build','com.gamepkg.arkanoo-events-denied','--target','native')
     run('integrity-check','com.gamepkg.arkanoo')
     subprocess.run([str(RUNTIME_TEST),'--ignored'],env=probe_env,check=True,timeout=120)
+    if args.runtime_only:
+        print('Signed Arkanoo checks passed in Wasm and native execution; GUI workflows were not requested.')
+        raise SystemExit(0)
     # Real native window: locate the original cyan core, hold movement, start, pause.
     display=start_display(env,width=1400,height=900);app=None;wm=None
     from Xlib import display as xdisplay

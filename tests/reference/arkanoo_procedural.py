@@ -39,7 +39,7 @@ uint8_t*pixels=malloc(1280*720*4);if(SDL_RenderReadPixels(r,NULL,SDL_PIXELFORMAT
 '''
 themes=[int(value) for value in sys.argv[3].split(',')] if len(sys.argv)>3 else [7,9,19]
 assert themes and len(set(themes))==len(themes) and all(0<=theme<20 for theme in themes)
-assert all(theme in [7,9,11,16,17,18,19] for theme in themes), 'This recorder covers the adapted point/filled-rectangle themes; line and outline recording remains pending'
+assert all(theme in [1,7,9,11,16,17,18,19] for theme in themes), 'This recorder covers the adapted point/filled-rectangle themes; line and outline recording remains pending'
 body=body.replace('[7,9,19]',str(themes).replace(' ',''))
 rand_source=Path(sys.argv[2]);assert tomllib.loads((rand_source/'Cargo.toml').read_text())['package']['version']=='0.8.5'
 with tempfile.TemporaryDirectory(prefix='gamepkg-procedural-reference-') as temporary:

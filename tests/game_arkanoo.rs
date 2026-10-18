@@ -2582,3 +2582,64 @@ fn original_procedural_fire_and_deep_sea_match_ordered_pixels_and_rng() {
 fn original_supernova_and_space_wars_preserve_ordered_pixels_and_half_probability() {
     check_procedural_background_fixture(include_str!("fixtures/arkanoo-space-background.json"));
 }
+
+#[test]
+fn original_star_voyage_preserves_mixed_typed_root_stream_and_star_pixels() {
+    check_procedural_background_fixture(include_str!("fixtures/arkanoo-star-voyage.json"));
+}
+
+#[test]
+fn background_line_points_match_sdl_default_and_record_software_degenerate_edges() {
+    use std::io::Read;
+    let reference: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/sdl-background-lines.json")).unwrap();
+    for case in reference["cases"].as_array().unwrap() {
+        let segment: Vec<_> = case["segment"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_i64().unwrap() as i32)
+            .collect();
+        let mut dots = Vec::new();
+        background::background_line_points(
+            &mut dots,
+            [segment[0], segment[1]],
+            [segment[2], segment[3]],
+            [64, 64],
+            0xc864ff96,
+        );
+        assert!(dots.iter().all(|p| p.color == 0xc864ff96));
+        let actual: std::collections::BTreeSet<_> = dots
+            .iter()
+            .filter(|p| (0..64).contains(&p.x) && (0..64).contains(&p.y))
+            .map(|p| (p.y * 64 + p.x) as usize)
+            .collect();
+        for mode in ["opengl", "software"] {
+            let data =
+                hex::decode(case["images"][mode]["rgba_zlib_hex"].as_str().unwrap()).unwrap();
+            let mut pixels = Vec::new();
+            flate2::read::ZlibDecoder::new(data.as_slice())
+                .read_to_end(&mut pixels)
+                .unwrap();
+            assert_eq!(pixels.len(), 64 * 64 * 4);
+            assert_eq!(gamepkg_digest(&pixels), case["images"][mode]["rgba_sha256"]);
+            let expected: std::collections::BTreeSet<_> = pixels
+                .chunks_exact(4)
+                .enumerate()
+                .filter(|(_, p)| p[..3] != [11, 16, 32])
+                .map(|(i, _)| i)
+                .collect();
+            if mode == "opengl" || case["coverage_pixel_differences"] == 0 {
+                assert_eq!(actual, expected, "SDL {mode} line {segment:?}");
+            } else {
+                assert_eq!(segment[..2], segment[2..]);
+                assert!(
+                    expected.is_empty(),
+                    "Software SDL drops the zero-length line"
+                );
+                assert_eq!(actual.len(), 1);
+                assert_eq!(case["coverage_pixel_differences"], 1);
+            }
+        }
+    }
+}

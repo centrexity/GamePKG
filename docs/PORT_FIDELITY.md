@@ -1116,3 +1116,45 @@ regeneration also pass. Thirteen procedural themes, image/editor
 artwork, viewport, fonts/HUD/menus/audio and remaining platforms remain open.
 Recipe 0.1.33 changes source only; host version and binary/package releases are
 unchanged.
+
+### Star Voyage and the SDL default line baseline
+
+Star Voyage restores the original mixed typed root RNG stream. Theme selection
+consumes i32 sampling before u8 background colors, the u64 star count, f32 speed
+multiplier and u8 tint. Per-star seeds then preserve original position, distance,
+size and alpha. Using the wrong sampler or restarting the root stream after
+selection would change the whole scene. Eleven unchanged-original/real-Rand/SDL
+cases cover three actual selected levels and frame precision extremes.
+
+The shared player harness now derives its guest selector and native/browser key
+mapping from one table. Eight configurations pass two frames at each of three
+level seeds plus a revisit: maximum sampled difference three on desktop and two
+in browsers. The previous supernova/laser/empty-interval matrix passes again.
+Interior and nearest-boundary sampling limits remain explicit.
+
+The remaining angled-line themes require their own evidence. Inspection of the
+vendored SDL software backend alone initially suggested antialiased line behavior;
+actual SDL 2.30 tests showed the default common point rasterizer is selected.
+A new 32-case baseline records default OpenGL and software images separately.
+Thirty cases have identical coverage and at most two RGB levels of blend-rounding
+difference; two zero-length cases paint one point on OpenGL and none in software.
+The baseline includes slope ties, reversal, degenerate and fully rejected lines,
+edge-only paths and viewport crossings. SDL version and images/hashes are retained.
+
+An altered scalar Rust helper now reproduces default OpenGL coverage. Integer
+endpoint clipping must happen before rasterization: clipping completed points
+instead shifted edge pixels in the independent test. The helper includes the
+full SDL zlib notice and needs no SDL dependency in player/game code. Its signed
+native/Wasm probe checks every final reference coverage set, raw layer color,
+bounds, empty output and one-image layout. It is not yet integrated into the
+remaining line-based themes, and does not establish every SDL version, line mode,
+scaled frame or platform. Those requirements remain open.
+
+Validation includes 70 logic tests, the final 44 signed checks in both runtimes,
+unchanged full-scene drawing limits, actual player matrices, original gameplay/
+editor/file workflows, strict lint and reference regeneration. A runtime-only
+maintainer option permits rechecking both signed execution profiles without
+repeating GUI workflows; CI retains the full default workflow. Twelve procedural
+themes, image/editor artwork, viewport, fonts/HUD/menus/audio and remaining
+platforms are unfinished. Recipe 0.1.34 is source-only, with unchanged host version
+and no binary/package release.

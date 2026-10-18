@@ -313,9 +313,9 @@ notes = "The complete unchanged original animated-background function compiles a
 
 [[work]]
 id = "arkanoo_remaining_procedural_themes"
-requirements = ["Cyber grid", "Star voyage", "Hex pulse", "Aurora waves", "Matrix rain", "Nebula clouds", "Rain and thunder", "Starry night", "Bubbles", "Digital circuit", "Kaleidoscope", "Warp", "Maze"]
+requirements = ["Cyber grid", "Hex pulse", "Aurora waves", "Matrix rain", "Nebula clouds", "Rain and thunder", "Starry night", "Bubbles", "Digital circuit", "Kaleidoscope", "Warp", "Maze"]
 status = "pending"
-notes = "The source now selects the original theme deterministically, but only Snow, Smoke, Tornado, Fire, Deep Sea, Supernova and Space Wars draw paths are adapted. Other selected themes still reach the previous grid fallback. Their original RNG types, line/outline rasterization, blend order, clipping, frame timing and resource use need independent reference evidence; the seven restored themes do not establish their completion."
+notes = "The source now selects the original theme deterministically, but only Star Voyage, Snow, Smoke, Tornado, Fire, Deep Sea, Supernova and Space Wars draw paths are adapted. Other selected themes still reach the previous grid fallback. Their original RNG types, line/outline rasterization, blend order, clipping, frame timing and resource use need independent reference evidence; the eight restored themes do not establish their completion."
 
 [[work]]
 id = "arkanoo_procedural_fire_and_deep_sea"
@@ -328,3 +328,15 @@ id = "arkanoo_procedural_supernova_and_space_wars"
 requirements = ["Original core shockwave and seeded debris", "Original interval/offset laser selection", "Exact half-probability RNG consumption", "Release wrapping after f32-to-u64 conversion", "Empty intervals clear earlier shots", "Native/Wasm pixels and full-scene limits", "Real desktop/browser animation and clearing"]
 status = "implemented_two_themes_verified_linux_browser"
 notes = "Twenty-two complete-original/real-Rand/SDL cases compare every ordered point/color hash and full framebuffer under the existing four-level grouping bound. Four real Rand streams verify 1,024 half-probability values. All 42 signed checks pass native and Wasm, preserving full fire-brick/particle scenes and empty backgrounds. Eight player configurations verify both animation frames/theme, a genuinely empty interval and a revisit. Desktop sampled delta at most two and browsers one; empty-interval samples match exactly. Laser samples use a one-pixel vertical interior margin because the original bars are only four pixels high; ordinary nearest-boundary choices remain explicit. Thirteen themes, original image/editor artwork, complete-window/edge/platform fidelity and remaining presentation/audio are unfinished."
+
+[[work]]
+id = "arkanoo_procedural_star_voyage"
+requirements = ["Original mixed typed root random stream", "Background tint speed and count selection", "Original per-star seeded positions sizes alpha", "Multiple actual selected levels and extreme phases", "Signed native/Wasm complete pixels and full-scene budgets", "Real desktop/browser seed changes and animation"]
+status = "implemented_and_verified_linux_browser"
+notes = "Eleven complete-original/real-Rand/SDL cases match ordered point/color hashes and all composed pixels under the existing four-level grouping bound. Root sampling consumes i32 theme, u8 colors, u64 star count, f32 speed and u8 tint in original order. Eight real players pass two frames for all three selected levels plus a revisit; sampled desktop delta at most three, browser two. Full signed native/Wasm scenes preserve fire bricks and 3,000 particles. The shared player fixture now generates guest/native/browser key mapping from one table; the existing space/empty-interval matrix passes again. Twelve themes, original image/editor artwork, full-window/edge/platform fidelity and remaining presentation/audio remain open."
+
+[[work]]
+id = "arkanoo_sdl_background_line_rasterization"
+requirements = ["Measure actual default OpenGL/software behavior", "Clip endpoints before rasterization", "Forward/reversed slope ties", "Viewport boundary crossing and rejection", "Degenerate line semantics", "Scalar portable attributed implementation", "Signed native/Wasm coverage", "Integrate remaining line-based themes"]
+status = "default_helper_and_reference_verified_theme_integration_pending"
+notes = "The 32-case real SDL 2.30 corpus records both renderer images, hashes, color and coverage differences. Default OpenGL/software share coverage in 30 cases and differ on two zero-length lines: GL paints one point, software omits it. RGB differences in the shared-coverage cases are at most two levels. An altered attributed zlib-licensed scalar helper follows default OpenGL coverage, including integer endpoint clipping before Bresenham; clipping after rasterization gave wrong edge phases and was corrected. Signed native/Wasm checks exercise the final corpus. This does not restore the remaining theme draw paths or establish all SDL versions, line modes, scaled/complete-frame or platform parity."
