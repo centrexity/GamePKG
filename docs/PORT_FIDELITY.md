@@ -1280,3 +1280,41 @@ not prove complete scaled-window or other-platform fidelity. Seven procedural
 themes, image/editor artwork, viewport, fonts/HUD/menus/audio and the other port
 requirements remain open. Recipe 0.1.37 is source-only; the host remains 0.1.17
 and no binary/package release is created.
+
+
+### Matrix Rain and Nebula Clouds
+
+Matrix Rain now retains the original shared u64 stream count/f32 multiplier,
+per-stream seeded position/speed/length/head offset and ordered 8×12 character
+rectangles. Its head addition explicitly wraps as in the original release;
+large saturated frame phases produce an empty background in the original and
+remain empty in this port. Nebula retains its typed background/cloud-count
+stream, per-cloud position/size/color, original trigonometric drift/casts and
+nested rectangles in their original order.
+
+A new rectangle recorder compiles the complete unchanged original function with
+pinned real Rand. It sends the raw ordered rectangles directly to actual SDL
+2.30 RenderFillRect calls, independently of the port's pixel expansion or blend
+implementation. Twenty-two seed/frame cases cover three selected levels/theme,
+extreme phases, overlap and viewport clipping. Every command field/hash, all
+133 independent 48-command-group OpenGL contribution maps and all complete
+canonical default OpenGL logical framebuffer bytes match. Original software SDL
+has identical coverage in these cases but differs by up to 23 RGB levels after
+repeated faint cloud blends; both original images and the measured backend
+difference are verified separately. The canonical comparison remains exact.
+
+An initial expanded per-pixel cloud list exceeded the existing 16 MiB package
+memory limit. The final renderer composites the ordered original rectangles
+directly into a bounded logical image, retaining every blend without that list.
+Non-overlapping 128-pixel tiles preserve all 200 fire-brick overlays and all four
+corner particle layers with 3,000 particles, cold and warm. Source/portability,
+command, image-byte, time and memory limits are unchanged.
+
+All 74 logic tests and 48 signed runtime checks per profile pass. Eight actual
+player configurations verify two animated frames/theme, another seed, an empty
+phase and revisit. Browser samples match exactly; desktop samples differ by at
+most one color level. Interior sampling with explicit nearest-boundary choices
+still does not establish complete scaled-window or other-platform fidelity.
+Five procedural themes, image/editor art, viewport, fonts/HUD/menus/audio and
+the other open port requirements remain unfinished. Recipe 0.1.38 is source-only;
+the host version and published binary/package releases are unchanged.

@@ -2754,3 +2754,13 @@ fn original_cyber_and_aurora_preserve_line_pixels_and_full_scene_budgets() {
         &[0, 3, 11, 14, 20, 21],
     );
 }
+
+#[test]
+#[ignore = "requires the signed production fixture prepared by tests/arkanoo.py"]
+fn original_matrix_and_nebula_preserve_rectangle_pixels_and_full_scene_budgets() {
+    check_procedural_runtime_fixture(
+        include_str!("fixtures/arkanoo-matrix-nebula.json"),
+        2151677952,
+        &[0, 3, 5, 11, 14, 20],
+    );
+}

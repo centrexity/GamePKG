@@ -2799,3 +2799,122 @@ fn original_cyber_and_aurora_preserve_line_commands_and_actual_sdl_framebuffers(
     );
     check_line_background_fixture(text);
 }
+
+#[test]
+fn original_matrix_and_nebula_preserve_rectangle_commands_and_actual_sdl_framebuffers() {
+    use std::io::Read;
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-matrix-nebula.json")).unwrap();
+    for case in fixture["cases"].as_array().unwrap() {
+        let frame = case["frame"].as_u64().unwrap();
+        let level = case["level"].as_u64().unwrap() as u32;
+        let theme = case["theme"].as_u64().unwrap() as u32;
+        assert_eq!(procedural::procedural_theme(level), theme);
+        let (color, rectangles) = match theme {
+            4 => procedural::matrix_rectangles(level, frame),
+            5 => procedural::nebula_rectangles(level, frame),
+            _ => panic!("Unknown rectangle theme"),
+        };
+        assert_eq!(u64::from(color), case["background"].as_u64().unwrap());
+        assert_eq!(
+            rectangles.len(),
+            case["rectangle_count"].as_u64().unwrap() as usize
+        );
+        let mut trace = Vec::new();
+        let groups = case["opengl_layer_counts_zlib_hex"].as_array().unwrap();
+        let mut counts = vec![vec![0u8; 1280 * 720]; groups.len()];
+        for (index, (rect, original)) in rectangles
+            .iter()
+            .zip(case["rectangles"].as_array().unwrap())
+            .enumerate()
+        {
+            assert_eq!(
+                serde_json::json!([
+                    i64::from(rect.position[0]),
+                    i64::from(rect.position[1]),
+                    i64::from(rect.size[0]),
+                    i64::from(rect.size[1]),
+                    i64::from(rect.color)
+                ]),
+                *original
+            );
+            trace.extend(rect.position[0].to_le_bytes());
+            trace.extend(rect.position[1].to_le_bytes());
+            trace.extend(rect.size[0].to_le_bytes());
+            trace.extend(rect.size[1].to_le_bytes());
+            trace.extend(rect.color.to_le_bytes());
+            if rect.color & 255 == 0 {
+                continue;
+            }
+            let mut dots = Vec::new();
+            background::rectangle(
+                &mut dots,
+                rect.position[0],
+                rect.position[1],
+                rect.size[0] as i32,
+                rect.size[1] as i32,
+                rect.color,
+            );
+            for dot in dots {
+                counts[index / 48][dot.y as usize * 1280 + dot.x as usize] += 1;
+            }
+        }
+        assert_eq!(gamepkg_digest(&trace), case["rectangle_sha256"]);
+        assert_eq!(case["coverage_backend_differences"], 0);
+        for (group, encoded) in groups.iter().enumerate() {
+            let data = hex::decode(encoded.as_str().unwrap()).unwrap();
+            let mut expected = Vec::new();
+            flate2::read::ZlibDecoder::new(data.as_slice())
+                .read_to_end(&mut expected)
+                .unwrap();
+            assert_eq!(
+                counts[group], expected,
+                "Actual SDL rectangle contributions, theme {theme}, frame {frame}, group {group}"
+            );
+        }
+        let mut actual = Vec::new();
+        for _ in 0..1280 * 720 {
+            actual.extend(color.to_be_bytes());
+        }
+        if let Some(image) = background::composited_rectangles(&rectangles, color) {
+            for (index, pixel) in image.pixels.chunks_exact(4).enumerate() {
+                let at = ((image.top as usize + index / image.width as usize) * 1280
+                    + image.left as usize
+                    + index % image.width as usize)
+                    * 4;
+                for channel in 0..3 {
+                    actual[at + channel] = ((u32::from(pixel[channel]) * u32::from(pixel[3])
+                        + u32::from(actual[at + channel]) * (255 - u32::from(pixel[3])))
+                        / 255) as u8;
+                }
+            }
+        }
+        for backend in ["sdl_rgba_zlib_hex", "opengl_rgba_zlib_hex"] {
+            let data = hex::decode(case[backend].as_str().unwrap()).unwrap();
+            let mut expected = Vec::new();
+            flate2::read::ZlibDecoder::new(data.as_slice())
+                .read_to_end(&mut expected)
+                .unwrap();
+            assert_eq!(actual.len(), expected.len());
+            let delta = actual
+                .iter()
+                .zip(expected)
+                .map(|(a, b)| a.abs_diff(b))
+                .max()
+                .unwrap();
+            println!("rectangle theme {theme}, frame {frame}, {backend}, maximum delta {delta}");
+            if backend == "opengl_rgba_zlib_hex" {
+                assert_eq!(
+                    delta, 0,
+                    "Original default GL rectangle composition differs"
+                );
+            } else {
+                assert_eq!(
+                    u64::from(delta),
+                    case["maximum_backend_rgb_delta"].as_u64().unwrap(),
+                    "Recorded original SDL renderer difference changed"
+                );
+            }
+        }
+    }
+}

@@ -313,9 +313,9 @@ notes = "The complete unchanged original animated-background function compiles a
 
 [[work]]
 id = "arkanoo_remaining_procedural_themes"
-requirements = ["Hex pulse", "Matrix rain", "Nebula clouds", "Starry night", "Bubbles", "Digital circuit", "Maze"]
+requirements = ["Hex pulse", "Starry night", "Bubbles", "Digital circuit", "Maze"]
 status = "pending"
-notes = "The source now selects the original theme deterministically, but only Star Voyage, Snow, Smoke, Tornado, Fire, Deep Sea, Supernova, Space Wars, Kaleidoscope, Rain, Warp, Cyber Grid and Aurora Waves draw paths are adapted. Other selected themes still reach the previous grid fallback. Their original RNG types, line/outline rasterization, blend order, clipping, frame timing and resource use need independent reference evidence; the thirteen restored themes do not establish their completion."
+notes = "The source now selects the original theme deterministically, but only Star Voyage, Snow, Smoke, Tornado, Fire, Deep Sea, Supernova, Space Wars, Kaleidoscope, Rain, Warp, Cyber Grid, Aurora Waves, Matrix Rain and Nebula Clouds draw paths are adapted. Other selected themes still reach the previous grid fallback. Their original RNG types, line/outline rasterization, blend order, clipping, frame timing and resource use need independent reference evidence; the fifteen restored themes do not establish their completion."
 
 [[work]]
 id = "arkanoo_procedural_fire_and_deep_sea"
@@ -358,3 +358,9 @@ id = "arkanoo_procedural_cyber_and_aurora"
 requirements = ["Original shared typed RNG stream and colors", "Perspective horizon spacing and scanline motion", "Both aurora orientations and wave parameters", "Exact ordered lines and contribution maps", "Exact original default OpenGL logical frames", "Signed native/Wasm dense-scene budgets", "Actual desktop/browser animation and revisit"]
 status = "implemented_and_verified_linux_browser"
 notes = "The complete unchanged original function with pinned Rand supplies 22 selected-level/frame cases including both aurora branches and extreme phases. All ordered commands, 185 independently recorded SDL 2.30 default OpenGL contribution maps and complete canonical framebuffers match production exactly in logic and signed native/Wasm checks. Separate original software frames have identical coverage and at most six RGB levels of renderer difference. The existing attributed clipped-line helper, precompositor and density-based tiles preserve all 200 fire-brick layers and 3,000-particle corner layers within unchanged limits. All 73 logic tests and 47 signed checks per profile pass. Eight actual players pass animation/theme/orientation/revisit checks with exact browser samples and desktop delta at most one. Seven procedural themes, other artwork and complete scaled-window/platform fidelity remain open."
+
+[[work]]
+id = "arkanoo_procedural_matrix_and_nebula"
+requirements = ["Original shared and per-object typed RNG streams", "Matrix head phase and release overflow", "Original nested cloud rectangles drift and colors", "Raw rectangle order and real SDL clipping/coverage", "Exact default OpenGL logical framebuffers", "Native/Wasm dense scenes within existing memory/drawing limits", "Actual player animation empty phase and revisit"]
+status = "implemented_and_verified_linux_browser"
+notes = "The complete unchanged original function with pinned real Rand supplies 22 selected-level/frame cases including extreme and empty phases. Actual SDL 2.30 filled-rectangle calls verify every ordered command and all 133 grouped contribution maps independently. Complete canonical OpenGL frames match exactly in logic and signed native/Wasm tests; separate original software frames have identical coverage and up to 23 RGB levels of backend difference on faint repeated cloud layers. Direct ordered-rectangle composition avoids the expanded point list, retaining the 16 MiB package memory cap. All 200 fire-brick overlays and four corner layers with 3,000 particles remain within unchanged drawing/time/source limits, cold/warm. All 74 logic tests and 48 signed checks per profile pass. Eight actual players pass animated frames, another seed, empty-phase clearing and revisit: browser samples exact, desktop delta at most one. Five themes and complete scaled-window/platform/art/audio fidelity remain open."
