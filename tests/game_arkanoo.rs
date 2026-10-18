@@ -29,11 +29,198 @@ mod menu;
 #[path = "../ports/arkanoo/source/src/pattern_rng.rs"]
 mod pattern_rng;
 #[path = "../ports/arkanoo/source/src/physics.rs"]
+// Guest source cannot use vec!; its bounded allocation uses capacity + resize.
+#[allow(clippy::slow_vector_initialization)]
 mod physics;
 fn menu_game() -> physics::Game {
     let mut game = physics::Game::new();
     game.source_input(5, 0.0, 0.0, 40);
     game
+}
+#[test]
+fn particle_lifetimes_rotations_alpha_and_ordered_shard_points_match_original() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-particles.json")).unwrap();
+    gamepkg::samples(&[(1u64 << 62) | (1u64 << 38)]);
+    let constructed = physics::Particle::new(6.25, 58.375, 1.0, -2.0, 0x1964c8ff);
+    let expected = fixture["constructor"].as_array().unwrap();
+    assert_eq!(
+        [
+            constructed.rotation,
+            constructed.rotation_speed,
+            constructed.max_life as f32,
+            constructed.size as f32
+        ],
+        [
+            expected[0].as_f64().unwrap() as f32,
+            expected[1].as_f64().unwrap() as f32,
+            expected[2].as_f64().unwrap() as f32,
+            expected[3].as_f64().unwrap() as f32
+        ]
+    );
+    for case in fixture["cases"].as_array().unwrap() {
+        let initial: Vec<f32> = case["initial"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|n| n.as_f64().unwrap() as f32)
+            .collect();
+        let mut p = physics::Particle {
+            x: initial[0],
+            y: initial[1],
+            vx: initial[2],
+            vy: initial[3],
+            rotation: initial[4],
+            rotation_speed: initial[5],
+            life: initial[6] as u32,
+            max_life: initial[6] as u32,
+            size: initial[7] as i32,
+            color: 0x1964c8ff,
+        };
+        for frame in case["frames"].as_array().unwrap() {
+            let expected = frame["state"].as_array().unwrap();
+            for (actual, expected) in [p.x, p.y, p.vy, p.rotation].iter().zip(expected) {
+                assert!((*actual - expected.as_f64().unwrap() as f32).abs() < 0.0001);
+            }
+            assert_eq!(u64::from(p.alpha()), expected[4].as_f64().unwrap() as u64);
+            assert_eq!(p.life > 0, expected[5].as_f64().unwrap() == 1.0);
+            let points: Vec<[i32; 2]> = frame["points"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|p| [p[0].as_i64().unwrap() as i32, p[1].as_i64().unwrap() as i32])
+                .collect();
+            assert_eq!(
+                p.shard_coordinates(),
+                points,
+                "integer rotation, duplicates and point order changed"
+            );
+            p.advance();
+        }
+    }
+}
+#[test]
+fn particle_batch_clips_composites_and_retains_large_bursts_without_draw_caps() {
+    let mut game = menu_game();
+    for _ in 0..200 {
+        game.burst(320.0, 240.0, 0xff0000ff);
+    }
+    assert!((2000..=3000).contains(&game.particles.len()));
+    let image = physics::particle_image(&game.particles).unwrap();
+    assert_eq!(
+        (image.left, image.top, image.width, image.height),
+        (635, 355, 11, 11)
+    );
+    assert_eq!(image.pixels.len(), 11 * 11 * 4);
+    assert!(image.pixels.chunks_exact(4).any(|p| p == [255, 0, 0, 255]));
+    for p in &mut game.particles {
+        p.x = -100.0;
+        p.y = -100.0;
+    }
+    assert!(physics::particle_image(&game.particles).is_none());
+    assert!(physics::particle_image(&[]).is_none());
+    gamepkg::samples(&[0, 0, 20, 5]);
+    let mut p = physics::Particle::new(0.0, 60.0, 0.0, 0.0, 0xff0000ff);
+    p.life = 10;
+    let image = physics::particle_image(&[p]).unwrap();
+    assert_eq!(
+        (image.left, image.top, image.width, image.height),
+        (0, 0, 6, 6)
+    );
+    assert_eq!(&image.pixels[..4], &[255, 0, 0, 127]);
+    gamepkg::samples(&[u64::MAX, 239, 254]);
+    let p = physics::Particle::new(0.0, 60.0, 0.0, 0.0, 0xffffffff);
+    assert_eq!((p.life, p.size), (39, 7));
+    assert!(p.rotation < 360.0 && p.rotation_speed < 10.0);
+    game.mode = 2;
+    let before = game.particles[0].life;
+    game.update(0);
+    assert_eq!(game.particles[0].life, before, "pause aged particles");
+}
+#[test]
+fn original_particle_triggers_keep_launch_record_portal_and_absorption_counts() {
+    let mut game = menu_game();
+    game.mode = 1;
+    game.fire_or_launch();
+    assert_eq!(game.particles.len(), 20);
+    assert!(game
+        .particles
+        .iter()
+        .all(|p| p.color == 0xffc832ff && (20..40).contains(&p.life) && (3..8).contains(&p.size)));
+    game.fire_or_launch();
+    assert_eq!(
+        game.particles.len(),
+        20,
+        "a flying ball spawned another manual-launch burst"
+    );
+    let mut portal = menu_game();
+    portal.mode = 1;
+    portal.balls[0].attached = false;
+    portal.balls[0].vx = 30.0;
+    portal.balls[0].vy = 0.0;
+    portal.update(0);
+    assert!(portal.portal);
+    assert_eq!(portal.particles.len(), 105);
+    assert_eq!(
+        portal
+            .particles
+            .iter()
+            .filter(|p| p.color == 0x9632ffff)
+            .count(),
+        100
+    );
+    assert!(portal.particles.iter().all(|p| p.life + 1 == p.max_life));
+    portal.update(0);
+    assert_eq!(
+        portal.particles.len(),
+        105,
+        "portal activation replayed its burst"
+    );
+    let mut absorb = menu_game();
+    absorb.mode = 1;
+    absorb.portal = true;
+    absorb.blocks = [0; 200];
+    absorb.blocks[0] = 1;
+    absorb.block_x[0] = 305.0;
+    absorb.block_y[0] = 235.0;
+    absorb.update(0);
+    assert_eq!(absorb.particles.len(), 5);
+    assert!(absorb
+        .particles
+        .iter()
+        .all(|p| p.color == 0x9632ffff && p.life + 1 == p.max_life));
+}
+#[test]
+fn packed_particle_randomness_keeps_independent_uniform_ranges_and_bounded_calls() {
+    let mut ages = [0u32; 20];
+    let mut sizes = [0u32; 5];
+    for age in 0u64..240 {
+        for size in 0u64..255 {
+            let word = (1u64 << 62) | (1u64 << 39) | (size << 8) | age;
+            gamepkg::samples(&[word, 12345]);
+            let p = physics::Particle::new(0.0, 60.0, 0.0, 0.0, 0xffffffff);
+            ages[(p.life - 20) as usize] += 1;
+            sizes[(p.size - 3) as usize] += 1;
+            assert_eq!((p.rotation, p.rotation_speed), (90.0, 0.0));
+            assert_eq!(
+                gamepkg::random_u64(),
+                12345,
+                "accepted fields consumed extra host words"
+            );
+        }
+    }
+    assert_eq!(ages, [3060; 20]);
+    assert_eq!(sizes, [12240; 5]);
+    gamepkg::samples(&[65535, 255, 240, 239, 255, 254, 12345]);
+    let p = physics::Particle::new(0.0, 60.0, 0.0, 0.0, 0xffffffff);
+    assert_eq!((p.life, p.size), (39, 7));
+    assert_eq!(
+        gamepkg::random_u64(),
+        12345,
+        "integer rejection skipped or reused sample bytes"
+    );
+    gamepkg::samples(&[(1u64 << 62) | (1u64 << 39)]);
+    assert_eq!(physics::random_pair(), [0.25, 0.5]);
 }
 #[test]
 fn splash_restart_and_editor_return_match_pinned_original_state_code() {
@@ -247,7 +434,11 @@ fn temporary_bonuses_expire_and_drop_cooldown_applies() {
     for i in 0..200 {
         game.hit(i);
     }
-    assert!(game.particles.len() <= 64);
+    assert_eq!(
+        game.particle_spawns.len(),
+        200,
+        "destroyed bricks lost queued effects"
+    );
     assert!(game.drops.len() <= 1);
 }
 
@@ -440,9 +631,9 @@ fn ball_contacts_restore_original_upward_ejection_and_shockwave() {
     assert_eq!(game.particles.len(), 36);
     assert_eq!(game.sound, 1);
     for particle in &game.particles {
-        assert_eq!((particle.x, particle.y), (102.5, 200.0));
+        assert_eq!((particle.x, particle.y), (205.0, 280.0));
         assert_eq!(particle.color, 0xc8ffffff);
-        assert!((particle.vx.hypot(particle.vy) - 3.0).abs() < 0.00001);
+        assert!((particle.vx.hypot(particle.vy) - 6.0).abs() < 0.00001);
     }
 }
 
@@ -928,6 +1119,10 @@ fn level_reset_matches_unchanged_original_with_items_and_high_level_numbers() {
             vx: 1.0,
             vy: 1.0,
             life: 20,
+            max_life: 20,
+            rotation: 0.0,
+            rotation_speed: 0.0,
+            size: 3,
             color: 0xffffffff,
         });
         game.update(4);

@@ -265,13 +265,116 @@ fn multiball_ejection_and_shockwave_reach_the_real_renderer() {
         "original upward/separating response did not run"
     );
     assert_eq!(state & 1, 0, "contact incorrectly activated the portal");
+    assert_eq!(
+        state >> 32,
+        41,
+        "five record particles plus the original 36-particle shockwave"
+    );
     let shockwave = game
         .frame()
         .commands
         .iter()
-        .filter(|command| matches!(command, Command::Rect { rgba, .. } if *rgba == 0xc8ffffff))
+        .filter(|command| matches!(command, Command::Image { image, .. } if image.pixels().chunks_exact(4).any(|p|p[..3]==[200,255,255] && p[3]>0)))
         .count();
-    assert_eq!(shockwave, 36, "missing original 36-particle shockwave");
+    assert_eq!(shockwave, 1, "missing batched original shockwave shards");
+}
+
+#[test]
+#[ignore = "requires the signed production-effects fixture prepared by tests/arkanoo.py"]
+fn original_particle_points_and_alpha_reach_native_and_wasm_renderers_without_caps() {
+    let root = isolated_library();
+    let mut game = load_menu(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-particles.json")).unwrap();
+    for (case_index, case) in fixture["cases"].as_array().unwrap().iter().enumerate() {
+        for (frame_index, frame) in case["frames"].as_array().unwrap().iter().enumerate() {
+            game.step(33554432 | case_index as u32 | ((frame_index as u32) << 2))
+                .unwrap();
+            let alpha = frame["state"][4].as_f64().unwrap() as u32;
+            let mut expected = std::collections::BTreeMap::new();
+            for point in frame["points"].as_array().unwrap() {
+                let x = point[0].as_i64().unwrap() as i32;
+                let y = point[1].as_i64().unwrap() as i32;
+                if (0..1280).contains(&x) && (0..720).contains(&y) && alpha != 0 {
+                    let pixel = expected.entry((x, y)).or_insert([25u8, 100, 200, 0]);
+                    pixel[3] = ((alpha * 255 + u32::from(pixel[3]) * (255 - alpha)) / 255) as u8;
+                }
+            }
+            let mut actual = std::collections::BTreeMap::new();
+            for command in &game.frame().commands {
+                if let Command::Image {
+                    x,
+                    y,
+                    width,
+                    height,
+                    image,
+                } = command
+                {
+                    let [w, h] = image.size();
+                    assert_eq!((*width, *height), (w as f32 * 0.5, h as f32 * 0.5));
+                    let left = (*x * 2.0) as i32;
+                    let top = ((*y - 60.0) * 2.0) as i32;
+                    for (index, pixel) in image.pixels().chunks_exact(4).enumerate() {
+                        if pixel[3] != 0 {
+                            actual.insert(
+                                (left + (index % w) as i32, top + (index / w) as i32),
+                                [pixel[0], pixel[1], pixel[2], pixel[3]],
+                            );
+                        }
+                    }
+                }
+            }
+            assert_eq!(actual, expected, "case {case_index} frame {frame_index}");
+            assert!(game.frame().commands.len() <= 1);
+        }
+    }
+    let count = game.step(67108864).unwrap();
+    assert!(
+        (2000..=3000).contains(&count),
+        "full-board effects were capped: {count}"
+    );
+    assert!(game.frame().commands.len() < 600);
+    assert!(game.frame().commands.iter().any(|command|matches!(command,Command::Image{image,..} if image.pixels().chunks_exact(4).any(|p|p[3]>0))));
+    assert!(
+        game.frame()
+            .commands
+            .iter()
+            .filter(|command| matches!(command,Command::Image{image,..} if image.size()[1]>50))
+            .count()
+            >= 2,
+        "wide particle layer was not tiled"
+    );
+    let count = game.step(67108865).unwrap();
+    assert!((2000..=3000).contains(&count));
+    let mut corners = std::collections::BTreeSet::new();
+    let mut tiles = 0;
+    for command in &game.frame().commands {
+        if let Command::Image { x, y, image, .. } = command {
+            let [w, h] = image.size();
+            if h <= 50 {
+                continue;
+            }
+            tiles += 1;
+            assert!(w <= 512 && h <= 512);
+            let left = (*x * 2.0) as i32;
+            let top = ((*y - 60.0) * 2.0) as i32;
+            for (index, pixel) in image.pixels().chunks_exact(4).enumerate() {
+                let point = (left + (index % w) as i32, top + (index / w) as i32);
+                if pixel[3] > 0 && [(0, 0), (1279, 0), (0, 719), (1279, 719)].contains(&point) {
+                    corners.insert(point);
+                }
+            }
+        }
+    }
+    assert!(
+        (4..=6).contains(&tiles),
+        "full-size particle layer lost tiles: {tiles}"
+    );
+    assert_eq!(
+        corners.len(),
+        4,
+        "full-size particle layer lost visible corner shards"
+    );
 }
 
 #[test]

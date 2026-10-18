@@ -180,3 +180,11 @@ Enter-skip and editor-exit fragments. Full-file SHA-256 guards pin both sources.
 Seventeen observations cover startup boundaries, skipped and expired restart
 timers, and editor return before/after starting play. SDL calls and entity
 allocation are stubs; this verifies state flow, not artwork/audio or physics.
+
+`arkanoo_particles.py /path/to/pinned/arkanoo` regenerates
+`arkanoo-particles.json`. It compiles the complete unchanged original Particle
+implementation and shard draw function, recording SDL draw points. Full-file
+hashes guard both originals; 114 observations cover lifecycle, rotation, alpha,
+point order/duplicates and negative/edge coordinates. Controlled constructor
+randomness isolates the original range/default formulas. GamePKG's independent
+field packing/rejection is tested separately for uniform ranges and host calls.

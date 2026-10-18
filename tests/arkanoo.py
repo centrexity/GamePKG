@@ -51,6 +51,21 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-arkanoo-',dir=PROJECT/'target')
     (modes/'source/src/lib.rs').write_text('''mod audio;mod editor;mod levels;mod menu;mod pattern_rng;mod physics;mod render;use std::sync::Mutex;
 static GAME:Mutex<Option<physics::Game>>=Mutex::new(None);
 pub fn game_tick(input:u32,state:u64)->u64 {
+ if input&67108864!=0 {
+  let mut game=physics::Game::new();game.mode=1;
+  for index in 0..200 {game.destroy(index);}game.update(0);
+  if input&1!=0 {for (index,p) in game.particles.iter_mut().enumerate() {p.x=if index%2==0 {0.0} else {1279.0};p.y=if index%4<2 {0.0} else {719.0};}}
+  render::draw(&game);return game.particles.len() as u64;
+ }
+ if input&33554432!=0 {
+  let values=if input&3==0 {[100.75,200.25,2.0,-4.0,0.0,7.5,20.0,3.0]}
+   else if input&3==1 {[-0.75,0.75,-2.5,3.0,45.0,-10.0,39.0,7.0]}
+   else if input&3==2 {[1279.5,719.75,0.0,0.0,90.0,0.0,30.0,6.0]}
+   else {[640.0,360.0,1.5,-2.25,359.0,9.5,21.0,5.0]};
+  let mut p=physics::Particle{x:values[0],y:values[1],vx:values[2],vy:values[3],rotation:values[4],rotation_speed:values[5],life:values[6] as u32,max_life:values[6] as u32,size:values[7] as i32,color:0x1964c8ff};
+  for _ in 0..((input>>2)&63) {p.advance();}
+  gamepkg::draw_clear(0x000000ff);render::draw_particles(&[p]);return 1;
+ }
  if input&16777216!=0 {let samples=audio::effect_samples(1,u32::MAX,128,false);gamepkg::audio_submit(&samples);return 1;}
  if let Ok(mut slot)=GAME.lock(){
   if slot.is_none(){let mut game=physics::Game::new();game.mode=1;game.blocks=[0;200];game.blocks[0]=1;game.balls[0].attached=false;game.balls[0].vx=30.0;game.balls[0].vy=0.0;*slot=Some(game);}
@@ -89,7 +104,8 @@ pub fn game_tick(input:u32,state:u64)->u64 {
    let preserved=game.width==90.0 && game.long>0 && game.ghost>0 && game.ammo==1 && game.lost_life;
    let ice=game.blocks[0]==1 && game.block_type[0]==1 && game.block_health[0]==1;
    let blast=game.blocks[0]==0 && game.blocks[1]==0 && game.blocks[2]==1 && game.blocks[3]==0 && game.blocks[4]==1 && game.blocks[5]==0 && game.blocks[6]==1;
-   return (u64::from(game.score)<<32)|u64::from(game.portal)|(u64::from(game.gravity)<<1)|(u64::from(game.mode==3)<<2)|(u64::from(contact)<<3)|(u64::from(brick)<<4)|(u64::from(ordered)<<5)|(u64::from(waiting)<<6)|(u64::from(stationary)<<7)|(u64::from(game.mode==5)<<10)|(u64::from(preserved)<<11)|(u64::from(ice)<<12)|(u64::from(blast)<<13)|(u64::from(game.lives)<<8)|(u64::from(game.level)<<16);
+   let score=if input&4096!=0 {game.particles.len() as u32} else {game.score};
+   return (u64::from(score)<<32)|u64::from(game.portal)|(u64::from(game.gravity)<<1)|(u64::from(game.mode==3)<<2)|(u64::from(contact)<<3)|(u64::from(brick)<<4)|(u64::from(ordered)<<5)|(u64::from(waiting)<<6)|(u64::from(stationary)<<7)|(u64::from(game.mode==5)<<10)|(u64::from(preserved)<<11)|(u64::from(ice)<<12)|(u64::from(blast)<<13)|(u64::from(game.lives)<<8)|(u64::from(game.level)<<16);
   }
  }state
 }''')
