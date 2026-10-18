@@ -19,6 +19,24 @@ if not args.skip_browser:
     from selenium.webdriver.support.ui import WebDriverWait
 PROJECT=Path(__file__).resolve().parents[1];CLI=Path(os.environ.get('GAMEPKG_TEST_BINARY_DIR',PROJECT/'target/release'))/'gamepkg'
 PROOF=PROJECT/'target/arkanoo-proof';PROOF.mkdir(parents=True,exist_ok=True)
+BRICK_REFERENCE=[bytes.fromhex(image['rgba_hex']) for image in json.loads((PROJECT/'tests/fixtures/arkanoo-blocks.json').read_text())['images']]
+BRICK_SAMPLES=[(x,y) for y in [103,105,107] for x in [25,35,45]]
+def original_brick_sample(color,x,y):
+    # Opaque source pixels, bilinear filtering at the actual captured pixel center.
+    left=math.floor(x);top=math.floor(y);fx=x-left;fy=y-top;pixels=BRICK_REFERENCE[color]
+    return [sum(pixels[((top+dy)*60+left+dx)*4+c]*wx*wy for dx,wx in [(0,1-fx),(1,fx)] for dy,wy in [(0,1-fy),(1,fy)]) for c in range(3)]
+def brick_rgb_matches(actual,expected):
+    # Allow three 8-bit levels for renderer/capture interpolation rounding.
+    return all(abs(actual[c]-expected[c])<=3 for c in range(3))
+def native_brick_matches(image,color):
+    scale=min(image.width/640,image.height/480);ox=(image.width-640*scale)/2;oy=(image.height-480*scale)/2
+    for wx,wy in BRICK_SAMPLES:
+        px=round(ox+wx*scale);py=round(oy+wy*scale)
+        sx=((px+.5-ox)/scale-20)*2-.5;sy=((py+.5-oy)/scale-100)*2-.5
+        if not brick_rgb_matches(image.getpixel((px,py)),original_brick_sample(color,sx,sy)):return False
+    return True
+def browser_brick_matches(pixels,color):
+    return all(brick_rgb_matches(pixels[(y*640+x)*4:(y*640+x)*4+3],original_brick_sample(color,(x+.5-20)*2-.5,(y+.5-100)*2-.5)) for x,y in BRICK_SAMPLES)
 class Quiet(SimpleHTTPRequestHandler):
     def log_message(self,*args):pass
 with tempfile.TemporaryDirectory(prefix='gamepkg-arkanoo-',dir=PROJECT/'target') as temp:
@@ -111,7 +129,8 @@ pub fn game_tick(input:u32,state:u64)->u64 {
  }state
 }''')
     trail_cases=json.loads((PROJECT/'tests/fixtures/arkanoo-trails.json').read_text())['cases']
-    probe=' if input&2147483656==2147483656 {let mut game=physics::Game::new();game.paddle=100.75;let variant=input&7;if variant==1 {game.width=90.0;}if variant==2 {game.ghost=600;}if variant>=3 {game.paddle_glow=1.0;}if variant==5 {game.paddle_glow=0.1;}if variant==6 {game.paddle_glow=0.2;}if variant==4 {game.last_paddle=game.paddle;game.update_paddle(0);}if variant==7 {game.paddle_glow=0.0;game.mode=1;game.last_paddle=game.paddle-2.0;game.balls.clear();game.balls.push(physics::Ball{x:game.paddle+35.0,y:394.0,vx:0.0,vy:2.0,spin:0.0,attached:false,launch_timer:0,trail:Vec::new()});game.update(0);}gamepkg::draw_clear(0x000000ff);return u64::from(render::draw_paddle(&game));}\n'
+    probe=' if input&2147483664==2147483664 {let positions=[[0.0f32,0.0f32],[200.75,80.25],[-0.75,-0.75],[-1.75,-1.75]];let at=positions[((input>>5)&3) as usize];gamepkg::draw_clear(0x000000ff);return u64::from(render::draw_normal_brick((input&7) as u8,at[0]*0.5,60.0+at[1]*0.5));}\n'
+    probe+=' if input&2147483656==2147483656 {let mut game=physics::Game::new();game.paddle=100.75;let variant=input&7;if variant==1 {game.width=90.0;}if variant==2 {game.ghost=600;}if variant>=3 {game.paddle_glow=1.0;}if variant==5 {game.paddle_glow=0.1;}if variant==6 {game.paddle_glow=0.2;}if variant==4 {game.last_paddle=game.paddle;game.update_paddle(0);}if variant==7 {game.paddle_glow=0.0;game.mode=1;game.last_paddle=game.paddle-2.0;game.balls.clear();game.balls.push(physics::Ball{x:game.paddle+35.0,y:394.0,vx:0.0,vy:2.0,spin:0.0,attached:false,launch_timer:0,trail:Vec::new()});game.update(0);}gamepkg::draw_clear(0x000000ff);return u64::from(render::draw_paddle(&game));}\n'
     probe+=' if input&2147483648!=0 {let positions=[[0.0f32,0.0f32],[320.75,240.25],[-0.75,-0.75],[-1.75,-1.75]];let at=positions[(input&3) as usize];let ball=physics::Ball::new(at[0]*0.5+3.0,at[1]*0.5+63.0);gamepkg::draw_clear(0x000000ff);return u64::from(render::draw_ball(&ball));}\n'
     probe+=' if input&134217728!=0 {\n'
     for index,case in enumerate(trail_cases):
@@ -316,7 +335,7 @@ pub fn game_tick(input:u32,state:u64)->u64 {
         deadline=time.monotonic()+3
         while True:
             editor_screen=capture(window,'native-editor-painted.png')
-            if editor_screen.getpixel((px,py))==(255,165,0):break
+            if native_brick_matches(editor_screen,1):break
             assert time.monotonic()<deadline,'Native editor did not paint the selected color';time.sleep(.05)
         subprocess.run(['xdotool','key','--window',window,'s'],env=env,check=True)
         deadline=time.monotonic()+3
@@ -332,7 +351,7 @@ pub fn game_tick(input:u32,state:u64)->u64 {
         subprocess.run(['xdotool','windowfocus',window],env=env,check=True);deadline=time.monotonic()+5
         while True:
             imported=capture(window,'native-pattern-import.png')
-            if imported.getpixel((px,py))==(138,43,226):break
+            if native_brick_matches(imported,5):break
             assert time.monotonic()<deadline,'Native selected pattern did not appear';time.sleep(.05)
         assert incoming.read_text()=='# Original ASCII pattern\n50******************\n'
         outgoing=root/'native-export.txt';subprocess.run(['xdotool','key','--window',window,'x'],env=env,check=True);choose_native_file(env,picker_title,outgoing)
@@ -458,23 +477,23 @@ pub fn game_tick(input:u32,state:u64)->u64 {
             canvas.send_keys('e');time.sleep(.15)
             canvas.send_keys('1')
             canvas_click(35,105)
-            wait.until(lambda b:pixels()[(105*640+35)*4:(105*640+35)*4+3]==[255,165,0])
+            wait.until(lambda b:browser_brick_matches(pixels(),1))
             canvas.send_keys('n');canvas.send_keys(Keys.BACKSPACE)
             canvas_click(150,400) # Mouse toolbar remains active while editing the name.
             def saved_pattern():
                 return browser.execute_script('const key=Object.keys(localStorage).find(key=>key.startsWith(arguments[0]));return key?JSON.parse(localStorage.getItem(key)):[];','gamepkg:save:'+game_id+':')
             wait.until(lambda b:saved_pattern()[:4]==[65,82,75,51] and saved_pattern()[16:20]==[1,0,0,0])
             restart_menu();time.sleep(.15);canvas.send_keys('e');canvas.send_keys('l');canvas.send_keys(Keys.ENTER)
-            wait.until(lambda b:pixels()[(105*640+35)*4:(105*640+35)*4+3]==[255,165,0])
+            wait.until(lambda b:browser_brick_matches(pixels(),1))
             canvas.send_keys('t');time.sleep(.15);canvas.send_keys('q');time.sleep(.15)
-            wait.until(lambda b:pixels()[(105*640+35)*4:(105*640+35)*4+3]==[255,165,0])
+            wait.until(lambda b:browser_brick_matches(pixels(),1))
             canvas.screenshot(str(PROOF/('browser-component-editor.png' if component else 'browser-core-editor.png')))
             canvas.send_keys('i');wait.until(lambda b:b.find_element(By.CSS_SELECTOR,'#user-files input[type=file]').is_displayed())
             browser.find_element(By.CSS_SELECTOR,'#user-files button').click();wait.until(lambda b:not b.find_element(By.ID,'user-files').is_displayed())
-            assert pixels()[(105*640+35)*4:(105*640+35)*4+3]==[255,165,0]
+            assert browser_brick_matches(pixels(),1)
             incoming=root/('browser-component.txt' if component else 'browser-core.txt');incoming.write_text('# Original ASCII pattern\n50******************\n')
             canvas.send_keys('i');upload=wait.until(lambda b:b.find_element(By.CSS_SELECTOR,'#user-files input[type=file]'));upload.send_keys(str(incoming))
-            wait.until(lambda b:pixels()[(105*640+35)*4:(105*640+35)*4+3]==[138,43,226]);assert incoming.read_text()=='# Original ASCII pattern\n50******************\n'
+            wait.until(lambda b:browser_brick_matches(pixels(),5));assert incoming.read_text()=='# Original ASCII pattern\n50******************\n'
             browser.execute_script('Object.defineProperty(window,"showSaveFilePicker",{value:undefined,configurable:true})')
             canvas.send_keys('x');button=wait.until(lambda b:next((v for v in b.find_elements(By.CSS_SELECTOR,'#user-files button') if v.text.startswith('Save ')),None));button.click()
             outgoing=downloads/incoming.name

@@ -12,7 +12,7 @@ work stays open until behavior is verified.
 | Cube 2 | Wayland lock-state access, Windows lock-state runtime validation, remaining uncommon-key/platform behavior and full controller/touch equivalence; further LAN/platform and master authentication/registration fault/service coverage; custom asset/mod workflows; demo/movie output and persistence; hardware-accelerated engine rendering; native platforms beyond Linux. Vulkan currently presents software-rendered engine frames. |
 | DOOM | Original WAD music, spatial stereo effects, six save slots, configuration, desktop controls and the original quit/ENDOOM flow are runtime verified. Music backend selection, multiplayer, additional WADs/mods and broader control/platform coverage remain unfinished. |
 | Zelda3 | External MSU music, replay tools, save states, widescreen, language selection and desktop enhancement settings need support. The adapter fixes the view to 256×224. Original DSP stereo is verified in native and Wasm gameplay/save tests. |
-| Arkanoo | Gravity, speed-triggered portal behavior and ball-to-ball responses are restored with upstream reference and actual-engine tests. Original world proportions and movement/contact order now match upstream reference checks. Per-ball launch timing, life recovery and victory/endless transitions also match original-code fixtures; prior item/score/level caps are removed. Brick health and original blast rules are also verified. All twelve original procedural patterns are restored. Focused mouse movement and original Space/Escape controls are restored. Editor painting/erasing, brick selection, names, save/load, clear confirmation, test return and the custom endless pool are restored. Original ASCII pattern import/export now uses player-selected files. Gameplay cursor confinement/hiding, F11 fullscreen and Q-to-quit outside play are verified in native and browser runtime checks. Normal-size/fullscreen/maximized preferences now persist through the native host. The six main menu actions and fullscreen/effects settings controls are restored. Remaining menu presentation and music/resolution/VSync controls, project-link action and original menus/music still need work. Original shard particles are restored; the metallic ball and glass paddle textures are restored; speed lettering and other art/effects still need work; original penguin/heart-loss behavior is now verified. Current runs do not persist; high score, unlocked level, gravity and effects preferences do. |
+| Arkanoo | Gravity, speed-triggered portal behavior and ball-to-ball responses are restored with upstream reference and actual-engine tests. Original world proportions and movement/contact order now match upstream reference checks. Per-ball launch timing, life recovery and victory/endless transitions also match original-code fixtures; prior item/score/level caps are removed. Brick health and original blast rules are also verified. All twelve original procedural patterns are restored. Focused mouse movement and original Space/Escape controls are restored. Editor painting/erasing, brick selection, names, save/load, clear confirmation, test return and the custom endless pool are restored. Original ASCII pattern import/export now uses player-selected files. Gameplay cursor confinement/hiding, F11 fullscreen and Q-to-quit outside play are verified in native and browser runtime checks. Normal-size/fullscreen/maximized preferences now persist through the native host. The six main menu actions and fullscreen/effects settings controls are restored. Remaining menu presentation and music/resolution/VSync controls, project-link action and original menus/music still need work. Original shard particles are restored; the metallic ball, glass paddle and normal-brick textures are restored; speed lettering and other art/effects still need work; original penguin/heart-loss behavior is now verified. Current runs do not persist; high score, unlocked level, gravity and effects preferences do. |
 | 2048 | Random spawning, merge scoring/best score, win/continue/game-over UI, restart, 128-step undo and persistent boards/history are implemented and tested. Byte-sized tile exponents remove the old 32768 cap. Cooperative expectimax assistance/autoplay matches independent upstream reference fixtures; a deterministic 932-turn game reaches 2048. Final signed-package delivery and broader platform verification remain open. |
 
 Evidence: [README coverage table](../README.md#port-feature-coverage),
@@ -609,3 +609,26 @@ independence. Native GUI and both core/component browser gameplay/editor/file
 workflows pass with movement checks against the restored cyan core. Reference
 regeneration is byte-identical; strict lint and formatting pass. The source
 recipe advances to 0.1.22 without a signed-package or app release.
+
+Arkanoo normal-brick follow-up: all six original color textures now use the
+unchanged pinned `draw_block_texture` procedure and `BLOCK_COLORS`. Real SDL
+rasterization supplies independent 60×20 RGBA fixtures, including line clipping,
+inner glow, gradient and beveled borders. Every decoded PNG byte matches, and
+signed runtime probes cover all colors, linear filtering and ordinary,
+fractional/negative integer rectangle positions. Gameplay and the editor's placed
+bricks share the same textures; the original flat-color palette is retained.
+The 106-layout regression checks the textured boards without dropping occupancy,
+coordinate or uniqueness assertions. Editor color/archive checks compare complete
+texture pixels. The gameplay test requires a real partially destroyed board with
+a rendered ball, so a menu cannot count as broken bricks. Ice refraction/glints,
+fire/glass detail, graphite stripes/bevels and other art/audio/settings remain
+unfinished.
+
+Normal-brick validation: all 410 all-features tests pass with 62 dedicated checks
+ignored by default. The signed harness explicitly passes all 31 runtime checks
+in Wasm and native builds, including exact pixels and all 106 layout cases.
+Desktop plus core/component browser gameplay/editor/file workflows pass. Painting,
+reload and imported-color checks compare nine samples from the original textures
+with a three-level 8-bit renderer/capture rounding tolerance; runtime source pixels
+are exact. Strict lint, formatting and byte-identical reference regeneration pass.
+The source recipe advances to 0.1.23; no package or app release is created.

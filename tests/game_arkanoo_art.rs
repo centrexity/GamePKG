@@ -54,3 +54,32 @@ fn original_paddle_textures_match_unchanged_source_and_sdl_blending() {
         assert_eq!(image.get_pixel(70, 11).0, [40, 50, 70, 255]);
     }
 }
+
+#[test]
+fn original_normal_brick_textures_match_unchanged_source_and_sdl_reference() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-blocks.json")).unwrap();
+    for (index, bytes) in [
+        include_bytes!("../ports/arkanoo/assets/brick-red.png").as_slice(),
+        include_bytes!("../ports/arkanoo/assets/brick-orange.png").as_slice(),
+        include_bytes!("../ports/arkanoo/assets/brick-yellow.png").as_slice(),
+        include_bytes!("../ports/arkanoo/assets/brick-green.png").as_slice(),
+        include_bytes!("../ports/arkanoo/assets/brick-blue.png").as_slice(),
+        include_bytes!("../ports/arkanoo/assets/brick-violet.png").as_slice(),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let reference = &fixture["images"][index];
+        let image = image::load_from_memory(bytes).unwrap().into_rgba8();
+        let expected = hex::decode(reference["rgba_hex"].as_str().unwrap()).unwrap();
+        assert_eq!(image.dimensions(), (60, 20));
+        assert_eq!(image.as_raw(), &expected);
+        assert_eq!(
+            gamepkg::verify::digest(&expected),
+            reference["rgba_sha256"].as_str().unwrap()
+        );
+        assert!(image.pixels().all(|pixel| pixel.0[3] == 255));
+        assert_ne!(image.get_pixel(30, 0), image.get_pixel(30, 19));
+    }
+}

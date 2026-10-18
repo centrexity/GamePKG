@@ -17,6 +17,30 @@ fn ball_position(command: &Command) -> Option<(f32, f32)> {
 fn is_ball(command: &Command) -> bool {
     ball_position(command).is_some()
 }
+fn normal_brick_position(command: &Command) -> Option<(f32, f32)> {
+    if let Command::LinearImage {
+        x,
+        y,
+        width,
+        height,
+        image,
+    } = command
+    {
+        if (*width, *height) == (30.0, 10.0) && image.size() == [60, 20] {
+            return Some((*x, *y));
+        }
+    }
+    None
+}
+fn is_normal_brick(command: &Command, color: usize, left: f32, top: f32) -> bool {
+    if normal_brick_position(command) != Some((left, top)) {
+        return false;
+    }
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-blocks.json")).unwrap();
+    let expected = hex::decode(fixture["images"][color]["rgba_hex"].as_str().unwrap()).unwrap();
+    matches!(command, Command::LinearImage{image,..} if image.pixels()==expected.as_slice())
+}
 fn copy_library(from: &std::path::Path, to: &std::path::Path) {
     std::fs::create_dir_all(to).unwrap();
     for entry in std::fs::read_dir(from).unwrap() {
@@ -310,13 +334,24 @@ fn real_gameplay_audio_progress_and_restart() {
     game.step(8).unwrap();
     let mut audio = false;
     let mut broken = false;
+    assert_eq!(
+        game.frame()
+            .commands
+            .iter()
+            .filter(|c| normal_brick_position(c).is_some())
+            .count(),
+        200
+    );
     for _ in 0..2200 {
         game.step(0).unwrap();
         audio |= game.audio_frame().iter().any(|sample| *sample != 0);
-        let bricks = game.frame().commands.iter().filter(|command| {
-            matches!(command, Command::Rect {width,height,..} if *width==30.0 && *height==10.0)
-        }).count();
-        broken |= bricks < 200;
+        let bricks = game
+            .frame()
+            .commands
+            .iter()
+            .filter(|command| normal_brick_position(command).is_some())
+            .count();
+        broken |= bricks > 0 && bricks < 200 && game.frame().commands.iter().any(is_ball);
         assert!(game.frame().commands.len() < 600);
     }
     assert!(audio, "no synthesized collision/launch audio");
@@ -758,25 +793,16 @@ fn original_layouts_match_in_native_and_32_bit_wasm_through_the_real_renderer() 
         assert_eq!(game.step(level as u32).unwrap(), level);
         let mut actual = [0u8; 200];
         for command in &game.frame().commands {
-            if let Command::Rect {
-                x,
-                y,
-                width,
-                height,
-                ..
-            } = command
-            {
-                if *width == 30.0 && *height == 10.0 {
-                    let col = ((*x - 20.0) / 30.0) as usize;
-                    let row = ((*y - 100.0) / 10.0) as usize;
-                    assert!(col < 20 && row < 10);
-                    assert_eq!(
-                        (*x, *y),
-                        (20.0 + col as f32 * 30.0, 100.0 + row as f32 * 10.0)
-                    );
-                    assert_eq!(actual[row * 20 + col], 0);
-                    actual[row * 20 + col] = 1;
-                }
+            if let Some((x, y)) = normal_brick_position(command) {
+                let col = ((x - 20.0) / 30.0) as usize;
+                let row = ((y - 100.0) / 10.0) as usize;
+                assert!(col < 20 && row < 10);
+                assert_eq!(
+                    (x, y),
+                    (20.0 + col as f32 * 30.0, 100.0 + row as f32 * 10.0)
+                );
+                assert_eq!(actual[row * 20 + col], 0);
+                actual[row * 20 + col] = 1;
             }
         }
         for (actual, expected) in actual
@@ -947,7 +973,13 @@ fn original_editor_workflow_persists_patterns_and_preserves_corrupt_saves_in_rea
         editor_key(&mut game, *key);
         editor_click(&mut game, 20.0 + index as f32 * 30.0, 100.0, 1);
     }
-    assert!(game.frame().commands.iter().any(|c|matches!(c,Command::Rect{x,y,rgba,..} if *x==110.0 && *y==100.0 && *rgba==0x8a2be2ff)),"original violet brick color was lost");
+    assert!(
+        game.frame()
+            .commands
+            .iter()
+            .any(|c| is_normal_brick(c, 5, 110.0, 100.0)),
+        "original violet brick color was lost"
+    );
     editor_key(&mut game, 115);
     let path = editor_archive(root.path());
     let bytes = std::fs::read(&path).unwrap();
@@ -1178,7 +1210,13 @@ fn pattern_archives_larger_than_one_read_chunk_reload_without_being_marked_corru
     editor_key(&mut game, 13);
     editor_key(&mut game, 115);
     assert_eq!(std::fs::read(&path).unwrap(), large);
-    assert!(game.frame().commands.iter().any(|c|matches!(c,Command::Rect{x,y,width,height,rgba} if *x==20.0 && *y==100.0 && *width==30.0 && *height==10.0 && *rgba==0xff0000ff)),"large archive's pattern was not loaded");
+    assert!(
+        game.frame()
+            .commands
+            .iter()
+            .any(|c| is_normal_brick(c, 0, 20.0, 100.0)),
+        "large archive's pattern was not loaded"
+    );
 }
 
 #[test]
@@ -1820,6 +1858,43 @@ fn original_paddle_body_ghost_independence_and_spin_overlays_reach_native_and_wa
         }
         if variant == 2 {
             assert_eq!(rects, normal, "Ghost ball must not recolor the paddle");
+        }
+    }
+}
+
+#[test]
+#[ignore = "requires the signed production fixture prepared by tests/arkanoo.py"]
+fn original_normal_brick_pixels_filtering_and_integer_rectangles_reach_native_and_wasm() {
+    let root = isolated_library();
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-blocks.json")).unwrap();
+    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
+    for color in 0..6 {
+        let expected = hex::decode(fixture["images"][color]["rgba_hex"].as_str().unwrap()).unwrap();
+        for (position, (left, top)) in [(0.0, 60.0), (100.0, 100.0), (0.0, 60.0), (-0.5, 59.5)]
+            .into_iter()
+            .enumerate()
+        {
+            assert_eq!(
+                game.step(2147483664 | color as u32 | ((position as u32) << 5))
+                    .unwrap(),
+                1
+            );
+            let commands = &game.frame().commands;
+            assert_eq!(commands.len(), 1);
+            let Command::LinearImage {
+                x,
+                y,
+                width,
+                height,
+                image,
+            } = &commands[0]
+            else {
+                panic!("Normal brick did not use the filtered texture API")
+            };
+            assert_eq!((*x, *y, *width, *height), (left, top, 30.0, 10.0));
+            assert_eq!(image.size(), [60, 20]);
+            assert_eq!(image.pixels(), expected.as_slice());
         }
     }
 }
