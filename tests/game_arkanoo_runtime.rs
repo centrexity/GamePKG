@@ -376,6 +376,73 @@ fn original_particle_points_and_alpha_reach_native_and_wasm_renderers_without_ca
         "full-size particle layer lost visible corner shards"
     );
 }
+#[test]
+#[ignore = "requires the signed production-trails fixture prepared by tests/arkanoo.py"]
+fn original_ball_trails_comet_and_pulsing_ring_pixels_match_in_native_and_wasm() {
+    let root = isolated_library();
+    let mut game = load_menu(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
+    assert_eq!(
+        game.step(268435456).unwrap(),
+        u64::from(u32::MAX) + 1,
+        "game clock wrapped at 32 bits"
+    );
+    assert_eq!(
+        game.step(268435457).unwrap(),
+        u64::from(u32::MAX),
+        "paused game clock advanced"
+    );
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-trails.json")).unwrap();
+    for (index, case) in fixture["cases"].as_array().unwrap().iter().enumerate() {
+        game.step(134217728 | index as u32).unwrap();
+        let mut expected = std::collections::BTreeMap::new();
+        for point in case["points"].as_array().unwrap() {
+            let x = point[0].as_i64().unwrap() as i32;
+            let y = point[1].as_i64().unwrap() as i32;
+            let color = point[2].as_u64().unwrap() as u32;
+            let alpha = color & 255;
+            if !(0..1280).contains(&x) || !(0..720).contains(&y) || alpha == 0 {
+                continue;
+            }
+            let pixel = expected.entry((x, y)).or_insert([0u8; 4]);
+            let old = u32::from(pixel[3]);
+            let denominator = alpha * 255 + old * (255 - alpha);
+            for (channel, value) in pixel.iter_mut().enumerate().take(3) {
+                let source = (color >> (24 - channel * 8)) & 255;
+                *value = ((source * alpha * 255 + u32::from(*value) * old * (255 - alpha))
+                    / denominator) as u8;
+            }
+            pixel[3] = (denominator / 255) as u8;
+        }
+        let mut actual = std::collections::BTreeMap::new();
+        for command in &game.frame().commands {
+            if let Command::Image {
+                x,
+                y,
+                width,
+                height,
+                image,
+            } = command
+            {
+                let [w, h] = image.size();
+                assert!(w <= 512 && h <= 512);
+                assert_eq!((*width, *height), (w as f32 * 0.5, h as f32 * 0.5));
+                let left = (*x * 2.0) as i32;
+                let top = ((*y - 60.0) * 2.0) as i32;
+                for (offset, pixel) in image.pixels().chunks_exact(4).enumerate() {
+                    if pixel[3] != 0 {
+                        actual.insert(
+                            (left + (offset % w) as i32, top + (offset / w) as i32),
+                            [pixel[0], pixel[1], pixel[2], pixel[3]],
+                        );
+                    }
+                }
+            }
+        }
+        assert_eq!(actual, expected, "original effect case {index}");
+        assert!(game.frame().commands.len() <= 6);
+    }
+}
 
 #[test]
 #[ignore = "requires the production-physics fixture prepared by tests/arkanoo.py"]
@@ -1404,19 +1471,21 @@ fn legacy_audio_defaults_migrate_and_denied_or_damaged_settings_preserve_data() 
 fn effects_phase_at_maximum_frame_matches_in_native_and_wasm32() {
     let root = isolated_library();
     let mut game = load_menu(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
-    assert_eq!(game.step(16777216).unwrap(), 1);
-    assert_eq!(game.audio_channels(), 1);
-    assert_eq!(game.audio_frame().len(), 800);
-    for (index, sample) in game.audio_frame().iter().enumerate() {
-        let sign = if (u64::from(u32::MAX) + index as u64) % 100 < 50 {
-            1
-        } else {
-            -1
-        };
-        assert_eq!(
-            *sample,
-            (sign * (800 - index) as i32 * 10) as i16,
-            "sample {index}"
-        );
+    for (frame, input) in [(u64::MAX, 16777216), (u64::from(u32::MAX), 16777217)] {
+        assert_eq!(game.step(input).unwrap(), 1);
+        assert_eq!(game.audio_channels(), 1);
+        assert_eq!(game.audio_frame().len(), 800);
+        for (index, sample) in game.audio_frame().iter().enumerate() {
+            let sign = if (u128::from(frame) + index as u128) % 100 < 50 {
+                1
+            } else {
+                -1
+            };
+            assert_eq!(
+                *sample,
+                (sign * (800 - index) as i32 * 10) as i16,
+                "sample {index}"
+            );
+        }
     }
 }

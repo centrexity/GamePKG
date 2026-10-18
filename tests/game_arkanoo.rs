@@ -38,6 +38,89 @@ fn menu_game() -> physics::Game {
     game
 }
 #[test]
+fn ball_trail_thresholds_history_and_prephysics_timing_match_original() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-trails.json")).unwrap();
+    let mut b = physics::Ball::new(53.0, 163.0);
+    b.attached = false;
+    b.launch_timer = 100;
+    for stage in fixture["trace"].as_array().unwrap() {
+        let a = stage["action"].as_array().unwrap();
+        b.vx = a[0].as_f64().unwrap() as f32 * 0.5;
+        b.vy = a[1].as_f64().unwrap() as f32 * 0.5;
+        b.spin = a[2].as_f64().unwrap() as f32 * 0.5;
+        b.attached = a[4].as_bool().unwrap();
+        for expected in stage["history"].as_array().unwrap() {
+            if b.attached {
+                b.launch_timer -= 1;
+            } else {
+                b.advance(false);
+            }
+            let expected = expected.as_array().unwrap();
+            assert_eq!(b.trail.len(), expected.len());
+            for (point, expected) in b.trail.iter().zip(expected) {
+                assert!((point[0] - expected[0].as_f64().unwrap() as f32).abs() < 0.002);
+                assert!((point[1] - expected[1].as_f64().unwrap() as f32).abs() < 0.002);
+            }
+        }
+    }
+}
+#[test]
+fn animation_clock_continues_past_32_bit_frames_without_changing_word_size() {
+    let mut game = menu_game();
+    game.mode = 1;
+    game.frame = u64::from(u32::MAX);
+    game.update(0);
+    assert_eq!(game.frame, u64::from(u32::MAX) + 1);
+    game.mode = 2;
+    game.update(0);
+    assert_eq!(game.frame, u64::from(u32::MAX) + 1);
+    game.mode = 1;
+    game.frame = u64::MAX;
+    game.update(0);
+    assert_eq!(game.frame, 0);
+}
+#[test]
+fn original_trail_comet_pulse_ring_and_ordered_colors_match_all_recorded_points() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-trails.json")).unwrap();
+    for case in fixture["cases"].as_array().unwrap() {
+        let a = case["ball"].as_array().unwrap();
+        let mut b = physics::Ball::new(
+            a[0].as_f64().unwrap() as f32 * 0.5 + 3.0,
+            a[1].as_f64().unwrap() as f32 * 0.5 + 63.0,
+        );
+        b.vx = a[2].as_f64().unwrap() as f32 * 0.5;
+        b.vy = a[3].as_f64().unwrap() as f32 * 0.5;
+        for point in case["trail"].as_array().unwrap() {
+            b.trail.push([
+                point[0].as_f64().unwrap() as f32,
+                point[1].as_f64().unwrap() as f32,
+            ]);
+        }
+        let actual = physics::ball_effect_points(&b, case["frame"].as_u64().unwrap());
+        let expected = case["points"].as_array().unwrap();
+        assert_eq!(actual.len(), expected.len());
+        for (dot, expected) in actual.iter().zip(expected) {
+            assert_eq!(
+                [i64::from(dot.x), i64::from(dot.y), i64::from(dot.color)],
+                [
+                    expected[0].as_i64().unwrap(),
+                    expected[1].as_i64().unwrap(),
+                    expected[2].as_i64().unwrap()
+                ]
+            );
+        }
+        let image = physics::effect_image(&actual);
+        assert_eq!(
+            image.is_some(),
+            actual
+                .iter()
+                .any(|p| (0..1280).contains(&p.x) && (0..720).contains(&p.y) && p.color & 255 != 0)
+        );
+    }
+}
+#[test]
 fn particle_lifetimes_rotations_alpha_and_ordered_shard_points_match_original() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/arkanoo-particles.json")).unwrap();
@@ -452,6 +535,7 @@ fn original_gravity_and_spin_equations_use_one_sixtieth_second_steps() {
         spin: 3.0,
         attached: false,
         launch_timer: 0,
+        trail: Vec::new(),
     };
     ball.apply_forces(false);
     assert!((ball.vx - 2.15).abs() < 0.00001);
@@ -592,6 +676,7 @@ fn scaled_force_steps_match_the_compiled_pinned_upstream_fragment() {
             spin: values[2].as_f64().unwrap() as f32 * 0.5,
             attached: false,
             launch_timer: 0,
+            trail: Vec::new(),
         };
         for _ in 0..fixture["steps"].as_u64().unwrap() {
             ball.apply_forces(fixture["gravity"].as_bool().unwrap());
@@ -614,6 +699,7 @@ fn collision_ball(x: f32, y: f32, vx: f32, vy: f32) -> physics::Ball {
         spin: 7.0,
         attached: false,
         launch_timer: 0,
+        trail: Vec::new(),
     }
 }
 
@@ -2023,12 +2109,20 @@ fn synthesized_effect_gain_mute_and_phase_are_bounded_and_word_size_independent(
             3 => 48,
             _ => 180,
         };
-        for frame in [0, 1, 99, 123456789, u32::MAX] {
+        for frame in [
+            0,
+            1,
+            99,
+            123456789,
+            u64::from(u32::MAX),
+            u64::from(u32::MAX) + 1,
+            u64::MAX,
+        ] {
             let normal = audio::effect_samples(kind, frame, 64, false);
             let quiet = audio::effect_samples(kind, frame, 32, false);
             let loud = audio::effect_samples(kind, frame, 128, false);
             for index in 0..800 {
-                let sign = if (u64::from(frame) + index as u64) % period < period / 2 {
+                let sign = if (u128::from(frame) + index as u128) % period < period / 2 {
                     1
                 } else {
                     -1

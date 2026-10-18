@@ -51,6 +51,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-arkanoo-',dir=PROJECT/'target')
     (modes/'source/src/lib.rs').write_text('''mod audio;mod editor;mod levels;mod menu;mod pattern_rng;mod physics;mod render;use std::sync::Mutex;
 static GAME:Mutex<Option<physics::Game>>=Mutex::new(None);
 pub fn game_tick(input:u32,state:u64)->u64 {
+ if input&268435456!=0 {let mut game=physics::Game::new();game.mode=if input&1!=0 {2} else {1};game.frame=u64::from(u32::MAX);game.update(0);return game.frame;};
  if input&67108864!=0 {
   let mut game=physics::Game::new();game.mode=1;
   for index in 0..200 {game.destroy(index);}game.update(0);
@@ -66,24 +67,24 @@ pub fn game_tick(input:u32,state:u64)->u64 {
   for _ in 0..((input>>2)&63) {p.advance();}
   gamepkg::draw_clear(0x000000ff);render::draw_particles(&[p]);return 1;
  }
- if input&16777216!=0 {let samples=audio::effect_samples(1,u32::MAX,128,false);gamepkg::audio_submit(&samples);return 1;}
+ if input&16777216!=0 {let frame=if input&1!=0 {u64::from(u32::MAX)} else {u64::MAX};let samples=audio::effect_samples(1,frame,128,false);gamepkg::audio_submit(&samples);return 1;}
  if let Ok(mut slot)=GAME.lock(){
   if slot.is_none(){let mut game=physics::Game::new();game.mode=1;game.blocks=[0;200];game.blocks[0]=1;game.balls[0].attached=false;game.balls[0].vx=30.0;game.balls[0].vy=0.0;*slot=Some(game);}
   if let Some(game)=slot.as_mut(){
    if input&4096!=0 {game.portal=false;game.gravity=false;game.max_speed=0.0;game.mode=1;game.particles.clear();game.balls.clear();
-    game.balls.push(physics::Ball{x:100.0,y:250.0,vx:1.0,vy:2.0,spin:0.0,attached:false,launch_timer:0});
-    game.balls.push(physics::Ball{x:104.0,y:250.0,vx:-1.0,vy:-2.0,spin:0.0,attached:false,launch_timer:0});
+    game.balls.push(physics::Ball{x:100.0,y:250.0,vx:1.0,vy:2.0,spin:0.0,attached:false,launch_timer:0,trail:Vec::new()});
+    game.balls.push(physics::Ball{x:104.0,y:250.0,vx:-1.0,vy:-2.0,spin:0.0,attached:false,launch_timer:0,trail:Vec::new()});
    }
-   if input&1024!=0 {game.portal=false;game.gravity=false;game.max_speed=0.0;game.mode=1;game.blocks=[0;200];game.blocks[0]=1;game.balls.clear();game.balls.push(physics::Ball{x:34.0,y:114.0,vx:0.0,vy:-4.0,spin:0.0,attached:false,launch_timer:0});}
+   if input&1024!=0 {game.portal=false;game.gravity=false;game.max_speed=0.0;game.mode=1;game.blocks=[0;200];game.blocks[0]=1;game.balls.clear();game.balls.push(physics::Ball{x:34.0,y:114.0,vx:0.0,vy:-4.0,spin:0.0,attached:false,launch_timer:0,trail:Vec::new()});}
    if input&2048!=0 {game.portal=false;game.gravity=false;game.max_speed=0.0;game.mode=1;game.blocks=[0;200];game.blocks[0]=1;game.balls.clear();
-    game.balls.push(physics::Ball{x:300.0,y:396.0,vx:1.0,vy:2.0,spin:0.0,attached:false,launch_timer:0});
-    game.balls.push(physics::Ball{x:304.0,y:396.0,vx:-1.0,vy:-2.0,spin:0.0,attached:false,launch_timer:0});
+    game.balls.push(physics::Ball{x:300.0,y:396.0,vx:1.0,vy:2.0,spin:0.0,attached:false,launch_timer:0,trail:Vec::new()});
+    game.balls.push(physics::Ball{x:304.0,y:396.0,vx:-1.0,vy:-2.0,spin:0.0,attached:false,launch_timer:0,trail:Vec::new()});
    }
    if input&8192!=0 {*game=physics::Game::new();game.mode=1;}
    if input&16384!=0 {*game=physics::Game::new();game.mode=1;game.level=9;game.width=90.0;game.long=300;game.ghost=600;game.ammo=1;game.score=100;game.balls.clear();}
    if input&32768!=0 {*game=physics::Game::new();game.mode=1;game.level=999;game.blocks=[0;200];game.score=10000004;}
-   if input&65536!=0 {*game=physics::Game::new();game.mode=1;game.blocks=[0;200];game.set_block(0,1);game.set_block(1,3);game.set_block(2,2);game.set_block(199,0);game.balls.clear();game.balls.push(physics::Ball{x:34.0,y:114.0,vx:0.0,vy:-4.0,spin:0.0,attached:false,launch_timer:0});}
-   if input&262144!=0 {game.balls.clear();game.balls.push(physics::Ball{x:34.0,y:114.0,vx:0.0,vy:-4.0,spin:0.0,attached:false,launch_timer:0});}
+   if input&65536!=0 {*game=physics::Game::new();game.mode=1;game.blocks=[0;200];game.set_block(0,1);game.set_block(1,3);game.set_block(2,2);game.set_block(199,0);game.balls.clear();game.balls.push(physics::Ball{x:34.0,y:114.0,vx:0.0,vy:-4.0,spin:0.0,attached:false,launch_timer:0,trail:Vec::new()});}
+   if input&262144!=0 {game.balls.clear();game.balls.push(physics::Ball{x:34.0,y:114.0,vx:0.0,vy:-4.0,spin:0.0,attached:false,launch_timer:0,trail:Vec::new()});}
    if input&524288!=0 {*game=physics::Game::new();game.mode=1;game.blocks=[0;200];
     game.set_block(0,0);game.block_x[0]=20.0;game.block_y[0]=100.0;
     game.set_block(1,3);game.block_x[1]=20.0;game.block_y[1]=160.0;
@@ -109,6 +110,16 @@ pub fn game_tick(input:u32,state:u64)->u64 {
   }
  }state
 }''')
+    trail_cases=json.loads((PROJECT/'tests/fixtures/arkanoo-trails.json').read_text())['cases']
+    probe=' if input&134217728!=0 {\n'
+    for index,case in enumerate(trail_cases):
+        x,y,vx,vy=case['ball']
+        probe+=f'if input&255=={index} {{let mut ball=physics::Ball::new({x}f32*0.5+3.0,{y}f32*0.5+63.0);ball.vx={vx}f32*0.5;ball.vy={vy}f32*0.5;'
+        for x,y in case['trail']:probe+=f'ball.trail.push([{x}f32,{y}f32]);'
+        probe+=f'gamepkg::draw_clear(0x000000ff);render::draw_ball_effects(&ball,{case["frame"]});return 1;}};\n'
+    probe+='return 0;}\n'
+    probe_file=modes/'source/src/lib.rs'
+    text=probe_file.read_text();text=text.replace(' if input&67108864!=0 {',probe+' if input&67108864!=0 {');probe_file.write_text(text)
     run('pack',modes,'-o',root/'modes.gamepkg','--key',key);run('install',root/'modes.gamepkg','--trust-creator');run('build','com.gamepkg.arkanoo-modes')
     layouts=root/'layouts';shutil.copytree(PROJECT/'ports/arkanoo',layouts)
     layout_manifest=layouts/'manifest.toml';layout_manifest.write_text(layout_manifest.read_text().replace('com.gamepkg.arkanoo','com.gamepkg.arkanoo-levels'))

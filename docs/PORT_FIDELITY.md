@@ -12,7 +12,7 @@ work stays open until behavior is verified.
 | Cube 2 | Initial OS lock-key state, remaining uncommon-key/platform behavior and full controller/touch equivalence; LAN discovery, master authentication and public server registration; custom asset/mod workflows; demo/movie output and persistence; hardware-accelerated engine rendering; native platforms beyond Linux. Vulkan currently presents software-rendered engine frames. |
 | DOOM | Original WAD music, spatial stereo effects, six save slots, configuration, desktop controls and the original quit/ENDOOM flow are runtime verified. Music backend selection, multiplayer, additional WADs/mods and broader control/platform coverage remain unfinished. |
 | Zelda3 | External MSU music, replay tools, save states, widescreen, language selection and desktop enhancement settings need support. The adapter fixes the view to 256×224. Original DSP stereo is verified in native and Wasm gameplay/save tests. |
-| Arkanoo | Gravity, speed-triggered portal behavior and ball-to-ball responses are restored with upstream reference and actual-engine tests. Original world proportions and movement/contact order now match upstream reference checks. Per-ball launch timing, life recovery and victory/endless transitions also match original-code fixtures; prior item/score/level caps are removed. Brick health and original blast rules are also verified. All twelve original procedural patterns are restored. Focused mouse movement and original Space/Escape controls are restored. Editor painting/erasing, brick selection, names, save/load, clear confirmation, test return and the custom endless pool are restored. Original ASCII pattern import/export now uses player-selected files. Gameplay cursor confinement/hiding, F11 fullscreen and Q-to-quit outside play are verified in native and browser runtime checks. Normal-size/fullscreen/maximized preferences now persist through the native host. The six main menu actions and fullscreen/effects settings controls are restored. Remaining menu presentation and music/resolution/VSync controls, project-link action and original menus/music still need work. Original shard particles are restored; ball trails, remaining art and other effects still need work. Current runs do not persist; high score, unlocked level, gravity and effects preferences do. |
+| Arkanoo | Gravity, speed-triggered portal behavior and ball-to-ball responses are restored with upstream reference and actual-engine tests. Original world proportions and movement/contact order now match upstream reference checks. Per-ball launch timing, life recovery and victory/endless transitions also match original-code fixtures; prior item/score/level caps are removed. Brick health and original blast rules are also verified. All twelve original procedural patterns are restored. Focused mouse movement and original Space/Escape controls are restored. Editor painting/erasing, brick selection, names, save/load, clear confirmation, test return and the custom endless pool are restored. Original ASCII pattern import/export now uses player-selected files. Gameplay cursor confinement/hiding, F11 fullscreen and Q-to-quit outside play are verified in native and browser runtime checks. Normal-size/fullscreen/maximized preferences now persist through the native host. The six main menu actions and fullscreen/effects settings controls are restored. Remaining menu presentation and music/resolution/VSync controls, project-link action and original menus/music still need work. Original shard particles are restored; remaining ball artwork/speed lettering, heart-loss animation and other art/effects still need work. Current runs do not persist; high score, unlocked level, gravity and effects preferences do. |
 | 2048 | Random spawning, merge scoring/best score, win/continue/game-over UI, restart, 128-step undo and persistent boards/history are implemented and tested. Byte-sized tile exponents remove the old 32768 cap. Cooperative expectimax assistance/autoplay matches independent upstream reference fixtures; a deterministic 932-turn game reaches 2048. Final signed-package delivery and broader platform verification remain open. |
 
 Evidence: [README coverage table](../README.md#port-feature-coverage),
@@ -111,9 +111,9 @@ tests. Test cross-version saves and each claimed native platform. Rebuild and
 verify the packages and catalog users import after source changes. Record
 unverified behavior explicitly; do not silently skip it or describe it as done.
 
-Latest local validation: the full Rust suite passes 372 tests. Its 49
+Latest local validation: the full Rust suite passes 375 tests. Its 50
 fixture-dependent or platform-specific ignored tests are not counted as passed.
-The signed isolated Arkanoo harness separately executes 25 fixture tests on Wasm
+The signed isolated Arkanoo harness separately executes 26 fixture tests on Wasm
 and again with native builds, plus actual native-window and core/component
 browser checks. Both Windows word sizes pass compilation checks; Windows gameplay,
 full campaigns and updated signed-package delivery remain separate requirements.
@@ -203,3 +203,27 @@ Disjoint random-word fields and rejection sampling preserve independent uniform
 ranges without per-field host RPCs. Native desktop and both browser profiles pass
 ordinary gameplay/editor checks with the restored effects. Ball trails/fireball
 glows, penguin/heart-loss animation and remaining original art/audio stay open.
+
+Arkanoo ball-history trails now follow the original pre-physics 800/1400 px/s
+thresholds and one-entry trimming, including the original tier-drop behavior.
+Regular/super comet length, radius, gradient, fading/pulsing and spinning ring
+match unchanged original drawing fragments. Full-file hashes guard the oracle;
+49 original update observations and 16 drawing cases supply 15,909 ordered points
+and colors, including negative/edge positions, wide history and u64::MAX frames.
+Actual signed runtime tests compare the resulting clipped RGBA pixels through
+the bounded tiled renderer. The ball's metal artwork, original speed-text font,
+penguin/heart-loss animation and other remaining art/audio stay open.
+
+The animation clock now retains the original u64 width, including continued play
+past u32::MAX and pause behavior. Native/wasm32 clock probes and effect cases
+extend through u64::MAX. Synthesized audio reduces the u64 phase before adding
+the bounded sample index; actual PCM checks cover both u32::MAX and u64::MAX,
+and a u128 reference checks all four tones without arithmetic overflow.
+
+Final trail/clock validation passes 375 ordinary Rust tests with 50 fixture/platform
+checks ignored. The signed isolated harness separately runs all 26 runtime tests
+on Wasm and again with native builds where available, followed by actual Linux
+native-window and both core/component browser gameplay/editor/file controls.
+Lint, formatting and the public site's local-link checks pass. These results do
+not establish Windows/Android gameplay, full campaigns, original ball/font art
+or the other open port requirements.

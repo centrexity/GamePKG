@@ -188,3 +188,12 @@ hashes guard both originals; 114 observations cover lifecycle, rotation, alpha,
 point order/duplicates and negative/edge coordinates. Controlled constructor
 randomness isolates the original range/default formulas. GamePKG's independent
 field packing/rejection is tested separately for uniform ranges and host calls.
+
+`arkanoo_trails.py /path/to/pinned/arkanoo` regenerates `arkanoo-trails.json`.
+It compiles unchanged original Ball-update and shiny-ball effect fragments with
+SHA-256 guards for both complete upstream files. The renderer records SDL point
+and RGBA operations before the cached ball/font draws. Forty-nine history frames
+and sixteen drawing cases cover thresholds, tier drop, pre-force timing,
+attached-state freezing, pulses/ring, clipping/negative positions, wide history
+and large frame values. It supplies 15,909 ordered point/color operations; cached
+ball artwork and speed text are explicitly outside this fixture's scope.
