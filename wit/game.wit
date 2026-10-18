@@ -1,6 +1,7 @@
 package gamepkg:engine@0.1.0;
 
 interface host {
+  frame-time-us: func() -> u64;
   window-control: func(operation:u32,value:u32)->bool;
   file-call: func(operation:u32,request:list<u8>,capacity:u32)->tuple<s32,list<u8>>;
   input-events: func(capacity:u32)->option<list<u8>>;
@@ -23,6 +24,7 @@ interface host {
     draw-circle: func(x: f32, y: f32, radius: f32, rgba: u32) -> bool;
     draw-asset-image: func(path: string, x: f32, y: f32, width: f32, height: f32) -> bool;
     draw-asset-image-linear: func(path: string, x: f32, y: f32, width: f32, height: f32) -> bool;
+    draw-asset-image-linear-straight: func(path: string, x: f32, y: f32, width: f32, height: f32) -> bool;
     draw-image: func(x: f32, y: f32, width: f32, height: f32, pixel-width: u32, pixel-height: u32, pixels: list<u8>) -> bool;
     draw-image-linear: func(x: f32, y: f32, width: f32, height: f32, pixel-width: u32, pixel-height: u32, pixels: list<u8>) -> bool;
     draw-shader-image: func(index: u32, pixel-width: u32, pixel-height: u32, pixels: list<u8>) -> bool;

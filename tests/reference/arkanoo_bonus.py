@@ -1,6 +1,6 @@
 """Extract unchanged bonus art with real pinned SDL constructors and SDL rasterization."""
 from pathlib import Path
-import argparse,hashlib,json,os,subprocess,tempfile,tarfile,sys
+import argparse,hashlib,json,os,subprocess,tempfile,tarfile,sys,zlib
 parser=argparse.ArgumentParser();parser.add_argument('upstream');parser.add_argument('--sdl-crate',required=True);parser.add_argument('--sdl-sys-crate',required=True);parser.add_argument('--write-assets');parser.add_argument('--commands-only',action='store_true');args=parser.parse_args()
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]));from gui_test_support import start_display
 source=Path(args.upstream)/'src/rendering.rs';text=source.read_text();assert hashlib.sha256(source.read_bytes()).hexdigest()=='51b6c75d19ed56c67412daee59f5cae90ace2586902c753c2598935f2702fb83'
@@ -60,10 +60,23 @@ struct Bonus{x:f32,y:f32,bonus_type:BonusType}impl Bonus{
    if name in layers:assert layers[name]==value,(name,case['position'])
    else:layers[name]=value
    path=work/name;path.write_bytes(rgba);paths.append(str(path));names.append(name)
+  # Capture the unchanged complete icon, then convert its premultiplied
+  # transparent framebuffer to a straight-alpha package texture once.
+  combined=bytearray(subprocess.check_output([str(work/'raster'),'5',str(case['x']),str(case['y']),'00000000'],input=commands,env=render_env))
+  for at in range(0,len(combined),4):
+   opacity=combined[at+3]
+   for channel in range(3):combined[at+channel]=min(255,(combined[at+channel]*255+opacity//2)//opacity) if opacity else 0
+  combined_name='bonus-icon-'+['long','ball','ghost','rocket'][case['kind']]+'.png'
+  combined_value=dict(width=41,height=41,rgba_sha256=hashlib.sha256(combined).hexdigest(),rgba_hex=combined.hex())
+  if combined_name in layers:assert layers[combined_name]==combined_value
+  else:layers[combined_name]=combined_value
+  combined_path=work/combined_name;combined_path.write_bytes(combined)
   composite=[]
   for background in ['000000ff','ffffffff','0b1020ff','505064ff','00000000','12345678']:
    original=subprocess.check_output([str(work/'raster'),'5',str(case['x']),str(case['y']),background],input=commands,env=render_env)
    grouped=subprocess.check_output([str(work/'raster'),'4',str(case['x']),str(case['y']),background,*paths],input=commands,env=render_env)
+   flattened=subprocess.check_output([str(work/'raster'),'6',str(case['x']),str(case['y']),background,str(combined_path)],input=commands,env=render_env)
+   flattened_delta=max(abs(a-b) for a,b in zip(original,flattened));assert flattened_delta<=3,(case['kind'],background,flattened_delta)
    delta=max(abs(a-b) for a,b in zip(original,grouped));worst=max(range(len(original)),key=lambda i:abs(original[i]-grouped[i]));assert delta<=3,(case['kind'],case['position'],background,delta,(worst//4%41,worst//4//41),list(original[worst//4*4:worst//4*4+4]),list(grouped[worst//4*4:worst//4*4+4]),[list(Path(path).read_bytes()[worst//4*4:worst//4*4+4]) for path in paths])
    software_env=dict(render_env,GAMEPKG_BONUS_SOFTWARE='1')
    software_original=subprocess.check_output([str(work/'raster'),'5',str(case['x']),str(case['y']),background],input=commands,env=software_env)
@@ -72,11 +85,11 @@ struct Bonus{x:f32,y:f32,bonus_type:BonusType}impl Bonus{
    if background=='0b1020ff':
     if str(case['kind']) in originals:assert originals[str(case['kind'])]==original.hex()
     else:originals[str(case['kind'])]=original.hex()
-   composite.append(dict(background=background,max_channel_delta=delta,software_max_channel_delta=software_delta,original_sha256=hashlib.sha256(original).hexdigest(),grouped_sha256=hashlib.sha256(grouped).hexdigest()))
-  records.append(dict(kind=case['kind'],position=case['position'],x=case['x'],y=case['y'],layers=names,primitive_count=len(case['commands']),commands_sha256=hashlib.sha256(commands).hexdigest(),composites=composite))
+   composite.append(dict(background=background,flattened_max_channel_delta=flattened_delta,original_rgba_zlib_hex=zlib.compress(original,9).hex(),max_channel_delta=delta,software_max_channel_delta=software_delta,original_sha256=hashlib.sha256(original).hexdigest(),grouped_sha256=hashlib.sha256(grouped).hexdigest()))
+  records.append(dict(kind=case['kind'],position=case['position'],x=case['x'],y=case['y'],layers=names,combined=combined_name,primitive_count=len(case['commands']),commands_sha256=hashlib.sha256(commands).hexdigest(),composites=composite))
  if args.write_assets:
   from PIL import Image
   destination=Path(args.write_assets);assert destination.is_dir()
   for name,value in layers.items():
-   image=Image.frombytes('RGBA',(41,41),bytes.fromhex(value['rgba_hex']));a=image.getchannel('A').getbbox();b=image.convert('RGB').getbbox();bounds=(min(a[0],b[0]),min(a[1],b[1]),max(a[2],b[2]),max(a[3],b[3]));image.crop(bounds).save(destination/name)
+   image=Image.frombytes('RGBA',(41,41),bytes.fromhex(value['rgba_hex']));a=image.getchannel('A').getbbox();b=image.convert('RGB').getbbox();bounds=(min(a[0],b[0]),min(a[1],b[1]),max(a[2],b[2]),max(a[3],b[3]));(image if name.startswith('bonus-icon-') else image.crop(bounds)).save(destination/name)
  print(json.dumps(dict(revision='9d613e78c9ed5657ae7fda9206cd4a82a893b7c8',rendering_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),entities_sha256=hashlib.sha256(entities.read_bytes()).hexdigest(),fragment_sha256=hashlib.sha256(fragment.encode()).hexdigest(),sdl2_version='0.37.0',canonical_renderer='opengl',original_dark_rgba=originals,layers=layers,cases=records),indent=2))

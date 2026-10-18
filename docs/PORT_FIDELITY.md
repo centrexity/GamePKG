@@ -1886,3 +1886,65 @@ Final native gameplay/editor/system import/cancel/Save-dialog export and both
 browser-profile gameplay/editor/import/cancel/explicit-download workflows pass
 with the end-screen and particle changes. Publication is source only; application
 version 0.1.17 and binary/package releases remain unchanged.
+
+
+### Original HUD, real frame timing and bounded full scenes (recipe 0.1.54)
+
+The placeholder header/tips are replaced by the original world-scoped score,
+heart PNGs and stolen-heart location, centered level/TEST caption, maximum-speed
+record pulse, gravity indicator and bottom-right FPS counter. Decimal formatting
+retains the complete u32 range. New speed records remember the original frame;
+level changes retain that record age. FPS counts actual frame timestamps in the
+original sliding one-second window, including across run resets.
+
+The host supplies relative monotonic microseconds sampled once per tick, stable
+within that tick and scoped independently to each game/restart. Core/component
+Wasm, native IPC and browser bindings agree. This exposes no calendar clock,
+ambient OS access or extra source dependencies. Repeated clock reads still obey
+the execution deadline.
+
+Original SDL heart textures interpolate straight RGB/alpha before applying
+alpha. The added `draw_asset_image_linear_straight` binding preserves that
+operation; the existing premultiplied sampler retains its behavior. Both modes
+share all path, decode, immutable-cache, command and full decoded-byte draw
+limits. Browser exports retain bounded nonopaque PNG RGBA, including hidden RGB
+at zero alpha, and charge that metadata against the existing export limit.
+Filtered coverage snaps physical pixel edges to measured SDL conventions while
+preserving the original UV mapping. Nine independently captured SDL edge cases
+and translated fractional-DPI tests cover coverage and empty rectangles.
+
+A SHA-guarded original SDL/TTF oracle records 29 complete contrast-backdrop HUD
+frames: zero/max-u32 numbers, TEST, gravity, zero/six/stolen hearts, fresh/expired
+speed records and wide/exceptional numeric inputs. Isolated canonical RGBA
+comparisons retain the existing two-level tolerance. Six desktop combinations
+match original canonical HUD RGB within one level; two browser profiles match
+separately captured smaller native frames within two. A same-asset cache marker
+alternates straight/premultiplied filtering and revisits the initial state.
+These fixed-layer checks do not prove arbitrary original viewport scaling.
+
+Dense full scenes exposed missing heart PNGs under the unchanged 8 MiB image
+budget. Fire-brick base/blob/glass/shine pixels now compose once per frame at
+original 61x21 resolution. Translucent inclusive endpoints remain intact. Bonus
+icons compose once from the unchanged original SDL primitives into 41x41 source
+textures. Full-image references over six backgrounds preserve the existing
+three-level tolerance; all earlier commands, reference pixels, hashes and
+thresholds are retained. Sparse particle tiles use 128-pixel boundaries without
+removing any visible particles. Full-renderer checks require the complete HUD
+suffix through 200 fire bricks plus 3,000 corner particles and 200 bonus drops.
+No command, memory, image or execution limit is increased.
+
+Recorded audio/music, remaining settings/project/version controls, external
+fullscreen readback, arbitrary original window/CSS scaling and untested
+platforms remain open. Publication is source only; application version 0.1.17
+and binary/package releases remain unchanged.
+
+Final verification passes all 90 logic checks and both 66-check signed suites
+at their unchanged default parallelism. Native gameplay/editor, real system
+file-picker import/cancellation/Save export, and both browser-profile gameplay,
+editor, selected-file import/cancellation/explicit-download workflows pass.
+All 924 shared six-desktop/two-browser clipping, image, shader and resize samples
+remain exact; original end-screen comparisons also pass all eight profiles.
+HUD, filtered-edge, fire and bonus reference regeneration is byte-identical. Strict lint,
+formatting, generated clock SDK checks and all 940 hostile browser paths pass.
+An earlier run hit the existing Wasm deadline while separate GPU captures ran;
+the final full run passes unchanged limits and test parallelism.

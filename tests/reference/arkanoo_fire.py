@@ -1,6 +1,6 @@
 """Trace and rasterize the unchanged pinned explosive-brick branch."""
 from pathlib import Path
-import argparse,hashlib,json,os,subprocess,tempfile,tarfile
+import argparse,hashlib,json,os,subprocess,tempfile,tarfile,zlib
 parser=argparse.ArgumentParser();parser.add_argument('upstream');parser.add_argument('--sdl-crate',required=True);parser.add_argument('--sdl-sys-crate',required=True);args=parser.parse_args()
 source=Path(args.upstream)/'src/rendering.rs';text=source.read_text();assert hashlib.sha256(source.read_bytes()).hexdigest()=='51b6c75d19ed56c67412daee59f5cae90ace2586902c753c2598935f2702fb83'
 entities=Path(args.upstream)/'src/entities.rs';assert hashlib.sha256(entities.read_bytes()).hexdigest()=='ee6fc52f2ea582900edee90350c0c4608235aeecae6e56cc875cfd7893313545'
@@ -60,5 +60,5 @@ fn draw(canvas:&mut Canvas<Window>,block:&Block,frame_count:u64){
    grouped=subprocess.check_output([str(work/'raster'),'4',str(case['x']),str(case['y']),background,*paths],input=commands)
    delta=max(abs(a-b) for a,b in zip(original,grouped))
    assert delta<=3,(case['frame'],case['x'],case['y'],case['health'],background,delta)
-   case['composites'].append(dict(background=background,max_channel_delta=delta,original_sha256=hashlib.sha256(original).hexdigest(),grouped_sha256=hashlib.sha256(grouped).hexdigest(),blob_changed_bytes=sum(a!=b for a,b in zip(original,without_blob))))
+   case['composites'].append(dict(background=background,max_channel_delta=delta,original_sha256=hashlib.sha256(original).hexdigest(),original_rgba_zlib_hex=zlib.compress(original,9).hex(),grouped_sha256=hashlib.sha256(grouped).hexdigest(),blob_changed_bytes=sum(a!=b for a,b in zip(original,without_blob))))
  print(json.dumps(dict(revision='9d613e78c9ed5657ae7fda9206cd4a82a893b7c8',rendering_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),fragment_sha256=hashlib.sha256(fragment.encode()).hexdigest(),sdl2_version='0.37.0',sdl2_sys_crate_sha256='951deab27af08ed9c6068b7b0d05a93c91f0a8eb16b6b816a5e73452a43521d3',sdl2_crate_sha256='3b498da7d14d1ad6c839729bd4ad6fc11d90a57583605f3b4df2cd709a9cd380',masks=masks,cases=cases),indent=2))

@@ -10,6 +10,7 @@ use std::sync::Arc;
 #[derive(Default)]
 pub(super) struct Cache {
     backend: Option<Backend>,
+    straight_backend: Option<Backend>,
     slots: Vec<Slot>,
 }
 enum Backend {
@@ -17,9 +18,10 @@ enum Backend {
     OpenGl(Arc<Gl>),
 }
 struct Slot {
+    straight: bool,
     source: Arc<Image>,
     resource: Resource,
-    bounds: [f32; 4],
+    bounds: [f32; 8],
 }
 enum Resource {
     Vulkan(Arc<VulkanSlot>),
@@ -29,6 +31,7 @@ impl Cache {
     pub fn clear(&mut self) {
         self.slots.clear();
         self.backend = None;
+        self.straight_backend = None;
     }
     pub fn finish(&mut self, count: usize) {
         self.slots.truncate(count);
@@ -36,40 +39,64 @@ impl Cache {
     pub fn callback(
         &mut self,
         index: usize,
-        image: &Arc<Image>,
+        source: (&Arc<Image>, bool),
         bounds: [f32; 4],
-        viewport: egui::Rect,
+        viewport_info: (egui::Rect, f32),
         state: Option<&egui_wgpu::RenderState>,
         gl: Option<&Arc<glow::Context>>,
     ) -> Result<egui::PaintCallback> {
-        if self.backend.is_none() {
-            self.backend = Some(if let Some(state) = state {
-                Backend::Vulkan(Vulkan::new(state)?)
+        let (image, straight) = source;
+        let (viewport, ppp) = viewport_info;
+        let (coverage, texcoords) = sampling_quad(bounds, viewport, ppp);
+        let uniform = [
+            coverage[0],
+            coverage[1],
+            coverage[2],
+            coverage[3],
+            texcoords[0],
+            texcoords[1],
+            texcoords[2],
+            texcoords[3],
+        ];
+        let selected = if straight {
+            &mut self.straight_backend
+        } else {
+            &mut self.backend
+        };
+        if selected.is_none() {
+            *selected = Some(if let Some(state) = state {
+                Backend::Vulkan(Vulkan::new(state, straight)?)
             } else {
                 Backend::OpenGl(Arc::new(Gl::new(
                     gl.context("game graphics context missing")?.clone(),
+                    straight,
                 )?))
             });
         }
-        let backend = self.backend.as_ref().unwrap();
-        let changed = self
-            .slots
-            .get(index)
-            .is_none_or(|s| !Arc::ptr_eq(&s.source, image) && s.source.as_ref() != image.as_ref());
+        let backend = selected.as_ref().unwrap();
+        let changed = self.slots.get(index).is_none_or(|s| {
+            s.straight != straight
+                || (!Arc::ptr_eq(&s.source, image) && s.source.as_ref() != image.as_ref())
+        });
         if changed {
-            let pixels: Vec<u8> = image
-                .pixels()
-                .chunks_exact(4)
-                .flat_map(|p| super::game_colors::rgba(p[0], p[1], p[2], p[3]).to_array())
-                .collect();
+            let pixels: Vec<u8> = if straight {
+                image.pixels().to_vec()
+            } else {
+                image
+                    .pixels()
+                    .chunks_exact(4)
+                    .flat_map(|p| super::game_colors::rgba(p[0], p[1], p[2], p[3]).to_array())
+                    .collect()
+            };
             let resource = match backend {
                 Backend::Vulkan(v) => Resource::Vulkan(Arc::new(v.slot(image.size(), &pixels))),
                 Backend::OpenGl(g) => Resource::OpenGl(Arc::new(g.slot(image.size(), &pixels)?)),
             };
             let slot = Slot {
+                straight,
                 source: image.clone(),
                 resource,
-                bounds: [f32::NAN; 4],
+                bounds: [f32::NAN; 8],
             };
             if index == self.slots.len() {
                 self.slots.push(slot);
@@ -80,10 +107,10 @@ impl Cache {
         let slot = &mut self.slots[index];
         match (backend, &slot.resource) {
             (Backend::Vulkan(v), Resource::Vulkan(resource)) => {
-                if slot.bounds != bounds {
-                    let bytes: Vec<u8> = bounds.into_iter().flat_map(f32::to_le_bytes).collect();
+                if slot.bounds != uniform {
+                    let bytes: Vec<u8> = uniform.into_iter().flat_map(f32::to_le_bytes).collect();
                     v.queue.write_buffer(&resource.uniform, 0, &bytes);
-                    slot.bounds = bounds;
+                    slot.bounds = uniform;
                 }
                 Ok(egui_wgpu::Callback::new_paint_callback(
                     viewport,
@@ -99,7 +126,7 @@ impl Cache {
                 Ok(egui::PaintCallback {
                     rect: viewport,
                     callback: Arc::new(eframe::egui_glow::CallbackFn::new(move |_, _| {
-                        g.paint(&resource, bounds)
+                        g.paint(&resource, texcoords, coverage)
                     })),
                 })
             }
@@ -136,7 +163,7 @@ impl egui_wgpu::CallbackTrait for VulkanPass {
     }
 }
 impl Vulkan {
-    fn new(state: &egui_wgpu::RenderState) -> Result<Self> {
+    fn new(state: &egui_wgpu::RenderState, straight: bool) -> Result<Self> {
         let device = state.device.clone();
         let queue = state.queue.clone();
         device.push_error_scope(wgpu::ErrorFilter::Validation);
@@ -165,17 +192,17 @@ impl Vulkan {
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
-                        min_binding_size: wgpu::BufferSize::new(16),
+                        min_binding_size: wgpu::BufferSize::new(32),
                     },
                     count: None,
                 },
             ],
         });
-        let source=r#"struct Bounds { rect:vec4<f32> }; @group(0) @binding(0) var image:texture_2d<f32>; @group(0) @binding(1) var filtering:sampler; @group(0) @binding(2) var<uniform> bounds:Bounds;
+        let source=r#"struct Bounds { rect:vec4<f32>,uv:vec4<f32> }; @group(0) @binding(0) var image:texture_2d<f32>; @group(0) @binding(1) var filtering:sampler; @group(0) @binding(2) var<uniform> bounds:Bounds;
 struct Vertex { @builtin(position) position:vec4<f32>, @location(0) uv:vec2<f32> };
-@vertex fn vertex(@builtin(vertex_index) i:u32)->Vertex {let points=array<vec2<f32>,6>(vec2(0.,0.),vec2(1.,0.),vec2(0.,1.),vec2(0.,1.),vec2(1.,0.),vec2(1.,1.));var out:Vertex;out.uv=points[i];out.position=vec4(bounds.rect.xy+out.uv*bounds.rect.zw,0.,1.);return out;}
-@fragment fn fragment(input:Vertex)->@location(0) vec4<f32> {var color=textureSample(image,filtering,input.uv);if TARGET_SRGB {let low=color.rgb/12.92;let high=pow((color.rgb+vec3(0.055))/1.055,vec3(2.4));color=vec4(select(high,low,color.rgb<vec3(0.04045)),color.a);}return color;}
-"#.replace("TARGET_SRGB",if state.target_format.is_srgb(){"true"}else{"false"});
+@vertex fn vertex(@builtin(vertex_index) i:u32)->Vertex {let points=array<vec2<f32>,6>(vec2(0.,0.),vec2(1.,0.),vec2(0.,1.),vec2(0.,1.),vec2(1.,0.),vec2(1.,1.));var out:Vertex;let point=points[i];out.uv=bounds.uv.xy+point*bounds.uv.zw;out.position=vec4(bounds.rect.xy+point*bounds.rect.zw,0.,1.);return out;}
+@fragment fn fragment(input:Vertex)->@location(0) vec4<f32> {var color=textureSample(image,filtering,input.uv);if STRAIGHT_ALPHA {color=vec4(color.rgb*color.a,color.a);}if TARGET_SRGB {let low=color.rgb/12.92;let high=pow((color.rgb+vec3(0.055))/1.055,vec3(2.4));color=vec4(select(high,low,color.rgb<vec3(0.04045)),color.a);}return color;}
+"#.replace("TARGET_SRGB",if state.target_format.is_srgb(){"true"}else{"false"}).replace("STRAIGHT_ALPHA",if straight {"true"} else {"false"});
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("GamePKG encoded sprite shader"),
             source: wgpu::ShaderSource::Wgsl(source.into()),
@@ -262,7 +289,7 @@ struct Vertex { @builtin(position) position:vec4<f32>, @location(0) uv:vec2<f32>
         );
         let uniform = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
-            size: 16,
+            size: 32,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -299,6 +326,7 @@ struct Gl {
     vao: Option<glow::VertexArray>,
     bounds: glow::UniformLocation,
     sampler: glow::UniformLocation,
+    coverage: glow::UniformLocation,
 }
 struct GlSlot {
     gl: Arc<glow::Context>,
@@ -312,7 +340,7 @@ impl Drop for GlSlot {
     }
 }
 impl Gl {
-    fn new(gl: Arc<glow::Context>) -> Result<Self> {
+    fn new(gl: Arc<glow::Context>, straight: bool) -> Result<Self> {
         unsafe {
             let version = gl.version();
             let modern = version.major >= 3;
@@ -334,13 +362,14 @@ impl Gl {
             } else {
                 "#version 120\n"
             };
-            let vertex=format!("{header}{} vec2 uv;uniform vec4 bounds;{} vec2 tex;void main(){{tex=uv;gl_Position=vec4(bounds.xy+uv*bounds.zw,0.,1.);}}",if modern{"in"}else{"attribute"},if modern{"out"}else{"varying"});
+            let vertex=format!("{header}{} vec2 uv;uniform vec4 bounds;uniform vec4 coverage;{} vec2 tex;void main(){{vec2 point=coverage.xy+uv*coverage.zw;tex=bounds.xy+uv*bounds.zw;gl_Position=vec4(point,0.,1.);}}",if modern{"in"}else{"attribute"},if modern{"out"}else{"varying"});
             let fragment = format!(
-                "{header}{} vec2 tex;uniform sampler2D image;{}void main(){{{}={} (image,tex);}}",
+                "{header}{} vec2 tex;uniform sampler2D image;{}void main(){{vec4 value={} (image,tex);{}{}=value;}}",
                 if modern { "in" } else { "varying" },
                 if modern { "out vec4 pixel;" } else { "" },
-                if modern { "pixel" } else { "gl_FragColor" },
-                if modern { "texture" } else { "texture2D" }
+                if modern { "texture" } else { "texture2D" },
+                if straight {"value.rgb*=value.a;"} else {""},
+                if modern { "pixel" } else { "gl_FragColor" }
             );
             let shader = |kind, source: &str| -> Result<glow::Shader> {
                 let s = gl.create_shader(kind).map_err(anyhow::Error::msg)?;
@@ -385,6 +414,10 @@ impl Gl {
             let Some(bounds) = gl.get_uniform_location(program, "bounds") else {
                 gl.delete_program(program);
                 bail!("Game sprite bounds missing");
+            };
+            let Some(coverage) = gl.get_uniform_location(program, "coverage") else {
+                gl.delete_program(program);
+                bail!("Game sprite coverage missing");
             };
             let Some(sampler) = gl.get_uniform_location(program, "image") else {
                 gl.delete_program(program);
@@ -432,6 +465,7 @@ impl Gl {
                 vao,
                 bounds,
                 sampler,
+                coverage,
             })
         }
     }
@@ -471,11 +505,18 @@ impl Gl {
             })
         }
     }
-    fn paint(&self, slot: &GlSlot, b: [f32; 4]) {
+    fn paint(&self, slot: &GlSlot, b: [f32; 4], coverage: [f32; 4]) {
         unsafe {
             self.gl.use_program(Some(self.program));
             self.gl
                 .uniform_4_f32(Some(&self.bounds), b[0], b[1], b[2], b[3]);
+            self.gl.uniform_4_f32(
+                Some(&self.coverage),
+                coverage[0],
+                coverage[1],
+                coverage[2],
+                coverage[3],
+            );
             self.gl.active_texture(glow::TEXTURE0);
             self.gl.bind_texture(glow::TEXTURE_2D, Some(slot.texture));
             self.gl.uniform_1_i32(Some(&self.sampler), 0);
@@ -508,3 +549,45 @@ impl Drop for Gl {
         }
     }
 }
+
+// SDL/OpenGL includes the left and lower edge at exact pixel centers. Move only
+// raster coverage to whole pixel edges; original bounds still determine UVs.
+fn sampling_quad(bounds: [f32; 4], viewport: egui::Rect, ppp: f32) -> ([f32; 4], [f32; 4]) {
+    let left = f64::from((viewport.left() * ppp).round());
+    let top = f64::from((viewport.top() * ppp).round());
+    let width = f64::from((viewport.right() * ppp).round()) - left;
+    let height = f64::from((viewport.bottom() * ppp).round()) - top;
+    let empty = ([0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 1.0, 1.0]);
+    if width <= 0.0 || height <= 0.0 {
+        return empty;
+    }
+    let x = left + f64::from(bounds[0]) * (width / 640.0);
+    let y = top + f64::from(bounds[1]) * (height / 480.0);
+    let w = f64::from(bounds[2]) * (width / 640.0);
+    let h = f64::from(bounds[3]) * (height / 480.0);
+    let x0 = (x - 0.5).ceil();
+    let x1 = (x + w - 0.5).ceil();
+    let y0 = (y - 0.5).floor() + 1.0;
+    let y1 = (y + h - 0.5).floor() + 1.0;
+    if x1 <= x0 || y1 <= y0 || w <= 0.0 || h <= 0.0 {
+        return empty;
+    }
+    (
+        [
+            ((x0 - left) * 2.0 / width - 1.0) as f32,
+            (1.0 - (y0 - top) * 2.0 / height) as f32,
+            ((x1 - x0) * 2.0 / width) as f32,
+            (-(y1 - y0) * 2.0 / height) as f32,
+        ],
+        [
+            ((x0 - x) / w) as f32,
+            ((y0 - y) / h) as f32,
+            ((x1 - x0) / w) as f32,
+            ((y1 - y0) / h) as f32,
+        ],
+    )
+}
+
+#[cfg(test)]
+#[path = "linear_sampling_tests.rs"]
+mod tests;

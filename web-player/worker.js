@@ -1,8 +1,34 @@
+let frameClockOrigin=null,frameClockValue=0n;
+function frameClockReset(){frameClockOrigin=null;frameClockValue=0n;}
+function frameClockBegin(now=performance.now()){
+ if(frameClockOrigin===null)frameClockOrigin=now;
+ const value=BigInt(Math.max(0,Math.floor((now-frameClockOrigin)*1000))),limit=(1n<<64n)-1n;
+ const bounded=value>limit?limit:value;if(bounded>frameClockValue)frameClockValue=bounded;
+}
 let eventBytes=new Uint8Array();
 // The guest sees only these typed imports, never JavaScript objects or browser APIs.
 let instance, manifest, assets, roms, save, state=0n, commands=[], background=null, unlocks=[],saveDirty=false,saveBudget=0,images=new Map(),imageBudget=0,audioSamples=[],shaderCount=0;
 function imageCommand(x,y,w,h,pw,ph,pixels,kind='image'){if(commands.length>=1024||!finite(x,y,w,h)||w<0||h<0||!Number.isInteger(pw)||!Number.isInteger(ph)||pw<1||ph<1||pw>512||ph>512||pixels.length!==pw*ph*4||imageBudget+pixels.length>8388608)return -1;imageBudget+=pixels.length;return command([kind,x,y,w,h,pw,ph,pixels.slice()]);}
-async function prepareImages(){images=new Map();let total=0;for(const [name,pixels] of assets){if(!name.toLowerCase().endsWith('.png')||pixels.length>2097152||pixels.length<33)continue;const signature=[137,80,78,71,13,10,26,10];if(!signature.every((byte,index)=>pixels[index]===byte))continue;const header=new DataView(pixels.buffer,pixels.byteOffset,pixels.byteLength),w=header.getUint32(16),h=header.getUint32(20);if(w<1||h<1||w>512||h>512||total+w*h*4>33554432)continue;let bitmap;try{bitmap=await createImageBitmap(new Blob([pixels],{type:'image/png'}));if(bitmap.width!==w||bitmap.height!==h)continue;const surface=new OffscreenCanvas(w,h),context=surface.getContext('2d');context.drawImage(bitmap,0,0);images.set(name,{width:w,height:h,pixels:context.getImageData(0,0,w,h).data});total+=w*h*4;}catch{}finally{bitmap?.close();}}}
+async function prepareImages(precise={}){
+ images=new Map();let total=0;
+ for(const [name,pixels] of assets){
+  if(!name.toLowerCase().endsWith('.png')||pixels.length>2097152||pixels.length<33)continue;
+  if(![137,80,78,71,13,10,26,10].every((byte,index)=>pixels[index]===byte))continue;
+  const header=new DataView(pixels.buffer,pixels.byteOffset,pixels.byteLength),w=header.getUint32(16),h=header.getUint32(20);
+  if(w<1||h<1||w>512||h>512||total+w*h*4>33554432)continue;
+  if(Object.hasOwn(precise,name)){
+   const raw=precise[name];if(raw.width!==w||raw.height!==h||typeof raw.rgba!=='string'||raw.rgba.length!==w*h*8)throw Error('Invalid precise image');
+   const decoded=decode(raw.rgba);images.set(name,{width:w,height:h,pixels:decoded,precise:true});total+=w*h*4;continue;
+  }
+  let bitmap;
+  try{
+   bitmap=await createImageBitmap(new Blob([pixels],{type:'image/png'}));if(bitmap.width!==w||bitmap.height!==h)continue;
+   const surface=new OffscreenCanvas(w,h),context=surface.getContext('2d');context.drawImage(bitmap,0,0);const decoded=context.getImageData(0,0,w,h).data;
+   let exact=true;for(let i=3;i<decoded.length;i+=4)if(decoded[i]!==255){exact=false;break;}
+   images.set(name,{width:w,height:h,pixels:decoded,precise:exact});total+=w*h*4;
+  }catch{}finally{bitmap?.close();}
+ }
+}
 function validAssetPath(name){
  if(!name||new TextEncoder().encode(name).length>1024||name.split('/').length>32||name.startsWith('/')||/[\\:<>"|?*\x00-\x1f\x7f-\x9f]/.test(name))return false;
  return name.split('/').every(part=>{
@@ -83,6 +109,7 @@ const api={
  window_control:windowRequest,
  file_call:(operation,pointer,length,output,capacity)=>{const request=bytes(pointer,length,1048840),out=bytes(output,capacity,65536);if(!request||!out)return -1;const reply=fileCall(operation,request.slice(),capacity);if(!reply)return -1;out.set(reply);return reply.length;},
  input_events:(pointer,capacity)=>{const output=bytes(pointer,capacity,32768);if(!output)return -1;const events=takeEvents(capacity);if(!events)return -1;output.set(events);return events.length;},
+ frame_time_us:()=>frameClockValue,
  random_u64:()=>{const words=new Uint32Array(2);crypto.getRandomValues(words);return BigInt(words[0])|(BigInt(words[1])<<32n);},
  asset_read:(p,n,offset,out,length)=>{const name=assetName(p,n);return name===null?-1:read(assets.get(name),offset,out,length);},
  rom_count:()=>roms.length,rom_size:()=>roms[0]?.length??-1,rom_size_at:index=>roms[index]?.length??-1,
@@ -99,19 +126,21 @@ const api={
  draw_image_linear:(x,y,w,h,pw,ph,pointer,length)=>{const pixels=bytes(pointer,length,1048576);return pixels?imageCommand(x,y,w,h,pw,ph,pixels,'linear-image'):-1;},
  draw_asset_image:(pointer,length,x,y,w,h)=>{const image=images.get(assetName(pointer,length));return image?imageCommand(x,y,w,h,image.width,image.height,image.pixels):-1;},
  draw_asset_image_linear:(pointer,length,x,y,w,h)=>{const image=images.get(assetName(pointer,length));return image?imageCommand(x,y,w,h,image.width,image.height,image.pixels,'linear-image'):-1;},
+ draw_asset_image_linear_straight:(pointer,length,x,y,w,h)=>{const image=images.get(assetName(pointer,length));return image?.precise?imageCommand(x,y,w,h,image.width,image.height,image.pixels,'straight-linear-image'):-1;},
  draw_shader:index=>Number.isInteger(index)&&index>=0&&index<shaderCount?command(['shader',index]):-1,
  draw_shader_asset_image:(index,pointer,length)=>{const image=images.get(assetName(pointer,length));if(!Number.isInteger(index)||index<0||index>=shaderCount||!image||imageBudget+image.pixels.length>8388608||commands.length>=1024)return -1;imageBudget+=image.pixels.length;return command(['shader-image',index,image.width,image.height,image.pixels.slice()]);},
  draw_shader_image:(index,pw,ph,pointer,length)=>{const pixels=bytes(pointer,length,1048576);if(!Number.isInteger(index)||index<0||index>=shaderCount||!pixels||!Number.isInteger(pw)||!Number.isInteger(ph)||pw<1||ph<1||pw>512||ph>512||length!==pw*ph*4||imageBudget+length>8388608)return -1;imageBudget+=length;return command(['shader-image',index,pw,ph,pixels.slice()]);},
  audio_submit:(pointer,count)=>{const samples=bytes(pointer,count*2,3200);if(!manifest.permissions.audio||!Number.isInteger(count)||count<0||count>1600||audioSamples.length+count>1600||!samples)return -1;const view=new DataView(samples.buffer,samples.byteOffset,samples.byteLength);for(let index=0;index<count;index++)audioSamples.push(view.getInt16(index*2,true));return 0;},
  achievement_unlock:index=>{const item=manifest.achievements?.[index];if(!item||unlocks.length>=1024)return 0;unlocks.push(item.id);return 1;}
 };
-function decode(hex){if(typeof hex!=='string'||hex.length%2||!/^[a-f0-9]*$/.test(hex))throw Error('Invalid packaged bytes');return Uint8Array.from(hex.match(/../g)||[],byte=>parseInt(byte,16));}
+function decode(hex){if(typeof hex!=='string'||hex.length%2||!/^[a-f0-9]*$/.test(hex))throw Error('Invalid packaged bytes');const out=new Uint8Array(hex.length/2);for(let i=0;i<out.length;i++){const a=hex.charCodeAt(i*2),b=hex.charCodeAt(i*2+1);out[i]=((a<=57?a-48:a-87)<<4)|(b<=57?b-48:b-87);}return out;}
 onmessage=async ({data})=>{try{
  if(data.type==='file-result'){fileResult(data);return;}
  if(data.type==='start'){
+  frameClockReset();
   fileEntry=null;fileNext=1;fileGeneration++;fileGesture=false;windowCurrent=defaultWindow();windowPrevious=defaultWindow();windowStaged=defaultWindow();
   shaderCount=data.shaderCount||0;manifest=data.manifest;assets=new Map(Object.entries(data.assets).map(([key,value])=>[key,decode(value)]));roms=data.roms.map(value=>new Uint8Array(value));save=new Uint8Array(data.save);state=0n;
-  await prepareImages();
+  await prepareImages(data.precise_images??{});
   const module=await WebAssembly.compile(data.wasm);
   const namespace=manifest.runtime_profile==='component-v1'?'gamepkg:engine/host@0.1.0':'gamepkg',imports=manifest.runtime_profile==='component-v1'?canonical:api;
   for(const item of WebAssembly.Module.imports(module))if(item.module!==namespace||item.kind!=='function'||!Object.hasOwn(imports,item.name))throw Error('Forbidden host import');
@@ -119,8 +148,10 @@ onmessage=async ({data})=>{try{
   if(typeof instance.exports[manifest.runtime_profile==='component-v1'?'tick':'gamepkg_tick']!=='function')throw Error('Missing game entry');
   postMessage({type:'ready'});
  }else if(data.type==='restart'){
+  frameClockReset();
   eventBytes=new Uint8Array();state=0n;fileEntry=null;fileGeneration++;fileGesture=false;windowCurrent=defaultWindow();windowPrevious=defaultWindow();windowStaged=defaultWindow();
  }else if(data.type==='tick'){
+  frameClockBegin();
   eventBytes=manifest.permissions.input?encodeEvents(data.events??[]):new Uint8Array();
   commands=[];background=null;unlocks=[];saveDirty=false;saveBudget=0;imageBudget=0;audioSamples=[];fileTickBegin(data.input);windowBegin(fileGesture);
   state=instance.exports[manifest.runtime_profile==='component-v1'?'tick':'gamepkg_tick'](manifest.permissions.input?data.input:0,state);
@@ -144,6 +175,7 @@ const canonical={
  'window-control':windowRequest,
  'file-call':(operation,pointer,length,capacity,result)=>{if(!range(result,12)||result%4)throw Error('Invalid result pointer');const request=bytes(pointer,length,1048840);let reply=null;if(request&&Number.isInteger(capacity)&&capacity>=0&&capacity<=65536)reply=fileCall(operation,request.slice(),capacity);let address=0;if(reply?.length){address=instance.exports.cabi_realloc(0,0,1,reply.length)>>>0;if(!range(address,reply.length))throw Error('Invalid allocation');bytes(address,reply.length).set(reply);}const v=new DataView(instance.exports.memory.buffer);v.setInt32(result,reply?reply.length:-1,true);v.setUint32(result+4,address,true);v.setUint32(result+8,reply?.length??0,true);},
  'input-events':(capacity,pointer)=>{if(!range(pointer,12)||pointer%4)throw Error('Invalid result pointer');const events=takeEvents(capacity);optionBytes(pointer,events,0,events?.length??0);},
+ 'frame-time-us':api.frame_time_us,
  'random-u64':api.random_u64,
  'rom-count':api.rom_count,
  'rom-size':pointer=>optionSize(pointer,api.rom_size()),
@@ -164,6 +196,7 @@ const canonical={
  'draw-image-linear':(...args)=>api.draw_image_linear(...args)===0?1:0,
  'draw-asset-image':(...args)=>api.draw_asset_image(...args)===0?1:0,
  'draw-asset-image-linear':(...args)=>api.draw_asset_image_linear(...args)===0?1:0,
+ 'draw-asset-image-linear-straight':(...args)=>api.draw_asset_image_linear_straight(...args)===0?1:0,
  'audio-submit':(...args)=>api.audio_submit(...args)===0?1:0,
  'draw-shader':index=>api.draw_shader(index)===0?1:0,
  'draw-shader-asset-image':(...args)=>api.draw_shader_asset_image(...args)===0?1:0,

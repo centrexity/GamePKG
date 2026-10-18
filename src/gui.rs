@@ -1022,22 +1022,18 @@ impl eframe::App for App {
                                     width,
                                     height,
                                     ref image,
-                                } => {
+                                }
+                                | crate::drawing::Command::StraightLinearImage {x,y,width,height,ref image} => {
                                     if matches!(
                                         command,
-                                        crate::drawing::Command::LinearImage { .. }
+                                        crate::drawing::Command::LinearImage { .. } | crate::drawing::Command::StraightLinearImage {..}
                                     ) {
-                                        let bounds = [
-                                            x / 320.0 - 1.0,
-                                            1.0 - y / 240.0,
-                                            width / 320.0,
-                                            -height / 240.0,
-                                        ];
+                                        let bounds=[x,y,width,height];
                                         match self.linear_sprites.callback(
                                             linear_count,
-                                            image,
+                                            (image,matches!(command,crate::drawing::Command::StraightLinearImage{..})),
                                             bounds,
-                                            rect,
+                                            (rect,ctx.pixels_per_point()),
                                             self.vulkan_state.as_ref(),
                                             self.gl.as_ref(),
                                         ) {
@@ -1058,7 +1054,7 @@ impl eframe::App for App {
                                         image,
                                         matches!(
                                             command,
-                                            crate::drawing::Command::LinearImage { .. }
+                                            crate::drawing::Command::LinearImage { .. } | crate::drawing::Command::StraightLinearImage {..}
                                         ),
                                     );
                                     image_count += 1;

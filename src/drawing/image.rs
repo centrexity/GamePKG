@@ -218,3 +218,48 @@ mod cache_tests {
         assert!(Arc::ptr_eq(&maximum, &cache.get("large").unwrap()));
     }
 }
+
+pub(crate) fn asset(
+    package: &mut crate::archive::Package,
+    cache: &mut Cache,
+    frame: &crate::drawing::Frame,
+    path: &str,
+    bounds: [f32; 4],
+) -> Option<std::sync::Arc<Image>> {
+    let [x, y, w, h] = bounds;
+    if path.len() > 1024 || !crate::archive::valid_path(path) || !frame.can_image(x, y, w, h, 0) {
+        return None;
+    }
+    if let Some(image) = cache.get(path) {
+        return frame
+            .can_image(x, y, w, h, image.pixels().len())
+            .then_some(image);
+    }
+    let Ok(size) = package.asset_size(path) else {
+        return None;
+    };
+    if !(33..=MAX_PNG_BYTES as u64).contains(&size) {
+        return None;
+    }
+    let Ok(header) = package.asset_chunk(path, 0, 33) else {
+        return None;
+    };
+    let pixel_bytes = Image::png_byte_length(&header)?;
+    if !frame.can_image(x, y, w, h, pixel_bytes) {
+        return None;
+    }
+    let mut encoded = Vec::with_capacity(size as usize);
+    for offset in (0..size).step_by(65536) {
+        let Ok(chunk) = package.asset_chunk(path, offset, 65536) else {
+            return None;
+        };
+        encoded.extend(chunk);
+    }
+    let image = Image::from_png(&encoded)?;
+    if image.pixels().len() != pixel_bytes {
+        return None;
+    }
+    let image = std::sync::Arc::new(image);
+    cache.insert(path, image.clone());
+    Some(image)
+}

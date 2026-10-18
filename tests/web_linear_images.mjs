@@ -27,3 +27,15 @@ for(const values of [[0,0,10,10,0,1,0,0],[0,0,10,10,513,1,0,4],[0,0,10,10,1,1,0,
 api.reset();for(let i=0;i<8;i++)assert.equal(raw.linear(0,0,10,10,512,512,0,1048576),0);
 assert.equal(raw.linear(0,0,10,10,1,1,0,4),-1);
 console.log('Generated filtered images preserve canonical bindings, memory checks and cumulative transfer limits.');
+
+// Straight-alpha assets retain hidden RGB and share all queue/transfer limits.
+vm.runInContext(`new Uint8Array(instance.exports.memory.buffer).set(new TextEncoder().encode('heart.png'));`,worker);
+vm.runInContext(`images.set('heart.png',{width:1,height:1,pixels:new Uint8Array([12,250,100,0]),precise:true});`,worker);api.reset();
+const straight=vm.runInContext('api.draw_asset_image_linear_straight',worker);
+assert.equal(straight(0,9,0,0,10,10),0);assert.equal(api.state().commands[0][0],'straight-linear-image');
+assert.deepEqual(Array.from(api.state().commands[0][7]),[12,250,100,0]);
+vm.runInContext(`images.get('heart.png').precise=false;`,worker);assert.equal(straight(0,9,0,0,10,10),-1);
+vm.runInContext(`images.set('heart.png',{width:512,height:512,pixels:new Uint8Array(1048576),precise:true});`,worker);api.reset();
+for(let i=0;i<8;i++)assert.equal(straight(0,9,0,0,10,10),0);
+assert.equal(api.linear(0,9,0,0,10,10),-1);assert.equal(straight(0,1025,0,0,10,10),-1);
+console.log('Straight-alpha assets preserve hidden RGB and share existing transfer and command bounds.');

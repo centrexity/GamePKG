@@ -22,6 +22,14 @@ pub enum Command {
         height: f32,
         image: std::sync::Arc<image::Image>,
     },
+    /// Bilinear sampling of straight RGBA, multiplying alpha after filtering.
+    StraightLinearImage {
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        image: std::sync::Arc<image::Image>,
+    },
     ShaderImage {
         index: usize,
         image: std::sync::Arc<image::Image>,
@@ -131,6 +139,27 @@ impl Frame {
                 height,
                 image,
             }
+        });
+        true
+    }
+    pub fn straight_linear_image(
+        &mut self,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        image: std::sync::Arc<image::Image>,
+    ) -> bool {
+        if !self.can_image(x, y, width, height, image.pixels().len()) {
+            return false;
+        }
+        self.image_bytes += image.pixels().len();
+        self.commands.push(Command::StraightLinearImage {
+            x,
+            y,
+            width,
+            height,
+            image,
         });
         true
     }
@@ -250,5 +279,27 @@ mod clip_tests {
         assert!(!frame.image(0.0, 0.0, 1.0, 1.0, image.clone()));
         frame.reset();
         assert!(frame.image(0.0, 0.0, 1.0, 1.0, image));
+    }
+}
+
+#[cfg(test)]
+mod straight_filter_tests {
+    use super::*;
+    #[test]
+    fn straight_sampling_shares_existing_transfer_and_command_budgets() {
+        let image =
+            std::sync::Arc::new(image::Image::new(512, 512, &vec![127; 512 * 512 * 4]).unwrap());
+        let mut frame = Frame::default();
+        for _ in 0..8 {
+            assert!(frame.straight_linear_image(0.0, 0.0, 20.0, 20.0, image.clone()));
+        }
+        assert!(!frame.image_arc(0.0, 0.0, 20.0, 20.0, image.clone(), true));
+        frame.clear(0);
+        assert!(!frame.straight_linear_image(0.0, 0.0, 20.0, 20.0, image.clone()));
+        frame.reset();
+        for _ in 0..MAX_COMMANDS {
+            assert!(frame.clip(None));
+        }
+        assert!(!frame.straight_linear_image(0.0, 0.0, 20.0, 20.0, image));
     }
 }

@@ -150,7 +150,7 @@ fn original_heart_loss_states_rectangle_art_and_texture_positions_reach_runtime(
                 .commands
                 .iter()
                 .filter_map(|c| {
-                    if let Command::LinearImage {
+                    if let Command::StraightLinearImage {
                         x,
                         y,
                         width,
@@ -227,7 +227,7 @@ fn filtered_asset_sdk_preserves_pixels_cache_budgets_paths_and_failed_tick_rollb
             .commands
             .iter()
             .filter_map(|c| {
-                if let Command::LinearImage { image, .. } = c {
+                if let Command::StraightLinearImage { image, .. } = c {
                     if image.size() != [512, 472] {
                         return None;
                     }
@@ -736,9 +736,43 @@ fn legacy_save_keeps_large_best_score_and_levels_above_the_old_cap() {
     std::fs::write(&save, bytes).unwrap();
     let mut game = load_menu(root.path(), "com.gamepkg.arkanoo").unwrap();
     game.step(4).unwrap();
-    assert!(game.frame().commands.iter().any(|command|matches!(command,Command::Image{x,y,width,..} if *x==240.0 && *y==23.0 && *width==48.0)),"best score was clamped or truncated");
+
     game.step(4).unwrap();
-    assert!(game.frame().commands.iter().any(|command|matches!(command,Command::Image{x,y,width,..} if *x==352.0 && *y==23.0 && *width==48.0)),"saved level 1000 was clamped");
+    let reference: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-hud.json")).unwrap();
+    let expected = &reference["labels"]["Level 1000"];
+    let width = expected["width"].as_u64().unwrap() as usize;
+    let height = expected["height"].as_u64().unwrap() as usize;
+    let encoded = hex::decode(expected["rgba_zlib_hex"].as_str().unwrap()).unwrap();
+    let mut glyphs = Vec::new();
+    std::io::Read::read_to_end(
+        &mut flate2::read::ZlibDecoder::new(encoded.as_slice()),
+        &mut glyphs,
+    )
+    .unwrap();
+    let level = game
+        .frame()
+        .commands
+        .iter()
+        .find_map(|c| match c {
+            Command::LinearImage { x, y, image, .. }
+                if (*x, *y) == ((640 - width as i32 / 2) as f32 * 0.5, 65.0)
+                    && image.size() == [width, height] =>
+            {
+                Some(image)
+            }
+            _ => None,
+        })
+        .expect("original Level 1000 label missing");
+    assert_eq!(
+        level
+            .pixels()
+            .chunks_exact(4)
+            .map(|p| p[3])
+            .collect::<Vec<_>>(),
+        glyphs.chunks_exact(4).map(|p| p[3]).collect::<Vec<_>>(),
+        "displayed level was clamped"
+    );
     game.step(131072).unwrap();
     game.finish().unwrap();
     drop(game);
@@ -760,7 +794,7 @@ fn special_bricks_ice_damage_and_world_radius_blasts_reach_real_renderers() {
     assert_eq!(state >> 32, 0);
     assert!(game.frame().commands.iter().any(|command|matches!(command,Command::Image{x,y,width,height,image} if *x==20.0 && *y==100.0 && *width==30.5 && *height==10.5 && image.pixels().chunks_exact(4).any(|pixel|pixel==[255,255,255,220]))),"damaged ice crack missing");
     assert!(game.frame().commands.iter().any(|command|matches!(command,Command::Image{x,y,image,..} if *x==50.0 && *y==100.0 && image.pixels().chunks_exact(4).any(|pixel|pixel==[30,35,40,255]) && image.pixels().chunks_exact(4).any(|pixel|pixel==[150,150,160,255]))),"metal brick/rivets missing");
-    assert!(game.frame().commands.iter().any(|command|matches!(command,Command::Rect{x:80.0,y:100.0,width:30.0,height:10.0,rgba} if rgba>>24>=220 && (rgba>>16)&255>=80 && rgba&65535==255)),"explosive brick missing");
+    assert!(game.frame().commands.iter().any(|command|matches!(command,Command::Image{x:80.0,y:100.0,width:30.5,height:10.5,image} if image.size()==[61,21] && image.pixels().chunks_exact(4).any(|p|p[0]>=220 && p[1]>=80 && p[3]==255))),"explosive brick missing");
     let state = game.step(262144).unwrap();
     assert_eq!(state >> 32, 10);
     assert_eq!(state & 4096, 0);
@@ -1008,7 +1042,7 @@ fn original_editor_workflow_persists_patterns_and_preserves_corrupt_saves_in_rea
             .commands
             .iter()
             .filter(
-                |c| matches!(c,Command::Image{width,height,..} if *width==30.0 && *height==10.0)
+                |c| matches!(c,Command::Image{width,height,image,..} if (*width==30.0 && *height==10.0)||(*width==30.5 && *height==10.5 && image.pixels().chunks_exact(4).any(|p|p[3]==255 && p[..3]!=[255,255,255])))
             )
             .count(),
         3
@@ -1027,7 +1061,7 @@ fn original_editor_workflow_persists_patterns_and_preserves_corrupt_saves_in_rea
             .commands
             .iter()
             .filter(
-                |c| matches!(c,Command::Image{width,height,..} if *width==30.0 && *height==10.0)
+                |c| matches!(c,Command::Image{width,height,image,..} if (*width==30.0 && *height==10.0)||(*width==30.5 && *height==10.5 && image.pixels().chunks_exact(4).any(|p|p[3]==255 && p[..3]!=[255,255,255])))
             )
             .count(),
         3
@@ -1973,7 +2007,10 @@ fn original_metal_layers_preserve_outside_pixels_order_and_full_board_budgets() 
         let mut outside = 0;
         let mut bytes = 0;
         for command in &game.frame().commands {
-            if let Command::Image { image, .. } | Command::LinearImage { image, .. } = command {
+            if let Command::Image { image, .. }
+            | Command::LinearImage { image, .. }
+            | Command::StraightLinearImage { image, .. } = command
+            {
                 bytes += image.pixels().len();
                 let index = if image.size() == [60, 20] {
                     bodies += 1;
@@ -2126,6 +2163,7 @@ fn original_ice_glints_refractions_cracks_and_clipped_shine_reach_real_runtimes(
 #[test]
 #[ignore = "requires the signed production fixture prepared by tests/arkanoo.py"]
 fn original_fire_glass_blob_and_clipped_shine_match_real_sdl_wrappers() {
+    use std::io::Read;
     let root = isolated_library();
     let reference: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/arkanoo-fire.json")).unwrap();
@@ -2136,72 +2174,53 @@ fn original_fire_glass_blob_and_clipped_shine_match_real_sdl_wrappers() {
     for (index, case) in cases.iter().enumerate() {
         assert_eq!(game.step(2147484672 | index as u32).unwrap(), 1);
         let commands = &game.frame().commands;
-        assert_eq!(commands.len(), 4);
+        assert_eq!(commands.len(), 1);
         let x = case["x"].as_i64().unwrap() as f32 * 0.5;
         let y = 60.0 + case["y"].as_i64().unwrap() as f32 * 0.5;
-        let color = case["commands"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|c| c[0] == "C")
-            .unwrap();
-        let packed = ((color[1].as_u64().unwrap() as u32) << 24)
-            | ((color[2].as_u64().unwrap() as u32) << 16)
-            | 255;
-        assert!(
-            matches!(commands[0],Command::Rect{x:left,y:top,width:30.0,height:10.0,rgba} if left==x&&top==y&&rgba==packed)
-        );
-        let blob = case["commands"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .filter(|c| c[0] == "R")
-            .nth(1)
-            .unwrap();
-        assert_eq!(
-            (blob[3].as_u64().unwrap(), blob[4].as_u64().unwrap()),
-            (40, 1),
-            "Real SDL wrapper must clamp the original zero-height rectangle"
-        );
-        let blob_x = blob[1].as_i64().unwrap() as f32 * 0.5;
-        let blob_y = 60.0 + blob[2].as_i64().unwrap() as f32 * 0.5;
-        assert!(
-            matches!(commands[1],Command::Rect{x:left,y:top,width:20.0,height:0.5,rgba:0xff9632ff} if left==blob_x&&top==blob_y)
-        );
-        for (layer, name) in [(2, "overlay"), (3, "shine")] {
-            let Command::Image {
-                x: left,
-                y: top,
-                width,
-                height,
-                image,
-            } = &commands[layer]
-            else {
-                panic!("Fire/glass primitives must use nearest sampling")
-            };
-            let size = if layer == 2 { [61, 21] } else { [60, 20] };
-            assert_eq!(
-                (*left, *top, *width, *height),
-                (x, y, size[0] as f32 * 0.5, size[1] as f32 * 0.5)
-            );
-            assert_eq!(image.size(), size);
-            let expected = hex::decode(
-                reference["masks"][case[name].as_str().unwrap()]
-                    .as_str()
-                    .unwrap(),
-            )
-            .unwrap();
-            let actual: Vec<_> = image.pixels().chunks_exact(4).map(|p| p[3]).collect();
-            let mismatch = actual.iter().zip(&expected).position(|(a, b)| a != b);
-            assert!(
-                mismatch.is_none(),
-                "Fire mask case {index}, layer {name}: {:?}",
-                mismatch.map(|at| (at, actual[at], expected[at]))
-            );
-            assert!(image
+        let Command::Image {
+            x: left,
+            y: top,
+            width,
+            height,
+            image,
+        } = &commands[0]
+        else {
+            panic!("Fire brick must retain nearest source-resolution sampling")
+        };
+        assert_eq!((*left, *top, *width, *height), (x, y, 30.5, 10.5));
+        assert_eq!(image.size(), [61, 21]);
+        // Compare the complete composited brick against the unchanged original
+        // SDL calls, including the moving one-pixel blob and translucent edges.
+        for composite in case["composites"].as_array().unwrap() {
+            let background = hex::decode(composite["background"].as_str().unwrap()).unwrap();
+            let compressed =
+                hex::decode(composite["original_rgba_zlib_hex"].as_str().unwrap()).unwrap();
+            let mut expected = Vec::new();
+            flate2::read::ZlibDecoder::new(compressed.as_slice())
+                .read_to_end(&mut expected)
+                .unwrap();
+            assert_eq!(expected.len(), image.pixels().len());
+            for (pixel, (source, target)) in image
                 .pixels()
                 .chunks_exact(4)
-                .all(|p| p[..3] == [255, 255, 255]));
+                .zip(expected.chunks_exact(4))
+                .enumerate()
+            {
+                let alpha = u32::from(source[3]);
+                for channel in 0..4 {
+                    let actual = if channel == 3 {
+                        alpha + (u32::from(background[3]) * (255 - alpha) + 127) / 255
+                    } else {
+                        (u32::from(source[channel]) * alpha
+                            + u32::from(background[channel]) * (255 - alpha)
+                            + 127)
+                            / 255
+                    } as u8;
+                    assert!(actual.abs_diff(target[channel]) <= 3,
+                        "Fire case {index}, background {}, pixel {pixel}, channel {channel}: {actual} vs {}",
+                        composite["background"], target[channel]);
+                }
+            }
         }
         assert_eq!(case["composites"].as_array().unwrap().len(), 6);
         for composite in case["composites"].as_array().unwrap() {
@@ -2219,9 +2238,9 @@ fn original_fire_glass_blob_and_clipped_shine_match_real_sdl_wrappers() {
                     .commands
                     .iter()
                     .filter_map(|c| match c {
-                        Command::Image { image, .. } | Command::LinearImage { image, .. } => {
-                            Some(image)
-                        }
+                        Command::Image { image, .. }
+                        | Command::LinearImage { image, .. }
+                        | Command::StraightLinearImage { image, .. } => Some(image),
                         _ => None,
                     })
                     .collect();
@@ -2231,7 +2250,7 @@ fn original_fire_glass_blob_and_clipped_shine_match_real_sdl_wrappers() {
                 );
                 if mixed == 0 {
                     assert_eq!(images.iter().filter(|i| i.size() == [61, 21]).count(), 200);
-                    assert_eq!(images.iter().filter(|i| i.size() == [60, 20]).count(), 200);
+                    assert_eq!(images.iter().filter(|i| i.size() == [60, 20]).count(), 0);
                 }
             }
         }
@@ -2250,33 +2269,59 @@ fn original_glass_bonus_layers_preserve_types_symbols_order_and_full_drop_budget
     let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
     for (index, case) in cases.iter().enumerate() {
         assert_eq!(game.step(2147485696 | index as u32).unwrap(), 1);
-        assert_eq!(game.frame().commands.len(), 4);
-        for (layer, command) in game.frame().commands.iter().enumerate() {
-            let Command::Image {
-                x,
-                y,
-                width,
-                height,
-                image,
-            } = command
-            else {
-                panic!("Bonus primitives must retain inclusive nearest-sampled bounds")
-            };
-            let expected = &reference["layers"][case["layers"][layer].as_str().unwrap()];
-            let raw = hex::decode(expected["rgba_hex"].as_str().unwrap()).unwrap();
-            let left = ((*x - case["x"].as_i64().unwrap() as f32 * 0.5) * 2.0) as usize;
-            let top = ((*y - 60.0 - case["y"].as_i64().unwrap() as f32 * 0.5) * 2.0) as usize;
-            let [w, h] = image.size();
-            assert_eq!((*width, *height), (w as f32 * 0.5, h as f32 * 0.5));
-            let mut restored = vec![0u8; 41 * 41 * 4];
-            for row in 0..h {
-                restored[((top + row) * 41 + left) * 4..((top + row) * 41 + left + w) * 4]
-                    .copy_from_slice(&image.pixels()[row * w * 4..(row + 1) * w * 4]);
+        let [Command::Image {
+            x,
+            y,
+            width: 20.5,
+            height: 20.5,
+            image,
+        }] = game.frame().commands.as_slice()
+        else {
+            panic!("Bonus must retain inclusive nearest-sampled bounds");
+        };
+        assert_eq!(
+            (*x, *y),
+            (
+                case["x"].as_i64().unwrap() as f32 * 0.5,
+                60.0 + case["y"].as_i64().unwrap() as f32 * 0.5
+            )
+        );
+        assert_eq!(image.size(), [41, 41]);
+        let expected = &reference["layers"][case["combined"].as_str().unwrap()];
+        assert_eq!(
+            image.pixels(),
+            hex::decode(expected["rgba_hex"].as_str().unwrap()).unwrap()
+        );
+        for composite in case["composites"].as_array().unwrap() {
+            let background = hex::decode(composite["background"].as_str().unwrap()).unwrap();
+            let compressed =
+                hex::decode(composite["original_rgba_zlib_hex"].as_str().unwrap()).unwrap();
+            let mut original = Vec::new();
+            std::io::Read::read_to_end(
+                &mut flate2::read::ZlibDecoder::new(compressed.as_slice()),
+                &mut original,
+            )
+            .unwrap();
+            assert_eq!(original.len(), image.pixels().len());
+            for (pixel, (source, target)) in image
+                .pixels()
+                .chunks_exact(4)
+                .zip(original.chunks_exact(4))
+                .enumerate()
+            {
+                let alpha = u32::from(source[3]);
+                for channel in 0..4 {
+                    let actual = if channel == 3 {
+                        alpha + (u32::from(background[3]) * (255 - alpha) + 127) / 255
+                    } else {
+                        (u32::from(source[channel]) * alpha
+                            + u32::from(background[channel]) * (255 - alpha)
+                            + 127)
+                            / 255
+                    } as u8;
+                    assert!(actual.abs_diff(target[channel])<=3,"Bonus case {index}, background {}, pixel {pixel}, channel {channel}: {actual} versus {}",composite["background"],target[channel]);
+                }
             }
-            assert_eq!(
-                restored, raw,
-                "Cropped bonus must preserve all original RGBA bytes and offsets"
-            );
         }
     }
     assert_eq!(game.step(2147485696 | 16).unwrap(), 0);
@@ -2299,18 +2344,31 @@ fn original_glass_bonus_layers_preserve_types_symbols_order_and_full_drop_budget
                 }
             })
             .collect();
-        assert_eq!(clips.len(), 2);
         assert_eq!(clips[0].1, Some([0.0, 60.0, 640.0, 360.0]));
         assert_eq!(clips[1].1, None);
         assert!(
             clips[0].0 > 0 && clips[1].0 + 1 < commands.len(),
-            "HUD must remain outside the world clip"
+            "HUD must follow the object clip"
+        );
+        let score=commands.iter().position(|c|matches!(c,Command::LinearImage{x,y,height,..} if (*x,*y,*height)==(5.0,65.0,15.5))).expect("original score label missing");
+        assert!(
+            score > clips[1].0,
+            "original HUD must follow gameplay objects"
+        );
+        assert!(
+            matches!(
+                commands[score - 1],
+                Command::Clip {
+                    rect: Some([5.0, 65.0, _, 15.5])
+                }
+            ),
+            "score must use its world-scoped label clip"
         );
         let bonus_start = commands
             .iter()
             .position(|command| matches!(command,Command::Image{image,..} if image.size()==[41,41]))
             .unwrap();
-        let bonus_end = bonus_start + 800;
+        let bonus_end = bonus_start + 200;
         assert!(
             bonus_start > clips[0].0 && bonus_end <= clips[1].0,
             "Every bonus layer must be inside the world clip"
@@ -2320,20 +2378,23 @@ fn original_glass_bonus_layers_preserve_types_symbols_order_and_full_drop_budget
         let bytes: usize = commands
             .iter()
             .filter_map(|command| match command {
-                Command::Image { image, .. } | Command::LinearImage { image, .. } => {
-                    Some(image.pixels().len())
-                }
+                Command::Image { image, .. }
+                | Command::LinearImage { image, .. }
+                | Command::StraightLinearImage { image, .. } => Some(image.pixels().len()),
                 _ => None,
             })
             .sum();
         let mut count = 0;
         for command in &stress.frame().commands[bonus_start..bonus_end] {
-            if let Command::Image { image, .. } | Command::LinearImage { image, .. } = command {
+            if let Command::Image { image, .. }
+            | Command::LinearImage { image, .. }
+            | Command::StraightLinearImage { image, .. } = command
+            {
                 if matches!(command, Command::Image { .. })
                     && image.size()[0] <= 41
                     && image.size()[1] <= 41
                 {
-                    let name = reference["cases"][(count / 4 % 4) * 4]["layers"][count % 4]
+                    let name = reference["cases"][(count % 4) * 4]["combined"]
                         .as_str()
                         .unwrap()
                         .to_owned();
@@ -2349,8 +2410,8 @@ fn original_glass_bonus_layers_preserve_types_symbols_order_and_full_drop_budget
                 }
             }
         }
-        assert_eq!(count, 800);
-        assert_eq!(identities.len(), 10);
+        assert_eq!(count, 200);
+        assert_eq!(identities.len(), 4);
         assert!(bytes < gamepkg::drawing::MAX_IMAGE_BYTES);
     }
 }
@@ -2413,7 +2474,10 @@ fn production_rocket_rendering_uses_shared_art_within_unchanged_frame_budgets() 
                 previous = Some(image.clone());
                 count += 1;
             }
-            if let Command::Image { image, .. } | Command::LinearImage { image, .. } = command {
+            if let Command::Image { image, .. }
+            | Command::LinearImage { image, .. }
+            | Command::StraightLinearImage { image, .. } = command
+            {
                 bytes += image.pixels().len();
             }
         }
@@ -2489,7 +2553,10 @@ fn original_four_portal_stages_reach_signed_runtimes_with_unchanged_budgets() {
             assert!(game.frame().commands.len() < gamepkg::drawing::MAX_COMMANDS);
             let mut bytes = 0;
             for command in &game.frame().commands {
-                if let Command::Image { image, .. } | Command::LinearImage { image, .. } = command {
+                if let Command::Image { image, .. }
+                | Command::LinearImage { image, .. }
+                | Command::StraightLinearImage { image, .. } = command
+                {
                     bytes += image.pixels().len();
                 }
             }
@@ -2610,7 +2677,10 @@ fn check_background_runtime_fixture(text: &str, flag: u32, scenes: &[u32], stres
             let mut fire = 0;
             let mut corners = 0;
             for command in &game.frame().commands {
-                if let Command::Image { image, .. } | Command::LinearImage { image, .. } = command {
+                if let Command::Image { image, .. }
+                | Command::LinearImage { image, .. }
+                | Command::StraightLinearImage { image, .. } = command
+                {
                     bytes += image.pixels().len();
                     if image.size() == [61, 21] {
                         fire += 1;
@@ -2965,9 +3035,9 @@ fn original_six_campaign_image_backgrounds_preserve_full_pixels_and_dense_scene_
             let bytes: usize = commands
                 .iter()
                 .filter_map(|c| match c {
-                    Command::Image { image, .. } | Command::LinearImage { image, .. } => {
-                        Some(image.pixels().len())
-                    }
+                    Command::Image { image, .. }
+                    | Command::LinearImage { image, .. }
+                    | Command::StraightLinearImage { image, .. } => Some(image.pixels().len()),
                     _ => None,
                 })
                 .sum();
@@ -3059,9 +3129,9 @@ fn original_editor_background_brightness_and_full_metal_boards_reach_native_and_
             let bytes: usize = commands
                 .iter()
                 .filter_map(|command| match command {
-                    Command::Image { image, .. } | Command::LinearImage { image, .. } => {
-                        Some(image.pixels().len())
-                    }
+                    Command::Image { image, .. }
+                    | Command::LinearImage { image, .. }
+                    | Command::StraightLinearImage { image, .. } => Some(image.pixels().len()),
                     _ => None,
                 })
                 .sum();
@@ -3625,9 +3695,9 @@ fn original_pattern_browser_complete_pixels_and_dense_board_budget_match() {
     let bytes: usize = full
         .iter()
         .map(|c| match c {
-            Command::Image { image, .. } | Command::LinearImage { image, .. } => {
-                image.pixels().len()
-            }
+            Command::Image { image, .. }
+            | Command::LinearImage { image, .. }
+            | Command::StraightLinearImage { image, .. } => image.pixels().len(),
             _ => 0,
         })
         .sum();
@@ -3675,6 +3745,13 @@ fn canonical_menu_pixels(frame: &gamepkg::drawing::Frame) -> Vec<u8> {
                 width,
                 height,
                 image,
+            }
+            | Command::StraightLinearImage {
+                x,
+                y,
+                width,
+                height,
+                image,
             } => (
                 *x,
                 *y,
@@ -3690,15 +3767,61 @@ fn canonical_menu_pixels(frame: &gamepkg::drawing::Frame) -> Vec<u8> {
         let top = ((y - 60.0) * 2.0).round() as i32;
         let width = (w * 2.0).round() as i32;
         let height = (h * 2.0).round() as i32;
-        assert!(iw == 1 || (iw == width as usize && ih == height as usize));
+        let rescaled = iw != width as usize || ih != height as usize;
+        assert!(
+            (iw == 1 && ih == 1)
+                || !rescaled
+                || matches!(
+                    command,
+                    Command::LinearImage { .. } | Command::StraightLinearImage { .. }
+                )
+        );
         for row in top.max(0).max(clip[1])..(top + height).min(720).min(clip[3]) {
             for col in left.max(0).max(clip[0])..(left + width).min(1280).min(clip[2]) {
-                let src = if iw == 1 {
+                let dst = (row as usize * 1280 + col as usize) * 4;
+                if rescaled && (iw > 1 || ih > 1) {
+                    let sx = (((col - left) as f64 + 0.5) * iw as f64 / width as f64 - 0.5)
+                        .clamp(0.0, iw as f64 - 1.0);
+                    let sy = (((row - top) as f64 + 0.5) * ih as f64 / height as f64 - 0.5)
+                        .clamp(0.0, ih as f64 - 1.0);
+                    let x0 = sx.floor() as usize;
+                    let y0 = sy.floor() as usize;
+                    let fx = sx - x0 as f64;
+                    let fy = sy - y0 as f64;
+                    let mut sample = [0.0f64; 4];
+                    for (y, wy) in [(y0, 1.0 - fy), ((y0 + 1).min(ih - 1), fy)] {
+                        for (x, wx) in [(x0, 1.0 - fx), ((x0 + 1).min(iw - 1), fx)] {
+                            let at = (y * iw + x) * 4;
+                            let alpha = u32::from(pixels[at + 3]);
+                            for c in 0..3 {
+                                let value =
+                                    if matches!(command, Command::StraightLinearImage { .. }) {
+                                        u32::from(pixels[at + c])
+                                    } else {
+                                        (u32::from(pixels[at + c]) * alpha + 127) / 255
+                                    };
+                                sample[c] += f64::from(value) * wx * wy;
+                            }
+                            sample[3] += f64::from(alpha) * wx * wy;
+                        }
+                    }
+                    for c in 0..3 {
+                        let foreground = if matches!(command, Command::StraightLinearImage { .. }) {
+                            sample[c] * sample[3] / 255.0
+                        } else {
+                            sample[c]
+                        };
+                        output[dst + c] = (foreground
+                            + f64::from(output[dst + c]) * (255.0 - sample[3]) / 255.0)
+                            .round() as u8;
+                    }
+                    continue;
+                }
+                let src = if iw == 1 && ih == 1 {
                     0
                 } else {
                     ((row - top) as usize * iw + (col - left) as usize) * 4
                 };
-                let dst = (row as usize * 1280 + col as usize) * 4;
                 let a = u32::from(pixels[src + 3]);
                 for c in 0..3 {
                     output[dst + c] = ((u32::from(pixels[src + c]) * a
@@ -3855,12 +3978,153 @@ fn original_end_state_overlay_frames_and_dense_scene_suffix_are_preserved() {
         let bytes: usize = full
             .iter()
             .map(|c| match c {
-                Command::Image { image, .. } | Command::LinearImage { image, .. } => {
-                    image.pixels().len()
-                }
+                Command::Image { image, .. }
+                | Command::LinearImage { image, .. }
+                | Command::StraightLinearImage { image, .. } => image.pixels().len(),
                 _ => 0,
             })
             .sum();
         assert!(bytes <= 8 * 1024 * 1024);
+    }
+}
+
+#[test]
+#[ignore = "requires tests/arkanoo.py fixtures"]
+fn original_full_hud_matches_sdl_frames_and_survives_full_scene_budgets() {
+    use std::io::Read;
+    let reference: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-hud.json")).unwrap();
+    let root = isolated_library();
+    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
+    for (index, case) in reference["cases"].as_array().unwrap().iter().enumerate() {
+        assert_eq!(
+            game.step(0xc0000048 | ((index as u32) << 8)).unwrap(),
+            72,
+            "HUD case {index}"
+        );
+        let actual = canonical_menu_pixels(game.frame());
+        let compressed = hex::decode(case["rgba_zlib_hex"].as_str().unwrap()).unwrap();
+        let mut expected = Vec::new();
+        flate2::read::ZlibDecoder::new(compressed.as_slice())
+            .read_to_end(&mut expected)
+            .unwrap();
+        assert_eq!(actual.len(), expected.len());
+        let (at, delta) = actual
+            .iter()
+            .zip(expected)
+            .enumerate()
+            .map(|(at, (a, b))| (at, a.abs_diff(b)))
+            .max_by_key(|(_, d)| *d)
+            .unwrap();
+        assert!(
+            delta <= 2,
+            "HUD case {index}, pixel {}, channel {}, delta {delta}",
+            at / 4,
+            at % 4
+        );
+    }
+    for (phase, index) in [0u32, 3, 17, 19].into_iter().enumerate() {
+        game.step(0xc0000048 | (index << 8)).unwrap();
+        let isolated = game.frame().commands[1..].to_vec();
+        assert_eq!(game.step(0xc0000049 | ((phase as u32) << 8)).unwrap(), 73);
+        let full = &game.frame().commands;
+        let first = full
+            .iter()
+            .position(|c| matches!(c,Command::LinearImage{x,y,..} if (*x,*y)==(5.0,65.0)))
+            .unwrap()
+            - 1;
+        assert!(full[first..] == isolated,
+            "dense full scene lost HUD commands for phase {phase}: {} versus {} commands; first mismatch {:?}",
+            full.len()-first, isolated.len(), full[first..].iter().zip(&isolated).position(|(a,b)| a!=b));
+        assert!(full.len() < 1024);
+        let bytes: usize = full
+            .iter()
+            .map(|c| match c {
+                Command::Image { image, .. }
+                | Command::LinearImage { image, .. }
+                | Command::StraightLinearImage { image, .. } => image.pixels().len(),
+                _ => 0,
+            })
+            .sum();
+        assert!(bytes <= 8 * 1024 * 1024);
+    }
+    game.step(0xc0000048 | (28 << 8)).unwrap();
+    let isolated = game.frame().commands[1..].to_vec();
+    game.step(2147485696 | 32).unwrap();
+    let full = &game.frame().commands;
+    let first = full
+        .iter()
+        .position(|c| matches!(c,Command::LinearImage{x,y,..} if (*x,*y)==(5.0,65.0)))
+        .unwrap()
+        - 1;
+    assert!(
+        full[first..] == isolated,
+        "200 bonus icons crowded out the original HUD: {} versus {} commands; first mismatch {:?}",
+        full.len() - first,
+        isolated.len(),
+        full[first..]
+            .iter()
+            .zip(&isolated)
+            .position(|(a, b)| a != b)
+    );
+}
+#[test]
+#[ignore = "requires tests/arkanoo.py fixtures"]
+fn actual_production_fps_uses_host_time_and_renders_original_counter_glyphs() {
+    use std::io::Read;
+    let reference: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-hud.json")).unwrap();
+    for id in ["com.gamepkg.arkanoo", "com.gamepkg.arkanoo-files-component"] {
+        let root = isolated_library();
+        let mut game = Game::load(root.path(), id).unwrap();
+        let mut times = Vec::new();
+        for (index, input) in [4, 4, 0, 0, 0].into_iter().enumerate() {
+            if index == 3 {
+                std::thread::sleep(std::time::Duration::from_millis(1010));
+            }
+            let state = game.step(0xc000004b | (input << 8)).unwrap();
+            let now = state >> 32;
+            let fps = state & u64::from(u32::MAX);
+            times.push(now);
+            let expected = times.iter().filter(|&&t| now - t < 1000000).count() as u64;
+            assert_eq!(fps, expected);
+            if index == 0 {
+                assert_eq!(now, 0);
+                continue;
+            }
+            let label = &reference["labels"][format!("FPS: {fps}")];
+            let w = label["width"].as_u64().unwrap() as usize;
+            let h = label["height"].as_u64().unwrap() as usize;
+            let compressed = hex::decode(label["rgba_zlib_hex"].as_str().unwrap()).unwrap();
+            let mut pixels = Vec::new();
+            flate2::read::ZlibDecoder::new(compressed.as_slice())
+                .read_to_end(&mut pixels)
+                .unwrap();
+            let counter = game
+                .frame()
+                .commands
+                .iter()
+                .find_map(|c| match c {
+                    Command::LinearImage {
+                        x,
+                        y,
+                        width,
+                        height,
+                        image,
+                    } if (*x, *y, *width, *height)
+                        == (
+                            (1270 - w as i32) as f32 * 0.5,
+                            60.0 + (710 - h as i32) as f32 * 0.5,
+                            w as f32 * 0.5,
+                            h as f32 * 0.5,
+                        ) =>
+                    {
+                        Some(image)
+                    }
+                    _ => None,
+                })
+                .expect("real FPS counter missing");
+            assert_eq!(counter.pixels(), pixels);
+        }
     }
 }

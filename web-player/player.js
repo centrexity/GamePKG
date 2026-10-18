@@ -32,18 +32,18 @@ function shaderFrame(index,width=1,height=1,pixels=new Uint8Array(4)){if(!progra
 // Use one-level GPU bilinear sampling rather than Canvas2D's implementation-
 // dependent minification filter. Match desktop encoded-byte premultiplication.
 let linearGraphics=null;
-function linearSprite(x,y,w,h,width,height,pixels){
+function linearSprite(x,y,w,h,width,height,pixels,straight=false){
  if(w<=0||h<=0)return;
  if(!linearGraphics){
   const surface=new OffscreenCanvas(640,480),g=surface.getContext('webgl2',{alpha:true,depth:false,antialias:false,premultipliedAlpha:true,preserveDrawingBuffer:true});
   if(!g)throw Error('Filtered game images require WebGL 2');
   const compile=(type,source)=>{const shader=g.createShader(type);g.shaderSource(shader,source);g.compileShader(shader);if(!g.getShaderParameter(shader,g.COMPILE_STATUS))throw Error('Filtered image shader failed');return shader;};
   const vertex=compile(g.VERTEX_SHADER,`#version 300 es
-  uniform vec4 bounds;out vec2 uv;
-  void main(){vec2 p[6]=vec2[6](vec2(0,0),vec2(1,0),vec2(0,1),vec2(0,1),vec2(1,0),vec2(1,1));uv=p[gl_VertexID];vec2 at=bounds.xy+uv*bounds.zw;gl_Position=vec4(at.x/320.0-1.0,1.0-at.y/240.0,0,1);}`);
+  uniform vec4 bounds;uniform vec4 coverage;out vec2 uv;
+  void main(){vec2 p[6]=vec2[6](vec2(0,0),vec2(1,0),vec2(0,1),vec2(0,1),vec2(1,0),vec2(1,1));vec2 at=coverage.xy+p[gl_VertexID]*coverage.zw;uv=bounds.xy+p[gl_VertexID]*bounds.zw;gl_Position=vec4(at.x/320.0-1.0,1.0-at.y/240.0,0,1);}`);
   const fragment=compile(g.FRAGMENT_SHADER,`#version 300 es
-  precision highp float;uniform sampler2D image;in vec2 uv;out vec4 result;
-  void main(){result=texture(image,uv);}`);
+  precision highp float;uniform sampler2D image;uniform bool straightAlpha;in vec2 uv;out vec4 result;
+  void main(){result=texture(image,uv);if(straightAlpha)result.rgb*=result.a;}`);
   const program=g.createProgram();g.attachShader(program,vertex);g.attachShader(program,fragment);g.linkProgram(program);g.deleteShader(vertex);g.deleteShader(fragment);
   if(!g.getProgramParameter(program,g.LINK_STATUS))throw Error('Filtered image program failed');
   const image=g.createTexture();g.bindTexture(g.TEXTURE_2D,image);g.texParameteri(g.TEXTURE_2D,g.TEXTURE_MIN_FILTER,g.LINEAR);g.texParameteri(g.TEXTURE_2D,g.TEXTURE_MAG_FILTER,g.LINEAR);g.texParameteri(g.TEXTURE_2D,g.TEXTURE_WRAP_S,g.CLAMP_TO_EDGE);g.texParameteri(g.TEXTURE_2D,g.TEXTURE_WRAP_T,g.CLAMP_TO_EDGE);g.bindVertexArray(g.createVertexArray());
@@ -51,12 +51,12 @@ function linearSprite(x,y,w,h,width,height,pixels){
  }
  const {surface,g,program,image,bounds}=linearGraphics;if(g.isContextLost())throw Error('Filtered image context unavailable');
  const premultiplied=new Uint8Array(pixels.length);
- for(let i=0;i<pixels.length;i+=4){const a=pixels[i+3];for(let c=0;c<3;c++)premultiplied[i+c]=Math.floor((pixels[i+c]*a+127)/255);premultiplied[i+3]=a;}
+ for(let i=0;i<pixels.length;i+=4){const a=pixels[i+3];for(let c=0;c<3;c++)premultiplied[i+c]=straight?pixels[i+c]:Math.floor((pixels[i+c]*a+127)/255);premultiplied[i+3]=a;}
  // Blend before framebuffer quantization, matching the desktop GPU. A
  // transparent intermediate rounds sampled color and alpha before compositing.
  g.viewport(0,0,640,480);g.useProgram(program);g.activeTexture(g.TEXTURE0);g.bindTexture(g.TEXTURE_2D,image);g.uniform1i(g.getUniformLocation(program,'image'),0);
- g.disable(g.BLEND);g.texImage2D(g.TEXTURE_2D,0,g.RGBA8,g.RGBA,g.UNSIGNED_BYTE,context.canvas);g.uniform4f(bounds,0,0,640,480);g.drawArrays(g.TRIANGLES,0,6);
- g.enable(g.BLEND);g.blendFunc(g.ONE,g.ONE_MINUS_SRC_ALPHA);g.texImage2D(g.TEXTURE_2D,0,g.RGBA8,width,height,0,g.RGBA,g.UNSIGNED_BYTE,premultiplied);g.uniform4f(bounds,x,y,w,h);g.drawArrays(g.TRIANGLES,0,6);
+ g.uniform1i(g.getUniformLocation(program,'straightAlpha'),0);g.disable(g.BLEND);g.texImage2D(g.TEXTURE_2D,0,g.RGBA8,g.RGBA,g.UNSIGNED_BYTE,context.canvas);g.uniform4f(bounds,0,0,1,1);g.uniform4f(g.getUniformLocation(program,'coverage'),0,0,640,480);g.drawArrays(g.TRIANGLES,0,6);
+ g.uniform1i(g.getUniformLocation(program,'straightAlpha'),straight?1:0);g.enable(g.BLEND);g.blendFunc(g.ONE,g.ONE_MINUS_SRC_ALPHA);g.texImage2D(g.TEXTURE_2D,0,g.RGBA8,width,height,0,g.RGBA,g.UNSIGNED_BYTE,premultiplied);const left=Math.ceil(x-.5),top=Math.floor(y-.5)+1,right=Math.ceil(x+w-.5),bottom=Math.floor(y+h-.5)+1;g.uniform4f(bounds,(left-x)/w,(top-y)/h,(right-left)/w,(bottom-top)/h);g.uniform4f(g.getUniformLocation(program,'coverage'),left,top,right-left,bottom-top);g.drawArrays(g.TRIANGLES,0,6);
  context.imageSmoothingEnabled=false;context.drawImage(surface,0,0);
 }
 function render(frame){
@@ -65,7 +65,7 @@ function render(frame){
  if((background&255)!==255){context.fillStyle='#000000';context.fillRect(0,0,640,480);}
  context.fillStyle=color(background);context.fillRect(0,0,640,480);
  context.save();
- try {for(const entry of frame.commands){const [kind,x,y,a,b,rgba]=entry;if(kind==='clip'||kind==='clip-reset'){context.restore();context.save();if(kind==='clip'){const left=Math.round(x),top=Math.round(y),right=Math.round(x+a),bottom=Math.round(y+b);context.beginPath();context.rect(left,top,right-left,bottom-top);context.clip();}}else if(kind==='shader'){shaderFrame(x);}else if(kind==='shader-image'){shaderFrame(x,y,a,b);}else if(kind==='rect'){context.fillStyle=color(rgba);context.fillRect(x,y,a,b);}else if(kind==='linear-image'){const [,,,,,width,height,pixels]=entry;linearSprite(x,y,a,b,width,height,pixels);}else if(kind==='image'){const [,,,,,width,height,pixels]=entry;if(width===1&&height===1){const left=Math.floor(x-.5)+1,top=Math.floor(y-.5)+1,right=Math.floor(x+a-.5)+1,bottom=Math.floor(y+b-.5)+1;context.fillStyle=color((pixels[0]<<24)|(pixels[1]<<16)|(pixels[2]<<8)|pixels[3]);context.fillRect(left,top,right-left,bottom-top);}else{const surface=document.createElement('canvas');surface.width=width;surface.height=height;surface.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(pixels),width,height),0,0);context.imageSmoothingEnabled=false;context.drawImage(surface,x,y,a,b);}}else{context.fillStyle=color(b);context.beginPath();context.arc(x,y,a,0,Math.PI*2);context.fill();}}} finally {context.restore();}
+ try {for(const entry of frame.commands){const [kind,x,y,a,b,rgba]=entry;if(kind==='clip'||kind==='clip-reset'){context.restore();context.save();if(kind==='clip'){const left=Math.round(x),top=Math.round(y),right=Math.round(x+a),bottom=Math.round(y+b);context.beginPath();context.rect(left,top,right-left,bottom-top);context.clip();}}else if(kind==='shader'){shaderFrame(x);}else if(kind==='shader-image'){shaderFrame(x,y,a,b);}else if(kind==='rect'){context.fillStyle=color(rgba);context.fillRect(x,y,a,b);}else if(kind==='linear-image'||kind==='straight-linear-image'){const [,,,,,width,height,pixels]=entry;linearSprite(x,y,a,b,width,height,pixels,kind==='straight-linear-image');}else if(kind==='image'){const [,,,,,width,height,pixels]=entry;if(width===1&&height===1){const left=Math.floor(x-.5)+1,top=Math.floor(y-.5)+1,right=Math.floor(x+a-.5)+1,bottom=Math.floor(y+b-.5)+1;context.fillStyle=color((pixels[0]<<24)|(pixels[1]<<16)|(pixels[2]<<8)|pixels[3]);context.fillRect(left,top,right-left,bottom-top);}else{const surface=document.createElement('canvas');surface.width=width;surface.height=height;surface.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(pixels),width,height),0,0);context.imageSmoothingEnabled=false;context.drawImage(surface,x,y,a,b);}}else{context.fillStyle=color(b);context.beginPath();context.arc(x,y,a,0,Math.PI*2);context.fill();}}} finally {context.restore();}
 
  if(!data.custom_renderer&&frame.commands.length===0&&frame.background===null){const state=BigInt(frame.state);context.fillStyle='#111a2c';context.fillRect(0,0,640,480);const x=Number(state&15n),y=Number(state>>8n&255n),tx=Number(state>>16n&255n),ty=Number(state>>24n&255n);context.fillStyle='#ffd45d';context.fillRect(tx*40,ty*40,32,32);context.fillStyle='#6ee7ac';context.fillRect(x*40,y*40,32,32);}
  document.querySelector('#score').textContent=data.custom_renderer?'':`Score ${BigInt(frame.state)>>32n}`;
@@ -94,7 +94,7 @@ async function start(){
   }
  };
  let saved=stored(saveKey,[]);if(!Array.isArray(saved)||saved.length>1048576||saved.some(v=>!Number.isInteger(v)||v<0||v>255))saved=[];
- worker.postMessage({type:'start',wasm,manifest:data.manifest,assets:data.assets,shaderCount:(data.shaders||[]).length,roms,save:saved});
+ worker.postMessage({type:'start',wasm,manifest:data.manifest,assets:data.assets,precise_images:data.precise_images??{},shaderCount:(data.shaders||[]).length,roms,save:saved});
 }
 canvas.addEventListener('keydown',keyboardDown);
 canvas.addEventListener('keyup',keyboardUp);

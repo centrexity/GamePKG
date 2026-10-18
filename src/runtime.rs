@@ -20,6 +20,7 @@ enum Tick {
     Component(wasmtime::component::TypedFunc<(u32, u64), (u64,)>),
 }
 struct Data {
+    clock: crate::frame_clock::Clock,
     window: crate::window_control::Service,
     user_files: crate::user_files::Service,
     input_events: crate::input_events::Queue,
@@ -151,12 +152,14 @@ impl Game {
                             | "save_write"
                             | "save_size"
                             | "random_u64"
+                            | "frame_time_us"
                             | "input_events"
                             | "file_call"
                             | "window_control"
                             | "draw_clear"
                             | "draw_asset_image"
                             | "draw_asset_image_linear"
+                            | "draw_asset_image_linear_straight"
                             | "draw_image"
                             | "draw_image_linear"
                             | "draw_shader_image"
@@ -213,12 +216,14 @@ impl Game {
                                 | "save-write"
                                 | "save-size"
                                 | "random-u64"
+                                | "frame-time-us"
                                 | "input-events"
                                 | "file-call"
                                 | "window-control"
                                 | "draw-clear"
                                 | "draw-asset-image"
                                 | "draw-asset-image-linear"
+                                | "draw-asset-image-linear-straight"
                                 | "draw-image"
                                 | "draw-image-linear"
                                 | "draw-shader-image"
@@ -274,6 +279,7 @@ impl Game {
         let mut store = Store::new(
             &engine,
             Data {
+                clock: crate::frame_clock::Clock::default(),
                 window: crate::window_control::Service::new(manifest.permissions.input),
                 user_files: crate::user_files::Service::new(manifest.permissions.files.clone()),
                 input_events: crate::input_events::Queue::new(manifest.permissions.input),
@@ -403,43 +409,53 @@ impl Game {
                     }
                 },
             )?;
-            linker.func_wrap(
-                "gamepkg",
-                "draw_asset_image_linear",
-                |mut caller: Caller<'_, Data>,
-                 pointer: i32,
-                 length: i32,
-                 x: f32,
-                 y: f32,
-                 w: f32,
-                 h: f32|
-                 -> i32 {
-                    if pointer < 0 || !(1..=1024).contains(&length) {
-                        return -1;
-                    }
-                    let Some(memory) = caller.get_export("memory").and_then(|e| e.into_memory())
-                    else {
-                        return -1;
-                    };
-                    let Some(end) = (pointer as usize).checked_add(length as usize) else {
-                        return -1;
-                    };
-                    let Some(bytes) = memory.data(&caller).get(pointer as usize..end) else {
-                        return -1;
-                    };
-                    let Ok(path) = std::str::from_utf8(bytes) else {
-                        return -1;
-                    };
-                    let path = path.to_owned();
-                    let result = draw_asset_image_linear(caller.data_mut(), &path, x, y, w, h);
+            for (asset_name, straight) in [
+                ("draw_asset_image_linear", false),
+                ("draw_asset_image_linear_straight", true),
+            ] {
+                linker.func_wrap(
+                    "gamepkg",
+                    asset_name,
+                    move |mut caller: Caller<'_, Data>,
+                          pointer: i32,
+                          length: i32,
+                          x: f32,
+                          y: f32,
+                          w: f32,
+                          h: f32|
+                          -> i32 {
+                        if pointer < 0 || !(1..=1024).contains(&length) {
+                            return -1;
+                        }
+                        let Some(memory) =
+                            caller.get_export("memory").and_then(|e| e.into_memory())
+                        else {
+                            return -1;
+                        };
+                        let Some(end) = (pointer as usize).checked_add(length as usize) else {
+                            return -1;
+                        };
+                        let Some(bytes) = memory.data(&caller).get(pointer as usize..end) else {
+                            return -1;
+                        };
+                        let Ok(path) = std::str::from_utf8(bytes) else {
+                            return -1;
+                        };
+                        let path = path.to_owned();
+                        let result = if straight {
+                            draw_asset_image_linear_straight(caller.data_mut(), &path, x, y, w, h)
+                        } else {
+                            draw_asset_image_linear(caller.data_mut(), &path, x, y, w, h)
+                        };
 
-                    if result {
-                        0
-                    } else {
-                        -1
-                    }
-                },
-            )?;
+                        if result {
+                            0
+                        } else {
+                            -1
+                        }
+                    },
+                )?;
+            }
             for (image_name, linear) in [("draw_image", false), ("draw_image_linear", true)] {
                 linker.func_wrap(
                     "gamepkg",
@@ -716,6 +732,11 @@ impl Game {
                 |mut caller: Caller<'_, Data>, operation: u32, value: u32| -> i32 {
                     i32::from(caller.data_mut().window.request(operation, value))
                 },
+            )?;
+            linker.func_wrap(
+                "gamepkg",
+                "frame_time_us",
+                |caller: Caller<'_, Data>| -> i64 { caller.data().clock.micros() as i64 },
             )?;
             linker.func_wrap("gamepkg", "random_u64", || -> Result<i64> {
                 Ok(crate::random::value()? as i64)
@@ -1350,6 +1371,7 @@ impl Game {
             }
             return Ok(self.state);
         }
+        self.store.as_mut().unwrap().data_mut().clock.begin();
         self.store
             .as_mut()
             .unwrap()
@@ -1650,6 +1672,19 @@ fn draw_asset_image_linear(data: &mut Data, path: &str, x: f32, y: f32, w: f32, 
     };
     data.frame.image_arc(x, y, w, h, image, true)
 }
+fn draw_asset_image_linear_straight(
+    data: &mut Data,
+    path: &str,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+) -> bool {
+    let Some(image) = decode_asset_image(data, path, x, y, w, h) else {
+        return false;
+    };
+    data.frame.straight_linear_image(x, y, w, h, image)
+}
 fn draw_shader_asset_image(data: &mut Data, index: i32, path: &str) -> bool {
     if index < 0 || index as usize >= data.shader_count {
         return false;
@@ -1668,48 +1703,13 @@ fn decode_asset_image(
     w: f32,
     h: f32,
 ) -> Option<std::sync::Arc<crate::drawing::image::Image>> {
-    use crate::drawing::image::{Image, MAX_PNG_BYTES};
-    if path.len() > 1024
-        || !crate::archive::valid_path(path)
-        || !data.frame.can_image(x, y, w, h, 0)
-    {
-        return None;
-    }
-    data.package.as_ref()?;
-    if let Some(image) = data.asset_image.get(path) {
-        return data
-            .frame
-            .can_image(x, y, w, h, image.pixels().len())
-            .then_some(image);
-    }
-    let package = data.package.as_mut()?;
-    let Ok(size) = package.asset_size(path) else {
-        return None;
-    };
-    if !(33..=MAX_PNG_BYTES as u64).contains(&size) {
-        return None;
-    }
-    let Ok(header) = package.asset_chunk(path, 0, 33) else {
-        return None;
-    };
-    let pixel_bytes = Image::png_byte_length(&header)?;
-    if !data.frame.can_image(x, y, w, h, pixel_bytes) {
-        return None;
-    }
-    let mut encoded = Vec::with_capacity(size as usize);
-    for offset in (0..size).step_by(65536) {
-        let Ok(chunk) = package.asset_chunk(path, offset, 65536) else {
-            return None;
-        };
-        encoded.extend(chunk);
-    }
-    let image = Image::from_png(&encoded)?;
-    if image.pixels().len() != pixel_bytes {
-        return None;
-    }
-    let image = std::sync::Arc::new(image);
-    data.asset_image.insert(path, image.clone());
-    Some(image)
+    crate::drawing::image::asset(
+        data.package.as_mut()?,
+        &mut data.asset_image,
+        &data.frame,
+        path,
+        [x, y, w, h],
+    )
 }
 
 /// Signed 16-bit little-endian mono PCM at 48 kHz; at most 1,600 samples per tick.

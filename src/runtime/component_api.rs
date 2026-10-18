@@ -50,6 +50,10 @@ pub(super) fn linker(engine: &Engine) -> Result<Linker<Data>> {
             Ok((store.data_mut().window.request(operation, value),))
         },
     )?;
+    host.func_wrap(
+        "frame-time-us",
+        |store: StoreContextMut<'_, Data>, (): ()| Ok((store.data().clock.micros(),)),
+    )?;
     host.func_wrap("random-u64", |_: StoreContextMut<'_, Data>, (): ()| {
         Ok((crate::random::value()?,))
     })?;
@@ -227,19 +231,28 @@ pub(super) fn linker(engine: &Engine) -> Result<Linker<Data>> {
             Ok((result,))
         },
     )?;
-    host.func_wrap(
-        "draw-asset-image-linear",
-        |mut store: StoreContextMut<'_, Data>,
-         (path, x, y, w, h): (WasmStr, f32, f32, f32, f32)| {
-            let path = path.to_str(store.as_context())?;
-            if path.len() > 1024 {
-                return Ok((false,));
-            }
-            let path = path.into_owned();
-            let result = super::draw_asset_image_linear(store.data_mut(), &path, x, y, w, h);
-            Ok((result,))
-        },
-    )?;
+    for (asset_name, straight) in [
+        ("draw-asset-image-linear", false),
+        ("draw-asset-image-linear-straight", true),
+    ] {
+        host.func_wrap(
+            asset_name,
+            move |mut store: StoreContextMut<'_, Data>,
+                  (path, x, y, w, h): (WasmStr, f32, f32, f32, f32)| {
+                let path = path.to_str(store.as_context())?;
+                if path.len() > 1024 {
+                    return Ok((false,));
+                }
+                let path = path.into_owned();
+                let result = if straight {
+                    super::draw_asset_image_linear_straight(store.data_mut(), &path, x, y, w, h)
+                } else {
+                    super::draw_asset_image_linear(store.data_mut(), &path, x, y, w, h)
+                };
+                Ok((result,))
+            },
+        )?;
+    }
     host.func_wrap(
         "draw-shader-asset-image",
         |mut store: StoreContextMut<'_, Data>, (index, path): (u32, WasmStr)| {

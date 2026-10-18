@@ -3,6 +3,7 @@ use anyhow::{bail, Context, Result};
 use std::{collections::BTreeMap, fs, io::Write, path::Path};
 
 const SUPPORTED: &[&str] = &[
+    "frame_time_us",
     "random_u64",
     "input_events",
     "file_call",
@@ -26,6 +27,7 @@ const SUPPORTED: &[&str] = &[
     "draw_image_linear",
     "draw_asset_image",
     "draw_asset_image_linear",
+    "draw_asset_image_linear_straight",
     "audio_submit",
     "draw_shader",
     "draw_shader_image",
@@ -190,12 +192,17 @@ pub fn export(root: &Path, id: &str, output: &Path) -> Result<()> {
     } else {
         "gamepkg"
     };
+    let mut needs_precise_images = false;
     let mut uses_shaders = false;
     let mut custom_renderer = false;
     for payload in wasmparser::Parser::new(0).parse_all(&wasm) {
         if let wasmparser::Payload::ImportSection(imports) = payload? {
             for import in imports {
                 let import = import?;
+                needs_precise_images |= matches!(
+                    import.name,
+                    "draw_asset_image_linear_straight" | "draw-asset-image-linear-straight"
+                );
                 custom_renderer |=
                     import.name.starts_with("draw_") || import.name.starts_with("draw-");
                 uses_shaders |= matches!(
@@ -239,10 +246,22 @@ pub fn export(root: &Path, id: &str, output: &Path) -> Result<()> {
     names.sort();
     names.dedup();
     let mut assets = BTreeMap::new();
+    let mut precise_images = BTreeMap::new();
     let mut size = 0usize;
     for name in names {
         let bytes = package.asset(&name)?;
         size += bytes.len();
+        if needs_precise_images && name.to_lowercase().ends_with(".png") {
+            if let Some(image) = crate::drawing::image::Image::from_png(&bytes) {
+                if image.pixels().chunks_exact(4).any(|p| p[3] != 255) {
+                    size += image.pixels().len();
+                    if size > 32 * 1024 * 1024 {
+                        bail!("web assets exceed 32 MiB export limit");
+                    }
+                    precise_images.insert(name.clone(),serde_json::json!({"width":image.size()[0],"height":image.size()[1],"rgba":hex::encode(image.pixels())}));
+                }
+            }
+        }
         if size > 32 * 1024 * 1024 {
             bail!("web assets exceed 32 MiB export limit");
         }
@@ -262,7 +281,7 @@ pub fn export(root: &Path, id: &str, output: &Path) -> Result<()> {
         bail!("browser shader source exceeds 32 MiB export budget");
     }
     let data = serde_json::to_vec(
-        &serde_json::json!({"format_version":1,"manifest":manifest,"wasm_sha256":crate::verify::digest(&wasm),"assets":assets,"shaders":shaders,"custom_renderer":custom_renderer}),
+        &serde_json::json!({"format_version":1,"manifest":manifest,"wasm_sha256":crate::verify::digest(&wasm),"assets":assets,"precise_images":precise_images,"shaders":shaders,"custom_renderer":custom_renderer}),
     )?;
     let parent = output
         .parent()

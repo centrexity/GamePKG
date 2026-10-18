@@ -3434,3 +3434,80 @@ fn menu_fullscreen_caption_state_survives_run_restart() {
     game.reset_run();
     assert!(game.menu.fullscreen);
 }
+
+#[test]
+fn fps_counts_the_original_strict_one_second_window_and_survives_run_restart() {
+    let mut game = physics::Game::new();
+    for (now, expected) in [
+        (0, 1),
+        (16666, 2),
+        (33333, 3),
+        (999999, 4),
+        (1000000, 4),
+        (1000001, 5),
+        (1016666, 5),
+        (2000000, 3),
+    ] {
+        game.frame_clock(now);
+        assert_eq!(game.fps, expected, "time {now}");
+    }
+    let retained = game.fps_times.clone();
+    game.reset_run();
+    assert_eq!(game.fps, 3);
+    assert_eq!(game.fps_times, retained);
+    game.frame_clock((1u64 << 32) + 23);
+    assert_eq!(game.fps, 1);
+    game.frame_clock((1u64 << 32) + 24);
+    assert_eq!(game.fps, 2);
+}
+#[test]
+fn speed_record_timestamp_updates_only_for_new_records_and_resets_with_the_run() {
+    let mut game = physics::Game::new();
+    game.mode = 1;
+    game.frame = 10;
+    game.blocks = [0; 200];
+    game.blocks[0] = 1;
+    game.balls[0].attached = false;
+    game.balls[0].x = 300.0;
+    game.balls[0].y = 300.0;
+    game.balls[0].vx = 4.0;
+    game.balls[0].vy = 0.0;
+    game.update(0);
+    assert_eq!(game.max_speed_record_frame, 11);
+    assert_eq!(game.max_speed, 480.0);
+    game.balls[0].vx = 1.0;
+    game.update(0);
+    assert_eq!(game.max_speed_record_frame, 11);
+    game.populate();
+    assert_eq!(game.max_speed, 0.0);
+    assert_eq!(game.max_speed_record_frame, 11);
+    game.reset_run();
+    assert_eq!(game.max_speed_record_frame, 0);
+}
+
+#[test]
+fn original_record_and_gravity_indicator_colors_match_captured_sdl_values() {
+    let reference: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-hud.json")).unwrap();
+    for case in reference["cases"].as_array().unwrap() {
+        let values = case["values"].as_array().unwrap();
+        let frame = values[5].as_u64().unwrap();
+        let record = values[6].as_u64().unwrap();
+        let expected = |name: &str| -> Vec<u8> {
+            case[name]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_u64().unwrap() as u8)
+                .collect()
+        };
+        assert_eq!(
+            physics::speed_record_color(frame, record).as_slice(),
+            expected("record_color")
+        );
+        assert_eq!(
+            physics::gravity_color(frame).as_slice(),
+            expected("gravity_color")
+        );
+    }
+}

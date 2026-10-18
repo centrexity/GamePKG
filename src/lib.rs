@@ -97,3 +97,5 @@ pub mod game_data;
 pub mod user_files;
 
 pub mod window_control;
+
+mod frame_clock;

@@ -7,7 +7,7 @@ const context = vm.createContext({TextDecoder, TextEncoder, WebAssembly, Uint8Ar
 vm.runInContext(source, context);
 vm.runInContext(`instance={exports:{memory:new WebAssembly.Memory({initial:1}),cabi_realloc:()=>55000}};
  assets=new Map([['hello.txt',new Uint8Array([65,66,67])]]);
- images=new Map([['hello.txt',{width:1,height:1,pixels:new Uint8Array([1,2,3,255])}]]);
+ images=new Map([['hello.txt',{width:1,height:1,pixels:new Uint8Array([1,2,3,255]),precise:true}]]);
  shaderCount=1;manifest={permissions:{save:false,audio:false}};roms=[];save=new Uint8Array();`, context);
 const worker = vm.runInContext('({api,canonical,validAssetPath,assetName,memory:instance.exports.memory})', context);
 const memory = new Uint8Array(worker.memory.buffer);
@@ -33,6 +33,8 @@ let length=encode('hello.txt');
 assert.equal(worker.api.asset_read(256,length,1,60000,8),2);
 assert.deepEqual([...memory.slice(60000,60002)],[66,67]);
 assert.equal(worker.api.draw_asset_image(256,length,0,0,1,1),0);
+assert.equal(worker.api.draw_asset_image_linear_straight(256,length,0,0,1,1),0);
+assert.equal(worker.canonical['draw-asset-image-linear-straight'](256,length,0,0,1,1),1);
 assert.equal(worker.api.draw_shader_asset_image(0,256,length),0);
 assert.equal(worker.canonical['draw-shader-asset-image'](0,256,length),1);
 assert.equal(worker.api.draw_shader_asset_image(99,256,length),-1);
@@ -45,6 +47,8 @@ for(const path of rejected){
  length=encode(path);memory.fill(0xa5,60000,60008);
  assert.equal(worker.api.asset_read(256,length,0,60000,8),-1,JSON.stringify(path));
  assert.equal(worker.api.draw_asset_image(256,length,0,0,1,1),-1,JSON.stringify(path));
+ assert.equal(worker.api.draw_asset_image_linear_straight(256,length,0,0,1,1),-1,JSON.stringify(path));
+ assert.equal(worker.canonical['draw-asset-image-linear-straight'](256,length,0,0,1,1),0,JSON.stringify(path));
  assert.equal(worker.api.draw_shader_asset_image(0,256,length),-1,JSON.stringify(path));
  assert.equal(worker.canonical['draw-shader-asset-image'](0,256,length),0,JSON.stringify(path));
  worker.canonical['asset-read'](256,length,0,8,50000);

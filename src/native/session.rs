@@ -49,6 +49,7 @@ fn stereo_engine_audio(
 }
 
 pub(crate) struct Session {
+    clock: crate::frame_clock::Clock,
     pub(crate) window: crate::window_control::Service,
     pub(crate) user_files: crate::user_files::Service,
     input_events: crate::input_events::Queue,
@@ -218,6 +219,7 @@ impl Session {
             }
         }
         let mut session = Self {
+            clock: crate::frame_clock::Clock::default(),
             child,
             _parent_thread: parent_thread,
             input,
@@ -310,6 +312,12 @@ impl Session {
             Ok(v)
         }
         let ok = match op {
+            34 => {
+                ensure!(b.is_empty(), "invalid frame-time packet");
+                let mut reply = vec![0];
+                reply.extend(self.clock.micros().to_le_bytes());
+                return Ok(reply);
+            }
             31 => {
                 ensure!(b.len() == 16, "invalid draw-clip packet");
                 self.frame
@@ -461,32 +469,33 @@ impl Session {
                         .image(f(b, 0)?, f(b, 4)?, f(b, 8)?, f(b, 12)?, image)
                 }
             }
-            14 | 30 => {
+            14 | 30 | 35 => {
                 let len = n(b, 0)? as usize;
                 ensure!(
                     len <= 1024 && b.len() == 20 + len,
                     "invalid asset-image packet"
                 );
                 let path = std::str::from_utf8(b.get(4..4 + len).context("short path")?)?;
-                ensure!(crate::archive::valid_path(path), "invalid asset path");
-                let image = self.asset_image.get(path);
-                let image = if let Some(image) = image {
-                    image
-                } else {
-                    let image = std::sync::Arc::new(
-                        crate::drawing::image::Image::from_png(&self.package.asset(path)?)
-                            .context("invalid PNG")?,
-                    );
-                    self.asset_image.insert(path, image.clone());
-                    image
-                };
                 let (x, y, w, h) = (
                     f(b, 4 + len)?,
                     f(b, 8 + len)?,
                     f(b, 12 + len)?,
                     f(b, 16 + len)?,
                 );
-                self.frame.image_arc(x, y, w, h, image, op == 30)
+                let Some(image) = crate::drawing::image::asset(
+                    &mut self.package,
+                    &mut self.asset_image,
+                    &self.frame,
+                    path,
+                    [x, y, w, h],
+                ) else {
+                    return Ok(vec![1]);
+                };
+                if op == 35 {
+                    self.frame.straight_linear_image(x, y, w, h, image)
+                } else {
+                    self.frame.image_arc(x, y, w, h, image, op == 30)
+                }
             }
 
             15 => {
@@ -579,6 +588,7 @@ impl Session {
                     && self.manifest.permissions.input),
             "desktop input access denied"
         );
+        self.clock.begin();
         self.frame.reset();
         self.audio.clear();
         self.audio_channels = 1;
