@@ -55,6 +55,8 @@ jobs:
           ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 target/doom-endoom-test
       - name: Test browser guest path protections
         run: node tests/web_path_attacks.mjs
+      - name: Verify nearest single-texel pixel coverage
+        run: node tests/web_nearest_pixels.mjs
       - name: Verify browser drawing clip policy
         run: node tests/web_clipping.mjs
       - name: Verify generated and packaged filtered image bounds
@@ -300,6 +302,9 @@ jobs:
       - name: Verify original starry night circuit and maze backgrounds
         if: matrix.features == '--all-features'
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tests/background_gui.py --night-circuit-maze
+      - name: Verify original editor grid colors endpoints and resized windows
+        if: matrix.features == '--all-features'
+        run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tests/background_gui.py --editor-grid
       - name: Verify real editor background buttons and original brightness
         if: matrix.features == '--all-features'
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tests/background_gui.py --editor-images

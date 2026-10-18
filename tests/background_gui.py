@@ -5,9 +5,10 @@ from http.server import SimpleHTTPRequestHandler,ThreadingHTTPServer
 import argparse,json,math,os,shutil,subprocess,tempfile,threading,time
 from PIL import Image
 from gui_test_support import start_display
-parser=argparse.ArgumentParser();parser.add_argument('--images',action='store_true');parser.add_argument('--editor-images',action='store_true');parser.add_argument('--canonical-particles',action='store_true');parser.add_argument('--canonical-effects',action='store_true');parser.add_argument('--night-circuit-maze',action='store_true');parser.add_argument('--hex-bubbles',action='store_true');parser.add_argument('--matrix-nebula',action='store_true');parser.add_argument('--cyber-aurora',action='store_true');parser.add_argument('--rain-warp',action='store_true');parser.add_argument('--kaleidoscope',action='store_true');parser.add_argument('--voyage',action='store_true');parser.add_argument('--space',action='store_true');parser.add_argument('--fire-sea',action='store_true');parser.add_argument('--procedural',action='store_true');parser.add_argument('--skip-browser',action='store_true');args=parser.parse_args();assert sum([args.editor_images,args.images,args.procedural,args.fire_sea,args.space,args.voyage,args.kaleidoscope,args.rain_warp,args.cyber_aurora,args.matrix_nebula,args.hex_bubbles,args.night_circuit_maze,args.canonical_particles,args.canonical_effects])<=1;args.procedural=args.procedural or args.fire_sea or args.space or args.voyage or args.kaleidoscope or args.rain_warp or args.cyber_aurora or args.matrix_nebula or args.hex_bubbles or args.night_circuit_maze or args.canonical_particles or args.canonical_effects
+parser=argparse.ArgumentParser();parser.add_argument('--images',action='store_true');parser.add_argument('--editor-images',action='store_true');parser.add_argument('--editor-grid',action='store_true');parser.add_argument('--canonical-particles',action='store_true');parser.add_argument('--canonical-effects',action='store_true');parser.add_argument('--night-circuit-maze',action='store_true');parser.add_argument('--hex-bubbles',action='store_true');parser.add_argument('--matrix-nebula',action='store_true');parser.add_argument('--cyber-aurora',action='store_true');parser.add_argument('--rain-warp',action='store_true');parser.add_argument('--kaleidoscope',action='store_true');parser.add_argument('--voyage',action='store_true');parser.add_argument('--space',action='store_true');parser.add_argument('--fire-sea',action='store_true');parser.add_argument('--procedural',action='store_true');parser.add_argument('--skip-browser',action='store_true');parser.add_argument('--browser-only',action='store_true');parser.add_argument('--profile',choices=['core-v1','component-v1']);args=parser.parse_args();assert not(args.skip_browser and args.browser_only);assert sum([args.editor_grid,args.editor_images,args.images,args.procedural,args.fire_sea,args.space,args.voyage,args.kaleidoscope,args.rain_warp,args.cyber_aurora,args.matrix_nebula,args.hex_bubbles,args.night_circuit_maze,args.canonical_particles,args.canonical_effects])<=1;args.procedural=args.procedural or args.fire_sea or args.space or args.voyage or args.kaleidoscope or args.rain_warp or args.cyber_aurora or args.matrix_nebula or args.hex_bubbles or args.night_circuit_maze or args.canonical_particles or args.canonical_effects
+args.editor_images=args.editor_images or args.editor_grid
 args.images=args.images or args.editor_images
-PROJECT=Path(__file__).resolve().parents[1];PROOF=PROJECT/('target/editor-image-background-proof' if args.editor_images else 'target/image-background-proof' if args.images else 'target/canonical-particles-proof' if args.canonical_particles else 'target/canonical-effects-proof' if args.canonical_effects else 'target/night-circuit-maze-proof' if args.night_circuit_maze else 'target/hex-bubbles-proof' if args.hex_bubbles else 'target/matrix-nebula-proof' if args.matrix_nebula else 'target/cyber-aurora-proof' if args.cyber_aurora else 'target/rain-warp-proof' if args.rain_warp else 'target/kaleidoscope-proof' if args.kaleidoscope else 'target/star-voyage-proof' if args.voyage else 'target/space-proof' if args.space else 'target/fire-sea-proof' if args.fire_sea else 'target/procedural-proof' if args.procedural else 'target/background-proof');PROOF.mkdir(parents=True,exist_ok=True)
+PROJECT=Path(__file__).resolve().parents[1];PROOF=PROJECT/('target/editor-grid-proof' if args.editor_grid else 'target/editor-image-background-proof' if args.editor_images else 'target/image-background-proof' if args.images else 'target/canonical-particles-proof' if args.canonical_particles else 'target/canonical-effects-proof' if args.canonical_effects else 'target/night-circuit-maze-proof' if args.night_circuit_maze else 'target/hex-bubbles-proof' if args.hex_bubbles else 'target/matrix-nebula-proof' if args.matrix_nebula else 'target/cyber-aurora-proof' if args.cyber_aurora else 'target/rain-warp-proof' if args.rain_warp else 'target/kaleidoscope-proof' if args.kaleidoscope else 'target/star-voyage-proof' if args.voyage else 'target/space-proof' if args.space else 'target/fire-sea-proof' if args.fire_sea else 'target/procedural-proof' if args.procedural else 'target/background-proof');PROOF.mkdir(parents=True,exist_ok=True)
 import zlib
 REFERENCE=json.loads((PROJECT/('tests/fixtures/arkanoo-image-backgrounds.json' if args.images else 'tests/fixtures/arkanoo-canonical-particles.json' if args.canonical_particles else 'tests/fixtures/arkanoo-canonical-effects.json' if args.canonical_effects else 'tests/fixtures/arkanoo-night-circuit-maze.json' if args.night_circuit_maze else 'tests/fixtures/arkanoo-hex-bubbles.json' if args.hex_bubbles else 'tests/fixtures/arkanoo-matrix-nebula.json' if args.matrix_nebula else 'tests/fixtures/arkanoo-cyber-aurora.json' if args.cyber_aurora else 'tests/fixtures/arkanoo-rain-warp.json' if args.rain_warp else 'tests/fixtures/arkanoo-kaleidoscope.json' if args.kaleidoscope else 'tests/fixtures/arkanoo-star-voyage.json' if args.voyage else 'tests/fixtures/arkanoo-space-background.json' if args.space else 'tests/fixtures/arkanoo-fire-sea-background.json' if args.fire_sea else 'tests/fixtures/arkanoo-procedural.json' if args.procedural else 'tests/fixtures/arkanoo-background.json')).read_text())['cases']
 if args.images:
@@ -27,7 +28,14 @@ if args.editor_images:
    with Image.open(PROJECT/'ports/arkanoo/assets'/tile['path']) as part:image.paste(part,tile['origin'])
   assert hashlib.sha256(image.tobytes()).hexdigest()==case['bright_rgba_sha256']
   image=image.point([(value*102+127)//255 for value in range(256)]*3+list(range(256)));raw=image.tobytes()
-  assert hashlib.sha256(raw).hexdigest()==case['editor_rgba_sha256'];ORIGINAL.append(raw)
+  assert hashlib.sha256(raw).hexdigest()==case['editor_rgba_sha256']
+  if args.editor_grid:
+   from PIL import ImageDraw
+   drawing=ImageDraw.Draw(image)
+   for row in range(11):drawing.line([(40,80+row*20),(1240,80+row*20)],fill=(80,80,100,255),width=1)
+   for col in range(21):drawing.line([(40+col*60,80),(40+col*60,280)],fill=(80,80,100,255),width=1)
+   raw=image.tobytes();assert hashlib.sha256(raw).hexdigest()==case['editor_grid_rgba_sha256']
+  ORIGINAL.append(raw)
 
 PHASES=[0,3,7,10,14,17,0]
 KEYS={3:'Right',7:'Up',10:'z',14:'Left',17:'Down'}
@@ -50,6 +58,8 @@ def source_pixel(case,x,y):
 from functools import lru_cache
 @lru_cache(maxsize=None)
 def points(case):
+ if args.editor_grid:
+  return [(0,x,y) for y in [100,110,150,200] for x in [20,21,49,50,51,300,400]]+[(0,x,y) for y in [104,109,110,149,199,200,200.5] for x in [20,50,320,620]]+[(0,300,99),(0,300,201),(0,19,150),(0,621,150)]
  if args.images:return [(0,x,y) for y in ([60,61,250,315,316,317,418,419] if args.editor_images else [60,61,120,315,316,317,418,419]) for x in [0,1,127,255,256,257,511,512,513,638,639]]
  raw=ORIGINAL[case];bg=REFERENCE[case]['background'].to_bytes(4,'big')[:3]
  visible=[i for i in range(1280*720) if raw[i*4:i*4+3]!=bg]
@@ -82,7 +92,7 @@ class Quiet(SimpleHTTPRequestHandler):
 with tempfile.TemporaryDirectory(prefix='gamepkg-background-ui-',dir=PROJECT/'target') as directory:
  root=Path(directory);config=root/'settings.toml';config.write_text('automatic_update_checks=false\ncheck_app_updates_on_startup=false\nmute_audio=true\n')
  env=dict(os.environ,GAMEPKG_HOME=str(root/'library'),GAMEPKG_CONFIG=str(config),LIBGL_ALWAYS_SOFTWARE='1',DBUS_SESSION_BUS_ADDRESS='unix:path=/tmp/gamepkg-no-session-bus');env.pop('WAYLAND_DISPLAY',None)
- display=start_display(env,width=1100,height=850)
+ display=start_display(env,width=1600 if args.editor_grid else 1100,height=1200 if args.editor_grid else 850)
  try:
   source=root/'source';shutil.copytree(PROJECT/'ports/arkanoo',source);entry=source/'source/src/lib.rs';modules=entry.read_text().split('use std::sync::Mutex;')[0]
   entry.write_text(modules+'pub fn game_tick(input:u32,_:u64)->u64 {let which=if input&gamepkg::HELD_RIGHT!=0 {3} else if input&gamepkg::HELD_UP!=0 {7} else if input&gamepkg::HELD_B!=0 {10} else if input&gamepkg::HELD_LEFT!=0 {14} else if input&gamepkg::HELD_DOWN!=0 {17} else {0};let cases='+str([[c['level'],c['frame']] for c in REFERENCE]).replace(' ', '')+';gamepkg::draw_clear(0x0b1020ff);render::draw_background(cases[which][0] as u32,cases[which][1]);which as u64}')
@@ -97,9 +107,9 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-background-ui-',dir=PROJECT/'ta
   def run(*arguments):
    r=subprocess.run([str(cli),*map(str,arguments)],env=env,capture_output=True,text=True,timeout=180);assert r.returncode==0,r.stderr
   key=root/'test.key';run('keygen','-o',key)
-  for profile in ['core-v1','component-v1']:
+  for profile in ([args.profile] if args.profile else ['core-v1','component-v1']):
    game_id='com.gamepkg.background-scene'+('-component' if profile=='component-v1' else '');(source/'manifest.toml').write_text('runtime_profile="'+profile+'"\n'+base.replace('com.gamepkg.background-scene',game_id));package=root/(profile+'.gamepkg');run('pack',source,'-o',package,'--key',key);run('install',package,'--trust-creator');run('build',game_id,'--target','wasm')
-   for target in (['wasm','native'] if profile=='core-v1' else ['wasm']):
+   for target in ([] if args.browser_only else ['wasm','native'] if profile=='core-v1' else ['wasm']):
     if target=='native':run('build',game_id,'--target','native')
     for renderer in ['vulkan','opengl']:
      label=profile+'-'+target+'-'+renderer;app=subprocess.Popen([str(gui),'--play',game_id,'--renderer',renderer],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE);held=False
@@ -127,6 +137,16 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-background-ui-',dir=PROJECT/'ta
         if app.poll() is not None:raise RuntimeError(app.stderr.read().decode())
         assert time.monotonic()<deadline,(label,shift,actual);time.sleep(.05)
        check(actual,expected(shift,im.width,im.height),label+'-'+str(shift))
+      if args.editor_grid:
+       for width,height in [(1280,960),(853,641),(700,800)]:
+        subprocess.run(['xdotool','windowsize',window,str(width),str(height)],env=env,check=True);deadline=time.monotonic()+12
+        while True:
+         path=PROOF/(label+'-'+str(width)+'x'+str(height)+'.png');subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(path)],env=env,check=True,timeout=10);im=Image.open(path).convert('RGB');scale=min(im.width/640,im.height/480);ox=(im.width-640*scale)/2;oy=(im.height-480*scale)/2
+         actual=[list(im.getpixel((round(ox+x*scale),round(oy+y*scale)))) for _,x,y in points(0)]
+         if im.size==(width,height) and all(min(max(abs(a-b) for a,b in zip(pixel,choice)) for choice in choices)<=1 for pixel,choices in zip(actual,expected(0,width,height))):break
+         if app.poll() is not None:raise RuntimeError(app.stderr.read().decode())
+         assert time.monotonic()<deadline,(label,im.size,(width,height),actual);time.sleep(.05)
+        check(actual,expected(0,width,height),label+' resized '+str(width)+'x'+str(height))
      finally:
       if held:subprocess.run(['xdotool','keyup',held],env=env,check=True)
       if app.poll() is None:app.terminate()

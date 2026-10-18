@@ -979,7 +979,7 @@ fn original_editor_workflow_persists_patterns_and_preserves_corrupt_saves_in_rea
     let mut game = load_menu(root.path(), "com.gamepkg.arkanoo").unwrap();
     game.step(0).unwrap();
     editor_key(&mut game, 101);
-    assert!(game.frame().commands.iter().any(|c|matches!(c,Command::Rect{x,y,width,height,..} if *x==20.0 && *y==100.0 && *width==600.0 && *height==0.5)));
+    assert!(game.frame().commands.iter().any(|c|matches!(c,Command::Image{x,y,width,height,image} if *x==20.0 && *y==100.0 && *width==600.5 && *height==0.5 && image.size()==[1,1] && image.pixels()==[80,80,100,255])));
     for (index, key) in [54, 55, 56, 53].iter().enumerate() {
         editor_key(&mut game, *key);
         editor_click(&mut game, 20.0 + index as f32 * 30.0, 100.0, 1);
@@ -1002,7 +1002,7 @@ fn original_editor_workflow_persists_patterns_and_preserves_corrupt_saves_in_rea
     editor_key(&mut game, 116); // Test the actual edited board, then clear through the original Q action.
     game.step(8).unwrap(); // Pause and return to editing without completing the test.
     editor_key(&mut game, 101);
-    assert!(game.frame().commands.iter().any(|c|matches!(c,Command::Rect{x,y,width,height,..} if *x==20.0 && *y==100.0 && *width==600.0 && *height==0.5)));
+    assert!(game.frame().commands.iter().any(|c|matches!(c,Command::Image{x,y,width,height,image} if *x==20.0 && *y==100.0 && *width==600.5 && *height==0.5 && image.size()==[1,1] && image.pixels()==[80,80,100,255])));
     editor_key(&mut game, 116);
     assert_eq!(
         game.frame()
@@ -1015,7 +1015,7 @@ fn original_editor_workflow_persists_patterns_and_preserves_corrupt_saves_in_rea
         3
     );
     editor_key(&mut game, 113);
-    assert!(game.frame().commands.iter().any(|c|matches!(c,Command::Rect{x,y,width,height,..} if *x==20.0 && *y==100.0 && *width==600.0 && *height==0.5)));
+    assert!(game.frame().commands.iter().any(|c|matches!(c,Command::Image{x,y,width,height,image} if *x==20.0 && *y==100.0 && *width==600.5 && *height==0.5 && image.size()==[1,1] && image.pixels()==[80,80,100,255])));
     drop(game);
     let mut game = load_menu(root.path(), "com.gamepkg.arkanoo").unwrap();
     game.step(0).unwrap();
@@ -1440,7 +1440,7 @@ fn actual_menu_clicks_start_resume_restart_gravity_editor_settings_fullscreen_an
         })
         .unwrap();
         game.step(0).unwrap();
-        assert!(game.frame().commands.iter().any(|command|matches!(command,Command::Rect{x,y,width,height,..} if *x==20.0 && *y==100.0 && *width==600.0 && *height==0.5)));
+        assert!(game.frame().commands.iter().any(|command|matches!(command,Command::Image{x,y,width,height,image} if *x==20.0 && *y==100.0 && *width==600.5 && *height==0.5 && image.size()==[1,1] && image.pixels()==[80,80,100,255])));
         game.input_event(Event {
             kind: 9,
             x: 0.0,
@@ -3076,5 +3076,86 @@ fn original_editor_background_brightness_and_full_metal_boards_reach_native_and_
                 );
             }
         }
+    }
+}
+
+#[test]
+#[ignore = "requires tests/arkanoo.py fixtures"]
+fn original_editor_grid_and_backdrop_match_sdl_logical_pixels_and_endpoints() {
+    use sha2::Digest;
+    let reference: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-image-backgrounds.json")).unwrap();
+    for (index, case) in reference["cases"].as_array().unwrap().iter().enumerate() {
+        let root = isolated_library();
+        let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
+        assert_eq!(
+            game.step(2684354560 | 512 | index as u32).unwrap(),
+            index as u64 + 1
+        );
+        let mut pixels = vec![0u8; 1280 * 720 * 4];
+        for (command, tile) in game.frame().commands[..6]
+            .iter()
+            .zip(case["tiles"].as_array().unwrap())
+        {
+            let Command::Image { image, .. } = command else {
+                panic!("Missing backdrop")
+            };
+            let left = tile["origin"][0].as_u64().unwrap() as usize;
+            let top = tile["origin"][1].as_u64().unwrap() as usize;
+            let [w, h] = image.size();
+            for row in 0..h {
+                pixels[((top + row) * 1280 + left) * 4..((top + row) * 1280 + left + w) * 4]
+                    .copy_from_slice(&image.pixels()[row * w * 4..(row + 1) * w * 4]);
+            }
+        }
+        for pixel in pixels.chunks_exact_mut(4) {
+            for channel in &mut pixel[..3] {
+                *channel = ((u16::from(*channel) * 102 + 127) / 255) as u8;
+            }
+        }
+        let lines: Vec<_> = game
+            .frame()
+            .commands
+            .iter()
+            .filter_map(|command| {
+                if let Command::Image {
+                    x,
+                    y,
+                    width,
+                    height,
+                    image,
+                } = command
+                {
+                    if image.size() == [1, 1] && image.pixels() == [80, 80, 100, 255] {
+                        return Some((*x, *y, *width, *height));
+                    }
+                }
+                None
+            })
+            .collect();
+        let expected: Vec<_> = (0..11)
+            .map(|row| (20.0, 100.0 + row as f32 * 10.0, 600.5, 0.5))
+            .chain((0..21).map(|col| (20.0 + col as f32 * 30.0, 100.0, 0.5, 100.5)))
+            .collect();
+        assert_eq!(
+            lines, expected,
+            "Grid must retain original opaque RGB, order and both endpoints"
+        );
+        for (x, y, w, h) in lines {
+            let left = (x * 2.0) as usize;
+            let top = ((y - 60.0) * 2.0) as usize;
+            let width = (w * 2.0) as usize;
+            let height = (h * 2.0) as usize;
+            for row in top..top + height {
+                for col in left..left + width {
+                    pixels[(row * 1280 + col) * 4..(row * 1280 + col) * 4 + 4]
+                        .copy_from_slice(&[80, 80, 100, 255]);
+                }
+            }
+        }
+        assert_eq!(
+            hex::encode(sha2::Sha256::digest(&pixels)),
+            case["editor_grid_rgba_sha256"].as_str().unwrap()
+        );
     }
 }

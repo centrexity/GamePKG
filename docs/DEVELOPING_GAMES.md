@@ -125,6 +125,8 @@ Each tick supplies a fresh frame. With no `draw_clear` call, the viewport uses o
 
 `gamepkg::draw_image_linear(x, y, width, height, pixel_width, pixel_height, pixels)` draws generated RGBA pixels with linear filtering. It uses the same 512×512 source-image bounds, guest-memory validation, per-frame command limit and cumulative 8 MiB image-transfer budget as `draw_image`. Both return whether the command was accepted. Native, core/component Wasm and browser players support it in the current source-built host.
 
+Browser nearest images containing one texel use pixel-center coverage with the lower-neighbor boundary tie rule. Thin pixel strips retain their source color.
+
 Game rectangle/circle colors and sprite pixels use straight RGBA bytes. Native game drawing premultiplies encoded RGB bytes for source-over compositing, with a conversion separate from the app's UI styling. The conversion retains supplied opaque-color bytes. Maintainers can run `tests/blending_gui.py` to compare rectangles, nearest sprites and ordered overlaps with SDL in native and browser players.
 
 These functions preserve the source checks, signatures, isolated compiler and Wasm restrictions. Games cannot replace the injected implementation or declare their own host imports.

@@ -14,7 +14,7 @@ for(let i=0;i<8;i++)assert.equal(api.linear(0,9,0,0,10,10),0);assert.equal(api.n
 const samples=[];const context={save(){},restore(){},imageSmoothingEnabled:false,fillRect(){},drawImage(){samples.push(this.imageSmoothingEnabled);}};
 const ui=vm.createContext({linearSprite(){samples.push('linear');},context,color:()=> '#000000',canvas:{dataset:{}},data:{custom_renderer:true},ImageData:class{constructor(){}},document:{createElement:()=>({getContext:()=>({putImageData(){}})}),querySelector:()=>({textContent:''})}});
 const player=readFileSync(new URL('../web-player/player.js',import.meta.url),'utf8');vm.runInContext(player.slice(player.indexOf('function render(frame)'),player.indexOf('function playAudio(')),ui);
-vm.runInContext(`render({background:null,state:'1',commands:[['linear-image',0,0,10,10,1,1,new Uint8Array(4)],['image',0,0,10,10,1,1,new Uint8Array(4)],['linear-image',0,0,10,10,1,1,new Uint8Array(4)]]});`,ui);
+vm.runInContext(`render({background:null,state:'1',commands:[['linear-image',0,0,10,10,1,1,new Uint8Array(4)],['image',0,0,10,10,2,1,new Uint8Array(8)],['linear-image',0,0,10,10,1,1,new Uint8Array(4)]]});`,ui);
 assert.deepEqual(samples,['linear',false,'linear']);console.log('Filtered assets keep path/memory/queue bounds and switch browser smoothing per draw.');
 
 api.reset();

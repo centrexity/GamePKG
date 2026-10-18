@@ -1567,3 +1567,26 @@ without increasing the native deadline or any quota. The larger encoded files
 have a 40 MiB storage recommendation, verified against a clean native install.
 Original grid blend mode/inclusive endpoints, editor/menu lettering and whole-
 window scaling remain open; restored backdrops do not establish those features.
+
+## Canonical editor grid correction
+
+The original disables blending before its RGB (80,80,100) grid and includes
+both SDL line endpoints. The port's translucent rectangles shortened each line.
+It now draws 32 opaque one-texel images with the original 1201×1 and 1×201
+source-pixel footprints. The independent actual SDL OpenGL reference verifies
+every complete grid/backdrop RGBA byte for all six images. Both rounds of 57
+signed runtime checks and native/core/component browser editor/file workflows
+pass under unchanged memory, command, image and execution limits.
+
+Actual grid checks pass in six desktop and both browser configurations, through
+13 real editor selection states and three exact/fractional/tall desktop sizes.
+All 7,320 sampled RGB pixels are within one level of original canonical values,
+with exact-nearest-boundary choices documented. Browser Canvas2D fractional
+coverage initially differed by up to 43 levels. Nearest one-texel images now use
+pixel centers and the background sampler's lower-neighbor tie rule; adjacent
+half-pixel strips do not overlap. This needs no extra WebGL capability. Existing
+clipping, reset, image/shader and resize regressions also pass afterward.
+
+This verifies canonical grid geometry, color and supported client samples.
+Original palette/lettering composition, browser CSS scaling and full original
+viewport behavior remain open. It does not establish complete editor parity.
