@@ -17,7 +17,13 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-assets-') as directory:
     (source / 'assets').mkdir(exist_ok=True)
     (source / 'assets/message.txt').write_bytes(b'ABC')
     (source / 'source/src/lib.rs').write_text('''
+fn controls_match() -> bool {
+    let sdk = [gamepkg::BUTTON_B,gamepkg::BUTTON_Y,gamepkg::BUTTON_START,gamepkg::BUTTON_SELECT,gamepkg::BUTTON_A,gamepkg::BUTTON_X,gamepkg::BUTTON_L,gamepkg::BUTTON_R,gamepkg::HELD_B,gamepkg::HELD_Y,gamepkg::HELD_START,gamepkg::HELD_SELECT,gamepkg::HELD_A,gamepkg::HELD_X,gamepkg::HELD_L,gamepkg::HELD_R,gamepkg::HELD_LEFT,gamepkg::HELD_RIGHT,gamepkg::HELD_UP,gamepkg::HELD_DOWN];
+    let expected = [16u32,32,64,128,65536,131072,262144,524288,4096,8192,16384,32768,1048576,2097152,4194304,8388608,256,512,1024,2048];
+    sdk == expected
+}
 pub fn game_tick(_: u32, _: u64) -> u64 {
+    if !controls_match() { loop {} };
     if !(gamepkg::achievement_unlock(0)) { loop {} };
     if !(!gamepkg::achievement_unlock(9999)) { loop {} };
     let mut buffer = [0; 8];

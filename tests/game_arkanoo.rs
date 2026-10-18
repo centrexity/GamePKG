@@ -20,6 +20,8 @@ mod gamepkg {
 }
 #[path = "../ports/arkanoo/source/src/audio.rs"]
 mod audio;
+#[path = "../ports/arkanoo/source/src/background.rs"]
+mod background;
 #[path = "../ports/arkanoo/source/src/editor.rs"]
 mod editor;
 #[path = "../ports/arkanoo/source/src/levels.rs"]
@@ -2442,4 +2444,59 @@ fn original_portal_stages_preserve_every_ordered_point_color_and_frame_precision
 fn gamepkg_digest(bytes: &[u8]) -> String {
     use sha2::Digest;
     hex::encode(sha2::Sha256::digest(bytes))
+}
+
+#[test]
+fn original_campaign_background_points_colors_and_release_overflow_match() {
+    use std::io::Read;
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-background.json")).unwrap();
+    for case in fixture["cases"].as_array().unwrap() {
+        let level = case["level"].as_u64().unwrap() as u32;
+        let frame = case["frame"].as_u64().unwrap();
+        let scene = background::campaign(level, frame).unwrap();
+        assert_eq!(u64::from(scene.color), case["background"].as_u64().unwrap());
+        let mut actual = Vec::new();
+        for dot in &scene.points {
+            actual.extend(dot.x.to_le_bytes());
+            actual.extend(dot.y.to_le_bytes());
+            actual.extend(dot.color.to_le_bytes());
+        }
+        let compressed = hex::decode(case["trace_zlib_hex"].as_str().unwrap()).unwrap();
+        let mut original = Vec::new();
+        flate2::read::ZlibDecoder::new(compressed.as_slice())
+            .read_to_end(&mut original)
+            .unwrap();
+        assert_eq!(actual, original, "level {level} frame {frame}");
+        assert_eq!(gamepkg_digest(&actual), case["trace_sha256"]);
+        assert_eq!(
+            scene.points.len(),
+            case["point_count"].as_u64().unwrap() as usize
+        );
+        let compressed = hex::decode(case["sdl_rgba_zlib_hex"].as_str().unwrap()).unwrap();
+        let mut original = Vec::new();
+        flate2::read::ZlibDecoder::new(compressed.as_slice())
+            .read_to_end(&mut original)
+            .unwrap();
+        let mut delta = 0;
+        if let Some(image) = physics::effect_image(&scene.points) {
+            for (index, pixel) in image.pixels.chunks_exact(4).enumerate() {
+                let x = image.left as usize + index % image.width as usize;
+                let y = image.top as usize + index / image.width as usize;
+                for channel in 0..3 {
+                    let bg = (scene.color >> (24 - channel * 8)) & 255;
+                    let value = (u32::from(pixel[channel]) * u32::from(pixel[3])
+                        + bg * (255 - u32::from(pixel[3])))
+                        / 255;
+                    delta = delta
+                        .max(value.abs_diff(u32::from(original[(y * 1280 + x) * 4 + channel])));
+                }
+            }
+        }
+        println!("background level {level} frame {frame}: maximum SDL grouping delta {delta}");
+        assert!(delta <= 2);
+    }
+    for level in [0, 1, 6, 10, u32::MAX] {
+        assert!(background::campaign(level, 0).is_none());
+    }
 }

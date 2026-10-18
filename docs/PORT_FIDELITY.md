@@ -972,3 +972,45 @@ also run separately. Original viewport clipping, whole-frame matching, remaining
 background/menu/HUD/audio and platform requirements stay open. Recipe 0.1.29 is a
 source-only change; the host version and published binary/package releases stay
 unchanged.
+
+### Campaign animated backgrounds and component input constants
+
+Campaign levels 7–9 now render the original starfield, pulsing circles and digital
+rain instead of the replacement grid. A SHA-guarded oracle compiles the unchanged
+campaign branches and sends their ordered pixels to real SDL software rendering.
+Its 21 cases include both animation frames, f32 precision loss beyond 2^24,
+32-bit frame overflow and u64::MAX. Star x addition deliberately wraps, matching
+the original release build; this avoids architecture-dependent overflow behavior.
+Ordered geometry/colors match production exactly. Full framebuffer composition
+retains a two-level software-SDL rounding bound in tests.
+
+Sparse backgrounds use non-overlapping 64-pixel tiles through the existing image
+API. Existing effects retain their 512-pixel tiling. The signed runtime test
+reconstructs every original background pixel and checks tile overlap, dimensions
+and clipped placement. It also keeps 200 fire bricks and 3,000 particles at all
+four window corners visible across cold/warm scenes. All layers remain inside
+the unchanged 1,024-command, 8 MiB image and time/memory limits; the background
+must not consume the budget and silently omit later art.
+
+The eight-configuration player scene checks both frames of all three animations
+and returns to the starfield to detect retained pixels. Desktop samples differ
+by at most two levels; both browser profiles by at most one. Samples are inside
+world/tile geometry edges and exact nearest-boundary choices remain explicit.
+Original edge rasterization, aspect and complete-window comparisons remain open.
+
+The component source SDK was missing the raw non-directional button constants
+already provided by core/native. All button/held aliases are now available there.
+An actual signed component checks all twenty raw constants against host input
+bits before its typed asset/ROM/save/drawing/audio and denial/rollback checks.
+The live background fixture uses held B (Z) in every desktop/browser profile.
+Existing library input mappings and permissions are unchanged. The CLI and GUI
+were rebuilt locally; older hosts need rebuilding to expose these component
+constants. This source-only change publishes no binary release.
+
+Validation: 65 logic tests and 39 signed checks in both native and Wasm pass;
+native and both browser gameplay/editor/file workflows pass. The complete
+background player matrix, signed component API/constant checks, component/input
+unit tests, strict lint, formatting and byte-identical reference regeneration
+pass. Source recipe 0.1.30 retains host version 0.1.17. Original image backgrounds
+1–6, editor artwork, twenty endless procedural themes, fonts/HUD/menu/audio,
+viewport and remaining platform work are still unfinished.

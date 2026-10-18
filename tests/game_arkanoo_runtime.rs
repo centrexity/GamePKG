@@ -2432,3 +2432,91 @@ fn original_four_portal_stages_reach_signed_runtimes_with_unchanged_budgets() {
         }
     }
 }
+
+#[test]
+#[ignore = "requires the signed production fixture prepared by tests/arkanoo.py"]
+fn original_campaign_background_tiles_preserve_pixels_and_full_scene_budgets() {
+    use std::io::Read;
+    let root = isolated_library();
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-background.json")).unwrap();
+    let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
+    for (index, case) in fixture["cases"].as_array().unwrap().iter().enumerate() {
+        assert_eq!(game.step(2147491840 | index as u32).unwrap(), 1);
+        let color = case["background"].as_u64().unwrap() as u32;
+        assert!(
+            matches!(game.frame().commands.first(),Some(Command::Rect{x:0.0,y:60.0,width:640.0,height:360.0,rgba}) if *rgba==color)
+        );
+        let mut actual = Vec::new();
+        for _ in 0..1280 * 720 {
+            actual.extend(color.to_be_bytes());
+        }
+        let mut covered = vec![false; 1280 * 720];
+        for command in game.frame().commands.iter().skip(1) {
+            let Command::Image {
+                x,
+                y,
+                width,
+                height,
+                image,
+            } = command
+            else {
+                panic!("Background must use bounded nearest tiles")
+            };
+            let [w, h] = image.size();
+            assert!(w <= 64 && h <= 64);
+            assert_eq!((*width, *height), (w as f32 * 0.5, h as f32 * 0.5));
+            let left = (*x * 2.0) as usize;
+            let top = ((*y - 60.0) * 2.0) as usize;
+            for (i, pixel) in image.pixels().chunks_exact(4).enumerate() {
+                let at = (top + i / w) * 1280 + left + i % w;
+                assert!(!covered[at], "Overlapping tiles blend source points twice");
+                covered[at] = true;
+                for channel in 0..3 {
+                    actual[at * 4 + channel] = ((u32::from(pixel[channel]) * u32::from(pixel[3])
+                        + u32::from(actual[at * 4 + channel]) * (255 - u32::from(pixel[3])))
+                        / 255) as u8;
+                }
+            }
+        }
+        let compressed = hex::decode(case["sdl_rgba_zlib_hex"].as_str().unwrap()).unwrap();
+        let mut expected = Vec::new();
+        flate2::read::ZlibDecoder::new(compressed.as_slice())
+            .read_to_end(&mut expected)
+            .unwrap();
+        assert_eq!(actual.len(), expected.len());
+        assert!(
+            actual.iter().zip(expected).all(|(a, b)| a.abs_diff(b) <= 2),
+            "Original SDL pixels differ, case {index}"
+        );
+    }
+    for index in [0, 3, 7, 10, 14, 17] {
+        for _ in 0..2 {
+            assert_eq!(game.step(2147491840 | 32 | index).unwrap(), 3000);
+            assert!(game.frame().commands.len() < gamepkg::drawing::MAX_COMMANDS);
+            let mut bytes = 0;
+            let mut fire = 0;
+            let mut corners = 0;
+            for command in &game.frame().commands {
+                if let Command::Image { image, .. } | Command::LinearImage { image, .. } = command {
+                    bytes += image.pixels().len();
+                    if image.size() == [61, 21] {
+                        fire += 1;
+                    }
+                    if image.size()[0] > 64
+                        && image.size()[1] > 64
+                        && image
+                            .pixels()
+                            .chunks_exact(4)
+                            .any(|p| p[..3] == [25, 100, 200] && p[3] > 0)
+                    {
+                        corners += 1;
+                    }
+                }
+            }
+            assert_eq!(fire, 200, "Background crowded out original brick art");
+            assert_eq!(corners, 4, "Background crowded out full-window particles");
+            assert!(bytes < gamepkg::drawing::MAX_IMAGE_BYTES);
+        }
+    }
+}

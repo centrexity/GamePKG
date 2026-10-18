@@ -183,6 +183,10 @@ gamepkg::audio_submit(&amp;[100, -100]);
 }
 </code></pre>
 <p><code>pressed</code> detects newly pressed buttons; <code>held</code> detects continuing presses. Constants are <code>LEFT</code>, <code>RIGHT</code>, <code>UP</code>, <code>DOWN</code>, <code>A</code>, <code>B</code>, <code>X</code>, <code>Y</code>, <code>L</code>, <code>R</code>, <code>START</code>, and <code>SELECT</code>. These are digital controls; this API does not expose raw touch coordinates, pressure, controller identities, or analog values to games.</p>
+<p>The raw mask constants <code>BUTTON_A/B/X/Y/L/R/START/SELECT</code> and the corresponding
+<code>HELD_*</code> constants, including <code>HELD_LEFT/RIGHT/UP/DOWN</code>, are also shared by native,
+core and component source builds. Use the named constants instead of hard-coded
+bit positions. Older hosts may need rebuilding for the complete component set.</p>
 <p>Keyboard press bits ignore OS key repeat. If two keyboard bindings share an
 action (such as Left and A), it stays held until both are released and pressing
 the second binding does not create another edge. A quick press/release within

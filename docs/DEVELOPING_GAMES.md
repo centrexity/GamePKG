@@ -169,6 +169,11 @@ pub fn game_tick(input: u32, state: u64) -> u64 {
 
 `pressed` detects newly pressed buttons; `held` detects continuing presses. Constants are `LEFT`, `RIGHT`, `UP`, `DOWN`, `A`, `B`, `X`, `Y`, `L`, `R`, `START`, and `SELECT`. These are digital controls; this API does not expose raw touch coordinates, pressure, controller identities, or analog values to games.
 
+The raw mask constants `BUTTON_A/B/X/Y/L/R/START/SELECT` and the corresponding
+`HELD_*` constants, including `HELD_LEFT/RIGHT/UP/DOWN`, are also shared by native,
+core and component source builds. Use the named constants instead of hard-coded
+bit positions. Older hosts may need rebuilding for the complete component set.
+
 Keyboard press bits ignore OS key repeat. If two keyboard bindings share an
 action (such as Left and A), it stays held until both are released and pressing
 the second binding does not create another edge. A quick press/release within
