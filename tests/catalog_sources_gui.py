@@ -44,7 +44,7 @@ pathlib.Path(args[args.index('--output')+1]).write_text(responses[url]);print('2
   launch();click('Add')
   _,hint_y=click_text(window,env,'Or drop a',root,click=False)
   subprocess.run(['xdotool','mousemove','--window',window,'100',str(hint_y+40),'click','1','type','--clearmodifiers',second],env=env,check=True)
-  click('Import');await_state(lambda lists:len(lists)==2);click('Saved game lists')
+  click('Import .gamepkglist');await_state(lambda lists:len(lists)==2);click('Saved game lists')
   responses[first]=catalog(['one','new'],'2.0.0');publish();before=requests().count(second)
   click('Update list');await_state(lambda lists:len(lists[0]['games'])==2)
   assert requests().count(second)==before,'Individual update fetched another list'

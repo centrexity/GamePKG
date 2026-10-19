@@ -2859,3 +2859,19 @@ pass. Test parallelism, timeouts, audio limits and reference tolerances are
 unchanged. This service does not yet expose game SDK commands, change a running
 port's audio, account all package/compiler metadata, or complete native/browser
 per-game memory wiring. Those remain required before port migration.
+
+## Saved-list GUI regression target
+
+Direct failure logs from hosted Rust run `39193999093` at source `93154d4`
+identify the all-features failure as the second saved-list import never appearing.
+A private-display reproduction logs the first list request followed by the
+GitHub official-ports release URL. The fixture's generic `Import` OCR target
+selected `Import official ports library` before reaching the separate URL-list
+import button. The typed URL was present in the input; the fixture clicked the
+wrong action. It now targets the distinctive visible `Import .gamepkglist` label.
+The unchanged end-to-end saved-list checks pass: restart persistence, targeted
+and global refresh, changed/new metadata, failed-source snapshot retention,
+cancelled/confirmed removal, installed-package preservation and zero package
+downloads. The request log still must contain exactly the two fixture list URLs.
+No product behavior, timing limits or assertion scope changed. A future hosted
+run must confirm the corrected fixture; the earlier failed run remains failed.
