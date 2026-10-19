@@ -360,3 +360,34 @@ checks also exercise full-width counters and cross-thread final ownership.
 The same public checks are added to Windows32/Android32 qualification; new hosted
 results for those additions remain required. Per-game guest/store limit carving
 and signed SDK activation are still unfinished.
+
+### Original-rate effect asset loading
+
+`audio_voices::Clip::from_verified_asset` is a trusted-host loader for canonical
+44.1 kHz stereo S16 WAVs. It requires audio permission and a verified scoped
+asset. The existing 2 MiB decoded-clip ceiling remains; loading reserves the PCM,
+clip ownership and fixed 4,140-byte input staging inside the caller's shared
+budget before allocating the sample storage. Bytes stream into the final clip,
+with explicit little-endian conversion and no complete encoded duplicate. The
+package reader completes its ZIP checksum check before publishing the clip.
+Malformed/truncated files, exhausted budgets and corrupt assets release their
+charges. Embedded compressed assets fail explicitly pending decompressor-memory
+accounting; shared snapshots and stored assets use the bounded reader path.
+
+Maintainers can verify all five original effects without changing port assets:
+
+```sh
+python3 tools/check_effect_assets.py /path/to/pinned/original/arkanoo
+```
+
+The check validates the original MP3 hashes, uses the independent SDL reference
+to generate temporary 44.1 kHz WAVs, signs a temporary package with a synthetic
+test key and compares complete playback with every original stereo PCM frame.
+It also checks all five recordings fit the unchanged 4 MiB pool and that live
+voices retain its parent charge after the cache owner drops. Ordinary tests use
+synthetic signed WAVs and require no original assets or SDL decoder. The helper
+and native SDL libraries are maintainer dependencies only.
+
+This loader is not a guest API or a migrated port. Guest commands, transactional
+tick commit, per-game memory carving, browser playback, original event timing
+and original-rate package-asset migration still need integration.

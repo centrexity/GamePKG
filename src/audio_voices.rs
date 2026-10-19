@@ -2,7 +2,7 @@
 //! precedes output-rate conversion. No game-facing API is exposed here yet.
 use crate::memory_budget::{Budget, Lease};
 use anyhow::{ensure, Result};
-use std::sync::Arc;
+use std::{io::Read, sync::Arc};
 
 const MAX_CLIP_BYTES: usize = 2 * 1024 * 1024;
 /// Immutable stereo PCM; shared voices retain one reservation for the recording.
@@ -11,6 +11,11 @@ pub struct Clip {
     _reservation: Lease,
 }
 impl Clip {
+    fn reservation(samples: usize, budget: &Budget) -> Result<Lease> {
+        budget.reserve(
+            (samples * 2 + std::mem::size_of::<Self>() + 2 * std::mem::size_of::<usize>()) as u64,
+        )
+    }
     pub fn new(samples: &[i16], budget: &Budget) -> Result<Arc<Self>> {
         ensure!(
             !samples.is_empty()
@@ -19,12 +24,74 @@ impl Clip {
             "invalid effect recording size"
         );
         // Include the ownership header, not just PCM storage, in the charge.
-        let bytes = std::mem::size_of_val(samples)
-            + std::mem::size_of::<Self>()
-            + 2 * std::mem::size_of::<usize>();
-        let reservation = budget.reserve(bytes as u64)?;
+        let reservation = Self::reservation(samples.len(), budget)?;
         Ok(Arc::new(Self {
             samples: samples.into(),
+            _reservation: reservation,
+        }))
+    }
+    /// Load canonical 44.1 kHz stereo S16 WAV for the original-rate host mixer.
+    /// Verification, audio permission and the caller's shared budget are required.
+    /// The complete ZIP CRC is checked before a clip can escape this call.
+    pub fn from_verified_asset(
+        package: &mut crate::archive::Package,
+        path: &str,
+        audio_allowed: bool,
+        budget: &Budget,
+    ) -> Result<Arc<Self>> {
+        ensure!(audio_allowed, "effects require audio permission");
+        ensure!(
+            package
+                .asset_compression(path)?
+                .is_none_or(|method| method == zip::CompressionMethod::Stored),
+            "compressed effects require decompressor memory accounting"
+        );
+        package.with_asset_reader(path, (MAX_CLIP_BYTES + 44) as u64, |input, length| {
+            Self::read_original_wav(input, length, budget)
+        })
+    }
+    fn read_original_wav(
+        input: &mut dyn Read,
+        length: usize,
+        budget: &Budget,
+    ) -> Result<Arc<Self>> {
+        ensure!(
+            (48..=MAX_CLIP_BYTES + 44).contains(&length),
+            "invalid effect WAV length"
+        );
+        // Reserve the fixed read staging too, including the header. No full
+        // encoded copy or uncharged decoding allocation is retained.
+        let _staging = budget.reserve(4096 + 44)?;
+        let mut header = [0; 44];
+        input.read_exact(&mut header)?;
+        let word = |at| u32::from_le_bytes(header[at..at + 4].try_into().unwrap());
+        ensure!(
+            &header[..4] == b"RIFF"
+                && &header[8..16] == b"WAVEfmt "
+                && word(4) as usize == length - 8
+                && word(16) == 16
+                && header[20..24] == [1, 0, 2, 0]
+                && word(24) == 44100
+                && word(28) == 176400
+                && header[32..36] == [4, 0, 16, 0]
+                && &header[36..40] == b"data"
+                && word(40) as usize == length - 44
+                && (length - 44).is_multiple_of(4),
+            "effects require canonical 44100 Hz stereo S16 WAV"
+        );
+        let count = (length - 44) / 2;
+        let reservation = Self::reservation(count, budget)?;
+        let mut samples = vec![0; count].into_boxed_slice();
+        let mut block = [0; 4096];
+        for output in samples.chunks_mut(2048) {
+            let bytes = &mut block[..output.len() * 2];
+            input.read_exact(bytes)?;
+            for (sample, bytes) in output.iter_mut().zip(bytes.as_chunks::<2>().0.iter()) {
+                *sample = i16::from_le_bytes(*bytes);
+            }
+        }
+        Ok(Arc::new(Self {
+            samples,
             _reservation: reservation,
         }))
     }
@@ -104,6 +171,97 @@ impl Mixer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn wav(samples: &[i16]) -> Vec<u8> {
+        let mut bytes = b"RIFF\0\0\0\0WAVEfmt \x10\0\0\0\x01\0\x02\0\x44\xac\0\0\x10\xb1\x02\0\x04\0\x10\0data\0\0\0\0".to_vec();
+        let size = samples.len() as u32 * 2;
+        bytes[4..8].copy_from_slice(&(size + 36).to_le_bytes());
+        bytes[40..44].copy_from_slice(&size.to_le_bytes());
+        for sample in samples {
+            bytes.extend(sample.to_le_bytes());
+        }
+        bytes
+    }
+    #[test]
+    fn original_wav_streams_little_endian_stereo_across_read_boundaries() {
+        struct SmallReads(std::io::Cursor<Vec<u8>>);
+        impl Read for SmallReads {
+            fn read(&mut self, output: &mut [u8]) -> std::io::Result<usize> {
+                let count = output.len().min(3);
+                self.0.read(&mut output[..count])
+            }
+        }
+        let expected = (0..4098).map(|i| (i * 7919) as i16).collect::<Vec<_>>();
+        let bytes = wav(&expected);
+        let budget = Budget::new(16384);
+        let clip = Clip::read_original_wav(
+            &mut SmallReads(std::io::Cursor::new(bytes.clone())),
+            bytes.len(),
+            &budget,
+        )
+        .unwrap();
+        assert_eq!(&*clip.samples, expected);
+        assert_eq!(budget.used(), clip._reservation.bytes());
+        let mut mixer = Mixer::default();
+        mixer.play(clip.clone());
+        drop(clip);
+        for frame in expected.as_chunks::<2>().0 {
+            assert_eq!(mixer.frame([0; 2]), *frame);
+        }
+        assert_eq!(mixer.active(), 0);
+        assert_eq!(budget.used(), 0);
+    }
+    #[test]
+    fn malformed_original_wavs_and_read_failures_release_every_charge() {
+        let valid = wav(&[i16::MIN, i16::MAX, 1, -1]);
+        let budget = Budget::new(8192);
+        for at in [0, 4, 8, 12, 16, 20, 22, 24, 28, 32, 34, 36, 40] {
+            let mut bytes = valid.clone();
+            bytes[at] ^= 1;
+            assert!(
+                Clip::read_original_wav(&mut &bytes[..], bytes.len(), &budget).is_err(),
+                "header byte {at}"
+            );
+            assert_eq!(budget.used(), 0);
+        }
+        for size in 0..valid.len() {
+            assert!(Clip::read_original_wav(&mut &valid[..size], valid.len(), &budget).is_err());
+            assert_eq!(budget.used(), 0);
+        }
+        for bytes in [wav(&[]), wav(&[1]), wav(&[1, 2, 3])] {
+            assert!(Clip::read_original_wav(&mut &bytes[..], bytes.len(), &budget).is_err());
+            assert_eq!(budget.used(), 0);
+        }
+        for limit in [1, 4139, 4140, 4141] {
+            let denied = Budget::new(limit);
+            assert!(Clip::read_original_wav(&mut &valid[..], valid.len(), &denied).is_err());
+            assert_eq!(denied.used(), 0);
+        }
+        // Length rejection happens before any attempted read/allocation.
+        assert!(
+            Clip::read_original_wav(&mut std::io::empty(), MAX_CLIP_BYTES + 48, &budget).is_err()
+        );
+        assert_eq!(budget.used(), 0);
+    }
+    #[test]
+    fn original_wav_exact_clip_limit_and_denial_before_payload_reads() {
+        let samples = vec![12345; MAX_CLIP_BYTES / 2];
+        let bytes = wav(&samples);
+        let budget = Budget::new((MAX_CLIP_BYTES + 8192) as u64);
+        let clip = Clip::read_original_wav(&mut &bytes[..], bytes.len(), &budget).unwrap();
+        assert_eq!(&*clip.samples, samples);
+        drop(clip);
+        assert_eq!(budget.used(), 0);
+        let denied = Budget::new(4140);
+        let mut input = std::io::Cursor::new(&bytes);
+        assert!(Clip::read_original_wav(&mut input, bytes.len(), &denied).is_err());
+        assert_eq!(input.position(), 44);
+        assert_eq!(denied.used(), 0);
+        // One additional stereo frame exceeds the unchanged recording bound.
+        let mut input = std::io::Cursor::new(&bytes);
+        assert!(Clip::read_original_wav(&mut input, bytes.len() + 4, &budget).is_err());
+        assert_eq!(input.position(), 0);
+        assert_eq!(budget.used(), 0);
+    }
     #[test]
     fn playing_clips_retain_parent_cache_capacity_after_cache_shutdown() {
         let game = Budget::new(4096);

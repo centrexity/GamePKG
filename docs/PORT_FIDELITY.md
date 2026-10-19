@@ -2561,3 +2561,43 @@ guest music API, per-game memory carving or platform/gameplay requirements.
 Optimized CLI and GUI builds pass; both relocated executables validate the same
 embedded decoder with runtime decoder paths unavailable and no display.
 Hosted full-workflow results for the new revision must be evaluated separately.
+
+
+## Original-rate verified effect assets (2026-10-18)
+
+The host's original-rate mixer now has a canonical 44.1 kHz stereo S16 WAV
+asset loader. Audio permission and a verified scoped package reader are required.
+It reserves the final PCM/ownership charge and fixed 4,140-byte input staging
+inside the existing caller budget before allocation, converts little-endian
+bytes directly into the final sample storage, and publishes no clip before the
+ZIP checksum succeeds. The unchanged 2 MiB per-clip limit includes an exact-limit
+regression; a one-frame excess is rejected before reading. Insufficient PCM
+capacity fails after only the header, with every reservation released. Malformed
+headers, truncation and post-verification payload corruption are tested. Embedded
+compressed effects fail explicitly until decompressor workspace is accounted for.
+
+A private independent SDL conversion of all five pinned original MP3s produced
+48384, 39791, 38616, 234253 and 146304 exact stereo frames. All five load from a
+synthetically signed package inside the unchanged 4 MiB effect pool. Full decoded
+playback matches the independent SDL bytes; four live clips keep the parent pool
+charged after its owner drops, and stopping them releases it. Neither generated
+WAVs nor test packages are published. The current port assets remain 48 kHz;
+this verifies the new host path without prematurely migrating the port.
+
+Signed synthetic cases cover permissions, package verification, invalid/missing
+paths, final checksum rejection/cleanup and explicit compressed-asset denial.
+The test recipe inputs are now embedded in the test executable, so they do not
+require the build machine's source tree on Android. Linux32, Windows32 and
+Android32 workflows include these cases; hosted results remain pending.
+This is a loader prerequisite, not guest music/effect integration: transactional
+commands, per-game guest/store memory carving, browser support, original-rate
+port migration and event/stop timing remain open.
+
+Local verification: all eight focused voice/loader tests pass, including the
+exact size boundary and existing exhaustive SDL arithmetic corpus. The GUI
+library regression run passes 238 cases with 19 explicit ignores; the additional
+size-boundary case passes separately. All three synthetic signed-asset tests pass
+on native 64-bit and actual ELF32 Linux. The original-recording case is an
+explicit ordinary-suite ignore and passes separately with the private SDL inputs.
+Strict GUI/all-target checks pass on both Rust 1.89 and 1.99.
+Optimized CLI and GUI linking also passes with the decoder embedded.

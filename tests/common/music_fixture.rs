@@ -3,22 +3,53 @@ pub fn signed_music_package(
 ) -> (tempfile::TempDir, gamepkg::archive::Package) {
     let temporary = tempfile::tempdir().unwrap();
     let recipe = temporary.path().join("recipe");
-    let minimal = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/minimal");
-    for relative in [
-        "manifest.toml",
-        "LICENSE",
-        "NOTICE",
-        "CREDITS.md",
-        "thumbnail.png",
-        "source/Cargo.toml",
-        "source/Cargo.lock",
-        "source/src/lib.rs",
-        "shaders/main.slang",
-        "assets/hello.txt",
+    // Embed fixture inputs so native test binaries also run on Android without
+    // the build machine's source checkout. All bytes match the minimal recipe.
+    for (relative, bytes) in [
+        (
+            "manifest.toml",
+            &include_bytes!("../../examples/minimal/manifest.toml")[..],
+        ),
+        (
+            "LICENSE",
+            &include_bytes!("../../examples/minimal/LICENSE")[..],
+        ),
+        (
+            "NOTICE",
+            &include_bytes!("../../examples/minimal/NOTICE")[..],
+        ),
+        (
+            "CREDITS.md",
+            &include_bytes!("../../examples/minimal/CREDITS.md")[..],
+        ),
+        (
+            "thumbnail.png",
+            &include_bytes!("../../examples/minimal/thumbnail.png")[..],
+        ),
+        (
+            "source/Cargo.toml",
+            &include_bytes!("../../examples/minimal/source/Cargo.toml")[..],
+        ),
+        (
+            "source/Cargo.lock",
+            &include_bytes!("../../examples/minimal/source/Cargo.lock")[..],
+        ),
+        (
+            "source/src/lib.rs",
+            &include_bytes!("../../examples/minimal/source/src/lib.rs")[..],
+        ),
+        (
+            "shaders/main.slang",
+            &include_bytes!("../../examples/minimal/shaders/main.slang")[..],
+        ),
+        (
+            "assets/hello.txt",
+            &include_bytes!("../../examples/minimal/assets/hello.txt")[..],
+        ),
     ] {
         let target = recipe.join(relative);
         std::fs::create_dir_all(target.parent().unwrap()).unwrap();
-        std::fs::copy(minimal.join(relative), target).unwrap();
+        std::fs::write(target, bytes).unwrap();
     }
     let manifest = recipe.join("manifest.toml");
     let text = std::fs::read_to_string(&manifest)

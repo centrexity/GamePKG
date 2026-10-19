@@ -26,7 +26,7 @@ jobs:
         run: rustup update stable && rustup default stable && rustup component add rustfmt clippy
       - name: Install audio development headers
         if: matrix.features == '--all-features'
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev libsdl2-mixer-dev
       - name: Check formatting
         run: cargo fmt --all -- --check
       - name: Verify optional decoder embedding bounds and input reset
@@ -338,6 +338,9 @@ jobs:
           ref: 9d613e78c9ed5657ae7fda9206cd4a82a893b7c8
           path: target/reference-arkanoo
           persist-credentials: false
+      - name: Verify signed original-rate effect assets and retained memory
+        if: matrix.features == '--all-features'
+        run: python3 tools/check_effect_assets.py target/reference-arkanoo
       - name: Compare original speed lettering in desktop and browser players
         if: matrix.features == '--all-features'
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tests/speed_font_gui.py --original target/reference-arkanoo
