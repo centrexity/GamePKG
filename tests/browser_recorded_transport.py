@@ -13,7 +13,7 @@ class Quiet(SimpleHTTPRequestHandler):
  def log_message(self,*args):pass
 with tempfile.TemporaryDirectory(prefix='gamepkg-worklet-mixer-') as temporary:
  root=Path(temporary)
- for name in ['recorded-decoder.js','recorded-mixer.js','recorded-queue.js','recorded-stream.js','recorded-transport.js','recorded-decoder-client.js','recorded-decoder-worker.js','recorded-budget.js','recorded-worklet.js','recorded-output-client.js','recorded-wav.js','recorded-frame-dispatcher.js','recorded-music-loader.js']:shutil.copy2(project/'web-player'/name,root/name)
+ for name in ['recorded-decoder.js','recorded-mixer.js','recorded-queue.js','recorded-stream.js','recorded-transport.js','recorded-decoder-client.js','recorded-decoder-worker.js','recorded-budget.js','recorded-worklet.js','recorded-output-client.js','recorded-wav.js','recorded-frame-dispatcher.js','recorded-music-loader.js','recorded-session.js']:shutil.copy2(project/'web-player'/name,root/name)
  shutil.copy2(project/'tests/fixtures/recorded-transport-worklet.js',root/'stream-worklet.js');shutil.copy2(companion,root/'converter.wasm')
  shutil.copy2(project/'tests/fixtures/sdl-live-audio-reference.json',root/'reference.json')
  shutil.copy2(Path(sys.argv[2]),root/'decoder.wasm')
@@ -189,5 +189,27 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-worklet-mixer-') as temporary:
   })().then(value=>done({value})).catch(error=>done({error:String(error.stack||error)}));''')
   assert 'error' not in musicFrames,musicFrames
   print('Production combined frame dispatcher: discarded Play/Stop, committed paused effects/music, asynchronous codec failure, fresh recovery and close during startup passed.',json.dumps(musicFrames['value']),flush=True)
+  sessions=browser.execute_async_script('''const done=arguments[arguments.length-1];(async()=>{
+   const {RecordedSession}=await import('./recorded-session.js'),{RecordedBudget}=await import('./recorded-budget.js'),load=async name=>new Uint8Array(await(await fetch(name)).arrayBuffer());
+   const converter=await load('converter.wasm'),decoder=await load('decoder.wasm'),assets=new Map([['tone.wav',await load('tone.wav')],['tone.mp3',await load('tone.mp3')]]),results=[];
+   for(const [effects,music] of [[4194304,8388608],[4194304,0],[0,8388608]]){
+    const root=new RecordedBudget(16777216),manifest={permissions:{audio:true},limits:{hard_memory_bytes:16777216,...(effects?{effects_memory_bytes:effects}:{}),...(music?{music_memory_bytes:music}:{})}},session=await RecordedSession.open(manifest,assets,converter,decoder,root);
+    if(session.guestBytes!==16777216-effects-music||root.used!==root.limit)throw Error('Independent session allowance escaped parent');
+    const script=URL.createObjectURL(new Blob(['const memory=new WebAssembly.Memory({initial:1,maximum:'+Math.floor(session.guestBytes/65536)+'});postMessage(memory.buffer.byteLength);'],{type:'application/javascript'})),guest=new Worker(script);let terminated=false;const terminate=guest.terminate.bind(guest);guest.terminate=()=>{terminated=true;terminate();};
+    if(!session.attachGuest(guest))throw Error('Guest ownership rejected');const allocated=await new Promise(resolve=>guest.onmessage=event=>resolve(event.data));URL.revokeObjectURL(script);if(allocated!==65536)throw Error('Guest memory not instantiated');session.volume(0);await session.resume();
+    const commands=[...(effects?[[2,'',1],[0,'tone.wav',0]]:[]),...(music?[[4,'tone.mp3',0],[6,'',1]]:[])];if(!await session.prepare({epoch:0,serial:1,recordedControls:commands})||!await session.finish(0,1,true))throw Error('Declared session frame rejected');
+    let state;const end=performance.now()+3000;do{state=await session.snapshot();if(!music||state.queuedFrames===4800)break;if(performance.now()>end)throw Error('Session prefill stalled');await new Promise(r=>setTimeout(r,5));}while(true);
+    if(!state.ready||state.activeEffects!==(effects?1:0)||state.playedFrames||state.musicStatus!==(music?'paused':'stopped'))throw Error('Declared session state mismatch');
+    const closing=session.close();if(!terminated||root.used>effects+music)throw Error('Guest reservation outlived termination ordering');await closing;if(root.used)throw Error('Session retained parent capacity');results.push({effects,music,guestBytes:session.guestBytes,terminated});
+   }
+   const manifest={permissions:{audio:true},limits:{hard_memory_bytes:16777216,effects_memory_bytes:4194304,music_memory_bytes:8388608}},root=new RecordedBudget(16777216),abort=new AbortController(),opening=RecordedSession.open(manifest,assets,converter,decoder,root,abort.signal);abort.abort();let denied=false;try{await opening;}catch{denied=true;}if(!denied||root.used)throw Error('Session startup cancellation leaked capacity');
+   for(const bad of [{...manifest,permissions:{audio:false}},{...manifest,limits:{...manifest.limits,music_memory_bytes:16777216}},{...manifest,limits:{hard_memory_bytes:16777216,effects_memory_bytes:65536}}]){denied=false;try{await RecordedSession.open(bad,assets,converter,decoder,root);}catch{denied=true;}if(!denied||root.used)throw Error('Invalid share/permission admitted or leaked');}
+   const {RecordedOutputClient}=await import('./recorded-output-client.js'),connect=RecordedOutputClient.prototype.connectMusic;let release,entered=false;
+   RecordedOutputClient.prototype.connectMusic=async function(...args){entered=true;await new Promise(resolve=>release=resolve);return connect.apply(this,args);};const lateAbort=new AbortController(),late=RecordedSession.open(manifest,assets,converter,decoder,root,lateAbort.signal);const observed=late.then(()=>false,()=>true);
+   while(!entered)await new Promise(r=>setTimeout(r,1));lateAbort.abort();release();const cancelled=await observed;RecordedOutputClient.prototype.connectMusic=connect;if(!cancelled||root.used)throw Error('Music connection cancellation leaked session ownership');
+   return results;
+  })().then(value=>done({value})).catch(error=>done({error:String(error.stack||error)}));''')
+  assert 'error' not in sessions,sessions
+  print('Production declared-share sessions: combined, effects-only and music-only real guest workers, one parent ceiling, paused playback, ordered shutdown and cancelled/invalid startup passed.',json.dumps(sessions['value']),flush=True)
  finally:
   browser.quit();server.shutdown();server.server_close()

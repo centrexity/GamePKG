@@ -3572,3 +3572,24 @@ checkpoint rollback, combined music and shutdown checks still pass. This fixes
 temporary duplication without increasing any allowance or reducing the 2 MiB
 clip limit. Manifest share/session allocation and actual player checkpoint
 integration remain open; recorded-audio exports remain disabled.
+
+A production recorded session owner now allocates declared effect/music children
+and the remaining guest ceiling from one parent. It subtracts all three
+converter snapshots from the selected output share, uses the effects child for
+the converter/cache when present, and otherwise charges the minimum output
+share to music. Decoder and packet leases stay inside the music child. Invalid
+permissions, oversized shares, insufficient guest space and insufficient output
+capacity fail without increasing any limit. Session closure terminates its
+attached guest before releasing that ceiling, then closes audio owners before
+retiring the child capacities.
+
+Actual Chromium verifies combined (4 MiB effects/8 MiB music/4 MiB guest),
+effects-only (4/0/12 MiB) and music-only (0/8/8 MiB) allocations under the same
+16 MiB parent. A real test worker instantiates bounded Wasm memory in each case;
+paused effect/music frames, shutdown order and zero retained parent usage pass.
+Invalid startup, immediate cancellation and cancellation while attaching the
+music port also release ownership. These are real worker/audio component tests,
+not yet the exported game's worker: player startup/checkpoint dispatch, reduced
+guest module capping, companion embedding and port migration remain open.
+Caller-owned encoded assets and browser/JIT/GC overhead remain outside the
+explicit guest/audio backing reservations. Recorded-audio exports stay disabled.
