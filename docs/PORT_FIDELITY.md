@@ -3750,3 +3750,38 @@ compiles the actual editor codec alongside the prepared playlist controller.
 The active game still writes ARK3 and uses its existing effects path; ARK4 writing
 and music controls are prepared for the complete migration, not enabled as a
 partial port. No recordings or private proofs are published.
+
+
+### Full private recorded-audio port qualification
+
+`tools/prepare_arkanoo_recorded_port.py` now prepares the complete private port
+candidate, including all five hash-checked original-rate effects, all nine
+hash-checked music tracks and the exact playlist. New private outputs must be
+outside the workspace. The source switches effects to host-owned playback,
+adds the original music toggle/slider geometry, persists separate ARK4 settings,
+preserves controls across game resets and uses the qualified playlist manager.
+The published active port is not silently switched or given missing recordings.
+
+The first full source check caught a conservative source-policy collision:
+`text` in the playlist parser matched the renderer's function name. Renaming that
+local to `playlist_text` makes the full package pass without relaxing policy.
+All 32 original controller observations/random draws still match. Source recipe
+0.1.63 contains this rename; gameplay remains on its previous active audio path.
+
+A 4 MiB guest partition failed native startup. The private candidate now assigns
+3 MiB effects, 7 MiB music and 6 MiB guest, preserving the original 16 MiB hard
+ceiling. Its full native and Wasm sources compile under the normal policy.
+`tools/check_arkanoo_recorded_port.py` uses separate temporary signed libraries
+for core/component profiles, retaining normal update/version checks. Actual
+native, core and component executions produce audible original music, freeze
+music progression when muted, accept original menu slider gestures, preserve
+volume 32/muted in ARK4 across restart, and resume playback from the UI. Launched
+gameplay commits an original collision recording through the shared host mixer
+while music is paused; guest PCM remains empty. Strict lint passes.
+
+These are real private full-port controls/output tests, not yet complete gameplay
+or pixel parity, all-track in-game selection, platform coverage or a successful
+browser export. The previous full-dataset browser size barrier remains. Private
+recordings, generated recipes, signed packages and binaries are not published;
+only preparation and qualification source is published. Players need none of
+the maintainer Python/compiler/test tools.
