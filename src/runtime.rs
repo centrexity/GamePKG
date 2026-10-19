@@ -1389,6 +1389,10 @@ impl Game {
             )?;
             if let Some(progress) = &mut self.progress {
                 if let Err(error) = progress.tick(&n.achievements) {
+                    n.frame.reset();
+                    n.audio.clear();
+                    n.audio_channels = 1;
+                    n.achievements.clear();
                     n.user_files.finish(false);
                     n.window.finish(false);
                     return Err(error);
@@ -1492,6 +1496,7 @@ impl Game {
             .map(|save| save.commit())
             .transpose();
         if let Err(error) = commit {
+            self.store.as_mut().unwrap().data_mut().frame.reset();
             self.store.as_mut().unwrap().data_mut().audio.clear();
             self.store.as_mut().unwrap().data_mut().audio_channels = 1;
             self.store
@@ -1507,6 +1512,11 @@ impl Game {
             if let Err(error) =
                 progress.tick(&self.store.as_ref().unwrap().data().pending_achievements)
             {
+                let data = self.store.as_mut().unwrap().data_mut();
+                data.frame.reset();
+                data.audio.clear();
+                data.audio_channels = 1;
+                data.pending_achievements.clear();
                 self.store
                     .as_mut()
                     .unwrap()
@@ -2133,5 +2143,164 @@ mod doom_input_tests {
             .is_err());
         game.doom_release_input().unwrap();
         assert_eq!(game.doom_events, vec![Event::Release]);
+    }
+}
+
+#[cfg(test)]
+mod persistence_output_tests {
+    use super::*;
+    #[test]
+    fn persistence_failures_discard_audio_and_drawing_from_the_rejected_tick() {
+        for component in [false, true] {
+            let mut manifest =
+                Manifest::parse(include_bytes!("../examples/minimal/manifest.toml")).unwrap();
+            manifest.permissions.audio = true;
+            manifest.permissions.save = true;
+            manifest.achievements.push(crate::manifest::Achievement {
+                id: "step".into(),
+                title: "Step".into(),
+                description: "Step".into(),
+            });
+            let (namespace, audio, draw, unlock, tick) = if component {
+                manifest.runtime_profile = "component-v1".into();
+                (
+                    "gamepkg:engine/host@0.1.0",
+                    "audio-submit-stereo",
+                    "draw-rect",
+                    "achievement-unlock",
+                    "tick",
+                )
+            } else {
+                (
+                    "gamepkg",
+                    "audio_submit_stereo",
+                    "draw_rect",
+                    "achievement_unlock",
+                    "gamepkg_tick",
+                )
+            };
+            let save = if component {
+                "save-write"
+            } else {
+                "save_write"
+            };
+            let module = wat::parse_str(format!(r#"(module
+                (import "{namespace}" "{audio}" (func $audio(param i32 i32)(result i32)))
+                (import "{namespace}" "{draw}" (func $draw(param f32 f32 f32 f32 i32)(result i32)))
+                (import "{namespace}" "{unlock}" (func $unlock(param i32)(result i32)))
+                (import "{namespace}" "{save}" (func $save(param i32 i32)(result i32)))
+                (memory(export "memory")1)
+                (data(i32.const 16) "\01\00\ff\ff")
+                (func(export "{tick}")(param i32 i64)(result i64)
+                    (drop(call $audio(i32.const 16)(i32.const 2)))
+                    (drop(call $draw(f32.const 0)(f32.const 0)(f32.const 10)(f32.const 10)(i32.const -1)))
+                    (drop(call $unlock(i32.const 0)))
+                    (drop(call $save(i32.const 16)(i32.const 4)))
+                    i64.const 1))"#)).unwrap();
+            let bytes = if component {
+                crate::hostapi::componentize(module).unwrap()
+            } else {
+                module
+            };
+            let mut game = Game::from_bytes(&bytes, &manifest).unwrap();
+            // Prove the fixture really emits both outputs on a successful tick.
+            assert_eq!(game.step(0).unwrap(), 1);
+            assert_eq!(game.audio_frame(), [1, -1]);
+            assert!(!game.frame().commands.is_empty());
+            let temporary = tempfile::tempdir().unwrap();
+            game.progress = Some(
+                crate::progress::Session::open(
+                    temporary.path(),
+                    &manifest.id,
+                    &manifest.creator_key,
+                )
+                .unwrap(),
+            );
+            std::fs::write(
+                temporary.path().join("progress"),
+                b"blocked history directory",
+            )
+            .unwrap();
+            assert!(game.step(0).is_err());
+            assert!(
+                game.audio_frame().is_empty(),
+                "component={component}: rejected tick retained PCM"
+            );
+            assert_eq!(game.audio_channels(), 1);
+            assert!(
+                game.frame().commands.is_empty(),
+                "component={component}: rejected tick retained drawing"
+            );
+            let mut game = Game::from_bytes(&bytes, &manifest).unwrap();
+            let temporary = tempfile::tempdir().unwrap();
+            let save = crate::saves::Save::open_for_game(temporary.path(), &manifest).unwrap();
+            game.store.as_mut().unwrap().data_mut().save = Some(save);
+            std::fs::rename(
+                temporary.path().join("saves"),
+                temporary.path().join("saved-directory"),
+            )
+            .unwrap();
+            std::fs::write(temporary.path().join("saves"), b"blocked save directory").unwrap();
+            assert!(game.step(0).is_err());
+            assert!(game.audio_frame().is_empty());
+            assert_eq!(game.audio_channels(), 1);
+            assert!(
+                game.frame().commands.is_empty(),
+                "component={component}: save failure retained drawing"
+            );
+        }
+    }
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[ignore = "requires the isolated signed native fixture from tools/check_tick_output_rollback.py"]
+    fn native_persistence_failures_discard_audio_and_drawing() {
+        let root =
+            std::path::PathBuf::from(std::env::var_os("GAMEPKG_TICK_OUTPUT_LIBRARY").unwrap());
+        let id = "com.gamepkg.tick-output-test";
+        let mut package =
+            crate::archive::Package::open(&root.join(format!("{id}.gamepkg"))).unwrap();
+        let manifest = crate::verify::verify_embedded(&mut package).unwrap();
+        for history in [true, false] {
+            let mut game = Game::load(&root, id).unwrap();
+            assert!(game.native.is_some());
+            assert_eq!(game.step(0).unwrap(), 1);
+            assert_eq!(game.audio_frame(), [1, -1]);
+            assert!(!game.frame().commands.is_empty());
+            let temporary = tempfile::tempdir().unwrap();
+            if history {
+                game.progress = Some(
+                    crate::progress::Session::open(
+                        temporary.path(),
+                        &manifest.id,
+                        &manifest.creator_key,
+                    )
+                    .unwrap(),
+                );
+                std::fs::write(
+                    temporary.path().join("progress"),
+                    b"blocked history directory",
+                )
+                .unwrap();
+            } else {
+                game.progress = None;
+                std::fs::rename(root.join("saves"), root.join("saved-directory")).unwrap();
+                std::fs::write(root.join("saves"), b"blocked save directory").unwrap();
+            }
+            assert!(game.step(0).is_err());
+            assert!(
+                game.audio_frame().is_empty(),
+                "history={history}: native rejected tick retained PCM"
+            );
+            assert_eq!(game.audio_channels(), 1);
+            assert!(
+                game.frame().commands.is_empty(),
+                "history={history}: native rejected tick retained drawing"
+            );
+            drop(game);
+            if !history {
+                std::fs::remove_file(root.join("saves")).unwrap();
+                std::fs::rename(root.join("saved-directory"), root.join("saves")).unwrap();
+            }
+        }
     }
 }

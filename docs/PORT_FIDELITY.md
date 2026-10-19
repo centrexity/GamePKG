@@ -2409,3 +2409,26 @@ pass separately. This removes host-control/ledger-lock contention from normal
 rendering, not allocator or OS scheduling latency. Signed SDK integration,
 browser playback, exact event timing, platform/device proof and the broader port
 fidelity requirements remain unfinished. No package/binary release is made.
+
+Preparing the game-facing music boundary exposed an existing rejected-tick output
+gap. Core/component ticks cleared PCM on a save-write error but retained drawing;
+a play-history error retained both. The native wrapper also retained PCM/drawing
+after history failure, and native save failure retained drawing. These paths now
+reset the transient frame and PCM format/data before returning the failure, while
+existing window/file-request rejection remains in place.
+
+A regression first reproduced retained PCM after a history write failure. It now
+proves a successful tick emits stereo PCM and drawing, then forces independent
+save/history directory failures and requires both outputs to be empty, for core
+and component Wasm. `tools/check_tick_output_rollback.py` builds a temporary
+signed no-dependency native fixture with a fixed synthetic key, verifies actual
+native execution, and checks the same save/history rejection behavior. It reads
+no user library or signing key and publishes no package/artifact. This establishes
+transient-output cleanup for these ordinary-game paths. Atomicity across already
+committed saves/history, engine background audio, signed music commands and the
+remaining port/runtime requirements are still separate unfinished work.
+The full library suite passes 179 tests with 18 explicit environment-dependent
+ignores; the selected signed native fault-injection test runs separately. Nineteen
+component, progress, window and file-request integration checks pass as well.
+The Wasm save-failure fixtures use the real guest save-write import with an
+allowed save permission, rather than pre-marking host save state dirty.

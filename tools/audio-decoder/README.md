@@ -290,3 +290,13 @@ cannot wait for a budget mutex. The null-device maintainer check explicitly runs
 frames to reach the actual callback while the producer/control lock stays held.
 This is a host-lock regression, not proof of hard real-time allocator/OS behavior
 or physical-speaker/platform fidelity. SDK/browser/event-timing work remains.
+
+Before introducing game-facing playback commands, transient-output rejection now
+also covers host persistence errors. Core/component and native ticks discard PCM
+and drawing when a save/history write fails. The focused core/component regression
+first reproduces the old stale PCM and then verifies both failure types after a
+successful emitting tick. `python3 tools/check_tick_output_rollback.py` creates a
+private synthetic signed package, builds native code, and verifies the same
+behavior in the actual native sandbox. This does not establish atomic persistent
+saves/history or rollback of already emitted background-engine audio. New music
+commands still require signed SDK wiring and commit only after a successful tick.

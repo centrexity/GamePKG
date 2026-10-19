@@ -623,6 +623,7 @@ impl Session {
             Ok(v) => {
                 if let Some(save) = &mut self.save {
                     if let Err(error) = save.commit() {
+                        self.frame.reset();
                         self.audio.clear();
                         self.audio_channels = 1;
                         self.user_files.finish(false);
