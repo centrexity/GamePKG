@@ -27,6 +27,12 @@ jobs:
       - name: Install audio development headers
         if: matrix.features == '--all-features'
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev libsdl2-mixer-dev
+      - name: Verify original SDL music repeat count and callback continuity
+        if: matrix.features == '--all-features'
+        run: |
+          mkdir -p target
+          cc -Wall -Wextra -Werror tests/music_loops.c -o target/music-loops-reference $(pkg-config --cflags --libs SDL2_mixer sdl2)
+          target/music-loops-reference
       - name: Check formatting
         run: cargo fmt --all -- --check
       - name: Verify optional decoder embedding bounds and input reset
@@ -366,6 +372,9 @@ jobs:
       - name: Verify signed original-rate effect assets and retained memory
         if: matrix.features == '--all-features'
         run: python3 tools/check_effect_assets.py target/reference-arkanoo
+      - name: Verify unchanged original playlist mute completion and retry controls
+        if: matrix.features == '--all-features'
+        run: python3 tools/check_original_music.py --original target/reference-arkanoo
       - name: Verify original menu buttons and whole-menu pixels
         if: matrix.features == '--all-features'
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tests/menu_controls_gui.py --original target/reference-arkanoo

@@ -3149,3 +3149,31 @@ udev development setup; no 32-bit device or GUI proof is claimed. The portabilit
 workflow now includes the manifest test on Linux32, Windows32 and Android32;
 its Android runner expects the corresponding sixth test executable. Those
 hosted runs are not counted as passed by this local evidence.
+
+### Original music contract before port migration
+
+Two independent oracles now check the music behavior that the port must retain.
+`tests/music_loops.c` plays generated stereo WAV data through actual SDL_mixer
+music callbacks. Values zero and one both produce one complete pass; two produces
+two passes. Every sample and the absence of gaps between passes are verified.
+Thus the original `Music::play(1)` does mean one pass for this API; the new desktop
+SDK's one-pass behavior needs no extra repeat at that boundary.
+
+`tools/check_original_music.py` compiles the unchanged pinned `src/audio.rs`,
+checks its complete source hash and supplies traced SDL controls and deterministic
+random draws. Real temporary directory enumeration verifies sorted lowercase-MP3
+selection and ignored extensions. The oracle checks random startup and next-song
+selection, startup play before saved mute settings, paused muted playback,
+volume changes while paused, unmute/resume, no advance while playing or muted,
+stop disabling automatic advance, empty playlists, load failure followed by a
+new random choice, gain clamping and all effect controls. In particular, the
+original pause is essential: its volume setter can update gain even while muted.
+Both oracles pass locally and have CI gates. No original recordings or modified
+upstream source are added by these tests.
+
+The control oracle traces original decisions; it is not proof of the current
+port's music playback. That port still uses guest-rendered effect PCM and lacks
+music/settings integration. Migrating its shared package now would break browser
+export because browser recorded audio is still rejected. Browser decoding,
+output-clock mixing and transactional controls must be implemented before the
+shared port can migrate with its desktop and browser behavior preserved.
