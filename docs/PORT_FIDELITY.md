@@ -2476,7 +2476,7 @@ a concurrent directory-creation race must have exactly one winner. Four Linux
 cases pass. Both Windows GNU harnesses cross-compile, and all four Windows cases
 (including long paths) pass under an isolated 64-bit Wine prefix. An initial
 compatibility failure on long-path conversion was corrected without relaxing the
-path test. Real Windows/macOS execution of the fix still needs hosted evidence.
+path test. Real Windows/macOS evidence is now available from the dedicated hosted run below.
 
 A small independent workflow tests the actual publication module on Linux,
 Windows and macOS, plus 32-bit Windows, without the full desktop build dependency.
@@ -2488,5 +2488,15 @@ performed during these tests.
 The local full library suite remains green (181 passed, 18 explicit ignores),
 with strict GUI/all-target checks, independent publication-harness checks and
 optimized CLI/GUI linking. The rebuilt entry points still validate the identical
-embedded decoder after relocation. Native hosted results for the new publication
-primitive remain pending until the dedicated workflow completes.
+embedded decoder after relocation. Native hosted results are recorded below.
+
+
+[Exclusive app publication run 39186503336](https://github.com/centrexity/GamePKG/actions/runs/39186503336)
+completed successfully at source revision `0710239`. Direct job logs confirm four
+actual native tests passed on Linux, macOS, Windows64 and Windows32: 16 checks in
+total, with no ignored or filtered tests. Windows logs include long-path cases
+on both architectures; Unix logs include dangling-link preservation. All hosts
+check the destination-creation race and file/empty/nonempty-directory invariants.
+The native strict-check steps also pass. This verifies the named publication
+invariant; the full application workflows and broader port/game fidelity remain
+separate in-progress requirements.

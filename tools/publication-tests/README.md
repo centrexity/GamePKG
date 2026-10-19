@@ -25,3 +25,9 @@ Windows and macOS, plus native 32-bit Windows execution. Local Windows GNU build
 can also compile this file directly as a standalone test harness; Wine results
 are compatibility evidence, not a substitute for native Windows/macOS runs.
 No release archives, user folders or real update downloads are used.
+
+The native workflow at source revision `0710239` passed all 16 cases across Linux,
+macOS, Windows64 and Windows32, including the long-path and creation-race checks:
+[verified run](https://github.com/centrexity/GamePKG/actions/runs/39186503336).
+This result covers the publication primitive, not full updater downloads or game
+feature/platform parity.
