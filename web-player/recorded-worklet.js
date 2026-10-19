@@ -30,6 +30,9 @@ class RecordedOutput extends AudioWorkletProcessor {
    if(data.kind==='music-port'&&!this.#music&&data.port instanceof MessagePort){this.#music=new RecordedMusicReceiver(data.port,this.#stream);ok=true;}
    else if(data.kind==='prepare')ok=this.#prepare(data);
    else if(data.kind==='finish')ok=this.#finish(data);
+   else if(data.kind==='reserve-clip'&&!this.#prepared)ok=this.#stream.reserveClip(data.clip,data.length,data.id);
+   else if(data.kind==='admit-clip'&&!this.#prepared)ok=this.#stream.adoptClip(data.clip,data.pcm,data.token);
+   else if(data.kind==='cancel-clip'&&!this.#prepared)ok=this.#stream.cancelClip(data.clip,data.token);
    else if(data.kind==='load'&&!this.#prepared)ok=this.#stream.load(data.clip,data.pcm);
    else if(data.kind==='unload'&&!this.#prepared)ok=this.#stream.unload(data.clip);
    else if(data.kind==='controls'&&!this.#prepared)ok=this.#stream.applyControls(data.commands,data.activeGeneration??null);

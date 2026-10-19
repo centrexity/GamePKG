@@ -3553,3 +3553,22 @@ fault tests still pass. This supersedes the earlier effect-only dispatcher's
 explicit Music Play/Stop refusal. Integration with the actual player checkpoint,
 manifest share partitioning, companion embedding and port migration remain open;
 recorded-audio exports stay disabled.
+
+Effect transfer admission now reserves the target cache slot before making the
+owned PCM copy. The worklet adopts that transferred, unshared, exact-span buffer
+without a second PCM copy. Thus the cache share covers the payload while it is
+in transit as well as after admission; the earlier separate full-payload staging
+charge is no longer needed. Reservation tokens bind admission/cancellation to
+one request; pending slots cannot play. Stale tokens, shared buffers, wrong
+indices/sizes, overcapacity and active unload remain denied. Cancellation returns
+only its matching unfinished slot. The ordinary snapshot-copy mixer load API
+retains its previous behavior for trusted test callers.
+
+A four-byte exact-capacity mixer test verifies transferred ownership and token
+isolation. Actual production WAV loading now succeeds with zero additional
+parent headroom beyond its reserved output share. All 59,179,008 SDL arithmetic
+cases, eighteen combined hashes, stream comparisons and real browser endpoint,
+checkpoint rollback, combined music and shutdown checks still pass. This fixes
+temporary duplication without increasing any allowance or reducing the 2 MiB
+clip limit. Manifest share/session allocation and actual player checkpoint
+integration remain open; recorded-audio exports remain disabled.

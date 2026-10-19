@@ -11,7 +11,7 @@ export class RecordedMixer {
   const {api,maximumMemoryBytes}=instantiateCompanion(wasm,MAX_CONVERTER_MEMORY,ABI);this.#api=api;this.#maximum=maximumMemoryBytes;this.#budget=budget;
   if(api.converter_init()!==0)throw Error('Converter initialization failed');this.#memory();
  }
- has(id){return !this.#closed&&!this.#failed&&Number.isInteger(id)&&id>=0&&id<32&&this.#clips[id]!==null;}
+ has(id){return !this.#closed&&!this.#failed&&Number.isInteger(id)&&id>=0&&id<32&&this.#clips[id] instanceof DataView;}
  get active(){return this.#voices.filter(Boolean).length;}
  get pcmBytes(){return this.#bytes;}
  get reservedBytes(){return this.#maximum+HOST_BYTES;}
@@ -25,8 +25,19 @@ export class RecordedMixer {
   if(!Number.isInteger(id)||id<0||id>=32||this.#clips[id]||!(pcm instanceof Uint8Array)||!Number.isInteger(length)||length<4||length>MAX_CLIP_BYTES||length%4||length>this.#budget-this.reservedBytes-this.#bytes)return false;
   const owned=new Uint8Array(length);owned.set(new Uint8Array(pcm.buffer,pcm.byteOffset,length));this.#clips[id]=new DataView(owned.buffer);this.#bytes+=length;return true;
  }
+ reserveClip(id,length,token){
+  this.#ready();if(!Number.isInteger(id)||id<0||id>=32||this.#clips[id]||!Number.isInteger(length)||length<4||length>MAX_CLIP_BYTES||length%4||!Number.isSafeInteger(token)||token<1||length>this.#budget-this.reservedBytes-this.#bytes)return false;
+  this.#clips[id]={byteLength:length,token,pending:true};this.#bytes+=length;return true;
+ }
+ adoptClip(id,pcm,token){
+  this.#ready();if(!Number.isInteger(id)||id<0||id>=32)return false;const pending=this.#clips[id];
+  if(!pending?.pending||pending.token!==token||!(pcm instanceof Uint8Array)||!(pcm.buffer instanceof ArrayBuffer)||pcm.byteOffset!==0||pcm.buffer.byteLength!==pcm.byteLength||pcm.byteLength!==pending.byteLength)return false;
+  // Called only for a transferred buffer on the private worklet control port.
+  this.#clips[id]=new DataView(pcm.buffer);return true;
+ }
+ cancelClip(id,token){this.#ready();if(!Number.isInteger(id)||id<0||id>=32)return false;const pending=this.#clips[id];return pending?.pending&&pending.token===token?this.unload(id):false;}
  unload(id){this.#ready();if(!Number.isInteger(id)||id<0||id>=32||!this.#clips[id]||this.#voices.some(voice=>voice?.id===id))return false;this.#bytes-=this.#clips[id].byteLength;this.#clips[id]=null;return true;}
- play(id){this.#ready();if(!Number.isInteger(id)||id<0||id>=32||!this.#clips[id])return -1;const slot=this.#voices.indexOf(null);if(slot<0)return -1;this.#voices[slot]={id,offset:0};return slot;}
+ play(id){this.#ready();if(!this.has(id))return -1;const slot=this.#voices.indexOf(null);if(slot<0)return -1;this.#voices[slot]={id,offset:0};return slot;}
  volume(value){this.#ready();if(!Number.isInteger(value)||value<0||value>128)return false;this.#volume=value;return true;}
  pause(value){this.#ready();if(typeof value!=='boolean')return false;this.#paused=value;return true;}
  stop(){this.#ready();this.#voices.fill(null);}

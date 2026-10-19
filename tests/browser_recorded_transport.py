@@ -146,7 +146,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-worklet-mixer-') as temporary:
    const fresh=await RecordedOutputClient.open(wasm,4194304,budget);if(!(await fresh.request('snapshot')).ok)throw Error('Output did not recover');await fresh.close();if(budget.used)throw Error('Recovered output leaked reservation');const post=MessagePort.prototype.postMessage;MessagePort.prototype.postMessage=function(message,...rest){if(message?.kind==='snapshot')return;return post.call(this,message,...rest);};let timedOut=false;
    try{await RecordedOutputClient.open(wasm,4194304,budget);}catch(error){timedOut=String(error).includes('deadline');}finally{MessagePort.prototype.postMessage=post;}
    if(!timedOut||budget.used)throw Error('Unresponsive output escaped deadline or leaked memory');
-   const encoded=await load('tone.wav'),staging=encoded.length-44,assetBudget=new RecordedBudget(budget.limit+staging),effectOutput=await RecordedOutputClient.open(wasm,4194304,assetBudget);
+   const encoded=await load('tone.wav'),assetBudget=new RecordedBudget(budget.limit),effectOutput=await RecordedOutputClient.open(wasm,4194304,assetBudget);
    const loaded=await effectOutput.loadWav(0,encoded);if(!loaded.ok||encoded.length!==40044||assetBudget.used!==budget.limit)throw Error('WAV load ownership or staging charge');
    const invalid=encoded.slice();invalid[24]^=1;denied=false;try{await effectOutput.loadWav(1,invalid);}catch{denied=true;}if(!denied||assetBudget.used!==budget.limit)throw Error('Malformed WAV escaped admission');
    const playing=await effectOutput.request('controls',{commands:[[0,0]]});if(!playing.ok||playing.activeEffects!==1)throw Error('Admitted WAV did not play');

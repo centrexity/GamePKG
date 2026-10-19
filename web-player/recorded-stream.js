@@ -23,6 +23,9 @@ export class RecordedStream {
  musicVolume(value){return !this.#closed&&this.#queue.volume(value);}
  musicPause(value){return !this.#closed&&this.#queue.pause(value);}
  load(id,pcm){return !this.#closed&&this.#mixer.load(id,pcm);}
+ reserveClip(id,length,token){return !this.#closed&&this.#mixer.reserveClip(id,length,token);}
+ adoptClip(id,pcm,token){return !this.#closed&&this.#mixer.adoptClip(id,pcm,token);}
+ cancelClip(id,token){return !this.#closed&&this.#mixer.cancelClip(id,token);}
  unload(id){return !this.#closed&&this.#mixer.unload(id);}
  play(id){return this.#closed?-1:this.#mixer.play(id);}
  effectVolume(value){return !this.#closed&&this.#mixer.volume(value);}

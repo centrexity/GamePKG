@@ -27,9 +27,14 @@ export class RecordedOutputClient {
  async connectMusic(sender,port){if(this.#closed||this.#music||!(sender instanceof RecordedMusicSender))return false;try{const reply=await this.request('music-port',{port},[port]);if(!reply.ok||this.#closed){sender.close();return false;}this.#music=sender;return true;}catch(error){sender.close();throw error;}}
  async loadWav(clip,encoded){
   if(this.#closed||!Number.isInteger(clip)||clip<0||clip>=32)throw Error('Invalid effect clip');
-  const source=originalEffectPCM(encoded),reservation=this.#parent?.reserve(source.length);
-  try{const pcm=source.slice();return await this.request('load',{clip,pcm},[pcm.buffer]);}
-  finally{if(this.#closed&&this.#closing)await this.#closing;reservation?.release();}
+  const source=originalEffectPCM(encoded);let reserved=null,admitted=false;
+  try{
+   reserved=await this.request('reserve-clip',{clip,length:source.length});if(!reserved.ok)return reserved;
+   const pcm=source.slice(),result=await this.request('admit-clip',{clip,token:reserved.id,pcm},[pcm.buffer]);admitted=result.ok;return result;
+  }finally{
+   if(this.#closed&&this.#closing)await this.#closing;
+   else if(reserved?.ok&&!admitted){const cancelled=await this.request('cancel-clip',{clip,token:reserved.id});if(!cancelled.ok){await this.close();throw Error('Effect admission cancellation failed');}}
+  }
  }
  get closed(){return this.#closed;}
  volume(value){if(this.#closed||!Number.isInteger(value)||value<0||value>128)return false;this.#gain.gain.value=value/128;return true;}
@@ -45,7 +50,7 @@ export class RecordedOutputClient {
  request(kind,fields={},transfer=[]){
   if(this.#closed)return Promise.reject(Error('Audio output is closed'));
   if(this.#pending)return Promise.reject(Error('Audio output request already pending'));
-  if(!['snapshot','load','unload','controls','music-port','prepare','finish'].includes(kind))return Promise.reject(Error('Invalid audio output operation'));
+  if(!['snapshot','load','unload','controls','music-port','prepare','finish','reserve-clip','admit-clip','cancel-clip'].includes(kind))return Promise.reject(Error('Invalid audio output operation'));
   if(this.#serial>=Number.MAX_SAFE_INTEGER){this.#fail(Error('Audio request counter exhausted'));return Promise.reject(Error('Audio request counter exhausted'));}
   const id=++this.#serial;
   return new Promise((resolve,reject)=>{
