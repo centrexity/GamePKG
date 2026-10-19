@@ -3637,3 +3637,21 @@ close. A signed-game browser test injects that failure in both profiles, verifie
 no new guest worker is created, then explicitly cleans up the test context.
 Corrupt-companion startup failures with zero retained ownership remain recoverable.
 All final recorded-player checks pass with the one-request guard intact.
+
+### Arkanoo recorded-backend migration inputs
+
+The current port still mixes its five 48 kHz effects in guest ticks. Migration
+must use original 44.1 kHz input before shared mixing/conversion, rather than
+resample those already converted files back and compound conversion error.
+The maintainer effect checker can now create an explicit new private output of
+exact SDL-decoded original-rate inputs, verify pinned original hashes and credit
+source, and optionally prepare the sorted original MP3 playlist. It records
+source/oracle/PCM/WAV hashes without changing existing reference fixtures.
+
+The private preparation passes signed-package exact-PCM loading and cleanup for
+all five clips: 2,029,392 PCM bytes fit inside the existing 4 MiB effect share.
+Nine music files and the playlist are retained only in the explicit private
+output. No recording, signed package or binary release is published. The live
+port is unchanged while its event/mute/pause/settings/playlist controller and
+actual native/browser migration checks are prepared. Source preparation is a
+maintainer operation; players require no Python, SDL tools or external decoder.
