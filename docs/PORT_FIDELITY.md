@@ -3533,3 +3533,23 @@ still pass. Music Play/Stop resolution is explicitly rejected until its async
 loading and generation ownership are wired; it is never silently skipped. Actual
 player storage dispatch, full share allocation and recorded-audio export remain
 unfinished. No package/binary release or game recording is published.
+
+The frame dispatcher now resolves music Play/Stop too. It assigns increasing
+worklet generations while preparing and retains only the final track action.
+A failed checkpoint starts no decoder and cannot stop the existing track.
+After a successful combined batch, the asynchronous music loader retires old
+output, cancels older startup, opens the supervised decoder from the shared
+budget and attaches only a still-current result. Decode/open failure publishes
+that generation's Failed state; cancelled/retired loads cannot overwrite newer
+music. Stop and dispatcher closure cancel pending startup and retire sources.
+
+Actual Chromium combines paused effect/music publication under one 16 MiB
+component ledger, verifies discarded Play and Stop, malformed MP3 failure,
+fresh complete 11,520-frame recovery, committed Stop during a new startup and
+closure during replacement. Two Play commands in the final frame create only
+one decoder. All five created decoder workers terminate and reservations return
+to zero. Existing exact PCM, cache rollback, production endpoint and supervisor
+fault tests still pass. This supersedes the earlier effect-only dispatcher's
+explicit Music Play/Stop refusal. Integration with the actual player checkpoint,
+manifest share partitioning, companion embedding and port migration remain open;
+recorded-audio exports stay disabled.

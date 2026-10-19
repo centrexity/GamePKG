@@ -13,7 +13,7 @@ class Quiet(SimpleHTTPRequestHandler):
  def log_message(self,*args):pass
 with tempfile.TemporaryDirectory(prefix='gamepkg-worklet-mixer-') as temporary:
  root=Path(temporary)
- for name in ['recorded-decoder.js','recorded-mixer.js','recorded-queue.js','recorded-stream.js','recorded-transport.js','recorded-decoder-client.js','recorded-decoder-worker.js','recorded-budget.js','recorded-worklet.js','recorded-output-client.js','recorded-wav.js','recorded-frame-dispatcher.js']:shutil.copy2(project/'web-player'/name,root/name)
+ for name in ['recorded-decoder.js','recorded-mixer.js','recorded-queue.js','recorded-stream.js','recorded-transport.js','recorded-decoder-client.js','recorded-decoder-worker.js','recorded-budget.js','recorded-worklet.js','recorded-output-client.js','recorded-wav.js','recorded-frame-dispatcher.js','recorded-music-loader.js']:shutil.copy2(project/'web-player'/name,root/name)
  shutil.copy2(project/'tests/fixtures/recorded-transport-worklet.js',root/'stream-worklet.js');shutil.copy2(companion,root/'converter.wasm')
  shutil.copy2(project/'tests/fixtures/sdl-live-audio-reference.json',root/'reference.json')
  shutil.copy2(Path(sys.argv[2]),root/'decoder.wasm')
@@ -169,5 +169,25 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-worklet-mixer-') as temporary:
   })().then(value=>done({value})).catch(error=>done({error:String(error.stack||error)}));''')
   assert 'error' not in dispatched,dispatched
   print('Production effect frame dispatcher: staged cache rollback, checkpoint-only publication, malformed asset rollback and close during admission passed.',json.dumps(dispatched['value']),flush=True)
+  musicFrames=browser.execute_async_script('''const done=arguments[arguments.length-1];(async()=>{
+   const {RecordedOutputClient}=await import('./recorded-output-client.js'),{RecordedBudget}=await import('./recorded-budget.js'),{RecordedFrameDispatcher}=await import('./recorded-frame-dispatcher.js'),{RecordedMusicLoader}=await import('./recorded-music-loader.js'),{RecordedMusicSender}=await import('./recorded-transport.js');
+   const load=async name=>new Uint8Array(await(await fetch(name)).arrayBuffer()),budget=new RecordedBudget(16777216),output=await RecordedOutputClient.open(await load('converter.wasm'),4194304,budget);output.volume(0);await output.resume();
+   const channel=new MessageChannel(),sender=new RecordedMusicSender(channel.port1,budget);if(!await output.connectMusic(sender,channel.port2))throw Error('Frame music connection');
+   const loader=new RecordedMusicLoader(sender,await load('decoder.wasm'),budget),dispatcher=new RecordedFrameDispatcher(output,new Map([['tone.mp3',await load('tone.mp3')],['tone.wav',await load('tone.wav')],['bad.mp3',new Uint8Array([1])]]),{effects:true,music:true,musicLoader:loader});
+   const frame=(serial,recordedControls)=>({epoch:0,serial,recordedControls,recordedActiveGeneration:null}),initial=budget.used;
+   const BaseWorker=window.Worker;let created=0,terminated=0;window.Worker=class extends BaseWorker{constructor(...args){super(...args);created++;}terminate(){terminated++;return super.terminate();}};
+   if(!await dispatcher.prepare(frame(1,[[4,'tone.mp3',0],[6,'',1]]))||loader.loading||budget.used!==initial||!await dispatcher.finish(0,1,false))throw Error('Discarded Play started decoder');
+   if(!await dispatcher.prepare(frame(2,[[2,'',1],[0,'tone.wav',0],[4,'tone.mp3',0],[6,'',1]]))||!await dispatcher.finish(0,2,true))throw Error('Combined committed frame failed');
+   const wait=async predicate=>{const end=performance.now()+3000;for(;;){const state=await output.request('snapshot');if(predicate(state))return state;if(performance.now()>end)throw Error('Frame music stalled '+JSON.stringify(state));await new Promise(r=>setTimeout(r,5));}};
+   const paused=await wait(s=>s.queuedFrames===4800);if(paused.playedFrames||paused.musicStatus!=='paused'||paused.activeEffects!==1)throw Error('Combined frame pause changed playback');
+   if(!await dispatcher.prepare(frame(3,[[7,'',0]]))||!await dispatcher.finish(0,3,false))throw Error('Failed Stop checkpoint');const preserved=await output.request('snapshot');if(preserved.generation!==paused.generation||preserved.queuedFrames!==4800)throw Error('Failed Stop changed music');
+   if(!await dispatcher.prepare(frame(4,[[4,'bad.mp3',0]]))||!await dispatcher.finish(0,4,true))throw Error('Async failure Play not committed');await wait(s=>s.musicStatus==='failed');
+   if(!await dispatcher.prepare(frame(5,[[3,'',0],[4,'tone.mp3',0]]))||!await dispatcher.finish(0,5,true))throw Error('Fresh music recovery rejected');const ended=await wait(s=>s.musicStatus==='ended');if(ended.playedFrames!==11520||ended.activeEffects)throw Error('Fresh music incomplete');
+   if(!await dispatcher.prepare(frame(6,[[4,'tone.mp3',0]]))||!await dispatcher.finish(0,6,true)||!loader.loading)throw Error('Fresh startup not queued');
+   if(!await dispatcher.prepare(frame(7,[[7,'',0]]))||!await dispatcher.finish(0,7,true))throw Error('Committed Stop rejected');await wait(s=>s.musicStatus==='stopped'&&s.queuedFrames===0);while(loader.loading)await new Promise(r=>setTimeout(r,1));if(budget.used!==initial)throw Error('Stop kept decoder reservations');
+   if(!await dispatcher.prepare(frame(8,[[4,'bad.mp3',0],[4,'tone.mp3',0]]))||!await dispatcher.finish(0,8,true)||!loader.loading)throw Error('Final replacement startup not queued');await dispatcher.close();window.Worker=BaseWorker;if(budget.used||created!==5||terminated!==created)throw Error('Closing music frame leaked reservations/workers or decoded an intermediate Play '+JSON.stringify({created,terminated}));return {discardedPlay:true,combinedPause:true,discardedStop:true,committedStop:true,asyncFailure:true,recoveredFrames:ended.playedFrames,closedDuringLoad:true,created,terminated};
+  })().then(value=>done({value})).catch(error=>done({error:String(error.stack||error)}));''')
+  assert 'error' not in musicFrames,musicFrames
+  print('Production combined frame dispatcher: discarded Play/Stop, committed paused effects/music, asynchronous codec failure, fresh recovery and close during startup passed.',json.dumps(musicFrames['value']),flush=True)
  finally:
   browser.quit();server.shutdown();server.server_close()

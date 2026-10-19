@@ -45,6 +45,8 @@ export class RecordedMusicSender {
  constructor(port,budget){if(budget!==undefined&&!(budget instanceof RecordedBudget))throw Error('Invalid transport memory allowance');this.#budget=budget;this.#port=port;port.onmessage=({data})=>this.#receive(data);port.onmessageerror=()=>this.#fail();port.start();}
  #retire(){this.#decoder?.close();this.#decoder=null;this.#busy=false;}
  #fail(){if(this.#closed)return;this.#retire();this.#port.postMessage({kind:'failed',generation:this.#generation});}
+ retire(){if(!this.#closed)this.#retire();}
+ failGeneration(next){if(this.#closed||!generation(next)||next<=this.#generation)return false;this.#retire();this.#generation=next;this.#port.postMessage({kind:'failed',generation:next});return true;}
  start(next,decoder){
   if(this.#closed||!generation(next)||next<=this.#generation||!decoder||typeof decoder.read!=='function'||typeof decoder.close!=='function')return false;
   this.#retire();this.#generation=next;this.#decoder=decoder;this.#port.postMessage({kind:'begin',generation:next});return true;
