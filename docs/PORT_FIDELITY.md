@@ -2601,3 +2601,37 @@ on native 64-bit and actual ELF32 Linux. The original-recording case is an
 explicit ordinary-suite ignore and passes separately with the private SDL inputs.
 Strict GUI/all-target checks pass on both Rust 1.89 and 1.99.
 Optimized CLI and GUI linking also passes with the decoder embedded.
+
+
+## Whole-tick effect command publication (2026-10-18)
+
+The host audio producer now accepts an ordered batch of effect commands under
+one lock. This is needed before guest staging can publish a successful tick
+without partially enqueueing it. The existing 32-command bound and preallocated
+queue remain unchanged. Play/volume/pause/stop helpers share this path. Invalid
+trailing values, queue exhaustion, inactive sources or closed consumers reject
+the whole nonempty batch without retaining clip owners. Empty batches are open-
+device no-ops. Voice exhaustion remains an asynchronous callback error.
+
+Focused tests check an original-source attachment plus exactly 31 commands,
+rejection at capacity, invalid Stop/volume rollback, clip lifetime, ordered gain/
+pause/play application and eight concurrent four-command producers with no
+interleaving. The real combined callback check also stages startup/resume as
+batches, rejects an invalid Stop batch and proves the retained paused effect
+subsequently becomes audible. Guest ABI exposure, tick/save/history staging,
+per-game memory carving and original event/stop timing are still required.
+
+For this handoff change, the complete audio-enabled library suite passes 189
+cases with 18 explicit ignores. The private embedded-decoder run passes all nine
+full-track hashes/lengths and actual callback checks, including the new rejected
+batch/resume path. Strict GUI/all-target checks pass on Rust 1.89 and 1.99.
+The default-feature hosted Rust job at source `092f042` passed; its full-feature
+job remains active and must not yet be recorded as a complete workflow pass.
+
+The 32-bit workflow also now preserves an already active run rather than
+cancelling it on the next source push, matching the full/native workflow policy.
+This lets the existing Windows32/Android32 effect-asset qualification finish.
+The newest pending revision can still supersede an older pending revision;
+cancelled snapshots do not count as passes. Test concurrency and limits are
+unchanged.
+Optimized CLI and GUI linking passes with the embedded decoder after this handoff change.

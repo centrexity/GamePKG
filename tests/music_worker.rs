@@ -317,19 +317,24 @@ fn combined_original_rate_music_and_effects_reach_the_device_without_game_ticks(
     }
     // Effects have their own output-clock lifetime even with music stopped.
     service.stop().unwrap();
-    assert!(player.effect_volume(0));
+    use gamepkg::audio::EffectCommand;
     assert!(!player.effect_volume(129));
-    assert!(player.effect_pause(true));
     let effects = budget.partition(128 * 1024).unwrap();
     let clip = gamepkg::audio_voices::Clip::new(&[20000; 32000], &effects).unwrap();
-    assert!(player.effect_play(clip));
+    assert!(player.effect_batch(&[
+        EffectCommand::Volume(0),
+        EffectCommand::Pause(true),
+        EffectCommand::Play(clip),
+    ]));
     drop(effects); // Pending/playing clips must retain the parent's cache charge.
     std::thread::sleep(std::time::Duration::from_millis(20));
     let silent = player.non_silent_frames();
     std::thread::sleep(std::time::Duration::from_millis(20));
     assert_eq!(player.non_silent_frames(), silent);
-    assert!(player.effect_volume(128));
-    assert!(player.effect_pause(false));
+    // A malformed batch must not partially stop the retained voice. Resuming
+    // it below proves the Stop was never applied to the real callback.
+    assert!(!player.effect_batch(&[EffectCommand::Stop, EffectCommand::Volume(129)]));
+    assert!(player.effect_batch(&[EffectCommand::Volume(128), EffectCommand::Pause(false)]));
     let start = std::time::Instant::now();
     while player.non_silent_frames() == silent {
         assert!(start.elapsed() < std::time::Duration::from_secs(5));

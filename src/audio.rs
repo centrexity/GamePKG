@@ -79,6 +79,15 @@ enum Command {
     Pause(bool),
     Stop,
 }
+/// Host-owned effect controls staged by one successful game tick. Acceptance
+/// means the whole batch was queued; voice exhaustion is reported by error().
+#[derive(Clone)]
+pub enum EffectCommand {
+    Play(Arc<crate::audio_voices::Clip>),
+    Volume(u8),
+    Pause(bool),
+    Stop,
+}
 struct Controls {
     commands: VecDeque<Command>,
     original: bool,
@@ -202,6 +211,34 @@ pub(crate) struct Sink {
     shared: Arc<Shared>,
 }
 impl Sink {
+    pub(crate) fn effect_batch(&self, commands: &[EffectCommand]) -> bool {
+        if commands.len() > MAX_COMMANDS
+            || commands
+                .iter()
+                .any(|command| matches!(command, EffectCommand::Volume(volume) if *volume > 128))
+        {
+            return false;
+        }
+        self.shared.controls.lock().is_ok_and(|mut controls| {
+            if self.shared.closed.load(Ordering::Acquire)
+                || (!commands.is_empty() && !controls.original)
+                || commands.len() > MAX_COMMANDS - controls.commands.len()
+            {
+                return false;
+            }
+            // One producer lock publishes the entire batch. The callback
+            // either sees all of it next time or continues its current state.
+            for command in commands {
+                controls.commands.push_back(match command {
+                    EffectCommand::Play(clip) => Command::Play(clip.clone()),
+                    EffectCommand::Volume(volume) => Command::Volume(*volume),
+                    EffectCommand::Pause(paused) => Command::Pause(*paused),
+                    EffectCommand::Stop => Command::Stop,
+                });
+            }
+            true
+        })
+    }
     pub fn submit(&self, samples: &[i16]) -> bool {
         self.submit_channels(samples, 1)
     }
@@ -278,16 +315,22 @@ impl Player {
     /// True acknowledges enqueueing, not channel allocation. Exhausted voices
     /// are reported through error() after the callback processes the command.
     pub fn effect_play(&self, clip: Arc<crate::audio_voices::Clip>) -> bool {
-        self.sink.command(Command::Play(clip), true)
+        self.effect_batch(&[EffectCommand::Play(clip)])
     }
     pub fn effect_volume(&self, volume: u8) -> bool {
-        volume <= 128 && self.sink.command(Command::Volume(volume), true)
+        self.effect_batch(&[EffectCommand::Volume(volume)])
     }
     pub fn effect_pause(&self, paused: bool) -> bool {
-        self.sink.command(Command::Pause(paused), true)
+        self.effect_batch(&[EffectCommand::Pause(paused)])
     }
     pub fn effect_stop(&self) -> bool {
-        self.sink.command(Command::Stop, true)
+        self.effect_batch(&[EffectCommand::Stop])
+    }
+    /// Publish up to 32 validated effect controls together. Invalid values,
+    /// insufficient queue space, inactive sources and closed devices reject
+    /// the entire batch without retaining any recording references.
+    pub fn effect_batch(&self, commands: &[EffectCommand]) -> bool {
+        self.sink.effect_batch(commands)
     }
     #[cfg(any(feature = "gui", test))]
     pub(crate) fn sink(&self) -> Sink {
@@ -397,6 +440,112 @@ fn output<T: cpal::SizedSample + cpal::FromSample<f32>>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn effect_batches_are_validated_and_published_whole_at_callback_boundaries() {
+        let (mut device, sink) = Device::new(100);
+        let budget = crate::memory_budget::Budget::new(128 * 1024);
+        let clip = crate::audio_voices::Clip::new(&[123, -456], &budget).unwrap();
+        assert!(!sink.effect_batch(&[EffectCommand::Play(clip.clone())]));
+        assert!(sink.effect_batch(&[]));
+        let source = crate::music::fixture_output_at_rate(&[[0; 2]], 44100);
+        let playback = crate::audio_mix_stream::Playback::new(source, &budget).unwrap();
+        assert!(sink.command(Command::Original(Some(Box::new(playback)), 0), false));
+        let mut batch = vec![EffectCommand::Pause(false); 28];
+        batch.extend([
+            EffectCommand::Volume(64),
+            EffectCommand::Play(clip.clone()),
+            EffectCommand::Pause(true),
+        ]);
+        assert!(sink.effect_batch(&batch));
+        let owners = Arc::strong_count(&clip);
+        assert!(!sink.effect_batch(&[EffectCommand::Stop, EffectCommand::Play(clip.clone())]));
+        assert_eq!(Arc::strong_count(&clip), owners);
+        assert_eq!(
+            sink.shared.controls.lock().unwrap().commands.len(),
+            MAX_COMMANDS
+        );
+        device.begin();
+        let effects = device.buffer.original.as_mut().unwrap().effects();
+        assert_eq!(effects.active(), 1);
+        assert_eq!(effects.frame([7, 8]), [7, 8]); // final pause applied
+        assert!(!sink.effect_batch(&[EffectCommand::Stop, EffectCommand::Volume(129)]));
+        assert!(!sink.effect_batch(&vec![EffectCommand::Stop; MAX_COMMANDS + 1]));
+        device.begin();
+        assert_eq!(
+            device.buffer.original.as_mut().unwrap().effects().active(),
+            1
+        );
+        assert!(sink.effect_batch(&[
+            EffectCommand::Pause(false),
+            EffectCommand::Stop,
+            EffectCommand::Play(clip.clone()),
+            EffectCommand::Volume(64),
+        ]));
+        device.begin();
+        assert_eq!(
+            device
+                .buffer
+                .original
+                .as_mut()
+                .unwrap()
+                .effects()
+                .frame([0; 2]),
+            [61, -228]
+        );
+        assert_eq!(sink.shared.failures.load(Ordering::Acquire), 0);
+        drop(batch);
+        drop(clip);
+        drop(device);
+        assert_eq!(budget.used(), 0);
+        assert!(!sink.effect_batch(&[]));
+        assert!(!sink.effect_batch(&[EffectCommand::Stop]));
+    }
+    #[test]
+    fn concurrent_effect_batches_do_not_interleave_or_exceed_the_existing_queue() {
+        let (mut device, sink) = Device::new(100);
+        let budget = crate::memory_budget::Budget::new(128 * 1024);
+        let source = crate::music::fixture_output_at_rate(&[[0; 2]], 44100);
+        let playback = crate::audio_mix_stream::Playback::new(source, &budget).unwrap();
+        assert!(sink.command(Command::Original(Some(Box::new(playback)), 0), false));
+        device.begin();
+        let start = Arc::new(std::sync::Barrier::new(8));
+        let threads = (0..8)
+            .map(|volume| {
+                let sink = sink.clone();
+                let start = start.clone();
+                std::thread::spawn(move || {
+                    start.wait();
+                    sink.effect_batch(&std::array::from_fn::<_, 4, _>(|_| {
+                        EffectCommand::Volume(volume)
+                    }))
+                })
+            })
+            .collect::<Vec<_>>();
+        for thread in threads {
+            assert!(thread.join().unwrap());
+        }
+        assert!(!sink.effect_batch(&[EffectCommand::Stop]));
+        let controls = sink.shared.controls.lock().unwrap();
+        let volumes = controls
+            .commands
+            .iter()
+            .map(|command| match command {
+                Command::Volume(volume) => *volume,
+                _ => panic!("unexpected callback command"),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(volumes.len(), MAX_COMMANDS);
+        let mut seen = [false; 8];
+        for batch in volumes.as_chunks::<4>().0 {
+            assert!(batch.iter().all(|volume| *volume == batch[0]));
+            assert!(!seen[batch[0] as usize]);
+            seen[batch[0] as usize] = true;
+        }
+        assert!(seen.into_iter().all(|seen| seen));
+        drop(controls);
+        device.begin();
+        assert_eq!(sink.shared.failures.load(Ordering::Acquire), 0);
+    }
     #[test]
     fn callback_consumes_actual_pcm_and_music_while_host_controls_are_locked() {
         let (mut device, sink) = Device::new(100);

@@ -391,3 +391,26 @@ and native SDL libraries are maintainer dependencies only.
 This loader is not a guest API or a migrated port. Guest commands, transactional
 tick commit, per-game memory carving, browser playback, original event timing
 and original-rate package-asset migration still need integration.
+
+### Whole-tick effect handoff
+
+`audio::Player::effect_batch` publishes up to 32 host-owned `EffectCommand`s
+under one producer lock. Play, volume, pause and stop retain their order. Invalid
+volume, overlong batches, insufficient remaining queue space, inactive original
+sources and closed devices reject the complete nonempty batch; rejected batches
+retain no extra clip references. An empty batch is a no-op while the device is
+open. The callback sees a whole accepted batch at its next control boundary, or
+keeps rendering its existing state if the producer lock is busy. This uses the
+existing 32-command queue and its preallocated storage. Fifth-voice exhaustion
+is still an asynchronous playback error rather than enqueue rejection.
+
+The individual effect methods use this same path. Tests cover the exact shared
+queue boundary, invalid trailing commands, preserved clips, ordered application,
+closed consumers and eight concurrent producers with no batch interleaving. The
+private null-device check now batches muted/paused effect startup and resume;
+an invalid Stop/volume batch cannot kill the retained voice, which subsequently
+produces real callback output after resume. No game ticks advance that playback.
+
+Guest runtime staging and save/history commit wiring must use this handoff only
+after a successful tick. This host operation alone does not expose guest controls
+or establish original event/stop timing.
