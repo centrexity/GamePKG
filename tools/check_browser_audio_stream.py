@@ -8,6 +8,7 @@ result=subprocess.run(['cargo','build','--locked','--release','--target','wasm32
 assert result.returncode==0,result.stderr
 wasm=project/'tools/audio-converter/target/wasm32-unknown-unknown/release/gamepkg_host_audio_converter.wasm'
 subprocess.run(['node','tests/web_recorded_budget.mjs'],cwd=project,check=True,timeout=30)
+subprocess.run(['node','tests/web_recorded_wav.mjs'],cwd=project,check=True,timeout=30)
 subprocess.run(['node','tests/web_recorded_queue.mjs'],cwd=project,check=True,timeout=30)
 subprocess.run(['node','tests/web_recorded_transport.mjs'],cwd=project,check=True,timeout=30)
 subprocess.run(['node','tests/web_recorded_stream.mjs',str(wasm)],cwd=project,check=True,timeout=30)

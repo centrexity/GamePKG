@@ -3454,3 +3454,34 @@ remain unchanged. This endpoint has no test capture buffer and runs independentl
 of game ticks. A supervised player-side request client, effect decoding/asset
 resolution, committed-frame dispatch and export embedding still need integration;
 recorded-audio exports remain rejected and current ports remain unmigrated.
+
+The production player-side recorded output supervisor now owns a dedicated
+AudioContext, one pending request, session/request identity and bounded response
+validation. Module startup uses the existing five-second startup allowance;
+requests use the existing 250 ms browser execution deadline, including rejection
+of late replies. Startup cancellation is immediate. A parent reservation covers
+the effect/worklet share and three simultaneously owned converter snapshots;
+closure retires an attached music sender and releases capacity only after the
+context's close promise succeeds. Failed context shutdown retains the charge.
+Caller-owned assets and browser/JIT/GC overhead remain separate.
+
+Actual Chromium passes request backpressure, master-zero output-clock startup,
+connected decoder shutdown, reservation retention during context shutdown,
+immediate cancelled startup and fresh recovery. Dropping a real snapshot request
+reproduces an unresponsive endpoint and verifies deadline termination/cleanup.
+All existing exact SDL/MP3 and production endpoint checks still pass. Frame
+checkpoint dispatch, effect asset decoding/admission, manifest share wiring and
+export embedding remain unfinished; recorded-audio exports remain rejected.
+
+Effect asset admission now checks the desktop host's canonical 44-byte RIFF/WAVE
+header, exact 44.1 kHz stereo S16 format, byte rates/alignment and 2 MiB PCM cap.
+The parser returns an existing little-endian PCM view; it allocates no decoded
+copy. All 44 individual header-byte mutations, short/misaligned/oversized clips,
+exact minimum/maximum, offset views and shared/invalid backing stores are tested.
+The output supervisor's WAV loader reserves its owned transfer staging before
+copying, awaits worklet cache admission, and retains staging through context
+shutdown when a pending load is cancelled. Real Chromium verifies generated WAV
+playback, malformed rejection, unchanged caller input, returned staging capacity
+and cancellation cleanup. The worklet cache share and transfer staging must both
+fit the same supplied parent; no allowance or clip cap was raised. Frame-level
+asset resolution/cache rollback and final manifest share wiring remain open.

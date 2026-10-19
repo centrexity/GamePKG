@@ -13,7 +13,7 @@ class Quiet(SimpleHTTPRequestHandler):
  def log_message(self,*args):pass
 with tempfile.TemporaryDirectory(prefix='gamepkg-worklet-mixer-') as temporary:
  root=Path(temporary)
- for name in ['recorded-decoder.js','recorded-mixer.js','recorded-queue.js','recorded-stream.js','recorded-transport.js','recorded-decoder-client.js','recorded-decoder-worker.js','recorded-budget.js','recorded-worklet.js']:shutil.copy2(project/'web-player'/name,root/name)
+ for name in ['recorded-decoder.js','recorded-mixer.js','recorded-queue.js','recorded-stream.js','recorded-transport.js','recorded-decoder-client.js','recorded-decoder-worker.js','recorded-budget.js','recorded-worklet.js','recorded-output-client.js','recorded-wav.js']:shutil.copy2(project/'web-player'/name,root/name)
  shutil.copy2(project/'tests/fixtures/recorded-transport-worklet.js',root/'stream-worklet.js');shutil.copy2(companion,root/'converter.wasm')
  shutil.copy2(project/'tests/fixtures/sdl-live-audio-reference.json',root/'reference.json')
  shutil.copy2(Path(sys.argv[2]),root/'decoder.wasm')
@@ -122,5 +122,26 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-worklet-mixer-') as temporary:
   })().then(value=>done({value})).catch(error=>done({error:String(error.stack||error)}));''')
   assert 'error' not in endpoint,endpoint
   print('Production recorded AudioWorklet: real output, atomic rejected batch, effect completion, supervised MP3 music clock and acknowledged shutdown passed.',json.dumps(endpoint['value']),flush=True)
+  supervised=browser.execute_async_script('''const done=arguments[arguments.length-1];(async()=>{
+   const {RecordedOutputClient}=await import('./recorded-output-client.js'),{RecordedBudget}=await import('./recorded-budget.js'),{RecordedDecoderClient}=await import('./recorded-decoder-client.js'),{RecordedMusicSender}=await import('./recorded-transport.js');
+   const load=async name=>new Uint8Array(await(await fetch(name)).arrayBuffer()),wasm=await load('converter.wasm'),budget=new RecordedBudget(4194304+wasm.length*3);
+   const output=await RecordedOutputClient.open(wasm,4194304,budget);if(budget.used!==budget.limit)throw Error('Output reservation missing');output.volume(0);await output.resume();
+   const inFlight=output.request('snapshot');let denied=false;try{await output.request('snapshot');}catch{denied=true;}if(!denied||!(await inFlight).ok)throw Error('Output backpressure lost active request');
+   const channel=new MessageChannel(),sender=new RecordedMusicSender(channel.port1);if(!await output.connectMusic(sender,channel.port2))throw Error('Supervised music connection failed');
+   const decoder=await RecordedDecoderClient.open(await load('decoder.wasm'),await load('tone.mp3'));sender.start(1,decoder);
+   const closing=output.close();if(budget.used!==budget.limit||!decoder.closed)throw Error('Output reservation released before context shutdown or decoder left alive');await closing;if(budget.used||!output.closed)throw Error('Output shutdown leaked reservation');
+   const abort=new AbortController(),opening=RecordedOutputClient.open(wasm,4194304,budget,abort.signal);abort.abort();denied=false;try{await opening;}catch{denied=true;}if(!denied||budget.used)throw Error('Cancelled output startup leaked reservation');
+   const fresh=await RecordedOutputClient.open(wasm,4194304,budget);if(!(await fresh.request('snapshot')).ok)throw Error('Output did not recover');await fresh.close();if(budget.used)throw Error('Recovered output leaked reservation');const post=MessagePort.prototype.postMessage;MessagePort.prototype.postMessage=function(message,...rest){if(message?.kind==='snapshot')return;return post.call(this,message,...rest);};let timedOut=false;
+   try{await RecordedOutputClient.open(wasm,4194304,budget);}catch(error){timedOut=String(error).includes('deadline');}finally{MessagePort.prototype.postMessage=post;}
+   if(!timedOut||budget.used)throw Error('Unresponsive output escaped deadline or leaked memory');
+   const encoded=await load('tone.wav'),staging=encoded.length-44,assetBudget=new RecordedBudget(budget.limit+staging),effectOutput=await RecordedOutputClient.open(wasm,4194304,assetBudget);
+   const loaded=await effectOutput.loadWav(0,encoded);if(!loaded.ok||encoded.length!==40044||assetBudget.used!==budget.limit)throw Error('WAV load ownership or staging charge');
+   const invalid=encoded.slice();invalid[24]^=1;denied=false;try{await effectOutput.loadWav(1,invalid);}catch{denied=true;}if(!denied||assetBudget.used!==budget.limit)throw Error('Malformed WAV escaped admission');
+   const playing=await effectOutput.request('controls',{commands:[[0,0]]});if(!playing.ok||playing.activeEffects!==1)throw Error('Admitted WAV did not play');
+   const pendingLoad=effectOutput.loadWav(1,encoded);const pendingRejected=pendingLoad.then(()=>false,()=>true);await effectOutput.close();if(!await pendingRejected||assetBudget.used)throw Error('Cancelled WAV admission leaked staging');
+   return {backpressure:true,decoderClosed:decoder.closed,reservedUntilContextClosed:true,cancelled:true,recovered:true,timedOut,wavAdmission:true};
+  })().then(value=>done({value})).catch(error=>done({error:String(error.stack||error)}));''')
+  assert 'error' not in supervised,supervised
+  print('Production output supervisor: one request, shared reservation, immediate startup cancellation, connected decoder teardown and fresh recovery passed.',json.dumps(supervised['value']),flush=True)
  finally:
   browser.quit();server.shutdown();server.server_close()
