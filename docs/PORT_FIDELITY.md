@@ -2500,3 +2500,30 @@ check the destination-creation race and file/empty/nonempty-directory invariants
 The native strict-check steps also pass. This verifies the named publication
 invariant; the full application workflows and broader port/game fidelity remain
 separate in-progress requirements.
+
+The shared memory ledger now supports child capacities charged inside the parent
+limit. Child leases anchor the parent reservation, so closing an effect cache
+cannot make its capacity reusable while a voice still retains a recording.
+Nested child shutdown, concurrent admissions, denial/cleanup and actual clip
+completion have regressions. The original-rate real callback uses an effect
+child pool, drops its cache object while the clip is retained, and still proves
+playback and complete cleanup alongside the nine embedded-decoder track checks.
+No memory cap, queue size, deadline or tolerance is raised.
+
+Three public budget integration cases pass on native 64-bit and actual ELF32
+Linux: nested ownership, full `u64` counter width and cross-thread final release.
+The local 32-bit setup needed official compiler runtime files extracted into a
+private temporary directory and native execution permission; no system package
+installation was performed. Windows32/Android32 qualification now builds/runs
+these same cases; new hosted results are still pending. Child capacity support
+is groundwork for per-game guest/store carving, not evidence that the game-facing
+music commands or automatic runtime budgets are already integrated.
+Full Rust runs were also being superseded by subsequent source/documentation
+pushes before they completed. Their concurrency policy now preserves an active
+run and queues the newest revision; both feature-matrix jobs can finish even if
+one reports a failure. Job/test parallelism, deadlines, limits and enabled checks
+remain unchanged. Cancelled snapshots are not recorded as passing verification.
+For this change, the full local library suite passes 184 tests with 18 explicit
+ignores. Strict GUI/all-target checks and optimized CLI/GUI builds pass; the
+rebuilt executables still contain the same validated decoder. Native Windows32/
+Android32 ownership results and full workflow completion remain outstanding.

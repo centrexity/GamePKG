@@ -11,7 +11,7 @@ adb=${ADB:-adb}
 remote=/data/local/tmp/gamepkg-portability32
 "$adb" -s "$serial" shell mkdir -p "$remote"
 found=0
-for kind in components portability runtime; do
+for kind in components portability runtime memory_budget; do
   for binary in "target/$target/debug/deps/$kind"-*; do
     [ -f "$binary" ] && [ -x "$binary" ] || continue
     name=$(basename "$binary")
@@ -20,4 +20,4 @@ for kind in components portability runtime; do
     found=$((found + 1))
   done
 done
-[ "$found" -eq 3 ] || { echo 'Build exactly the three Android test binaries before running this script.' >&2; exit 1; }
+[ "$found" -eq 4 ] || { echo 'Build exactly the four Android test binaries before running this script.' >&2; exit 1; }

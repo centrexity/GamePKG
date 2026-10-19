@@ -58,23 +58,30 @@ Android qualification currently covers the CLI and runtime. It is not an
 Android GUI APK or an Android-local sandboxed compiler. Windows 32-bit playback
 can consume validated Linux compiler exchanges; 32-bit Windows itself does not
 provide WSL 2. Keep source compilation isolated rather than disabling the
-compiler boundary to accommodate a new platform. The downloadable v0.1.6
-release remains the previously qualified 64-bit Linux/Windows preview.
+compiler boundary to accommodate a new platform. Hosted runtime qualification
+is separate from published app releases.
 
 ## Developer commands
 
 ```sh
-cargo test --locked --test portability --test runtime --test components
-cargo test --locked --target i686-unknown-linux-gnu --test portability --test runtime --test components
-cargo test --locked --target i686-pc-windows-msvc --test portability --test runtime --test components
+cargo test --locked --test portability --test runtime --test components --test memory_budget
+cargo test --locked --target i686-unknown-linux-gnu --test portability --test runtime --test components --test memory_budget
+cargo test --locked --target i686-pc-windows-msvc --test portability --test runtime --test components --test memory_budget
 ```
 
 Android builders need the matching Rust target and NDK compiler/linker configured.
-After building the three test executables, run them on a dedicated test device:
+After building the four test executables, run them on a dedicated test device:
 
 ```sh
-cargo test --locked --target i686-linux-android --test portability --test runtime --test components --no-run
+cargo test --locked --target i686-linux-android --test portability --test runtime --test components --test memory_budget --no-run
 bash tools/test_android_runtime.sh emulator-5554 i686-linux-android
 ```
 
 These are developer checks. Players do not need Python or signing keys.
+
+The budget checks include nested parent/child ownership, cross-thread final
+release and full `u64` accounting without allocating that amount of memory. They
+must preserve the parent charge after a cache object closes while recordings
+remain live. The new ownership cases pass on actual 32-bit Linux locally;
+Windows32/Android32 runs for these additions remain pending until hosted results
+confirm them.

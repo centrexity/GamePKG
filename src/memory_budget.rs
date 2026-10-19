@@ -7,6 +7,9 @@ use std::sync::{
 struct Shared {
     limit: u64,
     used: AtomicU64,
+    // Child leases retain this shared owner, and therefore the whole parent
+    // capacity charge, even after the child Budget/cache object is dropped.
+    _parent: Option<Lease>,
 }
 #[derive(Clone)]
 pub struct Budget(Arc<Shared>);
@@ -19,6 +22,7 @@ impl Budget {
         Self(Arc::new(Shared {
             limit,
             used: AtomicU64::new(0),
+            _parent: None,
         }))
     }
     pub fn limit(&self) -> u64 {
@@ -26,6 +30,16 @@ impl Budget {
     }
     pub fn used(&self) -> u64 {
         self.0.used.load(Ordering::Acquire)
+    }
+    /// Reserve a fixed child capacity inside this same hard limit. Child
+    /// reservations consume that capacity, not an independent allowance.
+    pub fn partition(&self, limit: u64) -> Result<Self> {
+        let parent = self.reserve(limit)?;
+        Ok(Self(Arc::new(Shared {
+            limit,
+            used: AtomicU64::new(0),
+            _parent: Some(parent),
+        })))
     }
     pub fn reserve(&self, bytes: u64) -> Result<Lease> {
         ensure!(
@@ -69,6 +83,66 @@ impl Drop for Lease {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn child_capacity_is_not_released_until_its_last_lease_owner_drops() {
+        let root = Budget::new(16);
+        assert!(root.partition(0).is_err());
+        assert!(root.partition(17).is_err());
+        let child = root.partition(10).unwrap();
+        assert_eq!(root.used(), 10);
+        assert_eq!(child.used(), 0);
+        let nested = child.partition(6).unwrap();
+        assert_eq!(child.used(), 6);
+        assert_eq!(root.used(), 10);
+        let retained = nested.reserve(6).unwrap();
+        assert!(nested.reserve(1).is_err());
+        let guest = root.reserve(6).unwrap();
+        assert!(root.reserve(1).is_err());
+        drop(nested);
+        drop(child);
+        assert_eq!(root.used(), 16);
+        drop(guest);
+        assert_eq!(root.used(), 10);
+        drop(retained);
+        assert_eq!(root.used(), 0);
+        let all = root.reserve(16).unwrap();
+        drop(all);
+        assert_eq!(root.used(), 0);
+    }
+    #[test]
+    fn concurrent_children_and_live_leases_cannot_overcommit_the_parent() {
+        let root = Budget::new(16);
+        let ready = Arc::new(std::sync::Barrier::new(5));
+        let release = Arc::new(std::sync::Barrier::new(5));
+        let workers = (0..4)
+            .map(|_| {
+                let root = root.clone();
+                let ready = ready.clone();
+                let release = release.clone();
+                std::thread::spawn(move || {
+                    let lease = root
+                        .partition(6)
+                        .ok()
+                        .and_then(|child| child.reserve(6).ok());
+                    let acquired = lease.is_some();
+                    ready.wait();
+                    release.wait();
+                    drop(lease);
+                    acquired
+                })
+            })
+            .collect::<Vec<_>>();
+        ready.wait();
+        let held = root.used();
+        release.wait();
+        let acquired = workers
+            .into_iter()
+            .map(|worker| usize::from(worker.join().unwrap()))
+            .sum::<usize>();
+        assert_eq!(acquired, 2);
+        assert_eq!(held, 12);
+        assert_eq!(root.used(), 0);
+    }
     #[test]
     fn shared_reservations_release_on_move_drop_and_failure() {
         let budget = Budget::new(16);

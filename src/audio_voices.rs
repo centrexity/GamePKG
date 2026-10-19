@@ -105,6 +105,27 @@ impl Mixer {
 mod tests {
     use super::*;
     #[test]
+    fn playing_clips_retain_parent_cache_capacity_after_cache_shutdown() {
+        let game = Budget::new(4096);
+        let cache = game.partition(1024).unwrap();
+        let clip = Clip::new(&[123, -456, 789, -987], &cache).unwrap();
+        let mut mixer = Mixer::default();
+        assert_eq!(mixer.play(clip.clone()), Some(0));
+        assert_eq!(mixer.play(clip.clone()), Some(1));
+        let guest = game.reserve(3072).unwrap();
+        drop(clip);
+        drop(cache);
+        assert_eq!(game.used(), 4096);
+        assert!(game.reserve(1).is_err());
+        assert_eq!(mixer.frame([0; 2]), [246, -912]);
+        assert_eq!(game.used(), 4096);
+        assert_eq!(mixer.frame([0; 2]), [1578, -1974]);
+        assert_eq!(mixer.active(), 0);
+        assert_eq!(game.used(), 3072);
+        drop(guest);
+        assert_eq!(game.used(), 0);
+    }
+    #[test]
     fn every_source_sample_and_legal_volume_matches_sdl_reference() {
         use sha2::{Digest, Sha256};
         let reference: serde_json::Value =

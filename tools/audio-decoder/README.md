@@ -347,3 +347,16 @@ The standalone build-script test covers malformed/missing/oversized inputs and
 resetting an optional input. Game-facing SDK commands, automatic per-game service
 creation/memory reservations, browser bundle integration and actual port migration
 remain unfinished; embedding alone does not expose music to games.
+
+The shared budget can now partition a fixed child capacity inside the existing
+game limit. A child is not another independent allowance. Every child lease
+retains the whole parent charge until the final child budget/lease owner drops;
+a cache can close while a playing recording keeps its charge. Nested partitions,
+concurrent admission, failure cleanup and callback-side clip completion have
+regressions. Releases remain atomic, with no reservation mutex on the callback.
+The combined real-callback test now plays an effect from a child cache after the
+cache object is dropped, and verifies final parent cleanup. Actual 32-bit Linux
+checks also exercise full-width counters and cross-thread final ownership.
+The same public checks are added to Windows32/Android32 qualification; new hosted
+results for those additions remain required. Per-game guest/store limit carving
+and signed SDK activation are still unfinished.

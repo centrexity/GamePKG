@@ -320,8 +320,10 @@ fn combined_original_rate_music_and_effects_reach_the_device_without_game_ticks(
     assert!(player.effect_volume(0));
     assert!(!player.effect_volume(129));
     assert!(player.effect_pause(true));
-    let clip = gamepkg::audio_voices::Clip::new(&[20000; 32000], &budget).unwrap();
+    let effects = budget.partition(128 * 1024).unwrap();
+    let clip = gamepkg::audio_voices::Clip::new(&[20000; 32000], &effects).unwrap();
     assert!(player.effect_play(clip));
+    drop(effects); // Pending/playing clips must retain the parent's cache charge.
     std::thread::sleep(std::time::Duration::from_millis(20));
     let silent = player.non_silent_frames();
     std::thread::sleep(std::time::Duration::from_millis(20));

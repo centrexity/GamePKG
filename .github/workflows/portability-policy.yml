@@ -28,7 +28,7 @@ jobs:
         env:
           PKG_CONFIG_ALLOW_CROSS: '1'
           PKG_CONFIG_LIBDIR: /usr/lib/i386-linux-gnu/pkgconfig
-        run: cargo test --locked --all-features --target i686-unknown-linux-gnu --test portability --test runtime --test components --test path_attacks --test dependency_attacks --test source_attacks
+        run: cargo test --locked --all-features --target i686-unknown-linux-gnu --test portability --test runtime --test components --test path_attacks --test dependency_attacks --test source_attacks --test memory_budget
       - name: Build 32-bit Linux CLI and GUI
         env:
           PKG_CONFIG_ALLOW_CROSS: '1'
@@ -57,7 +57,7 @@ jobs:
           rustup target add wasm32-unknown-unknown
           python tools/build_audio_companion.py --github-env
       - name: Execute native 32-bit runtime tests with embedded decoder
-        run: cargo test --locked --all-features --target i686-pc-windows-msvc --test portability --test runtime --test components --test path_attacks --test dependency_attacks --test source_attacks
+        run: cargo test --locked --all-features --target i686-pc-windows-msvc --test portability --test runtime --test components --test path_attacks --test dependency_attacks --test source_attacks --test memory_budget
       - name: Build 32-bit Windows CLI and GUI
         run: cargo build --locked --release --all-features --target i686-pc-windows-msvc --bins
       - name: Package matching 32-bit executables
@@ -97,7 +97,7 @@ jobs:
       - name: Embed decoder in Android CLI and test executables
         run: |
           cargo build --locked --release --target armv7-linux-androideabi --bin gamepkg
-          cargo test --locked --target i686-linux-android --test portability --test runtime --test components --no-run
+          cargo test --locked --target i686-linux-android --test portability --test runtime --test components --test memory_budget --no-run
       - name: Allow runner access to KVM
         run: sudo setfacl -m u:"$USER":rw /dev/kvm
       - name: Execute tests in 32-bit Android userspace
