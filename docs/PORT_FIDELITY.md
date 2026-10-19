@@ -3303,3 +3303,23 @@ Clippy checks pass. A separate injected decoder trap now reproduces the correspo
 race: the same active-at-begin generation retains Failed while its staged gain
 commits. The focused music suite passes all thirteen default-feature cases,
 including strict invalid-batch rejection and existing stop/replacement checks.
+
+The live browser components also have a point-to-point MessagePort transport.
+The output side credits exactly one 800-frame decode only when its fixed queue
+has capacity. The sender retires the old decoder on Stop/replacement; late
+successful and failed responses cannot change the new generation. Credit IDs
+must increase, malformed current-generation responses fail the track, and EOF
+closes its decoder after queued PCM is admitted. Real Node MessageChannel tests
+verify full PCM ordering, full-queue backpressure, replacement during an awaited
+read, stale success/failure, Stop, wrong credits and codec rejection. The live
+qualification tool includes these tests. The sender accepts the supervised
+client interface, and real Chromium MessagePort-to-live-AudioWorklet delivery now matches all six
+independent SDL hashes, complete 6,000-frame consumption and source closure.
+The independent SDL reference uses a deterministic asynchronous source. An
+additional generated MP3 passes through the actual supervised decoder worker,
+credited MessagePort and live AudioWorklet: all 32,768 output scalars match
+direct decoding/mixing, all 11,520 source frames play and the worker terminates
+at EOF. This proves the component connection, not committed guest controls or
+whole-browser memory accounting. Shared transport memory reservations, signed
+permission/export integration and migration of the existing ports remain open.
+This does not enable export.
