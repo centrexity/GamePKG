@@ -409,6 +409,12 @@ jobs:
       - name: Verify Stop and Restart during delayed browser persistence
         if: matrix.features == '--all-features'
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tests/browser_progress_lifecycle.py
+      - name: Verify exact original PNG pixels and bounded decoder cases
+        if: matrix.features == '--all-features'
+        run: sudo env PATH="$PATH" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tools/check_browser_png.py --browser
+      - name: Verify signed exact PNG exports without duplicate raw assets
+        if: matrix.features == '--all-features'
+        run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tests/browser_png_player.py
       - name: Verify signed recorded-audio browser exports and player lifecycle
         if: matrix.features == '--all-features'
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tests/browser_recorded_player.py

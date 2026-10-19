@@ -3785,3 +3785,48 @@ browser export. The previous full-dataset browser size barrier remains. Private
 recordings, generated recipes, signed packages and binaries are not published;
 only preparation and qualification source is published. Players need none of
 the maintainer Python/compiler/test tools.
+
+
+### Exact browser PNG decoding without duplicate raw assets
+
+Source-built exports now select validated noninterlaced RGB/RGBA8 and indexed
+1/2/4/8-bit PNGs for a trusted exact worker decoder. Package PNG bytes remain
+available to guest asset reads. Image preparation decodes them directly to the
+existing image cache, avoiding separately exported raw RGBA copies. Unsupported
+representations retain the previous precise-pixel fallback when needed.
+
+The decoder checks PNG signature, CRCs, chunk order, palette/transparency,
+dimensions, scanline size and filter values. The dependency-free zlib/DEFLATE
+inflater copies at most 2 MiB of compressed data, uses two fixed 32,768-entry
+Huffman scratch tables and allocates the exact bounded scanline capacity before
+decoding. Stored blocks, literal writes and overlapping back references check
+capacity before every write; no opaque browser decompressor allocates output
+before its size can be checked. Zlib headers/window bounds, reserved codes,
+back references, end position and Adler checksums are checked. Existing 512-pixel
+dimensions, encoded-image/image-cache/draw limits and worker deadlines remain.
+These named buffers do not establish a whole-browser/JIT/GC memory bound.
+
+`tools/check_browser_png.py --browser` independently decodes all 76 current
+source images with Pillow as a reference, then verifies exact RGBA hashes in
+Node and an actual classic Chromium worker. The same check passes for all 76
+private losslessly optimized PNGs, including packed palettes. Synthetic cases
+cover all five filters, RGB/RGBA expansion, split input, exact transparency,
+invalid chunks/CRCs/palettes/dimensions/filters and output overflow. Sixty-four
+independent zlib encodings cover stored/fixed/dynamic/RLE behavior; a 4 MiB
+expansion with a 16-byte allowance fails before exceeding the allowance.
+
+Actual signed core/component exports emit exact indexed, packed-palette and
+RGBA draw-command pixels without duplicate raw assets. A legacy RGB transparency
+case retains its previous raw fallback. Corrupt PNG CRCs fail explicitly and
+restored exports recover freshly. Existing browser export gameplay/storage/media/
+shader/shutdown checks, signed recorded-audio player lifecycle, host exporter
+checks and strict lint pass. CI gates the corpus and signed-player tests.
+
+The revised complete private dataset audit reports 12,945,752 optimized asset
+bytes with original-rate replacement effects, 21,118,219 music bytes and a
+330-byte playlist, with zero extra precise-image bytes. Total 34,064,301 remains
+509,869 bytes over the unchanged 33,554,432 export limit. A slower private optipng
+pass saved only another 7,084 bytes, so neither it nor this decoder establishes
+a successful complete browser export. Full gameplay/browser/platform migration
+remains open. No images, recordings, generated recipes or binary artifacts are
+published by this change.

@@ -161,6 +161,47 @@ fn browser_module(bytes: &[u8], profile: &str) -> Result<Vec<u8>> {
     selected.context("component lacks a browser-compatible GamePKG guest module")
 }
 
+// Header/chunk policy for the worker's bounded lossless RGB/RGBA/indexed decoder.
+// Call only after the host PNG decoder has validated the source image.
+fn exact_png_source(bytes: &[u8]) -> bool {
+    if bytes.len() < 33
+        || !matches!(bytes[25], 2 | 3 | 6)
+        || (if bytes[25] == 3 {
+            !matches!(bytes[24], 1 | 2 | 4 | 8)
+        } else {
+            bytes[24] != 8
+        })
+        || bytes[28] != 0
+    {
+        return false;
+    }
+    let mut at = 8usize;
+    let mut chunks = 0usize;
+    while at + 12 <= bytes.len() {
+        chunks += 1;
+        if chunks > 2048 {
+            return false;
+        }
+        let size = u32::from_be_bytes(bytes[at..at + 4].try_into().unwrap()) as usize;
+        let Some(end) = at
+            .checked_add(12)
+            .and_then(|n| n.checked_add(size))
+            .filter(|n| *n <= bytes.len())
+        else {
+            return false;
+        };
+        let kind = &bytes[at + 4..at + 8];
+        if kind == b"acTL" || (kind == b"tRNS" && bytes[25] != 3) {
+            return false;
+        }
+        if kind == b"IEND" {
+            return end == bytes.len();
+        }
+        at = end;
+    }
+    false
+}
+
 pub fn export(root: &Path, id: &str, output: &Path) -> Result<()> {
     let _guard = crate::registry::LibraryChange::acquire(root)?;
     let mut package = crate::archive::Package::open(&root.join(format!("{id}.gamepkg")))?;
@@ -275,13 +316,16 @@ pub fn export(root: &Path, id: &str, output: &Path) -> Result<()> {
     names.dedup();
     let mut assets = BTreeMap::new();
     let mut precise_images = BTreeMap::new();
+    let mut exact_png_images = Vec::new();
     let mut size = 0usize;
     for name in names {
         let bytes = package.asset(&name)?;
         size += bytes.len();
         if needs_precise_images && name.to_lowercase().ends_with(".png") {
             if let Some(image) = crate::drawing::image::Image::from_png(&bytes) {
-                if image
+                if exact_png_source(&bytes) {
+                    exact_png_images.push(name.clone());
+                } else if image
                     .pixels()
                     .as_chunks::<4>()
                     .0
@@ -315,7 +359,7 @@ pub fn export(root: &Path, id: &str, output: &Path) -> Result<()> {
         bail!("browser shader source exceeds 32 MiB export budget");
     }
     let data = serde_json::to_vec(
-        &serde_json::json!({"format_version":1,"recorded_audio":if recorded {Some(serde_json::json!({"converter_sha256":crate::verify::digest(converter),"decoder_sha256":if music != 0 {Some(crate::verify::digest(decoder))}else{None}}))}else{None},"manifest":manifest,"wasm_sha256":crate::verify::digest(&wasm),"assets":assets,"precise_images":precise_images,"shaders":shaders,"custom_renderer":custom_renderer}),
+        &serde_json::json!({"format_version":1,"recorded_audio":if recorded {Some(serde_json::json!({"converter_sha256":crate::verify::digest(converter),"decoder_sha256":if music != 0 {Some(crate::verify::digest(decoder))}else{None}}))}else{None},"manifest":manifest,"wasm_sha256":crate::verify::digest(&wasm),"assets":assets,"precise_images":precise_images,"exact_png_images":exact_png_images,"shaders":shaders,"custom_renderer":custom_renderer}),
     )?;
     let parent = output
         .parent()
@@ -338,6 +382,14 @@ pub fn export(root: &Path, id: &str, output: &Path) -> Result<()> {
         (
             "player.js",
             include_bytes!("../web-player/player.js").as_slice(),
+        ),
+        (
+            "png-inflate.js",
+            include_bytes!("../web-player/png-inflate.js").as_slice(),
+        ),
+        (
+            "png-exact.js",
+            include_bytes!("../web-player/png-exact.js").as_slice(),
         ),
         (
             "worker.js",
@@ -448,6 +500,24 @@ pub fn export(root: &Path, id: &str, output: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn exact_png_selection_retains_indexed_transparency_and_rejects_unsupported_headers() {
+        for source in [
+            include_bytes!("../ports/arkanoo/assets/heart.png").as_slice(),
+            include_bytes!("../ports/arkanoo/assets/ball.png").as_slice(),
+        ] {
+            assert!(crate::drawing::image::Image::from_png(source).is_some());
+            assert!(exact_png_source(source));
+            assert!(!exact_png_source(&source[..source.len() - 1]));
+            let mut unsupported = source.to_vec();
+            unsupported[24] = 16;
+            assert!(!exact_png_source(&unsupported));
+            unsupported[24] = 8;
+            unsupported[28] = 1;
+            assert!(!exact_png_source(&unsupported));
+        }
+    }
+
     #[test]
     fn extracts_the_verified_component_guest_without_forwarding_component_graphs() {
         let core = wat::parse_str(

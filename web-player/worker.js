@@ -10,13 +10,15 @@ let eventBytes=new Uint8Array();
 let recordedControls=[],recordedReady=false,recordedMusicStatus='stopped',recordedActiveGeneration=null;
 let instance, manifest, assets, roms, save, state=0n, commands=[], background=null, unlocks=[],saveDirty=false,saveBudget=0,images=new Map(),imageBudget=0,audioSamples=[],audioChannels=1,shaderCount=0;
 function imageCommand(x,y,w,h,pw,ph,pixels,kind='image'){if(commands.length>=1024||!finite(x,y,w,h)||w<0||h<0||!Number.isInteger(pw)||!Number.isInteger(ph)||pw<1||ph<1||pw>512||ph>512||pixels.length!==pw*ph*4||imageBudget+pixels.length>8388608)return -1;imageBudget+=pixels.length;return command([kind,x,y,w,h,pw,ph,pixels.slice()]);}
-async function prepareImages(precise={}){
+async function prepareImages(precise={},exactNames=[]){
+ const exact=new Set(exactNames),decoder=exact.size?(await import("./png-exact.js")).decodeExactPNG:null;
  images=new Map();let total=0;
  for(const [name,pixels] of assets){
   if(!name.toLowerCase().endsWith('.png')||pixels.length>2097152||pixels.length<33)continue;
   if(![137,80,78,71,13,10,26,10].every((byte,index)=>pixels[index]===byte))continue;
   const header=new DataView(pixels.buffer,pixels.byteOffset,pixels.byteLength),w=header.getUint32(16),h=header.getUint32(20);
   if(w<1||h<1||w>512||h>512||total+w*h*4>33554432)continue;
+  if(exact.has(name)){const decoded=await decoder(pixels);if(!decoded)throw Error('Unsupported exact packaged PNG');images.set(name,decoded);total+=w*h*4;continue;}
   if(Object.hasOwn(precise,name)){
    const raw=precise[name];if(raw.width!==w||raw.height!==h||typeof raw.rgba!=='string'||raw.rgba.length!==w*h*8)throw Error('Invalid precise image');
    const decoded=decode(raw.rgba);images.set(name,{width:w,height:h,pixels:decoded,precise:true});total+=w*h*4;continue;
@@ -196,7 +198,7 @@ onmessage=async ({data})=>{try{
   recordedBegin(null);frameClockReset();windowObserve(null);
   fileEntry=null;fileNext=1;fileGeneration++;fileGesture=false;windowCurrent=defaultWindow();windowPrevious=defaultWindow();windowStaged=defaultWindow();
   shaderCount=data.shaderCount||0;manifest=data.manifest;assets=new Map(Object.entries(data.assets).map(([key,value])=>[key,decode(value)]));roms=data.roms.map(value=>new Uint8Array(value));save=new Uint8Array(data.save);state=0n;
-  await prepareImages(data.precise_images??{});
+  await prepareImages(data.precise_images??{},data.exact_png_images??[]);
   const module=await WebAssembly.compile(data.wasm);
   const namespace=manifest.runtime_profile==='component-v1'?'gamepkg:engine/host@0.1.0':'gamepkg',imports=manifest.runtime_profile==='component-v1'?canonical:api;
   for(const item of WebAssembly.Module.imports(module))if(item.module!==namespace||item.kind!=='function'||!Object.hasOwn(imports,item.name))throw Error('Forbidden host import');

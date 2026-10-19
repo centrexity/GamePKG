@@ -144,7 +144,7 @@ async function start(){
    scheduleTick();
   }
  };
- worker.postMessage({type:'start',wasm,manifest:data.manifest,assets:data.assets,precise_images:data.precise_images??{},shaderCount:(data.shaders||[]).length,roms,save:saved});
+ worker.postMessage({type:'start',wasm,manifest:data.manifest,assets:data.assets,precise_images:data.precise_images??{},exact_png_images:data.exact_png_images??[],shaderCount:(data.shaders||[]).length,roms,save:saved});
 }
 canvas.addEventListener('keydown',keyboardDown);
 canvas.addEventListener('keyup',keyboardUp);

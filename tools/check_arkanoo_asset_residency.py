@@ -19,7 +19,17 @@ assert not output.exists(), 'Output must be new'
 source = project/'ports/arkanoo/assets'
 output.mkdir(parents=True)
 rows = []
-original = optimized = precise = 0
+original = optimized = precise = legacy_precise = 0
+def exact_png(encoded):
+    if encoded[25] not in [2,3,6] or encoded[28] or (encoded[24] not in ([1,2,4,8] if encoded[25]==3 else [8])):
+        return False
+    at=8
+    while at+12<=len(encoded):
+        length=int.from_bytes(encoded[at:at+4],"big");kind=encoded[at+4:at+8];end=at+12+length
+        if end>len(encoded) or kind==b"acTL" or kind==b"tRNS" and encoded[25]!=3:return False
+        if kind==b"IEND":return end==len(encoded)
+        at=end
+    return False
 for path in sorted(source.rglob('*')):
     if not path.is_file():
         continue
@@ -40,7 +50,9 @@ for path in sorted(source.rglob('*')):
                 assert image.convert('RGBA').tobytes() == rebuilt.convert('RGBA').tobytes(), name
                 rgba = image.convert('RGBA').tobytes()
                 if any(value != 255 for value in rgba[3::4]):
-                    precise += len(rgba)
+                    legacy_precise += len(rgba)
+                    if not exact_png(destination.read_bytes()):
+                        precise += len(rgba)
                 rows.append({'asset': name, 'source_sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
                              'rgba_sha256': hashlib.sha256(rgba).hexdigest(),
                              'optimized_sha256': hashlib.sha256(destination.read_bytes()).hexdigest(),
@@ -61,7 +73,7 @@ for song in migration['music']:
 playlist = (args.migration_inputs/'audio/music-list.txt').stat().st_size
 report = {'private_verification_inputs': True, 'original_assets_bytes': original,
           'optimized_assets_with_replacement_effects_bytes': optimized,
-          'music_bytes': music, 'playlist_bytes': playlist, 'precise_image_bytes': precise,
+          'music_bytes': music, 'playlist_bytes': playlist, 'precise_image_bytes': precise, 'legacy_precise_image_bytes': legacy_precise,
           'web_export_accounted_bytes': optimized+music+playlist+precise,
           'web_export_limit_bytes': 32*1024*1024, 'images': rows}
 (output/'residency.json').write_text(json.dumps(report, indent=2)+'\n')
