@@ -41,7 +41,7 @@ the original operation happened.
 | --- | --- | --- |
 | `engines/cube2/adapters/network.h` | Broadcast reaches the owned UDP socket; real nonblocking TCP now supports bind/connect/listen/accept/poll/shutdown. Reverse lookup returns a numeric address. Bounded buffer sizes, timeouts, address reuse and TTL now reach the actual host socket; error/TTL queries read host results. Socket shutdown now reaches the OS; bounded browser snapshots use explicit virtual EOF/half-close semantics. | Audit each original ENet caller; finish the host operations it needs and test real discovery, authentication, server registration, disconnect and error handling. Keep permission denial explicit. Do not infer complete networking from ordinary packet exchange. |
 | `engines/zelda3/adapters/engine.c` | MSU enable is ignored and MSU track playback falls back to the internal audio path. Initialization fixes extra horizontal area to zero and selects the default language. The frame scheduler omits the desktop replay log. | Add selected optional resources, enhancement/language configuration, and bounded replay/save-state persistence with actual engine tests. Ordinary ROM gameplay does not verify these features. |
-| `ports/arkanoo/source/src/menu.rs` and `render.rs` | The current menu and synthesized effects cover only part of the original presentation/settings. | Restore the remaining transitions, resolution confirmation/revert, VSync, homepage action and licensed art/audio; verify each against the pinned original. Window-size persistence alone does not implement a resolution menu. |
+| `ports/arkanoo/source/src/menu.rs` and `render.rs` | All five original recorded effects are restored, but the menu covers only part of the original presentation/settings and effects still advance through game ticks. | Restore the remaining transitions, resolution confirmation/revert, VSync, homepage action and licensed art/audio; verify each against the pinned original. Window-size persistence alone does not implement a resolution menu. |
 | `ports/2048/CREDITS.md` | Tile exponents stop at 63 and scores use checked fixed-width storage; the reference implementation has a smaller tile representation. | Retain explicit bounds in documentation and boundary tests. Verified solver/gameplay behavior does not establish unlimited arithmetic, package delivery or every-platform support. |
 
 Single-threaded audio lock no-ops and host-supplied SRAM are intentional
@@ -77,8 +77,9 @@ when a verified host replacement provides the same observable behavior.
 Arkanoo's pinned `rendering.rs` also has dedicated implementations for ball
 speed lettering,
 bonus icons, animated backgrounds, portal rendering, HUD/FPS, pause/settings,
-game-over, level-transition/victory and editor presentation. Background/menu/HUD presentation, bitmap lettering and synthesized audio still
-contain replacements. Restored object art and portal stages have the measured
+game-over, level-transition/victory and editor presentation. Background/menu/HUD presentation and bitmap lettering still contain replacements.
+All five recorded effects are restored; original music and asynchronous effect
+timing are not yet connected to the port. Restored object art and portal stages have the measured
 grouping and sampling limits below; they do not verify those remaining paths.
 Keep each original drawing path open until its behavior has reference evidence;
 matching a few screenshots is insufficient for animated or stateful effects.
@@ -2527,3 +2528,36 @@ For this change, the full local library suite passes 184 tests with 18 explicit
 ignores. Strict GUI/all-target checks and optimized CLI/GUI builds pass; the
 rebuilt executables still contain the same validated decoder. Native Windows32/
 Android32 ownership results and full workflow completion remain outstanding.
+
+
+## Rust compiler compatibility verification (2026-10-18)
+
+The full hosted Rust check exposed new Clippy diagnostics in Rust 1.99. Fixed-size
+PCM/pixel iteration now uses typed array chunks, preserving incomplete-tail
+behavior; stereo mixing still applies the same sample ordering and arithmetic.
+Port changes use equivalent integer-divisibility checks and a guarded editor
+match arm. The minimum supported Rust remains 1.89. No limits, tolerances,
+versions, manifests, assets or catalog packages change.
+
+Strict GUI/all-target checks pass on both Rust 1.89 and 1.99; the default-feature
+all-target check also passes on 1.99. Arkanoo's 100 logic tests and both 71-check
+signed native/Wasm suites pass. The 2048 logic suite passes nine cases with one
+explicit upstream-oracle ignore, and all five signed native/Wasm state checks
+pass. Host GUI library regressions pass 236 cases with 19 explicit ignores;
+decoder regressions pass seven with two explicit ignores, and resampler
+regressions pass four with two explicit ignores.
+
+The separately requested real-audio checks cover all nine full original tracks
+using the embedded decoder, actual null-device callbacks, effect-child ownership
+and complete reservation cleanup. Both independent SDL comparison tests pass:
+full floating-point conversion and original mixer staging/flush. These retain
+existing assertions, including the previously documented decoder differences;
+they do not establish bit-exact MP3 decoding or game-facing music integration.
+The networking checks also pass 15 local-socket cases plus two manifest cases;
+the public HTTPS case remains explicitly ignored in this local run.
+
+This source compatibility update does not close the remaining port fidelity,
+guest music API, per-game memory carving or platform/gameplay requirements.
+Optimized CLI and GUI builds pass; both relocated executables validate the same
+embedded decoder with runtime decoder paths unavailable and no display.
+Hosted full-workflow results for the new revision must be evaluated separately.

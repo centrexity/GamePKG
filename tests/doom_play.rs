@@ -169,7 +169,9 @@ fn original_attract_demo_has_spatial_stereo() {
         demo |= game.builtin_state().unwrap().unwrap().0 & 256 != 0;
         separated |= game
             .audio_frame()
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .any(|pair| pair[0] != pair[1]);
         if demo && separated {
             break;

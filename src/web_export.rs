@@ -255,7 +255,13 @@ pub fn export(root: &Path, id: &str, output: &Path) -> Result<()> {
         size += bytes.len();
         if needs_precise_images && name.to_lowercase().ends_with(".png") {
             if let Some(image) = crate::drawing::image::Image::from_png(&bytes) {
-                if image.pixels().chunks_exact(4).any(|p| p[3] != 255) {
+                if image
+                    .pixels()
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .any(|p| p[3] != 255)
+                {
                     size += image.pixels().len();
                     if size > 32 * 1024 * 1024 {
                         bail!("web assets exceed 32 MiB export limit");

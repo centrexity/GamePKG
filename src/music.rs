@@ -400,7 +400,11 @@ impl Pipeline {
                 self.converter.finish();
                 continue;
             }
-            for (frame, samples) in self.input.iter_mut().zip(self.decoded[..n].chunks_exact(2)) {
+            for (frame, samples) in self
+                .input
+                .iter_mut()
+                .zip(self.decoded[..n].as_chunks::<2>().0.iter())
+            {
                 *frame = [
                     f32::from(samples[0]) / 32768.0,
                     f32::from(samples[1]) / 32768.0,
@@ -410,7 +414,10 @@ impl Pipeline {
                 .append(&self.input[..n / 2])
                 .map_err(anyhow::Error::msg)?;
         }
-        for (frame, samples) in self.output[..count].iter().zip(output.chunks_exact_mut(2)) {
+        for (frame, samples) in self.output[..count]
+            .iter()
+            .zip(output.as_chunks_mut::<2>().0.iter_mut())
+        {
             for channel in 0..2 {
                 samples[channel] = (frame[channel] * 32768.0)
                     .round_ties_even()

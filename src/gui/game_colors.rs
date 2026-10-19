@@ -19,7 +19,9 @@ pub(super) fn image(image: &crate::drawing::image::Image) -> egui::ColorImage {
         size: image.size(),
         pixels: image
             .pixels()
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|p| rgba(p[0], p[1], p[2], p[3]))
             .collect(),
     }

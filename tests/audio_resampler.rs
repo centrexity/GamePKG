@@ -83,12 +83,12 @@ fn original_mixer_staging_and_flush_match_actual_sdl_stream_exactly() {
                 for (index, (sample, expected)) in actual
                     .iter()
                     .flatten()
-                    .zip(original.stdout.chunks_exact(4))
+                    .zip(original.stdout.as_chunks::<4>().0.iter())
                     .enumerate()
                 {
                     assert_eq!(
                         sample.to_bits(),
-                        u32::from_le_bytes(expected.try_into().unwrap()),
+                        u32::from_le_bytes(*expected),
                         "{length} frames, {source} to {target}, sample {index}"
                     );
                 }
@@ -235,12 +235,12 @@ fn complete_stream_matches_independent_sdl_float_conversion_exactly() {
             for (index, (sample, expected)) in actual
                 .iter()
                 .flatten()
-                .zip(original.stdout.chunks_exact(4))
+                .zip(original.stdout.as_chunks::<4>().0.iter())
                 .enumerate()
             {
                 assert_eq!(
                     sample.to_bits(),
-                    u32::from_le_bytes(expected.try_into().unwrap()),
+                    u32::from_le_bytes(*expected),
                     "{source} to {target} sample {index}"
                 );
             }

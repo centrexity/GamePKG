@@ -66,7 +66,9 @@ fn original_effect_wav(kind: u32) -> &'static [u8] {
 }
 fn original_effect_pcm(kind: u32) -> Vec<i16> {
     original_effect_wav(kind)[44..]
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|b| i16::from_le_bytes([b[0], b[1]]))
         .collect()
 }
@@ -404,7 +406,7 @@ fn particle_batch_clips_composites_and_retains_large_bursts_without_draw_caps() 
         (635, 355, 11, 11)
     );
     assert_eq!(image.pixels.len(), 11 * 11 * 4);
-    assert!(image.pixels.chunks_exact(4).any(|p| p == [255, 0, 0, 255]));
+    assert!(image.pixels.as_chunks::<4>().0.contains(&[255, 0, 0, 255]));
     for p in &mut game.particles {
         p.x = -100.0;
         p.y = -100.0;
@@ -2491,7 +2493,13 @@ fn original_portal_stages_preserve_every_ordered_point_color_and_frame_precision
                 .read_to_end(&mut original)
                 .unwrap();
             let mut delta = 0;
-            for (pixel, source) in image.pixels.chunks_exact(4).zip(original.chunks_exact(4)) {
+            for (pixel, source) in image
+                .pixels
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .zip(original.as_chunks::<4>().0.iter())
+            {
                 for channel in 0..3 {
                     let value = (u32::from(pixel[channel]) * u32::from(pixel[3])
                         + [11, 16, 32][channel] * (255 - u32::from(pixel[3])))
@@ -2647,7 +2655,9 @@ fn background_line_points_match_sdl_default_and_record_software_degenerate_edges
             assert_eq!(pixels.len(), 64 * 64 * 4);
             assert_eq!(gamepkg_digest(&pixels), case["images"][mode]["rgba_sha256"]);
             let expected: std::collections::BTreeSet<_> = pixels
-                .chunks_exact(4)
+                .as_chunks::<4>()
+                .0
+                .iter()
                 .enumerate()
                 .filter(|(_, p)| p[..3] != [11, 16, 32])
                 .map(|(i, _)| i)
@@ -2755,7 +2765,7 @@ fn check_line_background_fixture(text: &str) {
         for _ in 0..1280 * 720 {
             actual.extend(scene.color.to_be_bytes());
         }
-        for (index, pixel) in image.pixels.chunks_exact(4).enumerate() {
+        for (index, pixel) in image.pixels.as_chunks::<4>().0.iter().enumerate() {
             let at = ((image.top as usize + index / image.width as usize) * 1280
                 + image.left as usize
                 + index % image.width as usize)
@@ -2900,7 +2910,7 @@ fn original_matrix_and_nebula_preserve_rectangle_commands_and_actual_sdl_framebu
             actual.extend(color.to_be_bytes());
         }
         if let Some(image) = background::composited_rectangles(&rectangles, color) {
-            for (index, pixel) in image.pixels.chunks_exact(4).enumerate() {
+            for (index, pixel) in image.pixels.as_chunks::<4>().0.iter().enumerate() {
                 let at = ((image.top as usize + index / image.width as usize) * 1280
                     + image.left as usize
                     + index % image.width as usize)
@@ -3054,7 +3064,7 @@ fn check_command_background_fixture(text: &str) {
             actual.extend(color.to_be_bytes());
         }
         if let Some(image) = background::composited_commands(&commands, color) {
-            for (index, pixel) in image.pixels.chunks_exact(4).enumerate() {
+            for (index, pixel) in image.pixels.as_chunks::<4>().0.iter().enumerate() {
                 let at = ((image.top as usize + index / image.width as usize) * 1280
                     + image.left as usize
                     + index % image.width as usize)
@@ -3169,7 +3179,7 @@ fn assert_canonical_point_frame(scene: &background::Background, case: &serde_jso
         background::composited_background(scene)
     };
     if let Some(image) = image {
-        for (index, pixel) in image.pixels.chunks_exact(4).enumerate() {
+        for (index, pixel) in image.pixels.as_chunks::<4>().0.iter().enumerate() {
             let at = ((image.top as usize + index / image.width as usize) * 1280
                 + image.left as usize
                 + index % image.width as usize)
@@ -3610,7 +3620,7 @@ fn sparse_particle_tiles_preserve_every_original_rgba_byte_grid_and_order() {
                     (tile.left - original.left) % 128 == 0 && (tile.top - original.top) % 128 == 0
                 );
                 assert!(tile.width <= 128 && tile.height <= 128);
-                assert!(tile.pixels.chunks_exact(4).any(|p| p[3] > 0));
+                assert!(tile.pixels.as_chunks::<4>().0.iter().any(|p| p[3] > 0));
                 for row in 0..tile.height as usize {
                     let offset =
                         ((tile.top - original.top) as usize + row) * original.width as usize * 4
@@ -3772,7 +3782,9 @@ fn effect_mix_matches_actual_sdl_channel_gain_clipping_and_order() {
             assert!(actual.is_none());
         } else {
             let expected: Vec<i16> = expected
-                .chunks_exact(2)
+                .as_chunks::<2>()
+                .0
+                .iter()
                 .map(|b| i16::from_le_bytes([b[0], b[1]]))
                 .collect();
             assert_eq!(actual.unwrap().as_slice(), expected, "gain {gain}");
@@ -3839,7 +3851,9 @@ fn recorded_effects_preserve_every_original_sdl_sample_and_full_stereo_duration(
             Some((bytes.len() - 44) as u32)
         );
         let expected: Vec<i16> = bytes[44..]
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|b| i16::from_le_bytes([b[0], b[1]]))
             .collect();
         assert_eq!(
@@ -3848,7 +3862,9 @@ fn recorded_effects_preserve_every_original_sdl_sample_and_full_stereo_duration(
         );
         assert_eq!(
             expected
-                .chunks_exact(2)
+                .as_chunks::<2>()
+                .0
+                .iter()
                 .filter(|pair| pair[0] != pair[1])
                 .count() as u64,
             fixture["pcm_stereo_differences"].as_u64().unwrap()

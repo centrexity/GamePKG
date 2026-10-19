@@ -381,7 +381,7 @@ impl Stream {
                 .read(&self.store, pointer, &mut self.scratch[..count * 2])?;
             for (sample, bytes) in out
                 .iter_mut()
-                .zip(self.scratch[..count * 2].chunks_exact(2))
+                .zip(self.scratch[..count * 2].as_chunks::<2>().0.iter())
             {
                 *sample = i16::from_le_bytes([bytes[0], bytes[1]]);
             }

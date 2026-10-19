@@ -147,7 +147,9 @@ fn actual_zelda3_stereo_title_preserves_channel_differences() {
         assert_eq!(game.audio_frame().len(), 1600);
         separated |= game
             .audio_frame()
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .any(|pair| pair[0] != pair[1]);
     }
     assert!(separated, "Zelda DSP stereo channels were collapsed");

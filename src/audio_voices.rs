@@ -136,7 +136,7 @@ mod tests {
             let mut bytes = [0; 4096];
             for destination in [-32768, -30000, -1, 0, 1, 30000, 32767] {
                 for first in (-32768..=32767).step_by(2048) {
-                    for (offset, output) in bytes.chunks_exact_mut(2).enumerate() {
+                    for (offset, output) in bytes.as_chunks_mut::<2>().0.iter_mut().enumerate() {
                         output.copy_from_slice(
                             &mix_sample(destination, (first + offset as i32) as i16, volume)
                                 .to_le_bytes(),

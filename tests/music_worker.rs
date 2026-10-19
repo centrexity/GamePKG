@@ -213,7 +213,7 @@ fn original_tracks_play_from_signed_package_on_the_output_clock_without_game_tic
                 for (sample, bytes) in block[..count]
                     .iter()
                     .flatten()
-                    .zip(original.chunks_exact(2))
+                    .zip(original.as_chunks::<2>().0.iter())
                 {
                     hash.update(sample.to_le_bytes());
                     let expected = i16::from_le_bytes([bytes[0], bytes[1]]);

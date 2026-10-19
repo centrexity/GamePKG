@@ -275,7 +275,10 @@ fn original_tracks_stream_with_fixed_memory_chunk_invariance_and_rewind() {
                 let count = (reference_samples.unwrap() - reference_at).min(n as u64) as usize;
                 let mut original = vec![0u8; count * 2];
                 file.read_exact(&mut original).unwrap();
-                for (sample, bytes) in output[..count].iter().zip(original.chunks_exact(2)) {
+                for (sample, bytes) in output[..count]
+                    .iter()
+                    .zip(original.as_chunks::<2>().0.iter())
+                {
                     let delta = (i32::from(*sample)
                         - i32::from(i16::from_le_bytes([bytes[0], bytes[1]])))
                     .unsigned_abs();
@@ -295,7 +298,8 @@ fn original_tracks_stream_with_fixed_memory_chunk_invariance_and_rewind() {
                 witness = Some((samples, output[..n].to_vec()));
             }
             audible |= output[..n].iter().any(|v| *v != 0);
-            stereo |= stream.channels() == 2 && output[..n].chunks_exact(2).any(|p| p[0] != p[1]);
+            stereo |= stream.channels() == 2
+                && output[..n].as_chunks::<2>().0.iter().any(|p| p[0] != p[1]);
             samples += n as u64;
             assert!(samples < 1_000_000_000);
             memory_peak = memory_peak.max(stream.memory_bytes());
@@ -361,7 +365,9 @@ fn malformed_music_and_buffer_requests_fail_bounded_without_changing_output() {
                 }
                 heard |= output[..count].iter().any(|sample| *sample != 0);
                 assert!(output[..count]
-                    .chunks_exact(2)
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
                     .all(|pair| pair[0] == pair[1]));
             }
             assert!(heard, "mono conversion must include audible PCM");

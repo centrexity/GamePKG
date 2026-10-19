@@ -59,12 +59,8 @@ impl Buffer {
             if let Some(music) = &self.music {
                 let mut frame = [[0; 2]; 1];
                 if music.read(&mut frame) == 1 {
-                    for channel in 0..2 {
-                        self.current[channel] = crate::audio_voices::mix_sample(
-                            frame[0][channel],
-                            self.current[channel],
-                            128,
-                        );
+                    for (current, music) in self.current.iter_mut().zip(frame[0]) {
+                        *current = crate::audio_voices::mix_sample(music, *current, 128);
                     }
                 }
             }
@@ -587,7 +583,9 @@ mod tests {
             audible |= game.audio_frame().iter().any(|&sample| sample != 0);
             separated |= game
                 .audio_frame()
-                .chunks_exact(2)
+                .as_chunks::<2>()
+                .0
+                .iter()
                 .any(|pair| pair[0] != pair[1]);
         }
         assert!(audible, "Original engine emitted no sound");

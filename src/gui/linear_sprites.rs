@@ -84,7 +84,9 @@ impl Cache {
             } else {
                 image
                     .pixels()
-                    .chunks_exact(4)
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
                     .flat_map(|p| super::game_colors::rgba(p[0], p[1], p[2], p[3]).to_array())
                     .collect()
             };

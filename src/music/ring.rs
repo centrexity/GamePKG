@@ -75,7 +75,7 @@ impl Ring {
         }
         let tail = self.tail.load(Ordering::Relaxed);
         let block = &self.blocks[(tail % BLOCKS as u64) as usize];
-        for (slot, frame) in block.samples.iter().zip(samples.chunks_exact(2)) {
+        for (slot, frame) in block.samples.iter().zip(samples.as_chunks::<2>().0.iter()) {
             slot.store(
                 u32::from(frame[0] as u16) | (u32::from(frame[1] as u16) << 16),
                 Ordering::Relaxed,
@@ -214,7 +214,12 @@ mod tests {
             let mut block = [0i16; FRAMES * 2];
             for batch in 0..1024 {
                 let count = if batch % 17 == 0 { 113 } else { FRAMES };
-                for (index, frame) in block[..count * 2].chunks_exact_mut(2).enumerate() {
+                for (index, frame) in block[..count * 2]
+                    .as_chunks_mut::<2>()
+                    .0
+                    .iter_mut()
+                    .enumerate()
+                {
                     frame[0] = ((batch * 13 + index) % 32768) as i16;
                     frame[1] = -frame[0];
                 }

@@ -479,7 +479,7 @@ fn multiball_ejection_and_shockwave_reach_the_real_renderer() {
         .frame()
         .commands
         .iter()
-        .filter(|command| matches!(command, Command::Image { image, .. } if image.pixels().chunks_exact(4).any(|p|p[3]==0) && image.pixels().chunks_exact(4).any(|p|p[..3]==[200,255,255] && p[3]>0)))
+        .filter(|command| matches!(command, Command::Image { image, .. } if image.pixels().as_chunks::<4>().0.iter().any(|p|p[3]==0) && image.pixels().as_chunks::<4>().0.iter().any(|p|p[..3]==[200,255,255] && p[3]>0)))
         .count();
     assert_eq!(shockwave, 1, "missing batched original shockwave shards");
 }
@@ -519,7 +519,7 @@ fn original_particle_points_and_alpha_reach_native_and_wasm_renderers_without_ca
                     assert_eq!((*width, *height), (w as f32 * 0.5, h as f32 * 0.5));
                     let left = (*x * 2.0) as i32;
                     let top = ((*y - 60.0) * 2.0) as i32;
-                    for (index, pixel) in image.pixels().chunks_exact(4).enumerate() {
+                    for (index, pixel) in image.pixels().as_chunks::<4>().0.iter().enumerate() {
                         if pixel[3] != 0 {
                             actual.insert(
                                 (left + (index % w) as i32, top + (index / w) as i32),
@@ -539,7 +539,7 @@ fn original_particle_points_and_alpha_reach_native_and_wasm_renderers_without_ca
         "full-board effects were capped: {count}"
     );
     assert!(game.frame().commands.len() < 600);
-    assert!(game.frame().commands.iter().any(|command|matches!(command,Command::Image{image,..} if image.pixels().chunks_exact(4).any(|p|p[3]>0))));
+    assert!(game.frame().commands.iter().any(|command|matches!(command,Command::Image{image,..} if image.pixels().as_chunks::<4>().0.iter().any(|p|p[3]>0))));
     assert!(
         game.frame()
             .commands
@@ -556,14 +556,21 @@ fn original_particle_points_and_alpha_reach_native_and_wasm_renderers_without_ca
     for command in &game.frame().commands {
         if let Command::Image { x, y, image, .. } = command {
             let [w, h] = image.size();
-            if h <= 50 || image.pixels().chunks_exact(4).all(|pixel| pixel[3] == 255) {
+            if h <= 50
+                || image
+                    .pixels()
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .all(|pixel| pixel[3] == 255)
+            {
                 continue;
             }
             tiles += 1;
             assert!(w <= 512 && h <= 512);
             let left = (*x * 2.0) as i32;
             let top = ((*y - 60.0) * 2.0) as i32;
-            for (index, pixel) in image.pixels().chunks_exact(4).enumerate() {
+            for (index, pixel) in image.pixels().as_chunks::<4>().0.iter().enumerate() {
                 let point = (left + (index % w) as i32, top + (index / w) as i32);
                 if pixel[3] > 0 && [(0, 0), (1279, 0), (0, 719), (1279, 719)].contains(&point) {
                     corners.insert(point);
@@ -634,7 +641,7 @@ fn original_ball_trails_comet_and_pulsing_ring_pixels_match_in_native_and_wasm()
                 assert_eq!((*width, *height), (w as f32 * 0.5, h as f32 * 0.5));
                 let left = (*x * 2.0) as i32;
                 let top = ((*y - 60.0) * 2.0) as i32;
-                for (offset, pixel) in image.pixels().chunks_exact(4).enumerate() {
+                for (offset, pixel) in image.pixels().as_chunks::<4>().0.iter().enumerate() {
                     if pixel[3] != 0 {
                         actual.insert(
                             (left + (offset % w) as i32, top + (offset / w) as i32),
@@ -767,10 +774,17 @@ fn legacy_save_keeps_large_best_score_and_levels_above_the_old_cap() {
     assert_eq!(
         level
             .pixels()
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|p| p[3])
             .collect::<Vec<_>>(),
-        glyphs.chunks_exact(4).map(|p| p[3]).collect::<Vec<_>>(),
+        glyphs
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|p| p[3])
+            .collect::<Vec<_>>(),
         "displayed level was clamped"
     );
     game.step(131072).unwrap();
@@ -792,9 +806,9 @@ fn special_bricks_ice_damage_and_world_radius_blasts_reach_real_renderers() {
     let state = game.step(65536).unwrap();
     assert_ne!(state & 4096, 0);
     assert_eq!(state >> 32, 0);
-    assert!(game.frame().commands.iter().any(|command|matches!(command,Command::Image{x,y,width,height,image} if *x==20.0 && *y==100.0 && *width==30.5 && *height==10.5 && image.pixels().chunks_exact(4).any(|pixel|pixel==[255,255,255,220]))),"damaged ice crack missing");
-    assert!(game.frame().commands.iter().any(|command|matches!(command,Command::Image{x,y,image,..} if *x==50.0 && *y==100.0 && image.pixels().chunks_exact(4).any(|pixel|pixel==[30,35,40,255]) && image.pixels().chunks_exact(4).any(|pixel|pixel==[150,150,160,255]))),"metal brick/rivets missing");
-    assert!(game.frame().commands.iter().any(|command|matches!(command,Command::Image{x:80.0,y:100.0,width:30.5,height:10.5,image} if image.size()==[61,21] && image.pixels().chunks_exact(4).any(|p|p[0]>=220 && p[1]>=80 && p[3]==255))),"explosive brick missing");
+    assert!(game.frame().commands.iter().any(|command|matches!(command,Command::Image{x,y,width,height,image} if *x==20.0 && *y==100.0 && *width==30.5 && *height==10.5 && image.pixels().as_chunks::<4>().0.contains(&[255,255,255,220]))),"damaged ice crack missing");
+    assert!(game.frame().commands.iter().any(|command|matches!(command,Command::Image{x,y,image,..} if *x==50.0 && *y==100.0 && image.pixels().as_chunks::<4>().0.contains(&[30,35,40,255]) && image.pixels().as_chunks::<4>().0.contains(&[150,150,160,255]))),"metal brick/rivets missing");
+    assert!(game.frame().commands.iter().any(|command|matches!(command,Command::Image{x:80.0,y:100.0,width:30.5,height:10.5,image} if image.size()==[61,21] && image.pixels().as_chunks::<4>().0.iter().any(|p|p[0]>=220 && p[1]>=80 && p[3]==255))),"explosive brick missing");
     let state = game.step(262144).unwrap();
     assert_eq!(state >> 32, 10);
     assert_eq!(state & 4096, 0);
@@ -1042,7 +1056,7 @@ fn original_editor_workflow_persists_patterns_and_preserves_corrupt_saves_in_rea
             .commands
             .iter()
             .filter(
-                |c| matches!(c,Command::Image{width,height,image,..} if (*width==30.0 && *height==10.0)||(*width==30.5 && *height==10.5 && image.pixels().chunks_exact(4).any(|p|p[3]==255 && p[..3]!=[255,255,255])))
+                |c| matches!(c,Command::Image{width,height,image,..} if (*width==30.0 && *height==10.0)||(*width==30.5 && *height==10.5 && image.pixels().as_chunks::<4>().0.iter().any(|p|p[3]==255 && p[..3]!=[255,255,255])))
             )
             .count(),
         3
@@ -1055,13 +1069,13 @@ fn original_editor_workflow_persists_patterns_and_preserves_corrupt_saves_in_rea
     editor_key(&mut game, 101);
     editor_key(&mut game, 108);
     editor_key(&mut game, 13);
-    assert!(game.frame().commands.iter().any(|c|matches!(c,Command::Image{x,y,width,height,image} if *x==20.0 && *y==100.0 && *width==30.0 && *height==10.0 && !image.pixels().chunks_exact(4).any(|pixel|pixel==[255,255,255,220]))),"loaded ice incorrectly appears damaged before being hit");
+    assert!(game.frame().commands.iter().any(|c|matches!(c,Command::Image{x,y,width,height,image} if *x==20.0 && *y==100.0 && *width==30.0 && *height==10.0 && !image.pixels().as_chunks::<4>().0.contains(&[255,255,255,220]))),"loaded ice incorrectly appears damaged before being hit");
     assert_eq!(
         game.frame()
             .commands
             .iter()
             .filter(
-                |c| matches!(c,Command::Image{width,height,image,..} if (*width==30.0 && *height==10.0)||(*width==30.5 && *height==10.5 && image.pixels().chunks_exact(4).any(|p|p[3]==255 && p[..3]!=[255,255,255])))
+                |c| matches!(c,Command::Image{width,height,image,..} if (*width==30.0 && *height==10.0)||(*width==30.5 && *height==10.5 && image.pixels().as_chunks::<4>().0.iter().any(|p|p[3]==255 && p[..3]!=[255,255,255])))
             )
             .count(),
         3
@@ -1426,7 +1440,7 @@ fn actual_menu_clicks_start_resume_restart_gravity_editor_settings_fullscreen_an
                 &mut rgba,
             )
             .unwrap();
-            commands.iter().any(|c|matches!(c,Command::LinearImage{x,y,width:w,height:h,image} if (*x,*y,*w,*h)==((640-width as i32/2) as f32*0.5,262.0,width as f32*0.5,15.5) && image.size()==[width,31] && image.pixels().chunks_exact(4).zip(rgba.chunks_exact(4)).all(|(a,b)|a[3]==b[3])))
+            commands.iter().any(|c|matches!(c,Command::LinearImage{x,y,width:w,height:h,image} if (*x,*y,*w,*h)==((640-width as i32/2) as f32*0.5,262.0,width as f32*0.5,15.5) && image.size()==[width,31] && image.pixels().as_chunks::<4>().0.iter().zip(rgba.as_chunks::<4>().0.iter()).all(|(a,b)|a[3]==b[3])))
         };
         game.step(0).unwrap();
         assert!(
@@ -1599,7 +1613,9 @@ fn original_effect_pcm(kind: u32) -> Vec<i16> {
         _ => panic!("unknown test effect"),
     };
     bytes[44..]
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|b| i16::from_le_bytes([b[0], b[1]]))
         .collect()
 }
@@ -2166,7 +2182,13 @@ fn original_ice_glints_refractions_cracks_and_clipped_shine_reach_real_runtimes(
                     .unwrap(),
             )
             .unwrap();
-            let actual: Vec<_> = image.pixels().chunks_exact(4).map(|p| p[3]).collect();
+            let actual: Vec<_> = image
+                .pixels()
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|p| p[3])
+                .collect();
             let mismatch = actual.iter().zip(&expected).position(|(a, b)| a != b);
             assert!(
                 mismatch.is_none(),
@@ -2175,7 +2197,9 @@ fn original_ice_glints_refractions_cracks_and_clipped_shine_reach_real_runtimes(
             );
             assert!(image
                 .pixels()
-                .chunks_exact(4)
+                .as_chunks::<4>()
+                .0
+                .iter()
                 .all(|p| p[..3] == [255, 255, 255]));
         }
     }
@@ -2205,7 +2229,9 @@ fn original_ice_glints_refractions_cracks_and_clipped_shine_reach_real_runtimes(
     assert_eq!(
         image
             .pixels()
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|p| p[3])
             .collect::<Vec<_>>(),
         expected,
@@ -2277,8 +2303,10 @@ fn original_fire_glass_blob_and_clipped_shine_match_real_sdl_wrappers() {
             assert_eq!(expected.len(), image.pixels().len());
             for (pixel, (source, target)) in image
                 .pixels()
-                .chunks_exact(4)
-                .zip(expected.chunks_exact(4))
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .zip(expected.as_chunks::<4>().0.iter())
                 .enumerate()
             {
                 let alpha = u32::from(source[3]);
@@ -2380,8 +2408,10 @@ fn original_glass_bonus_layers_preserve_types_symbols_order_and_full_drop_budget
             assert_eq!(original.len(), image.pixels().len());
             for (pixel, (source, target)) in image
                 .pixels()
-                .chunks_exact(4)
-                .zip(original.chunks_exact(4))
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .zip(original.as_chunks::<4>().0.iter())
                 .enumerate()
             {
                 let alpha = u32::from(source[3]);
@@ -2608,7 +2638,13 @@ fn original_four_portal_stages_reach_signed_runtimes_with_unchanged_budgets() {
             .unwrap();
         assert_eq!(original.len(), image.pixels().len());
         let mut delta = 0;
-        for (pixel, source) in image.pixels().chunks_exact(4).zip(original.chunks_exact(4)) {
+        for (pixel, source) in image
+            .pixels()
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .zip(original.as_chunks::<4>().0.iter())
+        {
             for channel in 0..3 {
                 let value = (u32::from(pixel[channel]) * u32::from(pixel[3])
                     + [11, 16, 32][channel] * (255 - u32::from(pixel[3])))
@@ -2691,7 +2727,7 @@ fn check_background_runtime_fixture(text: &str, flag: u32, scenes: &[u32], stres
             assert_eq!((*width, *height), (w as f32 * 0.5, h as f32 * 0.5));
             let left = (*x * 2.0) as usize;
             let top = ((*y - 60.0) * 2.0) as usize;
-            for (i, pixel) in image.pixels().chunks_exact(4).enumerate() {
+            for (i, pixel) in image.pixels().as_chunks::<4>().0.iter().enumerate() {
                 let at = (top + i / w) * 1280 + left + i % w;
                 assert!(!covered[at], "Overlapping tiles blend source points twice");
                 covered[at] = true;
@@ -2717,8 +2753,10 @@ fn check_background_runtime_fixture(text: &str, flag: u32, scenes: &[u32], stres
             .unwrap();
         assert_eq!(actual.len(), expected.len());
         let delta = actual
-            .chunks_exact(4)
-            .zip(expected.chunks_exact(4))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .zip(expected.as_chunks::<4>().0.iter())
             .flat_map(|(a, b)| (0..3).map(move |channel| a[channel].abs_diff(b[channel])))
             .max()
             .unwrap();
@@ -2764,7 +2802,9 @@ fn check_background_runtime_fixture(text: &str, flag: u32, scenes: &[u32], stres
                         && image.size()[1] > 64
                         && image
                             .pixels()
-                            .chunks_exact(4)
+                            .as_chunks::<4>()
+                            .0
+                            .iter()
                             .any(|p| p[..3] == [25, 100, 200] && p[3] > 0)
                     {
                         corners += 1;
@@ -2834,7 +2874,9 @@ fn sdl_default_line_coverage_and_clipping_reach_native_and_wasm() {
             .read_to_end(&mut pixels)
             .unwrap();
         let expected: std::collections::BTreeSet<_> = pixels
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .enumerate()
             .filter(|(_, p)| p[..3] != [11, 16, 32])
             .map(|(i, _)| i)
@@ -2860,9 +2902,9 @@ fn sdl_default_line_coverage_and_clipping_reach_native_and_wasm() {
         let left = (*x * 2.0) as usize;
         let top = ((*y - 60.0) * 2.0) as usize;
         let mut actual = std::collections::BTreeSet::new();
-        for (i, pixel) in image.pixels().chunks_exact(4).enumerate() {
+        for (i, pixel) in image.pixels().as_chunks::<4>().0.iter().enumerate() {
             if pixel[3] > 0 {
-                assert_eq!(pixel, [200, 100, 255, 150]);
+                assert_eq!(*pixel, [200, 100, 255, 150]);
                 actual.insert((top + i / w) * 64 + left + i % w);
             }
         }
@@ -3091,7 +3133,7 @@ fn original_six_campaign_image_backgrounds_preserve_full_pixels_and_dense_scene_
             &mut expected,
         )
         .unwrap();
-        for pixel in bright.chunks_exact_mut(4) {
+        for pixel in bright.as_chunks_mut::<4>().0.iter_mut() {
             for channel in &mut pixel[..3] {
                 *channel = ((u16::from(*channel) * 64 + 127) / 255) as u8;
             }
@@ -3192,7 +3234,7 @@ fn original_editor_background_brightness_and_full_metal_boards_reach_native_and_
                         .copy_from_slice(&image.pixels()[row * w * 4..(row + 1) * w * 4]);
                 }
             }
-            for pixel in pixels.chunks_exact_mut(4) {
+            for pixel in pixels.as_chunks_mut::<4>().0.iter_mut() {
                 for channel in &mut pixel[..3] {
                     *channel = ((u16::from(*channel) * 102 + 127) / 255) as u8;
                 }
@@ -3265,7 +3307,7 @@ fn original_editor_grid_and_backdrop_match_sdl_logical_pixels_and_endpoints() {
                     .copy_from_slice(&image.pixels()[row * w * 4..(row + 1) * w * 4]);
             }
         }
-        for pixel in pixels.chunks_exact_mut(4) {
+        for pixel in pixels.as_chunks_mut::<4>().0.iter_mut() {
             for channel in &mut pixel[..3] {
                 *channel = ((u16::from(*channel) * 102 + 127) / 255) as u8;
             }
@@ -3345,7 +3387,7 @@ fn original_editor_palette_colors_borders_digits_and_order_match_sdl_pixels() {
                     .copy_from_slice(&image.pixels()[row * w * 4..(row + 1) * w * 4]);
             }
         }
-        for pixel in pixels.chunks_exact_mut(4) {
+        for pixel in pixels.as_chunks_mut::<4>().0.iter_mut() {
             for channel in &mut pixel[..3] {
                 *channel = ((u16::from(*channel) * 102 + 127) / 255) as u8;
             }
@@ -3590,7 +3632,7 @@ fn dynamic_unicode_editor_names_rows_messages_and_viewport_clips_match_original_
                 &mut expected,
             )
             .unwrap();
-            for pixel in expected.chunks_exact_mut(4) {
+            for pixel in expected.as_chunks_mut::<4>().0.iter_mut() {
                 pixel[..3].copy_from_slice(&color);
             }
             let mut column = (-left).clamp(0, full_width);
@@ -3662,7 +3704,7 @@ fn original_pattern_browser_complete_pixels_and_dense_board_budget_match() {
             66
         );
         let mut actual = vec![0u8; 1280 * 720 * 4];
-        for pixel in actual.chunks_exact_mut(4) {
+        for pixel in actual.as_chunks_mut::<4>().0.iter_mut() {
             pixel.copy_from_slice(&[120, 180, 240, 255]);
         }
         let mut clip = [0, 0, 1280, 720];
@@ -3781,7 +3823,7 @@ fn original_pattern_browser_complete_pixels_and_dense_board_budget_match() {
 
 fn canonical_menu_pixels(frame: &gamepkg::drawing::Frame) -> Vec<u8> {
     let mut output = vec![0u8; 1280 * 720 * 4];
-    for pixel in output.chunks_exact_mut(4) {
+    for pixel in output.as_chunks_mut::<4>().0.iter_mut() {
         pixel.copy_from_slice(&frame.background.unwrap_or(0x10171dff).to_be_bytes());
     }
     let mut clip = [0, 0, 1280, 720];
@@ -4407,7 +4449,9 @@ fn both_recordings_and_four_shared_voices_fit_the_unchanged_memory_limit() {
     .iter()
     .map(|bytes| {
         bytes[44..]
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|b| i16::from_le_bytes([b[0], b[1]]))
             .collect()
     })
