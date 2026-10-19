@@ -1,4 +1,4 @@
-// Trusted decoder adapter. Run in a separately supervised worker, never in a guest.
+// Trusted companion validation and decoder adapter. Decoder execution belongs in a supervised worker.
 export const MAX_DECODER_MEMORY=6291456,MAX_ENCODED_BYTES=8388608,MAX_PCM_VALUES=1600,MAX_DECODE_WORK=524288;
 const fail=message=>{throw Error(message);};
 function layout(bytes,limit){
@@ -12,7 +12,7 @@ function layout(bytes,limit){
   if(section===1){const count=uint();if(count>4096)fail('Too many decoder types');for(let i=0;i<count;i++){if(byte()!==96)fail('Invalid decoder function type');const params=uint();if(params>16)fail('Too many decoder parameters');const parameters=[];for(let n=0;n<params;n++)parameters.push(byte());const count=uint();if(count>16)fail('Too many decoder results');const results=[];for(let n=0;n<count;n++)results.push(byte());types.push({parameters,results});}if(at!==end)fail('Invalid decoder types');}
   if(section===2){if(uint()!==0||at!==end)fail('Decoder cannot import capabilities');}
   if(section===3){const count=uint();if(count>65536)fail('Too many decoder functions');for(let n=0;n<count;n++)functions.push(uint());if(at!==end)fail('Invalid decoder functions');}
-  if(section===7){const count=uint();if(count>4096)fail('Too many decoder exports');for(let n=0;n<count;n++){const size=uint();if(size>1024||at+size>end)fail('Invalid decoder export name');const name=new TextDecoder('utf-8',{fatal:true}).decode(bytes.subarray(at,at+size));at+=size;if(exports.has(name))fail('Duplicate decoder export');exports.set(name,{kind:byte(),index:uint()});}if(at!==end)fail('Invalid decoder exports');}
+  if(section===7){const count=uint();if(count>4096)fail('Too many decoder exports');for(let n=0;n<count;n++){const size=uint();if(size>1024||at+size>end)fail('Invalid decoder export name');let name='';for(let i=0;i<size;i++){const value=byte();if(value>127)fail('Companion export names must be ASCII');name+=String.fromCharCode(value);}if(exports.has(name))fail('Duplicate decoder export');exports.set(name,{kind:byte(),index:uint()});}if(at!==end)fail('Invalid decoder exports');}
   if(section===5){if(memory||uint()!==1)fail('Decoder must have one memory');memory=bounded(Math.floor(limit/65536))*65536;if(!memory||at!==end)fail('Invalid decoder memory');}
   if(section===4){if(uint()!==1||byte()!==112)fail('Invalid decoder table');bounded(4096);if(at!==end)fail('Invalid decoder table');}
   if(section===8)fail('Decoder start functions are forbidden');
@@ -22,13 +22,11 @@ function layout(bytes,limit){
 }
 export function inspectCompanion(bytes,limit=MAX_DECODER_MEMORY){return layout(bytes,limit).memory;}
 const ABI={decoder_reserve:1,decoder_open:0,decoder_read:1,decoder_output:0,decoder_rate:0,decoder_channels:0,decoder_work:0,decoder_rewind:0,decoder_set_output_rate:1,decoder_set_mixer_rate:1};
-export class RecordedDecoder {
- #api;#maximum;#opened=false;#failed=false;#closed=false;
- constructor(bytes,limit=MAX_DECODER_MEMORY){
+export function instantiateCompanion(bytes,limit,abi){
   const size=bytes?.byteLength;if(!(bytes instanceof Uint8Array)||!Number.isInteger(size)||size<8||size>4194304)fail('Invalid decoder module');
   const owned=new Uint8Array(size);owned.set(new Uint8Array(bytes.buffer,bytes.byteOffset,size));
-  const policy=layout(owned,limit);this.#maximum=policy.memory;
-  for(const [name,count] of Object.entries(ABI)){
+  const policy=layout(owned,limit);const maximumMemoryBytes=policy.memory;
+  for(const [name,count] of Object.entries(abi)){
    const exported=policy.exports.get(name),type=exported?.kind===0?policy.types[policy.functions[exported.index]]:null;
    if(!type||type.parameters.length!==count||type.parameters.some(value=>value!==127)||type.results.length!==1||type.results[0]!==127)fail('Invalid decoder ABI');
   }
@@ -37,9 +35,16 @@ export class RecordedDecoder {
   if(WebAssembly.Module.imports(module).length)fail('Decoder cannot import capabilities');
   const exports=WebAssembly.Module.exports(module);
   if(exports.filter(value=>value.kind==='memory').length!==1||!exports.some(value=>value.name==='memory'&&value.kind==='memory'))fail('Decoder memory export missing');
-  for(const name of Object.keys(ABI))if(!exports.some(value=>value.name===name&&value.kind==='function'))fail('Decoder function missing');
+  for(const name of Object.keys(abi))if(!exports.some(value=>value.name===name&&value.kind==='function'))fail('Decoder function missing');
   const api=new WebAssembly.Instance(module,{}).exports;
-  for(const [name,parameters] of Object.entries(ABI))if(api[name].length!==parameters)fail('Invalid decoder signature');
+  for(const [name,parameters] of Object.entries(abi))if(api[name].length!==parameters)fail('Invalid decoder signature');
+  if(!(api.memory instanceof WebAssembly.Memory)||api.memory.buffer.byteLength>maximumMemoryBytes)fail('Companion memory budget exceeded');
+  return {api,maximumMemoryBytes};
+}
+export class RecordedDecoder {
+ #api;#maximum;#opened=false;#failed=false;#closed=false;
+ constructor(bytes,limit=MAX_DECODER_MEMORY){
+  const {api,maximumMemoryBytes}=instantiateCompanion(bytes,limit,ABI);this.#maximum=maximumMemoryBytes;
   this.#api=api;this.#memory();
  }
  get maximumMemoryBytes(){return this.#maximum;}

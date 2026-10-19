@@ -3221,3 +3221,50 @@ mixing, shared transport/cache/queue budget accounting, game transaction wiring
 and port migration remain unfinished. Declared recorded-audio browser exports
 still fail explicitly until those pieces are integrated and verified. The
 Chromium proof's full-track hash buffer is test-only, not a production queue.
+
+### Browser original-rate mixer and shared output conversion
+
+The browser mixer now supports four first-free effect voices with immutable
+owned PCM, integer gain, pause, stop, slot reuse and active-clip unload denial.
+Music enters first; each voice adds and saturates in slot order. Muted effects
+still advance and paused effects freeze while music continues. Cache records are
+fixed at 32 IDs; each stereo recording is bounded to 2 MiB. PCM backing buffers
+are charged before publication inside the selected share, together with the
+converter's declared memory and fixed 64 KiB staging reservation. Invalid sizes
+and exhausted capacity leave prior playback unchanged. These buffer reservations
+are not a proof about the browser engine's entire object heap.
+
+One new import-free converter companion reuses the existing Rust SDL adaptation
+at 44.1-to-48 kHz. Its maximum linear memory is 256 KiB, including a fixed 128 KiB
+stack. Its input/output and conversion storage are fixed; conversion performs no
+allocation after initialization. The JS adapter and companion use explicit
+little-endian S16 buffers, capped at 800 stereo frames per operation. Music
+passed to this layer already has its gain applied, as in the native mixer.
+
+Every one of the 59,179,008 SDL source/destination/volume arithmetic combinations
+matches the pinned hashes. All eighteen combined music/effect conversion hashes
+match at the existing three buffer schedules and six gains. Three more checks
+freeze the effect voices and retain the original music-only output. Ownership,
+first-free reuse, active unload denial, cache/clip bounds, pause, silent
+advancement and rejected-buffer preservation pass. Actual Chromium AudioWorklet
+output matches complete SDL sample hashes and lengths at all six gains and with
+paused effects, without game ticks; completed output tails are zero.
+
+Shared companion validation now handles both decoder and converter signatures
+and does not depend on TextDecoder, which is unavailable in some worklet scopes.
+The existing nine-track native/JavaScript decoder corpus and actual Chromium
+worker deadline/cancellation/full-track tests still pass after this refactor.
+No reference hash, tolerance, existing audio cap or decoder deadline changed.
+
+This remains a separately qualified browser audio component. The production
+worklet's live queue/transport accounting, game frame/control transactions,
+companion embedding/export, and port migration still need wiring and proof.
+Recorded-audio browser exports remain explicitly disabled. No converter binary,
+recording or signed package release is published by this change.
+
+The converter passes strict Wasm-target checks on Rust 1.89 and 1.99. Optimized
+artifacts built by both compilers preserve every arithmetic/conversion hash and
+the actual AudioWorklet output. An additional muted-master AudioWorklet graph
+continues through all 6,530 output frames with entirely zero external output.
+This distinguishes application master mute from pausing effect voice positions.
+CI builds/checks the separate companion and runs the Node/Chromium qualification.

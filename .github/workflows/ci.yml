@@ -378,6 +378,12 @@ jobs:
       - name: Verify browser decoder PCM ABI limits deadlines and cancellation
         if: matrix.features == '--all-features'
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tools/check_browser_audio_decoder.py target/reference-arkanoo/assets/music --browser
+      - name: Verify browser original-rate mixing and actual AudioWorklet output
+        if: matrix.features == '--all-features'
+        run: |
+          cargo fmt --manifest-path tools/audio-converter/Cargo.toml -- --check
+          cargo clippy --locked --manifest-path tools/audio-converter/Cargo.toml --target wasm32-unknown-unknown -- -D warnings
+          sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tools/check_browser_audio_mixer.py --browser
       - name: Verify original menu buttons and whole-menu pixels
         if: matrix.features == '--all-features'
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tests/menu_controls_gui.py --original target/reference-arkanoo
