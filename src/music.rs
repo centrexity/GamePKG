@@ -207,6 +207,9 @@ impl Service {
             shared.force_status(Status::Failed);
             anyhow::bail!("music worker is unavailable");
         }
+        // Replacement invalidates the old generation immediately. Wait for an
+        // already admitted output read before reporting the boundary complete.
+        shared.ring.wait_consumer();
         shared.ring.wake();
         Ok(())
     }
@@ -252,6 +255,7 @@ impl Service {
         shared
             .status
             .store(tag(generation, Status::Stopped), Ordering::Release);
+        shared.ring.wait_consumer();
         shared.ring.wake();
         Ok(())
     }
@@ -817,6 +821,61 @@ mod tests {
         drop(service);
         assert_eq!(budget.used(), HOST_BYTES);
         assert_eq!(output.read(&mut unchanged), 0);
+        drop(output);
+        assert_eq!(budget.used(), 0);
+    }
+    #[test]
+    fn stop_and_replacement_wait_for_inflight_output_reads() {
+        let (_temporary, package) = package(zip::CompressionMethod::Stored, true);
+        let budget = memory_budget::Budget::new(HOST_BYTES + 6 * 1048576);
+        let service = Arc::new(
+            Service::new_original_rate(
+                factory(20000, false),
+                &package,
+                true,
+                budget.clone(),
+                6 * 1048576,
+            )
+            .unwrap(),
+        );
+        let output = service.output();
+        for replacement in [true, false] {
+            service.play("a.mp3").unwrap();
+            wait(|| output.queued_frames() == QUEUE_FRAMES);
+            // Hold the same guard as Output::read, without depending on thread
+            // scheduling inside its short sample-copy loop.
+            let consumer = output.0.ring.consumer().unwrap();
+            let generation = output.0.generation();
+            let control = service.clone();
+            let (sent, received) = std::sync::mpsc::channel();
+            let worker = std::thread::spawn(move || {
+                let result = if replacement {
+                    control.play("b.mp3")
+                } else {
+                    control.stop()
+                };
+                sent.send(result).unwrap();
+            });
+            wait(|| output.0.generation() != generation);
+            // The control state is visible, but the caller must not receive a
+            // completion until a previously admitted read has left its guard.
+            let early = received.recv_timeout(std::time::Duration::from_millis(20));
+            drop(consumer);
+            worker.join().unwrap();
+            assert!(matches!(
+                early,
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+            ));
+            received.recv().unwrap().unwrap();
+            if replacement {
+                assert_eq!(drain(&output), vec![[2000, -4000]; 20000]);
+            } else {
+                let mut sentinel = [[123, -456]; 1];
+                assert_eq!(output.read(&mut sentinel), 0);
+                assert_eq!(sentinel, [[123, -456]; 1]);
+            }
+        }
+        drop(service);
         drop(output);
         assert_eq!(budget.used(), 0);
     }

@@ -594,3 +594,10 @@ id = "browser_atomic_progress_checkpoint"
 requirements = ["Atomic save and history writes", "Preserve legacy records", "Strict schema and byte validation", "Concurrent history merge", "Creator separation", "Stop and Restart reject stale asynchronous publication"]
 status = "implemented_runtime_verified_chromium"
 notes = "Actual IndexedDB tests verify rollback after successful save request, history quota denial, early cancellation, connection recovery, full 1 MiB save hash, concurrent updates, invalid data preservation and lazy legacy access. Both exported runtime profiles verify delayed startup and checkpoint completion across Stop and Restart. Existing gameplay, editor, file, homepage and output rollback fixtures pass. Guest memory rewind and native cross-file atomicity remain separate open requirements; source only."
+
+
+[[work]]
+id = "music_control_output_boundary"
+requirements = ["Stop waits for admitted output reads", "Replacement waits for admitted old-track reads", "Callback remains independent of control mutex", "Complete replacement samples and budget cleanup"]
+status = "implemented_unit_verified"
+notes = "Deterministic guard-held regression failed before the fix. Both controls now publish a new generation and wait for the previous consumer boundary, matching Pause. Eight music and three combined conversion cases pass, including exact replacement samples and cleanup. Does not retract OS/device queued audio or close SDK and port migration requirements."

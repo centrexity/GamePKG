@@ -3025,3 +3025,20 @@ This supersedes the browser save/history cross-store limitation above. Native
 cross-file persistence, guest-memory rewind, repair UI, browser recorded effects,
 music SDKs and full port fidelity remain open. No binary or package release is
 part of this change.
+
+### Music Stop and replacement output boundaries
+
+A deterministic regression held the music ring's output-consumer guard while
+issuing Stop or replacement from another thread. Both controls previously
+returned before that already admitted read left its guard. They now wait at the
+control boundary, as Pause already did, after publishing the new generation.
+Later reads reject the old generation. The output callback still never takes
+the producer/control mutex. This bounds software read completion; it does not
+retract audio already submitted to an OS device.
+
+The test first failed on the previous implementation. With the fix it verifies
+both controls against active playback, exact complete replacement-track samples,
+stopped-read sentinel preservation and complete budget release. All eight music
+unit cases and three combined music/effect conversion cases pass with unchanged
+memory, queue and decoder limits. Music SDK activation and port migration remain
+open.
