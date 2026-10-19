@@ -3732,3 +3732,21 @@ limit. Lossless compression alone therefore remains 1,585,141 bytes over budget;
 this audit does not claim a successful full export or port migration. No images,
 tracks or fidelity data are removed. Generated assets and reports remain private.
 Players need none of the maintainer tools.
+
+
+### Prepared portable music setting persistence
+
+Arkanoo source recipe 0.1.62 prepares ARK4 save support for separate music/effect
+volume and mute settings. The fixed little-endian header keeps the existing save
+size and full pattern capacity. ARK1/2/3 remain readable with music volume 64 and
+unmuted defaults. Unknown bits, either gain above 128, invalid patterns and
+truncation reject before changing stored settings or patterns. Encoders clamp
+caller gains to 0..128. Unicode pattern names and complete archives round-trip.
+
+The standalone codec cases execute on actual Linux32 and Linux64. All 101
+existing port unit cases, the two new codec cases, strict lint and approved-source
+isolated native/Wasm compilation pass. The synthetic source-build check now
+compiles the actual editor codec alongside the prepared playlist controller.
+The active game still writes ARK3 and uses its existing effects path; ARK4 writing
+and music controls are prepared for the complete migration, not enabled as a
+partial port. No recordings or private proofs are published.

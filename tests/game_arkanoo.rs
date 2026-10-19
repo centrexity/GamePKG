@@ -2406,7 +2406,7 @@ fn effects_archive_migrates_old_formats_preserves_capacity_and_rejects_bad_setti
         assert_eq!((loaded.sfx_volume, loaded.sfx_muted), (17, true));
     }
     let mut future = valid.clone();
-    future[3] = b'4';
+    future[3] = b'5';
     assert!(loaded.save_decode(&future).is_none());
     let mut full = editor::Editor::new();
     full.name = "x".repeat(editor::SAVE_BYTES - 224);
@@ -2420,6 +2420,10 @@ fn effects_archive_migrates_old_formats_preserves_capacity_and_rejects_bad_setti
     assert_eq!(loaded.save_decode(&new), Some([1, 2, 0]));
     assert_eq!((loaded.sfx_volume, loaded.sfx_muted), (0, true));
     assert_eq!(loaded.patterns[0].name.len(), editor::SAVE_BYTES - 224);
+    let audio = full.save_encode_audio_settings(1, 2, false, [0, 128], [true, false]);
+    assert_eq!(audio.len(), editor::SAVE_BYTES);
+    assert_eq!(loaded.save_decode(&audio), Some([1, 2, 0]));
+    assert_eq!((loaded.music_volume, loaded.music_muted), (128, false));
 }
 
 #[test]
