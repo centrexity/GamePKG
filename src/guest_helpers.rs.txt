@@ -1,4 +1,10 @@
 
+/// Recorded effects use host-owned voices and the signed effects memory share.
+pub fn effect_play(path:&str)->bool {path.len()<=1024&&__gamepkg_effect_call(0,path,0)}
+pub fn effect_volume(volume:u32)->bool {volume<=128&&__gamepkg_effect_call(1,"",volume)}
+pub fn effect_pause(paused:bool)->bool {__gamepkg_effect_call(2,"",u32::from(paused))}
+pub fn effect_stop()->bool {__gamepkg_effect_call(3,"",0)}
+
 /// A signed Slang fragment entry; the host compiles it during Build/Rebuild.
 pub struct Shader { index: u32 }
 impl Shader {

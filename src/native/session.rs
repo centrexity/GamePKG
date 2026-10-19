@@ -49,6 +49,7 @@ fn stereo_engine_audio(
 }
 
 pub(crate) struct Session {
+    pub(crate) effects: crate::audio_effects::Runtime,
     clock: crate::frame_clock::Clock,
     pub(crate) window: crate::window_control::Service,
     pub(crate) user_files: crate::user_files::Service,
@@ -149,6 +150,12 @@ impl Session {
                 "memory ceiling is too low for this engine"
             );
         }
+        let (effects, memory) = crate::audio_effects::Runtime::new(
+            Some(&package),
+            manifest.limits.effects_memory_bytes,
+            memory,
+            manifest.permissions.audio,
+        )?;
         let save = if manifest.permissions.save {
             Some(crate::saves::Save::open_for_game(root, &manifest)?)
         } else {
@@ -223,6 +230,7 @@ impl Session {
             }
         }
         let mut session = Self {
+            effects,
             clock: crate::frame_clock::Clock::default(),
             child,
             _parent_thread: parent_thread,
@@ -316,6 +324,14 @@ impl Session {
             Ok(v)
         }
         let ok = match op {
+            38 => {
+                ensure!(
+                    (8..=1032).contains(&b.len()),
+                    "invalid effect-control packet"
+                );
+                let path = std::str::from_utf8(&b[8..])?;
+                self.effects.call(n(b, 0)?, path, n(b, 4)?)
+            }
             36 => {
                 ensure!(b.is_empty(), "invalid window-state packet");
                 let mut reply = vec![0];
@@ -453,7 +469,7 @@ impl Session {
                     &mut self.audio_channels,
                     &samples,
                     if op == 37 { 2 } else { 1 },
-                    self.manifest.permissions.audio,
+                    self.manifest.permissions.audio && !self.effects.enabled(),
                 )
             }
             23 => {
@@ -597,6 +613,7 @@ impl Session {
                     && self.manifest.permissions.input),
             "desktop input access denied"
         );
+        self.effects.begin()?;
         self.clock.begin();
         self.frame.reset();
         self.audio.clear();
@@ -632,6 +649,7 @@ impl Session {
                         self.audio_channels = 1;
                         self.user_files.finish(false);
                         self.window.finish(false);
+                        let _ = self.effects.finish(false);
                         return Err(error);
                     }
                 }
@@ -640,6 +658,7 @@ impl Session {
                 Ok(v)
             }
             Err(e) => {
+                let _ = self.effects.finish(false);
                 self.user_files.finish(false);
                 self.window.finish(false);
                 self.frame.reset();

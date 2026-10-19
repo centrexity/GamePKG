@@ -35,6 +35,7 @@ struct Data {
     audio: Vec<i16>,
     audio_channels: u32,
     audio_allowed: bool,
+    effects: crate::audio_effects::Runtime,
     shader_count: usize,
     zelda: Option<crate::zelda3::Zelda>,
     doom: Option<crate::doom::Doom>,
@@ -140,6 +141,7 @@ impl Game {
                     || !matches!(
                         i.name(),
                         "network_call"
+                            | "effect_call"
                             | "zelda3_tick"
                             | "doom_tick"
                             | "asset_read"
@@ -208,6 +210,7 @@ impl Game {
                         ) || !matches!(
                             name,
                             "network-call"
+                                | "effect-call"
                                 | "asset-read"
                                 | "rom-read"
                                 | "rom-size"
@@ -271,6 +274,13 @@ impl Game {
             memory
         };
 
+        let (effects, memory) = crate::audio_effects::Runtime::new(
+            package.as_ref(),
+            manifest.limits.effects_memory_bytes,
+            memory,
+            manifest.permissions.audio,
+        )?;
+
         let deadline_epochs = settings.tick_deadline_ms / 10;
         let limits = StoreLimitsBuilder::new()
             .memory_size(memory as usize)
@@ -302,6 +312,7 @@ impl Game {
                 audio: Vec::new(),
                 audio_channels: 1,
                 audio_allowed: manifest.permissions.audio,
+                effects,
                 shader_count: 0,
                 zelda: None,
                 doom: None,
@@ -349,6 +360,7 @@ impl Game {
                 },
             )?;
 
+            linker.func_wrap("gamepkg", "effect_call", effect_call)?;
             linker.func_wrap("gamepkg", "asset_read", asset_read)?;
             linker.func_wrap(
                 "gamepkg",
@@ -1347,6 +1359,25 @@ impl Game {
         }
         self.store.as_mut()?.data_mut().window.take_homepage()
     }
+    fn effects_mut(&mut self) -> Option<&mut crate::audio_effects::Runtime> {
+        #[cfg(target_os = "linux")]
+        if let Some(native) = &mut self.native {
+            return Some(&mut native.effects);
+        }
+        self.store
+            .as_mut()
+            .map(|store| &mut store.data_mut().effects)
+    }
+    /// Trusted desktop output attachment. Game source cannot supply callbacks.
+    pub fn attach_effect_output(&mut self, publisher: crate::audio_effects::Publisher) {
+        if let Some(effects) = self.effects_mut() {
+            effects.attach(publisher);
+        }
+    }
+    pub fn effect_playback(&mut self) -> Result<Option<crate::audio_mix_stream::Playback>> {
+        self.effects_mut()
+            .map_or(Ok(None), |effects| effects.playback())
+    }
     pub fn enable_user_files(&mut self) {
         if let Some(files) = self.user_files_mut() {
             files.enable();
@@ -1406,14 +1437,24 @@ impl Game {
                     n.achievements.clear();
                     n.user_files.finish(false);
                     n.window.finish(false);
+                    let _ = n.effects.finish(false);
                     return Err(error);
                 }
+            }
+            if let Err(error) = n.effects.finish(true) {
+                n.frame.reset();
+                n.audio.clear();
+                n.audio_channels = 1;
+                n.window.finish(false);
+                n.user_files.finish(false);
+                return Err(error);
             }
             if n.window.state().closed {
                 n.user_files.shutdown();
             }
             return Ok(self.state);
         }
+        self.store.as_mut().unwrap().data_mut().effects.begin()?;
         self.store.as_mut().unwrap().data_mut().clock.begin();
         self.store
             .as_mut()
@@ -1494,6 +1535,13 @@ impl Game {
                     .user_files
                     .finish(false);
                 self.store.as_mut().unwrap().data_mut().window.finish(false);
+                let _ = self
+                    .store
+                    .as_mut()
+                    .unwrap()
+                    .data_mut()
+                    .effects
+                    .finish(false);
                 return Err(error);
             }
         };
@@ -1517,6 +1565,13 @@ impl Game {
                 .user_files
                 .finish(false);
             self.store.as_mut().unwrap().data_mut().window.finish(false);
+            let _ = self
+                .store
+                .as_mut()
+                .unwrap()
+                .data_mut()
+                .effects
+                .finish(false);
             return Err(error).context("unable to persist game save");
         }
         if let Some(progress) = &mut self.progress {
@@ -1535,8 +1590,24 @@ impl Game {
                     .user_files
                     .finish(false);
                 self.store.as_mut().unwrap().data_mut().window.finish(false);
+                let _ = self
+                    .store
+                    .as_mut()
+                    .unwrap()
+                    .data_mut()
+                    .effects
+                    .finish(false);
                 return Err(error);
             }
+        }
+        if let Err(error) = self.store.as_mut().unwrap().data_mut().effects.finish(true) {
+            let data = self.store.as_mut().unwrap().data_mut();
+            data.frame.reset();
+            data.audio.clear();
+            data.audio_channels = 1;
+            data.user_files.finish(false);
+            data.window.finish(false);
+            return Err(error);
         }
         self.store
             .as_mut()
@@ -1765,8 +1836,35 @@ fn decode_asset_image(
 }
 
 /// Signed 16-bit PCM at 48 kHz; mono/stereo share 1,600 sample values per tick.
+fn effect_call(
+    mut caller: Caller<'_, Data>,
+    operation: u32,
+    pointer: i32,
+    length: i32,
+    value: u32,
+) -> i32 {
+    if pointer < 0 || !(0..=1024).contains(&length) {
+        return 0;
+    }
+    let Some(memory) = caller.get_export("memory").and_then(|e| e.into_memory()) else {
+        return 0;
+    };
+    let mut path = [0u8; 1024];
+    if memory
+        .read(&caller, pointer as usize, &mut path[..length as usize])
+        .is_err()
+    {
+        return 0;
+    }
+    let Ok(path) = std::str::from_utf8(&path[..length as usize]) else {
+        return 0;
+    };
+    i32::from(caller.data_mut().effects.call(operation, path, value))
+}
+
 fn audio_submit(mut caller: Caller<'_, Data>, pointer: i32, count: i32, channels: u32) -> i32 {
-    if !caller.data().audio_allowed
+    if caller.data().effects.enabled()
+        || !caller.data().audio_allowed
         || !matches!(channels, 1 | 2)
         || (!caller.data().audio.is_empty() && caller.data().audio_channels != channels)
         || pointer < 0
@@ -2339,6 +2437,255 @@ mod persistence_output_tests {
             if !history {
                 std::fs::remove_file(root.join("saves")).unwrap();
                 std::fs::rename(root.join("saved-directory"), root.join("saves")).unwrap();
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod effect_runtime_tests {
+    use super::*;
+    use crate::audio_voices::EffectCommand;
+    use std::sync::Mutex;
+
+    fn fixture(component: bool, trap: bool) -> (tempfile::TempDir, Game) {
+        let root = tempfile::tempdir().unwrap();
+        let recipe = root.path().join("recipe");
+        for path in [
+            "manifest.toml",
+            "LICENSE",
+            "NOTICE",
+            "CREDITS.md",
+            "thumbnail.png",
+            "source/Cargo.toml",
+            "source/Cargo.lock",
+            "source/src/lib.rs",
+            "shaders/main.slang",
+            "assets/hello.txt",
+        ] {
+            let target = recipe.join(path);
+            std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+            std::fs::copy(
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("examples/minimal")
+                    .join(path),
+                target,
+            )
+            .unwrap();
+        }
+        let path = recipe.join("manifest.toml");
+        let text = std::fs::read_to_string(&path)
+            .unwrap()
+            .replace("audio = false", "audio = true")
+            .replace("save = false", "save = true")
+            .replace("[limits]", "[limits]\neffects_memory_bytes = 1048576");
+        let text = if component {
+            format!("runtime_profile=\"component-v1\"\n{text}")
+        } else {
+            text
+        };
+        let text = format!("{text}\n[[achievements]]\nid=\"first\"\ntitle=\"First\"\ndescription=\"Fixture\"\n[[achievements]]\nid=\"second\"\ntitle=\"Second\"\ndescription=\"Fixture\"\n");
+        std::fs::write(path, text).unwrap();
+        let mut wav = b"RIFF\x28\0\0\0WAVEfmt \x10\0\0\0\x01\0\x02\0\x44\xac\0\0\x10\xb1\x02\0\x04\0\x10\0data\x04\0\0\0".to_vec();
+        wav.extend_from_slice(&[0xff, 0x7f, 0, 0x80]);
+        std::fs::write(recipe.join("assets/effect.wav"), wav).unwrap();
+        let archive = root.path().join("test.gamepkg");
+        crate::pack::pack(&recipe, &archive, &[0x65; 32]).unwrap();
+        let mut package = crate::archive::Package::open(&archive).unwrap();
+        let manifest = crate::verify::verify_embedded(&mut package).unwrap();
+        let (namespace, effect, audio, save, tick, denied) = if component {
+            (
+                "gamepkg:engine/host@0.1.0",
+                "effect-call",
+                "audio-submit",
+                "save-write",
+                "tick",
+                0,
+            )
+        } else {
+            (
+                "gamepkg",
+                "effect_call",
+                "audio_submit",
+                "save_write",
+                "gamepkg_tick",
+                -1,
+            )
+        };
+        let unlock = if component {
+            "achievement-unlock"
+        } else {
+            "achievement_unlock"
+        };
+        let trap = if trap {
+            "local.get 0 if unreachable end"
+        } else {
+            ""
+        };
+        let module = wat::parse_str(format!(r#"(module
+            (import "{namespace}" "{effect}" (func $effect(param i32 i32 i32 i32)(result i32)))
+            (import "{namespace}" "{audio}" (func $audio(param i32 i32)(result i32)))
+            (import "{namespace}" "{save}" (func $save(param i32 i32)(result i32)))
+            (import "{namespace}" "{unlock}" (func $unlock(param i32)(result i32)))
+            (memory(export "memory") 1)
+            (data(i32.const 0) "effect.wav")
+            (func(export "cabi_realloc")(param i32 i32 i32 i32)(result i32) i32.const 60000)
+            (func(export "{tick}")(param i32 i64)(result i64)
+                i32.const 1 i32.const 0 i32.const 0 i32.const 64 call $effect i32.eqz if unreachable end
+                i32.const 2 i32.const 0 i32.const 0 i32.const 0 call $effect i32.eqz if unreachable end
+                i32.const 0 i32.const 0 i32.const 10 i32.const 0 call $effect i32.eqz if unreachable end
+                i32.const 3 i32.const 0 i32.const 0 i32.const 0 call $effect i32.eqz if unreachable end
+                i32.const 0 i32.const 0 i32.const 10 i32.const 0 call $effect i32.eqz if unreachable end
+                i32.const 0 i32.const 0 call $audio i32.const {denied} i32.ne if unreachable end
+                i32.const 0 i32.const 10 call $save drop
+                local.get 0 call $unlock drop
+                {trap} i64.const 42))"#)).unwrap();
+        let bytes = if component {
+            crate::hostapi::componentize(module).unwrap()
+        } else {
+            module
+        };
+        let save = crate::saves::Save::open_for_game(root.path(), &manifest).unwrap();
+        let mut game = Game::with_package(
+            &bytes,
+            &manifest,
+            &Default::default(),
+            Some(package),
+            None,
+            Some(save),
+        )
+        .unwrap();
+        game.progress = Some(
+            crate::progress::Session::open(root.path(), &manifest.id, &manifest.creator_key)
+                .unwrap(),
+        );
+        (root, game)
+    }
+    fn recorder(game: &mut Game) -> Arc<Mutex<Vec<Vec<EffectCommand>>>> {
+        let batches = Arc::new(Mutex::new(Vec::new()));
+        let target = batches.clone();
+        game.attach_effect_output(Arc::new(move |commands| {
+            target.lock().unwrap().push(commands.to_vec());
+            true
+        }));
+        batches
+    }
+    #[test]
+    fn signed_core_and_component_stage_cache_and_commit_only_after_success() {
+        for component in [false, true] {
+            let (_root, mut game) = fixture(component, false);
+            let batches = recorder(&mut game);
+            assert_eq!(game.step(0).unwrap(), 42);
+            let batches = batches.lock().unwrap();
+            assert_eq!(batches.len(), 1);
+            assert_eq!(batches[0].len(), 5);
+            assert!(matches!(batches[0][0], EffectCommand::Volume(64)));
+            assert!(matches!(batches[0][1], EffectCommand::Pause(false)));
+            assert!(matches!(batches[0][3], EffectCommand::Stop));
+            let (EffectCommand::Play(first), EffectCommand::Play(second)) =
+                (&batches[0][2], &batches[0][4])
+            else {
+                panic!("missing clips")
+            };
+            assert!(Arc::ptr_eq(first, second));
+            let mut mixer = crate::audio_voices::Mixer::default();
+            mixer.volume(64);
+            mixer.play(first.clone());
+            assert_eq!(mixer.frame([0; 2]), [16383, -16384]);
+            assert!(game.audio_frame().is_empty());
+        }
+    }
+    #[test]
+    fn traps_save_failures_and_history_failures_cannot_publish_effects() {
+        for component in [false, true] {
+            for failure in ["trap", "save", "history"] {
+                let (root, mut game) = fixture(component, failure == "trap");
+                let batches = recorder(&mut game);
+                assert_eq!(game.step(0).unwrap(), 42);
+                batches.lock().unwrap().clear();
+                if failure == "save" {
+                    std::fs::rename(root.path().join("saves"), root.path().join("old-saves"))
+                        .unwrap();
+                    std::fs::write(root.path().join("saves"), b"blocked").unwrap();
+                } else if failure == "history" {
+                    std::fs::rename(
+                        root.path().join("progress"),
+                        root.path().join("old-progress"),
+                    )
+                    .unwrap();
+                    std::fs::write(root.path().join("progress"), b"blocked").unwrap();
+                }
+                assert!(
+                    game.step(1).is_err(),
+                    "component={component} failure={failure}"
+                );
+                assert!(batches.lock().unwrap().is_empty());
+                if failure == "trap" {
+                    if component {
+                        // Wasmtime prevents re-entry after a component trap;
+                        // another attempted tick must not replay audio either.
+                        assert!(game.step(0).is_err());
+                        assert!(batches.lock().unwrap().is_empty());
+                    } else {
+                        assert_eq!(game.step(0).unwrap(), 42);
+                        assert_eq!(batches.lock().unwrap().len(), 1);
+                    }
+                }
+            }
+        }
+    }
+    #[test]
+    fn output_rejection_clears_the_transaction_and_a_fresh_tick_can_recover() {
+        for component in [false, true] {
+            let (_root, mut game) = fixture(component, false);
+            game.attach_effect_output(Arc::new(|_| false));
+            assert!(game.step(0).is_err());
+            let batches = recorder(&mut game);
+            assert_eq!(game.step(0).unwrap(), 42);
+            assert_eq!(batches.lock().unwrap().len(), 1);
+        }
+    }
+
+    #[test]
+    fn recorded_effects_reduce_guest_memory_inside_the_existing_hard_ceiling() {
+        for component in [false, true] {
+            let (_root, game) = fixture(component, false);
+            let package = game
+                .store
+                .as_ref()
+                .unwrap()
+                .data()
+                .package
+                .as_ref()
+                .unwrap();
+            for pages in [240, 241] {
+                let mut package = package.try_clone_verified().unwrap();
+                let mut manifest = crate::verify::verify_embedded(&mut package).unwrap();
+                let tick = if component { "tick" } else { "gamepkg_tick" };
+                let core = wat::parse_str(format!("(module(memory(export \"memory\"){pages})(func(export \"{tick}\")(param i32 i64)(result i64)i64.const 0))")).unwrap();
+                let bytes = if component {
+                    crate::hostapi::componentize(core).unwrap()
+                } else {
+                    core
+                };
+                let make = |manifest: &Manifest, settings: &crate::settings::Settings| {
+                    Game::with_package(
+                        &bytes,
+                        manifest,
+                        settings,
+                        Some(package.try_clone_verified().unwrap()),
+                        None,
+                        None,
+                    )
+                };
+                assert_eq!(make(&manifest, &Default::default()).is_ok(), pages == 240);
+                let settings = crate::settings::Settings {
+                    memory_ceiling_mib: 1,
+                    ..Default::default()
+                };
+                assert!(make(&manifest, &settings).is_err());
+                manifest.limits.effects_memory_bytes = None;
+                assert!(make(&manifest, &Default::default()).is_ok());
             }
         }
     }

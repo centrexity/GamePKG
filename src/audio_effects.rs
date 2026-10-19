@@ -1,5 +1,5 @@
 //! Trusted, bounded recorded-effect cache and per-tick control transaction.
-//! Runtime/SDK wiring remains separate; no guest receives a device or clip.
+//! Shared by desktop native/core/component hosts; no guest receives a device or clip.
 use crate::{
     archive::Package,
     audio_voices::{Clip, EffectCommand},
@@ -10,6 +10,106 @@ use std::sync::Arc;
 
 // Match the existing device control queue; cache metadata has fixed storage.
 const CAPACITY: usize = 32;
+/// Trusted output attachment, never available to game source.
+pub type Publisher = Arc<dyn Fn(&[EffectCommand]) -> bool + Send + Sync>;
+
+#[derive(Default)]
+pub(crate) struct Runtime {
+    service: Option<Box<Service>>,
+    budget: Option<Budget>,
+    publisher: Option<Publisher>,
+    _guest: Option<Lease>,
+    _reservation: Option<Lease>,
+}
+impl Runtime {
+    pub(crate) fn new(
+        package: Option<&Package>,
+        declared: Option<u64>,
+        total: u64,
+        allowed: bool,
+    ) -> Result<(Self, u64)> {
+        let Some(bytes) = declared else {
+            return Ok((Self::default(), total));
+        };
+        ensure!(
+            allowed && (65536..=4 * 1048576).contains(&bytes),
+            "invalid effects memory reservation"
+        );
+        let guest_bytes = total
+            .checked_sub(bytes)
+            .filter(|n| *n >= 65536)
+            .context("effects exceed the selected memory ceiling")?;
+        let parent = Budget::new(total);
+        let guest = parent.reserve(guest_bytes)?;
+        let budget = parent.partition(bytes)?;
+        let reservation = budget
+            .reserve((std::mem::size_of::<Self>() + 2 * std::mem::size_of::<usize>()) as u64)?;
+        let package = package
+            .context("recorded effects require a verified package")?
+            .try_clone_verified()?;
+        let service = Service::new(package, allowed, budget.clone())?;
+        Ok((
+            Self {
+                service: Some(Box::new(service)),
+                budget: Some(budget),
+                publisher: None,
+                _guest: Some(guest),
+                _reservation: Some(reservation),
+            },
+            guest_bytes,
+        ))
+    }
+    pub(crate) fn enabled(&self) -> bool {
+        self.service.is_some()
+    }
+    pub(crate) fn attach(&mut self, publisher: Publisher) {
+        self.publisher = Some(publisher);
+    }
+    pub(crate) fn playback(&self) -> Result<Option<crate::audio_mix_stream::Playback>> {
+        self.budget
+            .as_ref()
+            .map(crate::audio_mix_stream::Playback::effects_only)
+            .transpose()
+    }
+    pub(crate) fn begin(&mut self) -> Result<()> {
+        if let Some(service) = &mut self.service {
+            service.begin()?;
+        }
+        Ok(())
+    }
+    pub(crate) fn call(&mut self, operation: u32, path: &str, value: u32) -> bool {
+        if self.publisher.is_none() {
+            return false;
+        }
+        let Some(service) = &mut self.service else {
+            return false;
+        };
+        match operation {
+            0 if value == 0 => service.play(path),
+            1 if path.is_empty() => service.volume(value),
+            2 if path.is_empty() && value <= 1 => service.pause(value != 0),
+            3 if path.is_empty() && value == 0 => service.stop(),
+            _ => return false,
+        }
+        .is_ok()
+    }
+    pub(crate) fn finish(&mut self, succeeded: bool) -> Result<()> {
+        if let Some(service) = &mut self.service {
+            let accepted = service.finish(succeeded, |commands| {
+                commands.is_empty()
+                    || self
+                        .publisher
+                        .as_ref()
+                        .is_some_and(|publish| publish(commands))
+            });
+            ensure!(
+                !succeeded || accepted,
+                "recorded effect output rejected the tick's control batch"
+            );
+        }
+        Ok(())
+    }
+}
 struct Recording {
     path: [u8; 1024],
     length: usize,

@@ -16,6 +16,20 @@ pub(super) fn linker(engine: &Engine) -> Result<Linker<Data>> {
     let mut linker = Linker::new(engine);
     let mut host = linker.instance("gamepkg:engine/host@0.1.0")?;
     host.func_wrap(
+        "effect-call",
+        |mut store: StoreContextMut<'_, Data>, (operation, path, value): (u32, WasmStr, u32)| {
+            let path = path.to_str(store.as_context())?;
+            if path.len() > 1024 {
+                return Ok((false,));
+            }
+            let mut bytes = [0u8; 1024];
+            let length = path.len();
+            bytes[..length].copy_from_slice(path.as_bytes());
+            let path = std::str::from_utf8(&bytes[..length])?;
+            Ok((store.data_mut().effects.call(operation, path, value),))
+        },
+    )?;
+    host.func_wrap(
         "input-events",
         |mut store: StoreContextMut<'_, Data>, (capacity,): (u32,)| {
             Ok((store.data_mut().input_events.read(capacity as usize),))
@@ -338,7 +352,7 @@ pub(super) fn linker(engine: &Engine) -> Result<Linker<Data>> {
                     &mut data.audio_channels,
                     &samples,
                     channels,
-                    data.audio_allowed,
+                    data.audio_allowed && !data.effects.enabled(),
                 ),))
             },
         )?;

@@ -326,6 +326,11 @@ impl Player {
     pub fn effect_batch(&self, commands: &[EffectCommand]) -> bool {
         self.sink.effect_batch(commands)
     }
+    /// Output handoff for trusted game runtimes; retains no device handle.
+    pub fn effect_publisher(&self) -> crate::audio_effects::Publisher {
+        let sink = self.sink.clone();
+        Arc::new(move |commands| sink.effect_batch(commands))
+    }
     #[cfg(any(feature = "gui", test))]
     pub(crate) fn sink(&self) -> Sink {
         self.sink.clone()

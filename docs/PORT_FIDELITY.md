@@ -2875,3 +2875,71 @@ cancelled/confirmed removal, installed-package preservation and zero package
 downloads. The request log still must contain exactly the two fixture list URLs.
 No product behavior, timing limits or assertion scope changed. A future hosted
 run must confirm the corrected fixture; the earlier failed run remains failed.
+
+## Desktop game-facing recorded-effect playback
+
+Signed source games can now opt into `limits.effects_memory_bytes`, with audio
+permission required and a 64 KiB–4 MiB share inside the existing hard limit.
+The effective limit remains the lower of the manifest cap and player ceiling.
+The runtime reserves the guest share and the audio child pool together: a 1 MiB
+effect share under 16 MiB leaves 15 MiB for Wasm linear memory or native worker
+address space. Cached PCM, staging, service metadata and the output converter
+use that same child budget. This is not complete accounting for all existing
+package/compiler metadata, drawing allocations, device or OS memory.
+
+Generated native/core/component SDKs now provide `effect_play`, `effect_volume`,
+`effect_pause` and `effect_stop`. Calls stage the existing bounded host service;
+execution, save and play-history failure discard the transaction before device
+publication. Native worker opcode 38 has a strict 1,032-byte control-payload bound, core pointers
+are checked before copying at most 1,024 bytes, and component strings use the
+same bounded path policy. This mode rejects premixed PCM submissions, and calls
+without a declared share or trusted output attachment return false. The desktop
+app attaches an effects-only original-rate stream and the atomic publisher;
+muted sessions accept committed controls without opening a device. Browser export
+explicitly rejects this mode until browser processing/accounting is implemented.
+
+Four ordinary runtime checks pass on Linux64 and actual Linux32: verified core
+and component control ordering/cache identity/complete PCM, traps/save/history
+rollback, output rejection followed by a clean tick, and actual initial-memory
+rejection at the reduced guest ceiling. Manifest cases cover legacy omission,
+round trips, audio permission, bounds and a share exceeding the hard cap. A
+component trap prevents Wasmtime re-entry; another attempted tick cannot replay
+audio. The current app stops failed sessions rather than promising guest-memory
+restoration or continued component execution after a trap.
+
+Private genuinely signed no-dependency source fixtures compile through all three
+generated SDKs. Tests explicitly select Wasm or native execution (no native
+fallback), verify full recording PCM and shared cache identity, then force trap,
+save, history and output failure. Backend phases use fresh history so a new
+achievement forces the history write. Actual CPAL/ALSA null-device callbacks
+receive these game-issued effects, continue beyond the last successful tick,
+and cannot replay a trapped tick. The expected blocked-history diagnostic is
+retained while the fixture's directory is deliberately unavailable.
+
+`examples/good/recorded-effects` contains a generated Apache-2.0 chime and no
+guest dependencies. Its real native/Wasm game windows respond to held Enter and
+continue rendering in Vulkan and OpenGL with private null audio. Existing stereo
+SDK cases still pass in native/core/component execution and actual Chromium
+WebAudio. Optimized CLI/GUI builds pass. The complete all-features host library
+passes 249 cases (19 specialized cases explicitly ignored); selected public
+asset/component/dependency/manifest/example/path/runtime/source suites pass 46
+more cases (one private-original case explicitly ignored). Strict
+library/bin/test Clippy passes after moving the Android publication test module
+to the end of its source file. No execution deadline, reference tolerance,
+resource cap or test parallelism was relaxed.
+
+CI now runs the signed SDK/device and real-window checks. These are local Linux
+results; Windows/Android game-facing playback, physical output, browser support,
+compressed workspace, music SDK controls, original port scheduling and migration
+remain open. No existing port, catalog package or binary release changes here.
+
+Hosted 32-bit run `39197971735` at source `06f0d7a` is now complete and successful
+for Linux32, Windows32 and Android32. Direct Android job `117884994236` logs
+confirm 11 component, four portability, ten runtime, three memory-budget, three
+signed effect-asset and all three exclusive-publication cases pass. The private
+original-recordings test is explicitly ignored there. This confirms the earlier
+Android hard-link publication fix and the selected suites at that source; it
+does not establish Android execution of the later effect cache/SDK/device code.
+The actual CLI also packs, verifies, installs, compiles and runs all 20 good
+examples, including recorded effects, while rejecting all seven bad examples
+without publishing partial packages.

@@ -152,6 +152,47 @@ Game rectangle/circle colors and sprite pixels use straight RGBA bytes. Native g
 
 These functions preserve the source checks, signatures, isolated compiler and Wasm restrictions. Games cannot replace the injected implementation or declare their own host imports.
 
+## Recorded effects on desktop
+
+`examples/good/recorded-effects` plays a generated chime when Start/Enter is
+pressed. It uses no guest dependencies. Select this mode with `audio = true`
+under `[permissions]` and `effects_memory_bytes = 1048576` under `[limits]`.
+The effects share is 64 KiB to 4 MiB and comes out of the existing hard memory
+limit and the player's memory ceiling. For example, reserving 1 MiB under a
+16 MiB effective hard limit leaves 15 MiB for game memory. Include room for
+cache metadata, output conversion and temporary loading as well as recordings.
+
+- `gamepkg::effect_play("sounds/bounce.wav")` stages a recorded sound.
+- `gamepkg::effect_volume(64)` sets effect gain from 0 to 128.
+- `gamepkg::effect_pause(true)` freezes voice positions; `false` resumes them.
+- `gamepkg::effect_stop()` stops all current effect voices.
+
+Assets must be canonical little-endian 44.1 kHz stereo S16 WAV, with a standard
+44-byte header, at most 2 MiB of PCM per recording. Stored package entries and
+resolved shared assets are supported. Compressed entries fail explicitly until
+their decompressor workspace is included in the shared accounting. The host
+checks verified scoped paths and the complete entry CRC before caching PCM.
+
+The host uses four first-free voices, mixes with sequential integer saturation,
+and converts the combined stream once to its 48 kHz output. Voices advance on
+the audio device clock independently of game ticks. A fifth simultaneous voice
+is rejected and reported by the output backend. Muting gain still advances
+voices. Cache metadata is fixed at 32 recordings, and a tick can stage at most
+32 controls. Full caches reject new names without evicting active recordings.
+
+Calls return whether their arguments and staged request were accepted; final
+device queue or voice exhaustion can still fail later. A failed tick, save or
+history write discards its staged commands. A rejected output batch is discarded
+as a whole. The mode rejects `audio_submit`/`audio_submit_stereo` to avoid mixing
+two incompatible playback paths. Omitting the effects share keeps the existing
+PCM API and disables these recorded-effect calls. Headless embedding must attach
+a trusted output publisher; desktop playback does this automatically.
+
+This API is currently implemented for desktop native/core/component playback.
+Web export explicitly rejects packages declaring this mode; browser support and
+music SDK commands remain separate work. Players need no Python, external
+decoder, additional game crates, microphone access or file paths.
+
 ## Slang shaders, textures and audio
 
 Use the injected shader and audio APIs directly. `examples/good/media-game` demonstrates them without dependencies. Declare each Slang source, entry and stage in `[[shaders]]`. The host verifies the signed source, compiles it in isolation on Build/Rebuild, validates resource reflection, caches the result, and selects the configured playback backend. Games never run a compiler themselves or supply precompiled shader binaries.

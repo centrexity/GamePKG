@@ -74,7 +74,7 @@ impl Stream {
 /// Silence fills genuine music underruns; effects continue at the original rate.
 pub struct Playback {
     stream: Stream,
-    music: crate::music::Output,
+    music: Option<crate::music::Output>,
     input: [[i16; 2]; 64],
     _reservation: memory_budget::Lease,
 }
@@ -84,6 +84,16 @@ impl Playback {
             music.sample_rate() == 44100,
             "combined playback requires original-rate music"
         );
+        Self::with_source(Some(music), budget)
+    }
+    /// Effects-only device-clock source; no decoder or music ring is needed.
+    pub fn effects_only(budget: &memory_budget::Budget) -> Result<Self> {
+        Self::with_source(None, budget)
+    }
+    fn with_source(
+        music: Option<crate::music::Output>,
+        budget: &memory_budget::Budget,
+    ) -> Result<Self> {
         let reservation =
             budget.reserve((std::mem::size_of::<Self>() - std::mem::size_of::<Stream>()) as u64)?;
         Ok(Self {
@@ -107,7 +117,9 @@ impl Playback {
             let count = self.input.len().min(self.stream.input_capacity());
             ensure!(count > 0, "combined playback cannot progress");
             self.input[..count].fill([0; 2]);
-            self.music.read(&mut self.input[..count]);
+            if let Some(music) = &self.music {
+                music.read(&mut self.input[..count]);
+            }
             self.stream.append(&self.input[..count])?;
         }
         anyhow::bail!("combined playback exceeded its refill bound")

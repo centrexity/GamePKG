@@ -1,6 +1,7 @@
 package gamepkg:engine@0.1.0;
 
 interface host {
+  effect-call: func(operation:u32,path:string,value:u32)->bool;
   frame-time-us: func() -> u64;
   window-state: func() -> u32;
   window-control: func(operation:u32,value:u32)->bool;

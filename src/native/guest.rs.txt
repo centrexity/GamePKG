@@ -1,5 +1,6 @@
 // Trusted host bindings for native game workers. Guest source cannot use std I/O.
 pub mod gamepkg {
+    fn __gamepkg_effect_call(operation:u32,path:&str,value:u32)->bool{if path.len()>1024{return false;}let mut data=u32s(&[operation,value]);data.extend_from_slice(path.as_bytes());accepted(38,&data)}
     /// Relative microseconds sampled by the parent once per tick.
     pub fn frame_time_us()->u64{let d=rpc(34,&[]);assert!(d.len()==9&&d[0]==0,"invalid frame-time response");u64::from_le_bytes(d[1..].try_into().unwrap())}
     pub fn window_fullscreen()->Option<bool>{let d=rpc(36,&[]);if d.len()!=5||d[0]!=0{return None;}match u32::from_le_bytes(d[1..].try_into().unwrap()){1=>Some(false),3=>Some(true),_=>None}}

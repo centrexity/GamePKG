@@ -646,6 +646,30 @@ impl eframe::App for App {
                             game.cube2_audio_sink(
                                 self.audio_player.as_ref().map(crate::audio::Player::sink),
                             );
+                            if let Some(audio) = &self.audio_player {
+                                match game.effect_playback() {
+                                    Ok(Some(playback)) => {
+                                        if !audio.original_source(Some(playback)) {
+                                            self.status =
+                                                "Unable to attach recorded-effect output".into();
+                                            self.audio_player = None;
+                                            return;
+                                        }
+                                        game.attach_effect_output(audio.effect_publisher());
+                                    }
+                                    Ok(None) => {}
+                                    Err(error) => {
+                                        self.status = format!(
+                                            "Unable to prepare recorded effects: {error:#}"
+                                        );
+                                        self.audio_player = None;
+                                        return;
+                                    }
+                                }
+                            } else {
+                                // Muted sessions accept committed controls without opening a device.
+                                game.attach_effect_output(std::sync::Arc::new(|_| true));
+                            }
                             self.selected_game = Some(game.id.clone());
                             self.source_window.release(ctx);
                             self.window_preferences_active = self.game_window;
