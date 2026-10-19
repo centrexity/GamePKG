@@ -3437,3 +3437,20 @@ exercise rejection and valid gain/pause while retaining all six SDL hashes and
 all three exact MP3 lifecycle comparisons. Resolving guest asset paths and
 committed frames into these backend batches is still unfinished; this primitive
 does not independently publish game commands or enable recorded-audio exports.
+
+A production recorded-audio AudioWorklet endpoint now owns the live stream. Its
+session-scoped, monotonically numbered requests load/unload bounded cached clips,
+apply validated batches, inspect playback, attach the credited music port and
+acknowledge closure. Wrong-session and stale requests are ignored. Its fixed
+3,200-byte quantum buffer plus existing stream buffers fit within the existing
+64 KiB host staging reservation. Invalid output quanta/fatal render faults close
+the endpoint and zero that quantum; decoder faults remain track states.
+
+Actual Chromium verifies nonzero output through an analyser, rejection without
+partial effect publication, stale/foreign request isolation, active clip unload
+denial, output-clock effect completion and all 11,520 supervised MP3 frames,
+followed by acknowledged shutdown. Existing exact SDL and direct MP3 comparisons
+remain unchanged. This endpoint has no test capture buffer and runs independently
+of game ticks. A supervised player-side request client, effect decoding/asset
+resolution, committed-frame dispatch and export embedding still need integration;
+recorded-audio exports remain rejected and current ports remain unmigrated.

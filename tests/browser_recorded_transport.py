@@ -13,7 +13,7 @@ class Quiet(SimpleHTTPRequestHandler):
  def log_message(self,*args):pass
 with tempfile.TemporaryDirectory(prefix='gamepkg-worklet-mixer-') as temporary:
  root=Path(temporary)
- for name in ['recorded-decoder.js','recorded-mixer.js','recorded-queue.js','recorded-stream.js','recorded-transport.js','recorded-decoder-client.js','recorded-decoder-worker.js','recorded-budget.js']:shutil.copy2(project/'web-player'/name,root/name)
+ for name in ['recorded-decoder.js','recorded-mixer.js','recorded-queue.js','recorded-stream.js','recorded-transport.js','recorded-decoder-client.js','recorded-decoder-worker.js','recorded-budget.js','recorded-worklet.js']:shutil.copy2(project/'web-player'/name,root/name)
  shutil.copy2(project/'tests/fixtures/recorded-transport-worklet.js',root/'stream-worklet.js');shutil.copy2(companion,root/'converter.wasm')
  shutil.copy2(project/'tests/fixtures/sdl-live-audio-reference.json',root/'reference.json')
  shutil.copy2(Path(sys.argv[2]),root/'decoder.wasm')
@@ -96,5 +96,31 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-worklet-mixer-') as temporary:
   })().then(value=>done({value})).catch(error=>done({error:String(error.stack||error)}));''')
   assert 'error' not in decoded,decoded
   print('Actual supervised MP3 decoder worker -> credited MessagePort -> live AudioWorklet matches every direct mixed scalar:',json.dumps(decoded['value']),flush=True)
+  endpoint=browser.execute_async_script('''const done=arguments[arguments.length-1];(async()=>{
+   const {RecordedDecoderClient}=await import('./recorded-decoder-client.js'),{RecordedMusicSender}=await import('./recorded-transport.js');
+   const load=async name=>new Uint8Array(await(await fetch(name)).arrayBuffer());
+   const context=new AudioContext({sampleRate:48000});await context.audioWorklet.addModule('recorded-worklet.js');
+   const node=new AudioWorkletNode(context,'gamepkg-recorded-output',{numberOfInputs:0,numberOfOutputs:1,outputChannelCount:[2],processorOptions:{session:42,wasm:await load('converter.wasm')}});
+   let serial=0;const replies=new Map();node.port.onmessage=({data})=>{const pending=replies.get(data.id);if(pending){replies.delete(data.id);pending(data);}};
+   const request=(kind,fields={},transfer=[])=>new Promise(resolve=>{const id=++serial;replies.set(id,resolve);node.port.postMessage({session:42,id,kind,...fields},transfer);});
+   const first=await request('snapshot');if(!first.ok||first.musicStatus!=='stopped')throw Error('Initial endpoint state');
+   const clip=new Uint8Array(4096*4),view=new DataView(clip.buffer);for(let i=0;i<4096;i++){view.setInt16(i*4,12345,true);view.setInt16(i*4+2,-23456,true);}
+   if(!(await request('load',{clip:0,pcm:clip},[clip.buffer])).ok)throw Error('Endpoint clip load');
+   const rejected=await request('controls',{commands:[[0,0],[5,129]]});if(rejected.ok||rejected.activeEffects)throw Error('Rejected batch partially published');
+   const played=await request('controls',{commands:[[1,128],[0,0]]});if(!played.ok||played.activeEffects!==1)throw Error('Endpoint effect play');
+   node.port.postMessage({session:41,id:serial+100,kind:'controls',commands:[[3,0]]});
+   node.port.postMessage({session:42,id:serial,kind:'controls',commands:[[3,0]]});
+   const unchanged=await request('snapshot');if(!unchanged.ok||unchanged.activeEffects!==1)throw Error('Stale or foreign request changed playback');
+   const busy=await request('unload',{clip:0});if(busy.ok||busy.activeEffects!==1)throw Error('Active clip unload changed playback');
+   const analyser=context.createAnalyser();analyser.fftSize=256;const gain=context.createGain();gain.gain.value=0;node.connect(analyser);analyser.connect(gain);gain.connect(context.destination);await context.resume();
+   let heard=false;const signal=new Float32Array(256),deadline=performance.now()+2000;while(performance.now()<deadline){analyser.getFloatTimeDomainData(signal);if(signal.some(v=>v!==0)){heard=true;break;}await new Promise(r=>setTimeout(r,1));}if(!heard)throw Error('No real output from production endpoint');
+   const channel=new MessageChannel(),sender=new RecordedMusicSender(channel.port1);if(!(await request('music-port',{port:channel.port2},[channel.port2])).ok)throw Error('Music port denied');
+   const decoder=await RecordedDecoderClient.open(await load('decoder.wasm'),await load('tone.mp3'));sender.start(1,decoder);
+   let state;const end=performance.now()+3000;do{state=await request('snapshot');if(state.musicStatus==='ended')break;if(performance.now()>end)throw Error('Production endpoint music stalled');await new Promise(r=>setTimeout(r,5));}while(true);
+   if(state.playedFrames!==11520||state.activeEffects!==0||!decoder.closed)throw Error('Production output clock incomplete');
+   const closed=await request('close');if(!closed.closed||!closed.ok)throw Error('Endpoint close not acknowledged');sender.close();node.port.close();node.disconnect();analyser.disconnect();gain.disconnect();await context.close();return {heard,sourceFrames:state.playedFrames,closed:closed.closed};
+  })().then(value=>done({value})).catch(error=>done({error:String(error.stack||error)}));''')
+  assert 'error' not in endpoint,endpoint
+  print('Production recorded AudioWorklet: real output, atomic rejected batch, effect completion, supervised MP3 music clock and acknowledged shutdown passed.',json.dumps(endpoint['value']),flush=True)
  finally:
   browser.quit();server.shutdown();server.server_close()
