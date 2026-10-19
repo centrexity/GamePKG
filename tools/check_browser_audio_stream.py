@@ -7,6 +7,7 @@ subprocess.run([sys.executable,'tools/check_live_audio_reference.py'],cwd=projec
 result=subprocess.run(['cargo','build','--locked','--release','--target','wasm32-unknown-unknown','--manifest-path','tools/audio-converter/Cargo.toml'],cwd=project,capture_output=True,text=True,timeout=300)
 assert result.returncode==0,result.stderr
 wasm=project/'tools/audio-converter/target/wasm32-unknown-unknown/release/gamepkg_host_audio_converter.wasm'
+subprocess.run(['node','tests/web_recorded_budget.mjs'],cwd=project,check=True,timeout=30)
 subprocess.run(['node','tests/web_recorded_queue.mjs'],cwd=project,check=True,timeout=30)
 subprocess.run(['node','tests/web_recorded_transport.mjs'],cwd=project,check=True,timeout=30)
 subprocess.run(['node','tests/web_recorded_stream.mjs',str(wasm)],cwd=project,check=True,timeout=30)

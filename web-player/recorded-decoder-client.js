@@ -1,9 +1,10 @@
 // Trusted worker supervisor. Decoder execution never occupies the game/UI thread.
 import {MAX_DECODER_MEMORY,MAX_ENCODED_BYTES,MAX_PCM_VALUES} from './recorded-decoder.js';
+import {RecordedBudget} from './recorded-budget.js';
 const STARTUP_MS=5000,EXECUTION_MS=100,CREATE=Symbol();
 function owned(bytes,maximum){const size=bytes?.byteLength;if(!(bytes instanceof Uint8Array)||!Number.isInteger(size)||size<1||size>maximum)throw Error('Invalid decoder byte snapshot');const copy=new Uint8Array(size);copy.set(new Uint8Array(bytes.buffer,bytes.byteOffset,size));return copy;}
 export class RecordedDecoderClient {
- #worker;#pending=null;#serial=0;#closed=false;#ready;
+ #worker;#pending=null;#serial=0;#closed=false;#ready;#reservation=null;
  constructor(token){
   if(token!==CREATE)throw Error('Use RecordedDecoderClient.open');
   this.#worker=new Worker(new URL('./recorded-decoder-worker.js',import.meta.url),{type:'module'});
@@ -12,16 +13,21 @@ export class RecordedDecoderClient {
   this.#worker.onerror=event=>{event.preventDefault();this.#fail(Error('Decoder worker failed'));};
   this.#worker.onmessageerror=()=>this.#fail(Error('Invalid decoder worker message'));
  }
- static async open(wasm,encoded,limit=MAX_DECODER_MEMORY,signal){
+ static async open(wasm,encoded,limit=MAX_DECODER_MEMORY,signal,budget){
   if(!(wasm instanceof Uint8Array)||wasm.length<8||wasm.length>4194304||!(encoded instanceof Uint8Array)||encoded.length<1||encoded.length>MAX_ENCODED_BYTES||!Number.isInteger(limit)||limit<65536||limit>MAX_DECODER_MEMORY)throw Error('Invalid decoder input');
   if(signal!==undefined&&!(signal instanceof AbortSignal))throw Error('Invalid decoder cancellation signal');
   if(signal?.aborted)throw Error('Decoder open cancelled');
-  const client=new RecordedDecoderClient(CREATE),abort=()=>client.close();signal?.addEventListener('abort',abort,{once:true});
+  if(budget!==undefined&&!(budget instanceof RecordedBudget))throw Error('Invalid audio memory allowance');
+  // Linear memory plus peak owned module/input snapshots and three PCM blocks.
+  // Caller-owned source buffers and browser compiler/JIT overhead are separate.
+  const reservation=budget?.reserve(limit+wasm.byteLength*2+encoded.byteLength+MAX_PCM_VALUES*2*3);
+  let client;try{client=new RecordedDecoderClient(CREATE);client.#reservation=reservation;}catch(error){reservation?.release();throw error;}
+  const abort=()=>client.close();signal?.addEventListener('abort',abort,{once:true});
   try{await client.#ready;const module=owned(wasm,4194304);await client.#request('compile',{bytes:module,limit},[module.buffer]);const bytes=owned(encoded,MAX_ENCODED_BYTES);await client.#request('open',{bytes},[bytes.buffer]);return client;}
   catch(error){client.close();throw error;}finally{signal?.removeEventListener('abort',abort);}
  }
  get closed(){return this.#closed;}
- #fail(error){if(this.#closed)return;this.#closed=true;this.#worker.terminate();const pending=this.#pending;this.#pending=null;if(pending){clearTimeout(pending.timer);pending.reject(error);}}
+ #fail(error){if(this.#closed)return;this.#closed=true;this.#worker.terminate();this.#reservation?.release();this.#reservation=null;const pending=this.#pending;this.#pending=null;if(pending){clearTimeout(pending.timer);pending.reject(error);}}
  #reply(data){
   if(this.#closed)return;
   const pending=this.#pending;

@@ -14,7 +14,7 @@ class Quiet(SimpleHTTPRequestHandler):
  def log_message(self,*args):pass
 with tempfile.TemporaryDirectory(prefix='gamepkg-chromium-decoder-') as temporary:
  root=Path(temporary)
- for name in ['recorded-decoder.js','recorded-decoder-client.js','recorded-decoder-worker.js']:shutil.copy2(project/'web-player'/name,root/name)
+ for name in ['recorded-decoder.js','recorded-decoder-client.js','recorded-decoder-worker.js','recorded-budget.js']:shutil.copy2(project/'web-player'/name,root/name)
  for file in fixture.glob('*.wasm'):shutil.copy2(file,root/file.name)
  shutil.copy2(companion,root/'decoder.wasm');shutil.copy2(music/record['name'],root/'track.mp3')
  (root/'reference.json').write_text(json.dumps(record))

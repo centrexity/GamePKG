@@ -3340,3 +3340,31 @@ state, including EOF received before the queue drains. Already completed tracks
 retain Ended. These cases pass through actual MessageChannel delivery; samples
 already admitted to the converter/device remain subject to its existing boundary
 semantics. This change does not promise retraction of already submitted output.
+
+The latest host changes also pass all 256 enabled all-feature library tests
+(19 remain explicitly ignored), strict Rust 1.99 checks and thirteen actual
+Linux32 music cases, including both new tick-boundary races.
+
+Browser recorded audio now has ownership-based parent/child reservations.
+Closing a child prevents new reservations while retaining its entire parent
+charge until its last lease releases. The supervised decoder accepts a shared
+budget and reserves its declared linear-memory ceiling, two owned module
+snapshots, one transferred encoded snapshot and three bounded PCM blocks before
+creating its worker. Close, startup failure and decode failure release that
+charge. Actual Chromium verifies concurrent-open refusal and cleanup after both
+normal close and malformed MP3 startup; live PCM and replacement regressions
+still pass. This parameter remains optional for component qualification. The
+exported game runtime has not yet supplied the common guest/effects/music
+ledger, and caller-owned source buffers, browser compiler/JIT and GC overhead
+are outside this reservation formula. These checks do not establish whole-page
+memory enforcement or enable recorded-audio export.
+
+Real-worker budget qualification now also closes a child while its decoder is
+live, proving the parent capacity remains unavailable until decoder shutdown.
+Immediate startup cancellation returns its reservation. Normal playback,
+replacement and Stop/restart use a common decoder ledger and return its usage
+to zero at EOF while retaining every exact mixed sample. Values returned to an
+arbitrary caller remain caller-owned; retaining unlimited decoded blocks is not
+made safe by the worker reservation. The credited transport avoids that usage
+pattern, but its own cross-generation outstanding-buffer accounting and runtime
+parent ownership still need integration before export can be enabled.

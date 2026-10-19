@@ -13,7 +13,7 @@ class Quiet(SimpleHTTPRequestHandler):
  def log_message(self,*args):pass
 with tempfile.TemporaryDirectory(prefix='gamepkg-worklet-mixer-') as temporary:
  root=Path(temporary)
- for name in ['recorded-decoder.js','recorded-mixer.js','recorded-queue.js','recorded-stream.js','recorded-transport.js','recorded-decoder-client.js','recorded-decoder-worker.js']:shutil.copy2(project/'web-player'/name,root/name)
+ for name in ['recorded-decoder.js','recorded-mixer.js','recorded-queue.js','recorded-stream.js','recorded-transport.js','recorded-decoder-client.js','recorded-decoder-worker.js','recorded-budget.js']:shutil.copy2(project/'web-player'/name,root/name)
  shutil.copy2(project/'tests/fixtures/recorded-transport-worklet.js',root/'stream-worklet.js');shutil.copy2(companion,root/'converter.wasm')
  shutil.copy2(project/'tests/fixtures/sdl-live-audio-reference.json',root/'reference.json')
  shutil.copy2(Path(sys.argv[2]),root/'decoder.wasm')
@@ -54,6 +54,17 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-worklet-mixer-') as temporary:
    const {RecordedDecoder}=await import('./recorded-decoder.js'),{RecordedDecoderClient}=await import('./recorded-decoder-client.js'),{RecordedStream}=await import('./recorded-stream.js'),{RecordedMusicSender}=await import('./recorded-transport.js');
    const load=async name=>new Uint8Array(await(await fetch(name)).arrayBuffer());
    const wasm=await load('converter.wasm'),codec=await load('decoder.wasm'),encoded=await load('tone.mp3');
+   const {RecordedBudget}=await import('./recorded-budget.js'),charge=6291456+codec.length*2+encoded.length+1600*2*3;
+   const budget=new RecordedBudget(charge),reserved=await RecordedDecoderClient.open(codec,encoded,6291456,undefined,budget);
+   if(budget.used!==charge)throw Error('Decoder reservation missing');let denied=false;
+   try{await RecordedDecoderClient.open(codec,encoded,6291456,undefined,budget);}catch{denied=true;}
+   if(!denied||budget.used!==charge)throw Error('Concurrent decoder overcommitted');reserved.close();if(budget.used)throw Error('Decoder close leaked reservation');
+   denied=false;try{await RecordedDecoderClient.open(codec,new Uint8Array([1]),6291456,undefined,budget);}catch{denied=true;}
+   if(!denied||budget.used)throw Error('Failed decoder open leaked reservation');
+   const parent=new RecordedBudget(charge),child=parent.partition(charge),retained=await RecordedDecoderClient.open(codec,encoded,6291456,undefined,child);child.close();
+   if(parent.used!==charge)throw Error('Child released capacity with a live decoder');retained.close();if(parent.used)throw Error('Retired child kept capacity');
+   const cancellation=new AbortController(),opening=RecordedDecoderClient.open(codec,encoded,6291456,cancellation.signal,budget);cancellation.abort();denied=false;try{await opening;}catch{denied=true;}
+   if(!denied||budget.used)throw Error('Cancelled decoder startup leaked reservation');
    const direct=new RecordedDecoder(codec);direct.open(encoded);const pcm=[];for(;;){const block=new Int16Array(1600),n=direct.read(block);if(!n)break;pcm.push(...block.subarray(0,n));}direct.close();
    if(pcm.length<20000||pcm.length>30000)throw Error('Unexpected synthetic MP3 length');
    const frames=16384,baseline=new RecordedStream(wasm);baseline.begin(1);baseline.effectVolume(64);
@@ -62,20 +73,20 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-worklet-mixer-') as temporary:
    for(let frame=0;frame<frames;frame+=128){while(at<pcm.length&&baseline.availableFrames>=800){const n=Math.min(1600,pcm.length-at);if(!baseline.push(1,Int16Array.from(pcm.slice(at,at+n))))throw Error('baseline enqueue');at+=n;}if(at===pcm.length&&!ended){baseline.finishMusic(1);ended=true;}baseline.render(expected.subarray(frame*2,(frame+128)*2));}
    if(baseline.musicStatus!=='ended'||baseline.playedFrames!==pcm.length/2)throw Error('baseline incomplete');baseline.close();
    const results=[];for(const mode of ['normal','replacement','stop-restart']){
-   const client=await RecordedDecoderClient.open(codec,encoded),context=new AudioContext({sampleRate:48000});await context.audioWorklet.addModule('stream-worklet.js');
+   const liveBudget=new RecordedBudget(charge*2),client=await RecordedDecoderClient.open(codec,encoded,6291456,undefined,liveBudget),context=new AudioContext({sampleRate:48000});await context.audioWorklet.addModule('stream-worklet.js');
    const node=new AudioWorkletNode(context,'transport-audio',{numberOfInputs:0,numberOfOutputs:1,outputChannelCount:[2],processorOptions:{wasm,volume:64,frames}});
    const channel=new MessageChannel(),sender=new RecordedMusicSender(channel.port1);node.port.postMessage({port:channel.port2},[channel.port2]);
    const finished=new Promise((resolve,reject)=>{node.port.onmessage=({data})=>data.error?reject(Error(data.error)):resolve(data);node.onprocessorerror=()=>reject(Error('decoder worklet failed'));});
    const gain=context.createGain();gain.gain.value=0;node.connect(gain);gain.connect(context.destination);await context.resume();let retired=null;
    if(mode==='normal')sender.start(1,client);else{
-    retired=await RecordedDecoderClient.open(codec,encoded);let release;
+    retired=await RecordedDecoderClient.open(codec,encoded,6291456,undefined,liveBudget);let release;
     const held={async read(size){const values=await retired.read(size);return new Promise(resolve=>release=()=>resolve(values.fill(32767)));},close(){retired.close();}};
     sender.start(1,held);const deadline=performance.now()+2000;while(!release){if(performance.now()>deadline)throw Error('Retired read not admitted');await new Promise(resolve=>setTimeout(resolve,1));}
     if(mode==='stop-restart'){if(!sender.stop(2))throw Error('Stop rejected');sender.start(3,client);}else sender.start(2,client);
     if(!retired.closed)throw Error('Replaced decoder alive');release();
    }
    const report=await finished;
-   if(report.status!=='ended'||report.played!==pcm.length/2||!client.closed||report.values.length!==expected.length)throw Error('worker pipeline incomplete');
+   if(report.status!=='ended'||report.played!==pcm.length/2||!client.closed||liveBudget.used||report.values.length!==expected.length)throw Error('worker pipeline incomplete');
    for(let i=0;i<expected.length;i++)if(report.values[i]!==expected[i])throw Error('worker pipeline differs at scalar '+i+': '+report.values[i]+' != '+expected[i]);
    sender.close();node.disconnect();node.port.close();gain.disconnect();await context.close();results.push({mode,sourceFrames:report.played,comparedScalars:expected.length,workerClosed:client.closed,retiredClosed:retired?.closed??true});
    }return results;
