@@ -284,7 +284,17 @@ fn combined_original_rate_music_and_effects_reach_the_device_without_game_ticks(
         .filter(|path| path.extension().is_some_and(|extension| extension == "mp3"))
         .collect::<Vec<_>>();
     paths.sort();
-    let (_temporary, package) = music_fixture::signed_music_package(&paths[..1]);
+    let effect_root = tempfile::tempdir().unwrap();
+    let effect_path = effect_root.path().join("effect.wav");
+    let mut wav = b"RIFF\0\0\0\0WAVEfmt \x10\0\0\0\x01\0\x02\0\x44\xac\0\0\x10\xb1\x02\0\x04\0\x10\0data\0\0\0\0".to_vec();
+    wav[4..8].copy_from_slice(&64036u32.to_le_bytes());
+    wav[40..44].copy_from_slice(&64000u32.to_le_bytes());
+    for _ in 0..32000 {
+        wav.extend_from_slice(&20000i16.to_le_bytes());
+    }
+    std::fs::write(&effect_path, wav).unwrap();
+    let (_temporary, package) =
+        music_fixture::signed_music_package(&[paths[0].clone(), effect_path]);
     let factory = decoder_factory();
     let budget = Budget::new(16 * 1048576);
     let guest = budget.reserve(9 * 1048576).unwrap();
@@ -320,19 +330,28 @@ fn combined_original_rate_music_and_effects_reach_the_device_without_game_ticks(
     use gamepkg::audio::EffectCommand;
     assert!(!player.effect_volume(129));
     let effects = budget.partition(128 * 1024).unwrap();
-    let clip = gamepkg::audio_voices::Clip::new(&[20000; 32000], &effects).unwrap();
-    assert!(player.effect_batch(&[
-        EffectCommand::Volume(0),
-        EffectCommand::Pause(true),
-        EffectCommand::Play(clip),
-    ]));
+    let mut transaction =
+        gamepkg::audio_effects::Service::new(package, true, effects.clone()).unwrap();
+    transaction.begin().unwrap();
+    transaction.volume(0).unwrap();
+    transaction.pause(true).unwrap();
+    transaction.play("music/effect.wav").unwrap();
+    assert!(transaction.finish(true, |commands| player.effect_batch(commands)));
     drop(effects); // Pending/playing clips must retain the parent's cache charge.
     std::thread::sleep(std::time::Duration::from_millis(20));
     let silent = player.non_silent_frames();
     std::thread::sleep(std::time::Duration::from_millis(20));
     assert_eq!(player.non_silent_frames(), silent);
-    // A malformed batch must not partially stop the retained voice. Resuming
-    // it below proves the Stop was never applied to the real callback.
+    transaction.begin().unwrap();
+    transaction.volume(128).unwrap();
+    transaction.pause(false).unwrap();
+    transaction.play("music/effect.wav").unwrap();
+    assert!(!transaction.finish(false, |_| panic!("failed tick reached the audio device")));
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    assert_eq!(player.non_silent_frames(), silent);
+    drop(transaction); // The output retains PCM after the cache closes.
+                       // A malformed batch must not partially stop the retained voice. Resuming
+                       // it below proves the Stop was never applied to the real callback.
     assert!(!player.effect_batch(&[EffectCommand::Stop, EffectCommand::Volume(129)]));
     assert!(player.effect_batch(&[EffectCommand::Volume(128), EffectCommand::Pause(false)]));
     let start = std::time::Instant::now();
@@ -351,4 +370,5 @@ fn combined_original_rate_music_and_effects_reach_the_device_without_game_ticks(
     drop(guest);
     assert_eq!(budget.used(), 0);
     println!("ORIGINAL_MIX_CALLBACK_OK");
+    println!("EFFECT_TRANSACTION_CALLBACK_OK");
 }

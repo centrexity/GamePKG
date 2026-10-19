@@ -2823,3 +2823,39 @@ All 14 browser Node suites pass with the final implementation. Optimized CLI
 and GUI builds pass with the updated self-contained export templates; original
 core/component homepage and restart/storage checks pass as well. The seven
 public HTML pages and local links pass validation.
+
+## Host effect transactions and shared recording ownership
+
+A host-only effect service now owns one verified package reader, a fixed
+32-recording cache and one 32-command tick transaction. It uses the existing
+shared memory budget: fixed cache metadata, pending control storage, WAV staging
+and immutable PCM all reserve before allocation. Paths use fixed 1,024-byte
+storage rather than an unbounded map or separately allocated names. Cache hits
+share the exact recording allocation. A full cache rejects new names without
+evicting an active recording; the existing 2 MiB per-clip bound is unchanged.
+
+`begin` starts staging, and `finish` calls the trusted all-or-none device batch
+publisher only after the caller reports successful execution and persistence.
+Failed execution never invokes that publisher. A rejected output batch drops
+its pending commands and all newly loaded recordings; an earlier committed cache
+entry survives. Finishing twice cannot replay commands. Output-owned clips retain
+the parent's pool reservation after the service/cache closes.
+
+Seven public signed-asset/transaction cases pass on Linux64 and actual Linux32,
+including permission/verification/path denial, exact command ordering, shared
+cache identity, both queue/cache bounds, failed execution, rejected output,
+subsequent empty transactions, memory exhaustion and last-owner cleanup. The
+Android test binary cross-compiles; these new cases have not yet been executed
+on Android. All five original SDL-decoded 44.1 kHz effect recordings also match
+complete PCM through the transaction cache in the unchanged 4 MiB pool.
+
+The actual CPAL/ALSA null-device combined music/effect check now loads its effect
+from a synthetically signed package through this service, commits the batch to
+the real callback, denies a failed tick's unmute/play request, and proves the
+output still owns PCM after cache shutdown. All nine complete music references,
+embedded-decoder relocation, held-control callback consumption and cleanup pass.
+Nine ordinary callback regressions and strict audio-library/integration Clippy
+pass. Test parallelism, timeouts, audio limits and reference tolerances are
+unchanged. This service does not yet expose game SDK commands, change a running
+port's audio, account all package/compiler metadata, or complete native/browser
+per-game memory wiring. Those remain required before port migration.

@@ -81,13 +81,7 @@ enum Command {
 }
 /// Host-owned effect controls staged by one successful game tick. Acceptance
 /// means the whole batch was queued; voice exhaustion is reported by error().
-#[derive(Clone)]
-pub enum EffectCommand {
-    Play(Arc<crate::audio_voices::Clip>),
-    Volume(u8),
-    Pause(bool),
-    Stop,
-}
+pub use crate::audio_voices::EffectCommand;
 struct Controls {
     commands: VecDeque<Command>,
     original: bool,

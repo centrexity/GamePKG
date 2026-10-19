@@ -231,6 +231,9 @@ impl Package {
     pub(crate) fn mark_verified(&mut self) {
         self.verified = true;
     }
+    pub(crate) fn is_verified(&self) -> bool {
+        self.verified
+    }
     /// Read a bounded range from an already verified package without extracting it.
     pub fn asset_chunk(&mut self, path: &str, offset: u64, length: usize) -> Result<Vec<u8>> {
         if !self.verified || !valid_path(path) || length > 65536 {

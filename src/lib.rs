@@ -1,6 +1,8 @@
 pub mod archive;
 #[doc(hidden)]
 pub mod audio_decode;
+#[doc(hidden)]
+pub mod audio_effects;
 mod audio_frame;
 #[doc(hidden)]
 pub mod audio_mix_stream;

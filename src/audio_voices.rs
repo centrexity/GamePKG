@@ -10,6 +10,14 @@ pub struct Clip {
     samples: Box<[i16]>,
     _reservation: Lease,
 }
+/// Trusted controls committed together after one successful game tick.
+#[derive(Clone)]
+pub enum EffectCommand {
+    Play(Arc<Clip>),
+    Volume(u8),
+    Pause(bool),
+    Stop,
+}
 impl Clip {
     fn reservation(samples: usize, budget: &Budget) -> Result<Lease> {
         budget.reserve(
