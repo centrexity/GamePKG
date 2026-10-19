@@ -13,7 +13,7 @@ class Quiet(SimpleHTTPRequestHandler):
  def log_message(self,*args):pass
 with tempfile.TemporaryDirectory(prefix='gamepkg-worklet-mixer-') as temporary:
  root=Path(temporary)
- for name in ['recorded-decoder.js','recorded-mixer.js','recorded-queue.js','recorded-stream.js','recorded-transport.js','recorded-decoder-client.js','recorded-decoder-worker.js','recorded-budget.js','recorded-worklet.js','recorded-output-client.js','recorded-wav.js']:shutil.copy2(project/'web-player'/name,root/name)
+ for name in ['recorded-decoder.js','recorded-mixer.js','recorded-queue.js','recorded-stream.js','recorded-transport.js','recorded-decoder-client.js','recorded-decoder-worker.js','recorded-budget.js','recorded-worklet.js','recorded-output-client.js','recorded-wav.js','recorded-frame-dispatcher.js']:shutil.copy2(project/'web-player'/name,root/name)
  shutil.copy2(project/'tests/fixtures/recorded-transport-worklet.js',root/'stream-worklet.js');shutil.copy2(companion,root/'converter.wasm')
  shutil.copy2(project/'tests/fixtures/sdl-live-audio-reference.json',root/'reference.json')
  shutil.copy2(Path(sys.argv[2]),root/'decoder.wasm')
@@ -155,5 +155,19 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-worklet-mixer-') as temporary:
   })().then(value=>done({value})).catch(error=>done({error:String(error.stack||error)}));''')
   assert 'error' not in supervised,supervised
   print('Production output supervisor: one request, shared reservation, immediate startup cancellation, connected decoder teardown and fresh recovery passed.',json.dumps(supervised['value']),flush=True)
+  dispatched=browser.execute_async_script('''const done=arguments[arguments.length-1];(async()=>{
+   const {RecordedOutputClient}=await import('./recorded-output-client.js'),{RecordedBudget}=await import('./recorded-budget.js'),{RecordedFrameDispatcher}=await import('./recorded-frame-dispatcher.js');
+   const load=async name=>new Uint8Array(await(await fetch(name)).arrayBuffer()),wasm=await load('converter.wasm'),wav=await load('tone.wav'),invalid=wav.slice();invalid[24]^=1;
+   const budget=new RecordedBudget(4194304+wasm.length*3+wav.length-44),output=await RecordedOutputClient.open(wasm,4194304,budget),dispatcher=new RecordedFrameDispatcher(output,new Map([['tone.wav',wav],['bad.wav',invalid],['next.wav',wav]]),{effects:true});
+   const frame=(serial,recordedControls)=>({epoch:0,serial,recordedControls,recordedActiveGeneration:null});
+   if(!await dispatcher.prepare(frame(1,[[0,'tone.wav',0]])))throw Error('Effect prepare failed');if((await output.request('snapshot')).activeEffects)throw Error('Asset admission started playback');
+   if(await dispatcher.finish(0,2,true))throw Error('Wrong dispatcher frame accepted');if(!await dispatcher.finish(0,1,false))throw Error('Discard failed');if((await output.request('unload',{clip:0})).ok)throw Error('Failed frame kept uncommitted cache');
+   if(!await dispatcher.prepare(frame(2,[[2,'',1],[0,'tone.wav',0]]))||!await dispatcher.finish(0,2,true))throw Error('Fresh committed effect failed');if((await output.request('snapshot')).activeEffects!==1)throw Error('Fresh effect not published');
+   let denied=false;try{await dispatcher.prepare(frame(3,[[3,'',0],[0,'next.wav',0],[0,'bad.wav',0]]));}catch{denied=true;}if(!denied||(await output.request('snapshot')).activeEffects!==1)throw Error('Malformed asset partially stopped playback');if((await output.request('unload',{clip:1})).ok)throw Error('Malformed frame retained an earlier staged admission');
+   if(!await dispatcher.prepare(frame(4,[[3,'',0]]))||!await dispatcher.finish(0,4,true)||(await output.request('snapshot')).activeEffects)throw Error('Fresh frame did not recover');
+   let release;const admit=output.loadWav.bind(output);output.loadWav=async(...args)=>{await new Promise(resolve=>release=resolve);return admit(...args);};const preparing=dispatcher.prepare(frame(5,[[0,'next.wav',0]])).then(value=>value,()=>false);while(!release)await new Promise(r=>setTimeout(r,1));await dispatcher.close();release();if(await preparing||budget.used)throw Error('Closed dispatcher revived pending admission');return {discardedCache:true,publishedFresh:true,malformedRollback:true,closedAdmission:true};
+  })().then(value=>done({value})).catch(error=>done({error:String(error.stack||error)}));''')
+  assert 'error' not in dispatched,dispatched
+  print('Production effect frame dispatcher: staged cache rollback, checkpoint-only publication, malformed asset rollback and close during admission passed.',json.dumps(dispatched['value']),flush=True)
  finally:
   browser.quit();server.shutdown();server.server_close()

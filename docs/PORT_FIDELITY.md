@@ -3515,3 +3515,21 @@ future dispatcher can preserve natural EOF/failure semantics for that generation
 The player still needs to resolve/admit staged asset paths and wire its actual
 storage checkpoint to these prepare/finish calls. Exports remain disabled for
 recorded audio; this endpoint protocol alone does not prove game-frame playback.
+
+A production frame dispatcher now resolves staged effect paths from the host's
+package asset Map, admits canonical WAVs into first-free bounded cache slots,
+and prepares their numeric control batch without starting playback. A successful
+checkpoint promotes new cache entries; a failed checkpoint unloads them. The
+complete wire schema is checked before asset admission, and only one prepare or
+finish can run at once. Matching frame identity is required. Closing during
+admission shuts down the output so late completion cannot revive playback.
+
+Actual Chromium exercises the dispatcher with the production supervisor/worklet:
+admission without playback, failed-checkpoint cache removal, fresh successful
+publication, wrong frame refusal, existing-voice preservation when a later WAV
+is malformed, rollback of a preceding valid admission in that same frame, fresh
+recovery and close during an awaited load. Existing exact audio/lifecycle checks
+still pass. Music Play/Stop resolution is explicitly rejected until its async
+loading and generation ownership are wired; it is never silently skipped. Actual
+player storage dispatch, full share allocation and recorded-audio export remain
+unfinished. No package/binary release or game recording is published.
