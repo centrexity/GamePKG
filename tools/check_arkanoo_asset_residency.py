@@ -6,6 +6,7 @@ import hashlib
 import json
 from pathlib import Path
 import subprocess
+import zlib
 from PIL import Image
 
 parser = argparse.ArgumentParser(description=__doc__)
@@ -61,10 +62,14 @@ for path in sorted(source.rglob('*')):
     optimized += size
 migration = json.loads((args.migration_inputs/'migration-inputs.json').read_text())
 # Replace the old effect assets rather than double-counting both encodings.
+effect_raw=effect_packed=effect_max=0
 for effect in migration['effects']:
     name = effect['asset']
     assert hashlib.sha256((args.migration_inputs/name).read_bytes()).hexdigest() == effect['wav_sha256'], name
-    optimized += (args.migration_inputs/name).stat().st_size - (source/name).stat().st_size
+    data=(args.migration_inputs/name).read_bytes();packed=zlib.compress(data,9)
+    assert zlib.decompress(packed)==data
+    effect_raw+=len(data);effect_packed+=len(packed);effect_max=max(effect_max,len(data))
+    optimized += len(data) - (source/name).stat().st_size
 music = 0
 for song in migration['music']:
     track = args.migration_inputs/song['asset']
@@ -74,7 +79,11 @@ playlist = (args.migration_inputs/'audio/music-list.txt').stat().st_size
 report = {'private_verification_inputs': True, 'original_assets_bytes': original,
           'optimized_assets_with_replacement_effects_bytes': optimized,
           'music_bytes': music, 'playlist_bytes': playlist, 'precise_image_bytes': precise, 'legacy_precise_image_bytes': legacy_precise,
-          'web_export_accounted_bytes': optimized+music+playlist+precise,
+          'uncompressed_web_export_bytes': optimized+music+playlist+precise,
+          'effect_wav_bytes': effect_raw, 'python_zlib_effect_estimate_bytes': effect_packed,
+          'python_encoded_export_estimate_bytes': optimized+music+playlist+precise-effect_raw+effect_packed,
+          'asset_scratch_bytes_per_owner': effect_max+263168,
+          'estimate_note': 'Exact host encoder sizes and memory compatibility are verified by check_arkanoo_recorded_web.py',
           'web_export_limit_bytes': 32*1024*1024, 'images': rows}
 (output/'residency.json').write_text(json.dumps(report, indent=2)+'\n')
 print(json.dumps({key: value for key, value in report.items() if key != 'images'}, indent=2))

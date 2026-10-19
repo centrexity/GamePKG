@@ -390,3 +390,13 @@ added. The guest is responsible for validating its actual file format.
 These operations do not yet provide a directory/resource browser, remembered
 mod folders, streaming media resources or large recording exports. Those remain
 separate requirements for the engine ports.
+
+
+Browser export may store larger canonical effect WAVs losslessly compressed.
+Game source continues to read the original WAV bytes and call the same effect
+functions. The exported player uses bounded reusable decoding buffers, reserved
+inside the existing hard memory allowance; the exported guest memory maximum
+is reduced to leave room for both owners. The exporter keeps raw storage when
+compression would not save space or would leave too little guest memory. The
+32 MiB encoded asset limit, effect cache limits and execution deadlines still
+apply. Players need no external decoder, Python or other preparation tools.

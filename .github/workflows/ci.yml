@@ -64,6 +64,8 @@ jobs:
           ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 target/doom-endoom-test
       - name: Test browser guest path protections
         run: node tests/web_path_attacks.mjs
+      - name: Test bounded compressed asset storage and ownership
+        run: node tests/web_asset_store.mjs
       - name: Test fixed browser music FIFO and generation boundaries
         run: node tests/web_recorded_queue.mjs
       - name: Recorded audio guest command staging
@@ -236,7 +238,7 @@ jobs:
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/drawing_game.py
       - name: Install virtual display tools
         if: matrix.features == '--all-features'
-        run: sudo apt-get install -y xvfb xdotool imagemagick tesseract-ocr python3-pil python3-xlib python3-selenium zenity libsdl2-dev libsdl2-ttf-dev libsdl2-image-dev pkg-config libxkbcommon-x11-0 libgl1-mesa-dri libvulkan1 mesa-vulkan-drivers
+        run: sudo apt-get install -y xvfb xdotool imagemagick optipng tesseract-ocr python3-pil python3-xlib python3-selenium zenity libsdl2-dev libsdl2-ttf-dev libsdl2-image-dev pkg-config libxkbcommon-x11-0 libgl1-mesa-dri libvulkan1 mesa-vulkan-drivers
       - name: Native package and catalog drag-and-drop
         if: matrix.features == '--all-features'
         run: /usr/bin/python3 tests/drop_files_gui.py
@@ -415,6 +417,21 @@ jobs:
       - name: Verify signed exact PNG exports without duplicate raw assets
         if: matrix.features == '--all-features'
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tests/browser_png_player.py
+      - name: Verify compressed asset reads and decoding lifetime accounting
+        if: matrix.features == '--all-features'
+        run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tests/browser_compressed_assets.py
+      - name: Verify exact filtered renderer batching
+        if: matrix.features == '--all-features'
+        run: sudo env PATH="$PATH" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tests/browser_linear_batch.py
+      - name: Verify complete original recorded-audio browser port within existing budgets
+        if: matrix.features == '--all-features'
+        run: |
+          recorded_checks=$(mktemp -d /tmp/gamepkg-recorded-checks.XXXXXX)
+          trap 'rm -rf "$recorded_checks"' EXIT
+          /usr/bin/python3 tools/check_effect_assets.py target/reference-arkanoo --private-output "$recorded_checks/inputs" --include-music
+          /usr/bin/python3 tools/check_arkanoo_asset_residency.py --private-output "$recorded_checks/images" --migration-inputs "$recorded_checks/inputs"
+          /usr/bin/python3 tools/prepare_arkanoo_recorded_port.py --private-output "$recorded_checks/candidate" --migration-inputs "$recorded_checks/inputs"
+          sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tools/check_arkanoo_recorded_web.py "$recorded_checks/candidate" --optimized-images "$recorded_checks/images"
       - name: Verify signed recorded-audio browser exports and player lifecycle
         if: matrix.features == '--all-features'
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tests/browser_recorded_player.py

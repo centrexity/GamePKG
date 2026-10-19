@@ -3830,3 +3830,64 @@ pass saved only another 7,084 bytes, so neither it nor this decoder establishes
 a successful complete browser export. Full gameplay/browser/platform migration
 remains open. No images, recordings, generated recipes or binary artifacts are
 published by this change.
+
+
+### Full original browser dataset fits with bounded lossless WAV storage
+
+The complete private recorded-audio candidate now exports successfully for both
+core and component profiles. It retains all 76 pixel-identical images, five
+original-rate effects and nine unchanged MP3 tracks. Actual host-encoded asset
+payloads total **33,185,755 bytes**, below the unchanged **33,554,432-byte** limit.
+The previous size barrier is resolved for this dataset; no assets or tracks were
+removed and no existing resource limits were raised.
+
+The exporter optionally zlib-encodes canonical effect WAVs between 128 KiB and
+the bounded inflater capacity, only when storage shrinks and the existing guest
+minimum still fits after workspace reservations. Other assets retain their raw
+representation. Package/source files and ordinary asset-read bytes are unchanged.
+A trusted package map lazily allocates one reusable decode workspace per side,
+retains only the most recent decoded asset and forbids overlapping borrows.
+Fixed Huffman and metadata tables remain in that workspace. Original WAV loading
+copies PCM into its already-reserved output slot; it does not retain a second
+complete decoded collection of all effect files.
+
+The session reserves both the main-side and worker-side workspaces before use.
+For this dataset each is 1,200,224 bytes: the maximum 937,056-byte WAV plus a
+263,168-byte scratch allowance. The 16 MiB parent still contains 3 MiB effects,
+7 MiB music and the remainder for guest plus both workspaces. The browser guest
+allowance is therefore 3,891,008 bytes. Actual signed fixture exports also verify
+the binary Wasm memory maximum is reduced accordingly. Shutdown terminates the
+guest before releasing its lease and retains the main workspace until every
+asynchronous borrower has settled. A forced Stop during admission proves that
+capacity remains charged until the borrower returns, then is released; fresh
+playback recovers. Static package inputs and whole-browser/JIT/GC accounting
+remain separate as previously documented.
+
+Full browser qualification initially exposed a real renderer bottleneck:
+consecutive filtered images copied the complete framebuffer for each sprite.
+Filtered runs now share the framebuffer, preserving draw order and per-draw
+RGBA8 quantization, and flush before other drawing or clip changes. Ten actual
+Chromium comparisons match the hash-pinned previous renderer byte-for-byte,
+including mixed drawing, fractional positions, clips and transparent background
+requests. A 235-image run now requires one framebuffer copy instead of 235.
+No logical game timing, runtime deadline or observation timeout was increased.
+Pointer capture is also skipped while pointer lock already owns the surface;
+platform rejection of ordinary pointer capture does not discard the input event.
+
+`tools/check_arkanoo_recorded_web.py` verifies both complete browser exports and
+actual original music, music mute clock freeze, durable slider selection,
+compressed collision effects, normal Escape-to-pause, Restart with restored
+music settings, resume and parent-capacity release. `tests/browser_compressed_assets.py`
+independently verifies full original WAV reads through both SDK forms, actual
+playback, exported memory maxima, pending-loan shutdown retention and fresh
+recovery. Node storage/decoder tests, 18 existing JavaScript checks plus the new store check, production
+worklet/transport/dispatcher/session regressions, 258 enabled host library tests
+(19 resource/platform cases remain explicitly ignored), and strict Rust 1.89/1.99
+checks pass. CI includes the bounded-store, signed compressed-asset, renderer
+batching and full original-dataset preparation/playback checks. All generated recipes, images, recordings, packages and binaries
+remain private; only implementation and qualification source is published.
+
+This qualifies the private full-audio migration on the tested desktop/browser
+paths. Public active-port migration, complete original menu/pixel/gameplay parity,
+other platforms and whole-host memory accounting still require work. The active
+public recipe and released app binaries are not represented as already migrated.

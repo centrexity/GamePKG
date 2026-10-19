@@ -1,3 +1,4 @@
+import {PackageAssets} from './asset-store.js';
 // Trusted lifetime owner for one recorded-audio game session.
 import {RecordedBudget} from './recorded-budget.js';
 import {RecordedOutputClient} from './recorded-output-client.js';
@@ -6,8 +7,8 @@ import {RecordedMusicLoader} from './recorded-music-loader.js';
 import {RecordedFrameDispatcher} from './recorded-frame-dispatcher.js';
 const CREATE=Symbol();
 export class RecordedSession {
- #parent;#guest;#guestBytes;#worker=null;#effects=null;#music=null;#output=null;#dispatcher=null;#closed=false;#closing=null;
- constructor(token,parent,guestBytes){if(token!==CREATE)throw Error('Use RecordedSession.open');this.#parent=parent;this.#guestBytes=guestBytes;this.#guest=parent.reserve(guestBytes);}
+ #parent;#guest;#guestBytes;#assetLease=null;#assets;#worker=null;#effects=null;#music=null;#output=null;#dispatcher=null;#closed=false;#closing=null;
+ constructor(token,parent,guestBytes,scratch,assets){if(token!==CREATE)throw Error('Use RecordedSession.open');this.#parent=parent;this.#guestBytes=guestBytes;this.#assets=assets;try{this.#guest=parent.reserve(guestBytes+scratch);if(scratch)this.#assetLease=parent.reserve(scratch);}catch(error){this.#guest?.release();this.#assetLease?.release();throw error;}}
  static async open(manifest,assets,converter,decoder,parent,signal){
   if(!(parent instanceof RecordedBudget)||!(assets instanceof Map)||manifest?.permissions?.audio!==true)throw Error('Recorded audio requires its declared permission and memory allowance');
   if(signal!==undefined&&!(signal instanceof AbortSignal))throw Error('Invalid recorded session cancellation');if(signal?.aborted)throw Error('Recorded session startup cancelled');
@@ -16,7 +17,10 @@ export class RecordedSession {
   if(!effects&&!music)throw Error('No recorded audio share');
   if(!Number.isSafeInteger(limits.hard_memory_bytes)||parent.limit>limits.hard_memory_bytes||parent.limit-effects-music<65536)throw Error('Audio shares exceed the selected memory ceiling');
   if(!(converter instanceof Uint8Array)||converter.length<8||converter.length>4194304)throw Error('Invalid audio converter');
-  const session=new RecordedSession(CREATE,parent,parent.limit-effects-music);
+  if(assets instanceof PackageAssets&&assets.closed)throw Error('Package assets are closed');
+  const scratch=assets instanceof PackageAssets?assets.scratchBytes:0,guestBytes=parent.limit-effects-music-2*scratch;
+  if(guestBytes<65536)throw Error('Compressed assets leave insufficient guest memory');
+  const session=new RecordedSession(CREATE,parent,guestBytes,scratch,assets);
   const abort=()=>{void session.close().catch(()=>{});};signal?.addEventListener('abort',abort,{once:true});
   try{
    if(effects)session.#effects=parent.partition(effects);if(music)session.#music=parent.partition(music);
@@ -38,6 +42,6 @@ export class RecordedSession {
  finish(epoch,serial,success){return this.#closed?Promise.resolve(false):this.#dispatcher.finish(epoch,serial,success);}
  close(){
   if(this.#closing)return this.#closing;this.#closed=true;this.#worker?.terminate();this.#worker=null;this.#guest?.release();this.#guest=null;
-  this.#closing=(async()=>{try{if(this.#dispatcher)await this.#dispatcher.close();else if(this.#output)await this.#output.close();}finally{this.#effects?.close();this.#music?.close();}})();return this.#closing;
+  this.#closing=(async()=>{try{if(this.#dispatcher)await this.#dispatcher.close();else if(this.#output)await this.#output.close();}finally{try{if(this.#assets instanceof PackageAssets)await this.#assets.close();}finally{this.#assetLease?.release();this.#assetLease=null;this.#effects?.close();this.#music?.close();}}})();return this.#closing;
  }
 }

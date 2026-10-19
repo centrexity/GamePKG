@@ -1,3 +1,4 @@
+import {CompressedAsset} from './asset-store.js';
 import {RecordedMusicLoader} from './recorded-music-loader.js';
 // Trusted host dispatcher. Package assets are supplied by the verified player.
 export class RecordedFrameDispatcher {
@@ -28,7 +29,7 @@ export class RecordedFrameDispatcher {
     if(id===undefined){
      const used=new Set([...this.#cache.values(),...entries.values()]);for(id=0;id<32&&used.has(id);id++);
      if(id===32)throw Error('Recorded effect cache is full');
-     const admitted=await this.#output.loadWav(id,this.#assets.get(path));if(this.#closed)return false;if(!admitted.ok)throw Error('Recorded effect asset was rejected');entries.set(path,id);
+     const asset=this.#assets.get(path),admitted=await (asset instanceof CompressedAsset?asset.borrow(bytes=>this.#output.loadWav(id,bytes)):this.#output.loadWav(id,asset));if(this.#closed)return false;if(!admitted.ok)throw Error('Recorded effect asset was rejected');entries.set(path,id);
     }
     commands.push([0,id]);
    }

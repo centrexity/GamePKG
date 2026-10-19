@@ -26,7 +26,7 @@ for item in metadata['effects']+metadata['music']:
 shutil.copy2(inputs/'audio/music-list.txt',out/'assets/audio/music-list.txt')
 def patch(file,old,new):
  path=out/'source/src'/file;s=path.read_text();assert s.count(old)==1,(file,old);path.write_text(s.replace(old,new))
-manifest=out/'manifest.toml';manifest.write_text(manifest.read_text().replace('[limits]','[limits]\neffects_memory_bytes = 3145728\nmusic_memory_bytes = 7340032'))
+manifest=out/'manifest.toml';manifest.write_text(manifest.read_text().replace('recommended_memory_bytes = 8388608','recommended_memory_bytes = 16777216').replace('[limits]','[limits]\neffects_memory_bytes = 3145728\nmusic_memory_bytes = 7340032'))
 (out/'source/src/audio.rs').write_text('''// Host-owned original recordings; no guest decoder or premixed PCM.
 pub struct Mixer {}
 impl Mixer {

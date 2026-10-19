@@ -1,3 +1,4 @@
+import {PackageAssets} from './asset-store.js';
 import {RecordedSession} from './recorded-session.js';
 async function companion(name,expected,signal){
  if(typeof expected!=='string'||!/^[a-f0-9]{64}$/.test(expected))throw Error('Missing audio companion integrity hash');
@@ -12,10 +13,8 @@ export async function startRecordedPlayer(data,parent,signal){
  const controller=new AbortController(),abort=()=>controller.abort();if(signal?.aborted)abort();signal?.addEventListener('abort',abort,{once:true});const timer=setTimeout(abort,5000);
  try{
   const [converter,decoder]=await Promise.all([companion('audio-converter.wasm',info.converter_sha256,controller.signal),data.manifest.limits.music_memory_bytes?companion('audio-decoder.wasm',info.decoder_sha256,controller.signal):Promise.resolve(null)]);
-  const assets=new Map();let total=0;for(const [path,hex] of Object.entries(data.assets)){
-   if(typeof hex!=='string'||hex.length%2||(total+=hex.length/2)>33554432||!/^[a-f0-9]*$/.test(hex))throw Error('Invalid or oversized recorded assets');
-   const bytes=new Uint8Array(hex.length/2);for(let i=0;i<bytes.length;i++)bytes[i]=parseInt(hex.slice(i*2,i*2+2),16);assets.set(path,bytes);
-  }
+  const assets=new PackageAssets(data.assets);
+  if(assets.scratchBytes!==(data.asset_scratch_bytes??0))throw Error('Invalid package asset scratch allowance');
   return await RecordedSession.open(data.manifest,assets,converter,decoder,parent,controller.signal);
  }catch(error){controller.abort();throw error;}finally{clearTimeout(timer);signal?.removeEventListener('abort',abort);}
 }

@@ -8,6 +8,7 @@ function frameClockBegin(now=performance.now()){
 let eventBytes=new Uint8Array();
 // The guest sees only these typed imports, never JavaScript objects or browser APIs.
 let recordedControls=[],recordedReady=false,recordedMusicStatus='stopped',recordedActiveGeneration=null;
+let compressedAssetClass=null;
 let instance, manifest, assets, roms, save, state=0n, commands=[], background=null, unlocks=[],saveDirty=false,saveBudget=0,images=new Map(),imageBudget=0,audioSamples=[],audioChannels=1,shaderCount=0;
 function imageCommand(x,y,w,h,pw,ph,pixels,kind='image'){if(commands.length>=1024||!finite(x,y,w,h)||w<0||h<0||!Number.isInteger(pw)||!Number.isInteger(ph)||pw<1||ph<1||pw>512||ph>512||pixels.length!==pw*ph*4||imageBudget+pixels.length>8388608)return -1;imageBudget+=pixels.length;return command([kind,x,y,w,h,pw,ph,pixels.slice()]);}
 async function prepareImages(precise={},exactNames=[]){
@@ -43,7 +44,7 @@ function validAssetPath(name){
 function assetName(pointer,length){const value=bytes(pointer,length,1024);if(!value||!length)return null;let name;try{name=new TextDecoder('utf-8',{fatal:true}).decode(value);}catch{return null;}return validAssetPath(name)?name:null;}
 function range(pointer,length,max=65536){return Number.isInteger(pointer)&&Number.isInteger(length)&&pointer>=0&&length>=0&&length<=max&&instance?.exports.memory&&pointer+length<=instance.exports.memory.buffer.byteLength;}
 function bytes(pointer,length,max){if(!range(pointer,length,max))return null;return new Uint8Array(instance.exports.memory.buffer,pointer,length);}
-function read(source,offset,pointer,length){if(!source||offset<0||offset>source.length||!range(pointer,length))return -1;const part=source.subarray(offset,offset+length);bytes(pointer,part.length).set(part);return part.length;}
+function read(source,offset,pointer,length){if(compressedAssetClass&&source instanceof compressedAssetClass){if(offset<0||offset>source.length||!range(pointer,length))return -1;return source.borrow(decoded=>read(decoded,offset,pointer,length));}if(!source||offset<0||offset>source.length||!range(pointer,length))return -1;const part=source.subarray(offset,offset+length);bytes(pointer,part.length).set(part);return part.length;}
 function finite(...values){return values.every(Number.isFinite)&&values.every(v=>Math.abs(v)<=16384);}
 function command(value){if(commands.length>=1024)return -1;commands.push(value);return 0;}
 function takeEvents(capacity){if(!manifest.permissions.input||!Number.isInteger(capacity)||capacity<=0||capacity>32768||capacity%16)return null;const result=eventBytes.slice(0,capacity);eventBytes=eventBytes.slice(result.length);return result;}
@@ -197,7 +198,8 @@ onmessage=async ({data})=>{try{
   homepageEpoch=0;windowSerial=0;windowPending=null;
   recordedBegin(null);frameClockReset();windowObserve(null);
   fileEntry=null;fileNext=1;fileGeneration++;fileGesture=false;windowCurrent=defaultWindow();windowPrevious=defaultWindow();windowStaged=defaultWindow();
-  shaderCount=data.shaderCount||0;manifest=data.manifest;assets=new Map(Object.entries(data.assets).map(([key,value])=>[key,decode(value)]));roms=data.roms.map(value=>new Uint8Array(value));save=new Uint8Array(data.save);state=0n;
+  shaderCount=data.shaderCount||0;manifest=data.manifest;assets=null;compressedAssetClass=null;roms=data.roms.map(value=>new Uint8Array(value));save=new Uint8Array(data.save);state=0n;
+  if(data.asset_scratch_bytes){const module=await import('./asset-store.js');assets=new module.PackageAssets(data.assets);if(assets.scratchBytes!==data.asset_scratch_bytes)throw Error('Invalid asset scratch allowance');compressedAssetClass=module.CompressedAsset;}else {if(Object.values(data.assets).some(value=>typeof value!=='string'))throw Error('Undeclared compressed asset scratch');assets=new Map(Object.entries(data.assets).map(([key,value])=>[key,decode(value)]));}
   await prepareImages(data.precise_images??{},data.exact_png_images??[]);
   const module=await WebAssembly.compile(data.wasm);
   const namespace=manifest.runtime_profile==='component-v1'?'gamepkg:engine/host@0.1.0':'gamepkg',imports=manifest.runtime_profile==='component-v1'?canonical:api;
@@ -230,6 +232,7 @@ onmessage=async ({data})=>{try{
 function optionSize(pointer,size){if(!range(pointer,8)||pointer%4)throw Error('Invalid result pointer');const view=new DataView(instance.exports.memory.buffer);view.setUint32(pointer,size<0?0:1,true);view.setUint32(pointer+4,size<0?0:size,true);}
 function optionBytes(pointer,source,offset,length){
  if(!range(pointer,12)||pointer%4)throw Error('Invalid result pointer');
+ if(compressedAssetClass&&source instanceof compressedAssetClass&&Number.isInteger(offset)&&offset>=0&&offset<=source.length&&Number.isInteger(length)&&length>=0&&length<=65536)return source.borrow(decoded=>optionBytes(pointer,decoded,offset,length));
  let part=null,address=0;
  if(source&&Number.isInteger(offset)&&offset>=0&&offset<=source.length&&Number.isInteger(length)&&length>=0&&length<=65536){part=source.subarray(offset,offset+length);if(part.length){address=instance.exports.cabi_realloc(0,0,1,part.length)>>>0;if(!range(address,part.length))throw Error('Invalid allocation');bytes(address,part.length).set(part);}}
  const view=new DataView(instance.exports.memory.buffer);view.setUint32(pointer,part?1:0,true);view.setUint32(pointer+4,address,true);view.setUint32(pointer+8,part?.length??0,true);

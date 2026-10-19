@@ -10,7 +10,9 @@ let allocations=0;
 const ui=vm.createContext({context:main,canvas,score,data:{custom_renderer:true},color:()=> '#fff',Uint8Array,
  document:{querySelector:()=>score,createElement:()=>{allocations++;return stageCanvas;}},
  shaderFrame(...args){if(args[0]===9)throw Error('fixture graphics failure');helpers.push(['shader',args.at(-1)]);},
- linearSprite(...args){helpers.push(['linear',args.at(-1)]);},
+ linearBegin(target){helpers.push(['linear-begin',target]);},
+ linearFinish(target){helpers.push(['linear-finish',target]);},
+ linearSprite(...args){if(args[0]===999)throw Error('fixture filtered failure');helpers.push(['linear',args[8]]);},
 });
 vm.runInContext(source.slice(source.indexOf('function render('),source.indexOf('function playAudio(')),ui);
 ui.frame={state:'42',background:0xffffffff,commands:[['rect',0,0,10,10,0xffffffff],['shader',0],['shader-image',1,2,1,new Uint8Array(8)],['linear-image',0,0,10,10,1,1,new Uint8Array(4)]]};
@@ -19,12 +21,15 @@ assert.equal(mainCalls.length,0,'preparation touched the visible canvas');
 assert(stagedCalls.includes('fill'));
 assert.equal(canvas.dataset.state,'previous');assert.equal(score.textContent,'previous score');
 assert.equal(allocations,1);assert.equal(stageCanvas.width,640);assert.equal(stageCanvas.height,480);
-assert.equal(helpers.length,3);for(const [,target] of helpers)assert.equal(target,stage,'GPU draw used the visible framebuffer');
+assert.equal(helpers.length,5);assert.deepEqual(helpers.map(([kind])=>kind),['shader','shader','linear-begin','linear','linear-finish']);for(const [,target] of helpers)assert.equal(target,stage,'GPU draw used the visible framebuffer');
 vm.runInContext('prepareFrame(frame)',ui);assert.equal(allocations,1,'staging surface grew per frame');
 vm.runInContext('publishFrame(frame)',ui);
 assert.deepEqual(mainCalls,[['image',stageCanvas,0,0]]);assert.equal(canvas.dataset.state,'42');assert.equal(score.textContent,'');
 ui.frame={state:'99',background:0xffffffff,commands:[['shader',9]]};
 assert.throws(()=>vm.runInContext('prepareFrame(frame)',ui),/fixture graphics failure/);
+assert.equal(mainCalls.length,1);assert.equal(canvas.dataset.state,'42');
+ui.frame={state:'100',background:0xffffffff,commands:[['linear-image',999,0,10,10,1,1,new Uint8Array(4)]]};
+assert.throws(()=>vm.runInContext('prepareFrame(frame)',ui),/fixture filtered failure/);
 assert.equal(mainCalls.length,1);assert.equal(canvas.dataset.state,'42');
 assert.equal(stagedCalls.filter(v=>v==='save').length,stagedCalls.filter(v=>v==='restore').length);
 const stopped=[];

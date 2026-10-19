@@ -13,7 +13,7 @@ class Quiet(SimpleHTTPRequestHandler):
  def log_message(self,*args):pass
 with tempfile.TemporaryDirectory(prefix='gamepkg-worklet-mixer-') as temporary:
  root=Path(temporary)
- for name in ['recorded-decoder.js','recorded-mixer.js','recorded-queue.js','recorded-stream.js','recorded-transport.js','recorded-decoder-client.js','recorded-decoder-worker.js','recorded-budget.js','recorded-worklet.js','recorded-output-client.js','recorded-wav.js','recorded-frame-dispatcher.js','recorded-music-loader.js','recorded-session.js']:shutil.copy2(project/'web-player'/name,root/name)
+ for name in ['asset-store.js','png-inflate.js','recorded-decoder.js','recorded-mixer.js','recorded-queue.js','recorded-stream.js','recorded-transport.js','recorded-decoder-client.js','recorded-decoder-worker.js','recorded-budget.js','recorded-worklet.js','recorded-output-client.js','recorded-wav.js','recorded-frame-dispatcher.js','recorded-music-loader.js','recorded-session.js']:shutil.copy2(project/'web-player'/name,root/name)
  shutil.copy2(project/'tests/fixtures/recorded-transport-worklet.js',root/'stream-worklet.js');shutil.copy2(companion,root/'converter.wasm')
  shutil.copy2(project/'tests/fixtures/sdl-live-audio-reference.json',root/'reference.json')
  shutil.copy2(Path(sys.argv[2]),root/'decoder.wasm')

@@ -202,6 +202,32 @@ fn exact_png_source(bytes: &[u8]) -> bool {
     false
 }
 
+const ASSET_INFLATE_SCRATCH: u64 = 263168;
+fn compressed_effect_wav(bytes: &[u8]) -> Result<Option<Vec<u8>>> {
+    if !(131072..=1049088).contains(&bytes.len()) {
+        return Ok(None);
+    }
+    let word = |at| u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap());
+    if &bytes[..4] != b"RIFF"
+        || &bytes[8..16] != b"WAVEfmt "
+        || word(4) as usize != bytes.len() - 8
+        || word(16) != 16
+        || bytes[20..24] != [1, 0, 2, 0]
+        || word(24) != 44100
+        || word(28) != 176400
+        || bytes[32..36] != [4, 0, 16, 0]
+        || &bytes[36..40] != b"data"
+        || word(40) as usize != bytes.len() - 44
+        || !(bytes.len() - 44).is_multiple_of(4)
+    {
+        return Ok(None);
+    }
+    let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::best());
+    encoder.write_all(bytes)?;
+    let packed = encoder.finish()?;
+    Ok((packed.len() + 64 < bytes.len()).then_some(packed))
+}
+
 pub fn export(root: &Path, id: &str, output: &Path) -> Result<()> {
     let _guard = crate::registry::LibraryChange::acquire(root)?;
     let mut package = crate::archive::Package::open(&root.join(format!("{id}.gamepkg")))?;
@@ -318,6 +344,7 @@ pub fn export(root: &Path, id: &str, output: &Path) -> Result<()> {
     let mut precise_images = BTreeMap::new();
     let mut exact_png_images = Vec::new();
     let mut size = 0usize;
+    let mut asset_scratch_bytes = 0u64;
     for name in names {
         let bytes = package.asset(&name)?;
         size += bytes.len();
@@ -340,11 +367,33 @@ pub fn export(root: &Path, id: &str, output: &Path) -> Result<()> {
                 }
             }
         }
+        let mut packed = None;
+        if effects != 0 && name.ends_with(".wav") {
+            if let Some(candidate) = compressed_effect_wav(&bytes)? {
+                let scratch = asset_scratch_bytes.max(bytes.len() as u64 + ASSET_INFLATE_SCRATCH);
+                if let Some(remaining) = guest_memory
+                    .checked_sub(2 * scratch)
+                    .filter(|n| *n >= 65536)
+                {
+                    if cap_memory(&wasm, remaining).is_ok() {
+                        asset_scratch_bytes = scratch;
+                        packed = Some(candidate);
+                    }
+                }
+            }
+        }
+        let payload = if let Some(packed) = packed {
+            size = size - bytes.len() + packed.len();
+            serde_json::json!({"length":bytes.len(),"zlib":hex::encode(packed)})
+        } else {
+            serde_json::Value::String(hex::encode(bytes))
+        };
         if size > 32 * 1024 * 1024 {
             bail!("web assets exceed 32 MiB export limit");
         }
-        assets.insert(name, hex::encode(bytes));
+        assets.insert(name, payload);
     }
+    let wasm = cap_memory(&wasm, guest_memory - 2 * asset_scratch_bytes)?;
     let shaders = if uses_shaders {
         crate::shaders::load_fragment_sources(
             root,
@@ -359,7 +408,7 @@ pub fn export(root: &Path, id: &str, output: &Path) -> Result<()> {
         bail!("browser shader source exceeds 32 MiB export budget");
     }
     let data = serde_json::to_vec(
-        &serde_json::json!({"format_version":1,"recorded_audio":if recorded {Some(serde_json::json!({"converter_sha256":crate::verify::digest(converter),"decoder_sha256":if music != 0 {Some(crate::verify::digest(decoder))}else{None}}))}else{None},"manifest":manifest,"wasm_sha256":crate::verify::digest(&wasm),"assets":assets,"precise_images":precise_images,"exact_png_images":exact_png_images,"shaders":shaders,"custom_renderer":custom_renderer}),
+        &serde_json::json!({"format_version":1,"recorded_audio":if recorded {Some(serde_json::json!({"converter_sha256":crate::verify::digest(converter),"decoder_sha256":if music != 0 {Some(crate::verify::digest(decoder))}else{None}}))}else{None},"manifest":manifest,"wasm_sha256":crate::verify::digest(&wasm),"assets":assets,"asset_scratch_bytes":asset_scratch_bytes,"precise_images":precise_images,"exact_png_images":exact_png_images,"shaders":shaders,"custom_renderer":custom_renderer}),
     )?;
     let parent = output
         .parent()
@@ -382,6 +431,10 @@ pub fn export(root: &Path, id: &str, output: &Path) -> Result<()> {
         (
             "player.js",
             include_bytes!("../web-player/player.js").as_slice(),
+        ),
+        (
+            "asset-store.js",
+            include_bytes!("../web-player/asset-store.js").as_slice(),
         ),
         (
             "png-inflate.js",
@@ -500,6 +553,31 @@ pub fn export(root: &Path, id: &str, output: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn compressed_effect_wav_preserves_every_original_byte_and_rejects_wrong_formats() {
+        let pcm = vec![0x39u8; 131072];
+        let mut wav=b"RIFF\0\0\0\0WAVEfmt \x10\0\0\0\x01\0\x02\0\x44\xac\0\0\x10\xb1\x02\0\x04\0\x10\0data\0\0\0\0".to_vec();
+        wav[4..8].copy_from_slice(&((pcm.len() + 36) as u32).to_le_bytes());
+        wav[40..44].copy_from_slice(&(pcm.len() as u32).to_le_bytes());
+        wav.extend_from_slice(&pcm);
+        let packed = compressed_effect_wav(&wav).unwrap().unwrap();
+        let mut restored = Vec::new();
+        std::io::Read::read_to_end(
+            &mut flate2::read::ZlibDecoder::new(packed.as_slice()),
+            &mut restored,
+        )
+        .unwrap();
+        assert_eq!(restored, wav);
+        assert!(packed.len() < wav.len());
+        for offset in [0, 4, 8, 16, 20, 22, 24, 28, 32, 34, 36, 40] {
+            let mut bad = wav.clone();
+            bad[offset] ^= 1;
+            assert!(compressed_effect_wav(&bad).unwrap().is_none());
+        }
+        assert!(compressed_effect_wav(&wav[..131071]).unwrap().is_none());
+        assert!(compressed_effect_wav(&vec![0; 1049089]).unwrap().is_none());
+    }
+
     #[test]
     fn exact_png_selection_retains_indexed_transparency_and_rejects_unsupported_headers() {
         for source in [
