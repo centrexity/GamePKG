@@ -3177,3 +3177,47 @@ music/settings integration. Migrating its shared package now would break browser
 export because browser recorded audio is still rejected. Browser decoding,
 output-clock mixing and transactional controls must be implemented before the
 shared port can migrate with its desktop and browser behavior preserved.
+
+### Browser recorded-audio decoder and supervised worker
+
+A trusted browser decoder adapter now executes the same import-free companion as
+the desktop host. Before instantiation it validates bounded 32-bit, unshared
+memory, bounded tables, required i32 function signatures, the memory export and
+absence of imports/start functions. The companion remains capped at 6 MiB of
+linear memory, modules at 4 MiB, encoded input at 8 MiB, output at 1,600 interleaved stereo
+samples (800 frames) per call and encoded-read work at 512 KiB. Returned ranges, sample counts,
+format and work values are checked before copying explicit little-endian samples
+to caller-owned output. Decoder faults are sticky; rewind and explicit close are
+supported. These are decoder limits, not a claim about the whole browser heap.
+
+The worker supervisor permits one pending operation and terminates the worker
+on invalid responses or execution deadline expiry. Open/read/rewind retain the
+existing 100 ms decoder deadline; module startup/compilation have separate bounded
+five-second initialization waits. Replies arriving beyond their deadline are
+rejected even if timer delivery was delayed. Startup can be aborted, pending
+reads can be closed, and fresh workers recover independently. PCM responses must
+own an unshared buffer of the exact returned size. No game receives worker,
+decoder, network, filesystem or device capabilities.
+
+Native Wasmtime and JavaScript execution match complete original-rate PCM hashes
+and sample counts for all nine pinned tracks, across varied read sizes. Actual
+Chromium matches a complete track both directly and through the supervised
+worker. Fault fixtures cover malformed function signatures, capabilities,
+unbounded/oversized/multiple memories, tables/start functions, invalid PCM counts
+and ranges, over-work, failed open/rewind and sticky errors. Deliberately infinite
+open/read functions are terminated by the parent deadline. Cancellation,
+backpressure, close during a read and fresh recovery pass; all eight worker
+handles created by the fixture are terminated.
+
+A deterministic red regression also mutated supplied module bytes between
+validation and compilation. The adapter now validates and compiles the same owned
+snapshot. Input copies use captured bounds, and decoded output never aliases the
+companion memory. No decoder/time cap or existing comparison tolerance increased.
+CI runs the native/JavaScript corpus and actual Chromium checks from private
+fixtures; no recordings, decoder binaries or packages are published by the tests.
+
+This decoder layer is not yet activated by browser export. Browser output-clock
+mixing, shared transport/cache/queue budget accounting, game transaction wiring
+and port migration remain unfinished. Declared recorded-audio browser exports
+still fail explicitly until those pieces are integrated and verified. The
+Chromium proof's full-track hash buffer is test-only, not a production queue.

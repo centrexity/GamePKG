@@ -629,3 +629,10 @@ id = "original_music_playlist_control_oracle"
 requirements = ["Actual SDL repeat count and contiguous samples", "Unchanged original audio source", "Sorted random playlist", "Saved mute startup and pause/resume", "Completion/stop/empty/load-failure decisions", "Gain and effect controls"]
 status = "original_runtime_and_control_flow_verified"
 notes = "Actual SDL callbacks show music loops 0/1 each play once and 2 plays twice, with exact contiguous generated samples. An unchanged-source/hash-checked Rust oracle traces deterministic playlist choices, mute, settings, stop, empty playlists, failure/retry and effects. It exercises real directory enumeration and no original recordings. CI gates both references. Current port remains unmigrated: browser recorded-audio decoding/mixing/transaction support must precede shared package migration; this oracle does not prove port music playback."
+
+
+[[work]]
+id = "browser_recorded_audio_decoder_worker"
+requirements = ["Same companion and complete PCM as desktop", "Bounded memory/table/import/ABI policy", "Little-endian owned PCM", "Sticky decoder faults and rewind", "One pending request", "100 ms operation supervision", "Cancellation and worker cleanup", "Immutable validation/compilation snapshot"]
+status = "decoder_component_verified_native_javascript_chromium"
+notes = "All nine pinned complete original-rate track hashes/counts match native Wasmtime and JavaScript. Chromium matches a complete track directly and over the supervised worker. Invalid ABI/resource/output/work fixtures reject safely; infinite open/read functions are terminated at the existing 100 ms deadline. Backpressure, startup cancellation, close during reads and fresh recovery pass; eight created handles are terminated. A red module-mutation regression is fixed by owned snapshot validation/compilation. Browser export remains disabled for recorded audio: output-clock mixing, shared transport/cache/queue accounting, committed game controls and port migration remain open. Decoder linear-memory bounds do not prove whole-browser heap accounting; full-track test buffers are not production queues."
