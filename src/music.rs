@@ -8,6 +8,7 @@ use std::{
         Arc, Mutex,
     },
 };
+pub mod controls;
 mod ring;
 use ring::Ring;
 pub const HOST_BYTES: u64 = 65536;
@@ -184,6 +185,7 @@ impl Service {
             std::mem::size_of::<Pipeline>()
                 + std::mem::size_of::<Shared>()
                 + std::mem::size_of::<[i16; 1600]>()
+                + controls::Transaction::MEMORY_BYTES
                 + 4096
                 <= HOST_BYTES as usize,
             "music host staging exceeds its reservation"
@@ -1129,6 +1131,99 @@ mod tests {
         assert_eq!(drain(&output), vec![[1000, -2000]; 20000]);
         drop(service);
         drop(output);
+        assert_eq!(budget.used(), 0);
+    }
+    #[test]
+    fn staged_music_controls_rollback_failed_ticks_and_never_replay() {
+        let (_temporary, package) = package(zip::CompressionMethod::Stored, true);
+        let budget = memory_budget::Budget::new(HOST_BYTES + 6 * 1048576);
+        let service = Service::new_original_rate(
+            factory(20000, false),
+            &package,
+            true,
+            budget.clone(),
+            6 * 1048576,
+        )
+        .unwrap();
+        let mut controls = controls::Transaction::new(service);
+        let output = controls.output();
+        assert!(controls.play("a.mp3").is_err());
+        assert!(controls.finish(true).is_err());
+        controls.begin().unwrap();
+        assert!(controls.begin().is_err());
+        let path = String::from("a.mp3");
+        controls.play(&path).unwrap();
+        drop(path);
+        assert_eq!(output.status(), Status::Stopped);
+        controls.finish(true).unwrap();
+        wait(|| output.queued_frames() == QUEUE_FRAMES);
+        let generation = output.0.generation();
+        controls.begin().unwrap();
+        controls.stop().unwrap();
+        controls.play("b.mp3").unwrap();
+        controls.volume(0).unwrap();
+        controls.pause(true).unwrap();
+        controls.finish(false).unwrap();
+        assert_eq!(output.0.generation(), generation);
+        assert_eq!(output.status(), Status::Playing);
+        assert_eq!(gain(output.0.status.load(Ordering::Acquire)), 128);
+        assert_eq!(drain(&output), vec![[1000, -2000]; 20000]);
+        controls.begin().unwrap();
+        controls.stop().unwrap();
+        controls.pause(true).unwrap();
+        assert!(controls.finish(true).is_err());
+        assert_eq!(output.0.generation(), generation);
+        controls.begin().unwrap();
+        controls.finish(true).unwrap();
+        assert_eq!(output.0.generation(), generation);
+        assert_eq!(output.status(), Status::Ended);
+        controls.begin().unwrap();
+        assert!(controls.play("../a.mp3").is_err());
+        assert!(controls.volume(129).is_err());
+        for _ in 0..32 {
+            controls.volume(64).unwrap();
+        }
+        assert!(controls.stop().is_err());
+        controls.finish(false).unwrap();
+        controls.begin().unwrap();
+        controls.play("b.mp3").unwrap();
+        controls.volume(64).unwrap();
+        controls.finish(true).unwrap();
+        assert_eq!(drain(&output), vec![[1000, -2000]; 20000]);
+        assert!(controls.error().is_none());
+        drop(controls);
+        drop(output);
+        assert_eq!(budget.used(), 0);
+    }
+    #[test]
+    fn music_control_metadata_cannot_create_a_separate_memory_allowance() {
+        let (_temporary, package) = package(zip::CompressionMethod::Stored, true);
+        let denied = memory_budget::Budget::new(HOST_BYTES - 1);
+        assert!(Service::new_original_rate(
+            factory(20000, false),
+            &package,
+            true,
+            denied.clone(),
+            6 * 1048576,
+        )
+        .is_err());
+        assert_eq!(denied.used(), 0);
+        let budget = memory_budget::Budget::new(HOST_BYTES);
+        let service = Service::new_original_rate(
+            factory(20000, false),
+            &package,
+            true,
+            budget.clone(),
+            6 * 1048576,
+        )
+        .unwrap();
+        let mut controls = controls::Transaction::new(service);
+        assert_eq!(budget.used(), HOST_BYTES);
+        controls.begin().unwrap();
+        controls.play("a.mp3").unwrap();
+        controls.finish(false).unwrap();
+        assert_eq!(budget.used(), HOST_BYTES);
+        drop(controls);
         assert_eq!(budget.used(), 0);
     }
     #[test]

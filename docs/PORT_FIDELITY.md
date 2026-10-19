@@ -3073,3 +3073,31 @@ decoder's runtime paths removed. Private CPAL/ALSA null-device music, combined
 mixing and effect transaction checks also pass. Strict Rust 1.89 and 1.99 checks
 pass; atomic updates use explicit compare/exchange loops compatible with both.
 No tolerance, memory/queue bound, decoder deadline or test concurrency changed.
+
+### Budgeted staged music transactions
+
+The host now owns a fixed, 32-operation music transaction buffer. Begin starts a
+transaction; controls copy the final asset path into owned storage; finish only
+publishes after the caller reports successful execution and persistence. Failed
+transactions leave prior music running. Invalid successful-tick batches are
+consumed without replay. Capacity, path and gain checks apply before staging.
+Only the final same-tick track replacement needs path storage; all operation
+ordering and generation increments are retained.
+
+The initial per-operation path layout consumed decoder capacity and failed the
+playback test. The corrected layout fits within the existing 64 KiB host
+reservation, whose size assertion now includes transaction storage and its
+command scratch array. No decoder, parent, queue or host allowance increased.
+Tests verify owned path lifetime, failed-tick rollback, rejected-batch cleanup,
+no replay, fresh playback, capacity boundaries and complete reservation release.
+This is trusted host infrastructure; runtime SDK dispatch, shared music/effect
+publication, browser controls and actual port migration remain unfinished.
+
+All nine signed original-track fixtures now use the staged transaction rather
+than direct controls: each first discards a missing-track/mute request, then
+commits the real track paused and resumes it in a fresh transaction. Complete
+pinned PCM hashes, output lengths, concurrent asset reads and reservation cleanup
+pass inside the unchanged 16 MiB parent budget with the embedded decoder. Private
+null-device music, combined mixing and effect checks pass. Rust 1.89 and 1.99
+strict checks pass. These tests simulate the host's success/failure signal;
+actual game tick, save and history wiring still needs implementation and proof.

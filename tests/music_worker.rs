@@ -139,7 +139,9 @@ fn original_tracks_play_from_signed_package_on_the_output_clock_without_game_tic
     let guest = budget
         .reserve(budget.limit() - 6 * 1048576 - HOST_BYTES)
         .unwrap();
-    let service = Service::new(factory, &package, true, budget.clone(), 6 * 1048576).unwrap();
+    let mut service = gamepkg::music::controls::Transaction::new(
+        Service::new(factory, &package, true, budget.clone(), 6 * 1048576).unwrap(),
+    );
     let output = service.output();
     let mut rendering = package.try_clone_verified().unwrap();
     let expected_hello = package.entries["assets/hello.txt"];
@@ -194,20 +196,24 @@ fn original_tracks_play_from_signed_package_on_the_output_clock_without_game_tic
                 .with_extension("s16");
         let mut reference = std::fs::File::open(reference).unwrap();
         let expected_samples = reference.metadata().unwrap().len() / 2;
-        service
-            .batch(&[
-                gamepkg::music::Command::Stop,
-                gamepkg::music::Command::Play(&format!("music/{name}")),
-                gamepkg::music::Command::Volume(128),
-                gamepkg::music::Command::Pause(true),
-            ])
-            .unwrap();
+        let previous = output.status();
+        service.begin().unwrap();
+        service.play("music/not-published.mp3").unwrap();
+        service.volume(0).unwrap();
+        service.finish(false).unwrap();
+        assert_eq!(output.status(), previous);
+        service.begin().unwrap();
+        service.stop().unwrap();
+        service.play(&format!("music/{name}")).unwrap();
+        service.volume(128).unwrap();
+        service.pause(true).unwrap();
+        service.finish(true).unwrap();
         let mut sentinel = [[123, -456]; 1];
         assert_eq!(output.read(&mut sentinel), 0);
         assert_eq!(sentinel, [[123, -456]; 1]);
-        service
-            .batch(&[gamepkg::music::Command::Pause(false)])
-            .unwrap();
+        service.begin().unwrap();
+        service.pause(false).unwrap();
+        service.finish(true).unwrap();
         let mut samples = 0u64;
         let mut hash = Sha256::new();
         let mut different = 0u64;
