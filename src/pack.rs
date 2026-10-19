@@ -290,7 +290,7 @@ mod publication_tests {
         let dir = tempfile::tempdir().unwrap();
         let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
         let target = dir.path().join("published");
-        let jobs = [b'A', b'B'].map(|value| {
+        let jobs = (*b"AB").map(|value| {
             let source = dir.path().join(format!("staged-{value}"));
             fs::write(&source, vec![value; 8192]).unwrap();
             let barrier = barrier.clone();

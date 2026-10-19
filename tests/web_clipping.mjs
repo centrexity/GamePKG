@@ -20,7 +20,7 @@ let depth=0;const clips=[];
 const context={save(){depth++;},restore(){assert.ok(depth>0);depth--;},fillRect(){},beginPath(){},rect(...bounds){clips.push(bounds);},clip(){}};
 const ui=vm.createContext({context,color:()=> '#000',canvas:{dataset:{}},data:{custom_renderer:true},document:{querySelector:()=>({textContent:''})}});
 const player=readFileSync(new URL('../web-player/player.js',import.meta.url),'utf8');
-vm.runInContext(player.slice(player.indexOf('function render(frame)'),player.indexOf('function playAudio(')),ui);
+vm.runInContext(player.slice(player.indexOf('function render('),player.indexOf('function playAudio(')),ui);
 vm.runInContext("render({background:null,state:'0',commands:[['clip',1,2,3,4],['clip',5,6,7,8],['clip-reset']]});render({background:null,state:'1',commands:[]});",ui);
 assert.equal(depth,0);assert.deepEqual(clips,[[1,2,3,4],[5,6,7,8]]);
 console.log('Clip validation, replacement/reset, command bounds, clear accounting and balanced browser frame state passed.');

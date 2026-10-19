@@ -11,7 +11,7 @@ const context={
 };
 const player=readFileSync(new URL('../web-player/player.js',import.meta.url),'utf8');
 const ui=vm.createContext({context,color:value=>value>>>0,canvas:{dataset:{}},data:{custom_renderer:true},document:{querySelector:()=>({textContent:''})}});
-vm.runInContext(player.slice(player.indexOf('function render(frame)'),player.indexOf('function playAudio(')),ui);
+vm.runInContext(player.slice(player.indexOf('function render('),player.indexOf('function playAudio(')),ui);
 vm.runInContext(`render({background:0xff,state:'0',commands:[
  ['clip',5,80,168.5,15.5],['rect',0,0,640,480,0xffffffff],
  ['clip',10.49,10.51,.02,.98],['rect',0,0,640,480,0xffffffff],

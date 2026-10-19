@@ -5,7 +5,7 @@ const draws=[];
 const context={save(){},restore(){},fillRect(...rect){draws.push({rect,color:this.fillStyle});}};
 const ui=vm.createContext({context,color:value=>value>>>0,canvas:{dataset:{}},data:{custom_renderer:true},document:{querySelector:()=>({textContent:''})}});
 const player=readFileSync(new URL('../web-player/player.js',import.meta.url),'utf8');
-vm.runInContext(player.slice(player.indexOf('function render(frame)'),player.indexOf('function playAudio(')),ui);
+vm.runInContext(player.slice(player.indexOf('function render('),player.indexOf('function playAudio(')),ui);
 vm.runInContext(`render({background:null,state:'0',commands:[
  ['image',20,100,600.5,.5,1,1,new Uint8Array([80,80,100,255])],
  ['image',20.5,100.5,.5,100.5,1,1,new Uint8Array([80,80,100,255])],

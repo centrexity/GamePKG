@@ -2769,6 +2769,8 @@ roll back all drawing/PCM on browser storage failure. Those broader consistency
 requirements and other platforms stay open. New tests use private synthetic
 packages and browser profiles; downloads, when requested, stay in temporary
 folders. No real user library, ROM or creator key is used.
+The later browser picture/PCM publication section closes the drawing/PCM gap
+described here; cross-store atomicity and guest-memory restoration remain open.
 
 Final actual-browser checks pass for both profiles and both failure kinds:
 import and export requests stay hidden on denial, cancellation works after
@@ -2943,3 +2945,56 @@ does not establish Android execution of the later effect cache/SDK/device code.
 The actual CLI also packs, verifies, installs, compiles and runs all 20 good
 examples, including recorded effects, while rejecting all seven bad examples
 without publishing partial packages.
+
+## Browser picture and PCM publication after persistence
+
+A stronger signed core/component browser fixture reproduced a save-denied frame
+that still advanced the visible state, changed canvas pixels and created another
+WebAudio buffer. The worker acknowledgement was already false; the page rendered
+before persisting history and its audio condition still admitted rejected frames.
+The same real-browser assertions now pass with publication held until commit.
+
+The player prepares drawing in one reused 640×480 canvas. Shader and filtered
+image helpers receive that staging target, including the source pixels sampled
+for compositing. Successful persistence copies the opaque prepared frame to the
+visible canvas and publishes score/state metadata. Failed save/history writes
+leave the previously committed pixels and displayed state unchanged and schedule
+no new PCM. A known failed save also prevents the subsequent history write.
+Already committed sound may finish; rejected-frame sound is never scheduled.
+Restart and halt share cancellation of all queued sources and reset the audio
+scheduling cursor, preventing previous-generation PCM from surviving Restart.
+A successful recovery also clears the stale storage warning and restores the
+Playing status; fatal or unrelated messages are not cleared.
+
+All 15 browser Node suites pass. New staging checks prove one fixed allocation,
+separate visible/staged targets, shader/filter target propagation, withheld
+metadata, balanced drawing state after failure, and complete audio cancellation
+when one ended node throws. Actual signed core/component Chromium fixtures prove
+valid stereo PCM first, then separately deny save/history writes and observe the
+canvas, displayed state and AudioBuffer creation after each rejected frame. Save
+failure attempts no history write. Existing cursor/fullscreen/close/import/export
+rollback and fresh recovery remain checked, including actual export bytes.
+Restart synchronously stops the pending sources, and invalid history field
+schemas still terminate without overwriting the damaged record.
+
+Actual core/component fresh/absent/translucent/transparent/empty frame pixel
+checks pass. The full SDL filtering corpus passes in native/Wasm Vulkan/OpenGL
+and both browser profiles, including moved/swapped images, at unchanged existing
+tolerances (browser maximum one 8-bit channel unit). Shader/RGBA/PNG/audio export
+checks also pass in actual Chromium for both profiles. Optimized CLI and GUI
+builds embed the updated player. No deadline, image/drawing/audio cap, tolerance
+or test parallelism changed.
+
+This closes transient picture/state/PCM publication on browser storage failure,
+not atomic save-plus-history storage or guest-memory rewind. A save can already
+have been written when history fails, and guest logic continues while output is
+withheld. Browser recorded-effect processing, music controls, repair UX and full
+port migration remain separate open work. CI includes the new Node check, all 15 existing/current browser Node suites,
+and the expanded actual-browser persistence fixture.
+
+Direct logs from the earlier hosted Rust run `39198679470` also identify two
+strict-lint failures in the publication race tests. Moving that test module was
+already fixed in `716f6e4`; the remaining Rust 1.99 byte-character-slice lint now
+uses the equivalent copied two-byte array. Strict library/bin/test Clippy passes
+on both Rust 1.89 and 1.99 without lint suppression. The three publication tests
+retain their overwrite/symlink/concurrency assertions.

@@ -61,9 +61,17 @@ jobs:
       - name: Verify nearest single-texel pixel coverage
         run: node tests/web_nearest_pixels.mjs
       - name: Verify browser drawing clip policy
-        run: node tests/web_clipping.mjs
+        run: |
+          node tests/web_clipping.mjs
+          node tests/web_clip_pixels.mjs
       - name: Verify generated and packaged filtered image bounds
-        run: node tests/web_linear_images.mjs
+        run: |
+          node tests/web_linear_images.mjs
+          node tests/web_precise_images.mjs
+      - name: Verify browser frame timing and ordered input
+        run: |
+          node tests/web_frame_clock.mjs
+          node tests/web_input_events.mjs
       - name: Verify browser random-value imports
         run: node tests/web_randomness.mjs
       - name: Verify browser keyboard edges and shared bindings
@@ -74,6 +82,7 @@ jobs:
           node tests/web_window_observation.mjs
           node tests/web_user_files.mjs
           node tests/web_window_commit.mjs
+          node tests/web_output_commit.mjs
       - name: Test support links and clipboard behavior
         run: node tests/support_page.mjs
       - name: Lint
@@ -356,7 +365,7 @@ jobs:
       - name: Verify original menu buttons and whole-menu pixels
         if: matrix.features == '--all-features'
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tests/menu_controls_gui.py --original target/reference-arkanoo
-      - name: Verify browser controls under save and history failures
+      - name: Verify browser controls picture and audio under save and history failures
         if: matrix.features == '--all-features'
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tests/window_commit_browser.py
       - name: Verify declared homepage clicks and isolated browser tabs

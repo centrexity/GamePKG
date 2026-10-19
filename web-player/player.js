@@ -21,10 +21,12 @@ function keyboardUp(event){
  for(const bit of heldKeys.values())held|=bit;
 }
 function color(rgba){return `rgba(${rgba>>>24},${rgba>>>16&255},${rgba>>>8&255},${(rgba&255)/255})`;}
-function halt(message){tickPending=false;restartPending=false;resetWindowControls();clearFileUI();for(const node of audioNodes){try{node.stop();}catch{}}audioNodes.clear();audioNext=0;clearTimeout(timer);clearTimeout(frameTimer);worker?.terminate();worker=null;running=false;resetKeyboard();surfaceEvents=[];play.disabled=false;stop.disabled=true;restart.disabled=true;status.textContent=message;}
+function clearAudio(){for(const node of audioNodes){try{node.stop();}catch{}}audioNodes.clear();audioNext=0;}
+function halt(message){tickPending=false;restartPending=false;resetWindowControls();clearFileUI();clearAudio();clearTimeout(timer);clearTimeout(frameTimer);worker?.terminate();worker=null;running=false;resetKeyboard();surfaceEvents=[];play.disabled=false;stop.disabled=true;restart.disabled=true;status.textContent=message;}
 function watch(delay){clearTimeout(timer);const active=worker;timer=setTimeout(()=>{if(worker===active)halt('Game stopped: execution deadline exceeded.');},delay);}
 function stored(key,fallback){try{return JSON.parse(localStorage.getItem(key))??fallback;}catch{return fallback;}}
-function persist(key,value){try{localStorage.setItem(key,JSON.stringify(value));return true;}catch{status.textContent='Browser storage is unavailable; progress may not persist.';return false;}}
+const storageWarning='Browser storage is unavailable; progress may not persist.';
+function persist(key,value){try{localStorage.setItem(key,JSON.stringify(value));return true;}catch{status.textContent=storageWarning;return false;}}
 function playHistory(){
  const history=stored(historyKey,{played_ms:0,unlocked:[]});
  if(!history||typeof history!=='object'||Array.isArray(history))throw Error('Invalid browser play history');
@@ -35,11 +37,11 @@ function playHistory(){
 function tick(){if(!running||restartPending||tickPending)return;tickPending=true;watch(250);worker.postMessage({type:'tick',fullscreen:typeof document.fullscreenElement==='undefined'?null:document.fullscreenElement===canvas,input:pressed|((held&255)<<8)|((held&0x000f0000)<<4),events:surfaceEvents});surfaceEvents=[];pressed=0;}
 function shader(type,source){const value=gl.createShader(type);gl.shaderSource(value,source);gl.compileShader(value);if(!gl.getShaderParameter(value,gl.COMPILE_STATUS)){const error=gl.getShaderInfoLog(value);gl.deleteShader(value);throw Error('WebGL shader compilation failed: '+error);}return value;}
 function setupShaders(sources){if(!sources.length)return;shaderSurface=new OffscreenCanvas(640,480);gl=shaderSurface.getContext('webgl2',{alpha:true,depth:false,antialias:false,premultipliedAlpha:false,preserveDrawingBuffer:true});if(!gl)throw Error('This game requires WebGL 2');const vertex=shader(gl.VERTEX_SHADER,'#version 300 es\nvoid main(){vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2);gl_Position=vec4(p*2.0-1.0,0.0,1.0);}');for(const source of sources){const adapted=source.replace(/^#version[^\n]*\n/,'#version 300 es\nprecision highp float;\nprecision highp int;\n').replace(/layout\(row_major\) (uniform|buffer);/g,'').replace(/layout\(binding\s*=\s*0\)\s*/g,'');const fragment=shader(gl.FRAGMENT_SHADER,adapted),program=gl.createProgram();gl.attachShader(program,vertex);gl.attachShader(program,fragment);gl.linkProgram(program);gl.deleteShader(fragment);if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw Error('WebGL shader link failed: '+gl.getProgramInfoLog(program));for(let i=0;i<gl.getProgramParameter(program,gl.ACTIVE_UNIFORMS);i++){const uniform=gl.getActiveUniform(program,i);if(uniform.name!=='gamepkgTexture_0'||uniform.type!==gl.SAMPLER_2D||uniform.size!==1)throw Error('Forbidden shader resource');}programs.push(program);}gl.deleteShader(vertex);texture=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,texture);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);gl.bindVertexArray(gl.createVertexArray());}
-function shaderFrame(index,width=1,height=1,pixels=new Uint8Array(4)){if(!programs[index]||gl.isContextLost())throw Error('Shader graphics context unavailable');gl.viewport(0,0,640,480);gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT);gl.useProgram(programs[index]);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,texture);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA8,width,height,0,gl.RGBA,gl.UNSIGNED_BYTE,pixels);const sampler=gl.getUniformLocation(programs[index],'gamepkgTexture_0');if(sampler!==null)gl.uniform1i(sampler,0);gl.drawArrays(gl.TRIANGLES,0,3);context.drawImage(shaderSurface,0,0);}
+function shaderFrame(index,width=1,height=1,pixels=new Uint8Array(4),target=context){if(!programs[index]||gl.isContextLost())throw Error('Shader graphics context unavailable');gl.viewport(0,0,640,480);gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT);gl.useProgram(programs[index]);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,texture);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA8,width,height,0,gl.RGBA,gl.UNSIGNED_BYTE,pixels);const sampler=gl.getUniformLocation(programs[index],'gamepkgTexture_0');if(sampler!==null)gl.uniform1i(sampler,0);gl.drawArrays(gl.TRIANGLES,0,3);target.drawImage(shaderSurface,0,0);}
 // Use one-level GPU bilinear sampling rather than Canvas2D's implementation-
 // dependent minification filter. Match desktop encoded-byte premultiplication.
 let linearGraphics=null;
-function linearSprite(x,y,w,h,width,height,pixels,straight=false){
+function linearSprite(x,y,w,h,width,height,pixels,straight=false,target=context){
  if(w<=0||h<=0)return;
  if(!linearGraphics){
   const surface=new OffscreenCanvas(640,480),g=surface.getContext('webgl2',{alpha:true,depth:false,antialias:false,premultipliedAlpha:true,preserveDrawingBuffer:true});
@@ -62,21 +64,34 @@ function linearSprite(x,y,w,h,width,height,pixels,straight=false){
  // Blend before framebuffer quantization, matching the desktop GPU. A
  // transparent intermediate rounds sampled color and alpha before compositing.
  g.viewport(0,0,640,480);g.useProgram(program);g.activeTexture(g.TEXTURE0);g.bindTexture(g.TEXTURE_2D,image);g.uniform1i(g.getUniformLocation(program,'image'),0);
- g.uniform1i(g.getUniformLocation(program,'straightAlpha'),0);g.disable(g.BLEND);g.texImage2D(g.TEXTURE_2D,0,g.RGBA8,g.RGBA,g.UNSIGNED_BYTE,context.canvas);g.uniform4f(bounds,0,0,1,1);g.uniform4f(g.getUniformLocation(program,'coverage'),0,0,640,480);g.drawArrays(g.TRIANGLES,0,6);
+ g.uniform1i(g.getUniformLocation(program,'straightAlpha'),0);g.disable(g.BLEND);g.texImage2D(g.TEXTURE_2D,0,g.RGBA8,g.RGBA,g.UNSIGNED_BYTE,target.canvas);g.uniform4f(bounds,0,0,1,1);g.uniform4f(g.getUniformLocation(program,'coverage'),0,0,640,480);g.drawArrays(g.TRIANGLES,0,6);
  g.uniform1i(g.getUniformLocation(program,'straightAlpha'),straight?1:0);g.enable(g.BLEND);g.blendFunc(g.ONE,g.ONE_MINUS_SRC_ALPHA);g.texImage2D(g.TEXTURE_2D,0,g.RGBA8,width,height,0,g.RGBA,g.UNSIGNED_BYTE,premultiplied);const left=Math.ceil(x-.5),top=Math.floor(y-.5)+1,right=Math.ceil(x+w-.5),bottom=Math.floor(y+h-.5)+1;g.uniform4f(bounds,(left-x)/w,(top-y)/h,(right-left)/w,(bottom-top)/h);g.uniform4f(g.getUniformLocation(program,'coverage'),left,top,right-left,bottom-top);g.drawArrays(g.TRIANGLES,0,6);
- context.imageSmoothingEnabled=false;context.drawImage(surface,0,0);
+ target.imageSmoothingEnabled=false;target.drawImage(surface,0,0);
 }
-function render(frame){
+function render(frame,target=context,publish=true){
  // Every tick is a fresh frame, matching the native player's black backdrop.
  const background=frame.background??0x10171dff;
- if((background&255)!==255){context.fillStyle='#000000';context.fillRect(0,0,640,480);}
- context.fillStyle=color(background);context.fillRect(0,0,640,480);
- context.save();
- try {for(const entry of frame.commands){const [kind,x,y,a,b,rgba]=entry;if(kind==='clip'||kind==='clip-reset'){context.restore();context.save();if(kind==='clip'){const left=Math.round(x),top=Math.round(y),right=Math.round(x+a),bottom=Math.round(y+b);context.beginPath();context.rect(left,top,right-left,bottom-top);context.clip();}}else if(kind==='shader'){shaderFrame(x);}else if(kind==='shader-image'){shaderFrame(x,y,a,b);}else if(kind==='rect'){const left=Math.ceil(x-.5),top=Math.floor(y-.5)+1,right=Math.ceil(x+a-.5),bottom=Math.floor(y+b-.5)+1;context.fillStyle=color(rgba);context.fillRect(left,top,Math.max(0,right-left),Math.max(0,bottom-top));}else if(kind==='linear-image'||kind==='straight-linear-image'){const [,,,,,width,height,pixels]=entry;linearSprite(x,y,a,b,width,height,pixels,kind==='straight-linear-image');}else if(kind==='image'){const [,,,,,width,height,pixels]=entry;if(width===1&&height===1){const left=Math.floor(x-.5)+1,top=Math.floor(y-.5)+1,right=Math.floor(x+a-.5)+1,bottom=Math.floor(y+b-.5)+1;context.fillStyle=color((pixels[0]<<24)|(pixels[1]<<16)|(pixels[2]<<8)|pixels[3]);context.fillRect(left,top,right-left,bottom-top);}else{const surface=document.createElement('canvas');surface.width=width;surface.height=height;surface.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(pixels),width,height),0,0);context.imageSmoothingEnabled=false;context.drawImage(surface,x,y,a,b);}}else{context.fillStyle=color(b);context.beginPath();context.arc(x,y,a,0,Math.PI*2);context.fill();}}} finally {context.restore();}
+ if((background&255)!==255){target.fillStyle='#000000';target.fillRect(0,0,640,480);}
+ target.fillStyle=color(background);target.fillRect(0,0,640,480);
+ target.save();
+ try {for(const entry of frame.commands){const [kind,x,y,a,b,rgba]=entry;if(kind==='clip'||kind==='clip-reset'){target.restore();target.save();if(kind==='clip'){const left=Math.round(x),top=Math.round(y),right=Math.round(x+a),bottom=Math.round(y+b);target.beginPath();target.rect(left,top,right-left,bottom-top);target.clip();}}else if(kind==='shader'){shaderFrame(x,1,1,new Uint8Array(4),target);}else if(kind==='shader-image'){shaderFrame(x,y,a,b,target);}else if(kind==='rect'){const left=Math.ceil(x-.5),top=Math.floor(y-.5)+1,right=Math.ceil(x+a-.5),bottom=Math.floor(y+b-.5)+1;target.fillStyle=color(rgba);target.fillRect(left,top,Math.max(0,right-left),Math.max(0,bottom-top));}else if(kind==='linear-image'||kind==='straight-linear-image'){const [,,,,,width,height,pixels]=entry;linearSprite(x,y,a,b,width,height,pixels,kind==='straight-linear-image',target);}else if(kind==='image'){const [,,,,,width,height,pixels]=entry;if(width===1&&height===1){const left=Math.floor(x-.5)+1,top=Math.floor(y-.5)+1,right=Math.floor(x+a-.5)+1,bottom=Math.floor(y+b-.5)+1;target.fillStyle=color((pixels[0]<<24)|(pixels[1]<<16)|(pixels[2]<<8)|pixels[3]);target.fillRect(left,top,right-left,bottom-top);}else{const surface=document.createElement('canvas');surface.width=width;surface.height=height;surface.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(pixels),width,height),0,0);target.imageSmoothingEnabled=false;target.drawImage(surface,x,y,a,b);}}else{target.fillStyle=color(b);target.beginPath();target.arc(x,y,a,0,Math.PI*2);target.fill();}}} finally {target.restore();}
 
- if(!data.custom_renderer&&frame.commands.length===0&&frame.background===null){const state=BigInt(frame.state);context.fillStyle='#111a2c';context.fillRect(0,0,640,480);const x=Number(state&15n),y=Number(state>>8n&255n),tx=Number(state>>16n&255n),ty=Number(state>>24n&255n);context.fillStyle='#ffd45d';context.fillRect(tx*40,ty*40,32,32);context.fillStyle='#6ee7ac';context.fillRect(x*40,y*40,32,32);}
+ if(!data.custom_renderer&&frame.commands.length===0&&frame.background===null){const state=BigInt(frame.state);target.fillStyle='#111a2c';target.fillRect(0,0,640,480);const x=Number(state&15n),y=Number(state>>8n&255n),tx=Number(state>>16n&255n),ty=Number(state>>24n&255n);target.fillStyle='#ffd45d';target.fillRect(tx*40,ty*40,32,32);target.fillStyle='#6ee7ac';target.fillRect(x*40,y*40,32,32);}
+ if(publish)publishFrameIdentity(frame);
+}
+function publishFrameIdentity(frame){
  document.querySelector('#score').textContent=data.custom_renderer?'':`Score ${BigInt(frame.state)>>32n}`;
  canvas.dataset.state=frame.state;
+}
+let stagedSurface=null;
+function prepareFrame(frame){
+ // Reuse one bounded backing surface; failed persistence never touches the
+ // visible canvas, including shader/filter draws that sample earlier pixels.
+ if(!stagedSurface){stagedSurface=document.createElement('canvas');stagedSurface.width=640;stagedSurface.height=480;}
+ const target=stagedSurface.getContext('2d');if(!target)throw Error('Frame staging unavailable');
+ render(frame,target,false);
+}
+function publishFrame(frame){context.drawImage(stagedSurface,0,0);publishFrameIdentity(frame);
 }
 function scheduleTick(){clearTimeout(frameTimer);const now=performance.now();nextTickAt=Math.max(nextTickAt+1000/60,now);frameTimer=setTimeout(tick,Math.max(0,nextTickAt-now));}
 function playAudio(samples,channels=1){if(!audioContext||audioContext.state!=='running'||!samples.length||samples.length>1600||![1,2].includes(channels)||samples.length%channels)return;audioNext=Math.max(audioContext.currentTime,audioNext);if(audioNext>audioContext.currentTime+.1)return;const frames=samples.length/channels,buffer=audioContext.createBuffer(channels,frames,48000);for(let c=0;c<channels;c++){const channel=buffer.getChannelData(c);for(let i=0;i<frames;i++)channel[i]=samples[i*channels+c]/32768;}const source=audioContext.createBufferSource();source.buffer=buffer;source.connect(audioGain);audioNodes.add(source);source.onended=()=>audioNodes.delete(source);source.start(audioNext);audioNext+=frames/48000;canvas.dataset.audioSamples=String(Number(canvas.dataset.audioSamples||0)+samples.length);canvas.dataset.audioChannels=String(channels);}
@@ -100,9 +115,9 @@ async function start(){
   if(message.type==='frame'){
    if(!Number.isInteger(message.serial)||message.serial!==lastWindowSerial+1||message.window?.homepage_epoch!==homepageEpoch){halt('Invalid window frame');return;}
    lastWindowSerial=message.serial;tickPending=false;
-   try{render(message);}catch(error){halt(String(error));return;}let committed;try{const history=playHistory();const now=performance.now();history.played_ms+=Math.max(0,Math.min(250,Math.round(now-lastFrame)));lastFrame=now;for(const id of message.unlocks)if(!history.unlocked.includes(id))history.unlocked.push(id);committed=persist(historyKey,history)&&(saveResult?.serial!==message.serial||saveResult.ok);saveResult=null;}catch{active.postMessage({type:'window-commit',epoch:homepageEpoch,serial:message.serial,success:false});halt('Game stopped: browser play history is invalid.');return;}
+   try{prepareFrame(message);}catch(error){halt(String(error));return;}let committed;try{const history=playHistory();const now=performance.now();history.played_ms+=Math.max(0,Math.min(250,Math.round(now-lastFrame)));lastFrame=now;for(const id of message.unlocks)if(!history.unlocked.includes(id))history.unlocked.push(id);committed=(saveResult?.serial!==message.serial||saveResult.ok)&&persist(historyKey,history);saveResult=null;}catch{active.postMessage({type:'window-commit',epoch:homepageEpoch,serial:message.serial,success:false});halt('Game stopped: browser play history is invalid.');return;}
    active.postMessage({type:'window-commit',epoch:homepageEpoch,serial:message.serial,success:committed});
-   if(!(committed&&message.window?.closed)){try{playAudio(message.audio||[],message.audioChannels??1);}catch(error){halt(String(error));return;}}
+   if(committed){if(status.textContent===storageWarning)status.textContent='Playing';try{publishFrame(message);if(!message.window?.closed)playAudio(message.audio||[],message.audioChannels??1);}catch(error){halt(String(error));return;}}
    if(committed&&!applyWindowControls(message.window))return;
    scheduleTick();
   }
@@ -114,7 +129,7 @@ canvas.addEventListener('keydown',keyboardDown);
 canvas.addEventListener('keyup',keyboardUp);
 window.addEventListener('blur',resetKeyboard);
 document.querySelector('#mute').onclick=()=>{muted=!muted;if(audioGain)audioGain.gain.value=muted?0:.5;document.querySelector('#mute').textContent=muted?'Unmute':'Mute';document.querySelector('#mute').setAttribute('aria-pressed',String(muted));};
-play.onclick=start;restart.onclick=()=>{if(running&&worker){if(homepageEpoch===4294967295){halt('Restart counter exhausted');return;}homepageEpoch++;restartPending=true;clearTimeout(frameTimer);if(!tickPending)watch(250);delete canvas.dataset.state;clearFileUI();resetWindowControls(true);resetSurface();worker.postMessage({type:'restart',homepageEpoch});canvas.focus();}};stop.onclick=()=>halt('Stopped');
+play.onclick=start;restart.onclick=()=>{if(running&&worker){if(homepageEpoch===4294967295){halt('Restart counter exhausted');return;}homepageEpoch++;restartPending=true;clearAudio();clearTimeout(frameTimer);if(!tickPending)watch(250);delete canvas.dataset.state;clearFileUI();resetWindowControls(true);resetSurface();worker.postMessage({type:'restart',homepageEpoch});canvas.focus();}};stop.onclick=()=>halt('Stopped');
 try{
  const response=await fetch('game.json',{cache:'no-store'});if(!response.ok)throw Error('Missing export metadata');data=await response.json();if(data.format_version!==1)throw Error('Unsupported web export');
  const binary=await fetch('game.wasm',{cache:'no-store'});if(!binary.ok)throw Error('Missing compiled game');wasm=await binary.arrayBuffer();
