@@ -11,6 +11,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-embed-check-') as temporary:
     subprocess.run(['rustc', '--edition=2021', str(project/'build.rs'), '-o', str(executable)], check=True, timeout=60)
     environment = dict(os.environ, OUT_DIR=str(root))
     environment.pop('GAMEPKG_BUNDLED_AUDIO_DECODER', None)
+    environment.pop('GAMEPKG_BUNDLED_AUDIO_CONVERTER', None)
     def run(path=None, good=True):
         env = dict(environment)
         if path is not None:
@@ -33,4 +34,10 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-embed-check-') as temporary:
         assert output.read_bytes() == data
     run()
     assert output.read_bytes() == b'', 'removed embedding input retained old bytes'
+    converter = root/'audio-converter.wasm'
+    for data,good in [(b'bad',False),(b'\0asm\x01\0\0\0',True),(b'\0asm\x01\0\0\0'+bytes(4*1024*1024),False)]:
+        source.write_bytes(data);result=subprocess.run([str(executable)],env=dict(environment,GAMEPKG_BUNDLED_AUDIO_CONVERTER=str(source)),capture_output=True,text=True,timeout=10)
+        assert (result.returncode==0)==good,result.stderr
+        if good:assert converter.read_bytes()==data
+    run();assert converter.read_bytes()==b'', 'removed converter embedding retained old bytes'
 print('Embedding checks passed: optional reset, changed input, missing/bad/oversized modules and bounded core header.')

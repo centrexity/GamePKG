@@ -967,16 +967,16 @@ Build an installed game, then export it:
 ```sh
 gamepkg build com.gamepkg.2048
 gamepkg web-export com.gamepkg.2048 --output ./2048-web
-python3 -m http.server 8080 --directory ./2048-web
 ```
 
-Open `http://localhost:8080`. You can upload the exported folder to static HTTPS
-hosting. The GUI's **Export for web** button writes a fresh folder under the
+Upload the exported folder to static HTTPS hosting, or serve it with a local HTTP server of your choice. The GUI's **Export for web** button writes a fresh folder under the
 library's `web-exports` directory and reports its location. Existing output
 folders are never overwritten. The export includes a browser player, compiled
 Wasm, asset data, game and player notices, and the original signed `.gamepkg`
 source archive for inspection. Exported Wasm is a separate browser artifact;
 it is never accepted as source inside a `.gamepkg`.
+
+Source-built hosts with embedded audio companions also export declared recorded effects and music. The player checks companion integrity, reserves audio shares inside the selected guest/audio ceiling, and commits sound controls only after save/history success. Players need no external decoder or Python. Original port migration remains separate work; published 0.1.17 binaries predate these source changes.
 
 The browser player supports `core-v1` and the host-generated `component-v1`
 guest ABI, with grid output, rectangles, circles, raw and PNG sprites, scoped

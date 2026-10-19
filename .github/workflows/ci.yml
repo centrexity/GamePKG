@@ -98,12 +98,12 @@ jobs:
         run: node tests/support_page.mjs
       - name: Lint
         run: cargo clippy --locked --all-targets ${{ matrix.features }} -- -D warnings
-      - name: Build decoder companion
+      - name: Build decoder and converter companions
         if: matrix.features == '--all-features'
         run: |
           rustup target add wasm32-unknown-unknown
           python3 tools/build_audio_companion.py --github-env
-      - name: Embed decoder in CLI and GUI
+      - name: Embed audio companions in CLI and GUI
         if: matrix.features == '--all-features'
         run: cargo build --locked --release --all-features --bins
       - name: Verify embedded decoder
@@ -406,6 +406,9 @@ jobs:
       - name: Verify Stop and Restart during delayed browser persistence
         if: matrix.features == '--all-features'
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tests/browser_progress_lifecycle.py
+      - name: Verify signed recorded-audio browser exports and player lifecycle
+        if: matrix.features == '--all-features'
+        run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tests/browser_recorded_player.py
       - name: Verify declared homepage clicks and isolated browser tabs
         if: matrix.features == '--all-features'
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tests/homepage_gui.py

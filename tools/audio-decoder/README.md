@@ -332,7 +332,10 @@ cargo build --locked --release --features gui --bins
 ```
 
 Hosted maintainer builds use `tools/build_audio_companion.py --github-env` before
-the root build. The packaging source/notices graph now includes the companion's
+the root build. It builds both the decoder and dependency-free converter and sets
+`GAMEPKG_BUNDLED_AUDIO_DECODER` and `GAMEPKG_BUNDLED_AUDIO_CONVERTER`.
+Recorded-audio web exports embed both runtime sources and integrity-checked
+companions; exported players require neither Python nor an external decoder. The packaging source/notices graph now includes the companion's
 Wasm dependencies separately from the native host dependencies; its own source
 is included without build artifacts. `tests/audio_companion_metadata.py` checks
 pinned decoder source/license coverage. The build workflow edits are not evidence

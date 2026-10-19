@@ -4,7 +4,7 @@ import json, os, shutil, subprocess, tempfile, wave
 project = Path(__file__).resolve().parents[1]
 cli = project/'target/release/gamepkg'
 decoder = project/'tools/audio-decoder/target/wasm32-unknown-unknown/release/gamepkg_host_audio_decoder.wasm'
-env = dict(os.environ, GAMEPKG_BUNDLED_AUDIO_DECODER=str(decoder))
+env = dict(os.environ, GAMEPKG_BUNDLED_AUDIO_DECODER=str(decoder),GAMEPKG_BUNDLED_AUDIO_CONVERTER=str(project/'tools/audio-converter/target/wasm32-unknown-unknown/release/gamepkg_host_audio_converter.wasm'))
 result = subprocess.run(['cargo','build','--locked','--release','--bin','gamepkg'],cwd=project,env=env,capture_output=True,text=True,timeout=300)
 assert result.returncode == 0, result.stderr
 result = subprocess.run(['cargo','test','--locked','--release','--features','audio','--test','music_sdk','--no-run','--message-format=json'],cwd=project,env=env,capture_output=True,text=True,timeout=300)
@@ -64,7 +64,8 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-music-sdk-') as temporary:
             }''')
             archive=root/(id+'.gamepkg')
             run('pack',recipe,'-o',archive,'--key',key);run('install',archive,'--trust-creator');run('build',id,'--target','wasm')
-            if enabled:assert 'music output is not yet available' in run('web-export',id,'--output',root/(id+'-web'),success=False).stderr
+            if enabled:
+                exported=root/(id+'-web');run('web-export',id,'--output',exported);assert (exported/'audio-converter.wasm').is_file() and (exported/'audio-decoder.wasm').is_file()
     subprocess.run([executable,'--ignored','--nocapture'],cwd=project,env=environment,check=True,timeout=120)
     for label in ['off','on','solo']:run('build','com.gamepkg.music-core-'+label,'--target','native')
     shutil.rmtree(root/'library/progress')

@@ -208,11 +208,8 @@ as a whole. The mode rejects <code>audio_submit</code>/<code>audio_submit_stereo
 two incompatible playback paths. Omitting the effects share keeps the existing
 PCM API and disables these recorded-effect calls. Headless embedding must attach
 a trusted output publisher; desktop playback does this automatically.</p>
-<p>This API is currently implemented for desktop native/core/component playback.
-Web export explicitly rejects packages declaring this mode; browser recorded-audio
-support remains separate work. Players need no Python, external
-decoder, additional game crates, microphone access or file paths.</p>
-<h2>Music on desktop</h2>
+<p>Source-built hosts support desktop native/core/component playback and core/component browser exports when the audio companions are embedded. Browser controls are prepared before the save/history checkpoint and applied only after success. Failed checkpoints discard new cache entries and commands without replay. Players need no Python, external decoder, additional game crates, microphone access or file paths.</p>
+<h2>Recorded music</h2>
 <p>Declare <code>audio = true</code> and <code>music_memory_bytes = 7340032</code> (7 MiB) to use the
 bundled host MP3 decoder. The share comes out of the signed hard limit and the
 player's memory ceiling. With a 16 MiB effective hard limit, 7 MiB for music and
@@ -240,8 +237,7 @@ accounted. Music advances on the output clock independently of game ticks, mixes
 at 44.1 kHz before the shared 48 kHz conversion, and can coexist with recorded
 effects. Declaring either recorded-audio share disables premixed PCM submission.
 No guest dependency, decoder file, Python installation or player file path is
-required. Desktop native/core/component bindings are implemented. Browser export
-currently rejects this mode; browser music and full port migration remain open.</p>
+required. Source-built hosts support desktop native/core/component and core/component browser exports with embedded companions. Browser music loads asynchronously after a successful checkpoint; Stop/replacement cancels older startup. Declared shares include decoder, cache, transfer and converter reservations and reduce the guest memory ceiling. Browser compiler/JIT/GC and caller-owned asset storage are separate from those explicit reservations. Original port migration and wider platform verification remain open.</p>
 <h2>Slang shaders, textures and audio</h2>
 <p>Use the injected shader and audio APIs directly. <code>examples/good/media-game</code> demonstrates them without dependencies. Declare each Slang source, entry and stage in <code>[[shaders]]</code>. The host verifies the signed source, compiles it in isolation on Build/Rebuild, validates resource reflection, caches the result, and selects the configured playback backend. Games never run a compiler themselves or supply precompiled shader binaries.</p>
 <pre><code class="language-rust">if let Some(shader) = gamepkg::Shader::from_slang(&quot;shaders/texture.slang&quot;, &quot;blueMain&quot;) {

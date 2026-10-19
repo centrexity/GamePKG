@@ -3593,3 +3593,47 @@ not yet the exported game's worker: player startup/checkpoint dispatch, reduced
 guest module capping, companion embedding and port migration remain open.
 Caller-owned encoded assets and browser/JIT/GC overhead remain outside the
 explicit guest/audio backing reservations. Recorded-audio exports stay disabled.
+
+### Signed recorded-audio browser player integration
+
+The actual exported player now owns the recorded session, attaches its game
+worker, obtains one output snapshot per tick, prepares audio before the shared
+save/history checkpoint and finishes that exact frame afterward. Stop cancels
+startup, closes the old session and waits for owned output shutdown before a
+new start allocates another session. Recorded Restart creates fresh game/audio
+owners and reloads persisted progress. Companion fetches are bounded, cancelled
+on failure/Stop, and checked against exported SHA-256 values before use.
+
+The maintainer helper builds both companions; embedding remains optional and a
+missing required companion gives an explicit export error. Recorded exports
+include runtime sources, converter, optional decoder and integrity metadata.
+Their compiled guest memory maximum is reduced by the declared audio shares.
+Additional files use create-new writes like existing export files. Source-built
+recorded-audio exports are now enabled; this supersedes the earlier disabled
+export gates. Existing released binaries are unchanged and no release was made.
+
+Actual signed dependency-free core/component fixtures declare 4 MiB effects and
+8 MiB music inside 16 MiB, with exported guest maxima verified as 64 Wasm pages.
+Both players reach natural MP3 completion, restart with a fresh worker, and
+complete again after Stop/relaunch. Forced progress-checkpoint failure starts no
+decoder; storage recovery cannot replay the rejected request, while fresh input
+plays a new generation. Corrupt converter bytes are refused before guest worker
+creation; restoring them permits fresh playback. Test observation reads existing
+tick snapshots, preserving the production one-request safety guard.
+
+Legacy core/component delayed startup/checkpoint Stop/Restart tests pass. All
+256 enabled host library tests pass (19 explicitly ignored). Signed desktop
+native/core/component music and effect SDK suites pass with successful new web
+exports. Optional decoder/converter build-input reset/bounds tests and strict
+all-feature Clippy pass. No existing deadline, resource cap, reference hash or
+comparison tolerance was increased. Caller-owned assets and browser/JIT/GC
+memory remain outside the explicit guest/audio backing ledger. Recorded port
+migration, guest-memory rewind, and broader platform/device qualification remain
+unfinished; this does not establish complete port fidelity.
+
+The integrated player also retains failed audio shutdown as a startup barrier:
+it does not allocate another session alongside an output whose context failed to
+close. A signed-game browser test injects that failure in both profiles, verifies
+no new guest worker is created, then explicitly cleans up the test context.
+Corrupt-companion startup failures with zero retained ownership remain recoverable.
+All final recorded-player checks pass with the one-request guard intact.

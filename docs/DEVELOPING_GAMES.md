@@ -188,12 +188,9 @@ two incompatible playback paths. Omitting the effects share keeps the existing
 PCM API and disables these recorded-effect calls. Headless embedding must attach
 a trusted output publisher; desktop playback does this automatically.
 
-This API is currently implemented for desktop native/core/component playback.
-Web export explicitly rejects packages declaring this mode; browser recorded-audio
-support remains separate work. Players need no Python, external
-decoder, additional game crates, microphone access or file paths.
+Source-built hosts support desktop native/core/component playback and core/component browser exports when the audio companions are embedded. Browser controls are prepared before the save/history checkpoint and applied only after success. Failed checkpoints discard new cache entries and commands without replay. Players need no Python, external decoder, additional game crates, microphone access or file paths.
 
-## Music on desktop
+## Recorded music
 
 Declare `audio = true` and `music_memory_bytes = 7340032` (7 MiB) to use the
 bundled host MP3 decoder. The share comes out of the signed hard limit and the
@@ -223,8 +220,7 @@ accounted. Music advances on the output clock independently of game ticks, mixes
 at 44.1 kHz before the shared 48 kHz conversion, and can coexist with recorded
 effects. Declaring either recorded-audio share disables premixed PCM submission.
 No guest dependency, decoder file, Python installation or player file path is
-required. Desktop native/core/component bindings are implemented. Browser export
-currently rejects this mode; browser music and full port migration remain open.
+required. Source-built hosts support desktop native/core/component and core/component browser exports with embedded companions. Browser music loads asynchronously after a successful checkpoint; Stop/replacement cancels older startup. Declared shares include decoder, cache, transfer and converter reservations and reduce the guest memory ceiling. Browser compiler/JIT/GC and caller-owned asset storage are separate from those explicit reservations. Original port migration and wider platform verification remain open.
 
 ## Slang shaders, textures and audio
 

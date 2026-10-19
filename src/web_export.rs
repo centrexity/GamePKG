@@ -29,6 +29,7 @@ const SUPPORTED: &[&str] = &[
     "draw_asset_image",
     "draw_asset_image_linear",
     "draw_asset_image_linear_straight",
+    "effect_call",
     "audio_submit",
     "audio_submit_stereo",
     "draw_shader",
@@ -164,12 +165,31 @@ pub fn export(root: &Path, id: &str, output: &Path) -> Result<()> {
     let _guard = crate::registry::LibraryChange::acquire(root)?;
     let mut package = crate::archive::Package::open(&root.join(format!("{id}.gamepkg")))?;
     let manifest = crate::verify::verify_embedded(&mut package)?;
-    if manifest.limits.music_memory_bytes.is_some() {
-        bail!("music output is not yet available in browser exports");
+    let effects = manifest.limits.effects_memory_bytes.unwrap_or(0);
+    let music = manifest.limits.music_memory_bytes.unwrap_or(0);
+    let recorded = effects != 0 || music != 0;
+    let converter = include_bytes!(concat!(env!("OUT_DIR"), "/audio-converter.wasm")).as_slice();
+    let decoder = if music != 0 {
+        crate::audio_decode::bundled_bytes()?
+    } else {
+        &[]
+    };
+    if recorded {
+        if converter.is_empty() {
+            bail!("this app was built without the browser audio converter companion");
+        }
+        let factory = crate::audio_decode::Factory::new(converter)?;
+        if factory.maximum_memory_bytes() > 262144 {
+            bail!("browser audio converter exceeds its memory limit");
+        }
     }
-    if manifest.limits.effects_memory_bytes.is_some() {
-        bail!("recorded-effect output is not yet available in browser exports");
-    }
+    let guest_memory = manifest
+        .limits
+        .hard_memory_bytes
+        .checked_sub(effects)
+        .and_then(|n| n.checked_sub(music))
+        .filter(|n| *n >= 65536)
+        .context("audio shares leave insufficient guest memory")?;
     if manifest.id != id {
         bail!("installed package ID differs");
     }
@@ -241,7 +261,7 @@ pub fn export(root: &Path, id: &str, output: &Path) -> Result<()> {
             }
         }
     }
-    let wasm = cap_memory(&wasm, manifest.limits.hard_memory_bytes)?;
+    let wasm = cap_memory(&wasm, guest_memory)?;
     if package.has_shared_assets() {
         package.resolve_shared_assets(root)?;
     }
@@ -295,7 +315,7 @@ pub fn export(root: &Path, id: &str, output: &Path) -> Result<()> {
         bail!("browser shader source exceeds 32 MiB export budget");
     }
     let data = serde_json::to_vec(
-        &serde_json::json!({"format_version":1,"manifest":manifest,"wasm_sha256":crate::verify::digest(&wasm),"assets":assets,"precise_images":precise_images,"shaders":shaders,"custom_renderer":custom_renderer}),
+        &serde_json::json!({"format_version":1,"recorded_audio":if recorded {Some(serde_json::json!({"converter_sha256":crate::verify::digest(converter),"decoder_sha256":if music != 0 {Some(crate::verify::digest(decoder))}else{None}}))}else{None},"manifest":manifest,"wasm_sha256":crate::verify::digest(&wasm),"assets":assets,"precise_images":precise_images,"shaders":shaders,"custom_renderer":custom_renderer}),
     )?;
     let parent = output
         .parent()
@@ -346,6 +366,82 @@ pub fn export(root: &Path, id: &str, output: &Path) -> Result<()> {
             .open(output.join(name))?;
         file.write_all(bytes)?;
         file.sync_all()?;
+    }
+    if recorded {
+        for (name, bytes) in [
+            (
+                "recorded-session.js",
+                include_bytes!("../web-player/recorded-session.js").as_slice(),
+            ),
+            (
+                "recorded-player-start.js",
+                include_bytes!("../web-player/recorded-player-start.js").as_slice(),
+            ),
+            (
+                "recorded-output-client.js",
+                include_bytes!("../web-player/recorded-output-client.js").as_slice(),
+            ),
+            (
+                "recorded-worklet.js",
+                include_bytes!("../web-player/recorded-worklet.js").as_slice(),
+            ),
+            (
+                "recorded-frame-dispatcher.js",
+                include_bytes!("../web-player/recorded-frame-dispatcher.js").as_slice(),
+            ),
+            (
+                "recorded-music-loader.js",
+                include_bytes!("../web-player/recorded-music-loader.js").as_slice(),
+            ),
+            (
+                "recorded-transport.js",
+                include_bytes!("../web-player/recorded-transport.js").as_slice(),
+            ),
+            (
+                "recorded-stream.js",
+                include_bytes!("../web-player/recorded-stream.js").as_slice(),
+            ),
+            (
+                "recorded-mixer.js",
+                include_bytes!("../web-player/recorded-mixer.js").as_slice(),
+            ),
+            (
+                "recorded-queue.js",
+                include_bytes!("../web-player/recorded-queue.js").as_slice(),
+            ),
+            (
+                "recorded-wav.js",
+                include_bytes!("../web-player/recorded-wav.js").as_slice(),
+            ),
+            (
+                "recorded-decoder.js",
+                include_bytes!("../web-player/recorded-decoder.js").as_slice(),
+            ),
+            (
+                "recorded-decoder-client.js",
+                include_bytes!("../web-player/recorded-decoder-client.js").as_slice(),
+            ),
+            (
+                "recorded-decoder-worker.js",
+                include_bytes!("../web-player/recorded-decoder-worker.js").as_slice(),
+            ),
+            ("audio-converter.wasm", converter),
+        ] {
+            let mut file = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(output.join(name))?;
+            file.write_all(bytes)?;
+            file.sync_all()?;
+        }
+        if music != 0 {
+            let mut file = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(output.join("audio-decoder.wasm"))?;
+            file.write_all(decoder)?;
+            file.sync_all()?;
+        }
     }
     Ok(())
 }

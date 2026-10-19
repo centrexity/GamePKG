@@ -14,6 +14,10 @@ const MAX_VALUES: usize = 1600;
 const MAX_MEMORY: usize = 16 * 1024 * 1024;
 const WORK_BYTES: u32 = 512 * 1024;
 static BUNDLED: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/audio-decoder.wasm"));
+pub(crate) fn bundled_bytes() -> Result<&'static [u8]> {
+    Factory::bundled()?;
+    Ok(BUNDLED)
+}
 struct DecoderData {
     limits: StoreLimits,
     expires: std::time::Instant,
