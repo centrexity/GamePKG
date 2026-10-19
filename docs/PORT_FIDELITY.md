@@ -12,7 +12,7 @@ work stays open until behavior is verified.
 | Cube 2 | Wayland lock-state access, Windows lock-state runtime validation, remaining uncommon-key/platform behavior and full controller/touch equivalence; further LAN/platform and master authentication/registration fault/service coverage; custom asset/mod workflows; demo/movie output and persistence; hardware-accelerated engine rendering; native platforms beyond Linux. Vulkan currently presents software-rendered engine frames. |
 | DOOM | Original WAD music, spatial stereo effects, six save slots, configuration, desktop controls and the original quit/ENDOOM flow are runtime verified. Music backend selection, multiplayer, additional WADs/mods and broader control/platform coverage remain unfinished. |
 | Zelda3 | External MSU music, replay tools, save states, widescreen, language selection and desktop enhancement settings need support. The adapter fixes the view to 256×224. Original DSP stereo is verified in native and Wasm gameplay/save tests. |
-| Arkanoo | Gravity, speed-triggered portal behavior and ball-to-ball responses are restored with upstream reference and actual-engine tests. Original world proportions and movement/contact order now match upstream reference checks. Per-ball launch timing, life recovery and victory/endless transitions also match original-code fixtures; prior item/score/level caps are removed. Brick health and original blast rules are also verified. All twelve original procedural patterns are restored. Focused mouse movement and original Space/Escape controls are restored. Editor painting/erasing, brick selection, names, save/load, clear confirmation, test return and the custom endless pool are restored. Original ASCII pattern import/export now uses player-selected files. Gameplay cursor confinement/hiding, F11 fullscreen and Q-to-quit outside play are verified in native and browser runtime checks. Normal-size/fullscreen/maximized preferences now persist through the native host. The six main menu actions and fullscreen/effects settings controls are restored. Remaining menu presentation and music/resolution/VSync controls, project-link action and original menus/music still need work. Original shard particles are restored; the metallic ball, glass paddle and normal-brick textures are restored; speed lettering and six campaign image backgrounds are restored and directly verified; editor image selection is restored; grid composition, editor/menu lettering, whole-window scaling and other art/effects still need work; original penguin/heart-loss behavior is now verified. Current runs do not persist; high score, unlocked level, gravity and effects preferences do. |
+| Arkanoo | Gravity, speed-triggered portal behavior and ball-to-ball responses are restored with upstream reference and actual-engine tests. Original world proportions and movement/contact order now match upstream reference checks. Per-ball launch timing, life recovery and victory/endless transitions also match original-code fixtures; prior item/score/level caps are removed. Brick health and original blast rules are also verified. All twelve original procedural patterns are restored. Focused mouse movement and original Space/Escape controls are restored. Editor painting/erasing, brick selection, names, save/load, clear confirmation, test return and the custom endless pool are restored. Original ASCII pattern import/export now uses player-selected files. Gameplay cursor confinement/hiding, F11 fullscreen and Q-to-quit outside play are verified in native and browser runtime checks. Normal-size/fullscreen/maximized preferences now persist through the native host. The six main menu actions, project-homepage button and fullscreen/effects settings controls are restored. Music/resolution/VSync controls and remaining menu presentation still need work. Original shard particles are restored; the metallic ball, glass paddle and normal-brick textures are restored; speed lettering and six campaign image backgrounds are restored and directly verified; editor image selection is restored; grid composition, editor/menu lettering, whole-window scaling and other art/effects still need work; original penguin/heart-loss behavior is now verified. Current runs do not persist; high score, unlocked level, gravity and effects preferences do. |
 | 2048 | Random spawning, merge scoring/best score, win/continue/game-over UI, restart, 128-step undo and persistent boards/history are implemented and tested. Byte-sized tile exponents remove the old 32768 cap. Cooperative expectimax assistance/autoplay matches independent upstream reference fixtures; a deterministic 932-turn game reaches 2048. Final signed-package delivery and broader platform verification remain open. |
 
 Evidence: [README coverage table](../README.md#port-feature-coverage),
@@ -41,7 +41,7 @@ the original operation happened.
 | --- | --- | --- |
 | `engines/cube2/adapters/network.h` | Broadcast reaches the owned UDP socket; real nonblocking TCP now supports bind/connect/listen/accept/poll/shutdown. Reverse lookup returns a numeric address. Bounded buffer sizes, timeouts, address reuse and TTL now reach the actual host socket; error/TTL queries read host results. Socket shutdown now reaches the OS; bounded browser snapshots use explicit virtual EOF/half-close semantics. | Audit each original ENet caller; finish the host operations it needs and test real discovery, authentication, server registration, disconnect and error handling. Keep permission denial explicit. Do not infer complete networking from ordinary packet exchange. |
 | `engines/zelda3/adapters/engine.c` | MSU enable is ignored and MSU track playback falls back to the internal audio path. Initialization fixes extra horizontal area to zero and selects the default language. The frame scheduler omits the desktop replay log. | Add selected optional resources, enhancement/language configuration, and bounded replay/save-state persistence with actual engine tests. Ordinary ROM gameplay does not verify these features. |
-| `ports/arkanoo/source/src/menu.rs` and `render.rs` | All five original recorded effects are restored, but the menu covers only part of the original presentation/settings and effects still advance through game ticks. | Restore the remaining transitions, resolution confirmation/revert, VSync, homepage action and licensed art/audio; verify each against the pinned original. Window-size persistence alone does not implement a resolution menu. |
+| `ports/arkanoo/source/src/menu.rs` and `render.rs` | All five original recorded effects are restored, but the menu covers only part of the original presentation/settings and effects still advance through game ticks. | Restore the remaining transitions, resolution confirmation/revert, VSync and remaining licensed art/audio; verify each against the pinned original. Window-size persistence alone does not implement a resolution menu. |
 | `ports/2048/CREDITS.md` | Tile exponents stop at 63 and scores use checked fixed-width storage; the reference implementation has a smaller tile representation. | Retain explicit bounds in documentation and boundary tests. Verified solver/gameplay behavior does not establish unlimited arithmetic, package delivery or every-platform support. |
 
 Single-threaded audio lock no-ops and host-supplied SRAM are intentional
@@ -164,7 +164,7 @@ profiles also click Settings/fullscreen/back/New Game through their actual windo
 Browser fullscreen now preserves the canvas aspect ratio and maps absolute/locked
 pointer motion to the displayed image, excluding borders and aspect-ratio bars.
 Remaining menu presentation and music/resolution/VSync controls,
-project-homepage action, fonts/background artwork and music remain open.
+fonts/background artwork and music remain open; the homepage action is verified below.
 
 Effects settings now preserve original range/default, mute, integer dragging and
 clamping. The `ARK3` codec stores effects flags without reducing the 1 MiB pattern
@@ -1796,8 +1796,8 @@ intermediate had accumulated a three-level menu text error. The complete menu
 matrix passes after the correction, and shared clipping/image/shader/resize
 checks retain exact output across all eight players (924 RGB comparisons).
 
-Music controls/playback, resolution and VSync controls, the safe project-link
-and version display, splash/HUD presentation, arbitrary original viewport
+At that checkpoint, music controls/playback, resolution and VSync controls, the
+safe project-link and version display, splash/HUD presentation, arbitrary original viewport
 scaling, fullscreen state readback and untested native platforms remain open.
 
 Measured native-plus-Wasm library storage is 43.0 MiB including the signed
@@ -2668,3 +2668,68 @@ but failed strict checks on the same Rust 1.99 chunk-iteration diagnostics alrea
 fixed in `092f042`; Windows remained active at this observation. Newer hosted
 full/native/32-bit results remain separate requirements, and no failed or
 cancelled workflow is counted as a complete pass.
+
+
+## Original declared-homepage action (2026-10-18)
+
+Recipe 0.1.61 restores the original `Github` menu button at (1170, 670, 100, 40),
+including normal/hover art and SDL integer hit rectangles. The exact unchanged
+original menu oracle now includes its nine boundary points; all 90 button cases
+and the original slider cases remain enabled. Whole-menu pixel references add
+the original width-100 button and its hover state without changing tolerances.
+
+The existing scoped window API gains operation 4/value 0. Only the host resolves
+the signed manifest homepage; the guest supplies no URL or process argument.
+Input permission, a fresh gesture and a successful tick/persistence are required.
+One request per tick commits transactionally and is consumed once. Unconfigured,
+invalid, closed, unfocused, file-dialog-blocked and failed-tick cases do not open
+a browser. URLs retain the existing HTTPS/v3-onion validation. Headless runs do
+not dispatch browser requests. Older released hosts need a source rebuild.
+
+Native/core/component desktop tests click the production port handler using a
+recording browser executable. Both browser profiles use actual trusted clicks
+and a loopback-mapped test hostname, with no opener connection to the opened
+tab. A restart regression exposed replay of an old queued frame after the
+frontend reset its consumed-request counter. Explicit restart generations now
+reject old homepage requests while allowing new post-restart clicks.
+
+One signed-suite attempt failed before gameplay because the workspace disk was
+full. Only generated Rust incremental cache was removed, freeing approximately
+33 GiB; no user library or source data was touched. A subsequent art check
+exposed a separately hardcoded probe-state table that no longer matched the
+expanded oracle case order. The probe now derives every state directly from
+the independent fixture, preserving old cases and adding the Github hover.
+Neither issue was worked around by changing deadlines, limits or tolerances.
+
+Remaining music/resolution/VSync controls, version text and full menu/port
+fidelity stay open. This source-only recipe change does not publish a signed
+package or a binary release.
+
+Final local checks pass: 101 port logic tests, both complete 71-check signed
+native/Wasm suites, 242 GUI host-library cases with 19 explicit ignores and four
+public window-control cases. Actual native/core/component window clicks dispatch
+only the declared URL, once per click. Both Chromium profiles also verify fresh
+clicks after Restart, deduplication and a null opener. Whole-menu comparisons
+include normal/hover Github states across native/core/component Vulkan/OpenGL
+and both browser profiles, retaining the existing two-unit RGB tolerance.
+
+The expanded native/core/component persistence fixtures prove a valid homepage
+request on success, then no retained request after either save or history failure.
+The final full signed-suite pass uses ordinary parallelism and unchanged budgets.
+An intervening full run hit a procedural-render epoch deadline during concurrent
+integration work; the unchanged rerun passes after that work completed. Broader
+performance qualification remains open rather than treating one passing rerun
+as a guarantee under all system loads. Windows-specific external-browser
+dispatch and other native platforms remain unverified.
+
+Browser homepage dispatch also checks the actual save/history write result in
+the player. An injected Storage.setItem failure must suppress the requested tab,
+and restoring storage must not replay that discarded request. A fresh subsequent
+click still works. The persistence helper reports success/failure explicitly;
+other call sites retain their existing behavior. This verifies navigation
+suppression, not browser-wide save/history atomicity or rollback of other window
+commands on parent storage failure; those remain separate open requirements.
+
+Strict GUI/all-target checks pass on Rust 1.89 and 1.99. Optimized CLI and GUI
+linking passes with the embedded decoder and updated browser export templates.
+The seven public HTML pages and local links pass the site checker.

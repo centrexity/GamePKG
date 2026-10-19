@@ -28,3 +28,29 @@ canvas.requestPointerLock=()=>new Promise(resolve=>{resolveLock=()=>{document.po
 control.apply(desired);assert.ok(resolveLock);control.reset();resolveLock();await settle();assert.equal(document.pointerLockElement,null,'stale capture survived game reset');
 control.apply({...desired,closed:true});assert.equal(stopped,'Game closed');
 console.log('Browser window controls preserve tick rollback, scoped capture, relative-to-absolute motion, fullscreen parity and Escape release.');
+
+// Homepage requests carry only a serial; the player selects the declared URL.
+vm.runInContext('globalThis.URL=globalThis.testURL;manifest={permissions:{input:true},homepage:"https://example.org/project"};windowCurrent=defaultWindow();windowPrevious=defaultWindow();windowStaged=defaultWindow();',Object.assign(worker,{testURL:URL}));
+api.begin(false);assert.equal(api.request(4,0),0);
+api.begin(true);assert.equal(api.request(4,1),0);assert.equal(api.request(4,0),1);assert.equal(api.request(4,0),0);api.finish(false);assert.equal(api.state().homepage_request,0);
+api.begin(true);assert.equal(api.request(4,0),1);api.finish(true);assert.equal(api.state().homepage_request,1);
+for(const url of ['javascript:alert(1)','file:///tmp/game','http://example.org/','https://user:password@example.org/']){
+ worker.badURL=url;vm.runInContext('manifest.homepage=badURL;',worker);api.begin(true);assert.equal(api.request(4,0),0);
+}
+const opened=[];ui.URL=URL;ui.TextEncoder=TextEncoder;ui.data={manifest:{homepage:'https://example.org/project'}};ui.navigator={userActivation:{isActive:true}};ui.window.open=(...args)=>opened.push(args);
+focused=true;document.activeElement=canvas;vm.runInContext('running=true;filePending=null;',ui);control.reset();
+const homepage={visible:true,confined:false,fullscreen_toggle:false,closed:false,homepage_request:1};
+control.apply(homepage);control.apply(homepage);assert.deepEqual(opened,[['https://example.org/project','_blank','noopener,noreferrer']]);
+ui.navigator.userActivation.isActive=false;control.apply({...homepage,homepage_request:2});assert.equal(opened.length,1);
+ui.navigator.userActivation.isActive=true;ui.data.manifest.homepage='javascript:alert(1)';control.apply({...homepage,homepage_request:3});assert.equal(opened.length,1);
+ui.data.manifest.homepage='https://example.org/project';focused=false;control.apply({...homepage,homepage_request:4});assert.equal(opened.length,1);
+focused=true;control.apply({...homepage,homepage_request:4});assert.equal(opened.length,1,'A suppressed background request resurfaced after focus');
+console.log('Homepage requests require a fresh gesture, valid declared URL and successful tick; browser navigation is deduplicated and isolated.');
+vm.runInContext('homepageEpoch=1;lastHomepageRequest=0;',ui);
+control.apply({...homepage,homepage_request:5,homepage_epoch:0});assert.equal(opened.length,1,'Old pre-restart request navigated');
+control.apply({...homepage,homepage_request:1,homepage_epoch:1});assert.equal(opened.length,2,'New post-restart click was suppressed');
+console.log('Restart generations discard old homepage requests and accept fresh post-restart clicks.');
+control.apply({...homepage,homepage_request:2,homepage_epoch:1},false);assert.equal(opened.length,2,'Failed persistence navigated');
+control.apply({...homepage,homepage_request:2,homepage_epoch:1},true);assert.equal(opened.length,2,'Failed request was delayed until persistence recovered');
+control.apply({...homepage,homepage_request:3,homepage_epoch:1},true);assert.equal(opened.length,3,'Fresh request after persistence recovery was suppressed');
+console.log('Failed persistence suppresses and consumes homepage navigation; fresh recovery clicks remain available.');

@@ -284,7 +284,10 @@ impl Game {
             &engine,
             Data {
                 clock: crate::frame_clock::Clock::default(),
-                window: crate::window_control::Service::new(manifest.permissions.input),
+                window: crate::window_control::Service::with_homepage(
+                    manifest.permissions.input,
+                    manifest.homepage.as_deref(),
+                )?,
                 user_files: crate::user_files::Service::new(manifest.permissions.files.clone()),
                 input_events: crate::input_events::Queue::new(manifest.permissions.input),
                 achievements: manifest.achievements.iter().map(|a| a.id.clone()).collect(),
@@ -1336,6 +1339,14 @@ impl Game {
             .map(|store| store.data().window.state())
             .unwrap_or_default()
     }
+    /// Consume one committed request for the signed manifest homepage.
+    pub fn take_homepage_url(&mut self) -> Option<String> {
+        #[cfg(target_os = "linux")]
+        if let Some(native) = &mut self.native {
+            return native.window.take_homepage();
+        }
+        self.store.as_mut()?.data_mut().window.take_homepage()
+    }
     pub fn enable_user_files(&mut self) {
         if let Some(files) = self.user_files_mut() {
             files.enable();
@@ -2155,6 +2166,7 @@ mod persistence_output_tests {
             let mut manifest =
                 Manifest::parse(include_bytes!("../examples/minimal/manifest.toml")).unwrap();
             manifest.permissions.audio = true;
+            manifest.homepage = Some("https://example.org/project".into());
             manifest.permissions.save = true;
             manifest.achievements.push(crate::manifest::Achievement {
                 id: "step".into(),
@@ -2184,14 +2196,21 @@ mod persistence_output_tests {
             } else {
                 "save_write"
             };
+            let window = if component {
+                "window-control"
+            } else {
+                "window_control"
+            };
             let module = wat::parse_str(format!(r#"(module
                 (import "{namespace}" "{audio}" (func $audio(param i32 i32)(result i32)))
                 (import "{namespace}" "{draw}" (func $draw(param f32 f32 f32 f32 i32)(result i32)))
                 (import "{namespace}" "{unlock}" (func $unlock(param i32)(result i32)))
                 (import "{namespace}" "{save}" (func $save(param i32 i32)(result i32)))
+                (import "{namespace}" "{window}" (func $window(param i32 i32)(result i32)))
                 (memory(export "memory")1)
                 (data(i32.const 16) "\01\00\ff\ff")
                 (func(export "{tick}")(param i32 i64)(result i64)
+                    (drop(call $window(i32.const 4)(i32.const 0)))
                     (drop(call $audio(i32.const 16)(i32.const 2)))
                     (drop(call $draw(f32.const 0)(f32.const 0)(f32.const 10)(f32.const 10)(i32.const -1)))
                     (drop(call $unlock(i32.const 0)))
@@ -2204,9 +2223,13 @@ mod persistence_output_tests {
             };
             let mut game = Game::from_bytes(&bytes, &manifest).unwrap();
             // Prove the fixture really emits both outputs on a successful tick.
-            assert_eq!(game.step(0).unwrap(), 1);
+            assert_eq!(game.step(4).unwrap(), 1);
             assert_eq!(game.audio_frame(), [1, -1]);
             assert!(!game.frame().commands.is_empty());
+            assert_eq!(
+                game.take_homepage_url().as_deref(),
+                Some("https://example.org/project")
+            );
             let temporary = tempfile::tempdir().unwrap();
             game.progress = Some(
                 crate::progress::Session::open(
@@ -2221,7 +2244,11 @@ mod persistence_output_tests {
                 b"blocked history directory",
             )
             .unwrap();
-            assert!(game.step(0).is_err());
+            assert!(game.step(4).is_err());
+            assert!(
+                game.take_homepage_url().is_none(),
+                "rejected tick retained homepage request"
+            );
             assert!(
                 game.audio_frame().is_empty(),
                 "component={component}: rejected tick retained PCM"
@@ -2241,7 +2268,11 @@ mod persistence_output_tests {
             )
             .unwrap();
             std::fs::write(temporary.path().join("saves"), b"blocked save directory").unwrap();
-            assert!(game.step(0).is_err());
+            assert!(game.step(4).is_err());
+            assert!(
+                game.take_homepage_url().is_none(),
+                "rejected tick retained homepage request"
+            );
             assert!(game.audio_frame().is_empty());
             assert_eq!(game.audio_channels(), 1);
             assert!(
@@ -2263,9 +2294,13 @@ mod persistence_output_tests {
         for history in [true, false] {
             let mut game = Game::load(&root, id).unwrap();
             assert!(game.native.is_some());
-            assert_eq!(game.step(0).unwrap(), 1);
+            assert_eq!(game.step(4).unwrap(), 1);
             assert_eq!(game.audio_frame(), [1, -1]);
             assert!(!game.frame().commands.is_empty());
+            assert_eq!(
+                game.take_homepage_url().as_deref(),
+                Some("https://example.org/project")
+            );
             let temporary = tempfile::tempdir().unwrap();
             if history {
                 game.progress = Some(
@@ -2286,7 +2321,11 @@ mod persistence_output_tests {
                 std::fs::rename(root.join("saves"), root.join("saved-directory")).unwrap();
                 std::fs::write(root.join("saves"), b"blocked save directory").unwrap();
             }
-            assert!(game.step(0).is_err());
+            assert!(game.step(4).is_err());
+            assert!(
+                game.take_homepage_url().is_none(),
+                "rejected tick retained homepage request"
+            );
             assert!(
                 game.audio_frame().is_empty(),
                 "history={history}: native rejected tick retained PCM"

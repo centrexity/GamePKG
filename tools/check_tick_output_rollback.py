@@ -17,8 +17,9 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-tick-output-') as temporary:
     text = manifest.read_text().replace('com.gamepkg.minimal', 'com.gamepkg.tick-output-test')
     text = text.replace('audio = false', 'audio = true').replace('save = false', 'save = true')
     text += '\n[[achievements]]\nid="step"\ntitle="Step"\ndescription="Test tick"\n'
-    manifest.write_text(text)
+    manifest.write_text('homepage="https://example.org/project"\n'+text)
     (source/'source/src/lib.rs').write_text('''pub fn game_tick(_:u32,_:u64)->u64{
+        gamepkg::window_control(4,0);
         gamepkg::audio_submit_stereo(&[1,-1]);
         gamepkg::draw_rect(0.0,0.0,10.0,10.0,0xffffffff);
         gamepkg::save_write(&[1]);
@@ -53,4 +54,4 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-tick-output-') as temporary:
                             capture_output=True, text=True, timeout=30)
     assert result.returncode == 0, result.stdout + '\n' + result.stderr
     assert '1 passed' in result.stdout, 'native rollback test did not run'
-print('Native signed-package playback: successful output, then history/save failures discard PCM and drawing.')
+print('Native signed-package playback: successful output, then history/save failures discard PCM, drawing and homepage requests.')

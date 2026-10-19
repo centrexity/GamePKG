@@ -7,7 +7,7 @@ from PIL import Image,ImageChops
 from gui_test_support import start_display
 parser=argparse.ArgumentParser();parser.add_argument('--original',type=Path,default=Path('/tmp/gamepkg-candidate-arkanoo'));args=parser.parse_args()
 PROJECT=Path(__file__).resolve().parents[1];CLI=PROJECT/'target/release/gamepkg';GUI=PROJECT/'target/release/gamepkg-gui';PROOF=PROJECT/'target/menu-controls-proof';PROOF.mkdir(parents=True,exist_ok=True)
-fixture=json.loads((PROJECT/'tests/fixtures/arkanoo-menu-controls.json').read_text());PHASES=[0,1,2,3,0];KEYS={1:'Right',2:'Up',3:'Down'};REFERENCES={};SMALL={}
+fixture=json.loads((PROJECT/'tests/fixtures/arkanoo-menu-controls.json').read_text());PHASES=[0,1,2,3,4,0];KEYS={4:'Left',1:'Right',2:'Up',3:'Down'};REFERENCES={};SMALL={}
 class Quiet(SimpleHTTPRequestHandler):
  def log_message(self,*args):pass
 with tempfile.TemporaryDirectory(prefix='gamepkg-menu-controls-gui-') as temp:
@@ -21,13 +21,13 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-menu-controls-gui-') as temp:
  for profile,suffix in [('core-v1','core'),('component-v1','component')]:
   source=root/suffix;shutil.copytree(PROJECT/'ports/arkanoo',source);entry=source/'source/src/lib.rs';modules=entry.read_text().split('use std::sync::Mutex;')[0]
   entry.write_text(modules+"""pub fn game_tick(input:u32,_:u64)->u64 {
- let phase=if input&gamepkg::HELD_RIGHT!=0 {1} else if input&gamepkg::HELD_UP!=0 {2} else if input&gamepkg::HELD_DOWN!=0 {3} else {0};let mut game=physics::Game::new();game.mode=0;game.started=phase==1;game.menu.settings=phase>=2;game.menu.hover=if phase==1 {3} else if phase==2 {10} else if phase==3 {7} else {0};game.menu.sfx_volume=if phase==2 {127} else if phase==3 {1} else {64};game.menu.sfx_muted=phase==2;game.menu.fullscreen=phase==3;render::draw_menu(&game);
- gamepkg::draw_rect(4.0,4.0,16.0,16.0,if phase==1 {0x00ff00ff} else if phase==2 {0x0000ffff} else if phase==3 {0xffff00ff} else {0xff0000ff});phase
+ let phase=if input&gamepkg::HELD_RIGHT!=0 {1} else if input&gamepkg::HELD_UP!=0 {2} else if input&gamepkg::HELD_DOWN!=0 {3} else if input&gamepkg::HELD_LEFT!=0 {4} else {0};let mut game=physics::Game::new();game.mode=0;game.started=phase==1;game.menu.settings=phase==2||phase==3;game.menu.hover=if phase==1 {3} else if phase==2 {10} else if phase==3 {7} else if phase==4 {9} else {0};game.menu.sfx_volume=if phase==2 {127} else if phase==3 {1} else {64};game.menu.sfx_muted=phase==2;game.menu.fullscreen=phase==3;render::draw_menu(&game);
+ gamepkg::draw_rect(4.0,4.0,16.0,16.0,if phase==1 {0x00ff00ff} else if phase==2 {0x0000ffff} else if phase==3 {0xffff00ff} else if phase==4 {0xff00ffff} else {0xff0000ff});phase
 }""")
   manifest=source/'manifest.toml';manifest.write_text('runtime_profile="'+profile+'"\n'+manifest.read_text().replace('com.gamepkg.arkanoo','com.gamepkg.menu-'+suffix));package=root/(suffix+'.gamepkg');run('pack',source,'-o',package,'--key',key);run('install',package,'--trust-creator');run('build','com.gamepkg.menu-'+suffix,'--target','wasm')
  display=start_display(env,width=1600,height=1200)
  try:
-  states=[(0,0,0,64,0,0),(0,1,3,64,0,0),(1,0,10,127,1,0),(1,0,7,1,0,1)]
+  states=[(0,0,0,64,0,0),(0,1,3,64,0,0),(1,0,10,127,1,0),(1,0,7,1,0,1),(0,0,9,64,0,0)]
   for phase,state in enumerate(states):
    raw=subprocess.check_output([reference,font,args.original/'assets/background1.png',*map(str,state)],env=env);REFERENCES[phase]=Image.frombytes('RGBA',(1280,720),raw).convert('RGB')
   def delta(actual,expected):return max(p[1] for p in ImageChops.difference(actual,expected).getextrema())
@@ -55,7 +55,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-menu-controls-gui-') as temp:
          path=PROOF/(label+'-'+str(width)+'-'+str(phase)+'.png');subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(path)],env=env,check=True,timeout=10);im=Image.open(path).convert('RGB');assert im.size==(width,height),im.size
          actual=im.crop((0,height//8,width,height*7//8))
          if width==640:
-          marker=im.getpixel((8,8));wanted={0:(255,0,0),1:(0,255,0),2:(0,0,255),3:(255,255,0)}[phase]
+          marker=im.getpixel((8,8));wanted={0:(255,0,0),1:(0,255,0),2:(0,0,255),3:(255,255,0),4:(255,0,255)}[phase]
           if marker==wanted:SMALL[phase]=actual.copy();break
          elif delta(actual,REFERENCES[phase])<=2:break
          if app.poll() is not None:raise RuntimeError(app.stderr.read().decode())
@@ -78,7 +78,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-menu-controls-gui-') as temp:
     browser.get(f'http://127.0.0.1:{server.server_port}/');wait=WebDriverWait(browser,20);wait.until(lambda b:b.find_element('id','status').text=='Ready to play');browser.find_element('id','play').click();wait.until(lambda b:b.find_element('id','game').get_attribute('data-state'));browser.find_element('id','game').click()
     for phase in PHASES:
      if held:ActionChains(browser).key_up(held).perform();held=False
-     if phase:held={1:Keys.ARROW_RIGHT,2:Keys.ARROW_UP,3:Keys.ARROW_DOWN}[phase];ActionChains(browser).key_down(held).perform()
+     if phase:held={1:Keys.ARROW_RIGHT,2:Keys.ARROW_UP,3:Keys.ARROW_DOWN,4:Keys.ARROW_LEFT}[phase];ActionChains(browser).key_down(held).perform()
      wait.until(lambda b:b.find_element('id','game').get_attribute('data-state')==str(phase));raw=browser.execute_script('return Array.from(document.querySelector("#game").getContext("2d").getImageData(0,60,640,360).data);');actual=Image.frombytes('RGBA',(640,360),bytes(raw)).convert('RGB');difference=delta(actual,SMALL[phase]);actual.save(PROOF/(profile+'-web-'+str(phase)+'.png'));print(profile,phase,'implemented menu browser/native maximum difference',difference,flush=True);assert difference<=2,difference
    finally:
     if held:ActionChains(browser).key_up(held).perform()

@@ -3963,3 +3963,19 @@ fn five_recording_slots_retain_the_previous_four_mib_resident_budget() {
     assert_eq!(gamepkg::recording_reads(), before + 1);
     gamepkg::recording_override(None);
 }
+
+#[test]
+fn original_project_button_requests_the_declared_homepage_only_from_main_menu() {
+    let mut game = physics::Game::new();
+    game.mode = 0;
+    game.source_input(2, 600.0, 405.0, 1);
+    assert!(game.homepage_requested);
+    game.homepage_requested = false;
+    game.menu.settings = true;
+    game.source_input(2, 600.0, 405.0, 1);
+    assert!(!game.homepage_requested);
+    game.menu.settings = false;
+    game.source_input(1, 600.0, 405.0, 0);
+    assert_eq!(game.menu.hover, 9);
+    assert!(!game.homepage_requested);
+}

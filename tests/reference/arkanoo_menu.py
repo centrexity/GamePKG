@@ -17,7 +17,7 @@ fn main(){let mut m=Menu::new(1280,720);
 cases=[]
 for settings in [False,True]:
     body+='m.state=MenuState::'+('Settings' if settings else 'Main')+';\n'
-    entries=[(7,540,400,200,40),(8,540,760,200,40),(10,540,310,200,40)] if settings else [(i+1,540,235+i*50,200,40) for i in range(6)]
+    entries=[(7,540,400,200,40),(8,540,760,200,40),(10,540,310,200,40)] if settings else [(i+1,540,235+i*50,200,40) for i in range(6)]+[(9,1170,670,100,40)]
     for action,x,y,w,h in entries:
         for px,py in [(x,y),(x-1,y),(x+w-1,y+h-1),(x+w,y),(x,y+h),(x+w/2,y+h/2),(x-.25,y),(x,y-.25),(x+w-.25,y+h-.25)]:
             cases.append(dict(settings=settings,point=[px*.5,py*.5+60],button=action))
@@ -38,4 +38,4 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-arkanoo-menu-reference-') as te
     subprocess.run(['rustc','--edition=2021',folder/'main.rs','-o',folder/'oracle'],env=env,check=True)
     results=subprocess.check_output([folder/'oracle'],text=True).splitlines();assert len(results)==len(cases)+len(slider_events)
     for case,result in zip(cases,results[:len(cases)]):case['action']=int(result)
-    print(json.dumps(dict(revision='9d613e78c9ed5657ae7fda9206cd4a82a893b7c8',menu_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),cases=cases,slider=[dict(event=event,volume=int(value)) for event,value in zip(slider_events,results[len(cases):])],remaining=['Original splash/menu transitions','Original music settings and recorded effects','Resolution/VSync controls and confirm/revert','Project-homepage button','Original fonts/background artwork']),indent=2))
+    print(json.dumps(dict(revision='9d613e78c9ed5657ae7fda9206cd4a82a893b7c8',menu_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),cases=cases,slider=[dict(event=event,volume=int(value)) for event,value in zip(slider_events,results[len(cases):])],remaining=['Original splash/menu transitions','Original music settings and recorded effects','Resolution/VSync controls and confirm/revert','Original fonts/background artwork']),indent=2))

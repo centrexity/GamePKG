@@ -489,6 +489,87 @@
       "action": 6
     },
     {
+      "settings": false,
+      "point": [
+        585.0,
+        395.0
+      ],
+      "button": 9,
+      "action": 9
+    },
+    {
+      "settings": false,
+      "point": [
+        584.5,
+        395.0
+      ],
+      "button": 9,
+      "action": 0
+    },
+    {
+      "settings": false,
+      "point": [
+        634.5,
+        414.5
+      ],
+      "button": 9,
+      "action": 9
+    },
+    {
+      "settings": false,
+      "point": [
+        635.0,
+        395.0
+      ],
+      "button": 9,
+      "action": 0
+    },
+    {
+      "settings": false,
+      "point": [
+        585.0,
+        415.0
+      ],
+      "button": 9,
+      "action": 0
+    },
+    {
+      "settings": false,
+      "point": [
+        610.0,
+        405.0
+      ],
+      "button": 9,
+      "action": 9
+    },
+    {
+      "settings": false,
+      "point": [
+        584.875,
+        395.0
+      ],
+      "button": 9,
+      "action": 0
+    },
+    {
+      "settings": false,
+      "point": [
+        585.0,
+        394.875
+      ],
+      "button": 9,
+      "action": 0
+    },
+    {
+      "settings": false,
+      "point": [
+        634.875,
+        414.875
+      ],
+      "button": 9,
+      "action": 9
+    },
+    {
       "settings": true,
       "point": [
         270.0,
@@ -963,7 +1044,6 @@
     "Original splash/menu transitions",
     "Original music settings and recorded effects",
     "Resolution/VSync controls and confirm/revert",
-    "Project-homepage button",
     "Original fonts/background artwork"
   ]
 }

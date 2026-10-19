@@ -71,10 +71,22 @@ the updated source host.
 window and requires signed `input` permission. Operations 0 and 1 accept 0/1 to
 set cursor visibility and absolute cursor confinement respectively. Operation 2
 with value 0 toggles actual fullscreen; operation 3 with value 0 closes the game.
-Fullscreen and close require a fresh key, pointer, controller or touch action;
+Operation 4 with value 0 requests opening the signed manifest's `homepage` in
+the user's browser. No URL or process arguments are accepted from the game. It
+requires a declared HTTPS homepage (or a valid v3 onion HTTP/HTTPS URL), a fresh
+action and signed input permission; at most one homepage request is accepted per
+tick. Desktop game windows and browser exports consume committed requests once.
+Browser tabs use `noopener,noreferrer` and require active browser user activation;
+unfocused or file-dialog-blocked requests are discarded. Headless runs do not
+open a browser. Older released hosts reject this new operation; rebuild from
+current source to use it.
+Fullscreen, close and homepage requests require a fresh key, pointer, controller or touch action;
 held buttons and repeated keys do not qualify. The return value means the host
 accepted the request, not that the operating system fulfilled it. Requests commit
-only after a successful tick and persistence; failed ticks roll them back.
+only after a successful tick; failed ticks roll them back. Desktop persistence
+failures also roll back staged requests. Homepage navigation is withheld if
+browser save/history writes fail; the failed navigation request is discarded,
+and a fresh action is needed after storage recovers.
 
 `gamepkg::window_fullscreen()` returns `Some(true)` or `Some(false)` for the host's latest observation of this game's own window, or `None` when no observation is available, input permission is denied, or the game has closed. Reads need no fresh input gesture and remain stable during a tick. Use this value for fullscreen captions; accepting a toggle request does not establish that fullscreen changed. Keep the last confirmed state while observation is unavailable. The native window controller keeps a pending toggle until the current mode is known; unavailable does not imply windowed. Native/core/component and browser bindings expose the same result without native handles or access to other windows. Browsers observe their game canvas's DOM fullscreen state, including external exits.
 

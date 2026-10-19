@@ -24,7 +24,7 @@ function color(rgba){return `rgba(${rgba>>>24},${rgba>>>16&255},${rgba>>>8&255},
 function halt(message){resetWindowControls();clearFileUI();for(const node of audioNodes){try{node.stop();}catch{}}audioNodes.clear();audioNext=0;clearTimeout(timer);clearTimeout(frameTimer);worker?.terminate();worker=null;running=false;resetKeyboard();surfaceEvents=[];play.disabled=false;stop.disabled=true;restart.disabled=true;status.textContent=message;}
 function watch(delay){clearTimeout(timer);const active=worker;timer=setTimeout(()=>{if(worker===active)halt('Game stopped: execution deadline exceeded.');},delay);}
 function stored(key,fallback){try{return JSON.parse(localStorage.getItem(key))??fallback;}catch{return fallback;}}
-function persist(key,value){try{localStorage.setItem(key,JSON.stringify(value));}catch{status.textContent='Browser storage is unavailable; progress may not persist.';}}
+function persist(key,value){try{localStorage.setItem(key,JSON.stringify(value));return true;}catch{status.textContent='Browser storage is unavailable; progress may not persist.';return false;}}
 function tick(){if(!running)return;watch(250);worker.postMessage({type:'tick',fullscreen:typeof document.fullscreenElement==='undefined'?null:document.fullscreenElement===canvas,input:pressed|((held&255)<<8)|((held&0x000f0000)<<4),events:surfaceEvents});surfaceEvents=[];pressed=0;}
 function shader(type,source){const value=gl.createShader(type);gl.shaderSource(value,source);gl.compileShader(value);if(!gl.getShaderParameter(value,gl.COMPILE_STATUS)){const error=gl.getShaderInfoLog(value);gl.deleteShader(value);throw Error('WebGL shader compilation failed: '+error);}return value;}
 function setupShaders(sources){if(!sources.length)return;shaderSurface=new OffscreenCanvas(640,480);gl=shaderSurface.getContext('webgl2',{alpha:true,depth:false,antialias:false,premultipliedAlpha:false,preserveDrawingBuffer:true});if(!gl)throw Error('This game requires WebGL 2');const vertex=shader(gl.VERTEX_SHADER,'#version 300 es\nvoid main(){vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2);gl_Position=vec4(p*2.0-1.0,0.0,1.0);}');for(const source of sources){const adapted=source.replace(/^#version[^\n]*\n/,'#version 300 es\nprecision highp float;\nprecision highp int;\n').replace(/layout\(row_major\) (uniform|buffer);/g,'').replace(/layout\(binding\s*=\s*0\)\s*/g,'');const fragment=shader(gl.FRAGMENT_SHADER,adapted),program=gl.createProgram();gl.attachShader(program,vertex);gl.attachShader(program,fragment);gl.linkProgram(program);gl.deleteShader(fragment);if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw Error('WebGL shader link failed: '+gl.getProgramInfoLog(program));for(let i=0;i<gl.getProgramParameter(program,gl.ACTIVE_UNIFORMS);i++){const uniform=gl.getActiveUniform(program,i);if(uniform.name!=='gamepkgTexture_0'||uniform.type!==gl.SAMPLER_2D||uniform.size!==1)throw Error('Forbidden shader resource');}programs.push(program);}gl.deleteShader(vertex);texture=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,texture);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);gl.bindVertexArray(gl.createVertexArray());}
@@ -79,7 +79,7 @@ async function start(){
  if(data.manifest.permissions.audio){try{if(!audioContext){audioContext=new AudioContext({sampleRate:48000});audioGain=audioContext.createGain();audioGain.gain.value=muted?0:.5;audioGain.connect(audioContext.destination);}await Promise.race([audioContext.resume(),new Promise(resolve=>setTimeout(resolve,2000))]);}catch{}}
  halt('Starting game…');delete canvas.dataset.state;play.disabled=true;restart.disabled=true;stop.disabled=false;running=true;
  worker=new Worker('worker.js');watch(10000);
- const active=worker;
+ const active=worker;let tickSaveSucceeded=true;
  worker.onerror=()=>{if(worker===active)halt('Game worker failed.');};
  worker.onmessage=({data:message})=>{
   if(!running||worker!==active)return;
@@ -87,10 +87,10 @@ async function start(){
   if(message.type==='error'){halt(message.error);return;}
   if(message.type==='ready'){lastFrame=performance.now();nextTickAt=lastFrame;status.textContent='Playing';restart.disabled=false;canvas.focus();tick();}
   if(message.type==='file-request')showFileRequest(message,active);
-  if(message.type==='save')persist(saveKey,Array.from(message.bytes));
+  if(message.type==='save')tickSaveSucceeded=persist(saveKey,Array.from(message.bytes))&&tickSaveSucceeded;
   if(message.type==='frame'){
-   try{render(message);if(!message.window?.closed)playAudio(message.audio||[],message.audioChannels??1);}catch(error){halt(String(error));return;}const history=stored(historyKey,{played_ms:0,unlocked:[]});const now=performance.now();history.played_ms+=Math.max(0,Math.min(250,Math.round(now-lastFrame)));lastFrame=now;for(const id of message.unlocks)if(!history.unlocked.includes(id))history.unlocked.push(id);persist(historyKey,history);
-   if(!applyWindowControls(message.window))return;
+   try{render(message);if(!message.window?.closed)playAudio(message.audio||[],message.audioChannels??1);}catch(error){halt(String(error));return;}const history=stored(historyKey,{played_ms:0,unlocked:[]});const now=performance.now();history.played_ms+=Math.max(0,Math.min(250,Math.round(now-lastFrame)));lastFrame=now;for(const id of message.unlocks)if(!history.unlocked.includes(id))history.unlocked.push(id);const homepageCommitted=persist(historyKey,history)&&tickSaveSucceeded;tickSaveSucceeded=true;
+   if(!applyWindowControls(message.window,homepageCommitted))return;
    scheduleTick();
   }
  };
@@ -101,7 +101,7 @@ canvas.addEventListener('keydown',keyboardDown);
 canvas.addEventListener('keyup',keyboardUp);
 window.addEventListener('blur',resetKeyboard);
 document.querySelector('#mute').onclick=()=>{muted=!muted;if(audioGain)audioGain.gain.value=muted?0:.5;document.querySelector('#mute').textContent=muted?'Unmute':'Mute';document.querySelector('#mute').setAttribute('aria-pressed',String(muted));};
-play.onclick=start;restart.onclick=()=>{if(running&&worker){clearFileUI();resetWindowControls(true);resetSurface();worker.postMessage({type:'restart'});canvas.focus();}};stop.onclick=()=>halt('Stopped');
+play.onclick=start;restart.onclick=()=>{if(running&&worker){if(homepageEpoch===4294967295){halt('Restart counter exhausted');return;}homepageEpoch++;clearFileUI();resetWindowControls(true);resetSurface();worker.postMessage({type:'restart',homepageEpoch});canvas.focus();}};stop.onclick=()=>halt('Stopped');
 try{
  const response=await fetch('game.json',{cache:'no-store'});if(!response.ok)throw Error('Missing export metadata');data=await response.json();if(data.format_version!==1)throw Error('Unsupported web export');
  const binary=await fetch('game.wasm',{cache:'no-store'});if(!binary.ok)throw Error('Missing compiled game');wasm=await binary.arrayBuffer();
@@ -114,12 +114,21 @@ try{
  status.textContent='Ready to play';play.disabled=false;restart.disabled=false;
 }catch(error){status.textContent=String(error);}
 
-// Host-owned window controls. Escape remains a game key; Ctrl+Alt+Escape releases capture.
-let requestedWindow={visible:true,confined:false,fullscreen_toggle:false,closed:false},lastWindowToggle=false,pointerSuspended=false,captureAttempted=false,capturePending=false,intentionalUnlock=false,captureEpoch=0,pendingCaptureEpoch=0,fullscreenBusy=false,fullscreenQueued=false;
+// Host-owned window controls
+function homepageURL(value){
+ if(typeof value!=='string'||new TextEncoder().encode(value).length>2048||/[\s\u0000-\u001f\u007f-\u009f]/.test(value))return null;
+ try{const url=new URL(value),host=url.hostname.toLowerCase().replace(/\.+$/,'');
+  if(!host||url.username||url.password)return null;
+  const onion=host.endsWith('.onion');if(onion&&!/^[a-z2-7]{56}$/.test(host.slice(0,-6).split('.').at(-1)))return null;
+  return (url.protocol==='https:'||onion&&url.protocol==='http:')?value:null;
+ }catch{return null;}
+}
+// Escape remains a game key; Ctrl+Alt+Escape releases capture.
+let requestedWindow={visible:true,confined:false,fullscreen_toggle:false,closed:false},lastWindowToggle=false,lastHomepageRequest=0,homepageEpoch=0,pointerSuspended=false,captureAttempted=false,capturePending=false,intentionalUnlock=false,captureEpoch=0,pendingCaptureEpoch=0,fullscreenBusy=false,fullscreenQueued=false;
 function windowFocused(){return running&&document.activeElement===canvas&&document.hasFocus?.()!==false;}
 function pointerStyle(){canvas.style.cursor=windowFocused()&&!pointerSuspended&&!filePending&&!requestedWindow.visible&&(!requestedWindow.confined||document.pointerLockElement===canvas)?'none':'auto';const button=document.querySelector('#capture');if(button)button.hidden=!(running&&requestedWindow.confined&&document.pointerLockElement!==canvas&&!filePending);}
 function releaseWindowPointer(){captureEpoch++;intentionalUnlock=true;capturePending=false;if(document.pointerLockElement===canvas)document.exitPointerLock?.();canvas.style.cursor='auto';}
-function resetWindowControls(leaveFullscreen=false){requestedWindow={visible:true,confined:false,fullscreen_toggle:false,closed:false};lastWindowToggle=false;fullscreenQueued=false;pointerSuspended=false;captureAttempted=false;releaseWindowPointer();if(!leaveFullscreen&&document.fullscreenElement===canvas)document.exitFullscreen?.().catch?.(()=>{});for(const id of ['#capture','#fullscreen']){const button=document.querySelector(id);if(button)button.hidden=true;}}
+function resetWindowControls(leaveFullscreen=false){requestedWindow={visible:true,confined:false,fullscreen_toggle:false,closed:false};lastWindowToggle=false;lastHomepageRequest=0;if(!leaveFullscreen)homepageEpoch=0;fullscreenQueued=false;pointerSuspended=false;captureAttempted=false;releaseWindowPointer();if(!leaveFullscreen&&document.fullscreenElement===canvas)document.exitFullscreen?.().catch?.(()=>{});for(const id of ['#capture','#fullscreen']){const button=document.querySelector(id);if(button)button.hidden=true;}}
 async function captureWindowPointer(explicit=false){
  if(!windowFocused()||filePending||!requestedWindow.confined||capturePending||document.pointerLockElement===canvas||(!explicit&&(pointerSuspended||captureAttempted)))return;
  captureAttempted=true;capturePending=true;intentionalUnlock=false;const epoch=captureEpoch;pendingCaptureEpoch=epoch;
@@ -134,8 +143,14 @@ async function toggleWindowFullscreen(){
   if(button)button.hidden=true;
  }}catch{fullscreenQueued=false;if(button)button.hidden=false;}finally{fullscreenBusy=false;}
 }
-function applyWindowControls(requested){
+function applyWindowControls(requested,homepageCommitted=true){
  if(!requested||typeof requested.visible!=='boolean'||typeof requested.confined!=='boolean'||typeof requested.fullscreen_toggle!=='boolean'||typeof requested.closed!=='boolean')return true;
+ const request=requested.homepage_request??0;
+ if((requested.homepage_epoch??0)===homepageEpoch&&Number.isInteger(request)&&request>lastHomepageRequest&&request<=4294967295){
+  lastHomepageRequest=request;
+  const url=homepageURL(data?.manifest?.homepage);
+  if(homepageCommitted&&url&&!requested.closed&&!filePending&&windowFocused()&&typeof navigator!=='undefined'&&navigator.userActivation?.isActive)window.open(url,'_blank','noopener,noreferrer');
+ }
  requestedWindow=requested;if(requested.closed){halt('Game closed');return false;}
  if(!requested.confined){captureAttempted=false;pointerSuspended=false;releaseWindowPointer();}
  if(filePending){releaseWindowPointer();pointerStyle();return true;}

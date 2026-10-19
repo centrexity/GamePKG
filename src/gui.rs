@@ -950,6 +950,11 @@ impl eframe::App for App {
                         self.pending_input = 0;
                         self.next_frame = Some(now + std::time::Duration::from_millis(16));
                     }
+                    if let Some(url) = game.take_homepage_url() {
+                        if !file_dialog_open && ctx.input(|input| input.focused) {
+                            ctx.open_url(egui::OpenUrl::new_tab(url));
+                        }
+                    }
                     if !game.builtin_engine {
                         self.source_window
                             .apply(ctx, game.window_state(), file_dialog_open);

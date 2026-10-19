@@ -23,6 +23,11 @@ pub struct Service {
     previous: State,
     staged: State,
     gesture: bool,
+    homepage: Option<String>,
+    link_current: u32,
+    link_previous: u32,
+    link_staged: u32,
+    link_consumed: u32,
 }
 impl Service {
     pub fn new(allowed: bool) -> Self {
@@ -33,7 +38,30 @@ impl Service {
             previous: State::default(),
             staged: State::default(),
             gesture: false,
+            homepage: None,
+            link_current: 0,
+            link_previous: 0,
+            link_staged: 0,
+            link_consumed: 0,
         }
+    }
+    pub fn with_homepage(allowed: bool, homepage: Option<&str>) -> anyhow::Result<Self> {
+        if let Some(url) = homepage {
+            anyhow::ensure!(url.len() <= 2048, "homepage URL is too long");
+            crate::registry::validate_url(url)?;
+        }
+        Ok(Self {
+            homepage: homepage.map(str::to_owned),
+            ..Self::new(allowed)
+        })
+    }
+    /// Only the host consumes this committed request. Guest code supplies no URL.
+    pub fn take_homepage(&mut self) -> Option<String> {
+        if self.current.closed || self.link_current == self.link_consumed {
+            return None;
+        }
+        self.link_consumed = self.link_current;
+        self.homepage.clone()
     }
     pub fn observe_fullscreen(&mut self, fullscreen: Option<bool>) {
         self.observed_fullscreen = fullscreen;
@@ -53,6 +81,8 @@ impl Service {
         self.previous = self.current;
         self.staged = self.current;
         self.gesture = gesture;
+        self.link_previous = self.link_current;
+        self.link_staged = self.link_current;
     }
     pub fn request(&mut self, operation: u32, value: u32) -> bool {
         if !self.allowed || self.staged.closed {
@@ -65,12 +95,27 @@ impl Service {
                 self.staged.fullscreen_toggle = !self.staged.fullscreen_toggle
             }
             (3, 0) if self.gesture => self.staged.closed = true,
+            (4, 0)
+                if self.gesture
+                    && self.homepage.is_some()
+                    && self.link_staged == self.link_previous =>
+            {
+                let Some(next) = self.link_staged.checked_add(1) else {
+                    return false;
+                };
+                self.link_staged = next;
+            }
             _ => return false,
         }
         true
     }
     pub fn finish(&mut self, success: bool) {
         self.current = if success { self.staged } else { self.previous };
+        self.link_current = if success {
+            self.link_staged
+        } else {
+            self.link_previous
+        };
         self.gesture = false;
     }
     pub fn state(&self) -> State {
@@ -80,6 +125,41 @@ impl Service {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn homepage_requests_are_bounded_transactional_and_never_accept_guest_urls() {
+        for url in [
+            "file:///tmp/game",
+            "javascript:alert(1)",
+            "https://user:password@example.org/",
+            "http://example.org/",
+        ] {
+            assert!(Service::with_homepage(true, Some(url)).is_err());
+        }
+        let mut service =
+            Service::with_homepage(true, Some("https://example.org/project")).unwrap();
+        service.begin(false);
+        assert!(!service.request(4, 0));
+        service.begin(true);
+        assert!(!service.request(4, 1));
+        assert!(service.request(4, 0));
+        assert!(!service.request(4, 0));
+        assert!(service.take_homepage().is_none());
+        service.finish(false);
+        assert!(service.take_homepage().is_none());
+        service.begin(true);
+        assert!(service.request(4, 0));
+        service.finish(true);
+        assert_eq!(
+            service.take_homepage().as_deref(),
+            Some("https://example.org/project")
+        );
+        assert!(service.take_homepage().is_none());
+        service.begin(true);
+        assert!(service.request(4, 0));
+        assert!(service.request(3, 0));
+        service.finish(true);
+        assert!(service.take_homepage().is_none());
+    }
     #[test]
     fn permissions_arguments_and_tick_commit_are_enforced() {
         let mut denied = Service::new(false);

@@ -916,8 +916,11 @@ Settings includes an effects mute toggle and a volume slider, with the original
 0–128 range shown as 0–100% and a 50% default. Drag the slider to change volume.
 Preferences survive New Game, Restart and relaunch in the existing scoped save.
 Unavailable saving and damaged saves show warnings; damaged data stays preserved.
-Original music, recorded effects and the remaining menu/display controls stay
-tracked in the fidelity audit.
+All five original recorded effects are restored. Original music and the
+remaining menu/display controls stay tracked in the fidelity audit.
+The main-menu Github button opens the signed manifest homepage through the host
+after a fresh click and successful tick. It works in current source-built desktop
+and browser players; games supply no URL or process arguments.
 
 With a current source-built CLI and GUI:
 

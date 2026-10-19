@@ -55,7 +55,16 @@ function encodeEvents(events){
  }return output;
 }
 // Transactional commands for the player's own window; no DOM/device handles.
-function defaultWindow(){return {visible:true,confined:false,fullscreen_toggle:false,closed:false};}
+function homepageURL(value){
+ if(typeof value!=='string'||new TextEncoder().encode(value).length>2048||/[\s\u0000-\u001f\u007f-\u009f]/.test(value))return null;
+ try{const url=new URL(value),host=url.hostname.toLowerCase().replace(/\.+$/,'');
+  if(!host||url.username||url.password)return null;
+  const onion=host.endsWith('.onion');if(onion&&!/^[a-z2-7]{56}$/.test(host.slice(0,-6).split('.').at(-1)))return null;
+  return (url.protocol==='https:'||onion&&url.protocol==='http:')?value:null;
+ }catch{return null;}
+}
+let homepageEpoch=0;
+function defaultWindow(){return {visible:true,confined:false,fullscreen_toggle:false,closed:false,homepage_request:0,homepage_epoch:homepageEpoch};}
 let windowCurrent=defaultWindow(),windowPrevious=defaultWindow(),windowStaged=defaultWindow(),windowGesture=false;
 let windowObserved=0;
 function windowObserve(fullscreen){windowObserved=typeof fullscreen==='boolean'?(fullscreen?3:1):0;}
@@ -67,6 +76,7 @@ function windowRequest(operation,value){
  else if(operation===1&&(value===0||value===1))windowStaged.confined=value===1;
  else if(operation===2&&value===0&&windowGesture)windowStaged.fullscreen_toggle=!windowStaged.fullscreen_toggle;
  else if(operation===3&&value===0&&windowGesture)windowStaged.closed=true;
+ else if(operation===4&&value===0&&windowGesture&&homepageURL(manifest.homepage)&&windowStaged.homepage_request===windowPrevious.homepage_request&&windowStaged.homepage_request<4294967295)windowStaged.homepage_request++;
  else return 0;return 1;
 }
 function windowFinish(success){windowCurrent=success?{...windowStaged}:{...windowPrevious};windowGesture=false;return {...windowCurrent};}
@@ -147,6 +157,7 @@ function decode(hex){if(typeof hex!=='string'||hex.length%2||!/^[a-f0-9]*$/.test
 onmessage=async ({data})=>{try{
  if(data.type==='file-result'){fileResult(data);return;}
  if(data.type==='start'){
+  homepageEpoch=0;
   frameClockReset();windowObserve(null);
   fileEntry=null;fileNext=1;fileGeneration++;fileGesture=false;windowCurrent=defaultWindow();windowPrevious=defaultWindow();windowStaged=defaultWindow();
   shaderCount=data.shaderCount||0;manifest=data.manifest;assets=new Map(Object.entries(data.assets).map(([key,value])=>[key,decode(value)]));roms=data.roms.map(value=>new Uint8Array(value));save=new Uint8Array(data.save);state=0n;
@@ -158,6 +169,8 @@ onmessage=async ({data})=>{try{
   if(typeof instance.exports[manifest.runtime_profile==='component-v1'?'tick':'gamepkg_tick']!=='function')throw Error('Missing game entry');
   postMessage({type:'ready'});
  }else if(data.type==='restart'){
+  if(!Number.isInteger(data.homepageEpoch)||data.homepageEpoch!==homepageEpoch+1||data.homepageEpoch>4294967295)throw Error('Invalid restart generation');
+  homepageEpoch=data.homepageEpoch;
   frameClockReset();windowObserve(null);
   eventBytes=new Uint8Array();state=0n;fileEntry=null;fileGeneration++;fileGesture=false;windowCurrent=defaultWindow();windowPrevious=defaultWindow();windowStaged=defaultWindow();
  }else if(data.type==='tick'){

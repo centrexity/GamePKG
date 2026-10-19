@@ -130,6 +130,10 @@ impl Session {
         settings: &crate::settings::Settings,
         shader_count: usize,
     ) -> Result<Self> {
+        let window = crate::window_control::Service::with_homepage(
+            manifest.permissions.input,
+            manifest.homepage.as_deref(),
+        )?;
         let path = super::path_for_digest(root, digest);
         let bytes = crate::files::read_regular(&path, 64 * 1048576, false)
             .context("Build this game for this computer before playing")?;
@@ -229,7 +233,7 @@ impl Session {
             asset_image: crate::drawing::image::Cache::default(),
             network: crate::network::Service::new(manifest.permissions.clone()),
             input_events: crate::input_events::Queue::new(manifest.permissions.input),
-            window: crate::window_control::Service::new(manifest.permissions.input),
+            window,
             user_files: crate::user_files::Service::new(manifest.permissions.files.clone()),
             manifest,
             roms,

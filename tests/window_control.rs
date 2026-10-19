@@ -105,3 +105,36 @@ fn only_edges_authorize_host_window_actions() {
         );
     }
 }
+
+#[test]
+fn homepage_requests_use_only_declared_urls_fresh_gestures_and_successful_ticks() {
+    let bytes = wat::parse_str(
+        r#"(module
+(import "gamepkg" "window_control" (func $window(param i32 i32)(result i32)))
+(func(export "gamepkg_tick")(param $input i32)(param i64)(result i64)
+(local $accepted i32)
+(local.set $accepted(call $window(i32.const 4)(i32.const 0)))
+(if(i32.eq(local.get $input)(i32.const 99))(then unreachable))
+(i64.extend_i32_s(local.get $accepted))))"#,
+    )
+    .unwrap();
+    let mut m = manifest(true);
+    m.homepage = Some("https://example.org/project".into());
+    let mut game = Game::from_bytes(&bytes, &m).unwrap();
+    assert_eq!(game.step(0).unwrap(), 0);
+    assert!(game.take_homepage_url().is_none());
+    assert_eq!(game.step(4).unwrap(), 1);
+    assert_eq!(game.take_homepage_url().as_deref(), m.homepage.as_deref());
+    assert!(game.take_homepage_url().is_none());
+    assert_eq!(game.step(4 << 8).unwrap(), 0);
+    assert!(game.take_homepage_url().is_none());
+    assert!(game.step(99).is_err());
+    assert!(game.take_homepage_url().is_none());
+    for input in [false, true] {
+        let mut denied = manifest(input);
+        denied.homepage = (!input).then(|| "https://example.org/project".into());
+        let mut game = Game::from_bytes(&bytes, &denied).unwrap();
+        assert_eq!(game.step(4).unwrap(), 0);
+        assert!(game.take_homepage_url().is_none());
+    }
+}
