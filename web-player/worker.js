@@ -80,6 +80,18 @@ function windowRequest(operation,value){
  else return 0;return 1;
 }
 function windowFinish(success){windowCurrent=success?{...windowStaged}:{...windowPrevious};windowGesture=false;return {...windowCurrent};}
+let windowSerial=0,windowPending=null;
+function windowPrepare(){
+ if(windowPending||windowSerial===4294967295)throw Error('Window commit unavailable');
+ windowPending={epoch:homepageEpoch,serial:++windowSerial};windowGesture=false;
+ return {...windowStaged};
+}
+function windowCommit(reply){
+ if(!windowPending||typeof reply.success!=='boolean'||reply.epoch!==windowPending.epoch||reply.serial!==windowPending.serial)return false;
+ windowFinish(reply.success);windowPending=null;
+ fileTickFinish(reply.success&&!windowCurrent.closed);return true;
+}
+
 
 // Player-selected file service; no worker filesystem or DOM access.
 let fileEntry=null,fileNext=1,fileGeneration=0,fileGesture=false;
@@ -116,7 +128,7 @@ function fileResult(data){const entry=fileEntry;if(!entry||entry.status!==1||ent
  if(entry.operation===0&&data.status===2&&data.bytes instanceof Uint8Array&&data.bytes.length<=entry.policy.max_bytes&&data.bytes.length<=67108864&&fileNameAllowed(data.name,entry.policy)){entry.name=data.name;entry.bytes=data.bytes;entry.status=2;return;}entry.status=5;
 }
 function fileTickBegin(input=0){fileGesture=false;if(manifest.permissions.input){fileGesture=(input&0x000f00ff)!==0;const v=new DataView(eventBytes.buffer,eventBytes.byteOffset,eventBytes.byteLength);for(let at=0;at<eventBytes.length;at+=16){const kind=v.getUint32(at,true),code=v.getUint32(at+12,true);if(kind===2||(kind===5&&!(code&65536))||(kind===9&&!(code&0x80000000)))fileGesture=true;}}}
-function fileTickFinish(success){fileGesture=false;if(fileEntry?.staged){if(!success){fileEntry=null;return;}fileEntry.staged=false;postMessage({type:'file-request',handle:fileEntry.handle,generation:fileEntry.generation,index:fileEntry.index,operation:fileEntry.operation,name:fileEntry.name,bytes:fileEntry.operation===1?fileEntry.bytes:new Uint8Array()});}}
+function fileTickFinish(success){fileGesture=false;if(fileEntry?.staged){if(!success){fileEntry=null;return;}fileEntry.staged=false;postMessage({type:'file-request',epoch:homepageEpoch,handle:fileEntry.handle,generation:fileEntry.generation,index:fileEntry.index,operation:fileEntry.operation,name:fileEntry.name,bytes:fileEntry.operation===1?fileEntry.bytes:new Uint8Array()});}}
 
 function audioSubmit(pointer,count,channels){
  if(!manifest.permissions.audio||!Number.isInteger(count)||count<0||count>1600||count%channels||audioSamples.length+count>1600||(audioSamples.length&&audioChannels!==channels))return -1;
@@ -156,8 +168,9 @@ const api={
 function decode(hex){if(typeof hex!=='string'||hex.length%2||!/^[a-f0-9]*$/.test(hex))throw Error('Invalid packaged bytes');const out=new Uint8Array(hex.length/2);for(let i=0;i<out.length;i++){const a=hex.charCodeAt(i*2),b=hex.charCodeAt(i*2+1);out[i]=((a<=57?a-48:a-87)<<4)|(b<=57?b-48:b-87);}return out;}
 onmessage=async ({data})=>{try{
  if(data.type==='file-result'){fileResult(data);return;}
+ if(data.type==='window-commit'){windowCommit(data);return;}
  if(data.type==='start'){
-  homepageEpoch=0;
+  homepageEpoch=0;windowSerial=0;windowPending=null;
   frameClockReset();windowObserve(null);
   fileEntry=null;fileNext=1;fileGeneration++;fileGesture=false;windowCurrent=defaultWindow();windowPrevious=defaultWindow();windowStaged=defaultWindow();
   shaderCount=data.shaderCount||0;manifest=data.manifest;assets=new Map(Object.entries(data.assets).map(([key,value])=>[key,decode(value)]));roms=data.roms.map(value=>new Uint8Array(value));save=new Uint8Array(data.save);state=0n;
@@ -170,20 +183,22 @@ onmessage=async ({data})=>{try{
   postMessage({type:'ready'});
  }else if(data.type==='restart'){
   if(!Number.isInteger(data.homepageEpoch)||data.homepageEpoch!==homepageEpoch+1||data.homepageEpoch>4294967295)throw Error('Invalid restart generation');
-  homepageEpoch=data.homepageEpoch;
+  homepageEpoch=data.homepageEpoch;windowSerial=0;windowPending=null;
   frameClockReset();windowObserve(null);
   eventBytes=new Uint8Array();state=0n;fileEntry=null;fileGeneration++;fileGesture=false;windowCurrent=defaultWindow();windowPrevious=defaultWindow();windowStaged=defaultWindow();
+  postMessage({type:'restarted',epoch:homepageEpoch});
  }else if(data.type==='tick'){
+  if(windowPending)throw Error('Previous window frame was not acknowledged');
   frameClockBegin();windowObserve(data.fullscreen);
   eventBytes=manifest.permissions.input?encodeEvents(data.events??[]):new Uint8Array();
   commands=[];background=null;unlocks=[];saveDirty=false;saveBudget=0;imageBudget=0;audioSamples=[];audioChannels=1;fileTickBegin(data.input);windowBegin(fileGesture);
   state=instance.exports[manifest.runtime_profile==='component-v1'?'tick':'gamepkg_tick'](manifest.permissions.input?data.input:0,state);
   if(instance.exports.memory&&instance.exports.memory.buffer.byteLength>manifest.limits.hard_memory_bytes)throw Error('Memory limit exceeded');
-  const windowState=windowFinish(true);fileTickFinish(!windowState.closed);
-  if(saveDirty)postMessage({type:'save',bytes:save});
-  postMessage({type:'frame',commands,background,state:String(state),unlocks,audio:audioSamples,audioChannels,window:windowState});
+  const windowState=windowPrepare();
+  if(saveDirty)postMessage({type:'save',epoch:homepageEpoch,serial:windowSerial,bytes:save});
+  postMessage({type:'frame',epoch:homepageEpoch,serial:windowSerial,commands,background,state:String(state),unlocks,audio:audioSamples,audioChannels,window:windowState});
  }
-}catch(error){audioSamples=[];audioChannels=1;windowFinish(false);fileTickFinish(false);postMessage({type:'error',error:String(error)});}};
+}catch(error){audioSamples=[];audioChannels=1;windowFinish(false);windowPending=null;fileTickFinish(false);postMessage({type:'error',error:String(error)});}};
 
 // Canonical list results are allocated in guest memory through its bounded
 // allocator. Guest bindings copy and free these results immediately.

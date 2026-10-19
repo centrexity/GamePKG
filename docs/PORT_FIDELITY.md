@@ -2727,9 +2727,79 @@ the player. An injected Storage.setItem failure must suppress the requested tab,
 and restoring storage must not replay that discarded request. A fresh subsequent
 click still works. The persistence helper reports success/failure explicitly;
 other call sites retain their existing behavior. This verifies navigation
-suppression, not browser-wide save/history atomicity or rollback of other window
-commands on parent storage failure; those remain separate open requirements.
+suppression at that checkpoint, not browser-wide save/history atomicity.
+Rollback of other window commands is implemented in the subsequent entry below;
+atomic save/history storage remains open.
 
 Strict GUI/all-target checks pass on Rust 1.89 and 1.99. Optimized CLI and GUI
 linking passes with the embedded decoder and updated browser export templates.
 The seven public HTML pages and local links pass the site checker.
+
+
+## Browser window and picker persistence acknowledgement (2026-10-18)
+
+Browser workers now prepare window state without committing it. The player
+reports the actual save/history write result using the matching frame serial and
+restart epoch. Success commits cursor/fullscreen/close/homepage requests; denial
+restores the prior committed state. New import/export picker jobs are published
+only after success and are cancelled on denial or a committed close. The worker
+retains at most one pending transaction, rejects overlapping ticks, ignores stale
+or malformed acknowledgements, and clears pending state after errors. Existing
+guest API signatures, memory/transfer limits and deadlines are unchanged.
+
+The player maintains one tick in flight and one scheduled timer. Restart waits
+for the worker's matching restart acknowledgement before issuing a new tick; old
+epoch save/frame/picker messages are discarded. This prevents a late old frame
+from publishing window changes, a picker, save bytes or a drawing frame after a
+restart. A stale acknowledgement cannot commit a new frame whose serial was
+reused in another epoch. Close affects audio only after persistence succeeds.
+
+All browser Node regressions pass, including hostile asset paths, input, clock,
+image/clip handling and the new commit protocol. Protocol checks cover prepared
+versus committed state, denial, invalid/stale/replayed acknowledgements, restart
+serial reuse, import/export publication and overlapping ticks. Actual signed
+core/component Chromium fixtures first prove physical confinement/hiding and
+then inject separate save/history write failures. Cursor/fullscreen/close/picker
+requests must be acknowledged as denied, remain unapplied and never replay on
+recovery. Fresh controls and picker requests still work afterwards.
+
+This closes control/picker publication under parent storage failure. It does not
+make save plus history a single atomic record, restore mutated guest memory or
+roll back all drawing/PCM on browser storage failure. Those broader consistency
+requirements and other platforms stay open. New tests use private synthetic
+packages and browser profiles; downloads, when requested, stay in temporary
+folders. No real user library, ROM or creator key is used.
+
+Final actual-browser checks pass for both profiles and both failure kinds:
+import and export requests stay hidden on denial, cancellation works after
+recovery, and an explicitly requested fallback download contains exactly the
+three fixture bytes in its private download directory. Fresh physical fullscreen
+and close still work, and restarting preserves protocol progress. The original
+port's core/component homepage clicks, opener isolation, restart and storage
+failure/recovery checks also pass with this protocol. No time, memory, transfer
+or image tolerance was relaxed.
+
+
+Hosted 32-bit run `39193999039` at source `93154d4` completed with successful
+Linux32 and Windows32 jobs. Direct Windows32 logs confirm all three shared-memory
+ownership/counter-width cases and all three signed effect-asset cases passed;
+the original-recording case stays explicitly ignored without private inputs.
+The Android32 emulator also passes its three memory-budget cases, plus the
+selected component/portability/runtime suites. Its three effect-asset cases fail
+earlier while creating their signed fixture: `pack` returns Permission denied
+at `tests/common/music_fixture.rs:69`. The audio loader assertions are not
+reached. The exact denied operation still needs diagnosis; this failed workflow
+is not counted as a passing Android effect-loader qualification.
+
+The final fixtures also inject a valid-JSON history record with an invalid
+field schema. The player denies that pending window transaction, reports an explicit error
+and terminates the worker instead of leaving it waiting indefinitely. The
+damaged record is unchanged; the test explicitly repairs it, starts a fresh
+worker and proves a new close request succeeds. Missing legacy history fields
+receive defaults. This is schema/error-path handling, not a complete browser
+history repair tool or a change to every legacy JSON fallback.
+
+All 14 browser Node suites pass with the final implementation. Optimized CLI
+and GUI builds pass with the updated self-contained export templates; original
+core/component homepage and restart/storage checks pass as well. The seven
+public HTML pages and local links pass validation.
