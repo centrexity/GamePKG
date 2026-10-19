@@ -3714,3 +3714,21 @@ After rebuilding both desktop entries with the embedded companions, the actual
 signed core/component exported-player regression also passes with chunked input:
 music completion, fresh Restart, Stop/relaunch, checkpoint failure/no replay,
 companion integrity rejection/recovery and close-failure allocation protection.
+
+
+### Lossless full-dataset asset residency audit
+
+`tools/check_arkanoo_asset_residency.py` creates a new private output outside the
+workspace, re-encodes PNGs with maintainer Pillow/optipng, verifies every decoded
+RGBA byte and dimension, and records input/output hashes. It substitutes the
+prepared original-rate effects, verifies prepared recording hashes, includes all
+nine original music tracks and the playlist, and accounts for the exporter's
+additional precise-image RGBA snapshots. It never rewrites published assets.
+
+All 76 PNGs retain exact pixels. Optimized assets with replacement effects use
+12,945,752 bytes; music uses 21,118,219 and the playlist 330. Precise-image data adds
+1,075,272, for 35,139,573 accounted bytes against the unchanged 33,554,432-byte
+limit. Lossless compression alone therefore remains 1,585,141 bytes over budget;
+this audit does not claim a successful full export or port migration. No images,
+tracks or fidelity data are removed. Generated assets and reports remain private.
+Players need none of the maintainer tools.
