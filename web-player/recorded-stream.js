@@ -30,25 +30,30 @@ export class RecordedStream {
  stopEffects(){if(!this.#closed)this.#mixer.stop();}
  // Host-resolved commands: Play takes a cached clip ID or new music generation.
  // One synchronous worklet task validates everything before changing any state.
- applyControls(commands,activeGeneration=null){
-  if(this.#closed||this.failed||!Array.isArray(commands)||commands.length>32)return false;
+ #controls(commands,activeGeneration){
+  if(this.#closed||this.failed||!Array.isArray(commands)||commands.length>32)return null;
   let voices=this.#mixer.active,generation=this.generation,status=this.musicStatus;
   const accepted=[];
   for(const command of commands){
-   if(!Array.isArray(command)||command.length!==2)return false;
-   const [operation,value]=command;if(!Number.isSafeInteger(operation)||!Number.isSafeInteger(value)||value<0)return false;
-   if(operation===0){if(!this.#mixer.has(value)||voices===4)return false;voices++;}
-   else if(operation===1||operation===5){if(value>128)return false;}
-   else if(operation===2){if(value>1)return false;}
-   else if(operation===3){if(value!==0)return false;voices=0;}
-   else if(operation===4||operation===7){if(value<=generation)return false;generation=value;status=operation===4?'loading':'stopped';}
+   if(!Array.isArray(command)||command.length!==2)return null;
+   const [operation,value]=command;if(!Number.isSafeInteger(operation)||!Number.isSafeInteger(value)||value<0)return null;
+   if(operation===0){if(!this.#mixer.has(value)||voices===4)return null;voices++;}
+   else if(operation===1||operation===5){if(value>128)return null;}
+   else if(operation===2){if(value>1)return null;}
+   else if(operation===3){if(value!==0)return null;voices=0;}
+   else if(operation===4||operation===7){if(value<=generation)return null;generation=value;status=operation===4?'loading':'stopped';}
    else if(operation===6){
-    if(value>1)return false;
+    if(value>1)return null;
     if((status==='ended'||status==='failed')&&activeGeneration===generation)continue;
-    if(!['loading','playing','paused'].includes(status))return false;status=value?'paused':'playing';
-   }else return false;
+    if(!['loading','playing','paused'].includes(status))return null;status=value?'paused':'playing';
+   }else return null;
    accepted.push(command);
   }
+  return accepted;
+ }
+ validateControls(commands,activeGeneration=null){return this.#controls(commands,activeGeneration)!==null;}
+ applyControls(commands,activeGeneration=null){
+  const accepted=this.#controls(commands,activeGeneration);if(accepted===null)return false;
   for(const [operation,value] of accepted){
    if(operation===0)this.play(value);
    else if(operation===1)this.effectVolume(value);

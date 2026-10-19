@@ -12,9 +12,9 @@ vm.runInContext("recordedBegin(null)",w);assert.equal(vm.runInContext('recordedC
 vm.runInContext("recordedBegin({ready:true,musicStatus:'playing'})",w);for(let i=0;i<32;i++)assert.equal(call(5,0,0,i),1);assert.equal(call(5),0);
 vm.runInContext("manifest.permissions.audio=false;recordedBegin({ready:true})",w);assert.equal(call(4,0,8),0);
 vm.runInContext(`manifest.permissions.audio=true;let action=true,trap=false;instance.exports.gamepkg_tick=(input,state)=>{if(action)api.effect_call(4,0,8,0);if(trap)throw Error('guest trap');return state+1n;};`,w);
-const tick=()=>w.onmessage({data:{type:'tick',input:0,recordedAudio:{ready:true,musicStatus:'playing'}}});
-await tick();let frame=messages.at(-1);assert.equal(frame.type,'frame');assert.equal(frame.recordedControls.length,1);
-await w.onmessage({data:{type:'window-commit',epoch:frame.epoch,serial:frame.serial,success:false}});assert.equal(vm.runInContext('recordedControls.length',w),0);
+const tick=()=>w.onmessage({data:{type:'tick',input:0,recordedAudio:{ready:true,musicStatus:'playing',generation:7}}});
+await tick();let frame=messages.at(-1);assert.equal(frame.type,'frame');assert.equal(frame.recordedControls.length,1);assert.equal(frame.recordedActiveGeneration,7);
+await w.onmessage({data:{type:'window-commit',epoch:frame.epoch,serial:frame.serial,success:false}});assert.equal(vm.runInContext('recordedControls.length',w),0);assert.equal(vm.runInContext('recordedActiveGeneration',w),null);
 vm.runInContext('action=false',w);await tick();frame=messages.at(-1);assert.equal(frame.recordedControls.length,0,'rejected commands replayed');
 await w.onmessage({data:{type:'window-commit',epoch:frame.epoch,serial:frame.serial,success:true}});
 vm.runInContext('action=true;trap=true',w);await tick();assert.equal(messages.at(-1).type,'error');assert.equal(vm.runInContext('recordedControls.length',w),0);

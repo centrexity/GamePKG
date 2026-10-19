@@ -3499,3 +3499,19 @@ advancing, then resume and complete all 11,520 source frames or close cleanly.
 Existing exact audio comparisons, reservations and supervisor faults still pass.
 An older EOF assertion now waits for actual delivered EOF rather than assuming
 worker closure and receiver message delivery occur synchronously.
+
+The production audio endpoint now supports two-phase frame controls. Prepare
+validates and copies at most 32 commands without changing output, retaining one
+session/epoch/frame record. While prepared, conflicting cache or direct control
+mutations are refused. Finish accepts only the matching frame and a boolean
+checkpoint result; failure discards it, success applies it once. Consumed frame
+identities cannot be replayed and overlapping prepares cannot replace a pending
+frame. Stream validation itself preserves voices, queued music and audible PCM.
+Actual Chromium verifies failed-checkpoint silence, stale/overlapping refusal,
+cache retention and fresh successful publication, followed by the existing exact
+audio/lifecycle tests. The guest worker now includes its active-at-tick-start
+music generation in the staged frame, clearing it on acknowledgement/trap so a
+future dispatcher can preserve natural EOF/failure semantics for that generation.
+The player still needs to resolve/admit staged asset paths and wire its actual
+storage checkpoint to these prepare/finish calls. Exports remain disabled for
+recorded audio; this endpoint protocol alone does not prove game-frame playback.

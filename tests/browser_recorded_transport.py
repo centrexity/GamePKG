@@ -107,7 +107,13 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-worklet-mixer-') as temporary:
    const clip=new Uint8Array(4096*4),view=new DataView(clip.buffer);for(let i=0;i<4096;i++){view.setInt16(i*4,12345,true);view.setInt16(i*4+2,-23456,true);}
    if(!(await request('load',{clip:0,pcm:clip},[clip.buffer])).ok)throw Error('Endpoint clip load');
    const rejected=await request('controls',{commands:[[0,0],[5,129]]});if(rejected.ok||rejected.activeEffects)throw Error('Rejected batch partially published');
-   const played=await request('controls',{commands:[[1,128],[0,0]]});if(!played.ok||played.activeEffects!==1)throw Error('Endpoint effect play');
+   const commands=[[1,128],[0,0]],prepared=await request('prepare',{epoch:0,frame:1,commands});if(!prepared.ok||prepared.activeEffects)throw Error('Prepare published audio');commands[1]=[3,0];
+   if((await request('controls',{commands:[[0,0]]})).ok||(await request('unload',{clip:0})).ok)throw Error('Prepared frame did not retain exclusive controls/cache');
+   if((await request('finish',{epoch:0,frame:2,success:true})).ok||(await request('prepare',{epoch:0,frame:2,commands:[]})).ok)throw Error('Mismatched or overlapping audio frame accepted');
+   const discarded=await request('finish',{epoch:0,frame:1,success:false});if(!discarded.ok||discarded.activeEffects)throw Error('Failed checkpoint published audio');
+   if((await request('finish',{epoch:0,frame:1,success:true})).ok||(await request('prepare',{epoch:0,frame:1,commands:[[0,0]]})).ok)throw Error('Failed audio frame replayed');
+   const next=await request('prepare',{epoch:0,frame:2,commands:[[1,128],[0,0]]});if(!next.ok||next.activeEffects)throw Error('Fresh audio frame failed validation');
+   const played=await request('finish',{epoch:0,frame:2,success:true});if(!played.ok||played.activeEffects!==1)throw Error('Successful checkpoint did not publish effect');
    node.port.postMessage({session:41,id:serial+100,kind:'controls',commands:[[3,0]]});
    node.port.postMessage({session:42,id:serial,kind:'controls',commands:[[3,0]]});
    const unchanged=await request('snapshot');if(!unchanged.ok||unchanged.activeEffects!==1)throw Error('Stale or foreign request changed playback');

@@ -7,7 +7,7 @@ function frameClockBegin(now=performance.now()){
 }
 let eventBytes=new Uint8Array();
 // The guest sees only these typed imports, never JavaScript objects or browser APIs.
-let recordedControls=[],recordedReady=false,recordedMusicStatus='stopped';
+let recordedControls=[],recordedReady=false,recordedMusicStatus='stopped',recordedActiveGeneration=null;
 let instance, manifest, assets, roms, save, state=0n, commands=[], background=null, unlocks=[],saveDirty=false,saveBudget=0,images=new Map(),imageBudget=0,audioSamples=[],audioChannels=1,shaderCount=0;
 function imageCommand(x,y,w,h,pw,ph,pixels,kind='image'){if(commands.length>=1024||!finite(x,y,w,h)||w<0||h<0||!Number.isInteger(pw)||!Number.isInteger(ph)||pw<1||ph<1||pw>512||ph>512||pixels.length!==pw*ph*4||imageBudget+pixels.length>8388608)return -1;imageBudget+=pixels.length;return command([kind,x,y,w,h,pw,ph,pixels.slice()]);}
 async function prepareImages(precise={}){
@@ -89,7 +89,7 @@ function windowPrepare(){
 }
 function windowCommit(reply){
  if(!windowPending||typeof reply.success!=='boolean'||reply.epoch!==windowPending.epoch||reply.serial!==windowPending.serial)return false;
- recordedControls=[];recordedReady=false;windowFinish(reply.success);windowPending=null;
+ recordedControls=[];recordedReady=false;recordedActiveGeneration=null;windowFinish(reply.success);windowPending=null;
  fileTickFinish(reply.success&&!windowCurrent.closed);return true;
 }
 
@@ -134,6 +134,7 @@ function fileTickFinish(success){fileGesture=false;if(fileEntry?.staged){if(!suc
 function recordedBegin(snapshot){
  recordedControls=[];recordedReady=snapshot?.ready===true&&manifest.permissions.audio===true;
  recordedMusicStatus=['loading','playing','paused','ended','failed','stopped'].includes(snapshot?.musicStatus)?snapshot.musicStatus:'stopped';
+ recordedActiveGeneration=recordedReady&&['loading','playing','paused'].includes(recordedMusicStatus)&&Number.isSafeInteger(snapshot?.generation)&&snapshot.generation>0?snapshot.generation:null;
 }
 function recordedCall(operation,pointer,length,value){
  if(!recordedReady||!Number.isInteger(operation)||!Number.isInteger(value)||value<0||value>4294967295)return 0;
@@ -218,9 +219,9 @@ onmessage=async ({data})=>{try{
   if(instance.exports.memory&&instance.exports.memory.buffer.byteLength>manifest.limits.hard_memory_bytes)throw Error('Memory limit exceeded');
   const windowState=windowPrepare();
   if(saveDirty)postMessage({type:'save',epoch:homepageEpoch,serial:windowSerial,bytes:save});
-  postMessage({type:'frame',epoch:homepageEpoch,serial:windowSerial,commands,background,state:String(state),unlocks,audio:audioSamples,audioChannels,recordedControls,window:windowState});
+  postMessage({type:'frame',epoch:homepageEpoch,serial:windowSerial,commands,background,state:String(state),unlocks,audio:audioSamples,audioChannels,recordedControls,recordedActiveGeneration,window:windowState});
  }
-}catch(error){recordedControls=[];recordedReady=false;audioSamples=[];audioChannels=1;windowFinish(false);windowPending=null;fileTickFinish(false);postMessage({type:'error',error:String(error)});}};
+}catch(error){recordedControls=[];recordedReady=false;recordedActiveGeneration=null;audioSamples=[];audioChannels=1;windowFinish(false);windowPending=null;fileTickFinish(false);postMessage({type:'error',error:String(error)});}};
 
 // Canonical list results are allocated in guest memory through its bounded
 // allocator. Guest bindings copy and free these results immediately.

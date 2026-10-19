@@ -45,7 +45,7 @@ export class RecordedOutputClient {
  request(kind,fields={},transfer=[]){
   if(this.#closed)return Promise.reject(Error('Audio output is closed'));
   if(this.#pending)return Promise.reject(Error('Audio output request already pending'));
-  if(!['snapshot','load','unload','controls','music-port'].includes(kind))return Promise.reject(Error('Invalid audio output operation'));
+  if(!['snapshot','load','unload','controls','music-port','prepare','finish'].includes(kind))return Promise.reject(Error('Invalid audio output operation'));
   if(this.#serial>=Number.MAX_SAFE_INTEGER){this.#fail(Error('Audio request counter exhausted'));return Promise.reject(Error('Audio request counter exhausted'));}
   const id=++this.#serial;
   return new Promise((resolve,reject)=>{

@@ -27,8 +27,9 @@ for(const mode of ['pause','fail','stop','underrun']){
  const left=new RecordedStream(wasm),right=new RecordedStream(wasm);
  for(const stream of [left,right]){stream.load(0,clip(0));stream.play(0);stream.begin(1);stream.push(1,pcm(0,800));}
  for(const batch of [[[1,0],[7,2],[0,99]],[[3,0],[7,2],[6,1]],Array(33).fill([1,64]),[[0,0],[0,0],[0,0],[0,0]],[[4,2],[5,129]],[[4,2],[7,2]],[[1,NaN]],[[6,2]]]){
-  assert.equal(left.applyControls(batch),false);assert.equal(left.generation,1);assert.equal(left.queuedFrames,800);assert.equal(left.activeEffects,1);
+  assert.equal(left.validateControls(batch),false);assert.equal(left.applyControls(batch),false);assert.equal(left.generation,1);assert.equal(left.queuedFrames,800);assert.equal(left.activeEffects,1);
  }
+ assert.ok(left.validateControls([[3,0],[4,2],[5,64]]));assert.equal(left.generation,1);assert.equal(left.activeEffects,1);assert.equal(left.queuedFrames,800);
  const a=new Int16Array(256),b=new Int16Array(256);left.render(a);right.render(b);assert.deepEqual(a,b,'rejected batch changed audible output');
  assert.ok(left.applyControls([[3,0],[0,0],[0,0],[4,2],[5,64],[6,1]]));assert.equal(left.activeEffects,2);assert.equal(left.generation,2);assert.equal(left.musicStatus,'paused');assert.equal(left.queuedFrames,0);
  assert.ok(left.failMusic(2));assert.ok(left.applyControls([[1,32],[6,0]],2));assert.equal(left.musicStatus,'failed');assert.equal(left.applyControls([[6,0]],1),false);
