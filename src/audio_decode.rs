@@ -13,6 +13,7 @@ const MAX_INPUT: usize = 8 * 1024 * 1024;
 const MAX_VALUES: usize = 1600;
 const MAX_MEMORY: usize = 16 * 1024 * 1024;
 const WORK_BYTES: u32 = 512 * 1024;
+static BUNDLED: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/audio-decoder.wasm"));
 struct DecoderData {
     limits: StoreLimits,
     expires: std::time::Instant,
@@ -57,6 +58,64 @@ pub enum Output {
     OriginalMixer(u32),
 }
 impl Factory {
+    /// Uses bytes embedded by the maintainer build. No runtime file, URL,
+    /// Python interpreter or guest-selected module is consulted.
+    pub fn bundled() -> Result<Self> {
+        ensure!(
+            !BUNDLED.is_empty(),
+            "this app was built without the audio decoder companion"
+        );
+        let factory = Self::new(BUNDLED)?;
+        factory.validate_companion()?;
+        Ok(factory)
+    }
+    fn validate_companion(&self) -> Result<()> {
+        ensure!(
+            self.maximum_memory_bytes() <= 6 * 1048576,
+            "bundled audio decoder must declare at most 6 MiB of memory"
+        );
+        for (name, parameters) in [
+            ("decoder_reserve", 1),
+            ("decoder_open", 0),
+            ("decoder_read", 1),
+            ("decoder_output", 0),
+            ("decoder_rate", 0),
+            ("decoder_channels", 0),
+            ("decoder_work", 0),
+            ("decoder_rewind", 0),
+            ("decoder_set_output_rate", 1),
+            ("decoder_set_mixer_rate", 1),
+        ] {
+            let function = self
+                .0
+                .module
+                .exports()
+                .find_map(|export| {
+                    if export.name() == name {
+                        if let ExternType::Func(function) = export.ty() {
+                            return Some(function);
+                        }
+                    }
+                    None
+                })
+                .with_context(|| format!("bundled decoder export missing: {name}"))?;
+            ensure!(
+                function.params().len() == parameters
+                    && function
+                        .params()
+                        .all(|ty| matches!(ty, wasmtime::ValType::I32))
+                    && function.results().len() == 1
+                    && function
+                        .results()
+                        .all(|ty| matches!(ty, wasmtime::ValType::I32)),
+                "invalid bundled decoder signature: {name}"
+            );
+        }
+        Ok(())
+    }
+    pub fn bundled_digest() -> Option<String> {
+        (!BUNDLED.is_empty()).then(|| crate::verify::digest(BUNDLED))
+    }
     pub fn new(wasm: &[u8]) -> Result<Self> {
         ensure!(wasm.len() <= 4 * 1024 * 1024, "decoder module too large");
         let mut config = Config::new();
@@ -350,6 +409,31 @@ impl Stream {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn bundled_validation_rejects_missing_mistyped_and_oversized_companions() {
+        for (module, message) in [
+            ("(module(memory(export \"memory\")1 96))", "export missing"),
+            ("(module(memory(export \"memory\")1 96)(func(export \"decoder_reserve\")(param i64)(result i32)i32.const 1))", "invalid bundled decoder signature"),
+            ("(module(memory(export \"memory\")1 97))", "at most 6 MiB"),
+        ] {
+            let factory = super::Factory::new(&wat::parse_str(module).unwrap()).unwrap();
+            assert!(factory.validate_companion().unwrap_err().to_string().contains(message));
+        }
+    }
+    #[test]
+    fn bundled_factory_validates_embedded_bytes_or_reports_unavailable() {
+        if super::BUNDLED.is_empty() {
+            assert!(super::Factory::bundled().is_err());
+            assert!(super::Factory::bundled_digest().is_none());
+        } else {
+            let factory = super::Factory::bundled().unwrap();
+            assert!(factory.maximum_memory_bytes() <= 6 * 1048576);
+            assert_eq!(
+                super::Factory::bundled_digest().unwrap(),
+                crate::verify::digest(super::BUNDLED)
+            );
+        }
+    }
     use super::*;
     #[test]
     fn first_delayed_epoch_observes_the_real_deadline_without_waiting_twenty_more_ticks() {

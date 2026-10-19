@@ -127,6 +127,8 @@ cargo build --locked --release --features gui --bins
 cargo test --locked --all-features
 ```
 
+Maintainer builds can [embed the host audio decoder](tools/audio-decoder/README.md#embedding-in-the-app) in both entry points. The companion uses Rust-only build commands on Linux or native Windows; packaged playback needs no separate decoder file or Python interpreter. Game-facing music integration remains tracked in [port fidelity](docs/PORT_FIDELITY.md).
+
 The executables are `target/release/gamepkg` and `target/release/gamepkg-gui` (with `.exe` on Windows). Launch the GUI with `cargo run --locked --features gui --bin gamepkg-gui`. It lists installed packages and accepts a local package path or HTTPS URL. Inspection runs in a background worker and displays the verified creator fingerprint and permissions before installation. New creators require approval; updates use the installed creator key automatically. It compiles the supported source profile on Linux and plays core and versioned WIT component games with scoped assets, ROMs, saves, drawing, and audio. Resource-free fragment passes render through OpenGL; broader graphics remain unfinished. A desktop display is required to launch it.
 
 Game windows remember their normal size, fullscreen and maximized state separately

@@ -12,6 +12,9 @@ struct Cli {
 }
 #[derive(Subcommand)]
 enum Command {
+    /// Maintainer packaging check; never reads a runtime decoder path.
+    #[command(hide = true)]
+    CheckBundledAudio,
     /// Remember the next multiplayer server or hosting address for a supported signed game.
     ConfigureNetwork {
         id: String,
@@ -181,6 +184,16 @@ fn key(s: &str) -> Result<[u8; 32]> {
 }
 fn main() -> Result<()> {
     match Cli::parse().command {
+        Command::CheckBundledAudio => {
+            let factory = gamepkg::audio_decode::Factory::bundled()?;
+            println!(
+                "{}",
+                serde_json::json!({
+                    "sha256": gamepkg::audio_decode::Factory::bundled_digest().unwrap(),
+                    "maximum_memory_bytes": factory.maximum_memory_bytes(),
+                })
+            );
+        }
         Command::PrepareBuildWorker { id, output } => {
             gamepkg::build_worker::prepare(&gamepkg::registry::default_root()?, &id, &output)?;
         }

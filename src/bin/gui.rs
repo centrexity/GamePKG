@@ -2,6 +2,8 @@ use clap::Parser;
 #[derive(Parser)]
 #[command(version, about = "GamePKG desktop library and game player")]
 struct Args {
+    #[arg(long, hide = true)]
+    check_bundled_audio: bool,
     #[arg(long)]
     library: Option<std::path::PathBuf>,
     #[arg(long)]
@@ -15,6 +17,19 @@ struct Args {
 }
 fn main() -> eframe::Result {
     let args = Args::parse();
+    if args.check_bundled_audio {
+        let factory = gamepkg::audio_decode::Factory::bundled().map_err(|error| {
+            eframe::Error::AppCreation(Box::new(std::io::Error::other(error.to_string())))
+        })?;
+        println!(
+            "{}",
+            serde_json::json!({
+                "sha256": gamepkg::audio_decode::Factory::bundled_digest().unwrap(),
+                "maximum_memory_bytes": factory.maximum_memory_bytes(),
+            })
+        );
+        return Ok(());
+    }
     if let Some(root) = args.library {
         std::env::set_var("GAMEPKG_HOME", root);
     }

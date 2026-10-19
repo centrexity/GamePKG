@@ -14,8 +14,14 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev
       - name: Install Rust
         run: rustup update stable && rustup default stable
-      - name: Build both host entry points
+      - name: Build decoder companion
+        run: |
+          rustup target add wasm32-unknown-unknown
+          python3 tools/build_audio_companion.py --github-env
+      - name: Embed decoder in both host entry points
         run: cargo build --locked --release --all-features --bins
+      - name: Verify embedded decoder
+        run: python3 tools/check_bundled_audio.py target/release
       - name: Fetch metadata sources for dependency notices
         run: cargo fetch --locked
       - name: Package executables, setup tools, examples, and notices

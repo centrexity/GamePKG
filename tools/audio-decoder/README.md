@@ -300,3 +300,50 @@ private synthetic signed package, builds native code, and verifies the same
 behavior in the actual native sandbox. This does not establish atomic persistent
 saves/history or rollback of already emitted background-engine audio. New music
 commands still require signed SDK wiring and commit only after a successful tick.
+
+### Embedding in the app
+
+Maintainer app builds can set `GAMEPKG_BUNDLED_AUDIO_DECODER` to the compiled
+companion before building the root crate. The root build script copies at most
+4 MiB of core Wasm into Cargo's output and embeds those bytes in the executables.
+No decoder file, Python interpreter, URL or runtime environment variable is
+consulted by `Factory::bundled`. Removing the optional build input writes an
+empty asset rather than retaining a previous helper; such source builds report
+an explicit unavailable error. Header/size guards run at build time. The factory
+then verifies import isolation, bounded memory (at most 6 MiB), and every required
+function signature. These remain trusted host dependencies, never guest crates.
+
+For a Rust-only source build on a Unix shell:
+
+```sh
+rustup target add wasm32-unknown-unknown
+GAMEPKG_AUDIO_MAX_MEMORY_BYTES=6291456 cargo build --locked --release --manifest-path tools/audio-decoder/Cargo.toml --target wasm32-unknown-unknown
+GAMEPKG_BUNDLED_AUDIO_DECODER="$PWD/tools/audio-decoder/target/wasm32-unknown-unknown/release/gamepkg_host_audio_decoder.wasm" cargo build --locked --release --features gui --bins
+```
+
+On Windows PowerShell, using native Rust without WSL:
+
+```powershell
+rustup target add wasm32-unknown-unknown
+$env:GAMEPKG_AUDIO_MAX_MEMORY_BYTES = "6291456"
+cargo build --locked --release --manifest-path tools/audio-decoder/Cargo.toml --target wasm32-unknown-unknown
+$env:GAMEPKG_BUNDLED_AUDIO_DECODER = (Resolve-Path "tools/audio-decoder/target/wasm32-unknown-unknown/release/gamepkg_host_audio_decoder.wasm").Path
+cargo build --locked --release --features gui --bins
+```
+
+Hosted maintainer builds use `tools/build_audio_companion.py --github-env` before
+the root build. The packaging source/notices graph now includes the companion's
+Wasm dependencies separately from the native host dependencies; its own source
+is included without build artifacts. `tests/audio_companion_metadata.py` checks
+pinned decoder source/license coverage. The build workflow edits are not evidence
+of a completed Windows/Android runtime run.
+
+`tools/check_bundled_audio.py target/release` relocates both executables into a
+private directory and checks identical decoder metadata with invalid runtime
+paths and no display. `tools/check_music_worker.py <original-music-directory>
+--null-device --bundled` runs the nine complete track hashes and actual callback
+gates using only embedded bytes, removing decoder path variables before playback.
+The standalone build-script test covers malformed/missing/oversized inputs and
+resetting an optional input. Game-facing SDK commands, automatic per-game service
+creation/memory reservations, browser bundle integration and actual port migration
+remain unfinished; embedding alone does not expose music to games.

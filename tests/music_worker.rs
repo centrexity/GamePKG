@@ -12,6 +12,16 @@ use std::{
         Arc,
     },
 };
+fn decoder_factory() -> Factory {
+    if std::env::var_os("GAMEPKG_MUSIC_USE_BUNDLED").is_some() {
+        Factory::bundled().unwrap()
+    } else {
+        Factory::new(
+            &std::fs::read(std::env::var_os("GAMEPKG_AUDIO_DECODER_WASM").unwrap()).unwrap(),
+        )
+        .unwrap()
+    }
+}
 struct Drawing {
     stop: Arc<AtomicBool>,
     thread: Option<std::thread::JoinHandle<u64>>,
@@ -38,10 +48,7 @@ fn actual_device_callback_drives_music_while_the_game_thread_is_idle() {
     paths.sort();
     let paths = &paths[..1];
     let (_temporary, package) = music_fixture::signed_music_package(paths);
-    let factory = Factory::new(
-        &std::fs::read(std::env::var_os("GAMEPKG_AUDIO_DECODER_WASM").unwrap()).unwrap(),
-    )
-    .unwrap();
+    let factory = decoder_factory();
     let budget = Budget::new(16 * 1048576);
     let guest = budget
         .reserve(budget.limit() - 6 * 1048576 - HOST_BYTES)
@@ -125,8 +132,7 @@ fn original_tracks_play_from_signed_package_on_the_output_clock_without_game_tic
         cases.len(),
         "the complete pinned original corpus is required"
     );
-    let wasm = std::fs::read(std::env::var_os("GAMEPKG_AUDIO_DECODER_WASM").unwrap()).unwrap();
-    let factory = Factory::new(&wasm).unwrap();
+    let factory = decoder_factory();
     assert!(factory.maximum_memory_bytes() <= 6 * 1048576);
     let (_temporary, package) = music_fixture::signed_music_package(&paths);
     let budget = Budget::new(16 * 1048576);
@@ -279,10 +285,7 @@ fn combined_original_rate_music_and_effects_reach_the_device_without_game_ticks(
         .collect::<Vec<_>>();
     paths.sort();
     let (_temporary, package) = music_fixture::signed_music_package(&paths[..1]);
-    let factory = Factory::new(
-        &std::fs::read(std::env::var_os("GAMEPKG_AUDIO_DECODER_WASM").unwrap()).unwrap(),
-    )
-    .unwrap();
+    let factory = decoder_factory();
     let budget = Budget::new(16 * 1048576);
     let guest = budget.reserve(9 * 1048576).unwrap();
     let service =

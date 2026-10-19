@@ -2432,3 +2432,31 @@ ignores; the selected signed native fault-injection test runs separately. Ninete
 component, progress, window and file-request integration checks pass as well.
 The Wasm save-failure fixtures use the real guest save-write import with an
 allowed save permission, rather than pre-marking host save state dirty.
+
+The host can now embed its import-free audio decoder at app build time. A bounded
+root build-script input copies core Wasm into the executable; optional builds
+without it explicitly report unavailable, and removing an input clears the prior
+asset. `Factory::bundled` verifies the 6 MiB declaration and required function
+signatures in addition to normal import/memory validation. Hidden packaging
+checks in both entry points keep the asset linked and run before any window,
+settings or library access. Relocated CLI/GUI binaries validate identical bytes
+with missing runtime decoder paths and no display.
+
+All nine signed-package full-track hashes and the actual PCM/original-rate null
+callbacks pass using embedded bytes with both decoder-path variables removed.
+Build-input size/header/missing/reset checks and companion dependency-source/
+license metadata checks pass. Packaging source accounting now includes the
+companion crate and its separate Wasm dependency graph. Hosted native/32-bit/
+Android recipes build this asset before the app; those edits do not constitute
+local Windows/Android gameplay proof, and no release is created here.
+
+The decoder remains a trusted host implementation detail. It adds no guest
+crate allowance or ambient file/network permission. Game-facing signed commands,
+automatic per-game service/budget setup, browser export embedding and current-port
+migration remain required; no game/music completeness claim follows from this
+bundling work.
+The optional/unbundled library suite passes 181 tests with 18 explicit ignores;
+three focused decoder tests pass with embedding enabled. Strict default/GUI
+checks, optimized CLI/GUI builds, relocated-entry-point verification and updated
+workflow YAML/input/metadata checks pass locally. No other-platform runtime
+result or game-facing music activation is implied by those checks.

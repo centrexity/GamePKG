@@ -62,6 +62,20 @@ def write_zip(root, destination):
                     shutil.copyfileobj(source, target)
 
 
+def dependency_metadata(target):
+    metadata = json.loads(subprocess.check_output(
+        ['cargo', 'metadata', '--locked', '--offline', '--all-features', '--filter-platform', target, '--format-version', '1'], cwd=PROJECT))
+    companion = json.loads(subprocess.check_output(
+        ['cargo', 'metadata', '--locked', '--offline', '--manifest-path', 'tools/audio-decoder/Cargo.toml',
+         '--filter-platform', 'wasm32-unknown-unknown', '--format-version', '1'], cwd=PROJECT))
+    # The decoder is embedded Wasm, so its dependency graph is independent of
+    # the app's native target and must be included in notices/source accounting.
+    metadata['packages'] = list({p['id']: p for p in metadata['packages'] + companion['packages']}.values())
+    metadata['workspace_members'] = list(set(metadata['workspace_members'] + companion['workspace_members']))
+    metadata['resolve']['nodes'].extend(companion['resolve']['nodes'])
+    return metadata
+
+
 def package(output_directory, binary_directory, *, system=None, target_triple=None):
     system = system or platform.system()
     if system not in ('Linux', 'Windows'):
@@ -82,8 +96,7 @@ def package(output_directory, binary_directory, *, system=None, target_triple=No
     destination = output_directory / (name + ('.zip' if windows else '.tar.gz'))
     if destination.exists() or destination.is_symlink():
         raise FileExistsError(destination)
-    metadata = json.loads(subprocess.check_output(
-        ['cargo', 'metadata', '--locked', '--offline', '--all-features', '--filter-platform', target, '--format-version', '1'], cwd=PROJECT))
+    metadata = dependency_metadata(target)
     resolved = {node['id'] for node in metadata['resolve']['nodes']}
     with tempfile.TemporaryDirectory(prefix='gamepkg-distribution-') as directory:
         root = Path(directory) / name
@@ -110,6 +123,7 @@ def package(output_directory, binary_directory, *, system=None, target_triple=No
             shutil.copyfile(PROJECT / 'tools' / filename, root / 'tools' / filename)
         shutil.copytree(PROJECT / 'engines', root / 'engines', ignore=shutil.ignore_patterns('__pycache__', 'target'))
         shutil.copytree(PROJECT / 'examples', root / 'examples', ignore=shutil.ignore_patterns('__pycache__', 'target'))
+        shutil.copytree(PROJECT / 'tools/audio-decoder', root / 'tools/audio-decoder', ignore=shutil.ignore_patterns('__pycache__', 'target'))
         shutil.copytree(PROJECT / 'ports', root / 'ports', ignore=shutil.ignore_patterns('.git', '__pycache__', 'target'))
         shutil.copyfile(PROJECT / 'docs' / ('INSTALL_WINDOWS.md' if windows else 'INSTALL.md'), root / 'INSTALL.md')
         notices = []

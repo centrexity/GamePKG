@@ -54,8 +54,14 @@ jobs:
         run: rustup update stable
       - name: Select Rust
         run: rustup default stable
-      - name: Build CLI and desktop entry points
+      - name: Build decoder companion
+        run: |
+          rustup target add wasm32-unknown-unknown
+          python tools/build_audio_companion.py --github-env
+      - name: Embed decoder in CLI and desktop entry points
         run: cargo build --locked --release --all-features --bins
+      - name: Verify embedded decoder
+        run: python tools/check_bundled_audio.py target/release
       - uses: actions/download-artifact@v4
         with:
           name: isolated-compiler-exchange
