@@ -9,7 +9,7 @@ const {RecordedBudget}=await import(budgetURL);
 const {RecordedQueue}=await import(queueURL);
 const {RecordedMusicReceiver,RecordedMusicSender}=await import(url(read('recorded-transport.js').replace("'./recorded-queue.js'",JSON.stringify(queueURL)).replace("'./recorded-budget.js'",JSON.stringify(budgetURL))));
 const wait=async test=>{const end=performance.now()+2000;while(!test()){assert.ok(performance.now()<end,'transport stalled');await new Promise(resolve=>setTimeout(resolve,1));}};
-function fixture(){const queue=new RecordedQueue(),stream={get generation(){return queue.generation;},get availableFrames(){return queue.availableFrames;},begin:g=>queue.begin(g),stopMusic:g=>queue.stop(g),failMusic:g=>queue.fail(g),finishMusic:g=>queue.finish(g),push:(g,v)=>queue.push(g,v)};const {port1,port2}=new MessageChannel();return {queue,port1,port2,receiver:new RecordedMusicReceiver(port1,stream)};}
+function fixture(){const queue=new RecordedQueue(),stream={get generation(){return queue.generation;},get musicStatus(){return queue.status;},get availableFrames(){return queue.availableFrames;},begin:g=>queue.begin(g),stopMusic:g=>queue.stop(g),failMusic:g=>queue.fail(g),finishMusic:g=>queue.finish(g),push:(g,v)=>queue.push(g,v)};const {port1,port2}=new MessageChannel();return {queue,port1,port2,receiver:new RecordedMusicReceiver(port1,stream)};}
 function decoder(total,value){return {reads:0,closed:false,async read(size){assert.equal(size,1600);this.reads++;const n=Math.min(total,size);total-=n;return new Int16Array(n).fill(value);},close(){this.closed=true;}};}
 {
  const {queue,port2,receiver}=fixture(),sender=new RecordedMusicSender(port2),source=decoder(12000,1234);
@@ -61,7 +61,7 @@ function decoder(total,value){return {reads:0,closed:false,async read(size){asse
 }
 {
  const {queue,port2,receiver}=fixture(),sender=new RecordedMusicSender(port2),source=decoder(1600,333);
- sender.start(1,source);await wait(()=>source.closed);queue.read(new Int16Array(1600));assert.equal(queue.status,'ended');receiver.close();assert.equal(queue.status,'ended','completed tracks retain their terminal status');sender.close();
+ sender.start(1,source);await wait(()=>source.closed);queue.read(new Int16Array(1600));await wait(()=>queue.status==='ended');receiver.close();assert.equal(queue.status,'ended','completed tracks retain their terminal status');sender.close();
 }
 {
  const {queue,port2,receiver}=fixture(),budget=new RecordedBudget(3200),sender=new RecordedMusicSender(port2,budget);let release;
@@ -75,5 +75,16 @@ function decoder(total,value){return {reads:0,closed:false,async read(size){asse
  sender.start(1,source);await wait(()=>queue.queuedFrames===4800);await wait(()=>budget.used===0);assert.equal(source.reads,6);
  while(queue.status!=='ended'){queue.read(new Int16Array(1600));receiver.poll();await new Promise(resolve=>setTimeout(resolve,1));}
  await wait(()=>budget.used===0);sender.close();receiver.close();
+}
+{
+ const {queue,port2,receiver}=fixture(),sender=new RecordedMusicSender(port2),source=decoder(1600,678);
+ // The committed worklet batch establishes the generation before transport attach.
+ queue.begin(1);sender.start(1,source);await wait(()=>queue.queuedFrames===800);await wait(()=>source.closed);assert.equal(queue.read(new Int16Array(1600)),800);await wait(()=>queue.status==='ended');sender.close();receiver.close();
+}
+{
+ const {queue,port2,receiver}=fixture(),sender=new RecordedMusicSender(port2),source=decoder(20000,456);
+ queue.begin(1);queue.pause(true);sender.start(1,source);await wait(()=>queue.queuedFrames===4800);assert.equal(queue.status,'paused');assert.equal(queue.playedFrames,0);assert.equal(source.reads,6);
+ port2.postMessage({kind:'begin',generation:1});await new Promise(resolve=>setTimeout(resolve,5));assert.equal(source.reads,6);
+ queue.stop(2);sender.stop(2);await wait(()=>source.closed);assert.equal(queue.queuedFrames,0);assert.equal(queue.status,'stopped');sender.close();receiver.close();
 }
 console.log('Real MessageChannel: bounded demand, complete PCM, replacement, stale success/failure, stop, bad credit, decoder fault passed');

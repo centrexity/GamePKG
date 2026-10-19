@@ -5,7 +5,7 @@ import {RecordedBudget} from './recorded-budget.js';
 const generation=value=>Number.isSafeInteger(value)&&value>0;
 const pcm=value=>value instanceof Int16Array&&value.buffer instanceof ArrayBuffer&&value.byteOffset===0&&value.buffer.byteLength===value.byteLength&&value.length<=BLOCK_FRAMES*2&&value.length%2===0;
 export class RecordedMusicReceiver {
- #port;#stream;#credit=0;#pending=0;#closed=false;#ended=false;
+ #port;#stream;#credit=0;#pending=0;#closed=false;#ended=false;#peerGeneration=0;
  constructor(port,stream){this.#port=port;this.#stream=stream;port.onmessage=({data})=>this.#receive(data);port.onmessageerror=()=>this.#fail();port.start();}
  #fail(){if(this.#closed)return;this.#ended=true;this.#pending=0;this.#stream.failMusic(this.#stream.generation);this.#port.postMessage({kind:'failed',generation:this.#stream.generation});}
  #receive(data){
@@ -13,9 +13,11 @@ export class RecordedMusicReceiver {
   if(data.kind==='closed'){this.close();return;}
   if(!generation(data.generation))return;
   if(data.kind==='begin'||data.kind==='stop'){
-   const accepted=data.kind==='begin'?this.#stream.begin(data.generation):this.#stream.stopMusic(data.generation);
+   if(data.generation<=this.#peerGeneration)return;
+   const committed=data.generation===this.#stream.generation&&(data.kind==='begin'?['loading','paused'].includes(this.#stream.musicStatus):this.#stream.musicStatus==='stopped');
+   const accepted=committed||(data.kind==='begin'?this.#stream.begin(data.generation):this.#stream.stopMusic(data.generation));
    if(!accepted)return;
-   this.#pending=0;this.#ended=data.kind==='stop';this.poll();return;
+   this.#peerGeneration=data.generation;this.#pending=0;this.#ended=data.kind==='stop';this.poll();return;
   }
   // Admission/drop acknowledges the transferred block before issuing more credit.
   if(data.kind==='pcm'&&generation(data.credit))this.#port.postMessage({kind:'ack',generation:data.generation,credit:data.credit});

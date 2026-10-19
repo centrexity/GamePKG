@@ -3485,3 +3485,17 @@ playback, malformed rejection, unchanged caller input, returned staging capacity
 and cancellation cleanup. The worklet cache share and transfer staging must both
 fit the same supplied parent; no allowance or clip cap was raised. Frame-level
 asset resolution/cache rollback and final manifest share wiring remain open.
+
+A committed-generation transport regression first reproduced a permanent stall:
+the output batch had already established Play's generation, so the later
+transport Begin was rejected and no decode credit issued. The receiver now
+tracks peer announcements separately and admits that already-committed loading
+or paused generation once. It still ignores duplicate announcements and stale
+generations; externally committed Stop also synchronizes transport retirement.
+Node cases cover loading/paused attachment, duplicate Begin, bounded prefill and
+Stop. Actual production endpoint and supervised-client Chromium cases commit
+Play+Pause before decoder attachment, fill exactly 4,800 queued frames without
+advancing, then resume and complete all 11,520 source frames or close cleanly.
+Existing exact audio comparisons, reservations and supervisor faults still pass.
+An older EOF assertion now waits for actual delivered EOF rather than assuming
+worker closure and receiver message delivery occur synchronously.
