@@ -324,6 +324,10 @@ pub fn export(root: &Path, id: &str, output: &Path) -> Result<()> {
             include_bytes!("../web-player/worker.js").as_slice(),
         ),
         (
+            "recorded-budget.js",
+            include_bytes!("../web-player/recorded-budget.js").as_slice(),
+        ),
+        (
             "progress-store.js",
             include_bytes!("../web-player/progress-store.js").as_slice(),
         ),

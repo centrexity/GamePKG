@@ -3391,3 +3391,20 @@ AudioContext shutdown. All three MP3 lifecycle paths preserve exact output and
 return parent usage to zero. This is a component ownership test: no exported
 game worker occupies the placeholder guest reservation yet, so guest-memory
 integration remains unverified rather than implied by this fixture.
+
+The exported player's real game worker now owns a parent ledger and a guest
+linear-memory ceiling reservation. Startup reserves before creating the worker;
+Stop/error teardown calls terminate before releasing it. Failed worker creation
+cleans up and reports an explicit startup failure. The budget module is embedded
+in each export. Actual exported core/component Chromium lifecycle tests observe
+reservation/creation/termination/release order across delayed startup, delayed
+checkpoint, Stop and Restart. Both also inject worker-construction failure,
+verify zero retained capacity and then launch successfully again. Existing frame
+publication and 600-tick clock checks pass; the clock fixture now supplies the
+clearTimeout stub required by the existing production scheduler. No production
+clock, memory limit or timeout changes.
+
+Recorded-audio exports remain rejected. Their effect/music shares still need to
+partition this actual parent, and committed guest controls, companions and port
+migration remain open. Reserving guest linear memory does not account for every
+asset, DOM, graphics or browser/JIT allocation.

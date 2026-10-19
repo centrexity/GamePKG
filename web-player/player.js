@@ -1,7 +1,8 @@
 import {ProgressStore,ProgressDataError} from './progress-store.js';
+import {RecordedBudget} from './recorded-budget.js';
 const canvas=document.querySelector('#game'),context=canvas.getContext('2d'),status=document.querySelector('#status'),play=document.querySelector('#play'),stop=document.querySelector('#stop'),restart=document.querySelector('#restart');
 let data,wasm,worker,timer,frameTimer,pressed=0,held=0,roms=[],running=false,saveKey,historyKey,lastFrame=0,nextTickAt=0,audioContext,audioGain,audioNext=0,muted=false,audioNodes=new Set(),shaderSurface,gl,programs=[],texture;
-let filePending=null,tickPending=false,restartPending=false,progressStore=null,startSerial=0;
+let filePending=null,tickPending=false,restartPending=false,progressStore=null,startSerial=0,gameBudget=null,guestMemory=null;
 const keys={ArrowLeft:1,a:1,ArrowRight:2,d:2,ArrowUp:4,w:4,ArrowDown:8,s:8,z:16,x:32,Enter:64,Tab:128,c:65536,v:131072,q:262144,e:524288};
 const heldKeys=new Map();
 function resetKeyboard(){heldKeys.clear();held=pressed=0;}
@@ -23,7 +24,7 @@ function keyboardUp(event){
 }
 function color(rgba){return `rgba(${rgba>>>24},${rgba>>>16&255},${rgba>>>8&255},${(rgba&255)/255})`;}
 function clearAudio(){for(const node of audioNodes){try{node.stop();}catch{}}audioNodes.clear();audioNext=0;}
-function halt(message){startSerial++;progressStore?.cancel();tickPending=false;restartPending=false;resetWindowControls();clearFileUI();clearAudio();clearTimeout(timer);clearTimeout(frameTimer);worker?.terminate();worker=null;running=false;resetKeyboard();surfaceEvents=[];play.disabled=false;stop.disabled=true;restart.disabled=true;status.textContent=message;}
+function halt(message){startSerial++;progressStore?.cancel();tickPending=false;restartPending=false;resetWindowControls();clearFileUI();clearAudio();clearTimeout(timer);clearTimeout(frameTimer);worker?.terminate();worker=null;guestMemory?.release();guestMemory=null;gameBudget?.close();gameBudget=null;running=false;resetKeyboard();surfaceEvents=[];play.disabled=false;stop.disabled=true;restart.disabled=true;status.textContent=message;}
 function watch(delay){clearTimeout(timer);const active=worker;timer=setTimeout(()=>{if(worker===active)halt('Game stopped: execution deadline exceeded.');},delay);}
 const storageWarning='Browser storage is unavailable; progress may not persist.';
 function tick(){if(!running||restartPending||tickPending)return;tickPending=true;watch(250);worker.postMessage({type:'tick',fullscreen:typeof document.fullscreenElement==='undefined'?null:document.fullscreenElement===canvas,input:pressed|((held&255)<<8)|((held&0x000f0000)<<4),events:surfaceEvents});surfaceEvents=[];pressed=0;}
@@ -96,7 +97,7 @@ async function start(){
  let saved;try{const [record]=await Promise.all([progressStore.load(),audioReady]);saved=record.save;}catch(error){if(launch===startSerial)halt(error instanceof ProgressDataError?'Game stopped: browser progress is invalid.':'Unable to load browser progress.');return;}
  if(launch!==startSerial)return;
  delete canvas.dataset.state;running=true;
- worker=new Worker('worker.js');watch(10000);
+ try{gameBudget=new RecordedBudget(data.manifest.limits.hard_memory_bytes);guestMemory=gameBudget.reserve(gameBudget.limit);worker=new Worker('worker.js');}catch{halt('Unable to reserve memory or start the game worker.');return;}watch(10000);
  const active=worker;let saveResult=null,lastWindowSerial=0;
  worker.onerror=()=>{if(worker===active)halt('Game worker failed.');};
  worker.onmessage=async ({data:message})=>{
