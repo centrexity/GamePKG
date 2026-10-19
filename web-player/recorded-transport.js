@@ -1,6 +1,7 @@
 // Trusted point-to-point transport: one credited decoder block in flight.
 // The receiver must be polled after each output quantum to replenish capacity.
 import {BLOCK_FRAMES} from './recorded-queue.js';
+import {RecordedBudget} from './recorded-budget.js';
 const generation=value=>Number.isSafeInteger(value)&&value>0;
 const pcm=value=>value instanceof Int16Array&&value.buffer instanceof ArrayBuffer&&value.byteOffset===0&&value.buffer.byteLength===value.byteLength&&value.length<=BLOCK_FRAMES*2&&value.length%2===0;
 export class RecordedMusicReceiver {
@@ -16,6 +17,8 @@ export class RecordedMusicReceiver {
    if(!accepted)return;
    this.#pending=0;this.#ended=data.kind==='stop';this.poll();return;
   }
+  // Admission/drop acknowledges the transferred block before issuing more credit.
+  if(data.kind==='pcm'&&generation(data.credit))this.#port.postMessage({kind:'ack',generation:data.generation,credit:data.credit});
   // A response from a retired decoder cannot affect the current track.
   if(data.generation!==this.#stream.generation)return;
   if(this.#ended)return;
@@ -36,8 +39,8 @@ export class RecordedMusicReceiver {
  close(){if(this.#closed)return;this.#closed=true;this.#stream.failMusic(this.#stream.generation);this.#pending=0;this.#port.postMessage({kind:'closed',generation:this.#stream.generation});this.#port.onmessage=null;this.#port.onmessageerror=null;this.#port.close();}
 }
 export class RecordedMusicSender {
- #port;#decoder=null;#generation=0;#busy=false;#closed=false;#credit=0;
- constructor(port){this.#port=port;port.onmessage=({data})=>this.#receive(data);port.onmessageerror=()=>this.#fail();port.start();}
+ #port;#decoder=null;#generation=0;#busy=false;#closed=false;#credit=0;#budget;#packets=new Map();
+ constructor(port,budget){if(budget!==undefined&&!(budget instanceof RecordedBudget))throw Error('Invalid transport memory allowance');this.#budget=budget;this.#port=port;port.onmessage=({data})=>this.#receive(data);port.onmessageerror=()=>this.#fail();port.start();}
  #retire(){this.#decoder?.close();this.#decoder=null;this.#busy=false;}
  #fail(){if(this.#closed)return;this.#retire();this.#port.postMessage({kind:'failed',generation:this.#generation});}
  start(next,decoder){
@@ -48,19 +51,22 @@ export class RecordedMusicSender {
  async #receive(data){
   if(this.#closed||!data)return;
   if(data.kind==='closed'){this.close();return;}
+  if(data.kind==='ack'){const packet=this.#packets.get(data.credit);if(packet?.sent&&packet.generation===data.generation){packet.lease?.release();this.#packets.delete(data.credit);}return;}
   if(data.generation!==this.#generation)return;
   if(data.kind==='failed'){this.#retire();return;}
   if(data.kind!=='read'||!generation(data.credit)||data.credit<=this.#credit||data.frames!==BLOCK_FRAMES||!this.#decoder||this.#busy){this.#fail();return;}
   const decoder=this.#decoder,current=this.#generation;this.#credit=data.credit;this.#busy=true;
+  let packet;
   try{
+   packet={generation:current,sent:false,lease:this.#budget?.reserve(BLOCK_FRAMES*4)};this.#packets.set(data.credit,packet);
    const values=await decoder.read(BLOCK_FRAMES*2);
    if(this.#closed||this.#generation!==current||this.#decoder!==decoder)return;
    if(!pcm(values))throw Error('Invalid credited PCM block');
-   const ended=values.length===0;this.#busy=false;this.#port.postMessage({kind:'pcm',generation:current,credit:data.credit,values},[values.buffer]);
+   const ended=values.length===0;this.#busy=false;this.#port.postMessage({kind:'pcm',generation:current,credit:data.credit,values},[values.buffer]);packet.sent=true;
    if(ended)this.#retire();
   }catch{
    if(!this.#closed&&this.#generation===current&&this.#decoder===decoder)this.#fail();
-  }
+  }finally{if(packet&&!packet.sent){packet.lease?.release();this.#packets.delete(data.credit);}}
  }
- close(){if(this.#closed)return;this.#closed=true;this.#retire();this.#port.postMessage({kind:'closed',generation:this.#generation});this.#port.onmessage=null;this.#port.onmessageerror=null;this.#port.close();}
+ close(){if(this.#closed)return;this.#closed=true;this.#retire();for(const [credit,packet] of this.#packets)if(packet.sent){packet.lease?.release();this.#packets.delete(credit);}this.#port.postMessage({kind:'closed',generation:this.#generation});this.#port.onmessage=null;this.#port.onmessageerror=null;this.#port.close();}
 }

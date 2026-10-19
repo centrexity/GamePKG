@@ -3368,3 +3368,26 @@ arbitrary caller remain caller-owned; retaining unlimited decoded blocks is not
 made safe by the worker reservation. The credited transport avoids that usage
 pattern, but its own cross-generation outstanding-buffer accounting and runtime
 parent ownership still need integration before export can be enabled.
+
+The credited transport now optionally shares the same decoder ledger. Each
+requested 800-frame stereo block reserves 3,200 bytes before decoding, retains
+its charge through message delivery, and releases it on receiver admission/drop
+acknowledgement. A retired read keeps its lease until it settles, even after
+sender closure. A controlled outstanding old read proves that a replacement
+cannot reuse that capacity or reach the decoder when the ledger is full.
+Normal full-queue backpressure returns all packet charges after admission.
+Real MP3 playback, replacement and Stop/restart now charge decoder and packet
+reservations to one parent and finish with zero usage, preserving all exact
+output scalars. Converter/cache/queue capacity and guest-memory reservations
+still need the runtime's common parent; browser compiler/JIT/GC overhead remains
+outside these explicit backing-store reservations. Connection teardown drops
+sent packet ownership; it does not prove synchronous browser GC reclamation.
+
+The actual-browser transport qualification now partitions one parent into a
+64 KiB placeholder guest reservation, the real worklet's 4 MiB effect capacity,
+and its decoder/packet allowance. It denies a further byte, retains guest and
+effect ownership after music cleanup, and releases the effects share only after
+AudioContext shutdown. All three MP3 lifecycle paths preserve exact output and
+return parent usage to zero. This is a component ownership test: no exported
+game worker occupies the placeholder guest reservation yet, so guest-memory
+integration remains unverified rather than implied by this fixture.

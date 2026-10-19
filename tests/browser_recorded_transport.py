@@ -73,9 +73,12 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-worklet-mixer-') as temporary:
    for(let frame=0;frame<frames;frame+=128){while(at<pcm.length&&baseline.availableFrames>=800){const n=Math.min(1600,pcm.length-at);if(!baseline.push(1,Int16Array.from(pcm.slice(at,at+n))))throw Error('baseline enqueue');at+=n;}if(at===pcm.length&&!ended){baseline.finishMusic(1);ended=true;}baseline.render(expected.subarray(frame*2,(frame+128)*2));}
    if(baseline.musicStatus!=='ended'||baseline.playedFrames!==pcm.length/2)throw Error('baseline incomplete');baseline.close();
    const results=[];for(const mode of ['normal','replacement','stop-restart']){
-   const liveBudget=new RecordedBudget(charge*2),client=await RecordedDecoderClient.open(codec,encoded,6291456,undefined,liveBudget),context=new AudioContext({sampleRate:48000});await context.audioWorklet.addModule('stream-worklet.js');
+   const guestBytes=65536,effectsBytes=4194304,musicBytes=charge*2+6400;
+   const root=new RecordedBudget(guestBytes+effectsBytes+musicBytes),guest=root.reserve(guestBytes),effects=root.reserve(effectsBytes),liveBudget=root.partition(musicBytes);
+   let overcommitted=false;try{root.reserve(1);}catch{overcommitted=true;}if(!overcommitted)throw Error('Independent audio allowance escaped root');
+   const client=await RecordedDecoderClient.open(codec,encoded,6291456,undefined,liveBudget),context=new AudioContext({sampleRate:48000});await context.audioWorklet.addModule('stream-worklet.js');
    const node=new AudioWorkletNode(context,'transport-audio',{numberOfInputs:0,numberOfOutputs:1,outputChannelCount:[2],processorOptions:{wasm,volume:64,frames}});
-   const channel=new MessageChannel(),sender=new RecordedMusicSender(channel.port1);node.port.postMessage({port:channel.port2},[channel.port2]);
+   const channel=new MessageChannel(),sender=new RecordedMusicSender(channel.port1,liveBudget);node.port.postMessage({port:channel.port2},[channel.port2]);
    const finished=new Promise((resolve,reject)=>{node.port.onmessage=({data})=>data.error?reject(Error(data.error)):resolve(data);node.onprocessorerror=()=>reject(Error('decoder worklet failed'));});
    const gain=context.createGain();gain.gain.value=0;node.connect(gain);gain.connect(context.destination);await context.resume();let retired=null;
    if(mode==='normal')sender.start(1,client);else{
@@ -88,7 +91,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-worklet-mixer-') as temporary:
    const report=await finished;
    if(report.status!=='ended'||report.played!==pcm.length/2||!client.closed||liveBudget.used||report.values.length!==expected.length)throw Error('worker pipeline incomplete');
    for(let i=0;i<expected.length;i++)if(report.values[i]!==expected[i])throw Error('worker pipeline differs at scalar '+i+': '+report.values[i]+' != '+expected[i]);
-   sender.close();node.disconnect();node.port.close();gain.disconnect();await context.close();results.push({mode,sourceFrames:report.played,comparedScalars:expected.length,workerClosed:client.closed,retiredClosed:retired?.closed??true});
+   sender.close();liveBudget.close();if(root.used!==guestBytes+effectsBytes)throw Error('Audio worker release changed guest/effect ownership');node.disconnect();node.port.close();gain.disconnect();await context.close();effects.release();guest.release();if(root.used)throw Error('Root reservation leaked');root.close();results.push({mode,sourceFrames:report.played,comparedScalars:expected.length,workerClosed:client.closed,retiredClosed:retired?.closed??true});
    }return results;
   })().then(value=>done({value})).catch(error=>done({error:String(error.stack||error)}));''')
   assert 'error' not in decoded,decoded
