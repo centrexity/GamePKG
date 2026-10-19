@@ -64,14 +64,3 @@ const overlap=fixture();overlap.actions([[0,0],[3,0]]);await overlap.send({type:
 assert.equal(overlap.messages.at(-1).type,'error');assert.match(overlap.messages.at(-1).error,/not acknowledged/);
 await overlap.send({type:'window-commit',epoch:0,serial:1,success:true});assert.equal(overlap.state().visible,true);assert.equal(overlap.state().closed,false);
 console.log('Browser window/file publication waits for a matching persistence acknowledgement, rolls back denial, and rejects stale/overlapping frames.');
-
-const player=readFileSync(new URL('../web-player/player.js',import.meta.url),'utf8');
-const history=vm.createContext({historyKey:'fixture',stored:()=>history.record});
-vm.runInContext(player.slice(player.indexOf('function playHistory'),player.indexOf('function tick')),history);
-for(const record of [{},{played_ms:123,unlocked:['legacy-achievement']}]){
- history.record=record;const value=vm.runInContext('playHistory()',history);assert.equal(typeof value.played_ms,'number');assert(Array.isArray(value.unlocked));
-}
-for(const record of [[],42,{played_ms:-1,unlocked:[]},{played_ms:null,unlocked:[]},{played_ms:0,unlocked:null},{played_ms:0,unlocked:[42]}]){
- history.record=record;assert.throws(()=>vm.runInContext('playHistory()',history),/Invalid browser play history/);
-}
-console.log('Malformed history is rejected before publication, while missing legacy fields receive defaults.');

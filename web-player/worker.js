@@ -183,6 +183,7 @@ onmessage=async ({data})=>{try{
   postMessage({type:'ready'});
  }else if(data.type==='restart'){
   if(!Number.isInteger(data.homepageEpoch)||data.homepageEpoch!==homepageEpoch+1||data.homepageEpoch>4294967295)throw Error('Invalid restart generation');
+  if(data.save!==undefined){if(!(data.save instanceof Uint8Array)||data.save.length>1048576)throw Error('Invalid restart save');save=data.save.slice();}
   homepageEpoch=data.homepageEpoch;windowSerial=0;windowPending=null;
   frameClockReset();windowObserve(null);
   eventBytes=new Uint8Array();state=0n;fileEntry=null;fileGeneration++;fileGesture=false;windowCurrent=defaultWindow();windowPrevious=defaultWindow();windowStaged=defaultWindow();

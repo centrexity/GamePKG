@@ -321,6 +321,10 @@ pub fn export(root: &Path, id: &str, output: &Path) -> Result<()> {
             include_bytes!("../web-player/worker.js").as_slice(),
         ),
         (
+            "progress-store.js",
+            include_bytes!("../web-player/progress-store.js").as_slice(),
+        ),
+        (
             "style.css",
             include_bytes!("../web-player/style.css").as_slice(),
         ),

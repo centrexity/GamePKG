@@ -1,6 +1,7 @@
 """Signed core/component browser controls wait for actual save/history writes.
 Synthetic games, local server, private browser profiles; no player data or ROMs.
 """
+from browser_storage_support import read_first,write_first
 from pathlib import Path
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -62,7 +63,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-window-commit-') as temporary:
         browser=webdriver.Chrome(service=Service(driver),options=options)
         browser.execute_cdp_cmd('Page.setDownloadBehavior',{'behavior':'allow','downloadPath':str(downloads)})
         browser.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument',{'source':'''window.windowFrames=[];window.windowCommits=[];window.workerSerial=0;
-            window.outputSnapshots=[];window.audioBufferCount=0;window.audioSources=[];
+            window.outputSnapshots=[];window.pendingOutputs=new Map();window.audioBufferCount=0;window.audioSources=[];
             const originalBuffer=AudioContext.prototype.createBuffer;
             AudioContext.prototype.createBuffer=function(...args){const result=originalBuffer.apply(this,args);window.audioBufferCount++;window.lastAudioBuffer=result;return result;};
             const originalSource=AudioContext.prototype.createBufferSource;
@@ -71,9 +72,9 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-window-commit-') as temporary:
             this.addEventListener('message',event=>{const m=event.data;if(m.type==='frame'){
                 window.windowFrames.push({instance,serial:m.serial,epoch:m.epoch,window:m.window,state:m.state});if(window.windowFrames.length>64)window.windowFrames.shift();
                 const canvas=document.querySelector('#game'),pixel=()=>Array.from(canvas.getContext('2d').getImageData(320,240,1,1).data),before=pixel(),beforeState=canvas.dataset.state,beforeAudio=window.audioBufferCount;
-                setTimeout(()=>{const commit=window.windowCommits.find(c=>c.instance===instance&&c.epoch===m.epoch&&c.serial===m.serial);window.outputSnapshots.push({instance,epoch:m.epoch,serial:m.serial,state:m.state,background:m.background,before,beforeState,beforeAudio,after:pixel(),afterState:canvas.dataset.state,afterAudio:window.audioBufferCount,success:commit?.success});if(window.outputSnapshots.length>64)window.outputSnapshots.shift();},0);
+                window.pendingOutputs.set(`${instance}/${m.epoch}/${m.serial}`,{instance,epoch:m.epoch,serial:m.serial,state:m.state,background:m.background,before,beforeState,beforeAudio});if(window.pendingOutputs.size>64)window.pendingOutputs.delete(window.pendingOutputs.keys().next().value);
             }});
-            const send=this.postMessage.bind(this);this.postMessage=(m,...rest)=>{if(m.type==='window-commit'){window.windowCommits.push({...m,instance});if(window.windowCommits.length>64)window.windowCommits.shift();}send(m,...rest);};}};'''})
+            const send=this.postMessage.bind(this);this.postMessage=(m,...rest)=>{if(m.type==='window-commit'){window.windowCommits.push({...m,instance});if(window.windowCommits.length>64)window.windowCommits.shift();const key=`${instance}/${m.epoch}/${m.serial}`,frame=window.pendingOutputs.get(key);window.pendingOutputs.delete(key);if(frame)queueMicrotask(()=>{const canvas=document.querySelector('#game');window.outputSnapshots.push({...frame,after:Array.from(canvas.getContext('2d').getImageData(320,240,1,1).data),afterState:canvas.dataset.state,afterAudio:window.audioBufferCount,success:m.success});if(window.outputSnapshots.length>64)window.outputSnapshots.shift();});}send(m,...rest);};}};'''})
         try:
             browser.get(f'http://127.0.0.1:{server.server_port}/');wait=WebDriverWait(browser,20)
             wait.until(lambda b:b.find_element('id','status').text=='Ready to play');browser.find_element('id','play').click()
@@ -95,9 +96,11 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-window-commit-') as temporary:
             press(Keys.ARROW_RIGHT,'value.window.visible&&!value.window.confined',True)
             wait.until(lambda b:b.execute_script('return document.pointerLockElement===null'))
             for failure in ['save','history']:
-                browser.execute_script('''window.failedWindowWrites=0;window.historyWriteAttempts=0;window.originalWindowSetItem=Storage.prototype.setItem;
-                    const selected=arguments[0];Storage.prototype.setItem=function(key,value){if(String(key).includes(':history:'))window.historyWriteAttempts++;if(String(key).includes(':'+selected+':')){window.failedWindowWrites++;throw Error('fixture write failure');}return window.originalWindowSetItem.call(this,key,value);};''',failure)
+                browser.execute_script('''window.failedWindowWrites=0;window.historyWriteAttempts=0;window.originalWindowPut=IDBObjectStore.prototype.put;
+                    const selected=arguments[0]==='save'?'saves':'history';IDBObjectStore.prototype.put=function(...args){if(this.name==='history')window.historyWriteAttempts++;if(this.name===selected){window.failedWindowWrites++;throw new DOMException('fixture write failure','QuotaExceededError');}return window.originalWindowPut.apply(this,args);};''',failure)
                 wait.until(lambda b:b.execute_script('return window.failedWindowWrites>0'))
+                prior_save=read_first(browser,'saves','gamepkg:save:'+game_id+':')
+                prior_history=read_first(browser,'history','gamepkg:history:'+game_id+':')
                 press(Keys.ARROW_LEFT,'!value.window.visible&&value.window.confined',False)
                 press(Keys.ARROW_UP,'value.window.fullscreen_toggle',False)
                 press(Keys.ARROW_DOWN,'value.window.closed',False)
@@ -118,7 +121,9 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-window-commit-') as temporary:
                     assert frame['afterState']==frame['beforeState'], ('Failed persistence published game state',frame)
                     assert frame['after']==frame['before'], ('Failed persistence published canvas pixels',frame)
                     assert frame['afterAudio']==frame['beforeAudio'], ('Failed persistence scheduled PCM',frame)
-                browser.execute_script('Storage.prototype.setItem=window.originalWindowSetItem')
+                assert read_first(browser,'saves','gamepkg:save:'+game_id+':')==prior_save, 'Aborted transaction changed the save'
+                assert read_first(browser,'history','gamepkg:history:'+game_id+':')==prior_history, 'Aborted transaction changed history'
+                browser.execute_script('IDBObjectStore.prototype.put=window.originalWindowPut')
                 baseline=int(browser.find_element('id','game').get_attribute('data-state'))
                 wait.until(lambda b:int(b.find_element('id','game').get_attribute('data-state'))>=baseline+3)
                 assert browser.find_element('id','status').text=='Playing', 'Storage warning survived successful recovery'
@@ -148,10 +153,12 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-window-commit-') as temporary:
             wait.until(lambda b:b.execute_script('return window.windowFrames.at(-1)?.epoch===1&&window.windowCommits.at(-1)?.epoch===1'))
             # Valid JSON with an invalid schema must terminate explicitly,
             # acknowledge denial and preserve the damaged history record.
-            browser.execute_script("window.badHistoryKey=Object.keys(localStorage).find(key=>key.startsWith('gamepkg:history:'));window.badHistoryValue=JSON.stringify({played_ms:0,unlocked:null});localStorage.setItem(window.badHistoryKey,window.badHistoryValue)")
+            bad_history={'played_ms':0,'unlocked':None}
+            write_first(browser,'history','gamepkg:history:'+game_id+':',bad_history)
             wait.until(lambda b:'browser play history is invalid' in b.find_element('id','status').text)
-            assert browser.execute_script('return localStorage.getItem(window.badHistoryKey)===window.badHistoryValue&&!window.windowCommits.at(-1).success')
-            browser.execute_script('localStorage.setItem(window.badHistoryKey,JSON.stringify({played_ms:0,unlocked:[]}))')
+            assert read_first(browser,'history','gamepkg:history:'+game_id+':')==bad_history
+            assert browser.execute_script('return !window.windowCommits.at(-1).success')
+            write_first(browser,'history','gamepkg:history:'+game_id+':',{'played_ms':0,'unlocked':[]})
             browser.find_element('id','play').click()
             wait.until(lambda b:b.execute_script('const value=window.windowFrames.at(-1);return value.instance===window.workerSerial&&window.windowCommits.some(commit=>commit.instance===value.instance&&commit.success)'))
             # Final successful close proves explicit recovery did not leave a pending transaction.

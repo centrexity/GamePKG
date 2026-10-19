@@ -1,6 +1,7 @@
+import {ProgressStore,ProgressDataError} from './progress-store.js';
 const canvas=document.querySelector('#game'),context=canvas.getContext('2d'),status=document.querySelector('#status'),play=document.querySelector('#play'),stop=document.querySelector('#stop'),restart=document.querySelector('#restart');
 let data,wasm,worker,timer,frameTimer,pressed=0,held=0,roms=[],running=false,saveKey,historyKey,lastFrame=0,nextTickAt=0,audioContext,audioGain,audioNext=0,muted=false,audioNodes=new Set(),shaderSurface,gl,programs=[],texture;
-let filePending=null,tickPending=false,restartPending=false;
+let filePending=null,tickPending=false,restartPending=false,progressStore=null,startSerial=0;
 const keys={ArrowLeft:1,a:1,ArrowRight:2,d:2,ArrowUp:4,w:4,ArrowDown:8,s:8,z:16,x:32,Enter:64,Tab:128,c:65536,v:131072,q:262144,e:524288};
 const heldKeys=new Map();
 function resetKeyboard(){heldKeys.clear();held=pressed=0;}
@@ -22,18 +23,9 @@ function keyboardUp(event){
 }
 function color(rgba){return `rgba(${rgba>>>24},${rgba>>>16&255},${rgba>>>8&255},${(rgba&255)/255})`;}
 function clearAudio(){for(const node of audioNodes){try{node.stop();}catch{}}audioNodes.clear();audioNext=0;}
-function halt(message){tickPending=false;restartPending=false;resetWindowControls();clearFileUI();clearAudio();clearTimeout(timer);clearTimeout(frameTimer);worker?.terminate();worker=null;running=false;resetKeyboard();surfaceEvents=[];play.disabled=false;stop.disabled=true;restart.disabled=true;status.textContent=message;}
+function halt(message){startSerial++;progressStore?.cancel();tickPending=false;restartPending=false;resetWindowControls();clearFileUI();clearAudio();clearTimeout(timer);clearTimeout(frameTimer);worker?.terminate();worker=null;running=false;resetKeyboard();surfaceEvents=[];play.disabled=false;stop.disabled=true;restart.disabled=true;status.textContent=message;}
 function watch(delay){clearTimeout(timer);const active=worker;timer=setTimeout(()=>{if(worker===active)halt('Game stopped: execution deadline exceeded.');},delay);}
-function stored(key,fallback){try{return JSON.parse(localStorage.getItem(key))??fallback;}catch{return fallback;}}
 const storageWarning='Browser storage is unavailable; progress may not persist.';
-function persist(key,value){try{localStorage.setItem(key,JSON.stringify(value));return true;}catch{status.textContent=storageWarning;return false;}}
-function playHistory(){
- const history=stored(historyKey,{played_ms:0,unlocked:[]});
- if(!history||typeof history!=='object'||Array.isArray(history))throw Error('Invalid browser play history');
- if(history.played_ms===undefined)history.played_ms=0;if(history.unlocked===undefined)history.unlocked=[];
- if(!Number.isFinite(history.played_ms)||history.played_ms<0||!Array.isArray(history.unlocked)||history.unlocked.some(id=>typeof id!=='string'))throw Error('Invalid browser play history');
- return history;
-}
 function tick(){if(!running||restartPending||tickPending)return;tickPending=true;watch(250);worker.postMessage({type:'tick',fullscreen:typeof document.fullscreenElement==='undefined'?null:document.fullscreenElement===canvas,input:pressed|((held&255)<<8)|((held&0x000f0000)<<4),events:surfaceEvents});surfaceEvents=[];pressed=0;}
 function shader(type,source){const value=gl.createShader(type);gl.shaderSource(value,source);gl.compileShader(value);if(!gl.getShaderParameter(value,gl.COMPILE_STATUS)){const error=gl.getShaderInfoLog(value);gl.deleteShader(value);throw Error('WebGL shader compilation failed: '+error);}return value;}
 function setupShaders(sources){if(!sources.length)return;shaderSurface=new OffscreenCanvas(640,480);gl=shaderSurface.getContext('webgl2',{alpha:true,depth:false,antialias:false,premultipliedAlpha:false,preserveDrawingBuffer:true});if(!gl)throw Error('This game requires WebGL 2');const vertex=shader(gl.VERTEX_SHADER,'#version 300 es\nvoid main(){vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2);gl_Position=vec4(p*2.0-1.0,0.0,1.0);}');for(const source of sources){const adapted=source.replace(/^#version[^\n]*\n/,'#version 300 es\nprecision highp float;\nprecision highp int;\n').replace(/layout\(row_major\) (uniform|buffer);/g,'').replace(/layout\(binding\s*=\s*0\)\s*/g,'');const fragment=shader(gl.FRAGMENT_SHADER,adapted),program=gl.createProgram();gl.attachShader(program,vertex);gl.attachShader(program,fragment);gl.linkProgram(program);gl.deleteShader(fragment);if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw Error('WebGL shader link failed: '+gl.getProgramInfoLog(program));for(let i=0;i<gl.getProgramParameter(program,gl.ACTIVE_UNIFORMS);i++){const uniform=gl.getActiveUniform(program,i);if(uniform.name!=='gamepkgTexture_0'||uniform.type!==gl.SAMPLER_2D||uniform.size!==1)throw Error('Forbidden shader resource');}programs.push(program);}gl.deleteShader(vertex);texture=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,texture);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);gl.bindVertexArray(gl.createVertexArray());}
@@ -98,38 +90,55 @@ function playAudio(samples,channels=1){if(!audioContext||audioContext.state!=='r
 async function start(){
  if(!data)return;
  if(roms.some(value=>!value)){status.textContent='Select all required ROM files before playing.';return;}
- if(data.manifest.permissions.audio){try{if(!audioContext){audioContext=new AudioContext({sampleRate:48000});audioGain=audioContext.createGain();audioGain.gain.value=muted?0:.5;audioGain.connect(audioContext.destination);}await Promise.race([audioContext.resume(),new Promise(resolve=>setTimeout(resolve,2000))]);}catch{}}
- halt('Starting game…');delete canvas.dataset.state;play.disabled=true;restart.disabled=true;stop.disabled=false;running=true;
+ halt('Loading saved progress…');play.disabled=true;restart.disabled=true;stop.disabled=false;
+ const launch=startSerial;let audioReady=Promise.resolve();
+ if(data.manifest.permissions.audio){try{if(!audioContext){audioContext=new AudioContext({sampleRate:48000});audioGain=audioContext.createGain();audioGain.gain.value=muted?0:.5;audioGain.connect(audioContext.destination);}audioReady=Promise.race([audioContext.resume(),new Promise(resolve=>setTimeout(resolve,2000))]).catch(()=>{});}catch{}}
+ let saved;try{const [record]=await Promise.all([progressStore.load(),audioReady]);saved=record.save;}catch(error){if(launch===startSerial)halt(error instanceof ProgressDataError?'Game stopped: browser progress is invalid.':'Unable to load browser progress.');return;}
+ if(launch!==startSerial)return;
+ delete canvas.dataset.state;running=true;
  worker=new Worker('worker.js');watch(10000);
  const active=worker;let saveResult=null,lastWindowSerial=0;
  worker.onerror=()=>{if(worker===active)halt('Game worker failed.');};
- worker.onmessage=({data:message})=>{
+ worker.onmessage=async ({data:message})=>{
   if(!running||worker!==active)return;
-  if(['save','frame','file-request','restarted'].includes(message.type)&&message.epoch!==homepageEpoch)return;
+  if(['save','frame','file-request','restarted'].includes(message.type)&&message.epoch!==homepageEpoch){if(restartPending&&message.type==='frame'){clearTimeout(timer);tickPending=false;}return;}
   if(['error','ready','frame'].includes(message.type))clearTimeout(timer);
   if(message.type==='error'){halt(message.error);return;}
   if(message.type==='ready'){lastFrame=performance.now();nextTickAt=lastFrame;status.textContent='Playing';restart.disabled=false;canvas.focus();tick();}
-  if(message.type==='restarted'){restartPending=false;tickPending=false;lastWindowSerial=0;saveResult=null;lastFrame=performance.now();nextTickAt=lastFrame;tick();return;}
+  if(message.type==='restarted'){restartPending=false;restart.disabled=false;tickPending=false;lastWindowSerial=0;saveResult=null;lastFrame=performance.now();nextTickAt=lastFrame;tick();return;}
   if(message.type==='file-request')showFileRequest(message,active);
-  if(message.type==='save'){if(!Number.isInteger(message.serial)||message.serial!==lastWindowSerial+1||!(message.bytes instanceof Uint8Array)||message.bytes.length>1048576){halt('Invalid save frame');return;}const ok=persist(saveKey,Array.from(message.bytes));saveResult={serial:message.serial,ok:ok&&(saveResult?.serial!==message.serial||saveResult.ok)};}
+  if(message.type==='save'){if(saveResult||!Number.isInteger(message.serial)||message.serial!==lastWindowSerial+1||!(message.bytes instanceof Uint8Array)||message.bytes.length>1048576){halt('Invalid save frame');return;}saveResult={serial:message.serial,bytes:message.bytes};}
   if(message.type==='frame'){
    if(!Number.isInteger(message.serial)||message.serial!==lastWindowSerial+1||message.window?.homepage_epoch!==homepageEpoch){halt('Invalid window frame');return;}
-   lastWindowSerial=message.serial;tickPending=false;
-   try{prepareFrame(message);}catch(error){halt(String(error));return;}let committed;try{const history=playHistory();const now=performance.now();history.played_ms+=Math.max(0,Math.min(250,Math.round(now-lastFrame)));lastFrame=now;for(const id of message.unlocks)if(!history.unlocked.includes(id))history.unlocked.push(id);committed=(saveResult?.serial!==message.serial||saveResult.ok)&&persist(historyKey,history);saveResult=null;}catch{active.postMessage({type:'window-commit',epoch:homepageEpoch,serial:message.serial,success:false});halt('Game stopped: browser play history is invalid.');return;}
+   lastWindowSerial=message.serial;
+   try{prepareFrame(message);}catch(error){halt(String(error));return;}
+   let committed=false,invalid=false;
+   const now=performance.now(),elapsed=Math.max(0,Math.min(250,Math.round(now-lastFrame)));lastFrame=now;
+   const bytes=saveResult?.serial===message.serial?saveResult.bytes:null;saveResult=null;
+   try{await progressStore.commit(bytes,elapsed,message.unlocks);committed=true;}catch(error){invalid=error instanceof ProgressDataError;}
+   if(!running||worker!==active||message.epoch!==homepageEpoch)return;
+   tickPending=false;
+   if(invalid){active.postMessage({type:'window-commit',epoch:homepageEpoch,serial:message.serial,success:false});halt('Game stopped: browser play history is invalid.');return;}
+   if(!committed)status.textContent=storageWarning;
    active.postMessage({type:'window-commit',epoch:homepageEpoch,serial:message.serial,success:committed});
    if(committed){if(status.textContent===storageWarning)status.textContent='Playing';try{publishFrame(message);if(!message.window?.closed)playAudio(message.audio||[],message.audioChannels??1);}catch(error){halt(String(error));return;}}
    if(committed&&!applyWindowControls(message.window))return;
    scheduleTick();
   }
  };
- let saved=stored(saveKey,[]);if(!Array.isArray(saved)||saved.length>1048576||saved.some(v=>!Number.isInteger(v)||v<0||v>255))saved=[];
  worker.postMessage({type:'start',wasm,manifest:data.manifest,assets:data.assets,precise_images:data.precise_images??{},shaderCount:(data.shaders||[]).length,roms,save:saved});
 }
 canvas.addEventListener('keydown',keyboardDown);
 canvas.addEventListener('keyup',keyboardUp);
 window.addEventListener('blur',resetKeyboard);
 document.querySelector('#mute').onclick=()=>{muted=!muted;if(audioGain)audioGain.gain.value=muted?0:.5;document.querySelector('#mute').textContent=muted?'Unmute':'Mute';document.querySelector('#mute').setAttribute('aria-pressed',String(muted));};
-play.onclick=start;restart.onclick=()=>{if(running&&worker){if(homepageEpoch===4294967295){halt('Restart counter exhausted');return;}homepageEpoch++;restartPending=true;clearAudio();clearTimeout(frameTimer);if(!tickPending)watch(250);delete canvas.dataset.state;clearFileUI();resetWindowControls(true);resetSurface();worker.postMessage({type:'restart',homepageEpoch});canvas.focus();}};stop.onclick=()=>halt('Stopped');
+play.onclick=start;restart.onclick=async()=>{if(running&&worker&&!restartPending){
+ if(homepageEpoch===4294967295){halt('Restart counter exhausted');return;}
+ const active=worker,epoch=++homepageEpoch;restartPending=true;restart.disabled=true;clearAudio();clearTimeout(frameTimer);
+ delete canvas.dataset.state;clearFileUI();resetWindowControls(true);resetSurface();
+ try{const record=await progressStore.load();if(!running||worker!==active||homepageEpoch!==epoch)return;watch(250);active.postMessage({type:'restart',homepageEpoch:epoch,save:record.save});canvas.focus();}
+ catch{if(running&&worker===active&&homepageEpoch===epoch)halt('Unable to reload browser progress.');}
+}};stop.onclick=()=>halt('Stopped');
 try{
  const response=await fetch('game.json',{cache:'no-store'});if(!response.ok)throw Error('Missing export metadata');data=await response.json();if(data.format_version!==1)throw Error('Unsupported web export');
  const binary=await fetch('game.wasm',{cache:'no-store'});if(!binary.ok)throw Error('Missing compiled game');wasm=await binary.arrayBuffer();
@@ -137,6 +146,7 @@ try{
  setupShaders(data.shaders||[]);
  const manifest=data.manifest;document.querySelector('#mute').disabled=!manifest.permissions.audio;document.querySelector('#title').textContent=manifest.id;document.querySelector('#identity').textContent=`Version ${manifest.version} · Creator ${manifest.creator_key}`;
  saveKey=`gamepkg:save:${manifest.id}:${manifest.creator_key}:${manifest.save_schema}`;historyKey=`gamepkg:history:${manifest.id}:${manifest.creator_key}`;
+ progressStore=new ProgressStore(saveKey,historyKey);
  const required=manifest.roms?.length?manifest.roms:manifest.requires_rom?[{title:'ROM'}]:[];roms=Array(required.length).fill(null);
  required.forEach((requirement,index)=>{const label=document.createElement('label');label.textContent=`Select ${requirement.title}`;const input=document.createElement('input');input.type='file';input.onchange=async()=>{const file=input.files[0];if(!file||file.size>67108864){status.textContent='ROM must be at most 64 MiB.';roms[index]=null;return;}const selected=new Uint8Array(await file.arrayBuffer());if(roms.reduce((total,value,i)=>total+(i===index?0:value?.length||0),0)+selected.length>134217728){status.textContent='Combined ROM files must be at most 128 MiB.';roms[index]=null;return;}roms[index]=selected;};label.append(input);document.querySelector('#roms').append(label);});
  status.textContent='Ready to play';play.disabled=false;restart.disabled=false;

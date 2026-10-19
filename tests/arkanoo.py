@@ -1,4 +1,5 @@
 """Signed Arkanoo port: isolated builds, native keyboard play and browser export."""
+from browser_storage_support import read_first
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -597,6 +598,7 @@ pub fn game_tick(input:u32,state:u64)->u64 {
         options.add_experimental_option('prefs',{'download.default_directory':str(downloads),'download.prompt_for_download':False,'download.directory_upgrade':True})
         for arg in ['--headless=new','--no-sandbox','--disable-dev-shm-usage','--enable-unsafe-swiftshader','--window-size=1200,1000']:options.add_argument(arg)
         browser=webdriver.Chrome(service=Service('/usr/bin/chromedriver'),options=options)
+        browser.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument',{'source':'''window.portFrames=[];const Original=Worker;window.Worker=class extends Original{constructor(...args){super(...args);let tick;this.addEventListener('message',event=>{const m=event.data;if(m.type==='frame'){const record={epoch:m.epoch,serial:m.serial,input:tick?.input,start:tick?.start,received:performance.now(),state:m.state};window.portFrames.push(record);if(window.portFrames.length>64)window.portFrames.shift();}});const send=this.postMessage.bind(this);this.postMessage=(m,...rest)=>{if(m.type==='tick')tick={input:m.input,start:performance.now()};if(m.type==='window-commit'){const record=window.portFrames.find(r=>r.epoch===m.epoch&&r.serial===m.serial);if(record){record.ack=performance.now();record.success=m.success;}}return send(m,...rest);};}};'''})
         try:
             browser.get(f'http://127.0.0.1:{server.server_port}/');wait=WebDriverWait(browser,20)
             wait.until(lambda b:b.find_element(By.ID,'status').text=='Ready to play')
@@ -623,7 +625,9 @@ pub fn game_tick(input:u32,state:u64)->u64 {
                 actions.w3c_actions.pointer_action.move_to_location(tx,cy)
                 actions.pause(.15).release().perform()
             def saved_sfx():
-                return browser.execute_script('const key=Object.keys(localStorage).find(key=>key.startsWith(arguments[0]));if(!key)return null;const a=JSON.parse(localStorage.getItem(key)),v=(a[12]|a[13]<<8)>>>0;return [(v>>>1)&255,!!(v&512)];','gamepkg:save:'+game_id+':')
+                a=read_first(browser,'saves','gamepkg:save:'+game_id+':')
+                if a is None:return None
+                v=int.from_bytes(bytes(a[12:14]),'little');return [(v>>1)&255,bool(v&512)]
             def expect_sfx(volume,muted):
                 try:wait.until(lambda b:saved_sfx()==[volume,muted])
                 except Exception:
@@ -647,23 +651,34 @@ pub fn game_tick(input:u32,state:u64)->u64 {
             canvas_click(320,185);time.sleep(.15)
 
             def saved_gravity():
-                return browser.execute_script('const key=Object.keys(localStorage).find(key=>key.startsWith(arguments[0]));return key?(JSON.parse(localStorage.getItem(key))[12]&1):null;','gamepkg:save:'+game_id+':')
+                a=read_first(browser,'saves','gamepkg:save:'+game_id+':')
+                return None if a is None else a[12]&1
             canvas.send_keys('v');wait.until(lambda b:saved_gravity()==1)
             canvas.send_keys('v');wait.until(lambda b:saved_gravity()==0)
             def pixels():return browser.execute_script('return Array.from(document.querySelector("#game").getContext("2d").getImageData(0,0,640,480).data)')
-            def center(data):
+            def center(data,first_row=399):
                 xs=[]
-                for i in range(399*640,401*640):
+                for i in range(first_row*640,(first_row+2)*640):
                     r,g,b=data[i*4:i*4+3]
                     if r<50 and g>140 and b>190 and g-r>80 and b-g>20:xs.append(i%640)
                 assert len(xs)>80,len(xs)
                 return sum(xs)/len(xs)
+            # Transferring 1.2 million JSON numbers stalls the page and its
+            # IndexedDB callbacks. Observe exactly the two previously tested
+            # rows, with the identical Python color/count/position calculation.
+            assert browser.execute_script('const c=arguments[0].getContext("2d"),full=c.getImageData(0,0,640,480).data,rows=c.getImageData(0,399,640,2).data;return rows.every((value,index)=>value===full[399*640*4+index]);',canvas), 'Paddle crop differs from full-canvas pixels'
+            def paddle_center():
+                return center(browser.execute_script('return Array.from(arguments[0].getContext("2d").getImageData(0,399,640,2).data)',canvas),0)
             bounds=canvas.rect
             ActionChains(browser).move_to_element_with_offset(canvas,-bounds['width']*.25,0).perform()
-            wait.until(lambda b:abs(center(pixels())-160)<5)
-            left=center(pixels())
+            wait.until(lambda b:abs(paddle_center()-160)<5)
+            left=paddle_center()
             ActionChains(browser).key_down(Keys.ARROW_RIGHT).pause(.3).key_up(Keys.ARROW_RIGHT).perform()
-            assert center(pixels())>left+25
+            actual_center=paddle_center()
+            if actual_center<=left+25:
+                canvas.screenshot(str(PROOF/'browser-keyboard-timing-failed.png'))
+                print('Browser keyboard timing failure:',{'left':left,'actual':actual_center,'status':browser.find_element(By.ID,'status').text,'frames':browser.execute_script('return window.portFrames.slice(-20)')},flush=True)
+            assert actual_center>left+25
             ActionChains(browser).send_keys(Keys.ESCAPE).perform();time.sleep(.15)
             paused=pixels();time.sleep(.25);assert pixels()==paused,'pause changed pixels'
             ActionChains(browser).send_keys(Keys.ESCAPE).perform();time.sleep(2)
@@ -697,7 +712,7 @@ pub fn game_tick(input:u32,state:u64)->u64 {
             canvas.send_keys('n');canvas.send_keys(Keys.BACKSPACE)
             canvas_click(150,400) # Mouse toolbar remains active while editing the name.
             def saved_pattern():
-                return browser.execute_script('const key=Object.keys(localStorage).find(key=>key.startsWith(arguments[0]));return key?JSON.parse(localStorage.getItem(key)):[];','gamepkg:save:'+game_id+':')
+                return read_first(browser,'saves','gamepkg:save:'+game_id+':') or []
             wait.until(lambda b:saved_pattern()[:4]==[65,82,75,51] and saved_pattern()[16:20]==[1,0,0,0])
             restart_menu();time.sleep(.15);canvas.send_keys('e');canvas.send_keys('l');canvas.send_keys(Keys.ENTER)
             wait.until(lambda b:browser_brick_matches(pixels(),1))

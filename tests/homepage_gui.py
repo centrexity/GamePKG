@@ -117,7 +117,7 @@ result
                     browser.find_element('id','restart').click()
                     ready.until(lambda b:b.find_element('id','game').get_attribute('data-state') is not None)
                 if click_index == 3:
-                    browser.execute_script("window.originalHomepageSetItem=Storage.prototype.setItem;Storage.prototype.setItem=function(){throw Error('fixture storage failure')}")
+                    browser.execute_script("window.originalHomepagePut=IDBObjectStore.prototype.put;IDBObjectStore.prototype.put=function(){throw new DOMException('fixture storage failure','QuotaExceededError')}")
                 time.sleep(.2)
                 assert len(browser.window_handles)==1
                 canvas=browser.find_element('id','game')
@@ -126,7 +126,7 @@ result
                 if click_index == 3:
                     time.sleep(.4)
                     assert len(browser.window_handles)==1, 'Failed history persistence opened a homepage'
-                    browser.execute_script('Storage.prototype.setItem=window.originalHomepageSetItem')
+                    browser.execute_script('IDBObjectStore.prototype.put=window.originalHomepagePut')
                     continue
                 try:
                     ready.until(lambda b:len(b.window_handles)==2)

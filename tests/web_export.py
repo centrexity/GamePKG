@@ -1,4 +1,5 @@
 """Play a real portable export in Chromium and check integrity and shutdown."""
+from browser_storage_support import read_records,read_first,write_first
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -50,7 +51,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-web-export-') as temporary:
             wait.until(lambda b:b.find_element(By.ID,'game').get_attribute('data-state'))
             canvas=browser.find_element(By.ID,'game');initial=canvas.get_attribute('data-state')
             def saved_board():
-                return browser.execute_script('return Object.keys(localStorage).filter(key=>key.startsWith("gamepkg:save:com.gamepkg.2048:")).map(key=>JSON.parse(localStorage.getItem(key)))[0];')
+                return read_first(browser,'saves','gamepkg:save:com.gamepkg.2048:')
             wait.until(lambda b:saved_board() is not None)
             initial_board=saved_board()[24:40]
             canvas.send_keys(Keys.ARROW_RIGHT)
@@ -64,14 +65,14 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-web-export-') as temporary:
             assert sum(cell!=0 for cell in saved_board()[24:40])==2
             canvas.send_keys(Keys.ARROW_RIGHT);wait.until(lambda b:int(canvas.get_attribute('data-state'))&0xffffffff!=1)
             browser.find_element(By.ID,'restart').click()
-            wait.until(lambda b:int(canvas.get_attribute('data-state'))&0xffffffff==1)
+            wait.until(lambda b:int(canvas.get_attribute('data-state') or '0')&0xffffffff==1)
             assert sum(cell!=0 for cell in saved_board()[24:40])==2
             # Player-owned save fixture exercises the actual win/continue UI
             # without depending on a long random play sequence.
             fixture=saved_board()[:52];fixture[8:16]=[0]*8;fixture[16:20]=[0]*4;fixture[20:24]=[1,0,0,0]
             fixture[24:40]=[10,10]+[0]*14;fixture[40:52]=[0]*12
             browser.find_element(By.ID,'stop').click()
-            browser.execute_script('const key=Object.keys(localStorage).find(key=>key.startsWith("gamepkg:save:com.gamepkg.2048:"));localStorage.setItem(key,JSON.stringify(arguments[0]));',fixture)
+            write_first(browser,'saves','gamepkg:save:com.gamepkg.2048:',fixture)
             browser.find_element(By.ID,'play').click();wait.until(lambda b:canvas.get_attribute('data-state')=='1')
             canvas.send_keys(Keys.ARROW_LEFT)
             wait.until(lambda b:saved_board()[24:40].count(11)==1)
@@ -82,7 +83,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-web-export-') as temporary:
             canvas.send_keys('z');wait.until(lambda b:saved_board()[24:40]==fixture[24:40])
             browser.find_element(By.ID,'stop').click()
             fixture[24:40]=[1,2,1,2,2,1,2,1,1,2,1,2,2,1,2,1]
-            browser.execute_script('const key=Object.keys(localStorage).find(key=>key.startsWith("gamepkg:save:com.gamepkg.2048:"));localStorage.setItem(key,JSON.stringify(arguments[0]));',fixture)
+            write_first(browser,'saves','gamepkg:save:com.gamepkg.2048:',fixture)
             browser.find_element(By.ID,'play').click();wait.until(lambda b:canvas.get_attribute('data-state')=='1')
             canvas.send_keys(Keys.ARROW_LEFT);time.sleep(.15);assert saved_board()==fixture
             canvas.screenshot(str(win_proof/('2048-component-game-over.png' if args.component else '2048-game-over.png')))
@@ -120,12 +121,12 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-web-export-') as temporary:
             browser.find_element(By.ID,'play').click()
             wait.until(lambda b:b.find_element(By.ID,'game').get_attribute('data-state')=='42')
             browser.find_element(By.ID,'stop').click()
-            persisted=browser.execute_script('return Object.keys(localStorage).filter(key=>key.startsWith("gamepkg:save:com.gamepkg.web-scoped:")).map(key=>JSON.parse(localStorage.getItem(key)));')
+            persisted=read_records(browser,'saves','gamepkg:save:com.gamepkg.web-scoped:')
             assert persisted==[[115,97,118,101,100]],persisted
-            history=browser.execute_script('return Object.keys(localStorage).filter(key=>key.startsWith("gamepkg:history:com.gamepkg.web-scoped:")).map(key=>JSON.parse(localStorage.getItem(key)));')
+            history=read_records(browser,'history','gamepkg:history:com.gamepkg.web-scoped:')
             assert history[0]['unlocked']==['first_star'] and history[0]['played_ms']>0,history
             browser.get(url);wait.until(lambda b:b.find_element(By.ID,'status').text=='Ready to play')
-            assert browser.execute_script('return Object.keys(localStorage).some(key=>key.startsWith("gamepkg:save:com.gamepkg.web-scoped:"));')
+            assert read_records(browser,'saves','gamepkg:save:com.gamepkg.web-scoped:')
             for name in ['sprite-playground','png-sprite-playground','tone-pad','shader-switch','shader-texture']:
                 media=root/name;shutil.copytree(PROJECT/'examples/good'/name,media)
                 manifest=media/'manifest.toml';manifest.write_text(profile_prefix+manifest.read_text())

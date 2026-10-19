@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 const source=readFileSync(new URL('../web-player/player.js',import.meta.url),'utf8');
 const context=vm.createContext({document:{querySelector:()=>({getContext:()=>({})})}});
-vm.runInContext(source.slice(0,source.indexOf('function color(')),context);
+vm.runInContext(source.slice(source.indexOf('const canvas='),source.indexOf('function color(')),context);
 const keyboard=vm.runInContext(`({down:keyboardDown,up:keyboardUp,reset:resetKeyboard,
  tick:()=>{const value=pressed|((held&255)<<8)|((held&0x000f0000)<<4);pressed=0;return value;}})`,context);
 const event=(key,code,repeat=false)=>({key,code,repeat,preventDefault(){}});

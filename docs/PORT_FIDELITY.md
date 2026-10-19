@@ -2998,3 +2998,30 @@ already fixed in `716f6e4`; the remaining Rust 1.99 byte-character-slice lint no
 uses the equivalent copied two-byte array. Strict library/bin/test Clippy passes
 on both Rust 1.89 and 1.99 without lint suppression. The three publication tests
 retain their overwrite/symlink/concurrency assertions.
+
+### Atomic browser checkpoints and asynchronous lifecycle
+
+Exported games now commit save bytes and play history in one IndexedDB
+transaction. A failed history write rolls back the save even if its individual
+write request already succeeded. Legacy localStorage records are read only when
+an IndexedDB record is absent and remain intact as recovery copies; malformed
+records fail explicitly rather than being overwritten. Concurrent tabs merge
+history increments and achievement IDs under the same transaction. Save bytes
+retain last-writer semantics.
+
+Actual Chromium tests verify request-success aborts, quota rollback, early
+cancellation, connection recovery, creator separation, strict record validation,
+and the complete hash of a maximum-size synthetic save. Both browser runtime
+profiles verify that delayed startup cannot revive a stopped game and delayed
+checkpoint completion cannot publish picture, audio or controls after Stop or
+Restart. The lifecycle test is included in CI alongside the persistence test.
+Original port tests pass both 71-check signed runtime suites and native/core/
+component gameplay, editor and file workflows. The paddle observer now reads the
+same two pixel rows directly instead of serializing a full image; an exact
+byte-equivalence assertion verifies the crop. Movement thresholds, input duration,
+execution limits and rendering tolerances are unchanged.
+
+This supersedes the browser save/history cross-store limitation above. Native
+cross-file persistence, guest-memory rewind, repair UI, browser recorded effects,
+music SDKs and full port fidelity remain open. No binary or package release is
+part of this change.
