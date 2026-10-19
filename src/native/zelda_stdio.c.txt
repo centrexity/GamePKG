@@ -1,0 +1,12 @@
+/* Native engine diagnostics and unused stdio cannot touch descriptors or paths. */
+#include <stdio.h>
+#include <stdlib.h>
+int __wrap_printf(const char *format, ...) { return 0; }
+int __wrap_puts(const char *text) { return 0; }
+int __wrap_putchar(int c) { return c; }
+int __wrap_fprintf(FILE *f, const char *format, ...) { return 0; }
+FILE *__wrap_fopen(const char *p, const char *m) { return NULL; }
+size_t __wrap_fread(void *p, size_t s, size_t n, FILE *f) { return 0; }
+size_t __wrap_fwrite(const void *p, size_t s, size_t n, FILE *f) { return 0; }
+int __wrap_fclose(FILE *f) { return 0; }
+char *__wrap_getenv(const char *name) { return NULL; }

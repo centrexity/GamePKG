@@ -1,0 +1,177 @@
+
+/// Read a chunk from a virtual path relative to the package's assets folder.
+/// Errors (missing asset, invalid path, or invalid offset) return None.
+pub mod gamepkg {
+    fn __gamepkg_effect_call(operation:u32,path:&str,value:u32)->bool{unsafe{host_effect_call(operation,path.as_ptr(),path.len(),value)==1}}
+    /// Relative microseconds at this tick's start; stable throughout the tick.
+    pub fn frame_time_us()->u64 {unsafe {host_frame_time_us()}}
+    /// Actual fullscreen observation for this game's window; None if unavailable.
+    pub fn window_fullscreen()->Option<bool>{match unsafe{host_window_state()}{1=>Some(false),3=>Some(true),_=>None}}
+    pub fn window_control(operation:u32,value:u32)->bool{unsafe{host_window_control(operation,value)==1}}
+    fn __gamepkg_file_call(op:u32,input:&[u8],output:&mut[u8])->Option<u32>{if input.len()>1048840||output.len()>65536{return None;}let n=unsafe{host_file_call(op,input.as_ptr(),input.len() as i32,output.as_mut_ptr(),output.len() as i32)};if n<0{None}else{Some(n as u32)}}
+    fn __gamepkg_input_events(output:&mut[u8])->Option<u32>{let n=unsafe{host_input_events(output.as_mut_ptr(),output.len() as i32)};if n<0{None}else{Some(n as u32)}}
+    pub fn random_u64()->u64 {unsafe {host_random_u64()}}
+    fn __gamepkg_network_call(operation:u32,input:&[u8],output:&mut[u8])->Result<u32,NetworkError>{if input.len()>65540||output.len()>65536{return Err(NetworkError::PermissionDenied);}let n=unsafe{host_network_call(operation,input.as_ptr(),input.len(),output.as_mut_ptr(),output.len())};match n{-2=>Err(NetworkError::Pending),-3=>Err(NetworkError::Failed),n if n<0=>Err(NetworkError::PermissionDenied),n=>Ok(n as u32)}}
+    #[link(wasm_import_module = "gamepkg")]
+    unsafe extern "C" {
+        #[link_name="effect_call"] fn host_effect_call(operation:u32,path:*const u8,length:usize,value:u32)->i32;
+        #[link_name="window_state"] fn host_window_state()->u32;
+        #[link_name="draw_asset_image_linear_straight"] fn host_asset_image_linear_straight(path:*const u8,length:usize,x:f32,y:f32,w:f32,h:f32)->i32;
+        #[link_name="frame_time_us"] fn host_frame_time_us()->u64;
+        #[link_name="window_control"] fn host_window_control(operation:u32,value:u32)->i32;
+        #[link_name="file_call"] fn host_file_call(op:u32,input:*const u8,length:i32,output:*mut u8,capacity:i32)->i32;
+        #[link_name="input_events"] fn host_input_events(output:*mut u8,capacity:i32)->i32;
+        #[link_name="random_u64"] fn host_random_u64()->u64;
+        #[link_name="network_call"] fn host_network_call(operation:u32,input:*const u8,length:usize,output:*mut u8,capacity:usize)->i32;
+        #[link_name="draw_shader_asset_image"] fn host_shader_asset_image(index: u32, path: *const u8, length: usize) -> i32;
+        #[link_name="doom_tick"] fn host_doom_tick(input:u32,state:u64)->u64;
+        #[link_name="zelda3_tick"] fn host_zelda3_tick(input:u32,state:u64)->u64;
+        #[link_name="rom_count"] fn host_rom_count()->u32;
+        #[link_name="rom_size_at"] fn host_rom_size_at(index:u32)->i32;
+        #[link_name="rom_read_at"] fn host_rom_read_at(index:u32,offset:i32,output:*mut u8,length:i32)->i32;
+        #[link_name="achievement_unlock"] fn host_achievement(index:u32)->i32;
+        #[link_name="draw_shader_image"] fn host_shader_image(index:u32,pw:u32,ph:u32,pixels:*const u8,length:usize)->i32;
+        #[link_name="draw_asset_image"] fn host_asset_image(path:*const u8,length:usize,x:f32,y:f32,w:f32,h:f32)->i32;
+        #[link_name="draw_asset_image_linear"] fn host_asset_image_linear(path:*const u8,length:usize,x:f32,y:f32,w:f32,h:f32)->i32;
+        #[link_name = "draw_image_linear"] fn host_image_linear(x:f32,y:f32,w:f32,h:f32,pw:u32,ph:u32,pixels:*const u8,length:usize) -> i32;
+        #[link_name = "draw_image"] fn host_image(x:f32,y:f32,w:f32,h:f32,pw:u32,ph:u32,pixels:*const u8,length:usize) -> i32;
+        #[link_name="audio_submit_stereo"] fn host_audio_submit_stereo(samples:*const i16,count:i32)->i32;
+        #[link_name = "audio_submit"]
+        fn host_audio_submit(samples: *const i16, count: i32) -> i32;
+        #[link_name = "draw_shader"]
+        fn host_draw_shader(index: i32) -> i32;
+        #[link_name = "draw_clear"]
+        fn host_draw_clear(rgba: u32) -> i32;
+        #[link_name="draw_clip"] fn host_draw_clip(x:f32,y:f32,w:f32,h:f32)->i32;
+        #[link_name="draw_clip_reset"] fn host_draw_clip_reset()->i32;
+        #[link_name = "draw_rect"]
+        fn host_draw_rect(x: f32, y: f32, width: f32, height: f32, rgba: u32) -> i32;
+        #[link_name = "draw_circle"]
+        fn host_draw_circle(x: f32, y: f32, radius: f32, rgba: u32) -> i32;
+        #[link_name = "save_size"]
+        fn host_save_size() -> i32;
+        #[link_name = "save_read"]
+        fn host_save_read(offset: i32, output: *mut u8, length: i32) -> i32;
+        #[link_name = "save_write"]
+        fn host_save_write(input: *const u8, length: i32) -> i32;
+        #[link_name = "rom_size"]
+        fn host_rom_size() -> i32;
+        #[link_name = "rom_read"]
+        fn host_rom_read(offset: i32, output: *mut u8, length: i32) -> i32;
+        #[link_name = "asset_read"]
+        fn host_asset_read(path: *const u8, path_len: i32, offset: i32, output: *mut u8, output_len: i32) -> i32;
+    }
+    /// Run the pinned Zelda3 engine with the explicitly selected ROM.
+    pub fn doom_tick(input:u32,state:u64)->u64 { unsafe {host_doom_tick(input,state)} }
+    pub fn zelda3_tick(input:u32,state:u64)->u64 { unsafe {host_zelda3_tick(input,state)} }
+    /// Unlock the signed manifest achievement at this zero-based index.
+    pub fn achievement_unlock(index: u32) -> bool { unsafe { host_achievement(index) == 1 } }
+    pub fn asset_read(path: &str, offset: u32, output: &mut [u8]) -> Option<u32> {
+        if path.len() > 1024 || output.len() > 65536 || offset > i32::MAX as u32 { return None; }
+        let result = unsafe { host_asset_read(path.as_ptr(), path.len() as i32, offset as i32, output.as_mut_ptr(), output.len() as i32) };
+        if result < 0 { None } else { Some(result as u32) }
+    }
+    /// Size of the ROM explicitly selected by the player, if available.
+    pub fn rom_count()->u32 { unsafe { host_rom_count() } }
+    pub fn rom_size_at(index:u32)->Option<u32> { let n=unsafe {host_rom_size_at(index)}; if n<0 {None} else {Some(n as u32)} }
+    pub fn rom_read_at(index:u32,offset:u32,output:&mut [u8])->Option<u32> {
+        if offset>i32::MAX as u32 || output.len()>65536 {return None;}
+        let n=unsafe {host_rom_read_at(index,offset as i32,output.as_mut_ptr(),output.len() as i32)};
+        if n<0 {None} else {Some(n as u32)}
+    }
+    pub fn rom_size() -> Option<u32> {
+        let size = unsafe { host_rom_size() };
+        if size < 0 { None } else { Some(size as u32) }
+    }
+    /// Read only the selected ROM; no host path is exposed to the game.
+    pub fn rom_read(offset: u32, output: &mut [u8]) -> Option<u32> {
+        if offset > i32::MAX as u32 || output.len() > 65536 { return None; }
+        let count = unsafe { host_rom_read(offset as i32, output.as_mut_ptr(), output.len() as i32) };
+        if count < 0 { None } else { Some(count as u32) }
+    }
+    pub fn save_size() -> Option<u32> {
+        let size = unsafe { host_save_size() }; if size < 0 { None } else { Some(size as u32) }
+    }
+    pub fn save_read(offset: u32, output: &mut [u8]) -> Option<u32> {
+        if offset > i32::MAX as u32 || output.len() > 65536 { return None; }
+        let result = unsafe { host_save_read(offset as i32, output.as_mut_ptr(), output.len() as i32) };
+        if result < 0 { None } else { Some(result as u32) }
+    }
+    /// Replace the game's save blob; persisted only when the tick completes successfully.
+    pub fn save_write(bytes: &[u8]) -> bool {
+        if bytes.len() > 1048576 { return false; }
+        unsafe { host_save_write(bytes.as_ptr(), bytes.len() as i32) == 0 }
+    }
+    /// Colors use 0xRRGGBBAA; coordinates use a 640 by 480 virtual canvas.
+    pub fn draw_clear(rgba: u32) -> bool { unsafe { host_draw_clear(rgba) == 0 } }
+    /// Replace the drawing clip within the 640x480 canvas. Empty clips draw nothing.
+    pub fn draw_clip(x:f32,y:f32,w:f32,h:f32)->bool {unsafe {host_draw_clip(x,y,w,h)==0}}
+    pub fn draw_clip_reset()->bool {unsafe {host_draw_clip_reset()==0}}
+    pub fn draw_rect(x: f32, y: f32, width: f32, height: f32, rgba: u32) -> bool {
+        unsafe { host_draw_rect(x,y,width,height,rgba) == 0 }
+    }
+    pub fn draw_circle(x: f32, y: f32, radius: f32, rgba: u32) -> bool {
+        unsafe { host_draw_circle(x,y,radius,rgba) == 0 }
+    }
+    /// Draw a compiled manifest fragment entry over the game viewport.
+    /// Draw a bounded PNG from the package's virtual assets folder.
+    pub fn draw_asset_image(path:&str,x:f32,y:f32,w:f32,h:f32)->bool {
+        if path.len()>1024 { return false; }
+        unsafe { host_asset_image(path.as_ptr(),path.len(),x,y,w,h) ==0 }
+    }
+    pub fn draw_asset_image_linear(path:&str,x:f32,y:f32,w:f32,h:f32)->bool {
+        if path.len()>1024 { return false; }
+        unsafe { host_asset_image_linear(path.as_ptr(),path.len(),x,y,w,h) ==0 }
+    }
+    pub fn draw_asset_image_linear_straight(path:&str,x:f32,y:f32,w:f32,h:f32)->bool {
+        if path.len()>1024 { return false; }
+        unsafe { host_asset_image_linear_straight(path.as_ptr(),path.len(),x,y,w,h) ==0 }
+    }
+    /// Draw raw RGBA pixels (at most 512 by 512) on the virtual canvas.
+    pub fn draw_image(x:f32,y:f32,w:f32,h:f32,pw:u32,ph:u32,pixels:&[u8]) -> bool {
+        if pw==0 || ph==0 || pw>512 || ph>512 || pixels.len()!=pw as usize*ph as usize*4 { return false; }
+        unsafe { host_image(x,y,w,h,pw,ph,pixels.as_ptr(),pixels.len()) == 0 }
+    }
+    pub fn draw_image_linear(x:f32,y:f32,w:f32,h:f32,pw:u32,ph:u32,pixels:&[u8]) -> bool {
+        if pw==0 || ph==0 || pw>512 || ph>512 || pixels.len()!=pw as usize*ph as usize*4 { return false; }
+        unsafe { host_image_linear(x,y,w,h,pw,ph,pixels.as_ptr(),pixels.len()) == 0 }
+    }
+    pub fn draw_shader_asset_image(index: u32, path: &str) -> bool {
+        if index > i32::MAX as u32 || path.is_empty() || path.len() > 1024 { return false; }
+        unsafe { host_shader_asset_image(index, path.as_ptr(), path.len()) == 0 }
+    }
+    pub fn draw_shader_image(index:u32,pw:u32,ph:u32,pixels:&[u8])->bool {
+        if index > i32::MAX as u32 || pw == 0 || ph == 0 || pw > 512 || ph > 512 || pixels.len() != pw as usize * ph as usize * 4 { return false; }
+        unsafe { host_shader_image(index,pw,ph,pixels.as_ptr(),pixels.len()) == 0 }
+    }
+    pub fn draw_shader(index: u32) -> bool {
+        if index > i32::MAX as u32 { return false; }
+        unsafe { host_draw_shader(index as i32) == 0 }
+    }
+    pub const BUTTON_B:u32=1<<4;
+    pub const BUTTON_Y:u32=1<<5;
+    pub const BUTTON_START:u32=1<<6;
+    pub const BUTTON_SELECT:u32=1<<7;
+    pub const HELD_B:u32=1<<12;
+    pub const HELD_Y:u32=1<<13;
+    pub const HELD_START:u32=1<<14;
+    pub const HELD_SELECT:u32=1<<15;
+    pub const BUTTON_A:u32=1<<16;
+    pub const BUTTON_X:u32=1<<17;
+    pub const BUTTON_L:u32=1<<18;
+    pub const BUTTON_R:u32=1<<19;
+    pub const HELD_A:u32=1<<20;
+    pub const HELD_X:u32=1<<21;
+    pub const HELD_L:u32=1<<22;
+    pub const HELD_R:u32=1<<23;
+    pub const HELD_LEFT: u32 = 1 << 8;
+    pub const HELD_RIGHT: u32 = 1 << 9;
+    pub const HELD_UP: u32 = 1 << 10;
+    pub const HELD_DOWN: u32 = 1 << 11;
+    /// Submit mono signed 16-bit PCM at 48 kHz, bounded to 1,600 samples per tick.
+    pub fn audio_submit_stereo(samples:&[i16])->bool{samples.len()<=1600&&samples.len()%2==0&&unsafe{host_audio_submit_stereo(samples.as_ptr(),samples.len() as i32)==0}}
+    pub fn audio_submit(samples: &[i16]) -> bool {
+        if samples.len() > 1600 { return false; }
+        unsafe { host_audio_submit(samples.as_ptr(), samples.len() as i32) == 0 }
+    }
+}

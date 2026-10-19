@@ -1,0 +1,32 @@
+title = "Collect Stars"
+description = "Find and collect stars around the board. Move with the arrow keys or WASD, improve your score and earn local achievements."
+author = "GamePKG contributors"
+genres = ["Arcade"]
+engine_version = ">=0.1.13, <0.2.0"
+format_version = 1
+id = "com.gamepkg.collect-stars"
+version = "0.1.0"
+entry_world = "game"
+lockfile_sha256 = "28385a27f421a8cc8b417127fdbd67aef322b4394d8d26ad6f8556da0552d843"
+shader_profile = "slang"
+
+[limits]
+recommended_storage_bytes = 1048576
+recommended_memory_bytes = 8388608
+hard_memory_bytes = 16777216
+
+[permissions]
+input = true
+audio = false
+save = false
+network = "none"
+
+[[achievements]]
+id = "first_star"
+title = "First star"
+description = "Collect your first star."
+
+[[achievements]]
+id = "ten_stars"
+title = "Star collector"
+description = "Collect ten stars in one session."

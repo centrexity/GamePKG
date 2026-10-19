@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Format specification — GamePKG</title>
+  <meta name="description" content="GamePKG package signatures, runtime profiles, limits, catalogs, and portable stores.">
+  <link rel="icon" type="image/png" href="../assets/gamepkg-icon.png">
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #10171d; color: #e8eef1; line-height: 1.6; }
+    body { margin: 0; } main { max-width: 780px; margin: auto; padding: 36px 24px 60px; }
+    a { color: #91dfc7; } h1 { line-height: 1.15; font-size: clamp(2rem, 6vw, 3.5rem); }
+    h2 { margin-top: 2rem; } li { margin: .6rem 0; } pre { overflow-x: auto; padding: 16px; background: #1b2931; border-radius: 8px; }
+    .notice { padding: 16px; border-left: 3px solid #91dfc7; background: #17232b; } code { font-size: .95em; }
+    footer { margin-top: 36px; border-top: 1px solid #40535e; padding-top: 18px; }
+  </style>
+</head>
+<body><main>
+<nav aria-label="Main"><a href="../index.html">← GamePKG</a> · <a href="../guide/index.html">Start playing</a></nav>
+<h1>GamePKG format: foundation profile</h1>
+<p>The ZIP contains <code>manifest.toml</code>, <code>signature.toml</code>, <code>thumbnail.png</code>, <code>LICENSE</code>, <code>CREDITS.md</code>, <code>source/Cargo.toml</code>, <code>source/Cargo.lock</code>, <code>source/src/lib.rs</code>, optional <code>shaders/*.slang</code>, and <code>assets/**</code>. All paths are relative UTF-8 paths with forward slashes. Directory entries are omitted. Compression methods are store and zstd; the packer currently writes store for every file.</p>
+<p>The manifest example in <code>examples/minimal/manifest.toml</code> is authoritative for currently supported fields. Unknown fields fail validation. <code>lockfile_sha256</code> is the SHA-256 of raw Cargo.lock bytes; it is lockfile integrity, not a complete SBOM.</p>
+<h2>Guest dependency policy</h2>
+<p>Game source must have <strong>no Cargo dependencies</strong>, including <code>gamepkg-*</code> crates. <code>[dependencies]</code> must be absent or empty. Build, development, target-specific, workspace, patch, replace and feature sections are rejected. Renamed, optional, Git and path dependencies receive no exception.</p>
+<p><code>source/Cargo.lock</code> must use version 3 or 4 and contain exactly one package with the root Cargo name and version, without dependency lists, sources, checksums or extra package fields. Its raw bytes must match <code>lockfile_sha256</code>.</p>
+<p>The host injects the scoped <code>gamepkg::</code> module after source validation. It supplies input, scoped assets/ROMs/saves, drawing, shaders, textures, audio and achievements. It is not a Cargo dependency. Packing, verification, installation and building enforce this policy; signatures and settings cannot waive it. GamePKG's own host dependencies belong to the player implementation, not the game package. See the <a href="../guide/developers.html">developer instructions</a> for minimal Cargo files and API examples.</p>
+<h2>Signature encoding</h2>
+<p><code>signature.toml</code> has <code>public_key</code> (32 bytes in hexadecimal) and <code>signature</code> (64 bytes in hexadecimal). The manifest includes <code>creator_key</code> (32 bytes in hexadecimal), which must match the signature envelope key. Verification checks that embedded key; advanced callers may additionally supply an externally trusted key. An optional <code>update_url</code> is an HTTPS or Tor onion URL pointing directly to the latest signed package.</p>
+<p>The signed message is a SHA-256 tree digest. Initialize SHA-256 with UTF-8 bytes <code>GamePKG tree v1</code> and one NUL byte. Sort every file except <code>signature.toml</code> lexicographically by its UTF-8 name. For each, hash: name byte length as a little-endian u64, name bytes, content byte length as a little-endian u64, then the raw 32-byte SHA-256 of its contents. Ed25519 signs the resulting 32-byte digest. This includes the manifest, shaders, source, assets, and license. ZIP timestamps, entry order and compression are not signed.</p>
+<h2>Runtime and compatibility</h2>
+<p><code>runtime_profile</code> is <code>core-v1</code> (the legacy default) or <code>component-v1</code>.
+<code>entry_world</code> must be <code>game</code> for compilation and play. Source must expose a
+callable <code>game_tick(input: u32, state: u64) -&gt; u64</code>; root re-exports from checked
+modules are supported. The host generates the export wrapper. Builds require
+a valid root tick export before publishing their cache.</p>
+<p>Component games use the versioned <code>gamepkg:engine@0.1.0</code> world in
+<code>wit/game.wit</code>. Both profiles receive scoped assets, input, draw commands,
+audio, saves, explicitly selected ROM reads and declared file import/export. They receive no WASI or
+ambient filesystem/network imports. <code>engine_version</code> is a semantic-version
+requirement checked against the host during verification and loading.
+<code>save_schema</code> is a positive integer; changing it selects a separate save
+namespace without deleting or converting earlier saves.</p>
+<p>Compilation runs in an isolated Linux environment, including through WSL 2
+on Windows. The desktop player presents through host-controlled Vulkan by default, with an explicit OpenGL option.</p>
+<p>An optional top-level <code>NOTICE</code> carries license attribution and is included in the signed tree. Creators choose the license in their package's <code>LICENSE</code>; the host's Apache 2.0 license does not dictate the license of independently authored games.</p>
+<h2>Creator identity and update continuity</h2>
+<p>A creator's trusted public key identifies the signing authority. The installer binds that key to the package ID after the user's initial trust decision. An update must have the same ID, a strictly higher semantic version, and a valid signature from the pinned creator key. Unrelated keys cannot replace a package merely by claiming its ID. The installed archive records the trusted key; install and update enforce same-ID/same-key continuity and increasing semantic versions. Updates that change the creator key are rejected.</p>
+<p><code>requires_rom</code> is an optional top-level boolean, defaulting to false. True declares that a ROM must be supplied by the end user. It is signed metadata; the host never infers permission to fetch or provide a ROM. The CLI accepts <code>run &lt;id&gt; --rom &lt;file&gt;</code> and the desktop library accepts an explicit ROM file path. Launching a ROM-required game without a file fails. The host shares a bounded read-only session snapshot through scoped ROM operations; no folder access is granted.</p>
+<p>Update URLs support HTTP/HTTPS v3 <code>.onion</code> services through a local Tor SOCKS proxy. Ordinary hosts require HTTPS. Onion redirects cannot leave onion hosts, and missing Tor connectivity never triggers a direct fallback.</p>
+<h2>Game list format</h2>
+<p><code>.gamepkglist</code> is a UTF-8 TOML document with <code>format_version = 1</code> and a <code>games</code> array written as <code>[[games]]</code> tables. Each entry requires <code>id</code>, <code>title</code>, and <code>download_url</code>; <code>version</code> (semantic version), <code>requires_rom</code> (boolean), and <code>description</code> (up to 4096 bytes of plain text) are optional unverified claims. Unknown fields, duplicate IDs, unsafe URLs, inputs exceeding 4 MiB, and more than 10,000 games are rejected.</p>
+<p>Import saves metadata only, with no package/thumbnail downloads and no creator trust. Games remain in a Not downloaded state until selected for download. A fetched package must verify and match the catalog ID; first installation requires creator approval. Installed signed manifest metadata takes precedence over catalog claims. Identical reimports merge without duplication; conflicting existing IDs reject the import atomically.</p>
+<p>The <code>[limits]</code> table accepts <code>hard_memory_bytes</code> (required, positive, at most 512 MiB) and <code>recommended_memory_bytes</code> (optional, positive, no greater than the hard limit). The recommendation defaults to the hard limit and is advisory; the runtime enforces the hard limit on guest linear memory. Legacy <code>memory_bytes</code> is an alias for <code>hard_memory_bytes</code>, and both names cannot appear together.</p>
+<h2>Shared store assets</h2>
+<p>A signed manifest may contain <code>shared_assets</code>, mapping asset-relative paths to
+<code>sha256</code> (64 lowercase hexadecimal characters) and <code>size</code> (bytes, at most
+64 MiB). Referenced paths cannot also be embedded under <code>assets/</code>. Logical
+contents remain limited to 256 MiB. Reusing a digest requires the same size.</p>
+<p>The host verifies signed references offline, then requires matching local pool
+blobs before installation, builds, or play. It does not download blobs
+automatically. Gameplay uses private verified snapshots through the existing
+scoped asset API. <code>pack --shared-assets</code> creates store packages; ordinary
+packages retain their embedded assets for self-contained sideloading.</p>
+<h2>Portable store bundle</h2>
+<p><code>.gamepkgstore</code> is a bounded ZIP containing <code>store.toml</code> with
+<code>format_version = 1</code>, <code>packages/&lt;id&gt;.gamepkg</code>, and referenced shared blobs at
+<code>blobs/&lt;sha256&gt;.blob</code>. All package signatures and referenced blob hashes/sizes
+are checked before import. Unknown files, missing or unreferenced blobs,
+duplicate entries, and conflicting identities or sizes are rejected. Limits:
+10,000 entries, 64 MiB per entry, 256 MiB total. Packages retain their own
+creator identities; importing new creators requires approval. Inspection does
+not install or execute games.</p>
+<h2>RGBA sprite drawing</h2>
+<p>The host API includes <code>draw-image(x, y, width, height, pixel-width, pixel-height, pixels)</code>. Coordinates use the 640×480 virtual canvas; the last argument is a row-major RGBA byte list with exactly four bytes per pixel. Each pixel dimension is 1–512. Image bytes count toward a per-frame 8 MiB budget and the existing 1,024-command budget. The host copies accepted pixels into a private frame snapshot, and validates finite display coordinates and dimensions. The desktop uses nearest-neighbor sampling and alpha transparency. Sprites are scoped host draw commands; this API does not expose arbitrary GPU bindings.</p>
+<p><code>draw-asset-image(path, x, y, width, height)</code> loads a PNG through the verified virtual asset API, including resolved shared references. The encoded file is limited to 2 MiB and the decoder allocation budget to 8 MiB; the same 512×512 dimensions, exact RGBA snapshot, and frame budget apply. Invalid data, unavailable assets, and paths outside the asset root return false.</p>
+<p>GLSL fragment passes may use one host-owned combined <code>Sampler2D gamepkgTexture</code> at binding 0 via <code>draw_shader_image(index, pixel_width, pixel_height, rgba)</code>. Pixels are snapshotted before queueing, bounded to 512×512 and included in the shared 8 MiB frame image budget. Additional shader resources are rejected. Core and WIT runtimes support this API. Textured SPIR-V/WGSL playback validates one float 2D image and one non-comparison sampler at group 0 bindings 0 and 1 before translating to GLSL. SPIR-V builds define <code>GAMEPKG_SEPARATE_SAMPLER=1</code>; use the example’s explicit texture/sampler branch.</p>
+<h2>Multiple player ROMs</h2>
+<p>Optional <code>[[roms]]</code> entries contain unique <code>id</code> and human-readable <code>title</code> fields. Up to eight entries are permitted. A nonempty list implies <code>requires_rom = true</code>; legacy <code>requires_rom = true</code> without entries requires one file. The player supplies every file in declaration order. Read-only session snapshots are limited to 64 MiB per file and 128 MiB combined. Core and component hosts expose count, indexed size and indexed read; legacy functions refer to the first file.</p>
+<h2>Installed integrity and repair</h2>
+<p>Signed package verification covers the archive contents; shared assets are checked against signed hashes. Compiled Wasm has a host-written SHA-256 receipt checked before playback. Integrity repair restores damaged archives only from a verified local recovery copy, and rebuilds compiled files from verified source. A damaged or missing recovery copy requires a verified replacement original. Player saves and history are never reset automatically. Shader caches retain playback validation separately. Build checksums detect changes, but are not signatures protecting a compromised host.</p>
+<h2>Shader asset textures and execution policy</h2>
+<p><code>draw-shader-asset-image(index, path)</code> supplies a PNG from the verified virtual assets to the selected fragment pass. It uses the same path checks, 2 MiB encoded limit, 512×512 decoded limit, 8 MiB decoder allocation limit, private snapshots and frame image budget as sprite loading. Unknown indices and invalid files return false. The core ABI names this operation <code>draw_shader_asset_image</code>; the component API uses the hyphenated name.</p>
+<p>The runtime uses memory limits and host time deadlines, without instruction metering. Legacy instruction-budget values in existing signed manifests are accepted but ignored; new manifests omit them.</p>
+<h2>Game display metadata</h2>
+<p>Since 0.1.13, optional signed root fields include <code>title</code> (256 bytes), <code>description</code> (4096 bytes, with line breaks), <code>author</code> (128 bytes), <code>homepage</code> (2048 bytes, HTTPS/Tor), and <code>genres</code> (up to eight unique labels, 32 bytes each). Text is literal, without markup; control sequences and bidirectional formatting controls are rejected. Old packages fall back to their IDs. Catalog entries may also supply unverified descriptions. Installed signed metadata takes precedence. Use <code>engine_version = "&gt;=0.1.13, &lt;0.2.0"</code> and update older hosts first. See the developer guide for the manifest example.</p>
+<h2>User-selected native-server permission</h2>
+<p>Networking uses a signed boolean: <code>network = false</code> disables it and <code>network = true</code> enables supported HTTPS/TCP/UDP operations for internet and local-network addresses without IP or endpoint allowlists. Host-owned handles, transfer and job quotas, time limits and process isolation remain enforced. Legacy <code>none</code> means disabled; legacy <code>https</code>, <code>multiplayer</code> and <code>all</code> mean enabled. Legacy endpoint/local-grant fields are accepted for reading and omitted on writing. This requires the current source-built host; released 0.1.17 binaries retain the older policy.</p>
+<p>Only an exact host-approved folder-backed native selector may sign <code>game_data.user_selected_servers = true</code> to expose remembered join, hosting and master launch addresses. These are preferences, not capability restrictions. Blank choices clear launch commands; they do not disable enabled networking. Disabled networking ignores saved choices. Local/private addresses need no separate opt-in. Choices remain scoped to the game/creator and validated against command injection. Ordinary guest packages cannot request these selector-specific launch controls.</p>
+<h2>Explicit file import and export</h2>
+<p>Optional <code>[[permissions.files]]</code> entries declare a unique ASCII <code>id</code>, a short
+<code>title</code>, 1–8 lowercase alphanumeric <code>extensions</code>, <code>max_bytes</code>, and <code>read</code>/<code>write</code>
+booleans. At most 32 purposes are allowed. These permissions require input and
+are default denied. Read-only purposes are limited to 64 MiB; export-enabled
+purposes are limited to 1 MiB. The smaller declared limit always applies.</p>
+<p><code>file_import(index)</code> and <code>file_export(index, suggested_name, bytes)</code> return an
+opaque per-session request handle. Requests require a fresh focused key or
+pointer press and commit only after a successful tick. Poll <code>file_status</code>, then
+use bounded <code>file_name</code>/<code>file_read</code> calls and release completed requests with
+<code>file_close</code>. Reads are limited to 64 KiB per call. Cancellation, errors and
+unavailable headless dialogs are explicit outcomes. The native app opens system
+dialogs; browser exports use explicit upload and save/download controls.</p>
+<p>Only selected bytes and portable basenames reach the game. Names cannot contain
+paths, streams, control characters or Windows device names. File extensions are
+filters and permissions, not proof of the file's actual format. There is no
+ambient directory access, automatic export destination or reusable OS handle.
+See the <a href="../guide/developers.html">developer guide</a>
+for the manifest and polling contract.</p>
+<h3>Recorded music memory</h3>
+<p><code>limits.music_memory_bytes</code> reserves host decoder and output storage inside the
+signed hard limit. It requires audio permission and a source game. Combined music
+and effect shares must leave at least 64 KiB for the game. The host also checks
+the selected player ceiling and the bundled decoder's actual declaration.
+Music controls stage until execution, save and history success. Games receive
+scoped controls and completion/failure queries, never a decoder or socket handle.</p>
+<footer><a href="../support/index.html">Support GamePKG</a> · <a href="../guide/allowlist.html">Game source policy</a> · <a href="https://github.com/centrexity/GamePKG/blob/main/html/spec/index.md">Documentation source</a> · GamePKG · Apache 2.0</footer>
+</main></body></html>

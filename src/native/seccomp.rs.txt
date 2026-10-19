@@ -1,0 +1,14 @@
+// Trusted native-worker entry guard. No game source can name this module.
+mod __gamepkg_security {
+ #[repr(C)] struct Filter {code:u16,jt:u8,jf:u8,k:u32}
+ #[repr(C)] struct Program {len:u16,filter:*const Filter}
+ unsafe extern "C" {fn prctl(option:i32,...)->i32;}
+ pub(super) fn lockdown(){
+  let allowed:&[u32]=&[/* GAMEPKG_SYSCALLS */];
+  let mut code=vec![Filter{code:0x20,jt:0,jf:0,k:4},Filter{code:0x15,jt:1,jf:0,k:/* GAMEPKG_ARCH */},Filter{code:0x06,jt:0,jf:0,k:0x80000000},Filter{code:0x20,jt:0,jf:0,k:0}];
+  for nr in allowed {code.push(Filter{code:0x15,jt:0,jf:1,k:*nr});code.push(Filter{code:0x06,jt:0,jf:0,k:0x7fff0000});}
+  code.push(Filter{code:0x06,jt:0,jf:0,k:0x00050001});
+  let program=Program{len:code.len()as u16,filter:code.as_ptr()};
+  unsafe{assert_eq!(prctl(38,1usize,0usize,0usize,0usize),0,"native no-new-privileges failed");assert_eq!(prctl(22,2usize,&program as *const Program,0usize,0usize),0,"native syscall isolation failed");}
+ }
+}

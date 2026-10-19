@@ -1,0 +1,7 @@
+{
+  "revision": 6889,
+  "notice": "Public deterministic test credential; no real account or user key.",
+  "private_key": "94aa74910b029aa67f0308e2a7328d63edb4f6cbc41ab0f6",
+  "challenge": "-655697d89d7b35edcb12a2a4aca44581645b1b203076dd82",
+  "response": "25ed347879863b0ae22f73592edb6b4848b6699ba96855e4"
+}

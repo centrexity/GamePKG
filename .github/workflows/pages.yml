@@ -1,0 +1,31 @@
+name: Publish website
+on:
+  push:
+    branches: [main]
+    paths: ['html/**', 'tools/check_site.py', '.github/workflows/pages.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: gamepkg-pages
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check public site links and prepare static output
+        run: python3 tools/check_site.py --output "$RUNNER_TEMP/gamepkg-site"
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ runner.temp }}/gamepkg-site
+      - name: Publish
+        id: deployment
+        uses: actions/deploy-pages@v4

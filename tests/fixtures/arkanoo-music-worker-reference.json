@@ -1,0 +1,86 @@
+{
+  "purpose": "Deterministic host output-clock regression fingerprints; decoder differences from SDL remain open",
+  "upstream_commit": "9d613e78c9ed5657ae7fda9206cd4a82a893b7c8",
+  "sdl": "2.30.0",
+  "sdl_mixer": "2.8.0",
+  "reference_sha256": "9373cd5c549e6f343c028a6233f6d4f0fc7414b4b9779c26ae40db4e4cdbb8bc",
+  "reference_pipeline": "SDL_mixer at 44100 Hz, then whole-buffer SDL_ConvertAudio to 48000 Hz stereo S16LE",
+  "decoder_memory_bytes": 6291456,
+  "host_audio_bytes": 65536,
+  "total_test_budget_bytes": 16777216,
+  "game_tick_calls": 0,
+  "cases": [
+    {
+      "name": "ambient-sad-piano-313614.mp3",
+      "samples": 17763784,
+      "sdl_different": 6059,
+      "sdl_maximum_delta": 1,
+      "sha256": "0587d70761b6f10c45c9342e965d9fb815ca5776ceb156b337d22c706c53d872",
+      "input_sha256": "306a6d2af31be8f0331062d84cd054bf302fed0b2495074775db0126b81c68a2"
+    },
+    {
+      "name": "calm-ambient-tender-piano-354930.mp3",
+      "samples": 11474334,
+      "sdl_different": 4695,
+      "sdl_maximum_delta": 1,
+      "sha256": "676429fcb154357b6135aa9c5a81d86e4d32403686aab0d1ca28744c0a4faa05",
+      "input_sha256": "583d7db202ddd535bcc61f75282de9d222b8a8c89d5d86b2d94cc6a4aee50042"
+    },
+    {
+      "name": "calm-classical-piano-291012.mp3",
+      "samples": 9781500,
+      "sdl_different": 11814,
+      "sdl_maximum_delta": 2,
+      "sha256": "0b820f1372819ed754f349c411ddf659cc252787c91e1faeb166a69838ab3fdc",
+      "input_sha256": "c57396b689220ca11842315ebdd25ea188d547dae85c14e8dd10e5998125fd70"
+    },
+    {
+      "name": "calmness-piano-355587.mp3",
+      "samples": 10616682,
+      "sdl_different": 6507,
+      "sdl_maximum_delta": 2,
+      "sha256": "0aab6fc05b6569587dae597c4ae038ae48b71c74c8f14ecb13e1954a83a6b30f",
+      "input_sha256": "9c03c46c50c2890e066a9a356102701d8f74fce286d9bc332091dad7cd7560aa"
+    },
+    {
+      "name": "celestial-collapse-ii-387515.mp3",
+      "samples": 23022838,
+      "sdl_different": 60691,
+      "sdl_maximum_delta": 2,
+      "sha256": "967db6441314cbf31656f7dc8d4304931b50d46859fe8c5152492e3efdff0af8",
+      "input_sha256": "73be72848c66ff8535fcd6540217ea0efdb51eeee4bd176d41a1f67a4d9cd1b2"
+    },
+    {
+      "name": "movie-soundtrack-cosmos-254968.mp3",
+      "samples": 17113502,
+      "sdl_different": 35172,
+      "sdl_maximum_delta": 2,
+      "sha256": "273906c951da8eacca2dd7274c5377bc63bbc2f27fe37b18709cf47ca3fead6c",
+      "input_sha256": "7003d3557d822044a2492feaaaa7ecc64b57729d229a734bbacb2c58f6f7a1df"
+    },
+    {
+      "name": "piano-438549.mp3",
+      "samples": 8066296,
+      "sdl_different": 15114,
+      "sdl_maximum_delta": 2,
+      "sha256": "8cf50ab6e8b123ad85bdf221f508b46bd776891d7bdf13aeab02452e7345af71",
+      "input_sha256": "8ca9055f0c9410df35868f49ee224dbfaca1517d819d8fb097b83721da55c361"
+    },
+    {
+      "name": "piano-background-music-soft-344547.mp3",
+      "samples": 13962028,
+      "sdl_different": 16135,
+      "sdl_maximum_delta": 2,
+      "sha256": "d2d5f872eba249d64be796629dc7b578d696626f2739741bc6215674b93ed0a0",
+      "input_sha256": "fc7c7da8fa1b147cb047726559d573b7fb745bc168301fa5f7adc1ba9ef40e2f"
+    },
+    {
+      "name": "soft-piano-music-312509.mp3",
+      "samples": 14795348,
+      "sdl_different": 25224,
+      "sdl_maximum_delta": 2,
+      "sha256": "dfc762044f4598f27af39f00f1cf56069c53b6efbaea3ae9931a8f975a831f6b",
+      "input_sha256": "650f42105f85c8edf61291fa575fe052a83970f21f422b93e05664146eb7036f"
+    }
+  ]
+}

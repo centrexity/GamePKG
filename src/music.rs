@@ -1,0 +1,1443 @@
+//! Host-owned asynchronous music playback, controlled through staged game calls.
+use crate::{audio_decode, audio_resample::Resampler, memory_budget};
+use anyhow::{ensure, Context, Result};
+use std::{
+    io::Read,
+    sync::{
+        atomic::{AtomicBool, AtomicU64, Ordering},
+        Arc, Mutex,
+    },
+};
+pub mod controls;
+mod ring;
+use ring::Ring;
+pub const HOST_BYTES: u64 = 65536;
+#[cfg(test)]
+const QUEUE_FRAMES: usize = 4800;
+const BLOCK_FRAMES: usize = ring::FRAMES;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum Status {
+    Stopped,
+    Loading,
+    Playing,
+    Paused,
+    Ended,
+    Failed,
+}
+impl Status {
+    fn from_tag(tag: u64) -> Self {
+        match tag & 7 {
+            0 => Self::Stopped,
+            1 => Self::Loading,
+            2 => Self::Playing,
+            3 => Self::Paused,
+            4 => Self::Ended,
+            _ => Self::Failed,
+        }
+    }
+    fn active(self) -> bool {
+        matches!(self, Self::Loading | Self::Playing | Self::Paused)
+    }
+}
+// Publish generation, status and gain together so an output frame never sees
+// half a control batch. Gain uses eight bits (legal values are 0 through 128).
+const GENERATION_SHIFT: u32 = 11;
+const MAX_GENERATION: u64 = u64::MAX >> GENERATION_SHIFT;
+fn tag(generation: u64, status: Status) -> u64 {
+    (generation << GENERATION_SHIFT) | (128 << 3) | status as u64
+}
+fn gain(tag: u64) -> u32 {
+    ((tag >> 3) & 255) as u32
+}
+struct State {
+    generation: u64,
+    request: Option<String>,
+    error: Option<String>,
+}
+struct Shared {
+    sample_rate: u32,
+    state: Mutex<State>,
+    ring: Ring,
+    status: AtomicU64,
+    eof: AtomicU64,
+    quit: AtomicBool,
+    consumer_generation: AtomicU64,
+    played: AtomicU64,
+    // All data buffers and queue storage drop before this reservation.
+    _reservation: memory_budget::Lease,
+}
+impl Shared {
+    fn generation(&self) -> u64 {
+        self.status.load(Ordering::Acquire) >> GENERATION_SHIFT
+    }
+    fn transition(&self, generation: u64, change: impl Fn(Status) -> Option<Status>) -> bool {
+        let mut current = self.status.load(Ordering::Acquire);
+        loop {
+            if current >> GENERATION_SHIFT != generation {
+                return false;
+            }
+            let Some(status) = change(Status::from_tag(current)) else {
+                return false;
+            };
+            match self.status.compare_exchange_weak(
+                current,
+                (current & !7) | status as u64,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => return true,
+                Err(next) => current = next,
+            }
+        }
+    }
+    fn replace_generation(&self, generation: u64, status: Status) {
+        let mut current = self.status.load(Ordering::Acquire);
+        loop {
+            let next =
+                (generation << GENERATION_SHIFT) | (u64::from(gain(current)) << 3) | status as u64;
+            match self.status.compare_exchange_weak(
+                current,
+                next,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => return,
+                Err(next) => current = next,
+            }
+        }
+    }
+    fn force_status(&self, status: Status) {
+        let mut current = self.status.load(Ordering::Acquire);
+        loop {
+            match self.status.compare_exchange_weak(
+                current,
+                (current & !7) | status as u64,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => return,
+                Err(next) => current = next,
+            }
+        }
+    }
+}
+#[derive(Clone)]
+pub struct Output(Arc<Shared>);
+pub struct Service {
+    output: Output,
+    worker: Option<std::thread::JoinHandle<()>>,
+}
+/// Trusted controls prepared by a host tick. No guest owns these references.
+#[derive(Clone, Copy)]
+pub enum Command<'a> {
+    Play(&'a str),
+    Volume(u32),
+    Pause(bool),
+    Stop,
+}
+fn next_generation(state: &mut State) -> Result<u64> {
+    let next = state
+        .generation
+        .checked_add(1)
+        .filter(|value| *value <= MAX_GENERATION)
+        .context("music request counter exhausted")?;
+    state.generation = next;
+    Ok(next)
+}
+impl Service {
+    pub fn new(
+        factory: audio_decode::Factory,
+        package: &crate::archive::Package,
+        audio_allowed: bool,
+        budget: memory_budget::Budget,
+        memory_bytes: usize,
+    ) -> Result<Self> {
+        Self::with_rate(factory, package, audio_allowed, budget, memory_bytes, 48000)
+    }
+    /// Original mixer-rate source for combined music/effect mixing before
+    /// conversion. This output must not be attached to a 48 kHz PCM consumer.
+    pub fn new_original_rate(
+        factory: audio_decode::Factory,
+        package: &crate::archive::Package,
+        audio_allowed: bool,
+        budget: memory_budget::Budget,
+        memory_bytes: usize,
+    ) -> Result<Self> {
+        Self::with_rate(factory, package, audio_allowed, budget, memory_bytes, 44100)
+    }
+    fn with_rate(
+        factory: audio_decode::Factory,
+        package: &crate::archive::Package,
+        audio_allowed: bool,
+        budget: memory_budget::Budget,
+        memory_bytes: usize,
+        sample_rate: u32,
+    ) -> Result<Self> {
+        ensure!(audio_allowed, "music requires audio permission");
+        ensure!(
+            (65536..=16 * 1048576).contains(&memory_bytes),
+            "invalid music decoder budget"
+        );
+        let reservation = budget.reserve(HOST_BYTES)?;
+        let package = package.try_clone_verified()?;
+        ensure!(
+            std::mem::size_of::<Pipeline>()
+                + std::mem::size_of::<Shared>()
+                + std::mem::size_of::<[i16; 1600]>()
+                + controls::Transaction::MEMORY_BYTES
+                + 4096
+                <= HOST_BYTES as usize,
+            "music host staging exceeds its reservation"
+        );
+        let shared = Arc::new(Shared {
+            sample_rate,
+            state: Mutex::new(State {
+                generation: 0,
+                request: None,
+                error: None,
+            }),
+            ring: Ring::new(),
+            status: AtomicU64::new(tag(0, Status::Stopped)),
+            eof: AtomicU64::new(0),
+            quit: AtomicBool::new(false),
+            consumer_generation: AtomicU64::new(0),
+            played: AtomicU64::new(0),
+            _reservation: reservation,
+        });
+        let output = Output(shared.clone());
+        let worker_shared = shared.clone();
+        let worker = std::thread::Builder::new()
+            .name("gamepkg-music".into())
+            .spawn(move || run(worker_shared, factory, package, budget, memory_bytes))?;
+        shared.ring.set_worker(worker.thread().clone());
+        Ok(Self {
+            output,
+            worker: Some(worker),
+        })
+    }
+    pub fn output(&self) -> Output {
+        self.output.clone()
+    }
+    /// Validate the entire tick before changing playback. Intermediate track
+    /// replacements have no output interval, so only the final request loads.
+    /// The caller invokes this only after execution and persistence succeed.
+    pub fn batch(&self, commands: &[Command<'_>]) -> Result<()> {
+        self.batch_with(commands, || true)
+    }
+    pub(crate) fn batch_with(
+        &self,
+        commands: &[Command<'_>],
+        publish: impl FnOnce() -> bool,
+    ) -> Result<()> {
+        self.batch_for_tick(commands, publish, None)
+    }
+    fn batch_for_tick(
+        &self,
+        commands: &[Command<'_>],
+        publish: impl FnOnce() -> bool,
+        active_generation: Option<u64>,
+    ) -> Result<()> {
+        ensure!(commands.len() <= 32, "music control queue is full");
+        let shared = &self.output.0;
+        let mut state = shared
+            .state
+            .lock()
+            .map_err(|_| anyhow::anyhow!("music unavailable"))?;
+        ensure!(!shared.quit.load(Ordering::Acquire), "music is stopped");
+        let mut generation = state.generation;
+        let mut status = self.output.status();
+        let mut volume = None;
+        let mut request = None;
+        let mut changed = false;
+        let mut paused = None;
+        for command in commands {
+            match *command {
+                Command::Play(path) => {
+                    ensure!(crate::archive::valid_path(path), "invalid music asset path");
+                    generation = generation
+                        .checked_add(1)
+                        .filter(|value| *value <= MAX_GENERATION)
+                        .context("music request counter exhausted")?;
+                    request = Some(path);
+                    status = Status::Loading;
+                    changed = true;
+                    paused = None;
+                }
+                Command::Stop => {
+                    generation = generation
+                        .checked_add(1)
+                        .filter(|value| *value <= MAX_GENERATION)
+                        .context("music request counter exhausted")?;
+                    request = None;
+                    status = Status::Stopped;
+                    changed = true;
+                    paused = None;
+                }
+                Command::Volume(value) => {
+                    ensure!(value <= 128, "music volume must be 0 to 128");
+                    volume = Some(value);
+                }
+                Command::Pause(value) => {
+                    // A track active at tick start can finish or fail while
+                    // the guest runs or persistence completes. Preserve that
+                    // terminal state without rejecting unrelated tick changes.
+                    if matches!(status, Status::Ended | Status::Failed)
+                        && !changed
+                        && active_generation == Some(generation)
+                    {
+                        continue;
+                    }
+                    ensure!(status.active(), "music is not active");
+                    status = if value {
+                        Status::Paused
+                    } else {
+                        Status::Playing
+                    };
+                    paused = Some(status);
+                }
+            }
+        }
+        let request = request.map(str::to_owned);
+        let mut current = shared.status.load(Ordering::Acquire);
+        ensure!(
+            !shared.quit.load(Ordering::Acquire),
+            "music worker is unavailable"
+        );
+        if !changed && paused.is_some() {
+            if matches!(Status::from_tag(current), Status::Ended | Status::Failed)
+                && active_generation == Some(current >> GENERATION_SHIFT)
+            {
+                paused = None;
+            } else {
+                ensure!(Status::from_tag(current).active(), "music is not active");
+            }
+        }
+        ensure!(publish(), "audio output rejected the tick's control batch");
+        loop {
+            // After acceptance, worker failures are asynchronous output faults,
+            // just as a decoder failure after a successfully queued Play is.
+            let next_status = if shared.quit.load(Ordering::Acquire) {
+                Status::Failed
+            } else if changed {
+                status
+            } else {
+                let actual = Status::from_tag(current);
+                if matches!(actual, Status::Ended | Status::Failed) {
+                    actual
+                } else {
+                    paused.unwrap_or(actual)
+                }
+            };
+            let next_generation = if changed {
+                generation
+            } else {
+                current >> GENERATION_SHIFT
+            };
+            let next = (next_generation << GENERATION_SHIFT)
+                | (u64::from(volume.unwrap_or_else(|| gain(current))) << 3)
+                | next_status as u64;
+            match shared.status.compare_exchange_weak(
+                current,
+                next,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => break,
+                Err(next) => current = next,
+            }
+        }
+        if changed {
+            state.generation = generation;
+            state.request = request;
+            state.error = None;
+            shared.eof.store(0, Ordering::Release);
+        }
+        if changed || paused == Some(Status::Paused) {
+            shared.ring.wait_consumer();
+        }
+        shared.ring.wake();
+        Ok(())
+    }
+    pub fn play(&self, path: &str) -> Result<()> {
+        ensure!(crate::archive::valid_path(path), "invalid music asset path");
+        let shared = &self.output.0;
+        let mut state = shared
+            .state
+            .lock()
+            .map_err(|_| anyhow::anyhow!("music unavailable"))?;
+        ensure!(!shared.quit.load(Ordering::Acquire), "music is stopped");
+        let generation = next_generation(&mut state)?;
+        state.request = Some(path.to_owned());
+        state.error = None;
+        shared.eof.store(0, Ordering::Release);
+        shared.replace_generation(generation, Status::Loading);
+        if shared.quit.load(Ordering::Acquire) {
+            shared.force_status(Status::Failed);
+            anyhow::bail!("music worker is unavailable");
+        }
+        // Replacement invalidates the old generation immediately. Wait for an
+        // already admitted output read before reporting the boundary complete.
+        shared.ring.wait_consumer();
+        shared.ring.wake();
+        Ok(())
+    }
+    pub fn pause(&self, paused: bool) -> Result<()> {
+        let shared = &self.output.0;
+        let state = shared
+            .state
+            .lock()
+            .map_err(|_| anyhow::anyhow!("music unavailable"))?;
+        ensure!(!shared.quit.load(Ordering::Acquire), "music is stopped");
+        ensure!(
+            shared.transition(state.generation, |status| status.active().then_some(
+                if paused {
+                    Status::Paused
+                } else {
+                    Status::Playing
+                }
+            )),
+            "music is not active"
+        );
+        // The callback never takes this lock. Pause returns after any already
+        // committed output read finishes; later reads observe the paused tag.
+        if paused {
+            shared.ring.wait_consumer();
+        }
+        shared.ring.wake();
+        Ok(())
+    }
+    pub fn volume(&self, volume: u32) -> Result<()> {
+        ensure!(volume <= 128, "music volume must be 0 to 128");
+        let shared = &self.output.0;
+        let mut current = shared.status.load(Ordering::Acquire);
+        loop {
+            let next = (current & !(255 << 3)) | (u64::from(volume) << 3);
+            match shared.status.compare_exchange_weak(
+                current,
+                next,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => break,
+                Err(next) => current = next,
+            }
+        }
+        Ok(())
+    }
+    pub fn stop(&self) -> Result<()> {
+        let shared = &self.output.0;
+        let mut state = shared
+            .state
+            .lock()
+            .map_err(|_| anyhow::anyhow!("music unavailable"))?;
+        let generation = next_generation(&mut state)?;
+        state.request = None;
+        state.error = None;
+        shared.replace_generation(generation, Status::Stopped);
+        shared.ring.wait_consumer();
+        shared.ring.wake();
+        Ok(())
+    }
+    pub fn error(&self) -> Option<String> {
+        self.output
+            .0
+            .state
+            .lock()
+            .ok()
+            .and_then(|state| state.error.clone())
+            .or_else(|| {
+                (self.output.status() == Status::Failed).then(|| "music worker unavailable".into())
+            })
+    }
+}
+impl Drop for Service {
+    fn drop(&mut self) {
+        let shared = &self.output.0;
+        shared.quit.store(true, Ordering::Release);
+        shared.force_status(Status::Stopped);
+        if let Ok(mut state) = shared.state.lock() {
+            state.request = None;
+        }
+        shared.ring.wake();
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
+    }
+}
+impl Output {
+    pub fn sample_rate(&self) -> u32 {
+        self.0.sample_rate
+    }
+    pub fn status(&self) -> Status {
+        Status::from_tag(self.0.status.load(Ordering::Acquire))
+    }
+    pub fn queued_frames(&self) -> usize {
+        self.0.ring.frames()
+    }
+    pub fn played_frames(&self) -> u64 {
+        let current = self.0.status.load(Ordering::Acquire);
+        if Status::from_tag(current) == Status::Stopped
+            || self.0.consumer_generation.load(Ordering::Acquire) != current >> GENERATION_SHIFT
+        {
+            return 0;
+        }
+        self.0.played.load(Ordering::Acquire)
+    }
+    /// Output-clock consumer. Producer and control locks cannot silence ready
+    /// samples. A guard permits one output consumer; it never waits for a lock.
+    pub fn read(&self, output: &mut [[i16; 2]]) -> usize {
+        if output.is_empty() || output.len() > BLOCK_FRAMES || self.0.quit.load(Ordering::Acquire) {
+            return 0;
+        }
+        let Some(mut consumer) = self.0.ring.consumer() else {
+            return 0;
+        };
+        let current = self.0.status.load(Ordering::Acquire);
+        let generation = current >> GENERATION_SHIFT;
+        if self.0.consumer_generation.load(Ordering::Relaxed) != generation {
+            self.0.played.store(0, Ordering::Relaxed);
+            self.0
+                .consumer_generation
+                .store(generation, Ordering::Release);
+        }
+        let status = Status::from_tag(current);
+        consumer.discard_through(generation, !status.active());
+        let mut count = 0;
+        for frame in output {
+            let current = self.0.status.load(Ordering::Acquire);
+            if current >> GENERATION_SHIFT != generation
+                || !matches!(Status::from_tag(current), Status::Loading | Status::Playing)
+            {
+                break;
+            }
+            let Some(played) = self.0.played.load(Ordering::Relaxed).checked_add(1) else {
+                self.0.transition(generation, |status| {
+                    status.active().then_some(Status::Failed)
+                });
+                break;
+            };
+            let Some(sample) = consumer.next(generation) else {
+                break;
+            };
+            let volume = gain(current) as i32;
+            *frame = sample.map(|sample| (i32::from(sample) * volume / 128) as i16);
+            self.0.played.store(played, Ordering::Release);
+            count += 1;
+        }
+        if self.0.eof.load(Ordering::Acquire) == generation && self.0.ring.empty() {
+            self.0.transition(generation, |status| {
+                status.active().then_some(Status::Ended)
+            });
+        }
+        count
+    }
+}
+
+struct Pipeline {
+    stream: audio_decode::Stream,
+    converter: Resampler,
+    input: [[f32; 2]; BLOCK_FRAMES],
+    output: [[f32; 2]; BLOCK_FRAMES],
+    decoded: [i16; 1600],
+    eof: bool,
+    original_rate: bool,
+}
+impl Pipeline {
+    fn new(stream: audio_decode::Stream, original_rate: bool) -> Result<Self> {
+        ensure!(
+            stream.sample_rate() == 44100 && stream.channels() == 2,
+            "unexpected music mixer format"
+        );
+        Ok(Self {
+            stream,
+            converter: Resampler::new(44100, 48000).map_err(anyhow::Error::msg)?,
+            input: [[0.0; 2]; BLOCK_FRAMES],
+            output: [[0.0; 2]; BLOCK_FRAMES],
+            decoded: [0; 1600],
+            eof: false,
+            original_rate,
+        })
+    }
+    fn produce(&mut self, output: &mut [i16; 1600]) -> Result<usize> {
+        if self.original_rate {
+            return self.stream.read(output);
+        }
+        let mut count = 0;
+        while count < BLOCK_FRAMES {
+            let n = self
+                .converter
+                .render(&mut self.output[count..])
+                .map_err(anyhow::Error::msg)?;
+            count += n;
+            if count == BLOCK_FRAMES || (n == 0 && self.eof) {
+                break;
+            }
+            if n > 0 {
+                continue;
+            }
+            let capacity = self.converter.input_capacity();
+            ensure!(capacity > 0, "music converter cannot progress");
+            let n = self.stream.read(&mut self.decoded[..capacity * 2])?;
+            if n == 0 {
+                self.eof = true;
+                self.converter.finish();
+                continue;
+            }
+            for (frame, samples) in self
+                .input
+                .iter_mut()
+                .zip(self.decoded[..n].as_chunks::<2>().0.iter())
+            {
+                *frame = [
+                    f32::from(samples[0]) / 32768.0,
+                    f32::from(samples[1]) / 32768.0,
+                ];
+            }
+            self.converter
+                .append(&self.input[..n / 2])
+                .map_err(anyhow::Error::msg)?;
+        }
+        for (frame, samples) in self.output[..count]
+            .iter()
+            .zip(output.as_chunks_mut::<2>().0.iter_mut())
+        {
+            for channel in 0..2 {
+                samples[channel] = (frame[channel] * 32768.0)
+                    .round_ties_even()
+                    .clamp(-32768.0, 32767.0) as i16;
+            }
+        }
+        Ok(count * 2)
+    }
+}
+
+enum Action {
+    Load(String, u64),
+    Fill,
+    Reset(u64),
+    Quit,
+}
+fn action(shared: &Shared, generation: u64, active: bool) -> Action {
+    loop {
+        {
+            let Ok(mut state) = shared.state.lock() else {
+                return Action::Quit;
+            };
+            if shared.quit.load(Ordering::Acquire) {
+                return Action::Quit;
+            }
+            if let Some(path) = state.request.take() {
+                return Action::Load(path, state.generation);
+            }
+            let current = shared.status.load(Ordering::Acquire);
+            if current >> GENERATION_SHIFT != generation
+                || (active && !Status::from_tag(current).active())
+            {
+                return Action::Reset(current >> GENERATION_SHIFT);
+            }
+            if active
+                && matches!(Status::from_tag(current), Status::Loading | Status::Playing)
+                && (shared.ring.can_write() || shared.ring.exhausted())
+            {
+                return Action::Fill;
+            }
+        }
+        // Unpark tokens persist if consumption or a control change happens
+        // between the predicate check and parking; no notification can be lost.
+        std::thread::park();
+    }
+}
+struct Cancellable<'a> {
+    input: &'a mut dyn Read,
+    shared: &'a Shared,
+    generation: u64,
+}
+impl Read for Cancellable<'_> {
+    fn read(&mut self, output: &mut [u8]) -> std::io::Result<usize> {
+        if self.shared.quit.load(Ordering::Acquire) || self.shared.generation() != self.generation {
+            return Err(std::io::Error::other("music loading cancelled"));
+        }
+        self.input.read(output)
+    }
+}
+fn failed(shared: &Shared, generation: u64, error: anyhow::Error) {
+    if let Ok(mut state) = shared.state.lock() {
+        if shared.generation() == generation && !shared.quit.load(Ordering::Acquire) {
+            state.error = Some(format!("{error:#}").chars().take(1024).collect());
+            shared.transition(generation, |status| {
+                status.active().then_some(Status::Failed)
+            });
+        }
+    }
+}
+struct WorkerExit<'a>(&'a Shared);
+impl Drop for WorkerExit<'_> {
+    fn drop(&mut self) {
+        if !self.0.quit.swap(true, Ordering::AcqRel) {
+            self.0.force_status(Status::Failed);
+        }
+    }
+}
+fn run(
+    shared: Arc<Shared>,
+    factory: audio_decode::Factory,
+    mut package: crate::archive::Package,
+    budget: memory_budget::Budget,
+    memory_bytes: usize,
+) {
+    let _exit = WorkerExit(&shared);
+    let mut generation = 0;
+    let mut pipeline: Option<Pipeline> = None;
+    let mut output = [0i16; 1600];
+    loop {
+        match action(&shared, generation, pipeline.is_some()) {
+            Action::Quit => return,
+            Action::Reset(next) => {
+                pipeline = None;
+                generation = next;
+            }
+            Action::Load(path, next) => {
+                pipeline = None;
+                generation = next;
+                let loaded = (|| -> Result<Pipeline> {
+                    ensure!(
+                        package
+                            .asset_compression(&path)?
+                            .is_none_or(|method| method == zip::CompressionMethod::Stored),
+                        "compressed music assets require decompressor memory accounting"
+                    );
+                    let stream = package.with_asset_reader(&path, 8 * 1048576, |input, size| {
+                        let mut input = Cancellable {
+                            input,
+                            shared: &shared,
+                            generation,
+                        };
+                        factory.open_budgeted(
+                            &mut input,
+                            size,
+                            audio_decode::Output::OriginalMixer(44100),
+                            &budget,
+                            memory_bytes,
+                        )
+                    })?;
+                    Pipeline::new(stream, shared.sample_rate == 44100)
+                })();
+                match loaded {
+                    Ok(loaded) => pipeline = Some(loaded),
+                    Err(error) => failed(&shared, generation, error),
+                }
+            }
+            Action::Fill => match pipeline.as_mut().unwrap().produce(&mut output) {
+                Ok(0) => {
+                    pipeline = None;
+                    if shared.generation() == generation && !shared.quit.load(Ordering::Acquire) {
+                        shared.eof.store(generation, Ordering::Release);
+                        if shared.ring.empty() {
+                            shared.transition(generation, |status| {
+                                status.active().then_some(Status::Ended)
+                            });
+                        }
+                    }
+                }
+                Ok(count) => {
+                    if shared.generation() == generation && !shared.quit.load(Ordering::Acquire) {
+                        if !shared.ring.push(generation, &output[..count]) {
+                            pipeline = None;
+                            failed(
+                                &shared,
+                                generation,
+                                anyhow::anyhow!("music output queue exhausted"),
+                            );
+                        } else {
+                            shared.transition(generation, |status| {
+                                (status == Status::Loading).then_some(Status::Playing)
+                            });
+                        }
+                    }
+                }
+                Err(error) => {
+                    pipeline = None;
+                    failed(&shared, generation, error);
+                }
+            },
+        }
+    }
+}
+#[cfg(all(test, feature = "audio"))]
+pub(crate) fn fixture_output(frames: &[[i16; 2]]) -> Output {
+    fixture_output_at_rate(frames, 48000)
+}
+#[cfg(all(test, feature = "audio"))]
+pub(crate) fn fixture_output_at_rate(frames: &[[i16; 2]], sample_rate: u32) -> Output {
+    let budget = memory_budget::Budget::new(HOST_BYTES);
+    let ring = Ring::new();
+    for chunk in frames.chunks(BLOCK_FRAMES) {
+        let samples = chunk.iter().flatten().copied().collect::<Vec<_>>();
+        assert!(ring.push(1, &samples));
+    }
+    Output(Arc::new(Shared {
+        sample_rate,
+        state: Mutex::new(State {
+            generation: 1,
+            request: None,
+            error: None,
+        }),
+        ring,
+        status: AtomicU64::new(tag(1, Status::Playing)),
+        eof: AtomicU64::new(1),
+        quit: AtomicBool::new(false),
+        consumer_generation: AtomicU64::new(0),
+        played: AtomicU64::new(0),
+        _reservation: budget.reserve(HOST_BYTES).unwrap(),
+    }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    #[cfg(feature = "audio")]
+    #[test]
+    fn available_music_is_not_replaced_with_silence_while_control_is_locked() {
+        let output = fixture_output(&[[123, -456]]);
+        let locked = output.0.state.lock().unwrap();
+        let reader = output.clone();
+        let (send, receive) = std::sync::mpsc::channel();
+        let test = std::thread::spawn(move || {
+            let mut frame = [[0; 2]; 1];
+            let count = reader.read(&mut frame);
+            send.send((count, frame)).unwrap();
+        });
+        let result = receive
+            .recv_timeout(std::time::Duration::from_millis(200))
+            .unwrap();
+        drop(locked);
+        test.join().unwrap();
+        assert_eq!(result, (1, [[123, -456]]));
+    }
+    fn factory(frames: u32, infinite: bool) -> audio_decode::Factory {
+        factory_fault(frames, infinite, false)
+    }
+    fn factory_fault(frames: u32, infinite: bool, fail_at_end: bool) -> audio_decode::Factory {
+        let body = if infinite {
+            "(loop $forever br $forever) i32.const 0"
+        } else {
+            "local.get 0 global.get $left i32.lt_u
+             if local.get 0 local.set $n else global.get $left local.set $n end
+             (block $done (loop $fill
+              local.get $i local.get $n i32.ge_u br_if $done
+              i32.const 4096 local.get $i i32.const 2 i32.mul i32.add
+              i32.const 1 i32.load8_u
+              local.get $i i32.const 1 i32.and i32.eqz
+              if (result i32) i32.const 1000 else i32.const -2000 end i32.mul i32.store16
+              local.get $i i32.const 1 i32.add local.set $i br $fill))
+             global.get $left local.get $n i32.sub global.set $left local.get $n"
+        };
+        let fault = if fail_at_end {
+            "global.get $left i32.eqz if unreachable end"
+        } else {
+            ""
+        };
+        audio_decode::Factory::new(
+            &wat::parse_str(format!(
+                r#"(module
+            (memory(export "memory") 1 96)
+            (global $left(mut i32)(i32.const 0))
+            (func(export "decoder_reserve")(param i32)(result i32)i32.const 1)
+            (func(export "decoder_open")(result i32)
+              i32.const {samples} global.set $left
+              i32.const 1 i32.load8_u i32.eqz if(result i32)i32.const -1 else i32.const 0 end)
+            (func(export "decoder_set_mixer_rate")(param i32)(result i32)
+              local.get 0 i32.const 44100 i32.eq if(result i32)i32.const 0 else i32.const -1 end)
+            (func(export "decoder_read")(param i32)(result i32)(local $n i32)(local $i i32){fault} {body})
+            (func(export "decoder_output")(result i32)i32.const 4096)
+            (func(export "decoder_rate")(result i32)i32.const 44100)
+            (func(export "decoder_channels")(result i32)i32.const 2)
+            (func(export "decoder_work")(result i32)i32.const 0)
+            (func(export "decoder_rewind")(result i32)i32.const 0))"#,
+                samples = frames * 2
+            ))
+            .unwrap(),
+        )
+        .unwrap()
+    }
+    fn package(
+        method: zip::CompressionMethod,
+        verified: bool,
+    ) -> (tempfile::TempDir, crate::archive::Package) {
+        let temporary = tempfile::tempdir().unwrap();
+        let path = temporary.path().join("music.gamepkg");
+        let mut writer = zip::ZipWriter::new(std::fs::File::create(&path).unwrap());
+        for (name, byte) in [("a", 1), ("b", 2), ("bad", 0)] {
+            writer
+                .start_file(
+                    format!("assets/{name}.mp3"),
+                    zip::write::SimpleFileOptions::default().compression_method(method),
+                )
+                .unwrap();
+            writer.write_all(&[byte]).unwrap();
+        }
+        writer.finish().unwrap();
+        let mut package = crate::archive::Package::open(&path).unwrap();
+        if verified {
+            package.mark_verified();
+        }
+        (temporary, package)
+    }
+    fn wait(mut predicate: impl FnMut() -> bool) {
+        let start = std::time::Instant::now();
+        while !predicate() {
+            assert!(
+                start.elapsed() < std::time::Duration::from_secs(2),
+                "music worker did not progress"
+            );
+            std::thread::sleep(std::time::Duration::from_micros(100));
+        }
+    }
+    fn drain(output: &Output) -> Vec<[i16; 2]> {
+        let mut result = Vec::new();
+        let mut block = [[0; 2]; 800];
+        let mut step = 0;
+        let start = std::time::Instant::now();
+        loop {
+            let count = output.read(&mut block[..[1, 113, 7, 799, 800][step % 5]]);
+            result.extend_from_slice(&block[..count]);
+            step += 1;
+            if output.status() == Status::Ended {
+                return result;
+            }
+            assert_ne!(output.status(), Status::Failed);
+            assert!(start.elapsed() < std::time::Duration::from_secs(2));
+            if count == 0 {
+                std::thread::sleep(std::time::Duration::from_micros(100));
+            }
+        }
+    }
+    #[test]
+    fn original_rate_output_keeps_every_decoded_frame_without_conversion() {
+        let (_temporary, package) = package(zip::CompressionMethod::Stored, true);
+        let budget = memory_budget::Budget::new(HOST_BYTES + 6 * 1048576);
+        let service = Service::new_original_rate(
+            factory(20000, false),
+            &package,
+            true,
+            budget.clone(),
+            6 * 1048576,
+        )
+        .unwrap();
+        let output = service.output();
+        assert_eq!(output.sample_rate(), 44100);
+        service.play("a.mp3").unwrap();
+        let frames = drain(&output);
+        assert_eq!(frames, vec![[1000, -2000]; 20000]);
+        assert_eq!(output.played_frames(), 20000);
+        drop(service);
+        drop(output);
+        assert_eq!(budget.used(), 0);
+    }
+    #[test]
+    fn output_clock_pause_gain_replacement_and_end_preserve_the_complete_stream() {
+        let (_temporary, package) = package(zip::CompressionMethod::Stored, true);
+        let budget = memory_budget::Budget::new(HOST_BYTES + 6 * 1048576);
+        let service = Service::new(
+            factory(20000, false),
+            &package,
+            true,
+            budget.clone(),
+            6 * 1048576,
+        )
+        .unwrap();
+        drop(package);
+        let output = service.output();
+        for bad in [
+            "../a.mp3",
+            "/a.mp3",
+            "https://example.invalid/a",
+            "a\\b",
+            "C:a",
+        ] {
+            assert!(service.play(bad).is_err());
+        }
+        assert_eq!(output.status(), Status::Stopped);
+        service.play("a.mp3").unwrap();
+        let baseline = drain(&output);
+        assert_eq!(baseline.len(), 20000 * 48000 / 44100);
+        assert_eq!(output.played_frames(), baseline.len() as u64);
+        assert!(baseline
+            .iter()
+            .any(|frame| frame[0] > 512 && frame[1] < -512));
+        service.play("a.mp3").unwrap();
+        wait(|| output.queued_frames() == QUEUE_FRAMES);
+        service.pause(true).unwrap();
+        let mut unchanged = [[123, -456]; 113];
+        assert_eq!(output.read(&mut unchanged), 0);
+        assert_eq!(unchanged, [[123, -456]; 113]);
+        assert_eq!(output.played_frames(), 0);
+        service.pause(false).unwrap();
+        assert_eq!(drain(&output), baseline);
+        service.volume(64).unwrap();
+        assert!(service.volume(129).is_err());
+        service.play("a.mp3").unwrap();
+        assert_eq!(
+            drain(&output),
+            baseline
+                .iter()
+                .map(|frame| frame.map(|s| s / 2))
+                .collect::<Vec<_>>()
+        );
+        service.volume(0).unwrap();
+        service.play("a.mp3").unwrap();
+        wait(|| output.queued_frames() == QUEUE_FRAMES);
+        assert_eq!(output.read(&mut unchanged), 113);
+        assert_eq!(unchanged, [[0; 2]; 113]);
+        assert_eq!(output.played_frames(), 113);
+        service.volume(128).unwrap();
+        service.play("b.mp3").unwrap();
+        let second = drain(&output);
+        service.play("a.mp3").unwrap();
+        wait(|| output.queued_frames() == QUEUE_FRAMES);
+        service.play("b.mp3").unwrap();
+        assert_eq!(drain(&output), second);
+        for n in 0..100 {
+            service
+                .play(if n % 2 == 0 { "a.mp3" } else { "b.mp3" })
+                .unwrap();
+        }
+        assert_eq!(drain(&output), second);
+        service.stop().unwrap();
+        assert_eq!(output.status(), Status::Stopped);
+        drop(service);
+        assert_eq!(budget.used(), HOST_BYTES);
+        assert_eq!(output.read(&mut unchanged), 0);
+        drop(output);
+        assert_eq!(budget.used(), 0);
+    }
+    #[test]
+    fn stop_and_replacement_wait_for_inflight_output_reads() {
+        let (_temporary, package) = package(zip::CompressionMethod::Stored, true);
+        let budget = memory_budget::Budget::new(HOST_BYTES + 6 * 1048576);
+        let service = Arc::new(
+            Service::new_original_rate(
+                factory(20000, false),
+                &package,
+                true,
+                budget.clone(),
+                6 * 1048576,
+            )
+            .unwrap(),
+        );
+        let output = service.output();
+        for replacement in [true, false] {
+            service.play("a.mp3").unwrap();
+            wait(|| output.queued_frames() == QUEUE_FRAMES);
+            // Hold the same guard as Output::read, without depending on thread
+            // scheduling inside its short sample-copy loop.
+            let consumer = output.0.ring.consumer().unwrap();
+            let generation = output.0.generation();
+            let control = service.clone();
+            let (sent, received) = std::sync::mpsc::channel();
+            let worker = std::thread::spawn(move || {
+                let result = if replacement {
+                    control.play("b.mp3")
+                } else {
+                    control.stop()
+                };
+                sent.send(result).unwrap();
+            });
+            wait(|| output.0.generation() != generation);
+            // The control state is visible, but the caller must not receive a
+            // completion until a previously admitted read has left its guard.
+            let early = received.recv_timeout(std::time::Duration::from_millis(20));
+            drop(consumer);
+            worker.join().unwrap();
+            assert!(matches!(
+                early,
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+            ));
+            received.recv().unwrap().unwrap();
+            if replacement {
+                assert_eq!(drain(&output), vec![[2000, -4000]; 20000]);
+            } else {
+                let mut sentinel = [[123, -456]; 1];
+                assert_eq!(output.read(&mut sentinel), 0);
+                assert_eq!(sentinel, [[123, -456]; 1]);
+            }
+        }
+        drop(service);
+        drop(output);
+        assert_eq!(budget.used(), 0);
+    }
+    #[test]
+    fn whole_tick_music_batches_reject_without_partial_controls() {
+        let (_temporary, package) = package(zip::CompressionMethod::Stored, true);
+        let budget = memory_budget::Budget::new(HOST_BYTES + 6 * 1048576);
+        let service = Service::new_original_rate(
+            factory(20000, false),
+            &package,
+            true,
+            budget.clone(),
+            6 * 1048576,
+        )
+        .unwrap();
+        let output = service.output();
+        assert!(service
+            .batch(&[Command::Play("a.mp3"), Command::Volume(129)])
+            .is_err());
+        assert_eq!(output.status(), Status::Stopped);
+        assert_eq!(output.0.generation(), 0);
+        assert_eq!(gain(output.0.status.load(Ordering::Acquire)), 128);
+        service.play("a.mp3").unwrap();
+        wait(|| output.queued_frames() == QUEUE_FRAMES);
+        let generation = output.0.generation();
+        for commands in [
+            vec![Command::Stop, Command::Pause(true)],
+            vec![Command::Volume(0), Command::Play("../b.mp3")],
+            vec![Command::Stop; 33],
+        ] {
+            assert!(service.batch(&commands).is_err());
+            assert_eq!(output.0.generation(), generation);
+            assert_eq!(gain(output.0.status.load(Ordering::Acquire)), 128);
+            assert_eq!(output.status(), Status::Playing);
+        }
+        assert_eq!(drain(&output), vec![[1000, -2000]; 20000]);
+        service
+            .batch(&[
+                Command::Play("a.mp3"),
+                Command::Stop,
+                Command::Play("b.mp3"),
+                Command::Volume(64),
+                Command::Pause(true),
+            ])
+            .unwrap();
+        assert_eq!(output.status(), Status::Paused);
+        let mut sentinel = [[123, -456]; 1];
+        assert_eq!(output.read(&mut sentinel), 0);
+        assert_eq!(sentinel, [[123, -456]; 1]);
+        service.batch(&[Command::Pause(false)]).unwrap();
+        assert_eq!(drain(&output), vec![[1000, -2000]; 20000]);
+        service.batch(&[Command::Volume(128); 32]).unwrap();
+        service.batch(&[Command::Stop]).unwrap();
+        assert_eq!(output.status(), Status::Stopped);
+        let exhausted = MAX_GENERATION - 1;
+        service.output.0.state.lock().unwrap().generation = exhausted;
+        output
+            .0
+            .status
+            .store(tag(exhausted, Status::Stopped), Ordering::Release);
+        assert!(service
+            .batch(&[Command::Volume(0), Command::Stop, Command::Play("a.mp3"),])
+            .is_err());
+        assert_eq!(output.0.generation(), exhausted);
+        assert_eq!(gain(output.0.status.load(Ordering::Acquire)), 128);
+        assert_eq!(output.status(), Status::Stopped);
+        drop(service);
+        drop(output);
+        assert_eq!(budget.used(), 0);
+    }
+    #[test]
+    fn batch_pause_and_gain_are_one_atomic_output_configuration() {
+        let (_temporary, package) = package(zip::CompressionMethod::Stored, true);
+        let budget = memory_budget::Budget::new(HOST_BYTES + 6 * 1048576);
+        let service = Arc::new(
+            Service::new_original_rate(
+                factory(20000, false),
+                &package,
+                true,
+                budget.clone(),
+                6 * 1048576,
+            )
+            .unwrap(),
+        );
+        let output = service.output();
+        service.play("a.mp3").unwrap();
+        wait(|| output.queued_frames() == QUEUE_FRAMES);
+        let control = service.clone();
+        let done = Arc::new(AtomicBool::new(false));
+        let completed = done.clone();
+        let worker = std::thread::spawn(move || {
+            for _ in 0..10000 {
+                control
+                    .batch(&[Command::Pause(true), Command::Volume(0)])
+                    .unwrap();
+                control
+                    .batch(&[Command::Pause(false), Command::Volume(128)])
+                    .unwrap();
+            }
+            completed.store(true, Ordering::Release);
+        });
+        let started = std::time::Instant::now();
+        while !done.load(Ordering::Acquire) {
+            assert!(started.elapsed() < std::time::Duration::from_secs(2));
+            let snapshot = output.0.status.load(Ordering::Acquire);
+            assert!(matches!(
+                (Status::from_tag(snapshot), gain(snapshot)),
+                (Status::Playing, 128) | (Status::Paused, 0)
+            ));
+        }
+        worker.join().unwrap();
+        assert_eq!(drain(&output), vec![[1000, -2000]; 20000]);
+        drop(service);
+        drop(output);
+        assert_eq!(budget.used(), 0);
+    }
+    #[test]
+    fn staged_music_controls_rollback_failed_ticks_and_never_replay() {
+        let (_temporary, package) = package(zip::CompressionMethod::Stored, true);
+        let budget = memory_budget::Budget::new(HOST_BYTES + 6 * 1048576);
+        let service = Service::new_original_rate(
+            factory(20000, false),
+            &package,
+            true,
+            budget.clone(),
+            6 * 1048576,
+        )
+        .unwrap();
+        let mut controls = controls::Transaction::new(service);
+        let output = controls.output();
+        assert!(controls.play("a.mp3").is_err());
+        assert!(controls.finish(true).is_err());
+        controls.begin().unwrap();
+        assert!(controls.begin().is_err());
+        let path = String::from("a.mp3");
+        controls.play(&path).unwrap();
+        drop(path);
+        assert_eq!(output.status(), Status::Stopped);
+        controls.finish(true).unwrap();
+        wait(|| output.queued_frames() == QUEUE_FRAMES);
+        let generation = output.0.generation();
+        controls.begin().unwrap();
+        controls.stop().unwrap();
+        controls.play("b.mp3").unwrap();
+        controls.volume(0).unwrap();
+        controls.pause(true).unwrap();
+        controls.finish(false).unwrap();
+        assert_eq!(output.0.generation(), generation);
+        assert_eq!(output.status(), Status::Playing);
+        assert_eq!(gain(output.0.status.load(Ordering::Acquire)), 128);
+        assert_eq!(drain(&output), vec![[1000, -2000]; 20000]);
+        controls.begin().unwrap();
+        controls.stop().unwrap();
+        controls.pause(true).unwrap();
+        assert!(controls.finish(true).is_err());
+        assert_eq!(output.0.generation(), generation);
+        controls.begin().unwrap();
+        controls.finish(true).unwrap();
+        assert_eq!(output.0.generation(), generation);
+        assert_eq!(output.status(), Status::Ended);
+        controls.begin().unwrap();
+        assert!(controls.play("../a.mp3").is_err());
+        assert!(controls.volume(129).is_err());
+        for _ in 0..32 {
+            controls.volume(64).unwrap();
+        }
+        assert!(controls.stop().is_err());
+        controls.finish(false).unwrap();
+        controls.begin().unwrap();
+        controls.play("b.mp3").unwrap();
+        controls.volume(64).unwrap();
+        controls.finish(true).unwrap();
+        assert_eq!(drain(&output), vec![[1000, -2000]; 20000]);
+        assert!(controls.error().is_none());
+        drop(controls);
+        drop(output);
+        assert_eq!(budget.used(), 0);
+    }
+    #[test]
+    fn staged_pause_does_not_reject_a_tick_when_music_finishes_before_commit() {
+        let (_temporary, package) = package(zip::CompressionMethod::Stored, true);
+        let budget = memory_budget::Budget::new(HOST_BYTES + 6 * 1048576);
+        let service = Service::new_original_rate(
+            factory(20000, false),
+            &package,
+            true,
+            budget.clone(),
+            6 * 1048576,
+        )
+        .unwrap();
+        let mut controls = controls::Transaction::new(service);
+        let output = controls.output();
+        controls.begin().unwrap();
+        controls.play("a.mp3").unwrap();
+        controls.finish(true).unwrap();
+        wait(|| output.queued_frames() == QUEUE_FRAMES);
+        controls.begin().unwrap();
+        controls.volume(64).unwrap();
+        controls.pause(true).unwrap();
+        assert_eq!(drain(&output), vec![[1000, -2000]; 20000]);
+        assert_eq!(output.status(), Status::Ended);
+        controls.finish(true).unwrap();
+        assert_eq!(output.status(), Status::Ended);
+        assert_eq!(gain(output.0.status.load(Ordering::Acquire)), 64);
+        controls.begin().unwrap();
+        controls.play("a.mp3").unwrap();
+        controls.pause(true).unwrap();
+        controls.finish(true).unwrap();
+        assert_eq!(output.status(), Status::Paused);
+        let mut sentinel = [[123, -456]; 1];
+        assert_eq!(output.read(&mut sentinel), 0);
+        assert_eq!(sentinel, [[123, -456]; 1]);
+        controls.begin().unwrap();
+        controls.pause(false).unwrap();
+        controls.finish(true).unwrap();
+        assert_eq!(drain(&output), vec![[500, -1000]; 20000]);
+        drop(controls);
+        drop(output);
+        assert_eq!(budget.used(), 0);
+    }
+    #[test]
+    fn staged_pause_preserves_decoder_failure_without_rejecting_tick() {
+        let (_temporary, package) = package(zip::CompressionMethod::Stored, true);
+        let budget = memory_budget::Budget::new(HOST_BYTES + 6 * 1048576);
+        let service = Service::new_original_rate(
+            factory_fault(20000, false, true),
+            &package,
+            true,
+            budget.clone(),
+            6 * 1048576,
+        )
+        .unwrap();
+        let mut controls = controls::Transaction::new(service);
+        let output = controls.output();
+        controls.begin().unwrap();
+        controls.play("a.mp3").unwrap();
+        controls.finish(true).unwrap();
+        wait(|| output.queued_frames() == QUEUE_FRAMES);
+        controls.begin().unwrap();
+        controls.volume(64).unwrap();
+        controls.pause(true).unwrap();
+        let mut block = [[0; 2]; 800];
+        wait(|| {
+            output.read(&mut block);
+            output.status() == Status::Failed
+        });
+        controls.finish(true).unwrap();
+        assert_eq!(output.status(), Status::Failed);
+        assert_eq!(gain(output.0.status.load(Ordering::Acquire)), 64);
+        drop(controls);
+        drop(output);
+        assert_eq!(budget.used(), 0);
+    }
+    #[test]
+    fn music_control_metadata_cannot_create_a_separate_memory_allowance() {
+        let (_temporary, package) = package(zip::CompressionMethod::Stored, true);
+        let denied = memory_budget::Budget::new(HOST_BYTES - 1);
+        assert!(Service::new_original_rate(
+            factory(20000, false),
+            &package,
+            true,
+            denied.clone(),
+            6 * 1048576,
+        )
+        .is_err());
+        assert_eq!(denied.used(), 0);
+        let budget = memory_budget::Budget::new(HOST_BYTES);
+        let service = Service::new_original_rate(
+            factory(20000, false),
+            &package,
+            true,
+            budget.clone(),
+            6 * 1048576,
+        )
+        .unwrap();
+        let mut controls = controls::Transaction::new(service);
+        assert_eq!(budget.used(), HOST_BYTES);
+        controls.begin().unwrap();
+        controls.play("a.mp3").unwrap();
+        controls.finish(false).unwrap();
+        assert_eq!(budget.used(), HOST_BYTES);
+        drop(controls);
+        assert_eq!(budget.used(), 0);
+    }
+    #[test]
+    fn permissions_verification_resources_and_decoder_errors_fail_without_audio() {
+        let (_temporary, package) = package(zip::CompressionMethod::Stored, false);
+        let budget = memory_budget::Budget::new(HOST_BYTES + 6 * 1048576);
+        let factory = factory(20000, false);
+        assert!(Service::new(
+            factory.clone(),
+            &package,
+            false,
+            budget.clone(),
+            6 * 1048576
+        )
+        .is_err());
+        assert!(
+            Service::new(factory.clone(), &package, true, budget.clone(), 6 * 1048576).is_err()
+        );
+        assert_eq!(budget.used(), 0);
+        let (_temporary, package) = self::package(zip::CompressionMethod::Stored, true);
+        let service =
+            Service::new(factory.clone(), &package, true, budget.clone(), 6 * 1048576).unwrap();
+        let output = service.output();
+        for bad in ["missing.mp3", "bad.mp3"] {
+            service.play(bad).unwrap();
+            wait(|| output.status() == Status::Failed);
+            assert!(service.error().is_some());
+            assert_eq!(output.read(&mut [[123; 2]; 1]), 0);
+            assert_eq!(budget.used(), HOST_BYTES);
+        }
+        service.play("a.mp3").unwrap();
+        assert!(!drain(&output).is_empty());
+        drop(service);
+        drop(output);
+        assert_eq!(budget.used(), 0);
+        let small = memory_budget::Budget::new(HOST_BYTES + 6 * 1048576 - 1);
+        let limited =
+            Service::new(factory.clone(), &package, true, small.clone(), 6 * 1048576).unwrap();
+        limited.play("a.mp3").unwrap();
+        wait(|| limited.output().status() == Status::Failed);
+        assert!(limited.error().unwrap().contains("memory budget exceeded"));
+        assert_eq!(small.used(), HOST_BYTES);
+        drop(limited);
+        assert_eq!(small.used(), 0);
+        let (_temporary, compressed) = self::package(zip::CompressionMethod::Zstd, true);
+        let service =
+            Service::new(factory, &compressed, true, budget.clone(), 6 * 1048576).unwrap();
+        service.play("a.mp3").unwrap();
+        wait(|| service.output().status() == Status::Failed);
+        assert!(service
+            .error()
+            .unwrap()
+            .contains("decompressor memory accounting"));
+    }
+    #[test]
+    fn stop_interrupts_a_bounded_decoder_and_callback_reads_never_wait_for_control_lock() {
+        let (_temporary, package) = package(zip::CompressionMethod::Stored, true);
+        let budget = memory_budget::Budget::new(HOST_BYTES + 6 * 1048576);
+        let service = Service::new(
+            factory(20000, true),
+            &package,
+            true,
+            budget.clone(),
+            6 * 1048576,
+        )
+        .unwrap();
+        let output = service.output();
+        service.play("a.mp3").unwrap();
+        wait(|| output.status() == Status::Failed);
+        assert!(service.error().unwrap().contains("interrupt"));
+        service.play("a.mp3").unwrap();
+        wait(|| budget.used() > HOST_BYTES);
+        let locked = output.0.state.lock().unwrap();
+        let reader = output.clone();
+        let (send, receive) = std::sync::mpsc::channel();
+        let test = std::thread::spawn(move || {
+            send.send(reader.read(&mut [[123; 2]; 1])).unwrap();
+        });
+        assert_eq!(
+            receive
+                .recv_timeout(std::time::Duration::from_millis(200))
+                .unwrap(),
+            0
+        );
+        drop(locked);
+        test.join().unwrap();
+        let start = std::time::Instant::now();
+        drop(service);
+        assert!(start.elapsed() < std::time::Duration::from_secs(1));
+        assert_eq!(budget.used(), HOST_BYTES);
+        drop(output);
+        assert_eq!(budget.used(), 0);
+    }
+}

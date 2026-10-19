@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Start playing — GamePKG</title>
+  <meta name="description" content="Install GamePKG, inspect a signed game, build it locally, and play with scoped access to assets and your selected ROM.">
+  <link rel="icon" type="image/png" href="../assets/gamepkg-icon.png">
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #10171d; color: #e8eef1; line-height: 1.6; }
+    body { margin: 0; } main { max-width: 780px; margin: auto; padding: 36px 24px 60px; }
+    a { color: #91dfc7; } h1 { line-height: 1.15; font-size: clamp(2rem, 6vw, 3.5rem); }
+    h2 { margin-top: 2rem; } li { margin: .6rem 0; } pre { overflow-x: auto; padding: 16px; background: #1b2931; border-radius: 8px; }
+    .notice { padding: 16px; border-left: 3px solid #91dfc7; background: #17232b; } code { font-size: .95em; }
+    footer { margin-top: 36px; border-top: 1px solid #40535e; padding-top: 18px; }
+  </style>
+</head>
+<body><main>
+  <nav aria-label="Main"><a href="../index.html">← GamePKG</a> · <a href="https://github.com/centrexity/GamePKG">Source and downloads</a> · <a href="developers.html">Developer instructions</a></nav>
+  <h1>Start playing with GamePKG.</h1>
+  <p>Inspect the creator and permissions, build the game on your machine, then play through the host’s scoped runtime.</p>
+  <p class="notice">Inspect the source and declared permissions before building. Creators host their packages; GamePKG verifies the packages you choose and builds them in isolation.</p>
+  <h2>Set up the host</h2>
+  <p>Play opens each game in its own process and window. Closing the library leaves running games open; closing a game finishes its session and saves progress.</p>
+  <p>Download the <a href="https://github.com/centrexity/GamePKG/releases/tag/v0.1.17">Linux or Windows CLI and desktop app</a>, verify its checksum and extract it. Follow the <a href="https://github.com/centrexity/GamePKG/blob/main/docs/INSTALL.md">installation instructions</a> to install Rust, the Wasm target, isolation tools and the pinned Slang compiler. Windows uses a matching Linux compiler in WSL 2; follow the <a href="https://github.com/centrexity/GamePKG/blob/main/docs/INSTALL_WINDOWS.md">Windows setup guide</a>.</p>
+  <pre><code>./bin/gamepkg-gui</code></pre>
+  <p>To build the host from source instead, follow the <a href="https://github.com/centrexity/GamePKG#readme">repository build instructions</a>.</p>
+  <p>In <strong>Settings</strong>, enter your Slang 2026.19 installation folder. Native C-based source ports need Clang 18 and lld-18. Their separate Wasm build also needs wasi-libc and the Clang 18 Wasm runtime. A separate WASI installation can be selected with <strong>C/WASI build tools folder</strong>; check the tools and save settings. New configurations use Vulkan with WGSL shader output. OpenGL can be chosen explicitly. Set your library folder, memory ceiling, sound volume, and update-check interval, then choose <strong>Save settings</strong>.</p>
+  <h2>Try the signed demos</h2>
+  <p>Choose <strong>Add</strong> in Library, enter the <a href="https://github.com/centrexity/GamePKG/releases/download/v0.1.6/demos.gamepkglist">demo catalog URL</a>, and choose <strong>Import .gamepkglist</strong>. It adds signed sample packages as <strong>Not downloaded</strong>. Select a game, approve its creator, then Build and Play. Some packages require player-provided ROM files; review their requirements before playing. Players need no signing key. The <a href="https://github.com/centrexity/GamePKG/releases/download/v0.1.6/demos.gamepkgstore">portable demo store</a> includes signed packages for offline import.</p>
+  <p>Click a game’s name or icon to open its page for Play, Build, ROM files, updates, integrity checks and package details. On Linux, Build compiles for the local CPU only; Build Wasm and Play Wasm are separate actions. Games that do not use shaders do not need Slang for their native build. Click a ROM file field to open the system file picker; the selected location is remembered for that game. Cancelling keeps your previous choice.</p>
+  <p>Follow the package’s controls when playing. Choose <strong>Back to game</strong> to return to its page, then <strong>Back to library</strong> to browse your games. The signed demo manifests include working update URLs.</p>
+  <h2>Drop a package or game list</h2>
+  <p>Drag one <code>.gamepkg</code> or <code>.gamepkglist</code> file from your file manager anywhere into the library window. A package is verified and shown for creator review before installation; <strong>Cancel package review</strong> discards it. A list adds <strong>Not downloaded</strong> entries without fetching games. Finish or cancel a review before dropping another file, and return to Library first when playing.</p>
+  <h2>Inspect, install, build, play</h2>
+  <ol>
+    <li>In Library, enter a local <code>.gamepkg</code> path or a creator’s HTTPS download URL. Choose <strong>Download / inspect</strong>.</li>
+    <li>Review the verified creator fingerprint, version, permissions, resource limits, and ROM requirement. You do not need to enter a signing key. Confirm the creator before choosing <strong>Trust this creator and install</strong>.</li>
+    <li>Choose <strong>Build</strong> in the game’s row. Compilation runs in an isolated environment. A failed initial build leaves the game unbuilt and displays an error. A failed rebuild preserves the earlier build.</li>
+    <li>Choose <strong>Play</strong> when the build succeeds. Use <strong>Rebuild</strong> after changing build options or shader backend.</li>
+  </ol>
+  <p>A signature proves key ownership and integrity; it does not prove the creator’s real-world identity or guarantee harmless code. Games receive scoped host operations, not general access to your folders or network.</p>
+  <h2>Games that need your ROM</h2>
+  <p>Choose <strong>ROM files</strong> on the game’s row and enter each named file location in manifest order. Games can require up to eight files. Only read-only session snapshots are shared; the host does not fetch ROMs or grant folder access. Locations are remembered separately for each game across app restarts. Updates with the same ROM requirements retain them. Different creators, libraries or ROM requirements use separate selections. Missing files must be selected again. In the CLI, repeat <code>--rom FILE</code> for each required file.</p>
+  <h2>Add several games</h2>
+  <p>For the published port catalog, choose <strong>Add</strong> in Library, then <strong>Import official ports library</strong>. The list is remembered for future refreshes, and no games are downloaded. Or download <a href="https://github.com/centrexity/GamePKG_Ports/releases/latest/download/ports.gamepkglist">ports.gamepkglist</a> and drag it into the desktop library. Review each entry’s host and user-file requirements before downloading.</p>
+  <p>Import a <code>.gamepkglist</code> to add catalog entries without downloading games. Choose a game’s <strong>Download / inspect</strong> action when ready. Catalog claims remain unverified until its package is checked.</p>
+  <p>For a <code>.gamepkgstore</code>, choose <strong>Inspect .gamepkgstore bundle</strong>, review the listed games and creator keys, then approve installation. A store bundle includes its required shared assets. Inspection and cancellation install nothing.</p>
+  <h2>Updates and Tor</h2>
+  <p>GamePKG checks for app updates when the library opens and notifies you if a newer stable release is available. You can turn off <strong>Check for app updates when GamePKG opens</strong> in Settings and save; manual checks remain available. To update GamePKG itself, open <strong>Settings → GamePKG updates</strong>, check for a new stable release, and choose <strong>Download and install GamePKG update</strong>. Select a writable folder, then restart into the verified new copy after closing running games. Your library and settings stay in place. The previous portable version is kept for rollback; update your shortcuts to the new copy. App updates need no Python, WSL or administrator access.</p>
+  <p>Use <strong>Check for updates</strong> or enable periodic checks in Settings. Checks verify candidate updates while the library is idle; updates require your installation choice and must keep the game’s approved creator key.</p>
+  <p>For onion URLs, run Tor separately and enter its loopback SOCKS proxy in Settings. DNS resolves through the proxy. Missing Tor connectivity fails the download; it never falls back to a direct connection.</p>
+  <h2>Dependency-free game source</h2>
+  <p>Game packages cannot declare Cargo dependencies, including <code>gamepkg-*</code> crates. The host provides the scoped <code>gamepkg::</code> API. Creator approval verifies who signed a package; it cannot allow dependencies or bypass source checks. There are no crate approval switches in Settings.</p>
+  <p>Creators: follow the <a href="developers.html">developer instructions</a> for Cargo files, API examples and migration from older dependency-based packages.</p>
+  <h2>Try a source example</h2>
+  <p>Creators can build a local example into a signed source package. Keep the private key private; players need no key entry.</p>
+  <pre><code>./target/release/gamepkg keygen -o creator.key
+./target/release/gamepkg build examples/minimal \
+  -o /tmp/example.gamepkg --key creator.key</code></pre>
+  <p>Inspect <code>/tmp/example.gamepkg</code> in the desktop library, then follow the install, build, and play steps above. The creator build checks compilation before publishing the package; it does not install it automatically.</p>
+  <section><h2>Download from a GitHub project</h2><p>Enter <code>https://github.com/owner/repository</code> to download its latest published stable release. The release must contain exactly one <code>.gamepkg</code> file. A <code>/releases/tag/version</code> link selects a specific release; use a direct asset link when the project hosts multiple packages. GitHub project links also work in game catalogs and signed update URLs. For list or store imports, the app selects one matching <code>.gamepkglist</code> or <code>.gamepkgstore</code> release file. Package signatures, creator approval, and update checks still apply.</p></section>
+  <section>
+    <h2>Integrity checks and repair</h2>
+    <p>Use <strong>Check integrity</strong> in Library to verify signed package contents, shared assets and compiled game checksums. <strong>Fix / rebuild</strong> recompiles verified source. Damaged archives can be restored from the verified local recovery copy. If that copy is missing or damaged, supply a verified replacement original. Player saves and history are preserved.</p>
+    <p>For missing or damaged shared assets, enter the original local <code>.gamepkgstore</code> path in the package field and choose <strong>Repair assets</strong>. The host requires the exact signed package before restoring its blobs. The CLI equivalent is <code>gamepkg integrity-fix GAME_ID --store original.gamepkgstore</code>.</p>
+  </section>
+  <footer><a href="../support/index.html">Support GamePKG</a> · <a href="allowlist.html">Game source policy</a> · <a href="security.html">Security model</a> · <a href="../spec/index.html">Format specification</a> · GamePKG · Apache 2.0</footer>
+
+</main></body>
+</html>

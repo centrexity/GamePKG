@@ -1,0 +1,14 @@
+{
+  "repository": "https://github.com/emilk/egui",
+  "revision": "1669e52a7ccfc3489c1b0999b9ed48894a0b3887",
+  "path": "crates/egui-winit",
+  "version": "0.31.1",
+  "original_files": {
+    "Cargo.toml": "61466e81b43fa2f093868e470f1f2429d3e9aca5a6676b6fc0406c08dac11e88",
+    "Cargo.toml.orig": "3a02011e258d24c1d9d61986a4ff1f72eb42934de853d0e1dc8f7dfe997ddad7",
+    "README.md": "7a8ccbb9fbddf24243446291b8e5a4e6bddcb6b565602c9561581926d5ae362b",
+    "src/lib.rs": "f835e5fc5d717cb6be4ec09c0ca207ed9acbe3b0b7cd645989eb946821bb15bc",
+    "src/clipboard.rs": "d3451c270aef9700876114014afe870735e492b92bd83534cad0bf4d2f754e81",
+    "src/window_settings.rs": "dd932be8e17a69b222015ec1a25cb4e163aa44a204a41760c7b0f53418ef63de"
+  }
+}

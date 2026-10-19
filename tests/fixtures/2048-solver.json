@@ -1,0 +1,149 @@
+{
+  "upstream": "https://github.com/adrienball/2048-rs",
+  "revision": "9e972c43e51b153f66b31a08c37eee140a0d2e57",
+  "parameters": {
+    "base_depth": 3,
+    "min_branch_probability": 0.001,
+    "four_probability": 0.1
+  },
+  "source_sha256": {
+    "src/solver.rs": "5d0b2d3696e4b64aea43850fc8b8d39e47cd84d18c9bfb0a8169ef98ce104475",
+    "src/evaluators.rs": "2d59d9139048a1b86f88c8f80a1e91fe1ffdad46f942b6af49bf7ab76e3e73e1",
+    "src/board.rs": "ebb9aadb8967c3eaf334144245712a4b092fcc3c862616b1e6f5dd8e70278338",
+    "src/utils.rs": "13186c819ccb5bbd7237bd06d22bb9328ab67153b9bbb0df0cb389e38a85e16f"
+  },
+  "fixtures": [
+    {
+      "cells": [
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      "direction": 2,
+      "evaluation": 5599
+    },
+    {
+      "cells": [
+        2,
+        2,
+        0,
+        2,
+        4,
+        0,
+        0,
+        1,
+        0,
+        3,
+        0,
+        4,
+        0,
+        3,
+        0,
+        4
+      ],
+      "direction": 0,
+      "evaluation": 3850
+    },
+    {
+      "cells": [
+        1,
+        2,
+        3,
+        4,
+        2,
+        3,
+        4,
+        5,
+        3,
+        4,
+        5,
+        6,
+        4,
+        5,
+        6,
+        6
+      ],
+      "direction": 3,
+      "evaluation": 1000
+    },
+    {
+      "cells": [
+        1,
+        2,
+        1,
+        2,
+        2,
+        1,
+        2,
+        1,
+        1,
+        2,
+        1,
+        2,
+        2,
+        1,
+        2,
+        1
+      ],
+      "direction": null,
+      "evaluation": -120
+    },
+    {
+      "cells": [
+        8,
+        7,
+        6,
+        5,
+        4,
+        3,
+        2,
+        1,
+        0,
+        0,
+        0,
+        0,
+        1,
+        1,
+        2,
+        2
+      ],
+      "direction": 0,
+      "evaluation": 2566
+    },
+    {
+      "cells": [
+        0,
+        0,
+        1,
+        1,
+        2,
+        2,
+        3,
+        3,
+        0,
+        4,
+        0,
+        4,
+        5,
+        0,
+        6,
+        0
+      ],
+      "direction": 3,
+      "evaluation": 1740
+    }
+  ]
+}

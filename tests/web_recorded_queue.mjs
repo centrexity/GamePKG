@@ -1,0 +1,21 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+const {RecordedQueue}=await import('data:text/javascript;base64,'+fs.readFileSync(new URL('../web-player/recorded-queue.js',import.meta.url)).toString('base64'));
+const q=new RecordedQueue(),block=(first,frames)=>Int16Array.from({length:frames*2},(_,i)=>(first+i)%65536-32768);
+assert.equal(q.storageBytes,19200);assert.equal(q.status,'stopped');assert.equal(q.push(0,block(0,1)),false);assert.equal(q.pause(true),false);
+for(const bad of [0,-1,1.5,Number.MAX_SAFE_INTEGER+1,NaN])assert.equal(q.begin(bad),false);
+assert.ok(q.begin(1));assert.equal(q.status,'loading');
+for(let i=0;i<6;i++)assert.ok(q.push(1,block(i*1600,800)));
+assert.equal(q.queuedFrames,4800);assert.equal(q.availableFrames,0);assert.equal(q.push(1,block(999,1)),false);
+const out=new Int16Array(226).fill(2345);assert.equal(q.read(out),113);assert.deepEqual(out,block(0,113));
+assert.ok(q.push(1,block(9600,113)));assert.equal(q.queuedFrames,4800);
+let at=226;
+while(q.queuedFrames){out.fill(2345);const n=q.read(out);assert.deepEqual(out.subarray(0,n*2),block(at,n));assert.ok(out.subarray(n*2).every(value=>value===2345));at+=n*2;}
+assert.equal(at,9826);assert.equal(q.playedFrames,4913);assert.equal(q.status,'playing');out.fill(2345);assert.equal(q.read(out),0);assert.ok(out.every(value=>value===2345));
+assert.ok(q.begin(2));const owned=block(12000,7),expected=owned.slice();assert.ok(q.push(2,owned));owned.fill(0);assert.ok(q.pause(true));out.fill(2345);assert.equal(q.read(out),0);assert.equal(q.queuedFrames,7);assert.equal(q.playedFrames,0);assert.ok(q.pause(false));assert.ok(q.volume(0));assert.equal(q.read(out),7);assert.ok(out.subarray(0,14).every(value=>value===0));assert.equal(q.playedFrames,7);
+assert.ok(q.push(2,expected));assert.ok(q.finish(2));assert.equal(q.status,'playing');assert.equal(q.push(2,block(0,1)),false);assert.ok(q.volume(64));assert.equal(q.read(out),7);assert.deepEqual([...out.subarray(0,14)],[...expected].map(value=>Math.trunc(value/2)));assert.equal(q.status,'ended');assert.equal(q.fail(2),false);assert.equal(q.status,'ended');
+assert.ok(q.begin(3));assert.ok(q.push(3,block(999,3)));const before=q.queuedFrames;for(const data of [new Int16Array(),new Int16Array(3),new Int16Array(1602),new Int16Array(8).subarray(2,4),new Uint16Array(2),new Int16Array(new SharedArrayBuffer(4))])assert.equal(q.push(3,data),false);assert.equal(q.queuedFrames,before);assert.throws(()=>q.read(new Int16Array(3)));assert.equal(q.queuedFrames,before);
+assert.ok(q.stop(4));assert.equal(q.queuedFrames,0);assert.equal(q.playedFrames,0);assert.equal(q.status,'stopped');assert.equal(q.push(3,block(1,1)),false);assert.equal(q.finish(3),false);assert.equal(q.fail(3),false);
+assert.ok(q.begin(5));assert.ok(q.push(5,block(800,2)));assert.equal(q.push(4,block(1,1)),false);assert.equal(q.begin(5),false);assert.ok(q.volume(128));assert.equal(q.read(out),2);assert.deepEqual(out.subarray(0,4),block(800,2));assert.ok(q.fail(5));assert.equal(q.status,'failed');assert.equal(q.push(5,block(0,1)),false);assert.equal(q.read(out),0);
+assert.ok(q.begin(Number.MAX_SAFE_INTEGER));assert.equal(q.stop(Number.MAX_SAFE_INTEGER+1),false);assert.ok(q.push(Number.MAX_SAFE_INTEGER,block(0,1)));q.close();assert.equal(q.storageBytes,0);assert.equal(q.status,'stopped');assert.equal(q.begin(Number.MAX_SAFE_INTEGER),false);assert.equal(q.push(Number.MAX_SAFE_INTEGER,block(0,1)),false);
+console.log('Fixed 4800-frame queue: stereo wrap/order, no overwrite, owned input, gain, pause/mute, EOF, bad buffers, stale generations, stop/failure/recovery and close passed.');

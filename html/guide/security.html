@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Security model — GamePKG</title>
+  <meta name="description" content="How GamePKG verifies source packages, isolates compilation, and limits running games.">
+  <link rel="icon" type="image/png" href="../assets/gamepkg-icon.png">
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #10171d; color: #e8eef1; line-height: 1.6; }
+    body { margin: 0; } main { max-width: 780px; margin: auto; padding: 36px 24px 60px; }
+    a { color: #91dfc7; } h1 { line-height: 1.15; font-size: clamp(2rem, 6vw, 3.5rem); }
+    h2 { margin-top: 2rem; } li { margin: .6rem 0; } pre { overflow-x: auto; padding: 16px; background: #1b2931; border-radius: 8px; }
+    .notice { padding: 16px; border-left: 3px solid #91dfc7; background: #17232b; } code { font-size: .95em; }
+    footer { margin-top: 36px; border-top: 1px solid #40535e; padding-top: 18px; }
+  </style>
+</head>
+<body><main>
+<nav aria-label="Main"><a href="../index.html">← GamePKG</a> · <a href="index.html">Start playing</a></nav>
+<h1>Security model</h1>
+<p>GamePKG checks package signatures and resource declarations, compiles supported
+source in an isolated Linux process, and runs the result under Wasmtime with
+scoped host APIs. A signature establishes package integrity and creator-key
+continuity. First installation requires creator approval; it does not identify
+a real-world person or guarantee harmless code.</p>
+<p>The source policy rejects build scripts, all guest macros, renamed and wildcard
+imports, type aliases, closures, function-pointer types, dynamic traits, computed
+call targets, binary includes,
+source path overrides, unsafe guest code, and filesystem/network/process
+paths. All guest Cargo dependencies are forbidden, including former gamepkg-prefixed wrappers. The signed lockfile contains only the root package. Legacy approvals cannot enable a crate. Source scanning is a policy filter; compilation
+and runtime isolation enforce the remaining boundaries. Every game Rust file,
+including unused modules, is parsed before compilation. A second pass parses the
+exact private build tree, including generated host bindings. Parsing is a syntax and policy check, not a proof of harmless behavior.</p>
+<p>Guest data follows a fixed wasm32 ABI on 32-bit and 64-bit hosts. Asset, ROM,
+and save byte counts use fixed-width <code>u32</code> values. Numeric byte conversions must
+name a fixed-width primitive and explicit little- or big-endian order; native
+endian encoding, pointer access, layout inspection, and architecture-specific
+intrinsics are rejected. Memory64 guests are rejected. Index and length values
+may use <code>usize</code> internally, but serialized numbers require an explicit width.</p>
+<p>Virtual paths are exact archive keys, never host paths. They are not URL-decoded,
+expanded, or Unicode-normalized. Absolute paths, traversal, empty components,
+backslashes, drive/stream colons, control characters, Windows device names,
+reserved characters, and trailing dots/spaces are rejected. Paths are bounded
+to 1,024 UTF-8 bytes, 32 components, and 255 bytes per component. Archives reject
+case aliases and file/directory conflicts. Compiler source filenames must be
+ASCII to avoid normalization aliases across filesystems; source text and virtual
+asset names may still contain Unicode. Slang file inclusion and module imports
+are forbidden, including in unused shader files.</p>
+<p>Dependency tables must be absent or empty. Build, development, target-specific, workspace, patch, replace and feature sections are rejected. Renamed, optional and source-overridden crates receive no exception. A valid creator signature does not exempt a package from source or dependency checks.</p>
+<p>The adversarial suites in <code>tests/path_attacks.rs</code>, <code>tests/dependency_attacks.rs</code>,
+and <code>tests/source_attacks.rs</code> cover generated path spellings, signed hostile
+packages, dependency-graph mutations, hidden source/configuration, and symlinks.
+Native runtime tests call the raw core and component imports with a real verified
+package and check that rejected reads preserve output memory. The browser suite
+<code>node tests/web_path_attacks.mjs</code> directly exercises the shipped worker's core and
+component read/image imports. Positive controls confirm ordinary asset reads and
+dependency-free builds remain usable. These are regression checks, not a claim of
+exhaustive protection against every possible attack.</p>
+<p>Linux builds use offline, locked Cargo inside bubblewrap, with an isolated
+network, private working directory and Cargo home, read-only system/toolchain
+mounts, and no user home directory. The host injects its scoped bindings; no guest dependency resolution occurs. Compiler processes have memory, file-size and time limits, with bounded
+diagnostics. Failed sandbox setup stops the build.</p>
+<p>Core and versioned WIT component games receive only scoped asset, input,
+drawing, audio, ROM, save and explicitly chosen file operations. WASI and ambient filesystem/socket
+imports are unavailable. Wasmtime enforces linear memory and epoch
+deadlines. ROM access uses an explicitly selected read-only session snapshot.
+Save writes commit only after successful ticks. Audio permission permits output
+without microphone access. Shared assets use signed hashes and private
+verified session snapshots.</p>
+<p>Optional signed file permissions declare import/export purposes, extensions and
+size limits. A fresh focused input action can request one asynchronous file
+choice. The native app uses system Open/Save dialogs; the browser uses explicit
+upload and save/download controls. Games receive selected bytes and a basename,
+without directory access or host paths. Imports reject non-regular files and
+symlinks; exports replace only the destination explicitly chosen by the player.
+Requests from failed ticks and stale game instances do not open new dialogs.
+The source code must still validate its actual data format.</p>
+<p>Optional video previews decode in a separate network-isolated process with
+bounded output. Resource-free compiled fragment shaders can render in the
+OpenGL player. GPU
+drivers and the host runtime remain trusted components, and GPU work is not
+interrupted by Wasm deadlines. These restrictions reduce access and do not establish a
+general guarantee that a package cannot cause harm.</p>
+<p>Packaged source modules are supported. Every Rust file is scanned, including
+unused modules; declarations must resolve unambiguously within the package.
+Only checked source files are staged for compilation.</p>
+<p>Slang 2026.19 compiles the signed shader source inside the build sandbox.
+SPIR-V, WGSL, Metal, and DXIL outputs are tested. DXIL additionally requires
+checksum-pinned DXC 1.9.2609 libraries, selected through Settings or
+<code>GAMEPKG_DXC_ROOT</code>. Missing or modified libraries stop the build. Compilation
+support does not imply that every output backend can render in the desktop
+player; current shader playback uses bounded-texture GLSL passes or validated SPIR-V/WGSL
+translated to GLSL for the OpenGL player.</p>
+<p>Portable <code>.gamepkgstore</code> imports verify every contained signature and shared
+blob before showing creator identities for approval. Inspection runs no game
+code and installs nothing. Rejected library files are shown as unavailable
+without hiding other verified games; installation checks remain strict.</p>
+<p>RGBA sprite drawing accepts images up to 512×512 pixels, with exact byte counts and at most 8 MiB of queued image bytes per frame. The host validates guest memory ranges, snapshots accepted pixels, and discards queued images after trapped ticks. Component pixel lists are length-checked through lazy guest-memory views before a host copy. Sprites draw through the host; GLSL shaders may receive one explicitly supplied host-owned texture through the bounded shader-image API.</p>
+<p>PNG sprite loading uses bounded verified archive ranges rather than host filesystem paths. Encoded files are limited to 2 MiB, decoded dimensions to 512×512, and decoder allocations to 8 MiB. The host validates dimensions and frame capacity before reading the full file. These renderer budgets are separate from guest linear-memory limits.</p>
+<p>GLSL fragment passes may use one host-owned combined <code>Sampler2D gamepkgTexture</code> at binding 0 via <code>draw_shader_image(index, pixel_width, pixel_height, rgba)</code>. Pixels are snapshotted before queueing, bounded to 512×512 and included in the shared 8 MiB frame image budget. Additional shader resources are rejected. Core and WIT runtimes support this API. Textured SPIR-V/WGSL playback validates one float 2D image and one non-comparison sampler at group 0 bindings 0 and 1 before translating to GLSL. SPIR-V builds define <code>GAMEPKG_SEPARATE_SAMPLER=1</code>; use the example’s explicit texture/sampler branch.</p>
+<p>Instruction metering is disabled. Host epoch deadlines interrupt Wasm execution, including initialization and calls that repeatedly invoke host operations. Shader textures loaded from PNG use the same bounded verified archive decoder as sprites. The injected shader/audio APIs add no ambient GPU, device, file or network access.</p>
+<footer><a href="../support/index.html">Support GamePKG</a> · <a href="../guide/allowlist.html">Game source policy</a> · <a href="https://github.com/centrexity/GamePKG/blob/main/html/guide/security.md">Documentation source</a> · GamePKG · Apache 2.0</footer>
+</main></body></html>

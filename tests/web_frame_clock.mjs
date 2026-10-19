@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import vm from 'node:vm';
+const worker=vm.createContext({TextEncoder,TextDecoder});vm.runInContext(readFileSync(new URL('../web-player/worker.js',import.meta.url),'utf8'),worker);
+const clock=vm.runInContext('({begin:frameClockBegin,reset:frameClockReset,core:api.frame_time_us,component:canonical["frame-time-us"]})',worker);
+assert.equal(clock.core(),0n);clock.begin(1200);assert.equal(clock.component(),0n);
+clock.begin(1200.125);assert.equal(clock.core(),125n);assert.equal(clock.component(),125n);
+clock.begin(1199);assert.equal(clock.core(),125n);
+clock.begin(1200+(2**32+19)/1000);assert.equal(clock.core(),2n**32n+19n);
+for(let i=0;i<100;i++)assert.equal(clock.component(),2n**32n+19n);
+clock.reset();assert.equal(clock.core(),0n);clock.begin(9876543);assert.equal(clock.core(),0n);
+clock.begin(1e30);assert.equal(clock.core(),2n**64n-1n);
+console.log('Browser clock samples are relative, stable, monotonic, full-width u64 and scoped to restart.');

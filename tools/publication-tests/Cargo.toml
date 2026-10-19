@@ -1,0 +1,16 @@
+[package]
+name = "gamepkg-publication-tests"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.89"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+libc = "=0.2.190"
+
+[[test]]
+name = "app_update_publication"
+path = "../../tests/app_update_publication.rs"
+
+[workspace]

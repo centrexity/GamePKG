@@ -1,0 +1,690 @@
+# Full scope from the 2026-10-17 source audit. Completion requires behavior tests.
+objective = "Restore accurate feature behavior across every current port"
+status = "in_progress"
+
+[[work]]
+id = "arkanoo_streamed_music_decoder"
+requirements = ["Original compressed recordings", "Bounded streaming decode", "Matching native/browser PCM", "Original mixer conversion", "Playback and menu controls", "Shared memory accounting"]
+status = "in_progress"
+notes = "An import-free scalar Wasm decoder prototype streams all nine original MP3 tracks with fixed memory, bounded reads and native epoch deadlines without instruction fuel. Complete native passes are chunk-invariant and rewindable; Chromium matches full-track fingerprints and exact audible windows. SDL decoded lengths match, but some PCM values differ by one integer unit. An independent original Music API capture checks the codec reference at source and original 44.1 kHz rates. A shared fixed-ring converter now provides 44.1/48 kHz stereo output with chunk-invariant global integer phase; its complete float output matches actual SDL conversion bit-for-bit across 18 rate pairs. A separate original-mixer mode now reproduces signed-stereo 1,024-frame puts, retained padding, short-put staging and flush/truncation. Actual SDL_AudioStream matches every float bit and length across 306 rate/boundary cases; all nine complete original 44.1 kHz track lengths match and native/browser outputs agree. Stereo sources only; mono byte/frame scheduling and asynchronous game playback remain unverified. Decoder differences can propagate to two integer units after filtering. Exact-length reader loading now avoids a full duplicate encoded buffer; verified asset readers retain path/size checks and final CRC verification. All nine tracks also pass native/browser checks with declared/enforced 8 MiB and 6 MiB decoder ceilings, peaking at 5,373,952 native linear-memory bytes. Shared reservations prevent concurrent overcommit and budgeted loading holds the charge until store destruction. A private synthetically signed fixture now verifies complete loading of all nine tracks through real package asset readers at 6 MiB, including pre-verification denial; no extraction or publication of recordings. Browser encoded ArrayBuffer loading still needs streaming/accounting. Runtime guest/decoder/buffer/decompressor accounting, signed audio-permission integration, SDK calls and asynchronous playback remain open; no guest dependencies or game music playback are enabled by this prototype."
+
+[[work]]
+id = "cube2_startup"
+requirements = ["Original startup menus", "Saved HUD/console preferences", "Saved FPS preference"]
+status = "implemented_runtime_verified"
+notes = "Removed forced map/menu/HUD/FPS commands; added explicit bounded 60-second map-loading events. Desktop keys now use ordered press/release events. Original menu, console-selected gameplay and custom HUD/FPS preferences verified by tests/cube2_startup_gui.py. Removed the extra fixed host pacing limit."
+
+[[work]]
+id = "cube2_input"
+requirements = ["Complete original keyboard controls", "Mouse buttons and relative input", "Controller and touch equivalents"]
+status = "in_progress"
+notes = "Desktop keyboard uses physical events rather than egui's normalized key subset, including Pause, keypad distinctions, international keys and left/right modifiers. The bounded protocol and engine release table now cover SDL's entire 512-entry scancode range; media/browser/application keys with SDL equivalents have explicit mappings. Accepted keyboard, paste and committed IME text stay ordered with keys; preedit text is not captured. Private actual-engine GUI tests verify original menus, console preferences, independent Pause/keypad-1/right-Ctrl/media-next bindings, focus transitions, release actions, saved configuration and normal close. Unit tests cover scancode boundaries, extended mappings and modifier sides; focused-viewport capture/text isolation and overflow tests pass. X11 initial Caps/Num state and focus resynchronization now pass a private-desktop regression; Windows has a queue-state implementation but no runtime proof. Native Wayland lock state, rapidly queued X11 lock ordering, remaining uncommon-key/platform behavior and full controller/touch equivalence remain open."
+
+[[work]]
+id = "cube2_network"
+requirements = ["LAN discovery", "Master browsing/authentication", "Public server registration", "Signed on/off networking"]
+status = "in_progress"
+notes = "Nonblocking host TCP now implements connect/bind/listen/accept/poll, socket options/errors, partial transfers and shutdown. UDP bind/connect/shutdown uses actual socket state. The synchronous list browser explicitly selects the sanitized snapshot; ordinary streams no longer masquerade as list-only sockets. Original private-master registration, UDP information ping, cryptographic challenge/response, authenticated privilege and auth.cfg save/reload pass. Private IPv4 Ethernet broadcast discovery, original browser row-click join, wrong-key rejection, unrelated-response denial and corrected-key retry are now verified. Further network/platform coverage, registration refusal/retry, master backoff and service interoperability remain open. Fixed shared quotas and signed on/off networking remain enforced."
+
+[[work]]
+id = "cube2_content"
+requirements = ["Custom assets and mod loading", "Demo and movie outputs", "Scoped import/export and persistence", "Complete matching media and asset-version validation"]
+status = "pending"
+
+[[work]]
+id = "cube2_renderer_platforms"
+requirements = ["Accurate graphics with hardware acceleration", "Native portability beyond Linux"]
+status = "pending"
+
+[[work]]
+id = "stereo_audio"
+requirements = ["Channel-aware host audio", "Cube 2 stereo", "DOOM spatial separation", "Zelda stereo DSP", "Output and channel-isolation tests"]
+status = "implemented_runtime_verified"
+notes = "Shared stereo output and Cube 2 stereo verified: callback/encoding, protocol, resampling, original-engine channel differences, real null-device output, cached package playback and GUI rendering. Zelda preserves original DSP stereo through native and Wasm adapters; actual channel differences, gameplay, SRAM saving/reload, import-free engine and malformed/budget/permission handling verified. DOOM spatial stereo verified in native and Wasm original attract demos and gameplay/save-reload tests. Production mixer tests cover separation, gain, clipping, end/rate bounds and long-sound counter overflow. Music remains separate pending work."
+
+[[work]]
+id = "doom_music"
+requirements = ["Original music playback", "Sound controls and persistence", "Music backend selection"]
+status = "in_progress"
+notes = "Original WAD music restored with pinned Chocolate DOOM sequencing/MUS/MIDI parsing and Nuked OPL synthesis using OPL2 defaults. Native and Wasm title-only music, original demo stereo and gameplay/save reload verified. All 45 songs in the selected DOOM WAD produce audio during their first three seconds with address/undefined-behavior sanitizers clean. Generated MIDI/MUS tests verify looping, volume reduction/restoration, pause/resume, tempo/callback bounds, truncations and 9,472 single-byte MIDI mutations; leak checks pass. Sound settings now persist and survive relaunch through the original menus in both targets. Full song/campaign coverage and backend selection remain unfinished."
+
+[[work]]
+id = "doom_saves_config_input"
+requirements = ["All original save slots", "Saved configuration", "Full keyboard and mouse controls"]
+status = "in_progress"
+notes = "Six original save slots and both configuration files persist through a versioned, creator/game-scoped bundle. Native and Wasm original-menu tests cover all slots, distinct last-slot resume, sound-setting changes/reload, legacy raw-slot migration and >3 MiB bundle read/commit. Local desktop input work now passes actual native and Wasm tests for original bindings, save-name editing, legacy zero-binding migration, firing, Pause, weapon selection, wheel bindings, relative mouse movement and the original quit/ENDOOM flow. Restored ENDOOM retains character cells, colors and blinking; a typed upstream demo-exit wrapper fixes a Wasm indirect-call signature trap. C input/ending sanitizer checks, focused-viewport capture isolation and Rust input regressions pass. Private desktop GUI verification also passes ROM selection, separate game window, visible gameplay, physical keyboard movement/automap and named scoped saving. Broader control/platform coverage remains unfinished; do not treat this as complete parity."
+
+[[work]]
+id = "doom_network_mods"
+requirements = ["Multiplayer", "Additional WADs and mods through scoped resources"]
+status = "pending"
+
+[[work]]
+id = "zelda_desktop_features"
+requirements = ["MSU music", "Replay and save-state tools", "Widescreen", "Language and enhancement settings", "Original ROM-only behavior retained"]
+status = "pending"
+
+[[work]]
+id = "arkanoo_parity"
+requirements = ["Editor", "Mouse controls", "Original menus and music", "Portal and gravity mechanics", "Accurate endless generation", "Run persistence", "Original artwork and effects where licensing permits", "Original world geometry and physics", "Editor block types and full bonus/life rules", "Uncapped original level progression"]
+status = "in_progress"
+notes = "Gravity force/spin steps match six trajectories compiled directly from the pinned original fragment. Removed the old velocity clamps that made the original speed-triggered portal unreachable. Added one-time 3600 px/s activation/5000-point award, orbital balls, dynamic inward block positions, integer pull rounding, 270-frame completion and per-level reset. Pause now freezes the animation clock and absorption. Gravity toggles through V/controller X and persists through legacy-compatible archives. Actual native/Wasm fixtures verify production portal physics/rendering, gravity reload and paused frames; both browser profiles verify gravity input/persistence and normal play. Ball-to-ball responses now match seven fixtures compiled from the unchanged upstream contact block, including strict boundaries, exact coincidences, simultaneous pairs and portal exclusion. Original world proportions, single-step unattached movement, SDL integer collision rectangles and movement/pair/paddle/block/rocket/bonus cleanup ordering are restored. Independent unchanged ball/paddle fragments and real SDL intersections verify trajectories, edge cases, centered long-paddle activation/expiry and both-direction clamping. Actual native/Wasm fixtures verify brick resolution and pair-before-paddle ordering. Per-ball 30-frame launch delays and all three directions, manual launch priority, independent host randomness, life-loss item preservation, single-life recovery on completion, ninth-level victory/endless flow and level resets now match unchanged original fragments. Removed four-ball/nine-ammo/four-rocket/eight-drop/score-9999999/level-999 port caps. Actual native/Wasm tests cover launch timing, preserved bonuses, victory, level 1000 and large legacy ARK1 scores. Normal/ice/explosive/metal brick health, ghost behavior and metal-aware completion are restored. Rockets use original 120-pixel world-distance blasts and explosive bricks use 60; indirect damage bypasses armor, never chains or drops bonuses. Ten unchanged-original SDL-backed fixtures cover phase ordering, boundaries, repeated hits and multiple rockets. Native/Wasm checks verify visible ice damage, all special types, blast exclusions and 200-special-brick rendering within normal budgets. Special bricks remain disabled in procedural generation just as upstream; the editor and saved custom patterns expose them. Original ASCII pattern-file import/export now uses explicit player-selected files. All twelve original procedural level types, level/attempt and per-cell/mirror seeding, density/parameter sampling and 20-block/10-retry rules now match the complete unchanged original generator with pinned rand 0.8.5. Fixed-width scalar ChaCha12/PCG sampling preserves canonical 64-bit layouts on native and wasm32 without guest crates. Independent fixtures cover 106 complete layouts including five low-density retries and u32::MAX, plus stream and distribution vectors. Actual native and wasm32 runtimes match all 106 rendered boards and coordinates. Saved custom patterns now join the endless pool; original ASCII import/export now uses signed, host-mediated file selection. Original shard lifetime/rotation/gravity/alpha/shape and launch/brick/record/portal bursts are restored without the old 64-particle cap. Original ball history trails and regular/super fireball effects are restored with point/color reference checks. Original penguin/heart-loss state and rectangle art, including final-life freezing and the original heart PNG, are restored; remaining visual effects still need work alongside original menu/music/run-save/art fidelity. Focused ordered pointer/key/text input now passes through a bounded permission-gated SDK across core, component, native and browser hosts. Mouse centering/quantization, original Space/Escape actions and transition clicks are restored; browser Restart resets static game state. Gameplay cursor hiding/confinement, F11 fullscreen and Q-to-quit outside play now use bounded, transactional host controls; unit, native-window and both browser-profile tests verify actual fullscreen, cursor visibility/release and clean quitting. Host-owned normal-size/fullscreen/maximized window preferences now persist through the native host, including combined-mode reopen and original normal-size restoration in actual Linux desktop tests. The six main menu actions now work through original projected mouse rectangles, with Settings/fullscreen/back controls. Ninety button cases and 25 slider events match the complete unchanged original menu module. Actual native/core/component and native/browser-window checks cover activation. Remaining menu presentation and music/resolution/VSync controls and initial modifier/lock state remain unfinished."
+
+
+[[work]]
+id = "2048_parity"
+requirements = ["Accurate randomized tile spawning", "Scoring", "Win and game-over flow", "Restart and undo", "Board persistence", "Solver functionality", "Tile representation fidelity"]
+status = "implemented_runtime_verified"
+notes = "Original spawn/move rules, merge/best scoring, 128-step undo/restart, win/continue/game-over UI, portable saved board/history and extended tile exponents are verified. Cooperative expectimax assistance/autoplay retains CLI evaluator weights, adaptive depth, four probability, branch cutoff and tie handling without fallback search depth. A bounded 32768-position memo table leaves uncached branches searchable. Six independent fixtures from the unchanged pinned original executable match decisions and evaluations; cooperative chunk sizes and all depth tiers agree. A complete deterministic regression reaches 2048 after 932 turns, score 20676, checking legality, tile mass, scores and save round-trip. Actual native/Wasm and both browser profiles verify assistance/autoplay controls, stop/undo, win pause/continue, responsive cancellation, shared saves, damaged-save preservation and denied saving. Browser actions and Restart match the desktop input contract. Final signed package/catalog delivery and broader platform verification remain tracked separately."
+
+[[work]]
+id = "web_exports"
+requirements = ["DOOM browser export", "Zelda browser ROM decoder and export", "Equivalent resource permissions and saves"]
+status = "pending"
+
+[[work]]
+id = "verification_and_delivery"
+requirements = ["Per-feature regressions", "Full campaigns and level coverage", "Cross-version saves", "Native platform verification", "Updated source recipes and signed packages", "Updated coverage documentation"]
+status = "pending"
+
+[[work]]
+id = "arkanoo_editor"
+requirements = ["Original grid paint/erase behavior", "All normal and special brick choices", "Named pattern save/load", "Clear confirmation", "Test game and editor return", "Custom endless pattern pool", "ASCII pattern compatibility", "Scoped external import/export", "Original editor art/fonts and full text input"]
+status = "in_progress"
+notes = "Restored editor accessible with E at title/pause, pointer toolbar and original S/C/T/L/N/0-8/arrow/Enter/Escape shortcuts. Complete unchanged original editor fixtures verify boundaries, duplicate painting, both-button drag priority, brick types/health, clear, ASCII parsing/writing, backspace and background cycling. All 106 custom-pool layouts match the unchanged original generator and pattern converter on native and wasm32, including three custom selections and empty/special boards. ARK3 archives preserve legacy metadata/effects preferences and named patterns within the existing 1 MiB scoped save; truncation, invalid UTF-8/cells/counts, oversized data, storage exhaustion and denied saving are tested without overwriting damaged saves. Active runs/unsaved edits, original art/fonts and full native IME/touch support remain open."
+
+[[work]]
+id = "selected_file_io"
+requirements = ["Signed file-type permissions", "Explicit player selection", "Async native and browser import/export", "Opaque per-instance requests", "Permission/buffer/path/size validation", "Failed-tick rollback", "Cancellation and stale-result handling", "Original ASCII pattern integration"]
+status = "implemented_runtime_verified"
+notes = "Added bounded import/export APIs for core/component/native and browser hosts. Requests require a fresh focused input action and successful tick; the CLI defaults to unavailable. Native selection reads only chosen regular files and exports atomically to the chosen destination. Browser upload and Save/download actions remain outside the guest. One request/result is retained; native session tokens and browser generations reject stale replies. Original pattern import/export and >64 KiB archive reloading are integrated. Eighteen actual-runtime checks pass on native and wasm32, including component bindings, denied files, cancelled operations, invalid UTF-8, chunked reads and play-history failure rollback. Linux native Open/Save dialogs and core/component browser upload/download controls pass; this does not close engine mod/directory/streaming/large-recording requirements."
+
+[[work]]
+id = "native_window_preferences"
+requirements = ["Game/creator/library-scoped window settings", "Normal size, fullscreen and maximized restore", "Preserve normal bounds across fullscreen/maximize/minimize", "Actual window and OS close handling", "Bounded records and damaged-data preservation", "Per-game storage accounting"]
+status = "implemented_runtime_verified_linux"
+notes = "Host-only atomic records restore actual native window state without guest filesystem access. Actual private-desktop tests cover resize, F11, fullscreen and maximized/fullscreen relaunch, normal-size restoration, game/OS close, library isolation, 100%/150% interface scaling without size drift and corrupt-record fallback. Fixed window-manager startup maximization and deferral until leaving restored fullscreen. Unit tests cover identity boundaries, invalid dimensions/schema/oversize, transient/minimized bounds, linked/device records and preserving damaged files; storage regressions include record bytes. Windows 32/64 compile checks pass, not Windows gameplay verification. Original menu display/resolution/VSync controls remain separate work."
+
+[[work]]
+id = "arkanoo_menus"
+requirements = ["Original main menu actions", "Complete splash/restart/editor-return transitions", "Music and SFX settings", "Resolution/VSync controls and confirmation/revert", "Project-homepage action", "Original menu fonts and backgrounds"]
+status = "in_progress"
+notes = "Implemented the six main-menu actions and supported fullscreen/back and effects volume/mute controls with independent unchanged-original hit-test fixtures. Startup now has the original 270-frame splash, Enter/left-click skip, timer lifetime across restart, and editor-return Resume preservation; 17 original-code state observations cover these transitions. Recipe 0.1.52 restores the original startup image and white-background fade: 17 complete SDL frame references and all 271 fade alpha values reproduce exactly; six canonical desktop configurations match exactly and both browser profiles match smaller native frames within two levels. Original recorded audio remains a replacement. A fresh launch initializes campaign level one; Restart resets score/lives/items while retaining saved patterns/preferences; Resume preserves the paused ball and board, and legacy Up/W quick-start still uses the unlocked level. Mouse, hover/reset, right-click rejection and settings pause are tested. Actual native/core/component and native/browser GUI tests pass menu/fullscreen clicks plus gameplay, saving and file selection. Browser fullscreen image proportions and border/letterbox-aware pointer projection are restored. Recipe 0.1.51 restores the implemented main/SFX/fullscreen/back control layer with original Roboto captions, hover fills, borders, slider percentages and dimmed background tiles. A reproducible 38-frame partial-layer SDL oracle and six desktop/two browser configurations pass within two levels under unchanged budgets. Accepted fullscreen toggles update captions and survive restart; external window state readback remains open. Original music/resolution/VSync controls, homepage/version display, HUD/FPS art and arbitrary scaled-original equivalence remain open. End-state overlays are restored and independently verified in recipe 0.1.53 below."
+
+[[work]]
+id = "arkanoo_effects_settings"
+requirements = ["Original effects-volume range/default and mute", "Integer pointer dragging and clamping", "Actual PCM gain and silence", "Preferences survive new game/restart/relaunch", "Legacy migration and full pattern capacity", "Denied/damaged-save warnings and data preservation", "Portable large-frame audio phase"]
+status = "implemented_runtime_verified_linux_and_web"
+notes = "Implemented 0–128 effects volume (64 default), independent mute and original slider behavior without guest dependencies. Packed ARK3 flags retain the existing 20-byte header and full 1 MiB pattern capacity; ARK1/ARK2 load with original effects defaults. Unit vectors cover 81 menu boundaries, 25 original slider events, all volume/mute states, bad/reserved flags, truncation and full archives. Actual native/core/component PCM verifies gain, mute/zero, restart/reopen, legacy migration and unavailable/damaged saves. Native and both browser profiles pass real drags/mute and browser rendered-state restoration. Fixed usize phase overflow; actual native/wasm32 samples at u32::MAX match a widened reference. Original recorded effects/music and non-Linux gameplay remain unverified/open."
+
+[[work]]
+id = "arkanoo_shard_particles"
+requirements = ["Original particle lifetime, gravity, rotation and fading", "Integer diamond geometry and point order", "Original launch, brick, record, shockwave and portal burst rules", "No replacement particle cap", "Bounded native/Wasm rendering and independent unbiased random fields"]
+status = "implemented_runtime_verified_linux_and_wasm"
+notes = "Restored original-coordinate particles, 20–39 frame life, sizes 3–7, rotation/spin and 0.3 gravity. Original-source SHA-guarded lifecycle/draw fixtures supply 114 observations; actual native/wasm32 image geometry/alpha matches, including repeated points and clipped edges. Full-board bursts retain 2000–3000 shards in a clipped layer of at most six 512x512 tiles; corner coverage verifies full-viewport effects fit unchanged texture/image/memory limits. Packed independent random fields and rejection avoid exceeding unchanged host RPC budgets; accepted-byte enumeration verifies uniform ranges. Real native/core/component browser gameplay passes. Original metallic ball texture is now restored; speed lettering and other visual fidelity remain open."
+
+[[work]]
+id = "arkanoo_ball_effects"
+requirements = ["Original pre-physics trail capture and speed thresholds", "History retention and tier-drop semantics", "Regular and super comet gradients, radii and fade", "Super pulse and spinning ring", "Original ordered point/color operations", "Bounded native/Wasm rendering", "Original u64 animation clock and overflow-safe audio phase"]
+status = "implemented_runtime_verified_linux_and_wasm"
+notes = "Restored history capture and regular/super ball effects. Independent SHA-guarded original-code fixtures cover 49 history frames and 16 draw cases with 15909 exact point/color operations, including wide history and large frames. The original u64 clock and audio phase are restored; probes cover crossing the 32-bit boundary, pause and both integer limits. Source models and actual native/wasm32 pixel/PCM/clock probes pass. The real Linux native window and core/component browser gameplay/editor/file controls pass. Original metal ball/speed font and other visual fidelity remain open."
+
+
+[[work]]
+id = "arkanoo_penguin_hearts"
+requirements = ["Original loss timing and heart destination", "Approach/grab/escape states", "Original final-life freeze", "Ordered rectangle colors and held-heart geometry", "Original heart texture and linear filtering", "Pause, repeated loss and reset behavior"]
+status = "implemented_runtime_verified_linux_and_wasm"
+notes = "SHA-guarded unchanged-original fixtures cover 337 loss/animation frames, sixteen draw poses and three fallback hearts. Actual native/wasm32 tests compare states, rectangles, PNG pixels and destination positions. The unmodified WTFPL heart asset is credited and hash-checked. Shared bounded linear asset draws now work in native/core/component/browser hosts without guest dependencies or added permissions. Cache hits still charge full per-draw bytes; hostile paths, invalid sizes, queue limits, filtering changes and failed-tick rollback are tested. Real Linux and both browser profiles pass gameplay/editor/file checks. Remaining fonts/HUD, ball/background art, menus/audio, platforms and catalog delivery stay open."
+
+
+[[work]]
+id = "arkanoo_remaining_presentation"
+requirements = ["Original shiny ball and speed font", "Glass paddle and bonus icons", "Block gradient/refraction/fire/shine effects", "Animated backgrounds and portal", "Original HUD/FPS and menu/editor presentation", "Recorded sound/music and controls"]
+status = "pending"
+notes = "The pinned rendering module has distinct implementations for these paths. Bitmap text, background/menu/HUD presentation and synthesized audio still contain replacements. Original object art and the four portal stages are restored with the measured grouping/sampling limits documented below; these do not close complete-frame or audio fidelity. Verify original drawing/state transitions and licensed assets independently, including animated boundaries and interaction with host budgets."
+
+
+[[work]]
+id = "network_on_off_permission"
+requirements = ["Signed network boolean", "No IP/hostname/endpoint allowlists when enabled", "No separate LAN opt-in", "Legacy manifest and saved-choice compatibility", "Disabled access denial", "Keep host-owned sockets and quotas"]
+status = "implemented_runtime_verified_native_core_component"
+notes = "Boolean permission applies to HTTPS/TCP/UDP. Legacy transport names map to enabled/disabled and endpoint fields no longer restrict destinations. Cube 2 UDP supports unlisted sources/destinations/binds, bounded DNS and broadcast options; real TCP lifecycle and private authentication/registration are restored; broader LAN/service/platform verification remains open. Signed native TCP/UDP and core/component TCP tests pass without endpoint/local grants, with disabled-open checks. Old signed server-choice identities migrate without creator reuse. Host isolation, handle, message, job, transfer and time limits remain. Documentation and app wording reflect the on/off policy."
+
+
+[[work]]
+id = "cube2_tcp_lifecycle_and_auth_keys"
+requirements = ["Host-owned nonblocking TCP", "Real connect/bind/listen/accept/poll/error/options", "Partial streams and EOF", "Real read/write/both shutdown", "Unbound UDP and original bind errors", "Original registration and cryptographic authentication", "Scoped auth.cfg persistence and reload", "Preserve sanitized browser and shared quotas"]
+status = "implemented_runtime_verified_linux_private_network"
+notes = "Real socket tests cover streams, half-close, refusal, options, listener peer identities, quota preservation, invalid/stale handles and disabled access. Snapshot mode is explicitly selected only by the original synchronous browser; changed masters discard stale results and failed reconnects have no side effects. The original engine registers with a private master, answers its UDP information ping, authenticates with an unchanged-source cryptographic fixture and reloads saved auth keys offline. Direct and discovered two-engine regressions retain background connections and clean saves. Full suite: 390 passed, 53 ignored; four original-engine checks run separately. Private Linux LAN discovery and wrong-key/retry cases are now verified below; further faults/service interoperability, platforms and updated signed delivery remain open."
+
+
+[[work]]
+id = "cube2_lan_and_authentication_failure_paths"
+requirements = ["Original LAN broadcast and echoed-token reply", "Discover custom game/info ports", "Original browser-row click and remote identity", "Networking-off and search-off produce no discovery traffic", "Wrong-key rejection without privilege", "Unrelated request ID cannot grant privilege", "Corrected-key retry and persistence"]
+status = "implemented_runtime_verified_linux_private_ethernet"
+notes = "Two original engines run on separate private network namespaces with a virtual Ethernet bridge and packet capture, with no physical interface. Empty/offline cases are silent; enabled discovery finds and joins the correct custom-port server through its original browser row. The test waits for game-level welcome before identity updates, preserving original semantics, and uses a 500 ms ordinary deadline on both engines after their first startup frame, including cold remote resources; the extra server warmup is removed. The original authentication regression rejects a wrong-key proof and unrelated success, verifies no privilege, then authenticates/reloads the replacement correct key. Further faults, real-service/platform coverage, worst-case rendering performance and content remain open."
+
+[[work]]
+id = "cube2_cold_resource_loading"
+requirements = ["Cold model/geometry/material notifications", "Shader compile/first-bind notifications", "Texture/cubemap and surface allocation notifications", "Cached frames retain ordinary deadlines", "Fixed nonrenewable loading allowance", "Cleanup resets resource state"]
+status = "implemented_runtime_verified_linux_software_renderer"
+notes = "Pinned source staging uses one shared exact-anchor patch table in both builders. Production C++ state tests cover cold/hot frames, shadow-before-material, cleanup and shutdown. Actual host-reader tests cover ordinary timeout, delayed loading success, fixed loading timeout, duplicate rejection and next-tick deadline restoration. The original browser and isolated LAN discovery/join regressions pass; the latter uses 500 ms ordinary deadlines immediately after startup without extra remote-model warmup. Hardware drivers, worst-case workloads and non-Linux execution remain open."
+
+[[work]]
+id = "cube2_desktop_lock_state"
+requirements = ["Initial Caps Lock and Num Lock state", "Focus-return resynchronization", "Preserve lock bits on keyboard/mouse/wheel events", "Reject unknown modifier bits", "Native Wayland and Windows behavior"]
+status = "in_progress"
+notes = "Trusted host hook reads the existing X11 connection's XKB locked modifiers using actual Caps/Num keysym masks, or Windows GetKeyState toggle bits. State is scoped to the active focused game viewport and deduplicated. A private X11 desktop verifies four initial combinations and focus changes; host protocol and modifier-state unit tests pass. Native Wayland, rapidly queued X11 lock ordering and Windows runtime coverage remain open. Guest source policy is unchanged."
+
+[[work]]
+id = "cube2_ordered_pointer_and_single_keyboard_path"
+requirements = ["All eight original physical mouse buttons on X11", "Ordered keyboard/button/wheel delivery", "Preserve modifier sides and lock snapshots", "Physical/controller mouse overlap", "No duplicate portable keyboard actions", "DPI-aware wheel fractions and capture/reset behavior"]
+status = "implemented_runtime_verified_linux_x11"
+notes = "Native host translation tests cover complete clicks, right-side modifiers, wheel DPI/fractions, recapture and focus reset. Production C++ state tests cover effective physical/controller button overlap in both release orders. The signed package and original Vulkan GUI regressions pass all eight original mouse bindings, four wheel directions, original Z without extra fire, and right-Ctrl/middle-click/release/wheel ordering through original script state and scoped saving. Initial-lock startup also passes. Wayland additional-button normalization, relative-motion ordering, broader lease recovery, physical-controller hardware validation, hardware devices and wider platform verification remain open."
+
+[[work]]
+id = "cube2_event_time_sdl_modifiers"
+requirements = ["Restore SDL global modifiers in input dispatch order", "Later Ctrl press cannot affect earlier plain navigation", "Later Ctrl release cannot erase earlier modified navigation", "Preserve postbatch snapshot", "Fail on invalid or rejected modifier markers", "Match both builders and fingerprint the helper"]
+status = "implemented_runtime_verified_linux_original_console"
+notes = "Original console regression reproduces both bugs before the fix and passes after it without modifying console behavior. Reviewed private SDL markers restore state before actual event dispatch; producer state remains current outside dispatch. Production-header tests cover keyboard/mouse/wheel, lock and standalone snapshots, foreign-event preservation and six queue/marker rejection cases. The signed-package rebuild/cache/integrity test passes. Broader console commands, physical-controller hardware validation, lease recovery and remaining platform/input work are not claimed complete."
+
+[[work]]
+id = "cube2_keyboard_action_overlap"
+requirements = ["Physical and portable-action key state combine", "Either release order preserves the other source", "Focus reset releases both once", "Preserve physical repeat and reject repeated releases", "Compose controller Shift with physical modifier snapshots"]
+status = "implemented_runtime_verified_linux_original_bindings"
+notes = "Production C++ state tests cover all accepted scancodes, both source orders, repeat, reset, invalid indices and Shift mask composition. The original engine's W and Left Shift bindings preserve exact press/release callback counts for both overlap orders and focus reset. Both builders and signed cache identity include the reviewed keyboard adapter. Actual controller/touch hardware, broader lease recovery, relative-motion ordering and wider platform equivalence remain open."
+
+[[work]]
+id = "cube2_held_input_lease_recovery"
+requirements = ["Release controls while UI reports are stale", "Resume still-held UI-observed controls only after fresh submission", "Do not replay completed taps or explicit reset state", "Preserve expired backlog ordering and release boundaries", "Defer fresh controller/look state until the recovery boundary", "Retain queue limits and reject state changes atomically"]
+status = "implemented_runtime_verified_linux_original_worker"
+notes = "Production input preparation validates and caches only bounded physical state. Queue tests cover restoration, release, repeat, focus reset, stale backlogs, deferred latches, batch/queue overflow and invalid-state atomicity. Original bindings verify callback counts from production queue output. A real background-worker test stops UI reports, waits for actual expiry while rendering continues, resumes current held input and verifies scoped saved callback counts. Hotplug/lost OS events, broader bindings, actual device/UI-stall variants and remaining platform/input work stay open."
+
+[[work]]
+id = "arkanoo_original_metallic_ball"
+requirements = ["Original procedural ball pixels and SDL clipping", "Original integer rectangle positioning", "Filtered half-scale draw in native/Wasm", "Preserve gameplay, effects and heart rendering"]
+status = "implemented_runtime_verified_native_wasm_browsers"
+notes = "A reference generator compiles the unchanged pinned drawing function and uses real SDL rasterization to produce the 12x12 RGBA fixture. The source-derived PNG matches all decoded bytes. All 29 signed runtime checks pass in Wasm and native builds, including original rectangle placement and exact source pixels. Native GUI and core/component browser gameplay/editor/file workflows pass. Original speed font/lettering and other presentation work remain open."
+
+[[work]]
+id = "arkanoo_original_glass_paddle"
+requirements = ["Original rounded normal and extended paddle pixels", "Original core, thruster and spin aura geometry/colors", "Fast paddle collision trigger and original glow decay", "Ghost bonus leaves paddle appearance unchanged", "Native/Wasm drawing and desktop/browser gameplay"]
+status = "implemented_runtime_verified_native_wasm_browsers"
+notes = "The unchanged pinned paddle procedure is rasterized through SDL into two source-derived textures with full decoded-pixel comparisons. The unchanged original overlay function supplies independent geometry/color fixtures, including spin thresholds. The signed runtime fixture checks normal, extended, ghost, full/decayed glow and collision-triggered discharge. All 30 signed runtime checks pass in native and Wasm builds, and native GUI plus core/component browser gameplay/editor/file workflows pass. The full all-features suite passes 409 tests with 61 dedicated checks ignored; strict lint and formatting pass. Remaining bonus/block/background/HUD/menu art, audio and settings still need fidelity work."
+
+
+[[work]]
+id = "arkanoo_original_normal_brick_textures"
+requirements = ["Original six color textures, gradient, glow and bevel", "Original integer copy rectangles and linear filtering", "Use shared textures for gameplay and editor boards", "Retain full layout/color/archive/gameplay assertions", "Native/Wasm and desktop/browser gameplay"]
+status = "implemented_runtime_verified_native_wasm_browsers"
+notes = "The unchanged pinned drawing procedure and original color table produce six SDL-rasterized reference textures. Every decoded PNG byte matches. Signed probes cover all six colors at ordinary, fractional and negative integer rectangles. The 106-board layout regression now checks textured brick positions; editor violet/archive red checks compare complete pixels. Gameplay must show an actual reduced board with a ball, so menu frames cannot count as destroyed bricks. All 31 signed checks pass in native and Wasm, including all 106 layouts and the stronger actual-breakage check. Native and both browser editor/save/reload/import workflows match nine original-texture samples with a three-level capture/interpolation tolerance; complete runtime pixels remain exact. The full all-features suite passes 410 tests with 62 dedicated checks ignored; strict lint, formatting and reference regeneration pass. Special ice/fire/graphite detail and broader art/audio/settings remain open."
+
+
+[[work]]
+id = "arkanoo_original_graphite_geometry"
+requirements = ["Original opaque graphite body and rivets", "Unclipped stripe/bevel coverage with original alpha and order", "Nearest primitive pixel grid and integer geometry", "Full 200-metal board within existing limits", "Bounded immutable multi-image cache"]
+status = "implemented_geometry_runtime_verified_native_wasm"
+notes = "The unchanged original branch supplies exact opaque pixels and separate outside layers, including pixels at x=-20, x=70 and y=20. Six SDL backdrop comparisons keep interior pixels exact and measure one/two-level line-versus-texture-copy rounding outside. Native/browser full-frame compositing equivalence remains open. The image cache retains at most 32 paths and 1 MiB decoded pixels, with LRU eviction; each frame still charges every draw. All 32 signed checks pass in native and Wasm, including cold/warm 200-metal boards, exact layer geometry/pixels and cross-draw/frame Arc identity. Default all-features tests pass 414 checks with 63 dedicated checks ignored; rebuilt CLI/GUI, native GUI and both browser regressions pass. Windows 32/64 compilation, strict lint, formatting and site-link checks pass. The maintainer harness compiles once before running timed tests directly, so Cargo waits do not consume execution time."
+
+[[work]]
+id = "arkanoo_original_frame_compositing"
+requirements = ["Compare original complete frames with native/browser output", "Preserve alpha/color-space semantics and overlapping primitive order", "Verify viewport/scaling and every special effect"]
+status = "pending"
+notes = "Source pixels/geometry alone do not prove complete framebuffer equivalence. The graphite reference exposes SDL software line/copy rounding differences of up to two 8-bit levels outside the opaque body. The reference bound is not a bound on native/browser framebuffer differences. A native game-color conversion bug is now fixed: 24 solid-color/background combinations with rectangles, nearest sprites and overlapping layers agree with actual SDL to one 8-bit level in six desktop configurations, and exactly in both browser profiles. Opaque filtered gradients now agree with actual SDL to one level across six desktop configurations and both browser profiles, including moving/changing textures and clipping. Transparent straight-alpha interpolation, edge rasterization, original full-scene clearing/retention and complete original frames remain open alongside other presentation work."
+
+
+[[work]]
+id = "sdk_rgba_source_over"
+requirements = ["Encoded-RGB source-over for game primitives and sprite pixels", "Opaque/transparent inputs and ordered overlaps", "Keep app UI styling and raw immutable pixels separate", "Actual SDL/native/browser comparison", "Preserve limits and port regressions"]
+status = "implemented_window_verified_linux_vulkan_opengl_browser"
+notes = "Game drawing no longer uses the UI helper's linear-light premultiplication. A real default SDL OpenGL renderer supplies 72 RGB samples from 24 foreground/background combinations; six desktop combinations (core/component Wasm and native across Vulkan/OpenGL) have maximum channel delta one, and both browser profiles match exactly. Before the fix, native Vulkan differed by up to 66 levels. The reference records software SDL separately. All 417 all-features tests and all 32 signed Arkanoo checks in native/Wasm pass; native GUI and both browser workflows pass. Windows 32/64 compilation, lint and formatting pass. The desktop-only SDL comparison is wired into CI and passes locally. This is flat-color/nearest-sprite compositing evidence, not full-frame or filtered-sampling parity."
+
+
+[[work]]
+id = "sdk_opaque_linear_sampling"
+requirements = ["Encoded-RGB interpolation separate from UI textures", "Nearest controls, clipped and minified sprites", "Moving bounds and changed source dimensions", "Live SDL comparison in native/core/component and browser players", "Retain limits and original-port workflows"]
+status = "implemented_window_verified_linux_vulkan_opengl_browser"
+notes = "The current source uses host-owned raw-Unorm textures for native linear sprites. The 46-sample SDL reference across three frame phases and eight configurations yields 1,104 RGB comparisons: OpenGL maximum delta zero, Vulkan/browser one. Forced Mesa OpenGL 2.1 static comparison passes; a true no-VAO path remains unverified because Mesa refused extension removal. The source-over regression interleaves filtered sprites with rectangles and nearest sprites. All 417 default tests pass; all 32 signed Arkanoo checks pass in native/Wasm, with native GUI and both browser workflows. Windows 32/64 compilation, strict lint, formatting, site links and the desktop-only CI comparison pass. Transparent straight-alpha SDL filtering, rare sRGB-only surfaces and complete original frames remain open."
+
+
+[[work]]
+id = "sdk_plain_shader_fallback"
+requirements = ["Transparent-black fallback for plain shader draws", "Match Vulkan and OpenGL", "Observe fallback RGBA and texture recovery", "Core/component/native and GLSL/SPIR-V/WGSL checks", "Keep shader resource and receipt validation"]
+status = "implemented_window_verified_linux_vulkan_opengl"
+notes = "The stronger opaque-output probe reproduced Vulkan's white fallback before correction. Vulkan now binds transparent black. All nine backend/runtime combinations and three wrapped API configurations pass nine interior fallback samples and subsequent texture recovery. Existing receipt/reflection/resource/malformed-cache rejection checks remain active in the runs. Seven shader unit tests, strict lint, formatting and Python syntax checks pass. CI includes native texture/fallback checks for all backends. General shader alpha-compositing and complete game-frame fidelity remain separate work."
+
+
+[[work]]
+id = "arkanoo_original_ice_layers"
+requirements = ["Original f32 pulsing fill", "Inclusive top/left glints", "Three position-seeded refraction lines", "Health-dependent five-segment cracks", "Ten clipped moving shine diagonals", "Independent active-editor animation clock", "Unchanged command/image/tick budgets and no guest crates", "Original-reference native/Wasm checks and actual editor animation"]
+status = "implemented_runtime_verified_linux_browser"
+notes = "Recipe 0.1.25 restores every ice drawing step. The unchanged source branch with pinned Rand 0.8.5 and real SDL yields 96 cases across twelve frames, four positions and healthy/damaged states. Signed native/Wasm checks compare every alpha-mask byte and exact f32 pulse color, inclusive 61x21 outside coverage and clipped 60x20 shine. A dedicated clock probe keeps editor animation separate from gameplay, and full damaged 200-ice boards retain existing 1024-command/8 MiB/tick limits using three commands per brick. All 63 port logic tests and all 33 signed checks in native/Wasm pass; native and both browser editors paint and animate ice before restoring the existing save/import workflows. Strict lint, formatting, Python syntax and exact reference regeneration pass. The original i32 random sampler has a direct independent stream test. Grouped white layers differ from original software SDL by at most three 8-bit levels over six backdrops (576 comparisons); this does not prove native/browser framebuffer equivalence. Explosive fire/glass, full frames and other presentation/platform/delivery requirements remain open."
+
+
+[[work]]
+id = "arkanoo_original_fire_glass_layers"
+requirements = ["Original f64 magma pulse and f32 shine phase", "Moving one-pixel core with original SDL rectangle semantics", "Top-half glossy fill and inclusive edge glints", "Two static diagonal reflections and eight clipped shine diagonals", "Native/Wasm original-reference coverage", "Full 200-brick and mixed-board budgets", "Actual native/browser editor painting and animation"]
+status = "implemented_runtime_verified_linux_browser"
+notes = "Recipe 0.1.26 restores all explosive-brick drawing stages. The unchanged branch is compiled with real SDL 0.37.0 constructors from original-lockfile-checksummed archives, catching the apparent zero-height core's actual one-pixel height. Sixty-four cases span sixteen frames/four positions and precision/wrap/u64 boundaries. Signed native/Wasm tests compare exact colors, core geometry, both alpha masks, order and sampling. Every one of 384 real-SDL backdrop comparisons changes when the core is removed. White overlay grouping differs by at most three 8-bit levels in software SDL, not a bound on native/browser framebuffer output. Full 200-fire and mixed ice/fire/metal boards pass cold/warm at three phases within unchanged command/image/tick limits using four commands per fire brick. All 63 port logic tests and all 34 signed checks in native/Wasm pass. Actual native and both browser editors verify animation and visible chromatic core pixels before restoring save/import workflows. Strict lint, formatting, Python syntax and exact reference regeneration pass. No guest crates, permissions or player tools are added. Complete original frames and other presentation/platform/delivery requirements remain open."
+
+
+[[work]]
+id = "sdk_fresh_frame_backgrounds"
+requirements = ["No retained pixels between custom frames", "Native/browser default background parity", "Translucent and transparent clears over fresh black", "Empty custom frames without legacy fallback", "Repeated ticks and phase revisits", "Both runtime profiles and native Vulkan/OpenGL comparison", "Existing browser export compatibility"]
+status = "implemented_window_verified_linux_vulkan_opengl_browser"
+notes = "Browser render previously retained prior red pixels when a later frame omitted draw_clear and accumulated translucent fills. It now paints the default opaque dark background, or composites the selected alpha background over fresh opaque black, matching existing native behavior. The pre-fix signed browser test reproduces retained RGB 200/48/32 instead of 16/23/29. Eight configurations (six desktop and both browser profiles) pass eight phase checks plus delayed stability checks, including omitted clear, alpha-128 clear, transparent clear, empty custom frames and revisits. Browser sample alpha remains 255. The full regression is added to CI with actual Chrome/Chromium support; local browser/driver discovery checks pass. Existing core/component complete browser export checks, all 34 signed port tests in both runtimes and native/both-browser gameplay/editor/file workflows pass. Node smoothing/keyboard, strict lint, formatting, Python syntax and site links pass. Original complete-game framebuffer equivalence remains open."
+
+
+[[work]]
+id = "arkanoo_original_bonus_capsules"
+requirements = ["Original four tints and radial glass alpha", "Top-left reflection and interleaved double ring", "Original shadow and all repeated symbol passes", "Inclusive point bounds with unchanged collision boxes and motion", "Exact decoded source layers in native/Wasm", "Live native/browser art and position changes", "Unchanged drawing/cache/image/tick limits"]
+status = "implemented_runtime_and_window_verified_linux_browser"
+notes = "Recipe 0.1.27 replaces flat blocks/letter labels with ten source-derived PNGs. The unchanged original drawing function and Bonus::rect use real pinned SDL constructors. Sixteen fixtures compare complete RGBA, order, nearest sampling and integer projection; cold/warm 200-item scenes retain 800 draws and per-asset Arc identity within unchanged limits. Ninety-six default-OpenGL backdrop comparisons differ by at most one level; software SDL texture-copy comparisons differ by up to five, explicitly recorded. Six desktop and both browser profiles compare original tint/corner/symbol/rim/highlight samples and position changes, with maximum delta two after accounting only for exact nearest-sampling boundaries. All 63 logic tests and all 35 signed checks in native/Wasm pass, with existing native/both-browser gameplay/editor/file workflows. All 24 bonus poses (480 RGB samples) and final browser discovery checks pass; strict lint, formatting, Python syntax, tracker/CI parsing and exact reference regeneration pass. Original world clipping/aspect, complete framebuffer equivalence and remaining art/audio/settings/platform/delivery work remain open."
+
+[[work]]
+id = "arkanoo_original_world_viewport"
+requirements = ["Original world viewport and aspect under window resizing", "World-object clipping at original window edges", "Partial bonus/particle visibility near boundaries", "Keep HUD and letterbox semantics faithful", "Original-frame comparison in native/browser players"]
+status = "pending"
+notes = "The source-art fixtures normalize each object and establish layer pixels/geometry, not whole-window clipping. Source currently projects the original 1280x720 world at half scale with a vertical offset into the fixed 640x480 SDK canvas. Original viewport/aspect and edge behavior need direct complete-frame evidence and any necessary scoped rendering support; restored object art does not close this requirement."
+
+[[work]]
+id = "arkanoo_original_rocket_art"
+requirements = ["Original ordered body/nose/fins/flame pixels", "Original integer-truncated projected coordinates", "Production gameplay integration", "Cold/warm shared asset and unchanged draw limits", "Signed native/Wasm and actual desktop/browser rendering"]
+status = "implemented_runtime_and_window_verified_linux_browser"
+notes = "The unchanged pinned rocket draw loop is captured and rasterized by real SDL into a 10x20 opaque/transparent source sprite. The production renderer replaces the old yellow rectangle with one nearest image; five fractional/negative/edge origins and 200-projectile cold/warm scenes are exercised through signed runtimes. All six desktop and both browser configurations pass three poses with seven samples per rocket (672 RGB comparisons); desktop channel difference at most one, browsers exact in this run. Transparent and nose samples avoid background-grid geometry edges, with explicit adjacent-texel handling at exact nearest boundaries. Original world-edge clipping and whole-frame presentation remain separate pending requirements."
+
+[[work]]
+id = "arkanoo_original_portal_stages"
+requirements = ["Original four portal stages and boundaries", "Ordered point geometry and colors", "Original f32 phase and large frame counts", "Production portal timer integration", "Signed native/Wasm budget checks", "Desktop/browser stage transitions and clearing", "Quantify grouping and sampling differences"]
+status = "implemented_geometry_and_bounded_layer_verified_linux_browser"
+notes = "Eighteen cases execute the complete unchanged SHA-guarded original draw_portal, including phase boundaries, f32 precision loss and u64::MAX. Every ordered point/color matches the adapted production functions. Full grouped images are compared with real software SDL over dark: maximum channel delta four, explicitly retained as a limit rather than exact framebuffer parity. Actual native and core/component desktop Vulkan/OpenGL and browser scenes pass swirl/close/flash/fade/empty/restore; sampled desktop delta at most three and browser at most two, with explicit nearest-boundary choices. All 38 signed checks pass native and Wasm, including complete Game.draw scenes and unchanged budgets. Original viewport, whole-frame comparison and cross-platform rendering remain open."
+
+[[work]]
+id = "arkanoo_campaign_animated_backgrounds"
+requirements = ["Original level 7 starfield", "Original level 8 pulsing circles", "Original level 9 digital rain", "Ordered primitive pixels/colors and f32 phase", "Release overflow at large frame counts", "Sparse tiles without dropping gameplay art", "Native/Wasm and desktop/browser animation checks"]
+status = "implemented_campaign_animations_verified_linux_browser"
+notes = "The three unchanged original campaign branches supply 21 ordered-point/color and real SDL framebuffer fixtures, including f32 precision loss and u64::MAX. Production points match exactly; grouped images retain a two-level software-SDL comparison bound. Backgrounds use non-overlapping 64-pixel sparse tiles. All 39 signed checks pass in native/Wasm, including 200 complete fire-brick layers and 3,000 full-window particles across six cold/warm scenes under unchanged limits. Eight real players pass both animation frames per background plus a revisit: desktop sampled channel delta at most two, browsers at most one, with explicit nearest-boundary handling and samples inside tile/world edges. Image backgrounds 1–6, editor artwork, the remaining procedural themes, complete-window parity and other platforms remain open."
+
+[[work]]
+id = "component_sdk_button_constant_parity"
+requirements = ["All named button/held mask exports in component SDK", "Host input bit compatibility", "Actual source build/execution", "Live held-button delivery"]
+status = "implemented_and_component_runtime_verified"
+notes = "Component wrappers previously exported only the four directional held masks, unlike core/native. They now also export A/B/X/Y/L/R/Start/Select press/held aliases. A signed component validates all twenty public raw mask constants against fixed host input positions before exercising typed asset/ROM/save/drawing/audio/rollback/permission paths. Background scene compilation and the Z/B held action work in both browser profiles and all desktop modes. The rebuilt source host is required for new component builds; no binary release is published."
+
+[[work]]
+id = "arkanoo_procedural_snow_smoke_tornado"
+requirements = ["Original level-seeded theme selection", "Typed Rand u8/i32/f32 sampling", "Original snow smoke tornado motion and ordered pixels", "Multiple level seeds and large frame phases", "Dense/sparse tiling without omitting later game art", "Native/Wasm and real desktop/browser rendering"]
+status = "implemented_three_themes_verified_linux_browser"
+notes = "The complete unchanged original animated-background function compiles against exact Rand 0.8.5/ChaCha 0.3.1/Core 0.6.4; real selected levels exercise the three themes without forcing selection. Thirty-three cases cover three levels per theme and f32/u64 phase extremes. Every ordered point/color hash and count matches production, with all original framebuffer pixels checked against software SDL under a measured four-level grouping bound. Four seeds also verify 1,024 real typed u8 samples. All 40 signed checks pass native and Wasm, including 200 fire bricks and 3,000 full-window particles. Eight player configurations pass two animation frames/theme plus a revisit; sampled desktop delta at most three and browsers at most two, with explicit nearest-boundary/interior sampling. Seventeen other procedural themes, image/editor backgrounds, whole-frame/edge/platform parity remain open."
+
+[[work]]
+id = "arkanoo_remaining_procedural_themes"
+requirements = ["Starry night", "Digital circuit", "Maze"]
+status = "implemented_paths_verified_linux_browser"
+notes = "All twenty original procedural draw paths are now adapted. The final three preserve all ordered mixed primitives and complete canonical default OpenGL frames in 43 real-Rand/actual-SDL cases and signed native/Wasm checks, including blink/shooting boundaries and extreme phases. Their 349 grouped contribution maps match exactly. The later canonical point-background pass also establishes exact logical OpenGL frames for the earlier eight themes. Campaign 7-9 canonical blending is also restored by its later capture pass. Image/editor art, complete-window/edge/platform parity and remaining presentation/audio remain separate open requirements."
+
+[[work]]
+id = "arkanoo_procedural_fire_and_deep_sea"
+requirements = ["Original seeded flame motion gradient and sizes", "Original integer-truncated light shafts", "Original ordered shaft bands and drifting plankton", "Multiple actual selected level seeds", "Frame precision extremes", "Native/Wasm complete pixel and full-scene budget checks", "Real desktop/browser animation and revisit"]
+status = "implemented_two_themes_verified_linux_browser"
+notes = "Twenty-two cases run the complete unchanged original function with exact real Rand and actual selected levels; point counts/trace hashes and every composed framebuffer pixel are verified under the existing four-level software-SDL grouping bound. The generalized shared unit/runtime verifiers retain all prior snow/smoke/tornado evidence. All 41 signed checks pass native and Wasm, including dense 200-fire-brick/3,000-particle scenes with all later art present. Eight real players pass both animation frames/theme and a revisit: sampled desktop maximum delta three, browser two, with explicit nearest/interior sampling limits. Original helper cast order is retained. Fifteen other themes, image/editor artwork, whole-frame/edge/platform parity and remaining presentation/audio are unfinished."
+
+[[work]]
+id = "arkanoo_procedural_supernova_and_space_wars"
+requirements = ["Original core shockwave and seeded debris", "Original interval/offset laser selection", "Exact half-probability RNG consumption", "Release wrapping after f32-to-u64 conversion", "Empty intervals clear earlier shots", "Native/Wasm pixels and full-scene limits", "Real desktop/browser animation and clearing"]
+status = "implemented_two_themes_verified_linux_browser"
+notes = "Twenty-two complete-original/real-Rand/SDL cases compare every ordered point/color hash and full framebuffer under the existing four-level grouping bound. Four real Rand streams verify 1,024 half-probability values. All 42 signed checks pass native and Wasm, preserving full fire-brick/particle scenes and empty backgrounds. Eight player configurations verify both animation frames/theme, a genuinely empty interval and a revisit. Desktop sampled delta at most two and browsers one; empty-interval samples match exactly. Laser samples use a one-pixel vertical interior margin because the original bars are only four pixels high; ordinary nearest-boundary choices remain explicit. Thirteen themes, original image/editor artwork, complete-window/edge/platform fidelity and remaining presentation/audio are unfinished."
+
+[[work]]
+id = "arkanoo_procedural_star_voyage"
+requirements = ["Original mixed typed root random stream", "Background tint speed and count selection", "Original per-star seeded positions sizes alpha", "Multiple actual selected levels and extreme phases", "Signed native/Wasm complete pixels and full-scene budgets", "Real desktop/browser seed changes and animation"]
+status = "implemented_and_verified_linux_browser"
+notes = "Eleven complete-original/real-Rand/SDL cases match ordered point/color hashes and all composed pixels under the existing four-level grouping bound. Root sampling consumes i32 theme, u8 colors, u64 star count, f32 speed and u8 tint in original order. Eight real players pass two frames for all three selected levels plus a revisit; sampled desktop delta at most three, browser two. Full signed native/Wasm scenes preserve fire bricks and 3,000 particles. The shared player fixture now generates guest/native/browser key mapping from one table; the existing space/empty-interval matrix passes again. Twelve themes, original image/editor artwork, full-window/edge/platform fidelity and remaining presentation/audio remain open."
+
+[[work]]
+id = "arkanoo_sdl_background_line_rasterization"
+requirements = ["Measure actual default OpenGL/software behavior", "Clip endpoints before rasterization", "Forward/reversed slope ties", "Viewport boundary crossing and rejection", "Degenerate line semantics", "Scalar portable attributed implementation", "Signed native/Wasm coverage", "Integrate remaining line-based themes"]
+status = "default_helper_and_reference_verified_theme_integration_pending"
+notes = "The 32-case real SDL 2.30 corpus records both renderer images, hashes, color and coverage differences. Default OpenGL/software share coverage in 30 cases and differ on two zero-length lines: GL paints one point, software omits it. RGB differences in the shared-coverage cases are at most two levels. An altered attributed zlib-licensed scalar helper follows default OpenGL coverage, including integer endpoint clipping before Bresenham; clipping after rasterization gave wrong edge phases and was corrected. Signed native/Wasm checks exercise the final corpus. Kaleidoscope now integrates this helper with independent original command/frame evidence below. This does not restore the other remaining theme draw paths or establish all SDL versions, line modes, scaled/complete-frame or platform parity."
+
+[[work]]
+id = "arkanoo_procedural_kaleidoscope"
+requirements = ["Original five layers and twelve petals", "All 240 ordered line commands and colors", "Original alternating rotation and endpoint casts", "Original viewport clipping and shared-corner blends", "Actual OpenGL/software reference frames", "Signed native/Wasm complete pixels and dense-scene limits", "Real desktop/browser animation and seed/revisit checks"]
+status = "implemented_and_verified_linux_browser"
+notes = "A recorder compiles the complete unchanged original procedure with pinned Rand and captures all 240 ordered line commands. Actual SDL 2.30 OpenGL/software render independently; additive default-GL passes also verify exact contributions for every pixel in all five layers. Eleven frame/level cases preserve command hashes and all 55 full layer-count maps. The final known-background precompositor matches all eleven complete original default OpenGL logical framebuffers byte-for-byte in unit and signed native/Wasm checks, including extreme repeated overlaps. Original software SDL differs by up to four levels from that renderer. All 45 signed checks pass, including dense 200-fire-brick/3,000-particle scenes. Eight real players pass animation/seeds/revisit with exact browser samples and desktop delta at most one against the canonical original GL images. Limits, sparse tiling and other background compositors remain unchanged. Eleven themes, image/editor art, full scaled-window/edge/platform fidelity and other presentation/audio remain open."
+
+[[work]]
+id = "arkanoo_procedural_rain_and_warp"
+requirements = ["Original seeded rain slant speed and length", "Preserve upstream disabled lightning behavior", "Original exponential warp distance tint alpha and tails", "All ordered commands and clipped pixel contributions", "Exact default OpenGL logical framebuffers", "Native/Wasm full-scene limits", "Real desktop/browser animation and revisit"]
+status = "implemented_and_verified_linux_browser"
+notes = "The unchanged complete original function supplies 22 actual level/frame cases and raw ordered line commands with pinned real Rand. Actual default SDL 2.30 OpenGL frames and 116 independent segment-group contribution maps match production exactly. Both signed native and Wasm compare every canonical framebuffer byte; all 46 signed checks pass. The original software renderer itself differs from default OpenGL by up to 15 RGB levels on faint overlapping warp streaks; tests verify that recorded difference separately instead of weakening exact canonical checks. Rain uses 128-pixel sparse tiles to preserve all fire-brick and 3,000-particle layers within unchanged budgets. Eight actual player configurations pass both animation frames/theme and a revisit: browser samples exact, desktop maximum difference one. Nine themes, original image/editor art, full scaled-window/edge/platform fidelity and remaining presentation/audio are unfinished."
+
+[[work]]
+id = "arkanoo_procedural_cyber_and_aurora"
+requirements = ["Original shared typed RNG stream and colors", "Perspective horizon spacing and scanline motion", "Both aurora orientations and wave parameters", "Exact ordered lines and contribution maps", "Exact original default OpenGL logical frames", "Signed native/Wasm dense-scene budgets", "Actual desktop/browser animation and revisit"]
+status = "implemented_and_verified_linux_browser"
+notes = "The complete unchanged original function with pinned Rand supplies 22 selected-level/frame cases including both aurora branches and extreme phases. All ordered commands, 185 independently recorded SDL 2.30 default OpenGL contribution maps and complete canonical framebuffers match production exactly in logic and signed native/Wasm checks. Separate original software frames have identical coverage and at most six RGB levels of renderer difference. The existing attributed clipped-line helper, precompositor and density-based tiles preserve all 200 fire-brick layers and 3,000-particle corner layers within unchanged limits. All 73 logic tests and 47 signed checks per profile pass. Eight actual players pass animation/theme/orientation/revisit checks with exact browser samples and desktop delta at most one. Seven procedural themes, other artwork and complete scaled-window/platform fidelity remain open."
+
+[[work]]
+id = "arkanoo_procedural_matrix_and_nebula"
+requirements = ["Original shared and per-object typed RNG streams", "Matrix head phase and release overflow", "Original nested cloud rectangles drift and colors", "Raw rectangle order and real SDL clipping/coverage", "Exact default OpenGL logical framebuffers", "Native/Wasm dense scenes within existing memory/drawing limits", "Actual player animation empty phase and revisit"]
+status = "implemented_and_verified_linux_browser"
+notes = "The complete unchanged original function with pinned real Rand supplies 22 selected-level/frame cases including extreme and empty phases. Actual SDL 2.30 filled-rectangle calls verify every ordered command and all 133 grouped contribution maps independently. Complete canonical OpenGL frames match exactly in logic and signed native/Wasm tests; separate original software frames have identical coverage and up to 23 RGB levels of backend difference on faint repeated cloud layers. Direct ordered-rectangle composition avoids the expanded point list, retaining the 16 MiB package memory cap. All 200 fire-brick overlays and four corner layers with 3,000 particles remain within unchanged drawing/time/source limits, cold/warm. All 74 logic tests and 48 signed checks per profile pass. Eight actual players pass animated frames, another seed, empty-phase clearing and revisit: browser samples exact, desktop delta at most one. Five themes and complete scaled-window/platform/art/audio fidelity remain open."
+
+[[work]]
+id = "arkanoo_procedural_hex_and_bubbles"
+requirements = ["Original typed grid parameters pulse and colors", "Original seeded bubble outlines and shine order", "SDL outline corner clipping and degenerate semantics", "Smallest/densest original grid", "Exact ordered commands contribution maps and default OpenGL frames", "Signed native/Wasm full-scene budgets", "Actual players animation dense-grid and revisit"]
+status = "implemented_and_verified_linux_browser"
+notes = "The unchanged complete original function with pinned Rand supplies 22 seed/frame cases and raw mixed commands. All 306 independently recorded actual SDL 2.30 OpenGL grouped contribution maps and complete canonical framebuffer bytes match production. Nineteen separate actual SDL outline baselines verify corners, clipping, absent shapes, viewport borders and one-pixel dimensions. The attributed scalar outline helper follows default SDL endpoint-exclusive strips; direct strip composition avoids retaining an expanded pixel list and preserves the default 100 ms deadline. The shared transparency helper also uses the exact first-contribution cancellation; timed runtime checks use the optimized production host without changing game limits. Deep Sea reserves its original maximum point count in one allocation, avoiding growing-buffer pressure; the complete private 106-level native sequence passes under the same cap. The reference selector includes the smallest original size and 2,508 grid commands. Game-case original software frames have identical visible coverage and at most two RGB levels of backend difference, verified separately without relaxing canonical checks. All 75 logic tests and 49 signed checks per profile pass, retaining all 200 fire-brick layers and 3,000-particle corner layers within unchanged limits and the 16 MiB cap. Eight actual players pass animated frames, dense grid and revisit with exact browser samples and desktop delta at most one. Three themes and full scaled-window/platform/art/audio fidelity remain open."
+
+[[work]]
+id = "arkanoo_procedural_night_circuit_and_maze"
+requirements = ["Original twinkle satellite blink and shooting intervals", "Original circuit node/connection/packet order", "Original seeded maze diagonals and moving solver", "Exact 10/30/70 percent probability streams", "Exact mixed commands contribution maps and default OpenGL frames", "Signed native/Wasm dense-scene limits", "Actual desktop/browser animation transitions and revisit"]
+status = "implemented_and_verified_linux_browser"
+notes = "The unchanged original function with pinned real Rand supplies 43 cases across three actual level seeds/theme, transition boundaries and extreme phases. All raw commands, 349 independent actual SDL 2.30 OpenGL contribution maps and complete canonical logical framebuffers match production exactly. Separate software frames have identical visible coverage and at most two RGB levels of backend difference. Four seeds per distribution verify 3,072 exact Bernoulli samples. The source retains original timing/casts, two independent circuit decisions per node and 627 maze diagonals followed by the solver. All 77 logic tests and 50 signed checks per run pass within unchanged limits, preserving all 200 fire-brick overlays and 3,000-particle corner layers in cold/warm scenes. Eight actual players pass animated frames for all three themes and revisit: browser samples exact, desktop maximum difference one. All twenty procedural paths are adapted and the later point-background pass also establishes exact canonical logical frames for the earlier themes; campaign 7-9 canonical blending is also restored later, while full scaled-window/platform parity and other artwork/audio remain open."
+
+[[work]]
+id = "arkanoo_background_canonical_composition"
+requirements = ["Canonical original OpenGL references for all twenty themes and campaign 7-9", "Exact original blend order for earlier grouped point backgrounds", "Complete canonical native/Wasm logical frames", "Retain drawing time memory and source limits", "Actual desktop/browser rendering and whole-window clipping evidence"]
+status = "in_progress"
+notes = "All twenty procedural themes and campaign 7-9 now have exact complete canonical default OpenGL logical frame comparisons, replacing all earlier background grouping bounds. The logical composition portion of this gate is verified. Complete scaled-window/viewport/edge and other-platform requirements remain open; interior player samples do not close its explicit whole-window clipping requirement."
+
+[[work]]
+id = "arkanoo_procedural_canonical_point_backgrounds"
+requirements = ["Exact canonical composition for all eight earlier point backgrounds", "Original SDL point/fill primitives independent of guest rasterization", "Retain full ordered point hashes and typed RNG vectors", "Exact primitive contribution maps and logical frames", "Signed native/Wasm dense and empty-scene budgets", "Actual players all eight themes animation clearing and revisit"]
+status = "implemented_and_verified_linux_browser"
+notes = "Two independent original-function/real-Rand/actual-SDL captures cover 88 cases across three selected levels/theme and extreme phases. Every clipped ordered point/color, 452 primitive-group contribution maps and complete default OpenGL logical framebuffer byte matches production. All previous full unclipped point hashes/counts and RNG vectors remain active; older signed tests now require exact canonical frames instead of a four-level grouped-image approximation. Actual software SDL differs from default OpenGL by up to six RGB levels, including faint-smoke RGB-visible-mask differences; that original-renderer difference is measured separately. Smoke directly replays its 100 original rectangles to avoid the expanded point buffer. All 79 logic and 52 signed checks per run pass under unchanged limits, retaining 200 fire-brick overlays and 3,000-particle corner layers in cold/warm scenes. Both eight-player matrices pass animated frames for all eight themes, empty laser clearing and revisit with exact browser samples and desktop rounding at most one. All twenty procedural themes now have exact canonical logical-frame evidence; the later campaign capture also closes logical blending for 7-9. Complete scaled-window/viewport/edge/platform behavior and other artwork/audio remain open."
+
+[[work]]
+id = "arkanoo_campaign_canonical_backgrounds"
+requirements = ["Original starfield circle and digital-rain primitive order", "Exact canonical blend composition", "Retain unclipped point hashes and release-overflow evidence", "Actual SDL contribution maps and full original logical frames", "Both signed probe paths and dense-scene limits", "Actual desktop/browser animation and revisit"]
+status = "implemented_and_verified_linux_browser"
+notes = "The unchanged complete original function supplies 21 actual SDL 2.30 point/fill cases across all existing frame extremes. All 392 independent grouped contribution maps, clipped ordered original pixels and complete canonical default OpenGL framebuffer bytes match exactly. Existing full unclipped point traces/hashes and release-overflow checks remain active; both old and new signed probes now require exact canonical frames with the original 64-pixel tile bound. Separate actual software frames differ by at most two RGB levels. All 80 logic and 53 signed checks per run pass under unchanged limits, retaining 200 fire-brick overlays and 3,000-particle corner layers in cold/warm scenes. Eight players pass both animation frames per campaign background and revisit: exact browser samples, desktop rounding at most one. All procedural and animated campaign backgrounds now have exact logical composition. Image/editor art and complete scaled-window/viewport/edge/platform behavior remain open."
+
+[[work]]
+id = "arkanoo_world_drawing_clip"
+requirements = ["Scope gameplay objects to the projected original 1280x720 world", "Preserve accessible HUD and controls outside the world", "Count clipping commands against existing draw limits", "Verify signed full-scene marker ordering and all bonus layers", "Verify actual native and browser gameplay"]
+status = "in_progress"
+notes = "Production gameplay now brackets bricks, paddle, balls, bonus drops, rockets, particles, penguin, portal and hearts with a 0,60,640,360 clip and reset. Gravity/footer labels follow reset; top status labels precede the clip. Signed bonus stress checks require both ordered markers, all 800 bonus layers inside and HUD commands outside. Shared primitive verification covers six desktop and two browser configurations, plus three actual resized client windows per desktop configuration (including fractional scaling and tall letterboxing); all 924 sampled RGB pixels match exactly. All 80 logic checks, both rounds of 53 signed checks, native gameplay/editor/system file dialogs and core/component browser gameplay/editor/import/export pass. This does not close original whole-window resizing/aspect fidelity."
+
+[[work]]
+id = "arkanoo_ball_speed_lettering"
+requirements = ["Original bundled Roboto Medium size 26 blended text", "Original speed conversion suffix positioning and 0.6 scale", "Filtered generated image SDK across native core component browser", "Signed runtime and actual player comparisons"]
+status = "implemented_and_verified_linux_browser"
+notes = "Pinned font SHA-256 616eee3f9b60ec0196e09700ebca48a375da3323c4d5872e2b982170969ac90e and original rendering-fragment hash guard the new SDL_ttf 2.22 maintainer oracle. Generated dependency-free glyph compositor matches all complete RGBA bytes for 18 reference labels (zero, digit boundaries, fire thresholds and i32 maximum), including transparent RGB and spacing. Source regeneration is byte-identical and the bundled OFL notice is retained. Production gameplay now draws the original speed label after each ball with original velocity conversion, integer centering, 0.6 size and half-scale world projection. The new bounded raw filtered-image SDK passes native/core/component and both browser player checks, including window resizing. Signed probes compare all source RGBA bytes and exact destination rectangles across six speeds and four fractional/negative positions. All 81 logic checks, both rounds of 54 signed checks, native gameplay/editor/system file dialogs and core/component browser gameplay/editor/import/export pass; strict all-feature/all-target lint and formatting pass. Complete 521×17-pixel strips across four frames in all six desktop and two browser configurations now compare with actual original-font SDL OpenGL output: 283,424 RGB pixels, desktop difference at most one and browsers at most two. Motion, speed changes and revisit verify clearing. The direct test exposed a 45-level browser Canvas2D minification difference; browser linear sprites now use explicit one-level bilinear WebGL sampling with the same encoded-byte premultiplication as desktop. Clipping/reset/resize regressions pass after that fix. Glyph tables are split into direct functions to retain the original expression budget."
+
+[[work]]
+id = "arkanoo_campaign_image_backgrounds"
+requirements = ["Pinned original six image assets and global linear filtering", "Exact original 1280x720 logical images and gameplay alpha 64", "Bounded reusable PNG tiles without larger drawing memory or source quotas", "Cold and warm dense bonus fire rocket particle scenes", "Actual desktop/browser level changes and revisit", "Editor/menu brightness and whole-window scaling tracked separately"]
+status = "implemented_and_verified_linux_browser"
+notes = "A new actual SDL_image/OpenGL oracle guards all six original PNG hashes, rendering.rs and main.rs, including the original global linear texture hint. All 36 bounded full-bright tiles reconstruct the original complete 1280x720 captures exactly; a black alpha-191 overlay matches every byte of the original alpha-64 gameplay capture. Gameplay uses the tiles under existing limits. Dense tests exposed the real 8 MiB background-plus-800-bonus-layer overflow: transparent bonus margins are cropped while retaining all original RGBA bytes, offsets and four-layer draw order. No quotas are relaxed. Both rounds of 55 signed checks pass, including complete pixel reconstruction for all six images and cold/warm dense fire/particle scenes; all 800 cropped bonus layers remain inside their clip and all original RGBA bytes reconstruct exactly. Native and both browser gameplay/editor/system-dialog/import/export workflows pass, as do strict all-feature/all-target lint and formatting. All six desktop and both browser configurations pass six image changes plus revisit, with 4,928 samples including every tile seam and world edge; maximum original canonical RGB difference is one. Cropped bonuses also pass 480 comparisons against unchanged original primitives over the original background (existing three-level bound); rockets pass 672 comparisons within one level, including stale-pixel clearing. The stricter whole-frame bonus-transfer sum passes both 55-check signed runs. Editor/menu use and whole-window direct scaling remain open."
+
+[[work]]
+id = "arkanoo_editor_image_backgrounds"
+requirements = ["Original full-bright selected image and black alpha-153 overlay", "Exact complete logical backdrop pixels for all six images", "Original Previous/Next selection and both wraparound directions", "Retain selection through editor test return", "Full 200-metal-brick boards under unchanged limits", "Actual native/core/component desktop and browser controls"]
+status = "implemented_and_verified_linux_browser"
+notes = "The guarded original SDL_image/OpenGL oracle now captures the actual two-stage editor backdrop; all six full 1280x720 RGBA hashes match exactly. Production editor replaces its solid-color palette with the existing bounded image tiles and original overlay. Both rounds of all 56 signed checks pass, including cold/warm full 200-metal-brick boards with all 400 outside layers, footer, commands, memory and whole-frame transfers within unchanged limits. Real Previous/Next button clicks traverse both wraparound directions in six desktop and two browser configurations; all 9,152 sampled RGB pixels match original canonical values within one level. A focused source-input test preserves selection through board testing and return. Repeated PNG decoding exposed the existing native deadline under concurrent load: lossless unfiltered stored RGB PNGs reduce a measured release 512x512 decode from about 2.23 ms to 0.14 ms without changing any decoded RGBA bytes or quotas. The complete 56-check runs and all editor/file workflows pass after the encoding change. Repeating signed checks concurrently with the complete eight-player real-editor matrix also passes, without deadline or quota changes. Original grid composition, editor lettering/menu art and whole-window scaling remain open."
+
+[[work]]
+id = "arkanoo_editor_grid_composition"
+requirements = ["Original inclusive SDL line endpoints", "Original non-blended grid RGB despite alpha 200", "Canonical logical grid plus background comparison", "Actual resized desktop/browser grid presentation"]
+status = "pending"
+notes = "The independent actual SDL OpenGL capture now records complete grid/backdrop RGBA hashes for all six images. Production uses 32 opaque one-texel images with original inclusive 1201x1 and 1x201 source-pixel footprints. All complete logical hashes and ordered endpoints match. All six desktop and two browser configurations pass forward/backward editor cycles; three exact/fractional/tall client sizes per desktop configuration also pass. Across 7,320 samples, original canonical RGB difference is at most one, with exact-nearest-boundary choices documented. Browser Canvas2D fractional image coverage initially differed by 43 levels; explicit single-texel pixel-center coverage aligned to the nearest background sampler fixes it without requiring WebGL or increasing quotas. Browser CSS scaling, full original viewport behavior and remaining editor/palette/lettering presentation are still open; do not infer complete editor presentation from logical grid/backdrop equality."
+
+
+[[work]]
+id = "arkanoo_editor_palette"
+requirements = ["Original nine colors and original Roboto digits", "Selected triple white and ordinary/hover gray borders", "Original placement draw order and hover hitboxes", "Canonical signed pixel comparisons", "All window scales and browser presentation"]
+status = "in_progress"
+notes = "Recipe 0.1.47 restores original colors, black Roboto Medium 26 digit alpha, border footprints/precedence, integer hover hitboxes and palette-after-grid/board ordering. The independent guarded original SDL oracle covers complete 404x34 RGBA regions for 28 states; native/core-Wasm production command composition matches within one level. Both rounds of 58 signed checks pass. Nine-choice input boundary/gap/nonfinite/selection tests and byte-identical font regeneration pass. At original pixel scale (1280x960 client), six Linux desktop configurations pass 329,664 complete-region RGB comparisons over three states and revisit, difference at most one. Direct half-size original SDL rendering differs; scaled primitive border coverage and backdrop resampling remain open. Browser/full-window scaling and remaining original editor lettering are not proven by canonical palette equality. No host or game budgets changed."
+
+
+[[work]]
+id = "arkanoo_editor_static_lettering_toolbar"
+requirements = ["Original Roboto title Colors and toolbar text", "All background captions and original instructions", "Original translucent toolbar borders colors hover and centering", "Bounded filtered text pieces without seams", "Signed and actual player verification", "Complete dynamic text and browser/editor presentation"]
+status = "in_progress"
+notes = "Recipe 0.1.48 restores 18 original static label rasters, positions, toolbar fills/borders/hover and caption centering. Complete SDL_ttf RGBA bytes and source regeneration match, guarded by font/render/editor hashes. Packed byte-string RLE respects the unchanged Rust expression budget. Long text uses 256-column pieces plus one source pixel overlap and non-overlapping destination clips/reset, without image-limit changes. All 85 logic checks and both 59-check signed suites pass, including full metal boards, all seven hover choices, all background captions and exact source/clip geometry. Six canonical Linux desktop configurations pass 1,760,088 static-label/toolbar RGB comparisons within two levels. Separate full-region font/seam/move/revisit tests pass 408,960 comparisons across six desktop and two browser players within one level. Dynamic names/messages are now covered by arkanoo_dynamic_editor_text; original browser rows/panel, full editor frames and whole-window/CSS scaling remain open."
+
+
+[[work]]
+id = "arkanoo_dynamic_editor_text"
+requirements = ["Original case-preserving Unicode pattern names and Name suffixes", "Original edit and message colors positions and centering", "Original font glyphs metrics normalization substitutions and kerning", "Visible raster slices without string truncation", "Saved pattern row lettering", "Signed and actual desktop/browser verification", "Preserve source dependency and resource rules"]
+status = "implemented_and_verified_linux_browser_recorded_font_cases"
+notes = "Recipe 0.1.49 embeds all 1321 original glyph alphas with explicit-endian metrics, font-aware canonical tables, selected font substitutions and GPOS kerning. All 3268 independently captured SDL_ttf cases match (3259 complete surfaces and nine empty results), including every mapped non-NUL scalar, combining marks, kerning, long names, space/filler behavior and 1205 compound joiner/variation sequences. That compound audit identified 64 mismatches, now fixed by cluster-sensitive normalization, contextual substitutions and separate nonjoiner/combining-joiner barriers. All 4174 default-ignorable candidates are checked with actual original HarfBuzz; 4165 are hidden and nine retain original behavior. Raw data regeneration is identical. Names retain original case/Unicode and suffixes; rows use white centered lettering and messages original centered green. Full width is measured but only viewport slices are allocated/drawn; source/save quotas and the dependency-free guest policy stay unchanged. Both 60-check signed suites pass, covering ordinary/edit/multilingual/200-character strings, exact source pixels, clips and destinations, plus the existing 70000-byte saved-name regression. The 86-test logic suite passes. Eight actual players compare 1576960 RGB samples over three states and revisit, desktop max two/browser max one. Unicode and font notices are bundled. Browser panel/row composition is now covered by arkanoo_pattern_browser; full editor frames and whole-window scaling remain separate open gates."
+
+[[work]]
+id = "browser_fractional_clip_scissors"
+requirements = ["Hard pixel clip boundaries matching both native backends", "Empty replace reset and fresh-frame behavior", "Fractional glyph edge rendering", "Shared image shader and resize regressions", "Preserve quotas"]
+status = "implemented_and_verified_linux_browser"
+notes = "Actual Unicode text exposed a 44-level browser error caused by fractional Canvas2D clip antialiasing. Clip endpoints now round independently to integer pixels, matching both existing native GL/Vulkan scissors. Direct browser-policy regression covers fractional and collapsed empty bounds, replacement/reset and fresh frames. All eight text configurations pass afterward and all 924 existing six-desktop/two-browser image/shader/clip/resize RGB samples are exact. No command/image/deadline limits change."
+
+
+[[work]]
+id = "arkanoo_pattern_browser"
+requirements = ["Original dim overlay panel border and row colors", "Original empty and selected/unselected row composition", "Original text placement and ordering", "Complete original frame references", "Dense-board limits", "Actual native and browser verification"]
+status = "implemented_canonical_linux_browser_consistent"
+notes = "Recipe 0.1.50 restores alpha-200 world dimming, original opaque panel/border and every row fill; removes invented empty-list lettering and retains existing paging. Twelve independently guarded actual original SDL full frames cover empty, one row and all first-ten selection states. Complete signed native/core-Wasm composition matches within two levels and a 200-metal board plus ten mixed/long-name rows retains the entire browser command sequence under unchanged limits. Both 61-check signed suites pass. Six desktop configurations compare 22118400 complete-world RGB pixels across empty/first/last selection/revisit with original canonical frames, max one. Two browser profiles compare 1843200 pixels with an independently captured smaller native canvas, max two; this is backend consistency, not direct scaled-original equivalence. Original fixtures regenerate identically. Arbitrary viewport/CSS scaling, full editor/menu frames and untested platforms remain open."
+
+[[work]]
+id = "native_single_texel_pixel_coverage"
+requirements = ["Deterministic single-texel nearest image bounds", "Match browser pixel-center convention", "Apply viewport translation and physical DPI before snapping", "Retain filtered image behavior and budgets", "Real border and resize verification"]
+status = "implemented_and_verified_linux_browser"
+notes = "Complete browser-panel comparisons exposed up to 68 RGB levels of mismatch because native fractional one-texel quads could disappear at backend-sensitive sample-center ties. Native GL/Vulkan now snap only one-texel nearest-image destination endpoints to the existing browser rule after viewport/DPI transformation. Filtered sprites and frame charging remain unchanged. Tests cover negative bounds, adjacent half strips, translated coordinates and DPI 1/1.25/2. Six canonical desktop and two smaller browser full-frame comparisons pass afterward; all 924 shared clip/image/shader/resize samples are exact and all 7320 editor grid samples across selection cycles and three desktop sizes remain within one. Whole-window presentation on untested platforms remains separate."
+
+[[work]]
+id = "arkanoo_original_end_state_overlays"
+requirements = ["Original full-world dimming", "Original level/score text and colors", "Game-over empty-board victory branch", "Campaign-victory instructions", "Portable complete u32 decimal range", "Full-renderer suffix and unchanged budgets", "Original SDL and actual desktop/browser frame comparisons"]
+status = "implemented_runtime_verified_linux_and_web"
+notes = "Recipe 0.1.53 replaces the placeholder panel with original level-transition, game-over and campaign-victory overlays. A guarded independent SDL/TTF oracle records 28 full contrast-backdrop frames, including all variants and zero/one/ten-digit/max-u32 score and level values. Fixtures reproduce exactly. Signed native/Wasm checks compare full RGBA frames within two levels and require every overlay suffix through the full renderer, including dense 200-metal boards and the animated ninth background, under unchanged limits. Six desktop configurations match canonical overlay frames within one level; both web profiles match a separately captured half-size native player within two. HUD/FPS, complete-game frames and arbitrary original scaling remain separate work."
+
+
+[[work]]
+id = "arkanoo_original_hud"
+requirements = ["Original score and level/TEST", "Original heart texture and stolen-heart coordinates", "Original maximum-speed record age and pulse", "Original gravity pulse", "Actual one-second FPS history", "Full-scene HUD suffix under unchanged budgets", "Independent original frames and actual desktop/browser comparisons"]
+status = "implemented_canonical_linux_browser_consistent"
+notes = "Recipe 0.1.54 restores all original HUD labels, colors and positions with Roboto26 and full u32 formatting. A bounded per-tick relative monotonic clock drives the original sliding FPS history across run resets. Twenty-nine independently guarded original SDL/TTF full HUD frames cover numeric/record/gravity/heart variants; canonical runtime frames stay within two levels. Six desktop configurations match canonical original RGB within one, both web profiles match separate smaller native captures within two, and alternating same-asset filter modes verifies cache identity. Full-renderer probes require all HUD commands with 200 fire bricks/3000 corner particles and 200 bonus drops. Original-resolution fire/bonus composition preserves earlier reference data and all six backgrounds within unchanged three-level tolerances. Arbitrary original scaling, complete-game presentation, audio/settings and untested platforms remain separate work."
+
+[[work]]
+id = "host_relative_frame_clock_and_straight_texture_filter"
+requirements = ["Core/component/native/browser API parity", "Stable relative per-tick time and independent restart origins", "Existing execution deadlines", "Straight-alpha original texture sampling", "Precise bounded browser PNG bytes", "Shared path and full image charging", "Measured SDL pixel coverage and cache-mode identity"]
+status = "implemented_and_verified_linux_browser"
+notes = "frame_time_us is a cached u64 monotonic sample, first tick zero, without calendar/ambient I/O access. draw_asset_image_linear_straight interpolates original straight PNG bytes before alpha multiplication, sharing the existing decoder/cache and all frame limits. Nonopaque browser PNG metadata retains hidden RGB and spends the existing export budget. Native/WebGL quads snap SDL-measured coverage with preserved affine UVs. Unit/original SDL fixtures, generated SDKs, runtime deadline/isolation checks, malicious paths and actual desktop/browser pixels cover the new bindings. Current source-built host required; 0.1.17 binaries are unchanged."
+
+
+[[work]]
+id = "arkanoo_cannon_and_launch_caption"
+requirements = ["Original ammo-gated barrel and highlight", "Integer paddle centering and original colors/sizes", "Original Roboto launch caption and 30-frame blink", "Zero-ammo absence", "Original rendering order and restored world clip", "Full dense scene retains cannon and HUD", "Unchanged original SDL captures at two sizes", "Actual desktop/browser frame verification"]
+status = "implemented_original_frames_verified_linux_browser"
+notes = "Recipe 0.1.55 restores the omitted original cannon and launch caption. An independent guarded oracle executes the unchanged original branch with original SDL/TTF, capturing 60 zero/max-ammo, normal/long/odd-width, clipped and wide-frame blink states at both 1280x720 and 640x360. Signed native/Wasm comparisons retain the two-level tolerance and require complete cue commands plus three heart PNGs through a 200-fire/3000-particle scene under unchanged budgets. Both 67-check signed suites and native/core/component browser gameplay/editor/file workflows pass. All six desktop configurations compare four selected states/revisit directly with original frames at both sizes within two levels; both browser profiles match original half-size frames within one. All 120 original captures reproduce exactly. Whole-game viewport scaling and other remaining port requirements stay open."
+
+[[work]]
+id = "game_solid_rectangle_pixel_coverage"
+requirements = ["Original SDL sample-center edge convention", "Native physical viewport and DPI handling", "Browser solid edges without Canvas antialiasing", "Empty/scaled/clipped rectangles", "Retain color/alpha/order/clip and all budgets", "Independent SDL edge captures and actual original scaled cannon frames", "Shared graphics regressions"]
+status = "implemented_original_frames_verified_linux_browser"
+notes = "Scaled original cannon comparisons exposed egui edge rounding and browser Canvas edge antialiasing. Game rectangles now follow measured SDL/OpenGL left/lower-inclusive sample-center coverage, independent of app UI shapes. Native coverage reuses the filtered-quad calculation before pixel-aligned solid filling; browser coverage snaps explicitly. Nine original SDL edge fixtures plus translated fractional-DPI assertions cover the helper. The 924 shared clipping/image/shader/resize samples remain exact; blending and all existing HUD/menu/browser/end-state graphics matrices pass unchanged thresholds. Original edge fixtures reproduce exactly. General original viewport and circle/presentation fidelity remain separate requirements."
+
+
+[[work]]
+id = "actual_fullscreen_readback"
+requirements = ["Unavailable distinguished from windowed", "Per-game permission-gated stable observation", "Native/core/component/browser binding parity", "No speculative caption on accepted request", "Unknown native state defers and retains pending toggle", "Original captions follow actual host state and retain last confirmed state", "External X11 changes and F11 after stale-cache changes", "Saved-fullscreen reopening", "Browser actual fullscreen/API/native Escape/restart", "Denied variants", "Bounded malformed property and deadline checks"]
+status = "implemented_runtime_verified_linux_x11_browser"
+notes = "Recipe 0.1.56 adds optional own-window observation and removes optimistic fullscreen-caption inversion. Real production source and generated SDK fixtures pass external WM changes, F11 and saved-fullscreen reopen in native/core/component; both browser profiles and denied variants pass actual DOM fullscreen, API/native Escape exit and restart. X11 observation reads only the owned window on the existing UI connection with a 64-atom cap, respecting native Xlib atom width and rejecting malformed/oversized state. Idempotent own-window requests bypass winit's stale-cache no-op. The native controller defers pending toggles while state is unknown and retains their parity; service/GUI transition tests pass. Raw/WIT/SDK stability, per-game isolation, permission and deadline checks pass. Signed caption checks use original glyph references and explicitly distinguish acceptance from observation. Both 67-check signed suites and native/core/component browser gameplay/editor/file workflows pass. Saved-window geometry/mode/reopen/isolation regressions pass using original title glyph readiness. Host Windows32/64 GUI compilation passes; other platform runtime verification remains open."
+
+
+[[work]]
+id = "lossless_sparse_particle_and_background_buffers"
+requirements = ["Original particle grid and ordered overlap pixels", "Exact row-major visible tile bytes/dimensions", "No full-screen temporary for sparse corner fields", "Exact encoded background initialization", "Full parallel signed stress suites", "Unchanged command/image/memory/time caps"]
+status = "implemented_runtime_verified_linux_and_web"
+notes = "Dense renderer deadlines prompted direct composition into occupied 128px tiles, retaining the original bounding-grid anchor, row-major command order and all RGBA. The 3000-particle corner fixture retains exactly four tiles/212992 bytes while avoiding a 3686400-byte full temporary. Mixed/clipped/overlap reconstruction is byte-exact. Background filling uses bounded repetitions of the same encoded RGBA instead of per-pixel append. All 91 logic and both 67-check signed suites pass at default parallelism and unchanged limits, with native/core/component browser gameplay/editor/file workflows passing. This does not establish performance guarantees for all hardware/platforms."
+
+[[work]]
+id = "portable_stereo_pcm"
+requirements = ["Signed portable stereo output without guest crates", "Shared mono/stereo budget", "Native/core/component/browser channel fidelity", "Existing mono compatibility"]
+status = "implemented_runtime_verified"
+notes = "Public audio_submit_stereo provides interleaved 48 kHz i16 output. The existing 1600 sample-value limit is shared by mono and stereo, with one nonempty format per tick. Signed generated SDK fixtures pass in native/core/component; actual browser Wasm exports preserve exact independent channels in WebAudio buffers. Raw ABI tests cover malformed memory/lengths, permissions, mixed formats, atomic rejection, isolation, rollback and deadlines. Browser output tests verify frame-based duration. Original compressed recordings, mixing and music controls remain separate unfinished work."
+
+
+[[work]]
+id = "arkanoo_audio_requests"
+requirements = ["Original effect categories", "Original silence for launch and non-audio transitions", "Recorded effects and music", "Original overlapping playback and event/update ordering"]
+status = "in_progress"
+notes = "Recipe 0.1.60 retains original Bounce/BreakingGlass/Explosion/Oh categories, original silence for launch/bonus/completion/portal activation and last-callback physics behavior. All five recorded effects now replace the temporary tones. Recorded input callbacks stay separate from the final physics callback. Audible-window and full combined-output checks cover overlap. Music and full asynchronous timing remain unfinished."
+
+
+[[work]]
+id = "arkanoo_effect_channels"
+requirements = ["Four independent stereo effect channels", "Gain and clipping match SDL", "Input and physics requests remain separate", "Recorded clips and asynchronous timing parity"]
+status = "in_progress"
+notes = "The four-slot stereo PCM mixer retains independent tails, first-free allocation, SDL gain/sequential clipping, silent advancement while muted and active voices through run reset. Production now uses all five recorded clips, shared under the existing 4 MiB worst-case resident bound with 2 MiB per clip. All 100 logic and both 71-check signed suites pass; actual core/component buffers verify audible overlap and every full clip. Music and full asynchronous callback timing remain open."
+
+
+[[work]]
+id = "arkanoo_recorded_effects"
+requirements = ["Original five recorded effects with provenance", "Full clip duration and stereo", "Shared bounded PCM storage", "Original music and asynchronous timing"]
+status = "in_progress"
+notes = "Recipe 0.1.60 restores all five exact upstream recordings and removes the tone generator. The two known Pixabay item credits are retained; pinned upstream README credits sounds/music to Pixabay for the three generically named files, whose individual artist/item identifications remain open and explicitly null in metadata. SDL conversion reproduces all MP3/PCM/WAV hashes. Five immutable clips total 2208852 decoded bytes under the existing 4 MiB worst-case cache and unchanged 2 MiB clip bound. All 100 logic and both 71-check signed suites pass at unchanged caps/concurrency/tolerances, including all five clips in one session. Actual core/component WebAudio matches every full PCM hash, including original silence, mono duplication and endings. Gain/overlap assertions use audible portions. Music, fully asynchronous timing and broader native platform/device/window verification remain unfinished."
+
+[[work]]
+id = "arkanoo_background_music_playback"
+requirements = ["Verified background asset readers", "Bounded decode and output queue", "Output-clock progress independent of game ticks", "Pause/gain/stop/replacement and cleanup", "Original combined per-effect mixing", "Runtime and browser SDK integration", "Playlist/settings fidelity"]
+status = "in_progress"
+notes = "Native host-only service now clones verified descriptors/snapshot ownership with independent cursors and reads directly into a budgeted decoder. Six atomic blocks retain the 4800-frame bound; queued audio remains available under producer/control lock contention, replaced generations are discarded safely, and sticky unpark tokens prevent lost wakeups. Controls, faults, memory exhaustion and teardown are tested. All nine signed-package tracks match complete original-mixer/output lengths and pinned full PCM hashes while drawing reads run concurrently and no game ticks occur. A private CPAL/ALSA null device proves muted-master progress, nonzero output, pause/resume and cleanup. The 100 ms decoder limit now checks monotonic elapsed time at the first expired epoch. Child cache capacities now reserve inside the existing parent hard limit and remain charged through live recording leases after cache shutdown. Nested/concurrent ownership and actual callback cleanup pass; public checks pass on actual 32-bit Linux, with native Windows32 and Android32 emulator logs now confirming all three named budget cases at source 93154d4. The earlier hosted Android workflow fails during fixture hard-link publication. A dedicated API 29 x86 emulator now passes all three signed effect-asset cases after atomic no-replace syscall publication; three publication safety/race cases pass on Linux and Android. Hosted run 39197971735 at source 06f0d7a now passes Linux32, Windows32 and Android32; direct Android logs confirm the selected runtime, budget, signed asset and exclusive-publication cases. Later guest effect SDK/device playback and full Android gameplay/audio remain unverified. Runtime permission/memory wiring, browser helper bundling/input/playback, original menus/playlists, compressed-asset workspace and port-level combined mixing/timing remain open; current ports are not migrated. No physical speakers, native gameplay windows or other-platform proof in this round."
+
+[[work]]
+id = "ordered_host_effect_mixer"
+requirements = ["Four host-owned first-free voices", "Budgeted shared stereo recordings", "Music-first sequential saturation", "Original-rate mixing before output conversion", "Game and browser command integration", "Output-clock effect timing"]
+status = "in_progress"
+notes = "Host-only mixer now supports four first-free slots, immutable shared budgeted clips, pause, zero-volume advancement and deterministic cleanup. All 59179008 combinations in a pinned SDL 2.30.0 reference corpus match exact hashes: every S16 source, every legal volume and seven destination values. Regression checks cover saturation order, slot exhaustion/reuse, malformed recordings and budget denial. The existing single-layer output uses the verified arithmetic. Original-rate music output and the ordered voices now feed a single shared output converter and CPAL callback with budgeted converter storage. An independent SDL combined-conversion corpus matches complete output at six volumes across three chunk schedules. Private null-device checks verify original-rate music, independent effects after music stops, paused/muted voices, wrong-rate rejection, denied premixed submissions and cleanup without game ticks. Signed desktop game-visible effect commands are now implemented; browser processing, original-rate port recordings and actual migration remain required. Callback-owned playback state now uses a fixed 4800-frame atomic PCM ring and a separate 32-command handoff. Held producer locks no longer silence buffered PCM/music; actual null-device callbacks consume all 1600 queued frames before release. Clear boundaries, pending detach PCM preservation, queue/voice rejection reporting and closed-consumer checks pass. Atomic reservation release removes the budget mutex from last-clip drops. A verified-asset loader now streams canonical 44.1 kHz stereo S16 WAV into budgeted immutable clips without a complete encoded duplicate; fixed input staging is charged too. It enforces audio permission, scoped verified reads, final ZIP CRC, the unchanged 2 MiB clip bound and explicit compressed-workspace denial. All five pinned original SDL recordings play exact complete PCM from a synthetic signed package within one unchanged 4 MiB pool. Signed corruption/permission/path/cleanup regressions pass. A whole-tick effect batch now enters the same unchanged 32-command callback queue atomically; invalid values/capacity/inactive sources reject all controls without extra clip retention. Concurrent batches do not interleave. A verified-package effect service now stages one 32-command transaction and reuses a fixed 32-recording cache with charged metadata/PCM. Failed execution never publishes; rejected batches release new recordings and cannot replay. Seven signed public cases pass on Linux64 and actual Linux32; Android cross-compiles only for these new cases. All five original recordings match complete PCM through the same unchanged 4 MiB pool. An actual null-device callback loads a signed effect through the service, rejects failed-tick unmute/play and retains output-owned PCM after cache shutdown. Desktop native/core/component effect SDK calls now stage and commit after guest/save/history success. A signed effects memory share reduces the existing guest hard limit; complete memory-limit and rollback cases pass on Linux64 and actual Linux32. Generated signed SDK fixtures select native/Wasm explicitly and reach real null-device callbacks independently of game ticks, with trap/save/history/output denial. Vulkan/OpenGL example windows and legacy actual-browser stereo pass. Source-built hosts now support the music SDK and browser processing; see browser_recorded_player_commit and browser_compressed_effect_assets for current production qualification. Wider platform/physical output and full host-memory accounting remain open. Current 48 kHz port assets are not migrated. Original block/event/stop timing, allocator/OS latency, other device rates and physical/platform proof remain open."
+
+[[work]]
+id = "rejected_tick_transient_output"
+requirements = ["Discard PCM and drawing on save failure", "Discard PCM and drawing on history failure", "Core and component behavior", "Signed native runtime behavior", "Browser persistence gates visible picture/state and PCM", "Restart cancels queued browser PCM"]
+status = "implemented_runtime_verified"
+notes = "A red regression reproduced retained PCM after play-history persistence failure. Core/component fixtures now first prove valid stereo PCM/drawing on success, then force save and history directory failures and require empty output with reset channel format. Native history failure and native save failure now clear the same transient outputs. A temporary signed no-dependency native fixture verifies actual execution and both rejected-tick paths using a fixed synthetic key. Browser picture/state and PCM now publish only after successful persistence, using one reused 640x480 staging canvas with shader/filter targets. Signed core/component Chromium cases first prove valid stereo output, then deny save/history writes and require unchanged visible pixels/state and no new AudioBuffers. Failed saves skip history writes; Restart cancels queued PCM; successful recovery clears the stale storage warning. All 15 Node suites, actual frame/filter/shader pixel checks and optimized entry-point builds pass without tolerance/cap changes. Persistent save/history atomicity, guest-memory rewind, engine background audio and game-facing music commands remain tracked as unfinished broader work."
+
+[[work]]
+id = "bundled_audio_companion"
+requirements = ["Embedded decoder in CLI and GUI", "Bounded build input and validated decoder ABI", "Separate dependency source/license accounting", "No end-user decoder file or Python dependency", "Game service and SDK activation", "Browser export and native platform proof"]
+status = "in_progress"
+notes = "Root build supports optional build-time embedding with bounded core-Wasm input and stale-input reset. Bundled factory validates import/memory policy, a 6 MiB maximum declaration and required function signatures. Both relocated entry points verify identical embedded bytes without runtime decoder paths or display. All nine signed-package track hashes and actual null-device callbacks pass through the embedded factory with path variables removed. Companion sources/dependency notices are included in packaging accounting; input and metadata regressions pass. Hosted build recipes prepare the companion, including native Windows without WSL. Per-game service/budget wiring, signed SDK commands, browser export and actual other-platform runtime proof remain required; current ports are not migrated. No package or binary release is made."
+
+[[work]]
+id = "exclusive_app_update_publication"
+requirements = ["Never replace existing files or directories", "Atomic concurrent destination protection", "Native Windows and Darwin operations", "Unicode and Windows long paths", "Native hosted platform proof"]
+status = "implemented_runtime_verified"
+notes = "Hosted Windows/macOS library jobs reproduced replacement of an existing empty install directory by the generic rename fallback. Native exclusive publication now replaces that fallback, retaining existing Linux protection and failing explicitly where unsupported. Four Linux cases pass; Windows 32/64 GNU harnesses compile and all four 64-bit Wine cases pass, including long paths and destination-creation races. A small independent hosted workflow covers actual Linux/Windows/macOS APIs and native Windows32. Hosted run 39186503336 at source revision 0710239 passes all four cases on native Linux, Windows64, Windows32 and macOS (16 checks total), with strict implementation warnings checked on each native host. Logs confirm actual long-path, existing-target and concurrent-creation tests executed. Broader full workflows remain separate from this verified invariant. The Linux full test setup now installs SDL development files before the enabled direct SDL oracle, fixing a separately verified hosted link failure. Full workflows stay enabled."
+
+
+[[work]]
+id = "declared_homepage_action"
+requirements = ["Original Github button geometry and pixels", "Signed manifest URL only", "Input permission and fresh gesture", "Successful tick and persistence commit", "Native/core/component desktop dispatch", "Browser opener isolation and deduplication", "Restart stale-request rejection"]
+status = "implemented_runtime_verified_linux_chromium"
+notes = "Recipe 0.1.61 restores the button and routes window_control(4,0) through a transactional host-owned declared homepage request. Unchanged-original hit-test cases and menu pixels include the button; no tolerance or limit changes. Native/core/component desktop clicks and both browser profiles pass initial navigation with a recording browser/loopback hostname. Restart-generation checks reject old queued requests and allow fresh post-restart clicks in both actual browser profiles. Native/core/component save/history failures discard staged homepage requests after successful baseline requests. All 101 logic tests, both 71-check signed suites and whole-menu desktop/browser pixel comparisons pass at unchanged limits/tolerances. Actual browser storage failure suppresses navigation without replay after recovery; fresh clicks still work. Browser save/history atomicity is verified by the checkpoint tests below; Windows-specific OS browser dispatch remains unverified. Remaining unrelated menu/music/port fidelity stays open; source only, no signed package release."
+
+
+[[work]]
+id = "browser_window_persistence_commit"
+requirements = ["Delay window changes until actual save/history result", "Rollback all window requests on denied persistence", "Delay/cancel new import and export jobs", "One bounded pending transaction", "Frame serial and restart epoch matching", "No replay after recovery", "Fresh controls still work after recovery"]
+status = "implemented_runtime_verified_chromium"
+notes = "Prepared worker state awaits an explicit parent acknowledgement. All browser Node suites pass. Signed core/component Chromium fixtures verify physical cursor/confinement/fullscreen/close behavior, separate save/history denial and fresh recovery, with import picker checks. Both runtime profiles deny import/export on failure, then complete a fresh explicitly requested download with exact bytes after recovery. Original homepage clicks, restart and storage failure/recovery also pass with the acknowledgement protocol. Invalid history field schemas produce explicit denial/termination without overwriting the damaged record; explicit fixture repair and a fresh worker restore normal controls. Later publication gating also withholds picture/state/PCM on storage failure and cancels queued audio on Restart; both real-browser profiles and rendering references pass. Save/history now share one IndexedDB transaction with verified migration, request-success abort and quota rollback. Both runtime profiles pass delayed startup/Stop and delayed checkpoint/Stop/Restart tests. Guest-memory rewind, native cross-file atomicity and repair UX remain unfinished."
+
+
+[[work]]
+id = "browser_atomic_progress_checkpoint"
+requirements = ["Atomic save and history writes", "Preserve legacy records", "Strict schema and byte validation", "Concurrent history merge", "Creator separation", "Stop and Restart reject stale asynchronous publication"]
+status = "implemented_runtime_verified_chromium"
+notes = "Actual IndexedDB tests verify rollback after successful save request, history quota denial, early cancellation, connection recovery, full 1 MiB save hash, concurrent updates, invalid data preservation and lazy legacy access. Both exported runtime profiles verify delayed startup and checkpoint completion across Stop and Restart. Existing gameplay, editor, file, homepage and output rollback fixtures pass. Guest memory rewind and native cross-file atomicity remain separate open requirements; source only."
+
+
+[[work]]
+id = "music_control_output_boundary"
+requirements = ["Stop waits for admitted output reads", "Replacement waits for admitted old-track reads", "Callback remains independent of control mutex", "Complete replacement samples and budget cleanup"]
+status = "implemented_unit_verified"
+notes = "Deterministic guard-held regression failed before the fix. Both controls now publish a new generation and wait for the previous consumer boundary, matching Pause. Eight music and three combined conversion cases pass, including exact replacement samples and cleanup. Does not retract OS/device queued audio or close SDK and port migration requirements."
+
+
+[[work]]
+id = "music_whole_tick_control_batch"
+requirements = ["Bounded ordered control batch", "Validate before output mutation", "No partial publication on rejected controls", "Callback cannot observe partial control batch", "Exact complete track samples and cleanup"]
+status = "implemented_runtime_verified_linux_signed_tracks"
+notes = "Trusted Service::batch validates at most 32 borrowed commands before publication. Rejected path/gain/state/count/generation cases retain old output. Valid ordered replacements, pause and volume preserve exact original-rate stereo samples. Generation/status/gain publish as one atomic setting without excluding the output consumer. A concurrent 10,000-cycle pause/gain observer sees only complete configurations, then exact full-track output; the callback never waits. All nine original signed-package tracks now start/resume through batches and retain pinned full PCM hashes/lengths, with private CPAL null-device and combined effect/music checks passing. Host primitive only: shared effect/music runtime publication, guest SDK, memory wiring, browser processing and port migration remain open."
+
+
+[[work]]
+id = "music_staged_tick_transaction"
+requirements = ["Fixed bounded pending controls", "Owned asset path", "Failed-tick rollback", "Rejected batches cannot replay", "Storage charged within existing host budget", "Fresh playback after recovery"]
+status = "implemented_runtime_verified_linux_signed_tracks"
+notes = "A 32-operation transaction retains ordered controls and only the final replacement path. Fixed storage plus command scratch is included in the existing 64 KiB host reservation assertion. Initial per-operation path storage failed decoder-budget playback; compact storage passes without increasing any allowance. Twelve music cases cover copied paths, inactive/nested calls, failed and rejected transactions, no replay, capacity and cleanup. All nine original signed tracks now discard a missing-track/mute transaction before committing/resuming the actual track, preserving pinned full output hashes/lengths within the unchanged 16 MiB parent budget. Private device checks pass. Trusted host infrastructure only; game runtime dispatch, shared effect/music publication, browser controls and port migration remain open."
+
+
+[[work]]
+id = "music_game_sdk_desktop"
+requirements = ["Signed music memory share", "Combined shares reduce guest ceiling", "Bundled verified decoder activation", "Native/core/component game calls", "Completion and failure queries", "Failed execution/save/history/output rollback", "Invalid music batch discards staged effects", "Music-only and combined output-clock playback"]
+status = "implemented_runtime_verified_linux_native_core_component"
+notes = "music_memory_bytes partitions the existing hard limit alongside effects; player ceiling refusal is verified. Generated signed dependency-free fixtures cover off, combined, and music-only modes. Full original-rate generated MP3 output agrees across all backends and with the existing SDL decoder comparison bound. Completion, asynchronous failure/recovery, trap/save/history/output denial and invalid combined controls pass. Actual CPAL null-device callbacks play combined and music-only sources independently of ticks and cannot replay a rejected tick. Existing effect SDK and 254 host library cases pass. Eleven non-device music unit cases and the manifest test execute on actual Linux32; full 32-bit GUI/device proof remains open. Optimized CLI/GUI and strict Rust 1.89/1.99 builds pass. Browser export rejects declared music explicitly. Original-rate mixer, game calls and embedded decoder are wired; full port migration, browser music, original event/callback timing, physical devices and broader platforms remain open. No binary or package release."
+
+
+[[work]]
+id = "original_music_playlist_control_oracle"
+requirements = ["Actual SDL repeat count and contiguous samples", "Unchanged original audio source", "Sorted random playlist", "Saved mute startup and pause/resume", "Completion/stop/empty/load-failure decisions", "Gain and effect controls"]
+status = "original_runtime_and_control_flow_verified"
+notes = "Actual SDL callbacks show music loops 0/1 each play once and 2 plays twice, with exact contiguous generated samples. An unchanged-source/hash-checked Rust oracle traces deterministic playlist choices, mute, settings, stop, empty playlists, failure/retry and effects. It exercises real directory enumeration and no original recordings. CI gates both references. Current port remains unmigrated: browser recorded-audio decoding/mixing/transaction support must precede shared package migration; this oracle does not prove port music playback."
+
+
+[[work]]
+id = "browser_recorded_audio_decoder_worker"
+requirements = ["Same companion and complete PCM as desktop", "Bounded memory/table/import/ABI policy", "Little-endian owned PCM", "Sticky decoder faults and rewind", "One pending request", "100 ms operation supervision", "Cancellation and worker cleanup", "Immutable validation/compilation snapshot"]
+status = "decoder_component_verified_native_javascript_chromium"
+notes = "All nine pinned complete original-rate track hashes/counts match native Wasmtime and JavaScript. Chromium matches a complete track directly and over the supervised worker. Invalid ABI/resource/output/work fixtures reject safely; infinite open/read functions are terminated at the existing 100 ms deadline. Backpressure, startup cancellation, close during reads and fresh recovery pass; eight created handles are terminated. A red module-mutation regression is fixed by owned snapshot validation/compilation. The component now participates in source-built recorded audio exports; see browser_recorded_player_commit for checkpoint and player qualification. Original port migration and broader memory/platform coverage remain open. Decoder linear-memory bounds do not prove whole-browser heap accounting; full-track test buffers are not production queues."
+
+
+[[work]]
+id = "browser_original_rate_effect_mix_and_conversion"
+requirements = ["Four first-free voices", "Owned bounded recording buffers", "Music-first sequential S16 saturation", "Paused effects preserve music", "Muted effects advance", "Single shared 44100-to-48000 conversion", "Exact SDL hashes across chunk schedules", "Actual AudioWorklet output"]
+status = "component_verified_node_and_chromium_audioworklet"
+notes = "All 59179008 SDL arithmetic combinations match. Eighteen combined-stream hashes and three paused-effect music comparisons match exact pinned SDL output with unchanged tolerances. Actual AudioWorklet output matches six gains and paused effects with clean tails and no game ticks. A muted master still processes all 6530 frames with zero external output. Both Rust 1.89/1.99 optimized artifacts retain exact hashes and pass strict Wasm checks. New dependency-free trusted converter reuses existing Rust DSP under fixed 256 KiB maximum linear memory; cache PCM uses the selected share with fixed staging reservations. Ownership, slot reuse, active unload denial, clip/cache bounds and invalid-buffer behavior pass. Shared companion validation retains all nine decoder track hashes and supervised Chromium worker tests. Production queue/transport, committed controls and source-built export integration are now covered by browser_recorded_player_commit. Whole browser heap accounting, port migration and broader platform verification remain open."
+
+[[work]]
+id = "live_recorded_audio_queue"
+requirements = ["Bounded output-clock music queue", "Independent effects and music progression", "Supervised decoder-to-worklet transport", "Committed game controls and export integration"]
+status = "implemented_runtime_verified_chromium_core_component"
+notes = "Fixed queue/stream SDL hashes and actual worklet comparisons pass. Credited transport retains in-flight reservations through delivery or retired-read completion. Production decoder, output supervisor, transactional asset admission, music loader and frame dispatcher now integrate with real exported-player checkpoints. Signed core/component fixtures cap the guest at 4 MiB under 4 MiB effects/8 MiB music shares and a 16 MiB parent, reach music completion and pass forced checkpoint failure/no replay, fresh recovery, Restart, Stop/relaunch and companion integrity rejection/recovery. No caps or tolerances increased. Whole-browser heap accounting, original port migration and broader platform verification remain open."
+
+[[work]]
+id = "browser_recorded_player_commit"
+requirements = ["Signed game SDK browser exports", "Embedded integrity-checked audio companions", "Guest memory cap reduced by declared audio shares", "Audio publication only after successful progress checkpoint", "Failed controls do not replay", "Stop and Restart own worker/audio lifetimes"]
+status = "implemented_runtime_verified_chromium_core_component"
+notes = "Source-built exports embed the converter and optional decoder plus runtime sources. Real signed core/component games play canonical effects and MP3 through output-clock mixing, finish music, reject forced checkpoint audio, recover only on fresh input, restart with fresh workers and relaunch after Stop. Corrupt converter bytes fail before guest creation and restoration permits fresh recovery. Existing legacy lifecycle checks, all 256 enabled host library tests, signed native/core/component music and effect SDK suites, build embedding bounds and strict lint pass. Published 0.1.17 binaries predate this source support. Guest-memory rewind, whole-page/JIT/GC accounting, port migration and broader platform testing remain separate."
+
+[[work]]
+id = "arkanoo_port_music_controller"
+requirements = ["Original playlist startup and random choice", "Volume mute pause completion stop and failure retry", "Dependency-free approved game source", "Actual port audio activation and full original dataset qualification"]
+status = "in_progress"
+notes = "Prepared controller matches 32 observed states/random draws from unchanged original audio.rs. Four parser/control tests execute on Linux32/64; isolated native/Wasm source builds and strict lint pass. The public recipe has not activated the controller. Chunked decoder input now qualifies all nine complete original tracks within the existing 8 MiB music share with exact native hashes and one aggregate 100 ms open deadline. A private lossless audit preserves all 76 PNG RGBA outputs but the complete private dataset now exports at 33185755 bytes under the unchanged 32 MiB limit after bounded lossless WAV storage removes the remaining size barrier. Both decode workspaces are charged inside the existing 16 MiB parent. ARK4 music/effect settings persistence is prepared with legacy defaults, malformed-save atomicity and actual Linux32/64 tests; active writer remains ARK3. Private residency and control wiring now pass; public activation and complete gameplay/pixel/platform qualification remain without dropping tracks or increasing limits. Recordings stay private."
+
+
+[[work]]
+id = "arkanoo_private_recorded_port"
+requirements = ["All original effect and music inputs", "Approved full-port source", "Host-owned output without guest PCM", "Original music menu controls", "Saved music restart", "Native core and component runtime qualification", "Maximum editor/save capacity and dense scenes under combined audio shares", "Complete gameplay browser and platform parity"]
+status = "in_progress"
+notes = "Private complete candidate retains all five effects and nine tracks. Native/core/component builds and real output/control/save/restart tests pass within the unchanged 16 MiB ceiling partitioned 3 MiB effects/7 MiB music/6 MiB guest. Music mute freezes progression; original slider stores volume 32, restores muted on restart and resumes; real collision effect reaches shared host mixer with music paused and no guest PCM. Full-package source validation exposed and fixed a playlist local/function-name collision without relaxing policy; all 32 original controller observations still match. Complete private core/component browser exports now fit at 33185755 bytes and pass original music, mute freeze, saved slider selection, compressed collision effects, restart/resume and parent release. Published active-port activation, maximum editor/save states, dense scenes and complete gameplay/pixel/platform parity remain open. No recordings or generated packages are published."
+
+
+[[work]]
+id = "browser_exact_png_asset_residency"
+requirements = ["Exact native PNG pixels without browser premultiplication", "Packed palette and transparency support", "Bounded inflation before output writes", "Preserve raw asset access", "Signed core/component production player", "Corruption rejection and fresh recovery", "Complete port dataset within existing export cap"]
+status = "in_progress"
+notes = "All 76 source and private optimized image RGBA hashes match independent Pillow decoding in Node and actual Chromium workers. Bounded in-tree inflater passes 64 zlib encodings, all PNG filters, malformed input and expansion overflow tests without opaque browser output allocation. Signed core/component production exports preserve indexed/packed/RGBA command pixels, original transparency fallback and corruption recovery. Existing browser/recorded-player regressions and host checks pass. The complete optimized dataset now exports at 33185755 bytes with lossless WAV storage, below the unchanged 33554432-byte cap. Complete private core/component music/effect/control/restart tests pass; wider PNG/platform and whole-browser accounting work remains. No recordings or generated assets are published."
+
+
+[[work]]
+id = "browser_compressed_effect_assets"
+requirements = ["Preserve original WAV asset reads", "Bounded reused decode workspace", "Reserve both owners inside the parent ceiling", "Reduce actual Wasm memory maximum", "Hold asynchronous borrow charges through shutdown", "Complete original dataset without dropping media or raising caps", "Broader format and platform parity"]
+status = "in_progress"
+notes = "Private core/component exports retain all 76 images, five effects and nine tracks at 33185755 encoded asset bytes under the existing 33554432 cap. Two 1200224-byte workspaces are reserved in the unchanged 16 MiB parent; guest allowance is 3891008 bytes under 3 MiB effects/7 MiB music shares. Real fixture reads/playback, actual Wasm maxima, pending-loan Stop retention, complete release and fresh recovery pass. Actual full-port music, mute progression freeze, selected-volume save/restart, compressed collision effects and resume pass. Fixed-table/backing accounting and corruption bounds pass; ordinary uncompressed assets retain their previous behavior. Public active-port migration, wider platform and whole-host/JIT/GC accounting remain open."
+
+[[work]]
+id = "browser_filtered_sprite_batches"
+requirements = ["Exact filtered pixels and per-draw quantization", "Preserve clipping and mixed command order", "Stage before persistence publication", "Reduce full framebuffer transfers", "Real full-port gameplay"]
+status = "verified_current_browser_fixtures"
+notes = "Ten actual Chromium cases match the pinned prior renderer bytes across fractional/alpha/clip/mixed draws; a 235-image run becomes one framebuffer copy. Staging tests retain all GPU operations offscreen and reject failed filtered batches without publication. Full private gameplay now reaches original collision effects within the existing observation/runtime limits. Other GPU/platform fidelity remains covered by the broader parity work."
