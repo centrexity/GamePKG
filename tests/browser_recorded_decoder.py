@@ -17,6 +17,9 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-chromium-decoder-') as temporar
  for name in ['recorded-decoder.js','recorded-decoder-client.js','recorded-decoder-worker.js','recorded-budget.js']:shutil.copy2(project/'web-player'/name,root/name)
  for file in fixture.glob('*.wasm'):shutil.copy2(file,root/file.name)
  shutil.copy2(companion,root/'decoder.wasm');shutil.copy2(music/record['name'],root/'track.mp3')
+ records=json.loads((fixture/'reference.json').read_text());(root/'all-tracks.json').write_text(json.dumps(records))
+ (root/'tracks').mkdir()
+ for track in records:shutil.copy2(music/track['name'],root/'tracks'/track['name'])
  (root/'reference.json').write_text(json.dumps(record))
  (root/'index.html').write_text('<script type="module">import * as api from "./recorded-decoder.js";window.decoderAPI=api;</script>')
  server=ThreadingHTTPServer(('127.0.0.1',0),partial(Quiet,directory=str(root)));threading.Thread(target=server.serve_forever,daemon=True).start()
@@ -76,5 +79,24 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-chromium-decoder-') as temporar
   assert 'error' not in supervised,supervised
   print('Actual Chromium supervised decoder: 100 ms open/read loop termination, cancellation, invalid-output cleanup, fresh recovery and no orphan workers:',supervised['value'],flush=True)
 
+  browser.set_script_timeout(30)
+  corpus=browser.execute_async_script('''const done=arguments[arguments.length-1];(async()=>{
+   const {RecordedDecoderClient}=await import('./recorded-decoder-client.js'),{RecordedBudget}=await import('./recorded-budget.js'),records=await(await fetch('all-tracks.json')).json(),wasm=new Uint8Array(await(await fetch('decoder.wasm')).arrayBuffer()),budget=new RecordedBudget(8388608),results=[];
+   const post=Worker.prototype.postMessage,timers=[];let timedOut=false;
+   Worker.prototype.postMessage=function(data,...rest){if(data?.kind==='input'){timers.push(setTimeout(()=>post.call(this,data,...rest),60));return;}return post.call(this,data,...rest);};
+   try{await RecordedDecoderClient.open(wasm,new Uint8Array(131072),6291456,undefined,budget);}catch(error){timedOut=String(error).includes('deadline');}finally{Worker.prototype.postMessage=post;for(const timer of timers)clearTimeout(timer);}
+   if(!timedOut||budget.used)throw Error('Chunk requests reset the aggregate open deadline or leaked capacity');
+   for(const track of records){
+    let transferred=0,maximumChunkBytes=0,inputChunks=0;Worker.prototype.postMessage=function(data,...rest){if(data?.kind==='input'){if(data.offset!==transferred||data.bytes.byteOffset!==0||data.bytes.buffer.byteLength!==data.bytes.length||data.bytes.length>65536)throw Error('Invalid chunk transfer ownership/order');transferred+=data.bytes.length;maximumChunkBytes=Math.max(maximumChunkBytes,data.bytes.length);inputChunks++;}return post.call(this,data,...rest);};
+    const encoded=new Uint8Array(await(await fetch('tracks/'+encodeURIComponent(track.name))).arrayBuffer()),start=performance.now(),client=await RecordedDecoderClient.open(wasm,encoded,6291456,undefined,budget),openMs=performance.now()-start,expectedCharge=6291456+wasm.length*2+65536+1600*2*3;
+    if(budget.used!==expectedCharge)throw Error('Chunk input reservation grew with encoded length');
+    const pcm=new Uint8Array(track.samples*2),view=new DataView(pcm.buffer);let at=0;
+    for(;;){const values=await client.read();if(!values.length)break;if(at+values.length*2>pcm.length)throw Error('Too much chunked PCM');for(let i=0;i<values.length;i++)view.setInt16(at+i*2,values[i],true);at+=values.length*2;}
+    const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',pcm)),v=>v.toString(16).padStart(2,'0')).join('');if(at!==pcm.length||hash!==track.sha256)throw Error('Chunked input full PCM mismatch '+track.name);client.close();Worker.prototype.postMessage=post;if(budget.used||transferred!==encoded.length||inputChunks!==Math.ceil(encoded.length/65536))throw Error('Chunked decoder leaked reservation or skipped input');results.push({name:track.name,samples:track.samples,sha256:hash,openMs,encodedBytes:encoded.length,maximumChunkBytes,inputChunks});
+   }return results;
+  })().then(value=>done({value})).catch(error=>done({error:String(error.stack||error)}));''')
+  assert 'error' not in corpus,corpus
+  assert len(corpus['value'])==9,corpus
+  print('Actual Chromium all nine chunked decoder workers: unchanged complete native PCM hashes/counts within one 8 MiB share and fixed chunk reservation.',json.dumps(corpus['value']),flush=True)
  finally:
   browser.quit();server.shutdown();server.server_close()

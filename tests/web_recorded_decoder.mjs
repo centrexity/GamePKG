@@ -7,6 +7,15 @@ const {RecordedDecoder,inspectCompanion}=await import('data:text/javascript;base
 const [fixture,input,companion]=process.argv.slice(2);
 assert.ok(fixture&&input&&companion,'Use tools/check_browser_audio_decoder.py');
 const load=name=>new Uint8Array(fs.readFileSync(path.join(fixture,name+'.wasm')));
+for(const mode of ['incomplete','duplicate','oversize','shared']){
+ const staged=new RecordedDecoder(load('valid'));staged.beginInput(2);
+ if(mode==='incomplete')assert.throws(()=>staged.finishInput());
+ if(mode==='duplicate'){staged.writeInput(0,new Uint8Array([1]));assert.throws(()=>staged.writeInput(0,new Uint8Array([1])));}
+ if(mode==='oversize')assert.throws(()=>staged.writeInput(0,new Uint8Array(65537)));
+ if(mode==='shared')assert.throws(()=>staged.writeInput(0,new Uint8Array(new SharedArrayBuffer(2))));
+ assert.ok(staged.failed,mode+' did not poison incomplete input');assert.throws(()=>staged.read(new Int16Array(2)));staged.close();
+}
+const staged=new RecordedDecoder(load('valid'));staged.beginInput(2);staged.writeInput(0,new Uint8Array([1]));staged.writeInput(1,new Uint8Array([2]));staged.finishInput();const stagedPCM=new Int16Array(2);assert.equal(staged.read(stagedPCM),2);assert.deepEqual(Array.from(stagedPCM),[4660,-292]);staged.close();
 const header=[0,97,115,109,1,0,0,0];
 const module=memory=>new Uint8Array([...header,5,memory.length,...memory]);
 assert.equal(inspectCompanion(module([1,1,1,96])),6291456);

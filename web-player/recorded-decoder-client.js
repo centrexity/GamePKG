@@ -18,12 +18,17 @@ export class RecordedDecoderClient {
   if(signal!==undefined&&!(signal instanceof AbortSignal))throw Error('Invalid decoder cancellation signal');
   if(signal?.aborted)throw Error('Decoder open cancelled');
   if(budget!==undefined&&!(budget instanceof RecordedBudget))throw Error('Invalid audio memory allowance');
-  // Linear memory plus peak owned module/input snapshots and three PCM blocks.
+  // Linear memory, two module snapshots, one 64 KiB transfer and three PCM blocks.
   // Caller-owned source buffers and browser compiler/JIT overhead are separate.
-  const reservation=budget?.reserve(limit+wasm.byteLength*2+encoded.byteLength+MAX_PCM_VALUES*2*3);
+  const reservation=budget?.reserve(limit+wasm.byteLength*2+65536+MAX_PCM_VALUES*2*3);
   let client;try{client=new RecordedDecoderClient(CREATE);client.#reservation=reservation;}catch(error){reservation?.release();throw error;}
   const abort=()=>client.close();signal?.addEventListener('abort',abort,{once:true});
-  try{await client.#ready;const module=owned(wasm,4194304);await client.#request('compile',{bytes:module,limit},[module.buffer]);const bytes=owned(encoded,MAX_ENCODED_BYTES);await client.#request('open',{bytes},[bytes.buffer]);return client;}
+  try{
+   await client.#ready;const module=owned(wasm,4194304);await client.#request('compile',{bytes:module,limit},[module.buffer]);
+   const expires=performance.now()+EXECUTION_MS;await client.#request('reserve',{length:encoded.length},[],expires);
+   for(let at=0;at<encoded.length;at+=65536){const bytes=owned(encoded.subarray(at,Math.min(at+65536,encoded.length)),65536);await client.#request('input',{offset:at,bytes},[bytes.buffer],expires);}
+   await client.#request('open',{},[],expires);return client;
+  }
   catch(error){client.close();throw error;}finally{signal?.removeEventListener('abort',abort);}
  }
  get closed(){return this.#closed;}
@@ -43,13 +48,14 @@ export class RecordedDecoderClient {
   }
   clearTimeout(pending.timer);this.#pending=null;pending.resolve(pending.kind==='read'?data.values:undefined);
  }
- #request(kind,fields={},transfer=[]){
+ #request(kind,fields={},transfer=[],deadline){
   if(this.#closed)return Promise.reject(Error('Decoder is closed'));
   if(this.#pending)return Promise.reject(Error('Decoder request already pending'));
   if(this.#serial>=Number.MAX_SAFE_INTEGER){this.close();return Promise.reject(Error('Decoder request counter exhausted'));}
-  const id=++this.#serial,timeout=kind==='compile'?STARTUP_MS:EXECUTION_MS;
+  const id=++this.#serial,expires=deadline??performance.now()+(kind==='compile'?STARTUP_MS:EXECUTION_MS),timeout=Math.max(0,expires-performance.now());
+  if(!timeout){this.#fail(Error('Decoder execution deadline exceeded'));return Promise.reject(Error('Decoder execution deadline exceeded'));}
   return new Promise((resolve,reject)=>{
-   this.#pending={id,kind,length:fields.length,limit:fields.limit,resolve,reject,expires:performance.now()+timeout,timer:setTimeout(()=>this.#fail(Error('Decoder execution deadline exceeded')),timeout)};
+   this.#pending={id,kind,length:fields.length,limit:fields.limit,resolve,reject,expires,timer:setTimeout(()=>this.#fail(Error('Decoder execution deadline exceeded')),timeout)};
    try{this.#worker.postMessage({id,kind,...fields},transfer);}catch(error){this.#fail(error);}
   });
  }

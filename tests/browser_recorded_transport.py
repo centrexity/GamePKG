@@ -54,7 +54,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-worklet-mixer-') as temporary:
    const {RecordedDecoder}=await import('./recorded-decoder.js'),{RecordedDecoderClient}=await import('./recorded-decoder-client.js'),{RecordedStream}=await import('./recorded-stream.js'),{RecordedMusicSender}=await import('./recorded-transport.js');
    const load=async name=>new Uint8Array(await(await fetch(name)).arrayBuffer());
    const wasm=await load('converter.wasm'),codec=await load('decoder.wasm'),encoded=await load('tone.mp3');
-   const {RecordedBudget}=await import('./recorded-budget.js'),charge=6291456+codec.length*2+encoded.length+1600*2*3;
+   const {RecordedBudget}=await import('./recorded-budget.js'),charge=6291456+codec.length*2+65536+1600*2*3;
    const budget=new RecordedBudget(charge),reserved=await RecordedDecoderClient.open(codec,encoded,6291456,undefined,budget);
    if(budget.used!==charge)throw Error('Decoder reservation missing');let denied=false;
    try{await RecordedDecoderClient.open(codec,encoded,6291456,undefined,budget);}catch{denied=true;}

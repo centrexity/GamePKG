@@ -3684,3 +3684,33 @@ must be resolved without dropping tracks or raising existing limits. The working
 port remains on its existing audio path; persisted music controls and full
 native/browser recorded-backend migration still need wiring and proof. Only
 controller/source tests are published; all migration recordings remain private.
+
+
+### Chunked browser decoder input qualification
+
+The full encoded transfer snapshot described above has been replaced by one
+sequential, owned transfer of at most 64 KiB at a time into reserved decoder
+memory. The worker releases each message's input reference before acknowledging
+it. The client reserves linear memory, two module snapshots, one fixed 64 KiB
+transfer and three bounded PCM blocks; caller-owned package assets and browser
+compiler/JIT/GC overhead remain separate. Reserve, all input transfers and codec
+open share one absolute 100 ms deadline, rather than resetting it per chunk.
+
+Actual Chromium decodes all nine complete original tracks within one 8 MiB
+music allowance, with unchanged native PCM hashes and sample counts. The largest
+track uses 59 transfers, none larger than 65,536 bytes. Tests inspect exact-span
+ownership and sequential offsets, reject incomplete/out-of-order/oversized/shared
+input, and force delayed transfers to verify the aggregate deadline and cleanup.
+The complete native/JavaScript/browser qualification finishes in 12.52 seconds
+under the existing 30-second browser observation and 60-second tool timeout.
+No runtime caps, reference hashes or tolerances were increased.
+
+This resolves the decoder transfer-memory barrier, not the full port migration.
+The complete music plus existing assets still exceed the 32 MiB browser asset
+budget. Asset residency, persisted controls and full native/browser port playback
+remain required; recordings remain private.
+
+After rebuilding both desktop entries with the embedded companions, the actual
+signed core/component exported-player regression also passes with chunked input:
+music completion, fresh Restart, Stop/relaunch, checkpoint failure/no replay,
+companion integrity rejection/recovery and close-failure allocation protection.

@@ -42,7 +42,7 @@ export function instantiateCompanion(bytes,limit,abi){
   return {api,maximumMemoryBytes};
 }
 export class RecordedDecoder {
- #api;#maximum;#opened=false;#failed=false;#closed=false;
+ #api;#maximum;#opened=false;#failed=false;#closed=false;#opening=false;#inputPointer=0;#inputLength=0;#written=0;
  constructor(bytes,limit=MAX_DECODER_MEMORY){
   const {api,maximumMemoryBytes}=instantiateCompanion(bytes,limit,ABI);this.#maximum=maximumMemoryBytes;
   this.#api=api;this.#memory();
@@ -53,16 +53,28 @@ export class RecordedDecoder {
  #call(operation){try{return operation();}catch(error){this.#failed=true;throw error;}}
  #work(){const work=this.#api.decoder_work();if(!Number.isInteger(work)||work<0||work>MAX_DECODE_WORK)fail('Decoder work limit exceeded');}
  #ready(){if(this.#closed||this.#failed||!this.#opened)fail('Decoder is not active');}
- open(encoded){
-  if(this.#closed||this.#failed||this.#opened)fail('Decoder cannot be reopened');
-  const length=encoded?.byteLength;if(!(encoded instanceof Uint8Array)||!Number.isInteger(length)||length<1||length>MAX_ENCODED_BYTES)fail('Invalid encoded music size');
-  this.#opened=true;
-  this.#call(()=>{const source=new Uint8Array(encoded.buffer,encoded.byteOffset,length),pointer=this.#api.decoder_reserve(length),memory=this.#memory();
-   if(!Number.isInteger(pointer)||pointer<=0||pointer+length>memory.byteLength)fail('Invalid decoder input range');
-   new Uint8Array(memory,pointer,length).set(source);
-   if(this.#api.decoder_open()!==0)fail('Invalid or over-budget MPEG audio');this.#work();
-   if(this.#api.decoder_set_mixer_rate(44100)!==0||this.#api.decoder_rate()!==44100||this.#api.decoder_channels()!==2)fail('Invalid decoder mixer format');this.#memory();
+ beginInput(length){
+  if(this.#closed||this.#failed||this.#opened||this.#opening)fail('Decoder cannot be reopened');
+  if(!Number.isInteger(length)||length<1||length>MAX_ENCODED_BYTES)fail('Invalid encoded music size');
+  this.#opening=true;
+  this.#call(()=>{const pointer=this.#api.decoder_reserve(length),memory=this.#memory();if(!Number.isInteger(pointer)||pointer<=0||pointer+length>memory.byteLength)fail('Invalid decoder input range');this.#inputPointer=pointer;this.#inputLength=length;});
+ }
+ writeInput(offset,bytes){
+  this.#call(()=>{
+   if(this.#closed||!this.#opening||this.#opened||this.#failed||offset!==this.#written||!(bytes instanceof Uint8Array)||!(bytes.buffer instanceof ArrayBuffer)||bytes.length<1||bytes.length>65536||offset+bytes.length>this.#inputLength)fail('Invalid decoder input chunk');
+   const memory=this.#memory();if(this.#inputPointer+this.#inputLength>memory.byteLength)fail('Invalid decoder input range');new Uint8Array(memory,this.#inputPointer+offset,bytes.length).set(bytes);this.#written+=bytes.length;
   });
+ }
+ finishInput(){
+  this.#call(()=>{
+   if(this.#closed||this.#failed||!this.#opening||this.#opened||this.#written!==this.#inputLength)fail('Incomplete decoder input');
+   if(this.#api.decoder_open()!==0)fail('Invalid or over-budget MPEG audio');this.#work();
+   if(this.#api.decoder_set_mixer_rate(44100)!==0||this.#api.decoder_rate()!==44100||this.#api.decoder_channels()!==2)fail('Invalid decoder mixer format');this.#memory();this.#opened=true;this.#opening=false;
+  });
+ }
+ open(encoded){
+  const length=encoded?.byteLength;if(!(encoded instanceof Uint8Array)||!Number.isInteger(length)||length<1||length>MAX_ENCODED_BYTES)fail('Invalid encoded music size');
+  this.beginInput(length);for(let at=0;at<length;at+=65536)this.writeInput(at,encoded.subarray(at,Math.min(at+65536,length)));this.finishInput();
  }
  read(output){
   this.#ready();
