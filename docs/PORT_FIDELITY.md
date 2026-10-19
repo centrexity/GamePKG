@@ -2788,8 +2788,28 @@ The Android32 emulator also passes its three memory-budget cases, plus the
 selected component/portability/runtime suites. Its three effect-asset cases fail
 earlier while creating their signed fixture: `pack` returns Permission denied
 at `tests/common/music_fixture.rs:69`. The audio loader assertions are not
-reached. The exact denied operation still needs diagnosis; this failed workflow
-is not counted as a passing Android effect-loader qualification.
+reached in that hosted run, which remains a failed workflow.
+
+A separate API 29 x86 Android emulator reproduces the failure as uid 2000 with
+the shell SELinux context. Stage-specific pack diagnostics identify the denied
+operation as hard-link publication after signing and verification; a minimal
+hard-link probe also fails with Permission denied. Android package publication
+now uses the kernel's atomic `renameat2(RENAME_NOREPLACE)` syscall. Calling the
+kernel directly avoids bionic's API 30-only exported function and retains our
+older Android API build target. Unsupported kernels fail explicitly, with no
+overwriting fallback. Other platforms retain their existing hard-link path.
+
+On the same API 29 device, all three signed effect-asset tests now pass, including
+post-verification CRC corruption and compressed-workspace denial. Three new
+publication tests pass on both Linux and Android: complete publication with
+existing-file/directory denial, dangling-symlink denial without following it,
+and simultaneous publishers with exactly one winner and complete winner bytes.
+The original-recordings case remains explicitly ignored without private inputs.
+Android CI now runs these publication tests using Cargo's exact library-test
+artifact path. This is local emulator evidence, not a claim that a new hosted
+workflow or full Android gameplay/audio qualification has passed. Local
+portability, path/dependency attacks and signed effect regressions also pass;
+strict library Clippy passes. No limits, tolerances or test parallelism changed.
 
 The final fixtures also inject a valid-JSON history record with an invalid
 field schema. The player denies that pending window transaction, reports an explicit error

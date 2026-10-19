@@ -97,7 +97,7 @@ jobs:
       - name: Embed decoder in Android CLI and test executables
         run: |
           cargo build --locked --release --target armv7-linux-androideabi --bin gamepkg
-          cargo test --locked --target i686-linux-android --test portability --test runtime --test components --test memory_budget --test audio_effect_assets --no-run
+          cargo test --locked --target i686-linux-android --lib --test portability --test runtime --test components --test memory_budget --test audio_effect_assets --no-run --message-format=json > android-tests.json
       - name: Allow runner access to KVM
         run: sudo setfacl -m u:"$USER":rw /dev/kvm
       - name: Execute tests in 32-bit Android userspace
@@ -107,7 +107,7 @@ jobs:
           target: google_apis
           arch: x86
           disable-animations: true
-          script: bash tools/test_android_runtime.sh emulator-5554 i686-linux-android
+          script: bash tools/test_android_runtime.sh emulator-5554 i686-linux-android "$(jq -er 'select(.reason == "compiler-artifact" and .profile.test == true and (.target.kind | index("lib")) != null) | .executable // empty' android-tests.json)"
       - uses: actions/upload-artifact@v4
         with:
           name: gamepkg-android-armv7-cli

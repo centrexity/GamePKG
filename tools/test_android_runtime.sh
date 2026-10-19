@@ -3,6 +3,8 @@
 set -euo pipefail
 serial=${1:?Pass the serial of your dedicated Android test device}
 target=${2:-i686-linux-android}
+publication_binary=${3:?Pass the library test executable reported by Cargo}
+[ -f "$publication_binary" ] && [ -x "$publication_binary" ] || { echo 'The library test executable is missing.' >&2; exit 1; }
 case "$target" in
   i686-linux-android|armv7-linux-androideabi) ;;
   *) echo 'Select a 32-bit Android target.' >&2; exit 1 ;;
@@ -21,3 +23,6 @@ for kind in components portability runtime memory_budget audio_effect_assets; do
   done
 done
 [ "$found" -eq 5 ] || { echo 'Build exactly the five Android test binaries before running this script.' >&2; exit 1; }
+name=$(basename "$publication_binary")
+"$adb" -s "$serial" push "$publication_binary" "$remote/$name"
+"$adb" -s "$serial" shell "TMPDIR=$remote $remote/$name pack::publication_tests::"
