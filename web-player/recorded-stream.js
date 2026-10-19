@@ -28,6 +28,39 @@ export class RecordedStream {
  effectVolume(value){return !this.#closed&&this.#mixer.volume(value);}
  effectPause(value){return !this.#closed&&this.#mixer.pause(value);}
  stopEffects(){if(!this.#closed)this.#mixer.stop();}
+ // Host-resolved commands: Play takes a cached clip ID or new music generation.
+ // One synchronous worklet task validates everything before changing any state.
+ applyControls(commands,activeGeneration=null){
+  if(this.#closed||this.failed||!Array.isArray(commands)||commands.length>32)return false;
+  let voices=this.#mixer.active,generation=this.generation,status=this.musicStatus;
+  const accepted=[];
+  for(const command of commands){
+   if(!Array.isArray(command)||command.length!==2)return false;
+   const [operation,value]=command;if(!Number.isSafeInteger(operation)||!Number.isSafeInteger(value)||value<0)return false;
+   if(operation===0){if(!this.#mixer.has(value)||voices===4)return false;voices++;}
+   else if(operation===1||operation===5){if(value>128)return false;}
+   else if(operation===2){if(value>1)return false;}
+   else if(operation===3){if(value!==0)return false;voices=0;}
+   else if(operation===4||operation===7){if(value<=generation)return false;generation=value;status=operation===4?'loading':'stopped';}
+   else if(operation===6){
+    if(value>1)return false;
+    if((status==='ended'||status==='failed')&&activeGeneration===generation)continue;
+    if(!['loading','playing','paused'].includes(status))return false;status=value?'paused':'playing';
+   }else return false;
+   accepted.push(command);
+  }
+  for(const [operation,value] of accepted){
+   if(operation===0)this.play(value);
+   else if(operation===1)this.effectVolume(value);
+   else if(operation===2)this.effectPause(value===1);
+   else if(operation===3)this.stopEffects();
+   else if(operation===4)this.begin(value);
+   else if(operation===5)this.musicVolume(value);
+   else if(operation===6)this.musicPause(value===1);
+   else this.stopMusic(value);
+  }
+  return true;
+ }
  render(output){
   if(!(output instanceof Int16Array)||output.length>1600||output.length%2)throw Error('Invalid live audio output');
   if(this.#closed)return 0;

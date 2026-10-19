@@ -3408,3 +3408,32 @@ Recorded-audio exports remain rejected. Their effect/music shares still need to
 partition this actual parent, and committed guest controls, companions and port
 migration remain open. Reserving guest linear memory does not account for every
 asset, DOM, graphics or browser/JIT allocation.
+
+Browser guest bindings now recognize core/component recorded-audio calls and
+stage at most 32 ordered commands in the current frame. Calls require signed
+audio permission, the corresponding declared share and a host-ready snapshot;
+read-only music completion/failure uses the same tick snapshot. Paths must be
+valid existing package assets, and retained commands reference package-owned
+keys rather than accumulating copied guest paths. Numeric/path bounds, absent
+output, absent permission, per-tick reset, trap cleanup and failed checkpoint
+no-replay pass worker tests. Matching checkpoint acknowledgement clears staging;
+existing window/file acknowledgement, input and frame-clock regressions pass.
+Declared recorded-audio modes reject premixed PCM, matching the desktop API.
+
+The player does not yet supply recorded output readiness or consume these staged
+commands. Backend cache/admission validation, all-or-nothing effect/music
+publication after checkpoint, actual game SDK/browser device proof, companion
+embedding and port migration remain open. Exports with recorded-audio shares
+remain explicitly rejected; staging tests do not establish audible game playback.
+
+The live stream also validates a complete host-resolved numeric control batch
+before applying any changes in one synchronous worklet task. Cached clip IDs,
+four voice slots, ordered Stop/Play, gains, pause values and strictly increasing
+music generations are checked together. Invalid late commands leave gain,
+voices, generation, queued PCM and exact audible output unchanged. A pause of
+the same active-at-tick-start generation preserves asynchronous Ended/Failed.
+Node tests cover rejected and ordered valid batches; actual AudioWorklet checks
+exercise rejection and valid gain/pause while retaining all six SDL hashes and
+all three exact MP3 lifecycle comparisons. Resolving guest asset paths and
+committed frames into these backend batches is still unfinished; this primitive
+does not independently publish game commands or enable recorded-audio exports.

@@ -23,4 +23,15 @@ for(const mode of ['pause','fail','stop','underrun']){
  const hash=createHash('sha256'),out=new Int16Array(256);for(let at=0;at<8192;at+=128){assert.equal(stream.render(out),128);const bytes=new Uint8Array(out.length*2),view=new DataView(bytes.buffer);for(let i=0;i<out.length;i++)view.setInt16(i*2,out[i],true);hash.update(bytes);}
  assert.equal(hash.digest('hex'),reference.cases[6].sha256,mode+' interrupted effects');assert.equal(stream.playedFrames,0);assert.equal(stream.musicStatus,{pause:'paused',fail:'failed',stop:'stopped',underrun:'loading'}[mode]);assert.equal(stream.queuedFrames,mode==='pause'?4800:0);assert.equal(stream.activeEffects,0);const before=stream.renderedFrames;assert.throws(()=>stream.render(new Int16Array(1602)));assert.equal(stream.renderedFrames,before);stream.close();
 }
+{
+ const left=new RecordedStream(wasm),right=new RecordedStream(wasm);
+ for(const stream of [left,right]){stream.load(0,clip(0));stream.play(0);stream.begin(1);stream.push(1,pcm(0,800));}
+ for(const batch of [[[1,0],[7,2],[0,99]],[[3,0],[7,2],[6,1]],Array(33).fill([1,64]),[[0,0],[0,0],[0,0],[0,0]],[[4,2],[5,129]],[[4,2],[7,2]],[[1,NaN]],[[6,2]]]){
+  assert.equal(left.applyControls(batch),false);assert.equal(left.generation,1);assert.equal(left.queuedFrames,800);assert.equal(left.activeEffects,1);
+ }
+ const a=new Int16Array(256),b=new Int16Array(256);left.render(a);right.render(b);assert.deepEqual(a,b,'rejected batch changed audible output');
+ assert.ok(left.applyControls([[3,0],[0,0],[0,0],[4,2],[5,64],[6,1]]));assert.equal(left.activeEffects,2);assert.equal(left.generation,2);assert.equal(left.musicStatus,'paused');assert.equal(left.queuedFrames,0);
+ assert.ok(left.failMusic(2));assert.ok(left.applyControls([[1,32],[6,0]],2));assert.equal(left.musicStatus,'failed');assert.equal(left.applyControls([[6,0]],1),false);
+ left.close();right.close();assert.equal(left.applyControls([]),false);
+}
 console.log('Live queue/mix/conversion: 24 exact SDL prefixes, finite-track-to-silence, epoch replacement, pause/failure/stop with continuing effects, fixed buffers, rejected reads and close passed.');

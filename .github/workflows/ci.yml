@@ -66,6 +66,8 @@ jobs:
         run: node tests/web_path_attacks.mjs
       - name: Test fixed browser music FIFO and generation boundaries
         run: node tests/web_recorded_queue.mjs
+      - name: Recorded audio guest command staging
+        run: node tests/web_recorded_controls.mjs
       - name: Verify nearest single-texel pixel coverage
         run: node tests/web_nearest_pixels.mjs
       - name: Verify browser drawing clip policy

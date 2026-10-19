@@ -11,6 +11,7 @@ export class RecordedMixer {
   const {api,maximumMemoryBytes}=instantiateCompanion(wasm,MAX_CONVERTER_MEMORY,ABI);this.#api=api;this.#maximum=maximumMemoryBytes;this.#budget=budget;
   if(api.converter_init()!==0)throw Error('Converter initialization failed');this.#memory();
  }
+ has(id){return !this.#closed&&!this.#failed&&Number.isInteger(id)&&id>=0&&id<32&&this.#clips[id]!==null;}
  get active(){return this.#voices.filter(Boolean).length;}
  get pcmBytes(){return this.#bytes;}
  get reservedBytes(){return this.#maximum+HOST_BYTES;}

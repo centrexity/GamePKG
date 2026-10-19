@@ -7,6 +7,7 @@ function frameClockBegin(now=performance.now()){
 }
 let eventBytes=new Uint8Array();
 // The guest sees only these typed imports, never JavaScript objects or browser APIs.
+let recordedControls=[],recordedReady=false,recordedMusicStatus='stopped';
 let instance, manifest, assets, roms, save, state=0n, commands=[], background=null, unlocks=[],saveDirty=false,saveBudget=0,images=new Map(),imageBudget=0,audioSamples=[],audioChannels=1,shaderCount=0;
 function imageCommand(x,y,w,h,pw,ph,pixels,kind='image'){if(commands.length>=1024||!finite(x,y,w,h)||w<0||h<0||!Number.isInteger(pw)||!Number.isInteger(ph)||pw<1||ph<1||pw>512||ph>512||pixels.length!==pw*ph*4||imageBudget+pixels.length>8388608)return -1;imageBudget+=pixels.length;return command([kind,x,y,w,h,pw,ph,pixels.slice()]);}
 async function prepareImages(precise={}){
@@ -88,7 +89,7 @@ function windowPrepare(){
 }
 function windowCommit(reply){
  if(!windowPending||typeof reply.success!=='boolean'||reply.epoch!==windowPending.epoch||reply.serial!==windowPending.serial)return false;
- windowFinish(reply.success);windowPending=null;
+ recordedControls=[];recordedReady=false;windowFinish(reply.success);windowPending=null;
  fileTickFinish(reply.success&&!windowCurrent.closed);return true;
 }
 
@@ -130,7 +131,26 @@ function fileResult(data){const entry=fileEntry;if(!entry||entry.status!==1||ent
 function fileTickBegin(input=0){fileGesture=false;if(manifest.permissions.input){fileGesture=(input&0x000f00ff)!==0;const v=new DataView(eventBytes.buffer,eventBytes.byteOffset,eventBytes.byteLength);for(let at=0;at<eventBytes.length;at+=16){const kind=v.getUint32(at,true),code=v.getUint32(at+12,true);if(kind===2||(kind===5&&!(code&65536))||(kind===9&&!(code&0x80000000)))fileGesture=true;}}}
 function fileTickFinish(success){fileGesture=false;if(fileEntry?.staged){if(!success){fileEntry=null;return;}fileEntry.staged=false;postMessage({type:'file-request',epoch:homepageEpoch,handle:fileEntry.handle,generation:fileEntry.generation,index:fileEntry.index,operation:fileEntry.operation,name:fileEntry.name,bytes:fileEntry.operation===1?fileEntry.bytes:new Uint8Array()});}}
 
+function recordedBegin(snapshot){
+ recordedControls=[];recordedReady=snapshot?.ready===true&&manifest.permissions.audio===true;
+ recordedMusicStatus=['loading','playing','paused','ended','failed','stopped'].includes(snapshot?.musicStatus)?snapshot.musicStatus:'stopped';
+}
+function recordedCall(operation,pointer,length,value){
+ if(!recordedReady||!Number.isInteger(operation)||!Number.isInteger(value)||value<0||value>4294967295)return 0;
+ const music=operation>=4,share=music?manifest.limits.music_memory_bytes:manifest.limits.effects_memory_bytes;
+ if(!Number.isSafeInteger(share)||share<65536)return 0;
+ if(operation===8||operation===9)return length===0&&value===0&&recordedMusicStatus===(operation===8?'ended':'failed')?1:0;
+ if(operation<0||operation>7||recordedControls.length>=32)return 0;
+ let path='';
+ if(operation===0||operation===4){
+  const name=assetName(pointer,length);if(name===null||value!==0||!assets.has(name))return 0;
+  // Keep the package-owned key, rather than accumulating copied guest strings.
+  for(const key of assets.keys())if(key===name){path=key;break;}
+ }else if(length!==0||((operation===1||operation===5)&&value>128)||((operation===2||operation===6)&&value>1)||((operation===3||operation===7)&&value!==0))return 0;
+ recordedControls.push([operation,path,value]);return 1;
+}
 function audioSubmit(pointer,count,channels){
+ if(manifest.limits?.effects_memory_bytes!==undefined||manifest.limits?.music_memory_bytes!==undefined)return -1;
  if(!manifest.permissions.audio||!Number.isInteger(count)||count<0||count>1600||count%channels||audioSamples.length+count>1600||(audioSamples.length&&audioChannels!==channels))return -1;
  const samples=bytes(pointer,count*2,3200);if(!samples)return -1;
  if(count){audioChannels=channels;const view=new DataView(samples.buffer,samples.byteOffset,samples.byteLength);for(let i=0;i<count;i++)audioSamples.push(view.getInt16(i*2,true));}return 0;
@@ -161,6 +181,7 @@ const api={
  draw_shader:index=>Number.isInteger(index)&&index>=0&&index<shaderCount?command(['shader',index]):-1,
  draw_shader_asset_image:(index,pointer,length)=>{const image=images.get(assetName(pointer,length));if(!Number.isInteger(index)||index<0||index>=shaderCount||!image||imageBudget+image.pixels.length>8388608||commands.length>=1024)return -1;imageBudget+=image.pixels.length;return command(['shader-image',index,image.width,image.height,image.pixels.slice()]);},
  draw_shader_image:(index,pw,ph,pointer,length)=>{const pixels=bytes(pointer,length,1048576);if(!Number.isInteger(index)||index<0||index>=shaderCount||!pixels||!Number.isInteger(pw)||!Number.isInteger(ph)||pw<1||ph<1||pw>512||ph>512||length!==pw*ph*4||imageBudget+length>8388608)return -1;imageBudget+=length;return command(['shader-image',index,pw,ph,pixels.slice()]);},
+ effect_call:recordedCall,
  audio_submit:(pointer,count)=>audioSubmit(pointer,count,1),
  audio_submit_stereo:(pointer,count)=>audioSubmit(pointer,count,2),
  achievement_unlock:index=>{const item=manifest.achievements?.[index];if(!item||unlocks.length>=1024)return 0;unlocks.push(item.id);return 1;}
@@ -171,7 +192,7 @@ onmessage=async ({data})=>{try{
  if(data.type==='window-commit'){windowCommit(data);return;}
  if(data.type==='start'){
   homepageEpoch=0;windowSerial=0;windowPending=null;
-  frameClockReset();windowObserve(null);
+  recordedBegin(null);frameClockReset();windowObserve(null);
   fileEntry=null;fileNext=1;fileGeneration++;fileGesture=false;windowCurrent=defaultWindow();windowPrevious=defaultWindow();windowStaged=defaultWindow();
   shaderCount=data.shaderCount||0;manifest=data.manifest;assets=new Map(Object.entries(data.assets).map(([key,value])=>[key,decode(value)]));roms=data.roms.map(value=>new Uint8Array(value));save=new Uint8Array(data.save);state=0n;
   await prepareImages(data.precise_images??{});
@@ -185,21 +206,21 @@ onmessage=async ({data})=>{try{
   if(!Number.isInteger(data.homepageEpoch)||data.homepageEpoch!==homepageEpoch+1||data.homepageEpoch>4294967295)throw Error('Invalid restart generation');
   if(data.save!==undefined){if(!(data.save instanceof Uint8Array)||data.save.length>1048576)throw Error('Invalid restart save');save=data.save.slice();}
   homepageEpoch=data.homepageEpoch;windowSerial=0;windowPending=null;
-  frameClockReset();windowObserve(null);
+  recordedBegin(null);frameClockReset();windowObserve(null);
   eventBytes=new Uint8Array();state=0n;fileEntry=null;fileGeneration++;fileGesture=false;windowCurrent=defaultWindow();windowPrevious=defaultWindow();windowStaged=defaultWindow();
   postMessage({type:'restarted',epoch:homepageEpoch});
  }else if(data.type==='tick'){
   if(windowPending)throw Error('Previous window frame was not acknowledged');
-  frameClockBegin();windowObserve(data.fullscreen);
+  recordedBegin(data.recordedAudio);frameClockBegin();windowObserve(data.fullscreen);
   eventBytes=manifest.permissions.input?encodeEvents(data.events??[]):new Uint8Array();
   commands=[];background=null;unlocks=[];saveDirty=false;saveBudget=0;imageBudget=0;audioSamples=[];audioChannels=1;fileTickBegin(data.input);windowBegin(fileGesture);
   state=instance.exports[manifest.runtime_profile==='component-v1'?'tick':'gamepkg_tick'](manifest.permissions.input?data.input:0,state);
   if(instance.exports.memory&&instance.exports.memory.buffer.byteLength>manifest.limits.hard_memory_bytes)throw Error('Memory limit exceeded');
   const windowState=windowPrepare();
   if(saveDirty)postMessage({type:'save',epoch:homepageEpoch,serial:windowSerial,bytes:save});
-  postMessage({type:'frame',epoch:homepageEpoch,serial:windowSerial,commands,background,state:String(state),unlocks,audio:audioSamples,audioChannels,window:windowState});
+  postMessage({type:'frame',epoch:homepageEpoch,serial:windowSerial,commands,background,state:String(state),unlocks,audio:audioSamples,audioChannels,recordedControls,window:windowState});
  }
-}catch(error){audioSamples=[];audioChannels=1;windowFinish(false);windowPending=null;fileTickFinish(false);postMessage({type:'error',error:String(error)});}};
+}catch(error){recordedControls=[];recordedReady=false;audioSamples=[];audioChannels=1;windowFinish(false);windowPending=null;fileTickFinish(false);postMessage({type:'error',error:String(error)});}};
 
 // Canonical list results are allocated in guest memory through its bounded
 // allocator. Guest bindings copy and free these results immediately.
@@ -237,6 +258,7 @@ const canonical={
  'draw-asset-image':(...args)=>api.draw_asset_image(...args)===0?1:0,
  'draw-asset-image-linear':(...args)=>api.draw_asset_image_linear(...args)===0?1:0,
  'draw-asset-image-linear-straight':(...args)=>api.draw_asset_image_linear_straight(...args)===0?1:0,
+ 'effect-call':(...args)=>api.effect_call(...args),
  'audio-submit':(...args)=>api.audio_submit(...args)===0?1:0,
  'audio-submit-stereo':(...args)=>api.audio_submit_stereo(...args)===0?1:0,
  'draw-shader':index=>api.draw_shader(index)===0?1:0,

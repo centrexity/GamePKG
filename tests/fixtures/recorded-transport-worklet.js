@@ -5,6 +5,8 @@ class TransportAudio extends AudioWorkletProcessor {
   super();this.stream=new RecordedStream(options.processorOptions.wasm);this.frames=0;this.started=false;this.output=new Int16Array(256);this.total=options.processorOptions.frames||8192;this.capture=new Int16Array(this.total*2);
   this.port.onmessage=({data})=>{if(data.port&&!this.receiver)this.receiver=new RecordedMusicReceiver(data.port,this.stream);};
   this.stream.effectVolume(options.processorOptions.volume);
+  if(this.stream.applyControls([[1,0],[7,99],[0,99]]))throw Error('Invalid batch accepted');
+  if(!this.stream.applyControls([[1,options.processorOptions.volume],[2,0]]))throw Error('Valid batch rejected');
   for(let slot=0;slot<4;slot++){const frames=[1025,2051,4096,777][slot],bytes=new Uint8Array(frames*4),view=new DataView(bytes.buffer);for(let i=0;i<frames;i++)for(let c=0;c<2;c++)view.setInt16(i*4+c*2,(i*(slot*1543+197)+c*12345+slot*313)%65536-32768,true);if(!this.stream.load(slot,bytes)||this.stream.play(slot)!==slot)throw Error('clip rejected');}
  }
  process(_,outputs){
