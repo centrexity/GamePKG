@@ -382,6 +382,9 @@ jobs:
       - name: Verify unchanged original playlist mute completion and retry controls
         if: matrix.features == '--all-features'
         run: python3 tools/check_original_music.py --original target/reference-arkanoo
+      - name: Verify port music controller uses approved dependency-free source
+        if: matrix.features == '--all-features'
+        run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tools/check_arkanoo_music_source.py
       - name: Verify browser decoder PCM ABI limits deadlines and cancellation
         if: matrix.features == '--all-features'
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tools/check_browser_audio_decoder.py target/reference-arkanoo/assets/music --browser

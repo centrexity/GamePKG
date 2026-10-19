@@ -3655,3 +3655,32 @@ output. No recording, signed package or binary release is published. The live
 port is unchanged while its event/mute/pause/settings/playlist controller and
 actual native/browser migration checks are prepared. Source preparation is a
 maintainer operation; players require no Python, SDL tools or external decoder.
+
+### Port playlist controller qualification
+
+A dependency-free playlist controller is prepared in the port source, still
+inactive in the game entry point. It uses only virtual asset reads and music
+controls; it preserves sorted/random selection, startup gain, mute/pause,
+completion, stop and failure retry without decoding in the guest. A staged-Play
+flag prevents an old tick snapshot's completion from advancing a just-requested
+replacement twice. Inactive SDL resume is represented as a no-op so it cannot
+create an invalid GamePKG pause batch.
+
+The maintainer tool runs the unchanged hash-checked original audio.rs and the
+port controller against the same operation sequence and random draws. All 32
+observed output/gain/mute/pause/track states match. Four unit cases also verify
+missing/empty playlists, UTF-8 split across reads, sorting, portable path rejection,
+size bounds, gain clamps and staged completion behavior. Those cases pass on
+actual Linux32 as well as Linux64. A private synthetic signed recipe passes the
+real source policy and isolated native/Wasm builds; strict lint passes. Existing
+original references and tolerances are unchanged.
+
+Full activation remains blocked by work to do, not by a relaxed fixture: the
+largest original MP3 is 3,841,536 bytes, so the browser's full transferred encoded
+copy plus its 6 MiB decoder exceeds the proposed 8 MiB music child. All nine
+MP3s total 21,118,219 bytes alongside 24,416,401 existing asset bytes, exceeding
+the current 32 MiB web export budget. Bounded/chunked loading and export residency
+must be resolved without dropping tracks or raising existing limits. The working
+port remains on its existing audio path; persisted music controls and full
+native/browser recorded-backend migration still need wiring and proof. Only
+controller/source tests are published; all migration recordings remain private.
