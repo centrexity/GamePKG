@@ -2460,3 +2460,33 @@ three focused decoder tests pass with embedding enabled. Strict default/GUI
 checks, optimized CLI/GUI builds, relocated-entry-point verification and updated
 workflow YAML/input/metadata checks pass locally. No other-platform runtime
 result or game-facing music activation is implied by those checks.
+
+Hosted verification follow-up found two concrete failures outside the local
+Linux evidence. The Linux Rust matrix linked the direct SDL audio oracle before
+installing its development library; SDL is now installed before both test
+configurations. The test remains enabled. Native Windows and macOS library jobs
+failed the existing updater invariant for an already existing empty destination.
+The generic rename fallback could replace that directory.
+
+The updater now uses native exclusive publication on Linux, Windows and Darwin,
+with no check-then-overwrite fallback. Windows retains Unicode/extended path
+support without following the destination leaf. Tests require preservation of
+existing files, empty/nonempty directories, dangling Unix links and invalid paths;
+a concurrent directory-creation race must have exactly one winner. Four Linux
+cases pass. Both Windows GNU harnesses cross-compile, and all four Windows cases
+(including long paths) pass under an isolated 64-bit Wine prefix. An initial
+compatibility failure on long-path conversion was corrected without relaxing the
+path test. Real Windows/macOS execution of the fix still needs hosted evidence.
+
+A small independent workflow tests the actual publication module on Linux,
+Windows and macOS, plus 32-bit Windows, without the full desktop build dependency.
+The existing full workflows remain enabled. Prior source revision e79ac11 has a
+successful hosted 32-bit workflow for Linux, Windows and Android selected runtime/
+portability suites; this proves those named checks, not every game's visual,
+audio or feature fidelity. No release, updater download or user installation is
+performed during these tests.
+The local full library suite remains green (181 passed, 18 explicit ignores),
+with strict GUI/all-target checks, independent publication-harness checks and
+optimized CLI/GUI linking. The rebuilt entry points still validate the identical
+embedded decoder after relocation. Native hosted results for the new publication
+primitive remain pending until the dedicated workflow completes.

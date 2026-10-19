@@ -309,28 +309,9 @@ pub fn install(release: &Release, parent: &Path) -> Result<PathBuf> {
     publish(staging.path(), &target).context("Unable to finish installing the update")?;
     Ok(target.join(relative_executable))
 }
+mod publication;
 fn publish(staging: &Path, target: &Path) -> Result<()> {
-    #[cfg(target_os = "linux")]
-    {
-        use std::os::unix::ffi::OsStrExt;
-        let source = std::ffi::CString::new(staging.as_os_str().as_bytes())?;
-        let target = std::ffi::CString::new(target.as_os_str().as_bytes())?;
-        // Atomic publication must not replace a directory created concurrently.
-        let result = unsafe {
-            libc::renameat2(
-                libc::AT_FDCWD,
-                source.as_ptr(),
-                libc::AT_FDCWD,
-                target.as_ptr(),
-                libc::RENAME_NOREPLACE,
-            )
-        };
-        if result != 0 {
-            return Err(std::io::Error::last_os_error().into());
-        }
-    }
-    #[cfg(not(target_os = "linux"))]
-    fs::rename(staging, target)?;
+    publication::publish(staging, target)?;
     Ok(())
 }
 pub fn suggested_parent() -> Option<PathBuf> {
@@ -519,6 +500,7 @@ mod tests {
         assert!(validate_install(dir.path(), "0.1.17", "linux-x86_64").is_err());
     }
     #[test]
+    #[cfg(any(target_os = "linux", target_os = "macos", windows))]
     fn publication_never_replaces_an_existing_install() {
         let parent = tempfile::tempdir().unwrap();
         let staging = parent.path().join("staging");

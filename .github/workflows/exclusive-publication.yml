@@ -1,0 +1,32 @@
+name: Exclusive app publication
+on:
+  push:
+    paths: ['src/app_updates.rs', 'src/app_updates/**', 'tests/app_update_publication.rs', 'tools/publication-tests/**', '.github/workflows/exclusive-publication.yml']
+  pull_request:
+    paths: ['src/app_updates.rs', 'src/app_updates/**', 'tests/app_update_publication.rs', 'tools/publication-tests/**', '.github/workflows/exclusive-publication.yml']
+permissions:
+  contents: read
+concurrency:
+  group: exclusive-publication-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022, macos-14]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - name: Verify actual native exclusive-publication APIs
+        run: cargo test --locked --manifest-path tools/publication-tests/Cargo.toml
+      - name: Check publication implementation warnings
+        run: cargo clippy --locked --manifest-path tools/publication-tests/Cargo.toml --all-targets -- -D warnings
+      - name: Verify native 32-bit Windows publication
+        if: runner.os == 'Windows'
+        run: |
+          rustup target add i686-pc-windows-msvc
+          cargo test --locked --manifest-path tools/publication-tests/Cargo.toml --target i686-pc-windows-msvc

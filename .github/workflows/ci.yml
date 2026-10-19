@@ -20,7 +20,7 @@ jobs:
         with:
           submodules: recursive
       - name: Install preview codecs
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg g++
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg g++ libsdl2-dev
       - name: Install Rust tools
         run: rustup update stable && rustup default stable && rustup component add rustfmt clippy
       - name: Install audio development headers

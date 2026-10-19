@@ -138,6 +138,8 @@ not replace the remembered normal size. The library window keeps its own default
 Invalid window records fall back to defaults and remain preserved; window settings
 are host-owned metadata, never a guest filesystem permission or packaged game data.
 
+On Linux, running the complete maintainer test suite also needs SDL development files (`libsdl2-dev` on Debian/Ubuntu) for the direct audio comparison test. This test dependency is separate from building or running the app.
+
 The CLI remains available without desktop dependencies: `cargo build --locked --release --bin gamepkg`. See [examples](examples/README.md) for valid and deliberately rejected packages. Local integration tests exercise the actual CLI binary, every example, and signed archive tampering.
 
 ## Install, download, and update
