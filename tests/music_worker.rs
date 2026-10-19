@@ -194,7 +194,20 @@ fn original_tracks_play_from_signed_package_on_the_output_clock_without_game_tic
                 .with_extension("s16");
         let mut reference = std::fs::File::open(reference).unwrap();
         let expected_samples = reference.metadata().unwrap().len() / 2;
-        service.play(&format!("music/{name}")).unwrap();
+        service
+            .batch(&[
+                gamepkg::music::Command::Stop,
+                gamepkg::music::Command::Play(&format!("music/{name}")),
+                gamepkg::music::Command::Volume(128),
+                gamepkg::music::Command::Pause(true),
+            ])
+            .unwrap();
+        let mut sentinel = [[123, -456]; 1];
+        assert_eq!(output.read(&mut sentinel), 0);
+        assert_eq!(sentinel, [[123, -456]; 1]);
+        service
+            .batch(&[gamepkg::music::Command::Pause(false)])
+            .unwrap();
         let mut samples = 0u64;
         let mut hash = Sha256::new();
         let mut different = 0u64;

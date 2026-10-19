@@ -4,7 +4,7 @@ use anyhow::{ensure, Context, Result};
 use std::{
     io::Read,
     sync::{
-        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, Mutex,
     },
 };
@@ -39,8 +39,15 @@ impl Status {
         matches!(self, Self::Loading | Self::Playing | Self::Paused)
     }
 }
+// Publish generation, status and gain together so an output frame never sees
+// half a control batch. Gain uses eight bits (legal values are 0 through 128).
+const GENERATION_SHIFT: u32 = 11;
+const MAX_GENERATION: u64 = u64::MAX >> GENERATION_SHIFT;
 fn tag(generation: u64, status: Status) -> u64 {
-    (generation << 3) | status as u64
+    (generation << GENERATION_SHIFT) | (128 << 3) | status as u64
+}
+fn gain(tag: u64) -> u32 {
+    ((tag >> 3) & 255) as u32
 }
 struct State {
     generation: u64,
@@ -52,7 +59,6 @@ struct Shared {
     state: Mutex<State>,
     ring: Ring,
     status: AtomicU64,
-    volume: AtomicU32,
     eof: AtomicU64,
     quit: AtomicBool,
     consumer_generation: AtomicU64,
@@ -62,12 +68,12 @@ struct Shared {
 }
 impl Shared {
     fn generation(&self) -> u64 {
-        self.status.load(Ordering::Acquire) >> 3
+        self.status.load(Ordering::Acquire) >> GENERATION_SHIFT
     }
     fn transition(&self, generation: u64, change: impl Fn(Status) -> Option<Status>) -> bool {
         let mut current = self.status.load(Ordering::Acquire);
         loop {
-            if current >> 3 != generation {
+            if current >> GENERATION_SHIFT != generation {
                 return false;
             }
             let Some(status) = change(Status::from_tag(current)) else {
@@ -75,11 +81,27 @@ impl Shared {
             };
             match self.status.compare_exchange_weak(
                 current,
-                tag(generation, status),
+                (current & !7) | status as u64,
                 Ordering::AcqRel,
                 Ordering::Acquire,
             ) {
                 Ok(_) => return true,
+                Err(next) => current = next,
+            }
+        }
+    }
+    fn replace_generation(&self, generation: u64, status: Status) {
+        let mut current = self.status.load(Ordering::Acquire);
+        loop {
+            let next =
+                (generation << GENERATION_SHIFT) | (u64::from(gain(current)) << 3) | status as u64;
+            match self.status.compare_exchange_weak(
+                current,
+                next,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => return,
                 Err(next) => current = next,
             }
         }
@@ -89,7 +111,7 @@ impl Shared {
         loop {
             match self.status.compare_exchange_weak(
                 current,
-                tag(current >> 3, status),
+                (current & !7) | status as u64,
                 Ordering::AcqRel,
                 Ordering::Acquire,
             ) {
@@ -105,11 +127,19 @@ pub struct Service {
     output: Output,
     worker: Option<std::thread::JoinHandle<()>>,
 }
+/// Trusted controls prepared by a host tick. No guest owns these references.
+#[derive(Clone, Copy)]
+pub enum Command<'a> {
+    Play(&'a str),
+    Volume(u32),
+    Pause(bool),
+    Stop,
+}
 fn next_generation(state: &mut State) -> Result<u64> {
     let next = state
         .generation
         .checked_add(1)
-        .filter(|value| *value <= u64::MAX >> 3)
+        .filter(|value| *value <= MAX_GENERATION)
         .context("music request counter exhausted")?;
     state.generation = next;
     Ok(next)
@@ -167,7 +197,6 @@ impl Service {
             }),
             ring: Ring::new(),
             status: AtomicU64::new(tag(0, Status::Stopped)),
-            volume: AtomicU32::new(128),
             eof: AtomicU64::new(0),
             quit: AtomicBool::new(false),
             consumer_generation: AtomicU64::new(0),
@@ -188,6 +217,106 @@ impl Service {
     pub fn output(&self) -> Output {
         self.output.clone()
     }
+    /// Validate the entire tick before changing playback. Intermediate track
+    /// replacements have no output interval, so only the final request loads.
+    /// The caller invokes this only after execution and persistence succeed.
+    pub fn batch(&self, commands: &[Command<'_>]) -> Result<()> {
+        ensure!(commands.len() <= 32, "music control queue is full");
+        let shared = &self.output.0;
+        let mut state = shared
+            .state
+            .lock()
+            .map_err(|_| anyhow::anyhow!("music unavailable"))?;
+        ensure!(!shared.quit.load(Ordering::Acquire), "music is stopped");
+        let mut generation = state.generation;
+        let mut status = self.output.status();
+        let mut volume = None;
+        let mut request = None;
+        let mut changed = false;
+        let mut paused = None;
+        for command in commands {
+            match *command {
+                Command::Play(path) => {
+                    ensure!(crate::archive::valid_path(path), "invalid music asset path");
+                    generation = generation
+                        .checked_add(1)
+                        .filter(|value| *value <= MAX_GENERATION)
+                        .context("music request counter exhausted")?;
+                    request = Some(path);
+                    status = Status::Loading;
+                    changed = true;
+                    paused = None;
+                }
+                Command::Stop => {
+                    generation = generation
+                        .checked_add(1)
+                        .filter(|value| *value <= MAX_GENERATION)
+                        .context("music request counter exhausted")?;
+                    request = None;
+                    status = Status::Stopped;
+                    changed = true;
+                    paused = None;
+                }
+                Command::Volume(value) => {
+                    ensure!(value <= 128, "music volume must be 0 to 128");
+                    volume = Some(value);
+                }
+                Command::Pause(value) => {
+                    ensure!(status.active(), "music is not active");
+                    status = if value {
+                        Status::Paused
+                    } else {
+                        Status::Playing
+                    };
+                    paused = Some(status);
+                }
+            }
+        }
+        let request = request.map(str::to_owned);
+        let mut current = shared.status.load(Ordering::Acquire);
+        loop {
+            ensure!(
+                !shared.quit.load(Ordering::Acquire),
+                "music worker is unavailable"
+            );
+            if !changed && paused.is_some() {
+                ensure!(Status::from_tag(current).active(), "music is not active");
+            }
+            let next_status = if changed {
+                status
+            } else {
+                paused.unwrap_or(Status::from_tag(current))
+            };
+            let next_generation = if changed {
+                generation
+            } else {
+                current >> GENERATION_SHIFT
+            };
+            let next = (next_generation << GENERATION_SHIFT)
+                | (u64::from(volume.unwrap_or_else(|| gain(current))) << 3)
+                | next_status as u64;
+            match shared.status.compare_exchange_weak(
+                current,
+                next,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => break,
+                Err(next) => current = next,
+            }
+        }
+        if changed {
+            state.generation = generation;
+            state.request = request;
+            state.error = None;
+            shared.eof.store(0, Ordering::Release);
+        }
+        if changed || paused == Some(Status::Paused) {
+            shared.ring.wait_consumer();
+        }
+        shared.ring.wake();
+        Ok(())
+    }
     pub fn play(&self, path: &str) -> Result<()> {
         ensure!(crate::archive::valid_path(path), "invalid music asset path");
         let shared = &self.output.0;
@@ -200,9 +329,7 @@ impl Service {
         state.request = Some(path.to_owned());
         state.error = None;
         shared.eof.store(0, Ordering::Release);
-        shared
-            .status
-            .store(tag(generation, Status::Loading), Ordering::Release);
+        shared.replace_generation(generation, Status::Loading);
         if shared.quit.load(Ordering::Acquire) {
             shared.force_status(Status::Failed);
             anyhow::bail!("music worker is unavailable");
@@ -240,7 +367,20 @@ impl Service {
     }
     pub fn volume(&self, volume: u32) -> Result<()> {
         ensure!(volume <= 128, "music volume must be 0 to 128");
-        self.output.0.volume.store(volume, Ordering::Release);
+        let shared = &self.output.0;
+        let mut current = shared.status.load(Ordering::Acquire);
+        loop {
+            let next = (current & !(255 << 3)) | (u64::from(volume) << 3);
+            match shared.status.compare_exchange_weak(
+                current,
+                next,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => break,
+                Err(next) => current = next,
+            }
+        }
         Ok(())
     }
     pub fn stop(&self) -> Result<()> {
@@ -252,9 +392,7 @@ impl Service {
         let generation = next_generation(&mut state)?;
         state.request = None;
         state.error = None;
-        shared
-            .status
-            .store(tag(generation, Status::Stopped), Ordering::Release);
+        shared.replace_generation(generation, Status::Stopped);
         shared.ring.wait_consumer();
         shared.ring.wake();
         Ok(())
@@ -298,7 +436,7 @@ impl Output {
     pub fn played_frames(&self) -> u64 {
         let current = self.0.status.load(Ordering::Acquire);
         if Status::from_tag(current) == Status::Stopped
-            || self.0.consumer_generation.load(Ordering::Acquire) != current >> 3
+            || self.0.consumer_generation.load(Ordering::Acquire) != current >> GENERATION_SHIFT
         {
             return 0;
         }
@@ -314,7 +452,7 @@ impl Output {
             return 0;
         };
         let current = self.0.status.load(Ordering::Acquire);
-        let generation = current >> 3;
+        let generation = current >> GENERATION_SHIFT;
         if self.0.consumer_generation.load(Ordering::Relaxed) != generation {
             self.0.played.store(0, Ordering::Relaxed);
             self.0
@@ -326,7 +464,7 @@ impl Output {
         let mut count = 0;
         for frame in output {
             let current = self.0.status.load(Ordering::Acquire);
-            if current >> 3 != generation
+            if current >> GENERATION_SHIFT != generation
                 || !matches!(Status::from_tag(current), Status::Loading | Status::Playing)
             {
                 break;
@@ -340,7 +478,7 @@ impl Output {
             let Some(sample) = consumer.next(generation) else {
                 break;
             };
-            let volume = self.0.volume.load(Ordering::Acquire) as i32;
+            let volume = gain(current) as i32;
             *frame = sample.map(|sample| (i32::from(sample) * volume / 128) as i16);
             self.0.played.store(played, Ordering::Release);
             count += 1;
@@ -451,8 +589,10 @@ fn action(shared: &Shared, generation: u64, active: bool) -> Action {
                 return Action::Load(path, state.generation);
             }
             let current = shared.status.load(Ordering::Acquire);
-            if current >> 3 != generation || (active && !Status::from_tag(current).active()) {
-                return Action::Reset(current >> 3);
+            if current >> GENERATION_SHIFT != generation
+                || (active && !Status::from_tag(current).active())
+            {
+                return Action::Reset(current >> GENERATION_SHIFT);
             }
             if active
                 && matches!(Status::from_tag(current), Status::Loading | Status::Playing)
@@ -603,7 +743,6 @@ pub(crate) fn fixture_output_at_rate(frames: &[[i16; 2]], sample_rate: u32) -> O
         }),
         ring,
         status: AtomicU64::new(tag(1, Status::Playing)),
-        volume: AtomicU32::new(128),
         eof: AtomicU64::new(1),
         quit: AtomicBool::new(false),
         consumer_generation: AtomicU64::new(0),
@@ -875,6 +1014,119 @@ mod tests {
                 assert_eq!(sentinel, [[123, -456]; 1]);
             }
         }
+        drop(service);
+        drop(output);
+        assert_eq!(budget.used(), 0);
+    }
+    #[test]
+    fn whole_tick_music_batches_reject_without_partial_controls() {
+        let (_temporary, package) = package(zip::CompressionMethod::Stored, true);
+        let budget = memory_budget::Budget::new(HOST_BYTES + 6 * 1048576);
+        let service = Service::new_original_rate(
+            factory(20000, false),
+            &package,
+            true,
+            budget.clone(),
+            6 * 1048576,
+        )
+        .unwrap();
+        let output = service.output();
+        assert!(service
+            .batch(&[Command::Play("a.mp3"), Command::Volume(129)])
+            .is_err());
+        assert_eq!(output.status(), Status::Stopped);
+        assert_eq!(output.0.generation(), 0);
+        assert_eq!(gain(output.0.status.load(Ordering::Acquire)), 128);
+        service.play("a.mp3").unwrap();
+        wait(|| output.queued_frames() == QUEUE_FRAMES);
+        let generation = output.0.generation();
+        for commands in [
+            vec![Command::Stop, Command::Pause(true)],
+            vec![Command::Volume(0), Command::Play("../b.mp3")],
+            vec![Command::Stop; 33],
+        ] {
+            assert!(service.batch(&commands).is_err());
+            assert_eq!(output.0.generation(), generation);
+            assert_eq!(gain(output.0.status.load(Ordering::Acquire)), 128);
+            assert_eq!(output.status(), Status::Playing);
+        }
+        assert_eq!(drain(&output), vec![[1000, -2000]; 20000]);
+        service
+            .batch(&[
+                Command::Play("a.mp3"),
+                Command::Stop,
+                Command::Play("b.mp3"),
+                Command::Volume(64),
+                Command::Pause(true),
+            ])
+            .unwrap();
+        assert_eq!(output.status(), Status::Paused);
+        let mut sentinel = [[123, -456]; 1];
+        assert_eq!(output.read(&mut sentinel), 0);
+        assert_eq!(sentinel, [[123, -456]; 1]);
+        service.batch(&[Command::Pause(false)]).unwrap();
+        assert_eq!(drain(&output), vec![[1000, -2000]; 20000]);
+        service.batch(&[Command::Volume(128); 32]).unwrap();
+        service.batch(&[Command::Stop]).unwrap();
+        assert_eq!(output.status(), Status::Stopped);
+        let exhausted = MAX_GENERATION - 1;
+        service.output.0.state.lock().unwrap().generation = exhausted;
+        output
+            .0
+            .status
+            .store(tag(exhausted, Status::Stopped), Ordering::Release);
+        assert!(service
+            .batch(&[Command::Volume(0), Command::Stop, Command::Play("a.mp3"),])
+            .is_err());
+        assert_eq!(output.0.generation(), exhausted);
+        assert_eq!(gain(output.0.status.load(Ordering::Acquire)), 128);
+        assert_eq!(output.status(), Status::Stopped);
+        drop(service);
+        drop(output);
+        assert_eq!(budget.used(), 0);
+    }
+    #[test]
+    fn batch_pause_and_gain_are_one_atomic_output_configuration() {
+        let (_temporary, package) = package(zip::CompressionMethod::Stored, true);
+        let budget = memory_budget::Budget::new(HOST_BYTES + 6 * 1048576);
+        let service = Arc::new(
+            Service::new_original_rate(
+                factory(20000, false),
+                &package,
+                true,
+                budget.clone(),
+                6 * 1048576,
+            )
+            .unwrap(),
+        );
+        let output = service.output();
+        service.play("a.mp3").unwrap();
+        wait(|| output.queued_frames() == QUEUE_FRAMES);
+        let control = service.clone();
+        let done = Arc::new(AtomicBool::new(false));
+        let completed = done.clone();
+        let worker = std::thread::spawn(move || {
+            for _ in 0..10000 {
+                control
+                    .batch(&[Command::Pause(true), Command::Volume(0)])
+                    .unwrap();
+                control
+                    .batch(&[Command::Pause(false), Command::Volume(128)])
+                    .unwrap();
+            }
+            completed.store(true, Ordering::Release);
+        });
+        let started = std::time::Instant::now();
+        while !done.load(Ordering::Acquire) {
+            assert!(started.elapsed() < std::time::Duration::from_secs(2));
+            let snapshot = output.0.status.load(Ordering::Acquire);
+            assert!(matches!(
+                (Status::from_tag(snapshot), gain(snapshot)),
+                (Status::Playing, 128) | (Status::Paused, 0)
+            ));
+        }
+        worker.join().unwrap();
+        assert_eq!(drain(&output), vec![[1000, -2000]; 20000]);
         drop(service);
         drop(output);
         assert_eq!(budget.used(), 0);

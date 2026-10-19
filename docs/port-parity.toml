@@ -601,3 +601,10 @@ id = "music_control_output_boundary"
 requirements = ["Stop waits for admitted output reads", "Replacement waits for admitted old-track reads", "Callback remains independent of control mutex", "Complete replacement samples and budget cleanup"]
 status = "implemented_unit_verified"
 notes = "Deterministic guard-held regression failed before the fix. Both controls now publish a new generation and wait for the previous consumer boundary, matching Pause. Eight music and three combined conversion cases pass, including exact replacement samples and cleanup. Does not retract OS/device queued audio or close SDK and port migration requirements."
+
+
+[[work]]
+id = "music_whole_tick_control_batch"
+requirements = ["Bounded ordered control batch", "Validate before output mutation", "No partial publication on rejected controls", "Callback cannot observe partial control batch", "Exact complete track samples and cleanup"]
+status = "implemented_runtime_verified_linux_signed_tracks"
+notes = "Trusted Service::batch validates at most 32 borrowed commands before publication. Rejected path/gain/state/count/generation cases retain old output. Valid ordered replacements, pause and volume preserve exact original-rate stereo samples. Generation/status/gain publish as one atomic setting without excluding the output consumer. A concurrent 10,000-cycle pause/gain observer sees only complete configurations, then exact full-track output; the callback never waits. All nine original signed-package tracks now start/resume through batches and retain pinned full PCM hashes/lengths, with private CPAL null-device and combined effect/music checks passing. Host primitive only: shared effect/music runtime publication, guest SDK, memory wiring, browser processing and port migration remain open."

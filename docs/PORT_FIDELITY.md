@@ -3042,3 +3042,34 @@ stopped-read sentinel preservation and complete budget release. All eight music
 unit cases and three combined music/effect conversion cases pass with unchanged
 memory, queue and decoder limits. Music SDK activation and port migration remain
 open.
+
+### Whole-tick music control publication
+
+The host music service accepts a maximum 32-command batch. It validates every
+path, gain, active-state transition and generation increment before mutating
+playback. A batch containing Stop followed by an invalid Pause, a bad path, an
+invalid gain, an exhausted generation or too many commands leaves prior playback
+unchanged. The final track request is prepared before publication; intermediate
+same-tick replacements have no output interval. Generation, status and gain publish as one atomic setting, so an output frame
+cannot observe a partially applied batch. Publication does not exclude the
+output consumer or introduce silence while a control guard is held. The callback
+never waits for a control mutex.
+
+The new test verifies rejected batches against active playback, the exact full
+old-track output, ordered Play/Stop/replacement/pause/gain behavior, the exact
+full replacement output, both command-count boundaries, generation exhaustion
+and complete budget release. A concurrent 10,000-cycle test verifies that pause and gain are always observed
+as one valid pair, followed by exact full-track playback. All ten music cases
+pass. This is the host commit
+primitive needed for game SDK integration; no runtime currently exposes music
+commands to games, and shared music/effect tick publication, SDK/budget wiring,
+browser processing and port migration remain required.
+
+The signed original-track fixture now starts each of all nine tracks with an
+ordered Stop/Play/gain/Pause batch, verifies paused-read sentinel preservation,
+then resumes through a second batch. Every complete pinned PCM hash and original
+mixer/output length passes, with concurrent verified asset reads and the embedded
+decoder's runtime paths removed. Private CPAL/ALSA null-device music, combined
+mixing and effect transaction checks also pass. Strict Rust 1.89 and 1.99 checks
+pass; atomic updates use explicit compare/exchange loops compatible with both.
+No tolerance, memory/queue bound, decoder deadline or test concurrency changed.
