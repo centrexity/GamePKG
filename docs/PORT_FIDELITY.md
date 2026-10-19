@@ -3323,3 +3323,20 @@ at EOF. This proves the component connection, not committed guest controls or
 whole-browser memory accounting. Shared transport memory reservations, signed
 permission/export integration and migration of the existing ports remain open.
 This does not enable export.
+
+Transport shutdown now explicitly retires the peer's source, including a read
+awaiting completion and closure before the first Begin message is processed.
+Regression tests first reproduced both leaked-source cases, then passed after
+adding connection-level close notification independent of track generation.
+Closing the sender marks an active receiving track failed rather than leaving
+it loading indefinitely. Real Chromium additionally verifies actual MP3 worker
+replacement and Stop/restart while a retired read's deliberately corrupted
+result is delayed: each current track still matches all 32,768 direct output
+scalars, consumes 11,520 frames and closes both current and retired workers.
+
+A disconnect regression also reproduced 4,800 stale queued frames surviving
+receiver closure. Closure now discards unconsumed music and preserves a failed
+state, including EOF received before the queue drains. Already completed tracks
+retain Ended. These cases pass through actual MessageChannel delivery; samples
+already admitted to the converter/device remain subject to its existing boundary
+semantics. This change does not promise retraction of already submitted output.

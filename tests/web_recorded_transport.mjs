@@ -36,4 +36,29 @@ function decoder(total,value){return {reads:0,closed:false,async read(size){asse
  const {queue,port2,receiver}=fixture(),sender=new RecordedMusicSender(port2),source={closed:false,async read(){throw Error('codec trap');},close(){this.closed=true;}};
  sender.start(1,source);await wait(()=>queue.status==='failed');assert.ok(source.closed);sender.close();receiver.close();
 }
+{
+ const {queue,port2,receiver}=fixture(),sender=new RecordedMusicSender(port2);let pending;
+ const source={closed:false,read(){return new Promise(resolve=>pending=resolve);},close(){this.closed=true;}};
+ sender.start(1,source);await wait(()=>pending);receiver.close();await wait(()=>source.closed);pending(new Int16Array(2));sender.close();assert.equal(queue.queuedFrames,0);
+}
+{
+ const {port2,receiver}=fixture(),sender=new RecordedMusicSender(port2),source=decoder(1600,12);
+ sender.start(1,source);receiver.close();await wait(()=>source.closed);sender.close();
+}
+{
+ const {queue,port2,receiver}=fixture(),sender=new RecordedMusicSender(port2);let pending;
+ sender.start(1,{read(){return new Promise(resolve=>pending=resolve);},close(){}});await wait(()=>pending);sender.close();await wait(()=>queue.status==='failed');receiver.close();pending(new Int16Array(2));
+}
+{
+ const {queue,port2,receiver}=fixture(),sender=new RecordedMusicSender(port2),source=decoder(20000,987);
+ sender.start(1,source);await wait(()=>queue.queuedFrames===4800);receiver.close();assert.equal(queue.queuedFrames,0,'disconnect must discard queued PCM');assert.equal(queue.status,'failed');await wait(()=>source.closed);sender.close();
+}
+{
+ const {queue,port2,receiver}=fixture(),sender=new RecordedMusicSender(port2),source=decoder(1600,333);
+ sender.start(1,source);await wait(()=>source.closed);assert.equal(queue.queuedFrames,800);receiver.close();assert.equal(queue.queuedFrames,0);assert.equal(queue.status,'failed');sender.close();
+}
+{
+ const {queue,port2,receiver}=fixture(),sender=new RecordedMusicSender(port2),source=decoder(1600,333);
+ sender.start(1,source);await wait(()=>source.closed);queue.read(new Int16Array(1600));assert.equal(queue.status,'ended');receiver.close();assert.equal(queue.status,'ended','completed tracks retain their terminal status');sender.close();
+}
 console.log('Real MessageChannel: bounded demand, complete PCM, replacement, stale success/failure, stop, bad credit, decoder fault passed');

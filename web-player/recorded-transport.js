@@ -8,7 +8,9 @@ export class RecordedMusicReceiver {
  constructor(port,stream){this.#port=port;this.#stream=stream;port.onmessage=({data})=>this.#receive(data);port.onmessageerror=()=>this.#fail();port.start();}
  #fail(){if(this.#closed)return;this.#ended=true;this.#pending=0;this.#stream.failMusic(this.#stream.generation);this.#port.postMessage({kind:'failed',generation:this.#stream.generation});}
  #receive(data){
-  if(this.#closed||!data||!generation(data.generation))return;
+  if(this.#closed||!data)return;
+  if(data.kind==='closed'){this.close();return;}
+  if(!generation(data.generation))return;
   if(data.kind==='begin'||data.kind==='stop'){
    const accepted=data.kind==='begin'?this.#stream.begin(data.generation):this.#stream.stopMusic(data.generation);
    if(!accepted)return;
@@ -31,7 +33,7 @@ export class RecordedMusicReceiver {
   this.#pending=++this.#credit;
   this.#port.postMessage({kind:'read',generation:this.#stream.generation,credit:this.#pending,frames:BLOCK_FRAMES});
  }
- close(){if(this.#closed)return;this.#closed=true;this.#pending=0;this.#port.onmessage=null;this.#port.onmessageerror=null;this.#port.close();}
+ close(){if(this.#closed)return;this.#closed=true;this.#stream.failMusic(this.#stream.generation);this.#pending=0;this.#port.postMessage({kind:'closed',generation:this.#stream.generation});this.#port.onmessage=null;this.#port.onmessageerror=null;this.#port.close();}
 }
 export class RecordedMusicSender {
  #port;#decoder=null;#generation=0;#busy=false;#closed=false;#credit=0;
@@ -44,7 +46,9 @@ export class RecordedMusicSender {
  }
  stop(next){if(this.#closed||!generation(next)||next<=this.#generation)return false;this.#retire();this.#generation=next;this.#port.postMessage({kind:'stop',generation:next});return true;}
  async #receive(data){
-  if(this.#closed||!data||data.generation!==this.#generation)return;
+  if(this.#closed||!data)return;
+  if(data.kind==='closed'){this.close();return;}
+  if(data.generation!==this.#generation)return;
   if(data.kind==='failed'){this.#retire();return;}
   if(data.kind!=='read'||!generation(data.credit)||data.credit<=this.#credit||data.frames!==BLOCK_FRAMES||!this.#decoder||this.#busy){this.#fail();return;}
   const decoder=this.#decoder,current=this.#generation;this.#credit=data.credit;this.#busy=true;
@@ -58,5 +62,5 @@ export class RecordedMusicSender {
    if(!this.#closed&&this.#generation===current&&this.#decoder===decoder)this.#fail();
   }
  }
- close(){if(this.#closed)return;this.#closed=true;this.#retire();this.#port.onmessage=null;this.#port.onmessageerror=null;this.#port.close();}
+ close(){if(this.#closed)return;this.#closed=true;this.#retire();this.#port.postMessage({kind:'closed',generation:this.#generation});this.#port.onmessage=null;this.#port.onmessageerror=null;this.#port.close();}
 }

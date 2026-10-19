@@ -61,14 +61,24 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-worklet-mixer-') as temporary:
    let at=0,ended=false;const expected=new Int16Array(frames*2);
    for(let frame=0;frame<frames;frame+=128){while(at<pcm.length&&baseline.availableFrames>=800){const n=Math.min(1600,pcm.length-at);if(!baseline.push(1,Int16Array.from(pcm.slice(at,at+n))))throw Error('baseline enqueue');at+=n;}if(at===pcm.length&&!ended){baseline.finishMusic(1);ended=true;}baseline.render(expected.subarray(frame*2,(frame+128)*2));}
    if(baseline.musicStatus!=='ended'||baseline.playedFrames!==pcm.length/2)throw Error('baseline incomplete');baseline.close();
+   const results=[];for(const mode of ['normal','replacement','stop-restart']){
    const client=await RecordedDecoderClient.open(codec,encoded),context=new AudioContext({sampleRate:48000});await context.audioWorklet.addModule('stream-worklet.js');
    const node=new AudioWorkletNode(context,'transport-audio',{numberOfInputs:0,numberOfOutputs:1,outputChannelCount:[2],processorOptions:{wasm,volume:64,frames}});
    const channel=new MessageChannel(),sender=new RecordedMusicSender(channel.port1);node.port.postMessage({port:channel.port2},[channel.port2]);
    const finished=new Promise((resolve,reject)=>{node.port.onmessage=({data})=>data.error?reject(Error(data.error)):resolve(data);node.onprocessorerror=()=>reject(Error('decoder worklet failed'));});
-   sender.start(1,client);const gain=context.createGain();gain.gain.value=0;node.connect(gain);gain.connect(context.destination);await context.resume();const report=await finished;
+   const gain=context.createGain();gain.gain.value=0;node.connect(gain);gain.connect(context.destination);await context.resume();let retired=null;
+   if(mode==='normal')sender.start(1,client);else{
+    retired=await RecordedDecoderClient.open(codec,encoded);let release;
+    const held={async read(size){const values=await retired.read(size);return new Promise(resolve=>release=()=>resolve(values.fill(32767)));},close(){retired.close();}};
+    sender.start(1,held);const deadline=performance.now()+2000;while(!release){if(performance.now()>deadline)throw Error('Retired read not admitted');await new Promise(resolve=>setTimeout(resolve,1));}
+    if(mode==='stop-restart'){if(!sender.stop(2))throw Error('Stop rejected');sender.start(3,client);}else sender.start(2,client);
+    if(!retired.closed)throw Error('Replaced decoder alive');release();
+   }
+   const report=await finished;
    if(report.status!=='ended'||report.played!==pcm.length/2||!client.closed||report.values.length!==expected.length)throw Error('worker pipeline incomplete');
    for(let i=0;i<expected.length;i++)if(report.values[i]!==expected[i])throw Error('worker pipeline differs at scalar '+i+': '+report.values[i]+' != '+expected[i]);
-   sender.close();node.disconnect();node.port.close();gain.disconnect();await context.close();return {sourceFrames:report.played,comparedScalars:expected.length,workerClosed:client.closed};
+   sender.close();node.disconnect();node.port.close();gain.disconnect();await context.close();results.push({mode,sourceFrames:report.played,comparedScalars:expected.length,workerClosed:client.closed,retiredClosed:retired?.closed??true});
+   }return results;
   })().then(value=>done({value})).catch(error=>done({error:String(error.stack||error)}));''')
   assert 'error' not in decoded,decoded
   print('Actual supervised MP3 decoder worker -> credited MessagePort -> live AudioWorklet matches every direct mixed scalar:',json.dumps(decoded['value']),flush=True)
