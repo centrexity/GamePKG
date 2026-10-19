@@ -3268,3 +3268,38 @@ the actual AudioWorklet output. An additional muted-master AudioWorklet graph
 continues through all 6,530 output frames with entirely zero external output.
 This distinguishes application master mute from pausing effect voice positions.
 CI builds/checks the separate companion and runs the Node/Chromium qualification.
+
+### Live browser queue and muted desktop music qualification
+
+The browser recorded-audio components now include a fixed 4,800-frame stereo
+queue and output-clock stream. Their owned PCM backing storage totals 22,656
+bytes inside the existing host staging reservation. Replacement generations
+reject stale packets; pause freezes music positions, zero gain advances them,
+and failure/stop discard queued music while effects continue. Previously
+converted samples retain the converter's existing boundary semantics.
+
+An independent SDL C oracle verifies eight live music/effect output prefixes.
+All 24 Node read-schedule comparisons match those hashes. Fourteen actual
+Chromium AudioWorklet cases verify combined output, independent music/effect
+pause, failure, stop, underrun and master mute, including clean output tails.
+This uses a deterministic local producer: supervised decoder-to-worklet
+transport, transport memory accounting, committed game controls, companion
+embedding/export and port migration remain unfinished. Recorded-audio browser
+export remains disabled; these component checks do not prove end-to-end browser
+playback or whole-browser heap accounting.
+
+Desktop music now retains its real audio output clock when master mute or zero
+volume is selected. A missing device rejects playback rather than attaching a
+successful no-op publisher. Sixteen private real-window cases pass across
+native/core builds, Vulkan/OpenGL, audible/muted/zero-volume output and absent
+devices. CI runs the same generated synthetic-audio fixture. No game recording,
+key, screenshot or package artifact is published.
+
+A staged pause also tolerates the same track naturally ending between tick
+start and control commit, preserving completion and gain without rejecting the
+tick. Thirteen music unit cases and the signed native/core/component SDK
+qualification pass, including existing rollback checks. Strict all-feature
+Clippy checks pass. A separate injected decoder trap now reproduces the corresponding failure
+race: the same active-at-begin generation retains Failed while its staged gain
+commits. The focused music suite passes all thirteen default-feature cases,
+including strict invalid-batch rejection and existing stop/replacement checks.

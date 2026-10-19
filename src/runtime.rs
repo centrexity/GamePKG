@@ -1379,6 +1379,10 @@ impl Game {
         self.effects_mut()
             .map_or(Ok(None), |effects| effects.playback())
     }
+    /// Recorded playback needs a source clock even when master gain is zero.
+    pub fn has_recorded_audio(&mut self) -> bool {
+        self.effects_mut().is_some_and(|audio| audio.enabled())
+    }
     /// Trusted output-clock inspection; no decoder or device handle reaches a game.
     pub fn music_output(&mut self) -> Option<crate::music::Output> {
         self.effects_mut().and_then(|audio| audio.music_output())

@@ -230,6 +230,14 @@ impl Service {
         commands: &[Command<'_>],
         publish: impl FnOnce() -> bool,
     ) -> Result<()> {
+        self.batch_for_tick(commands, publish, None)
+    }
+    fn batch_for_tick(
+        &self,
+        commands: &[Command<'_>],
+        publish: impl FnOnce() -> bool,
+        active_generation: Option<u64>,
+    ) -> Result<()> {
         ensure!(commands.len() <= 32, "music control queue is full");
         let shared = &self.output.0;
         let mut state = shared
@@ -271,6 +279,15 @@ impl Service {
                     volume = Some(value);
                 }
                 Command::Pause(value) => {
+                    // A track active at tick start can finish or fail while
+                    // the guest runs or persistence completes. Preserve that
+                    // terminal state without rejecting unrelated tick changes.
+                    if matches!(status, Status::Ended | Status::Failed)
+                        && !changed
+                        && active_generation == Some(generation)
+                    {
+                        continue;
+                    }
                     ensure!(status.active(), "music is not active");
                     status = if value {
                         Status::Paused
@@ -288,7 +305,13 @@ impl Service {
             "music worker is unavailable"
         );
         if !changed && paused.is_some() {
-            ensure!(Status::from_tag(current).active(), "music is not active");
+            if matches!(Status::from_tag(current), Status::Ended | Status::Failed)
+                && active_generation == Some(current >> GENERATION_SHIFT)
+            {
+                paused = None;
+            } else {
+                ensure!(Status::from_tag(current).active(), "music is not active");
+            }
         }
         ensure!(publish(), "audio output rejected the tick's control batch");
         loop {
@@ -299,7 +322,12 @@ impl Service {
             } else if changed {
                 status
             } else {
-                paused.unwrap_or(Status::from_tag(current))
+                let actual = Status::from_tag(current);
+                if matches!(actual, Status::Ended | Status::Failed) {
+                    actual
+                } else {
+                    paused.unwrap_or(actual)
+                }
             };
             let next_generation = if changed {
                 generation
@@ -789,6 +817,9 @@ mod tests {
         assert_eq!(result, (1, [[123, -456]]));
     }
     fn factory(frames: u32, infinite: bool) -> audio_decode::Factory {
+        factory_fault(frames, infinite, false)
+    }
+    fn factory_fault(frames: u32, infinite: bool, fail_at_end: bool) -> audio_decode::Factory {
         let body = if infinite {
             "(loop $forever br $forever) i32.const 0"
         } else {
@@ -803,6 +834,11 @@ mod tests {
               local.get $i i32.const 1 i32.add local.set $i br $fill))
              global.get $left local.get $n i32.sub global.set $left local.get $n"
         };
+        let fault = if fail_at_end {
+            "global.get $left i32.eqz if unreachable end"
+        } else {
+            ""
+        };
         audio_decode::Factory::new(
             &wat::parse_str(format!(
                 r#"(module
@@ -814,7 +850,7 @@ mod tests {
               i32.const 1 i32.load8_u i32.eqz if(result i32)i32.const -1 else i32.const 0 end)
             (func(export "decoder_set_mixer_rate")(param i32)(result i32)
               local.get 0 i32.const 44100 i32.eq if(result i32)i32.const 0 else i32.const -1 end)
-            (func(export "decoder_read")(param i32)(result i32)(local $n i32)(local $i i32){body})
+            (func(export "decoder_read")(param i32)(result i32)(local $n i32)(local $i i32){fault} {body})
             (func(export "decoder_output")(result i32)i32.const 4096)
             (func(export "decoder_rate")(result i32)i32.const 44100)
             (func(export "decoder_channels")(result i32)i32.const 2)
@@ -1203,6 +1239,81 @@ mod tests {
         controls.finish(true).unwrap();
         assert_eq!(drain(&output), vec![[1000, -2000]; 20000]);
         assert!(controls.error().is_none());
+        drop(controls);
+        drop(output);
+        assert_eq!(budget.used(), 0);
+    }
+    #[test]
+    fn staged_pause_does_not_reject_a_tick_when_music_finishes_before_commit() {
+        let (_temporary, package) = package(zip::CompressionMethod::Stored, true);
+        let budget = memory_budget::Budget::new(HOST_BYTES + 6 * 1048576);
+        let service = Service::new_original_rate(
+            factory(20000, false),
+            &package,
+            true,
+            budget.clone(),
+            6 * 1048576,
+        )
+        .unwrap();
+        let mut controls = controls::Transaction::new(service);
+        let output = controls.output();
+        controls.begin().unwrap();
+        controls.play("a.mp3").unwrap();
+        controls.finish(true).unwrap();
+        wait(|| output.queued_frames() == QUEUE_FRAMES);
+        controls.begin().unwrap();
+        controls.volume(64).unwrap();
+        controls.pause(true).unwrap();
+        assert_eq!(drain(&output), vec![[1000, -2000]; 20000]);
+        assert_eq!(output.status(), Status::Ended);
+        controls.finish(true).unwrap();
+        assert_eq!(output.status(), Status::Ended);
+        assert_eq!(gain(output.0.status.load(Ordering::Acquire)), 64);
+        controls.begin().unwrap();
+        controls.play("a.mp3").unwrap();
+        controls.pause(true).unwrap();
+        controls.finish(true).unwrap();
+        assert_eq!(output.status(), Status::Paused);
+        let mut sentinel = [[123, -456]; 1];
+        assert_eq!(output.read(&mut sentinel), 0);
+        assert_eq!(sentinel, [[123, -456]; 1]);
+        controls.begin().unwrap();
+        controls.pause(false).unwrap();
+        controls.finish(true).unwrap();
+        assert_eq!(drain(&output), vec![[500, -1000]; 20000]);
+        drop(controls);
+        drop(output);
+        assert_eq!(budget.used(), 0);
+    }
+    #[test]
+    fn staged_pause_preserves_decoder_failure_without_rejecting_tick() {
+        let (_temporary, package) = package(zip::CompressionMethod::Stored, true);
+        let budget = memory_budget::Budget::new(HOST_BYTES + 6 * 1048576);
+        let service = Service::new_original_rate(
+            factory_fault(20000, false, true),
+            &package,
+            true,
+            budget.clone(),
+            6 * 1048576,
+        )
+        .unwrap();
+        let mut controls = controls::Transaction::new(service);
+        let output = controls.output();
+        controls.begin().unwrap();
+        controls.play("a.mp3").unwrap();
+        controls.finish(true).unwrap();
+        wait(|| output.queued_frames() == QUEUE_FRAMES);
+        controls.begin().unwrap();
+        controls.volume(64).unwrap();
+        controls.pause(true).unwrap();
+        let mut block = [[0; 2]; 800];
+        wait(|| {
+            output.read(&mut block);
+            output.status() == Status::Failed
+        });
+        controls.finish(true).unwrap();
+        assert_eq!(output.status(), Status::Failed);
+        assert_eq!(gain(output.0.status.load(Ordering::Acquire)), 64);
         drop(controls);
         drop(output);
         assert_eq!(budget.used(), 0);

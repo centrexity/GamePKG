@@ -18,6 +18,7 @@ pub struct Transaction {
     path_length: usize,
     length: usize,
     active: bool,
+    active_generation: Option<u64>,
 }
 impl Transaction {
     pub(super) const MEMORY_BYTES: usize =
@@ -30,6 +31,7 @@ impl Transaction {
             path_length: 0,
             length: 0,
             active: false,
+            active_generation: None,
         }
     }
     pub fn output(&self) -> Output {
@@ -44,6 +46,15 @@ impl Transaction {
     pub fn begin(&mut self) -> Result<()> {
         ensure!(!self.active, "music transaction already active");
         self.active = true;
+        let snapshot = self
+            .service
+            .output
+            .0
+            .status
+            .load(std::sync::atomic::Ordering::Acquire);
+        self.active_generation = super::Status::from_tag(snapshot)
+            .active()
+            .then_some(snapshot >> super::GENERATION_SHIFT);
         Ok(())
     }
     fn push(&mut self, operation: Operation) -> Result<()> {
@@ -96,13 +107,15 @@ impl Transaction {
                     Operation::Stop => Command::Stop,
                 };
             }
-            self.service.batch_with(&commands[..self.length], publish)
+            self.service
+                .batch_for_tick(&commands[..self.length], publish, self.active_generation)
         } else {
             Ok(())
         };
         self.pending[..self.length].fill(None);
         self.length = 0;
         self.path_length = 0;
+        self.active_generation = None;
         result
     }
 }

@@ -64,6 +64,8 @@ jobs:
           ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 target/doom-endoom-test
       - name: Test browser guest path protections
         run: node tests/web_path_attacks.mjs
+      - name: Test fixed browser music FIFO and generation boundaries
+        run: node tests/web_recorded_queue.mjs
       - name: Verify nearest single-texel pixel coverage
         run: node tests/web_nearest_pixels.mjs
       - name: Verify browser drawing clip policy
@@ -155,6 +157,9 @@ jobs:
       - name: Signed native core and component music playback and rollback
         if: matrix.features == '--all-features'
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tools/check_music_sdk.py
+      - name: Muted music clocks and unavailable audio devices in real game windows
+        if: matrix.features == '--all-features'
+        run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/muted_music_gui.py
       - name: Recorded-effect game windows in Vulkan and OpenGL
         if: matrix.features == '--all-features'
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/recorded_effects_gui.py
@@ -384,6 +389,9 @@ jobs:
           cargo fmt --manifest-path tools/audio-converter/Cargo.toml -- --check
           cargo clippy --locked --manifest-path tools/audio-converter/Cargo.toml --target wasm32-unknown-unknown -- -D warnings
           sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tools/check_browser_audio_mixer.py --browser
+      - name: Verify live browser audio queue and continuous SDL output
+        if: matrix.features == '--all-features'
+        run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tools/check_browser_audio_stream.py --browser
       - name: Verify original menu buttons and whole-menu pixels
         if: matrix.features == '--all-features'
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tests/menu_controls_gui.py --original target/reference-arkanoo

@@ -620,17 +620,26 @@ impl eframe::App for App {
                             self.pending_input = 0;
                             self.audio_player = None;
                             self.audio_error.clear();
+                            let recorded_audio = game.has_recorded_audio();
                             if game.audio_allowed {
                                 match crate::settings::load() {
                                     Ok(settings)
-                                        if !settings.mute_audio && settings.audio_volume > 0 =>
+                                        if recorded_audio
+                                            || (!settings.mute_audio
+                                                && settings.audio_volume > 0) =>
                                     {
-                                        match crate::audio::Player::new(settings.audio_volume) {
+                                        let volume = if settings.mute_audio {
+                                            0
+                                        } else {
+                                            settings.audio_volume
+                                        };
+                                        match crate::audio::Player::new(volume) {
                                             Ok(player) => self.audio_player = Some(player),
-                                            Err(error) => {
+                                            Err(error) if volume > 0 => {
                                                 self.audio_error =
                                                     format!("Sound unavailable: {error:#}")
                                             }
+                                            Err(_) => {}
                                         }
                                     }
                                     Ok(_) => {}
@@ -665,9 +674,6 @@ impl eframe::App for App {
                                         return;
                                     }
                                 }
-                            } else {
-                                // Muted sessions accept committed controls without opening a device.
-                                game.attach_effect_output(std::sync::Arc::new(|_| true));
                             }
                             self.selected_game = Some(game.id.clone());
                             self.source_window.release(ctx);

@@ -1,0 +1,57 @@
+{
+  "sdl_version": "2.30.0",
+  "source_sha256": "be3f757ed77b2773d4379581336038d43bdb3c82e96bb58323bfb4b473eaa501",
+  "music_frames": 6000,
+  "source_frames": 8000,
+  "output_prefix_frames": 8192,
+  "cases": [
+    {
+      "music_volume": 128,
+      "effect_volume": 0,
+      "frames": 8192,
+      "sha256": "678e3e8f412fe41f68a89c4ab31f43649123366157bc06798dd396c98f1d9c26"
+    },
+    {
+      "music_volume": 128,
+      "effect_volume": 1,
+      "frames": 8192,
+      "sha256": "440c7e95405d6b82b5a2f90842841155148c4e307eb7fb873ae6c2e95cd22f45"
+    },
+    {
+      "music_volume": 128,
+      "effect_volume": 63,
+      "frames": 8192,
+      "sha256": "26b246e51699f18ae76ad36d5068a3e887e49754c5c4a02920e6467e333f0d13"
+    },
+    {
+      "music_volume": 128,
+      "effect_volume": 64,
+      "frames": 8192,
+      "sha256": "5522e829feb37f9f180954e974fbeb382b8d409a28444ba9f30e95db6d8f4722"
+    },
+    {
+      "music_volume": 128,
+      "effect_volume": 127,
+      "frames": 8192,
+      "sha256": "a15d306eacdea75ec23b3bfdc54155ca0828cc0aa421c3315a598da1e208e5b1"
+    },
+    {
+      "music_volume": 128,
+      "effect_volume": 128,
+      "frames": 8192,
+      "sha256": "47ca041fa66933ae5cbbb5ad04e1efd11b238cbb894d5b06e430b74deaaf1595"
+    },
+    {
+      "music_volume": 0,
+      "effect_volume": 64,
+      "frames": 8192,
+      "sha256": "fb45a70b216a9981c288113a0a7dc5c4f83dadb5e025493b3ebc4ffb5eb03468"
+    },
+    {
+      "music_volume": 64,
+      "effect_volume": 64,
+      "frames": 8192,
+      "sha256": "931edaabc6c2e4058c11eb0eb10d40cd5b14e4a52ebaf43417a08d4c06834ccb"
+    }
+  ]
+}
