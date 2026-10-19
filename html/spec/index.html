@@ -105,5 +105,12 @@ filters and permissions, not proof of the file's actual format. There is no
 ambient directory access, automatic export destination or reusable OS handle.
 See the <a href="../guide/developers.html">developer guide</a>
 for the manifest and polling contract.</p>
+<h3>Recorded music memory</h3>
+<p><code>limits.music_memory_bytes</code> reserves host decoder and output storage inside the
+signed hard limit. It requires audio permission and a source game. Combined music
+and effect shares must leave at least 64 KiB for the game. The host also checks
+the selected player ceiling and the bundled decoder's actual declaration.
+Music controls stage until execution, save and history success. Games receive
+scoped controls and completion/failure queries, never a decoder or socket handle.</p>
 <footer><a href="../support/index.html">Support GamePKG</a> · <a href="../guide/allowlist.html">Game source policy</a> · <a href="https://github.com/centrexity/GamePKG/blob/main/html/spec/index.md">Documentation source</a> · GamePKG · Apache 2.0</footer>
 </main></body></html>

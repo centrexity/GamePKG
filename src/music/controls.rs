@@ -38,6 +38,9 @@ impl Transaction {
     pub fn error(&self) -> Option<String> {
         self.service.error()
     }
+    pub(crate) fn is_empty(&self) -> bool {
+        self.length == 0
+    }
     pub fn begin(&mut self) -> Result<()> {
         ensure!(!self.active, "music transaction already active");
         self.active = true;
@@ -72,6 +75,13 @@ impl Transaction {
     /// Failed ticks and rejected successful-tick batches are consumed and cannot
     /// replay. Prior music continues unchanged when a tick fails.
     pub fn finish(&mut self, succeeded: bool) -> Result<()> {
+        self.finish_with(succeeded, || true)
+    }
+    pub(crate) fn finish_with(
+        &mut self,
+        succeeded: bool,
+        publish: impl FnOnce() -> bool,
+    ) -> Result<()> {
         ensure!(self.active, "music transaction is not active");
         self.active = false;
         let result = if succeeded {
@@ -86,7 +96,7 @@ impl Transaction {
                     Operation::Stop => Command::Stop,
                 };
             }
-            self.service.batch(&commands[..self.length])
+            self.service.batch_with(&commands[..self.length], publish)
         } else {
             Ok(())
         };

@@ -110,6 +110,9 @@ pub struct Limits {
     /// Host-owned recorded effects share, rather than extend, the hard limit.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effects_memory_bytes: Option<u64>,
+    /// Host-owned asynchronous music shares, rather than extends, the hard limit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub music_memory_bytes: Option<u64>,
     // Accepted only for packages signed with the earlier schema; never enforced or emitted.
     #[serde(default, rename = "fuel", skip_serializing)]
     pub legacy_execution_budget: Option<u64>,
@@ -354,6 +357,18 @@ impl Manifest {
                 || m.builtin_engine.is_some()
             {
                 bail!("effects memory requires audio permission, 64 KiB to 4 MiB inside the hard limit, and a source game");
+            }
+        }
+        if let Some(bytes) = m.limits.music_memory_bytes {
+            if !(65536..=16 * 1048576).contains(&bytes)
+                || !m.permissions.audio
+                || m.builtin_engine.is_some()
+                || bytes
+                    .checked_add(m.limits.effects_memory_bytes.unwrap_or(0))
+                    .and_then(|n| n.checked_add(65536))
+                    .is_none_or(|n| n > m.limits.hard_memory_bytes)
+            {
+                bail!("music memory requires audio permission and space inside the source game's hard limit");
             }
         }
         if let Some(recommended) = m.limits.recommended_memory_bytes {

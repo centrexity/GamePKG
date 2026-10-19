@@ -176,6 +176,72 @@ No new filesystem, network, window-creation or Cargo dependency access is grante
 <p>Browser nearest images containing one texel use pixel-center coverage with the lower-neighbor boundary tie rule. Thin pixel strips retain their source color.</p>
 <p>Game rectangle/circle colors and sprite pixels use straight RGBA bytes. Native game drawing premultiplies encoded RGB bytes for source-over compositing, with a conversion separate from the app's UI styling. The conversion retains supplied opaque-color bytes. Maintainers can run <code>tests/blending_gui.py</code> to compare rectangles, nearest sprites and ordered overlaps with SDL in native and browser players.</p>
 <p>These functions preserve the source checks, signatures, isolated compiler and Wasm restrictions. Games cannot replace the injected implementation or declare their own host imports.</p>
+<h2>Recorded effects on desktop</h2>
+<p><code>examples/good/recorded-effects</code> plays a generated chime when Start/Enter is
+pressed. It uses no guest dependencies. Select this mode with <code>audio = true</code>
+under <code>[permissions]</code> and <code>effects_memory_bytes = 1048576</code> under <code>[limits]</code>.
+The effects share is 64 KiB to 4 MiB and comes out of the existing hard memory
+limit and the player's memory ceiling. For example, reserving 1 MiB under a
+16 MiB effective hard limit leaves 15 MiB for game memory. Include room for
+cache metadata, output conversion and temporary loading as well as recordings.</p>
+<ul>
+<li><code>gamepkg::effect_play("sounds/bounce.wav")</code> stages a recorded sound.</li>
+<li><code>gamepkg::effect_volume(64)</code> sets effect gain from 0 to 128.</li>
+<li><code>gamepkg::effect_pause(true)</code> freezes voice positions; <code>false</code> resumes them.</li>
+<li><code>gamepkg::effect_stop()</code> stops all current effect voices.</li>
+</ul>
+<p>Assets must be canonical little-endian 44.1 kHz stereo S16 WAV, with a standard
+44-byte header, at most 2 MiB of PCM per recording. Stored package entries and
+resolved shared assets are supported. Compressed entries fail explicitly until
+their decompressor workspace is included in the shared accounting. The host
+checks verified scoped paths and the complete entry CRC before caching PCM.</p>
+<p>The host uses four first-free voices, mixes with sequential integer saturation,
+and converts the combined stream once to its 48 kHz output. Voices advance on
+the audio device clock independently of game ticks. A fifth simultaneous voice
+is rejected and reported by the output backend. Muting gain still advances
+voices. Cache metadata is fixed at 32 recordings, and a tick can stage at most
+32 controls. Full caches reject new names without evicting active recordings.</p>
+<p>Calls return whether their arguments and staged request were accepted; final
+device queue or voice exhaustion can still fail later. A failed tick, save or
+history write discards its staged commands. A rejected output batch is discarded
+as a whole. The mode rejects <code>audio_submit</code>/<code>audio_submit_stereo</code> to avoid mixing
+two incompatible playback paths. Omitting the effects share keeps the existing
+PCM API and disables these recorded-effect calls. Headless embedding must attach
+a trusted output publisher; desktop playback does this automatically.</p>
+<p>This API is currently implemented for desktop native/core/component playback.
+Web export explicitly rejects packages declaring this mode; browser recorded-audio
+support remains separate work. Players need no Python, external
+decoder, additional game crates, microphone access or file paths.</p>
+<h2>Music on desktop</h2>
+<p>Declare <code>audio = true</code> and <code>music_memory_bytes = 7340032</code> (7 MiB) to use the
+bundled host MP3 decoder. The share comes out of the signed hard limit and the
+player's memory ceiling. With a 16 MiB effective hard limit, 7 MiB for music and
+1 MiB for effects leaves 8 MiB for the game. Include the decoder's declared
+memory, host staging and output converter in the music share. Insufficient
+memory fails explicitly; the host does not increase the game's limit.</p>
+<ul>
+<li><code>gamepkg::music_play("music/theme.mp3")</code> requests a verified asset.</li>
+<li><code>gamepkg::music_volume(64)</code> sets integer gain from 0 to 128.</li>
+<li><code>gamepkg::music_pause(true)</code> pauses; <code>false</code> resumes.</li>
+<li><code>gamepkg::music_stop()</code> stops the current track.</li>
+<li><code>gamepkg::music_finished()</code> reports natural track completion.</li>
+<li><code>gamepkg::music_failed()</code> reports asynchronous loading or decoding failure.</li>
+</ul>
+<p>Control calls report staging acceptance. The track loads asynchronously after
+execution, save and history success; poll completion/failure on later ticks.
+Failed ticks discard controls and preserve prior music. Invalid complete music
+batches reject their staged effects too; denied effect output also prevents the
+music batch from publishing. Decoder faults after acceptance remain asynchronous
+failures and can be followed by a new Play request. At most 32 music operations
+are staged per tick. Only the final same-tick track replacement loads.</p>
+<p>Music accepts stored package MP3 assets and uses verified scoped readers. ZIP
+compressed music entries fail explicitly until decompressor workspace is
+accounted. Music advances on the output clock independently of game ticks, mixes
+at 44.1 kHz before the shared 48 kHz conversion, and can coexist with recorded
+effects. Declaring either recorded-audio share disables premixed PCM submission.
+No guest dependency, decoder file, Python installation or player file path is
+required. Desktop native/core/component bindings are implemented. Browser export
+currently rejects this mode; browser music and full port migration remain open.</p>
 <h2>Slang shaders, textures and audio</h2>
 <p>Use the injected shader and audio APIs directly. <code>examples/good/media-game</code> demonstrates them without dependencies. Declare each Slang source, entry and stage in <code>[[shaders]]</code>. The host verifies the signed source, compiles it in isolation on Build/Rebuild, validates resource reflection, caches the result, and selects the configured playback backend. Games never run a compiler themselves or supply precompiled shader binaries.</p>
 <pre><code class="language-rust">if let Some(shader) = gamepkg::Shader::from_slang(&quot;shaders/texture.slang&quot;, &quot;blueMain&quot;) {

@@ -277,6 +277,7 @@ impl Game {
         let (effects, memory) = crate::audio_effects::Runtime::new(
             package.as_ref(),
             manifest.limits.effects_memory_bytes,
+            manifest.limits.music_memory_bytes,
             memory,
             manifest.permissions.audio,
         )?;
@@ -1377,6 +1378,10 @@ impl Game {
     pub fn effect_playback(&mut self) -> Result<Option<crate::audio_mix_stream::Playback>> {
         self.effects_mut()
             .map_or(Ok(None), |effects| effects.playback())
+    }
+    /// Trusted output-clock inspection; no decoder or device handle reaches a game.
+    pub fn music_output(&mut self) -> Option<crate::music::Output> {
+        self.effects_mut().and_then(|audio| audio.music_output())
     }
     pub fn enable_user_files(&mut self) {
         if let Some(files) = self.user_files_mut() {

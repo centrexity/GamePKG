@@ -3101,3 +3101,51 @@ pass inside the unchanged 16 MiB parent budget with the embedded decoder. Privat
 null-device music, combined mixing and effect checks pass. Rust 1.89 and 1.99
 strict checks pass. These tests simulate the host's success/failure signal;
 actual game tick, save and history wiring still needs implementation and proof.
+
+### Desktop game music SDK and shared memory wiring
+
+Signed `music_memory_bytes` now partitions the existing hard limit, alongside
+`effects_memory_bytes`, before applying the guest's runtime/native process limit.
+Both shares must leave guest memory under the selected player ceiling. Music
+activation checks the bundled decoder declaration and output staging fit inside
+the declared share. Decoder and fixed control storage retain existing bounds;
+no new independent memory allowance is created. The source-only manifest field
+requires audio permission and a source game. Existing manifests serialize without
+a new field unless they declare music.
+
+Dependency-free game helpers provide play, integer gain, pause/resume, stop,
+natural-completion and asynchronous-failure queries. The existing bounded
+native/core/component control transport carries them. Runtime begin/finish hooks
+stage controls alongside effects. Music validation runs before effect output
+acceptance; invalid music batches discard effects, and rejected effect output
+prevents music publication. Failed guest execution, saves and history discard
+both. Worker faults after acceptance remain asynchronous failures; a new Play
+can recover. The desktop output attaches the combined original-rate music/effect
+source to the existing device-clock converter. Premixed PCM cannot be submitted
+in either recorded-audio mode.
+
+Private signed fixtures exercise disabled, combined and music-only declarations
+in native/core/component runtimes, including insufficient player ceilings. They
+compare every generated MP3 sample across backends and against the independent
+SDL original-mixer output with the existing two-unit decoder bound. Completion,
+missing-track failure and recovery, traps, failed save/history writes, denied
+output and invalid control batches pass. Actual null-device callbacks finish
+music with no further game ticks and cannot replay after a trap. The older
+signed effect SDK suite still passes. All 254 non-ignored host library cases and
+the selected runtime/budget/asset/manifest integration tests pass. CI includes
+the new signed SDK fixture, and developer/spec pages describe the APIs.
+
+This closes desktop SDK/budget activation, not full music fidelity. Browser
+music, migration of current ports, playlists/settings parity, exact combined
+control-to-callback timing, physical devices, broader platform playback and full
+OS/compiler/allocator memory accounting remain open. No signed package or binary
+release is included.
+
+The optimized CLI and GUI both build with the embedded decoder, and strict
+checks pass on Rust 1.89 and 1.99. Actual 32-bit Linux executes all eleven music
+cases available without the optional audio-device feature and the new manifest
+share test. The all-features 32-bit attempt lacks this machine's cross-compiled
+udev development setup; no 32-bit device or GUI proof is claimed. The portability
+workflow now includes the manifest test on Linux32, Windows32 and Android32;
+its Android runner expects the corresponding sixth test executable. Those
+hosted runs are not counted as passed by this local evidence.

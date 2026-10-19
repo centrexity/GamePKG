@@ -1,4 +1,4 @@
-//! Trusted, bounded recorded-effect cache and per-tick control transaction.
+//! Trusted, bounded recorded audio and per-tick control transactions.
 //! Shared by desktop native/core/component hosts; no guest receives a device or clip.
 use crate::{
     archive::Package,
@@ -17,6 +17,7 @@ pub type Publisher = Arc<dyn Fn(&[EffectCommand]) -> bool + Send + Sync>;
 pub(crate) struct Runtime {
     service: Option<Box<Service>>,
     budget: Option<Budget>,
+    music: Option<Box<crate::music::controls::Transaction>>,
     publisher: Option<Publisher>,
     _guest: Option<Lease>,
     _reservation: Option<Lease>,
@@ -25,32 +26,78 @@ impl Runtime {
     pub(crate) fn new(
         package: Option<&Package>,
         declared: Option<u64>,
+        music_declared: Option<u64>,
         total: u64,
         allowed: bool,
     ) -> Result<(Self, u64)> {
-        let Some(bytes) = declared else {
+        if declared.is_none() && music_declared.is_none() {
             return Ok((Self::default(), total));
-        };
-        ensure!(
-            allowed && (65536..=4 * 1048576).contains(&bytes),
-            "invalid effects memory reservation"
-        );
+        }
+        ensure!(allowed, "recorded audio requires audio permission");
+        if let Some(bytes) = declared {
+            ensure!(
+                (65536..=4 * 1048576).contains(&bytes),
+                "invalid effects memory reservation"
+            );
+        }
+        if let Some(bytes) = music_declared {
+            ensure!(
+                (65536..=16 * 1048576).contains(&bytes),
+                "invalid music memory reservation"
+            );
+        }
+        let reserved = declared
+            .unwrap_or(0)
+            .checked_add(music_declared.unwrap_or(0))
+            .context("audio reservation overflow")?;
         let guest_bytes = total
-            .checked_sub(bytes)
+            .checked_sub(reserved)
             .filter(|n| *n >= 65536)
-            .context("effects exceed the selected memory ceiling")?;
+            .context("recorded audio exceeds the selected memory ceiling")?;
         let parent = Budget::new(total);
         let guest = parent.reserve(guest_bytes)?;
-        let budget = parent.partition(bytes)?;
+        let effects_budget = declared.map(|bytes| parent.partition(bytes)).transpose()?;
+        let music_budget = music_declared
+            .map(|bytes| parent.partition(bytes))
+            .transpose()?;
+        let budget = effects_budget
+            .as_ref()
+            .or(music_budget.as_ref())
+            .unwrap()
+            .clone();
         let reservation = budget
             .reserve((std::mem::size_of::<Self>() + 2 * std::mem::size_of::<usize>()) as u64)?;
-        let package = package
-            .context("recorded effects require a verified package")?
-            .try_clone_verified()?;
-        let service = Service::new(package, allowed, budget.clone())?;
+        let package = package.context("recorded audio requires a verified package")?;
+        let service = effects_budget
+            .map(|budget| {
+                Service::new(package.try_clone_verified()?, allowed, budget).map(Box::new)
+            })
+            .transpose()?;
+        let music = music_budget
+            .map(|budget| -> Result<_> {
+                let factory = crate::audio_decode::Factory::bundled()?;
+                let decoder_bytes = factory.maximum_memory_bytes();
+                ensure!(
+                    budget.limit() - budget.used()
+                        >= decoder_bytes as u64
+                            + crate::music::HOST_BYTES
+                            + std::mem::size_of::<crate::audio_mix_stream::Playback>() as u64,
+                    "music reservation cannot contain the decoder and output staging"
+                );
+                let service = crate::music::Service::new_original_rate(
+                    factory,
+                    package,
+                    allowed,
+                    budget,
+                    decoder_bytes,
+                )?;
+                Ok(Box::new(crate::music::controls::Transaction::new(service)))
+            })
+            .transpose()?;
         Ok((
             Self {
-                service: Some(Box::new(service)),
+                service,
+                music,
                 budget: Some(budget),
                 publisher: None,
                 _guest: Some(guest),
@@ -60,7 +107,7 @@ impl Runtime {
         ))
     }
     pub(crate) fn enabled(&self) -> bool {
-        self.service.is_some()
+        self.service.is_some() || self.music.is_some()
     }
     pub(crate) fn attach(&mut self, publisher: Publisher) {
         self.publisher = Some(publisher);
@@ -68,18 +115,50 @@ impl Runtime {
     pub(crate) fn playback(&self) -> Result<Option<crate::audio_mix_stream::Playback>> {
         self.budget
             .as_ref()
-            .map(crate::audio_mix_stream::Playback::effects_only)
+            .map(|budget| {
+                if let Some(music) = &self.music {
+                    crate::audio_mix_stream::Playback::new(music.output(), budget)
+                } else {
+                    crate::audio_mix_stream::Playback::effects_only(budget)
+                }
+            })
             .transpose()
+    }
+    pub(crate) fn music_output(&self) -> Option<crate::music::Output> {
+        self.music.as_ref().map(|music| music.output())
     }
     pub(crate) fn begin(&mut self) -> Result<()> {
         if let Some(service) = &mut self.service {
             service.begin()?;
+        }
+        if let Some(music) = &mut self.music {
+            music.begin()?;
         }
         Ok(())
     }
     pub(crate) fn call(&mut self, operation: u32, path: &str, value: u32) -> bool {
         if self.publisher.is_none() {
             return false;
+        }
+        if operation >= 4 {
+            let Some(music) = &mut self.music else {
+                return false;
+            };
+            if path.is_empty() && value == 0 {
+                match operation {
+                    8 => return music.output().status() == crate::music::Status::Ended,
+                    9 => return music.output().status() == crate::music::Status::Failed,
+                    _ => {}
+                }
+            }
+            return match operation {
+                4 if value == 0 => music.play(path),
+                5 if path.is_empty() => music.volume(value),
+                6 if path.is_empty() && value <= 1 => music.pause(value != 0),
+                7 if path.is_empty() && value == 0 => music.stop(),
+                _ => return false,
+            }
+            .is_ok();
         }
         let Some(service) = &mut self.service else {
             return false;
@@ -94,20 +173,42 @@ impl Runtime {
         .is_ok()
     }
     pub(crate) fn finish(&mut self, succeeded: bool) -> Result<()> {
-        if let Some(service) = &mut self.service {
-            let accepted = service.finish(succeeded, |commands| {
-                commands.is_empty()
-                    || self
-                        .publisher
-                        .as_ref()
-                        .is_some_and(|publish| publish(commands))
-            });
+        if !succeeded {
+            if let Some(service) = &mut self.service {
+                service.finish(false, |_| false);
+            }
+            if let Some(music) = &mut self.music {
+                music.finish(false)?;
+            }
+            return Ok(());
+        }
+        let require_output = self.music.as_ref().is_some_and(|music| !music.is_empty());
+        let publisher = &self.publisher;
+        let service = &mut self.service;
+        let mut publish = || {
+            let output = |commands: &[EffectCommand]| {
+                (commands.is_empty() && !require_output)
+                    || publisher.as_ref().is_some_and(|publish| publish(commands))
+            };
+            service
+                .as_mut()
+                .map_or_else(|| output(&[]), |service| service.finish(true, output))
+        };
+        let result = if let Some(music) = &mut self.music {
+            music.finish_with(true, publish)
+        } else {
             ensure!(
-                !succeeded || accepted,
+                publish(),
                 "recorded effect output rejected the tick's control batch"
             );
+            Ok(())
+        };
+        if result.is_err() {
+            if let Some(service) = &mut self.service {
+                service.finish(false, |_| false);
+            }
         }
-        Ok(())
+        result
     }
 }
 struct Recording {

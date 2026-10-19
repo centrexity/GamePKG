@@ -1,4 +1,4 @@
-//! Host-only asynchronous music playback. Game SDK integration is still pending.
+//! Host-owned asynchronous music playback, controlled through staged game calls.
 use crate::{audio_decode, audio_resample::Resampler, memory_budget};
 use anyhow::{ensure, Context, Result};
 use std::{
@@ -223,6 +223,13 @@ impl Service {
     /// replacements have no output interval, so only the final request loads.
     /// The caller invokes this only after execution and persistence succeed.
     pub fn batch(&self, commands: &[Command<'_>]) -> Result<()> {
+        self.batch_with(commands, || true)
+    }
+    pub(crate) fn batch_with(
+        &self,
+        commands: &[Command<'_>],
+        publish: impl FnOnce() -> bool,
+    ) -> Result<()> {
         ensure!(commands.len() <= 32, "music control queue is full");
         let shared = &self.output.0;
         let mut state = shared
@@ -276,15 +283,20 @@ impl Service {
         }
         let request = request.map(str::to_owned);
         let mut current = shared.status.load(Ordering::Acquire);
+        ensure!(
+            !shared.quit.load(Ordering::Acquire),
+            "music worker is unavailable"
+        );
+        if !changed && paused.is_some() {
+            ensure!(Status::from_tag(current).active(), "music is not active");
+        }
+        ensure!(publish(), "audio output rejected the tick's control batch");
         loop {
-            ensure!(
-                !shared.quit.load(Ordering::Acquire),
-                "music worker is unavailable"
-            );
-            if !changed && paused.is_some() {
-                ensure!(Status::from_tag(current).active(), "music is not active");
-            }
-            let next_status = if changed {
+            // After acceptance, worker failures are asynchronous output faults,
+            // just as a decoder failure after a successfully queued Play is.
+            let next_status = if shared.quit.load(Ordering::Acquire) {
+                Status::Failed
+            } else if changed {
                 status
             } else {
                 paused.unwrap_or(Status::from_tag(current))

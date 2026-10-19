@@ -5,6 +5,14 @@ pub fn effect_volume(volume:u32)->bool {volume<=128&&__gamepkg_effect_call(1,"",
 pub fn effect_pause(paused:bool)->bool {__gamepkg_effect_call(2,"",u32::from(paused))}
 pub fn effect_stop()->bool {__gamepkg_effect_call(3,"",0)}
 
+/// Music uses the bundled host decoder and the signed music memory share.
+pub fn music_play(path:&str)->bool {path.len()<=1024&&__gamepkg_effect_call(4,path,0)}
+pub fn music_volume(volume:u32)->bool {volume<=128&&__gamepkg_effect_call(5,"",volume)}
+pub fn music_pause(paused:bool)->bool {__gamepkg_effect_call(6,"",u32::from(paused))}
+pub fn music_stop()->bool {__gamepkg_effect_call(7,"",0)}
+pub fn music_finished()->bool {__gamepkg_effect_call(8,"",0)}
+pub fn music_failed()->bool {__gamepkg_effect_call(9,"",0)}
+
 /// A signed Slang fragment entry; the host compiles it during Build/Rebuild.
 pub struct Shader { index: u32 }
 impl Shader {

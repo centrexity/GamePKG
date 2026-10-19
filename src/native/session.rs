@@ -153,6 +153,7 @@ impl Session {
         let (effects, memory) = crate::audio_effects::Runtime::new(
             Some(&package),
             manifest.limits.effects_memory_bytes,
+            manifest.limits.music_memory_bytes,
             memory,
             manifest.permissions.audio,
         )?;

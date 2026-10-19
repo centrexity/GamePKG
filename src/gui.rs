@@ -651,7 +651,7 @@ impl eframe::App for App {
                                     Ok(Some(playback)) => {
                                         if !audio.original_source(Some(playback)) {
                                             self.status =
-                                                "Unable to attach recorded-effect output".into();
+                                                "Unable to attach recorded-audio output".into();
                                             self.audio_player = None;
                                             return;
                                         }
@@ -659,9 +659,8 @@ impl eframe::App for App {
                                     }
                                     Ok(None) => {}
                                     Err(error) => {
-                                        self.status = format!(
-                                            "Unable to prepare recorded effects: {error:#}"
-                                        );
+                                        self.status =
+                                            format!("Unable to prepare recorded audio: {error:#}");
                                         self.audio_player = None;
                                         return;
                                     }

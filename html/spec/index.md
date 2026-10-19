@@ -134,3 +134,12 @@ filters and permissions, not proof of the file's actual format. There is no
 ambient directory access, automatic export destination or reusable OS handle.
 See the [developer guide](../guide/developers.html)
 for the manifest and polling contract.
+
+### Recorded music memory
+
+`limits.music_memory_bytes` reserves host decoder and output storage inside the
+signed hard limit. It requires audio permission and a source game. Combined music
+and effect shares must leave at least 64 KiB for the game. The host also checks
+the selected player ceiling and the bundled decoder's actual declaration.
+Music controls stage until execution, save and history success. Games receive
+scoped controls and completion/failure queries, never a decoder or socket handle.

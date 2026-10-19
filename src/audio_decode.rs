@@ -1,4 +1,4 @@
-//! Host-only, import-free music decoder companion. Not exposed to game source yet.
+//! Host-only, import-free music decoder companion. Games receive controls, never the decoder.
 use anyhow::{bail, ensure, Context, Result};
 use std::io::Read;
 use std::sync::{

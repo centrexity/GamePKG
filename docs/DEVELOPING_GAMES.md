@@ -189,9 +189,42 @@ PCM API and disables these recorded-effect calls. Headless embedding must attach
 a trusted output publisher; desktop playback does this automatically.
 
 This API is currently implemented for desktop native/core/component playback.
-Web export explicitly rejects packages declaring this mode; browser support and
-music SDK commands remain separate work. Players need no Python, external
+Web export explicitly rejects packages declaring this mode; browser recorded-audio
+support remains separate work. Players need no Python, external
 decoder, additional game crates, microphone access or file paths.
+
+## Music on desktop
+
+Declare `audio = true` and `music_memory_bytes = 7340032` (7 MiB) to use the
+bundled host MP3 decoder. The share comes out of the signed hard limit and the
+player's memory ceiling. With a 16 MiB effective hard limit, 7 MiB for music and
+1 MiB for effects leaves 8 MiB for the game. Include the decoder's declared
+memory, host staging and output converter in the music share. Insufficient
+memory fails explicitly; the host does not increase the game's limit.
+
+- `gamepkg::music_play("music/theme.mp3")` requests a verified asset.
+- `gamepkg::music_volume(64)` sets integer gain from 0 to 128.
+- `gamepkg::music_pause(true)` pauses; `false` resumes.
+- `gamepkg::music_stop()` stops the current track.
+- `gamepkg::music_finished()` reports natural track completion.
+- `gamepkg::music_failed()` reports asynchronous loading or decoding failure.
+
+Control calls report staging acceptance. The track loads asynchronously after
+execution, save and history success; poll completion/failure on later ticks.
+Failed ticks discard controls and preserve prior music. Invalid complete music
+batches reject their staged effects too; denied effect output also prevents the
+music batch from publishing. Decoder faults after acceptance remain asynchronous
+failures and can be followed by a new Play request. At most 32 music operations
+are staged per tick. Only the final same-tick track replacement loads.
+
+Music accepts stored package MP3 assets and uses verified scoped readers. ZIP
+compressed music entries fail explicitly until decompressor workspace is
+accounted. Music advances on the output clock independently of game ticks, mixes
+at 44.1 kHz before the shared 48 kHz conversion, and can coexist with recorded
+effects. Declaring either recorded-audio share disables premixed PCM submission.
+No guest dependency, decoder file, Python installation or player file path is
+required. Desktop native/core/component bindings are implemented. Browser export
+currently rejects this mode; browser music and full port migration remain open.
 
 ## Slang shaders, textures and audio
 

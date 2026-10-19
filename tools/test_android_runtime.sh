@@ -13,7 +13,7 @@ adb=${ADB:-adb}
 remote=/data/local/tmp/gamepkg-portability32
 "$adb" -s "$serial" shell mkdir -p "$remote"
 found=0
-for kind in components portability runtime memory_budget audio_effect_assets; do
+for kind in components portability runtime memory_budget audio_effect_assets music_permissions; do
   for binary in "target/$target/debug/deps/$kind"-*; do
     [ -f "$binary" ] && [ -x "$binary" ] || continue
     name=$(basename "$binary")
@@ -22,7 +22,7 @@ for kind in components portability runtime memory_budget audio_effect_assets; do
     found=$((found + 1))
   done
 done
-[ "$found" -eq 5 ] || { echo 'Build exactly the five Android test binaries before running this script.' >&2; exit 1; }
+[ "$found" -eq 6 ] || { echo 'Build exactly the six Android test binaries before running this script.' >&2; exit 1; }
 name=$(basename "$publication_binary")
 "$adb" -s "$serial" push "$publication_binary" "$remote/$name"
 "$adb" -s "$serial" shell "TMPDIR=$remote $remote/$name pack::publication_tests::"
