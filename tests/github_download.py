@@ -121,7 +121,11 @@ print('200', end='')
         publish('0.1.0')
         (root / 'requests.jsonl').write_text('')
         shutil.rmtree(root / 'library')
-        (root / 'settings.toml').write_text('automatic_update_checks = false\n')
+        # Package update polling and app startup checks are separate settings.
+        # This fixture accounts for every request made by the import workflow;
+        # tests/app_updates_gui.py separately verifies the default-on app check.
+        (root / 'settings.toml').write_text(
+            'automatic_update_checks = false\ncheck_app_updates_on_startup = false\n')
         env['LIBGL_ALWAYS_SOFTWARE'] = '1'
         env.pop('WAYLAND_DISPLAY', None)
         display = start_display(env, 1600, 1100)
@@ -178,6 +182,7 @@ print('200', end='')
             subprocess.run(['xdotool', 'type', '--clearmodifiers', '--delay', '20', URL], env=env, check=True)
             time.sleep(.2)
             text, words = screen()
+            assert not (root / 'requests.jsonl').read_text(), 'Import fixture made a request before Download'
             click(next(w for w in words if w['text'] == 'Download'))
             for _ in range(30):
                 text, words = screen()

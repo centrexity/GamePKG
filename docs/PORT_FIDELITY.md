@@ -2625,8 +2625,9 @@ For this handoff change, the complete audio-enabled library suite passes 189
 cases with 18 explicit ignores. The private embedded-decoder run passes all nine
 full-track hashes/lengths and actual callback checks, including the new rejected
 batch/resume path. Strict GUI/all-target checks pass on Rust 1.89 and 1.99.
-The default-feature hosted Rust job at source `092f042` passed; its full-feature
-job remains active and must not yet be recorded as a complete workflow pass.
+The default-feature hosted Rust job at source `092f042` passed. At this
+checkpoint its full-feature job was active; the later result is recorded below.
+This was not a complete workflow pass.
 
 The 32-bit workflow also now preserves an already active run rather than
 cancelling it on the next source push, matching the full/native workflow policy.
@@ -2635,3 +2636,35 @@ The newest pending revision can still supersede an older pending revision;
 cancelled snapshots do not count as passes. Test concurrency and limits are
 unchanged.
 Optimized CLI and GUI linking passes with the embedded decoder after this handoff change.
+
+
+## Independent updater checks in the GitHub desktop fixture (2026-10-18)
+
+Full Rust run `39190363623` at source `092f042` completed: the default-feature
+job passed, while the full-feature job reached the desktop GitHub download check
+and failed its exact request-count assertion. Its earlier steps, including Rust
+checks and native/core/component integrations, had passed. The private fixture
+disabled automatic game updates but left the independent default-on app startup
+check enabled, producing an additional request for the host's own release.
+The same failure reproduces locally. This was test configuration, not failed
+package downloading or a product opt-out bug.
+
+The GitHub fixture now explicitly disables both independent background settings.
+A new assertion requires no fixture requests before the Download action; the
+existing exact two-request assertion remains, as do creator review, explicit
+installation approval, library publication and signer/ID/ambiguous-release
+rejection checks. The real desktop integration passes with unchanged waits and
+assertions. No startup-update behavior is disabled in the application.
+
+The separate real app-updater UI check also passes: default-on startup notice,
+saved opt-out across restart, manual checks while disabled, native destination
+picker, checksum rejection and staging cleanup, retry, explicit install/restart
+and preserved library. All eight settings regressions pass, including independent
+app/game polling toggles. These private fixtures use synthetic keys and temporary
+libraries only; no real installation or player library is read or modified.
+
+The preserved native run at source `d4d653d` has passed its macOS runtime suite
+but failed strict checks on the same Rust 1.99 chunk-iteration diagnostics already
+fixed in `092f042`; Windows remained active at this observation. Newer hosted
+full/native/32-bit results remain separate requirements, and no failed or
+cancelled workflow is counted as a complete pass.
