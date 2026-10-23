@@ -15,6 +15,7 @@ static LONG block_read;
 static HANDLE read_started, read_resume;
 static const uint64_t small_size = 131101, large_size = UINT64_C(0x200000007);
 static uint8_t pattern(uint64_t offset) { return (uint8_t)((offset * 37) ^ (offset >> 5)); }
+static const char *directory_names[] = {"pattern.bin", "large.bin", "README", "a.b.c", "x.TXT", "caf\xc3\xa9.bin", "Folder"};
 static fake_stream *stream(uint64_t id) {
     for (unsigned i = 0; i < 128; i++) if (streams[i].id == id) return streams + i;
     return NULL;
@@ -64,6 +65,87 @@ int32_t gp_media_read(uint64_t id, uint8_t *output, size_t capacity, size_t *rea
     if ((uint64_t)count > s->size - s->position) count = (size_t)(s->size - s->position);
     for (size_t i = 0; i < count; i++) output[i] = pattern(s->position + i);
     s->position += count; *read = count; return 0;
+}
+int32_t gp_media_readdir(uint64_t id, uint8_t *name, size_t capacity, size_t *length, gp_media_info *info) {
+    fake_stream *s = stream(id); if (!s) return -9;
+    if (!s->directory) return -20;
+    if (corrupt) return -5;
+    if (s->position == sizeof directory_names / sizeof *directory_names) { *length = 0; return 0; }
+    const char *entry = directory_names[s->position]; size_t n = strlen(entry);
+    if (n > capacity) return -105;
+    memcpy(name, entry, n); *length = n;
+    *info = (gp_media_info){s->position == 0 ? small_size : s->position == 1 ? large_size : 0,
+                             s->position == 6, 0};
+    s->position++; return 0;
+}
+static unsigned collect_names(HANDLE search, WIN32_FIND_DATAW *data, int virtual_search) {
+    unsigned found = 0;
+    if (search == INVALID_HANDLE_VALUE) { assert(GetLastError() == ERROR_FILE_NOT_FOUND); return 0; }
+    do {
+        if (!wcscmp(data->cFileName, L".") || !wcscmp(data->cFileName, L"..")) continue;
+        unsigned index;
+        for (index = 0; index < sizeof directory_names / sizeof *directory_names; index++) {
+            WCHAR wide[MAX_PATH];
+            assert(MultiByteToWideChar(CP_UTF8, 0, directory_names[index], -1, wide, MAX_PATH));
+            if (!wcscmp(wide, data->cFileName)) break;
+        }
+        assert(index < sizeof directory_names / sizeof *directory_names && !(found & (1u << index)));
+        if (virtual_search) {
+            assert(data->dwFileAttributes == (FILE_ATTRIBUTE_READONLY | (index == 6 ? FILE_ATTRIBUTE_DIRECTORY : 0)));
+            uint64_t size = ((uint64_t)data->nFileSizeHigh << 32) | data->nFileSizeLow;
+            assert(size == (index == 0 ? small_size : index == 1 ? large_size : 0));
+        }
+        found |= 1u << index;
+    } while (virtual_search ? gpw_FindNextFileW(search, data) : FindNextFileW(search, data));
+    assert(GetLastError() == ERROR_NO_MORE_FILES);
+    assert(virtual_search ? gpw_FindClose(search) : FindClose(search));
+    return found;
+}
+static void directory_oracle(void) {
+    assert(CreateDirectoryW(L"directory-oracle", NULL));
+    for (unsigned i = 0; i < sizeof directory_names / sizeof *directory_names; i++) {
+        WCHAR name[MAX_PATH], path[MAX_PATH];
+        assert(MultiByteToWideChar(CP_UTF8, 0, directory_names[i], -1, name, MAX_PATH));
+        swprintf(path, MAX_PATH, L"directory-oracle/%ls", name);
+        if (i == 6) assert(CreateDirectoryW(path, NULL));
+        else {
+            HANDLE file = CreateFileW(path, GENERIC_WRITE, 0, NULL, CREATE_NEW, 0, NULL);
+            assert(file != INVALID_HANDLE_VALUE && CloseHandle(file));
+        }
+    }
+    const WCHAR *patterns[] = {L"*", L"*.*", L"*.BIN", L"README", L"readme", L"no-match", L"?", L"??????",
+        L"*.?", L"*.???", L"a.*", L"*.", L"*.*.*", L"pattern.b?n", L"caf\x00e9.*", L"Folder", L"F*"};
+    for (unsigned i = 0; i < sizeof patterns / sizeof *patterns; i++) {
+        WCHAR native[MAX_PATH], virtual_path[MAX_PATH]; WIN32_FIND_DATAW a, b;
+        swprintf(native, MAX_PATH, L"directory-oracle/%ls", patterns[i]);
+        swprintf(virtual_path, MAX_PATH, L"/gamepkg-disc/Data/%ls", patterns[i]);
+        HANDLE original = FindFirstFileW(native, &a);
+        unsigned expected = collect_names(original, &a, 0);
+        HANDLE adapted = gpw_FindFirstFileW(virtual_path, &b);
+        unsigned actual = collect_names(adapted, &b, 1);
+        if (actual != expected) fprintf(stderr, "directory pattern=%ls native=%u adapter=%u\n", patterns[i], expected, actual);
+        assert(actual == expected);
+    }
+    WIN32_FIND_DATAW a, b;
+    HANDLE first = gpw_FindFirstFileW(L"/gamepkg-disc/Data/*", &a);
+    HANDLE second = gpw_FindFirstFileW(L"/gamepkg-disc/Data/*", &b);
+    assert(first != INVALID_HANDLE_VALUE && second != INVALID_HANDLE_VALUE && !wcscmp(a.cFileName, b.cFileName));
+    assert(gpw_FindNextFileW(first, &a));
+    assert(wcscmp(a.cFileName, b.cFileName));
+    assert(gpw_FindClose(first) && gpw_FindClose(second));
+    assert(!gpw_FindNextFileW(first, &a) && GetLastError() == ERROR_INVALID_HANDLE);
+    assert(gpw_FindFirstFileW(L"/gamepkg-disc/Data/../*", &a) == INVALID_HANDLE_VALUE && GetLastError() == ERROR_ACCESS_DENIED);
+    assert(gpw_FindFirstFileW(L"/gamepkg-disc/Data/*:stream", &a) == INVALID_HANDLE_VALUE && GetLastError() == ERROR_ACCESS_DENIED);
+    corrupt = 1;
+    assert(gpw_FindFirstFileW(L"/gamepkg-disc/Data/*", &a) == INVALID_HANDLE_VALUE && GetLastError() == ERROR_READ_FAULT);
+    corrupt = 0;
+    for (unsigned i = 0; i < sizeof directory_names / sizeof *directory_names; i++) {
+        WCHAR name[MAX_PATH], path[MAX_PATH];
+        assert(MultiByteToWideChar(CP_UTF8, 0, directory_names[i], -1, name, MAX_PATH));
+        swprintf(path, MAX_PATH, L"directory-oracle/%ls", name);
+        assert(i == 6 ? RemoveDirectoryW(path) : DeleteFileW(path));
+    }
+    assert(RemoveDirectoryW(L"directory-oracle"));
 }
 static HANDLE open_disc(void) {
     HANDLE h = gpw_CreateFileW(L"/gamepkg-disc/Data/pattern.bin", GENERIC_READ, FILE_SHARE_READ,
@@ -237,6 +319,7 @@ int main(void) {
     assert(gpw_SetFilePointerEx(outside, zero, NULL, FILE_BEGIN));
     assert(gpw_ReadFile(outside, data, 6, &count, NULL) && count == 6 && !memcmp(data, "native", 6));
     assert(gpw_CloseHandle(outside));
+    directory_oracle();
     assert(!live);
     puts("PASS: native Windows disc file adapter; native read/seek/EOF oracle, 64-bit offsets, read-only metadata, write/traversal rejection, sharing, waitable handles, integrity failure and handle cleanup");
     return 0;

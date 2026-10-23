@@ -286,3 +286,131 @@ BOOL WINAPI gpw_FlushFileBuffers(HANDLE handle) {
     ReleaseSRWLockShared(&files_lock);
     return disc ? fail(ERROR_ACCESS_DENIED) : FlushFileBuffers(handle);
 }
+
+/* Directory searches own independent Rust directory cursors. No placeholder
+ * files or extracted names/assets are created on the host filesystem. */
+typedef struct {
+    HANDLE event;
+    uint64_t media;
+    WCHAR expression[MAX_PATH];
+} gpw_search;
+static gpw_search searches[GPW_SLOTS];
+typedef struct { USHORT Length, MaximumLength; WCHAR *Buffer; } gpw_unicode;
+typedef BOOLEAN (NTAPI *gpw_match_fn)(gpw_unicode *, gpw_unicode *, BOOLEAN, WCHAR *);
+
+static gpw_search *find_search(HANDLE handle) {
+    for (unsigned i = 0; i < GPW_SLOTS; i++)
+        if (searches[i].event && searches[i].event == handle) return searches + i;
+    return NULL;
+}
+static BOOL prepare_expression(LPCWSTR input, WCHAR output[MAX_PATH]) {
+    size_t length = wcslen(input);
+    if (!length || length >= MAX_PATH) return fail(ERROR_INVALID_NAME);
+    for (size_t i = 0; i < length; i++)
+        if (input[i] < 32 || (input[i] >= 127 && input[i] <= 159) ||
+            wcschr(L":<>\"/\\", input[i])) return fail(ERROR_ACCESS_DENIED);
+    WCHAR translated[MAX_PATH]; size_t used = 0;
+    if (!wcscmp(input, L"*.*")) input = L"*";
+    length = wcslen(input);
+    for (size_t i = 0; i < length; i++) {
+        WCHAR c = input[i];
+        /* Win32's DOS wildcard translation; matching itself remains native.
+         * See System.IO.Enumeration.FileSystemName.TranslateWin32Expression
+         * and Microsoft's RtlIsNameInExpression documentation. */
+        if (c == L'?' ) c = L'>';
+        else if (c == L'.' && i && i == length - 1 && input[i - 1] == L'*') {
+            translated[used - 1] = L'<'; continue;
+        } else if (c == L'.' && i + 1 < length && (input[i + 1] == L'?' || input[i + 1] == L'*')) c = L'"';
+        translated[used++] = c;
+    }
+    translated[used] = 0;
+    return LCMapStringEx(LOCALE_NAME_INVARIANT, LCMAP_UPPERCASE, translated, -1,
+                         output, MAX_PATH, NULL, NULL, 0) != 0;
+}
+static BOOL search_next(gpw_search *search, LPWIN32_FIND_DATAW output) {
+    FARPROC symbol = GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "RtlIsNameInExpression");
+    gpw_match_fn matches;
+    _Static_assert(sizeof matches == sizeof symbol, "Windows function pointer size");
+    memcpy(&matches, &symbol, sizeof matches);
+    if (!matches) return fail(ERROR_NOT_SUPPORTED);
+    for (;;) {
+        uint8_t name[GPW_PATH]; size_t length = 0; gp_media_info info;
+        int32_t rc = gp_media_readdir(search->media, name, sizeof name, &length, &info);
+        if (rc) return fail(media_error(rc));
+        if (!length) return fail(ERROR_NO_MORE_FILES);
+        WCHAR wide[MAX_PATH];
+        int count = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, (const char *)name,
+                                        (int)length, wide, MAX_PATH - 1);
+        if (!count) return fail(ERROR_INVALID_NAME);
+        wide[count] = 0;
+        gpw_unicode expression = {(USHORT)(wcslen(search->expression) * sizeof(WCHAR)),
+                                  sizeof search->expression, search->expression};
+        gpw_unicode candidate = {(USHORT)(count * sizeof(WCHAR)), sizeof wide, wide};
+        if (!matches(&expression, &candidate, TRUE, NULL)) continue;
+        WIN32_FIND_DATAW result; memset(&result, 0, sizeof result);
+        result.dwFileAttributes = attributes(info);
+        result.nFileSizeLow = (DWORD)info.size; result.nFileSizeHigh = (DWORD)(info.size >> 32);
+        memcpy(result.cFileName, wide, ((size_t)count + 1) * sizeof(WCHAR));
+        *output = result; return TRUE;
+    }
+}
+HANDLE WINAPI gpw_FindFirstFileW(LPCWSTR path, LPWIN32_FIND_DATAW output) {
+    if (!path) { SetLastError(ERROR_INVALID_PARAMETER); return INVALID_HANDLE_VALUE; }
+    size_t length = wcslen(path);
+    WCHAR probe[GPW_PATH * 2];
+    if (length >= sizeof probe / sizeof *probe) {
+        SetLastError(ERROR_FILENAME_EXCED_RANGE); return INVALID_HANDLE_VALUE;
+    }
+    memcpy(probe, path, (length + 1) * sizeof(WCHAR));
+    WCHAR *tail = probe;
+    for (WCHAR *p = probe; *p; p++) if (sep(*p)) tail = p + 1;
+    size_t parent = (size_t)(tail - probe);
+    if (parent + 2 > sizeof probe / sizeof *probe) {
+        SetLastError(ERROR_FILENAME_EXCED_RANGE); return INVALID_HANDLE_VALUE;
+    }
+    tail[0] = L'x'; tail[1] = 0;
+    char relative[GPW_PATH]; int kind = relative_path(probe, relative);
+    if (!kind) return FindFirstFileW(path, output);
+    if (kind < 0) return INVALID_HANDLE_VALUE;
+    if (!output) { SetLastError(ERROR_INVALID_PARAMETER); return INVALID_HANDLE_VALUE; }
+    WCHAR expression[MAX_PATH];
+    if (!prepare_expression(path + parent, expression)) return INVALID_HANDLE_VALUE;
+    size_t n = strlen(relative);
+    if (!n || relative[n - 1] != 'x') { SetLastError(ERROR_INVALID_NAME); return INVALID_HANDLE_VALUE; }
+    relative[--n] = 0;
+    if (n && relative[n - 1] == '/') relative[--n] = 0;
+    gp_media_info info; int32_t rc = gp_media_stat((const uint8_t *)relative, n, &info);
+    if (rc || !info.is_directory) {
+        SetLastError(rc ? media_error(rc) : ERROR_DIRECTORY); return INVALID_HANDLE_VALUE;
+    }
+    AcquireSRWLockExclusive(&files_lock);
+    gpw_search *slot = NULL;
+    for (unsigned i = 0; i < GPW_SLOTS; i++) if (!searches[i].event) { slot = searches + i; break; }
+    if (!slot) { ReleaseSRWLockExclusive(&files_lock); SetLastError(ERROR_TOO_MANY_OPEN_FILES); return INVALID_HANDLE_VALUE; }
+    uint64_t media; rc = gp_media_open((const uint8_t *)relative, n, &media);
+    if (rc) { ReleaseSRWLockExclusive(&files_lock); SetLastError(media_error(rc)); return INVALID_HANDLE_VALUE; }
+    HANDLE event = CreateEventW(NULL, TRUE, TRUE, NULL);
+    if (!event) { DWORD error = GetLastError(); gp_media_close(media); ReleaseSRWLockExclusive(&files_lock); SetLastError(error); return INVALID_HANDLE_VALUE; }
+    slot->event = event; slot->media = media; memcpy(slot->expression, expression, sizeof expression);
+    BOOL result = search_next(slot, output); DWORD error = GetLastError();
+    if (!result) {
+        gp_media_close(media); CloseHandle(event); memset(slot, 0, sizeof *slot);
+    }
+    ReleaseSRWLockExclusive(&files_lock);
+    if (!result) { SetLastError(error == ERROR_NO_MORE_FILES ? ERROR_FILE_NOT_FOUND : error); return INVALID_HANDLE_VALUE; }
+    return event;
+}
+BOOL WINAPI gpw_FindNextFileW(HANDLE handle, LPWIN32_FIND_DATAW output) {
+    AcquireSRWLockExclusive(&files_lock); gpw_search *search = find_search(handle);
+    if (!search) { ReleaseSRWLockExclusive(&files_lock); return FindNextFileW(handle, output); }
+    BOOL result = output ? search_next(search, output) : fail(ERROR_INVALID_PARAMETER);
+    DWORD error = GetLastError(); ReleaseSRWLockExclusive(&files_lock); SetLastError(error); return result;
+}
+BOOL WINAPI gpw_FindClose(HANDLE handle) {
+    AcquireSRWLockExclusive(&files_lock); gpw_search *search = find_search(handle);
+    if (!search) { ReleaseSRWLockExclusive(&files_lock); return FindClose(handle); }
+    int32_t rc = gp_media_close(search->media);
+    if (rc) { ReleaseSRWLockExclusive(&files_lock); return fail(media_error(rc)); }
+    BOOL result = CloseHandle(handle); DWORD error = GetLastError(); memset(search, 0, sizeof *search);
+    ReleaseSRWLockExclusive(&files_lock); SetLastError(error); return result;
+}
