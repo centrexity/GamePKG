@@ -271,11 +271,15 @@ mod tests {
             fs::read_dir(kit.directory().join("prepared/src"))
                 .unwrap()
                 .count(),
-            485
+            487
         );
         assert!(kit
             .directory()
             .join("prepared/src/recomp_dispatch.rs")
+            .is_file());
+        assert!(kit
+            .directory()
+            .join("prepared/src/gamepkg_native_mxcsr.rs")
             .is_file());
     }
 }
