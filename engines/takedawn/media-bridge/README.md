@@ -122,7 +122,12 @@ isolated Wine boot transfers an inherited read-only ISO handle while deliberatel
 setting an invalid legacy filename. It verifies all 716 files, loads the XBE,
 initializes Vulkan and reaches 1,721 presented intro frames before an intentional
 35-second end. This qualifies the handle handoff, rather than a completed race
-or the app's process owner. The earlier gameplay checks above used the first build.
+or the app's process owner. The updated build also passes all 21 original Xbox
+race assertions in a separate 92-second Wine regression: right-trigger
+acceleration increases speed by 15.0 m/s, pause/resume works and Quit returns to
+the front end. That race uses legacy Unicode path admission; inherited-handle
+admission is qualified separately by the boot probe. The other gameplay checks
+above used the first build.
 
 Native Windows CI also runs the actual Rust disc-reader/media tests: 17 pass
 on each MSVC architecture and 16 on Linux in
