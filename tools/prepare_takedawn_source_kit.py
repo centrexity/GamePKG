@@ -34,6 +34,16 @@ def main():
     conversion = json.loads((prepared / 'conversion.json').read_text())
     recovery = conversion.get('recovered_paths')
     functions, units = (24003, 485) if recovery else (24001, 484)
+    native_exports = 24030
+    if conversion.get('native_mxcsr'):
+        from takedawn_native_mxcsr import receipt
+        expected_mxcsr = receipt(project, {'recomp_0004_018': ['001DD63F', '001DD652']})
+        if conversion['native_mxcsr'] != expected_mxcsr:
+            raise RuntimeError('unsupported native MXCSR adaptation')
+        if sha(prepared / 'src/gamepkg_native_mxcsr.rs') != expected_mxcsr['implementation_sha256']:
+            raise RuntimeError('prepared native MXCSR implementation differs')
+        units += 1
+        native_exports += 2
     if recovery:
         spec = project / 'engines/takedawn/rust-port/recovered-paths.json'
         if (recovery['specification_sha256'] != sha(spec)
@@ -45,7 +55,7 @@ def main():
             or conversion['toolkit_commit'] != lock['toolkit']['commit']
             or conversion['generated_game_functions'] != functions
             or conversion['translation_units'] != units
-            or len(conversion['exports']) != 24030):
+            or len(conversion['exports']) != native_exports):
         raise RuntimeError('unsupported prepared game inventory')
     for name, digest in conversion['rust_sources'].items():
         if Path(name).name != name or sha(prepared / 'src' / name) != digest:
@@ -129,7 +139,7 @@ def main():
         copy(config, 'host/engines/takedawn/media-bridge/.cargo/config.toml')
     manifest = {'format': 'gamepkg-takedawn-source-kit-v1', 'game_commit': lock['game']['commit'],
                 'toolkit_commit': lock['toolkit']['commit'], 'generated_game_functions': functions,
-                'native_exports': 24030, 'files': files,
+                'native_exports': native_exports, 'files': files,
                 'omitted_maintainer_fixtures': ['toolkit/tools/conformance/test.xbe']}
     data = json.dumps(manifest, sort_keys=True, indent=2).encode()
     (output / 'kit.json').write_bytes(data)

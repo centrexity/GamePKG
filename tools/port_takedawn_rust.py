@@ -28,6 +28,8 @@ parser.add_argument('--structured-unit', action='append', default=['recomp_0021_
 parser.add_argument('--reuse', type=Path, help='Reuse matching successful raw conversions from a private earlier attempt')
 parser.add_argument('--recover-gameplay-paths', type=Path, metavar='ISO',
                     help='Recover reviewed missing native paths from the supported ISO in RAM')
+parser.add_argument('--native-mxcsr', action='store_true',
+                    help='Restore the reviewed native SSE setup pair using real x86 control state')
 args = parser.parse_args()
 project = Path(__file__).resolve().parents[1]
 lock = json.loads((project / 'engines/takedawn/upstream-lock.json').read_text())
@@ -101,6 +103,17 @@ inputs['recomp_manual.c'] = hashlib.sha256(manual.read_bytes()).hexdigest()
 unit = split / manual.name
 unit.write_bytes(manual.read_bytes())
 units.append((unit, []))
+
+mxcsr = None
+if args.native_mxcsr:
+    from takedawn_native_mxcsr import adapt, receipt
+    adapted = {}
+    for unit, _ in units:
+        text, seen = adapt(unit.read_text())
+        if seen:
+            unit.write_text(text)
+            adapted[unit.stem] = seen
+    mxcsr = receipt(project, adapted)
 
 unknown_structured = set(args.structured_unit) - {unit.stem for unit, _ in units}
 if unknown_structured:
@@ -186,6 +199,17 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
             exports.add(name)
 if not expected.issubset(exports):
     raise RuntimeError('converted export set is incomplete')
+prepared_units = [unit.stem for unit, _ in units]
+if mxcsr:
+    # A reviewed leaf Rust unit owns the actual native control instructions.
+    # Generated game bodies remain Rust; no C shim implements game behavior.
+    name = 'gamepkg_native_mxcsr'
+    if exports.intersection(mxcsr['native_exports']):
+        raise RuntimeError('duplicate native MXCSR support symbol')
+    (rust / (name + '.rs')).write_bytes(
+        (project / 'engines/takedawn/rust-port/native_mxcsr.rs').read_bytes())
+    prepared_units.append(name)
+    exports.update(mxcsr['native_exports'])
 shim = '#define RECOMP_GENERATED_CODE\n#include "recomp_types.h"\n'
 for name in sorted(tls):
     if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', name):
@@ -194,7 +218,7 @@ for name in sorted(tls):
 (output / 'native_tls.c').write_text(shim)
 # Compile independent prepared units with a stable Rust build script. A single
 # enormous module tree multiplies compiler memory and cannot reuse unit objects.
-(output / 'units.txt').write_text(''.join(unit.stem + '\n' for unit, _ in units))
+(output / 'units.txt').write_text(''.join(name + '\n' for name in prepared_units))
 (rust / 'lib.rs').write_text('// Prepared game units are bundled by build.rs.\n')
 (output / 'build.rs').write_bytes((project / 'engines/takedawn/rust-port/prepared-build.rs').read_bytes())
 (output / 'Cargo.toml').write_text('''[package]
@@ -212,7 +236,7 @@ panic = "abort"
 ''')
 manifest = {'game_commit': lock['game']['commit'], 'toolkit_commit': lock['toolkit']['commit'],
             'c_stamp': stamp, 'c_sources': inputs, 'generated_game_functions': len(expected),
-            'translation_units': len(units), 'control_flow_preparation': strategies, 'exports': sorted(exports), 'thread_locals': tls,
+            'translation_units': len(prepared_units), 'control_flow_preparation': strategies, 'exports': sorted(exports), 'thread_locals': tls,
             'rust_sources': {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
                              for p in sorted(rust.glob('*.rs'))}}
 manifest['prepared_files'] = {name: hashlib.sha256((output / name).read_bytes()).hexdigest()
@@ -227,6 +251,8 @@ manifest['preparation'] = {
 }
 if recovery:
     manifest['recovered_paths'] = recovery
+if mxcsr:
+    manifest['native_mxcsr'] = mxcsr
 (output / 'conversion.json').write_text(json.dumps(manifest, indent=2))
-print(f'Converted all {len(expected)} game functions into {len(units)} Rust units.', flush=True)
+print(f'Prepared all {len(expected)} game functions in {len(prepared_units)} Rust units.', flush=True)
 print('Compilation, C/Rust behavior comparison and gameplay validation remain required.', flush=True)

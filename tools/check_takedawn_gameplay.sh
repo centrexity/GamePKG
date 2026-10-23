@@ -100,6 +100,10 @@ if grep -aEq '\[STUB\] unresolved 0x' "$task_state/run/log.txt" "$task_state/run
     echo "FAIL: gameplay reached an unresolved upstream game-function stub" >> "$task_state/driver.log"
     task_result=1
 fi
+if grep -aEq '\[UNIMPL\].*(stmxcsr|ldmxcsr)' "$task_state/run/log.txt" "$task_state/run/out.txt" 2>/dev/null; then
+    echo "FAIL: gameplay skipped the original native SSE control setup" >> "$task_state/driver.log"
+    task_result=1
+fi
 printf 'exit_code=%s\nscheme=%s\nevent=%s\nnative_sha256=%s\n' \
     "$task_result" "$task_scheme" "$task_event" "$(sha256sum "$task_binary" | cut -d' ' -f1)" \
     > "$task_state/result.txt"

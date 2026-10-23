@@ -848,6 +848,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.89.0
         with:
           targets: i686-unknown-linux-gnu
+      - name: Execute reviewed native SSE control on Linux 64-bit and 32-bit
+        run: |
+          python3 tools/check_takedawn_native_mxcsr.py
+          python3 tools/check_takedawn_native_mxcsr.py --target i686-unknown-linux-gnu
       - name: Execute production controller look timing as ELF32
         run: python3 tools/check_controller_look.py --32-bit
       - name: Execute production touch camera with real egui as ELF32

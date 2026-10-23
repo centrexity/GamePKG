@@ -22,6 +22,7 @@ Build this directory's maintainer tool with Cargo, then run:
 python3 tools/port_takedawn_rust.py \
   --source /private/pinned/takedawn --toolkit /private/pinned/xboxrecomp \
   --c2rust /private/tools/c2rust --normalizer /path/to/gamepkg-takedawn-rust-port \
+  --recover-gameplay-paths /path/to/owned.iso --native-mxcsr \
   --output /tmp/private-mode-700-directory/new-conversion
 ```
 
@@ -96,11 +97,35 @@ race assertions, including trigger acceleration, pause/resume and Quit > Yes
 returning to the front end, with unresolved-stub logging enabled. The same
 executable passes the PS2-layout Crash impact/results/Continue assertions and
 the signed-package Play, remembered ISO, failed-disc recovery and history gate.
-The new kit
-contains 4,238 verified files; 483 unchanged Rust unit checkpoints were
+The v7 kit contains 4,238 verified files; 483 unchanged Rust unit checkpoints were
 individually verified before reuse and both changed/new units compiled afresh.
 No runtime/build inputs or other Rust units changed. The earlier v6 results
 below remain baseline evidence.
+
+The v8 candidate also restores the original SSE control setup at `0x001DD63F`
+and `0x001DD652`. The baseline logged both instructions as reached no-ops:
+the native engine never received the game's requested flush-to-zero setting.
+Maintainer preparation replaces only those exact two sites with calls to a
+reviewed Rust leaf unit using the real host `STMXCSR` and `LDMXCSR` instructions.
+The original read, stack writes, bitwise OR and load order remain intact.
+This changes the existing native OS thread's floating-point state, shared with
+the original engine. It adds no software CPU or arithmetic decoder.
+
+`tools/check_takedawn_native_mxcsr.py` passes 512 cases on actual Linux x86-64
+and i686, with both Clang and GCC references. It checks all four rounding modes,
+all 64 sticky-status combinations, FTZ and subnormal results, the original
+read/OR/load sequence, 8,192 thread-local reads, and matching hardware faults
+for reserved bits. Preparation rejects duplicate or incomplete setup pairs.
+The inventory becomes 486 Rust units: all 24,030 original game/runtime exports
+remain, alongside two named native-control helpers, for 24,032 exports total.
+The full native kit remains qualified only for Linux x86-64; a 32-bit helper
+fixture does not establish complete 32-bit game support.
+The v8 signed-package native Build/integrity and Play/remembered ISO/failed-disc
+recovery/history checks pass. Its actual executable passes the original Xbox
+race controls, with neither former SSE no-op diagnostic present. The gameplay
+gate now rejects either diagnostic; it demonstrably rejects the prior v7 log.
+The same v8 executable passes the PS2-layout Crash impact, results and Continue
+assertions with the new guard enabled. No remaining unresolved stub is reached.
 
 The full native runtime built through `attach.cmake` with the prepared Rust
 archive. Its actual build commands contain neither Python nor generated C game

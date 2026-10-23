@@ -59,8 +59,10 @@ fn mono_signed_package_worker_controls_and_full_output_match_sdl() {
     assert!(original.status.success());
     assert!(original
         .stdout
-        .chunks_exact(2)
-        .any(|sample| sample != [0, 0]));
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .any(|sample| *sample != [0, 0]));
     let mixer = temporary.path().join("mixer.s16");
     std::fs::write(&mixer, &original.stdout).unwrap();
     let (_package_root, package) = music_fixture::signed_music_package(std::slice::from_ref(&path));
