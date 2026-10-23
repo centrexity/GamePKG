@@ -88,21 +88,27 @@ pub fn cache_path(root: &Path, id: &str) -> Result<PathBuf> {
             &crate::verify::digest(&bytes),
         ));
     }
-    if manifest.builtin_engine.as_deref() == Some(crate::opence::PROFILE) {
-        return Ok(crate::opence::binary_path(
+    if let Some(engine) = manifest
+        .builtin_engine
+        .as_deref()
+        .and_then(crate::external_engine::get)
+    {
+        return Ok(crate::external_engine::cached_binary(
             root,
             &crate::verify::digest(&bytes),
+            engine,
         ));
     }
     Ok(path_for_digest(root, &crate::verify::digest(&bytes)))
 }
 pub fn is_built(root: &Path, id: &str) -> Result<bool> {
-    if crate::registry::installed_manifest(root, id)?
+    let manifest = crate::registry::installed_manifest(root, id)?;
+    if let Some(engine) = manifest
         .builtin_engine
         .as_deref()
-        == Some(crate::opence::PROFILE)
+        .and_then(crate::external_engine::get)
     {
-        return crate::opence::cache_ready(&cache_path(root, id)?);
+        return crate::external_engine::cache_ready(&cache_path(root, id)?, engine);
     }
     let path = cache_path(root, id)?;
     let Ok(bytes) = crate::files::read_regular(&path, 64 * 1048576, false) else {
@@ -114,39 +120,36 @@ pub fn is_built(root: &Path, id: &str) -> Result<bool> {
     )
 }
 pub fn compile(root: &Path, id: &str) -> Result<()> {
+    compile_for(root, id, None)
+}
+
+/// `engine_target` selects a reviewed external-engine target such as `linux-i686`.
+/// Other engines reject it. `None` uses the host's ready target, then any ready
+/// target for this operating system.
+pub fn compile_for(root: &Path, id: &str, engine_target: Option<&str>) -> Result<()> {
+    let manifest = crate::registry::installed_manifest(root, id)?;
+    if manifest
+        .builtin_engine
+        .as_deref()
+        .and_then(crate::external_engine::get)
+        .is_some()
+    {
+        return crate::external_engine::build::compile_package(root, id, engine_target);
+    }
+    if engine_target.is_some() {
+        bail!("--engine-target applies only to a reviewed external engine");
+    }
     #[cfg(target_os = "linux")]
     {
-        if crate::registry::installed_manifest(root, id)?
-            .builtin_engine
-            .as_deref()
-            == Some(crate::cube2::PROFILE)
-        {
+        if manifest.builtin_engine.as_deref() == Some(crate::cube2::PROFILE) {
             return crate::cube2::build::compile_package(root, id);
-        }
-        if crate::registry::installed_manifest(root, id)?
-            .builtin_engine
-            .as_deref()
-            == Some(crate::opence::PROFILE)
-        {
-            return crate::opence::build::compile_package(root, id);
         }
         build::compile(root, id)
     }
     #[cfg(not(target_os = "linux"))]
     {
-        if crate::registry::installed_manifest(root, id)?
-            .builtin_engine
-            .as_deref()
-            == Some(crate::cube2::PROFILE)
-        {
+        if manifest.builtin_engine.as_deref() == Some(crate::cube2::PROFILE) {
             bail!("Cube 2 currently requires Linux native process isolation");
-        }
-        if crate::registry::installed_manifest(root, id)?
-            .builtin_engine
-            .as_deref()
-            == Some(crate::opence::PROFILE)
-        {
-            bail!("OpenCE currently requires Linux to build and run its 32-bit engine");
         }
         let _ = (root, id);
         bail!("native game isolation is not available on this platform; choose the separate Wasm build")

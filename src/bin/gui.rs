@@ -38,15 +38,19 @@ fn main() -> eframe::Result {
             if gamepkg::registry::installed_manifest(&root, id)
                 .ok()
                 .is_some_and(|manifest| {
-                    manifest.builtin_engine.as_deref() == Some(gamepkg::opence::PROFILE)
+                    manifest
+                        .builtin_engine
+                        .as_deref()
+                        .and_then(gamepkg::external_engine::get)
+                        .is_some()
                 })
             {
                 if args.target.as_deref() == Some("wasm") {
                     return Err(eframe::Error::AppCreation(Box::new(std::io::Error::other(
-                        "OpenCE has no Wasm build. Play it with the native target.",
+                        "this external engine has no Wasm build. Play it with the native target.",
                     ))));
                 }
-                gamepkg::opence::launch(&root, id).map_err(|error| {
+                gamepkg::external_engine::launch(&root, id).map_err(|error| {
                     eframe::Error::AppCreation(Box::new(std::io::Error::other(error.to_string())))
                 })?;
                 return Ok(());

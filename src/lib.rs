@@ -107,8 +107,8 @@ mod random;
 pub mod app_updates;
 #[doc(hidden)]
 pub mod cube2;
+pub mod external_engine;
 pub mod game_data;
-pub mod opence;
 
 pub mod user_files;
 
