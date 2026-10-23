@@ -11,7 +11,10 @@ maintainer-only; players use the prepared source kit.
 `windows_file.c` provides read-only Windows file handles over the same verified
 media API. Real waitable handles preserve synchronous file completion. The core
 supports reads, independent positions, explicit-offset reads, 64-bit offsets,
-metadata, sharing checks, close/cleanup and read-only rejection. Virtual paths
+metadata, sharing checks, close/cleanup and read-only rejection. Directory
+searches have independent verified-reader cursors and native Windows DOS
+wildcard matching; they create no placeholder files. Rename/delete/create and
+handle-based mutation calls also reject disc writes. Virtual paths
 reject traversal, alternate streams and malformed components before any host
 fallback. The underlying Rust reader remains bounded; the adapter keeps logical
 positions beyond EOF without asking that reader to access bytes beyond a file.
@@ -34,10 +37,38 @@ alongside the Linux Rust stream tests. This is an adapter qualification fixture,
 not a full Windows game test. It follows the
 [Windows file-position contract](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-setfilepointerex);
 backing-filesystem maximum offsets are separate from API arithmetic overflow.
+The expanded directory/mutation oracle also passes on native MSVC 32/64-bit in
+[40025766359](https://github.com/centrexity/GamePKG/actions/runs/40025766359).
+It compares 17 literal/wildcard/case/Unicode search patterns with actual Windows
+directory results, along with independent cursors, closed search rejection,
+metadata, disc mutation rejection, integrity failures and resource cleanup.
+Search objects remain distinct from waitable file handles, including after
+close. Wildcard translation references the .NET runtime's
+`System.IO.Enumeration.FileSystemName.TranslateWin32Expression`; the MIT notice
+is retained in `DotNET-RUNTIME-LICENSE.txt`. Native Windows oracle behavior is
+decisive where a reference algorithm or Wine differs. Matching uses Microsoft's
+[RtlIsNameInExpression](https://learn.microsoft.com/en-us/windows/win32/devnotes/rtlisnameinexpression).
 
-The Windows core is not yet selected by `attach.cmake`. Directory enumeration,
-the original runtime's startup/SDL stream reads, pinned Windows source staging,
-process isolation and complete native linking/gameplay remain required. The
+`adapt_windows_file.cmake` stages the exact pinned original `kernel_file.c`,
+routing all 53 calls across 19 reviewed Win32 APIs through this adapter. The
+stager never edits upstream and refuses changed revisions. The maintainer gate
+also reverses the routing and demands byte-for-byte original source equality,
+checks in-place/modified-input rejection, and compiles the staged original:
+
+```sh
+python3 tools/check_takedawn_windows_kernel.py --source /path/to/pinned/xboxrecomp
+python3 tools/check_takedawn_windows_kernel.py --source /path/to/pinned/xboxrecomp --target i686-pc-windows-gnu
+```
+
+Both GNU cross-target compile gates pass locally. Native MSVC 32/64-bit staging,
+compile and expanded directory/mutation tests all pass in
+[40025914890](https://github.com/centrexity/GamePKG/actions/runs/40025914890).
+CI checks out the exact upstream commit and uses its canonical source bytes.
+Python remains a maintainer test tool.
+
+The Windows core is not yet selected by `attach.cmake`. The original runtime's
+startup/SDL stream reads, final build attachment, process isolation and complete
+native linking/gameplay remain required. The
 player kit stays at its verified Linux pin until that integration is qualified.
 
 ## Earlier reference bring-up
