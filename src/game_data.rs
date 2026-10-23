@@ -1,6 +1,6 @@
 //! Host-only remembered data folders, scoped to signed creator and declaration.
 use crate::manifest::Manifest;
-use anyhow::{ensure, Context, Result};
+use anyhow::{bail, ensure, Context, Result};
 use std::{
     collections::BTreeMap,
     io::Write,
@@ -8,11 +8,10 @@ use std::{
 };
 pub(crate) fn identity(manifest: &Manifest) -> Result<String> {
     ensure!(
-        manifest.game_data.is_some()
-            && matches!(
-                manifest.builtin_engine.as_deref(),
-                Some(crate::cube2::PROFILE | crate::opence::PROFILE)
-            ),
+        manifest.game_data.as_ref().is_some_and(|data| {
+            manifest.builtin_engine.as_deref() == Some(crate::cube2::PROFILE)
+                || !data.layouts.is_empty()
+        }),
         "this game does not request a supported data folder"
     );
     Ok(crate::verify::digest(&serde_json::to_vec(&(
@@ -46,12 +45,174 @@ pub fn load(root: &Path, manifest: &Manifest) -> Result<Option<PathBuf>> {
     Ok(read(root)?.remove(&identity(manifest)?).map(PathBuf::from))
 }
 pub fn available_for(manifest: &Manifest, path: &Path) -> bool {
-    if manifest.builtin_engine.as_deref() == Some(crate::opence::PROFILE) {
-        crate::opence::classify(path).is_ok()
-    } else {
-        available(path)
+    if let Some(data) = &manifest.game_data {
+        if !data.layouts.is_empty() {
+            return matches(path, &data.layouts).is_ok();
+        }
+    }
+    available(path)
+}
+pub fn validate_layouts(layouts: &[crate::manifest::DataLayout]) -> Result<()> {
+    ensure!(
+        !layouts.is_empty() && layouts.len() <= 8,
+        "an external engine needs one to eight data layouts"
+    );
+    for layout in layouts {
+        ensure!(
+            matches!(layout.placement.as_str(), "link" | "beside"),
+            "data layout placement must be link or beside"
+        );
+        ensure!(
+            layout.directories.len() <= 16
+                && layout.paths.len() <= 32
+                && layout.extensions.len() <= 16,
+            "data layout is too large"
+        );
+        for value in layout.directories.iter().chain(&layout.paths) {
+            let path = Path::new(value);
+            ensure!(
+                !value.is_empty()
+                    && value.len() <= 256
+                    && !path.is_absolute()
+                    && !value.contains('\\')
+                    && !value
+                        .split('/')
+                        .any(|part| part.is_empty() || part == "." || part == ".."),
+                "data layout paths must be relative and cannot contain .."
+            );
+        }
+        for extension in &layout.extensions {
+            ensure!(
+                !extension.is_empty()
+                    && extension.len() <= 8
+                    && extension.bytes().all(|byte| byte.is_ascii_alphanumeric()),
+                "data layout extension must be short and alphanumeric"
+            );
+        }
+        if let (Some(min), Some(max)) = (layout.min_bytes, layout.max_bytes) {
+            ensure!(
+                min <= max && max <= 8 * 1024 * 1024 * 1024,
+                "data layout size bounds are invalid"
+            );
+        }
+        match layout.placement.as_str() {
+            "link" => ensure!(
+                !layout.directories.is_empty() || !layout.paths.is_empty(),
+                "a link layout needs directories or paths"
+            ),
+            "beside" => ensure!(
+                !layout.extensions.is_empty() && layout.directories.is_empty(),
+                "a beside layout names file extensions only"
+            ),
+            _ => unreachable!(),
+        }
+    }
+    Ok(())
+}
+
+/// A player folder that satisfied one reviewed layout. The first match wins.
+#[derive(Debug)]
+pub enum DataMatch {
+    Link {
+        root: PathBuf,
+        directories: Vec<String>,
+    },
+    Beside {
+        file: PathBuf,
+    },
+}
+
+pub fn matches(path: &Path, layouts: &[crate::manifest::DataLayout]) -> Result<DataMatch> {
+    let path = std::fs::canonicalize(path).context("choose the game-data folder")?;
+    ensure!(path.is_dir(), "game data must be a folder");
+    let mut notes = Vec::new();
+    for layout in layouts {
+        match try_layout(&path, layout) {
+            Ok(found) => return Ok(found),
+            Err(error) => notes.push(error.to_string()),
+        }
+    }
+    bail!(
+        "the selected folder does not match this game's data layout{}",
+        if notes.is_empty() {
+            String::new()
+        } else {
+            format!(": {}", notes.join("; "))
+        }
+    )
+}
+
+fn try_layout(root: &Path, layout: &crate::manifest::DataLayout) -> Result<DataMatch> {
+    let min = layout.min_bytes.unwrap_or(0);
+    let max = layout.max_bytes.unwrap_or(8 * 1024 * 1024 * 1024);
+    match layout.placement.as_str() {
+        "link" => {
+            for directory in &layout.directories {
+                let metadata = root
+                    .join(directory)
+                    .symlink_metadata()
+                    .with_context(|| format!("the folder needs a real {directory} directory"))?;
+                ensure!(
+                    metadata.is_dir() && !metadata.file_type().is_symlink(),
+                    "{directory} must be a real directory, not a link"
+                );
+            }
+            for relative in &layout.paths {
+                let metadata = root
+                    .join(relative)
+                    .symlink_metadata()
+                    .with_context(|| format!("the folder needs {relative}"))?;
+                ensure!(
+                    metadata.is_file() && !metadata.file_type().is_symlink(),
+                    "{relative} must be a regular file"
+                );
+                ensure!(
+                    (min..=max).contains(&metadata.len()),
+                    "{relative} is outside the reviewed size range"
+                );
+            }
+            Ok(DataMatch::Link {
+                root: root.to_path_buf(),
+                directories: layout.directories.clone(),
+            })
+        }
+        "beside" => {
+            let mut files = Vec::new();
+            for entry in std::fs::read_dir(root).context("read the game-data folder")? {
+                let entry = entry?;
+                let name = entry.file_name().to_string_lossy().to_ascii_lowercase();
+                let extension = name.rsplit_once('.').map(|(_, extension)| extension);
+                if !extension.is_some_and(|extension| {
+                    layout
+                        .extensions
+                        .iter()
+                        .any(|expected| expected == extension)
+                }) {
+                    continue;
+                }
+                let metadata = std::fs::symlink_metadata(entry.path())?;
+                ensure!(
+                    metadata.is_file() && !metadata.file_type().is_symlink(),
+                    "game data archive must be a regular file, not a link"
+                );
+                ensure!(
+                    (min..=max).contains(&metadata.len()),
+                    "game data archive is outside the reviewed size range"
+                );
+                files.push(entry.path());
+            }
+            ensure!(
+                files.len() == 1,
+                "choose a folder with exactly one file matching this layout"
+            );
+            Ok(DataMatch::Beside {
+                file: files.remove(0),
+            })
+        }
+        other => bail!("unsupported data layout {other}"),
     }
 }
+
 pub fn available(path: &Path) -> bool {
     path.is_dir()
         && ["data", "packages"].iter().all(|name| {
@@ -71,15 +232,17 @@ pub fn remember(root: &Path, manifest: &Manifest, path: &Path) -> Result<()> {
         text.len() <= 4096 && !text.chars().any(char::is_control),
         "invalid game-data location"
     );
-    if manifest.builtin_engine.as_deref() == Some(crate::opence::PROFILE) {
-        crate::opence::classify(&path)?;
-    } else {
-        for name in ["data", "packages"] {
-            let metadata = path.join(name).symlink_metadata()?;
-            ensure!(
-                metadata.is_dir() && !metadata.file_type().is_symlink(),
-                "choose the original installation containing real data and packages folders"
-            );
+    if let Some(data) = &manifest.game_data {
+        if !data.layouts.is_empty() {
+            matches(&path, &data.layouts)?;
+        } else {
+            for name in ["data", "packages"] {
+                let metadata = path.join(name).symlink_metadata()?;
+                ensure!(
+                    metadata.is_dir() && !metadata.file_type().is_symlink(),
+                    "choose the original installation containing real data and packages folders"
+                );
+            }
         }
     }
     let mut entries = read(root)?;

@@ -90,10 +90,12 @@ impl Game {
     ) -> Result<Self> {
         settings.validate()?;
         anyhow::ensure!(
-            !matches!(
-                manifest.builtin_engine.as_deref(),
-                Some(crate::cube2::PROFILE | crate::opence::PROFILE)
-            ),
+            manifest.builtin_engine.as_deref() != Some(crate::cube2::PROFILE)
+                && manifest
+                    .builtin_engine
+                    .as_deref()
+                    .and_then(crate::external_engine::get)
+                    .is_none(),
             "this engine runs from its verified native cache, not a Wasm module"
         );
         if !matches!(
