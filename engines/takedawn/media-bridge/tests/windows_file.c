@@ -139,6 +139,7 @@ int main(void) {
     compare_seek(disc, native, 19, FILE_END);
     compare_read(disc, native, 19, 0, 0);
     compare_read(disc, native, 1, 1, UINT64_C(0x100000007));
+    compare_seek(disc, native, INT64_C(0x100000007), FILE_BEGIN);
     /* Overflow from a valid >4 GiB position is an API arithmetic case. An
      * absolute INT64_MAX seek instead tests the backing filesystem's own
      * maximum offset (Wine's host filesystem and NTFS may differ). */
