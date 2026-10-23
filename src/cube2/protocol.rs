@@ -68,13 +68,19 @@ pub fn save_path(path: &str) -> bool {
     {
         return false;
     }
-    matches!(path, "config.cfg" | "init.cfg" | "servers.cfg" | "auth.cfg")
-        || (path.starts_with("packages/")
-            && parts.len() >= 3
-            && [".ogz", ".cfg", ".BAK", ".jpg", ".png"]
-                .iter()
-                .any(|s| path.ends_with(s)))
-        || ((path.starts_with("demo/") || path.starts_with("demos/")) && path.ends_with(".dmo"))
+    matches!(
+        path,
+        "config.cfg" | "init.cfg" | "servers.cfg" | "auth.cfg" | "autoexec.cfg"
+    ) || (path.starts_with("packages/")
+        && parts.len() >= 3
+        && [".ogz", ".cfg", ".BAK", ".jpg", ".png"]
+            .iter()
+            .any(|s| path.ends_with(s)))
+        || path
+            .get(path.len().saturating_sub(4)..)
+            .is_some_and(|extension| {
+                extension.eq_ignore_ascii_case(".dmo") || extension.eq_ignore_ascii_case(".avi")
+            })
 }
 
 #[derive(Debug)]
@@ -554,6 +560,7 @@ mod tests {
     fn saved_file_paths_reject_escape_encodings_hidden_files_and_other_content() {
         for path in [
             "auth.cfg",
+            "autoexec.cfg",
             "config.cfg",
             "init.cfg",
             "servers.cfg",
@@ -563,6 +570,11 @@ mod tests {
             "packages/base/map.jpg",
             "packages/base/map.png",
             "demos/match.dmo",
+            "PortRoot.DMO",
+            "PortMovie.AVI",
+            "recordings/movie.aVi",
+            "recordings/PortCustom.dMo",
+            "captures/matches/one.dmo",
         ] {
             assert!(save_path(path), "rejected {path}");
         }
@@ -591,9 +603,21 @@ mod tests {
             "packages/base/map.so",
             "packages/base/map.ogz.exe",
             "data/autoexec.cfg",
-            "autoexec.cfg",
+            "autoexec.cfg.exe",
+            "Autoexec.cfg",
+            "startup/autoexec.cfg",
+            "other.cfg",
             "packages/map.ogz",
             "demos/../map.dmo",
+            "recordings/../escape.DMO",
+            "recordings/.private/demo.DMO",
+            "recordings/demo.DMO.exe",
+            "../movie.AVI",
+            "recordings/.private/movie.avi",
+            "recordings/movie.avi.exe",
+            "/root.DMO",
+            "../root.DMO",
+            "recordings/a/b/c/d/e/demo.DMO",
             "demos/map.cfg",
             "packages/a/b/c/d/e/f.ogz",
         ] {

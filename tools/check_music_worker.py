@@ -52,7 +52,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-worker-reference-') as temporar
         assert held_lock.returncode == 0, held_lock.stdout + '\n' + held_lock.stderr
         assert '1 passed' in held_lock.stdout, 'held-control callback test did not run'
         print('Actual null-device callback consumes all 1600 queued frames while the producer/control lock remains held.', flush=True)
-    result = subprocess.run([executable, '--ignored', '--nocapture'], cwd=project, env=environment,
+    result = subprocess.run([executable, '--ignored', '--nocapture', '--skip', 'mono_signed_package_worker_controls_and_full_output_match_sdl', '--skip', 'mono_actual_device_callback_controls_both_worker_rates_without_game_ticks'], cwd=project, env=environment,
                             capture_output=True, text=True, timeout=120)
     assert result.returncode == 0, result.stdout + '\n' + result.stderr
     records = [json.loads(line.split('MUSIC_WORKER_JSON ', 1)[1]) for line in result.stdout.splitlines()

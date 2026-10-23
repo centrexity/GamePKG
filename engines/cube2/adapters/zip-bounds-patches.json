@@ -1,0 +1,62 @@
+[
+  {
+    "file": "shared/zip.cpp",
+    "before": "#include \"cube.h\"",
+    "after": "#include \"cube.h\"\n#include \"gamepkg_zip_bounds.h\""
+  },
+  {
+    "file": "shared/zip.cpp",
+    "before": "    uchar *buf = new (false) uchar[size], *src = buf;",
+    "after": "    if(fseek(f, 0, SEEK_END) < 0 || !gamepkg_zip_directory_valid(ftell(f), offset, size, entries)) return false;\n    uchar *buf = new (false) uchar[size], *src = buf;"
+  },
+  {
+    "file": "shared/zip.cpp",
+    "before": "        if(src + ZIP_FILE_SIZE > &buf[size]) break;",
+    "after": "        if(size_t(&buf[size] - src) < ZIP_FILE_SIZE) { delete[] buf; return false; }"
+  },
+  {
+    "file": "shared/zip.cpp",
+    "before": "        if(hdr.signature != ZIP_FILE_SIGNATURE) break;",
+    "after": "        if(hdr.signature != ZIP_FILE_SIGNATURE ||\n            !gamepkg_zip_entry_valid(size_t(&buf[size] - src), hdr.namelength, hdr.extralength, hdr.commentlength))\n        { delete[] buf; return false; }"
+  },
+  {
+    "file": "shared/zip.cpp",
+    "before": "    const uint signature = lilswap<uint>(ZIP_DIRECTORY_SIGNATURE);",
+    "after": "    // Signature reads use explicit little-endian bytes, independent of alignment."
+  },
+  {
+    "file": "shared/zip.cpp",
+    "before": "        uchar *search = &buf[next-1];\n        for(; search >= buf; search--) if(*(uint *)search == signature) break; \n        if(search >= buf) { src = search; break; }",
+    "after": "        int found = gamepkg_zip_find_end(buf, unsigned(len), unsigned(next), (unsigned long long)gamepkg_file_end - offset - len);\n        if(found >= 0) { src = &buf[found]; break; }"
+  },
+  {
+    "file": "shared/zip.cpp",
+    "before": "    hdr.signature = lilswap(*(uint *)src); src += 4;\n    hdr.disknumber = lilswap(*(ushort *)src); src += 2;\n    hdr.directorydisk = lilswap(*(ushort *)src); src += 2;\n    hdr.diskentries = lilswap(*(ushort *)src); src += 2;\n    hdr.entries = lilswap(*(ushort *)src); src += 2;\n    hdr.size = lilswap(*(uint *)src); src += 4;\n    hdr.offset = lilswap(*(uint *)src); src += 4;\n    hdr.commentlength = lilswap(*(ushort *)src); src += 2;",
+    "after": "    hdr.signature = gamepkg_zip_u32(src); src += 4;\n    hdr.disknumber = gamepkg_zip_u16(src); src += 2;\n    hdr.directorydisk = gamepkg_zip_u16(src); src += 2;\n    hdr.diskentries = gamepkg_zip_u16(src); src += 2;\n    hdr.entries = gamepkg_zip_u16(src); src += 2;\n    hdr.size = gamepkg_zip_u32(src); src += 4;\n    hdr.offset = gamepkg_zip_u32(src); src += 4;\n    hdr.commentlength = gamepkg_zip_u16(src); src += 2;"
+  },
+  {
+    "file": "shared/zip.cpp",
+    "before": "        hdr.signature = lilswap(*(uint *)src); src += 4;\n        hdr.version = lilswap(*(ushort *)src); src += 2;\n        hdr.needversion = lilswap(*(ushort *)src); src += 2;\n        hdr.flags = lilswap(*(ushort *)src); src += 2;\n        hdr.compression = lilswap(*(ushort *)src); src += 2;\n        hdr.modtime = lilswap(*(ushort *)src); src += 2;\n        hdr.moddate = lilswap(*(ushort *)src); src += 2;\n        hdr.crc32 = lilswap(*(uint *)src); src += 4;\n        hdr.compressedsize = lilswap(*(uint *)src); src += 4;\n        hdr.uncompressedsize = lilswap(*(uint *)src); src += 4;\n        hdr.namelength = lilswap(*(ushort *)src); src += 2;\n        hdr.extralength = lilswap(*(ushort *)src); src += 2;\n        hdr.commentlength = lilswap(*(ushort *)src); src += 2;\n        hdr.disknumber = lilswap(*(ushort *)src); src += 2;\n        hdr.internalattribs = lilswap(*(ushort *)src); src += 2;\n        hdr.externalattribs = lilswap(*(uint *)src); src += 4;\n        hdr.offset = lilswap(*(uint *)src); src += 4;",
+    "after": "        hdr.signature = gamepkg_zip_u32(src); src += 4;\n        hdr.version = gamepkg_zip_u16(src); src += 2;\n        hdr.needversion = gamepkg_zip_u16(src); src += 2;\n        hdr.flags = gamepkg_zip_u16(src); src += 2;\n        hdr.compression = gamepkg_zip_u16(src); src += 2;\n        hdr.modtime = gamepkg_zip_u16(src); src += 2;\n        hdr.moddate = gamepkg_zip_u16(src); src += 2;\n        hdr.crc32 = gamepkg_zip_u32(src); src += 4;\n        hdr.compressedsize = gamepkg_zip_u32(src); src += 4;\n        hdr.uncompressedsize = gamepkg_zip_u32(src); src += 4;\n        hdr.namelength = gamepkg_zip_u16(src); src += 2;\n        hdr.extralength = gamepkg_zip_u16(src); src += 2;\n        hdr.commentlength = gamepkg_zip_u16(src); src += 2;\n        hdr.disknumber = gamepkg_zip_u16(src); src += 2;\n        hdr.internalattribs = gamepkg_zip_u16(src); src += 2;\n        hdr.externalattribs = gamepkg_zip_u32(src); src += 4;\n        hdr.offset = gamepkg_zip_u32(src); src += 4;"
+  },
+  {
+    "file": "shared/zip.cpp",
+    "before": "    h.signature = lilswap(*(uint *)src); src += 4;\n    h.version = lilswap(*(ushort *)src); src += 2;\n    h.flags = lilswap(*(ushort *)src); src += 2;\n    h.compression = lilswap(*(ushort *)src); src += 2;\n    h.modtime = lilswap(*(ushort *)src); src += 2;\n    h.moddate = lilswap(*(ushort *)src); src += 2;\n    h.crc32 = lilswap(*(uint *)src); src += 4;\n    h.compressedsize = lilswap(*(uint *)src); src += 4;\n    h.uncompressedsize = lilswap(*(uint *)src); src += 4;\n    h.namelength = lilswap(*(ushort *)src); src += 2;\n    h.extralength = lilswap(*(ushort *)src); src += 2;",
+    "after": "    h.signature = gamepkg_zip_u32(src); src += 4;\n    h.version = gamepkg_zip_u16(src); src += 2;\n    h.flags = gamepkg_zip_u16(src); src += 2;\n    h.compression = gamepkg_zip_u16(src); src += 2;\n    h.modtime = gamepkg_zip_u16(src); src += 2;\n    h.moddate = gamepkg_zip_u16(src); src += 2;\n    h.crc32 = gamepkg_zip_u32(src); src += 4;\n    h.compressedsize = gamepkg_zip_u32(src); src += 4;\n    h.uncompressedsize = gamepkg_zip_u32(src); src += 4;\n    h.namelength = gamepkg_zip_u16(src); src += 2;\n    h.extralength = gamepkg_zip_u16(src); src += 2;"
+  },
+  {
+    "file": "shared/zip.cpp",
+    "before": "    long offset = ftell(f);\n    if(offset < 0) return false;",
+    "after": "    long offset = ftell(f);\n    if(offset < 0) return false;\n    const long gamepkg_file_end = offset;"
+  },
+  {
+    "file": "shared/zip.cpp",
+    "before": "            if(!readlocalfileheader(a->data, h, f->header)) return false;\n            f->offset = f->header + ZIP_LOCAL_FILE_SIZE + h.namelength + h.extralength;",
+    "after": "            if(!readlocalfileheader(a->data, h, f->header)) return false;\n            if(h.flags & 1u || h.compression != (f->compressedsize ? Z_DEFLATED : 0)) return false;\n            if(fseek(a->data, 0, SEEK_END) < 0) return false;\n            const long gamepkg_end = ftell(a->data);\n            if(!gamepkg_zip_payload_valid(gamepkg_end, f->header, h.namelength,\n                h.extralength, f->compressedsize ? f->compressedsize : f->size)) return false;\n            f->offset = f->header + ZIP_LOCAL_FILE_SIZE + h.namelength + h.extralength;"
+  },
+  {
+    "file": "shared/zip.cpp",
+    "before": "        zfile.next_out = (Bytef *)buf;\n        zfile.avail_out = len;",
+    "after": "        len = gamepkg_zip_read_size(info->size, zfile.total_out, len);\n        if(!len) { ended = true; return 0; }\n        zfile.next_out = (Bytef *)buf;\n        zfile.avail_out = len;"
+  }
+]

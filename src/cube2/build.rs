@@ -81,12 +81,12 @@ pub fn compile_with_options(optimize: bool) -> Result<Vec<u8>> {
     )?;
     #[derive(serde::Deserialize)]
     #[serde(deny_unknown_fields)]
-    struct LoadingPatch {
+    struct AdaptationPatch {
         file: String,
         before: String,
         after: String,
     }
-    let patches: Vec<LoadingPatch> = serde_json::from_str(include_str!(
+    let patches: Vec<AdaptationPatch> = serde_json::from_str(include_str!(
         "../../engines/cube2/adapters/loading-patches.json"
     ))?;
     for patch in patches {
@@ -99,6 +99,83 @@ pub fn compile_with_options(optimize: bool) -> Result<Vec<u8>> {
         patch_once(&mut text, &patch.before, &patch.after)?;
         fs::write(path, text)?;
     }
+    let movie_patches: Vec<AdaptationPatch> = serde_json::from_str(include_str!(
+        "../../engines/cube2/adapters/movie-audio-patches.json"
+    ))?;
+    for patch in movie_patches {
+        ensure!(
+            patch.file == "engine/movie.cpp",
+            "invalid movie audio adaptation path"
+        );
+        let path = stage.path().join(patch.file);
+        let mut text = fs::read_to_string(&path)?;
+        patch_once(&mut text, &patch.before, &patch.after)?;
+        fs::write(path, text)?;
+    }
+    fs::write(
+        stage.path().join("engine/gamepkg_movie_limit.h"),
+        include_bytes!("../../engines/cube2/adapters/movie_limit.h"),
+    )?;
+    fs::write(
+        stage.path().join("engine/gamepkg_movie_io.h"),
+        include_bytes!("../../engines/cube2/adapters/movie_io.h"),
+    )?;
+    let movie_limits: Vec<AdaptationPatch> = serde_json::from_str(include_str!(
+        "../../engines/cube2/adapters/movie-limit-patches.json"
+    ))?;
+    ensure!(
+        !fs::read_to_string(stage.path().join("engine/movie.cpp"))?
+            .contains("gamepkg_movie_limit.h"),
+        "movie limit adaptation already applied"
+    );
+    for patch in movie_limits {
+        ensure!(
+            patch.file == "engine/movie.cpp",
+            "invalid movie limit adaptation path"
+        );
+        let path = stage.path().join(patch.file);
+        let mut text = fs::read_to_string(&path)?;
+        patch_once(&mut text, &patch.before, &patch.after)?;
+        fs::write(path, text)?;
+    }
+    fs::write(
+        stage.path().join("shared/gamepkg_zip_bounds.h"),
+        include_bytes!("../../engines/cube2/adapters/zip_bounds.h"),
+    )?;
+    ensure!(
+        !fs::read_to_string(stage.path().join("shared/zip.cpp"))?.contains("gamepkg_zip_bounds.h"),
+        "ZIP bounds adaptation already applied"
+    );
+    let zip_patches: Vec<AdaptationPatch> = serde_json::from_str(include_str!(
+        "../../engines/cube2/adapters/zip-bounds-patches.json"
+    ))?;
+    for patch in zip_patches {
+        ensure!(
+            patch.file == "shared/zip.cpp",
+            "invalid ZIP bounds adaptation path"
+        );
+        let path = stage.path().join(patch.file);
+        let mut text = fs::read_to_string(&path)?;
+        patch_once(&mut text, &patch.before, &patch.after)?;
+        fs::write(path, text)?;
+    }
+    let socket_patches: Vec<AdaptationPatch> = serde_json::from_str(include_str!(
+        "../../engines/cube2/adapters/socket-set-patches.json"
+    ))?;
+    for patch in socket_patches {
+        ensure!(
+            patch.file == "enet/include/enet/unix.h",
+            "invalid socket-set adaptation path"
+        );
+        let path = stage.path().join(patch.file);
+        let mut text = fs::read_to_string(&path)?;
+        patch_once(&mut text, &patch.before, &patch.after)?;
+        fs::write(path, text)?;
+    }
+    fs::write(
+        stage.path().join("enet/include/enet/gamepkg_socket_set.h"),
+        include_bytes!("../../engines/cube2/adapters/socket_set.h"),
+    )?;
     let main = stage.path().join("engine/main.cpp");
     fs::write(
         stage.path().join("enet/gamepkg_network.h"),

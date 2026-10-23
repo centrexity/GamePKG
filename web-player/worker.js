@@ -9,6 +9,7 @@ let eventBytes=new Uint8Array();
 // The guest sees only these typed imports, never JavaScript objects or browser APIs.
 let recordedControls=[],recordedReady=false,recordedMusicStatus='stopped',recordedActiveGeneration=null;
 let compressedAssetClass=null;
+let savePending=null;
 let instance, manifest, assets, roms, save, state=0n, commands=[], background=null, unlocks=[],saveDirty=false,saveBudget=0,images=new Map(),imageBudget=0,audioSamples=[],audioChannels=1,shaderCount=0;
 function imageCommand(x,y,w,h,pw,ph,pixels,kind='image'){if(commands.length>=1024||!finite(x,y,w,h)||w<0||h<0||!Number.isInteger(pw)||!Number.isInteger(ph)||pw<1||ph<1||pw>512||ph>512||pixels.length!==pw*ph*4||imageBudget+pixels.length>8388608)return -1;imageBudget+=pixels.length;return command([kind,x,y,w,h,pw,ph,pixels.slice()]);}
 async function prepareImages(precise={},exactNames=[]){
@@ -162,6 +163,7 @@ function audioSubmit(pointer,count,channels){
 const api={
  window_control:windowRequest,
  window_state:windowObservation,
+ window_size:()=>0,
  file_call:(operation,pointer,length,output,capacity)=>{const request=bytes(pointer,length,1048840),out=bytes(output,capacity,65536);if(!request||!out)return -1;const reply=fileCall(operation,request.slice(),capacity);if(!reply)return -1;out.set(reply);return reply.length;},
  input_events:(pointer,capacity)=>{const output=bytes(pointer,capacity,32768);if(!output)return -1;const events=takeEvents(capacity);if(!events)return -1;output.set(events);return events.length;},
  frame_time_us:()=>frameClockValue,
@@ -171,7 +173,16 @@ const api={
  rom_read:(offset,out,length)=>read(roms[0],offset,out,length),rom_read_at:(index,offset,out,length)=>read(roms[index],offset,out,length),
  save_size:()=>manifest.permissions.save?save.length:-1,
  save_read:(offset,out,length)=>manifest.permissions.save?read(save,offset,out,length):-1,
- save_write:(pointer,length)=>{const data=bytes(pointer,length,1048576);if(!manifest.permissions.save||!data)return -1;if(saveBudget+length>1048576)return -1;saveBudget+=length;save=data.slice();saveDirty=true;return 0;},
+ save_chunk:(offset,total,pointer,length)=>{
+  const data=bytes(pointer,length,65536);
+  if(!manifest.permissions.save||!data||!Number.isInteger(offset)||offset<0||!Number.isInteger(total)||total<0||total>1048576||offset+length>total||(length===0&&total!==0)||saveBudget+length>1048576){savePending=null;return -1;}
+  if(offset===0)savePending={total,used:0,bytes:new Uint8Array(total)};
+  if(!savePending||savePending.total!==total||savePending.used!==offset){savePending=null;return -1;}
+  saveBudget+=length;savePending.bytes.set(data,offset);savePending.used+=length;
+  if(savePending.used===total){save=savePending.bytes;savePending=null;saveDirty=true;}
+  return 0;
+ },
+ save_write:(pointer,length)=>{const data=bytes(pointer,length,1048576);if(!manifest.permissions.save||!data)return -1;if(saveBudget+length>1048576)return -1;saveBudget+=length;savePending=null;save=data.slice();saveDirty=true;return 0;},
  draw_clear:rgba=>{background=rgba>>>0;commands=[];return 0;},
  draw_clip:(x,y,w,h)=>[x,y,w,h].every(Number.isFinite)&&x>=0&&y>=0&&w>=0&&h>=0&&x+w<=640&&y+h<=480?command(['clip',x,y,w,h]):-1,
  draw_clip_reset:()=>command(['clip-reset']),
@@ -218,7 +229,7 @@ onmessage=async ({data})=>{try{
   if(windowPending)throw Error('Previous window frame was not acknowledged');
   recordedBegin(data.recordedAudio);frameClockBegin();windowObserve(data.fullscreen);
   eventBytes=manifest.permissions.input?encodeEvents(data.events??[]):new Uint8Array();
-  commands=[];background=null;unlocks=[];saveDirty=false;saveBudget=0;imageBudget=0;audioSamples=[];audioChannels=1;fileTickBegin(data.input);windowBegin(fileGesture);
+  commands=[];background=null;unlocks=[];saveDirty=false;saveBudget=0;savePending=null;imageBudget=0;audioSamples=[];audioChannels=1;fileTickBegin(data.input);windowBegin(fileGesture);
   state=instance.exports[manifest.runtime_profile==='component-v1'?'tick':'gamepkg_tick'](manifest.permissions.input?data.input:0,state);
   if(instance.exports.memory&&instance.exports.memory.buffer.byteLength>manifest.limits.hard_memory_bytes)throw Error('Memory limit exceeded');
   const windowState=windowPrepare();
@@ -240,6 +251,7 @@ function optionBytes(pointer,source,offset,length){
 const canonical={
  'window-control':windowRequest,
  'window-state':windowObservation,
+ 'window-size':()=>0,
  'file-call':(operation,pointer,length,capacity,result)=>{if(!range(result,12)||result%4)throw Error('Invalid result pointer');const request=bytes(pointer,length,1048840);let reply=null;if(request&&Number.isInteger(capacity)&&capacity>=0&&capacity<=65536)reply=fileCall(operation,request.slice(),capacity);let address=0;if(reply?.length){address=instance.exports.cabi_realloc(0,0,1,reply.length)>>>0;if(!range(address,reply.length))throw Error('Invalid allocation');bytes(address,reply.length).set(reply);}const v=new DataView(instance.exports.memory.buffer);v.setInt32(result,reply?reply.length:-1,true);v.setUint32(result+4,address,true);v.setUint32(result+8,reply?.length??0,true);},
  'input-events':(capacity,pointer)=>{if(!range(pointer,12)||pointer%4)throw Error('Invalid result pointer');const events=takeEvents(capacity);optionBytes(pointer,events,0,events?.length??0);},
  'frame-time-us':api.frame_time_us,
@@ -251,6 +263,7 @@ const canonical={
  'rom-read-at':(index,offset,length,pointer)=>optionBytes(pointer,roms[index],offset,length),
  'save-size':pointer=>optionSize(pointer,api.save_size()),
  'save-read':(offset,length,pointer)=>optionBytes(pointer,manifest.permissions.save?save:null,offset,length),
+ 'save-chunk':(offset,total,pointer,length)=>api.save_chunk(offset,total,pointer,length)===0?1:0,
  'save-write':(pointer,length)=>api.save_write(pointer,length)===0?1:0,
  'asset-read':(pointer,length,offset,count,result)=>{const name=assetName(pointer,length);optionBytes(result,name===null?null:assets.get(name),offset,count);},
  'achievement-unlock':api.achievement_unlock,

@@ -7,7 +7,7 @@ mod build;
 mod session;
 #[cfg(target_os = "linux")]
 pub(crate) use session::Session;
-fn cpu_identity() -> &'static str {
+pub(crate) fn cpu_identity() -> &'static str {
     static ID: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     ID.get_or_init(|| {
         use std::io::Read;
@@ -39,6 +39,7 @@ fn sdk_identity() -> &'static str {
                 include_str!("build.rs"),
                 include_str!("guest.rs.txt"),
                 include_str!("engine.rs.txt"),
+                include_str!("pixels.rs.txt"),
                 include_str!("seccomp.rs.txt"),
                 include_str!("../guest_helpers.rs.txt"),
                 include_str!("../network_guest.rs.txt"),
@@ -88,6 +89,12 @@ pub fn cache_path(root: &Path, id: &str) -> Result<PathBuf> {
             &crate::verify::digest(&bytes),
         ));
     }
+    if manifest.builtin_engine.as_deref() == Some(crate::takedawn::PROFILE) {
+        return Ok(crate::takedawn::cache_path(
+            root,
+            &crate::verify::digest(&bytes),
+        ));
+    }
     Ok(path_for_digest(root, &crate::verify::digest(&bytes)))
 }
 pub fn is_built(root: &Path, id: &str) -> Result<bool> {
@@ -106,6 +113,13 @@ pub fn compile(root: &Path, id: &str) -> Result<()> {
         if crate::registry::installed_manifest(root, id)?
             .builtin_engine
             .as_deref()
+            == Some(crate::takedawn::PROFILE)
+        {
+            return crate::takedawn::build::compile_package(root, id);
+        }
+        if crate::registry::installed_manifest(root, id)?
+            .builtin_engine
+            .as_deref()
             == Some(crate::cube2::PROFILE)
         {
             return crate::cube2::build::compile_package(root, id);
@@ -114,6 +128,13 @@ pub fn compile(root: &Path, id: &str) -> Result<()> {
     }
     #[cfg(not(target_os = "linux"))]
     {
+        if crate::registry::installed_manifest(root, id)?
+            .builtin_engine
+            .as_deref()
+            == Some(crate::takedawn::PROFILE)
+        {
+            bail!("Takedawn native process isolation currently requires Linux");
+        }
         if crate::registry::installed_manifest(root, id)?
             .builtin_engine
             .as_deref()
@@ -179,3 +200,6 @@ pub(crate) fn source_flags(source: &str) -> Result<(bool, bool)> {
     flags.visit_file(&syn::parse_file(source)?);
     Ok((flags.draw || flags.shader, flags.shader))
 }
+
+#[cfg(test)]
+mod pixel_tests;

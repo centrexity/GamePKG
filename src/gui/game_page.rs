@@ -1,6 +1,48 @@
 use super::{App, Work};
 use eframe::egui;
 use std::path::PathBuf;
+fn game_file_order(manifest: &crate::manifest::Manifest) -> Vec<usize> {
+    let mut order = (0..manifest.required_rom_count()).collect::<Vec<_>>();
+    if manifest.builtin_engine.as_deref() == Some(crate::doom::PROFILE) && order.len() > 1 {
+        order[1..].sort_by_key(|index| {
+            let mode = manifest
+                .doom_wad_modes
+                .get(index - 1)
+                .copied()
+                .unwrap_or(crate::manifest::DoomWadMode::File) as u32;
+            if mode == 0 {
+                5
+            } else {
+                mode - 1
+            }
+        });
+    }
+    order
+}
+fn game_file_role(manifest: &crate::manifest::Manifest, index: usize) -> Option<&'static str> {
+    use crate::manifest::DoomWadMode;
+    if manifest.builtin_engine.as_deref() != Some(crate::doom::PROFILE) {
+        return None;
+    }
+    if index == 0 {
+        return Some("Base game data");
+    }
+    Some(
+        match manifest
+            .doom_wad_modes
+            .get(index - 1)
+            .copied()
+            .unwrap_or(DoomWadMode::File)
+        {
+            DoomWadMode::File => "Game resource overrides",
+            DoomWadMode::Merge => "Merge graphics and game resources",
+            DoomWadMode::NwtMerge => "Prepare sprite replacements",
+            DoomWadMode::Flats => "Replace existing floor textures",
+            DoomWadMode::Sprites => "Replace existing sprites",
+            DoomWadMode::Both => "Replace existing sprites and floor textures",
+        },
+    )
+}
 impl App {
     pub(super) fn play_blockers(&self, m: &crate::manifest::Manifest) -> Vec<String> {
         let mut blockers = Vec::new();
@@ -12,6 +54,14 @@ impl App {
         }
         if !self.built.contains(&m.id) {
             blockers.push("Build this game first. If you already built it, recheck readiness or rebuild if the cached build is missing or invalid.".into());
+        }
+        if m.builtin_engine.as_deref() == Some(crate::takedawn::PROFILE)
+            && self
+                .applied_settings
+                .as_ref()
+                .is_none_or(|s| s.memory_ceiling_mib < 4096)
+        {
+            blockers.push("This game uses 4096 MiB. Set Memory ceiling to 4096 MiB in Settings before playing.".into());
         }
         if m.game_data.is_some() {
             if self
@@ -28,24 +78,34 @@ impl App {
             }
             match self.data_paths.get(&m.id).filter(|p| !p.is_empty()) {
                 None => blockers.push("Choose the original game-data folder below.".into()),
-                Some(path) if !crate::game_data::available(std::path::Path::new(path)) => blockers.push("The selected game-data folder is unavailable or missing its data/packages folders. Choose it again below.".into()),
-                _ => {}
+                Some(path) => {
+                    if let Err(error) = crate::game_data::validate(std::path::Path::new(path)) {
+                        blockers.push(format!("Selected game data: {error}. Choose a complete original installation below."));
+                    }
+                }
             }
         }
         if m.requires_rom {
             for index in 0..m.required_rom_count() {
-                if !self
+                let path = self
                     .rom_paths
                     .get(&m.id)
                     .and_then(|paths| paths.get(index))
-                    .is_some_and(|path| !path.is_empty() && std::path::Path::new(path).is_file())
-                {
+                    .map(String::as_str)
+                    .unwrap_or("");
+                if let Err(error) = crate::rom_selections::check_for(m, path) {
                     let title = m
                         .roms
                         .get(index)
                         .map(|rom| rom.title.clone())
                         .unwrap_or_else(|| format!("ROM {}", index + 1));
-                    blockers.push(format!("Choose an available file for {title} below."));
+                    if path.trim().is_empty() {
+                        blockers.push(format!("Choose an available file for {title} below."));
+                    } else {
+                        blockers.push(format!(
+                            "File for {title}: {error}. Choose another file below."
+                        ));
+                    }
                 }
             }
         }
@@ -93,7 +153,7 @@ impl App {
             .installed
             .iter()
             .find(|m| m.id == id)
-            .and_then(|m| crate::server_selections::identity(m).ok())
+            .and_then(super::multiplayer::scope)
             .and_then(|scope| {
                 self.network_drafts
                     .get(&scope)
@@ -220,14 +280,59 @@ impl App {
                 let built=self.built.contains(&id);let reviewing=self.pending.is_some();
                 let blockers = self.play_blockers(&m);
                 let ready = blockers.is_empty();
+                let wasm_ready = self.wasm_built.contains(&id)
+                    && (!m.requires_rom || self.rom_paths.get(&id).is_some_and(|paths| crate::rom_selections::ready_for(&m, paths)))
+                    && (m.game_data.is_none() || (
+                        self.applied_settings.as_ref().is_some_and(|settings| settings.memory_ceiling_mib >= 2048)
+                        && self.data_paths.get(&id).is_some_and(|path| crate::game_data::validate(std::path::Path::new(path)).is_ok())
+                    ));
                 ui.label(if ready{"Ready to play"}else if built{"Native build verified — setup required"}else{"Native build: Not built or no longer valid"});
                 if let Some(usage)=self.usage.get(&id){ui.label(format!("Storage: {} used",crate::storage::bytes(usage.used_bytes())));}
                 ui.horizontal_wrapped(|ui|{
                     if ui.add_enabled(!reviewing&&ready&&self.result.is_none(),super::theme::primary("Play")).clicked(){self.launch_selected(id.clone(),true);}
-                    if ui.add_enabled(cfg!(target_os="linux")&&!reviewing&&self.result.is_none(),egui::Button::new(if built{"Rebuild"}else{"Build"}).min_size(egui::vec2(100.0,36.0))).clicked(){let id=id.clone();self.begin_work(move||{crate::native::compile(&crate::registry::default_root()?,&id)?;Ok(Work::NativeBuilt(id))});}
+                    if ui.add_enabled(cfg!(target_os="linux")&&!reviewing&&self.result.is_none(),egui::Button::new(if built{"Rebuild"}else{"Build"}).min_size(egui::vec2(100.0,36.0))).clicked(){let id=id.clone();self.begin_work(move||{crate::native::compile(&crate::registry::default_root()?,&id)?;Ok(Work::NativeBuilt(id))});if m.builtin_engine.as_deref()==Some(crate::takedawn::PROFILE){self.status="Building this game for your computer. The first build can take an hour or more. Your ISO is not copied.".into();}}
                     if ui.add_enabled(!reviewing&&self.result.is_none()&&m.update_url.is_some(),egui::Button::new("Check for updates")).clicked(){let id=id.clone();self.begin_work(move||match crate::registry::check_update(&crate::registry::default_root()?,&id)?{Some((m,file))=>Ok(Work::Update(m,file)),None=>Ok(Work::Message("This game is up to date.".into()))});}
-                    if ui.add_enabled(m.builtin_engine.as_deref()!=Some(crate::cube2::PROFILE)&&!reviewing&&self.result.is_none(),egui::Button::new("Build Wasm")).clicked(){let id=id.clone();self.begin_work(move||{crate::build::compile(&crate::registry::default_root()?,&id)?;Ok(Work::Message("Wasm build complete. Native build kept separately.".into()))});}
-                    if ui.add_enabled(!reviewing&&self.wasm_built.contains(&id)&&self.result.is_none()&&(!m.requires_rom||self.rom_paths.get(&id).is_some_and(|p|crate::rom_selections::ready(p,m.required_rom_count()))),egui::Button::new("Play Wasm")).clicked(){self.launch_selected(id.clone(),false);}
+                    if ui.add_enabled(!matches!(m.builtin_engine.as_deref(),Some(crate::cube2::PROFILE)|Some(crate::takedawn::PROFILE))&&!reviewing&&self.result.is_none(),egui::Button::new("Build Wasm")).clicked(){let id=id.clone();self.begin_work(move||{crate::build::compile(&crate::registry::default_root()?,&id)?;Ok(Work::Message("Wasm build complete. Native build kept separately.".into()))});}
+                    if ui.add_enabled(!reviewing&&wasm_ready&&self.result.is_none(),egui::Button::new("Play Wasm")).clicked(){self.launch_selected(id.clone(),false);}
+                    ui.add_enabled_ui(!reviewing && self.result.is_none() && cfg!(any(target_os="linux", target_os="windows")), |ui| {
+                        ui.menu_button("Add to Steam", |ui| {
+                            let target = if ready { Some("native") } else if wasm_ready { Some("wasm") } else { None };
+                            let Some(target) = target else {
+                                ui.label("Build the game and choose its required files first.");
+                                return;
+                            };
+                            let mut accounts = crate::steam_shortcuts::accounts();
+                            if let (Ok(found), Some(root)) = (&mut accounts, &self.steam_custom_root) {
+                                if let Ok(extra) = crate::steam_shortcuts::accounts_at(root) {
+                                    for account in extra {
+                                        if !found.iter().any(|old| old.shortcuts == account.shortcuts) { found.push(account); }
+                                    }
+                                }
+                            }
+                            match accounts {
+                                Ok(found) if found.is_empty() => { ui.label("No Steam account folder found."); }
+                                Ok(found) => for account in found {
+                                    if ui.button(&account.label).on_hover_text(account.shortcuts.display().to_string()).clicked() {
+                                        let manifest = m.clone();
+                                        let target = target.to_owned();
+                                        self.begin_work(move || {
+                                            let root = crate::registry::default_root()?;
+                                            let exe = crate::steam_shortcuts::current_launcher()?;
+                                            Ok(Work::Message(crate::steam_shortcuts::add(&account, &manifest, &root, &exe, &target)?))
+                                        });
+                                        ui.close_menu();
+                                    }
+                                },
+                                Err(error) => { ui.label(format!("Unable to find Steam accounts: {error:#}")); }
+                            }
+                            if ui.button("Choose Steam folder…").clicked() {
+                                if let Some(folder) = rfd::FileDialog::new().pick_folder() {
+                                    self.steam_custom_root = Some(folder);
+                                }
+                            }
+                            ui.weak("Close Steam before adding. Open it again to see the shortcut.");
+                        });
+                    });
                     ui.menu_button("More",|ui|{
                         if ui.add_enabled(!reviewing&&self.result.is_none(),egui::Button::new("Check integrity")).clicked(){let id=id.clone();self.begin_work(move||Ok(Work::Message(crate::integrity::check(&crate::registry::default_root()?,&id)?)));ui.close_menu();}
                         if ui.add_enabled(cfg!(target_os="linux")&&!reviewing&&self.result.is_none(),egui::Button::new("Fix / rebuild native")).clicked(){let id=id.clone();self.begin_work(move||Ok(Work::Message(crate::integrity::fix_target(&crate::registry::default_root()?,&id,None,true)?)));ui.close_menu();}
@@ -262,7 +367,7 @@ impl App {
                     }
                 });
                 if !cfg!(target_os="linux"){ui.label(if m.game_data.is_some(){"This engine currently requires Linux native process isolation."}else{"Native worker isolation is currently available on Linux. Use the explicit Wasm build and Play Wasm on this platform."});}
-                if m.requires_rom&&!self.rom_paths.get(&id).is_some_and(|p|crate::rom_selections::ready(p,m.required_rom_count())){ui.label("Choose the required ROM files below to enable Play.");}
+                if m.requires_rom&&!self.rom_paths.get(&id).is_some_and(|p|crate::rom_selections::ready_for(&m,p)){ui.label("Choose the required ROM files below to enable Play.");}
             }else if self.pending.is_none(){
                 if let Some(entry)=self.catalog.iter().find(|e|e.id==id).cloned(){
                     ui.label(&entry.title);ui.label("Not downloaded. Catalog information is unverified until the signed package is checked.");
@@ -272,7 +377,13 @@ impl App {
             }
             if let Some(notice)=self.updates.notices.get(&id){match notice {crate::updates::Notice::Available(version)=>{ui.label(format!("Update {version} available"));},crate::updates::Notice::Current=>{ui.label("Up to date");},crate::updates::Notice::Failed(error)=>{ui.label("Update check failed").on_hover_text(error);}}}
             ui.add_space(12.0);ui.label(&self.status);
-            if self.pending.is_none(){self.game_rom_editor(ui);self.game_data_editor(ui);self.game_network_editor(ui);}
+            if self.manifest.as_ref().is_some_and(|m|matches!(m.builtin_engine.as_deref(),Some(crate::doom::PROFILE)|Some(crate::cube2::PROFILE))) {
+                ui.label("Touch camera: drag in the upper two-thirds of the game window to look. Other fingers can use the bottom movement/action regions at the same time.");
+            }
+            if self.manifest.as_ref().is_some_and(|m|m.builtin_engine.as_deref()==Some(crate::zelda3::PROFILE) && m.permissions.save) {
+                ui.label("Snapshot shortcuts: Shift+F1–F10 saves; F1–F10 loads. Defaults use slots 1–10; Settings can assign any of the 20 slots or turn shortcuts off. Saving replaces that slot. Normal in-game saving still works separately.");
+            }
+            if self.pending.is_none(){self.game_rom_editor(ui);self.game_data_editor(ui);self.game_network_editor(ui);self.game_display_editor(ui);self.game_recordings(ui);}
             self.game_details(ui,ctx);
             });
         });
@@ -293,6 +404,8 @@ impl App {
             .get(&selected.id)
             .cloned()
             .unwrap_or_default();
+        #[cfg(target_os = "linux")]
+        let audit_path = current.clone();
         ui.strong(title);
         let label = if current.is_empty() {
             "Choose game-data folder…"
@@ -319,6 +432,20 @@ impl App {
             });
         }
         ui.label("Choose the original installation containing data and packages folders. GamePKG reads these files in place and remembers this folder for this signed game.");
+        #[cfg(target_os = "linux")]
+        if ui
+            .add_enabled(
+                self.result.is_none() && !audit_path.is_empty(),
+                egui::Button::new("Check game data"),
+            )
+            .clicked()
+        {
+            self.begin_work(move || {
+                Ok(Work::Message(
+                    crate::cube2::content::audit(std::path::Path::new(&audit_path))?.summary(),
+                ))
+            });
+        }
         ui.label("Edited maps, map settings and saved demos are remembered separately from the original files. Saved files can use up to 32 MiB.");
         if self
             .applied_settings
@@ -339,13 +466,17 @@ impl App {
         {
             let mut pick = None;
             egui::Frame::group(ui.style()).show(ui, |ui| {
-                ui.strong(format!("ROM files — {}", selected.id));
-                for index in 0..selected.required_rom_count() {
+                ui.strong("Your game files");
+                if selected.builtin_engine.as_deref()==Some(crate::doom::PROFILE) && selected.required_rom_count()>1 {
+                    ui.label("Files are shown in the order this recipe applies them.");
+                }
+                for (position,index) in game_file_order(&selected).into_iter().enumerate() {
                     let title = selected.roms.get(index).map(|r| r.title.clone())
                         .unwrap_or_else(|| format!("ROM {}", index + 1));
                     let path = if index == 0 { &self.rom_path } else { &self.additional_rom_paths[index - 1] };
                     ui.vertical(|ui| {
                         ui.label(&title);
+                        if let Some(role)=game_file_role(&selected,index) {ui.small(format!("{} · {role}",position+1));}
                         let text = if path.is_empty() { "Choose ROM file…" } else { path };
                         if ui.add_enabled(self.result.is_none(), egui::Button::new(text).truncate()
                             .min_size(egui::vec2(ui.available_width().min(620.0), 38.0)))
@@ -389,8 +520,13 @@ impl App {
                 m.limits.hard_memory_bytes as f64 / 1048576.0
             ));
             ui.label(if m.requires_rom { format!("Requires {} ROM file(s) supplied by you. They are not included in this package.",m.required_rom_count()) } else if m.game_data.is_some(){"Original game-data folder required (read-only).".into()} else { "No user ROM required.".into() });
-            for (index, rom) in m.roms.iter().enumerate() {
-                ui.label(format!("ROM {}: {} ({})", index + 1, rom.title, rom.id));
+            for (position, index) in game_file_order(&m).into_iter().enumerate() {
+                if let Some(rom) = m.roms.get(index) {
+                    ui.label(format!("File {}: {}", position + 1, rom.title));
+                    if let Some(role) = game_file_role(&m, index) {
+                        ui.small(role);
+                    }
+                }
             }
             let package_size = self
                 .pending
@@ -563,6 +699,97 @@ impl App {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn native_disc_setup_explains_memory_and_accepts_large_selected_iso() {
+        let manifest =
+            crate::manifest::Manifest::parse(include_bytes!("../../ports/takedawn/manifest.toml"))
+                .unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let file = root.path().join("selected.iso");
+        std::fs::File::create(&file)
+            .unwrap()
+            .set_len(128 * 1048576)
+            .unwrap();
+        let mut app = super::App {
+            applied_settings: Some(crate::settings::Settings::default()),
+            ..Default::default()
+        };
+        app.built.insert(manifest.id.clone());
+        app.rom_paths.insert(
+            manifest.id.clone(),
+            vec![file.to_string_lossy().into_owned()],
+        );
+        assert!(!app.ready_to_play(&manifest));
+        assert!(app
+            .play_blockers(&manifest)
+            .iter()
+            .any(|s| s.contains("4096 MiB")));
+        app.applied_settings.as_mut().unwrap().memory_ceiling_mib = 4096;
+        assert_eq!(app.ready_to_play(&manifest), cfg!(target_os = "linux"));
+        if cfg!(target_os = "linux") {
+            assert!(app.play_blockers(&manifest).is_empty());
+        }
+        std::fs::remove_file(file).unwrap();
+        assert!(!app.ready_to_play(&manifest));
+        assert!(app
+            .play_blockers(&manifest)
+            .iter()
+            .any(|s| s.contains(&manifest.roms[0].title)));
+    }
+    #[test]
+    fn mixed_patch_display_uses_runtime_order_without_changing_selection_indices() {
+        use crate::manifest::{DoomWadMode as Mode, RomRequirement};
+        let mut manifest: crate::manifest::Manifest =
+            toml::from_str(include_str!("../../ports/doom/manifest.toml")).unwrap();
+        for index in 0..6 {
+            manifest.roms.push(RomRequirement {
+                id: format!("patch{index}"),
+                title: format!("Patch {index}"),
+            });
+        }
+        manifest.doom_wad_modes = vec![
+            Mode::File,
+            Mode::Sprites,
+            Mode::Merge,
+            Mode::File,
+            Mode::NwtMerge,
+            Mode::Flats,
+        ];
+        let order = super::game_file_order(&manifest);
+        assert_eq!(order, [0, 3, 5, 6, 2, 1, 4]);
+        let names = order
+            .iter()
+            .map(|index| manifest.roms[*index].id.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            names,
+            [
+                "doom_iwad",
+                "patch2",
+                "patch4",
+                "patch5",
+                "patch1",
+                "patch0",
+                "patch3"
+            ]
+        );
+        assert_eq!(super::game_file_role(&manifest, 0), Some("Base game data"));
+        assert_eq!(
+            super::game_file_role(&manifest, 3),
+            Some("Merge graphics and game resources")
+        );
+        manifest.doom_wad_modes.clear();
+        assert_eq!(
+            super::game_file_order(&manifest),
+            (0..7).collect::<Vec<_>>()
+        );
+        manifest.builtin_engine = None;
+        assert_eq!(
+            super::game_file_order(&manifest),
+            (0..7).collect::<Vec<_>>()
+        );
+        assert_eq!(super::game_file_role(&manifest, 1), None);
+    }
     use super::*;
     #[test]
     fn verified_cube_build_still_explains_memory_and_missing_data_requirements() {
@@ -588,21 +815,75 @@ mod tests {
             .any(|text| text.contains("2048") && text.contains("512")));
         assert!(!blockers.iter().any(|text| text.contains("Build this game")));
         app.applied_settings.as_mut().unwrap().memory_ceiling_mib = 2048;
-        assert_eq!(app.ready_to_play(&manifest), cfg!(target_os = "linux"));
-        if cfg!(target_os = "linux") {
-            assert!(app.play_blockers(&manifest).is_empty());
-        }
-        std::fs::remove_dir(folder.path().join("packages")).unwrap();
         assert!(!app.ready_to_play(&manifest));
         assert!(app
             .play_blockers(&manifest)
             .iter()
-            .any(|text| text.contains("data/packages")));
+            .any(|text| text.contains("packages/textures")));
+        std::fs::create_dir(folder.path().join("packages/textures")).unwrap();
+        assert!(app
+            .play_blockers(&manifest)
+            .iter()
+            .any(|text| text.contains("data/stdlib.cfg")));
+        std::fs::write(folder.path().join("data/stdlib.cfg"), b"original startup").unwrap();
+        assert!(!app.ready_to_play(&manifest));
+        assert!(app
+            .play_blockers(&manifest)
+            .iter()
+            .any(|text| text.contains("packages/textures/notexture.png")));
+        std::fs::write(
+            folder.path().join("packages/textures/notexture.png"),
+            b"core texture",
+        )
+        .unwrap();
+        assert_eq!(app.ready_to_play(&manifest), cfg!(target_os = "linux"));
+        if cfg!(target_os = "linux") {
+            assert!(app.play_blockers(&manifest).is_empty());
+        }
+        std::fs::remove_dir_all(folder.path().join("packages")).unwrap();
+        assert!(!app.ready_to_play(&manifest));
+        assert!(app
+            .play_blockers(&manifest)
+            .iter()
+            .any(|text| text.contains("missing packages")));
         app.data_paths.clear();
         assert!(app
             .play_blockers(&manifest)
             .iter()
             .any(|text| text.contains("Choose the original")));
+    }
+    #[test]
+    fn selected_oversized_rom_explains_the_same_limit_that_disables_play() {
+        let manifest =
+            crate::manifest::Manifest::parse(include_bytes!("../../ports/doom/manifest.toml"))
+                .unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let file = root.path().join("large.wad");
+        let handle = std::fs::File::create(&file).unwrap();
+        handle.set_len(64 * 1024 * 1024 + 1).unwrap();
+        let mut app = App::default();
+        app.built.insert(manifest.id.clone());
+        app.rom_paths.insert(
+            manifest.id.clone(),
+            vec![file.to_string_lossy().into_owned()],
+        );
+        assert!(!app.ready_to_play(&manifest));
+        assert!(app
+            .play_blockers(&manifest)
+            .iter()
+            .any(|text| text.contains("64 MiB") && text.contains(&manifest.roms[0].title)));
+        handle.set_len(64 * 1024 * 1024).unwrap();
+        assert_eq!(app.ready_to_play(&manifest), cfg!(target_os = "linux"));
+        assert!(!app
+            .play_blockers(&manifest)
+            .iter()
+            .any(|text| text.contains("64 MiB")));
+        std::fs::remove_file(file).unwrap();
+        assert!(!app.ready_to_play(&manifest));
+        assert!(app
+            .play_blockers(&manifest)
+            .iter()
+            .any(|text| text.contains("missing or unavailable")));
     }
     #[test]
     fn missing_named_roms_and_missing_builds_have_separate_play_explanations() {

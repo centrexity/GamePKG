@@ -1,0 +1,12 @@
+[
+  {
+    "before": "#include \"dma.h\"",
+    "after": "#include \"dma.h\"\n#include \"gamepkg_dma_state.h\"",
+    "count": 1
+  },
+  {
+    "before": "func(ctx, &dma->channel, sizeof(Dma) - offsetof(Dma, channel));",
+    "after": "gamepkg_dma_saveload(dma, func, ctx);",
+    "count": 1
+  }
+]

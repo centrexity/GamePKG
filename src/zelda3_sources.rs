@@ -1,6 +1,58 @@
 // Host-owned pinned engine kit; generated from the reviewed repository sources.
 pub const FILES: &[(&str, &[u8])] = &[
     (
+        "engines/zelda3/adapters/include/gamepkg_spc_playback.h",
+        include_bytes!("../engines/zelda3/adapters/include/gamepkg_spc_playback.h"),
+    ),
+    (
+        "engines/zelda3/adapters/spc-playback-patches.json",
+        include_bytes!("../engines/zelda3/adapters/spc-playback-patches.json"),
+    ),
+    (
+        "engines/zelda3/adapters/include/gamepkg_spc_state.h",
+        include_bytes!("../engines/zelda3/adapters/include/gamepkg_spc_state.h"),
+    ),
+    (
+        "engines/zelda3/adapters/spc-state-patches.json",
+        include_bytes!("../engines/zelda3/adapters/spc-state-patches.json"),
+    ),
+    (
+        "engines/zelda3/adapters/include/gamepkg_snapshot.h",
+        include_bytes!("../engines/zelda3/adapters/include/gamepkg_snapshot.h"),
+    ),
+    (
+        "engines/zelda3/adapters/include/gamepkg_snapshot_bridge.h",
+        include_bytes!("../engines/zelda3/adapters/include/gamepkg_snapshot_bridge.h"),
+    ),
+    (
+        "engines/zelda3/adapters/ppu-state-patches.json",
+        include_bytes!("../engines/zelda3/adapters/ppu-state-patches.json"),
+    ),
+    (
+        "engines/zelda3/adapters/include/gamepkg_ppu_state.h",
+        include_bytes!("../engines/zelda3/adapters/include/gamepkg_ppu_state.h"),
+    ),
+    (
+        "engines/zelda3/adapters/dsp-state-patches.json",
+        include_bytes!("../engines/zelda3/adapters/dsp-state-patches.json"),
+    ),
+    (
+        "engines/zelda3/adapters/include/gamepkg_dsp_state.h",
+        include_bytes!("../engines/zelda3/adapters/include/gamepkg_dsp_state.h"),
+    ),
+    (
+        "engines/zelda3/adapters/dma-state-patches.json",
+        include_bytes!("../engines/zelda3/adapters/dma-state-patches.json"),
+    ),
+    (
+        "engines/zelda3/adapters/include/gamepkg_dma_state.h",
+        include_bytes!("../engines/zelda3/adapters/include/gamepkg_dma_state.h"),
+    ),
+    (
+        "engines/zelda3/adapters/ppu-patches.json",
+        include_bytes!("../engines/zelda3/adapters/ppu-patches.json"),
+    ),
+    (
         "engines/zelda3/adapters/engine.c",
         include_bytes!("../engines/zelda3/adapters/engine.c"),
     ),

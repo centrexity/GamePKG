@@ -1,0 +1,16 @@
+{
+  "repository": "https://github.com/bochs-emu/Bochs",
+  "revision": "b0c88410501f48bbe1a966cab1c0592fb504915a",
+  "files": [
+    {
+      "path": "upstream/sse_rcp.cc",
+      "upstream_path": "bochs/cpu/sse_rcp.cc",
+      "sha256": "ffae960592507409b416d00a17e74a05c968912408a2b229f42d6628592a4309"
+    },
+    {
+      "path": "upstream/COPYING",
+      "upstream_path": "bochs/COPYING",
+      "sha256": "1e71c5e18d5a0e3723bf07314404f07b27c38fcdeae2a4b1f3088477baf61efa"
+    }
+  ]
+}

@@ -2,12 +2,15 @@
 #[cfg(target_os = "linux")]
 pub mod build;
 #[cfg(target_os = "linux")]
+pub mod content;
+#[cfg(target_os = "linux")]
 mod data;
 #[cfg(target_os = "linux")]
 mod discovery;
 #[cfg(target_os = "linux")]
 mod network;
 pub mod protocol;
+pub mod recordings;
 #[cfg(target_os = "linux")]
 mod runner;
 #[cfg(target_os = "linux")]
@@ -39,6 +42,12 @@ pub fn cache_path(root: &std::path::Path, digest: &str) -> std::path::PathBuf {
             include_str!("../../engines/cube2/upstream-lock.json"),
             include_str!("../../engines/cube2/adapters/frame_bridge.h"),
             include_str!("../../engines/cube2/adapters/audio.h"),
+            include_str!("../../engines/cube2/adapters/movie-audio-patches.json"),
+            include_str!("../../engines/cube2/adapters/movie_limit.h"),
+            include_str!("../../engines/cube2/adapters/movie_io.h"),
+            include_str!("../../engines/cube2/adapters/movie-limit-patches.json"),
+            include_str!("../../engines/cube2/adapters/zip_bounds.h"),
+            include_str!("../../engines/cube2/adapters/zip-bounds-patches.json"),
             include_str!("../../engines/cube2/adapters/mouse.h"),
             include_str!("../../engines/cube2/adapters/keyboard.h"),
             include_str!("../../engines/cube2/adapters/modifiers.h"),
@@ -46,6 +55,8 @@ pub fn cache_path(root: &std::path::Path, digest: &str) -> std::path::PathBuf {
             include_str!("../../engines/cube2/adapters/loading-patches.json"),
             include_str!("../../engines/cube2/adapters/persistence.h"),
             include_str!("../../engines/cube2/adapters/network.h"),
+            include_str!("../../engines/cube2/adapters/socket_set.h"),
+            include_str!("../../engines/cube2/adapters/socket-set-patches.json"),
             include_str!("../../engines/cube2/adapters/syscall_guard.h"),
             include_str!("build.rs")
         )

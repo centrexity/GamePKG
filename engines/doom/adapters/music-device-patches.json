@@ -1,0 +1,7 @@
+[
+  {
+    "before": "#ifdef FEATURE_SOUND\n    music_module = &DG_music_module;\n#endif /* FEATURE_SOUND */",
+    "after": "music_module = NULL;\n#ifdef FEATURE_SOUND\n    if (SndDeviceInList(snd_musicdevice, DG_music_module.sound_devices,\n                        DG_music_module.num_sound_devices))\n        music_module = &DG_music_module;\n#endif /* FEATURE_SOUND */",
+    "count": 1
+  }
+]

@@ -3,6 +3,7 @@ mod add_page;
 mod app_updates;
 mod artwork;
 mod cube2_input;
+mod display;
 mod doom_input;
 mod drops;
 mod game_colors;
@@ -11,7 +12,10 @@ mod input;
 mod library_view;
 mod linear_sprites;
 mod multiplayer;
+mod processes;
+mod recordings;
 mod rom_picker;
+mod snapshot_slots;
 mod source_input;
 mod sprites;
 mod theme;
@@ -30,6 +34,9 @@ enum Work {
         Option<(String, crate::server_selections::Selection)>,
     ),
     NetworkSaved(String, crate::server_selections::Selection),
+    VideoSaved(String, Option<crate::manifest::ZeldaVideo>),
+    Recordings(recordings::Loaded),
+    RecordingExported(String),
     Store(crate::store::Bundle),
     Preview(Vec<Vec<u8>>),
     Game(Box<crate::runtime::Game>),
@@ -54,9 +61,12 @@ pub struct App {
     source: String,
     drop_notice: Option<String>,
     selected_game: Option<String>,
+    steam_custom_root: Option<PathBuf>,
     rom_paths: HashMap<String, Vec<String>>,
     data_paths: HashMap<String, String>,
     network_drafts: HashMap<String, multiplayer::Draft>,
+    video_drafts: HashMap<String, display::Draft>,
+    recordings: Option<recordings::Loaded>,
     rom_path: String,
     rom_game: Option<String>,
     rom_identity: Option<String>,
@@ -82,6 +92,7 @@ pub struct App {
     game_window: bool,
     game_window_closing: bool,
     window_preferences: Option<crate::window_preferences::Session>,
+    startup_vsync: Option<bool>,
     window_preferences_active: bool,
     pending_window_maximize: bool,
     cube_mouse_capture: cube2_input::MouseCapture,
@@ -90,6 +101,7 @@ pub struct App {
     source_window: window_control::Controller,
     cube_desktop: cube2_input::Desktop,
     doom_desktop: doom_input::Desktop,
+    snapshot_desktop: snapshot_slots::Desktop,
     game_processes: Vec<(String, std::process::Child)>,
     next_frame: Option<std::time::Instant>,
     pending_input: u32,
@@ -119,10 +131,79 @@ pub struct App {
 }
 impl App {
     pub fn set_window_preferences(&mut self, session: Option<crate::window_preferences::Session>) {
+        self.startup_vsync = session
+            .as_ref()
+            .filter(|_| self.game_window)
+            .map(|session| session.preferences.vsync);
         self.pending_window_maximize = session
             .as_ref()
             .is_some_and(|session| session.preferences.maximized);
         self.window_preferences = session;
+    }
+    fn observe_window_preferences(&mut self, ctx: &egui::Context, restoring_maximize: bool) {
+        let requested = self
+            .player
+            .as_ref()
+            .map(|game| game.window_state())
+            .unwrap_or_default();
+        let settled = !self.source_window.resize_pending(ctx, requested);
+        if self.window_preferences_active {
+            if let (Some(vsync), Some(session)) =
+                (requested.vsync, self.window_preferences.as_mut())
+            {
+                session.preferences.vsync = vsync;
+            }
+        }
+        let confirmation = if settled {
+            self.source_window.take_confirmation()
+        } else {
+            None
+        };
+        let actual_fullscreen = ctx.input(|input| input.viewport().fullscreen);
+        if let (Some((normal, maximized)), Some(session)) = (
+            confirmation.or_else(|| self.source_window.preview_preferences()),
+            self.window_preferences.as_mut(),
+        ) {
+            let native_scale = ctx.pixels_per_point() / ctx.zoom_factor();
+            let width = (normal[0] as f32 / native_scale).round();
+            let height = (normal[1] as f32 / native_scale).round();
+            if (320.0..=10000.0).contains(&width) && (240.0..=10000.0).contains(&height) {
+                session.preferences.width = width as u32;
+                session.preferences.height = height as u32;
+                session.preferences.maximized = maximized;
+                if let Some(fullscreen) = actual_fullscreen {
+                    session.preferences.fullscreen = fullscreen;
+                }
+            }
+        }
+        if self.window_preferences_active
+            && settled
+            && !self.game_window_closing
+            && requested.resize_origin.is_none()
+        {
+            if let Some(session) = &mut self.window_preferences {
+                let zoom = ctx.zoom_factor();
+                ctx.input(|input| {
+                    let viewport = input.viewport();
+                    session.preferences.observe(
+                        if restoring_maximize {
+                            None
+                        } else {
+                            viewport
+                                .inner_rect
+                                .map(|rect| [rect.width() * zoom, rect.height() * zoom])
+                        },
+                        viewport.fullscreen,
+                        if restoring_maximize {
+                            None
+                        } else {
+                            viewport.maximized
+                        },
+                        viewport.minimized.unwrap_or(false),
+                    );
+                });
+            }
+        }
     }
     fn persist_window_preferences(&mut self) {
         if self.window_preferences_active {
@@ -223,6 +304,7 @@ impl App {
         }
     }
     fn refresh(&mut self, ctx: &egui::Context) {
+        self.recordings = None;
         match crate::registry::default_root().and_then(|root| crate::catalog::sources::lists(&root))
         {
             Ok(lists) => self.catalog_sources = lists,
@@ -241,11 +323,14 @@ impl App {
             Ok(report) => {
                 self.rejected = report.rejected;
                 let games = report.games;
-                let scopes: HashSet<String> = games
-                    .iter()
-                    .filter_map(|m| crate::server_selections::identity(m).ok())
-                    .collect();
+                let scopes: HashSet<String> = games.iter().filter_map(multiplayer::scope).collect();
                 self.network_drafts.retain(|key, _| scopes.contains(key));
+                let video_scopes: HashSet<String> = games
+                    .iter()
+                    .filter_map(|m| crate::video_selections::identity(m).ok())
+                    .collect();
+                self.video_drafts
+                    .retain(|key, _| video_scopes.contains(key));
                 self.icons.clear();
                 self.package_notices.clear();
                 self.built.clear();
@@ -257,7 +342,21 @@ impl App {
                     self.usage.clear();
                     self.library_bytes = crate::storage::total(&root).ok();
                     for m in &games {
-                        if let Ok(scope) = crate::server_selections::identity(m) {
+                        if let Ok(scope) = crate::video_selections::identity(m) {
+                            match crate::video_selections::load(&root, m) {
+                                Ok(selection) => self
+                                    .video_drafts
+                                    .entry(scope)
+                                    .or_default()
+                                    .loaded(selection),
+                                Err(error) => {
+                                    self.status =
+                                        format!("Unable to read display settings: {error:#}")
+                                }
+                            }
+                        }
+
+                        if let Some(scope) = multiplayer::scope(m) {
                             match crate::server_selections::load(&root, m) {
                                 Ok(selection) => self
                                     .network_drafts
@@ -438,30 +537,6 @@ impl eframe::App for App {
             self.pending_window_maximize = false;
             ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true));
         }
-        if self.window_preferences_active && !self.game_window_closing {
-            if let Some(session) = &mut self.window_preferences {
-                let zoom = ctx.zoom_factor();
-                ctx.input(|input| {
-                    let viewport = input.viewport();
-                    session.preferences.observe(
-                        if restoring_maximize {
-                            None
-                        } else {
-                            viewport
-                                .inner_rect
-                                .map(|rect| [rect.width() * zoom, rect.height() * zoom])
-                        },
-                        viewport.fullscreen,
-                        if restoring_maximize {
-                            None
-                        } else {
-                            viewport.maximized
-                        },
-                        viewport.minimized.unwrap_or(false),
-                    );
-                });
-            }
-        }
         self.user_files.tick(self.player.as_deref_mut(), ctx);
         let file_dialog_open = self.user_files.is_open();
         egui_winit::gamepkg_input::enable(
@@ -469,7 +544,10 @@ impl eframe::App for App {
             !self.game_window_closing
                 && !file_dialog_open
                 && self.player.as_ref().is_some_and(|game| {
-                    game.doom_input_allowed() || game.is_cube2() || game.input_events_allowed()
+                    game.doom_input_allowed()
+                        || game.is_cube2()
+                        || game.input_events_allowed()
+                        || game.supports_zelda_snapshot_slots()
                 }),
             ctx.input(|i| i.focused) && !file_dialog_open,
         );
@@ -485,17 +563,16 @@ impl eframe::App for App {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             return;
         }
-        let mut exited = false;
-        self.game_processes
-            .retain_mut(|(_, child)| match child.try_wait() {
-                Ok(Some(_)) => {
-                    exited = true;
-                    false
-                }
-                _ => true,
-            });
-        if exited {
+        let mut stopped = processes::poll(&mut self.game_processes);
+        if stopped.exited {
+            let previous_status = self.status.clone();
             self.refresh(ctx);
+            if !stopped.errors.is_empty() && self.status != previous_status {
+                stopped.errors.push(self.status.clone());
+            }
+        }
+        if !stopped.errors.is_empty() {
+            self.status = stopped.errors.join("\n");
         }
         if !self.game_processes.is_empty() {
             ctx.request_repaint_after(std::time::Duration::from_millis(500));
@@ -550,6 +627,13 @@ impl eframe::App for App {
                             }
                             self.status = format!("Opened {id} in its own window.");
                             self.game_processes.push((id, child));
+                        }
+                        Ok(Work::Recordings(loaded)) => self.loaded_recordings(loaded),
+                        Ok(Work::RecordingExported(message)) => self.status = message,
+                        Ok(Work::VideoSaved(scope, selection)) => {
+                            self.video_drafts.insert(scope, selection.into());
+                            self.status = "Display settings saved for the next launch.".into();
+                            self.refresh(ctx);
                         }
                         Ok(Work::NetworkSaved(scope, selection)) => {
                             self.network_drafts.insert(scope, selection.into());
@@ -791,6 +875,7 @@ impl eframe::App for App {
             self.keyboard.reset();
             self.source_input = Default::default();
             self.doom_desktop = Default::default();
+            self.snapshot_desktop = Default::default();
             self.cube_desktop = Default::default();
             self.sprite_textures.finish(0);
             self.linear_sprites.clear();
@@ -799,6 +884,41 @@ impl eframe::App for App {
             let mut image_count = 0;
             let mut linear_count = 0;
             let mut failure = None;
+            if game.supports_zelda_snapshot_slots() && !file_dialog_open {
+                let events = egui_winit::gamepkg_input::take(ctx.viewport_id());
+                if let Some(action) = ctx.input(|input| {
+                    self.snapshot_desktop.request(
+                        &events,
+                        input,
+                        self.applied_settings
+                            .as_ref()
+                            .unwrap_or(&self.settings_draft),
+                    )
+                }) {
+                    let result = crate::registry::default_root().and_then(|root| match action {
+                        snapshot_slots::Action::Save(slot) => game.save_zelda_slot(&root, slot),
+                        snapshot_slots::Action::Load(slot) => game.load_zelda_slot(&root, slot),
+                    });
+                    match result {
+                        Ok(()) => {
+                            if matches!(action, snapshot_slots::Action::Load(_)) {
+                                self.pending_input = 0;
+                                self.next_frame = None;
+                                if let Some(audio) = &self.audio_player {
+                                    audio.clear();
+                                }
+                            }
+                        }
+                        Err(error) => {
+                            rfd::MessageDialog::new()
+                                .set_title("Snapshot slot")
+                                .set_description(format!("{error:#}"))
+                                .set_level(rfd::MessageLevel::Error)
+                                .show();
+                        }
+                    }
+                }
+            }
             let select_input = ctx.input(|i| {
                 u32::from(input::key_edge(i, egui::Key::Tab)) << 7
                     | u32::from(i.key_down(egui::Key::Tab)) << 15
@@ -829,7 +949,7 @@ impl eframe::App for App {
                     } else {
                         select_input | ctx.input(|i| self.keyboard.poll(i))
                     };
-                    let device_input = self.input_devices.poll(ui);
+                    let device_input = self.input_devices.poll(ui, game.is_cube2() || game.doom_input_allowed());
                     let input = if ctx.input(|i| i.focused) && !file_dialog_open {
                         input | device_input
                     } else {
@@ -960,6 +1080,25 @@ impl eframe::App for App {
                         }
                     }
                     game.observe_fullscreen(ctx.input(|i| i.viewport().fullscreen));
+                    game.observe_window_vsync(self.startup_vsync);
+                    let physical_scale = ctx.pixels_per_point();
+                    game.observe_window_size(if self.game_window {
+                        ctx.input(|input| {
+                            let viewport = input.viewport();
+                            if viewport.minimized == Some(true) {
+                                return None;
+                            }
+                            viewport.inner_rect.and_then(|rect| {
+                                let size = rect.size() * physical_scale;
+                                if size.x.is_finite() && size.y.is_finite()
+                                    && (1.0..=65535.0).contains(&size.x)
+                                    && (1.0..=65535.0).contains(&size.y)
+                                {
+                                    Some([size.x.round() as u32, size.y.round() as u32])
+                                } else { None }
+                            })
+                        })
+                    } else { None });
                     self.pending_input |= input & 0xf00ff;
                     let now = std::time::Instant::now();
                     if self.next_frame.is_none_or(|next| now >= next) {
@@ -983,6 +1122,13 @@ impl eframe::App for App {
                         if !file_dialog_open && ctx.input(|input| input.focused) {
                             ctx.open_url(egui::OpenUrl::new_tab(url));
                         }
+                    }
+                    if let Some(session)=&self.window_preferences {
+                        let native_scale=ctx.pixels_per_point()/ctx.zoom_factor();
+                        self.source_window.normal_size([
+                            (session.preferences.width as f32*native_scale).round() as u32,
+                            (session.preferences.height as f32*native_scale).round() as u32,
+                        ]);
                     }
                     if !game.builtin_engine {
                         self.source_window
@@ -1225,6 +1371,7 @@ impl eframe::App for App {
                 });
             self.sprite_textures.finish(image_count);
             self.linear_sprites.finish(linear_count);
+            self.observe_window_preferences(ctx, restoring_maximize);
             if self.player.as_ref().is_some_and(|game| game.is_cube2()) {
                 ctx.request_repaint();
             } else {
@@ -1389,6 +1536,7 @@ impl eframe::App for App {
                 ui.label("Choose how GamePKG stores, builds, and runs your games.");
                 egui::ScrollArea::vertical().max_height((ui.available_height() - 110.0).max(100.0)).show(ui,|ui| {
                     self.app_update_controls(ui, ctx);
+                    snapshot_slots::settings(ui, &mut self.settings_draft);
                     ui.heading("Library");
                     ui.label("Library folder (absolute path; leave empty for the default)");
                     ui.text_edit_singleline(&mut self.settings_draft.library_directory);
@@ -1429,6 +1577,9 @@ impl eframe::App for App {
                     {
                         ui.label("C/WASI build tools folder (optional; empty uses system tools)");
                         ui.text_edit_singleline(&mut self.settings_draft.wasi_sysroot_directory);
+                        ui.label("Native tools folder (optional; empty uses installed libraries)");
+                        ui.text_edit_singleline(&mut self.settings_draft.native_sysroot_directory);
+                        ui.label("Use this for a separate native SDL2/Vulkan/glslang development installation.");
                         ui.label("Native source ports use Clang 18 and lld-18. The separate Wasm build also needs wasi-libc and libclang-rt-18-dev-wasm32; set this folder only for a separate WASI installation.");
                         if ui.button("Check C/WASI build tools").clicked() {
                             self.status = match crate::c_toolchain::check_draft(&self.settings_draft.wasi_sysroot_directory) {

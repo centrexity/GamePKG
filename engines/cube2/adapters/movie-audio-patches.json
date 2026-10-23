@@ -1,0 +1,17 @@
+[
+  {
+    "file": "engine/movie.cpp",
+    "before": "#include \"engine.h\"",
+    "after": "#include \"engine.h\"\nextern void gamepkg_audio_postmix(void (*callback)(void *, Uint8 *, int), void *userdata);"
+  },
+  {
+    "file": "engine/movie.cpp",
+    "before": "Mix_SetPostMix(soundencoder, NULL);",
+    "after": "gamepkg_audio_postmix(soundencoder, NULL);"
+  },
+  {
+    "file": "engine/movie.cpp",
+    "before": "Mix_SetPostMix(NULL, NULL);",
+    "after": "gamepkg_audio_postmix(NULL, NULL);"
+  }
+]

@@ -31,6 +31,9 @@ impl Budget {
     pub fn used(&self) -> u64 {
         self.0.used.load(Ordering::Acquire)
     }
+    pub(crate) fn owns(&self, lease: &Lease) -> bool {
+        Arc::ptr_eq(&self.0, &lease.shared)
+    }
     /// Reserve a fixed child capacity inside this same hard limit. Child
     /// reservations consume that capacity, not an independent allowance.
     pub fn partition(&self, limit: u64) -> Result<Self> {

@@ -30,9 +30,11 @@ if args.sdl_reference:
   info=json.loads(subprocess.check_output(['ffprobe','-v','quiet','-show_entries','stream=sample_rate','-of','json',str(path)]));rate=info['streams'][0]['sample_rate']
   command=[str(reference_root/'decode'),str(path),str(args.output_rate)] if args.original_mixer else [str(reference_root/'decode'),str(path),rate,*([str(args.output_rate)] if args.output_rate else [])]
   with (reference_root/path.with_suffix('.s16').name).open('wb') as out:subprocess.run(command,stdout=out,check=True)
-p=subprocess.run([executable,'--ignored','--nocapture'],cwd=PROJECT,env=env,capture_output=True,text=True,timeout=120)
+p=subprocess.run([executable,'--ignored','--nocapture','--skip','mono_original_mixer_matches_sdl_conversion_and_rewinds_with_equal_channels'],cwd=PROJECT,env=env,capture_output=True,text=True,timeout=120)
 assert p.returncode==0,p.stdout+'\n'+p.stderr
 records=[json.loads(line.split('MUSIC_JSON ',1)[1]) for line in p.stdout.splitlines() if 'MUSIC_JSON ' in line];assert records
+mono_records=[json.loads(line.split('MONO_JSON ',1)[1]) for line in p.stdout.splitlines() if 'MONO_JSON ' in line]
+if args.mono_input:assert len(mono_records)==4
 if args.package_readers:print('Native input: verified signed package asset readers; private synthetic key; no extraction.',flush=True)
 print('Native sandbox: complete streaming, chunk invariance, rewind, malformed input and bounded memory passed for',len(records),'tracks.',flush=True)
 for record in records:print('Decoder memory:',record['name'],record['memory_peak'],'of',record['memory_budget'],'bytes.',flush=True)
@@ -50,7 +52,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-music-decoder-') as temporary:
   source=args.music/record['name'];assert source.is_file() and not source.is_symlink();record['url']=str(index)+'.mp3';shutil.copyfile(source,root/record['url'])
  if args.mono_input:
   assert args.mono_input.is_file() and not args.mono_input.is_symlink();shutil.copyfile(args.mono_input,root/'mono.mp3')
- (root/'expected.json').write_text(json.dumps(records));server=ThreadingHTTPServer(('127.0.0.1',0),partial(Quiet,directory=str(root)));threading.Thread(target=server.serve_forever,daemon=True).start()
+ (root/'mono-expected.json').write_text(json.dumps(mono_records));(root/'expected.json').write_text(json.dumps(records));server=ThreadingHTTPServer(('127.0.0.1',0),partial(Quiet,directory=str(root)));threading.Thread(target=server.serve_forever,daemon=True).start()
  options=Options();options.binary_location=shutil.which('chromium')
  for flag in ['--headless=new','--no-sandbox','--disable-dev-shm-usage']:options.add_argument(flag)
  browser=webdriver.Chrome(service=Service(shutil.which('chromedriver')),options=options);browser.set_script_timeout(120)
@@ -79,21 +81,38 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-music-decoder-') as temporary:
     if(e.decoder_rewind()!==0||e.decoder_read(1600)<=0)throw Error('rewind');results.push({name:item.name,samples,fnv32:fnv});
    }
    if(mono){
-    const {instance}=await WebAssembly.instantiate(binary,{}),e=instance.exports,input=await(await fetch('mono.mp3')).arrayBuffer(),pointer=e.decoder_reserve(input.byteLength);
-    if(!pointer)throw Error('mono allocation');new Uint8Array(e.memory.buffer,pointer,input.byteLength).set(new Uint8Array(input));
-    if(e.decoder_open()!==0||e.decoder_channels()!==1)throw Error('mono format');
-    const rate=e.decoder_rate();for(const target of [44100,48000])if(e.decoder_set_mixer_rate(target)!==-1||e.decoder_channels()!==1||e.decoder_rate()!==rate)throw Error('mono mixer rejection');
-    if(e.decoder_set_output_rate(48000)!==0||e.decoder_channels()!==2)throw Error('mono global conversion');
-    let heard=false,ended=false;
-    for(let call=0;call<1000;call++){
-     const count=e.decoder_read(1600);if(count<0||count%2)throw Error('mono output');if(!count){ended=true;break;}
-     const pcm=new DataView(e.memory.buffer,e.decoder_output(),count*2);
-     for(let i=0;i<count;i+=2){const left=pcm.getInt16(i*2,true);heard||=left!==0;if(left!==pcm.getInt16((i+1)*2,true))throw Error('mono duplication');}
+    const input=await(await fetch('mono.mp3')).arrayBuffer(),monoExpected=await(await fetch('mono-expected.json')).json();
+    for(const target of [44100,48000])for(const mixer of [false,true]){
+     const {instance}=await WebAssembly.instantiate(binary,{}),e=instance.exports,pointer=e.decoder_reserve(input.byteLength);
+     if(!pointer)throw Error('mono allocation');new Uint8Array(e.memory.buffer,pointer,input.byteLength).set(new Uint8Array(input));
+     if(e.decoder_open()!==0||e.decoder_channels()!==1)throw Error('mono format');
+     if((mixer?e.decoder_set_mixer_rate(target):e.decoder_set_output_rate(target))!==0||e.decoder_channels()!==2||e.decoder_rate()!==target)throw Error('mono conversion');
+     let previous;
+     for(let pass=0;pass<2;pass++){
+      let heard=false,ended=false,samples=0,fnv=2166136261;
+      outer:for(let call=0;call<1000;call++){
+       // Each outer iteration retains the old 1,600-value workload bound.
+       for(const size of pass===0?[1600]:[2,1598]){
+        const count=e.decoder_read(size);
+        if(count<0||count%2||count>size)throw Error('mono output');if(!count){ended=true;break outer;}
+        if(e.decoder_work()>524288||e.memory.buffer.byteLength>expected[0].memory_budget)throw Error('mono resource budget');
+        const pcm=new DataView(e.memory.buffer,e.decoder_output(),count*2);
+        for(let i=0;i<count;i+=2){const left=pcm.getInt16(i*2,true);heard||=left!==0;if(left!==pcm.getInt16((i+1)*2,true))throw Error('mono duplication');}
+        for(const byte of new Uint8Array(e.memory.buffer,e.decoder_output(),count*2))fnv=Math.imul(fnv^byte,16777619)>>>0;
+        samples+=count;
+       }
+      }
+      if(!heard||!ended)throw Error('mono audible ending');
+      const native=monoExpected.find(item=>item.rate===target&&item.original_mixer===mixer);
+      if(!native||samples!==native.samples||fnv!==native.fnv32)throw Error('mono native/browser PCM mismatch');
+      if(pass===0){previous={samples,fnv};if(e.decoder_rewind()!==0)throw Error('mono rewind');}
+      else if(previous.samples!==samples||previous.fnv!==fnv)throw Error('mono chunk/rewind mismatch');
+     }
     }
-    if(!heard||!ended)throw Error('mono audible ending');
    }return results;
   })().then(results=>done({results})).catch(error=>done({error:String(error)}));''',bool(args.mono_input))
   assert 'error' not in result,result
   assert len(result['results'])==len(records)
   for record in result['results']:print('Chromium matches native: '+record['name']+'; '+str(record['samples'])+' sample values.',flush=True)
+  if args.mono_input:print('Chromium mono matches complete native PCM: both rates/modes, equal channels, audible ending, complete rewind and varied read sizes.',flush=True)
  finally:browser.quit();server.shutdown();server.server_close()

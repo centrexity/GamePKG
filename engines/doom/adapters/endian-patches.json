@@ -1,0 +1,12 @@
+[
+  {
+    "before": "#define __I_SWAP__",
+    "after": "#define __I_SWAP__\n\n#include <stdint.h>",
+    "count": 1
+  },
+  {
+    "before": "static inline unsigned long swapLE32(unsigned long val)",
+    "after": "static inline uint32_t swapLE32(uint32_t val)",
+    "count": 1
+  }
+]

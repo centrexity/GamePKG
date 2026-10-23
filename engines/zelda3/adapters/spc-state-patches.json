@@ -1,0 +1,7 @@
+[
+  {"before":"#include \"spc_player.h\"","after":"#include \"spc_player.h\"\n#include \"gamepkg_spc_state.h\"","count":1},
+  {"before":"memcpy(&p->ram[(m->org_off & 0x7fff) + i * 2], (uint8 *)c + m->off, m->org_off & 0x8000 ? 2 : 1);","after":"gamepkg_spc_to_ram(&p->ram[(m->org_off & 0x7fff) + i * 2], (uint8 *)c + m->off, m->org_off & 0x8000 ? 2 : 1);","count":1},
+  {"before":"memcpy(&p->ram[m->org_off], (uint8 *)p + m->off, m->size);","after":"gamepkg_spc_to_ram(&p->ram[m->org_off], (uint8 *)p + m->off, m->size);","count":1},
+  {"before":"memcpy((uint8 *)c + m->off, &p->ram[(m->org_off & 0x7fff) + i * 2], m->org_off & 0x8000 ? 2 : 1);","after":"gamepkg_spc_from_ram((uint8 *)c + m->off, &p->ram[(m->org_off & 0x7fff) + i * 2], m->org_off & 0x8000 ? 2 : 1);","count":1},
+  {"before":"memcpy((uint8 *)p + m->off, &p->ram[m->org_off], m->size);","after":"gamepkg_spc_from_ram((uint8 *)p + m->off, &p->ram[m->org_off], m->size);","count":1}
+]

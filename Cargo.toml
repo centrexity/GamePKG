@@ -1,6 +1,6 @@
 [package]
 name = "gamepkg"
-version = "0.1.17"
+version = "0.1.18"
 edition = "2021"
 rust-version = "1.89"
 license = "Apache-2.0"
@@ -23,6 +23,8 @@ path = "src/bin/gui.rs"
 required-features = ["gui"]
 
 [dependencies]
+cap-std = "=4.0.3"
+cap-fs-ext = "=4.0.3"
 egui-winit = { version = "=0.31.1", optional = true, default-features = false }
 cpal = { version = "0.18.2", optional = true }
 wit-component = "=0.236.1"
@@ -62,4 +64,6 @@ wat = "1"
 gilrs = { version = "=0.10.10", optional = true, default-features = false, features = ["xinput"] }
 
 [patch.crates-io]
+egui = { path = "vendor/egui" }
+winit = { path = "vendor/winit" }
 egui-winit = { path = "vendor/egui-winit" }

@@ -484,6 +484,23 @@ fn original_desktop_keyboard_mouse_binding_migration_and_quit() {
     }
     parts[7] = replace_config(&parts[7], "mouseb_nextweapon", "3");
     parts[7] = replace_config(&parts[7], "mouseb_prevweapon", "4");
+    parts[6] = replace_config(&parts[6], "mouseb_fire", "-2");
+    parts[6] = replace_config(&parts[6], "joyb_strafe", "2147483647");
+    parts[6] = replace_config(&parts[6], "joyb_speed", "31");
+    parts[7] = replace_config(&parts[7], "mouseb_use", "8");
+    parts[7] = replace_config(&parts[7], "joyb_menu_activate", "31");
+    parts[7] = replace_config(&parts[7], "mouseb_backward", "0xffffffff");
+    for (name, value) in [
+        ("usegamma", "2147483647"),
+        ("screenblocks", "-2147483648"),
+        ("sfx_volume", "-1"),
+        ("music_volume", "16"),
+        ("detaillevel", "2"),
+        ("mouse_sensitivity", "2147483647"),
+        ("snd_channels", "2147483647"),
+    ] {
+        parts[6] = replace_config(&parts[6], name, value);
+    }
     game.finish().unwrap();
     drop(game);
     write_bundle(root, &parts, 0);
@@ -492,6 +509,29 @@ fn original_desktop_keyboard_mouse_binding_migration_and_quit() {
     println!("desktop phase: reload and fire");
     let repaired = bundle_parts(root);
     assert_eq!(config_value(&repaired[6], "key_fire"), "29");
+    assert_eq!(config_value(&repaired[6], "mouseb_fire"), "0");
+    assert_eq!(config_value(&repaired[6], "joyb_strafe"), "1");
+    assert_eq!(config_value(&repaired[6], "joyb_speed"), "31");
+    assert_eq!(config_value(&repaired[7], "mouseb_use"), "-1");
+    assert_eq!(config_value(&repaired[7], "joyb_menu_activate"), "-1");
+    assert_eq!(config_value(&repaired[7], "mouseb_backward"), "-1");
+    for (name, value) in [
+        ("usegamma", "0"),
+        ("screenblocks", "10"),
+        ("sfx_volume", "8"),
+        ("music_volume", "8"),
+        ("detaillevel", "1"),
+        ("mouse_sensitivity", "5"),
+        ("snd_channels", "8"),
+    ] {
+        assert_eq!(config_value(&repaired[6], name), value);
+    }
+    for slot in 0..6 {
+        assert_eq!(
+            repaired[slot], parts[slot],
+            "repairing control settings changed save slot {slot}"
+        );
+    }
     game.doom_input(Event::Key {
         code: 0x9d,
         down: true,
@@ -590,6 +630,100 @@ fn original_desktop_keyboard_mouse_binding_migration_and_quit() {
         before.1, after.1,
         "relative mouse turning did not change forward movement direction"
     );
+    println!("desktop phase: sixth mouse button binding and release");
+    game.finish().unwrap();
+    drop(game);
+    let mut parts = bundle_parts(root);
+    parts[6] = replace_config(&parts[6], "mouseb_fire", "7");
+    parts[6] = replace_config(&parts[6], "mouse_sensitivity", "30");
+    parts[6] = replace_config(&parts[6], "snd_channels", "16");
+    for (name, value) in [
+        ("usegamma", "4"),
+        ("screenblocks", "11"),
+        ("sfx_volume", "15"),
+        ("music_volume", "15"),
+        ("detaillevel", "1"),
+    ] {
+        parts[6] = replace_config(&parts[6], name, value);
+    }
+    write_bundle(root, &parts, 0);
+    let mut game = load(root, &wad);
+    assert!(
+        run(&mut game, 120, 0),
+        "maximum valid volume settings produced no audio"
+    );
+    let maximum = bundle_parts(root);
+    assert_eq!(config_value(&maximum[6], "mouse_sensitivity"), "30");
+    assert_eq!(config_value(&maximum[6], "snd_channels"), "16");
+    for (name, value) in [
+        ("usegamma", "4"),
+        ("screenblocks", "11"),
+        ("sfx_volume", "15"),
+        ("music_volume", "15"),
+        ("detaillevel", "1"),
+    ] {
+        assert_eq!(config_value(&maximum[6], name), value);
+    }
+    assert!(game.frame().commands.iter().any(|command| {
+        matches!(command, Command::Image { image, .. }
+            if image.pixels().chunks_exact(4).any(|pixel| pixel[..3].iter().any(|value| *value != 0)))
+    }), "maximum gamma/fullscreen low-detail settings produced no visible game image");
+    println!("desktop phase: extended sensitivity Options thermometer");
+    desktop_key(&mut game, 27);
+    desktop_key(&mut game, b'o');
+    desktop_key(&mut game, 13);
+    run(&mut game, 30, 0); // Draw the original thermometer at extended value 30.
+    desktop_key(&mut game, b'm'); // Messages.
+    desktop_key(&mut game, b'm'); // Mouse sensitivity.
+    press(&mut game, 1); // Original left arrow reduces the extended value.
+    assert_eq!(
+        config_value(&bundle_parts(root)[6], "mouse_sensitivity"),
+        "29"
+    );
+    desktop_key(&mut game, 27);
+    game.doom_input(Event::Mouse {
+        buttons: 1,
+        dx: 0,
+        dy: 0,
+    })
+    .unwrap();
+    run(&mut game, 30, 0);
+    assert_eq!(
+        game.builtin_controller().unwrap().unwrap() & (1 << 24),
+        0,
+        "left mouse fired despite the original sixth-button binding"
+    );
+    game.doom_input(Event::Mouse {
+        buttons: 128,
+        dx: 0,
+        dy: 0,
+    })
+    .unwrap();
+    run(&mut game, 30, 0);
+    assert_ne!(
+        game.builtin_controller().unwrap().unwrap() & (1 << 24),
+        0,
+        "the original sixth mouse button did not fire"
+    );
+    game.doom_release_input().unwrap();
+    run(&mut game, 90, 0);
+    assert_eq!(
+        game.builtin_controller().unwrap().unwrap() & (1 << 24),
+        0,
+        "focus release left the sixth button held"
+    );
+    assert_eq!(config_value(&bundle_parts(root)[6], "mouseb_fire"), "7");
+    println!("desktop phase: gamma shortcut and saved relaunch");
+    desktop_key(&mut game, 0xd7); // Original F11: gamma 4 wraps to 0.
+    desktop_key(&mut game, 0xd7); // Then advance to a nondefault level.
+    run(&mut game, 60, 0);
+    assert_eq!(config_value(&bundle_parts(root)[6], "usegamma"), "1");
+    game.finish().unwrap();
+    drop(game);
+    let mut game = load(root, &wad);
+    run(&mut game, 120, 0);
+    assert_eq!(config_value(&bundle_parts(root)[6], "usegamma"), "1");
+    assert_eq!(config_value(&bundle_parts(root)[6], "mouseb_fire"), "7");
     println!("desktop phase: quit");
     desktop_key(&mut game, 0xc4);
     desktop_key(&mut game, b'y'); // Original F10 + confirmation.
@@ -606,4 +740,225 @@ fn original_desktop_keyboard_mouse_binding_migration_and_quit() {
         "original quit menu did not close the game cleanly"
     );
     game.finish().unwrap();
+    drop(game);
+    println!("desktop phase: zero effect channels preserve music");
+    let mut parts = bundle_parts(root);
+    parts[6] = replace_config(&parts[6], "snd_channels", "0");
+    write_bundle(root, &parts, 0);
+    let mut game = load(root, &wad);
+    assert!(
+        run(&mut game, 120, 0),
+        "zero effect channels disabled music"
+    );
+    assert_eq!(config_value(&bundle_parts(root)[6], "snd_channels"), "0");
+    game.finish().unwrap();
+    drop(game);
+    for (device, audible) in [
+        ("0", false),
+        ("0", false),
+        ("3", true),
+        ("2", true),
+        ("5", false),
+    ] {
+        println!("desktop phase: music device {device}");
+        let mut parts = bundle_parts(root);
+        parts[6] = replace_config(&parts[6], "snd_musicdevice", device);
+        write_bundle(root, &parts, 0);
+        let mut game = load(root, &wad);
+        assert_eq!(
+            run(&mut game, 120, 0),
+            audible,
+            "music device {device} ignored its enabled/supported state"
+        );
+        assert_eq!(
+            config_value(&bundle_parts(root)[6], "snd_musicdevice"),
+            device
+        );
+        game.finish().unwrap();
+    }
+}
+
+#[test]
+#[ignore = "requires private original WAD and built engine fixtures"]
+fn original_linked_chaingun_sound_plays() {
+    let source = std::path::PathBuf::from(std::env::var_os("GAMEPKG_DOOM_TEST_ROOT").unwrap());
+    let wad = std::path::PathBuf::from(std::env::var_os("GAMEPKG_DOOM_TEST_WAD").unwrap());
+    let fixture = tempfile::tempdir().unwrap();
+    copy(&source, fixture.path());
+    let mut game = load(fixture.path(), &wad);
+    run(&mut game, 120, 0);
+    for _ in 0..4 {
+        desktop_key(&mut game, 13);
+    }
+    run(&mut game, 120, 0);
+    assert_eq!(game.builtin_state().unwrap().unwrap().0 & 0xffff, 0);
+    desktop_key(&mut game, 0xbe); // Original F4 sound menu.
+    press(&mut game, 8); // Music slider, skipping its spacer.
+    for _ in 0..16 {
+        press(&mut game, 1);
+    }
+    desktop_key(&mut game, 27);
+    run(&mut game, 60, 0);
+    let config = bundle_parts(fixture.path());
+    assert_eq!(config_value(&config[6], "music_volume"), "0");
+    let mut quiet_peak = 0i32;
+    for _ in 0..30 {
+        game.step(0).unwrap();
+        quiet_peak = quiet_peak.max(
+            game.audio_frame()
+                .iter()
+                .map(|s| i32::from(*s).abs())
+                .max()
+                .unwrap(),
+        );
+    }
+    for code in b"idkfa" {
+        desktop_key(&mut game, *code);
+    }
+    desktop_key(&mut game, b'4');
+    run(&mut game, 120, 0);
+    assert_eq!(
+        (game.builtin_controller().unwrap().unwrap() >> 27) & 15,
+        3,
+        "original chaingun selection failed"
+    );
+    let mut firing_peak = 0i32;
+    for _ in 0..120 {
+        game.step(16 << 8).unwrap();
+        firing_peak = firing_peak.max(
+            game.audio_frame()
+                .iter()
+                .map(|s| i32::from(*s).abs())
+                .max()
+                .unwrap(),
+        );
+    }
+    assert!(
+        firing_peak > quiet_peak,
+        "chaingun audio peak {firing_peak} did not exceed quiet OPL baseline {quiet_peak}"
+    );
+    assert_ne!(game.builtin_controller().unwrap().unwrap() & (1 << 24), 0);
+    run(&mut game, 60, 0);
+    game.finish().unwrap();
+}
+
+#[test]
+#[ignore = "requires private original WAD and built engine fixtures"]
+fn stale_doom_engine_is_rejected_and_integrity_fix_rebuilds() {
+    let source = std::path::PathBuf::from(std::env::var_os("GAMEPKG_DOOM_TEST_ROOT").unwrap());
+    let wad = std::path::PathBuf::from(std::env::var_os("GAMEPKG_DOOM_TEST_WAD").unwrap());
+    let fixture = tempfile::tempdir().unwrap();
+    copy(&source, fixture.path());
+    let root = fixture.path();
+    let id = "com.gamepkg.doom";
+    let package = std::fs::read(root.join(format!("{id}.gamepkg"))).unwrap();
+    let native = gamepkg::native::cache_path(root, id).unwrap();
+    if native.exists() {
+        std::fs::remove_file(native).unwrap();
+    }
+    let engine = gamepkg::build::cache_path(root, id)
+        .unwrap()
+        .with_file_name("doom.wasm");
+    let old = wat::parse_str("(module (memory 1 1024))").unwrap();
+    std::fs::write(&engine, &old).unwrap();
+    gamepkg::integrity::record_build(&engine, &old).unwrap();
+    assert!(!gamepkg::build::is_built(root, id).unwrap());
+    assert!(format!("{:#}", gamepkg::integrity::check(root, id).unwrap_err()).contains("rebuild"));
+    let error = match Game::load_target(root, id, std::slice::from_ref(&wad), Some(false)) {
+        Ok(_) => panic!("stale DOOM engine launched"),
+        Err(error) => error,
+    };
+    assert!(format!("{error:#}").contains("rebuild"));
+    gamepkg::integrity::fix_target(root, id, None, false).unwrap();
+    assert!(gamepkg::build::is_built(root, id).unwrap());
+    gamepkg::integrity::check(root, id).unwrap();
+    let mut game = Game::load_target(root, id, &[wad], Some(false)).unwrap();
+    game.step(0).unwrap();
+    game.finish().unwrap();
+    assert_eq!(
+        std::fs::read(root.join(format!("{id}.gamepkg"))).unwrap(),
+        package
+    );
+}
+
+#[test]
+#[ignore = "requires private original WAD and built engine fixtures"]
+fn original_music_changes_maps_and_saved_map_resume() {
+    let source = std::path::PathBuf::from(std::env::var_os("GAMEPKG_DOOM_TEST_ROOT").unwrap());
+    let wad = std::path::PathBuf::from(std::env::var_os("GAMEPKG_DOOM_TEST_WAD").unwrap());
+    let fixture = tempfile::tempdir().unwrap();
+    copy(&source, fixture.path());
+    let mut game = load(fixture.path(), &wad);
+    run(&mut game, 120, 0);
+    for _ in 0..4 {
+        desktop_key(&mut game, 13);
+    }
+    run(&mut game, 120, 0);
+    desktop_key(&mut game, 0xbe); // Original sound-volume menu.
+    for _ in 0..16 {
+        press(&mut game, 1);
+    }
+    press(&mut game, 8);
+    for _ in 0..16 {
+        press(&mut game, 2);
+    }
+    desktop_key(&mut game, 27);
+    run(&mut game, 120, 0);
+    let config = bundle_parts(fixture.path());
+    assert_eq!(config_value(&config[6], "sfx_volume"), "0");
+    assert_eq!(config_value(&config[6], "music_volume"), "15");
+    assert!(
+        run(&mut game, 180, 0),
+        "initial music was silent with effects disabled"
+    );
+    // Registered Doom 1.9 deliberately emulates its broken idmus mapping to
+    // Doom II tracks. Use supported map transitions for music replacement.
+    for code in b"idclev12" {
+        desktop_key(&mut game, *code);
+    }
+    run(&mut game, 120, 0);
+    let saved_state = game.builtin_state().unwrap().unwrap();
+    assert_eq!(saved_state.0 & 0xffff, 0);
+    assert_eq!(saved_state.0 >> 16, 2);
+    assert!(run(&mut game, 180, 0), "map 2 music was silent");
+    run(&mut game, 1, (1 << 22) | (1 << 23) | 64);
+    run(&mut game, 60, 0);
+    let saved = bundle_parts(fixture.path());
+    assert!(saved[0].len() > 1000);
+    for code in b"idclev13" {
+        desktop_key(&mut game, *code);
+    }
+    run(&mut game, 120, 0);
+    assert_eq!(game.builtin_state().unwrap().unwrap().0 >> 16, 3);
+    assert!(run(&mut game, 180, 0), "map 3 music was silent");
+    // Original F3/load menu must replace map 3 and its music with the saved map.
+    desktop_key(&mut game, 0xbd);
+    desktop_key(&mut game, 13);
+    run(&mut game, 120, 0);
+    assert_eq!(game.builtin_state().unwrap().unwrap().0 >> 16, 2);
+    assert!(run(&mut game, 180, 0), "loaded map music was silent");
+    game.finish().unwrap();
+    drop(game);
+    let mut saved_config = bundle_parts(fixture.path());
+    saved_config[6] = b"ignored \0 hidden\nsfx_volume 0\nmusic_volume 15".to_vec();
+    write_bundle(fixture.path(), &saved_config, 0);
+    let mut resumed = load(fixture.path(), &wad);
+    run(&mut resumed, 120, 0);
+    assert_eq!(resumed.builtin_state().unwrap().unwrap().0 >> 16, 2);
+    assert!(
+        run(&mut resumed, 180, 0),
+        "fresh-engine saved map music was silent"
+    );
+    // One step from the loaded values proves the original parser used both
+    // valid settings after the malformed line, including the final no-newline one.
+    desktop_key(&mut resumed, 0xbe);
+    press(&mut resumed, 2);
+    press(&mut resumed, 8);
+    press(&mut resumed, 1);
+    desktop_key(&mut resumed, 27);
+    let config = bundle_parts(fixture.path());
+    assert_eq!(config_value(&config[6], "sfx_volume"), "1");
+    assert_eq!(config_value(&config[6], "music_volume"), "14");
+    assert!(!config[6].contains(&0));
+    resumed.finish().unwrap();
 }

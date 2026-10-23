@@ -41,12 +41,13 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-network-') as directory:
   (source/'source/src/lib.rs').write_text('''pub fn game_tick(_:u32,_:u64)->u64 {
    let mut denied=0u32;
    if let Err(gamepkg::NetworkError::PermissionDenied)=gamepkg::https_get("https://unused.invalid/"){denied+=1;}
+   if let Err(gamepkg::NetworkError::PermissionDenied)=gamepkg::network_request("https://unused.invalid/",&mut [0u8;1]){denied+=1;}
    if let Err(gamepkg::NetworkError::PermissionDenied)=gamepkg::tcp_connect("127.0.0.1:1"){denied+=1;}
    if let Err(gamepkg::NetworkError::PermissionDenied)=gamepkg::udp_connect("127.0.0.1:1"){denied+=1;}
    if let Err(gamepkg::NetworkError::PermissionDenied)=gamepkg::tcp_listen("127.0.0.1:1"){denied+=1;}
-   if denied==4 {99u64<<32} else {0}
+   if denied==5 {99u64<<32} else {0}
   }''')
   package=root/(profile+'-disabled.gamepkg');run('pack',source,'-o',package,'--key',key);run('install',package,'--trust-creator')
   run('build',disabled,'--target','wasm')
   output=run('run',disabled,'--frames','1');assert 'score: 99' in output,output
- print('Core and component networking passed: unlisted local TCP echo and disabled HTTPS/TCP/UDP/listener denial through bounded bindings.')
+ print('Core and component networking passed: unlisted local TCP echo and disabled HTTPS/cached-HTTPS/TCP/UDP/listener denial through bounded bindings.')
