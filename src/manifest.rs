@@ -260,6 +260,7 @@ impl Manifest {
             }
         }
         let cube2 = m.builtin_engine.as_deref() == Some(crate::cube2::PROFILE);
+        let opence = m.builtin_engine.as_deref() == Some(crate::opence::PROFILE);
         if cube2 {
             if !m.shaders.is_empty() || !m.shared_assets.is_empty() {
                 bail!("Cube 2 cannot substitute package shaders or media for original game data");
@@ -281,9 +282,34 @@ impl Manifest {
             {
                 bail!("Cube 2 requires a data folder, input/save/audio permissions and at least 2 GiB memory");
             }
+        } else if opence {
+            if !m.shaders.is_empty() || !m.shared_assets.is_empty() {
+                bail!("OpenCE cannot substitute package shaders or media for your game data");
+            }
+            let data = m
+                .game_data
+                .as_ref()
+                .context("OpenCE requires a folder containing your Halo maps or disc image")?;
+            if data.title.trim().is_empty()
+                || data.title.len() > 256
+                || data.title.chars().any(char::is_control)
+                || data.user_selected_servers
+                || m.runtime_profile != "core-v1"
+                || m.entry_world != "game"
+                || m.required_rom_count() != 0
+                || !m.permissions.save
+                || !m.permissions.audio
+                || !m.permissions.input
+                || m.permissions.network
+                || m.limits.hard_memory_bytes < crate::opence::MEMORY
+            {
+                bail!("OpenCE requires a data folder, input/save/audio permissions, no guest network, and at least 2 GiB memory");
+            }
         } else {
             if m.game_data.is_some() {
-                bail!("game-data folders are only supported by the pinned Cube 2 engine");
+                bail!(
+                    "game-data folders are only supported by the pinned Cube 2 and OpenCE engines"
+                );
             }
             if let Some(engine) = &m.builtin_engine {
                 let minimum = crate::builtin::memory(engine)? + 16 * 1048576;
@@ -339,6 +365,8 @@ impl Manifest {
             || m.limits.hard_memory_bytes
                 > if cube2 {
                     4 * 1024 * 1024 * 1024
+                } else if opence {
+                    crate::opence::HARD_MEMORY_LIMIT
                 } else {
                     512 * 1024 * 1024
                 }

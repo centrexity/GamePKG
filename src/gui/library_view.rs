@@ -135,7 +135,7 @@ impl App {
                 || (self
                     .data_paths
                     .get(&m.id)
-                    .is_some_and(|p| crate::game_data::available(std::path::Path::new(p)))
+                    .is_some_and(|p| crate::game_data::available_for(m, std::path::Path::new(p)))
                     && self
                         .applied_settings
                         .as_ref()

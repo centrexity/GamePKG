@@ -9,7 +9,10 @@ use std::{
 pub(crate) fn identity(manifest: &Manifest) -> Result<String> {
     ensure!(
         manifest.game_data.is_some()
-            && manifest.builtin_engine.as_deref() == Some(crate::cube2::PROFILE),
+            && matches!(
+                manifest.builtin_engine.as_deref(),
+                Some(crate::cube2::PROFILE | crate::opence::PROFILE)
+            ),
         "this game does not request a supported data folder"
     );
     Ok(crate::verify::digest(&serde_json::to_vec(&(
@@ -42,6 +45,13 @@ pub fn load(root: &Path, manifest: &Manifest) -> Result<Option<PathBuf>> {
     }
     Ok(read(root)?.remove(&identity(manifest)?).map(PathBuf::from))
 }
+pub fn available_for(manifest: &Manifest, path: &Path) -> bool {
+    if manifest.builtin_engine.as_deref() == Some(crate::opence::PROFILE) {
+        crate::opence::classify(path).is_ok()
+    } else {
+        available(path)
+    }
+}
 pub fn available(path: &Path) -> bool {
     path.is_dir()
         && ["data", "packages"].iter().all(|name| {
@@ -61,12 +71,16 @@ pub fn remember(root: &Path, manifest: &Manifest, path: &Path) -> Result<()> {
         text.len() <= 4096 && !text.chars().any(char::is_control),
         "invalid game-data location"
     );
-    for name in ["data", "packages"] {
-        let metadata = path.join(name).symlink_metadata()?;
-        ensure!(
-            metadata.is_dir() && !metadata.file_type().is_symlink(),
-            "choose the original installation containing real data and packages folders"
-        );
+    if manifest.builtin_engine.as_deref() == Some(crate::opence::PROFILE) {
+        crate::opence::classify(&path)?;
+    } else {
+        for name in ["data", "packages"] {
+            let metadata = path.join(name).symlink_metadata()?;
+            ensure!(
+                metadata.is_dir() && !metadata.file_type().is_symlink(),
+                "choose the original installation containing real data and packages folders"
+            );
+        }
     }
     let mut entries = read(root)?;
     entries.insert(key, text.to_owned());

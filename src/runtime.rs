@@ -90,8 +90,11 @@ impl Game {
     ) -> Result<Self> {
         settings.validate()?;
         anyhow::ensure!(
-            manifest.builtin_engine.as_deref() != Some(crate::cube2::PROFILE),
-            "Cube 2 can only run from its verified native engine cache"
+            !matches!(
+                manifest.builtin_engine.as_deref(),
+                Some(crate::cube2::PROFILE | crate::opence::PROFILE)
+            ),
+            "this engine runs from its verified native cache, not a Wasm module"
         );
         if !matches!(
             manifest.runtime_profile.as_str(),

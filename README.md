@@ -44,6 +44,8 @@ Game networking is off by default. A signed `network = true` enables supported H
 
 Port recipes for DOOM, Zelda3, Arkanoo, and 2048 live in [GamePKG_Ports](https://github.com/centrexity/GamePKG_Ports). This repository pins them under `ports` for integration tests and release bundles. Existing checkouts should run `git submodule update --init --recursive` before building or testing. Trusted engine integration remains part of the host.
 
+Halo: Combat Evolved is a Linux profile in `ports/halo`. It is not in the published catalog. Build fetches the pinned OpenCE commit, and you supply an Xbox disc image or extracted maps folder. See [engines/halo/README.md](engines/halo/README.md) and [ports/HALO.md](ports/HALO.md).
+
 To import the published ports, choose **Add** in the library, then **Import official ports library**. The list URL is remembered for future refreshes. Or download [ports.gamepkglist](https://github.com/centrexity/GamePKG_Ports/releases/latest/download/ports.gamepkglist) and drag it into the app. Entries remain **Not downloaded** until you choose a game; packages still require creator review. The current DOOM port requires the updated main host.
 
 

@@ -70,7 +70,10 @@ pub fn is_built(root: &Path, id: &str) -> Result<bool> {
         return Ok(false);
     };
     let manifest = registry::installed_manifest(root, id)?;
-    if manifest.builtin_engine.as_deref() == Some(crate::cube2::PROFILE) {
+    if matches!(
+        manifest.builtin_engine.as_deref(),
+        Some(crate::cube2::PROFILE | crate::opence::PROFILE)
+    ) {
         return Ok(false);
     }
     if let Some(profile) = manifest.builtin_engine.as_deref() {
@@ -166,6 +169,13 @@ pub fn compile(root: &Path, id: &str) -> Result<()> {
         == Some(crate::cube2::PROFILE)
     {
         bail!("Cube 2 requires the native Build action; Wasm compilation is unavailable");
+    }
+    if registry::installed_manifest(root, id)?
+        .builtin_engine
+        .as_deref()
+        == Some(crate::opence::PROFILE)
+    {
+        bail!("OpenCE requires the native Build action; Wasm compilation is unavailable");
     }
     #[cfg(windows)]
     {

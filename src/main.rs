@@ -358,6 +358,21 @@ fn main() -> Result<()> {
                 let root = gamepkg::registry::default_root()?;
                 gamepkg::game_data::remember_for_game(&root, &id, &path)?;
             }
+            {
+                let root = gamepkg::registry::default_root()?;
+                if gamepkg::registry::installed_manifest(&root, &id)?
+                    .builtin_engine
+                    .as_deref()
+                    == Some(gamepkg::opence::PROFILE)
+                {
+                    if frames.is_some() {
+                        anyhow::bail!("OpenCE plays in its own window. Run it without --frames, or use gamepkg-gui --play {id}");
+                    }
+                    gamepkg::opence::launch(&root, &id)?;
+                    println!("OpenCE closed");
+                    return Ok(());
+                }
+            }
             let mut game = gamepkg::runtime::Game::load_with_roms(
                 &gamepkg::registry::default_root()?,
                 &id,

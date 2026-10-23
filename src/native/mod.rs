@@ -88,9 +88,22 @@ pub fn cache_path(root: &Path, id: &str) -> Result<PathBuf> {
             &crate::verify::digest(&bytes),
         ));
     }
+    if manifest.builtin_engine.as_deref() == Some(crate::opence::PROFILE) {
+        return Ok(crate::opence::binary_path(
+            root,
+            &crate::verify::digest(&bytes),
+        ));
+    }
     Ok(path_for_digest(root, &crate::verify::digest(&bytes)))
 }
 pub fn is_built(root: &Path, id: &str) -> Result<bool> {
+    if crate::registry::installed_manifest(root, id)?
+        .builtin_engine
+        .as_deref()
+        == Some(crate::opence::PROFILE)
+    {
+        return crate::opence::cache_ready(&cache_path(root, id)?);
+    }
     let path = cache_path(root, id)?;
     let Ok(bytes) = crate::files::read_regular(&path, 64 * 1048576, false) else {
         return Ok(false);
@@ -110,6 +123,13 @@ pub fn compile(root: &Path, id: &str) -> Result<()> {
         {
             return crate::cube2::build::compile_package(root, id);
         }
+        if crate::registry::installed_manifest(root, id)?
+            .builtin_engine
+            .as_deref()
+            == Some(crate::opence::PROFILE)
+        {
+            return crate::opence::build::compile_package(root, id);
+        }
         build::compile(root, id)
     }
     #[cfg(not(target_os = "linux"))]
@@ -120,6 +140,13 @@ pub fn compile(root: &Path, id: &str) -> Result<()> {
             == Some(crate::cube2::PROFILE)
         {
             bail!("Cube 2 currently requires Linux native process isolation");
+        }
+        if crate::registry::installed_manifest(root, id)?
+            .builtin_engine
+            .as_deref()
+            == Some(crate::opence::PROFILE)
+        {
+            bail!("OpenCE currently requires Linux to build and run its 32-bit engine");
         }
         let _ = (root, id);
         bail!("native game isolation is not available on this platform; choose the separate Wasm build")
