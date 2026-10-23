@@ -89,10 +89,48 @@ admission, a 4,308,992-byte XBE load, original intro execution, and Vulkan devic
 creation on an RTX 3090. Wine needs its display connection even for this
 headless Vulkan check; omitting it produces a CPU fallback and does not qualify
 Vulkan. Both boots were externally bounded and intentionally ended, with
-private saves, a read-only ISO and no network. This is early boot evidence,
-not verified Windows race controls, saves, native window or campaign gameplay.
-The Windows launcher/process owner, real gameplay gates and player build/kit
-promotion remain required. The player kit stays at its verified Linux v8 pin.
+private saves, a read-only ISO and no network.
+
+The same native executable now passes the original Xbox-layout race control
+assertions and PS2-layout Crash impact/results/Continue assertions under Wine.
+It creates and reloads the original 59,904-byte profile plus 54-byte metadata,
+preserving save hashes, and captures 45 seconds of non-silent 48 kHz stereo.
+Captured race frames show the original car/world/HUD. A separate fresh-prefix
+desktop check loads that profile using keyboard input, reaches the main menu,
+resizes the Vulkan window to 1024x768 and closes normally with exit status zero
+and original renderer teardown. Its 37-second run presents at about 59 frames/s
+on the RTX 3090; this is one diagnostic run, not a general performance claim.
+The window test confirms focus, uses bounded noninteractive captures and always
+releases its generated keys, including when closing destroys the window.
+
+Maintainer reproductions (Wine/Python are not player requirements):
+
+```sh
+GAMEPKG_GAMEPLAY_WINE=1 bash tools/check_takedawn_gameplay.sh /path/to/game.exe /path/to/owned.iso /path/to/pinned/takedawn /path/to/private/reference-saves xbox race
+GAMEPKG_GAMEPLAY_WINE=1 bash tools/check_takedawn_gameplay.sh /path/to/game.exe /path/to/owned.iso /path/to/pinned/takedawn /path/to/private/reference-saves ps2 crash
+GAMEPKG_GAMEPLAY_WINE=1 bash tools/check_takedawn_session.sh /path/to/game.exe /path/to/owned.iso
+python3 tools/check_takedawn_windows_window.py /path/to/game.exe /path/to/owned.iso /path/to/private/reference-saves
+```
+
+Native Windows CI also runs the actual Rust disc-reader/media tests: 14 pass
+on each MSVC architecture and 15 on Linux in
+[40029576931](https://github.com/centrexity/GamePKG/actions/runs/40029576931).
+Those actual Windows API/reader tests and Wine gameplay cover distinct scopes.
+Actual Windows-host game/hardware checks, full campaign progression, physical
+controllers and audible fidelity remain unqualified. The Windows app's native
+builder, launcher/process owner, signed-package integration and kit promotion
+remain required. The player kit stays at its verified Linux v8 pin.
+
+The private v9 candidate packages the Windows transport/stagers, dependency pins
+and notices alongside the prepared Rust. Its archive SHA-256 is
+`d448d64f12640a0d71914b9fc5ab6842748510aa39e2f9ed2ca31f14e837f739`:
+55,181,802 compressed bytes, 668,157,299 unpacked bytes, 4,249 files. The actual
+Rust source-kit loader accepts it. Linux regression builds retain all 24,032
+exports, build media dependencies offline with an empty Cargo home, and preserve
+every packaged source hash. They pass the original race, PS2 Crash and profile
+create/reload/45-second audio gates. Of 486 Linux Rust units, 471 reuse individually
+verified identical source/compiler/flags/object checkpoints and 15 compile anew.
+This candidate is not yet the normal signed-package app build or player pin.
 
 ## Earlier reference bring-up
 
