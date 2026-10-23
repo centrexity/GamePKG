@@ -27,8 +27,8 @@ impl App {
                 blockers.push(format!("Increase the memory ceiling to at least 2048 MiB in Settings (currently {current} MiB)."));
             }
             match self.data_paths.get(&m.id).filter(|p| !p.is_empty()) {
-                None => blockers.push("Choose the original game-data folder below.".into()),
-                Some(path) if !crate::game_data::available(std::path::Path::new(path)) => blockers.push("The selected game-data folder is unavailable or missing its data/packages folders. Choose it again below.".into()),
+                None => blockers.push(if m.builtin_engine.as_deref()==Some(crate::opence::PROFILE){"Choose the folder that contains your Halo maps or one Xbox disc image.".into()}else{"Choose the original game-data folder below.".into()}),
+                Some(path) if !crate::game_data::available_for(m, std::path::Path::new(path)) => blockers.push(if m.builtin_engine.as_deref()==Some(crate::opence::PROFILE){"The selected folder needs maps/ui.map from your Xbox disc, or exactly one .iso/.xiso file.".into()}else{"The selected game-data folder is unavailable or missing its data/packages folders. Choose it again below.".into()}),
                 _ => {}
             }
         }
@@ -226,7 +226,7 @@ impl App {
                     if ui.add_enabled(!reviewing&&ready&&self.result.is_none(),super::theme::primary("Play")).clicked(){self.launch_selected(id.clone(),true);}
                     if ui.add_enabled(cfg!(target_os="linux")&&!reviewing&&self.result.is_none(),egui::Button::new(if built{"Rebuild"}else{"Build"}).min_size(egui::vec2(100.0,36.0))).clicked(){let id=id.clone();self.begin_work(move||{crate::native::compile(&crate::registry::default_root()?,&id)?;Ok(Work::NativeBuilt(id))});}
                     if ui.add_enabled(!reviewing&&self.result.is_none()&&m.update_url.is_some(),egui::Button::new("Check for updates")).clicked(){let id=id.clone();self.begin_work(move||match crate::registry::check_update(&crate::registry::default_root()?,&id)?{Some((m,file))=>Ok(Work::Update(m,file)),None=>Ok(Work::Message("This game is up to date.".into()))});}
-                    if ui.add_enabled(m.builtin_engine.as_deref()!=Some(crate::cube2::PROFILE)&&!reviewing&&self.result.is_none(),egui::Button::new("Build Wasm")).clicked(){let id=id.clone();self.begin_work(move||{crate::build::compile(&crate::registry::default_root()?,&id)?;Ok(Work::Message("Wasm build complete. Native build kept separately.".into()))});}
+                    if ui.add_enabled(!matches!(m.builtin_engine.as_deref(),Some(crate::cube2::PROFILE|crate::opence::PROFILE))&&!reviewing&&self.result.is_none(),egui::Button::new("Build Wasm")).clicked(){let id=id.clone();self.begin_work(move||{crate::build::compile(&crate::registry::default_root()?,&id)?;Ok(Work::Message("Wasm build complete. Native build kept separately.".into()))});}
                     if ui.add_enabled(!reviewing&&self.wasm_built.contains(&id)&&self.result.is_none()&&(!m.requires_rom||self.rom_paths.get(&id).is_some_and(|p|crate::rom_selections::ready(p,m.required_rom_count()))),egui::Button::new("Play Wasm")).clicked(){self.launch_selected(id.clone(),false);}
                     ui.menu_button("More",|ui|{
                         if ui.add_enabled(!reviewing&&self.result.is_none(),egui::Button::new("Check integrity")).clicked(){let id=id.clone();self.begin_work(move||Ok(Work::Message(crate::integrity::check(&crate::registry::default_root()?,&id)?)));ui.close_menu();}
@@ -248,7 +248,7 @@ impl App {
                             Err(error) => self.status=format!("Unable to load settings: {error:#}"),
                         }
                     }
-                    if m.game_data.is_some() && self.applied_settings.as_ref().is_none_or(|s|s.tick_deadline_ms<500) {
+                    if m.builtin_engine.as_deref()==Some(crate::cube2::PROFILE) && self.applied_settings.as_ref().is_none_or(|s|s.tick_deadline_ms<500) {
                         ui.label("Software rendering may need a 500 ms Tick deadline.");
                         if ui.add_enabled(self.result.is_none(), egui::Button::new("Open rendering settings")).clicked() {
                             match crate::settings::load() {
@@ -287,13 +287,14 @@ impl App {
         else {
             return;
         };
+        let opence = selected.builtin_engine.as_deref() == Some(crate::opence::PROFILE);
         let title = selected.game_data.as_ref().unwrap().title.clone();
         let current = self
             .data_paths
             .get(&selected.id)
             .cloned()
             .unwrap_or_default();
-        ui.strong(title);
+        ui.strong(title.clone());
         let label = if current.is_empty() {
             "Choose game-data folder…"
         } else {
@@ -310,16 +311,20 @@ impl App {
         {
             self.begin_work(move || {
                 let root = std::fs::canonicalize(crate::registry::default_root()?)?;
-                let mut dialog =
-                    rfd::FileDialog::new().set_title("Choose original Sauerbraten installation");
+                let mut dialog = rfd::FileDialog::new().set_title(title);
                 if !current.is_empty() {
                     dialog = dialog.set_directory(current);
                 }
                 Ok(Work::DataPicked(root, selected, dialog.pick_folder()))
             });
         }
-        ui.label("Choose the original installation containing data and packages folders. GamePKG reads these files in place and remembers this folder for this signed game.");
-        ui.label("Edited maps, map settings and saved demos are remembered separately from the original files. Saved files can use up to 32 MiB.");
+        if opence {
+            ui.label("Choose a folder with maps/ui.map from your Xbox disc, or exactly one .iso or .xiso file. The disc is not copied into the package.");
+            ui.label("A disc image is extracted into this library's runtime directory the first time you play. An extracted maps folder is read in place. Saves stay in the library.");
+        } else {
+            ui.label("Choose the original installation containing data and packages folders. GamePKG reads these files in place and remembers this folder for this signed game.");
+            ui.label("Edited maps, map settings and saved demos are remembered separately from the original files. Saved files can use up to 32 MiB.");
+        }
         if self
             .applied_settings
             .as_ref()
@@ -327,7 +332,9 @@ impl App {
         {
             ui.label("This engine needs a memory ceiling of at least 2048 MiB. Adjust it in Settings before playing.");
         }
-        ui.label("A 500 ms tick deadline is recommended for first-use software shader compilation. Adjust it in Settings.");
+        if !opence {
+            ui.label("A 500 ms tick deadline is recommended for first-use software shader compilation. Adjust it in Settings.");
+        }
         ui.add_space(12.0);
     }
     fn game_rom_editor(&mut self, ui: &mut egui::Ui) {
@@ -388,7 +395,7 @@ impl App {
                 m.limits.recommended_memory_bytes() as f64 / 1048576.0,
                 m.limits.hard_memory_bytes as f64 / 1048576.0
             ));
-            ui.label(if m.requires_rom { format!("Requires {} ROM file(s) supplied by you. They are not included in this package.",m.required_rom_count()) } else if m.game_data.is_some(){"Original game-data folder required (read-only).".into()} else { "No user ROM required.".into() });
+            ui.label(if m.requires_rom { format!("Requires {} ROM file(s) supplied by you. They are not included in this package.",m.required_rom_count()) } else if m.builtin_engine.as_deref()==Some(crate::opence::PROFILE){"Your Halo maps folder or Xbox disc image is required. It is not included in this package.".into()} else if m.game_data.is_some(){"Original game-data folder required (read-only).".into()} else { "No user ROM required.".into() });
             for (index, rom) in m.roms.iter().enumerate() {
                 ui.label(format!("ROM {}: {} ({})", index + 1, rom.title, rom.id));
             }
