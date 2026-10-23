@@ -666,7 +666,7 @@ fn original_desktop_keyboard_mouse_binding_migration_and_quit() {
     }
     assert!(game.frame().commands.iter().any(|command| {
         matches!(command, Command::Image { image, .. }
-            if image.pixels().chunks_exact(4).any(|pixel| pixel[..3].iter().any(|value| *value != 0)))
+            if image.pixels().as_chunks::<4>().0.iter().any(|pixel| pixel[..3].iter().any(|value| *value != 0)))
     }), "maximum gamma/fullscreen low-detail settings produced no visible game image");
     println!("desktop phase: extended sensitivity Options thermometer");
     desktop_key(&mut game, 27);

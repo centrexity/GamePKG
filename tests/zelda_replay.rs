@@ -314,8 +314,10 @@ fn original_recorder_matches_streamed_wire_and_metadata() {
         let mut header = [0u8; 16];
         output.read_exact(&mut header).unwrap();
         let words: Vec<u32> = header
-            .chunks_exact(4)
-            .map(|part| u32::from_le_bytes(part.try_into().unwrap()))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|part| u32::from_le_bytes(*part))
             .collect();
         assert_eq!(
             words,

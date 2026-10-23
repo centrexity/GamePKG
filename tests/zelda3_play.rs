@@ -434,10 +434,17 @@ fn actual_zelda3_video_dimensions_aspect_and_pixels() {
         assert!((drawn_width / drawn_height - width as f32 / height as f32).abs() < 0.00001);
         assert!((x * 2.0 + drawn_width - 640.0).abs() < 0.001);
         assert!((y * 2.0 + drawn_height - 480.0).abs() < 0.001);
-        assert!(image.pixels().chunks_exact(4).all(|pixel| pixel[3] == 255));
+        assert!(image
+            .pixels()
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .all(|pixel| pixel[3] == 255));
         visible |= image
             .pixels()
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .any(|pixel| pixel[..3] != [0, 0, 0]);
         digest.update(image.pixels());
     }

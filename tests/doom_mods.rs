@@ -133,7 +133,9 @@ fn original_patch_wad_order_title_and_gameplay() {
         let pixels = rendered_image(&room);
         assert!(
             pixels[..320 * 150 * 4]
-                .chunks_exact(4)
+                .as_chunks::<4>()
+                .0
+                .iter()
                 .collect::<std::collections::BTreeSet<_>>()
                 .len()
                 > 32,
