@@ -1,6 +1,6 @@
 # Halo: Combat Evolved (OpenCE)
 
-Profile `opence-ce95f7de` in the external-engine catalog. The selector is `ports/halo`. It is not listed in `ports.gamepkglist`.
+Profile `opence-ce95f7de` in the external-engine catalog. The selector is `ports/halo`, published as `com.gamepkg.halo` in `ports/ports.gamepkglist`. The shipped target is `linux-i686`. `windows-i686` is a cross-compile. The package contains no Halo assets and no OpenCE source.
 
 The host does not special-case this game. The record is `engines/halo/engine.toml`. A package names the profile and repeats the reviewed data layouts. Commands, image formats, license checks, the desktop sandbox, and game-data placement come from `src/external_engine`, which loads every `engines/*/engine.toml` the same way. Another port can add a catalog file without a new host module. Host Rust does not name this engine. The platform gap list is [docs/external-engine-platform-gaps.md](../../docs/external-engine-platform-gaps.md).
 

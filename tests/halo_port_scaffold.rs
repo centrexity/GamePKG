@@ -30,7 +30,14 @@ fn external_engine_recipe_parses_and_rejects_layout_and_network_changes() {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("ports/ports.gamepkglist"),
     )
     .unwrap();
-    assert!(!catalog.contains("com.gamepkg.halo"));
+    let halo = catalog
+        .split("id = \"com.gamepkg.halo\"")
+        .nth(1)
+        .expect("halo catalog entry");
+    assert!(halo.contains("version = \"0.1.0\""));
+    assert!(halo.contains("requires_rom = false"));
+    assert!(halo.contains("i686"));
+    assert!(halo.contains("/v0.1.6/halo.gamepkg"));
     let pin: serde_json::Value = serde_json::from_str(
         &std::fs::read_to_string(
             Path::new(env!("CARGO_MANIFEST_DIR")).join("ports/tools/opence-pin.json"),
