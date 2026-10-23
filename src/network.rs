@@ -276,6 +276,8 @@ pub(crate) struct Service {
 }
 struct Job<'a>(&'a AtomicUsize);
 impl<'a> Job<'a> {
+    // Keep compatibility with Rust 1.89, before fetch_update was renamed.
+    #[allow(deprecated)]
     fn acquire(counter: &'a AtomicUsize) -> Result<Self> {
         counter
             .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |used| {
