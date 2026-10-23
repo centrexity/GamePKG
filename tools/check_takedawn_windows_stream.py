@@ -78,6 +78,21 @@ def main():
     if result.returncode:
         print(result.stderr.decode(errors='replace'), flush=True)
     result.check_returncode()
+    entry = work / 'entry.exe'
+    if msvc:
+        command = ['cl', '/nologo', '/std:c11', '/O2', '/UNDEBUG', '/W4', '/WX',
+                   '/D_CRT_SECURE_NO_WARNINGS', str(root / 'tests/windows_entry.c'), '/Fe' + str(entry)]
+    else:
+        command = [arch + '-gcc', '-std=c11', '-O2', '-UNDEBUG', '-Wall', '-Wextra', '-Werror',
+                   str(root / 'tests/windows_entry.c'), '-o', str(entry)]
+    subprocess.run(command, cwd=work, check=True)
+    result = subprocess.run([str(entry)], cwd=work, capture_output=True, timeout=20)
+    (work / 'entry-stdout.log').write_bytes(result.stdout)
+    (work / 'entry-stderr.log').write_bytes(result.stderr)
+    print(result.stdout.decode(errors='replace').strip(), flush=True)
+    if result.returncode:
+        print(result.stderr.decode(errors='replace'), flush=True)
+    result.check_returncode()
 
 
 if __name__ == '__main__':
