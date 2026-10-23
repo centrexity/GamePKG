@@ -33,3 +33,16 @@ Microsoft's contracts explain the explicit
 [handle list](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute),
 [process startup](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessw)
 and [job assignment](https://learn.microsoft.com/en-us/windows/win32/api/jobapi2/nf-jobapi2-assignprocesstojobobject).
+
+The first native process fixture run passes all five tests on both MSVC targets
+in [40037578848](https://github.com/centrexity/GamePKG/actions/runs/40037578848).
+This includes a live descendant process stopped with its owner. The unrelated
+handle check captures any existing object before opening its named oracle, so
+reuse of an empty numeric handle slot by the oracle cannot produce a false leak.
+
+`examples/native_game.rs` is a maintainer-only, bounded headless probe using the
+same Rust API with the full native game. Its arguments are absolute executable,
+owned ISO, private save directory, log file, `--headless`, and explicit probe
+seconds (1–300). The library itself has no execution deadline. It intentionally
+stops the job at the probe's end; that is not normal game completion. The probe
+uses dummy audio and does not qualify audible fidelity or window interaction.
