@@ -25,8 +25,15 @@ def main():
     executable = work / 'compare.exe'
     sources = [str(root / 'windows_file.c'), str(root / 'tests/windows_file.c')]
     if args.target.endswith('-msvc'):
-        command = ['cl', '/nologo', '/std:c11', '/O2', '/UNDEBUG', '/W4', '/WX',
-                   *sources, '/Fe' + str(executable)]
+        # Both inputs are named windows_file.c; cl's default .obj names would
+        # overwrite each other before linking and discard the test's main.
+        objects = []
+        for index, source in enumerate(sources):
+            obj = work / f'disc-{index}.obj'
+            subprocess.run(['cl', '/nologo', '/std:c11', '/O2', '/UNDEBUG', '/W4', '/WX',
+                            '/c', source, '/Fo' + str(obj)], cwd=work, check=True)
+            objects.append(str(obj))
+        command = ['cl', '/nologo', *objects, '/Fe' + str(executable)]
     else:
         cc = args.target.replace('pc-windows-gnu', 'w64-mingw32') + '-gcc'
         command = [cc, '-std=c11', '-O2', '-UNDEBUG', '-Wall', '-Wextra', '-Werror',
