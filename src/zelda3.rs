@@ -336,6 +336,7 @@ pub fn build() -> Result<Vec<u8>> {
                 cmd.arg("-fsyntax-only");
             } else {
                 cmd.args([
+                    "-fuse-ld=/usr/bin/wasm-ld-18",
                     "-nostartfiles",
                     "-Wl,--no-entry",
                     "-Wl,--export-memory",
