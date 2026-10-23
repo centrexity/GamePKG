@@ -115,11 +115,15 @@ def main():
         copy(prepared / name, 'prepared/' + name)
     host = project / 'engines/takedawn'
     for name in ['Cargo.toml', 'Cargo.lock', 'src/lib.rs', 'media.h', 'posix.c',
-                 'engine.c', 'attach.cmake', 'adapt_paths.cmake', 'adapt_smoke.cmake', 'adapt_memory.cmake']:
+                 'engine.c', 'attach.cmake', 'adapt_paths.cmake', 'adapt_smoke.cmake', 'adapt_memory.cmake',
+                 'windows_file.c', 'windows_file.h', 'windows_stream.c', 'windows_stream.h',
+                 'windows_entry.c', 'windows_attach.cmake', 'adapt_windows_file.cmake',
+                 'adapt_windows_startup.cmake', 'DotNET-RUNTIME-LICENSE.txt']:
         copy(host / 'media-bridge' / name, 'host/engines/takedawn/media-bridge/' + name)
     for name in ['attach.cmake', 'C2Rust-LICENSE.txt']:
         copy(host / 'rust-port' / name, 'host/engines/takedawn/rust-port/' + name)
-    for name in ['ntsc-u-retail.manifest', 'upstream-lock.json', 'Takedawn-LICENSE.txt', 'Xboxrecomp-LICENSE.txt']:
+    for name in ['ntsc-u-retail.manifest', 'upstream-lock.json', 'Takedawn-LICENSE.txt',
+                 'Xboxrecomp-LICENSE.txt', 'windows-dependencies.json']:
         copy(host / name, 'host/engines/takedawn/' + name)
     for name in ['memory_budget.rs', 'xbox_disc.rs', 'xbox_disc/media.rs']:
         copy(project / 'src' / name, 'host/src/' + name)
