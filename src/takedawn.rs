@@ -4,7 +4,7 @@ use anyhow::{ensure, Result};
 use std::path::{Path, PathBuf};
 pub const PROFILE: &str = "takedawn-5a00fc10-rust-v1";
 pub const MEMORY: u64 = 4 * 1024 * 1024 * 1024;
-pub const KIT_SHA256: &str = "a04117bf20f120df02ed028faadf6fc5652fe139d59e8c82f95d70aeb0b66e66";
+pub const KIT_SHA256: &str = "604dd82372785f09bdf94d30fa3fc32edfcf57e933ccf4f91a7a25044087e2c6";
 pub const KIT_ASSET: &str = "assets/takedawn-source-kit.tar.gz";
 pub const LAUNCHER: &str =
     "pub fn game_tick(input: u32, state: u64) -> u64 { gamepkg::takedawn_tick(input, state) }\n";

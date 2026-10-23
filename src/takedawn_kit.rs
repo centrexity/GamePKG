@@ -91,7 +91,7 @@ impl SourceKit {
                 && manifest.game_commit == lock["game"]["commit"].as_str().unwrap_or_default()
                 && manifest.toolkit_commit
                     == lock["toolkit"]["commit"].as_str().unwrap_or_default()
-                && manifest.generated_game_functions == 24001
+                && manifest.generated_game_functions == 24003
                 && manifest.native_exports == 24030,
             "unsupported source-kit revision"
         );
@@ -175,7 +175,7 @@ mod tests {
     fn fixture(name: &str, payload: &[u8], extra: bool, link: bool) -> Vec<u8> {
         let lock: serde_json::Value =
             serde_json::from_str(include_str!("../engines/takedawn/upstream-lock.json")).unwrap();
-        let manifest = serde_json::json!({"format":"gamepkg-takedawn-source-kit-v1", "game_commit":lock["game"]["commit"],"toolkit_commit":lock["toolkit"]["commit"],"generated_game_functions":24001,"native_exports":24030,"omitted_maintainer_fixtures":["toolkit/tools/conformance/test.xbe"],"files":{name:{"sha256":crate::verify::digest(payload),"bytes":payload.len(),"mode":420}}});
+        let manifest = serde_json::json!({"format":"gamepkg-takedawn-source-kit-v1", "game_commit":lock["game"]["commit"],"toolkit_commit":lock["toolkit"]["commit"],"generated_game_functions":24003,"native_exports":24030,"omitted_maintainer_fixtures":["toolkit/tools/conformance/test.xbe"],"files":{name:{"sha256":crate::verify::digest(payload),"bytes":payload.len(),"mode":420}}});
         let gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
         let mut tar = tar::Builder::new(gz);
         let mut append = |name: &str, data: &[u8], symlink: bool| {

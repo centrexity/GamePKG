@@ -26,6 +26,8 @@ parser.add_argument('--jobs', type=int, default=2, choices=range(1, 5))
 parser.add_argument('--structured-unit', action='append', default=['recomp_0021_013'],
                     help='Use C2Rust structured lowering for a reviewed hot unit (repeatable)')
 parser.add_argument('--reuse', type=Path, help='Reuse matching successful raw conversions from a private earlier attempt')
+parser.add_argument('--recover-gameplay-paths', type=Path, metavar='ISO',
+                    help='Recover reviewed missing native paths from the supported ISO in RAM')
 args = parser.parse_args()
 project = Path(__file__).resolve().parents[1]
 lock = json.loads((project / 'engines/takedawn/upstream-lock.json').read_text())
@@ -81,6 +83,19 @@ for original in sorted(gen.glob('recomp_*.c')):
         units.append((unit, []))
 if len(expected) != 24001:
     raise RuntimeError(f'expected 24001 generated game functions, found {len(expected)}')
+recovery = None
+if args.recover_gameplay_paths:
+    from takedawn_recovered_paths import recover, remove_recovered_stubs
+    code, recovery = recover(project, source, toolkit, args.recover_gameplay_paths)
+    unit = split / 'recomp_recovered.c'
+    unit.write_text(code)
+    names = [f"sub_{int(entry['start'], 16):08X}" for entry in recovery['functions']]
+    if expected.intersection(names):
+        raise RuntimeError('recovered native functions already exist')
+    expected.update(names)
+    units.append((unit, names))
+    stubs = split / 'recomp_stubs_unresolved.c'
+    stubs.write_text(remove_recovered_stubs(stubs.read_text(), recovery['functions']))
 manual = source / 'src/game/recomp/recomp_manual.c'
 inputs['recomp_manual.c'] = hashlib.sha256(manual.read_bytes()).hexdigest()
 unit = split / manual.name
@@ -210,6 +225,8 @@ manifest['preparation'] = {
     'units_sha256': hashlib.sha256((output / 'units.txt').read_bytes()).hexdigest(),
     'large_control_flow': 'native Rust branches over the original typed basic blocks',
 }
+if recovery:
+    manifest['recovered_paths'] = recovery
 (output / 'conversion.json').write_text(json.dumps(manifest, indent=2))
 print(f'Converted all {len(expected)} game functions into {len(units)} Rust units.', flush=True)
 print('Compilation, C/Rust behavior comparison and gameplay validation remain required.', flush=True)
