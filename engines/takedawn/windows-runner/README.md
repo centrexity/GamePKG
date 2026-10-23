@@ -1,57 +1,90 @@
-# Native Windows process owner
+# Native Windows process and restart ownership
 
-This host Rust library is the process layer for GamePKG's native Windows
-Takedawn integration. It is not connected to the app's Build/Play actions yet.
-It introduces no game dependency or package-supplied code, Python or WSL.
+This host Rust library owns native Windows Takedawn processes and restarts.
+The app's Build/Play actions, save/history integration and native builder still
+need connecting. This library introduces no game dependency, Python or WSL.
 
-The caller retains its opened ISO. Each launch duplicates that handle with only
-read access and transfers it using an explicit `PROC_THREAD_ATTRIBUTE_HANDLE_LIST`.
-The other inherited handles are a write-only runtime log and NUL stdin. Original
-handles and their inheritance flags remain the caller's. A suspended child joins
-an owned kill-on-close job before its first instruction executes; dropping the
-owner terminates its process tree. Polling distinguishes a genuine exit code 259
-from a still-running process. Arguments and the explicit environment use Unicode;
-there is no command shell or implicit executable search.
+`Process` transfers a duplicate of the caller's opened ISO with read access,
+a write-only runtime log and NUL stdin through an explicit
+`PROC_THREAD_ATTRIBUTE_HANDLE_LIST`. A suspended child joins an owned
+kill-on-close job before executing. Original handles and their inheritance flags
+remain the caller's. Dropping the owner stops its process tree. Polling reports
+exact exit codes, including 259, separately from a running process. Arguments and
+the explicit environment use Unicode, without a command shell or executable search.
 
-This implements lifetime ownership, not a filesystem/network sandbox or signed
-package admission. Those app responsibilities, restart coordination, normal
-history/save integration and the native Windows builder remain required before
-player promotion. Restart must wait for complete original teardown and launch
-again with a fresh inherited duplicate of the parent's retained ISO. Upstream's
-current unowned Windows self-spawn cannot carry that handle and must be adapted.
-No extra memory or time limits are imposed here; the existing gameplay allowance
-is unchanged.
+`Session` retains one `Launch` across restarts, including its owned ISO file,
+arguments, environment, working directory and log. It additionally transfers a
+private event with only permission to signal it. The pinned original runtime's
+restart exit handler signals that event and returns, allowing every remaining
+exit handler and CRT cleanup to run normally, including handlers registered
+before `main`. The parent waits for exit zero and all descendants to finish,
+then launches again with fresh inherited handles. It never reopens the ISO by
+filename. `Event::Restarted` lets the app reset readiness observations while its
+session clock and save ownership continue. A nonzero exit after a signal is
+reported as an error exit; a failed relaunch remains terminal without hidden
+retries or a panic on later polling.
 
-Native tests launch real child executables without game assets. They check
-read-only ISO access, the caller's continued ownership, unrelated inheritable
-handle exclusion by kernel-object identity, quoted/Unicode arguments, exit code
-259 and termination on owner drop. They run on actual MSVC 32/64-bit in the
-`Native Rust engine stream ABI` workflow. A 32-bit process-layer test does not
-qualify the x86-64 game for 32-bit Windows.
+`../media-bridge/adapt_windows_restart.cmake` stages the exact pinned upstream
+restart source, preserving request, cancellation, quit and teardown logic.
+Staging reverses byte-for-byte and rejects changed/in-place inputs. An absent
+managed event retains upstream's standalone behavior. A broken managed signal
+logs a diagnostic and closes instead of creating an untracked process.
 
-Microsoft's contracts explain the explicit
+Process ownership is separate from filesystem/network confinement and signed
+package admission. Those app responsibilities, normal launch/history integration,
+the native builder and player-kit promotion remain required. No extra game
+memory or execution deadlines are introduced here.
+
+Native validation passes on both MSVC architectures in
+[40039958125](https://github.com/centrexity/GamePKG/actions/runs/40039958125):
+
+- Eight process tests cover read-only ISO access, retained caller ownership,
+  unrelated inheritable-handle exclusion by kernel-object identity, quoted and
+  Unicode arguments, exact exit codes, child/descendant termination, restart
+  after ISO pathname replacement, error exits and failed relaunches.
+- An explicitly invoked integration fixture runs the original upstream restart
+  code through `Session`. It verifies one restart after all cleanup, including
+  a handler registered before upstream's own, and continued exclusive save access.
+- Three native lifecycle cases also verify request, cancellation and ordinary
+  quit with the actual event protocol. The default suite explicitly ignores the
+  integration fixture until this compiled pinned fixture is supplied.
+
+A 32-bit process-layer check does not qualify the x86-64 game for 32-bit Windows.
+Microsoft documents the explicit
 [handle list](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute),
 [process startup](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessw)
 and [job assignment](https://learn.microsoft.com/en-us/windows/win32/api/jobapi2/nf-jobapi2-assignprocesstojobobject).
 
-The first native process fixture run passes all five tests on both MSVC targets
-in [40037578848](https://github.com/centrexity/GamePKG/actions/runs/40037578848).
-This includes a live descendant process stopped with its owner. The unrelated
-handle check captures any existing object before opening its named oracle, so
-reuse of an empty numeric handle slot by the oracle cannot produce a false leak.
+## Full native game check
 
-`examples/native_game.rs` is a maintainer-only, bounded headless probe using the
-same Rust API with the full native game. Its arguments are absolute executable,
-owned ISO, private save directory, log file, `--headless`, and explicit probe
-seconds (1–300). The library itself has no execution deadline. It intentionally
-stops the job at the probe's end; that is not normal game completion. The probe
-uses dummy audio and does not qualify audible fidelity or window interaction.
+`examples/native_game.rs` is a maintainer probe using the same session API. Its
+arguments are absolute executable, owned ISO, private saves, log, `--headless`
+or `--window`, and explicit probe seconds (1–300). Only the probe has a deadline;
+its intentional stop is separate from normal game completion. It uses dummy audio.
 
-The full-game Rust-owner probe passes under isolated Wine with the legacy ISO
-filename deliberately invalid: all 716 files verify, the 4,308,992-byte XBE
-loads, Vulkan uses the RTX 3090, and 2,375 intro frames present. After the explicit
-60-second probe, Rust stops the job and observes child exit code 1; the probe
-itself exits zero. This verifies admission, startup, output capture and process
-ownership, not a completed race or actual Windows hardware gameplay. The
-separate Windows executable race qualification is described in the
-[media bridge notes](../media-bridge/README.md).
+The complete updated native executable retains all 24,032 Rust exports in
+59,883,520 bytes. Its game source remains the same 486 prepared Rust units; build
+commands compile no generated C game bodies and invoke no Python.
+
+A fresh-prefix Wine test uses the original overlay's SDL event driver to change
+render scale from 1x to 2x, cancel the first restart confirmation, confirm the
+restart and verify 2x remains applied afterward with no pending-change prompt.
+The same Rust session admits the ISO twice despite an invalid legacy filename,
+opens two Vulkan windows on the RTX 3090, performs both normal shutdowns and exits
+zero after the original Quit action. Renderer-owned captures show the settings
+before and after. No global keyboard input or game-state edits are used.
+
+Maintainer reproduction, after building the native runner example:
+
+```sh
+python3 tools/check_takedawn_windows_restart_window.py \
+  --runner /path/to/native_game.exe --game /path/to/game.exe \
+  --iso /path/to/owned.iso --saves /path/to/private/reference-saves
+```
+
+Python and Wine are diagnostic tools, not player requirements. These results
+qualify this Wine window/settings/restart flow, not full campaign progression,
+physical controllers, audible fidelity or actual Windows hardware gameplay.
+The earlier native executable's race, Crash and profile/audio checks are in the
+[media bridge notes](../media-bridge/README.md). The verified Linux player kit
+remains unchanged.

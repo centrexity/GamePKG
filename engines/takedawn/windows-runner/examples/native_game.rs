@@ -1,5 +1,5 @@
 //! Maintainer probe of the real native runtime through the Rust process owner.
-//! Package validation/confinement and restart coordination belong to the app.
+//! Package validation and confinement belong to the app.
 #[cfg(windows)]
 fn main() -> std::io::Result<()> {
     use gamepkg_takedawn_windows_runner::{Event, Launch, Session};
@@ -33,6 +33,7 @@ fn main() -> std::io::Result<()> {
         "WINEPREFIX",
         "WINEDEBUG",
         "WINEDLLOVERRIDES",
+        "RECOMP_OVERLAY_TEST",
     ] {
         if let Some(value) = std::env::var_os(key) {
             values.push((key.into(), value));
