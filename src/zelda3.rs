@@ -404,6 +404,10 @@ fn source_identity() -> &'static str {
 }
 #[cfg(any(target_os = "linux", test))]
 fn stamp_engine(mut bytes: Vec<u8>) -> Result<Vec<u8>> {
+    #[cfg(test)]
+    if let Some(path) = std::env::var_os("GAMEPKG_ZELDA3_BUILD_EVIDENCE") {
+        std::fs::write(path, &bytes)?;
+    }
     validate_renderer(&bytes)?;
     fn leb(mut value: usize, output: &mut Vec<u8>) {
         loop {
@@ -452,6 +456,7 @@ fn validate_renderer(bytes: &[u8]) -> Result<()> {
     let mut functions = Vec::new();
     let mut revision_function = None;
     let mut code_index = 0;
+    let mut mismatch = String::from("renderer_revision export missing");
     for payload in wasmparser::Parser::new(0).parse_all(bytes) {
         match payload? {
             wasmparser::Payload::TypeSection(types) => {
@@ -480,6 +485,19 @@ fn validate_renderer(bytes: &[u8]) -> Result<()> {
             }
             wasmparser::Payload::CodeSectionEntry(body) => {
                 if revision_function == Some(code_index) {
+                    // Bounded compile diagnostics make differences between
+                    // supported linker versions visible without running code.
+                    let observed = body
+                        .get_operators_reader()?
+                        .into_iter()
+                        .take(16)
+                        .map(|op| format!("{op:?}"))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    mismatch = format!(
+                        "function {code_index}, {} local groups: {observed}",
+                        body.get_locals_reader()?.get_count()
+                    );
                     let signature = functions
                         .get(code_index as usize)
                         .and_then(|ty| signatures.get(*ty as usize))
@@ -532,7 +550,7 @@ fn validate_renderer(bytes: &[u8]) -> Result<()> {
             _ => {}
         }
     }
-    bail!("rebuild the Zelda engine to apply the current renderer fixes")
+    bail!("rebuild the Zelda engine to apply the current renderer fixes ({mismatch})")
 }
 
 fn require_renderer_revision(revision: i32) -> Result<()> {
@@ -792,6 +810,13 @@ impl Zelda {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[ignore = "requires Clang 18, WASI tools and private compiler namespaces"]
+    fn actual_wasi_build_has_current_renderer_and_source_receipt() {
+        let bytes = super::build().unwrap();
+        super::validate_current(&bytes).unwrap();
+    }
     #[test]
     fn spc_live_staging_removes_native_byte_aliases_and_rejects_changed_anchors() {
         let normalized =
