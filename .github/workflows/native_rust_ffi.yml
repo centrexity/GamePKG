@@ -1,9 +1,9 @@
 name: Native Rust engine stream ABI
 on:
   push:
-    paths: ['engines/takedawn/rust-port/**', 'engines/takedawn/media-bridge/**', 'tools/check_takedawn_rust_stdio.py', 'tools/check_takedawn_windows_file.py', 'tools/check_takedawn_windows_kernel.py', 'tools/check_takedawn_windows_stream.py', '.github/workflows/native_rust_ffi.yml']
+    paths: ['engines/takedawn/rust-port/**', 'engines/takedawn/media-bridge/**', 'engines/takedawn/windows-runner/**', 'tools/check_takedawn_rust_stdio.py', 'tools/check_takedawn_windows_file.py', 'tools/check_takedawn_windows_kernel.py', 'tools/check_takedawn_windows_stream.py', '.github/workflows/native_rust_ffi.yml']
   pull_request:
-    paths: ['engines/takedawn/rust-port/**', 'engines/takedawn/media-bridge/**', 'tools/check_takedawn_rust_stdio.py', 'tools/check_takedawn_windows_file.py', 'tools/check_takedawn_windows_kernel.py', 'tools/check_takedawn_windows_stream.py', '.github/workflows/native_rust_ffi.yml']
+    paths: ['engines/takedawn/rust-port/**', 'engines/takedawn/media-bridge/**', 'engines/takedawn/windows-runner/**', 'tools/check_takedawn_rust_stdio.py', 'tools/check_takedawn_windows_file.py', 'tools/check_takedawn_windows_kernel.py', 'tools/check_takedawn_windows_stream.py', '.github/workflows/native_rust_ffi.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -36,6 +36,11 @@ jobs:
         run: python tools/check_takedawn_rust_stdio.py --target ${{ matrix.target }}
       - name: Test the actual Rust verified-disc reader and media bridge
         run: cargo test --locked --manifest-path engines/takedawn/media-bridge/Cargo.toml --target ${{ matrix.target }}
+      - name: Verify native process ownership and inherited ISO handles
+        if: runner.os == 'Windows'
+        run: |
+          cargo test --locked --manifest-path engines/takedawn/windows-runner/Cargo.toml --target ${{ matrix.target }}
+          cargo clippy --locked --manifest-path engines/takedawn/windows-runner/Cargo.toml --target ${{ matrix.target }} --all-targets -- -D warnings
       - name: Compare the read-only disc adapter with native Windows file APIs
         if: runner.os == 'Windows'
         run: python tools/check_takedawn_windows_file.py --target ${{ matrix.target }}
