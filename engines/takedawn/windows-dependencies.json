@@ -1,0 +1,37 @@
+{
+  "purpose": "Maintainer native Windows runtime qualification; player kit promotion is separate",
+  "llvm_mingw": {
+    "version": "20260922",
+    "linux_x86_64": {
+      "url": "https://github.com/mstorsjo/llvm-mingw/releases/download/20260922/llvm-mingw-20260922-ucrt-ubuntu-22.04-x86_64.tar.xz",
+      "sha256": "bb7bb7654b33d5aa8712acb837c963b2e0c56352560c76105270a3268c665c21"
+    },
+    "windows_x86_64": {
+      "url": "https://github.com/mstorsjo/llvm-mingw/releases/download/20260922/llvm-mingw-20260922-ucrt-x86_64.zip",
+      "sha256": "e3ad77d117a4bea19a7a3b333341824d79a5a371004a10e25b8504e7b3047666"
+    }
+  },
+  "sdl2": {
+    "version": "2.32.10",
+    "mingw": {
+      "url": "https://github.com/libsdl-org/SDL/releases/download/release-2.32.10/SDL2-devel-2.32.10-mingw.tar.gz",
+      "sha256": "83a5d74012311edc3c0d40ea6faecbe57ad692aa033fa5dc273cc937e3938ff2"
+    },
+    "msvc_fixture": {
+      "url": "https://github.com/libsdl-org/SDL/releases/download/release-2.32.10/SDL2-devel-2.32.10-VC.zip",
+      "sha256": "af347939395a58b365846aaea27391e69f9ec9d4dd650d6ac40802159b418a6e"
+    }
+  },
+  "vulkan_headers": {
+    "tag": "vulkan-sdk-1.4.363.0",
+    "commit": "6802bb4733b63ed5efd3adb308a6c885ef180ea1",
+    "url": "https://codeload.github.com/KhronosGroup/Vulkan-Headers/tar.gz/6802bb4733b63ed5efd3adb308a6c885ef180ea1",
+    "sha256": "9044fbb356160e43201dc2094acb44c8a906722a63a35f48fc0f051579db9bb6"
+  },
+  "glslang": {
+    "tag": "16.6.0",
+    "commit": "e1b562a8bed273a02f30b59b66a5d499793cede5",
+    "url": "https://codeload.github.com/KhronosGroup/glslang/tar.gz/e1b562a8bed273a02f30b59b66a5d499793cede5",
+    "sha256": "907174a24713c6202c146f164bf81783f1fbc79c8cb821a30f18f159eb980312"
+  }
+}
