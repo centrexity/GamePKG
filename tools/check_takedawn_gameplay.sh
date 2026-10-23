@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Maintainer-only gameplay gate using the pinned upstream control assertions.
 # Python belongs to the upstream checker, not the player build or runtime.
+# GAMEPKG_GAMEPLAY_WINE=1 runs the Windows executable with the same assertions
+# in an isolated private Wine prefix. It does not qualify actual Windows.
 set -euo pipefail
 if [[ $# -lt 4 || $# -gt 6 ]]; then
     echo "usage: bash $0 NATIVE_EXECUTABLE ISO PINNED_TAKEDAWN PRIVATE_REFERENCE_SAVES [xbox|ps2] [race|crash]" >&2
@@ -15,6 +17,16 @@ task_source=$(realpath -- "$3")
 task_saves=$(realpath -- "$4")
 task_scheme=${5:-xbox}
 task_event=${6:-race}
+task_wine=${GAMEPKG_GAMEPLAY_WINE:-0}
+[[ "$task_wine" == 0 || "$task_wine" == 1 ]] || exit 2
+if [[ "$task_wine" == 1 ]]; then
+    command -v wine >/dev/null || { echo "missing maintainer Wine" >&2; exit 2; }
+    [[ -n "${DISPLAY:-}" && -f "${XAUTHORITY:-}" && -f "$(dirname -- "$task_binary")/SDL2.dll" ]] || {
+        echo "Windows Vulkan checks require DISPLAY, XAUTHORITY and SDL2.dll beside the executable" >&2; exit 2;
+    }
+    export GAMEPKG_WINE_DISPLAY="$DISPLAY" GAMEPKG_WINE_XAUTHORITY="$XAUTHORITY"
+    export GAMEPKG_GAMEPLAY_WINE=1 GAME_PATH_PREFIX=Z:
+fi
 [[ -x "$task_binary" && -f "$task_disc" && -d "$task_saves" ]] || exit 2
 [[ "$task_scheme" == xbox || "$task_scheme" == ps2 ]] || exit 2
 [[ "$task_event" == race || "$task_event" == crash ]] || exit 2
@@ -66,6 +78,8 @@ cat > "$task_state/launch.sh" <<'LAUNCH'
 set -euo pipefail
 task_state=$GAMEPKG_SCENE_STATE
 [[ "$task_state" == /tmp/gamepkg-takedawn-gameplay.* && -d "$task_state/game" ]]
+task_disc_path=/disc.iso
+[[ "${GAMEPKG_GAMEPLAY_WINE:-0}" == 1 ]] && task_disc_path='Z:\disc.iso'
 task_args=(--die-with-parent --unshare-net --clearenv
     --ro-bind /usr /usr --ro-bind /lib /lib --ro-bind /lib64 /lib64
     --ro-bind /etc /etc --ro-bind /sys /sys --dev-bind /dev /dev --proc /proc --tmpfs /tmp
@@ -73,7 +87,7 @@ task_args=(--die-with-parent --unshare-net --clearenv
     --ro-bind "$GAMEPKG_GAMEPLAY_BINARY" /engine --ro-bind "$GAMEPKG_GAMEPLAY_DISC" /disc.iso
     --setenv PATH /usr/bin:/bin --setenv LANG C.UTF-8 --setenv HOME "$task_state/home"
     --setenv XDG_DATA_HOME "$task_state/data" --setenv XDG_CACHE_HOME "$task_state/cache"
-    --setenv GAMEPKG_TAKEDAWN_DISC /disc.iso --setenv RECOMP_PB_BACKEND vulkan
+    --setenv GAMEPKG_TAKEDAWN_DISC "$task_disc_path" --setenv RECOMP_PB_BACKEND vulkan
     --setenv RECOMP_STUB_LOG 1
     --setenv SDL_AUDIODRIVER dummy --setenv RECOMP_FB_DUMP "$task_state/run/frame-")
 for task_key in RECOMP_HEADLESS RECOMP_PAD_LIVE RECOMP_STDIO_LOG RECOMP_FLIP_MARK RECOMP_SAVE_DIR \
@@ -81,11 +95,23 @@ for task_key in RECOMP_HEADLESS RECOMP_PAD_LIVE RECOMP_STDIO_LOG RECOMP_FLIP_MAR
     RECOMP_INPUT_CONTROL_SCHEME RECOMP_INPUT_FACE_LAYOUT; do
     if [[ -v "$task_key" ]]; then task_args+=(--setenv "$task_key" "${!task_key}"); fi
 done
+task_command=(/engine --headless /gamepkg-disc/default.xbe)
+if [[ "${GAMEPKG_GAMEPLAY_WINE:-0}" == 1 ]]; then
+    task_args+=(--unshare-pid --symlink usr/bin /bin
+        --ro-bind /tmp/.X11-unix /tmp/.X11-unix
+        --ro-bind "$GAMEPKG_WINE_XAUTHORITY" /xauth
+        --ro-bind "$(dirname -- "$GAMEPKG_GAMEPLAY_BINARY")" /engine-dir
+        --setenv DISPLAY "$GAMEPKG_WINE_DISPLAY" --setenv XAUTHORITY /xauth
+        --setenv WINEPREFIX "$task_state/wine-prefix" --setenv WINEARCH win64
+        --setenv WINEDEBUG -all --setenv WINEDLLOVERRIDES 'mscoree,mshtml='
+        --setenv RECOMP_FB_DUMP_FLIPS 120)
+    task_command=(/usr/bin/wine "/engine-dir/$(basename -- "$GAMEPKG_GAMEPLAY_BINARY")" --headless /gamepkg-disc/default.xbe)
+fi
 # Physical memory accounting permits the runtime's original RAM aliases and
 # GPU reservations. This applies only to this private test process tree.
 exec systemd-run --user --scope --quiet --collect --property=MemoryMax=4294967296 \
     --property=MemorySwapMax=0 -- timeout --signal=TERM --kill-after=5s 300s \
-    bwrap "${task_args[@]}" /engine --headless /gamepkg-disc/default.xbe
+    bwrap "${task_args[@]}" "${task_command[@]}"
 LAUNCH
 chmod 700 "$task_state/launch.sh"
 export LAUNCH="$task_state/launch.sh" GAME_DIR="$task_state/game" SAVES="$task_saves"
@@ -107,6 +133,7 @@ fi
 printf 'exit_code=%s\nscheme=%s\nevent=%s\nnative_sha256=%s\n' \
     "$task_result" "$task_scheme" "$task_event" "$(sha256sum "$task_binary" | cut -d' ' -f1)" \
     > "$task_state/result.txt"
+printf 'transport=%s\n' "$([[ "$task_wine" == 1 ]] && echo windows-wine || echo native-linux)" >> "$task_state/result.txt"
 # A timed-out driver has not reached its checker. Preserve partial assertion
 # results too, without changing the failed exit status or hiding the timeout.
 if (( task_result != 0 )) && [[ ! -f "$task_state/run/controls.txt" \
