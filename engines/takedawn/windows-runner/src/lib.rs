@@ -963,8 +963,16 @@ mod tests {
         }
         assert_eq!(restarts, 1);
         assert_eq!(
-            std::fs::read_to_string(marker).unwrap(),
-            "teardown complete\nfinal cleanup complete\nteardown complete\nfinal cleanup complete\n"
+            std::fs::read_to_string(marker)
+                .unwrap()
+                .lines()
+                .collect::<Vec<_>>(),
+            [
+                "teardown complete",
+                "final cleanup complete",
+                "teardown complete",
+                "final cleanup complete"
+            ]
         );
         output.seek(SeekFrom::Start(0)).unwrap();
         let mut log = String::new();
