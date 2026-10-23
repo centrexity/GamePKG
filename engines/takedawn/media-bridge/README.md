@@ -145,7 +145,12 @@ The separate [Windows Rust process layer](../windows-runner/README.md) now
 transfers only selected handles and owns the game process tree. Its actual
 MSVC32/MSVC64 child/descendant lifetime tests pass. A bounded full-game Wine
 probe also boots through that Rust owner and stops its child successfully.
-Managed restart and connection to the app's normal launch/history flow remain
+Its managed session now preserves all original exit handlers, waits for complete
+shutdown and relaunches with the retained ISO. A fresh-prefix real-game Wine
+check changes render scale from 1x to 2x, cancels then confirms restart, verifies
+2x persists with no pending-change prompt, and quits both runs normally in one
+tracked session. Actual MSVC32/MSVC64 lifecycle and original-upstream teardown
+fixtures pass. App launch/history wiring, native builder and kit promotion remain
 required; the standalone process layer is not filesystem/network isolation.
 
 The private v9 candidate packages the Windows transport/stagers, dependency pins
