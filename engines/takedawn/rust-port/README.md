@@ -66,6 +66,38 @@ save/reload checks are separate private integration gates.
 
 ## Validation
 
+### Windows preparation
+
+The Windows preparation audit found two concrete blockers in Linux-generated
+Rust. Importing `stderr` as a global fails to link on Windows, and thirteen
+`INT64_MIN` declarations use Linux's 64-bit `long`, which becomes a 32-bit type
+on Windows. The normalizer now uses native stream getters and native C wrappers
+for `fprintf`/`fflush`, keeping each `FILE` in the runtime that owns it. `FILE`
+remains an opaque pointer; by-value use, layout-dependent arrays and fixed-size
+construction are rejected. The exact known `INT64_MIN` definition becomes
+`i64::MIN`; a changed definition fails preparation rather than truncating it.
+
+`tools/check_takedawn_rust_stdio.py` compares converted Rust with the platform's
+native C stream identities, fixed-width minimum, variadic 32/64-bit values and
+flush results. The fixture passes on Linux 64/32-bit and Windows GNU 64/32-bit
+under a private maintainer Wine runner. Native Windows MSVC 64/32-bit CI runs
+the same fixture directly. Those checks are separate from full game support.
+The original actual game-code stub fails Windows linking before this change;
+afterward it links and passes its logging and return-stack probe.
+
+CI consumes the small prepared asset-free fixture in `tests/stdio-prepared`;
+its provenance binds the C source, normalizer source and resulting Rust hashes.
+To refresh it after a reviewed normalizer change, run the fixture tool with
+`--c2rust /private/tools/c2rust --normalizer /path/to/gamepkg-takedawn-rust-port
+--refresh-fixture`. Conversion tools and Wine remain maintainer-only tools.
+
+Newly prepared Windows game source is a private qualification candidate. The
+player source-kit pin remains the verified Linux v8 kit while the complete
+Windows native archive, original runtime, ISO transport, launcher and gameplay
+are qualified. A passing ABI fixture is not a working Windows game release.
+
+### Linux gameplay baseline
+
 The complete pinned C baseline reproduced its expected tree hash, 108/108
 patches and both spin-wait adjustments. All 24,001 generated game functions
 converted into 484 Rust units and compiled with stable Rust 1.89.0 on Linux

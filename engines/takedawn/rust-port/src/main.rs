@@ -15,8 +15,40 @@ struct Normalize {
     locals: Option<BTreeSet<String>>,
     unsupported_intrinsics: BTreeSet<String>,
     atomic_calls: BTreeMap<String, usize>,
+    streams: BTreeSet<String>,
+    stream_functions: BTreeSet<String>,
+    invalid_file_value: bool,
+    fixed_constants: BTreeMap<String, usize>,
 }
 impl VisitMut for Normalize {
+    fn visit_type_mut(&mut self, ty: &mut syn::Type) {
+        if !self.streams.is_empty() {
+            // The C runtime owns FILE's layout. Only raw pointers may cross
+            // this boundary; by-value use, sizeof and arrays require a real
+            // layout and must fail preparation rather than silently use a ZST.
+            let opaque = |ty: &syn::Type| {
+                matches!(ty, syn::Type::Path(p)
+                if p.qself.is_none() && p.path.segments.len() == 1
+                && matches!(p.path.segments[0].ident.to_string().as_str(), "FILE" | "_IO_FILE"))
+            };
+            if let syn::Type::Ptr(pointer) = ty {
+                if opaque(&pointer.elem) {
+                    return;
+                }
+            }
+            if opaque(ty) {
+                self.invalid_file_value = true;
+                return;
+            }
+        }
+        syn::visit_mut::visit_type_mut(self, ty);
+    }
+    fn visit_item_type_mut(&mut self, item: &mut syn::ItemType) {
+        if !self.streams.is_empty() && item.ident == "FILE" {
+            return; // The reviewed FILE = _IO_FILE alias was checked below.
+        }
+        syn::visit_mut::visit_item_type_mut(self, item);
+    }
     fn visit_item_fn_mut(&mut self, function: &mut syn::ItemFn) {
         let enclosing = self.locals.replace(BTreeSet::new());
         syn::visit_mut::visit_item_fn_mut(self, function);
@@ -32,6 +64,17 @@ impl VisitMut for Normalize {
         function.block.stmts.splice(0..0, declarations);
     }
     fn visit_expr_mut(&mut self, expr: &mut Expr) {
+        if let Expr::Struct(value) = expr {
+            if !self.streams.is_empty()
+                && value
+                    .path
+                    .segments
+                    .last()
+                    .is_some_and(|s| s.ident == "FILE" || s.ident == "_IO_FILE")
+            {
+                self.invalid_file_value = true;
+            }
+        }
         syn::visit_mut::visit_expr_mut(self, expr);
         if let Expr::Call(call) = expr {
             if let Expr::Path(path) = call.func.as_ref() {
@@ -80,6 +123,15 @@ impl VisitMut for Normalize {
         if let Expr::Path(path) = expr {
             if path.qself.is_none() && path.path.segments.len() == 1 {
                 let name = path.path.segments[0].ident.to_string();
+                if self.streams.contains(&name) {
+                    let getter = format_ident!("gamepkg_native_{name}");
+                    *expr = parse_quote!(#getter());
+                    return;
+                }
+                if self.stream_functions.contains(&name) {
+                    path.path.segments[0].ident = format_ident!("gamepkg_native_{name}");
+                    return;
+                }
                 if self.tls.contains_key(&name) {
                     if let Some(used) = &mut self.locals {
                         used.insert(name.clone());
@@ -121,7 +173,9 @@ impl VisitMut for Normalize {
 
 fn normalize(source: &str) -> Result<(String, serde_json::Value)> {
     ensure!(
-        !source.contains("__gamepkg_tls_") && !source.contains("__gamepkg_atomic_"),
+        !source.contains("__gamepkg_tls_")
+            && !source.contains("__gamepkg_atomic_")
+            && !source.contains("gamepkg_native_"),
         "reserved generated local prefix already present"
     );
     let mut file = syn::parse_file(source).context("invalid transpiled Rust")?;
@@ -178,6 +232,24 @@ fn normalize(source: &str) -> Result<(String, serde_json::Value)> {
             block.items = kept;
             for item in &mut block.items {
                 if let ForeignItem::Static(global) = item {
+                    let name = global.ident.to_string();
+                    if matches!(name.as_str(), "stdin" | "stdout" | "stderr") {
+                        ensure!(
+                            global.attrs.is_empty(),
+                            "unreviewed native stream attributes"
+                        );
+                        ensure!(
+                            global.ty.to_token_stream().to_string() == "* mut FILE",
+                            "unreviewed native stream type"
+                        );
+                        ensure!(
+                            change.streams.insert(name.clone()),
+                            "duplicate native stream"
+                        );
+                        let getter = format_ident!("gamepkg_native_{name}");
+                        *item = parse_quote!(fn #getter() -> *mut FILE;);
+                        continue;
+                    }
                     if global
                         .attrs
                         .iter()
@@ -201,6 +273,73 @@ fn normalize(source: &str) -> Result<(String, serde_json::Value)> {
         }
     }
     file.items.extend(opaque_items);
+    for item in &mut file.items {
+        if let Item::Const(value) = item {
+            if value.ident == "INT64_MIN" {
+                let expected: Expr = parse_quote!(
+                    -9223372036854775807 as ::core::ffi::c_long - 1 as ::core::ffi::c_long
+                );
+                ensure!(
+                    value.ty.to_token_stream().to_string() == ":: core :: ffi :: c_long"
+                        && value.expr.to_token_stream().to_string()
+                            == expected.to_token_stream().to_string(),
+                    "unreviewed INT64_MIN definition"
+                );
+                // C2Rust emitted the generation machine's LP64 macro type.
+                // This is a fixed-width C constant, independent of host long.
+                value.ty = Box::new(parse_quote!(i64));
+                value.expr = Box::new(parse_quote!(i64::MIN));
+                *change
+                    .fixed_constants
+                    .entry("INT64_MIN".into())
+                    .or_default() += 1;
+            }
+        }
+    }
+    if !change.streams.is_empty() {
+        for item in &mut file.items {
+            if let Item::ForeignMod(block) = item {
+                for item in &mut block.items {
+                    if let ForeignItem::Fn(function) = item {
+                        let name = function.sig.ident.to_string();
+                        if matches!(name.as_str(), "fprintf" | "fflush") {
+                            ensure!(
+                                function.attrs.is_empty(),
+                                "unreviewed native stdio function attributes"
+                            );
+                            change.stream_functions.insert(name.clone());
+                            function.sig.ident = format_ident!("gamepkg_native_{name}");
+                        }
+                    }
+                }
+            }
+        }
+        let aliases = file
+            .items
+            .iter()
+            .filter(|item| {
+                matches!(item, Item::Type(alias)
+            if alias.ident == "FILE" && alias.ty.to_token_stream().to_string() == "_IO_FILE")
+            })
+            .count();
+        ensure!(aliases == 1, "unreviewed C stream layout alias");
+        let mut replaced = 0;
+        for item in &mut file.items {
+            if matches!(item, Item::Struct(s) if s.ident == "_IO_FILE") {
+                *item = parse_quote!(
+                    #[repr(C)]
+                    pub struct _IO_FILE {
+                        _private: [u8; 0],
+                    }
+                );
+                replaced += 1;
+            }
+        }
+        ensure!(
+            replaced == 1,
+            "missing or duplicate native FILE declaration"
+        );
+    }
     let mut exports = Vec::new();
     for item in &file.items {
         if let Item::Fn(function) = item {
@@ -215,6 +354,10 @@ fn normalize(source: &str) -> Result<(String, serde_json::Value)> {
     }
     change.visit_file_mut(&mut file);
     ensure!(
+        !change.invalid_file_value,
+        "native FILE must remain an opaque pointer"
+    );
+    ensure!(
         change.unsupported_intrinsics.is_empty(),
         "unreviewed intrinsic calls: {:?}",
         change.unsupported_intrinsics
@@ -225,7 +368,9 @@ fn normalize(source: &str) -> Result<(String, serde_json::Value)> {
     Ok((
         result,
         serde_json::json!({"thread_locals": change.tls, "exports": exports,
-            "atomic_calls": change.atomic_calls, "opaque_types": opaque_names}),
+            "atomic_calls": change.atomic_calls, "opaque_types": opaque_names,
+            "stdio_streams": change.streams, "stdio_functions": change.stream_functions,
+            "fixed_width_constants": change.fixed_constants}),
     ))
 }
 
@@ -333,5 +478,51 @@ mod tests {
         assert!(rust.contains("p: *const Opaque"));
         assert!(!rust.contains("pub type Opaque"));
         assert_eq!(report["opaque_types"], serde_json::json!(["Opaque"]));
+    }
+    #[test]
+    fn native_streams_use_host_getters_and_no_foreign_file_layout() {
+        let source = r#"
+            #[repr(C)] pub struct _IO_FILE { pub linux_only: i64 }
+            pub type FILE = _IO_FILE;
+            extern "C" {
+                static mut stderr: *mut FILE;
+                fn fflush(stream: *mut FILE) -> i32;
+            }
+            #[no_mangle] pub unsafe extern "C" fn flush() -> i32 { fflush(stderr) }
+        "#;
+        let (rust, report) = normalize(source).unwrap();
+        assert!(rust.contains("fn gamepkg_native_stderr() -> *mut FILE"));
+        assert!(rust.contains("gamepkg_native_fflush(gamepkg_native_stderr())"));
+        assert!(!rust.contains("static mut stderr"));
+        assert!(!rust.contains("linux_only"));
+        assert_eq!(report["stdio_streams"], serde_json::json!(["stderr"]));
+        assert_eq!(report["stdio_functions"], serde_json::json!(["fflush"]));
+        for extra in [
+            "unsafe fn value(stream: FILE) {}",
+            "fn size() { let _ = core::mem::size_of::<FILE>(); }",
+            "unsafe fn array(stream: *mut [FILE; 2]) {}",
+            "fn create() { let _ = _IO_FILE { linux_only: 0 }; }",
+            "type Other = FILE;",
+        ] {
+            assert!(normalize(&format!("{source}\n{extra}")).is_err(), "{extra}");
+        }
+        assert!(normalize(&source.replace("*mut FILE;", "*mut u8;")).is_err());
+        assert!(
+            normalize(&source.replace("pub type FILE = _IO_FILE;", "pub type FILE = u8;")).is_err()
+        );
+        assert!(normalize(&source.replace(
+            "static mut stderr:",
+            "#[link_name=\"other\"] static mut stderr:"
+        ))
+        .is_err());
+    }
+    #[test]
+    fn fixed_width_minimum_does_not_inherit_the_generation_hosts_long_width() {
+        let source = "pub const INT64_MIN: ::core::ffi::c_long = -9223372036854775807 as ::core::ffi::c_long - 1 as ::core::ffi::c_long;";
+        let (rust, report) = normalize(source).unwrap();
+        assert!(rust.contains("pub const INT64_MIN: i64 = i64::MIN"));
+        assert_eq!(report["fixed_width_constants"]["INT64_MIN"], 1);
+        assert!(normalize(&source.replace("9223372036854775807", "9223372036854775806")).is_err());
+        assert!(normalize("pub const INT64_MIN: u32 = 0;").is_err());
     }
 }
