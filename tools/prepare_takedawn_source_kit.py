@@ -114,7 +114,7 @@ def main():
     for name in ['build.rs', 'Cargo.toml', 'units.txt', 'native_tls.c', 'conversion.json']:
         copy(prepared / name, 'prepared/' + name)
     host = project / 'engines/takedawn'
-    for name in ['Cargo.toml', 'Cargo.lock', 'src/lib.rs', 'media.h', 'posix.c',
+    for name in ['Cargo.toml', 'Cargo.lock', 'src/lib.rs', 'src/windows_handle.rs', 'media.h', 'posix.c',
                  'engine.c', 'attach.cmake', 'adapt_paths.cmake', 'adapt_smoke.cmake', 'adapt_memory.cmake',
                  'windows_file.c', 'windows_file.h', 'windows_stream.c', 'windows_stream.h',
                  'windows_entry.c', 'windows_attach.cmake', 'adapt_windows_file.cmake',

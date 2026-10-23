@@ -70,7 +70,12 @@ Python remains a maintainer test tool.
 It supports complete XBE reads, 64-bit sizes/seeks, partial SDL objects, EOF,
 overflow/write rejection and unchanged outputs on failed loads. It keeps CRT
 `FILE` objects out of DLL boundaries. `windows_entry.c` admits the selected ISO
-from its Unicode Windows environment path before calling the original main;
+through `GAMEPKG_TAKEDAWN_DISC_HANDLE` before calling the original main. The
+strict decimal handle is duplicated with read-only access and without inheritance;
+the verified reader owns that duplicate. Successful startup closes the child's
+original inherited copy. Invalid, empty or failed handle admission stops startup
+without falling back to a pathname. The legacy maintainer path remains available
+only when the handle variable is absent, using the Unicode Windows environment;
 extraction/data-folder overrides reject. These asset-free tests, including
 malformed Unicode and admission failure/recovery, pass on actual MSVC 32/64-bit
 in [40028221745](https://github.com/centrexity/GamePKG/actions/runs/40028221745).
@@ -112,9 +117,19 @@ GAMEPKG_GAMEPLAY_WINE=1 bash tools/check_takedawn_session.sh /path/to/game.exe /
 python3 tools/check_takedawn_windows_window.py /path/to/game.exe /path/to/owned.iso /path/to/private/reference-saves
 ```
 
-Native Windows CI also runs the actual Rust disc-reader/media tests: 14 pass
-on each MSVC architecture and 15 on Linux in
-[40029576931](https://github.com/centrexity/GamePKG/actions/runs/40029576931).
+The updated private Windows executable retains all 24,032 Rust exports. A separate
+isolated Wine boot transfers an inherited read-only ISO handle while deliberately
+setting an invalid legacy filename. It verifies all 716 files, loads the XBE,
+initializes Vulkan and reaches 1,721 presented intro frames before an intentional
+35-second end. This qualifies the handle handoff, rather than a completed race
+or the app's process owner. The earlier gameplay checks above used the first build.
+
+Native Windows CI also runs the actual Rust disc-reader/media tests: 17 pass
+on each MSVC architecture and 16 on Linux in
+[40035038063](https://github.com/centrexity/GamePKG/actions/runs/40035038063).
+They verify read-only duplication, caller ownership, rejection of non-file handles,
+and continued reads from an opened ISO after its pathname is replaced. Entry tests
+also cover malformed handle values, admission failure and source-handle closure.
 Those actual Windows API/reader tests and Wine gameplay cover distinct scopes.
 Actual Windows-host game/hardware checks, full campaign progression, physical
 controllers and audible fidelity remain unqualified. The Windows app's native
