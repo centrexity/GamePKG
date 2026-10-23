@@ -172,8 +172,8 @@ BOOL WINAPI gpw_ReadFile(HANDLE handle, LPVOID buffer, DWORD length, LPDWORD out
         /* Native Windows treats a zero-byte synchronous read as a no-op,
          * including when OVERLAPPED supplies a different explicit offset.
          * Wine moves the cursor in that case; the native oracle is decisive. */
-        if (length) entry->position = position;
         if (length && position < info.size) {
+            entry->position = position;
             uint64_t actual;
             rc = gp_media_seek(entry->media, (int64_t)(position < info.size ? position : info.size), 0, &actual);
             if (rc) error = media_error(rc);
