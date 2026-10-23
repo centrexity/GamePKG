@@ -66,10 +66,33 @@ compile and expanded directory/mutation tests all pass in
 CI checks out the exact upstream commit and uses its canonical source bytes.
 Python remains a maintainer test tool.
 
-The Windows core is not yet selected by `attach.cmake`. The original runtime's
-startup/SDL stream reads, final build attachment, process isolation and complete
-native linking/gameplay remain required. The
-player kit stays at its verified Linux pin until that integration is qualified.
+`windows_stream.c` connects startup reads and SDL streams to those same handles.
+It supports complete XBE reads, 64-bit sizes/seeks, partial SDL objects, EOF,
+overflow/write rejection and unchanged outputs on failed loads. It keeps CRT
+`FILE` objects out of DLL boundaries. `windows_entry.c` admits the selected ISO
+from its Unicode Windows environment path before calling the original main;
+extraction/data-folder overrides reject. These asset-free tests, including
+malformed Unicode and admission failure/recovery, pass on actual MSVC 32/64-bit
+in [40028221745](https://github.com/centrexity/GamePKG/actions/runs/40028221745).
+
+`attach.cmake` selects `windows_attach.cmake` for Windows. Pinned staging connects
+the original startup loader/report, SDL font read, file runtime and separate HDD
+cache directory. Linux attachment behavior is retained. The original Windows
+runtime now links successfully with the complete 486-unit Rust game archive and
+its standard library. All 24,032 Rust exports remain in the 59,878,912-byte native
+executable. Build commands compile no generated C game bodies and invoke no
+Python. The original upstream checkouts remain unchanged. Official dependency
+versions, source commits and download digests are in `../windows-dependencies.json`.
+
+The first isolated Wine 9 diagnostic confirms the runtime identity, ISO
+admission, a 4,308,992-byte XBE load, original intro execution, and Vulkan device
+creation on an RTX 3090. Wine needs its display connection even for this
+headless Vulkan check; omitting it produces a CPU fallback and does not qualify
+Vulkan. Both boots were externally bounded and intentionally ended, with
+private saves, a read-only ISO and no network. This is early boot evidence,
+not verified Windows race controls, saves, native window or campaign gameplay.
+The Windows launcher/process owner, real gameplay gates and player build/kit
+promotion remain required. The player kit stays at its verified Linux v8 pin.
 
 ## Earlier reference bring-up
 

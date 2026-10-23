@@ -95,9 +95,15 @@ To refresh it after a reviewed normalizer change, run the fixture tool with
 --refresh-fixture`. Conversion tools and Wine remain maintainer-only tools.
 
 Newly prepared Windows game source is a private qualification candidate. The
-player source-kit pin remains the verified Linux v8 kit while the complete
-Windows native archive, original runtime, ISO transport, launcher and gameplay
-are qualified. A passing ABI fixture is not a working Windows game release.
+complete optimized 486-unit Windows archive and original native runtime now
+link successfully, retaining all 24,032 Rust exports. The ISO transport includes
+native file/directory APIs, startup reads and SDL streams. Actual MSVC 32/64-bit
+stream/admission/file tests pass; isolated Wine tests confirm ISO-in-place boot
+and an RTX 3090 Vulkan device. Details and remaining gates are in the
+[media integration notes](../media-bridge/README.md). The player source-kit pin
+remains the verified Linux v8 kit while Windows controls, saves, native window,
+launcher/process isolation and complete gameplay are qualified. A passing boot
+does not prove a working Windows game release.
 
 ### Linux gameplay baseline
 
