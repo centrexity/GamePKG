@@ -33,8 +33,8 @@ def main():
     stage(original, staged, True)
     text = staged.read_text()
     include = '#if defined(_WIN32)\n#include "' + (bridge / 'windows_restart.h').as_posix() + '"\n#endif\n'
-    assert text.count(include) == 1 and text.count('    gpw_restart_at_exit();\n') == 1
-    assert text.replace(include, '').replace('    gpw_restart_at_exit();\n', '').encode() == canonical
+    assert text.count(include) == 1 and text.count('    if (gpw_restart_at_exit()) return;\n') == 1
+    assert text.replace(include, '').replace('    if (gpw_restart_at_exit()) return;\n', '').encode() == canonical
     stage(original, original, False)
     changed = work / 'changed.c'
     changed.write_bytes(canonical + b'\n/* different source */\n')
@@ -55,17 +55,37 @@ def main():
     if os.name != 'nt':
         print('PASS: pinned staging/restoration and Windows fixture compilation; native execution still required')
         return
-    for mode, expected in [('request', 0x47505253), ('cancel', 0), ('quit', 0)]:
+    import ctypes
+    from ctypes import wintypes
+    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+    kernel.CreateEventW.argtypes = [ctypes.c_void_p, wintypes.BOOL, wintypes.BOOL, wintypes.LPCWSTR]
+    kernel.CreateEventW.restype = wintypes.HANDLE
+    kernel.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+    kernel.WaitForSingleObject.restype = wintypes.DWORD
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel.CloseHandle.restype = wintypes.BOOL
+    for mode in ['request', 'cancel', 'quit']:
         folder = work / mode
         folder.mkdir()
-        result = subprocess.run([str(exe), mode, str(folder / 'marker.txt')], cwd=folder,
-                                env=dict(os.environ, GAMEPKG_TAKEDAWN_MANAGED_RESTART='1'),
-                                capture_output=True, timeout=20)
-        (folder / 'stdout.log').write_bytes(result.stdout)
-        (folder / 'stderr.log').write_bytes(result.stderr)
-        assert result.returncode == expected, (mode, result.returncode, result.stderr)
-        assert (folder / 'marker.txt').read_text() == 'teardown complete\n'
-        assert ('requesting managed restart' in result.stderr.decode()) == (mode == 'request')
+        event = kernel.CreateEventW(None, True, False, None)
+        if not event:
+            raise ctypes.WinError(ctypes.get_last_error())
+        try:
+            os.set_handle_inheritable(event, True)
+            startup = subprocess.STARTUPINFO()
+            startup.lpAttributeList = {'handle_list': [event]}
+            result = subprocess.run([str(exe), mode, str(folder / 'marker.txt')], cwd=folder,
+                                    env=dict(os.environ, GAMEPKG_TAKEDAWN_RESTART_HANDLE=str(event)),
+                                    startupinfo=startup, close_fds=True,
+                                    capture_output=True, timeout=20)
+            (folder / 'stdout.log').write_bytes(result.stdout)
+            (folder / 'stderr.log').write_bytes(result.stderr)
+            assert result.returncode == 0, (mode, result.returncode, result.stderr)
+            assert (folder / 'marker.txt').read_text() == 'teardown complete\nfinal cleanup complete\n'
+            assert kernel.WaitForSingleObject(event, 0) == (0 if mode == 'request' else 258)
+            assert ('managed restart requested; normal exit pending' in result.stderr.decode()) == (mode == 'request')
+        finally:
+            kernel.CloseHandle(event)
     subprocess.run(['cargo', 'test', '--locked', '--manifest-path',
                     str(project / 'engines/takedawn/windows-runner/Cargo.toml'),
                     '--target', args.target, 'tests::actual_upstream_restart_teardown',

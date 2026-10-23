@@ -14,7 +14,7 @@ if(NOT hash STREQUAL "3eba3080b1525b5ec07b044a0a93f283f2a0a3282a3e4d99d3804b8d6e
 endif()
 file(READ "${INPUT}" source)
 set(before "    fflush(NULL);\n#if defined(_WIN32)\n")
-set(after "    fflush(NULL);\n#if defined(_WIN32)\n    gpw_restart_at_exit();\n")
+set(after "    fflush(NULL);\n#if defined(_WIN32)\n    if (gpw_restart_at_exit()) return;\n")
 string(REPLACE "${before}" "${after}" adapted "${source}")
 if(adapted STREQUAL source)
     message(FATAL_ERROR "Pinned final restart handler is missing")

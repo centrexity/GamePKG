@@ -15,10 +15,17 @@ static void teardown(void) {
     puts("FIXTURE: normal save/audio/window teardown completed");
     fflush(NULL);
 }
+static void final_cleanup(void) {
+    FILE *file = fopen(marker, "a"); assert(file);
+    assert(fputs("final cleanup complete\n", file) >= 0);
+    assert(!fclose(file));
+    puts("FIXTURE: earlier exit handler completed");
+}
 int main(int argc, char **argv) {
     assert(argc == 3);
-    recomp_restart_init(argc, argv); /* registers original last exit handler */
     marker = argv[2];
+    assert(!atexit(final_cleanup)); /* earlier handler runs AFTER upstream's */
+    recomp_restart_init(argc, argv);
     save_lock = CreateFileA("save-lock.bin", GENERIC_READ | GENERIC_WRITE, 0, NULL,
         OPEN_ALWAYS, FILE_ATTRIBUTE_TEMPORARY, NULL);
     assert(save_lock != INVALID_HANDLE_VALUE);
@@ -29,6 +36,8 @@ int main(int argc, char **argv) {
         if (file) {
             char line[64]; assert(fgets(line, sizeof line, file));
             assert(!strcmp(line, "teardown complete\n"));
+            assert(fgets(line, sizeof line, file));
+            assert(!strcmp(line, "final cleanup complete\n"));
             assert(!fclose(file));
             puts("FIXTURE: restarted after completed teardown");
             return 0;
