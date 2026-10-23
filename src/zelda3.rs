@@ -451,17 +451,46 @@ pub fn validate_current(bytes: &[u8]) -> Result<()> {
     );
     Ok(())
 }
-fn literal_renderer_revision(body: &wasmparser::FunctionBody<'_>) -> Result<bool> {
+fn renderer_revision_body(
+    body: &wasmparser::FunctionBody<'_>,
+    is_void: impl Fn(u32) -> bool,
+    literal_delegates: Option<&std::collections::BTreeSet<u32>>,
+) -> Result<bool> {
     if body.get_locals_reader()?.get_count() != 0 {
         return Ok(false);
     }
     let mut ops = body.get_operators_reader()?;
     let mut constant = false;
     let mut returned = false;
+    let mut constructor_prefix = 0;
     while !ops.eof() {
         match ops.read()? {
             wasmparser::Operator::Nop => {}
-            wasmparser::Operator::I32Const { value } if !constant && value == RENDERER_REVISION => {
+            wasmparser::Operator::Block {
+                blockty: wasmparser::BlockType::Empty,
+            } if !constant && constructor_prefix == 0 => constructor_prefix = 1,
+            wasmparser::Operator::Call { function_index }
+                if !constant && constructor_prefix <= 1 && is_void(function_index) =>
+            {
+                constructor_prefix = if constructor_prefix == 1 { 2 } else { 3 };
+            }
+            wasmparser::Operator::End if !constant && constructor_prefix == 2 => {
+                constructor_prefix = 3
+            }
+            wasmparser::Operator::I32Const { value }
+                if !constant
+                    && matches!(constructor_prefix, 0 | 3)
+                    && value == RENDERER_REVISION =>
+            {
+                constant = true
+            }
+            // Only one delegation is admitted. Callees were checked with
+            // delegation disabled and must return the literal current value.
+            wasmparser::Operator::Call { function_index }
+                if !constant
+                    && matches!(constructor_prefix, 0 | 3)
+                    && literal_delegates.is_some_and(|set| set.contains(&function_index)) =>
+            {
                 constant = true
             }
             wasmparser::Operator::Return if constant && !returned => returned = true,
@@ -511,10 +540,21 @@ fn validate_renderer(bytes: &[u8]) -> Result<()> {
                     .and_then(|ty| signatures.get(*ty as usize))
                     .copied()
                     .unwrap_or((false, false));
-                if signature.0 && literal_renderer_revision(&body)? {
+                let is_void = |function_index: u32| {
+                    functions
+                        .get(function_index as usize)
+                        .and_then(|ty| signatures.get(*ty as usize))
+                        .is_some_and(|signature| signature.1)
+                };
+                if signature.0 && renderer_revision_body(&body, is_void, None)? {
                     literal_revisions.insert(code_index);
                 }
                 if revision_function == Some(code_index) {
+                    if signature.0
+                        && renderer_revision_body(&body, is_void, Some(&literal_revisions))?
+                    {
+                        return Ok(());
+                    }
                     // Bounded compile diagnostics make differences between
                     // supported linker versions visible without running code.
                     let observed = body
@@ -528,57 +568,6 @@ fn validate_renderer(bytes: &[u8]) -> Result<()> {
                         "function {code_index}, {} local groups: {observed}",
                         body.get_locals_reader()?.get_count()
                     );
-                    if !signature.0 || body.get_locals_reader()?.get_count() != 0 {
-                        break;
-                    }
-                    let mut ops = body.get_operators_reader()?;
-                    let mut constant = false;
-                    let mut returned = false;
-                    let mut constructor_prefix = 0;
-                    while !ops.eof() {
-                        match ops.read()? {
-                            wasmparser::Operator::Nop => {}
-                            wasmparser::Operator::Block {
-                                blockty: wasmparser::BlockType::Empty,
-                            } if !constant && constructor_prefix == 0 => constructor_prefix = 1,
-                            wasmparser::Operator::Call { function_index }
-                                if !constant
-                                    && constructor_prefix <= 1
-                                    && functions
-                                        .get(function_index as usize)
-                                        .and_then(|ty| signatures.get(*ty as usize))
-                                        .is_some_and(|signature| signature.1) =>
-                            {
-                                constructor_prefix = if constructor_prefix == 1 { 2 } else { 3 };
-                            }
-                            wasmparser::Operator::End if !constant && constructor_prefix == 2 => {
-                                constructor_prefix = 3
-                            }
-                            wasmparser::Operator::I32Const { value }
-                                if !constant
-                                    && matches!(constructor_prefix, 0 | 3)
-                                    && value == RENDERER_REVISION =>
-                            {
-                                constant = true
-                            }
-                            // wasm-ld can retain the constant-returning original
-                            // behind an exported initialization thunk. Accept
-                            // only a previously checked, typed literal callee;
-                            // never execute or follow arbitrary engine calls.
-                            wasmparser::Operator::Call { function_index }
-                                if !constant
-                                    && matches!(constructor_prefix, 0 | 3)
-                                    && literal_revisions.contains(&function_index) =>
-                            {
-                                constant = true
-                            }
-                            wasmparser::Operator::Return if constant && !returned => {
-                                returned = true
-                            }
-                            wasmparser::Operator::End if constant && ops.eof() => return Ok(()),
-                            _ => break,
-                        }
-                    }
                     break;
                 }
                 code_index += 1;
@@ -1040,11 +1029,16 @@ mod tests {
         super::validate_current(&super::stamp_engine(clang_wrapper).unwrap()).unwrap();
         let clang_thunk = wat::parse_str(r#"(module (memory 1 256) (func $ctors nop) (func $revision (result i32) i32.const 6) (func (export "renderer_revision") (result i32) call $ctors call $revision))"#).unwrap();
         super::validate_current(&super::stamp_engine(clang_thunk).unwrap()).unwrap();
+        let init_and_cleanup = wat::parse_str(r#"(module (memory 1 256) (func $init nop) (func $cleanup nop) (func $revision (result i32) block call $cleanup end i32.const 6) (func (export "renderer_revision") (result i32) call $init call $revision))"#).unwrap();
+        super::validate_current(&super::stamp_engine(init_and_cleanup).unwrap()).unwrap();
+        let delegated_twice = wat::parse_str(r#"(module (memory 1 256) (func $base (result i32) i32.const 6) (func $revision (result i32) call $base) (func (export "renderer_revision") (result i32) call $revision))"#).unwrap();
+        assert!(super::stamp_engine(delegated_twice).is_err());
         for callee in [
             "i32.const 5",
             "i32.const 6 i32.const 0 i32.add",
             "call $revision",
             "loop br 0 end i32.const 6",
+            "(local i32) i32.const 6 local.set 0 local.get 0",
         ] {
             let source = format!(
                 r#"(module (memory 1 256) (func $ctors nop) (func $revision (result i32) {callee}) (func (export "renderer_revision") (result i32) call $ctors call $revision))"#
