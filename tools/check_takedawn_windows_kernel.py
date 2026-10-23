@@ -35,7 +35,7 @@ def main():
 
     stage(original, staged, True)
     text = staged.read_text()
-    apis = re.findall(r'gpw_([A-Za-z0-9_]+)\(', (adapter / 'windows_file.h').read_text())
+    apis = re.findall(r'WINAPI gpw_([A-Za-z0-9_]+)\(', (adapter / 'windows_file.h').read_text())
     expected = 0
     for api in apis:
         count = len(re.findall(r'\b' + api + r'\(', before.decode()))
