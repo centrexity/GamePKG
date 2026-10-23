@@ -138,8 +138,15 @@ also cover malformed handle values, admission failure and source-handle closure.
 Those actual Windows API/reader tests and Wine gameplay cover distinct scopes.
 Actual Windows-host game/hardware checks, full campaign progression, physical
 controllers and audible fidelity remain unqualified. The Windows app's native
-builder, launcher/process owner, signed-package integration and kit promotion
+builder, launcher/process-owner integration, signed-package integration and kit promotion
 remain required. The player kit stays at its verified Linux v8 pin.
+
+The separate [Windows Rust process layer](../windows-runner/README.md) now
+transfers only selected handles and owns the game process tree. Its actual
+MSVC32/MSVC64 child/descendant lifetime tests pass. A bounded full-game Wine
+probe also boots through that Rust owner and stops its child successfully.
+Managed restart and connection to the app's normal launch/history flow remain
+required; the standalone process layer is not filesystem/network isolation.
 
 The private v9 candidate packages the Windows transport/stagers, dependency pins
 and notices alongside the prepared Rust. Its archive SHA-256 is
