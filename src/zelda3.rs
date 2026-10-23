@@ -463,6 +463,7 @@ fn renderer_revision_body(
     let mut constant = false;
     let mut returned = false;
     let mut constructor_prefix = 0;
+    let mut cleanup = false;
     while !ops.eof() {
         match ops.read()? {
             wasmparser::Operator::Nop => {}
@@ -492,6 +493,14 @@ fn renderer_revision_body(
                     && literal_delegates.is_some_and(|set| set.contains(&function_index)) =>
             {
                 constant = true
+            }
+            // A linker cleanup thunk may call a () -> () destructor while the
+            // checked i32 result remains on the operand stack. It cannot consume
+            // or replace that result. Admit one such call, before any return.
+            wasmparser::Operator::Call { function_index }
+                if constant && !returned && !cleanup && is_void(function_index) =>
+            {
+                cleanup = true
             }
             wasmparser::Operator::Return if constant && !returned => returned = true,
             wasmparser::Operator::End if constant && ops.eof() => return Ok(true),
@@ -1031,6 +1040,18 @@ mod tests {
         super::validate_current(&super::stamp_engine(clang_thunk).unwrap()).unwrap();
         let init_and_cleanup = wat::parse_str(r#"(module (memory 1 256) (func $init nop) (func $cleanup nop) (func $revision (result i32) block call $cleanup end i32.const 6) (func (export "renderer_revision") (result i32) call $init call $revision))"#).unwrap();
         super::validate_current(&super::stamp_engine(init_and_cleanup).unwrap()).unwrap();
+        let cleanup_after_value = wat::parse_str(r#"(module (memory 1 256) (func $revision (result i32) i32.const 6) (func $cleanup nop) (func (export "renderer_revision") (result i32) call $revision call $cleanup))"#).unwrap();
+        super::validate_current(&super::stamp_engine(cleanup_after_value).unwrap()).unwrap();
+        for tail in [
+            "call $cleanup call $cleanup",
+            "drop call $cleanup i32.const 6",
+            "call $wrong_cleanup i32.const 6",
+        ] {
+            let source = format!(
+                r#"(module (memory 1 256) (func $revision (result i32) i32.const 6) (func $cleanup nop) (func $wrong_cleanup (param i32)) (func (export "renderer_revision") (result i32) call $revision {tail}))"#
+            );
+            assert!(super::stamp_engine(wat::parse_str(source).unwrap()).is_err());
+        }
         let delegated_twice = wat::parse_str(r#"(module (memory 1 256) (func $base (result i32) i32.const 6) (func $revision (result i32) call $base) (func (export "renderer_revision") (result i32) call $revision))"#).unwrap();
         assert!(super::stamp_engine(delegated_twice).is_err());
         for callee in [
