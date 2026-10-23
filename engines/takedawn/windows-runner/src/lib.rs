@@ -371,20 +371,23 @@ mod tests {
             disc.write(b"mutation").unwrap_err().kind(),
             io::ErrorKind::PermissionDenied
         );
-        let event_name = wide(&std::env::var_os("GP_EVENT_NAME").unwrap()).unwrap();
-        let event = unsafe { OpenEventW(SYNCHRONIZATION_SYNCHRONIZE, 0, event_name.as_ptr()) };
-        assert!(!event.is_null());
-        let event = unsafe { OwnedHandle::from_raw_handle(event) };
         let unrelated: usize = std::env::var("GP_UNRELATED_HANDLE")
             .unwrap()
             .parse()
             .unwrap();
-        // A numeric slot can be reused in the child. Compare the actual kernel
-        // object rather than assuming that an unrelated numeric handle is absent.
-        assert_eq!(
-            unsafe { CompareObjectHandles(unrelated as HANDLE, event.as_raw_handle()) },
-            0
-        );
+        // Capture any object currently occupying that numeric slot before
+        // OpenEventW itself can allocate/reuse the slot for the named event.
+        let candidate = duplicate(unrelated as HANDLE, 0).ok();
+        let event_name = wide(&std::env::var_os("GP_EVENT_NAME").unwrap()).unwrap();
+        let event = unsafe { OpenEventW(SYNCHRONIZATION_SYNCHRONIZE, 0, event_name.as_ptr()) };
+        assert!(!event.is_null());
+        let event = unsafe { OwnedHandle::from_raw_handle(event) };
+        if let Some(candidate) = candidate {
+            assert_eq!(
+                unsafe { CompareObjectHandles(candidate.as_raw_handle(), event.as_raw_handle()) },
+                0
+            );
+        }
         let expected = [
             "with spaces",
             "quote\"inside",
