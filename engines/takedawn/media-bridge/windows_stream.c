@@ -3,6 +3,7 @@
  * host paths; the launcher owns process confinement. */
 #include "windows_file.h"
 #include "windows_stream.h"
+#include <SDL.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>

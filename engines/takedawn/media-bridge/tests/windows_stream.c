@@ -3,6 +3,7 @@
 #define GPW_STREAM_TEST
 #include "windows_file.c"
 #include "../windows_stream.h"
+#include <SDL.h>
 #include <stdlib.h>
 
 int main(void) {

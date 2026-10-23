@@ -3,6 +3,11 @@
 # after building this directory's Rust static library. No upstream source edit
 # or asset extraction is needed. The reference executable keeps its own name.
 function(gamepkg_attach_disc_media)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+        include("${CMAKE_CURRENT_FUNCTION_LIST_DIR}/windows_attach.cmake")
+        gamepkg_attach_windows_disc_media()
+        return()
+    endif()
     if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
         message(FATAL_ERROR "The reference POSIX media adapter currently requires Linux")
     endif()
