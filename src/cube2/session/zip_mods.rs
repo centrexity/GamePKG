@@ -24,7 +24,7 @@ fn tap(session: &mut Session, key: u32) {
 fn assert_zip_image(session: &mut Session) {
     fn colors(frame: &protocol::Frame) -> [usize; 2] {
         let mut counts = [0; 2];
-        for pixel in frame.rgba.chunks_exact(4) {
+        for pixel in frame.rgba.as_chunks::<4>().0.iter() {
             if pixel[0] > 180 && pixel[1] < 60 && pixel[2] > 180 {
                 counts[0] += 1;
             }

@@ -1318,7 +1318,7 @@ unsafe fn callback<const N: usize>(
 ) -> i32 {
     if context.is_null()
         || out.is_null()
-        || (out as usize) % std::mem::align_of::<u32>() != 0
+        || !(out as usize).is_multiple_of(std::mem::align_of::<u32>())
         || !native_buffer(out.cast(), N * 4)
     {
         return -1;
@@ -1340,11 +1340,13 @@ unsafe fn callback<const N: usize>(
     0
 }
 unsafe fn allocation<'a>(context: *mut c_void, buffer: *mut Buffer) -> Result<&'a mut Allocation> {
-    if buffer.is_null() || (buffer as usize) % std::mem::align_of::<Buffer>() != 0 {
+    if buffer.is_null() || !(buffer as usize).is_multiple_of(std::mem::align_of::<Buffer>()) {
         return Err(Error::Host(-1));
     }
     let buffer = unsafe { &*buffer };
-    if buffer.owner.is_null() || (buffer.owner as usize) % std::mem::align_of::<Allocation>() != 0 {
+    if buffer.owner.is_null()
+        || !(buffer.owner as usize).is_multiple_of(std::mem::align_of::<Allocation>())
+    {
         return Err(Error::Host(-1));
     }
     // Only a live owner returned by stage may enter this host-only API. C must
@@ -1366,7 +1368,8 @@ unsafe extern "C" fn stage(
 ) -> i32 {
     unsafe {
         callback(context, status, |c| {
-            if buffer.is_null() || (buffer as usize) % std::mem::align_of::<Buffer>() != 0 {
+            if buffer.is_null() || !(buffer as usize).is_multiple_of(std::mem::align_of::<Buffer>())
+            {
                 return Err(Error::Host(-1));
             }
             let memory = c
@@ -1421,7 +1424,7 @@ unsafe extern "C" fn transfer(
     unsafe {
         callback(context, out, |c| {
             if request.is_null()
-                || (request as usize) % std::mem::align_of::<u32>() != 0
+                || !(request as usize).is_multiple_of(std::mem::align_of::<u32>())
                 || !native_buffer(request.cast(), 16)
             {
                 return Err(Error::Host(-1));
@@ -1489,7 +1492,7 @@ unsafe extern "C" fn create(
             if length > 65535
                 || !native_buffer(name, length as usize)
                 || request.is_null()
-                || (request as usize) % std::mem::align_of::<u32>() != 0
+                || !(request as usize).is_multiple_of(std::mem::align_of::<u32>())
                 || !native_buffer(request.cast(), 36)
             {
                 return Err(Error::Host(-1));
