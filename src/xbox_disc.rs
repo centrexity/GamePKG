@@ -96,6 +96,12 @@ fn name(bytes: &[u8]) -> Result<String> {
 impl Disc {
     pub fn open(path: &Path) -> Result<Self> {
         let file = File::open(path).context("open Xbox disc image read-only")?;
+        Self::from_file(file)
+    }
+
+    /// Index the already-open file without reopening its pathname. The reader
+    /// takes ownership and performs only positional reads on this descriptor.
+    pub fn from_file(file: File) -> Result<Self> {
         let metadata = file.metadata()?;
         ensure!(metadata.is_file(), "Xbox disc image must be a regular file");
         let length = metadata.len();
@@ -370,6 +376,22 @@ mod tests {
             assert!(disc.read_file("../default.xbe", 0, &mut data).is_err());
             assert!(disc.verify_takedawn().is_err());
         }
+    }
+    #[test]
+    fn supplied_file_survives_path_replacement_and_still_checks_extents() {
+        let image = fixture(0);
+        let folder = tempfile::tempdir().unwrap();
+        let path = folder.path().join("selected.iso");
+        std::fs::copy(image.path(), &path).unwrap();
+        let opened = File::open(&path).unwrap();
+        std::fs::rename(&path, folder.path().join("renamed.iso")).unwrap();
+        std::fs::write(&path, b"replacement, not a disc").unwrap();
+        let disc = Disc::from_file(opened).unwrap();
+        let mut data = [0; 3];
+        disc.read_file("Data/race.bin", 0, &mut data).unwrap();
+        assert_eq!(&data, b"car");
+        assert!(disc.read_file("Data/race.bin", 1, &mut data).is_err());
+        assert!(Disc::open(&path).is_err());
     }
     #[test]
     fn damaged_extents_tree_cycles_overlaps_and_unsafe_names_fail_closed() {

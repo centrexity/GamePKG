@@ -71,10 +71,18 @@ impl VerifiedDisc {
     /// The supplied budget must belong to the game that will own this media.
     /// No independent allowance is created and no player asset is extracted.
     pub fn open(path: &Path, budget: &Budget) -> Result<Self> {
+        Self::open_with(|| Disc::open(path), budget)
+    }
+    /// Verify an already-open image, retaining that file instead of reopening
+    /// its name. This supports the launcher's read-only inherited capability.
+    pub fn from_file(file: File, budget: &Budget) -> Result<Self> {
+        Self::open_with(|| Disc::from_file(file), budget)
+    }
+    fn open_with(open: impl FnOnce() -> Result<Disc>, budget: &Budget) -> Result<Self> {
         let opening = budget
             .reserve(OPEN_MEMORY)
             .context("Xbox disc index memory reservation")?;
-        let disc = Disc::open(path)?;
+        let disc = open()?;
         let media = Self::prepare(disc, MANIFEST, budget)?;
         ensure!(
             media.report().verified_files == 716 && media.report().verified_bytes == 2476107072,

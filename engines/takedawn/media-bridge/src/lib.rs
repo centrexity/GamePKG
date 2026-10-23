@@ -4,6 +4,8 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 #[path = "../../../../src/memory_budget.rs"]
 mod memory_budget;
+#[cfg(windows)]
+mod windows_handle;
 #[path = "../../../../src/xbox_disc.rs"]
 mod xbox_disc;
 
@@ -80,6 +82,25 @@ fn call(f: impl FnOnce(&mut State) -> Result<()>) -> i32 {
 fn bridge(state: &mut State) -> Result<&mut Bridge> {
     state.bridge.as_mut().ok_or(ENODEV)
 }
+fn initialize(
+    state: &mut State,
+    budget_bytes: u64,
+    open: impl FnOnce(&Budget) -> anyhow::Result<VerifiedDisc>,
+) -> Result<()> {
+    if state.bridge.is_some() {
+        return Err(EBUSY);
+    }
+    let budget = Budget::new(budget_bytes);
+    let table = budget.reserve(65536).map_err(|_| ENOMEM)?;
+    let media = open(&budget).map_err(|_| EIO)?;
+    state.bridge = Some(Bridge {
+        media,
+        handles: BTreeMap::new(),
+        budget,
+        _table: table,
+    });
+    Ok(())
+}
 // SAFETY: All exported functions use the live caller-buffer contract in media.h.
 unsafe fn text<'a>(p: *const u8, len: usize, max: usize) -> Result<&'a str> {
     if len > max || (len != 0 && p.is_null()) {
@@ -153,16 +174,25 @@ pub unsafe extern "C" fn gp_media_init(iso: *const u8, length: usize, budget_byt
         if iso.is_empty() {
             return Err(EINVAL);
         }
-        let budget = Budget::new(budget_bytes);
-        let table = budget.reserve(65536).map_err(|_| ENOMEM)?;
-        let media = VerifiedDisc::open(std::path::Path::new(iso), &budget).map_err(|_| EIO)?;
-        state.bridge = Some(Bridge {
-            media,
-            handles: BTreeMap::new(),
-            budget,
-            _table: table,
-        });
-        Ok(())
+        initialize(state, budget_bytes, |budget| {
+            VerifiedDisc::open(std::path::Path::new(iso), budget)
+        })
+    })
+}
+/// Admit the launcher's already-open Windows file without reopening its path.
+/// The caller retains the original; the reader owns a noninheritable read-only
+/// duplicate. Invalid/non-file handles reject without consuming the caller.
+#[cfg(windows)]
+#[no_mangle]
+pub extern "C" fn gp_media_init_handle(handle: usize, budget_bytes: u64) -> i32 {
+    call(|state| {
+        if state.bridge.is_some() {
+            return Err(EBUSY);
+        }
+        let file = windows_handle::duplicate_read_file(handle)?;
+        initialize(state, budget_bytes, |budget| {
+            VerifiedDisc::from_file(file, budget)
+        })
     })
 }
 #[no_mangle]
