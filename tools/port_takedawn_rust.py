@@ -185,10 +185,15 @@ def convert(entry):
     print(f'Converted {unit.stem}: {len(names)} original game functions', flush=True)
     return metadata
 
-tls, exports, strategies = {}, set(), {}
+tls, exports, strategies, streams, stream_functions = {}, set(), {}, set(), set()
+fixed_constants = {}
 with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
     for (unit, _), metadata in zip(units, pool.map(convert, units)):
         strategies[unit.stem] = metadata['control_flow_preparation']
+        streams.update(metadata.get('stdio_streams', []))
+        stream_functions.update(metadata.get('stdio_functions', []))
+        for name, count in metadata.get('fixed_width_constants', {}).items():
+            fixed_constants[name] = fixed_constants.get(name, 0) + count
         for name, ty in metadata['thread_locals'].items():
             if name in tls and tls[name] != ty:
                 raise RuntimeError(f'conflicting TLS layout for {name}')
@@ -199,6 +204,10 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
             exports.add(name)
 if not expected.issubset(exports):
     raise RuntimeError('converted export set is incomplete')
+if fixed_constants != {'INT64_MIN': 13}:
+    raise RuntimeError('expected all 13 fixed-width INT64_MIN corrections')
+if streams != {'stderr'} or stream_functions != {'fflush', 'fprintf'}:
+    raise RuntimeError('expected the reviewed native stream ABI adaptation')
 prepared_units = [unit.stem for unit, _ in units]
 if mxcsr:
     # A reviewed leaf Rust unit owns the actual native control instructions.
@@ -215,6 +224,21 @@ for name in sorted(tls):
     if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', name):
         raise RuntimeError('invalid TLS symbol')
     shim += f'void *gamepkg_tls_{name}(void) {{ return (void *)&{name}; }}\n'
+for name in sorted(streams):
+    if name not in ['stdin', 'stdout', 'stderr']:
+        raise RuntimeError('unreviewed native C stream')
+    shim += f'void *gamepkg_native_{name}(void) {{ return (void *){name}; }}\n'
+if stream_functions:
+    shim += '#include <stdarg.h>\n'
+    if not stream_functions.issubset({'fflush', 'fprintf'}):
+        raise RuntimeError('unreviewed native C stream function')
+    if 'fflush' in stream_functions:
+        shim += 'int gamepkg_native_fflush(void *stream) { return fflush((FILE *)stream); }\n'
+    if 'fprintf' in stream_functions:
+        shim += ('int gamepkg_native_fprintf(void *stream, const char *format, ...) { '
+                 'va_list args; va_start(args, format); '
+                 'int result = vfprintf((FILE *)stream, format, args); '
+                 'va_end(args); return result; }\n')
 (output / 'native_tls.c').write_text(shim)
 # Compile independent prepared units with a stable Rust build script. A single
 # enormous module tree multiplies compiler memory and cannot reuse unit objects.
@@ -236,7 +260,7 @@ panic = "abort"
 ''')
 manifest = {'game_commit': lock['game']['commit'], 'toolkit_commit': lock['toolkit']['commit'],
             'c_stamp': stamp, 'c_sources': inputs, 'generated_game_functions': len(expected),
-            'translation_units': len(prepared_units), 'control_flow_preparation': strategies, 'exports': sorted(exports), 'thread_locals': tls,
+            'translation_units': len(prepared_units), 'control_flow_preparation': strategies, 'exports': sorted(exports), 'thread_locals': tls, 'stdio_streams': sorted(streams), 'stdio_functions': sorted(stream_functions), 'fixed_width_constants': fixed_constants,
             'rust_sources': {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
                              for p in sorted(rust.glob('*.rs'))}}
 manifest['prepared_files'] = {name: hashlib.sha256((output / name).read_bytes()).hexdigest()
