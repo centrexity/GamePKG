@@ -301,7 +301,7 @@ typedef BOOLEAN (NTAPI *gpw_match_fn)(gpw_unicode *, gpw_unicode *, BOOLEAN, WCH
 
 static gpw_search *find_search(HANDLE handle) {
     for (unsigned i = 0; i < GPW_SLOTS; i++)
-        if (searches[i].event && searches[i].event == handle) return searches + i;
+        if ((HANDLE)(searches + i) == handle) return searches + i;
     return NULL;
 }
 static BOOL prepare_expression(LPCWSTR input, WCHAR output[MAX_PATH]) {
@@ -409,20 +409,25 @@ HANDLE WINAPI gpw_FindFirstFileW(LPCWSTR path, LPWIN32_FIND_DATAW output) {
     }
     ReleaseSRWLockExclusive(&files_lock);
     if (!result) { SetLastError(error == ERROR_NO_MORE_FILES ? ERROR_FILE_NOT_FOUND : error); return INVALID_HANDLE_VALUE; }
-    return event;
+    /* Windows find handles are opaque search objects, not waitable kernel
+     * handles. A stable slot address also recognizes closed searches instead
+     * of passing an event value to native FindNextFileW's pointer ABI. */
+    return (HANDLE)slot;
 }
 BOOL WINAPI gpw_FindNextFileW(HANDLE handle, LPWIN32_FIND_DATAW output) {
     AcquireSRWLockExclusive(&files_lock); gpw_search *search = find_search(handle);
     if (!search) { ReleaseSRWLockExclusive(&files_lock); return FindNextFileW(handle, output); }
+    if (!search->event) { ReleaseSRWLockExclusive(&files_lock); return fail(ERROR_INVALID_HANDLE); }
     BOOL result = output ? search_next(search, output) : fail(ERROR_INVALID_PARAMETER);
     DWORD error = GetLastError(); ReleaseSRWLockExclusive(&files_lock); SetLastError(error); return result;
 }
 BOOL WINAPI gpw_FindClose(HANDLE handle) {
     AcquireSRWLockExclusive(&files_lock); gpw_search *search = find_search(handle);
     if (!search) { ReleaseSRWLockExclusive(&files_lock); return FindClose(handle); }
+    if (!search->event) { ReleaseSRWLockExclusive(&files_lock); return fail(ERROR_INVALID_HANDLE); }
     int32_t rc = gp_media_close(search->media);
     if (rc) { ReleaseSRWLockExclusive(&files_lock); return fail(media_error(rc)); }
-    BOOL result = CloseHandle(handle); DWORD error = GetLastError(); memset(search, 0, sizeof *search);
+    BOOL result = CloseHandle(search->event); DWORD error = GetLastError(); memset(search, 0, sizeof *search);
     ReleaseSRWLockExclusive(&files_lock); SetLastError(error); return result;
 }
 
