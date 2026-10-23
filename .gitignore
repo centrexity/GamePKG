@@ -3,6 +3,7 @@
 /engines/takedawn/media-bridge/target/
 /engines/takedawn/native-gen/target/
 /engines/takedawn/rust-port/target/
+/engines/takedawn/windows-runner/target/
 *.gamepkg
 *.partial
 *.key

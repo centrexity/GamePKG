@@ -46,3 +46,12 @@ owned ISO, private save directory, log file, `--headless`, and explicit probe
 seconds (1–300). The library itself has no execution deadline. It intentionally
 stops the job at the probe's end; that is not normal game completion. The probe
 uses dummy audio and does not qualify audible fidelity or window interaction.
+
+The full-game Rust-owner probe passes under isolated Wine with the legacy ISO
+filename deliberately invalid: all 716 files verify, the 4,308,992-byte XBE
+loads, Vulkan uses the RTX 3090, and 2,375 intro frames present. After the explicit
+60-second probe, Rust stops the job and observes child exit code 1; the probe
+itself exits zero. This verifies admission, startup, output capture and process
+ownership, not a completed race or actual Windows hardware gameplay. The
+separate Windows executable race qualification is described in the
+[media bridge notes](../media-bridge/README.md).
