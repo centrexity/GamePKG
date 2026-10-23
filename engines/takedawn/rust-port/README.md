@@ -98,12 +98,15 @@ Newly prepared Windows game source is a private qualification candidate. The
 complete optimized 486-unit Windows archive and original native runtime now
 link successfully, retaining all 24,032 Rust exports. The ISO transport includes
 native file/directory APIs, startup reads and SDL streams. Actual MSVC 32/64-bit
-stream/admission/file tests pass; isolated Wine tests confirm ISO-in-place boot
-and an RTX 3090 Vulkan device. Details and remaining gates are in the
+stream/admission/file and real Rust reader tests pass. Isolated Wine tests now
+cover original race/Crash controls, profile create/reload, 45-second mixed stereo
+and a keyboard-driven, resizable native Vulkan window with clean closing.
+The private universal v9 source candidate also passes Linux gameplay/save/audio
+regressions and full source-hash preservation. Details and remaining gates are in the
 [media integration notes](../media-bridge/README.md). The player source-kit pin
-remains the verified Linux v8 kit while Windows controls, saves, native window,
-launcher/process isolation and complete gameplay are qualified. A passing boot
-does not prove a working Windows game release.
+remains the verified Linux v8 kit while actual Windows-host hardware checks,
+native app build/launch integration, process isolation and complete gameplay are
+qualified. These checks do not prove a completed Windows game release.
 
 ### Linux gameplay baseline
 
