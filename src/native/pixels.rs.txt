@@ -1,0 +1,19 @@
+// Trusted engine pixels are color words, not a host-independent byte layout.
+#[allow(dead_code)]
+fn __gamepkg_engine_rgba(pixels: &mut [u8], words_little_endian: bool) {
+    assert!(pixels.len().is_multiple_of(4), "invalid engine pixel length");
+    for pixel in pixels.chunks_exact_mut(4) {
+        let bytes = [pixel[0], pixel[1], pixel[2], pixel[3]];
+        let word = if words_little_endian { u32::from_le_bytes(bytes) } else { u32::from_be_bytes(bytes) };
+        pixel.copy_from_slice(&[(word >> 16) as u8, (word >> 8) as u8, word as u8, 255]);
+    }
+}
+
+#[allow(dead_code)]
+fn __gamepkg_engine_little_endian(format: u32, native_little_endian: bool) -> bool {
+    match format {
+        0 => native_little_endian,
+        1 => true,
+        _ => panic!("unsupported engine pixel format"),
+    }
+}

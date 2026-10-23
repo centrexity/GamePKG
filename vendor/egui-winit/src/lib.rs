@@ -19,6 +19,7 @@ pub use winit;
 
 pub mod clipboard;
 pub mod gamepkg_input;
+mod gamepkg_touch_owner;
 #[allow(unsafe_code)] // Trusted UI-only query of its own existing window.
 mod gamepkg_window;
 mod window_settings;
@@ -99,7 +100,7 @@ pub struct State {
     /// Is Some(…) when a touch is being translated to a pointer.
     ///
     /// Only one touch will be interpreted as pointer at any time.
-    pointer_touch_id: Option<u64>,
+    pointer_touch_owner: gamepkg_touch_owner::PointerOwner<winit::event::DeviceId>,
 
     /// track ime state
     has_sent_ime_enabled: bool,
@@ -142,7 +143,7 @@ impl State {
             ),
 
             simulate_touch_screen: false,
-            pointer_touch_id: None,
+            pointer_touch_owner: Default::default(),
 
             has_sent_ime_enabled: false,
 
@@ -419,6 +420,13 @@ impl State {
                 }
             }
             WindowEvent::Focused(focused) => {
+                if !focused && self.pointer_touch_owner.cancel() {
+                    self.egui_input.events.push(egui::Event::PointerButtonCancelled {
+                        button: egui::PointerButton::Primary,
+                    });
+                    self.pointer_pos_in_points = None;
+                    self.egui_input.events.push(egui::Event::PointerGone);
+                }
                 self.egui_input.focused = *focused;
                 self.egui_input
                     .events
@@ -663,14 +671,13 @@ impl State {
                 None => None,
             },
         });
-        // If we're not yet translating a touch or we're translating this very
-        // touch …
-        if self.pointer_touch_id.is_none() || self.pointer_touch_id.unwrap_or_default() == touch.id
+        // Only a fresh start can claim mouse emulation. Device identity is
+        // essential: separate touchscreens can reuse the same finger number.
+        if self.pointer_touch_owner.accepts(touch.device_id, touch.id, touch.phase)
         {
             // … emit PointerButton resp. PointerMoved events to emulate mouse
             match touch.phase {
                 winit::event::TouchPhase::Started => {
-                    self.pointer_touch_id = Some(touch.id);
                     // First move the pointer to the right location
                     self.on_cursor_moved(window, touch.location);
                     self.on_mouse_button_input(
@@ -682,7 +689,6 @@ impl State {
                     self.on_cursor_moved(window, touch.location);
                 }
                 winit::event::TouchPhase::Ended => {
-                    self.pointer_touch_id = None;
                     self.on_mouse_button_input(
                         winit::event::ElementState::Released,
                         winit::event::MouseButton::Left,
@@ -693,7 +699,9 @@ impl State {
                     self.egui_input.events.push(egui::Event::PointerGone);
                 }
                 winit::event::TouchPhase::Cancelled => {
-                    self.pointer_touch_id = None;
+                    self.egui_input.events.push(egui::Event::PointerButtonCancelled {
+                        button: egui::PointerButton::Primary,
+                    });
                     self.pointer_pos_in_points = None;
                     self.egui_input.events.push(egui::Event::PointerGone);
                 }

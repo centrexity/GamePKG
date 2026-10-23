@@ -5,6 +5,7 @@ use std::{collections::BTreeMap, fs, io::Write, path::Path};
 const SUPPORTED: &[&str] = &[
     "frame_time_us",
     "window_state",
+    "window_size",
     "random_u64",
     "input_events",
     "file_call",
@@ -18,6 +19,7 @@ const SUPPORTED: &[&str] = &[
     "save_size",
     "save_read",
     "save_write",
+    "save_chunk",
     "draw_clear",
     "draw_clip",
     "draw_clip_reset",

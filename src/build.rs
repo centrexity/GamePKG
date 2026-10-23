@@ -70,7 +70,10 @@ pub fn is_built(root: &Path, id: &str) -> Result<bool> {
         return Ok(false);
     };
     let manifest = registry::installed_manifest(root, id)?;
-    if manifest.builtin_engine.as_deref() == Some(crate::cube2::PROFILE) {
+    if matches!(
+        manifest.builtin_engine.as_deref(),
+        Some(crate::cube2::PROFILE) | Some(crate::takedawn::PROFILE)
+    ) {
         return Ok(false);
     }
     if let Some(profile) = manifest.builtin_engine.as_deref() {
@@ -160,6 +163,13 @@ pub(crate) fn artifact_has_tick(bytes: &[u8]) -> bool {
     found
 }
 pub fn compile(root: &Path, id: &str) -> Result<()> {
+    if registry::installed_manifest(root, id)?
+        .builtin_engine
+        .as_deref()
+        == Some(crate::takedawn::PROFILE)
+    {
+        bail!("Takedawn requires the native Build action; Wasm compilation is unavailable");
+    }
     if registry::installed_manifest(root, id)?
         .builtin_engine
         .as_deref()

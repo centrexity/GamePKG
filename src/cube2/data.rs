@@ -41,15 +41,10 @@ impl Directories {
         };
         let data = open(c"data")?;
         let packages = open(c"packages")?;
-        for (fd, relative) in [
-            (data.as_raw_fd(), "stdlib.cfg"),
-            (packages.as_raw_fd(), "textures/notexture.png"),
-        ] {
-            ensure!(
-                Path::new(&format!("/proc/self/fd/{fd}/{relative}")).is_file(),
-                "Cube 2 installation is missing core game data"
-            );
-        }
+        crate::game_data::validate_parts(
+            Path::new(&format!("/proc/self/fd/{}", data.as_raw_fd())),
+            Path::new(&format!("/proc/self/fd/{}", packages.as_raw_fd())),
+        )?;
         Ok(Self { data, packages })
     }
 }

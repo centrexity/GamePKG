@@ -1,0 +1,12 @@
+{
+  "end": 2395970,
+  "sha256": "1f57389bdaf4c48b4c13596f5418ba48c2a3e0137705353f375e1cc375fc9c59",
+  "start": 2393982,
+  "tables": [
+    {
+      "branch": 2394099,
+      "entries": 8,
+      "first_index": 0
+    }
+  ]
+}

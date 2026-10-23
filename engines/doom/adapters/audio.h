@@ -21,6 +21,20 @@ static void channel_params(Channel *channel, int volume, int separation) {
   channel->left = volume - volume * a * a / 65536;
   channel->right = volume - volume * b * b / 65536;
 }
+/* DMX sample framing: Chocolate DOOM i_sdlsound.c CacheSFX, revision
+ * 35fb1372d10756ca27eca05665bd8a7cebc71c05. Padding is not audible data. */
+static int channel_start(Channel *channel, const uint8_t *data, uint32_t size,
+                         int volume, int separation) {
+  if (size < 8 || data[0] != 3 || data[1] != 0) return 0;
+  uint32_t length = (uint32_t)data[4] | (uint32_t)data[5] << 8 |
+                    (uint32_t)data[6] << 16 | (uint32_t)data[7] << 24;
+  uint32_t rate = (uint32_t)data[2] | (uint32_t)data[3] << 8;
+  if (length > size - 8 || length <= 48 || !rate) return 0;
+  *channel = (Channel){.data = data + 24, .length = length - 32,
+                        .rate = rate, .active = 1};
+  channel_params(channel, volume, separation);
+  return 1;
+}
 static int16_t clip_sample(int value) {
   return value > 32767 ? 32767 : value < -32768 ? -32768 : value;
 }
@@ -39,6 +53,8 @@ static void mix(void) {
       left += sample * channel->left * 256 / 127;
       right += sample * channel->right * 256 / 127;
       channel->phase += channel->rate;
+      if (channel->phase >= (uint64_t)channel->length * 48000)
+        channel->active = 0;
     }
     pcm[frame * 2] = clip_sample(left);
     pcm[frame * 2 + 1] = clip_sample(right);

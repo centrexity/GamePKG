@@ -1794,27 +1794,39 @@ fn legacy_audio_defaults_migrate_and_denied_or_damaged_settings_preserve_data() 
             assert_eq!(u32::from_le_bytes(bytes[4..8].try_into().unwrap()), 17);
             assert_eq!(u32::from_le_bytes(bytes[8..12].try_into().unwrap()), 7);
         }
-        let mut damaged = b"ARK3".to_vec();
-        for value in [17u32, 7, 2048, 0] {
-            damaged.extend(value.to_le_bytes());
+        for (magic, flags) in [
+            (b"ARK1", 2u32),
+            (b"ARK1", u32::MAX),
+            (b"ARK2", 2),
+            (b"ARK3", 2048),
+            (b"ARK4", 129 << 10),
+            (b"ARK4", 1 << 19),
+        ] {
+            let mut damaged = magic.to_vec();
+            for value in [17u32, 7, flags] {
+                damaged.extend(value.to_le_bytes());
+            }
+            if magic != b"ARK1" {
+                damaged.extend(0u32.to_le_bytes());
+            }
+            std::fs::write(&save, &damaged).unwrap();
+            let mut game = load_menu(root.path(), id).unwrap();
+            game.step(0).unwrap();
+            event(&mut game, 2, 320.0, 285.0, 1);
+            event(&mut game, 2, 320.0, 245.0, 1);
+            event(&mut game, 1, 295.0, 245.0, 1);
+            game.step(0).unwrap();
+            assert!(
+                game.frame()
+                    .commands
+                    .iter()
+                    .any(|command| matches!(command,Command::Image{y,..} if *y==330.0)),
+                "damaged-save warning is absent"
+            );
+            game.finish().unwrap();
+            drop(game);
+            assert_eq!(std::fs::read(&save).unwrap(), damaged);
         }
-        std::fs::write(&save, &damaged).unwrap();
-        let mut game = load_menu(root.path(), id).unwrap();
-        game.step(0).unwrap();
-        event(&mut game, 2, 320.0, 285.0, 1);
-        event(&mut game, 2, 320.0, 245.0, 1);
-        event(&mut game, 1, 295.0, 245.0, 1);
-        game.step(0).unwrap();
-        assert!(
-            game.frame()
-                .commands
-                .iter()
-                .any(|command| matches!(command,Command::Image{y,..} if *y==330.0)),
-            "damaged-save warning is absent"
-        );
-        game.finish().unwrap();
-        drop(game);
-        assert_eq!(std::fs::read(&save).unwrap(), damaged);
     }
     for id in [
         "com.gamepkg.arkanoo-nosave",
@@ -3822,12 +3834,25 @@ fn original_pattern_browser_complete_pixels_and_dense_board_budget_match() {
 }
 
 fn canonical_menu_pixels(frame: &gamepkg::drawing::Frame) -> Vec<u8> {
-    let mut output = vec![0u8; 1280 * 720 * 4];
-    for pixel in output.as_chunks_mut::<4>().0.iter_mut() {
-        pixel.copy_from_slice(&frame.background.unwrap_or(0x10171dff).to_be_bytes());
+    canonical_menu_overlay_pixels(frame, None, 0)
+}
+fn canonical_menu_overlay_pixels(
+    frame: &gamepkg::drawing::Frame,
+    backdrop: Option<&[u8]>,
+    skip: usize,
+) -> Vec<u8> {
+    let mut output = if let Some(pixels) = backdrop {
+        pixels.to_vec()
+    } else {
+        vec![0u8; 1280 * 720 * 4]
+    };
+    if backdrop.is_none() {
+        for pixel in output.as_chunks_mut::<4>().0.iter_mut() {
+            pixel.copy_from_slice(&frame.background.unwrap_or(0x10171dff).to_be_bytes());
+        }
     }
     let mut clip = [0, 0, 1280, 720];
-    for command in &frame.commands {
+    for command in frame.commands.iter().skip(skip) {
         if let Command::Clip { rect } = command {
             clip = rect
                 .map(|r| {
@@ -3964,9 +3989,49 @@ fn implemented_menu_controls_and_original_backdrop_match_captured_sdl_frames() {
         .unwrap();
     let root = isolated_library();
     let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
+    let mut backdrop_cache: Option<(Option<u32>, Vec<Command>, Vec<u8>)> = None;
     for (index, case) in reference["cases"].as_array().unwrap().iter().enumerate() {
         assert_eq!(game.step(0xc0000044 | ((index as u32) << 8)).unwrap(), 68);
-        let actual = canonical_menu_pixels(game.frame());
+        // Every frame must retain the exact full background commands and pixels.
+        // Rasterize this immutable prefix once to avoid the reference compositor
+        // competing with unrelated game deadlines during normal parallel tests.
+        let prefix = &game.frame().commands[..19];
+        assert!(matches!(prefix[17], Command::Clip { rect: None }));
+        assert!(matches!(
+            prefix[18],
+            Command::Rect {
+                x: 0.0,
+                y: 60.0,
+                width: 640.0,
+                height: 360.0,
+                rgba: 150
+            }
+        ));
+        if backdrop_cache.is_none() {
+            let mut background = gamepkg::drawing::Frame::default();
+            background.background = game.frame().background;
+            background.commands = prefix.to_vec();
+            backdrop_cache = Some((
+                background.background,
+                prefix.to_vec(),
+                canonical_menu_pixels(&background),
+            ));
+        }
+        let (color, commands, pixels) = backdrop_cache.as_ref().unwrap();
+        assert_eq!(*color, game.frame().background);
+        assert_eq!(
+            commands.as_slice(),
+            prefix,
+            "changed original backdrop at case {index}"
+        );
+        let actual = canonical_menu_overlay_pixels(game.frame(), Some(pixels), 19);
+        if index == 0 {
+            assert_eq!(
+                actual,
+                canonical_menu_pixels(game.frame()),
+                "cached compositor differs"
+            );
+        }
         let compressed = hex::decode(case["xor_zlib_hex"].as_str().unwrap()).unwrap();
         let mut difference = Vec::new();
         flate2::read::ZlibDecoder::new(compressed.as_slice())
@@ -4472,4 +4537,33 @@ fn both_recordings_and_four_shared_voices_fit_the_unchanged_memory_limit() {
         assert_eq!(game.audio_frame(), expected);
         assert_eq!(game.audio_channels(), 2);
     }
+}
+
+#[test]
+#[ignore = "requires signed editor fixtures prepared by tests/arkanoo.py"]
+fn effect_only_profile_preserves_saved_recorded_music_preferences() {
+    let root = isolated_library();
+    let mut game = load_menu(root.path(), "com.gamepkg.arkanoo").unwrap();
+    game.step(0).unwrap();
+    editor_key(&mut game, 101);
+    editor_click(&mut game, 20.0, 100.0, 1);
+    editor_key(&mut game, 115);
+    drop(game);
+    let path = editor_archive(root.path());
+    let mut bytes = std::fs::read(&path).unwrap();
+    bytes[..4].copy_from_slice(b"ARK4");
+    let flags = u32::from_le_bytes(bytes[12..16].try_into().unwrap()) | (32 << 10) | (1 << 18);
+    bytes[12..16].copy_from_slice(&flags.to_le_bytes());
+    std::fs::write(&path, &bytes).unwrap();
+    let mut game = load_menu(root.path(), "com.gamepkg.arkanoo").unwrap();
+    game.step(0).unwrap();
+    editor_click(&mut game, 320.0, 287.5, 1);
+    editor_click(&mut game, 320.0, 225.0, 1);
+    drop(game);
+    let saved = std::fs::read(&path).unwrap();
+    assert_eq!(&saved[..4], b"ARK4");
+    let flags = u32::from_le_bytes(saved[12..16].try_into().unwrap());
+    assert_eq!((flags >> 10) & 255, 32);
+    assert_ne!(flags & (1 << 18), 0);
+    assert_eq!(&saved[16..], &bytes[16..]);
 }

@@ -7,7 +7,13 @@ static uint32_t le32(const unsigned char *bytes) {
            (uint32_t)bytes[2] << 16 | (uint32_t)bytes[3] << 24;
 }
 int main(int argc, char **argv) {
-    assert(argc == 2);
+    assert(argc == 2 || (argc == 3 && !strcmp(argv[2], "--complete")));
+    int complete = argc == 3;
+#ifndef GAMEPKG_OPL_TEST
+    assert(!complete);
+#else
+    unsigned gamepkg_opl_pending_callbacks(void);
+#endif
     FILE *file = fopen(argv[1], "rb"); assert(file);
     assert(!fseek(file, 0, SEEK_END)); long size = ftell(file);
     assert(size >= 12 && size <= 64 * 1024 * 1024);
@@ -30,19 +36,41 @@ int main(int argc, char **argv) {
     assert(have_instruments && DG_music_module.Init());
     DG_music_module.SetMusicVolume(127);
     unsigned songs = 0;
+    uint64_t total_ticks = 0;
     for (uint32_t i = 0; i < count; i++) {
         const unsigned char *entry = wad + offset + i * 16;
         uint32_t start = le32(entry), length = le32(entry + 4);
         if (length < 4 || memcmp(entry + 8, "D_", 2) ||
             (memcmp(wad + start, "MUS\x1a", 4) && memcmp(wad + start, "MThd", 4))) continue;
         void *song = DG_music_module.RegisterSong(wad + start, length);
-        assert(song); DG_music_module.PlaySong(song, true);
-        assert(render(180) > 0);
+        assert(song); DG_music_module.PlaySong(song, !complete);
+        unsigned ticks = 0;
+        uint64_t energy = 0;
+#ifdef GAMEPKG_OPL_TEST
+        if (complete) {
+            while (gamepkg_opl_pending_callbacks()) {
+                assert(ticks < 20 * 60 * 60); /* Test watchdog, not an engine limit. */
+                energy += render(1); ticks++;
+            }
+            assert(energy > 0 && ticks > 0);
+            DG_music_module.StopSong();
+            if (!songs) {
+                /* Cross the real end boundary with looping enabled. */
+                DG_music_module.PlaySong(song, true);
+                render(ticks);
+                assert(gamepkg_opl_pending_callbacks() > 0);
+                assert(render(180) > 0);
+            }
+        } else
+#endif
+        { energy = render(180); ticks = 180; assert(energy > 0); }
+        total_ticks += ticks;
         DG_music_module.StopSong(); DG_music_module.UnRegisterSong(song);
-        printf("Verified music %.8s\n", entry + 8); songs++;
+        printf("Verified music %.8s: %u frames at 60 Hz%s\n", entry + 8, ticks, complete ? " to completion" : "");
+        fflush(stdout); songs++;
     }
     assert(songs > 20);
     DG_music_module.Shutdown(); free(wad);
-    printf("Verified %u original music lumps, RAM-only, 3 seconds per song.\n", songs);
+    printf("Verified %u original music lumps, RAM-only, %llu total frames at 60 Hz%s.\n", songs, (unsigned long long)total_ticks, complete ? ", complete songs and first-song loop boundary" : "");
     return 0;
 }

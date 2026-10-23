@@ -1,0 +1,12 @@
+[
+  {
+    "before": "#include \"ppu.h\"",
+    "after": "#include \"ppu.h\"\n#include \"gamepkg_ppu_state.h\"",
+    "count": 1
+  },
+  {
+    "before": "void ppu_saveload(Ppu *ppu, SaveLoadFunc *func, void *ctx) {\n  uint8 tmp[556] = { 0 };\n\n  func(ctx, &ppu->vram, 0x8000 * 2);\n  func(ctx, tmp, 10);\n  func(ctx, &ppu->cgram, 512);\n  func(ctx, tmp, 556);\n  func(ctx, tmp, 520);\n  for (int i = 0; i < 4; i++) {\n    func(ctx, tmp, 4);\n    func(ctx, &ppu->bgLayer[i].tilemapWider, 4);\n    func(ctx, tmp, 4);\n  }\n  func(ctx, tmp, 123);\n}",
+    "after": "void ppu_saveload(Ppu *ppu, SaveLoadFunc *func, void *ctx) {\n  gamepkg_ppu_saveload(ppu, func, ctx);\n}",
+    "count": 1
+  }
+]

@@ -131,6 +131,35 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-worklet-mixer-') as temporary:
   })().then(value=>done({value})).catch(error=>done({error:String(error.stack||error)}));''')
   assert 'error' not in endpoint,endpoint
   print('Production recorded AudioWorklet: real output, atomic rejected batch, effect completion, supervised MP3 music clock and acknowledged shutdown passed.',json.dumps(endpoint['value']),flush=True)
+  handoff=browser.execute_async_script('''const done=arguments[arguments.length-1];(async()=>{
+   const {RecordedOutputClient}=await import('./recorded-output-client.js'),{RecordedBudget}=await import('./recorded-budget.js'),{RecordedMusicSender}=await import('./recorded-transport.js');
+   const wasm=new Uint8Array(await(await fetch('converter.wasm')).arrayBuffer()),results=[];
+   for(const earlyCredit of [false,true])for(const paused of [false,true])for(const firstDelivered of [false,true]){
+    const budget=new RecordedBudget(4194304+wasm.length*3+3200),output=await RecordedOutputClient.open(wasm,4194304,budget);
+    const channel=new MessageChannel();let begin,release,reads=0,earlyRequests=0;
+    const delayed={set onmessage(value){channel.port1.onmessage=value;},set onmessageerror(value){channel.port1.onmessageerror=value;},start(){channel.port1.start();},close(){channel.port1.close();},postMessage(data,...args){if(data.kind==='begin'){begin=data;return;}channel.port1.postMessage(data,...args);}};
+    const sender=new RecordedMusicSender(delayed,budget),expectedReads=firstDelivered?2:1;
+    const source={closed:false,read(){reads++;if(firstDelivered&&reads===1)return Promise.resolve(new Int16Array(1600).fill(567));if(reads===expectedReads)return new Promise(resolve=>release=resolve);return Promise.resolve(new Int16Array(0));},close(){this.closed=true;}};
+    try{
+     if(!await output.connectMusic(sender,channel.port2))throw Error('Delayed begin transport connection failed');
+     channel.port1.addEventListener('message',({data})=>{if(data.kind==='read')earlyRequests++;});if(!earlyCredit)sender.start(1,source);await output.resume();
+     if(!(await output.request('controls',{commands:paused?[[4,1],[6,1]]:[[4,1]]})).ok)throw Error('Committed generation rejected');
+     if(earlyCredit){const limit=performance.now()+2000;while(!earlyRequests){if(performance.now()>limit)throw Error('Early decoder credit not observed');await new Promise(resolve=>setTimeout(resolve,1));}if(reads)throw Error('Read ran before decoder attach');sender.start(1,source);channel.port1.postMessage(begin);}
+     const deadline=performance.now()+2000;while(!release){if(performance.now()>deadline)throw Error('Pre-begin decoder credit missing');await new Promise(resolve=>setTimeout(resolve,1));}
+     if(!earlyCredit)channel.port1.postMessage(begin);await new Promise(resolve=>setTimeout(resolve,30));
+     const before=await output.request('snapshot');if(before.musicStatus==='failed'||source.closed||reads!==expectedReads)throw Error('Delayed begin duplicated in-flight credit');
+     release(new Int16Array(1600).fill(456));
+     if(paused){const limit=performance.now()+2000;for(;;){const state=await output.request('snapshot');if(state.queuedFrames===(firstDelivered?1600:800)){if(state.playedFrames!==0||state.musicStatus!=='paused')throw Error('Paused handoff advanced audio');break;}if(performance.now()>limit)throw Error('Paused handoff did not queue complete PCM');await new Promise(resolve=>setTimeout(resolve,1));}if(!(await output.request('controls',{commands:[[6,0]]})).ok)throw Error('Handoff resume rejected');}
+     const limit=performance.now()+2000;let state;for(;;){state=await output.request('snapshot');if(state.musicStatus==='ended')break;if(state.musicStatus==='failed'||performance.now()>limit)throw Error('Handoff playback failed');await new Promise(resolve=>setTimeout(resolve,1));}
+     if(state.playedFrames!==(firstDelivered?1600:800)||!source.closed)throw Error('Handoff lost or duplicated source frames');
+     results.push({earlyCredit,paused,firstDelivered,sourceFrames:state.playedFrames});
+    }finally{await output.close();sender.close();release?.(new Int16Array(0));}
+    if(budget.used)throw Error('Handoff retained audio allowance');
+   }
+   return results;
+  })().then(value=>done({value})).catch(error=>done({error:String(error.stack||error)}));''')
+  assert 'error' not in handoff,handoff
+  print('Production AudioWorklet delayed-begin ordering: one credited read, paused preservation, exact source frames and released budgets passed.',json.dumps(handoff['value']),flush=True)
   supervised=browser.execute_async_script('''const done=arguments[arguments.length-1];(async()=>{
    const {RecordedOutputClient}=await import('./recorded-output-client.js'),{RecordedBudget}=await import('./recorded-budget.js'),{RecordedDecoderClient}=await import('./recorded-decoder-client.js'),{RecordedMusicSender}=await import('./recorded-transport.js');
    const load=async name=>new Uint8Array(await(await fetch(name)).arrayBuffer()),wasm=await load('converter.wasm'),budget=new RecordedBudget(4194304+wasm.length*3);
@@ -189,6 +218,28 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-worklet-mixer-') as temporary:
   })().then(value=>done({value})).catch(error=>done({error:String(error.stack||error)}));''')
   assert 'error' not in musicFrames,musicFrames
   print('Production combined frame dispatcher: discarded Play/Stop, committed paused effects/music, asynchronous codec failure, fresh recovery and close during startup passed.',json.dumps(musicFrames['value']),flush=True)
+  terminalFailures=browser.execute_async_script('''const done=arguments[arguments.length-1];(async()=>{
+   const {RecordedOutputClient}=await import('./recorded-output-client.js'),{RecordedBudget}=await import('./recorded-budget.js'),{RecordedMusicSender}=await import('./recorded-transport.js');
+   const wasm=new Uint8Array(await(await fetch('converter.wasm')).arrayBuffer()),budget=new RecordedBudget(16777216),output=await RecordedOutputClient.open(wasm,4194304,budget),channel=new MessageChannel(),sender=new RecordedMusicSender(channel.port1,budget);
+   const wait=async status=>{const end=performance.now()+3000;for(;;){const state=await output.request('snapshot');if(state.musicStatus===status)return state;if(performance.now()>end)throw Error('Terminal replacement stalled '+JSON.stringify(state));await new Promise(r=>setTimeout(r,5));}};
+   const controls=async commands=>{if(!(await output.request('controls',{commands})).ok)throw Error('Terminal replacement controls rejected');};
+   const empty=()=>({async read(){return new Int16Array(0);},close(){}});let generation=0,cases=0;
+   try{
+    if(!await output.connectMusic(sender,channel.port2))throw Error('Terminal replacement connect');output.volume(0);await output.resume();
+    for(const terminal of ['ended','failed','stopped'])for(const paused of [false,true]){
+     generation++;await controls([[terminal==='stopped'?7:4,generation]]);
+     if(terminal==='ended')sender.start(generation,empty());else if(terminal==='failed')sender.failGeneration(generation);else sender.stop(generation);
+     await wait(terminal);
+     generation++;await controls([[4,generation],...(paused?[[6,1]]:[])]);
+     if(!sender.failGeneration(generation))throw Error('Replacement failure rejected');await wait('failed');
+     channel.port1.postMessage({kind:'begin',generation});const failed=await output.request('snapshot');if(failed.musicStatus!=='failed')throw Error('Failed generation revived');
+     generation++;await controls([[4,generation]]);if(!sender.start(generation,empty()))throw Error('Recovery rejected');await wait('ended');cases++;
+    }
+   }finally{sender.close();await output.close();}
+   if(budget.used)throw Error('Terminal replacement budget leaked');return {cases,recovered:true,closed:true};
+  })().then(value=>done({value})).catch(error=>done({error:String(error.stack||error)}));''')
+  assert 'error' not in terminalFailures,terminalFailures
+  print('Production worklet: replacement failure before begin after ended/failed/stopped, paused/loading, late begin rejection and fresh recovery passed.',json.dumps(terminalFailures['value']),flush=True)
   sessions=browser.execute_async_script('''const done=arguments[arguments.length-1];(async()=>{
    const {RecordedSession}=await import('./recorded-session.js'),{RecordedBudget}=await import('./recorded-budget.js'),load=async name=>new Uint8Array(await(await fetch(name)).arrayBuffer());
    const converter=await load('converter.wasm'),decoder=await load('decoder.wasm'),assets=new Map([['tone.wav',await load('tone.wav')],['tone.mp3',await load('tone.mp3')]]),results=[];

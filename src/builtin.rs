@@ -17,8 +17,8 @@ pub fn memory(profile: &str) -> Result<u64> {
 }
 pub fn validate(profile: &str, bytes: &[u8]) -> Result<()> {
     match profile {
-        crate::zelda3::PROFILE => crate::zelda3::validate(bytes),
-        crate::doom::PROFILE => crate::doom::validate(bytes),
+        crate::zelda3::PROFILE => crate::zelda3::validate_current(bytes),
+        crate::doom::PROFILE => crate::doom::validate_current(bytes),
         _ => bail!("unsupported builtin engine"),
     }
 }

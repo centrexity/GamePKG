@@ -29,7 +29,7 @@ impl Usage {
         .fold(0, u64::saturating_add)
     }
     pub fn breakdown(&self) -> String {
-        format!("Package: {}; recovery copy: {}; current build: {}; shader caches: {}; current save: {}; play history: {}; window settings: {}; cached shared assets: {}. Shared assets may also be used by other games. Older Wasm builds and save schemas remain in the library total.",bytes(self.package_bytes),bytes(self.recovery_bytes),bytes(self.built_bytes),bytes(self.shader_bytes),bytes(self.save_bytes),bytes(self.history_bytes),bytes(self.window_bytes),bytes(self.shared_bytes))
+        format!("Package: {}; recovery copy: {}; current build and reusable compiler files: {}; shader caches: {}; saves and snapshots: {}; play history: {}; window settings: {}; cached shared assets: {}. Compiler files and shared assets may also be used by other games. Older Wasm builds and save schemas remain in the library total.",bytes(self.package_bytes),bytes(self.recovery_bytes),bytes(self.built_bytes),bytes(self.shader_bytes),bytes(self.save_bytes),bytes(self.history_bytes),bytes(self.window_bytes),bytes(self.shared_bytes))
     }
 }
 pub fn bytes(value: u64) -> String {
@@ -105,7 +105,13 @@ pub fn usage(root: &Path, manifest: &crate::manifest::Manifest) -> Result<Usage>
         .join("builds")
         .join(hex::encode(hash.finalize()))
         .join("game.wasm");
-    let built_bytes = scoped_total(root, build.parent().unwrap())?;
+    let mut built_bytes = scoped_total(root, build.parent().unwrap())?;
+    if manifest.builtin_engine.as_deref() == Some(crate::takedawn::PROFILE) {
+        built_bytes = built_bytes.saturating_add(scoped_total(
+            root,
+            &root.join("native-unit-cache/takedawn"),
+        )?);
+    }
     let mut shader_bytes = 0u64;
     let shaders = root.join("shader-builds");
     if shaders.exists() && !shaders.symlink_metadata()?.file_type().is_symlink() {
@@ -161,6 +167,21 @@ pub fn usage(root: &Path, manifest: &crate::manifest::Manifest) -> Result<Usage>
                 manifest.save_schema,
             ),
         )?);
+    }
+    if manifest.builtin_engine.as_deref() == Some(crate::takedawn::PROFILE) {
+        save_bytes = save_bytes.saturating_add(scoped_total(
+            root,
+            &crate::takedawn::data_path(
+                root,
+                &manifest.id,
+                &manifest.creator_key,
+                manifest.save_schema,
+            ),
+        )?);
+    }
+    for name in crate::zelda_snapshots::slot_names(manifest)? {
+        save_bytes =
+            save_bytes.saturating_add(scoped_total(root, &root.join("states").join(name))?);
     }
     let history_bytes = scoped_total(
         root,

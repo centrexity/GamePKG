@@ -79,24 +79,25 @@ ENetSocket enet_socket_create(ENetSocketType type)
     unsigned char request[4], reply[4]; uint32_t id;
     gp_net_put32(request,(uint32_t)type);
     if(gp_net_call(1,request,4,reply,4)!=4) return ENET_SOCKET_NULL;
-    id=gp_net_get32(reply);if(id<32 || id>=1024) return ENET_SOCKET_NULL;
+    id=gp_net_get32(reply);if(id<32 || id>2147483647u) return ENET_SOCKET_NULL;
     return (ENetSocket)id;
 }
 int enet_socket_bind(ENetSocket socket, const ENetAddress *address)
 {
     unsigned char request[12]; ENetAddress any={ENET_HOST_ANY,0};
+    if(socket<32) return -1;
     gp_net_put32(request,(uint32_t)socket);gp_net_address(request+4,address ? address : &any);
     return gp_net_call(2,request,12,NULL,0)==0 ? 0 : -1;
 }
 int enet_socket_get_address(ENetSocket socket, ENetAddress *address)
 {
-    unsigned char request[4], reply[8];gp_net_put32(request,(uint32_t)socket);
+    unsigned char request[4], reply[8];if(socket<32 || !address) return -1;gp_net_put32(request,(uint32_t)socket);
     return gp_net_call(5,request,4,reply,8)==8 ? gp_net_read_address(address,reply) : -1;
 }
 int enet_socket_listen(ENetSocket socket, int backlog)
 {
     unsigned char request[8];
-    if(socket<32 || socket>=1024 || backlog < -1 || backlog > 128) return -1;
+    if(socket<32 || backlog < -1 || backlog > 128) return -1;
     gp_net_put32(request,(uint32_t)socket);gp_net_put32(request+4,(uint32_t)backlog);
     return gp_net_call(9,request,8,NULL,0)==0 ? 0 : -1;
 }
@@ -106,11 +107,11 @@ ENetSocket gamepkg_master_socket(int snapshot)
     unsigned char reply[4];uint32_t id;
     if(!snapshot) return enet_socket_create(ENET_SOCKET_TYPE_STREAM);
     if(gp_net_call(16,NULL,0,reply,4)!=4) return ENET_SOCKET_NULL;
-    id=gp_net_get32(reply);return id>=32 && id<1024 ? (ENetSocket)id : ENET_SOCKET_NULL;
+    id=gp_net_get32(reply);return id>=32 && id<=2147483647u ? (ENetSocket)id : ENET_SOCKET_NULL;
 }
 int enet_socket_set_option(ENetSocket socket, ENetSocketOption option, int value)
 {
-    if(socket<32 || socket>=1024) return -1;
+    if(socket<32) return -1;
     unsigned char request[12];
     gp_net_put32(request,(uint32_t)socket);gp_net_put32(request+4,(uint32_t)option);gp_net_put32(request+8,(uint32_t)value);
     return gp_net_call(11,request,sizeof(request),NULL,0)==0 ? 0 : -1;
@@ -118,7 +119,7 @@ int enet_socket_set_option(ENetSocket socket, ENetSocketOption option, int value
 int enet_socket_get_option(ENetSocket socket, ENetSocketOption option, int *value)
 {
     unsigned char request[8],reply[4];uint32_t result;
-    if(socket<32 || socket>=1024 || !value) return -1;
+    if(socket<32 || !value) return -1;
     gp_net_put32(request,(uint32_t)socket);gp_net_put32(request+4,(uint32_t)option);
     if(gp_net_call(12,request,sizeof(request),reply,sizeof(reply))!=4) return -1;
     result=gp_net_get32(reply);if(result>2147483647u) return -1;
@@ -128,7 +129,7 @@ int enet_socket_get_option(ENetSocket socket, ENetSocketOption option, int *valu
 int enet_socket_connect(ENetSocket socket, const ENetAddress *address)
 {
     unsigned char request[12];
-    if(socket<32 || socket>=1024 || !address) return -1;
+    if(socket<32 || !address) return -1;
     gp_net_put32(request,(uint32_t)socket);gp_net_address(request+4,address);
     if(gp_net_call(10,request,12,NULL,0)!=0) return -1;
     return 0;
@@ -136,30 +137,30 @@ int enet_socket_connect(ENetSocket socket, const ENetAddress *address)
 ENetSocket enet_socket_accept(ENetSocket socket, ENetAddress *address)
 {
     unsigned char request[4],reply[12];uint32_t id;ENetAddress peer;
-    if(socket<32 || socket>=1024) return ENET_SOCKET_NULL;
+    if(socket<32) return ENET_SOCKET_NULL;
     gp_net_put32(request,(uint32_t)socket);
     if(gp_net_call(14,request,4,reply,12)!=12) return ENET_SOCKET_NULL;
     id=gp_net_get32(reply);
-    if(id<32 || id>=1024 || gp_net_read_address(&peer,reply+4)) return ENET_SOCKET_NULL;
+    if(id<32 || id>2147483647u || gp_net_read_address(&peer,reply+4)) return ENET_SOCKET_NULL;
     if(address) *address=peer;
     return (ENetSocket)id;
 }
 int enet_socket_shutdown(ENetSocket socket, ENetSocketShutdown how)
 {
     unsigned char request[8];
-    if(socket<32 || socket>=1024 || (unsigned)how>2) return -1;
+    if(socket<32 || (unsigned)how>2) return -1;
     gp_net_put32(request,(uint32_t)socket);gp_net_put32(request+4,(uint32_t)how);
     return gp_net_call(13,request,8,NULL,0)==0 ? 0 : -1;
 }
 void enet_socket_destroy(ENetSocket socket)
 {
-    unsigned char request[4];if(socket<32 || socket>=1024) return;
+    unsigned char request[4];if(socket<32) return;
     gp_net_put32(request,(uint32_t)socket);(void)gp_net_call(7,request,4,NULL,0);
 }
 int enet_socket_send(ENetSocket socket, const ENetAddress *address, const ENetBuffer *buffers, size_t count)
 {
     unsigned char request[12+GP_NET_DATAGRAM],reply[4];size_t length=0,i;int result;
-    if(socket<32 || socket>=1024 || count>65 || !buffers) return -1;
+    if(socket<32 || count>65 || !buffers) return -1;
     gp_net_put32(request,(uint32_t)socket);
     if(address) gp_net_address(request+4,address); else memset(request+4,0,8);
     for(i=0;i<count;i++)
@@ -176,7 +177,7 @@ int enet_socket_send(ENetSocket socket, const ENetAddress *address, const ENetBu
 int enet_socket_receive(ENetSocket socket, ENetAddress *address, ENetBuffer *buffers, size_t count)
 {
     unsigned char request[8],reply[8+GP_NET_DATAGRAM];size_t capacity=0,i,offset=8,left;int result;
-    if(socket<32 || socket>=1024 || count>65 || !buffers) return -1;
+    if(socket<32 || count>65 || !buffers) return -1;
     // ENet may offer a growing TCP-list buffer. Read only one bounded chunk.
     for(i=0;i<count;i++) { size_t room=GP_NET_DATAGRAM-capacity;capacity+=buffers[i].dataLength<room ? buffers[i].dataLength : room; }
     if(!capacity) return -1;
@@ -191,27 +192,49 @@ int enet_socket_receive(ENetSocket socket, ENetAddress *address, ENetBuffer *buf
 }
 int enet_socket_wait(ENetSocket socket, enet_uint32 *condition, enet_uint32 timeout)
 {
-    unsigned char request[8],reply[4];int result;
-    gp_net_put32(request,(uint32_t)socket);gp_net_put32(request+4,*condition&3);
+    unsigned char request[8],reply[4];int result;enet_uint32 wanted;
+    if(socket<32 || !condition) return -1;
+    wanted=*condition&3;
+    gp_net_put32(request,(uint32_t)socket);gp_net_put32(request+4,wanted);
     result=gp_net_call(8,request,8,reply,4);
     if(result==-2) { *condition=0;return 0; }
     if(result!=4) return -1;
-    *condition=gp_net_get32(reply)&3;
+    if(gp_net_get32(reply)&~wanted) return -1;
+    *condition=gp_net_get32(reply);
     if(!*condition && timeout) { struct timespec delay={0,(long)(timeout>10 ? 10 : timeout)*1000000};nanosleep(&delay,NULL); }
     return 0;
 }
 int enet_socketset_select(ENetSocket maxSocket, ENetSocketSet *reads, ENetSocketSet *writes, enet_uint32 timeout)
 {
-    ENetSocket i;int ready=0;(void)timeout;
-    if(maxSocket>=1024) return -1;
-    for(i=0;i<=maxSocket;i++)
+    ENetSocketSet requested,nextreads,nextwrites;unsigned index;int ready=0;(void)timeout;
+    gp_net_set_empty(&requested);gp_net_set_empty(&nextreads);gp_net_set_empty(&nextwrites);
+    if((reads && !gp_net_set_valid(reads)) || (writes && !gp_net_set_valid(writes))) return -1;
+    if(reads) nextreads=*reads;
+    if(writes) nextwrites=*writes;
+    for(index=0;reads && index<reads->count;index++)
+        if(reads->sockets[index]<=maxSocket) gp_net_set_add(&requested,reads->sockets[index]);
+    for(index=0;writes && index<writes->count;index++)
+        if(writes->sockets[index]<=maxSocket) gp_net_set_add(&requested,writes->sockets[index]);
+    if(!gp_net_set_valid(&requested)) return -1;
+    for(index=0;index<requested.count;index++)
     {
-        enet_uint32 wanted=(reads && FD_ISSET(i,reads) ? 2 : 0) | (writes && FD_ISSET(i,writes) ? 1 : 0), actual=wanted;
-        if(!wanted) continue;
-        if(enet_socket_wait(i,&actual,0)<0) return -1;
-        if(reads && !(actual&2)) FD_CLR(i,reads);
-        if(writes && !(actual&1)) FD_CLR(i,writes);
+        ENetSocket socket=requested.sockets[index];
+        enet_uint32 wanted=(reads && gp_net_set_check(reads,socket) ? 2 : 0) | (writes && gp_net_set_check(writes,socket) ? 1 : 0),actual=wanted;
+        if(enet_socket_wait(socket,&actual,0)<0) return -1;
+        if(!(actual&2)) gp_net_set_remove(&nextreads,socket);
+        if(!(actual&1)) gp_net_set_remove(&nextwrites,socket);
         if(actual) ready++;
+    }
+    if(reads && reads==writes) {
+        index=0;
+        while(index<nextreads.count) {
+            ENetSocket socket=nextreads.sockets[index];
+            if(!gp_net_set_check(&nextwrites,socket)) gp_net_set_remove(&nextreads,socket); else index++;
+        }
+        *reads=nextreads;
+    } else {
+        if(reads) *reads=nextreads;
+        if(writes) *writes=nextwrites;
     }
     return ready;
 }

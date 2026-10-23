@@ -39,6 +39,27 @@ fn main() -> eframe::Result {
     let settings = gamepkg::settings::load().map_err(|error| {
         eframe::Error::AppCreation(Box::new(std::io::Error::other(error.to_string())))
     })?;
+    #[cfg(target_os = "linux")]
+    if let Some(id) = &args.play {
+        let launch = || -> anyhow::Result<bool> {
+            let root = gamepkg::registry::default_root()?;
+            let manifest = gamepkg::registry::installed_manifest(&root, id)?;
+            if manifest.builtin_engine.as_deref() != Some(gamepkg::takedawn::PROFILE) {
+                return Ok(false);
+            }
+            anyhow::ensure!(
+                args.target.as_deref() != Some("wasm"),
+                "Takedawn requires native Play"
+            );
+            gamepkg::takedawn::play(&root, id, &[], &settings, None)?;
+            Ok(true)
+        };
+        if launch().map_err(|error| {
+            eframe::Error::AppCreation(Box::new(std::io::Error::other(format!("{error:#}"))))
+        })? {
+            return Ok(());
+        }
+    }
     let mut wgpu_options = eframe::egui_wgpu::WgpuSetupCreateNew::default();
     wgpu_options.instance_descriptor.backends = eframe::wgpu::Backends::VULKAN;
     let title = args.play.clone().unwrap_or_else(|| "GamePKG".into());
@@ -63,12 +84,18 @@ fn main() -> eframe::Result {
     eframe::run_native(
         &title,
         eframe::NativeOptions {
+            vsync: args.play.is_none() || preferences.vsync,
             renderer: if settings.renderer == "opengl" {
                 eframe::Renderer::Glow
             } else {
                 eframe::Renderer::Wgpu
             },
             wgpu_options: eframe::egui_wgpu::WgpuConfiguration {
+                present_mode: if args.play.is_none() || preferences.vsync {
+                    eframe::wgpu::PresentMode::Fifo
+                } else {
+                    eframe::wgpu::PresentMode::AutoNoVsync
+                },
                 wgpu_setup: wgpu_options.into(),
                 ..Default::default()
             },

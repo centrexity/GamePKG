@@ -48,6 +48,7 @@ pub(super) fn compile(root: &Path, id: &str) -> Result<()> {
     let mut helpers = include_str!("../input_buttons.rs").replace("//!", "//");
     helpers.push_str(include_str!("../guest_helpers.rs.txt"));
     helpers.push_str(include_str!("../network_guest.rs.txt"));
+    helpers.push_str(include_str!("pixels.rs.txt"));
     let legacy = include_str!("../guest_api.rs.txt");
     helpers.push_str(
         &legacy[legacy.find("    pub const BUTTON_B").unwrap()
@@ -325,7 +326,29 @@ fn engine(stage: &Path, profile: &str, optimize: bool) -> Result<Vec<String>> {
             }
             source.replace_range(begin..end.context("invalid pinned SRAM function")?, "");
         }
-        fs::write(path, source)?;
+        fs::write(path, crate::zelda3::stage_snapshot_bridge(&source)?)?;
+        let ppu = stage.join("engines/zelda3/upstream/snes/ppu.c");
+        fs::write(
+            &ppu,
+            crate::zelda3::adapt_ppu_state(&crate::zelda3::adapt_ppu(&fs::read_to_string(&ppu)?)?)?,
+        )?;
+        let dma = stage.join("engines/zelda3/upstream/snes/dma.c");
+        fs::write(
+            &dma,
+            crate::zelda3::adapt_dma_state(&fs::read_to_string(&dma)?)?,
+        )?;
+        let dsp = stage.join("engines/zelda3/upstream/snes/dsp.c");
+        fs::write(
+            &dsp,
+            crate::zelda3::adapt_dsp_state(&fs::read_to_string(&dsp)?)?,
+        )?;
+        let spc = stage.join("engines/zelda3/upstream/src/spc_player.c");
+        fs::write(
+            &spc,
+            crate::zelda3::adapt_spc_playback(&crate::zelda3::adapt_spc_state(
+                &fs::read_to_string(&spc)?,
+            )?)?,
+        )?;
     }
     let adapter = stage.join(format!("engines/{label}/adapters/engine.c"));
     let mut text = fs::read_to_string(&adapter)?;
@@ -349,10 +372,13 @@ fn engine(stage: &Path, profile: &str, optimize: bool) -> Result<Vec<String>> {
             + a;
         text.replace_range(a..b, "");
         for name in [
+            "renderer_revision",
+            "configure_video",
             "allocate",
             "initialize",
             "step",
             "pixels",
+            "pixel_format",
             "audio",
             "audio_channels",
             "sram",
@@ -408,6 +434,8 @@ fn engine(stage: &Path, profile: &str, optimize: bool) -> Result<Vec<String>> {
     sources.push(format!("/work/engines/{label}/adapters/engine.c"));
     if doom {
         crate::doom::verify_music_sources(stage)?;
+        crate::doom::verify_merge_sources(stage)?;
+        sources.push("/work/engines/doom/merge/upstream/w_merge.c".into());
         sources.extend(
             crate::doom::MUSIC_SOURCES
                 .iter()
@@ -443,6 +471,7 @@ fn engine(stage: &Path, profile: &str, optimize: bool) -> Result<Vec<String>> {
             "-DDOOMGENERIC_RESX=320",
             "-DDOOMGENERIC_RESY=200",
             "-DFEATURE_SOUND",
+            "-DFEATURE_WAD_MERGE",
             "-DNORMALUNIX",
             "-D_DEFAULT_SOURCE",
         ]);

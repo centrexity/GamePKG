@@ -7,6 +7,20 @@ pub mod gamepkg {
     pub fn frame_time_us()->u64 {unsafe {host_frame_time_us()}}
     /// Actual fullscreen observation for this game's window; None if unavailable.
     pub fn window_fullscreen()->Option<bool>{match unsafe{host_window_state()}{1=>Some(false),3=>Some(true),_=>None}}
+    /// Actual physical client-area pixels; None when unavailable or input is denied.
+    pub fn window_size()->Option<[u32;2]>{let value=unsafe{host_window_size()};let width=value&65535;let height=value>>16;if width==0||height==0{None}else{Some([width,height])}}
+    /// True only while a committed, permitted host preview is outstanding.
+    pub fn window_preview_active()->bool{window_control(8,0)}
+    /// Saved desktop presentation preference; changes take effect after restart.
+    pub fn window_vsync_preference()->Option<bool>{if window_control(9,0){Some(window_control(9,1))}else{None}}
+    /// Save the next-launch preference; requires a fresh user action.
+    pub fn window_set_vsync(enabled:bool)->bool{window_control(10,u32::from(enabled))}
+    /// Preview a physical client size in this game's normal desktop window.
+    pub fn window_preview_size(width:u32,height:u32)->bool{if width>65535||height>65535{return false;}window_control(5,width|(height<<16))}
+    /// Keep the current preview; requires a fresh user action.
+    pub fn window_keep_size()->bool{window_control(7,0)}
+    /// Restore only the host-recorded pre-preview size; no new gesture required.
+    pub fn window_revert_size()->bool{window_control(6,0)}
     pub fn window_control(operation:u32,value:u32)->bool{unsafe{host_window_control(operation,value)==1}}
     fn __gamepkg_file_call(op:u32,input:&[u8],output:&mut[u8])->Option<u32>{if input.len()>1048840||output.len()>65536{return None;}let n=unsafe{host_file_call(op,input.as_ptr(),input.len() as i32,output.as_mut_ptr(),output.len() as i32)};if n<0{None}else{Some(n as u32)}}
     fn __gamepkg_input_events(output:&mut[u8])->Option<u32>{let n=unsafe{host_input_events(output.as_mut_ptr(),output.len() as i32)};if n<0{None}else{Some(n as u32)}}
@@ -15,6 +29,7 @@ pub mod gamepkg {
     #[link(wasm_import_module = "gamepkg")]
     unsafe extern "C" {
         #[link_name="effect_call"] fn host_effect_call(operation:u32,path:*const u8,length:usize,value:u32)->i32;
+        #[link_name="window_size"] fn host_window_size()->u32;
         #[link_name="window_state"] fn host_window_state()->u32;
         #[link_name="draw_asset_image_linear_straight"] fn host_asset_image_linear_straight(path:*const u8,length:usize,x:f32,y:f32,w:f32,h:f32)->i32;
         #[link_name="frame_time_us"] fn host_frame_time_us()->u64;
@@ -52,6 +67,8 @@ pub mod gamepkg {
         fn host_save_size() -> i32;
         #[link_name = "save_read"]
         fn host_save_read(offset: i32, output: *mut u8, length: i32) -> i32;
+        #[link_name = "save_chunk"]
+        fn host_save_chunk(offset:i32,total:i32,input:*const u8,length:i32)->i32;
         #[link_name = "save_write"]
         fn host_save_write(input: *const u8, length: i32) -> i32;
         #[link_name = "rom_size"]
@@ -98,6 +115,7 @@ pub mod gamepkg {
         if result < 0 { None } else { Some(result as u32) }
     }
     /// Replace the game's save blob; persisted only when the tick completes successfully.
+    pub fn save_chunk(offset:u32,total:u32,bytes:&[u8])->bool {if offset>1048576||total>1048576||bytes.len()>65536{return false;} unsafe {host_save_chunk(offset as i32,total as i32,bytes.as_ptr(),bytes.len() as i32)==0}}
     pub fn save_write(bytes: &[u8]) -> bool {
         if bytes.len() > 1048576 { return false; }
         unsafe { host_save_write(bytes.as_ptr(), bytes.len() as i32) == 0 }

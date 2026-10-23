@@ -1,0 +1,32 @@
+{
+  "repository": "https://github.com/wine-mirror/wine",
+  "tag": "wine-9.0",
+  "revision": "fd1153552d779e1ac14b0b1c48fbd1cde894eb0a",
+  "files": [
+    {
+      "path": "upstream/error.c",
+      "upstream_path": "dlls/ntdll/error.c",
+      "sha256": "5d12fc8b0d77397a20a018c867122e64b54214dcda024888b03a825a331d54a1"
+    },
+    {
+      "path": "upstream/error.h",
+      "upstream_path": "dlls/ntdll/error.h",
+      "sha256": "ace888cedd00b84837688209fe5416a4afaa2168a87b026b25dbb287d32738b3"
+    },
+    {
+      "path": "upstream/winerror.h",
+      "upstream_path": "include/winerror.h",
+      "sha256": "6955601b6b4429edc25bbfd27155d3ed540ede8b2f3a71b2978f7918109f9f50"
+    },
+    {
+      "path": "upstream/COPYING.LIB",
+      "upstream_path": "COPYING.LIB",
+      "sha256": "e237fa56668030e928551ddd60f05df5fe957f75eab874bbd017e085ed722e7c"
+    },
+    {
+      "path": "upstream/ntstatus.h",
+      "upstream_path": "include/ntstatus.h",
+      "sha256": "58455541771367456216d33cd5c8c8a0698463950cafb74df967f661531132dd"
+    }
+  ]
+}

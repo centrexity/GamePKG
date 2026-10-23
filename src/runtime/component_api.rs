@@ -68,6 +68,9 @@ pub(super) fn linker(engine: &Engine) -> Result<Linker<Data>> {
         "window-state",
         |store: StoreContextMut<'_, Data>, (): ()| Ok((store.data().window.observation(),)),
     )?;
+    host.func_wrap("window-size", |store: StoreContextMut<'_, Data>, (): ()| {
+        Ok((store.data().window.size_observation(),))
+    })?;
     host.func_wrap(
         "frame-time-us",
         |store: StoreContextMut<'_, Data>, (): ()| Ok((store.data().clock.micros(),)),
@@ -196,12 +199,23 @@ pub(super) fn linker(engine: &Engine) -> Result<Linker<Data>> {
         },
     )?;
     host.func_wrap(
+        "save-chunk",
+        |mut store: StoreContextMut<'_, Data>, (offset, total, bytes): (u32, u32, Vec<u8>)| {
+            Ok((store
+                .data_mut()
+                .save
+                .as_mut()
+                .is_some_and(|save| save.chunk(offset as usize, total as usize, &bytes)),))
+        },
+    )?;
+    host.func_wrap(
         "save-write",
         |mut store: StoreContextMut<'_, Data>, (bytes,): (Vec<u8>,)| {
             if bytes.len() > crate::saves::MAX_SAVE || store.data().save.is_none() {
                 return Ok((false,));
             }
             let save = store.data_mut().save.as_mut().unwrap();
+            save.discard_pending();
             save.bytes = bytes;
             save.dirty = true;
             Ok((true,))

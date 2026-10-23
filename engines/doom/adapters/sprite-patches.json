@@ -1,0 +1,17 @@
+[
+  {
+    "before": "spritewidth[i] = SHORT(patch->width)<<FRACBITS;",
+    "after": "spritewidth[i] = SHORT(patch->width) * 65536;",
+    "count": 1
+  },
+  {
+    "before": "spriteoffset[i] = SHORT(patch->leftoffset)<<FRACBITS;",
+    "after": "spriteoffset[i] = SHORT(patch->leftoffset) * 65536;",
+    "count": 1
+  },
+  {
+    "before": "spritetopoffset[i] = SHORT(patch->topoffset)<<FRACBITS;",
+    "after": "spritetopoffset[i] = SHORT(patch->topoffset) * 65536;",
+    "count": 1
+  }
+]

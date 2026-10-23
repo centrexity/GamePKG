@@ -6,7 +6,7 @@ os.environ['OMP_THREAD_LIMIT']='1'
 project=Path(__file__).resolve().parents[1]
 with tempfile.TemporaryDirectory(prefix='gamepkg-settings-gui-') as directory:
     root=Path(directory);config=root/'settings.toml'
-    config.write_text('automatic_update_checks = false\ncheck_app_updates_on_startup = false\napproved_crates = ["gamepkg-byteorder"]\n')
+    config.write_text('automatic_update_checks = false\ncheck_app_updates_on_startup = false\napproved_crates = ["gamepkg-byteorder"]\nsnapshot_load_slots=[10,11,12,13,14,15,16,17,18,19]\nsnapshot_save_slots=[20,11,12,13,14,15,16,17,18,19]\n')
     env=dict(os.environ,GAMEPKG_HOME=str(root/'library'),GAMEPKG_CONFIG=str(config),LIBGL_ALWAYS_SOFTWARE='1');env.pop('WAYLAND_DISPLAY',None)
     display=start_display(env,1200,1200)
     app=subprocess.Popen([str(Path(os.environ.get('GAMEPKG_TEST_BINARY_DIR', project/'target/release'))/'gamepkg-gui')],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
@@ -20,7 +20,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-settings-gui-') as directory:
         window=found.stdout.splitlines()[0]
         subprocess.run(['xdotool','windowsize',window,'1100','1100'],env=env,check=True);time.sleep(.3)
         def click(label):
-            if label in ['Optimize new builds','Limit game render resolution']:
+            if label in ['Optimize new builds','Limit game render resolution','Snapshot shortcuts']:
                 direction='5' if label=='Optimize new builds' else '4'
                 subprocess.run(['xdotool','mousemove','--window',window,'400','600','click','--repeat','40','--delay','10',direction],env=env,check=True)
                 time.sleep(.3)
@@ -37,6 +37,8 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-settings-gui-') as directory:
         assert saved['optimize_builds'] is False, 'Save did not apply optimization preference'
         assert 'approved_crates' not in saved, 'Save retained obsolete crate approvals'
         assert saved['render_limit_enabled'] is False, 'Render resolution limit was enabled by default'
+        assert saved['snapshot_load_slots'] == list(range(10,20))
+        assert saved['snapshot_save_slots'] == [20]+list(range(11,20))
         click('Optimize new builds'); click('Cancel edits')
         assert tomllib.loads(config.read_text())['optimize_builds'] is False, 'Cancel persisted an unsaved edit'
         open_and_toggle(); click('Save settings')
@@ -48,6 +50,12 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-settings-gui-') as directory:
         assert tomllib.loads(config.read_text())['render_limit_enabled'] is True, 'Render limit did not save'
         click('Limit game render resolution'); click('Save settings')
         assert tomllib.loads(config.read_text())['render_limit_enabled'] is False, 'Render limit did not turn off'
+        click('Settings');click('Snapshot shortcuts');click('Reset snapshot shortcuts');click('Cancel edits')
+        assert tomllib.loads(config.read_text())['snapshot_load_slots'] == list(range(10,20)), 'Cancel persisted shortcut reset'
+        click('Settings');click('Reset snapshot shortcuts');click('Save settings')
+        saved=tomllib.loads(config.read_text())
+        assert saved['snapshot_load_slots'] == list(range(10))
+        assert saved['snapshot_save_slots'] == list(range(10))
         output=subprocess.run([str(Path(os.environ.get('GAMEPKG_TEST_BINARY_DIR', project/'target/release'))/'gamepkg'),'--help'],env=env,check=True,capture_output=True,text=True).stdout
         assert 'allowlist' not in output, output
         subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(project/'target/settings-approval-tested.png')],env=env,check=True)

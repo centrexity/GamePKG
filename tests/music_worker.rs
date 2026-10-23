@@ -22,6 +22,250 @@ fn decoder_factory() -> Factory {
         .unwrap()
     }
 }
+#[test]
+#[ignore = "requires mono fixture, decoder and GAMEPKG_SDL_RESAMPLE_REFERENCE"]
+fn mono_signed_package_worker_controls_and_full_output_match_sdl() {
+    let path = std::path::PathBuf::from(std::env::var_os("GAMEPKG_AUDIO_MONO_INPUT").unwrap());
+    let factory = decoder_factory();
+    assert!(factory.maximum_memory_bytes() <= 6 * 1048576);
+    let mut native = factory.open(&std::fs::read(&path).unwrap()).unwrap();
+    assert_eq!(native.channels(), 1);
+    let source_rate = native.sample_rate();
+    let mut decoded = Vec::new();
+    let mut block = [0i16; 1600];
+    loop {
+        let count = native.read(&mut block).unwrap();
+        if count == 0 {
+            break;
+        }
+        decoded.extend(
+            block[..count]
+                .iter()
+                .flat_map(|sample| sample.to_le_bytes()),
+        );
+        assert!(decoded.len() <= 65536);
+    }
+    drop(native);
+    let temporary = tempfile::tempdir().unwrap();
+    let pcm = temporary.path().join("source.s16");
+    std::fs::write(&pcm, decoded).unwrap();
+    let oracle = std::env::var_os("GAMEPKG_SDL_RESAMPLE_REFERENCE").unwrap();
+    let original = std::process::Command::new(&oracle)
+        .arg(&pcm)
+        .arg(source_rate.to_string())
+        .args(["44100", "stream", "1", "s16"])
+        .output()
+        .unwrap();
+    assert!(original.status.success());
+    assert!(original
+        .stdout
+        .chunks_exact(2)
+        .any(|sample| sample != [0, 0]));
+    let mixer = temporary.path().join("mixer.s16");
+    std::fs::write(&mixer, &original.stdout).unwrap();
+    let (_package_root, package) = music_fixture::signed_music_package(std::slice::from_ref(&path));
+    let name = format!("music/{}", path.file_name().unwrap().to_str().unwrap());
+    for rate in [44100, 48000] {
+        let expected = if rate == 44100 {
+            original.stdout.clone()
+        } else {
+            let converted = std::process::Command::new(&oracle)
+                .arg(&mixer)
+                .args(["44100", "48000", "cvt", "2", "s16"])
+                .output()
+                .unwrap();
+            assert!(converted.status.success());
+            converted.stdout
+        };
+        let budget = Budget::new(16 * 1048576);
+        let guest = budget
+            .reserve(budget.limit() - 6 * 1048576 - HOST_BYTES)
+            .unwrap();
+        assert!(Service::new(
+            factory.clone(),
+            &package,
+            false,
+            budget.clone(),
+            6 * 1048576
+        )
+        .is_err());
+        assert_eq!(budget.used(), guest.bytes());
+        let service = if rate == 44100 {
+            Service::new_original_rate(factory.clone(), &package, true, budget.clone(), 6 * 1048576)
+        } else {
+            Service::new(factory.clone(), &package, true, budget.clone(), 6 * 1048576)
+        }
+        .unwrap();
+        let mut service = gamepkg::music::controls::Transaction::new(service);
+        let output = service.output();
+        service.begin().unwrap();
+        service.play(&name).unwrap();
+        service.finish(false).unwrap();
+        assert_eq!(output.status(), Status::Stopped);
+        for gain in [128, 0, 128] {
+            service.begin().unwrap();
+            service.play(&name).unwrap();
+            service.volume(gain).unwrap();
+            service.pause(true).unwrap();
+            service.finish(true).unwrap();
+            let mut sentinel = [[123, -456]; 1];
+            assert_eq!(output.read(&mut sentinel), 0);
+            assert_eq!(sentinel, [[123, -456]; 1]);
+            service.begin().unwrap();
+            service.pause(false).unwrap();
+            service.finish(true).unwrap();
+            let started = std::time::Instant::now();
+            let mut actual = Vec::new();
+            let mut block = [[0i16; 2]; 800];
+            let mut step = 0;
+            loop {
+                let count = output.read(&mut block[..[1, 113, 7, 799, 800][step % 5]]);
+                step += 1;
+                actual.extend(
+                    block[..count]
+                        .iter()
+                        .flatten()
+                        .flat_map(|sample| sample.to_le_bytes()),
+                );
+                assert!(actual.len() <= expected.len());
+                assert!(budget.used() <= budget.limit());
+                assert_ne!(
+                    output.status(),
+                    Status::Failed,
+                    "{}",
+                    service.error().unwrap_or_default()
+                );
+                if output.status() == Status::Ended {
+                    break;
+                }
+                assert!(
+                    started.elapsed() < std::time::Duration::from_secs(10),
+                    "Mono output worker stalled"
+                );
+                if count == 0 {
+                    std::thread::sleep(std::time::Duration::from_micros(100));
+                }
+            }
+            assert_eq!(actual.len(), expected.len());
+            assert_eq!(output.played_frames() * 4, actual.len() as u64);
+            if gain == 0 {
+                assert!(actual.iter().all(|byte| *byte == 0));
+            } else {
+                assert_eq!(actual, expected, "Original mono worker PCM at {rate} Hz");
+            }
+            service.begin().unwrap();
+            service.stop().unwrap();
+            service.finish(true).unwrap();
+            assert_eq!(output.status(), Status::Stopped);
+            assert_eq!(output.read(&mut sentinel), 0);
+            assert_eq!(sentinel, [[123, -456]; 1]);
+        }
+        drop(service);
+        assert_eq!(budget.used(), guest.bytes() + HOST_BYTES);
+        drop(output);
+        assert_eq!(budget.used(), guest.bytes());
+        drop(guest);
+        assert_eq!(budget.used(), 0);
+    }
+}
+#[cfg(all(feature = "audio", target_os = "linux"))]
+#[test]
+#[ignore = "requires generated mono input, decoder and private ALSA null configuration"]
+fn mono_actual_device_callback_controls_both_worker_rates_without_game_ticks() {
+    assert!(std::env::var_os("ALSA_CONFIG_PATH").is_some());
+    let path = std::path::PathBuf::from(std::env::var_os("GAMEPKG_AUDIO_MONO_INPUT").unwrap());
+    let factory = decoder_factory();
+    assert!(factory.maximum_memory_bytes() <= 6 * 1048576);
+    let input = factory.open(&std::fs::read(&path).unwrap()).unwrap();
+    assert_eq!(input.channels(), 1);
+    if let Ok(rate) = std::env::var("GAMEPKG_AUDIO_MONO_RATE") {
+        assert_eq!(input.sample_rate(), rate.parse::<u32>().unwrap());
+    }
+    drop(input);
+    let (_temporary, package) = music_fixture::signed_music_package(std::slice::from_ref(&path));
+    let name = format!("music/{}", path.file_name().unwrap().to_str().unwrap());
+    for rate in [44100, 48000] {
+        let budget = Budget::new(16 * 1048576);
+        let guest = budget.reserve(9 * 1048576).unwrap();
+        let service = if rate == 44100 {
+            Service::new_original_rate(factory.clone(), &package, true, budget.clone(), 6 * 1048576)
+        } else {
+            Service::new(factory.clone(), &package, true, budget.clone(), 6 * 1048576)
+        }
+        .unwrap();
+        let output = service.output();
+        for master in [0, 100] {
+            let player = gamepkg::audio::Player::new(master).unwrap();
+            if rate == 44100 {
+                assert!(!player.music_source(Some(output.clone())));
+                let playback =
+                    gamepkg::audio_mix_stream::Playback::new(output.clone(), &budget).unwrap();
+                assert!(player.original_source(Some(playback)));
+            } else {
+                assert!(player.music_source(Some(output.clone())));
+            }
+            service
+                .batch(&[
+                    gamepkg::music::Command::Play(&name),
+                    gamepkg::music::Command::Pause(true),
+                ])
+                .unwrap();
+            let start = std::time::Instant::now();
+            while output.played_frames() != 0 {
+                assert!(start.elapsed() < std::time::Duration::from_secs(5));
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+            assert_eq!(output.status(), Status::Paused);
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            assert_eq!(output.played_frames(), 0);
+            service.pause(false).unwrap();
+            let start = std::time::Instant::now();
+            while output.played_frames() < 4800 || (master != 0 && player.non_silent_frames() == 0)
+            {
+                assert_ne!(output.status(), Status::Failed, "{:?}", service.error());
+                assert!(
+                    start.elapsed() < std::time::Duration::from_secs(5),
+                    "Mono callback did not advance"
+                );
+                assert!(budget.used() <= budget.limit());
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+            if master == 0 {
+                assert_eq!(player.non_silent_frames(), 0);
+            }
+            service.pause(true).unwrap();
+            assert_eq!(output.status(), Status::Paused);
+            let paused = output.played_frames();
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            assert_eq!(output.played_frames(), paused);
+            service.pause(false).unwrap();
+            let start = std::time::Instant::now();
+            while output.played_frames() == paused {
+                assert_ne!(output.status(), Status::Failed, "{:?}", service.error());
+                assert!(
+                    start.elapsed() < std::time::Duration::from_secs(5),
+                    "Mono callback did not resume"
+                );
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+            service.stop().unwrap();
+            assert_eq!(output.status(), Status::Stopped);
+            if rate == 44100 {
+                assert!(player.original_source(None));
+            } else {
+                assert!(player.music_source(None));
+            }
+            assert!(player.error().is_none());
+            drop(player);
+        }
+        drop(service);
+        assert_eq!(budget.used(), guest.bytes() + HOST_BYTES);
+        drop(output);
+        assert_eq!(budget.used(), guest.bytes());
+        drop(guest);
+        assert_eq!(budget.used(), 0);
+    }
+}
 struct Drawing {
     stop: Arc<AtomicBool>,
     thread: Option<std::thread::JoinHandle<u64>>,

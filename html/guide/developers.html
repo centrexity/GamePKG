@@ -55,6 +55,15 @@ version = &quot;0.1.0&quot;
 <p>Keep the name and version identical in both Cargo files. Hash the exact lockfile bytes for the manifest's <code>lockfile_sha256</code>. Do not add dependencies or <code>extern crate</code> declarations. Call <code>gamepkg::</code> directly: it is a host-injected module, not a crate to install, download or list in Cargo.toml. Rust's built-in standard library remains subject to the source restrictions below; it does not grant filesystem or network access.</p>
 <h2>Scoped host functions</h2>
 <p>Use <code>gamepkg::asset_read</code> for package-relative assets, <code>rom_count</code>, <code>rom_size_at</code> and <code>rom_read_at</code> for player-selected ROMs, and <code>save_size</code>, <code>save_read</code> and <code>save_write</code> for the game's save blob. They never open arbitrary host files.</p>
+<p>For large saves, current source-built hosts also provide
+<code>gamepkg::save_chunk(offset, total, bytes)</code>. Start at offset zero, send consecutive
+chunks of at most 65,536 bytes and finish the declared total within the same
+tick. The total cannot exceed 1,048,576 bytes. The host keeps the old save until
+the complete replacement arrives; partial sequences expire before the next
+tick. Completed writes retain normal successful-tick persistence and rollback.
+This lets a game serialize through a small reusable buffer. Browser chunked and
+whole-blob writes share the existing 1 MiB per-tick transfer budget. This API
+requires rebuilding the host from current source.</p>
 <p>Use <code>gamepkg::random_u64()</code> for a fresh 64-bit random value supplied by the host.
 It needs no additional permission and exposes no device, clock, filesystem or
 host identity. Native, core-Wasm and component-Wasm hosts use OS randomness;
@@ -68,6 +77,72 @@ text events. It returns <code>None</code> when the signed <code>input</code> per
 <code>Some(Vec&lt;InputEvent&gt;)</code> otherwise. The simple <code>game_tick</code> action-button mask
 continues to work for keyboard, controller and touch actions. This API requires
 the updated source host.</p>
+<p><code>gamepkg::window_size()</code> returns <code>Option&lt;[u32; 2]&gt;</code> containing the actual physical
+client-area width and height of the game's own desktop window. It requires signed
+<code>input</code> permission and remains stable between host observations. Unavailable,
+minimized, headless, embedded-library and browser contexts return <code>None</code>; denied
+input and closed games also return <code>None</code>. This is measured state, including
+external resizing and fullscreen changes, rather than a predicted preset. It
+does not resize the window. Dimensions outside the 16-bit wire representation
+are unavailable, not clamped. Generated native/core/component bindings require
+the updated source-built host; released 0.1.17 hosts lack this call.</p>
+<p>Current source-built desktop hosts also provide:</p>
+<ul>
+<li><code>window_vsync_preference()</code> reads the committed <code>Option&lt;bool&gt;</code> presentation
+  preference for the next game-window launch. It requires signed input and a
+  desktop host with readable persistent game-window settings. Other contexts
+  return <code>None</code>. Reads have no side effects or fresh-action requirement and do
+  not predict a change staged during the current tick.</li>
+<li><code>window_set_vsync(enabled)</code> requests the next-launch preference with a fresh
+  user action. A successful tick commits the request; a failed tick discards it.
+  Restart the game to apply it. Preferences are scoped by game, creator and
+  library, and default to enabled for older window records. OpenGL configures its
+  swap interval; Vulkan selects strict FIFO when enabled and automatic non-VSync
+  presentation when disabled.
+  Drivers and compositors control final presentation; Vulkan can fall back to a
+  supported mode. Browser and headless hosts offer no desktop VSync preference.</li>
+<li><code>window_preview_active()</code> reads whether a permitted, committed host preview is
+  outstanding. It does not predict a start, Keep, Revert or close staged during
+  the current tick. The host's expiry is visible on the tick it occurs. Reads
+  have no side effects, require no fresh action, and still obey execution
+  deadlines. Browser/default headless runs have no active preview.</li>
+<li><code>window_preview_size(width, height)</code> starts one pending physical-size preview.
+  It requires signed input permission, a fresh action, an actual size observation
+  and a known windowed state. Requests accept widths 320–10,000 and heights
+  240–10,000 pixels; these request bounds do not change the renderer-limit setting.
+  A request matching the observed size, or a second outstanding preview, returns
+  <code>false</code>. The operating system may constrain the applied size; read
+  <code>window_size()</code> for the actual result.</li>
+<li><code>window_keep_size()</code> confirms a pending preview with a fresh user action.</li>
+<li><code>window_revert_size()</code> restores only the size recorded by the host before that
+  preview. It needs no fresh action, so a game's confirmation timer can cancel
+  safely. It cannot supply a new arbitrary size.</li>
+</ul>
+<p>These correspond to operations 5 (packed low/high-16-bit width/height), 7 (Keep,
+value 0) and 6 (Revert, value 0) on <code>window_control</code>. Operation 8 with value 0 is
+its read-only committed-preview query. Guest-requested changes still
+require successful tick/checkpoint commit. The host additionally counts 300
+subsequent attempted ticks and reverts on the following tick if the preview
+remains unconfirmed; failed later ticks do not reset this host fallback. Closing
+also cancels an outstanding preview. Unconfirmed geometry is excluded from saved
+window preferences, and restored geometry waits for physical acknowledgement.
+Browser, headless and embedded-library hosts reject previews. Normal and
+maximized desktop preview flows are verified on Linux: cancel/timeout restores
+maximization and the prior normal bounds, while Keep records the confirmed normal
+geometry. Restoration waits for normal-size acknowledgement before maximizing.
+For normal-origin previews, entering fullscreen preserves the actual fullscreen
+flag across expiry/close/reopen. Keep in fullscreen saves the last windowed
+geometry and mode, rather than monitor dimensions. An expired/reverted normal
+size waits for fullscreen exit before being applied. Fullscreen pixels cannot
+acknowledge a normal-size restore. A fullscreen entry queued with a preview waits
+for its geometry; fullscreen exit remains available during deferred restoration.
+Linux native/core/component checks cover these flows at 100%/150% UI scaling.
+More complex maximized/fullscreen combinations, monitor-clamp/hotplug edges,
+native-DPI and other-platform behavior remain under qualification. The original
+Desktop game Settings menus can use these APIs for resolution choices and
+Keep/Revert confirmation. The host remains authoritative
+for expiry and actual geometry. Browser/headless hosts offer no desktop size
+selection; fullscreen users return to windowed mode before choosing a size.</p>
 <p><code>gamepkg::window_control(operation, value)</code> requests changes to the game's own
 window and requires signed <code>input</code> permission. Operations 0 and 1 accept 0/1 to
 set cursor visibility and absolute cursor confinement respectively. Operation 2
@@ -81,6 +156,10 @@ Browser tabs use <code>noopener,noreferrer</code> and require active browser use
 unfocused or file-dialog-blocked requests are discarded. Headless runs do not
 open a browser. Older released hosts reject this new operation; rebuild from
 current source to use it.
+Operation 9 reads the committed desktop VSync preference: value 0 tests
+availability and value 1 reads enabled. Operation 10 requests disabled/enabled
+with value 0/1 and a fresh user action. These operations back the typed VSync
+helpers above and are unavailable to browser/headless hosts.
 Fullscreen, close and homepage requests require a fresh key, pointer, controller or touch action;
 held buttons and repeated keys do not qualify. The return value means the host
 accepted the request, not that the operating system fulfilled it. Requests commit
@@ -380,5 +459,177 @@ added. The guest is responsible for validating its actual file format.</p>
 <p>These operations do not yet provide a directory/resource browser, remembered
 mod folders, streaming media resources or large recording exports. Those remain
 separate requirements for the engine ports.</p>
+<p>Browser export may store larger canonical effect WAVs losslessly compressed.
+Game source continues to read the original WAV bytes and call the same effect
+functions. The exported player uses bounded reusable decoding buffers, reserved
+inside the existing hard memory allowance; the exported guest memory maximum
+is reduced to leave room for both owners. The exporter keeps raw storage when
+compression would not save space or would leave too little guest memory. The
+32 MiB encoded asset limit, effect cache limits and execution deadlines still
+apply. Players need no external decoder, Python or other preparation tools.</p>
+<h2>Reviewed DOOM recipes with patch WADs</h2>
+<p>For <code>builtin_engine = "doom-e257a095"</code>, declare the player's base IWAD first in <code>[[roms]]</code>, then up to six PWAD files in their intended loading order. The original engine receives them through <code>-file</code>; later files override earlier matching lumps. Every declared file is required and uses the normal per-game file picker and remembered location. The standard DOOM recipe continues to request only its base IWAD. Use a distinct game ID/save schema for a mod recipe when its saves are incompatible with the base game.</p>
+<p>For example, add the following declarations to the existing reviewed recipe, after its base IWAD declaration:</p>
+<pre><code class="language-toml">[[roms]]
+id = &quot;patch_content&quot;
+title = &quot;Your compatible patch WAD&quot;
+
+[[roms]]
+id = &quot;patch_override&quot;
+title = &quot;Your compatible override WAD&quot;
+</code></pre>
+<p>Once declared, both files are required by this recipe. Declare only the patches that recipe actually needs. These files remain player-selected resources; the manifest does not grant access to their containing folders. Native and Wasm builds use the same exact read-only virtual names and original loading order. Six patches plus the base IWAD leave one of the unchanged eight virtual handles for configuration/save operations. Combined WAD input stays within 64 MiB and the engine's existing hard memory limit still applies; that input bound does not guarantee that a large mod will fit all engine allocations.</p>
+<p>The original engine's shareware restrictions and supported WAD semantics remain in force. This does not provide arbitrary native extensions, every source-port feature, multiplayer or browser export. Rebuild the game after updating GamePKG. Maintainers can run <code>python3 tools/check_doom_mods.py --wad /path/to/DOOM.WAD --baseline</code> to privately verify all six slots, duplicate-lump order, generated E1M1 map precedence, exact player starts, rendering and wall collision, original gameplay/movement, save/reload, malformed patch rejection and unchanged single-WAD behavior on native and Wasm. The tool creates synthetic title patches and keys in temporary storage and reads the original IWAD in place; players do not need Python.</p>
+<h3>Signed WAD loading modes</h3>
+<p>A DOOM recipe may set top-level <code>doom_wad_modes</code> beside <code>builtin_engine</code>, before any TOML tables. If supplied, the array has exactly one entry per additional PWAD, excluding the base IWAD. Omitting it keeps every patch in <code>file</code> mode. Values are <code>file</code>, <code>merge</code>, <code>nwt_merge</code>, <code>flats</code>, <code>sprites</code> and <code>both</code>, selecting the original <code>-file</code>, <code>-merge</code>, <code>-nwtmerge</code>, <code>-af</code>, <code>-as</code> and <code>-aa</code> paths respectively. Other games cannot use this field, and arbitrary command-line arguments are rejected.</p>
+<pre><code class="language-toml">doom_wad_modes = [&quot;merge&quot;, &quot;file&quot;]
+</code></pre>
+<p>The original <code>nwt_merge</code> operation masks matching IWAD sprite names, discards the patch directory and closes that patch handle. The original workflow then adds the PWAD again through <code>file</code>; follow the mod's required sprite-section layout. Its metadata masking/cleanup has separate sanitizer coverage. A generated <code>SS_START</code>/<code>PISGA0</code>/<code>S_END</code> fixture also passes mask-then-file loading, visible replacement, firing animation and exact idle return on native/Wasm. Select the same PWAD for the separate mask and reload requirements. Use <code>tools/check_doom_mods.py --wad /path/to/DOOM.WAD --nwt-probe</code> for that private check; broader real-mod layouts remain separate qualification work.</p>
+<p>The original parser processes groups in this order: <code>merge</code>, <code>nwt_merge</code>, <code>flats</code>, <code>sprites</code>, <code>both</code>, then <code>file</code>. Declaration order is preserved within each group. Therefore an ordinary <code>file</code> patch loads after merged patches even if it is declared earlier. Use the merge modes when the original mod requires sprite/flat merging; this does not add source-port scripting or native extensions. Registration is sealed when the engine initializes, and the existing file-handle/input/memory boundaries still apply. Rebuild the engine and game after updating GamePKG.</p>
+<p>Maintainers can add <code>--mode merge</code> to <code>tools/check_doom_mods.py</code> for the signed original merge path. Current native/Wasm qualification covers complete resource/map override order, exact starts, rendering/collision and original saving/reload for <code>file</code> and <code>merge</code>. Mixed <code>file</code>/<code>merge</code> recipes are also verified with the file declared both first and last; the original file-group priority wins in both arrangements. Maintainers can select <code>--mode mixed_file_first</code> or <code>--mode mixed_file_last</code>. Generated flat replacement is also verified for <code>merge</code>, <code>flats</code> and <code>both</code>; <code>sprites</code> and <code>nwt_merge</code> are verified to leave that flat content untouched. Use <code>--flat-probe --mode flats</code> (or another merge-family mode) for this separate probe. Generated pistol-sprite replacement is verified for <code>merge</code>, <code>sprites</code> and <code>both</code>, with <code>flats</code> verified to leave it unchanged; use <code>--sprite-probe --mode sprites</code> for this separate test. Directional/world sprites and more complex NWT/content cases remain tracked in <code>docs/port-parity.toml</code>.</p>
+<p>For a flat name absent from the base IWAD, use <code>merge</code> to insert it into the original flat directory. The original <code>flats</code>/<code>both</code> algorithms replace existing entries; they do not insert new names. Generated new-flat probes verify that distinction on native/Wasm and require missing-resource errors to name the absent flat. Run <code>tools/check_doom_mods.py --wad /path/to/DOOM.WAD --new-flat-probe --mode merge</code> or a replacement-only mode for the corresponding positive/negative case. Engine failures now preserve bounded diagnostics: DOOM retains the newest 4,095 diagnostic bytes plus a null terminator in its existing 4 KiB buffer and reads it after a Wasm trap without further game execution, and native games retain the newest 4 KiB of stderr for startup/tick failures.</p>
+<p>The private <code>--recovery-probe --mode flats</code> check (also available for <code>both</code>, <code>sprites</code> and <code>nwt_merge</code>) creates an original save, deliberately loads an incompatible generated map, verifies the named missing resource and byte-identical committed save files, then reopens the valid map. Recovery must restore exact coordinates, preserve the original saved slot, be unpaused and accept original movement controls on both native and Wasm. These fixtures use temporary libraries and do not alter the player's library.</p>
+<p>The installed game page and package details display DOOM files in their actual loading-group order, with plain-language roles for base data, merging, sprite preparation and resource overrides. Within-group declaration order is preserved. File pickers and remembered paths remain tied to each original manifest entry, even when its visual position changes.</p>
+<p>Library readiness and game-page file explanations share the same basic selected-file check: the path must resolve to a regular file within the existing 64 MiB per-ROM boundary. Missing files and oversized selections identify the affected requirement. After changing files outside the app, use <strong>Recheck readiness</strong>. Cancelling a picker preserves remembered selections; replacing one file leaves the other requirements unchanged. Format/content checks still run at launch, and final bounded file reads remain authoritative.</p>
+<h2>Pinned Zelda presentation and enhancement options</h2>
+<p>Recipes using <code>builtin_engine = "zelda3-45a149d8"</code> can configure the original
+renderer with this optional signed table:</p>
+<pre><code class="language-toml">[zelda_video]
+extra_width = 71
+extend_height = false
+no_sprite_limits = false
+dim_flashes = false
+skip_intro_on_keypress = false
+</code></pre>
+<p><code>extra_width</code> adds 0–96 pixels <strong>on each side</strong> of the original 256-pixel image.
+The example produces 398×224, matching the original integer 16:9 setting.
+<code>extend_height = true</code> selects the original 240-line mode; otherwise height is
+224. Omitting the table preserves the 256×224 image. Widescreen enables the
+original sprite visibility and visual fixes. The optional <code>no_sprite_limits = true</code> selects the original renderer's extra
+sprite mode. It defaults to false, preserving the console-style per-line object
+and tile limits. Players can also use Allow extra sprites on the game page;
+changing view shape or height preserves that choice. <code>dim_flashes = true</code> enables
+the original port’s dimmer flash effect; it defaults off. Players can save the
+same choice with Dim flashes under Display. It changes neither image dimensions
+nor sprite limits. <code>skip_intro_on_keypress = true</code> enables the original earlier
+button-press skip threshold during the intro; it defaults off. Players can save
+that choice with Skip intro earlier on button press. Older display
+preferences remain readable, with missing enhancement flags defaulting off. The host centers the complete
+image without stretching its aspect ratio. Both native and Wasm paths use the
+same options. Older Wasm engine caches need rebuilding for the current renderer
+fixes. Readiness and Integrity check detect stale renderer revisions; Integrity
+fix rebuilds them from verified source. Existing saved preferences and SRAM remain readable.</p>
+<p>The table defines creator-signed defaults. Players can choose Original width,
+Widescreen (16:9), Widest view and extended vertical view under Display on the
+game page, then save for the next launch. These host-owned preferences are
+scoped to the creator and game and persist across updates. Package default
+removes the override and follows the current signed recipe. They change no
+filesystem/network permissions or signed package bytes. Other engine profiles,
+unknown fields, invalid types and widths above 96 are rejected. Existing image,
+framebuffer, memory and execution limits still apply. This table does not enable
+MSU music, translations, replays or save-state tools.</p>
+<p>Original gameplay enhancement switches are available in a nested signed table.
+Every omitted switch defaults to false. For example:</p>
+<pre><code class="language-toml">[zelda_video.enhancements]
+item_switch_lr = true
+disable_low_health_beep = true
+</code></pre>
+<p>Players can change the same switches in <strong>Display → Gameplay enhancements</strong>, then
+save for the next launch. An explicit all-off override stays off even when the
+recipe recommends enhancements; <strong>Package default</strong> restores the creator’s
+signed choices. View/height changes preserve these choices.</p>
+<table>
+<thead>
+<tr>
+<th>Manifest/CLI name</th>
+<th>Original option</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>item_switch_lr</code></td>
+<td>Cycle items with shoulder buttons</td>
+</tr>
+<tr>
+<td><code>item_switch_lr_limit</code></td>
+<td>Limit shoulder cycling to the first four inventory positions</td>
+</tr>
+<tr>
+<td><code>turn_while_dashing</code></td>
+<td>Turn while dashing</td>
+</tr>
+<tr>
+<td><code>mirror_to_darkworld</code></td>
+<td>Allow mirror travel to the Dark World</td>
+</tr>
+<tr>
+<td><code>collect_items_with_sword</code></td>
+<td>Collect items with the sword</td>
+</tr>
+<tr>
+<td><code>break_pots_with_sword</code></td>
+<td>Break pots with the sword</td>
+</tr>
+<tr>
+<td><code>disable_low_health_beep</code></td>
+<td>Disable the low-health beep</td>
+</tr>
+<tr>
+<td><code>show_max_items_in_yellow</code></td>
+<td>Highlight maximum item counts in yellow</td>
+</tr>
+<tr>
+<td><code>more_active_bombs</code></td>
+<td>Allow more active bombs</td>
+</tr>
+<tr>
+<td><code>carry_more_rupees</code></td>
+<td>Carry up to 9,999 rupees</td>
+</tr>
+<tr>
+<td><code>misc_bug_fixes</code></td>
+<td>Original port's miscellaneous bug fixes</td>
+</tr>
+<tr>
+<td><code>game_changing_bug_fixes</code></td>
+<td>Original port's gameplay-changing bug fixes</td>
+</tr>
+<tr>
+<td><code>cancel_bird_travel</code></td>
+<td>Allow canceling bird travel</td>
+</tr>
+</tbody>
+</table>
+<p>With bird-travel cancellation enabled, press X at the destination menu to cancel. A, B and Y confirm the selected destination. With the option disabled, X also confirms, following the original game. Face-button input is accepted after the original menu debounce countdown expires.</p>
+<p><code>item_switch_lr_limit</code> modifies shoulder-button cycling and needs
+<code>item_switch_lr</code> to have an effect. It selects among the first four inventory
+positions in the current order; if none is owned, selection stays unchanged.
+The currency switch follows the original refill logic: existing balances remain
+until gameplay updates them, and increases apply the selected cap. The bug-fix switches preserve the pinned
+original port’s optional behavior, including changes to original game rules.
+These flags do not grant filesystem or networking access. Configuration mapping,
+serialization and selected gameplay paths are verified; they do not establish
+complete campaign or every-feature interaction parity.</p>
+<p>The CLI offers the same launch preferences:</p>
+<pre><code class="language-sh">gamepkg configure-display com.gamepkg.zelda3 --preset wide --extended-height --extra-sprites --dim-flashes --skip-intro
+gamepkg configure-display com.gamepkg.zelda3 --preset original --enhancement item_switch_lr --enhancement disable_low_health_beep
+gamepkg configure-display com.gamepkg.zelda3 --preset default
+</code></pre>
+<p>Presets are <code>default</code>, <code>original</code>, <code>wide</code> and <code>widest</code>. <code>--extended-height</code>
+selects 240 lines. <code>--extra-sprites</code> enables the original extra-sprite mode.
+<code>--dim-flashes</code> enables dimmer flashes. <code>--skip-intro</code> enables earlier button-press
+intro skipping. Repeat <code>--enhancement NAME</code> for the named original gameplay
+options above. Unknown names are rejected before saved settings change.
+Override flags cannot accompany <code>default</code>. A current engine needs no
+rebuild when preferences change; legacy engines need rebuilding for current display
+features. Corrupt or oversized preference files fail validation without being
+overwritten, and Integrity check includes saved display settings.</p>
+<p>The reviewed renderer adaptations use unsigned bitplane/mask operations and
+bounded horizontal mosaic spans for side areas and clipped windows. Their
+count-checked replacements apply only to the pinned engine sources after hash
+verification. The original HUD layer retains its 256-pixel width. A renderer
+revision gate checks the current typed constant (including the compiler's
+initialization wrapper) before accepting a Wasm cache; it does not execute code
+during readiness checks.</p>
 <footer><a href="../support/index.html">Support GamePKG</a> · <a href="../guide/allowlist.html">Game source policy</a> · <a href="https://github.com/centrexity/GamePKG/blob/main/docs/DEVELOPING_GAMES.md">Documentation source</a> · GamePKG · Apache 2.0</footer>
 </main></body></html>

@@ -106,7 +106,9 @@ capture. It records bounded metadata only, never PCM, and is not part of the app
 
 An independent actual `SDL_AudioStream` oracle matches every float sample bit
 and complete length across 306 cases: 17 lengths around staging/put boundaries,
-nine input rates and both output rates. This includes the surprising behavior
+nine input rates and both output rates. The corresponding mono matrix adds
+414 cases, retaining those lengths and adding 2,048-frame boundary edges.
+This includes the surprising behavior
 that a final non-staged put does not flush retained padding. Tests preserve that
 behavior explicitly. `Mix_PlayMusic(1)` is one traversal, as checked by the
 original-API capture and its complete reference length.
@@ -118,17 +120,42 @@ python3 tools/check_audio_decoder.py /path/to/original/music --sdl-reference --o
 In this mode the corpus reference uses SDL_mixer's actual chunked conversion,
 previously verified against `Mix_LoadMUS`/postmix capture. Full native and browser
 passes check chunk invariance, retained output rate on rewind, rejected rate
-changes and full-track length. The original mode currently requires stereo
-source recordings, as used by all nine tracks. Mono source is rejected because
-the original decoder's byte-sized puts imply different frame boundaries; no
-claim is made for that unimplemented path. New decoder PCM differences remain
-observable. Game playback, controls, scheduling and combined memory accounting
-still require integration.
+changes and full-track length. All nine original source recordings are stereo.
+The original mono Music API also uses 4,096-byte puts: 2,048 S16 mono frames.
+Mono input is now supported using a fixed 4 KiB source-put staging buffer and
+announced complete puts. The unchanged 2,048-frame conversion ring consumes each
+put incrementally with backpressure and waits for its filter lookahead. The
+existing hard decoder memory ceiling covers the staging buffer; it is not raised.
+New decoder PCM differences remain observable; exact conversion of the same
+quantized PCM does not establish bit-identical MP3 codec output. Complete game
+playback/campaign and wider platform qualification remain separate work.
 
-Pass `--mono-input /path/to/mono.mp3` to check the explicit original-mode
-rejection alongside complete audible ordinary stereo conversion in native and
-Chromium execution. The channel check includes nonzero PCM and the ending, so
-it cannot pass solely on the recording's initial silence.
+Pass `--mono-input /path/to/mono.mp3` to check both original and global conversion
+at both output rates in native and Chromium execution. Complete mono PCM hashes,
+channel equality, nonzero audio, endings and rewind with varied reads must match.
+These checks cannot pass solely on initial silence.
+
+`python3 tools/check_mono_music_schedule.py` verifies the actual Music API's mono
+put format/sizes at both output rates using private generated audio.
+`python3 tools/check_mono_decoder.py` generates mono MP3 fixtures at all nine
+supported source rates and checks both output rates against actual SDL S16
+conversion of the same decoded PCM, with varied reads, rewind and the unchanged
+6 MiB bound. Add `--worker` to also load each generated mono fixture from a
+verified signed package through the asynchronous output-clock worker at 44.1 and
+48 kHz. This checks exact SDL-converted output, audio-permission denial, discarded
+control transactions, pause/resume, mute with an advancing clock, replay, stop,
+and complete shared-reservation cleanup. It preserves the separate complete
+nine-track reference corpus and its fixed hashes. On Linux,
+`--worker --null-device` also uses private generated three-second mono fixtures
+and a private ALSA null configuration to exercise actual CPAL callbacks at both
+worker rates. Master mute must still advance playback, unmuted callbacks must
+receive nonzero output, midstream pause/resume and stop must work without game
+ticks, and all reservations must release. Wrong-rate direct attachment of the
+original-rate source is rejected. CI runs this generated suite without original
+recordings or a physical sound device. Build the companion at that
+ceiling first. The float conversion
+matrix and actual Music API put-size trace also run in CI. These tools and
+FFmpeg/SDL/Chromium are maintainer dependencies, never player requirements.
 
 ## Loading and shared memory reservations
 
@@ -417,3 +444,44 @@ produces real callback output after resume. No game ticks advance that playback.
 Guest runtime staging and save/history commit wiring must use this handoff only
 after a successful tick. This host operation alone does not expose guest controls
 or establish original event/stop timing.
+
+
+## Codec precision provenance
+
+`python3 tools/check_music_codec_precision.py --float-check` uses a private
+generated stereo fixture to identify the actual original Music API backend and
+compare native/generic MPG123 S16 output, float output quantized with explicit
+ties-to-even rounding, and the sandboxed decoder. Pass the original music folder
+to run the same checks on the complete local corpus. Only native 44.1/48 kHz
+stereo inputs are used so no sample-rate conversion obscures codec arithmetic.
+Captured PCM is temporary, and the tool emits metadata only. It requires
+maintainer MPG123 development headers, SDL_mixer, FFmpeg and the built companion;
+none becomes a player dependency.
+
+On the tested SDL 2.30.0 / SDL_mixer 2.8.0 / MPG123 1.32.5 system, the actual Music
+API selects MPG123's AVX path. Direct MPG123 S16 matches its complete PCM exactly,
+excluding only confirmed silent callback padding. Across all nine original
+tracks (121,627,854 native-rate samples), MPG123 generic versus AVX differs at
+89,767 samples by one integer unit. Each path's float output quantizes back to
+its own S16 output exactly. The sandboxed minimp3-family decoder differs from
+both paths. These observations locate the remaining difference in codec
+arithmetic, rather than a missing rounding switch. They do not close exact codec
+parity or justify altering existing tolerances, corpus coverage or golden hashes.
+The generated provenance probe runs in CI; the original corpus remains private.
+## Measured conversion optimization
+
+The shared native/browser resampler now reuses phase weights and input lookups
+between stereo channels, preserving each channel's original addition order.
+Equal-rate playback copies bounded ring spans without changing queued-history
+or backpressure behavior. The filter and memory-state sizes are unchanged.
+The updated decoder and output converter use that same source.
+
+The [preserved-baseline benchmark](../audio-resample-bench/README.md) records
+2592 exact-output comparisons/5963184 stereo frames on native64, actual ELF32,
+actual PE32 under Wine and WebAssembly. Original SDL mono/stereo/flush gates
+also pass. On the measured Ryzen5 9600X host, O3/native/thin-LTO conversion
+medians improve1.122–1.282x and equal-rate medians1.232–4.536x, with separate
+generic-target results and raw min/median/max rows retained. These are component
+measurements, not whole-game frame-rate or browser-speed claims. Heavy measured
+optimization across every current port and full port/platform fidelity remain
+part of the larger project goal.

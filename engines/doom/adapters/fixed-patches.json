@@ -1,0 +1,17 @@
+[
+  {
+    "before": "return ((int64_t) a * (int64_t) b) >> FRACBITS;",
+    "after": "int64_t product = (int64_t)a * (int64_t)b;\n    int64_t scaled = product / FRACUNIT;\n    if (product < 0 && product % FRACUNIT != 0)\n        --scaled;\n    uint32_t bits = (uint32_t)scaled;\n    return bits <= INT_MAX ? (fixed_t)bits : (fixed_t)((int64_t)bits - INT64_C(4294967296));",
+    "count": 1
+  },
+  {
+    "before": "if ((abs(a) >> 14) >= abs(b))",
+    "after": "uint32_t magnitude_a = a < 0 ? (uint32_t)(-(int64_t)a) : (uint32_t)a;\n    uint32_t magnitude_b = b < 0 ? (uint32_t)(-(int64_t)b) : (uint32_t)b;\n    if ((magnitude_a >> 14) >= magnitude_b)",
+    "count": 1
+  },
+  {
+    "before": "result = ((int64_t) a << 16) / b;",
+    "after": "result = ((int64_t)a * FRACUNIT) / b;",
+    "count": 1
+  }
+]

@@ -4,12 +4,15 @@ import select
 import subprocess
 import time
 
-def start_display(env, width=1024, height=900):
+def start_display(env, width=1024, height=900, *, local_only=False):
     reader, writer = os.pipe()
     try:
+        arguments=['Xvfb', '-displayfd', str(writer), '-screen', '0',
+             f'{width}x{height}x24', '-ac', '-noreset']
+        if local_only:
+            arguments+=['-nolisten','tcp']
         process = subprocess.Popen(
-            ['Xvfb', '-displayfd', str(writer), '-screen', '0',
-             f'{width}x{height}x24', '-ac', '-noreset'], pass_fds=(writer,),
+            arguments, pass_fds=(writer,),
             stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
     finally:
         os.close(writer)
@@ -119,7 +122,7 @@ def choose_native_file(env, title, path=None, windows=False):
     while True:
         subprocess.run(['import','-display',env['DISPLAY'],'-window',dialog,str(proof)],env=env,check=True)
         text=subprocess.check_output(['tesseract',str(proof),'stdout','--psm','11'],env=env,stderr=subprocess.DEVNULL,text=True).casefold()
-        if re.search(r'\bcancel\b',text) and re.search(r'\b(open|select|ok)\b',text):
+        if re.search(r'\bcancel\b',text) and re.search(r'\b(open|select|ok|save)\b',text):
             break
         assert time.monotonic()<ready_deadline, f'Native picker controls were not ready: {text}'
         time.sleep(.1)

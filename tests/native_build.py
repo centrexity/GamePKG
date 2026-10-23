@@ -57,7 +57,15 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-native-') as temporary:
   name=install('udp' if udp else 'tcp',code,'network = true')
   output=run('run',name,'--frames','1000');assert 'score: 42' in output,output
   worker.join(timeout=12);server.close();assert not errors,errors;assert not worker.is_alive()
- denied=install('denied','pub fn game_tick(_:u32,_:u64)->u64{match gamepkg::tcp_connect("127.0.0.1:1"){Err(gamepkg::NetworkError::PermissionDenied)=>99u64<<32,_=>0}}')
+ denied=install('denied','''pub fn game_tick(_:u32,_:u64)->u64 {
+   let mut denied=0u32;
+   if let Err(gamepkg::NetworkError::PermissionDenied)=gamepkg::https_get("https://unused.invalid/"){denied+=1;}
+   if let Err(gamepkg::NetworkError::PermissionDenied)=gamepkg::network_request("https://unused.invalid/",&mut [0u8;1]){denied+=1;}
+   if let Err(gamepkg::NetworkError::PermissionDenied)=gamepkg::tcp_connect("127.0.0.1:1"){denied+=1;}
+   if let Err(gamepkg::NetworkError::PermissionDenied)=gamepkg::udp_connect("127.0.0.1:1"){denied+=1;}
+   if let Err(gamepkg::NetworkError::PermissionDenied)=gamepkg::tcp_listen("127.0.0.1:1"){denied+=1;}
+   if denied==5 {99u64<<32} else {0}
+  }''')
  assert 'score: 99' in run('run',denied,'--frames','1')
  # A native artifact cannot run after its verified checksum changes.
  binary=artifacts['simple'];binary.write_bytes(binary.read_bytes()+b'corrupt')

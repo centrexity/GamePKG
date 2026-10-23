@@ -5,6 +5,20 @@ pub mod gamepkg {
     pub fn frame_time_us()->u64 {unsafe {host_frame_time_us()}}
     /// Actual fullscreen observation for this game's window; None if unavailable.
     pub fn window_fullscreen()->Option<bool>{match unsafe{host_window_state()}{1=>Some(false),3=>Some(true),_=>None}}
+    /// Actual physical client-area pixels; None when unavailable or input is denied.
+    pub fn window_size()->Option<[u32;2]>{let value=unsafe{host_window_size()};let width=value&65535;let height=value>>16;if width==0||height==0{None}else{Some([width,height])}}
+    /// True only while a committed, permitted host preview is outstanding.
+    pub fn window_preview_active()->bool{window_control(8,0)}
+    /// Saved desktop presentation preference; changes take effect after restart.
+    pub fn window_vsync_preference()->Option<bool>{if window_control(9,0){Some(window_control(9,1))}else{None}}
+    /// Save the next-launch preference; requires a fresh user action.
+    pub fn window_set_vsync(enabled:bool)->bool{window_control(10,u32::from(enabled))}
+    /// Preview a physical client size in this game's normal desktop window.
+    pub fn window_preview_size(width:u32,height:u32)->bool{if width>65535||height>65535{return false;}window_control(5,width|(height<<16))}
+    /// Keep the current preview; requires a fresh user action.
+    pub fn window_keep_size()->bool{window_control(7,0)}
+    /// Restore only the host-recorded pre-preview size; no new gesture required.
+    pub fn window_revert_size()->bool{window_control(6,0)}
     pub fn window_control(operation:u32,value:u32)->bool{unsafe{host_window_control(operation,value)==1}}
     fn __gamepkg_file_call(op:u32,input:&[u8],output:&mut[u8])->Option<u32>{if input.len()>1048840||output.len()>65536{return None;}let mut r=[0u32;3];unsafe{host_file_call(op,input.as_ptr(),input.len() as u32,output.len() as u32,r.as_mut_ptr());}if (r[0] as i32)<0{return None;}let n=r[2] as usize;if n>output.len(){return None;}if n>0{unsafe{let p=r[1] as *mut u8;output[..n].copy_from_slice(std::slice::from_raw_parts(p,n));std::alloc::dealloc(p,std::alloc::Layout::from_size_align(n,1).unwrap());}}Some(n as u32)}
     fn __gamepkg_input_events(output:&mut[u8])->Option<u32>{let mut r=[0u32;3];unsafe{host_input_events(output.len() as u32,r.as_mut_ptr());copy_result(r,output)}}
@@ -14,6 +28,7 @@ pub mod gamepkg {
     unsafe extern "C" {
         #[link_name="effect-call"] fn host_effect_call(operation:u32,path:*const u8,length:usize,value:u32)->i32;
         #[link_name="audio-submit-stereo"] fn audio_stereo(samples:*const i16,count:usize)->i32;
+        #[link_name="window-size"] fn host_window_size()->u32;
         #[link_name="window-state"] fn host_window_state()->u32;
         #[link_name="draw-asset-image-linear-straight"] fn host_asset_image_linear_straight(path:*const u8,length:usize,x:f32,y:f32,w:f32,h:f32)->i32;
         #[link_name="frame-time-us"] fn host_frame_time_us()->u64;
@@ -37,6 +52,7 @@ pub mod gamepkg {
         #[link_name = "save-read"] fn save(offset: u32, length: u32, result: *mut u32);
         #[link_name = "rom-size"] fn rom_len(result: *mut u32);
         #[link_name = "save-size"] fn save_len(result: *mut u32);
+        #[link_name = "save-chunk"] fn host_save_chunk(offset:u32,total:u32,bytes:*const u8,n:usize)->i32;
         #[link_name = "save-write"] fn write(bytes: *const u8, n: usize) -> i32;
         #[link_name = "draw-clear"] fn clear(rgba: u32) -> i32;
         #[link_name="draw-clip"] fn host_draw_clip(x:f32,y:f32,w:f32,h:f32)->i32;
@@ -88,6 +104,7 @@ pub mod gamepkg {
         let mut result = [0u32;2]; unsafe { save_len(result.as_mut_ptr()); }
         if result[0] == 0 { None } else { Some(result[1]) }
     }
+    pub fn save_chunk(offset:u32,total:u32,bytes:&[u8])->bool {bytes.len()<=65536&&unsafe {host_save_chunk(offset,total,bytes.as_ptr(),bytes.len())!=0}}
     pub fn save_write(bytes: &[u8]) -> bool {
         bytes.len() <= 1048576 && unsafe { write(bytes.as_ptr(),bytes.len()) != 0 }
     }
