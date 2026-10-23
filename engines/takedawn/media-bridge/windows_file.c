@@ -169,9 +169,9 @@ BOOL WINAPI gpw_ReadFile(HANDLE handle, LPVOID buffer, DWORD length, LPDWORD out
     if (!error) {
         ResetEvent(entry->event);
         if (ov && ov->hEvent) ResetEvent(ov->hEvent);
-        /* Native Windows treats a zero-byte synchronous read as a no-op,
-         * including when OVERLAPPED supplies a different explicit offset.
-         * Wine moves the cursor in that case; the native oracle is decisive. */
+        /* Native Windows preserves the cursor on a zero-byte read and on an
+         * explicit-offset read failing at EOF. Wine moves it in those cases;
+         * the native oracle is decisive. */
         if (length && position < info.size) {
             entry->position = position;
             uint64_t actual;
