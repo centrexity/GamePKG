@@ -20,6 +20,11 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y bubblewrap clang-18 lld-18 wasi-libc libclang-rt-18-dev-wasm32 && rustup target add wasm32-unknown-unknown
       - name: Build compiler host
         run: cargo build --locked --release --bin gamepkg
+      - name: Report versioned Wasm linker selection
+        run: |
+          /usr/bin/clang-18 --version
+          /usr/bin/wasm-ld-18 --version
+          if test -x /usr/bin/wasm-ld; then /usr/bin/wasm-ld --version; fi
       - name: Install pinned shader compiler
         run: python3 tools/install_slang.py /tmp/gamepkg-slang
       - name: Stage isolated toolchain
