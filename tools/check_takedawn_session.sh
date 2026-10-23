@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Maintainer-only original-engine save/reload + mixed-audio gate. No Python,
 # extracted disc folder, real user library or existing save directory is used.
+# GAMEPKG_GAMEPLAY_WINE=1 tests the native Windows build under isolated Wine.
 set -euo pipefail
 if [[ $# != 2 ]]; then
     echo "usage: bash $0 /path/to/private/burnout3-gamepkg-media /path/to/supported.iso" >&2
@@ -11,9 +12,18 @@ for task_tool in bwrap timeout realpath awk grep sha256sum ffprobe ffmpeg find s
 done
 task_binary=$(realpath -- "$1")
 task_disc=$(realpath -- "$2")
+task_wine=${GAMEPKG_GAMEPLAY_WINE:-0}
+[[ "$task_wine" == 0 || "$task_wine" == 1 ]] || exit 2
+if [[ "$task_wine" == 1 ]]; then
+    command -v wine >/dev/null || { echo "missing maintainer Wine" >&2; exit 2; }
+    [[ -n "${DISPLAY:-}" && -f "${XAUTHORITY:-}" && -f "$(dirname -- "$task_binary")/SDL2.dll" ]] || {
+        echo "Windows Vulkan checks require DISPLAY, XAUTHORITY and SDL2.dll beside the executable" >&2; exit 2;
+    }
+fi
 [[ -f "$task_binary" && -x "$task_binary" && -f "$task_disc" ]] || { echo "executable and ISO are required" >&2; exit 2; }
 task_state=$(mktemp -d /tmp/gamepkg-takedawn-session.XXXXXXXX)
 mkdir -p "$task_state/saves" "$task_state/data" "$task_state/cache"
+[[ "$task_wine" == 0 ]] || mkdir -p "$task_state/home"
 task_pid=
 task_phase=
 task_presses=0
@@ -70,6 +80,18 @@ start() {
     # renderer's system libraries/devices are present; saves and caches have
     # their own fresh scope. A clean environment prevents inherited secrets or
     # diagnostic switches from changing the tested behavior.
+    local task_platform=() task_command=(/engine --headless /gamepkg-disc/default.xbe)
+    if [[ "$task_wine" == 1 ]]; then
+        task_platform=(--unshare-pid --symlink usr/bin /bin
+            --ro-bind /tmp/.X11-unix /tmp/.X11-unix --ro-bind "$XAUTHORITY" /xauth
+            --ro-bind "$(dirname -- "$task_binary")" /engine-dir
+            --setenv DISPLAY "$DISPLAY" --setenv XAUTHORITY /xauth
+            --setenv HOME /state/home --setenv WINEPREFIX /state/wine-prefix --setenv WINEARCH win64
+            --setenv WINEDEBUG -all --setenv WINEDLLOVERRIDES 'mscoree,mshtml='
+            --setenv GAMEPKG_TAKEDAWN_DISC 'Z:\disc.iso'
+            --setenv RECOMP_FB_DUMP_FLIPS 120 --setenv RECOMP_STUB_LOG 1)
+        task_command=(/usr/bin/wine "/engine-dir/$(basename -- "$task_binary")" --headless /gamepkg-disc/default.xbe)
+    fi
     timeout --signal=TERM --kill-after=5s 100s bwrap --die-with-parent --unshare-net --clearenv \
         --ro-bind /usr /usr --ro-bind /lib /lib --ro-bind /lib64 /lib64 \
         --ro-bind /etc /etc --ro-bind /sys /sys --dev-bind /dev /dev \
@@ -81,7 +103,7 @@ start() {
         --setenv RECOMP_PB_BACKEND vulkan --setenv SDL_AUDIODRIVER dummy \
         --setenv RECOMP_FLIP_MARK 1 --setenv RECOMP_PAD_LIVE /state/pad.txt \
         --setenv RECOMP_FB_DUMP "/state/$task_phase-frame-" --setenv RECOMP_PB_REPORT_MS 5000 \
-        "${task_audio[@]}" /engine --headless /gamepkg-disc/default.xbe > "$task_log" 2>&1 &
+        "${task_audio[@]}" "${task_platform[@]}" "${task_command[@]}" > "$task_log" 2>&1 &
     task_pid=$!
     wait_line 'GamePKG: verified disc admitted in place; 716 files, read-only'
     wait_line 'Titles30[.]xmv'
@@ -138,5 +160,12 @@ awk '/RMS level dB:/ { if ($NF != "-inf" && $NF < 0 && $NF > -90) good++ }
      END { exit good >= 3 ? 0 : 1 }' "$task_state/audio-stats.txt" || fail "silent or invalid mixed audio"
 printf '{"profile_bytes":59904,"metadata_bytes":54,"reload_unchanged":true,"audio_seconds":45,"sample_rate":48000,"channels":2}\n' \
     > "$task_state/result.json"
+if [[ "$task_wine" == 1 ]]; then
+    for task_phase in create reload; do
+        grep -aq '\[vulkan\] device up:' "$task_state/$task_phase.log" || fail "$task_phase did not initialize Vulkan"
+        ! grep -aEq '\[STUB\] unresolved|\[UNIMPL\].*(stmxcsr|ldmxcsr)' "$task_state/$task_phase.log" || fail "$task_phase reached an unresolved game path"
+    done
+    printf 'windows-wine\n' > "$task_state/transport.txt"
+fi
 echo "PASS: original profile create/reload, unchanged save hashes and non-silent stereo capture"
 echo "Review private create/reload frames in $task_state; full progression and audible fidelity remain separate checks."
