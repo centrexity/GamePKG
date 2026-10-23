@@ -1,9 +1,9 @@
 name: Native Rust engine stream ABI
 on:
   push:
-    paths: ['engines/takedawn/rust-port/**', 'engines/takedawn/media-bridge/**', 'engines/takedawn/windows-runner/**', 'tools/check_takedawn_rust_stdio.py', 'tools/check_takedawn_windows_file.py', 'tools/check_takedawn_windows_kernel.py', 'tools/check_takedawn_windows_stream.py', '.github/workflows/native_rust_ffi.yml']
+    paths: ['engines/takedawn/rust-port/**', 'engines/takedawn/media-bridge/**', 'engines/takedawn/windows-runner/**', 'tools/check_takedawn_rust_stdio.py', 'tools/check_takedawn_windows_file.py', 'tools/check_takedawn_windows_kernel.py', 'tools/check_takedawn_windows_stream.py', 'tools/check_takedawn_windows_restart.py', '.github/workflows/native_rust_ffi.yml']
   pull_request:
-    paths: ['engines/takedawn/rust-port/**', 'engines/takedawn/media-bridge/**', 'engines/takedawn/windows-runner/**', 'tools/check_takedawn_rust_stdio.py', 'tools/check_takedawn_windows_file.py', 'tools/check_takedawn_windows_kernel.py', 'tools/check_takedawn_windows_stream.py', '.github/workflows/native_rust_ffi.yml']
+    paths: ['engines/takedawn/rust-port/**', 'engines/takedawn/media-bridge/**', 'engines/takedawn/windows-runner/**', 'tools/check_takedawn_rust_stdio.py', 'tools/check_takedawn_windows_file.py', 'tools/check_takedawn_windows_kernel.py', 'tools/check_takedawn_windows_stream.py', 'tools/check_takedawn_windows_restart.py', '.github/workflows/native_rust_ffi.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -58,6 +58,9 @@ jobs:
         if: runner.os == 'Windows'
         run: |
           python tools/check_takedawn_windows_kernel.py --source target/windows-kernel-reference --target ${{ matrix.target }}
+      - name: Verify original teardown and managed Windows restart
+        if: runner.os == 'Windows'
+        run: python tools/check_takedawn_windows_restart.py --source target/windows-kernel-reference --target ${{ matrix.target }}
       - name: Verify preparation transformations and rejected layouts
         if: runner.os == 'Linux'
         run: |
