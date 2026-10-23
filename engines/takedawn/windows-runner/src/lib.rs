@@ -11,16 +11,18 @@ use std::{
         ffi::OsStrExt,
         io::{AsRawHandle, FromRawHandle, OwnedHandle},
     },
-    path::Path,
+    path::{Path, PathBuf},
     ptr::{null, null_mut},
+    time::{Duration, Instant},
 };
 use windows_sys::Win32::{
     Foundation::{DuplicateHandle, DUPLICATE_SAME_ACCESS, HANDLE, WAIT_OBJECT_0, WAIT_TIMEOUT},
     System::{
         JobObjects::{
-            AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
-            SetInformationJobObject, TerminateJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
-            JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+            AssignProcessToJobObject, CreateJobObjectW, JobObjectBasicAccountingInformation,
+            JobObjectExtendedLimitInformation, QueryInformationJobObject, SetInformationJobObject,
+            TerminateJobObject, JOBOBJECT_BASIC_ACCOUNTING_INFORMATION,
+            JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
         },
         Memory::{GetProcessHeap, HeapAlloc, HeapFree},
         Threading::{
@@ -73,7 +75,11 @@ fn quoted(value: &OsStr, out: &mut Vec<u16>) -> io::Result<()> {
     out.push(b'"' as u16);
     Ok(())
 }
-fn environment(values: &[(OsString, OsString)], disc: HANDLE) -> io::Result<Vec<u16>> {
+fn environment(
+    values: &[(OsString, OsString)],
+    disc: HANDLE,
+    managed: bool,
+) -> io::Result<Vec<u16>> {
     let mut entries = Vec::new();
     for (key, value) in values {
         let key = wide(key)?;
@@ -84,7 +90,11 @@ fn environment(values: &[(OsString, OsString)], disc: HANDLE) -> io::Result<Vec<
         let name = String::from_utf16(&key[..key.len() - 1])
             .map_err(|_| invalid("invalid environment name"))?
             .to_uppercase();
-        if name == "GAMEPKG_TAKEDAWN_DISC_HANDLE" || entries.iter().any(|(k, _)| k == &name) {
+        if matches!(
+            name.as_str(),
+            "GAMEPKG_TAKEDAWN_DISC_HANDLE" | "GAMEPKG_TAKEDAWN_MANAGED_RESTART"
+        ) || entries.iter().any(|(k, _)| k == &name)
+        {
             return Err(invalid("duplicate or reserved environment name"));
         }
         let mut pair = key[..key.len() - 1].to_vec();
@@ -100,6 +110,12 @@ fn environment(values: &[(OsString, OsString)], disc: HANDLE) -> io::Result<Vec<
         "GAMEPKG_TAKEDAWN_DISC_HANDLE".into(),
         std::mem::take(&mut pair),
     ));
+    if managed {
+        entries.push((
+            "GAMEPKG_TAKEDAWN_MANAGED_RESTART".into(),
+            wide(OsStr::new("GAMEPKG_TAKEDAWN_MANAGED_RESTART=1"))?,
+        ));
+    }
     entries.sort_by(|a, b| a.0.cmp(&b.0));
     let mut out: Vec<u16> = entries.into_iter().flat_map(|(_, pair)| pair).collect();
     out.push(0);
@@ -202,6 +218,17 @@ impl Process {
         disc: &File,
         output: &File,
     ) -> io::Result<Self> {
+        Self::spawn_inner(executable, args, cwd, values, disc, output, false)
+    }
+    fn spawn_inner(
+        executable: &Path,
+        args: &[OsString],
+        cwd: &Path,
+        values: &[(OsString, OsString)],
+        disc: &File,
+        output: &File,
+        managed: bool,
+    ) -> io::Result<Self> {
         if !executable.is_absolute() || !cwd.is_absolute() {
             return Err(invalid(
                 "native executable and working directory must be absolute",
@@ -232,7 +259,7 @@ impl Process {
             input.as_raw_handle(),
         ];
         let attributes = Attributes::new(&mut handles)?;
-        let env = environment(values, source.as_raw_handle())?;
+        let env = environment(values, source.as_raw_handle(), managed)?;
         // SAFETY: no security attributes/name: the job is private, noninheritable.
         let raw = unsafe { CreateJobObjectW(null(), null()) };
         if raw.is_null() {
@@ -322,12 +349,138 @@ impl Process {
         if unsafe { WaitForSingleObject(self.process.as_raw_handle(), 5000) } != WAIT_OBJECT_0 {
             return Err(io::Error::other("native game did not stop"));
         }
-        Ok(())
+        let began = Instant::now();
+        loop {
+            let mut info: JOBOBJECT_BASIC_ACCOUNTING_INFORMATION = unsafe { zeroed() };
+            // SAFETY: the live job and correctly sized output remain valid.
+            if unsafe {
+                QueryInformationJobObject(
+                    self.job.as_raw_handle(),
+                    JobObjectBasicAccountingInformation,
+                    (&mut info as *mut JOBOBJECT_BASIC_ACCOUNTING_INFORMATION).cast(),
+                    size_of::<JOBOBJECT_BASIC_ACCOUNTING_INFORMATION>() as u32,
+                    null_mut(),
+                )
+            } == 0
+            {
+                return Err(io::Error::last_os_error());
+            }
+            if info.ActiveProcesses == 0 {
+                return Ok(());
+            }
+            if began.elapsed() >= Duration::from_secs(5) {
+                return Err(io::Error::other("native game descendants did not stop"));
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
     }
 }
 impl Drop for Process {
     fn drop(&mut self) {
         let _ = self.stop();
+    }
+}
+
+/// Reserved by the reviewed original runtime's final restart handler. It is
+/// interpreted only by managed sessions, never ordinary Process polling.
+pub const RESTART_EXIT: u32 = 0x4750_5253;
+
+/// Exact launch inputs retained for the whole session. In particular, the disc
+/// is an owned open file, not a filename reopened between runs.
+pub struct Launch {
+    pub executable: PathBuf,
+    pub args: Vec<OsString>,
+    pub cwd: PathBuf,
+    pub environment: Vec<(OsString, OsString)>,
+    pub disc: File,
+    pub output: File,
+}
+impl Launch {
+    fn spawn(&self) -> io::Result<Process> {
+        Process::spawn_inner(
+            &self.executable,
+            &self.args,
+            &self.cwd,
+            &self.environment,
+            &self.disc,
+            &self.output,
+            true,
+        )
+    }
+}
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Event {
+    Restarted { count: u64 },
+    Exited(u32),
+}
+/// One tracked session across ordinary upstream shutdowns and managed restarts.
+/// Restart notification lets the app reset window/readiness observations while
+/// its play-time clock and save-directory ownership continue uninterrupted.
+pub struct Session {
+    launch: Launch,
+    process: Option<Process>,
+    exit: Option<u32>,
+    failure: Option<(io::ErrorKind, String)>,
+    restarts: u64,
+}
+impl Session {
+    pub fn start(launch: Launch) -> io::Result<Self> {
+        let process = launch.spawn()?;
+        Ok(Self {
+            launch,
+            process: Some(process),
+            exit: None,
+            failure: None,
+            restarts: 0,
+        })
+    }
+    pub fn poll(&mut self) -> io::Result<Option<Event>> {
+        if let Some((kind, message)) = &self.failure {
+            return Err(io::Error::new(*kind, message.clone()));
+        }
+        if let Some(code) = self.exit {
+            return Ok(Some(Event::Exited(code)));
+        }
+        let Some(code) = self
+            .process
+            .as_ref()
+            .expect("live session process")
+            .poll()?
+        else {
+            return Ok(None);
+        };
+        let previous = self.process.take().expect("exited session process");
+        let result: io::Result<Option<Event>> = (|| {
+            // Wait for every descendant too before another run can acquire the
+            // saves. Stop/relaunch failures are terminal, with no hidden retry.
+            previous.stop()?;
+            drop(previous);
+            if code == RESTART_EXIT {
+                let process = self.launch.spawn()?;
+                self.process = Some(process);
+                self.restarts += 1;
+                Ok(Some(Event::Restarted {
+                    count: self.restarts,
+                }))
+            } else {
+                self.exit = Some(code);
+                Ok(Some(Event::Exited(code)))
+            }
+        })();
+        if let Err(error) = &result {
+            self.failure = Some((error.kind(), error.to_string()));
+        }
+        result
+    }
+    pub fn stop(&mut self) -> io::Result<()> {
+        if let Some(process) = self.process.take() {
+            if let Err(error) = process.stop() {
+                self.failure = Some((error.kind(), error.to_string()));
+                return Err(error);
+            }
+            self.exit = Some(1);
+        }
+        Ok(())
     }
 }
 
@@ -364,6 +517,7 @@ mod tests {
             0
         );
         assert_ne!(flags & HANDLE_FLAG_INHERIT, 0);
+        disc.seek(SeekFrom::Start(0)).unwrap();
         let mut contents = String::new();
         disc.read_to_string(&mut contents).unwrap();
         assert_eq!(contents, "selected ISO fixture");
@@ -406,6 +560,28 @@ mod tests {
             "CHILD READY: original ISO read-only; unrelated handle excluded; arguments intact"
         );
         io::stdout().flush().unwrap();
+        if matches!(mode.as_str(), "restart" | "request") {
+            assert_eq!(
+                std::env::var("GAMEPKG_TAKEDAWN_MANAGED_RESTART").unwrap(),
+                "1"
+            );
+            if mode == "request" {
+                std::process::exit(RESTART_EXIT as i32);
+            }
+            let marker = std::env::var_os("GP_RESTART_MARKER").unwrap();
+            match std::fs::OpenOptions::new()
+                .create_new(true)
+                .write(true)
+                .open(marker)
+            {
+                Ok(mut file) => {
+                    file.write_all(b"first run finished").unwrap();
+                    drop(file);
+                    std::process::exit(RESTART_EXIT as i32);
+                }
+                Err(error) => assert_eq!(error.kind(), io::ErrorKind::AlreadyExists),
+            }
+        }
         if mode == "wait" {
             let mut grandchild = std::process::Command::new(std::env::current_exe().unwrap())
                 .args(["--exact", "tests::grandchild", "--nocapture"])
@@ -437,7 +613,12 @@ mod tests {
             let folder = tempfile::tempdir().unwrap();
             let exe = folder.path().join("native runner caf\u{e9} fixture.exe");
             std::fs::copy(std::env::current_exe().unwrap(), &exe).unwrap();
-            let mut disc = tempfile::tempfile().unwrap();
+            let mut disc = std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create_new(true)
+                .open(folder.path().join("selected.iso"))
+                .unwrap();
             disc.write_all(b"selected ISO fixture").unwrap();
             disc.seek(SeekFrom::Start(0)).unwrap();
             let log = tempfile::tempfile().unwrap();
@@ -591,6 +772,155 @@ mod tests {
         );
         assert_eq!(code, 1);
     }
+    impl Fixture {
+        fn launch(&self) -> Launch {
+            let mut args: Vec<OsString> = ["--exact", "tests::child", "--nocapture"]
+                .into_iter()
+                .map(Into::into)
+                .collect();
+            for value in [
+                "with spaces",
+                "quote\"inside",
+                "trailing\\",
+                "two\\\\\"quotes",
+                "caf\u{e9}",
+            ] {
+                args.push("--skip".into());
+                args.push(value.into());
+            }
+            let mut environment = self.values.clone();
+            environment.push((
+                "GP_RESTART_MARKER".into(),
+                self._folder.path().join("restart.marker").into_os_string(),
+            ));
+            Launch {
+                executable: self.exe.clone(),
+                args,
+                cwd: self._folder.path().into(),
+                environment,
+                disc: self.disc.try_clone().unwrap(),
+                output: self.log.try_clone().unwrap(),
+            }
+        }
+    }
+    #[test]
+    fn managed_restart_retains_the_open_disc_and_one_session() {
+        let mut fixture = Fixture::new("restart");
+        let path = fixture._folder.path().join("selected.iso");
+        std::fs::rename(&path, fixture._folder.path().join("held-original.iso")).unwrap();
+        std::fs::write(&path, b"replacement must never be reopened").unwrap();
+        let mut session = Session::start(fixture.launch()).unwrap();
+        let began = Instant::now();
+        let mut restarted = false;
+        loop {
+            match session.poll().unwrap() {
+                Some(Event::Restarted { count: 1 }) => {
+                    assert!(!restarted);
+                    restarted = true;
+                }
+                Some(Event::Exited(259)) => break,
+                Some(event) => panic!("unexpected event {event:?}: {}", fixture.log()),
+                None => {
+                    assert!(
+                        began.elapsed() < Duration::from_secs(20),
+                        "{}",
+                        fixture.log()
+                    );
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+            }
+        }
+        assert!(restarted);
+        assert_eq!(fixture.log().matches("CHILD READY").count(), 2);
+        assert_eq!(session.poll().unwrap(), Some(Event::Exited(259)));
+        assert_eq!(
+            std::fs::read(path).unwrap(),
+            b"replacement must never be reopened"
+        );
+    }
+    #[test]
+    fn failed_restart_is_terminal_and_does_not_retry_or_panic() {
+        let fixture = Fixture::new("request");
+        let mut session = Session::start(fixture.launch()).unwrap();
+        // Inject the missing executable a real removal/cache failure presents.
+        session.launch.executable = fixture._folder.path().join("missing.exe");
+        let began = Instant::now();
+        let error = loop {
+            match session.poll() {
+                Err(error) => break error,
+                Ok(None) => {
+                    assert!(began.elapsed() < Duration::from_secs(15));
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+                Ok(event) => panic!("unexpected restart result {event:?}"),
+            }
+        };
+        assert_eq!(error.kind(), io::ErrorKind::NotFound);
+        assert!(session.process.is_none());
+        assert_eq!(session.poll().unwrap_err().to_string(), error.to_string());
+    }
+    #[test]
+    #[ignore = "requires the pinned original native restart fixture"]
+    fn actual_upstream_restart_teardown() {
+        let executable = PathBuf::from(
+            std::env::var_os("GAMEPKG_RESTART_FIXTURE").expect("native fixture executable"),
+        );
+        let folder = tempfile::tempdir().unwrap();
+        let marker = folder.path().join("marker.txt");
+        let disc = tempfile::tempfile().unwrap();
+        let mut output = tempfile::tempfile().unwrap();
+        let mut environment = Vec::new();
+        for key in ["SystemRoot", "TEMP", "TMP"] {
+            if let Some(value) = std::env::var_os(key) {
+                environment.push((key.into(), value));
+            }
+        }
+        let mut session = Session::start(Launch {
+            executable,
+            args: vec!["once".into(), marker.clone().into_os_string()],
+            cwd: folder.path().into(),
+            environment,
+            disc,
+            output: output.try_clone().unwrap(),
+        })
+        .unwrap();
+        let began = Instant::now();
+        let mut restarts = 0;
+        loop {
+            match session.poll().unwrap() {
+                Some(Event::Restarted { count: 1 }) => restarts += 1,
+                Some(Event::Exited(0)) => break,
+                Some(event) => panic!("unexpected original lifecycle event: {event:?}"),
+                None => {
+                    assert!(began.elapsed() < Duration::from_secs(20));
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+            }
+        }
+        assert_eq!(restarts, 1);
+        assert_eq!(
+            std::fs::read_to_string(marker).unwrap(),
+            "teardown complete\nteardown complete\n"
+        );
+        output.seek(SeekFrom::Start(0)).unwrap();
+        let mut log = String::new();
+        output.read_to_string(&mut log).unwrap();
+        assert_eq!(
+            log.matches("FIXTURE: normal save/audio/window teardown completed")
+                .count(),
+            2
+        );
+        assert_eq!(
+            log.matches("FIXTURE: restarted after completed teardown")
+                .count(),
+            1
+        );
+        assert_eq!(
+            log.matches("GamePKG: normal shutdown complete; requesting managed restart.")
+                .count(),
+            1
+        );
+    }
     #[test]
     fn rejects_ambiguous_environment_and_embedded_nuls() {
         assert!(wide(OsStr::new("bad\0argument")).is_err());
@@ -598,9 +928,10 @@ mod tests {
             vec![("Path".into(), "a".into()), ("PATH".into(), "b".into())],
             vec![("GAMEPKG_TAKEDAWN_DISC_HANDLE".into(), "12".into())],
             vec![("bad=name".into(), "x".into())],
+            vec![("GAMEPKG_TAKEDAWN_MANAGED_RESTART".into(), "1".into())],
             vec![("".into(), "x".into())],
         ] {
-            assert!(environment(&values, 12usize as HANDLE).is_err());
+            assert!(environment(&values, 12usize as HANDLE, false).is_err());
         }
         let mut quoted_empty = Vec::new();
         quoted(OsStr::new(""), &mut quoted_empty).unwrap();

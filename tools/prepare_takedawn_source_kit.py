@@ -117,7 +117,7 @@ def main():
     for name in ['Cargo.toml', 'Cargo.lock', 'src/lib.rs', 'src/windows_handle.rs', 'media.h', 'posix.c',
                  'engine.c', 'attach.cmake', 'adapt_paths.cmake', 'adapt_smoke.cmake', 'adapt_memory.cmake',
                  'windows_file.c', 'windows_file.h', 'windows_stream.c', 'windows_stream.h',
-                 'windows_entry.c', 'windows_attach.cmake', 'adapt_windows_file.cmake',
+                 'windows_entry.c', 'windows_attach.cmake', 'windows_restart.h', 'adapt_windows_restart.cmake', 'adapt_windows_file.cmake',
                  'adapt_windows_startup.cmake', 'DotNET-RUNTIME-LICENSE.txt']:
         copy(host / 'media-bridge' / name, 'host/engines/takedawn/media-bridge/' + name)
     for name in ['attach.cmake', 'C2Rust-LICENSE.txt']:

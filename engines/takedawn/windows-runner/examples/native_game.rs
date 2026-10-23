@@ -2,11 +2,12 @@
 //! Package validation/confinement and restart coordination belong to the app.
 #[cfg(windows)]
 fn main() -> std::io::Result<()> {
+    use gamepkg_takedawn_windows_runner::{Event, Launch, Session};
     use std::{ffi::OsString, fs::File, path::PathBuf, time::Duration};
     let args: Vec<_> = std::env::args_os().skip(1).collect();
-    if args.len() != 6 || args[4] != "--headless" {
+    if args.len() != 6 || (args[4] != "--headless" && args[4] != "--window") {
         return Err(std::io::Error::other(
-            "usage: native_game.exe ABSOLUTE_GAME_EXE ABSOLUTE_ISO PRIVATE_SAVES LOG --headless PROBE_SECONDS",
+            "usage: native_game.exe ABSOLUTE_GAME_EXE ABSOLUTE_ISO PRIVATE_SAVES LOG --headless|--window PROBE_SECONDS",
         ));
     }
     let seconds: u64 = args[5]
@@ -49,29 +50,40 @@ fn main() -> std::io::Result<()> {
     ] {
         values.push((key.into(), value));
     }
-    let process = gamepkg_takedawn_windows_runner::Process::spawn(
-        &executable,
-        &["--headless".into(), "/gamepkg-disc/default.xbe".into()],
-        &std::env::current_dir()?,
-        &values,
-        &disc,
-        &output,
-    )?;
+    let mut game_args = Vec::new();
+    if args[4] == "--headless" {
+        game_args.push("--headless".into());
+    }
+    game_args.push("/gamepkg-disc/default.xbe".into());
+    let mut session = Session::start(Launch {
+        executable,
+        args: game_args,
+        cwd: std::env::current_dir()?,
+        environment: values,
+        disc,
+        output,
+    })?;
     println!("Rust owner started the native game with the selected ISO handle.");
     loop {
-        if let Some(code) = process.poll()? {
-            println!("Native game exited: {code}");
-            return if code == 0 {
-                Ok(())
-            } else {
-                Err(std::io::Error::other(format!("native game exit {code}")))
-            };
+        match session.poll()? {
+            Some(Event::Restarted { count }) => {
+                println!("Native game restarted after normal shutdown: {count}")
+            }
+            Some(Event::Exited(code)) => {
+                println!("Native game exited: {code}");
+                return if code == 0 {
+                    Ok(())
+                } else {
+                    Err(std::io::Error::other(format!("native game exit {code}")))
+                };
+            }
+            None => {}
         }
         if began.elapsed() >= Duration::from_secs(seconds) {
-            process.stop()?;
+            session.stop()?;
             println!(
                 "Intentional end of bounded native process-owner probe; child stopped: {:?}",
-                process.poll()?
+                session.poll()?
             );
             return Ok(());
         }
