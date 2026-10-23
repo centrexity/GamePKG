@@ -451,6 +451,26 @@ pub fn validate_current(bytes: &[u8]) -> Result<()> {
     );
     Ok(())
 }
+fn literal_renderer_revision(body: &wasmparser::FunctionBody<'_>) -> Result<bool> {
+    if body.get_locals_reader()?.get_count() != 0 {
+        return Ok(false);
+    }
+    let mut ops = body.get_operators_reader()?;
+    let mut constant = false;
+    let mut returned = false;
+    while !ops.eof() {
+        match ops.read()? {
+            wasmparser::Operator::Nop => {}
+            wasmparser::Operator::I32Const { value } if !constant && value == RENDERER_REVISION => {
+                constant = true
+            }
+            wasmparser::Operator::Return if constant && !returned => returned = true,
+            wasmparser::Operator::End if constant && ops.eof() => return Ok(true),
+            _ => return Ok(false),
+        }
+    }
+    Ok(false)
+}
 fn validate_renderer(bytes: &[u8]) -> Result<()> {
     validate(bytes)?;
     let mut signatures = Vec::new();
@@ -458,6 +478,7 @@ fn validate_renderer(bytes: &[u8]) -> Result<()> {
     let mut revision_function = None;
     let mut code_index = 0;
     let mut mismatch = String::from("renderer_revision export missing");
+    let mut literal_revisions = std::collections::BTreeSet::new();
     for payload in wasmparser::Parser::new(0).parse_all(bytes) {
         match payload? {
             wasmparser::Payload::TypeSection(types) => {
@@ -485,6 +506,14 @@ fn validate_renderer(bytes: &[u8]) -> Result<()> {
                 }
             }
             wasmparser::Payload::CodeSectionEntry(body) => {
+                let signature = functions
+                    .get(code_index as usize)
+                    .and_then(|ty| signatures.get(*ty as usize))
+                    .copied()
+                    .unwrap_or((false, false));
+                if signature.0 && literal_renderer_revision(&body)? {
+                    literal_revisions.insert(code_index);
+                }
                 if revision_function == Some(code_index) {
                     // Bounded compile diagnostics make differences between
                     // supported linker versions visible without running code.
@@ -499,11 +528,6 @@ fn validate_renderer(bytes: &[u8]) -> Result<()> {
                         "function {code_index}, {} local groups: {observed}",
                         body.get_locals_reader()?.get_count()
                     );
-                    let signature = functions
-                        .get(code_index as usize)
-                        .and_then(|ty| signatures.get(*ty as usize))
-                        .copied()
-                        .unwrap_or((false, false));
                     if !signature.0 || body.get_locals_reader()?.get_count() != 0 {
                         break;
                     }
@@ -534,6 +558,17 @@ fn validate_renderer(bytes: &[u8]) -> Result<()> {
                                 if !constant
                                     && matches!(constructor_prefix, 0 | 3)
                                     && value == RENDERER_REVISION =>
+                            {
+                                constant = true
+                            }
+                            // wasm-ld can retain the constant-returning original
+                            // behind an exported initialization thunk. Accept
+                            // only a previously checked, typed literal callee;
+                            // never execute or follow arbitrary engine calls.
+                            wasmparser::Operator::Call { function_index }
+                                if !constant
+                                    && matches!(constructor_prefix, 0 | 3)
+                                    && literal_revisions.contains(&function_index) =>
                             {
                                 constant = true
                             }
@@ -1003,6 +1038,21 @@ mod tests {
         super::validate_current(&super::stamp_engine(padded).unwrap()).unwrap();
         let clang_wrapper = wat::parse_str(r#"(module (memory 1 256) (func $ctors nop) (func (export "renderer_revision") (result i32) block call $ctors end i32.const 6))"#).unwrap();
         super::validate_current(&super::stamp_engine(clang_wrapper).unwrap()).unwrap();
+        let clang_thunk = wat::parse_str(r#"(module (memory 1 256) (func $ctors nop) (func $revision (result i32) i32.const 6) (func (export "renderer_revision") (result i32) call $ctors call $revision))"#).unwrap();
+        super::validate_current(&super::stamp_engine(clang_thunk).unwrap()).unwrap();
+        for callee in [
+            "i32.const 5",
+            "i32.const 6 i32.const 0 i32.add",
+            "call $revision",
+            "loop br 0 end i32.const 6",
+        ] {
+            let source = format!(
+                r#"(module (memory 1 256) (func $ctors nop) (func $revision (result i32) {callee}) (func (export "renderer_revision") (result i32) call $ctors call $revision))"#
+            );
+            assert!(super::stamp_engine(wat::parse_str(source).unwrap()).is_err());
+        }
+        let parameter_callee = wat::parse_str(r#"(module (memory 1 256) (func $revision (param i32) (result i32) i32.const 6) (func (export "renderer_revision") (result i32) i32.const 0 call $revision))"#).unwrap();
+        assert!(super::stamp_engine(parameter_callee).is_err());
         let wrong_constructor_type = wat::parse_str(r#"(module (memory 1 256) (func $ctor (param i32)) (func (export "renderer_revision") (result i32) block i32.const 0 call $ctor end i32.const 6))"#).unwrap();
         assert!(super::stamp_engine(wrong_constructor_type).is_err());
 
