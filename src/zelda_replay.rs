@@ -31,8 +31,8 @@ impl<'a> LegacyReplay<'a> {
     pub fn parse(bytes: &'a [u8]) -> Result<Self> {
         ensure!(bytes.len() >= HEADER, "truncated replay header");
         let mut h = [0u32; 8];
-        for (value, word) in h.iter_mut().zip(bytes[..HEADER].chunks_exact(4)) {
-            *value = u32::from_le_bytes(word.try_into()?);
+        for (value, word) in h.iter_mut().zip(bytes[..HEADER].as_chunks::<4>().0.iter()) {
+            *value = u32::from_le_bytes(*word);
         }
         ensure!(h[0] == 1, "unsupported original replay version");
         let recorded_inputs = u16::try_from(h[3]).context("invalid recorded input mask")?;

@@ -25,7 +25,9 @@ fn assert_movie_timing(movie: &[u8]) {
     let find = |id: &[u8]| all.iter().find(|(kind, _)| *kind == id).unwrap().1;
     let index = find(b"idx1");
     let frames = index
-        .chunks_exact(16)
+        .as_chunks::<16>()
+        .0
+        .iter()
         .filter(|entry| &entry[..4] == b"00dc")
         .count() as u32;
     assert!(frames > 0);
@@ -40,7 +42,9 @@ fn assert_movie_timing(movie: &[u8]) {
             let alignment = word(header, 44);
             assert!(alignment > 0);
             let bytes: u32 = index
-                .chunks_exact(16)
+                .as_chunks::<16>()
+                .0
+                .iter()
                 .filter(|entry| &entry[..4] == b"01wb")
                 .map(|entry| word(entry, 12))
                 .sum();

@@ -39,7 +39,9 @@ impl KernelVersion {
     pub fn to_le_bytes(self) -> [u8; 8] {
         let mut bytes = [0; 8];
         for (chunk, value) in bytes
-            .chunks_exact_mut(2)
+            .as_chunks_mut::<2>()
+            .0
+            .iter_mut()
             .zip([self.major, self.minor, self.build, self.qfe])
         {
             chunk.copy_from_slice(&value.to_le_bytes());
