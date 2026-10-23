@@ -1199,7 +1199,24 @@ mod tests {
     fn tcp_falls_back_after_a_refused_resolved_address() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let reachable = listener.local_addr().unwrap();
-        let refused = SocketAddr::new("127.0.0.2".parse().unwrap(), reachable.port());
+        // Hold a bound, non-listening TCP socket on the configured loopback.
+        // 127.0.0.2 is not necessarily routed on macOS, so it can time out
+        // instead of producing the refusal this regression is meant to test.
+        let reservation = socket2::Socket::new(
+            socket2::Domain::IPV4,
+            socket2::Type::STREAM,
+            Some(socket2::Protocol::TCP),
+        )
+        .unwrap();
+        reservation
+            .bind(&"127.0.0.1:0".parse::<SocketAddr>().unwrap().into())
+            .unwrap();
+        let refused = reservation.local_addr().unwrap().as_socket().unwrap();
+        let error = connect_tcp(&[refused]).unwrap_err();
+        assert_eq!(
+            error.downcast_ref::<std::io::Error>().unwrap().kind(),
+            std::io::ErrorKind::ConnectionRefused
+        );
         let mut stream = connect_tcp(&[refused, reachable]).unwrap();
         stream.write_all(b"ping").unwrap();
         let (mut peer, _) = listener.accept().unwrap();

@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import tempfile
@@ -101,6 +102,13 @@ def main():
     assert '18446744073709551615' in lines[-1]
     print(output.stdout.decode(errors='replace').strip())
     print('PASS:', args.target, 'native stream and variadic ABI; every C/Rust output pair matches')
+    if wine:
+        try:
+            subprocess.run(['wineserver', '-k'], env=environment, check=False, timeout=20)
+            subprocess.run(['wineserver', '-w'], env=environment, check=True, timeout=20)
+            shutil.rmtree(work / 'wine-prefix')
+        except (OSError, subprocess.SubprocessError) as error:
+            print('Native checks passed; temporary test prefix retained:', error)
 
 
 if __name__ == '__main__':
