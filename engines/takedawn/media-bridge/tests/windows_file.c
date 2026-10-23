@@ -91,7 +91,8 @@ static unsigned collect_names(HANDLE search, WIN32_FIND_DATAW *data, int virtual
         }
         assert(index < sizeof directory_names / sizeof *directory_names && !(found & (1u << index)));
         if (virtual_search) {
-            assert(data->dwFileAttributes == (FILE_ATTRIBUTE_READONLY | (index == 6 ? FILE_ATTRIBUTE_DIRECTORY : 0)));
+            DWORD expected_attributes = FILE_ATTRIBUTE_READONLY | (index == 6 ? FILE_ATTRIBUTE_DIRECTORY : 0);
+            assert(data->dwFileAttributes == expected_attributes);
             uint64_t size = ((uint64_t)data->nFileSizeHigh << 32) | data->nFileSizeLow;
             assert(size == (index == 0 ? small_size : index == 1 ? large_size : 0));
         }

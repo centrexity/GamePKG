@@ -306,6 +306,7 @@ static gpw_search *find_search(HANDLE handle) {
 static BOOL prepare_expression(LPCWSTR input, WCHAR output[MAX_PATH]) {
     size_t length = wcslen(input);
     if (!length || length >= MAX_PATH) return fail(ERROR_INVALID_NAME);
+    if (!wcscmp(input, L".") || !wcscmp(input, L"..")) return fail(ERROR_ACCESS_DENIED);
     for (size_t i = 0; i < length; i++)
         if (input[i] < 32 || (input[i] >= 127 && input[i] <= 159) ||
             wcschr(L":<>\"/\\", input[i])) return fail(ERROR_ACCESS_DENIED);
