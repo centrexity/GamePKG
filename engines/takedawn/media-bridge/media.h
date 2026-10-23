@@ -22,6 +22,12 @@ typedef struct gp_media_info {
     uint32_t reserved;
 } gp_media_info;
 int32_t gp_media_init(const uint8_t *iso, size_t length, uint64_t budget_bytes);
+#if defined(_WIN32)
+/* Borrows a launcher-supplied file handle in this process. The reader creates
+ * its own read-only noninheritable duplicate; it never reopens the pathname or
+ * closes the supplied original. The same full pinned manifest is verified. */
+int32_t gp_media_init_handle(uintptr_t handle, uint64_t budget_bytes);
+#endif
 int32_t gp_media_shutdown(void);
 int32_t gp_media_open(const uint8_t *path, size_t length, uint64_t *handle);
 int32_t gp_media_close(uint64_t handle);
