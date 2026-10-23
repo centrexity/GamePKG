@@ -1,0 +1,286 @@
+diff --git a/port/include/halo_ref.h b/port/include/halo_ref.h
+new file mode 100644
+index 0000000..4190e49
+--- /dev/null
++++ b/port/include/halo_ref.h
+@@ -0,0 +1,161 @@
++#ifndef HALO_REF_H
++#define HALO_REF_H
++/*
++ * Pointer-width references for persisted and shared engine data.
++ *
++ * A halo_addr is 4 bytes on every ABI. Zero is null. Any other value is a
++ * guest address: either an absolute address in a registered arena (the
++ * numbers stored in Xbox maps and save images) or an offset when the
++ * arena's origin is 0. The host pointer is arena->base + (addr - origin).
++ * Disc bytes are not rewritten. Callers resolve on access and store with
++ * halo_addr_from_host, which writes the guest address back.
++ *
++ * halo_datum matches the engine's datum index: low 16 bits are the slot,
++ * high 16 bits are the salt. It is not a pointer.
++ */
++#include <stddef.h>
++#include <stdint.h>
++
++typedef uint32_t halo_addr;
++typedef uint32_t halo_datum;
++
++typedef struct halo_arena {
++	uint8_t *base;
++	uint32_t origin;
++	uint32_t size;
++} halo_arena;
++
++static inline int halo_addr_is_null(halo_addr addr)
++{
++	return addr == 0;
++}
++
++static inline void *halo_addr_resolve(const halo_arena *arena, halo_addr addr)
++{
++	uint32_t offset;
++
++	if (!arena || !arena->base || addr == 0 || addr < arena->origin)
++		return NULL;
++	offset = addr - arena->origin;
++	if (offset >= arena->size)
++		return NULL;
++	return arena->base + offset;
++}
++
++static inline halo_addr halo_addr_from_host(const halo_arena *arena, const void *pointer)
++{
++	uintptr_t base;
++	uintptr_t value;
++	uint32_t offset;
++
++	if (!arena || !arena->base || !pointer)
++		return 0;
++	base = (uintptr_t)arena->base;
++	value = (uintptr_t)pointer;
++	if (value < base)
++		return 0;
++	offset = (uint32_t)(value - base);
++	if ((uintptr_t)offset != value - base || offset >= arena->size)
++		return 0;
++	if (offset > UINT32_MAX - arena->origin)
++		return 0;
++	return arena->origin + offset;
++}
++
++#define HALO_RESOLVE(type, arena, addr) ((type *)halo_addr_resolve((arena), (addr)))
++
++static inline uint16_t halo_datum_index(halo_datum datum)
++{
++	return (uint16_t)datum;
++}
++
++static inline uint16_t halo_datum_salt(halo_datum datum)
++{
++	return (uint16_t)(datum >> 16);
++}
++
++static inline halo_datum halo_datum_new(uint16_t index, uint16_t salt)
++{
++	return (halo_datum)index | ((halo_datum)salt << 16);
++}
++
++/* On-disk layouts. Sizes are the Xbox sizes. Both ABIs keep them. */
++
++typedef struct halo_disk_tag_instance {
++	int32_t group_tag;
++	int32_t parent_group_tags[2];
++	int32_t tag_index;
++	halo_addr name;
++	halo_addr base_address;
++	uint32_t unused[2];
++} halo_disk_tag_instance;
++
++typedef struct halo_disk_tag_header {
++	halo_addr tag_instances;
++	int32_t scenario_tag_index;
++	uint32_t checksum;
++	int32_t tag_count;
++	int32_t vertex_buffer_count;
++	halo_addr vertex_buffers;
++	int32_t index_buffer_count;
++	halo_addr index_buffers;
++	uint32_t signature;
++} halo_disk_tag_header;
++
++typedef struct halo_disk_tag_block {
++	int32_t count;
++	halo_addr address;
++	halo_addr definition;
++} halo_disk_tag_block;
++
++typedef struct halo_disk_tag_reference {
++	uint32_t group_tag;
++	halo_addr name;
++	int32_t name_length;
++	int32_t index;
++} halo_disk_tag_reference;
++
++typedef struct halo_disk_tag_data {
++	int32_t size;
++	uint32_t pad;
++	int32_t file_offset;
++	halo_addr address;
++	halo_addr definition;
++} halo_disk_tag_data;
++
++typedef struct halo_disk_tag_reference_definition {
++	uint32_t flags;
++	uint32_t group_tag;
++	halo_addr group_tags;
++} halo_disk_tag_reference_definition;
++
++typedef struct halo_disk_data_iterator {
++	halo_addr data;
++	int16_t absolute_index;
++	int16_t pad;
++	int32_t datum_index;
++	uint32_t signature;
++} halo_disk_data_iterator;
++
++typedef struct halo_disk_saved_pointer {
++	halo_addr address;
++	int32_t size;
++} halo_disk_saved_pointer;
++
++#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
++_Static_assert(sizeof(halo_addr) == 4, "halo_addr is 4 bytes");
++_Static_assert(sizeof(halo_datum) == 4, "halo_datum is 4 bytes");
++_Static_assert(sizeof(halo_disk_tag_instance) == 0x20, "tag instance disk size");
++_Static_assert(offsetof(halo_disk_tag_header, tag_count) == 0xC, "tag count offset");
++_Static_assert(sizeof(halo_disk_tag_header) == 0x24, "tag header disk size");
++_Static_assert(sizeof(halo_disk_tag_block) == 0xC, "tag block disk size");
++_Static_assert(sizeof(halo_disk_tag_reference) == 0x10, "tag reference disk size");
++_Static_assert(sizeof(halo_disk_tag_data) == 0x14, "tag data disk size");
++_Static_assert(sizeof(halo_disk_tag_reference_definition) == 0xC, "tag reference definition disk size");
++_Static_assert(sizeof(halo_disk_data_iterator) == 0x10, "data iterator disk size");
++_Static_assert(sizeof(halo_disk_saved_pointer) == 0x8, "saved pointer disk size");
++_Static_assert(offsetof(halo_disk_tag_instance, name) == 0x10, "tag name offset");
++_Static_assert(offsetof(halo_disk_tag_instance, base_address) == 0x14, "tag base offset");
++#endif
++
++#endif
+diff --git a/port/linux/tests/test_halo_ref.c b/port/linux/tests/test_halo_ref.c
+new file mode 100644
+index 0000000..fb8e1e8
+--- /dev/null
++++ b/port/linux/tests/test_halo_ref.c
+@@ -0,0 +1,113 @@
++#include "halo_ref.h"
++
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++
++static int fail(const char *message)
++{
++	fprintf(stderr, "halo_ref: %s\n", message);
++	return 1;
++}
++
++static int test_round_trip(void)
++{
++	uint8_t storage[64];
++	halo_arena arena;
++	halo_addr addr;
++	void *resolved;
++	memset(storage, 0, sizeof(storage));
++	memcpy(storage + 8, "ui", 2);
++	arena.base = storage;
++	arena.origin = 0x803A6000u;
++	arena.size = sizeof(storage);
++	addr = halo_addr_from_host(&arena, storage + 8);
++	if (addr != 0x803A6008u)
++		return fail("from_host did not keep the guest address");
++	resolved = halo_addr_resolve(&arena, addr);
++	if (resolved != (void *)(storage + 8))
++		return fail("resolve did not return the host pointer");
++	if (halo_addr_resolve(&arena, 0) != NULL)
++		return fail("null resolved");
++	if (halo_addr_resolve(&arena, 0x803A6000u + sizeof(storage)) != NULL)
++		return fail("out of range resolved");
++	if (halo_addr_from_host(&arena, storage + sizeof(storage)) != 0)
++		return fail("end pointer stored");
++	return 0;
++}
++
++static int test_map_fixture(void)
++{
++	/* A one-tag header and its name, laid out as Xbox bytes, then copied
++	into a host buffer that is not at the guest address. */
++	uint8_t disk[0x40];
++	uint8_t *host;
++	halo_arena arena;
++	halo_disk_tag_header header;
++	halo_disk_tag_instance *instance;
++	char *name;
++	memset(disk, 0, sizeof(disk));
++	/* tag instance at guest 0x803A6024, name at guest 0x803A6010 ("ui"). */
++	disk[0x10] = 'u';
++	disk[0x11] = 'i';
++	/* header.tag_instances = 0x803A6024 */
++	disk[0x00] = 0x24;
++	disk[0x01] = 0x60;
++	disk[0x02] = 0x3A;
++	disk[0x03] = 0x80;
++	disk[0x0C] = 1; /* tag_count */
++	memcpy(disk + 0x20, "tags", 4); /* signature at 0x20 */
++	/* instance.name = 0x803A6010, instance.base_address = 0x803A6012 */
++	disk[0x24 + 0x10] = 0x10;
++	disk[0x24 + 0x11] = 0x60;
++	disk[0x24 + 0x12] = 0x3A;
++	disk[0x24 + 0x13] = 0x80;
++	disk[0x24 + 0x14] = 0x12;
++	disk[0x24 + 0x15] = 0x60;
++	disk[0x24 + 0x16] = 0x3A;
++	disk[0x24 + 0x17] = 0x80;
++	host = malloc(sizeof(disk));
++	if (!host)
++		return fail("malloc");
++	memcpy(host, disk, sizeof(disk));
++	arena.base = host;
++	arena.origin = 0x803A6000u;
++	arena.size = sizeof(disk);
++	memcpy(&header, host, sizeof(header));
++	if (header.tag_count != 1 || header.signature != 0x73676174u)
++		return fail("header fields");
++	instance = HALO_RESOLVE(halo_disk_tag_instance, &arena, header.tag_instances);
++	if (!instance)
++		return fail("tag instance");
++	name = HALO_RESOLVE(char, &arena, instance->name);
++	if (!name || name[0] != 'u' || name[1] != 'i')
++		return fail("tag name");
++	if (HALO_RESOLVE(uint8_t, &arena, instance->base_address) != host + 0x12)
++		return fail("tag base");
++	/* Saving the host pointer writes the same guest address the disc had. */
++	if (halo_addr_from_host(&arena, name) != instance->name)
++		return fail("save address drifted");
++	free(host);
++	return 0;
++}
++
++static int test_datum(void)
++{
++	halo_datum datum = halo_datum_new(7, 0x1234);
++	if (halo_datum_index(datum) != 7 || halo_datum_salt(datum) != 0x1234)
++		return fail("datum");
++	if (sizeof(datum) != 4)
++		return fail("datum width");
++	return 0;
++}
++
++int main(void)
++{
++	int result = test_round_trip();
++	if (result)
++		return result;
++	result = test_map_fixture();
++	if (result)
++		return result;
++	return test_datum();
++}

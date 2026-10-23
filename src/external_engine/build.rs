@@ -28,14 +28,14 @@ pub fn compile_package(root: &Path, id: &str, requested: Option<&str>) -> Result
     let target = select(engine, requested)?;
     let source = ensure_source(root, engine)?;
     build_upstream(&source, target)?;
-    let built = source.join(target.binary);
+    let built = source.join(&target.binary);
     let binary = crate::files::read_regular(&built, BINARY_LIMIT, false)?;
     validate_image(&target.image, &binary)?;
     let mut companions = Vec::new();
-    for companion in target.companions {
+    for companion in &target.companions {
         companions.push((
             companion,
-            crate::files::read_regular(&source.join(companion.relative), companion.limit, false)?,
+            crate::files::read_regular(&source.join(&companion.relative), companion.limit, false)?,
         ));
     }
     ensure!(
@@ -43,10 +43,10 @@ pub fn compile_package(root: &Path, id: &str, requested: Option<&str>) -> Result
         "The installed package changed during the build"
     );
     let digest = crate::verify::digest(&original);
-    let base = root.join("builds").join(&digest).join(engine.id);
-    let directory = base.join(target.id);
+    let base = root.join("builds").join(&digest).join(&engine.id);
+    let directory = base.join(&target.id);
     fs::create_dir_all(&directory)?;
-    let filename = Path::new(target.binary)
+    let filename = Path::new(&target.binary)
         .file_name()
         .context("engine target has no executable name")?;
     let output = directory.join(filename);
@@ -57,14 +57,14 @@ pub fn compile_package(root: &Path, id: &str, requested: Option<&str>) -> Result
     }
     crate::integrity::record_build(&output, &binary)?;
     for (companion, bytes) in companions {
-        let name = Path::new(companion.relative)
+        let name = Path::new(&companion.relative)
             .file_name()
             .context("engine companion has no file name")?;
         let path = directory.join(name);
         write_file(&path, &bytes)?;
         write_companion_receipt(&path, &bytes)?;
     }
-    write_current(&base, target.id)?;
+    write_current(&base, &target.id)?;
     ensure!(
         cache_ready(&output, engine)?,
         "engine cache failed its own receipt check"
@@ -139,8 +139,8 @@ pub fn launch(root: &Path, id: &str) -> Result<()> {
         &runtime.join(binary.file_name().unwrap()),
         BINARY_LIMIT,
     )?;
-    for companion in target.companions {
-        let name = Path::new(companion.relative).file_name().unwrap();
+    for companion in &target.companions {
+        let name = Path::new(&companion.relative).file_name().unwrap();
         install_runtime_file(
             &binary.with_file_name(name),
             &runtime.join(name),
@@ -161,24 +161,24 @@ pub fn launch(root: &Path, id: &str) -> Result<()> {
             .env("XDG_DATA_HOME", runtime.join("home"))
             .env("XDG_CONFIG_HOME", runtime.join("home"));
     }
-    for (key, value) in engine.launch.fixed {
+    for (key, value) in &engine.launch.fixed {
         child.env(key, value);
     }
-    if let (Some(key), Some(root)) = (engine.launch.save_root, Some(runtime.join("saves"))) {
-        child.env(key, root);
+    if let Some(key) = engine.launch.save_root.as_deref() {
+        child.env(key, runtime.join("saves"));
     }
-    if let (Some(key), Some(root)) = (engine.launch.data_root, data_root) {
+    if let (Some(key), Some(root)) = (engine.launch.data_root.as_deref(), data_root) {
         child.env(key, root);
     }
     if let Some(audio) = &target.audio {
-        if std::env::var_os(audio.variable).is_none()
+        if std::env::var_os(&audio.variable).is_none()
             && !audio.libraries.iter().any(|path| Path::new(path).exists())
         {
             eprintln!("{}", audio.warning);
-            child.env(audio.variable, audio.value);
+            child.env(&audio.variable, &audio.value);
         }
     }
-    for key in engine.launch.passthrough {
+    for key in &engine.launch.passthrough {
         if let Some(value) = std::env::var_os(key) {
             child.env(key, value);
         }
@@ -219,7 +219,7 @@ pub fn launch(root: &Path, id: &str) -> Result<()> {
 fn ensure_source(root: &Path, engine: &Engine) -> Result<PathBuf> {
     let source = std::env::var_os("GAMEPKG_ENGINE_SOURCE")
         .map(PathBuf::from)
-        .unwrap_or_else(|| root.join("engine-sources").join(engine.id));
+        .unwrap_or_else(|| root.join("engine-sources").join(&engine.id));
     if source.join(".git").exists() {
         let head = git(&source, &["rev-parse", "HEAD"])?;
         ensure!(
@@ -229,36 +229,71 @@ fn ensure_source(root: &Path, engine: &Engine) -> Result<PathBuf> {
             head.trim(),
             engine.commit
         );
-        verify_tree(&source, engine)?;
-        return Ok(source);
-    }
-    if source.exists() {
+    } else if source.exists() {
         bail!(
             "remove the incomplete engine directory {} or set GAMEPKG_ENGINE_SOURCE to a pinned checkout",
             source.display()
         );
+    } else {
+        if let Some(parent) = source.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let clone = Command::new("git")
+            .args(["clone", "--no-tags", engine.clone_url.as_str()])
+            .arg(&source)
+            .status()
+            .context("git clone external engine")?;
+        ensure!(clone.success(), "git clone of {} failed", engine.id);
+        let checkout = Command::new("git")
+            .arg("-C")
+            .arg(&source)
+            .args(["checkout", "--detach", engine.commit.as_str()])
+            .status()
+            .context("git checkout pinned engine")?;
+        ensure!(
+            checkout.success(),
+            "could not check out the pinned engine commit"
+        );
     }
-    if let Some(parent) = source.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let clone = Command::new("git")
-        .args(["clone", "--no-tags", engine.clone_url])
-        .arg(&source)
-        .status()
-        .context("git clone external engine")?;
-    ensure!(clone.success(), "git clone of {} failed", engine.id);
-    let checkout = Command::new("git")
-        .arg("-C")
-        .arg(&source)
-        .args(["checkout", "--detach", engine.commit])
-        .status()
-        .context("git checkout pinned engine")?;
-    ensure!(
-        checkout.success(),
-        "could not check out the pinned engine commit"
-    );
+    apply_patches(&source, engine)?;
     verify_tree(&source, engine)?;
     Ok(source)
+}
+
+fn apply_patches(source: &Path, engine: &Engine) -> Result<()> {
+    for (name, body) in &engine.patches {
+        let mut file = tempfile::NamedTempFile::new()?;
+        file.write_all(body.as_bytes())?;
+        file.as_file().sync_all()?;
+        let path = file.path().to_path_buf();
+        if git_apply(source, &path, &["apply", "--check", "--whitespace=nowarn"])? {
+            ensure!(
+                git_apply(source, &path, &["apply", "--whitespace=nowarn"])?,
+                "could not apply engine patch {name}"
+            );
+            continue;
+        }
+        ensure!(
+            git_apply(
+                source,
+                &path,
+                &["apply", "--reverse", "--check", "--whitespace=nowarn"]
+            )?,
+            "engine patch {name} does not apply to the pinned checkout"
+        );
+    }
+    Ok(())
+}
+
+fn git_apply(source: &Path, patch: &Path, args: &[&str]) -> Result<bool> {
+    Ok(Command::new("git")
+        .arg("-C")
+        .arg(source)
+        .args(args)
+        .arg(patch)
+        .status()
+        .context("git apply")?
+        .success())
 }
 
 fn verify_tree(source: &Path, engine: &Engine) -> Result<()> {
@@ -272,7 +307,7 @@ fn verify_tree(source: &Path, engine: &Engine) -> Result<()> {
         license.windows(marker.len()).any(|window| window == marker),
         "engine LICENSE is missing its required license marker"
     );
-    for relative in engine.required_paths {
+    for relative in &engine.required_paths {
         ensure!(
             source.join(relative).exists(),
             "engine checkout is missing {relative}"
@@ -305,7 +340,7 @@ fn visit(root: &Path, dir: &Path, engine: &Engine, forbidden: &mut Vec<String>) 
         if engine
             .forbidden_directories
             .iter()
-            .any(|dir| lowered == *dir)
+            .any(|dir| lowered == dir.as_str())
         {
             forbidden.push(format!("{relative}/"));
             continue;
@@ -317,7 +352,7 @@ fn visit(root: &Path, dir: &Path, engine: &Engine, forbidden: &mut Vec<String>) 
         if engine
             .forbidden_suffixes
             .iter()
-            .any(|suffix| lowered.ends_with(suffix))
+            .any(|suffix| lowered.ends_with(suffix.as_str()))
         {
             forbidden.push(relative);
         }
@@ -326,12 +361,12 @@ fn visit(root: &Path, dir: &Path, engine: &Engine, forbidden: &mut Vec<String>) 
 }
 
 fn build_upstream(source: &Path, target: &Target) -> Result<()> {
-    let binary = source.join(target.binary);
+    let binary = source.join(&target.binary);
     if binary.is_file()
         && target
             .companions
             .iter()
-            .all(|companion| source.join(companion.relative).is_file())
+            .all(|companion| source.join(&companion.relative).is_file())
     {
         if let Ok(bytes) = crate::files::read_regular(&binary, BINARY_LIMIT, false) {
             if validate_image(&target.image, &bytes).is_ok() {
@@ -339,13 +374,13 @@ fn build_upstream(source: &Path, target: &Target) -> Result<()> {
             }
         }
     }
-    for tool in target.tools {
+    for tool in &target.tools {
         ensure!(
             Command::new(tool).arg("--version").output().is_ok(),
             "this engine target needs {tool} on PATH"
         );
     }
-    let configure = expand(target.configure)?;
+    let configure = expand(&target.configure)?;
     ensure!(
         !configure.is_empty(),
         "this engine target has no configure command"
@@ -356,8 +391,8 @@ fn build_upstream(source: &Path, target: &Target) -> Result<()> {
         .status()
         .with_context(|| format!("configure {} with {}", target.id, configure[0]))?;
     ensure!(status.success(), "configure for {} failed", target.id);
-    let build = Command::new(target.build_program)
-        .args(target.build_args)
+    let build = Command::new(&target.build_program)
+        .args(&target.build_args)
         .current_dir(source)
         .status()
         .with_context(|| format!("build {}", target.id))?;
@@ -370,10 +405,10 @@ fn build_upstream(source: &Path, target: &Target) -> Result<()> {
     Ok(())
 }
 
-fn expand(args: &[&str]) -> Result<Vec<String>> {
+fn expand(args: &[String]) -> Result<Vec<String>> {
     args.iter()
         .map(|arg| {
-            let mut value = (*arg).to_owned();
+            let mut value = arg.clone();
             for (token, env) in [
                 ("{vctools}", "GAMEPKG_MSVC_TOOLS"),
                 ("{winsdk}", "GAMEPKG_WINDOWS_SDK"),
@@ -516,7 +551,7 @@ fn arrange_data(
     };
     let marker = runtime.join("selected");
     if fs::read_to_string(&marker).ok().as_deref() != Some(label.as_str()) {
-        for name in engine.cleanup {
+        for name in &engine.cleanup {
             remove_path(&runtime.join(name))?;
         }
         remove_archive_links(runtime, engine)?;
@@ -586,10 +621,10 @@ fn remove_path(path: &Path) -> Result<()> {
 
 fn remove_archive_links(runtime: &Path, engine: &Engine) -> Result<()> {
     let extensions = engine
-        .layout_specs
+        .layouts
         .iter()
         .filter(|layout| layout.placement == "beside")
-        .flat_map(|layout| layout.extensions.iter().copied())
+        .flat_map(|layout| layout.extensions.iter().map(String::as_str))
         .collect::<Vec<_>>();
     for entry in fs::read_dir(runtime)? {
         let entry = entry?;

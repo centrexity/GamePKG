@@ -6,48 +6,27 @@
 use crate::manifest::DataLayout;
 use anyhow::{bail, ensure, Context, Result};
 use std::path::Path;
+use std::sync::OnceLock;
 
 pub mod build;
+mod catalog;
 
 const BINARY_LIMIT: u64 = 64 * 1024 * 1024;
-
-/// One way a player's folder can satisfy an engine. The package must repeat it.
-pub struct LayoutSpec {
-    pub placement: &'static str,
-    pub directories: &'static [&'static str],
-    pub paths: &'static [&'static str],
-    pub extensions: &'static [&'static str],
-    pub min_bytes: Option<u64>,
-    pub max_bytes: Option<u64>,
-}
-
-impl LayoutSpec {
-    fn to_manifest(&self) -> DataLayout {
-        DataLayout {
-            placement: self.placement.into(),
-            directories: self.directories.iter().map(|item| (*item).into()).collect(),
-            paths: self.paths.iter().map(|item| (*item).into()).collect(),
-            extensions: self.extensions.iter().map(|item| (*item).into()).collect(),
-            min_bytes: self.min_bytes,
-            max_bytes: self.max_bytes,
-        }
-    }
-}
 
 /// A file that must sit beside the engine executable.
 #[derive(Debug)]
 pub struct Companion {
-    pub relative: &'static str,
+    pub relative: String,
     pub limit: u64,
 }
 
 /// What to do when a host library the engine wants is missing.
 #[derive(Debug)]
 pub struct AudioFallback {
-    pub libraries: &'static [&'static str],
-    pub variable: &'static str,
-    pub value: &'static str,
-    pub warning: &'static str,
+    pub libraries: Vec<String>,
+    pub variable: String,
+    pub value: String,
+    pub warning: String,
 }
 
 /// Executable image this target is allowed to cache.
@@ -60,224 +39,73 @@ pub enum Image {
 /// One upstream build of an external engine.
 #[derive(Debug)]
 pub struct Target {
-    pub id: &'static str,
-    pub os: &'static str,
-    pub arch: &'static str,
-    /// Upstream reason this target cannot be built. `None` means the build is supported.
-    pub blocker: Option<&'static str>,
-    pub tools: &'static [&'static str],
-    pub configure: &'static [&'static str],
-    pub build_program: &'static str,
-    pub build_args: &'static [&'static str],
-    pub binary: &'static str,
-    pub companions: &'static [Companion],
+    pub id: String,
+    pub os: String,
+    pub arch: String,
+    /// Recorded reason this target cannot be built. `None` means the build is supported.
+    pub blocker: Option<String>,
+    /// Review note. The host does not branch on it.
+    pub note: Option<String>,
+    pub tools: Vec<String>,
+    pub configure: Vec<String>,
+    pub build_program: String,
+    pub build_args: Vec<String>,
+    pub binary: String,
+    pub companions: Vec<Companion>,
     pub image: Image,
     pub audio: Option<AudioFallback>,
 }
 
-/// Environment the engine reads. Names come from the upstream port, values do not.
+/// Environment the engine reads. Names come from the engine record.
 pub struct LaunchSpec {
     /// Set only when the matched layout links directories into a private data root.
-    pub data_root: Option<&'static str>,
-    pub save_root: Option<&'static str>,
-    pub fixed: &'static [(&'static str, &'static str)],
-    pub passthrough: &'static [&'static str],
+    pub data_root: Option<String>,
+    pub save_root: Option<String>,
+    pub fixed: Vec<(String, String)>,
+    pub passthrough: Vec<String>,
 }
 
 pub struct Engine {
-    pub id: &'static str,
-    pub clone_url: &'static str,
-    pub commit: &'static str,
-    pub license_sha256: &'static str,
-    pub license_marker: &'static str,
+    pub id: String,
+    pub clone_url: String,
+    pub commit: String,
+    pub license_sha256: String,
+    pub license_marker: String,
     pub memory: u64,
     pub hard_memory: u64,
     pub network_allowed: bool,
-    pub launcher: &'static str,
-    pub required_paths: &'static [&'static str],
-    pub forbidden_directories: &'static [&'static str],
-    pub forbidden_suffixes: &'static [&'static str],
+    pub launcher: String,
+    pub required_paths: Vec<String>,
+    pub forbidden_directories: Vec<String>,
+    pub forbidden_suffixes: Vec<String>,
     /// Directories the engine may write beside its executable. Cleared when the
-    /// selected game data changes, so one disc's extraction cannot leak into the next.
-    pub cleanup: &'static [&'static str],
-    pub layout_specs: &'static [LayoutSpec],
-    pub targets: &'static [Target],
+    /// selected game data changes, so one extraction cannot leak into the next.
+    pub cleanup: Vec<String>,
+    /// Patch name and body, applied after the pinned commit is checked out.
+    pub patches: Vec<(String, String)>,
+    pub layouts: Vec<DataLayout>,
+    pub targets: Vec<Target>,
     pub launch: LaunchSpec,
 }
 
 impl Engine {
     pub fn layouts(&self) -> Vec<DataLayout> {
-        self.layout_specs
-            .iter()
-            .map(LayoutSpec::to_manifest)
-            .collect()
+        self.layouts.clone()
     }
 }
 
-const LINUX_X64_BLOCKED: &str = "OpenCE's Linux build is 32-bit only. port/linux/include/halo_linux_prefix.h rejects every other ABI with `#error the Linux port targets 32-bit x86: game data structures assume 32-bit pointers`, and tools/linux_build.py hardcodes `--target=i686-linux-gnu -m32`. Cache files and saved games embed 32-bit pointers. There is no x86_64 or x32 target. The Android ILP32 guest is arm64_32, not 64-bit x86.";
+include!(concat!(env!("OUT_DIR"), "/external_engine_records.rs"));
 
-const WINDOWS_X64_BLOCKED: &str = "OpenCE's Windows build is 32-bit only. port/windows/include/halo_windows_prefix.h rejects other targets with `#error the Windows port targets 32-bit x86: game data structures assume 32-bit pointers`. Clang `--target=x86_64-pc-windows-msvc` hits that error before any SDK header. Win64 is LLP64, so pointers would not match the Xbox map format. The upstream Windows target is `i686-pc-windows-msvc`.";
-
-static ENGINES: &[Engine] = &[Engine {
-    id: "opence-ce95f7de",
-    clone_url: "https://github.com/OpenCommunityEdition/OpenCE.git",
-    commit: "ce95f7deed5bbf726e50a9d5fe5227437194cf3b",
-    license_sha256: "0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0",
-    license_marker: "GNU AFFERO GENERAL PUBLIC LICENSE",
-    memory: 2 * 1024 * 1024 * 1024,
-    hard_memory: 3 * 1024 * 1024 * 1024,
-    network_allowed: false,
-    launcher:
-        "pub fn game_tick(input: u32, state: u64) -> u64 { gamepkg::opence_tick(input, state) }\n",
-    required_paths: &["configure.py", "source", "port/linux"],
-    forbidden_directories: &["maps", "custom_maps"],
-    forbidden_suffixes: &[".iso", ".xiso", ".map", ".wad", ".sfc", ".smc", ".rom"],
-    cleanup: &["maps", "custom_maps", "content"],
-    layout_specs: &[
-        LayoutSpec {
-            placement: "link",
-            directories: &["maps"],
-            paths: &["maps/ui.map"],
-            extensions: &[],
-            min_bytes: Some(1),
-            max_bytes: Some(64 * 1024 * 1024),
-        },
-        LayoutSpec {
-            placement: "beside",
-            directories: &[],
-            paths: &[],
-            extensions: &["iso", "xiso"],
-            min_bytes: Some(1024),
-            max_bytes: Some(8 * 1024 * 1024 * 1024),
-        },
-    ],
-    targets: &[
-        Target {
-            id: "linux-x86_64",
-            os: "linux",
-            arch: "x86_64",
-            blocker: Some(LINUX_X64_BLOCKED),
-            tools: &[],
-            configure: &[],
-            build_program: "",
-            build_args: &[],
-            binary: "",
-            companions: &[],
-            image: Image::Elf {
-                class: 2,
-                machine: 62,
-            },
-            audio: None,
-        },
-        Target {
-            id: "linux-i686",
-            os: "linux",
-            arch: "i686",
-            blocker: None,
-            tools: &["python3", "ninja", "clang", "cmake", "pkg-config"],
-            configure: &[
-                "python3",
-                "configure.py",
-                "--release",
-                "--portable",
-                "--pgo=off",
-                "--lto=off",
-            ],
-            build_program: "ninja",
-            build_args: &["linux"],
-            binary: "build/linux/halo",
-            companions: &[Companion {
-                relative: "build/linux/libSDL3.so.0",
-                limit: 32 * 1024 * 1024,
-            }],
-            image: Image::Elf {
-                class: 1,
-                machine: 3,
-            },
-            audio: Some(AudioFallback {
-                libraries: &[
-                    "/usr/lib/i386-linux-gnu/libasound.so.2",
-                    "/lib/i386-linux-gnu/libasound.so.2",
-                    "/usr/lib32/libasound.so.2",
-                ],
-                variable: "SDL_AUDIODRIVER",
-                value: "dummy",
-                warning: "32-bit ALSA was not found. The engine will start without sound.",
-            }),
-        },
-        Target {
-            id: "windows-x64",
-            os: "windows",
-            arch: "x86_64",
-            blocker: Some(WINDOWS_X64_BLOCKED),
-            tools: &[],
-            configure: &[],
-            build_program: "",
-            build_args: &[],
-            binary: "",
-            companions: &[],
-            image: Image::Pe {
-                machine: 0x8664,
-                magic: 0x20b,
-            },
-            audio: None,
-        },
-        Target {
-            id: "windows-i686",
-            os: "windows",
-            arch: "i686",
-            blocker: None,
-            tools: &["python3", "ninja", "clang", "cmake", "pkg-config"],
-            // `--portable` selects `-march=x86-64`. Clang 18 ignores that flag on
-            // `i686-pc-windows-msvc`, SSE2 stays off, and mbedtls then fails to
-            // compile. The default `-march=native` enables SSE2 on this triple.
-            configure: &[
-                "python3",
-                "configure.py",
-                "--release",
-                "--pgo=off",
-                "--lto=off",
-                "--windows-cross",
-                "--windows-vctools-dir",
-                "{vctools}",
-                "--windows-sdk-dir",
-                "{winsdk}",
-            ],
-            build_program: "ninja",
-            build_args: &["windows"],
-            binary: "build/windows/halo.exe",
-            companions: &[Companion {
-                relative: "build/windows/SDL3.dll",
-                limit: 32 * 1024 * 1024,
-            }],
-            image: Image::Pe {
-                machine: 0x14c,
-                magic: 0x10b,
-            },
-            audio: None,
-        },
-    ],
-    launch: LaunchSpec {
-        data_root: Some("HALO_DATA_ROOT"),
-        save_root: Some("HALO_SAVE_ROOT"),
-        fixed: &[("HALO_UPDATE_AUTO", "false")],
-        passthrough: &[
-            "SDL_VIDEODRIVER",
-            "DISPLAY",
-            "WAYLAND_DISPLAY",
-            "XAUTHORITY",
-            "XDG_RUNTIME_DIR",
-            "LANG",
-            "LC_ALL",
-            "HALO_HIDDEN_WINDOW",
-            "HALO_NULL_RENDERER",
-            "HALO_EXIT_AFTER",
-        ],
-    },
-}];
+fn catalog() -> &'static [Engine] {
+    static CATALOG: OnceLock<Vec<Engine>> = OnceLock::new();
+    CATALOG.get_or_init(|| {
+        catalog::load(RECORDS)
+            .unwrap_or_else(|error| panic!("reviewed external-engine catalog is invalid: {error}"))
+    })
+}
 
 pub fn get(id: &str) -> Option<&'static Engine> {
-    ENGINES.iter().find(|engine| engine.id == id)
+    catalog().iter().find(|engine| engine.id == id)
 }
 
 /// Linux can run its own native workers. Another host can run an external
@@ -306,12 +134,12 @@ pub fn select<'a>(engine: &'a Engine, requested: Option<&str>) -> Result<&'a Tar
                     engine
                         .targets
                         .iter()
-                        .map(|target| target.id)
+                        .map(|target| target.id.as_str())
                         .collect::<Vec<_>>()
                         .join(", ")
                 )
             })?;
-        if let Some(blocker) = target.blocker {
+        if let Some(blocker) = &target.blocker {
             bail!("{blocker}");
         }
         return Ok(target);
@@ -394,7 +222,7 @@ pub(crate) fn validate_recipe(
             !engine
                 .forbidden_suffixes
                 .iter()
-                .any(|suffix| lower.ends_with(suffix))
+                .any(|suffix| lower.ends_with(suffix.as_str()))
                 && !engine
                     .forbidden_directories
                     .iter()
@@ -423,14 +251,14 @@ fn contains_directory(name: &str, directory: &str) -> bool {
 }
 
 pub fn cached_binary(root: &Path, digest: &str, engine: &Engine) -> std::path::PathBuf {
-    let base = root.join("builds").join(digest).join(engine.id);
+    let base = root.join("builds").join(digest).join(&engine.id);
     let id = std::fs::read_to_string(base.join("current")).unwrap_or_default();
     let id = id.trim();
     if let Some(target) = engine.targets.iter().find(|target| target.id == id) {
-        let name = Path::new(target.binary)
+        let name = Path::new(&target.binary)
             .file_name()
             .unwrap_or(std::ffi::OsStr::new("engine"));
-        return base.join(target.id).join(name);
+        return base.join(&target.id).join(name);
     }
     base.join("not-built")
 }
@@ -458,8 +286,8 @@ pub fn cache_ready(binary: &Path, engine: &Engine) -> Result<bool> {
     {
         return Ok(false);
     }
-    for companion in target.companions {
-        let name = Path::new(companion.relative)
+    for companion in &target.companions {
+        let name = Path::new(&companion.relative)
             .file_name()
             .unwrap_or(std::ffi::OsStr::new("companion"));
         let path = binary.with_file_name(name);
@@ -487,25 +315,24 @@ pub fn launch(root: &Path, id: &str) -> Result<()> {
 mod tests {
     use super::*;
 
-    fn engine() -> &'static Engine {
-        get("opence-ce95f7de").unwrap()
-    }
-
     #[test]
-    fn blocked_abis_report_the_upstream_pointer_limit() {
-        let engine = engine();
-        for id in ["linux-x86_64", "windows-x64"] {
-            let error = select(engine, Some(id)).unwrap_err().to_string();
-            assert!(error.contains("32-bit pointers"), "{id}: {error}");
+    fn blocked_targets_return_their_recorded_reason() {
+        assert!(!catalog().is_empty());
+        for engine in catalog() {
+            for target in &engine.targets {
+                match &target.blocker {
+                    Some(blocker) => {
+                        let error = select(engine, Some(&target.id)).unwrap_err().to_string();
+                        assert_eq!(error, *blocker, "{}", target.id);
+                    }
+                    None => {
+                        let selected = select(engine, Some(&target.id)).unwrap();
+                        assert!(selected.blocker.is_none());
+                        assert!(!selected.configure.is_empty());
+                    }
+                }
+            }
         }
-        assert!(select(engine, Some("linux-i686"))
-            .unwrap()
-            .blocker
-            .is_none());
-        assert!(select(engine, Some("windows-i686"))
-            .unwrap()
-            .blocker
-            .is_none());
     }
 
     #[test]

@@ -17,7 +17,10 @@ fn env_lock() -> std::sync::MutexGuard<'static, ()> {
 #[test]
 fn external_engine_recipe_parses_and_rejects_layout_and_network_changes() {
     let manifest = gamepkg::manifest::Manifest::parse(manifest_text().as_bytes()).unwrap();
-    assert_eq!(manifest.builtin_engine.as_deref(), Some(engine().id));
+    assert_eq!(
+        manifest.builtin_engine.as_deref(),
+        Some(engine().id.as_str())
+    );
     assert_eq!(
         manifest.game_data.as_ref().unwrap().layouts,
         engine().layouts()
@@ -35,10 +38,10 @@ fn external_engine_recipe_parses_and_rejects_layout_and_network_changes() {
         .unwrap(),
     )
     .unwrap();
-    assert_eq!(pin["commit"].as_str(), Some(engine().commit));
+    assert_eq!(pin["commit"].as_str(), Some(engine().commit.as_str()));
     assert_eq!(
         pin["license_sha256"].as_str(),
-        Some(engine().license_sha256)
+        Some(engine().license_sha256.as_str())
     );
     assert_eq!(pin["vendored"], false);
     for (needle, message) in [
