@@ -2,7 +2,7 @@
 
 Profile `opence-ce95f7de` in the external-engine catalog. The selector is `ports/halo`. It is not listed in `ports.gamepkglist`.
 
-The host does not special-case this game. A package names the profile and repeats the reviewed data layouts. Commands, image formats, license checks, the desktop sandbox, and game-data placement come from `src/external_engine`. Another port can add a catalog entry without a new host module.
+The host does not special-case this game. The record is `engines/halo/engine.toml`. A package names the profile and repeats the reviewed data layouts. Commands, image formats, license checks, the desktop sandbox, and game-data placement come from `src/external_engine`, which loads every `engines/*/engine.toml` the same way. Another port can add a catalog file without a new host module. Host Rust does not name this engine. The platform gap list is [docs/external-engine-platform-gaps.md](../../docs/external-engine-platform-gaps.md).
 
 ## What the generic path does
 
@@ -18,12 +18,14 @@ The host does not special-case this game. A package names the profile and repeat
 
 `linux-i686` runs upstream `configure.py --release --portable --pgo=off --lto=off` and `ninja linux`. The cache stores `halo` and `libSDL3.so.0`.
 
-`windows-i686` runs the same configure with `--windows-cross` and the two toolchain directories, then `ninja windows`. `--portable` is omitted: Clang 18's `i686-pc-windows-msvc` target ignores `-march=x86-64`, so SSE2 stays off and `port/third_party/mbedtls/library/aesni.c` fails with `unknown type name '__m128i'`. `-march=native` enables SSE2. The cache stores `halo.exe` and `SDL3.dll`.
+`windows-i686` runs the same configure with `--portable`, `--windows-cross`, and the two toolchain directories, then `ninja windows`. After checkout the host applies `engines/halo/patches/0003-x86-arch-and-portable-march.patch`, which makes a portable i686 Windows build pass `-msse2`. Clang 18's `i686-pc-windows-msvc` target does not define `__SSE2__` for `-march=x86-64`. `-march=native` enables SSE2 and is not portable. Linux i686 portable stays on `-march=x86-64`. The cache stores `halo.exe` and `SDL3.dll`. The PE already cached from the earlier `-march=native` build still matches the image check, so the host does not reconfigure it.
 
-`linux-x86_64` and `windows-x64` are catalog entries whose blocker is the upstream prefix:
+`linux-x86_64` and `windows-x64` are catalog entries whose blocker is the upstream prefix. The same patch adds `configure.py --arch i686|x86_64` (default `i686`) and selects `x86_64-linux-gnu` or `x86_64-pc-windows-msvc`, `lib/x64/SDL3.lib`, and `-march=x86-64` for a portable 64-bit build. Those targets stay blocked until the prefix guards can go:
 
 - `port/linux/include/halo_linux_prefix.h` errors unless the ABI is 32-bit x86, `HALO_ARM64_GUEST`, or wasm32. `tools/linux_build.py` hardcodes `--target=i686-linux-gnu -m32`. There is no x86_64 or x32 target. The Android guest is `arm64_32`, not 64-bit x86.
-- `port/windows/include/halo_windows_prefix.h` errors unless `_M_IX86` is set. Clang `--target=x86_64-pc-windows-msvc`, `x86_64-w64-mingw32`, and `i686-w64-mingw32` all hit that error. Win64 is LLP64. The upstream Windows target is `i686-pc-windows-msvc` only.
+- `port/windows/include/halo_windows_prefix.h` errors unless `_M_IX86` is set. Clang `--target=x86_64-pc-windows-msvc`, `x86_64-w64-mingw32`, and `i686-w64-mingw32` all hit that error. Win64 is LLP64, so `long` is already 4 bytes and the remaining mismatch is pointer width. The upstream Windows target is `i686-pc-windows-msvc` only.
+
+Patch `0001-pointer-independent-refs.patch` adds `halo_addr` (a 4-byte guest address) and static asserts for the Xbox on-disk sizes. Disc bytes stay 32-bit. The engine structures that still store raw pointers are not converted, so the `#error` lines stay. Patch `0002-gamepkg-host-log.patch` sends `platform_log` through `gamepkg_host_log` in `include/gamepkg_host.h`. A weak definition still writes stderr when the process is not linked to the host. There is no `centrexity/OpenCE` fork. The patches are applied by the catalog after the pinned checkout. They are not pushed upstream.
 
 Verified here: the portable Linux i686 ELF builds, caches, and a launch with a stand-in `ui.map` exits with OpenCE's own rejection. A cross build with Clang 18, `llvm-rc`, `lld`, and an `xwin splat --arch x86 --use-winsysroot-style` SDK produced `halo.exe` (PE32, machine `0x14c`, magic `0x10b`, about 20 MB) and `SDL3.dll`. GamePKG cached that image and refused to launch it on Linux. It was not executed under Wine. Campaign, co-op, and multiplayer were not played: this machine has no Halo disc.
 
