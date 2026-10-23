@@ -385,7 +385,7 @@ mod tests {
         play(
             root.path(),
             &manifest.id,
-            &[iso.clone()],
+            std::slice::from_ref(&iso),
             &settings,
             Some(120),
         )
