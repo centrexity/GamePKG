@@ -23,9 +23,15 @@ meaning; they are outside the current adapter's supported call profile.
 short reads, EOF and overflow with actual Windows file APIs over synthetic data.
 It also checks offsets above 4 GiB, blocked-read signaling, metadata-only handles,
 directories, sharing, integrity failures, path rejection and handle exhaustion.
-Its initial GNU 32/64-bit tests pass in a private maintainer Wine runner; native
-MSVC 32/64-bit CI runs directly. This is an adapter qualification fixture, not a
-full Windows game test. It follows the
+Initial GNU 32/64-bit tests passed in a private maintainer Wine runner. Native
+MSVC 32/64-bit CI subsequently exposed Wine cursor differences: zero-byte reads
+and failed explicit-offset EOF reads must preserve the prior position. The
+adapter follows actual Windows behavior, and the native oracle keeps checking
+those cases. Wine results alone cannot qualify this adapter. Native MSVC 32-bit
+and 64-bit tests pass in workflow run
+[40024528035](https://github.com/centrexity/GamePKG/actions/runs/40024528035),
+alongside the Linux Rust stream tests. This is an adapter qualification fixture,
+not a full Windows game test. It follows the
 [Windows file-position contract](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-setfilepointerex);
 backing-filesystem maximum offsets are separate from API arithmetic overflow.
 
