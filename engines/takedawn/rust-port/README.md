@@ -93,7 +93,10 @@ position. These focused checks do not establish complete campaign coverage.
 The v7 kit also passes the normal signed-package native Build and integrity
 checks. Its freshly linked native executable passes the original Xbox-layout
 race assertions, including trigger acceleration, pause/resume and Quit > Yes
-returning to the front end, with unresolved-stub logging enabled. The new kit
+returning to the front end, with unresolved-stub logging enabled. The same
+executable passes the PS2-layout Crash impact/results/Continue assertions and
+the signed-package Play, remembered ISO, failed-disc recovery and history gate.
+The new kit
 contains 4,238 verified files; 483 unchanged Rust unit checkpoints were
 individually verified before reuse and both changed/new units compiled afresh.
 No runtime/build inputs or other Rust units changed. The earlier v6 results
@@ -268,7 +271,7 @@ output cannot erase the disc-admission result or grow the host log indefinitely.
 The source-kit loader and process owner are host APIs. Normal signed-package
 profile registration and library Build/Play are now connected and tested.
 
-The final private source-kit candidate has also built its original native runtime
+The earlier v6 private source-kit baseline also built its original native runtime
 from a fresh relocated tree. Its host media adapter builds offline with an empty
 Cargo home using vendored dependencies; all 4,237 shipped source files retain
 their verified hashes afterward. The linked 66,788,904-byte executable retains
