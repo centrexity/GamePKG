@@ -5,6 +5,7 @@
 #include "windows_file.h"
 #include "media.h"
 #include <stdint.h>
+#include <stddef.h>
 #include <string.h>
 #include <wchar.h>
 #define GPW_SLOTS 128
@@ -321,7 +322,10 @@ static BOOL prepare_expression(LPCWSTR input, WCHAR output[MAX_PATH]) {
         if (c == L'?' ) c = L'>';
         else if (c == L'.' && i && i == length - 1 && input[i - 1] == L'*') {
             translated[used - 1] = L'<'; continue;
-        } else if (c == L'.' && i + 1 < length && (input[i + 1] == L'?' || input[i + 1] == L'*')) c = L'"';
+        } else if (c == L'.' && i + 1 < length && (input[i + 1] == L'?' || input[i + 1] == L'*')) {
+            if (used && translated[used - 1] == L'*') translated[used - 1] = L'<';
+            c = L'"';
+        }
         translated[used++] = c;
     }
     translated[used] = 0;
@@ -357,6 +361,12 @@ static BOOL search_next(gpw_search *search, LPWIN32_FIND_DATAW output) {
 }
 HANDLE WINAPI gpw_FindFirstFileW(LPCWSTR path, LPWIN32_FIND_DATAW output) {
     if (!path) { SetLastError(ERROR_INVALID_PARAMETER); return INVALID_HANDLE_VALUE; }
+    char full_relative[GPW_PATH];
+    int full_kind = relative_path(path, full_relative);
+    if (!full_kind) return FindFirstFileW(path, output);
+    if (full_kind > 0 && !*full_relative) {
+        SetLastError(ERROR_INVALID_NAME); return INVALID_HANDLE_VALUE;
+    }
     size_t length = wcslen(path);
     WCHAR probe[GPW_PATH * 2];
     if (length >= sizeof probe / sizeof *probe) {
@@ -374,7 +384,7 @@ HANDLE WINAPI gpw_FindFirstFileW(LPCWSTR path, LPWIN32_FIND_DATAW output) {
     if (!kind) return FindFirstFileW(path, output);
     if (kind < 0) return INVALID_HANDLE_VALUE;
     if (!output) { SetLastError(ERROR_INVALID_PARAMETER); return INVALID_HANDLE_VALUE; }
-    WCHAR expression[MAX_PATH];
+    WCHAR expression[MAX_PATH] = {0};
     if (!prepare_expression(path + parent, expression)) return INVALID_HANDLE_VALUE;
     size_t n = strlen(relative);
     if (!n || relative[n - 1] != 'x') { SetLastError(ERROR_INVALID_NAME); return INVALID_HANDLE_VALUE; }
@@ -414,4 +424,47 @@ BOOL WINAPI gpw_FindClose(HANDLE handle) {
     if (rc) { ReleaseSRWLockExclusive(&files_lock); return fail(media_error(rc)); }
     BOOL result = CloseHandle(handle); DWORD error = GetLastError(); memset(search, 0, sizeof *search);
     ReleaseSRWLockExclusive(&files_lock); SetLastError(error); return result;
+}
+
+static BOOL writable_path(LPCWSTR path) {
+    char relative[GPW_PATH]; int kind = relative_path(path, relative);
+    return kind == 0 ? TRUE : kind < 0 ? FALSE : fail(ERROR_WRITE_PROTECT);
+}
+BOOL WINAPI gpw_CreateDirectoryW(LPCWSTR path, LPSECURITY_ATTRIBUTES security) {
+    return writable_path(path) ? CreateDirectoryW(path, security) : FALSE;
+}
+BOOL WINAPI gpw_DeleteFileW(LPCWSTR path) {
+    return writable_path(path) ? DeleteFileW(path) : FALSE;
+}
+BOOL WINAPI gpw_RemoveDirectoryW(LPCWSTR path) {
+    return writable_path(path) ? RemoveDirectoryW(path) : FALSE;
+}
+BOOL WINAPI gpw_MoveFileExW(LPCWSTR source, LPCWSTR destination, DWORD flags) {
+    if (!writable_path(source) || (destination && !writable_path(destination))) return FALSE;
+    return MoveFileExW(source, destination, flags);
+}
+BOOL WINAPI gpw_SetFileInformationByHandle(HANDLE handle, FILE_INFO_BY_HANDLE_CLASS kind, LPVOID info, DWORD bytes) {
+    AcquireSRWLockShared(&files_lock); BOOL disc = lookup(handle) != NULL;
+    ReleaseSRWLockShared(&files_lock);
+    if (disc) return fail(ERROR_WRITE_PROTECT);
+    if (kind == FileRenameInfo) {
+        /* The reviewed kernel sends this form, then falls back to MoveFileExW.
+         * Check the destination too: an ordinary save handle must not rename
+         * into the virtual read-only disc namespace. */
+        size_t header = offsetof(FILE_RENAME_INFO, FileName);
+        if (!info || bytes < header) return fail(ERROR_INVALID_PARAMETER);
+        FILE_RENAME_INFO *rename = (FILE_RENAME_INFO *)info;
+        if (rename->FileNameLength % sizeof(WCHAR) || rename->FileNameLength > bytes - header)
+            return fail(ERROR_INVALID_PARAMETER);
+        AcquireSRWLockShared(&files_lock); disc = lookup(rename->RootDirectory) != NULL;
+        ReleaseSRWLockShared(&files_lock);
+        if (disc) return fail(ERROR_WRITE_PROTECT);
+        size_t count = rename->FileNameLength / sizeof(WCHAR);
+        WCHAR destination[GPW_PATH * 2];
+        if (count >= sizeof destination / sizeof *destination) return fail(ERROR_FILENAME_EXCED_RANGE);
+        memcpy(destination, rename->FileName, count * sizeof(WCHAR)); destination[count] = 0;
+        if (wcslen(destination) != count) return fail(ERROR_INVALID_NAME);
+        if (!writable_path(destination)) return FALSE;
+    }
+    return SetFileInformationByHandle(handle, kind, info, bytes);
 }

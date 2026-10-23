@@ -239,6 +239,13 @@ int main(void) {
     assert(attrs.nFileSizeLow == small_size && attrs.dwFileAttributes == FILE_ATTRIBUTE_READONLY);
     assert(!gpw_WriteFile(disc, data, 1, &count, NULL) && GetLastError() == ERROR_WRITE_PROTECT && count == 0);
     assert(!gpw_SetEndOfFile(disc) && GetLastError() == ERROR_WRITE_PROTECT);
+    assert(!gpw_CreateDirectoryW(L"/gamepkg-disc/New", NULL) && GetLastError() == ERROR_WRITE_PROTECT);
+    assert(!gpw_DeleteFileW(L"/gamepkg-disc/Data/pattern.bin") && GetLastError() == ERROR_WRITE_PROTECT);
+    assert(!gpw_RemoveDirectoryW(L"/gamepkg-disc/Data") && GetLastError() == ERROR_WRITE_PROTECT);
+    assert(!gpw_MoveFileExW(L"/gamepkg-disc/Data/pattern.bin", L"ordinary.bin", 0) && GetLastError() == ERROR_WRITE_PROTECT);
+    assert(!gpw_MoveFileExW(L"ordinary.bin", L"/gamepkg-disc/overwrite.bin", 0) && GetLastError() == ERROR_WRITE_PROTECT);
+    FILE_DISPOSITION_INFO disposition = {TRUE};
+    assert(!gpw_SetFileInformationByHandle(disc, FileDispositionInfo, &disposition, sizeof disposition) && GetLastError() == ERROR_WRITE_PROTECT);
     assert(!gpw_FlushFileBuffers(disc) && GetLastError() == ERROR_ACCESS_DENIED);
     HANDLE other = gpw_CreateFileW(L"\\gamepkg-disc\\DATA\\PATTERN.BIN", GENERIC_READ, 0, NULL, OPEN_EXISTING, 0, NULL);
     assert(other == INVALID_HANDLE_VALUE && GetLastError() == ERROR_SHARING_VIOLATION);
@@ -316,6 +323,13 @@ int main(void) {
     HANDLE outside = gpw_CreateFileW(L"native-pass-through.bin", GENERIC_READ | GENERIC_WRITE,
         0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_TEMPORARY | FILE_FLAG_DELETE_ON_CLOSE, NULL);
     assert(outside != INVALID_HANDLE_VALUE);
+    union { FILE_RENAME_INFO alignment; uint8_t bytes[2048]; } rename_storage;
+    memset(&rename_storage, 0, sizeof rename_storage);
+    FILE_RENAME_INFO *rename = (FILE_RENAME_INFO *)&rename_storage;
+    const WCHAR destination[] = L"/gamepkg-disc/overwrite.bin";
+    rename->FileNameLength = sizeof destination - sizeof(WCHAR);
+    memcpy(rename->FileName, destination, sizeof destination);
+    assert(!gpw_SetFileInformationByHandle(outside, FileRenameInfo, rename, sizeof rename_storage) && GetLastError() == ERROR_WRITE_PROTECT);
     assert(gpw_WriteFile(outside, "native", 6, &count, NULL) && count == 6);
     assert(gpw_SetFilePointerEx(outside, zero, NULL, FILE_BEGIN));
     assert(gpw_ReadFile(outside, data, 6, &count, NULL) && count == 6 && !memcmp(data, "native", 6));
