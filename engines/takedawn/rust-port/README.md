@@ -81,7 +81,10 @@ construction are rejected. The exact known `INT64_MIN` definition becomes
 native C stream identities, fixed-width minimum, variadic 32/64-bit values and
 flush results. The fixture passes on Linux 64/32-bit and Windows GNU 64/32-bit
 under a private maintainer Wine runner. Native Windows MSVC 64/32-bit CI runs
-the same fixture directly. Those checks are separate from full game support.
+the same fixture directly. Both Windows architectures and Linux pass in
+[run 40018020006](https://github.com/centrexity/GamePKG/actions/runs/40018020006);
+Linux also passes all six normalizer tests and strict formatting/Clippy. Those
+checks are separate from full game support.
 The original actual game-code stub fails Windows linking before this change;
 afterward it links and passes its logging and return-stack probe.
 
