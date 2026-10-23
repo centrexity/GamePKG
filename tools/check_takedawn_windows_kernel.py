@@ -20,9 +20,18 @@ def main():
                         default='x86_64-pc-windows-msvc' if os.name == 'nt' else 'x86_64-pc-windows-gnu')
     args = parser.parse_args()
     source = args.source.resolve()
-    original = source / 'src/kernel/kernel_file.c'
-    before = original.read_bytes()
+    upstream = source / 'src/kernel/kernel_file.c'
+    checkout_before = upstream.read_bytes()
+    revision = subprocess.check_output(['git', '-C', str(source), 'rev-parse', 'HEAD'], text=True).strip()
+    if revision != '5ae8ad90d984425e834dee759592c15592679880':
+        raise RuntimeError('Unreviewed original runtime revision')
+    # Read canonical Git object bytes. A Windows checkout may legitimately use
+    # CRLF; changing checkout options does not reliably rewrite an up-to-date
+    # worktree file, and must not weaken the source hash or mutate upstream.
+    before = subprocess.check_output(['git', '-C', str(source), 'show', 'HEAD:src/kernel/kernel_file.c'])
     work = Path(tempfile.mkdtemp(prefix='gamepkg-windows-kernel.'))
+    original = work / 'original.c'
+    original.write_bytes(before)
     root = Path(__file__).resolve().parents[1]
     adapter = root / 'engines/takedawn/media-bridge'
     staged = work / 'kernel_file.c'
@@ -52,7 +61,7 @@ def main():
     altered.write_bytes(before + b'\n/* source revision changed */\n')
     rejected = work / 'must-not-exist.c'
     stage(altered, rejected, False)
-    assert not rejected.exists() and original.read_bytes() == before
+    assert not rejected.exists() and original.read_bytes() == before and upstream.read_bytes() == checkout_before
     obj = work / 'kernel_file.obj'
     if args.target.endswith('-msvc'):
         command = ['cl', '/nologo', '/std:c11', '/O2', '/W3', '/c',
@@ -64,7 +73,7 @@ def main():
                    '-isystem', str(source / 'src'), '-isystem', str(source / 'src/kernel'),
                    '-c', str(staged), '-o', str(obj)]
     subprocess.run(command, cwd=work, check=True)
-    assert obj.stat().st_size > 0 and original.read_bytes() == before
+    assert obj.stat().st_size > 0 and original.read_bytes() == before and upstream.read_bytes() == checkout_before
     print(f'PASS: {expected} original Win32 calls routed; source restored byte-for-byte; changed/in-place input rejected; {args.target} compiled')
     print('Original SHA-256:', hashlib.sha256(before).hexdigest())
     print('Private evidence directory:', work)

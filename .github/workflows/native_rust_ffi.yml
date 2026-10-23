@@ -50,7 +50,6 @@ jobs:
       - name: Compile the pinned original Windows file runtime through the adapter
         if: runner.os == 'Windows'
         run: |
-          git -C target/windows-kernel-reference -c core.autocrlf=false checkout HEAD -- src/kernel/kernel_file.c
           python tools/check_takedawn_windows_kernel.py --source target/windows-kernel-reference --target ${{ matrix.target }}
       - name: Verify preparation transformations and rejected layouts
         if: runner.os == 'Linux'
