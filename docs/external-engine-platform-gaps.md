@@ -1,0 +1,52 @@
+# External engine platform gaps
+
+Audit of the OpenCE profile (`engines/halo/engine.toml`, package `ports/halo`) against the host. The same host functions serve Linux and Windows on x86_64 and i686. Width-sensitive values in the C ABI are `uint32_t`, `int32_t`, and `uint64_t`. The header has no OS branch.
+
+The host does not name this engine in Rust. `build.rs` embeds every `engines/*/engine.toml` and its `patches/*.patch` files. `src/external_engine` checks out the pinned commit and applies those patches. A test walks `src/**/*.rs` and rejects engine-specific tokens. The catalog record and `ports/halo/manifest.toml` are data: the manifest repeats the layouts and the memory numbers, and it cannot supply a compiler command.
+
+OpenCE itself stays out of this repository. `centrexity/OpenCE` does not exist, and this run cannot create a fork, so the engine edits are the patch series under `engines/halo/patches/`. They apply on top of commit `ce95f7deed5bbf726e50a9d5fe5227437194cf3b`. Nothing is pushed to `OpenCommunityEdition/OpenCE`.
+
+The C ABI is `include/gamepkg_host.h` (`GAMEPKG_HOST_ABI` 1), implemented in `src/engine_host.rs`. Each function calls the same service as the matching import in `wit/game.wit` and the Wasm wrappers in `src/runtime.rs`. Cube 2's frame bridge is a private byte pipe, and DOOM's file wrappers stay inside that port. This header is the native form of the shared host imports, not a second protocol. `gamepkg_host_log` is the one addition. Guests had no log import.
+
+| Item | OpenCE dependency | GamePKG replacement | Status |
+| --- | --- | --- | --- |
+| Profile id, clone URL, commit, license digest and marker | Hardcoded host profile | `id`, `clone_url`, `commit`, `license_sha256`, `license_marker` in `engines/halo/engine.toml` | done |
+| Recommended memory and the 3 GiB cap | 32-bit process limit, previously a host constant | `memory` (2 GiB) and `hard_memory` (3 GiB). The manifest must repeat both. The host only checks `0 < memory <= hard_memory <= 8 GiB` | done |
+| `maps/ui.map` and one `.iso` or `.xiso` | Disc layout assumed by the launcher | `[[layouts]]` in the catalog, repeated in `ports/halo/manifest.toml`. Placement is the generic link and beside linker | done |
+| Executable path and ELF or PE identity | Host checks for `halo` / `halo.exe` | `binary` plus `image` (`elf` class and machine, or `pe` machine and magic) per target | done |
+| SDL3 companion next to the executable | `libSDL3.so.0` or `SDL3.dll` checked by name in host code | `[[targets.companions]]` `relative` and `limit` | done |
+| Data root, save root, update switch, display variables | `HALO_DATA_ROOT`, `HALO_SAVE_ROOT`, `HALO_UPDATE_AUTO`, SDL and `HALO_*` passthrough | `[launch]` `data_root`, `save_root`, `fixed`, `passthrough` | done |
+| Network off, sandbox, image cache, `{vctools}` / `{winsdk}` | Host branches written for this port | `network_allowed`, the shared bubblewrap path, cache receipts, and configure placeholders. Packages still cannot upload compiler commands | done |
+| Logging | `platform_log` in `port/linux/src/xbox_kernel.c` writes `halo-linux:` to stderr | `gamepkg_host_log`. Patch `0002-gamepkg-host-log.patch` keeps that prefix, then calls the host. A weak ELF definition still writes stderr when the process is not linked to the host. Windows logging is untouched | in progress |
+| Window visibility, confine, fullscreen, close, homepage | `SDL_SetWindowFullscreen` and related calls in `port/linux/src/sdl_platform.c` and `port/windows/src/win32_window.c` | `gamepkg_window_control` with the same operation numbers as `window-control` (`VISIBLE` 0, `CONFINED` 1, `FULLSCREEN` 2, `CLOSE` 3, `HOMEPAGE` 4). Returns 1 or 0, matching the Wasm `bool` | in progress |
+| Frame present | SDL window plus the GL renderer in `port/linux/src/d3d8_gl.c` | `gamepkg_draw_clear`, `gamepkg_draw_clip`, `gamepkg_draw_clip_reset`, `gamepkg_draw_rect`, `gamepkg_draw_circle`, `gamepkg_draw_image`, and `gamepkg_draw_image_linear`. Image submits are RGBA8 and use `drawing::Frame`, the same checks as the Wasm `draw-image` imports, including `can_image`. There is no GL context and no swapchain. Cube 2 keeps its own GL and does not go through this header | in progress |
+| Input | `port/linux/src/xinput_sdl.c` | `gamepkg_input_events`. Records are 16 bytes, the same `input_events::Event` the Wasm host copies. OpenCE still polls SDL | in progress |
+| Audio | `port/linux/src/dsound_sdl.c` and `voice_audio.c` | `gamepkg_audio_submit` and `gamepkg_audio_submit_stereo`, both `audio_frame::append`. A format change or more than 1600 frames fails. OpenCE still opens an SDL audio device. The catalog audio fallback (`SDL_AUDIODRIVER=dummy` when ALSA is missing) stays data on the target | in progress |
+| Player import and export | Not used. The engine opens paths itself | `gamepkg_file_call` (`GAMEPKG_FILE_IMPORT` 0, `GAMEPKG_FILE_EXPORT` 1), the same player-picked bytes as `user_files::Service` | in progress |
+| Map and disc files | `posix_files.c`, `xbox_files.c`, `xiso.c`, `win32_files.c`, and `HALO_DATA_ROOT` | The layout linker places the catalog directories or the one archive. There is no directory VFS. `gamepkg_file_call` is not a substitute for `fopen` of `maps/` | remaining |
+| Timing | `GetTickCount`, `QueryPerformanceCounter`, and `clock_gettime` in `xbox_kernel.c` | `gamepkg_frame_time_us` returns the sample `gamepkg_host_begin_frame` took for this tick. It is not a Xbox clock. Replacing `GetTickCount` with it would change simulation time | remaining |
+| Threads | pthreads in `xbox_kernel.c`, Win32 threads on Windows | No guest thread API. The engine keeps its own threads | remaining |
+| Networking | `posix_net.c`, `xnet.c`, `p2p.c`, `win32_net.c` | `gamepkg_network_call`, same operation bounds as the Wasm wrapper (payload length, -2 busy, -3 failed, -1 rejected). This profile sets `network_allowed = false`, so calls fail closed | remaining |
+| Effects, package assets, ROMs | The engine does not load a `.gamepkg` archive | `gamepkg_effect_call`, `gamepkg_asset_read`, `gamepkg_rom_count`, `gamepkg_rom_read`, `gamepkg_rom_read_at`. The external process has no bound effect runtime and no package image, so effect calls return 0 and asset or ROM reads fail closed | remaining |
+| Saves | Saved games are copies of the Xbox memory image (`source/saved games/game_state.c`) | `gamepkg_save_size`, `gamepkg_save_read`, `gamepkg_save_write`. The cap is `saves::MAX_SAVE` (1 MiB), the same as Wasm. That is not the engine's save image | remaining |
+| Persisted pointers | Tag, cache, and save structures store absolute 32-bit guest addresses. `port/linux/include/halo_linux_prefix.h` and `port/windows/include/halo_windows_prefix.h` `#error` unless the ABI is 32-bit x86 | `halo_addr` and `halo_datum` in patch `0001-pointer-independent-refs.patch` (`port/include/halo_ref.h`). Zero is null. Any other value is a guest address resolved through a `halo_arena` (`base + (addr - origin)`). Disc bytes are not rewritten. `halo_addr_from_host` writes the guest address back. On-disk structs assert the Xbox sizes: tag instance `0x20`, tag header `0x24` with `tag_count` at `0xC`, tag block `0xC`, tag reference `0x10`, tag data `0x14`, reference definition `0xC`, data iterator `0x10`, saved pointer `0x8`. The engine's own struct fields are not converted, so both prefix guards stay | in progress |
+| x86_64 compile and portable SSE2 | `tools/linux_build.py` and `tools/windows_build.py` hardcoded `i686-linux-gnu -m32` and `i686-pc-windows-msvc`. `configure.py` had no architecture switch. Portable Windows passed `-march=x86-64`, which Clang 18's `i686-pc-windows-msvc` does not treat as SSE2 (`__SSE2__` stays unset). `-march=native` enables SSE2 and is not portable. Linux i686 portable already uses `-march=x86-64` and must keep doing so | Patch `0003-x86-arch-and-portable-march.patch` adds `configure.py --arch i686|x86_64` (default `i686`). `linux_machine_flags` and `windows_machine_flags` prepend the triple, so a default configure still emits the old i686 flags. Portable i686 Windows uses `-msse2`. Portable x86_64, on either OS, uses `-march=x86-64`. Win64 omits `/LARGEADDRESSAWARE` and links `lib/x64/SDL3.lib`. `linux-x86_64` and `windows-x64` stay blocked in the catalog until the prefix guards can go. Linux x86_64 is also LP64, so `long` is 8 bytes there. Win64 is LLP64, so `long` is already 4 bytes and the remaining mismatch is pointer width | in progress |
+
+## What is converted, and what is left
+
+Converted in this tree: the host record is data, the C ABI covers the shared host imports plus a log line and an RGBA frame submit, and three engine patches add the reference types, the log call, and the architecture switch.
+
+Not converted: the engine structures that still contain raw pointers, and the call sites that still use SDL, OS files, OS threads, and OS clocks. A scan of `source/` and `port/` outside the vendored codecs is on the order of 10^4 pointer declarators across several hundred files. Those fields, and every load and save that copies them, are the remaining port. The `#error` guards stay until that layout work is real. Removing them would not make a 64-bit build read Xbox maps.
+
+The reference test `engines/halo/ref/test_halo_ref.c` (the same bytes as the patch) was compiled and run for Linux x86_64 and Linux i686, and compiled for `i686-pc-windows-msvc` and `x86_64-pc-windows-msvc`. The static asserts are part of that translation unit. The engine binary was not rebuilt for x86_64 or Win64.
+
+## Build evidence for the march split
+
+On Clang 18, `-dM` for a translation unit that does not include a header:
+
+- `i686-pc-windows-msvc -march=x86-64` defines `__SSE__` and does not define `__SSE2__`.
+- `i686-pc-windows-msvc -msse2` defines `__SSE2__`.
+- `x86_64-pc-windows-msvc -march=x86-64` defines `__SSE2__`.
+- `i686-linux-gnu -m32 -march=x86-64` is unchanged from the flags that already built the portable Linux i686 ELF.
+
+The catalog's `windows-i686` configure now passes `--portable`. The cached `halo.exe` under `/tmp/OpenCE-win` was produced before that flag and still matches the PE image check, so the host does not reconfigure it. A clean configure applies patch 0003 first, then `-msse2`.

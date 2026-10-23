@@ -36,6 +36,13 @@ pub fn verify(pkg: &mut Package, trusted: &[u8; 32]) -> Result<Manifest> {
     if m.builtin_engine.as_deref() == Some(crate::cube2::PROFILE) {
         crate::cube2::validate_recipe(pkg)?;
     }
+    if let Some(engine) = m
+        .builtin_engine
+        .as_deref()
+        .and_then(crate::external_engine::get)
+    {
+        crate::external_engine::validate_recipe(engine, pkg)?;
+    }
     pkg.set_shared_refs(m.shared_assets.clone());
     pkg.mark_verified();
     Ok(m)

@@ -33,6 +33,30 @@ fn main() -> eframe::Result {
     if let Some(root) = args.library {
         std::env::set_var("GAMEPKG_HOME", root);
     }
+    if let Some(id) = args.play.as_deref() {
+        if let Ok(root) = gamepkg::registry::default_root() {
+            if gamepkg::registry::installed_manifest(&root, id)
+                .ok()
+                .is_some_and(|manifest| {
+                    manifest
+                        .builtin_engine
+                        .as_deref()
+                        .and_then(gamepkg::external_engine::get)
+                        .is_some()
+                })
+            {
+                if args.target.as_deref() == Some("wasm") {
+                    return Err(eframe::Error::AppCreation(Box::new(std::io::Error::other(
+                        "this external engine has no Wasm build. Play it with the native target.",
+                    ))));
+                }
+                gamepkg::external_engine::launch(&root, id).map_err(|error| {
+                    eframe::Error::AppCreation(Box::new(std::io::Error::other(error.to_string())))
+                })?;
+                return Ok(());
+            }
+        }
+    }
     if let Some(renderer) = args.renderer {
         std::env::set_var("GAMEPKG_RENDERER", renderer);
     }
