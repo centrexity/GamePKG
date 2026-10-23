@@ -32,10 +32,19 @@ def main():
     lock = json.loads((project / 'engines/takedawn/upstream-lock.json').read_text())
     prepared = args.prepared.resolve()
     conversion = json.loads((prepared / 'conversion.json').read_text())
+    recovery = conversion.get('recovered_paths')
+    functions, units = (24003, 485) if recovery else (24001, 484)
+    if recovery:
+        spec = project / 'engines/takedawn/rust-port/recovered-paths.json'
+        if (recovery['specification_sha256'] != sha(spec)
+                or [f['start'] for f in recovery['functions']] != ['0x000966F0', '0x00249AB6']
+                or recovery['executable_sha256'] != lock['disc_manifest']['executable_sha256']
+                or recovery['original_media_extracted_to_disk'] is not False):
+            raise RuntimeError('unsupported recovered native paths')
     if (conversion['game_commit'] != lock['game']['commit']
             or conversion['toolkit_commit'] != lock['toolkit']['commit']
-            or conversion['generated_game_functions'] != 24001
-            or conversion['translation_units'] != 484
+            or conversion['generated_game_functions'] != functions
+            or conversion['translation_units'] != units
             or len(conversion['exports']) != 24030):
         raise RuntimeError('unsupported prepared game inventory')
     for name, digest in conversion['rust_sources'].items():
@@ -119,7 +128,7 @@ def main():
                           '[source.gamepkg-vendored]\ndirectory="../../../vendor"\n')
         copy(config, 'host/engines/takedawn/media-bridge/.cargo/config.toml')
     manifest = {'format': 'gamepkg-takedawn-source-kit-v1', 'game_commit': lock['game']['commit'],
-                'toolkit_commit': lock['toolkit']['commit'], 'generated_game_functions': 24001,
+                'toolkit_commit': lock['toolkit']['commit'], 'generated_game_functions': functions,
                 'native_exports': 24030, 'files': files,
                 'omitted_maintainer_fixtures': ['toolkit/tools/conformance/test.xbe']}
     data = json.dumps(manifest, sort_keys=True, indent=2).encode()

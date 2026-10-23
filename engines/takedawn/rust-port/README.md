@@ -72,6 +72,33 @@ x86-64. All 24,030 expected native exports were retained, including upstream
 manual/dispatch code and its 15 existing unresolved stubs. Those stubs are
 preserved baseline behavior, not newly implemented functions.
 
+The v7 prepared kit recovers two of those entries: `0x000966F0` is a complete
+game-state transition body, and `0x00249AB6` is a floating-point error-result
+body. Both have direct branches from existing generated functions. Recovery
+checks the supported executable hash, those original branches, non-overlap with
+existing functions, complete decoding through the return, and all local branch
+boundaries. It uses the pinned original translator and adds a separate native
+Rust unit; existing function boundaries remain unchanged. The resulting
+inventory is 24,003 translated functions in 485 units, with the same 24,030
+exports and 13 remaining upstream unresolved stubs.
+
+Pass `--recover-gameplay-paths /path/to/owned.iso` to the maintainer conversion
+command to prepare this kit. The executable stays in sealed RAM; original media
+is never written to disk. `tools/check_takedawn_recovered_paths.py --source
+/private/pinned/takedawn --toolkit /private/pinned/xboxrecomp --prepared
+/tmp/private/new-conversion` compiles both recovered C and Rust bodies and passes
+128 comparisons, with independent assertions for state branches, signed mode
+values, callback arguments, return-stack balance and every floating-point stack
+position. These focused checks do not establish complete campaign coverage.
+The v7 kit also passes the normal signed-package native Build and integrity
+checks. Its freshly linked native executable passes the original Xbox-layout
+race assertions, including trigger acceleration, pause/resume and Quit > Yes
+returning to the front end, with unresolved-stub logging enabled. The new kit
+contains 4,238 verified files; 483 unchanged Rust unit checkpoints were
+individually verified before reuse and both changed/new units compiled afresh.
+No runtime/build inputs or other Rust units changed. The earlier v6 results
+below remain baseline evidence.
+
 The full native runtime built through `attach.cmake` with the prepared Rust
 archive. Its actual build commands contain neither Python nor generated C game
 compilation. Repeating the preparation command reproduced every tested Rust
