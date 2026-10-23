@@ -1,9 +1,44 @@
 # Private Takedawn media integration
 
-This is an unfinished host-engine integration, not a playable public GamePKG.
-It contains no player assets, generated game code, external executables or keys.
-Players do not need Python for the media library; upstream reference generation
-is still a separate maintainer-only prerequisite, not the final local generator.
+This is the host-owned disc transport used by the native Linux preview described
+in [the Rust port notes](../rust-port/README.md). It contains no player assets,
+generated game code, external executables or keys. Original disc files are read
+in place through the verified Rust reader. Generation/conversion tools are
+maintainer-only; players use the prepared source kit.
+
+## Windows transport preparation
+
+`windows_file.c` provides read-only Windows file handles over the same verified
+media API. Real waitable handles preserve synchronous file completion. The core
+supports reads, independent positions, explicit-offset reads, 64-bit offsets,
+metadata, sharing checks, close/cleanup and read-only rejection. Virtual paths
+reject traversal, alternate streams and malformed components before any host
+fallback. The underlying Rust reader remains bounded; the adapter keeps logical
+positions beyond EOF without asking that reader to access bytes beyond a file.
+The reviewed original kernel opens buffered synchronous handles. Explicit
+asynchronous/unbuffered handle flags reject rather than silently changing their
+meaning; they are outside the current adapter's supported call profile.
+
+`tools/check_takedawn_windows_file.py` compares reads, seeks, zero-byte reads,
+short reads, EOF and overflow with actual Windows file APIs over synthetic data.
+It also checks offsets above 4 GiB, blocked-read signaling, metadata-only handles,
+directories, sharing, integrity failures, path rejection and handle exhaustion.
+Its initial GNU 32/64-bit tests pass in a private maintainer Wine runner; native
+MSVC 32/64-bit CI runs directly. This is an adapter qualification fixture, not a
+full Windows game test. It follows the
+[Windows file-position contract](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-setfilepointerex);
+backing-filesystem maximum offsets are separate from API arithmetic overflow.
+
+The Windows core is not yet selected by `attach.cmake`. Directory enumeration,
+the original runtime's startup/SDL stream reads, pinned Windows source staging,
+process isolation and complete native linking/gameplay remain required. The
+player kit stays at its verified Linux pin until that integration is qualified.
+
+## Earlier reference bring-up
+
+The remaining notes retain earlier reference measurements. The current prepared
+Rust game, signed-package Build/Play and Linux gameplay qualification live in
+the Rust port notes linked above.
 
 The static library reuses src/xbox_disc.rs, src/xbox_disc/media.rs and
 src/memory_budget.rs by source path. Keep their tests enabled. media.h describes

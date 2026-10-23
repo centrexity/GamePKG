@@ -1,9 +1,9 @@
 name: Native Rust engine stream ABI
 on:
   push:
-    paths: ['engines/takedawn/rust-port/**', 'tools/check_takedawn_rust_stdio.py', '.github/workflows/native_rust_ffi.yml']
+    paths: ['engines/takedawn/rust-port/**', 'engines/takedawn/media-bridge/**', 'tools/check_takedawn_rust_stdio.py', 'tools/check_takedawn_windows_file.py', '.github/workflows/native_rust_ffi.yml']
   pull_request:
-    paths: ['engines/takedawn/rust-port/**', 'tools/check_takedawn_rust_stdio.py', '.github/workflows/native_rust_ffi.yml']
+    paths: ['engines/takedawn/rust-port/**', 'engines/takedawn/media-bridge/**', 'tools/check_takedawn_rust_stdio.py', 'tools/check_takedawn_windows_file.py', '.github/workflows/native_rust_ffi.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -34,6 +34,9 @@ jobs:
           arch: ${{ matrix.arch }}
       - name: Compare converted Rust with the native platform C runtime
         run: python tools/check_takedawn_rust_stdio.py --target ${{ matrix.target }}
+      - name: Compare the read-only disc adapter with native Windows file APIs
+        if: runner.os == 'Windows'
+        run: python tools/check_takedawn_windows_file.py --target ${{ matrix.target }}
       - name: Verify preparation transformations and rejected layouts
         if: runner.os == 'Linux'
         run: |
