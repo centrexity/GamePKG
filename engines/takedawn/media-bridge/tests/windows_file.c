@@ -88,7 +88,13 @@ static void compare_read(HANDLE disc, HANDLE native, DWORD size, int explicit_of
     assert(actual == reference && ca == cb);
     if (!actual) assert(GetLastError() == error);
     assert(!memcmp(a, b, sizeof a));
-    assert(position(disc, 1) == position(native, 0));
+    uint64_t disc_position = position(disc, 1), native_position = position(native, 0);
+    if (disc_position != native_position) fprintf(stderr,
+        "read size=%lu explicit=%d offset=%llu count=%lu result=%d native-position=%llu adapter-position=%llu\n",
+        (unsigned long)size, explicit_offset, (unsigned long long)offset,
+        (unsigned long)ca, reference, (unsigned long long)native_position,
+        (unsigned long long)disc_position);
+    assert(disc_position == native_position);
     if (explicit_offset) assert(oa.Internal == ob.Internal && oa.InternalHigh == ob.InternalHigh);
 }
 static void compare_seek(HANDLE disc, HANDLE native, int64_t delta, DWORD method) {
