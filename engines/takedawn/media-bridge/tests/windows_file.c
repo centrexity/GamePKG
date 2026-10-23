@@ -199,7 +199,7 @@ static DWORD WINAPI blocking_read(LPVOID argument) {
     assert(gpw_ReadFile((HANDLE)argument, data, sizeof data, &count, NULL) && count == sizeof data);
     return 0;
 }
-int main(void) {
+int gpw_test_file_oracle(void) {
     HANDLE native = CreateFileW(L"native-file-oracle.bin", GENERIC_READ | GENERIC_WRITE, 0, NULL,
         CREATE_ALWAYS, FILE_ATTRIBUTE_TEMPORARY | FILE_FLAG_DELETE_ON_CLOSE, NULL);
     assert(native != INVALID_HANDLE_VALUE);
@@ -339,3 +339,6 @@ int main(void) {
     puts("PASS: native Windows disc file adapter; native read/seek/EOF oracle, 64-bit offsets, read-only metadata, write/traversal rejection, sharing, waitable handles, integrity failure and handle cleanup");
     return 0;
 }
+#if !defined(GPW_STREAM_TEST)
+int main(void) { return gpw_test_file_oracle(); }
+#endif

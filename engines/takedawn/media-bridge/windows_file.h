@@ -30,6 +30,8 @@ BOOL WINAPI gpw_DeleteFileW(LPCWSTR);
 BOOL WINAPI gpw_RemoveDirectoryW(LPCWSTR);
 BOOL WINAPI gpw_MoveFileExW(LPCWSTR, LPCWSTR, DWORD);
 BOOL WINAPI gpw_SetFileInformationByHandle(HANDLE, FILE_INFO_BY_HANDLE_CLASS, LPVOID, DWORD);
+/* 0 ordinary host path, 1 admitted virtual disc path, -1 rejected disc path. */
+int gpw_DiscPathW(LPCWSTR);
 #ifdef __cplusplus
 }
 #endif

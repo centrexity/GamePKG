@@ -82,6 +82,10 @@ static gpw_file *lookup(HANDLE handle) {
     for (unsigned i = 0; i < GPW_SLOTS; i++) if (files[i].event == handle && handle) return files + i;
     return NULL;
 }
+int gpw_DiscPathW(LPCWSTR path) {
+    char relative[GPW_PATH];
+    return relative_path(path, relative);
+}
 static int shares_read(DWORD access) {
     return (access & (GENERIC_READ | GENERIC_EXECUTE | FILE_READ_DATA | FILE_EXECUTE)) != 0;
 }
