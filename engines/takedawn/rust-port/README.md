@@ -271,7 +271,13 @@ original input mapper, preserves all 15 normal glyph families, checks disconnect
 and shared-controller transitions, rejects changed/in-place upstream staging,
 and passes ASan/UBSan. Prepared Rust game inputs remain identical to v12; all
 24,032 exports remain present. Actual mixed-controller hardware validation and
-Windows original-game rendering still require qualification.
+Windows original-game rendering still require qualification. The normal signed
+v0.1.2 package also builds, passes integrity and incorrect-disc rejection,
+remembers its ISO, and increases host play history. Its exact executable passes
+Crash/R2/results/Continue and PS2 race acceleration, pause/resume, Quit and menu
+assertions. A profile that already completed the driving tutorial loads the
+track directly; the maintainer driver now handles that route and fresh-profile
+tutorials without changing the original input/gameplay checker.
 
 ## GamePKG library integration
 

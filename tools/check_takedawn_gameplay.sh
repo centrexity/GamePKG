@@ -75,14 +75,17 @@ flip() {
     if (( direct > filtered )); then echo "$direct"; else echo "$filtered"; fi
 }
 CLOCK
-# Use a real Start press to skip the tutorial. No game state, engine feature,
+# Use a real Start press when the profile still shows the tutorial; a profile
+# which already completed it loads the track directly. No game state, engine feature,
 # checker assertion, driving input or result expectation is replaced.
 awk '
     /wait_log '\''streamed/ {
-        if ($0 ~ /junction/) print "    wait_log '\''TrC_ENG[.]xmv'\'' \"crash tutorial\""
-        else print "    wait_log '\''TrD_ENG[.]xmv'\'' \"driving tutorial\""
-        print "    wait_flips 600"
-        print "    press start:300 0"
+        tutorial = $0 ~ /junction/ ? "TrC_ENG[.]xmv" : "TrD_ENG[.]xmv"
+        print "    wait_log '\''(" tutorial "|streamed[.]dat)'\'' \"tutorial or track load\""
+        print "    if grep -aqE '\''" tutorial "'\'' \"$D/events.txt\"; then"
+        print "        wait_flips 600"
+        print "        press start:300 0"
+        print "    fi"
         n++
     }
     { print }
