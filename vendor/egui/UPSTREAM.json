@@ -1,0 +1,12 @@
+{
+  "name": "egui",
+  "version": "0.31.1",
+  "repository": "https://github.com/emilk/egui",
+  "revision": "1669e52a7ccfc3489c1b0999b9ed48894a0b3887",
+  "path_in_vcs": "crates/egui",
+  "modified_rust_sources": [
+    "src/data/input.rs",
+    "src/input_state/mod.rs"
+  ],
+  "notes": "Host-only pointer cancellation patch; see GAMEPKG_CHANGES.md. Cargo license include paths refer to local copies of the exact upstream license files."
+}

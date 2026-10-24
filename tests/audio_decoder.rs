@@ -189,6 +189,102 @@ fn companion() -> Factory {
         std::env::var_os("GAMEPKG_AUDIO_DECODER_WASM").expect("set GAMEPKG_AUDIO_DECODER_WASM");
     Factory::new(&std::fs::read(path).unwrap()).unwrap()
 }
+#[test]
+#[ignore = "requires companion, GAMEPKG_AUDIO_MONO_INPUT and GAMEPKG_SDL_RESAMPLE_REFERENCE"]
+fn mono_original_mixer_matches_sdl_conversion_and_rewinds_with_equal_channels() {
+    let factory = companion();
+    let input = std::fs::read(std::env::var_os("GAMEPKG_AUDIO_MONO_INPUT").unwrap()).unwrap();
+    let mut native = factory.open(&input).unwrap();
+    assert_eq!(native.channels(), 1);
+    let source_rate = native.sample_rate();
+    if let Ok(expected) = std::env::var("GAMEPKG_AUDIO_MONO_RATE") {
+        assert_eq!(
+            source_rate,
+            expected.parse::<u32>().unwrap(),
+            "Mono source-rate metadata"
+        );
+    }
+    let mut buffer = [0i16; 1600];
+    let mut pcm = Vec::new();
+    loop {
+        let count = native.read(&mut buffer).unwrap();
+        if count == 0 {
+            break;
+        }
+        pcm.extend_from_slice(&buffer[..count]);
+        assert!(pcm.len() <= 32768);
+    }
+    assert!(pcm.iter().any(|sample| *sample != 0));
+    drop(native);
+    let file = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(
+        file.path(),
+        pcm.iter()
+            .flat_map(|sample| sample.to_le_bytes())
+            .collect::<Vec<_>>(),
+    )
+    .unwrap();
+    for rate in [44100, 48000] {
+        let original =
+            std::process::Command::new(std::env::var_os("GAMEPKG_SDL_RESAMPLE_REFERENCE").unwrap())
+                .arg(file.path())
+                .arg(source_rate.to_string())
+                .arg(rate.to_string())
+                .args(["stream", "1", "s16"])
+                .output()
+                .unwrap();
+        assert!(
+            original.status.success(),
+            "{}",
+            String::from_utf8_lossy(&original.stderr)
+        );
+        let mut stream = factory
+            .open_original_mixer(&input, rate)
+            .expect("Mono original-mixer conversion must be supported");
+        assert_eq!(stream.channels(), 2);
+        assert_eq!(stream.sample_rate(), rate);
+        let mut expected = None;
+        for pass in 0..2 {
+            let mut actual = Vec::new();
+            let mut step = 0;
+            loop {
+                let size = if pass == 0 {
+                    [2, 6, 32, 1598, 1600][step % 5]
+                } else {
+                    1600
+                };
+                step += 1;
+                let count = stream.read(&mut buffer[..size]).unwrap();
+                if count == 0 {
+                    break;
+                }
+                assert!(count.is_multiple_of(2));
+                assert!(buffer[..count]
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
+                    .all(|pair| pair[0] == pair[1]));
+                actual.extend(
+                    buffer[..count]
+                        .iter()
+                        .flat_map(|sample| sample.to_le_bytes()),
+                );
+                assert!(actual.len() <= 262144);
+                assert!(stream.memory_bytes() <= 6 * 1048576);
+            }
+            assert_eq!(
+                actual, original.stdout,
+                "Mono conversion differs from actual SDL at {rate} Hz, pass {pass}"
+            );
+            if let Some(previous) = &expected {
+                assert_eq!(&actual, previous);
+            } else {
+                expected = Some(actual);
+                stream.rewind().unwrap();
+            }
+        }
+    }
+}
 fn open_music(factory: &Factory, input: &[u8]) -> anyhow::Result<gamepkg::audio_decode::Stream> {
     open_music_reader(factory, &mut std::io::Cursor::new(input), input.len())
 }
@@ -353,24 +449,43 @@ fn malformed_music_and_buffer_requests_fail_bounded_without_changing_output() {
         assert_eq!(native.channels(), 1);
         assert!(native.read(&mut [0; 1600]).unwrap() > 0);
         for rate in [44100, 48000] {
-            assert!(factory.open_original_mixer(&input, rate).is_err());
-            let mut converted = factory.open_resampled(&input, rate).unwrap();
-            assert_eq!(converted.channels(), 2);
-            let mut output = [0; 1600];
-            let mut heard = false;
-            loop {
-                let count = converted.read(&mut output).unwrap();
-                if count == 0 {
-                    break;
+            for original_mixer in [false, true] {
+                let mut converted = if original_mixer {
+                    factory.open_original_mixer(&input, rate)
+                } else {
+                    factory.open_resampled(&input, rate)
                 }
-                heard |= output[..count].iter().any(|sample| *sample != 0);
-                assert!(output[..count]
-                    .as_chunks::<2>()
-                    .0
-                    .iter()
-                    .all(|pair| pair[0] == pair[1]));
+                .unwrap();
+                assert_eq!(converted.channels(), 2);
+                let mut output = [0; 1600];
+                let mut heard = false;
+                let mut samples = 0u64;
+                let mut fnv = 2166136261u32;
+                loop {
+                    let count = converted.read(&mut output).unwrap();
+                    if count == 0 {
+                        break;
+                    }
+                    heard |= output[..count].iter().any(|sample| *sample != 0);
+                    samples += count as u64;
+                    for byte in output[..count]
+                        .iter()
+                        .flat_map(|sample| sample.to_le_bytes())
+                    {
+                        fnv = (fnv ^ u32::from(byte)).wrapping_mul(16777619);
+                    }
+                    assert!(output[..count]
+                        .as_chunks::<2>()
+                        .0
+                        .iter()
+                        .all(|pair| pair[0] == pair[1]));
+                }
+                assert!(heard, "mono conversion must include audible PCM");
+                println!(
+                    "MONO_JSON {}",
+                    serde_json::json!({"rate":rate,"original_mixer":original_mixer,"samples":samples,"fnv32":fnv})
+                );
             }
-            assert!(heard, "mono conversion must include audible PCM");
         }
     }
     assert!(open_music(&factory, &[]).is_err());

@@ -1,0 +1,17 @@
+{
+  "format": "gamepkg-takedawn-recovered-paths-v1",
+  "functions": [
+    {
+      "start": "0x000966F0",
+      "end": "0x000967C6",
+      "reference": "0x00096505",
+      "reason": "Direct tail branch from the existing game vtable function; complete body ends at RET before INT3 alignment padding."
+    },
+    {
+      "start": "0x00249AB6",
+      "end": "0x00249ABB",
+      "reference": "0x002498E2",
+      "reason": "Direct tail branch from the existing floating-point error path; complete pop, zero-result, RET body."
+    }
+  ]
+}

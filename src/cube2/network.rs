@@ -16,6 +16,8 @@ use std::{
 const MAX_PACKET: usize = 8192;
 const MAX_DATAGRAM: usize = 4096;
 const MAX_HANDLES: usize = 16;
+// Positive ENet int tokens, never OS descriptor indexes and never reused.
+const MAX_HANDLE_ID: u32 = i32::MAX as u32;
 #[derive(Clone)]
 pub(super) struct Config {
     pub permissions: crate::manifest::Permissions,
@@ -247,7 +249,7 @@ impl State {
             ensure!(bytes.is_empty(), "invalid snapshot socket request");
             ensure!(
                 self.sockets.len() + self.streams.len() + self.tcp.len() < MAX_HANDLES
-                    && self.next < 1024
+                    && self.next <= MAX_HANDLE_ID
                     && self.opens < 8,
                 "network handle limit"
             );
@@ -281,7 +283,7 @@ impl State {
                 ensure!(bytes.len() == 4, "invalid accept request");
                 ensure!(
                     self.sockets.len() + self.streams.len() + self.tcp.len() < MAX_HANDLES
-                        && self.next < 1024
+                        && self.next <= MAX_HANDLE_ID
                         && self.opens < 8,
                     "network handle limit"
                 );
@@ -308,7 +310,7 @@ impl State {
                 );
                 ensure!(
                     self.sockets.len() + self.streams.len() + self.tcp.len() < MAX_HANDLES
-                        && self.next < 1024
+                        && self.next <= MAX_HANDLE_ID
                         && self.opens < 8,
                     "network handle limit"
                 );
@@ -929,6 +931,132 @@ mod tests {
         state.dispatch(7, &id.to_le_bytes()).unwrap();
         state.dispatch(7, &listener.to_le_bytes()).unwrap();
         assert!(state.tcp.is_empty());
+    }
+    #[test]
+    fn long_sessions_replace_more_than_992_sockets_without_reusing_retired_handles() {
+        let mut state = State::new(permissions(Vec::new(), Vec::new(), false)).unwrap();
+        let mut retired = Vec::new();
+        for wave in 0..160 {
+            if wave != 0 {
+                state.window = Instant::now() - Duration::from_secs(1);
+            }
+            for _ in 0..8 {
+                let request = match retired.len() % 3 {
+                    0 => state.dispatch(1, &2u32.to_le_bytes()),
+                    1 => state.dispatch(1, &1u32.to_le_bytes()),
+                    _ => state.dispatch(16, &[]),
+                }
+                .expect("long-session socket allocation");
+                let id = number(&request, 0).unwrap();
+                assert!(retired.last().is_none_or(|previous| *previous < id));
+                assert_eq!(
+                    state.sockets.len() + state.tcp.len() + state.streams.len(),
+                    1
+                );
+                for old in retired.iter().rev().take(4) {
+                    assert_eq!(
+                        state.call(5, &u32::to_le_bytes(*old)).0,
+                        1,
+                        "retired token addressed a replacement"
+                    );
+                }
+                state.dispatch(7, &id.to_le_bytes()).unwrap();
+                assert!(
+                    state.sockets.is_empty() && state.tcp.is_empty() && state.streams.is_empty()
+                );
+                retired.push(id);
+            }
+            let next = state.next;
+            assert!(
+                state.dispatch(1, &2u32.to_le_bytes()).is_err(),
+                "open-rate quota changed"
+            );
+            assert_eq!(state.next, next);
+            assert_eq!(state.opens, 8);
+        }
+        assert_eq!(retired.len(), 1280);
+        assert!(state.tcp.is_empty() && state.streams.is_empty());
+    }
+    #[test]
+    fn token_range_and_live_handle_caps_apply_to_all_socket_kinds() {
+        let mut state = State::new(permissions(Vec::new(), Vec::new(), false)).unwrap();
+        let mut ids = Vec::new();
+        for index in 0..16 {
+            if index == 8 {
+                state.window = Instant::now() - Duration::from_secs(1);
+            }
+            let reply = match index % 3 {
+                0 => state.dispatch(1, &2u32.to_le_bytes()),
+                1 => state.dispatch(1, &1u32.to_le_bytes()),
+                _ => state.dispatch(16, &[]),
+            }
+            .unwrap();
+            ids.push(number(&reply, 0).unwrap());
+        }
+        state.window = Instant::now() - Duration::from_secs(1);
+        let next = state.next;
+        for (op, request) in [
+            (1, 1u32.to_le_bytes().to_vec()),
+            (1, 2u32.to_le_bytes().to_vec()),
+            (16, Vec::new()),
+        ] {
+            assert!(state.dispatch(op, &request).is_err());
+            assert_eq!(state.next, next);
+        }
+        for id in &ids {
+            state.dispatch(7, &id.to_le_bytes()).unwrap();
+        }
+        assert!(state.sockets.is_empty() && state.tcp.is_empty() && state.streams.is_empty());
+        let replacement = create(&mut state);
+        assert!(ids.iter().all(|id| *id < replacement));
+        for id in ids {
+            assert_eq!(state.call(5, &id.to_le_bytes()).0, 1);
+        }
+        state.dispatch(7, &replacement.to_le_bytes()).unwrap();
+        state.next = MAX_HANDLE_ID;
+        let last = create(&mut state);
+        assert_eq!(last, MAX_HANDLE_ID);
+        state.dispatch(7, &last.to_le_bytes()).unwrap();
+        assert_eq!(state.next, MAX_HANDLE_ID + 1);
+        assert!(state.dispatch(1, &2u32.to_le_bytes()).is_err());
+        assert!(state.dispatch(16, &[]).is_err());
+        assert!(state.sockets.is_empty() && state.tcp.is_empty() && state.streams.is_empty());
+        assert_eq!(state.call(5, &last.to_le_bytes()).0, 1);
+    }
+    #[test]
+    fn accepted_tcp_handles_use_the_full_token_range_and_close_without_reuse() {
+        let mut state = State::new(permissions(Vec::new(), Vec::new(), false)).unwrap();
+        state.next = MAX_HANDLE_ID - 1;
+        let listener = create_tcp(&mut state);
+        state
+            .dispatch(2, &destination(listener, "127.0.0.1:0".parse().unwrap()))
+            .unwrap();
+        state.dispatch(9, &pair(listener, 1)).unwrap();
+        let target = address(&state.dispatch(5, &listener.to_le_bytes()).unwrap(), 0).unwrap();
+        let mut peer = std::net::TcpStream::connect(target).unwrap();
+        peer.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        let reply = retry(&mut state, 14, &listener.to_le_bytes());
+        let accepted = number(&reply, 0).unwrap();
+        assert_eq!(accepted, MAX_HANDLE_ID);
+        assert_eq!(address(&reply, 4).unwrap(), peer.local_addr().unwrap());
+        peer.write_all(b"regserv 32123\n").unwrap();
+        let received = retry(&mut state, 4, &pair(accepted, 64));
+        assert_eq!(&received[8..], b"regserv 32123\n");
+        let mut output = destination(accepted, "0.0.0.0:1".parse().unwrap());
+        output[4..12].fill(0);
+        output.extend_from_slice(b"succreg\n");
+        assert_eq!(number(&retry(&mut state, 3, &output), 0).unwrap(), 8);
+        let mut bytes = [0; 8];
+        peer.read_exact(&mut bytes).unwrap();
+        assert_eq!(&bytes, b"succreg\n");
+        state.dispatch(7, &accepted.to_le_bytes()).unwrap();
+        state.dispatch(7, &listener.to_le_bytes()).unwrap();
+        assert!(state.tcp.is_empty());
+        assert_eq!(state.next, MAX_HANDLE_ID + 1);
+        assert!(state.dispatch(1, &1u32.to_le_bytes()).is_err());
+        for retired in [accepted, listener] {
+            assert_eq!(state.call(5, &retired.to_le_bytes()).0, 1);
+        }
     }
     #[test]
     fn tcp_connect_refusal_queries_the_os_and_offline_rejects_before_opening() {

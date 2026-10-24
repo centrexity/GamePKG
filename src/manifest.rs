@@ -28,6 +28,10 @@ pub struct Manifest {
     pub runtime_profile: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub builtin_engine: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub doom_wad_modes: Vec<DoomWadMode>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub zelda_video: Option<ZeldaVideo>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub game_data: Option<GameDataRequirement>,
     pub lockfile_sha256: String,
@@ -46,6 +50,161 @@ pub struct Manifest {
     pub roms: Vec<RomRequirement>,
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub shared_assets: std::collections::BTreeMap<String, crate::pool::Reference>,
+}
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ZeldaVideo {
+    #[serde(default)]
+    pub extra_width: u32,
+    #[serde(default)]
+    pub extend_height: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub no_sprite_limits: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub dim_flashes: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub skip_intro_on_keypress: bool,
+    #[serde(default, skip_serializing_if = "ZeldaEnhancements::is_empty")]
+    pub enhancements: ZeldaEnhancements,
+}
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ZeldaEnhancements {
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub item_switch_lr: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub item_switch_lr_limit: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub turn_while_dashing: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub mirror_to_darkworld: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub collect_items_with_sword: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub break_pots_with_sword: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub disable_low_health_beep: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub show_max_items_in_yellow: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub more_active_bombs: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub carry_more_rupees: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub misc_bug_fixes: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub game_changing_bug_fixes: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub cancel_bird_travel: bool,
+}
+impl ZeldaEnhancements {
+    pub const CHOICES: &'static [(&'static str, &'static str)] = &[
+        ("item_switch_lr", "Cycle items with shoulder buttons"),
+        (
+            "item_switch_lr_limit",
+            "Limit shoulder cycling to the first four slots",
+        ),
+        ("turn_while_dashing", "Turn while dashing"),
+        (
+            "mirror_to_darkworld",
+            "Allow mirror travel to the Dark World",
+        ),
+        ("collect_items_with_sword", "Collect items with the sword"),
+        ("break_pots_with_sword", "Break pots with the sword"),
+        ("disable_low_health_beep", "Disable the low-health beep"),
+        (
+            "show_max_items_in_yellow",
+            "Highlight maximum item counts in yellow",
+        ),
+        ("more_active_bombs", "Allow more active bombs"),
+        ("carry_more_rupees", "Carry up to 9,999 rupees"),
+        ("misc_bug_fixes", "Original port's miscellaneous bug fixes"),
+        (
+            "game_changing_bug_fixes",
+            "Original port's gameplay-changing bug fixes",
+        ),
+        ("cancel_bird_travel", "Allow canceling bird travel"),
+    ];
+    pub fn enabled(&self, name: &str) -> Option<bool> {
+        match name {
+            "item_switch_lr" => Some(self.item_switch_lr),
+            "item_switch_lr_limit" => Some(self.item_switch_lr_limit),
+            "turn_while_dashing" => Some(self.turn_while_dashing),
+            "mirror_to_darkworld" => Some(self.mirror_to_darkworld),
+            "collect_items_with_sword" => Some(self.collect_items_with_sword),
+            "break_pots_with_sword" => Some(self.break_pots_with_sword),
+            "disable_low_health_beep" => Some(self.disable_low_health_beep),
+            "show_max_items_in_yellow" => Some(self.show_max_items_in_yellow),
+            "more_active_bombs" => Some(self.more_active_bombs),
+            "carry_more_rupees" => Some(self.carry_more_rupees),
+            "misc_bug_fixes" => Some(self.misc_bug_fixes),
+            "game_changing_bug_fixes" => Some(self.game_changing_bug_fixes),
+            "cancel_bird_travel" => Some(self.cancel_bird_travel),
+            _ => None,
+        }
+    }
+    pub fn set(&mut self, name: &str, enabled: bool) -> Result<()> {
+        match name {
+            "item_switch_lr" => self.item_switch_lr = enabled,
+            "item_switch_lr_limit" => self.item_switch_lr_limit = enabled,
+            "turn_while_dashing" => self.turn_while_dashing = enabled,
+            "mirror_to_darkworld" => self.mirror_to_darkworld = enabled,
+            "collect_items_with_sword" => self.collect_items_with_sword = enabled,
+            "break_pots_with_sword" => self.break_pots_with_sword = enabled,
+            "disable_low_health_beep" => self.disable_low_health_beep = enabled,
+            "show_max_items_in_yellow" => self.show_max_items_in_yellow = enabled,
+            "more_active_bombs" => self.more_active_bombs = enabled,
+            "carry_more_rupees" => self.carry_more_rupees = enabled,
+            "misc_bug_fixes" => self.misc_bug_fixes = enabled,
+            "game_changing_bug_fixes" => self.game_changing_bug_fixes = enabled,
+            "cancel_bird_travel" => self.cancel_bird_travel = enabled,
+            _ => bail!("unknown Zelda enhancement: {name}"),
+        }
+        Ok(())
+    }
+    pub fn bits(&self) -> u32 {
+        Self::CHOICES
+            .iter()
+            .enumerate()
+            .fold(0, |bits, (index, (name, _))| {
+                bits | (u32::from(self.enabled(name).expect("reviewed enhancement name")) << index)
+            })
+    }
+    pub fn is_empty(&self) -> bool {
+        self.bits() == 0
+    }
+}
+impl ZeldaVideo {
+    pub fn configuration_bits(self) -> u32 {
+        u32::from(self.extend_height)
+            | (u32::from(self.no_sprite_limits) << 1)
+            | (u32::from(self.dim_flashes) << 2)
+            | (u32::from(self.skip_intro_on_keypress) << 3)
+            | (self.enhancements.bits() << 4)
+    }
+    pub fn dimensions(self) -> (u32, u32) {
+        (
+            256 + self.extra_width * 2,
+            if self.extend_height { 240 } else { 224 },
+        )
+    }
+    pub fn validate(self) -> Result<()> {
+        if self.extra_width > 96 {
+            bail!("Zelda extra_width must be between 0 and 96 pixels per side");
+        }
+        Ok(())
+    }
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+#[repr(u32)]
+pub enum DoomWadMode {
+    File = 0,
+    Merge = 1,
+    NwtMerge = 2,
+    Flats = 3,
+    Sprites = 4,
+    Both = 5,
 }
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -259,8 +418,37 @@ impl Manifest {
                 bail!("invalid or duplicate achievement declaration");
             }
         }
+        if !m.doom_wad_modes.is_empty()
+            && (m.builtin_engine.as_deref() != Some(crate::doom::PROFILE)
+                || m.doom_wad_modes.len() != m.required_rom_count().saturating_sub(1))
+        {
+            bail!("DOOM WAD modes require one mode per declared patch in the pinned DOOM recipe");
+        }
+        if let Some(video) = m.zelda_video {
+            if m.builtin_engine.as_deref() != Some(crate::zelda3::PROFILE) {
+                bail!("Zelda video options require the pinned Zelda recipe");
+            }
+            video.validate()?;
+        }
         let cube2 = m.builtin_engine.as_deref() == Some(crate::cube2::PROFILE);
-        if cube2 {
+        let takedawn = m.builtin_engine.as_deref() == Some(crate::takedawn::PROFILE);
+        if takedawn {
+            if m.runtime_profile != "core-v1"
+                || m.entry_world != "game"
+                || m.required_rom_count() != 1
+                || m.game_data.is_some()
+                || !m.permissions.save
+                || !m.permissions.audio
+                || !m.permissions.input
+                || m.permissions.network
+                || !m.permissions.files.is_empty()
+                || !m.shaders.is_empty()
+                || !m.shared_assets.is_empty()
+                || m.limits.hard_memory_bytes != crate::takedawn::MEMORY
+            {
+                bail!("Takedawn requires its native recipe, one user ISO, input/audio/save permissions and 4 GiB memory");
+            }
+        } else if cube2 {
             if !m.shaders.is_empty() || !m.shared_assets.is_empty() {
                 bail!("Cube 2 cannot substitute package shaders or media for original game data");
             }
@@ -291,12 +479,16 @@ impl Manifest {
                     engine.as_str(),
                     crate::zelda3::PROFILE | crate::doom::PROFILE
                 ) || m.runtime_profile != "core-v1"
-                    || m.required_rom_count() != 1
+                    || if engine == crate::doom::PROFILE {
+                        !(1..=7).contains(&m.required_rom_count())
+                    } else {
+                        m.required_rom_count() != 1
+                    }
                     || !m.permissions.save
                     || !m.permissions.audio
                     || m.limits.hard_memory_bytes < minimum
                 {
-                    bail!("builtin games require a pinned core-v1 engine, one ROM, save/audio permissions and enough memory for the engine plus 16 MiB");
+                    bail!("builtin games require a pinned core-v1 engine, one base ROM (DOOM may declare up to six additional patch WADs), save/audio permissions and enough memory for the engine plus 16 MiB");
                 }
             }
         }
@@ -337,7 +529,7 @@ impl Manifest {
         }
         if m.limits.hard_memory_bytes == 0
             || m.limits.hard_memory_bytes
-                > if cube2 {
+                > if cube2 || takedawn {
                     4 * 1024 * 1024 * 1024
                 } else {
                     512 * 1024 * 1024

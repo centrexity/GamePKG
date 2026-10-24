@@ -1,6 +1,54 @@
 // Reviewed host-owned DOOM source kit. No game-provided C is compiled.
 pub const FILES: &[(&str, &[u8])] = &[
     (
+        "engines/doom/adapters/music-device-patches.json",
+        include_bytes!("../engines/doom/adapters/music-device-patches.json"),
+    ),
+    (
+        "engines/doom/adapters/angle-patches.json",
+        include_bytes!("../engines/doom/adapters/angle-patches.json"),
+    ),
+    (
+        "engines/doom/adapters/sound-patches.json",
+        include_bytes!("../engines/doom/adapters/sound-patches.json"),
+    ),
+    (
+        "engines/doom/adapters/sound_names.h",
+        include_bytes!("../engines/doom/adapters/sound_names.h"),
+    ),
+    (
+        "engines/doom/adapters/fixed-patches.json",
+        include_bytes!("../engines/doom/adapters/fixed-patches.json"),
+    ),
+    (
+        "engines/doom/adapters/sprite-patches.json",
+        include_bytes!("../engines/doom/adapters/sprite-patches.json"),
+    ),
+    (
+        "engines/doom/adapters/map-patches.json",
+        include_bytes!("../engines/doom/adapters/map-patches.json"),
+    ),
+    (
+        "engines/doom/adapters/endian-patches.json",
+        include_bytes!("../engines/doom/adapters/endian-patches.json"),
+    ),
+    (
+        "engines/doom/adapters/video-patches.json",
+        include_bytes!("../engines/doom/adapters/video-patches.json"),
+    ),
+    (
+        "engines/doom/adapters/diagnostics.h",
+        include_bytes!("../engines/doom/adapters/diagnostics.h"),
+    ),
+    (
+        "engines/doom/merge/upstream/w_merge.c",
+        include_bytes!("../engines/doom/merge/upstream/w_merge.c"),
+    ),
+    (
+        "engines/doom/merge/upstream-lock.json",
+        include_bytes!("../engines/doom/merge/upstream-lock.json"),
+    ),
+    (
         "engines/doom/adapters/endoom.h",
         include_bytes!("../engines/doom/adapters/endoom.h"),
     ),

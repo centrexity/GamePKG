@@ -12,9 +12,41 @@ struct Cli {
 }
 #[derive(Subcommand)]
 enum Command {
+    /// Install the standalone Windows tools used by the native engine.
+    #[cfg(windows)]
+    SetupNativeTools,
+    /// Verify the supported Xbox Burnout 3 disc directly from an ISO; extract nothing.
+    CheckXboxDisc {
+        path: PathBuf,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Read-only check of literal startup-script includes in selected original game data.
+    CheckGameData {
+        path: PathBuf,
+        #[arg(long)]
+        json: bool,
+    },
     /// Maintainer packaging check; never reads a runtime decoder path.
     #[command(hide = true)]
     CheckBundledAudio,
+    /// Remember a display preference for the pinned Zelda engine.
+    ConfigureDisplay {
+        id: String,
+        #[arg(long, value_parser=["default", "original", "wide", "widest"])]
+        preset: String,
+        #[arg(long)]
+        extended_height: bool,
+        #[arg(long)]
+        extra_sprites: bool,
+        #[arg(long)]
+        dim_flashes: bool,
+        #[arg(long)]
+        skip_intro: bool,
+        /// Enable an original Zelda enhancement by its documented name; repeat for more.
+        #[arg(long)]
+        enhancement: Vec<String>,
+    },
     /// Remember the next multiplayer server or hosting address for a supported signed game.
     ConfigureNetwork {
         id: String,
@@ -28,6 +60,26 @@ enum Command {
         allow_local: bool,
         #[arg(long,conflicts_with_all=["server","master","listen","allow_local"])]
         clear: bool,
+    },
+    /// List saved demos and movies for an installed game.
+    Recordings {
+        id: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Import a selected demo or AVI without replacing existing saved files. Close the game first.
+    RecordingImport {
+        id: String,
+        source: PathBuf,
+        #[arg(long)]
+        name: Option<String>,
+    },
+    /// Copy one saved recording to a new file; existing files are never replaced.
+    RecordingExport {
+        id: String,
+        name: String,
+        #[arg(short, long)]
+        output: PathBuf,
     },
     /// Internal verified compiler response; requires an installed signed package.
     #[command(hide = true)]
@@ -106,9 +158,18 @@ enum Command {
         #[arg(short, long)]
         output: PathBuf,
     },
-    /// Play an installed grid-v1 game in the terminal, or run N headless frames.
+    /// Play an installed game, or run N headless frames.
     Run {
         id: String,
+        /// Explicit runtime choice; otherwise use the installed native build.
+        #[arg(long,value_parser=["native","wasm"])]
+        target: Option<String>,
+        /// Restore a Zelda snapshot slot before a headless run.
+        #[arg(long,requires="frames",value_parser=clap::value_parser!(u8).range(1..=20))]
+        load_slot: Option<u8>,
+        /// Replace a Zelda snapshot slot after a successful headless run.
+        #[arg(long,requires="frames",value_parser=clap::value_parser!(u8).range(1..=20))]
+        save_slot: Option<u8>,
         /// Remember an original installation folder for this signed game.
         #[arg(long)]
         game_data: Option<PathBuf>,
@@ -184,6 +245,28 @@ fn key(s: &str) -> Result<[u8; 32]> {
 }
 fn main() -> Result<()> {
     match Cli::parse().command {
+        #[cfg(windows)]
+        Command::SetupNativeTools => {
+            let sdk =
+                gamepkg::takedawn::prepare_windows_tools(&gamepkg::registry::default_root()?)?;
+            println!(
+                "Verified native Windows build tools ready: {}",
+                sdk.display()
+            );
+        }
+        Command::CheckXboxDisc { path, json } => {
+            let report = gamepkg::xbox_disc::Disc::open(&path)?.verify_takedawn()?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&report)?);
+            } else {
+                println!("Usable supported disc: {} — {}", report.game, report.build);
+                println!(
+                    "Verified {} files ({} bytes) directly in the image; nothing extracted.",
+                    report.verified_files, report.verified_bytes
+                );
+                println!("Select this ISO on the game's page, build the native game, then Play. The ISO stays in place.");
+            }
+        }
         Command::CheckBundledAudio => {
             let factory = gamepkg::audio_decode::Factory::bundled()?;
             println!(
@@ -318,6 +401,127 @@ fn main() -> Result<()> {
             let frames = gamepkg::previews::decode(name, &pkg.read(name)?)?;
             println!("Decoded {} preview frames (320×240, 5 fps)", frames.len());
         }
+        Command::Recordings { id, json } => {
+            let entries =
+                gamepkg::cube2::recordings::list(&gamepkg::registry::default_root()?, &id)?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&entries)?);
+            } else if entries.is_empty() {
+                println!("No saved recordings.");
+            } else {
+                for entry in entries {
+                    println!("{}  {} bytes  {}", entry.kind, entry.bytes, entry.name);
+                }
+            }
+        }
+        Command::RecordingImport { id, source, name } => {
+            let entry = gamepkg::cube2::recordings::import(
+                &gamepkg::registry::default_root()?,
+                &id,
+                &source,
+                name.as_deref(),
+            )?;
+            println!("Imported {} ({} bytes).", entry.name, entry.bytes);
+        }
+        Command::RecordingExport { id, name, output } => {
+            let bytes = gamepkg::cube2::recordings::export(
+                &gamepkg::registry::default_root()?,
+                &id,
+                &name,
+                &output,
+            )?;
+            println!("Exported {bytes} bytes to {}", output.display());
+        }
+        Command::CheckGameData { path, json } => {
+            #[cfg(target_os = "linux")]
+            {
+                let report = gamepkg::cube2::content::audit(&path)?;
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&report)?);
+                } else {
+                    println!(
+                        "Checked {} scripts for line-leading literal includes.",
+                        report.checked_scripts
+                    );
+                    for issue in &report.missing_or_unreadable {
+                        println!(
+                            "Missing/unreadable: {} (from {}): {}",
+                            issue.reference, issue.script, issue.reason
+                        );
+                    }
+                    for issue in &report.upstream_missing_references {
+                        println!("Known upstream stale include: {} (from {}). Original texture browser is built into the engine.", issue.reference,issue.script);
+                    }
+                    for issue in &report.unresolved {
+                        println!("Unresolved: {}: {}", issue.script, issue.reason);
+                    }
+                    println!("Dynamic commands, conditional execution, complete media and matching asset versions are not verified by this check.");
+                }
+                anyhow::ensure!(
+                    report.missing_or_unreadable.is_empty(),
+                    "selected game data has missing or unreadable referenced scripts"
+                );
+            }
+            #[cfg(not(target_os = "linux"))]
+            {
+                let _ = (path, json);
+                anyhow::bail!("original game-data auditing currently requires Linux");
+            }
+        }
+        Command::ConfigureDisplay {
+            id,
+            preset,
+            extended_height,
+            extra_sprites,
+            dim_flashes,
+            skip_intro,
+            enhancement,
+        } => {
+            anyhow::ensure!(
+                preset != "default"
+                    || (!extended_height
+                        && !extra_sprites
+                        && !dim_flashes
+                        && !skip_intro
+                        && enhancement.is_empty()),
+                "package default cannot override display options"
+            );
+            let mut video = match preset.as_str() {
+                "default" => None,
+                "original" => Some(gamepkg::manifest::ZeldaVideo {
+                    extra_width: 0,
+                    extend_height: extended_height,
+                    no_sprite_limits: false,
+                    dim_flashes: false,
+                    skip_intro_on_keypress: false,
+                    enhancements: Default::default(),
+                }),
+                "wide" => Some(gamepkg::video_selections::wide(extended_height)),
+                "widest" => Some(gamepkg::manifest::ZeldaVideo {
+                    extra_width: 96,
+                    extend_height: extended_height,
+                    no_sprite_limits: false,
+                    dim_flashes: false,
+                    skip_intro_on_keypress: false,
+                    enhancements: Default::default(),
+                }),
+                _ => unreachable!(),
+            };
+            if let Some(video) = video.as_mut() {
+                video.no_sprite_limits = extra_sprites;
+                video.dim_flashes = dim_flashes;
+                video.skip_intro_on_keypress = skip_intro;
+                for name in &enhancement {
+                    video.enhancements.set(name, true)?;
+                }
+            }
+            gamepkg::video_selections::remember_for_game(
+                &gamepkg::registry::default_root()?,
+                &id,
+                video,
+            )?;
+            println!("Display settings saved for the next launch.");
+        }
         Command::ConfigureNetwork {
             id,
             server,
@@ -350,6 +554,9 @@ fn main() -> Result<()> {
         }
         Command::Run {
             id,
+            target,
+            load_slot,
+            save_slot,
             frames,
             rom,
             game_data,
@@ -358,11 +565,42 @@ fn main() -> Result<()> {
                 let root = gamepkg::registry::default_root()?;
                 gamepkg::game_data::remember_for_game(&root, &id, &path)?;
             }
-            let mut game = gamepkg::runtime::Game::load_with_roms(
-                &gamepkg::registry::default_root()?,
+            let root = gamepkg::registry::default_root()?;
+            #[cfg(any(target_os = "linux", windows))]
+            if gamepkg::registry::installed_manifest(&root, &id)?
+                .builtin_engine
+                .as_deref()
+                == Some(gamepkg::takedawn::PROFILE)
+            {
+                anyhow::ensure!(
+                    target.as_deref() != Some("wasm"),
+                    "Takedawn requires native Run"
+                );
+                anyhow::ensure!(
+                    load_slot.is_none() && save_slot.is_none(),
+                    "Takedawn uses its original profile saves"
+                );
+                gamepkg::takedawn::play(&root, &id, &rom, &gamepkg::settings::load()?, frames)?;
+                if let Some(count) = frames {
+                    println!("Ran {count} native frames.");
+                }
+                return Ok(());
+            }
+            let mut game = gamepkg::runtime::Game::load_target(
+                &root,
                 &id,
                 &rom,
+                target.as_deref().map(|target| target == "native"),
             )?;
+            if load_slot.is_some() || save_slot.is_some() {
+                anyhow::ensure!(
+                    game.supports_zelda_snapshot_slots(),
+                    "this game does not support Zelda snapshot slots"
+                );
+            }
+            if let Some(slot) = load_slot {
+                game.load_zelda_slot(&root, slot - 1)?;
+            }
             if let Some(count) = frames {
                 if count > 10000 {
                     anyhow::bail!("headless runs are limited to 10000 frames");
@@ -372,6 +610,9 @@ fn main() -> Result<()> {
                     if game.exited() {
                         break;
                     }
+                }
+                if let Some(slot) = save_slot {
+                    game.save_zelda_slot(&root, slot - 1)?;
                 }
                 if game.custom_renderer {
                     println!(

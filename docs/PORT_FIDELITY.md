@@ -1,6 +1,6 @@
 # Port fidelity audit
 
-Audit date: 2026-10-17. Compare behavior against each credited, pinned upstream
+Initial audit: 2026-10-17; overview reconciled with verified work on 2026-10-19. Compare behavior against each credited, pinned upstream
 revision. A playable port or passing smoke test does not prove feature parity.
 The implementation tracker is [port-parity.toml](port-parity.toml); unfinished
 work stays open until behavior is verified.
@@ -9,9 +9,10 @@ work stays open until behavior is verified.
 
 | Port | Remaining gaps |
 | --- | --- |
-| Cube 2 | Wayland lock-state access, Windows lock-state runtime validation, remaining uncommon-key/platform behavior and full controller/touch equivalence; further LAN/platform and master authentication/registration fault/service coverage; custom asset/mod workflows; demo/movie output and persistence; hardware-accelerated engine rendering; native platforms beyond Linux. Vulkan currently presents software-rendered engine frames. |
-| DOOM | Original WAD music, spatial stereo effects, six save slots, configuration, desktop controls and the original quit/ENDOOM flow are runtime verified. Music backend selection, multiplayer, additional WADs/mods and broader control/platform coverage remain unfinished. |
-| Zelda3 | External MSU music, replay tools, save states, widescreen, language selection and desktop enhancement settings need support. The adapter fixes the view to 256×224. Original DSP stereo is verified in native and Wasm gameplay/save tests. |
+| Takedawn | The original native implementation links all 24,003 generated game functions converted to Rust. Race controls pass for Xbox/PS2 layouts; Crash results, profile persistence/reload and non-silent stereo capture have private tests. Signed-package native Build/Play, remembered ISO selection, history, storage, integrity and the separate original window are verified. The standard Build resumed after 456 verified units, compiled the remaining 28 and freshly built the native runtime; its output passes the original race-control gate. Desktop keyboard input creates/reloads a profile and drives the first World Tour race, including pause/resume and normal window closing. Full campaign/progression, steering equivalence, audio fidelity, physical controller and broader platform coverage, production isolation and official publication remain open. Two genuine missing native bodies are recovered and pass 128 C/Rust behavior cases; 13 original unresolved upstream stubs remain. Tested routes do not reach the remaining stubs. |
+| Cube 2 | Wayland lock-state access, Windows lock-state runtime validation, remaining uncommon-key/platform behavior and full controller/touch equivalence; further LAN/platform and master authentication/registration fault/service coverage; custom asset/mod workflows; large recording import/export and further movie capture fidelity; hardware-accelerated engine rendering; native platforms beyond Linux. Vulkan currently presents software-rendered engine frames. |
+| DOOM | Original WAD music, stereo effects, six save slots, configuration, desktop controls and quit/ENDOOM are runtime verified. Complete playback of all 45 selected-WAD music entries, supported map/save/load music transitions and ordered/merge PWAD cases have private tests. Music backend selection, multiplayer, complete mod/campaign compatibility and broader control/platform coverage remain unfinished. |
+| Zelda3 | Original ROM gameplay, stereo and SRAM are verified in native and Wasm. Widescreen/240-line rendering, extra sprites, dim flashes and earlier button-press intro skipping have signed defaults, saved GUI/CLI controls and runtime tests. All original enhancement switches now have signed/saved controls and exhaustive flag-mapping tests; selected combined gameplay and low-health behavior are verified. External MSU music, replay/save-state tools, language selection and complete enhancement/campaign/platform behavior remain open. |
 | Arkanoo | Gravity, speed-triggered portal behavior and ball-to-ball responses are restored with upstream reference and actual-engine tests. Original world proportions and movement/contact order now match upstream reference checks. Per-ball launch timing, life recovery and victory/endless transitions also match original-code fixtures; prior item/score/level caps are removed. Brick health and original blast rules are also verified. All twelve original procedural patterns are restored. Focused mouse movement and original Space/Escape controls are restored. Editor painting/erasing, brick selection, names, save/load, clear confirmation, test return and the custom endless pool are restored. Original ASCII pattern import/export now uses player-selected files. Gameplay cursor confinement/hiding, F11 fullscreen and Q-to-quit outside play are verified in native and browser runtime checks. Normal-size/fullscreen/maximized preferences now persist through the native host. The six main menu actions, project-homepage button and fullscreen/effects settings controls are restored. Music/resolution/VSync controls and remaining menu presentation still need work. Original shard particles are restored; the metallic ball, glass paddle and normal-brick textures are restored; speed lettering and six campaign image backgrounds are restored and directly verified; editor image selection is restored; grid composition, editor/menu lettering, whole-window scaling and other art/effects still need work; original penguin/heart-loss behavior is now verified. Current runs do not persist; high score, unlocked level, gravity and effects preferences do. |
 | 2048 | Random spawning, merge scoring/best score, win/continue/game-over UI, restart, 128-step undo and persistent boards/history are implemented and tested. Byte-sized tile exponents remove the old 32768 cap. Cooperative expectimax assistance/autoplay matches independent upstream reference fixtures; a deterministic 932-turn game reaches 2048. Final signed-package delivery and broader platform verification remain open. |
 
@@ -40,7 +41,7 @@ the original operation happened.
 | Source | Observed behavior | Required follow-up |
 | --- | --- | --- |
 | `engines/cube2/adapters/network.h` | Broadcast reaches the owned UDP socket; real nonblocking TCP now supports bind/connect/listen/accept/poll/shutdown. Reverse lookup returns a numeric address. Bounded buffer sizes, timeouts, address reuse and TTL now reach the actual host socket; error/TTL queries read host results. Socket shutdown now reaches the OS; bounded browser snapshots use explicit virtual EOF/half-close semantics. | Audit each original ENet caller; finish the host operations it needs and test real discovery, authentication, server registration, disconnect and error handling. Keep permission denial explicit. Do not infer complete networking from ordinary packet exchange. |
-| `engines/zelda3/adapters/engine.c` | MSU enable is ignored and MSU track playback falls back to the internal audio path. Initialization fixes extra horizontal area to zero and selects the default language. The frame scheduler omits the desktop replay log. | Add selected optional resources, enhancement/language configuration, and bounded replay/save-state persistence with actual engine tests. Ordinary ROM gameplay does not verify these features. |
+| `engines/zelda3/adapters/engine.c` | Signed/saved video options configure the original PPU before play: bounded side area, height, sprite limits, dim flashes and early intro skipping. Default language remains selected, external MSU playback is unavailable, and the frame scheduler omits the desktop replay log. | Add selected optional resources, language configuration and bounded replay/save-state persistence, and finish individual enhancement/campaign behavior qualification with actual engine tests. Existing ROM/presentation checks do not verify those missing features. |
 | `ports/arkanoo/source/src/menu.rs` and `render.rs` | All five original recorded effects are restored, but the menu covers only part of the original presentation/settings and effects still advance through game ticks. | Restore the remaining transitions, resolution confirmation/revert, VSync and remaining licensed art/audio; verify each against the pinned original. Window-size persistence alone does not implement a resolution menu. |
 | `ports/2048/CREDITS.md` | Tile exponents stop at 63 and scores use checked fixed-width storage; the reference implementation has a smaller tile representation. | Retain explicit bounds in documentation and boundary tests. Verified solver/gameplay behavior does not establish unlimited arithmetic, package delivery or every-platform support. |
 
@@ -526,6 +527,88 @@ formatting, 125 pinned source hashes and seven public-page link checks pass.
 CLI and GUI are rebuilt locally. This is source-only progress at version 0.1.17;
 full controller/touch hardware and overall port parity are not claimed complete.
 
+
+Native touch identity follow-up: mouse emulation in the window adapter now
+belongs to a complete device/finger pair. Previously it compared only the
+finger number, so another native device reusing that number could move or end
+the emulated pointer. Only a fresh Start can acquire ownership; duplicate starts
+and unmatched Move/End/Cancel events cannot create or take over a gesture. The
+adapter still forwards all raw touch events independently for multi-touch game
+controls. Production-helper integration tests cover zero, ordinary and maximum
+IDs, matching fingers on distinct devices, distinct fingers on one device,
+duplicate starts, orphan events, terminal events and reacquisition. The full
+737-test release suite, strict lint, 32-bit Windows library compilation and
+real native Cube 2 mouse/focus/window regression pass. This proves the routing
+change and host regression coverage, not multi-touchscreen hardware behavior.
+The cancellation follow-up below completes emulated-button cleanup and focus
+interruption; pointer disappearance alone intentionally does not release a
+pressed button, so a separate cancellation event is required.
+
+Native touch cancellation follow-up: the pinned egui 0.31.1 host fork adds
+`PointerButtonCancelled`, which releases the specified button without a click.
+The adapter emits it for an owned cancelled touch and cancels its touch owner
+when the window loses focus. Raw touch cancellation, pointer disappearance and
+the emulated button now end together. Unrelated fingers and late events cannot
+release another gesture. Other held mouse buttons remain held; ordinary mouse
+release behavior is unchanged. No synthetic movement or focus change is used.
+
+The real-widget tests warm the layout before pressing, verify same-frame and
+later cancellation never activate a button, reject duplicate cancellation and
+require a fresh tap to activate the widget afterward. A red case demonstrates
+that `PointerGone` alone retains the original pressed state. All three tests
+pass on host and actual ELF32 with the production patched egui. A private X11
+window test sends native touch/focus events through the actual adapter and egui
+context, covering ownership, interruption, orphan events and fresh-tap recovery;
+it executes exactly one required test. These are constructed native events,
+not a physical touchscreen qualification. Windows i686 library compilation,
+strict lint, CLI/GUI builds and all 740 standard tests pass; the real native
+Cube 2 mouse/window regression also passes after its private fixture rebuild.
+CI includes the cancellation, native-window and two-width gates. The fork keeps
+the original version, both upstream licenses and source revision, with only
+two modified upstream Rust files. Physical devices and wider platform coverage
+remain open.
+
+Touch mouse-control follow-up: the first-person desktop players accept a drag
+that begins in the upper two-thirds of the game window. One device/finger pair
+owns relative motion until it ends or is cancelled; other fingers can keep using
+the bottom movement/action regions. A camera finger crossing into those regions
+does not acquire button actions. Positions are converted from logical window
+coordinates using display scale, with fractional movement retained. Lifting a
+finger, cancellation, invalid input, focus loss and game reset release ownership;
+an unmatched move cannot reacquire it. Button contacts also require a fresh
+Start after focus loss. Other games retain their existing touch regions without
+camera motion. Mouse sensitivity and the original games' mouse semantics apply.
+
+Three tests cover ordered/scaled/fractional drags, device identity, multiple
+fingers, End and Cancel, bounds, focus/reset/invalid input, and combined camera
+and action contacts through actual egui window polling. The original window
+test exposed a nested context-read deadlock, corrected by reading display scale
+before entering the input closure. The full 735-test standard suite passes.
+`tools/check_touch_look.py` builds the actual gesture implementation and its
+ownership/motion test against pinned real egui; host and actual ELF32 execution
+pass. A fresh private Cube 2 native build also passes its real Vulkan-window
+mouse capture, menus, release/recapture, focus and close regression. Physical
+touchscreens, OS touch-to-mouse emulation and full controller/touch/platform
+equivalence remain unverified.
+
+Controller camera timing follow-up: right-stick motion now integrates elapsed
+window time rather than treating a stick rate as a displacement on every
+update. The original dead zone and 60-Hz turning speed remain, while fractional
+movement is retained for slow turns and fast displays. Neutral input and direction
+changes discard stale fractional travel. Focus loss, game reset, invalid or
+backwards clocks and gaps over 100 ms discard pending travel rather than replay
+a camera jump. Aggregated rates remain bounded to 64 reference units per axis;
+one accepted interval can produce at most 384 mouse units. Native mouse deltas
+and game sensitivity preferences remain unchanged.
+
+Production-helper tests verify equal travel within one mouse unit at 10, 20,
+30, 60, 75, 120, 144 and 240 updates per second, including slow input, both axes,
+varying intervals, neutral/reversed input and focus/time discontinuities.
+`tools/check_controller_look.py` compiles the actual helper and its actual tests;
+`--32-bit --linker gcc-11` executes them as ELF32 on the local multilib setup.
+Both widths pass. CI runs both widths with its installed compiler. This fixes
+the host calculation shared by the first-person ports; physical controllers,
+device-specific calibration and complete controller/touch parity remain open.
 
 Input-lease recovery follow-up: the 250 ms stale-input release is unchanged. The
 background worker now retains bounded, UI-observed physical key/button state
@@ -3743,6 +3826,235 @@ unmuted defaults. Unknown bits, either gain above 128, invalid patterns and
 truncation reject before changing stored settings or patterns. Encoders clamp
 caller gains to 0..128. Unicode pattern names and complete archives round-trip.
 
+Archive encoding reserves its complete byte length before writing, preventing
+the final pattern cells from doubling a near-limit buffer. The maximum-size
+archive regression checks both length and allocation capacity at 1,048,576
+bytes on actual Linux32 and Linux64; all 101 port unit cases also pass after
+this change. This removes one allocation spike. It does not yet establish that
+maximum archives, editor backups and dense scenes fit together with recorded
+audio in every guest runtime; that combined-memory qualification remains open.
+
+The private full-port qualification now installs a synthetic maximum-size ARK4
+archive, restarts the actual guest, changes the music setting and checks that
+all pattern bytes survive the resulting save. Desktop core and component Wasm
+pass with the original recordings and unchanged audio shares. Native diagnostics
+identified a failed 1,048,352-byte name allocation during decoding. The owned
+single-pattern decoder now validates before mutation and reuses the input
+allocation for that name. A pointer-identity regression and malformed UTF-8
+rejection pass on actual Linux32 and Linux64. The later settings-change failure
+was eliminated by lending that name buffer to synchronous archive encoding and
+restoring it before save commit or rollback. The complete maximum archive now
+loads, changes music settings and preserves every pattern byte in native, core
+and component desktop runtimes, with all original audio inputs and unchanged
+16 MiB combined limits. Pointer-identity tests verify reuse in both directions;
+zero/multiple-pattern encoding and failed editor transactions retain their bytes.
+The runner checks all three variants before reporting failures, so a native
+failure cannot hide the component result. Browser maximum-state coverage,
+editor backups and dense scenes remain open; the single-pattern regression
+does not prove those broader cases.
+
+The full private runtime regression additionally constructs an exact 1 MiB
+archive with 5,041 unique patterns. Core and component desktop runtimes preserve
+every pattern through a music-settings save. Native startup initially exhausted
+memory while holding the raw archive beside its pattern table. The game now
+reads directly into final name/cell allocations through a reusable 4 KiB cache,
+and decoding reserves the exact validated pattern count. The smaller cache also
+avoids a failed 65,537-byte native RPC response allocation without exceeding the
+unchanged call budget. Saving now streams the archive through bounded host-owned
+chunks rather than allocating another full archive in the guest. Native, core
+and component desktop runtimes all pass loading and a music-settings save of
+the exact 5,041-pattern archive, preserving all pattern bytes. Both full private
+browser profiles also pass normal music/effect gameplay, settings saves and
+restart with this API. Browser maximum archives and full editor backup/edit
+transactions still require their own qualification.
+
+The host retains the previous save until every ordered chunk arrives. Chunks
+are limited to 64 KiB and the replacement remains limited to 1 MiB; incomplete
+sequences are discarded before the next tick. Disk publication still uses the
+existing successful-tick transaction. Host tests cover gaps, abandoned writes,
+oversize chunks, integer overflow and unchanged disk data; end-to-end runtime
+tests cover traps after completed chunk writes, incomplete multi-tick writes and
+permission denial. Browser tests cover bounds/order, canonical bindings and the
+unchanged shared 1 MiB per-tick save-transfer budget.
+
+The maximum 5,041-pattern runtime case also opens the editor and browser, loads
+the first pattern, erases one cell and stores it over the original. Native,
+core and component runtimes preserve the complete archive with exactly that
+one byte changed. Editor rollback now records changed cells and insertion
+indices instead of cloning the complete collection. Replaying records in
+reverse restores indices after interleaved insertions; repeated edits, failed
+transactions and original name allocation identities pass standalone Linux32
+and Linux64 tests. The working board remains available after a failed save.
+
+Native editor entry exposed an additional 31,868-byte allocation failure while
+retaining both a full static label raster and its tile. Label decoding now
+produces only the requested tile directly from the original RLE data. Existing
+256-column boundaries, one-column sampling overlap and draw order are retained.
+Every tile row matches the unchanged original SDL label fixtures exactly, and
+all 101 port unit tests pass. This establishes the tested small-name full
+collection edit; extremely long active names, browser maximum-state execution,
+failure injection in the complete guest and dense scenes remain open.
+
+The game's streaming reader/writer now lives in `save_io.rs`, compiled directly
+by standalone tests with bounded host fixtures. The loader agrees with the
+original codec for ARK1/2/3/4, every truncation and single-byte mutation of the
+Unicode multi-pattern fixtures, trailing data and oversized input. Invalid input
+never invokes a write. Maximum single-name archives use exactly 256 reads;
+failed and short reads at the first, second, middle and final chunks stop
+immediately. Corresponding failed writes leave the previous blob unchanged,
+and successful streaming output matches the existing ARK3/ARK4 encoders exactly.
+These checks pass on actual Linux32 and Linux64. The refactored full private
+port also passes native/core/component playback, maximum saves and collection
+editing; complete-guest fault injection and browser maximum states remain open.
+
+### Maximum browser archive and collection editing qualification
+
+Both core and component browser exports now load exact 1 MiB archives for two
+shapes: one near-limit identifier and 5,041 distinct short-name patterns. The
+maintainer test supplies the initial fixture once through the normal progress
+load boundary, changes the music setting through real UI input, waits for the
+real persistent commit and compares every pattern byte. It then opens a fresh
+playback session without the fixture override and verifies byte-for-byte reload
+from the actual progress store. The collection case additionally opens the
+editor/browser, loads the first pattern and erases/stores one cell; exactly that
+cell byte changes, and the edited archive survives the fresh-session reload.
+
+All original effects/music remain enabled. The existing 16 MiB parent partition,
+3 MiB effects share, 7 MiB music share, two 1,200,224-byte asset workspaces and
+3,891,008-byte guest allowance are unchanged. Every stopped session releases its
+parent reservations before the next begins. No renderer, frame deadline, save,
+transfer or observation limits were increased. The browser input trace caught
+an initial test click half a pixel outside the grid; the final test uses the
+interior of the same first cell. This establishes the two tested archive shapes
+and short-name collection editing, not extremely long active names, complete
+guest failure recovery or dense-scene parity.
+
+The explicit `check_arkanoo_recorded_port.py --long-names` qualification now
+opens the full-size single identifier in the pattern browser, then attempts
+loading/storing it in the editor without altering its archive bytes. This is
+currently failing in native, core and component desktop runtimes. Core and
+component fail while entering the browser (logical L): `unicode_layout` grows
+the complete shaped-glyph vector through `unicode_append`, requesting
+7,143,424 bytes against the unchanged 6 MiB guest allowance. Native stops at the
+same action. This is separate from save serialization, which already passes.
+The required fix must preserve complete names and shaping/sampling semantics
+while avoiding full offscreen glyph retention; input truncation and larger
+memory ceilings do not close this requirement. The opt-in gate reports each
+runtime failure and remains an outstanding qualification, alongside the normal
+maximum-archive/short-name editing checks.
+
+Printable ASCII labels now derive a conservative visible-prefix bound from the
+pinned font's minimum pair advance, negative bearings and maximum three-input
+ligatures. The bound includes additional offscreen glyphs for shaping lookahead;
+stored identifiers remain complete. The fast path is used only for left-aligned
+viewport labels after verifying positive advances and a fixed vertical envelope.
+Centered and non-ASCII labels retain the existing full shaping path. Editor
+prefix/name/suffix assembly uses the same bound, avoiding a complete temporary
+copy solely for a clipped label.
+
+Visible glyph pixels match full shaping for long kerning/ligature/punctuation
+cases on Linux32 and Linux64, and all 102 port unit tests pass. The long-name
+qualification now passes browser entry, active loading and storing in both
+desktop Wasm profiles within their unchanged memory allowance. Native passes
+browser entry but still stops on Enter while loading the full identifier into
+the working editor; that separate failure remains to diagnose and fix. Broad
+Unicode maximum-name support and browser-export long active-name qualification
+are still open. No arbitrary text-length limit or source-policy exception was
+introduced.
+
+The remaining native long-name load is now fixed by sharing identifiers between
+the archive and working editor. Short identifiers use a compact shared string;
+large identifiers retain and share their original String allocation. The name
+value occupies no more space than the former String field on actual Linux32 and
+Linux64. This avoids both a near-1 MiB copy on editor load and per-short-name
+wrapper overhead that would otherwise regress maximum collections. Explicit
+name edits copy on write, preserving the archived identifier and its allocation
+until the user stores a replacement. Unicode backspace/input, rollback, exact
+save bytes and streaming fault tests retain their expected values.
+
+Native and both desktop Wasm profiles now pass `--long-names` alongside the
+5,041-pattern collection load/edit/save cases. Both browser profiles also open
+the near-limit ASCII identifier in the pattern browser and working editor,
+store it intact, and reload it byte-for-byte from persistent storage. The full
+collection edit/reload and all parent reservation release checks still pass.
+All 110 port/codec tests pass; the eight storage/streaming cases also execute on
+actual Linux32. No memory ceiling, source restriction, save format or archive
+name length was changed. Maximum-length typing that requires a distinct working
+copy, broad Unicode maximum-name shaping and dense-scene fidelity remain open.
+
+The separate `check_arkanoo_recorded_port.py --typing` probe now loads the full
+ASCII identifier, enters name editing, removes its final character, types a
+different character, then restores the original character and stores the name.
+Both desktop Wasm profiles complete this input sequence and preserve the final
+archive bytes. Native stops on the first logical Backspace (code 8), where the
+shared large-name path requires copy-on-write. This remains a failing native
+resource regression; it does not invalidate the passing select/load/store case.
+The probe currently observes runtime survival and final archive equality, rather
+than independently reading intermediate working-name contents, so it is not a
+complete proof of maximum-length text editing. No memory ceilings were raised
+and no input was truncated or silently denied to make this probe pass.
+
+The native tail-edit failure is now fixed with segmented identifier storage.
+Deletion adjusts a UTF-8 boundary in the shared prefix. A replacement retains
+that prefix and stores only its changed suffix; shared edited names copy their
+suffix metadata when necessary, preserving previously stored values. Name
+comparison, archive serialization, ASCII export and filename sanitization read
+the segments in order. Rendering joins only the font-derived visible prefix
+for ASCII, while ordinary single-segment labels use borrowed slices. Unicode
+fallback labels no longer gain an unnecessary full-size viewport copy.
+
+The full `--typing` input sequence now completes in native, core and component
+desktop runtimes within the unchanged shares. Both browser profiles perform
+the same deletion/replacement/restoration through real keyboard input, commit
+the original bytes and reload them intact from persistent storage. Maximum
+collections still load, edit and save correctly. Independent tests check the
+intermediate UTF-8 suffix contents, retained prefix pointer, stored-value
+isolation, lexical ordering and exact equivalence to flat-string save bytes.
+All 112 port/storage tests pass; ten storage/streaming cases and the borrowed
+viewport pixel test also pass on actual Linux32. No archive format, memory
+ceiling, source restriction or text-length limit changed. Broad maximum-name
+Unicode shaping, larger edit workloads, complete guest failure recovery and
+dense-scene parity remain open; these results cover the tested tail-edit case.
+
+The broader production integration suite (`tests/arkanoo.py --runtime-only`)
+also passes after the streaming save, segmented identifier and viewport changes.
+All 71 signed runtime checks pass before native builds and again after the
+native builds are installed. Coverage includes original SDL rendering fixtures,
+dense backgrounds/boards/particles, editor and filename workflows, save
+continuity/corruption/denial, controls, recorded effects and window commands.
+Reference hashes, pixel tolerances, scene counts, deadlines and test parallelism
+remain unchanged. Both CLI and GUI release entries rebuild with all features
+and both embedded audio companions afterward.
+
+This regression run uses the active port's existing guest-effects path and its
+normal memory allocation. It does not close dense-scene qualification of the
+private complete recorded-music candidate with its smaller guest allowance.
+The runtime-only run also omits interactive desktop file-picker/window QA;
+those workflows require their own live checks.
+
+### Dense campaign scenes with complete recorded audio
+
+`check_arkanoo_recorded_dense.py` now compares six controlled campaign states
+with 200 blocks and 3,000 particles against the active source port. The probe
+uses the actual initialized Game and production rendering code; only scene
+state and a direct original-effect request are supplied by the private fixture.
+The complete candidate retains the fixed 16 MiB parent, 3 MiB effects and 7 MiB
+music shares, leaving the existing 6 MiB desktop guest allowance. Original music
+is initially audible and remains Playing throughout every scene; original
+effect commands reach the real shared playback consumer and finish naturally
+between cases, without enlarging the four-voice limit.
+
+All six states pass in native, core and component desktop runtimes. Each matches
+all 234 ordered draw commands, coordinates, colors, clips and image bytes exactly
+against the active port, using 7,896,124 bytes of the unchanged 8 MiB frame image
+budget. No scene count, pixel tolerance, memory ceiling or deadline was raised.
+The reference port's original rendering is separately covered by the passing
+71-check production suite. These comparisons qualify the six controlled dense
+states with audio; they do not establish every animated/background state,
+browser dense-scene execution or interactive platform parity. The maximum
+archive combination is qualified below. CI runs the private comparison before
+full-browser qualification, and publishes none of its generated packages or media.
+
 The standalone codec cases execute on actual Linux32 and Linux64. All 101
 existing port unit cases, the two new codec cases, strict lint and approved-source
 isolated native/Wasm compilation pass. The synthetic source-build check now
@@ -3891,3 +4203,364 @@ This qualifies the private full-audio migration on the tested desktop/browser
 paths. Public active-port migration, complete original menu/pixel/gameplay parity,
 other platforms and whole-host memory accounting still require work. The active
 public recipe and released app binaries are not represented as already migrated.
+
+### Maximum archives with recorded audio and dense desktop scenes
+
+The final packed-pattern candidate passes `check_arkanoo_recorded_dense.py
+--full-save` in native, core and component desktop runtimes. An exact 1 MiB
+ARK4 save containing 5,041 patterns remains loaded throughout all six dense
+states; the probe verifies the pattern and particle counts as well as exact
+ordered rendering commands and image bytes. Audio shares, guest limits, voice
+counts, frame budgets and deadlines are unchanged. CI now runs this combined
+case rather than only the empty-archive variant.
+
+Patterns retain all original cell values in lossless nibble storage and expand
+to the same 200 wire bytes when saved. Exhaustive valid cell-pair tests and
+every invalid cell value verify decoding, atomic rejection and unchanged wire
+bytes. Native image calls send the existing header and borrowed pixels directly
+under one output lock, avoiding an extra full-packet allocation without changing
+the protocol or its bounds.
+
+The final candidate also passes actual Chromium core and component gameplay,
+original recorded music/effects, mute and restart checks, and both maximum-size
+archive shapes. Real editor actions commit byte-exact saves and fresh sessions
+reload them from persistent storage. All 76 images, five effects and nine tracks
+remain present in the 33,185,755-byte export. These browser checks do not yet
+combine the dense-scene fixture with the maximum archive.
+
+The full `cargo test --all-features` run completes successfully, including the
+259 passing host unit tests and the standard integration suites. Fixture-bound
+ignored tests retain their separate qualification requirements; a standard
+green run does not establish those cases or cross-platform completion.
+
+### Dense browser scenes with maximum archives and recorded audio
+
+`check_arkanoo_recorded_dense_web.py` uses the same private scene initializer
+as the desktop comparison and the production renderer unchanged. Actual
+Chromium core and component exports each pass all six scenes with 200 blocks,
+3,000 particles and the full 5,041-pattern save loaded. Returned state confirms
+the actual pattern and particle counts. Every ordered command, geometry value,
+color and image-byte SHA-256 equals the active-port browser reference. Each
+scene retains 234 commands and 7,896,124 image bytes.
+
+Recorded music remains Playing, an original effect reaches the real browser
+audio session, and stopping releases every tracked parent budget. Guest
+accounting remains 3,891,008 bytes within the unchanged 16 MiB parent, 3/7 MiB
+audio shares and two 1,200,224-byte asset workspaces. No execution deadline,
+image cap, voice limit or comparison tolerance changed. Test observations and
+Chrome's own allocations remain outside that named guest/audio accounting.
+
+CI now includes this private comparison after the existing full-browser
+editor/persistence check. These checks qualify six controlled scene states,
+not all animation sequences, broad maximum-length Unicode shaping or
+interactive platform parity. No generated package, media or real key is
+published. The all-feature optimized CLI and GUI rebuild also passes.
+
+### Unicode cluster lookahead and reproduced maximum-name failure
+
+Unicode shaping no longer allocates a duplicate scalar vector for each
+combining cluster. Iterator lookahead detects variation selectors before
+normalization, preserving the previous append/composition/substitution order.
+The pinned pre-change eager shaper in
+`tests/fixtures/arkanoo_unicode_shape_eager.rs` independently checks exact output
+for 576 mixed base/mark/variation combinations, three 32,768-mark clusters and
+empty/NUL cases. All 103 port unit tests and strict all-target/all-feature lint
+pass, including the existing independently recorded SDL text rasters.
+
+The full private runtime probe now accepts `--unicode-name SAMPLE`, retains a
+valid full 1 MiB archive with a final ASCII character for the existing edit/
+restore sequence, and forces the long-name editor/browser workflow. The
+reproduction with `--typing --unicode-name Aé` fails while opening the pattern
+browser: core and component attempt growth to 7,143,424 bytes beyond the fixed
+6 MiB guest share; native exceeds its existing deadline. This is an open
+production limitation, not a passing qualification. The duplicate-cluster
+removal alone does not solve the full-name point vector and full-name shaping
+cost. No name is truncated, no rendering/input cap or deadline is increased,
+and the failing runtime check remains available for the next correction.
+
+### Maximum Unicode base-name correction
+
+The previously failing full-size `Aé` name now passes the complete private
+native, core and component port probe with `--typing --unicode-name Aé`. Actual
+Chromium core and component exports also pass the same full 1 MiB name through
+editor selection, character replacement/restoration, byte-exact commit and
+persistent reload. Recorded music/effects, mute, restart and shutdown checks
+remain enabled; the original memory shares and execution deadlines are unchanged.
+
+The viewport path verifies independent single-glyph normalization against the
+pinned font's complete cmap, decomposition and space-fallback scalar tables.
+It derives a conservative advance from every possible used-glyph ligature and
+kerning pair, checks bearings and the vertical envelope, then copies only a
+UTF-8-complete visible prefix with shaping lookahead. The complete original name
+remains in the archive. No arbitrary name length or glyph-count limit is added.
+Centered text and unproven cases retain the existing complete shaping.
+
+Exact visible pixels match full layout for mixed accented Latin, Greek,
+Cyrillic, missing-glyph text, kerning and ligatures, including segmented names.
+An additional table-driven test checks each scalar against the pinned eager
+shaper and compares every visible raster tile for each optimized scalar-table
+entry. All 105 port unit tests pass. CI adds the full Unicode desktop and
+browser workflows alongside existing ASCII checks. Maximum-length combining
+clusters, variation sequences and glyphs outside the proven vertical envelope
+remain open; passing base-name checks do not establish those cases.
+
+The same four focused ASCII/Unicode normalization and viewport tests also pass
+as an actual i686 Linux executable against the final source. The exhaustive
+viewport test exercises 2,705 optimized scalar-table entries and compares all
+five visible raster tiles for each. Strict all-target/all-feature lint,
+formatting, CI YAML, private-probe syntax and parity TOML checks pass. This
+32-bit evidence covers the tested text path, not a complete 32-bit app release.
+
+### Decomposed-accent viewport correction
+
+The full-size `A` plus U+0301 name first reproduced the earlier memory failure
+in both Wasm profiles and stopped the native worker while opening the browser.
+The corrected complete candidate passes `--typing --unicode-name` with that
+decomposed sample in native, core and component desktop runtimes. Actual
+Chromium core and component exports also pass editor save, exact-byte
+persistent reload, recorded-audio controls and parent-budget release. Original
+UTF-8 name bytes are retained; no normalization is written back to the archive.
+
+The viewport scanner retains one current composed scalar rather than a full
+name-point vector. It accepts only nondecreasing combining classes whose exact
+font normalization consumes the complete cluster into one approved nominal
+glyph. It verifies each composition against the existing complete shaper,
+tracks the largest proven cluster, and ends any visible prefix at a complete
+cluster boundary, including boundaries split across name segments. Ligature,
+kerning, bearing and vertical-envelope proofs remain required.
+
+All 107 port unit tests pass. The composition test traverses every chain in the
+pinned 941-rule composition graph (maximum three successive compositions),
+compares normalization with the pinned eager implementation and checks exact
+visible tiles for every optimized case: 365 pairs/chains. Strict lint passes.
+CI adds decomposed-name desktop and browser cases alongside the existing ASCII
+and composed-scalar cases. Unconsumed marks, reordered classes, variation
+selectors and other unproven clusters retain full shaping and remain open. No
+guest memory, time, input, drawing or audio limits have been increased.
+
+All six focused checks also pass as an actual i686 Linux executable against
+the final source, including 365 optimized composition pairs/chains and 2,705
+scalar-table viewport cases. This verifies the tested text path on Linux32;
+Windows32, Android and broader interactive parity still require their own
+qualification.
+
+### Variation-selector viewport and loading-recovery corrections
+
+The full-size repeated `A` plus U+FE0F name reproduced the previous memory
+failure in core/component and stopped native playback. The corrected private
+port passes desktop native/core/component edit/restore and both real Chromium
+profiles' editor save and persistent reload. Full original UTF-8 bytes remain
+in saves. A selector is admitted to the viewport proof only when the pinned
+shaper emits an unflagged glyph with zero bearings, dimensions and advance.
+Only trailing selectors after a proven base/composed cluster are accepted;
+marks following a selector retain complete shaping because their normalization
+can differ. Ligature/kerning lookahead and complete prefix cluster boundaries
+remain enforced. All 108 port unit tests and strict lint pass.
+
+The browser run also exposed a transport failure before reaching the name
+fixture: a replacement decoder failed before sending begin while an older
+track was terminal, leaving the committed replacement Loading indefinitely.
+A deterministic Node MessageChannel regression reproduced it. The receiver
+now processes the current replacement's failure despite older terminal state,
+records its peer generation, and retains stale/late message rejection and
+completed-track queued PCM. Six ended/failed/stopped versus loading/paused
+replacement combinations, subsequent recovery, and queued-EOF preservation
+pass. Actual Chromium production-worklet tests verify all six combinations,
+existing independent SDL hashes, decoder supervision, dispatcher rollback,
+combined playback and session shutdown. The rebuilt all-feature CLI/GUI and
+complete selector-name browser workflow pass with unchanged limits.
+
+CI adds the selector desktop/browser cases alongside prior ASCII, base Unicode
+and decomposed-accent cases. Existing transport qualification automatically
+runs the new Node and production-worklet regressions. Giant individual
+clusters, unconsumed/reordered marks and other unproven text contexts remain
+open; this does not establish universal maximum-length Unicode support.
+
+The final seven focused tests also pass as a real i686 Linux executable,
+including 1,295 optimized selector/context raster comparisons, 365 composition
+pairs/chains and 2,705 scalar-table entries. Selectors that do not satisfy the
+pinned-font zero-metric proof retain full shaping. This is 32-bit text-path
+evidence, not completion of Windows32, Android or other platform qualification.
+
+### Maximum single selector-run correction
+
+The new `--selector-run` full-port fixture contains one `A`, 349,450 identical
+U+FE0F selectors and final `x` padding in a complete 1 MiB ARK4 save. Before the
+correction, both Wasm profiles attempted growth beyond their 6 MiB share and
+native exceeded its existing deadline while opening the pattern browser.
+The corrected complete private candidate passes native/core/component editing,
+character replacement/restoration and unchanged save bytes. Both actual
+Chromium profiles pass the corresponding seeded fixture, editor commit and
+persistent reload, original audio controls and ordered budget release. The
+browser probe explicitly verifies the full original selector-run fixture bytes.
+
+Only the rendering representation compacts adjacent identical selectors,
+retaining one selector per run when the immutable font proves unflagged zero
+metrics and skippable lookahead. This retains raw normalization mode, the
+class-zero barrier and final starter scalar, including contexts with later
+marks, join controls, spacing fallback, leading selectors and ligatures. The
+original name remains untouched in editor/archive storage. Two passes compute
+exact display capacity without first cloning the large source text. The giant
+run's five-byte display representation has capacity five.
+
+Across 2,331 contexts, normalization matches the pinned eager shaper after
+excluding only proven zero glyphs; complete dimensions and all five visible
+raster tiles match exactly. Every UTF-8 segment boundary preserves compaction.
+All 109 port unit tests and strict all-target/all-feature lint pass. CI adds
+the single-run desktop/browser cases without removing prior ASCII, Unicode,
+decomposed-accent or repeated-selector coverage. Unsupported/nonidentical
+giant clusters and other unproven contexts remain open. No resource limits
+or comparison tolerances change.
+
+All eight focused text checks pass as an actual i686 Linux executable, including
+2,331 compaction contexts, 1,295 selector contexts, 365 composition chains and
+2,705 scalar-table cases. The broader signed production suite also passes all
+71 checks before native fixture builds and all 71 again afterward. These cover
+original complete editor/browser pixels, Unicode names and clipping, original
+background/HUD/gameplay rendering, input, save corruption/denial and recording
+semantics with existing references and budgets. The runtime-only run omits
+interactive GUI workflows; other platform and unproven text requirements
+remain separate.
+
+### Original master retry and registration-state checks
+
+`tests/cube2_master_retry.py` verifies the pinned upstream source set, extracts
+unchanged master-state/output/parser functions plus the original heartbeat
+condition, and runs them with deterministic clock and socket-call stubs. It
+checks the zero-clock sentinel, pending connection timeout at 60 seconds,
+no retry at either five-minute boundary and retry immediately afterward,
+connected hourly registration, synchronous connection refusal scheduling,
+fragmented `failreg`/`succreg` replies, custom reply forwarding, blocked and
+partial sends, and disconnect buffer/address/callback cleanup. A `failreg`
+reply logs failure but does not itself disconnect or invent immediate retries.
+
+AddressSanitizer, UndefinedBehaviorSanitizer and LeakSanitizer all pass with
+halt-on-error enabled. CI includes the regression in both feature matrices.
+The production Rust network broker separately passes its actual loopback TCP
+refusal/error-query and disabled-network test. The fragment harness records
+network calls; it does not run an actual engine or contact a public master.
+Full engine-to-master timed recovery and wider service/platform behavior remain
+open. No original retry interval, network permission, quota or deadline changes.
+
+### Long-session opaque network-handle correction
+
+The new host regression first failed after 992 allocations even though every
+socket had been closed. The old host token range was coupled to `fd_set`
+indexing. The reviewed engine now uses fixed 16-entry virtual sets and the
+host issues fresh positive 32-bit tokens without reusing closed identities.
+No OS descriptor enters the engine. The wire integer representation and packet
+limits are unchanged; 16 live handles, eight opens per second, call/transfer
+quotas and all existing deadlines remain enforced. Token-space exhaustion at
+the positive-int boundary fails closed without wrapping or reusing stale IDs.
+
+All 14 host network tests pass. They include 1,280 mixed UDP/TCP/snapshot
+replacements, stale-token denial, unchanged per-window open quotas, mixed
+16-live-socket admission, accepted TCP at the maximum token, real data transfer
+and clean representation-boundary failure. The guarded ENet shim passes
+large/sparse-token polling, 16-entry and combined-set overflow, duplicate set
+entries, alias preservation, malformed readiness bits and atomic poll failure.
+Address/undefined/leak-sanitized set tests check forged counts, invalid tokens,
+removal, repeated replacement and surrounding memory canaries.
+
+Both the Rust player builder and maintainer builder compile the original
+engine with the same shared header patch. Original source hashes are verified
+and left untouched; repeated/changed overlay anchors fail closed. The native
+cache fingerprint includes both the new adapter and patch description. The
+original engine's private-master registration, cryptographic authentication,
+wrong-key/unrelated-response rejection, successful retry and saved-key recovery
+test passes with the new sets. These checks establish the tested Linux paths;
+Windows/Android and full live master timing remain separate requirements.
+
+The final adapter also passes a real 32-bit C executable ABI/behavior check
+(32-bit pointers, 32-bit tokens, fixed 72-byte sets), the complete standard
+`cargo test --all-features` suite, and a fresh original-engine private-master
+registration/authentication/saved-key run. Both final engine build paths
+complete. Fixture-bound ignored cases retain their separate requirements;
+these results do not establish all port/platform parity.
+
+Final all-feature CLI/GUI release builds pass. Strict all-target/all-feature
+lint passes on Rust 1.89 and 1.99. The newer compiler's iterator lint required
+two test-only `as_chunks` updates; the 365-case composition regression still
+passes on the declared Rust 1.89 minimum without changing reference data or
+case counts.
+
+
+The original native demo record/retrieve/save/replay path is verified by
+`cube2::session::demos::original_demo_recording_survives_snapshot_and_plays_after_restart`.
+It records 120 gameplay ticks, validates the compressed original packet stream,
+restarts with the scoped save, observes original demo playback and changing
+rendered frames for 60 ticks, and checks byte-identical demo persistence. Run
+this ignored fixture-bound regression with `GAMEPKG_CUBE2_DATA` pointing at the
+original local data folder. It does not publish or modify that folder. Large
+recording import/export and movie output remain separate requirements.
+
+Custom demo paths are now verified too. The old save filter silently dropped
+root-level recordings and uppercase `.DMO` files despite the original game
+reporting successful receipt. Both host and engine adapters now preserve
+case-insensitive demo extensions at validated relative paths inside the game's
+isolated save root. Default, empty and custom `demodir` workflows pass actual
+record/save/restart/rendered-replay tests. Existing traversal, link, depth,
+visit, file/count and total-size limits remain enforced; the change grants no
+ambient filesystem access. Rebuild the engine to use the fingerprinted adapter.
+
+Original movie capture no longer steals game audio. The permanent host mixer
+callback feeds both the host stereo ring and the original recorder; synchronized
+removal fences the recorder's state before cleanup. A failing-then-passing real
+engine regression verifies audio before, during and after recording. Shared
+sample/wire tests and 1,000 concurrent callback registration/removal cycles pass
+with address, undefined-behavior and leak checks enabled. Both build paths apply
+the same verified, fingerprinted source overlay. Movie-file persistence is qualified separately below; large recording export
+remains unfinished.
+
+
+Finished original AVI recordings now persist within the unchanged scoped save
+quotas. The full original-engine regression verifies 320x240 video, nonempty
+frame output and 48 kHz stereo PCM through FFprobe and complete FFmpeg decoding,
+then restores a fresh engine and checks identical movie bytes. These tools are
+maintainer test dependencies only. Case-insensitive AVI paths retain the same
+traversal/link/depth/visit/file/count/total protections as demos. Recordings above
+the existing 16 MiB per-file or 32 MiB tree quotas, explicit import/export UI and
+wider capture/platform coverage remain unfinished.
+
+Native engine save writers now hold one kernel-backed lease per library, game,
+creator and save schema. A second session or future recording import must wait
+until the active game closes; it cannot later overwrite that session's state.
+Validated committed snapshots remain readable for recording lists and exports.
+Cross-process exclusion/release, hostile metadata-file types and the real
+background worker's recovery/final-save behavior are verified. The signed CLI
+recording test also lists and exports while a separate process owns the writer
+lease. Bounded recording import uses this protection as described below.
+
+
+Recording import is now available through `gamepkg recording-import GAME_ID
+FILE` and the game-page **Import recording** picker. Close the game first.
+Imports verify the installed creator/schema scope, validate demo gzip integrity,
+version/protocol and bounded packet framing or AVI chunk/stream/frame structure,
+then merge canonically without replacing names or losing existing preferences.
+Legacy preference slots migrate into the same bounded archive. Files remain
+limited to 16 MiB and the save tree to 32 MiB; decoded demo validation uses that
+same 32 MiB budget. Three original demo record/import/restart/playback paths and
+original AVI record/decode/import/restart pass against fresh signed libraries.
+CLI tests cover active-writer, malformed, duplicate, path, size and count failures
+without save changes. Real native Open/Save dialogs pass cancellation and exact
+import/export. Large-recording streaming and wider platform coverage remain open.
+
+Creator-scoped save readers also reject hard-linked current and legacy archives.
+The check uses the opened no-follow descriptor, so another pathname cannot
+substitute for the file being validated. A failing-then-passing regression covers
+both formats; signed recording commands verify that listing, export and import
+through linked archives fail without copying private bytes or changing targets.
+Normal committed snapshots remain readable while the game's writer is active.
+
+### Original main-menu version caption (recipe 0.1.64)
+
+The main menu now restores `Version: 0.5.0`, the pinned original game's version,
+beside its GitHub button. The GamePKG recipe has its own version. Original Roboto
+width, gray color and alignment are retained. Forty independent full SDL menu
+frames, including title/paused and Settings states, pass in signed Wasm and
+native runtimes at the existing two-level rendering tolerance. Each execution
+profile also passes all 71 runtime regressions without changing resource caps.
+
+This does not complete the original settings menu. Resolution selection,
+confirmation/revert and VSync still need host support; the recorded-music
+candidate and broader browser/platform fidelity remain separate work.

@@ -21,12 +21,12 @@ jobs:
         with:
           submodules: recursive
       - name: Install preview codecs
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg g++ libsdl2-dev
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg g++ libsdl2-dev openssl
       - name: Install Rust tools
         run: rustup update stable && rustup default stable && rustup component add rustfmt clippy
       - name: Install audio development headers
         if: matrix.features == '--all-features'
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev libsdl2-mixer-dev
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev libsdl2-mixer-dev libmpg123-dev libmpfr-dev
       - name: Verify original SDL music repeat count and callback continuity
         if: matrix.features == '--all-features'
         run: |
@@ -35,23 +35,245 @@ jobs:
           target/music-loops-reference
       - name: Check formatting
         run: cargo fmt --all -- --check
+      - name: Verify bit-exact optimized audio against the preserved baseline
+        run: |
+          mkdir -p target
+          sha256sum -c tools/audio-resample-bench/source-lock.sha256
+          rustc --edition=2021 -Dwarnings -C opt-level=3 tools/audio-resample-bench/main.rs -o target/audio-resample-compare
+          target/audio-resample-compare --verify-only
+          rustup target add wasm32-unknown-unknown
+          rustc --edition=2021 -Dwarnings --target wasm32-unknown-unknown --crate-type cdylib -C opt-level=3 -C panic=abort -C link-arg=-zstack-size=1048576 -C link-arg=--max-memory=16777216 tools/audio-resample-bench/wasm.rs -o target/audio-resample-compare.wasm
+          node tools/audio-resample-bench/check-wasm.cjs target/audio-resample-compare.wasm
+      - name: Verify native Xbox generator synthetic semantics without game media
+        if: matrix.features == '--all-features'
+        run: |
+          cargo fmt --manifest-path engines/takedawn/native-gen/Cargo.toml -- --check
+          GAMEPKG_TAKEDAWN_PREDICATE_CORPUS="$RUNNER_TEMP/gamepkg-predicate-corpus.bin" GAMEPKG_TAKEDAWN_SELECTION_CORPUS="$RUNNER_TEMP/gamepkg-selection-corpus.bin" GAMEPKG_TAKEDAWN_X87_TRIG_PUSH_CORPUS="$RUNNER_TEMP/gamepkg-x87-trig-push-corpus.bin" GAMEPKG_TAKEDAWN_X87_SINCOS_CORPUS="$RUNNER_TEMP/gamepkg-x87-sincos-corpus.bin" GAMEPKG_TAKEDAWN_X87_FPATAN_CORPUS="$RUNNER_TEMP/gamepkg-x87-fpatan-corpus.bin" GAMEPKG_TAKEDAWN_X87_FYL2XP1_CORPUS="$RUNNER_TEMP/gamepkg-x87-fyl2xp1-corpus.bin" GAMEPKG_TAKEDAWN_X87_FYL2X_CORPUS="$RUNNER_TEMP/gamepkg-x87-fyl2x-corpus.bin" GAMEPKG_TAKEDAWN_X87_F2XM1_CORPUS="$RUNNER_TEMP/gamepkg-x87-f2xm1-corpus.bin" GAMEPKG_TAKEDAWN_F128_CORPUS="$RUNNER_TEMP/gamepkg-f128-corpus.bin" GAMEPKG_TAKEDAWN_F128_FIXTURE="$RUNNER_TEMP/gamepkg-f128-fixture.c" GAMEPKG_TAKEDAWN_ARITHMETIC_CORPUS="$RUNNER_TEMP/gamepkg-arithmetic-corpus.bin" GAMEPKG_TAKEDAWN_EXT80_CORPUS="$RUNNER_TEMP/gamepkg-ext80-corpus.bin" GAMEPKG_TAKEDAWN_MMX_SHIFT_CORPUS="$RUNNER_TEMP/gamepkg-mmx-shift-corpus.bin" GAMEPKG_TAKEDAWN_MMX_LANES_CORPUS="$RUNNER_TEMP/gamepkg-mmx-lanes-corpus.bin" GAMEPKG_TAKEDAWN_MMX_CONVERSION_CORPUS="$RUNNER_TEMP/gamepkg-mmx-conversion-corpus.bin" GAMEPKG_TAKEDAWN_X87_MEMORY_CORPUS="$RUNNER_TEMP/gamepkg-x87-memory-corpus.bin" GAMEPKG_TAKEDAWN_X87_MEMORY_FIXTURE="$RUNNER_TEMP/gamepkg-x87-memory-fixture.c" GAMEPKG_TAKEDAWN_X87_COMPARE_CORPUS="$RUNNER_TEMP/gamepkg-x87-compare-corpus.bin" GAMEPKG_TAKEDAWN_X87_COMPARE_FIXTURE="$RUNNER_TEMP/gamepkg-x87-compare-fixture.c" GAMEPKG_TAKEDAWN_X87_STORE_CORPUS="$RUNNER_TEMP/gamepkg-x87-store-corpus.bin" GAMEPKG_TAKEDAWN_X87_STORE_FIXTURE="$RUNNER_TEMP/gamepkg-x87-store-fixture.c" GAMEPKG_TAKEDAWN_X87_ENVIRONMENT_CORPUS="$RUNNER_TEMP/gamepkg-x87-environment-corpus.bin" GAMEPKG_TAKEDAWN_X87_ENVIRONMENT_FIXTURE="$RUNNER_TEMP/gamepkg-x87-environment-fixture.c" GAMEPKG_TAKEDAWN_X87_REMAINDER_CORPUS="$RUNNER_TEMP/gamepkg-x87-remainder-corpus.bin" GAMEPKG_TAKEDAWN_X87_REMAINDER_FIXTURE="$RUNNER_TEMP/gamepkg-x87-remainder-fixture.c" GAMEPKG_TAKEDAWN_X87_SCALE_CORPUS="$RUNNER_TEMP/gamepkg-x87-scale-corpus.bin" GAMEPKG_TAKEDAWN_X87_SCALE_FIXTURE="$RUNNER_TEMP/gamepkg-x87-scale-fixture.c" GAMEPKG_TAKEDAWN_X87_STACK_CORPUS="$RUNNER_TEMP/gamepkg-x87-stack-corpus.bin" GAMEPKG_TAKEDAWN_X87_STACK_FIXTURE="$RUNNER_TEMP/gamepkg-x87-stack-fixture.c" cargo test --locked --release --manifest-path engines/takedawn/native-gen/Cargo.toml
+          cargo clippy --locked --release --all-targets --manifest-path engines/takedawn/native-gen/Cargo.toml -- -D warnings
+      - name: Verify software SSE, extended math and MMX lanes on a 32-bit big-endian CPU
+        if: matrix.features == '--all-features'
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update && sudo apt-get install -y qemu-user qemu-system-x86 gcc-mips-linux-gnu libc6-dev-mips-cross
+          # The same gate runs native gcc -m32 fixtures as well as MIPS.
+          # Install its headers/runtime without the gcc-multilib meta-package,
+          # which conflicts with cross-compiler meta-packages on this image.
+          sudo apt-get install -y --no-install-recommends libc6-dev-i386 lib32gcc-13-dev linux-libc-dev:i386
+          GAMEPKG_ARITHMETIC_CORPUS_SOURCE="$RUNNER_TEMP/gamepkg-arithmetic-corpus.bin" bash tools/check_takedawn_arithmetic_portability.sh
+          GAMEPKG_EXT80_CORPUS_SOURCE="$RUNNER_TEMP/gamepkg-ext80-corpus.bin" bash tools/check_takedawn_ext80_portability.sh
+          GAMEPKG_MMX_SHIFT_CORPUS_SOURCE="$RUNNER_TEMP/gamepkg-mmx-shift-corpus.bin" bash tools/check_takedawn_mmx_shift_portability.sh
+          GAMEPKG_MMX_LANES_CORPUS_SOURCE="$RUNNER_TEMP/gamepkg-mmx-lanes-corpus.bin" bash tools/check_takedawn_mmx_lanes_portability.sh
+          GAMEPKG_MMX_CONVERSION_CORPUS_SOURCE="$RUNNER_TEMP/gamepkg-mmx-conversion-corpus.bin" bash tools/check_takedawn_mmx_conversion_portability.sh
+          GAMEPKG_X87_MEMORY_CORPUS_SOURCE="$RUNNER_TEMP/gamepkg-x87-memory-corpus.bin" bash tools/check_takedawn_x87_memory_portability.sh
+          GAMEPKG_X87_COMPARE_CORPUS_SOURCE="$RUNNER_TEMP/gamepkg-x87-compare-corpus.bin" bash tools/check_takedawn_x87_compare_portability.sh
+          GAMEPKG_X87_STORE_CORPUS_SOURCE="$RUNNER_TEMP/gamepkg-x87-store-corpus.bin" bash tools/check_takedawn_x87_store_portability.sh
+          GAMEPKG_X87_ENVIRONMENT_CORPUS_SOURCE="$RUNNER_TEMP/gamepkg-x87-environment-corpus.bin" bash tools/check_takedawn_x87_environment_portability.sh
+          GAMEPKG_X87_TRIG_PUSH_CORPUS_SOURCE="$RUNNER_TEMP/gamepkg-x87-trig-push-corpus.bin" bash tools/check_takedawn_x87_trig_push_portability.sh
+          GAMEPKG_X87_SINCOS_CORPUS_SOURCE="$RUNNER_TEMP/gamepkg-x87-sincos-corpus.bin" bash tools/check_takedawn_x87_sincos_portability.sh
+          GAMEPKG_X87_FPATAN_CORPUS_SOURCE="$RUNNER_TEMP/gamepkg-x87-fpatan-corpus.bin" bash tools/check_takedawn_x87_fpatan_portability.sh
+          GAMEPKG_X87_FYL2XP1_CORPUS_SOURCE="$RUNNER_TEMP/gamepkg-x87-fyl2xp1-corpus.bin" bash tools/check_takedawn_x87_fyl2xp1_portability.sh
+          GAMEPKG_X87_FYL2X_CORPUS_SOURCE="$RUNNER_TEMP/gamepkg-x87-fyl2x-corpus.bin" bash tools/check_takedawn_x87_fyl2x_portability.sh
+          GAMEPKG_X87_F2XM1_CORPUS_SOURCE="$RUNNER_TEMP/gamepkg-x87-f2xm1-corpus.bin" bash tools/check_takedawn_x87_f2xm1_portability.sh
+          GAMEPKG_F128_CORPUS_SOURCE="$RUNNER_TEMP/gamepkg-f128-corpus.bin" bash tools/check_takedawn_f128_portability.sh
+          GAMEPKG_X87_REMAINDER_CORPUS_SOURCE="$RUNNER_TEMP/gamepkg-x87-remainder-corpus.bin" bash tools/check_takedawn_x87_remainder_portability.sh
+          GAMEPKG_X87_SCALE_CORPUS_SOURCE="$RUNNER_TEMP/gamepkg-x87-scale-corpus.bin" bash tools/check_takedawn_x87_scale_portability.sh
+          GAMEPKG_X87_STACK_CORPUS_SOURCE="$RUNNER_TEMP/gamepkg-x87-stack-corpus.bin" bash tools/check_takedawn_x87_stack_portability.sh
+          bash tools/check_takedawn_memory_portability.sh
+          GAMEPKG_FP_CONTEXT_PORTABLE_ONLY=1 bash tools/check_takedawn_fp_context.sh
+          GAMEPKG_STACK_FAULT_PORTABLE_ONLY=1 bash tools/check_takedawn_stack_fault.sh
+          GAMEPKG_FLAGS_PORTABLE_ONLY=1 bash tools/check_takedawn_flags.sh
+          GAMEPKG_STRINGS_PORTABLE_ONLY=1 bash tools/check_takedawn_strings.sh
+          GAMEPKG_STRING_CHECKPOINTS_PORTABLE_ONLY=1 bash tools/check_takedawn_string_checkpoints.sh
+          GAMEPKG_ATOMICS_PORTABLE_ONLY=1 bash tools/check_takedawn_atomics.sh
+          GAMEPKG_APPROX_PORTABLE_ONLY=1 bash tools/check_takedawn_approx.sh
+          GAMEPKG_DISPATCH_PORTABLE_ONLY=1 bash tools/check_takedawn_dispatch.sh
+          GAMEPKG_INTERRUPTS_PORTABLE_ONLY=1 bash tools/check_takedawn_interrupts.sh
+          GAMEPKG_IRQ_FLAGS_PORTABLE_ONLY=1 bash tools/check_takedawn_irq_flags.sh
+          GAMEPKG_HARDWARE_INFO_PORTABLE_ONLY=1 bash tools/check_takedawn_hardware_info.sh
+          GAMEPKG_BCD_PORTABLE_ONLY=1 bash tools/check_takedawn_x87_bcd.sh
+          GAMEPKG_TABLES_PORTABLE_ONLY=1 bash tools/check_takedawn_tables.sh
+          GAMEPKG_TABLE_DISPATCH_PORTABLE_ONLY=1 bash tools/check_takedawn_table_dispatch.sh
+          GAMEPKG_FAR_JUMP_PORTABLE_ONLY=1 bash tools/check_takedawn_far_jump.sh
+          GAMEPKG_FAR_MEMORY_PORTABLE_ONLY=1 bash tools/check_takedawn_far_memory.sh
+          GAMEPKG_CPU_CODE_PORTABLE_ONLY=1 bash tools/check_takedawn_cpu_code.sh
+          GAMEPKG_CPU_RETURN_PORTABLE_ONLY=1 bash tools/check_takedawn_cpu_return.sh
+          GAMEPKG_KERNEL_IMAGE_PORTABLE_ONLY=1 bash tools/check_takedawn_kernel_image.sh
+          GAMEPKG_PROCESSOR_PORTABLE_ONLY=1 bash tools/check_takedawn_processor.sh
+          GAMEPKG_SHUTDOWN_PORTABLE_ONLY=1 bash tools/check_takedawn_shutdown.sh
+          GAMEPKG_KERNEL_PRIORITY_PORTABLE_ONLY=1 bash tools/check_takedawn_kernel_priority.sh
+          GAMEPKG_DISPATCHER_OBJECT_PORTABLE_ONLY=1 bash tools/check_takedawn_dispatcher_object.sh
+          GAMEPKG_NV_PORTABLE_ONLY=1 bash tools/check_takedawn_nv.sh
+          GAMEPKG_TIMER_PORTABLE_ONLY=1 bash tools/check_takedawn_timer.sh
+          GAMEPKG_JUMP_TABLE_PORTABLE_ONLY=1 bash tools/check_takedawn_jump_table.sh
+          GAMEPKG_VIRTUAL_PAGES_PORTABLE_ONLY=1 bash tools/check_takedawn_virtual_pages.sh
+          GAMEPKG_VIRTUAL_MEMORY_PORTABLE_ONLY=1 bash tools/check_takedawn_virtual_memory.sh
+          GAMEPKG_IO_PORTABLE_ONLY=1 bash tools/check_takedawn_io.sh
+          GAMEPKG_STATUS_PORTABLE_ONLY=1 bash tools/check_takedawn_status.sh
+          GAMEPKG_FAR_DISPATCH_PORTABLE_ONLY=1 bash tools/check_takedawn_far_dispatch.sh
+          GAMEPKG_NEAR_DISPATCH_PORTABLE_ONLY=1 bash tools/check_takedawn_near_dispatch.sh
+          GAMEPKG_CPU_PORTABLE_ONLY=1 bash tools/check_takedawn_cpu.sh
+          GAMEPKG_SELECTION_CORPUS_SOURCE="$RUNNER_TEMP/gamepkg-selection-corpus.bin" GAMEPKG_SELECTION_PORTABLE_ONLY=1 bash tools/check_takedawn_selection.sh
+          GAMEPKG_PREDICATE_CORPUS_SOURCE="$RUNNER_TEMP/gamepkg-predicate-corpus.bin" GAMEPKG_PREDICATE_PORTABLE_ONLY=1 bash tools/check_takedawn_predicate.sh
+      - name: Compile and link Windows mixed-compiler guest ABI fixtures
+        if: matrix.features == '--all-features'
+        run: |
+          sudo apt-get update && sudo apt-get install -y clang gcc-mingw-w64-i686
+          GAMEPKG_CLANG=clang GAMEPKG_WINDOWS_TLS_LINK_ONLY=1 bash tools/check_takedawn_windows_tls.sh
+          GAMEPKG_CLANG=clang GAMEPKG_FP_CONTEXT_LINK_ONLY=1 bash tools/check_takedawn_fp_context.sh
+          GAMEPKG_CLANG=clang GAMEPKG_STACK_FAULT_LINK_ONLY=1 bash tools/check_takedawn_stack_fault.sh
+          GAMEPKG_CLANG=clang GAMEPKG_FLAGS_LINK_ONLY=1 bash tools/check_takedawn_flags.sh
+          GAMEPKG_CLANG=clang GAMEPKG_STRINGS_LINK_ONLY=1 bash tools/check_takedawn_strings.sh
+          GAMEPKG_CLANG=clang GAMEPKG_STRING_CHECKPOINTS_LINK_ONLY=1 bash tools/check_takedawn_string_checkpoints.sh
+          GAMEPKG_CLANG=clang GAMEPKG_ATOMICS_LINK_ONLY=1 bash tools/check_takedawn_atomics.sh
+          GAMEPKG_CLANG=clang GAMEPKG_APPROX_LINK_ONLY=1 bash tools/check_takedawn_approx.sh
+          GAMEPKG_CLANG=clang GAMEPKG_DISPATCH_LINK_ONLY=1 bash tools/check_takedawn_dispatch.sh
+          GAMEPKG_CLANG=clang GAMEPKG_MEMORY_WINDOWS_LINK_ONLY=1 bash tools/check_takedawn_memory_windows.sh
+          GAMEPKG_CLANG=clang GAMEPKG_INTERRUPTS_LINK_ONLY=1 bash tools/check_takedawn_interrupts.sh
+          GAMEPKG_CLANG=clang GAMEPKG_IRQ_FLAGS_LINK_ONLY=1 bash tools/check_takedawn_irq_flags.sh
+          GAMEPKG_CLANG=clang GAMEPKG_HARDWARE_INFO_LINK_ONLY=1 bash tools/check_takedawn_hardware_info.sh
+          GAMEPKG_CLANG=clang GAMEPKG_BCD_LINK_ONLY=1 bash tools/check_takedawn_x87_bcd.sh
+          GAMEPKG_CLANG=clang GAMEPKG_TABLES_LINK_ONLY=1 bash tools/check_takedawn_tables.sh
+          GAMEPKG_CLANG=clang GAMEPKG_TABLE_DISPATCH_LINK_ONLY=1 bash tools/check_takedawn_table_dispatch.sh
+          GAMEPKG_CLANG=clang GAMEPKG_FAR_JUMP_LINK_ONLY=1 bash tools/check_takedawn_far_jump.sh
+          GAMEPKG_CLANG=clang GAMEPKG_FAR_MEMORY_LINK_ONLY=1 bash tools/check_takedawn_far_memory.sh
+          GAMEPKG_CLANG=clang GAMEPKG_CPU_CODE_LINK_ONLY=1 bash tools/check_takedawn_cpu_code.sh
+          GAMEPKG_CLANG=clang GAMEPKG_CPU_RETURN_LINK_ONLY=1 bash tools/check_takedawn_cpu_return.sh
+          GAMEPKG_CLANG=clang GAMEPKG_KERNEL_IMAGE_LINK_ONLY=1 bash tools/check_takedawn_kernel_image.sh
+          GAMEPKG_CLANG=clang GAMEPKG_PROCESSOR_LINK_ONLY=1 bash tools/check_takedawn_processor.sh
+          GAMEPKG_CLANG=clang GAMEPKG_SHUTDOWN_LINK_ONLY=1 bash tools/check_takedawn_shutdown.sh
+          GAMEPKG_CLANG=clang GAMEPKG_KERNEL_PRIORITY_LINK_ONLY=1 bash tools/check_takedawn_kernel_priority.sh
+          GAMEPKG_CLANG=clang GAMEPKG_DISPATCHER_OBJECT_LINK_ONLY=1 bash tools/check_takedawn_dispatcher_object.sh
+          GAMEPKG_CLANG=clang GAMEPKG_NV_LINK_ONLY=1 bash tools/check_takedawn_nv.sh
+          GAMEPKG_CLANG=clang GAMEPKG_TIMER_LINK_ONLY=1 bash tools/check_takedawn_timer.sh
+          GAMEPKG_CLANG=clang GAMEPKG_JUMP_TABLE_LINK_ONLY=1 bash tools/check_takedawn_jump_table.sh
+          GAMEPKG_CLANG=clang GAMEPKG_VIRTUAL_PAGES_LINK_ONLY=1 bash tools/check_takedawn_virtual_pages.sh
+          GAMEPKG_CLANG=clang GAMEPKG_VIRTUAL_MEMORY_LINK_ONLY=1 bash tools/check_takedawn_virtual_memory.sh
+          GAMEPKG_CLANG=clang GAMEPKG_IO_LINK_ONLY=1 bash tools/check_takedawn_io.sh
+          GAMEPKG_CLANG=clang GAMEPKG_STATUS_LINK_ONLY=1 bash tools/check_takedawn_status.sh
+          GAMEPKG_CLANG=clang GAMEPKG_FAR_DISPATCH_LINK_ONLY=1 bash tools/check_takedawn_far_dispatch.sh
+          GAMEPKG_CLANG=clang GAMEPKG_NEAR_DISPATCH_LINK_ONLY=1 bash tools/check_takedawn_near_dispatch.sh
+          GAMEPKG_CLANG=clang GAMEPKG_CPU_LINK_ONLY=1 bash tools/check_takedawn_cpu.sh
+          GAMEPKG_CLANG=clang GAMEPKG_SELECTION_LINK_ONLY=1 bash tools/check_takedawn_selection.sh
+          GAMEPKG_CLANG=clang GAMEPKG_PREDICATE_LINK_ONLY=1 bash tools/check_takedawn_predicate.sh
+          GAMEPKG_CLANG=clang GAMEPKG_X87_MEMORY_FIXTURE_SOURCE="$RUNNER_TEMP/gamepkg-x87-memory-fixture.c" GAMEPKG_X87_MEMORY_LINK_ONLY=1 bash tools/check_takedawn_x87_memory_targets.sh
+          GAMEPKG_CLANG=clang GAMEPKG_X87_COMPARE_FIXTURE_SOURCE="$RUNNER_TEMP/gamepkg-x87-compare-fixture.c" GAMEPKG_X87_COMPARE_LINK_ONLY=1 bash tools/check_takedawn_x87_compare_targets.sh
+          GAMEPKG_CLANG=clang GAMEPKG_X87_STORE_FIXTURE_SOURCE="$RUNNER_TEMP/gamepkg-x87-store-fixture.c" GAMEPKG_X87_STORE_LINK_ONLY=1 bash tools/check_takedawn_x87_store_targets.sh
+          GAMEPKG_CLANG=clang GAMEPKG_X87_ENVIRONMENT_FIXTURE_SOURCE="$RUNNER_TEMP/gamepkg-x87-environment-fixture.c" GAMEPKG_X87_ENVIRONMENT_LINK_ONLY=1 bash tools/check_takedawn_x87_environment_targets.sh
+          GAMEPKG_CLANG=clang GAMEPKG_X87_TRIG_PUSH_LINK_ONLY=1 bash tools/check_takedawn_x87_trig_push_targets.sh
+          GAMEPKG_CLANG=clang GAMEPKG_X87_SINCOS_LINK_ONLY=1 bash tools/check_takedawn_x87_sincos_targets.sh
+          GAMEPKG_CLANG=clang GAMEPKG_X87_FPATAN_LINK_ONLY=1 bash tools/check_takedawn_x87_fpatan_targets.sh
+          GAMEPKG_CLANG=clang GAMEPKG_X87_FYL2XP1_LINK_ONLY=1 bash tools/check_takedawn_x87_fyl2xp1_targets.sh
+          GAMEPKG_CLANG=clang GAMEPKG_X87_FYL2X_LINK_ONLY=1 bash tools/check_takedawn_x87_fyl2x_targets.sh
+          GAMEPKG_CLANG=clang GAMEPKG_X87_F2XM1_LINK_ONLY=1 bash tools/check_takedawn_x87_f2xm1_targets.sh
+          GAMEPKG_CLANG=clang GAMEPKG_F128_LINK_ONLY=1 bash tools/check_takedawn_f128_targets.sh
+          GAMEPKG_CLANG=clang GAMEPKG_X87_REMAINDER_FIXTURE_SOURCE="$RUNNER_TEMP/gamepkg-x87-remainder-fixture.c" GAMEPKG_X87_REMAINDER_LINK_ONLY=1 bash tools/check_takedawn_x87_remainder_targets.sh
+          GAMEPKG_CLANG=clang GAMEPKG_X87_SCALE_FIXTURE_SOURCE="$RUNNER_TEMP/gamepkg-x87-scale-fixture.c" GAMEPKG_X87_SCALE_LINK_ONLY=1 bash tools/check_takedawn_x87_scale_targets.sh
+          GAMEPKG_CLANG=clang GAMEPKG_X87_STACK_FIXTURE_SOURCE="$RUNNER_TEMP/gamepkg-x87-stack-fixture.c" GAMEPKG_X87_STACK_LINK_ONLY=1 bash tools/check_takedawn_x87_stack_targets.sh
       - name: Verify optional decoder embedding bounds and input reset
         run: python3 tests/embedded_audio_build.py
       - name: Test
         run: cargo test --locked ${{ matrix.features }}
+      - name: Compare mono and stereo streaming conversion with actual SDL
+        if: matrix.features == '--all-features'
+        run: |
+          python3 tools/check_mono_music_schedule.py
+          cc -std=c11 -Wall -Wextra -Werror tools/audio-decoder/resample_reference.c -o target/sdl-resample-reference $(pkg-config --cflags --libs sdl2)
+          GAMEPKG_SDL_RESAMPLE_REFERENCE="$PWD/target/sdl-resample-reference" cargo test --locked --all-features --test audio_resampler -- --ignored
       - name: Verify stereo audio callback and wire bounds without game assets
         run: |
-          g++ -Wall -Wextra -Werror tests/cube2_audio_bridge.cpp -o target/cube2-audio-bridge-test
+          g++ -pthread -Wall -Wextra -Werror tests/cube2_audio_bridge.cpp -o target/cube2-audio-bridge-test
           target/cube2-audio-bridge-test
-          cc -Wall -Wextra -Werror tests/doom_audio.c -o target/doom-audio-test
-          target/doom-audio-test
-      - name: Verify in-memory DOOM music and parser boundaries
+          cc -Wall -Wextra -Werror -fsanitize=address,undefined tests/doom_audio.c -o target/doom-audio-test
+          ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 target/doom-audio-test
+      - name: Verify original linked sound-name table
         run: |
-          cc -O2 -ffunction-sections -Wl,--gc-sections -fsanitize=address,undefined -Iengines/doom/upstream -Iengines/doom/music -Iengines/doom/music/upstream -DFEATURE_SOUND tests/doom_music.c engines/doom/music/music_opl.c engines/doom/music/midi_memory.c engines/doom/music/music_mus.c engines/doom/music/opl_memory.c engines/doom/music/opl_synth.c engines/doom/upstream/memio.c -o target/doom-music-test
+          cc -Wall -Wextra -Werror -fsanitize=address,undefined tests/doom_sound_names.c -o target/doom-sound-names
+          ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 target/doom-sound-names
+      - name: Verify original sound channel allocation and priority
+        run: |
+          cc -O1 -g -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Wl,--gc-sections -fsanitize=address,undefined tests/doom_sound_channels.c -o target/doom-sound-channels
+          ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 target/doom-sound-channels
+      - name: Verify original sound-ID boundaries and valid dispatch
+        run: python3 tools/check_doom_sound_ids.py
+      - name: Verify original supported and disabled music devices
+        run: python3 tools/check_doom_music_devices.py
+      - name: Verify portable original Zelda DMA save-state component
+        run: python3 tools/check_zelda_dma_state.py
+      - name: Verify portable original Zelda DSP save-state component
+        run: python3 tools/check_zelda_dma_state.py --component dsp
+      - name: Verify portable original Zelda PPU save-state component
+        run: python3 tools/check_zelda_dma_state.py --component ppu
+      - name: Verify bounded whole Zelda snapshot callbacks
+        run: python3 tools/check_zelda_snapshot.py
+      - name: Verify portable original Zelda SPC RAM words
+        run: |
+          python3 tools/check_zelda_spc_state.py
+          python3 tools/check_zelda_spc_state.py --playback
+          python3 tools/check_controller_look.py
+      - name: Verify production touch camera with real egui
+        if: matrix.features == '--all-features'
+        run: |
+          cargo fetch --locked
+          python3 tools/check_touch_look.py
+          python3 tools/check_touch_look.py --cancellation
+      - name: Verify bounded replay decoding against the original reader
+        if: matrix.features == '--all-features'
+        run: python3 tools/check_zelda_replay.py
+      - name: Install big-endian source portability tools
+        if: matrix.features == '--all-features'
+        run: sudo apt-get update && sudo apt-get install -y gcc-13-powerpc-linux-gnu qemu-user
+      - name: Verify actual big-endian Zelda SPC RAM words
+        if: matrix.features == '--all-features'
+        run: |
+          python3 tools/check_zelda_spc_state.py --big-endian --cc powerpc-linux-gnu-gcc-13 --compiler-prefix / --emulator /usr/bin/qemu-ppc --sysroot /usr/powerpc-linux-gnu
+          python3 tools/check_zelda_spc_state.py --playback --big-endian --cc powerpc-linux-gnu-gcc-13 --compiler-prefix / --emulator /usr/bin/qemu-ppc --sysroot /usr/powerpc-linux-gnu
+      - name: Verify original sound distance boundaries and attenuation
+        run: python3 tools/check_doom_sound_ids.py --fixture spatial
+      - name: Verify original point-to-angle arithmetic
+        run: python3 tools/check_doom_angles.py
+      - name: Verify original spatial sound with actual angle backend
+        run: python3 tools/check_doom_sound_ids.py --fixture spatial --real-angles
+      - name: Verify bounded opaque engine socket sets and guarded RPC
+        run: python3 tests/cube2_network_bridge.py
+      - name: Verify ZIP directory extent before allocation
+        run: |
+          g++ -Wall -Wextra -Werror -fsanitize=address,undefined tests/cube2_zip_bounds.cpp -o target/cube2-zip-bounds-test
+          ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 target/cube2-zip-bounds-test
+          python3 tools/check_cube2_zip_stream.py
+      - name: Verify original Zelda input and video configuration
+        run: |
+          python3 tools/check_zelda_input_reference.py
+          python3 tools/check_zelda_video_reference.py
+          python3 tools/check_zelda_low_health_reference.py
+          python3 tools/check_zelda_inventory_reference.py
+          python3 tools/check_zelda_bird_reference.py
+          python3 tools/check_zelda_bird_arrival.py
+          python3 tools/check_zelda_frame_schedule.py
+          python3 tools/check_zelda_audio_state.py
+          python3 tools/check_zelda_sprite_limits.py
+      - name: Verify movie finalization stays within the file quota
+        run: |
+          g++ -Wall -Wextra -Werror tests/cube2_movie_limit.cpp -o target/cube2-movie-limit-test
+          target/cube2-movie-limit-test
+      - name: Verify original master retry clocks and registration parsing
+        run: python3 tests/cube2_master_retry.py
+      - name: Verify original attack timing against mouse adapter
+        run: python3 tests/cube2_click_timing.py
+      - name: Verify in-memory DOOM music completion, loops and parser boundaries
+        run: |
+          cc -O2 -ffunction-sections -Wl,--gc-sections -fsanitize=address,undefined -Iengines/doom/upstream -Iengines/doom/music -Iengines/doom/music/upstream -DFEATURE_SOUND -DGAMEPKG_OPL_TEST tests/doom_music.c engines/doom/music/music_opl.c engines/doom/music/midi_memory.c engines/doom/music/music_mus.c engines/doom/music/opl_memory.c engines/doom/music/opl_synth.c engines/doom/upstream/memio.c -o target/doom-music-test
           if ! ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 target/doom-music-test > target/doom-music-test.log 2>&1; then
             cat target/doom-music-test.log
             exit 1
           fi
+      - name: Verify original NWT sprite masking and handle cleanup
+        run: |
+          cc -Wall -Wextra -Werror -fsanitize=address,undefined -Iengines/doom/upstream tests/doom_nwt_merge.c -o target/doom-nwt-merge-test
+          ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 target/doom-nwt-merge-test
+      - name: Verify bounded DOOM diagnostics retain fatal errors
+        run: |
+          cc -Wall -Wextra -Werror -fsanitize=address,undefined tests/doom_diagnostics.c -o target/doom-diagnostics-test
+          ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 target/doom-diagnostics-test
       - name: Verify DOOM virtual save slots and configuration boundaries
         run: |
           cc -Wall -Wextra -Werror -fsanitize=address,undefined tests/doom_storage.c -o target/doom-storage-test
@@ -62,6 +284,13 @@ jobs:
           ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 target/doom-input-test
           cc -Wall -Wextra -Werror -fsanitize=address,undefined tests/doom_endoom.c -o target/doom-endoom-test
           ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 target/doom-endoom-test
+      - name: Verify DOOM palette byte order
+        run: |
+          python3 tools/check_doom_pixel_order.py
+          python3 tools/check_doom_endian_words.py
+          python3 tools/check_doom_map_coordinates.py
+          python3 tools/check_doom_sprite_coordinates.py
+          python3 tools/check_doom_fixed_math.py
       - name: Test browser guest path protections
         run: node tests/web_path_attacks.mjs
       - name: Test bounded compressed asset storage and ownership
@@ -95,11 +324,16 @@ jobs:
           node tests/web_user_files.mjs
           node tests/web_window_commit.mjs
           node tests/web_output_commit.mjs
+          node tests/web_render_cooperative.mjs
+          node tests/web_save_chunks.mjs
           node tests/web_progress_store.mjs
       - name: Test support links and clipboard behavior
         run: node tests/support_page.mjs
       - name: Lint
         run: cargo clippy --locked --all-targets ${{ matrix.features }} -- -D warnings
+      - name: Build CLI for headless verification
+        if: matrix.features == ''
+        run: cargo build --locked --release --bin gamepkg
       - name: Build decoder and converter companions
         if: matrix.features == '--all-features'
         run: |
@@ -108,6 +342,15 @@ jobs:
       - name: Embed audio companions in CLI and GUI
         if: matrix.features == '--all-features'
         run: cargo build --locked --release --all-features --bins
+      - name: Verify generated mono decoder worker and actual device callbacks
+        if: matrix.features == '--all-features'
+        run: python3 tools/check_mono_decoder.py --decoder "$GAMEPKG_BUNDLED_AUDIO_DECODER" --worker --null-device
+      - name: Verify original codec provenance with generated private audio
+        if: matrix.features == '--all-features'
+        run: python3 tools/check_music_codec_precision.py --decoder "$GAMEPKG_BUNDLED_AUDIO_DECODER" --float-check
+      - name: Verify signed scoped recording import and export
+        if: matrix.features == '--all-features'
+        run: python3 tests/cube2_recording_exports.py
       - name: Verify embedded decoder
         if: matrix.features == '--all-features'
         run: |
@@ -115,7 +358,9 @@ jobs:
           python3 tests/audio_companion_metadata.py
       - name: Verify physical input capture isolation and ordering
         if: matrix.features == '--all-features'
-        run: python3 tests/desktop_input_capture.py
+        run: |
+          python3 tests/desktop_input_capture.py
+          python3 tools/check_native_touch_cancellation.py
       - name: Reject excessive Rust parser nesting without aborting the host
         if: matrix.features == '--all-features'
         run: python3 tests/parser_limits.py
@@ -170,6 +415,9 @@ jobs:
       - name: Core and component networking
         if: matrix.features == '--all-features'
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/network_game.py
+      - name: Signed native core and component TCP listeners and cleanup
+        if: matrix.features == '--all-features'
+        run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/network_listener_game.py
       - name: Compile every good example and reject every bad example
         if: matrix.features == '--all-features'
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/good_examples.py
@@ -238,7 +486,16 @@ jobs:
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/drawing_game.py
       - name: Install virtual display tools
         if: matrix.features == '--all-features'
-        run: sudo apt-get install -y xvfb xdotool imagemagick optipng tesseract-ocr python3-pil python3-xlib python3-selenium zenity libsdl2-dev libsdl2-ttf-dev libsdl2-image-dev pkg-config libxkbcommon-x11-0 libgl1-mesa-dri libvulkan1 mesa-vulkan-drivers
+        run: sudo apt-get install -y xvfb xdotool metacity x11-utils imagemagick optipng tesseract-ocr python3-pil python3-xlib python3-selenium zenity libxtst-dev libsdl2-dev libsdl2-ttf-dev libsdl2-image-dev pkg-config libxkbcommon-x11-0 libgl1-mesa-dri libvulkan1 libvulkan-dev mesa-vulkan-drivers
+      - name: Verify X11 cursor reentry and exact click coordinates
+        if: matrix.features == '--all-features'
+        run: python3 tests/x11_cursor_reentry.py
+      - name: Verify actual SDL X11 extra mouse buttons
+        if: matrix.features == '--all-features'
+        run: python3 tests/doom_extra_mouse.py
+      - name: Recording game page and native Open/Save dialogs
+        if: matrix.features == '--all-features'
+        run: /usr/bin/python3 tests/cube2_recording_exports_gui.py
       - name: Native package and catalog drag-and-drop
         if: matrix.features == '--all-features'
         run: /usr/bin/python3 tests/drop_files_gui.py
@@ -286,6 +543,14 @@ jobs:
       - name: Verify signed and catalog game descriptions
         if: matrix.features == '--all-features'
         run: /usr/bin/python3 tests/metadata_gui.py
+      - name: Verify signed file load order and reordered native picker
+        if: matrix.features == '--all-features'
+        run: /usr/bin/python3 tests/doom_file_roles_gui.py
+      - name: Verify saved game display controls and restart
+        if: matrix.features == '--all-features'
+        run: /usr/bin/python3 tests/zelda_display_gui.py
+      - name: Verify display CLI preferences and integrity validation
+        run: python3 tests/display_preferences_cli.py
       - name: Verify responsive high-contrast library appearance
         if: matrix.features == '--all-features'
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" /usr/bin/python3 tests/appearance_gui.py
@@ -423,6 +688,9 @@ jobs:
       - name: Verify exact filtered renderer batching
         if: matrix.features == '--all-features'
         run: sudo env PATH="$PATH" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tests/browser_linear_batch.py
+      - name: Verify graphics context loss and fresh-play recovery
+        if: matrix.features == '--all-features'
+        run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tests/browser_graphics_recovery.py
       - name: Verify complete original recorded-audio browser port within existing budgets
         if: matrix.features == '--all-features'
         run: |
@@ -431,7 +699,37 @@ jobs:
           /usr/bin/python3 tools/check_effect_assets.py target/reference-arkanoo --private-output "$recorded_checks/inputs" --include-music
           /usr/bin/python3 tools/check_arkanoo_asset_residency.py --private-output "$recorded_checks/images" --migration-inputs "$recorded_checks/inputs"
           /usr/bin/python3 tools/prepare_arkanoo_recorded_port.py --private-output "$recorded_checks/candidate" --migration-inputs "$recorded_checks/inputs"
-          sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tools/check_arkanoo_recorded_web.py "$recorded_checks/candidate" --optimized-images "$recorded_checks/images"
+          for playlist_case in empty invalid-utf8 invalid-paths; do
+            sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" /usr/bin/python3 tools/check_arkanoo_recorded_port.py "$recorded_checks/candidate" --playlist-case "$playlist_case"
+            sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tools/check_arkanoo_recorded_web.py "$recorded_checks/candidate" --optimized-images "$recorded_checks/images" --playlist-case "$playlist_case"
+          done
+          sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" /usr/bin/python3 tools/check_arkanoo_recorded_dense.py "$recorded_checks/candidate" --full-save
+          sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tools/check_arkanoo_recorded_web.py "$recorded_checks/candidate" --optimized-images "$recorded_checks/images" --corrupt-saves
+          sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tools/check_arkanoo_recorded_web.py "$recorded_checks/candidate" --optimized-images "$recorded_checks/images" --unicode-name Aé
+          sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tools/check_arkanoo_recorded_web.py "$recorded_checks/candidate" --optimized-images "$recorded_checks/images" --unicode-name 'Á'
+          sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tools/check_arkanoo_recorded_web.py "$recorded_checks/candidate" --optimized-images "$recorded_checks/images" --selector-run
+          sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tools/check_arkanoo_recorded_web.py "$recorded_checks/candidate" --optimized-images "$recorded_checks/images" --mixed-selector-run
+          sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tools/check_arkanoo_recorded_web.py "$recorded_checks/candidate" --optimized-images "$recorded_checks/images" --missing-mark-run
+          sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tools/check_arkanoo_recorded_web.py "$recorded_checks/candidate" --optimized-images "$recorded_checks/images" --mixed-missing-mark-run
+          sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tools/check_arkanoo_recorded_web.py "$recorded_checks/candidate" --optimized-images "$recorded_checks/images" --mixed-class-missing-mark-run
+          sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tools/check_arkanoo_recorded_web.py "$recorded_checks/candidate" --optimized-images "$recorded_checks/images" --late-composing-mark-run
+          sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tools/check_arkanoo_recorded_web.py "$recorded_checks/candidate" --optimized-images "$recorded_checks/images" --unicode-name $'A\u0327'
+          sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tools/check_arkanoo_recorded_web.py "$recorded_checks/candidate" --optimized-images "$recorded_checks/images" --unicode-name $'A\u0301\u0327'
+          sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tools/check_arkanoo_recorded_web.py "$recorded_checks/candidate" --optimized-images "$recorded_checks/images" --unicode-name $'A\u0301\ufe0f\u0327'
+          sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tools/check_arkanoo_recorded_web.py "$recorded_checks/candidate" --optimized-images "$recorded_checks/images" --unicode-name $'A\uFE0F'
+          sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tools/check_arkanoo_recorded_port.py "$recorded_checks/candidate" --typing --unicode-name Aé
+          sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tools/check_arkanoo_recorded_port.py "$recorded_checks/candidate" --typing --unicode-name 'Á'
+          sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tools/check_arkanoo_recorded_port.py "$recorded_checks/candidate" --typing --selector-run
+          sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tools/check_arkanoo_recorded_port.py "$recorded_checks/candidate" --typing --mixed-selector-run
+          sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tools/check_arkanoo_recorded_port.py "$recorded_checks/candidate" --typing --missing-mark-run
+          sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tools/check_arkanoo_recorded_port.py "$recorded_checks/candidate" --typing --mixed-missing-mark-run
+          sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tools/check_arkanoo_recorded_port.py "$recorded_checks/candidate" --typing --mixed-class-missing-mark-run
+          sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tools/check_arkanoo_recorded_port.py "$recorded_checks/candidate" --typing --late-composing-mark-run
+          sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tools/check_arkanoo_recorded_port.py "$recorded_checks/candidate" --typing --unicode-name $'A\u0327'
+          sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tools/check_arkanoo_recorded_port.py "$recorded_checks/candidate" --typing --unicode-name $'A\u0301\u0327'
+          sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tools/check_arkanoo_recorded_port.py "$recorded_checks/candidate" --typing --unicode-name $'A\u0301\ufe0f\u0327'
+          sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tools/check_arkanoo_recorded_port.py "$recorded_checks/candidate" --typing --unicode-name $'A\uFE0F'
+          sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tools/check_arkanoo_recorded_dense_web.py "$recorded_checks/candidate" --optimized-images "$recorded_checks/images"
       - name: Verify signed recorded-audio browser exports and player lifecycle
         if: matrix.features == '--all-features'
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tests/browser_recorded_player.py
@@ -456,6 +754,12 @@ jobs:
       - name: Verify Arkanoo isolated build, gameplay, audio, saves and native controls
         if: matrix.features == '--all-features'
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" /usr/bin/python3 tests/arkanoo.py --skip-browser
+      - name: Verify original Arkanoo resolution controls, confirmation and timeout
+        if: matrix.features == '--all-features'
+        run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" /usr/bin/python3 tests/arkanoo_resolution_gui.py
+      - name: Verify original VSync controls and real Vulkan/OpenGL presentation
+        if: matrix.features == '--all-features'
+        run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" /usr/bin/python3 tests/arkanoo_vsync_gui.py
       - name: Verify WIT component gameplay in the GUI
         if: matrix.features == '--all-features'
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" /usr/bin/python3 tests/component_gui.py
@@ -532,3 +836,95 @@ jobs:
           path: ${{ runner.temp }}/gamepkg-distribution/*
           retention-days: 7
           if-no-files-found: error
+  zip32:
+    name: Archive and sprite helpers on actual Linux 32-bit
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install multilib compiler and runtime
+        run: sudo apt-get update && sudo apt-get install -y gcc-multilib g++
+      - name: Execute checked Xbox RAM and blocking critical sections as ELF32
+        run: |
+          cc -m32 -std=c11 -O3 -Wall -Wextra -Werror -pthread -fsanitize=undefined -fsanitize-undefined-trap-on-error -I engines/takedawn/native-gen/runtime engines/takedawn/native-gen/tests/memory_runtime.c engines/takedawn/native-gen/runtime/gamepkg_x86_memory.c engines/takedawn/native-gen/runtime/gamepkg_x86_fault.c -o /tmp/gamepkg-memory32
+          /tmp/gamepkg-memory32
+      - name: Execute current ZIP boundary assertions as ELF32
+        run: python3 tools/check_cube2_zip32.py
+      - name: Execute original PPU sprite and color checks as ELF32
+        run: python3 tools/check_zelda_sprite_limits.py --32-bit
+      - uses: dtolnay/rust-toolchain@1.89.0
+        with:
+          targets: i686-unknown-linux-gnu
+      - name: Execute reviewed native SSE control on Linux 64-bit and 32-bit
+        run: |
+          python3 tools/check_takedawn_native_mxcsr.py
+          python3 tools/check_takedawn_native_mxcsr.py --target i686-unknown-linux-gnu
+      - name: Execute production controller look timing as ELF32
+        run: python3 tools/check_controller_look.py --32-bit
+      - name: Execute production touch camera with real egui as ELF32
+        run: |
+          cargo fetch --locked
+          python3 tools/check_touch_look.py --32-bit
+          python3 tools/check_touch_look.py --32-bit --cancellation
+      - name: Verify bounded and original replay readers as ELF32
+        run: python3 tools/check_zelda_replay.py --32-bit
+      - name: Execute original Zelda enhancement and HUD references as ELF32
+        run: |
+          python3 tools/check_zelda_video_reference.py --32-bit
+          python3 tools/check_zelda_low_health_reference.py --32-bit
+          python3 tools/check_zelda_inventory_reference.py --32-bit
+          python3 tools/check_zelda_bird_reference.py --32-bit
+          python3 tools/check_zelda_bird_arrival.py --32-bit
+          python3 tools/check_zelda_frame_schedule.py --32-bit
+          python3 tools/check_zelda_audio_state.py --32-bit
+      - name: Execute scoped save failure and recovery as ELF32
+        run: |
+          python3 tools/check_arkanoo_save32.py
+          cc -m32 -isystem /usr/include/x86_64-linux-gnu -DGAMEPKG_TEST_32 -O1 -Wall -Wextra -Werror -fsanitize=undefined -fsanitize-undefined-trap-on-error tests/doom_storage.c -o /tmp/doom-storage32
+          /tmp/doom-storage32
+      - name: Execute music completion and loops as ELF32
+        run: python3 tools/check_doom_music.py --32-bit
+      - name: Execute linked sound-name table as ELF32
+        run: |
+          cc -m32 -DGAMEPKG_TEST_32 -Wall -Wextra -Werror -fsanitize=undefined -fsanitize-undefined-trap-on-error tests/doom_sound_names.c -o /tmp/doom-names32
+          /tmp/doom-names32
+      - name: Execute DMX sound framing and stereo mixer as ELF32
+        run: |
+          cc -m32 -DGAMEPKG_TEST_32 -Wall -Wextra -Werror -fsanitize=undefined -fsanitize-undefined-trap-on-error tests/doom_audio.c -o /tmp/doom-audio32
+          /tmp/doom-audio32
+      - name: Execute original sound allocation and priority as ELF32
+        run: |
+          cc -m32 -DGAMEPKG_TEST_32 -O1 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Wl,--gc-sections -fsanitize=undefined -fsanitize-undefined-trap-on-error tests/doom_sound_channels.c -o /tmp/doom-channels32
+          /tmp/doom-channels32
+      - name: Execute original sound-ID boundaries as ELF32
+        run: python3 tools/check_doom_sound_ids.py --32-bit
+      - name: Execute original supported and disabled music devices as ELF32
+        run: python3 tools/check_doom_music_devices.py --32-bit
+      - name: Execute portable Zelda DMA save-state component as ELF32
+        run: python3 tools/check_zelda_dma_state.py --32-bit
+      - name: Execute portable Zelda DSP save-state component as ELF32
+        run: python3 tools/check_zelda_dma_state.py --component dsp --32-bit
+      - name: Execute portable Zelda PPU save-state component as ELF32
+        run: python3 tools/check_zelda_dma_state.py --component ppu --32-bit
+      - name: Execute bounded whole Zelda snapshot callbacks as ELF32
+        run: |
+          python3 tools/check_zelda_snapshot.py --32-bit
+          python3 tools/check_zelda_spc_state.py --32-bit
+          python3 tools/check_zelda_spc_state.py --playback --32-bit
+      - name: Execute original sound distance and attenuation as ELF32
+        run: python3 tools/check_doom_sound_ids.py --fixture spatial --32-bit
+      - name: Execute original point-to-angle arithmetic as ELF32
+        run: python3 tools/check_doom_angles.py --32-bit
+      - name: Execute original spatial sound with actual angle backend as ELF32
+        run: python3 tools/check_doom_sound_ids.py --fixture spatial --real-angles --32-bit
+      - name: Execute original DOOM fixed-point checks as ELF32
+        run: python3 tools/check_doom_fixed_math.py --32-bit
+      - name: Execute original DOOM sprite-coordinate checks as ELF32
+        run: python3 tools/check_doom_sprite_coordinates.py --32-bit
+      - name: Execute original DOOM map-coordinate checks as ELF32
+        run: python3 tools/check_doom_map_coordinates.py --32-bit
+      - name: Execute signed DOOM data conversions as ELF32
+        run: python3 tools/check_doom_endian_words.py --32-bit
+      - name: Execute native pixel conversion tests as ELF32
+        run: python3 tools/check_native_pixels32.py

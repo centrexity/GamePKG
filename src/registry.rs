@@ -7,6 +7,33 @@ use std::{
     process::Command,
 };
 
+pub(crate) fn curl_command() -> Result<Command> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let windows =
+            PathBuf::from(std::env::var_os("SystemRoot").context("missing Windows system folder")?);
+        if !windows.is_absolute() {
+            bail!("Windows system folder must be absolute");
+        }
+        // Do not resolve a downloaded curl.exe in the current game/library
+        // directory. Windows includes this tool in its system installation.
+        #[cfg(target_arch = "x86")]
+        if windows.join("Sysnative/curl.exe").is_file() {
+            let mut command = Command::new(windows.join("Sysnative/curl.exe"));
+            command.creation_flags(0x08000000);
+            return Ok(command);
+        }
+        let mut command = Command::new(windows.join("System32/curl.exe"));
+        command.creation_flags(0x08000000);
+        Ok(command)
+    }
+    #[cfg(not(windows))]
+    {
+        Ok(Command::new("curl"))
+    }
+}
+
 pub fn default_root() -> Result<PathBuf> {
     if let Some(path) = std::env::var_os("GAMEPKG_HOME") {
         return Ok(PathBuf::from(path));
@@ -193,7 +220,7 @@ pub(crate) fn download_direct(value: &str, limit: u64) -> Result<tempfile::Named
         tor_only |= onion;
         let headers = tempfile::NamedTempFile::new()?;
         // Ignore curlrc, never auto-follow redirects, and override NO_PROXY for Tor.
-        let mut command = Command::new("curl");
+        let mut command = curl_command()?;
         command
             .args([
                 "--disable",

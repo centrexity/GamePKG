@@ -1,4 +1,12 @@
 /target/
+/.verification/
+/gamepkg-build-release
+/gamepkg-build-release.exe
+/dist/
+/engines/takedawn/media-bridge/target/
+/engines/takedawn/native-gen/target/
+/engines/takedawn/rust-port/target/
+/engines/takedawn/windows-runner/target/
 *.gamepkg
 *.partial
 *.key
@@ -16,3 +24,6 @@
 
 # Maintainer test caches
 __pycache__/
+
+# Prepared game-derived source remains private until source-kit release packaging.
+/.takedawn-prepared/

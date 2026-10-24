@@ -10,6 +10,8 @@ Download the [0.1.17 Linux and Windows CLI/desktop apps](https://github.com/cent
 
 Try the [signed demo catalog](https://github.com/centrexity/GamePKG/releases/download/v0.1.6/demos.gamepkglist) by choosing **Add** in the desktop library, then **Import .gamepkglist**. It adds Collect Stars, Shape Playground, PNG Sprite Playground and Zelda3 as **Not downloaded**. Choose a game to download, approve its creator on first installation, then **Build** and **Play**. The three original demos need no ROM; Zelda3 requires your supported USA ROM. Players need no signing key. The [portable demo store](https://github.com/centrexity/GamePKG/releases/download/v0.1.6/demos.gamepkgstore) includes all four signed games for offline import. Compare downloads against [demo checksums](https://github.com/centrexity/GamePKG/releases/download/v0.1.6/demo-packages.sha256).
 
+For a built game, open its page and choose **Add to Steam**, then select a local Steam account. Close Steam before adding and reopen it afterward. The non-Steam shortcut starts the selected game through the GamePKG desktop app with the same library and build target, so GamePKG still records play time and achievements. If Steam is installed in a custom location, use **Choose Steam folder…**. Steam treats this as a [non-Steam shortcut](https://help.steampowered.com/en/faqs/view/4B8B-9697-2338-40EC); Steam does not provide package updates or ownership for it.
+
 
 ## Why distribute GamePKG instead of an opaque executable?
 
@@ -123,11 +125,19 @@ Creators choose their own licenses for their games and assets. Using the GamePKG
 Build both entry points locally:
 
 ```sh
-cargo build --locked --release --features gui --bins
+rustup target add wasm32-unknown-unknown
+rustc --edition=2021 tools/build_release.rs -o gamepkg-build-release
+./gamepkg-build-release
 cargo test --locked --all-features
 ```
 
-Maintainer builds can [embed the host audio decoder](tools/audio-decoder/README.md#embedding-in-the-app) in both entry points. The companion uses Rust-only build commands on Linux or native Windows; packaged playback needs no separate decoder file or Python interpreter. Game-facing music integration remains tracked in [port fidelity](docs/PORT_FIDELITY.md).
+On Windows, compile the builder with `-o gamepkg-build-release.exe` and run
+`.\gamepkg-build-release.exe`. This Rust-only builder prepares both audio
+companions, embeds them in both entry points, and verifies copied executables
+without a display or external decoder files. Pass `--offline` when dependencies
+and the Wasm target are already installed. Packaged playback needs no compiler
+or Python interpreter. See [audio embedding](tools/audio-decoder/README.md#embedding-in-the-app)
+and [port fidelity](docs/PORT_FIDELITY.md) for integration details.
 
 The executables are `target/release/gamepkg` and `target/release/gamepkg-gui` (with `.exe` on Windows). Launch the GUI with `cargo run --locked --features gui --bin gamepkg-gui`. It lists installed packages and accepts a local package path or HTTPS URL. Inspection runs in a background worker and displays the verified creator fingerprint and permissions before installation. New creators require approval; updates use the installed creator key automatically. It compiles the supported source profile on Linux and plays core and versioned WIT component games with scoped assets, ROMs, saves, drawing, and audio. Resource-free fragment passes render through OpenGL; broader graphics remain unfinished. A desktop display is required to launch it.
 
@@ -159,6 +169,8 @@ Creators may set `update_url = "https://creator.example/latest.gamepkg"` at the 
 Downloads require the `curl` executable, enforce HTTPS for ordinary hosts, Tor-only routing for onion hosts, certificate verification for HTTPS, connection/transfer timeouts, and a 256 MiB transfer limit. No game code runs during installation. Host downloads are separate from guest network permissions, which are separately declared in the signed manifest.
 
 Installed archives reside under `GAMEPKG_HOME` when set, otherwise `$XDG_DATA_HOME/gamepkg`, `%LOCALAPPDATA%/gamepkg`, or `$HOME/.local/share/gamepkg`. Installation snapshots and verifies the bytes before replacement, uses an install lock, and leaves the old version intact on validation failure. An interrupted process may leave `.install-lock`; remove it only after confirming no install process is active.
+
+Supported engine ports offer optional private snapshot slots alongside normal in-game saves. The game page lists their controls; see [snapshot slots](engines/zelda3/README.md#snapshot-slots) for key bindings, headless CLI commands and storage details. Slots remain in the user's library; packaging does not collect them.
 
 For a local HTTPS end-to-end test (requires Python 3, OpenSSL, and curl), run `python3 tests/https_download.py` after the release build. It creates temporary certificates and packages, verifies URL installation and updates, and checks signer and ID substitution rejection. The server and temporary keys are cleaned up afterward.
 
@@ -444,9 +456,10 @@ product decisions before claiming full parity.
 
 | Port | Confirmed gaps | Implementation evidence |
 | --- | --- | --- |
+| Takedawn | The original native implementation links 24,003 generated game functions converted to Rust. Linux x86-64 signed-package Build/Play, ISO reads in place, profile persistence, stereo capture, Xbox/PS2 race-control gates and Crash results have private verification. Desktop keyboard input also reaches and drives the first World Tour race. Per-unit compiler checkpoints preserve completed work across interrupted builds. Full campaign/progression, steering/audio equivalence, physical controllers, other platforms and official package publication remain open. Two genuine missing native bodies are recovered and pass 128 C/Rust behavior cases; 13 original unresolved upstream stubs remain. Tested routes do not reach the remaining stubs. | `ports/takedawn`, `src/takedawn.rs`, `engines/takedawn/rust-port/README.md` |
 | Cube 2 | Original startup/menu, HUD/FPS preferences and ordered desktop movement/menu key events have been restored. Physical keys now bypass egui normalization, including Pause, keypad distinctions, modifier sides and media/browser keys with SDL equivalents. Initial OS lock state and remaining uncommon-key/platform behavior still need verification. The broker now provides nonblocking TCP and UDP with unlisted peers/listeners, local addresses and broadcast under the signed on/off permission. Original registration with UDP verification, cryptographic master authentication and saved auth-key reload pass against a private master. Private Ethernet LAN broadcast discovery, original browser-row joining, wrong-key rejection and corrected-key retry are now verified. Further authentication/registration faults, live-service/platform interoperability and first-use rendering performance remain unverified. Persistence accepts selected file types, so arbitrary custom assets, movie recordings and other output formats are not equivalent to the desktop engine. Rendering inside the engine remains software OpenGL; Vulkan presents its frames. Native isolation currently requires Linux. | `src/cube2/session.rs`, `src/gui/cube2_input.rs`, `src/cube2/discovery.rs`, `engines/cube2/adapters/network.h`, `engines/cube2/adapters/persistence.h` |
-| DOOM | Original WAD music, spatial stereo effects, all six original save slots and configuration persistence now work. Original desktop keyboard/mouse input, saved bindings and the quit/ENDOOM flow pass native, Wasm and desktop GUI checks. Music backend selection and broader control/platform coverage remain unfinished. Multiplayer and extra WAD/mod loading are absent. | `engines/doom/adapters/engine.c`, `engines/doom/README.md` |
-| Zelda3 | Normal ROM-based SPC/DSP music and SRAM are supported. External MSU music is disabled; the desktop replay logger is removed. The adapter fixes the view to 256×224, disables extra side area, selects the default language and supplies no desktop configuration UI. Desktop enhancements, replay/save-state tools and alternate resource sets need individual support and tests. | `engines/zelda3/adapters/engine.c`, `engines/zelda3/upstream/src/config.h` |
+| DOOM | Original WAD music, spatial stereo effects, all six original save slots and configuration persistence now work. Original desktop keyboard/mouse input, saved bindings and the quit/ENDOOM flow pass native, Wasm and desktop GUI checks. Music backend selection and broader control/platform coverage remain unfinished. Signed recipes can declare up to six ordered patch WADs after the base IWAD. Original native/Wasm override order, all six slots, gameplay and save/reload pass private tests. Multiplayer and complete mod compatibility remain unfinished. | `engines/doom/adapters/engine.c`, `engines/doom/README.md` |
+| Zelda3 | ROM-based SPC/DSP music, stereo and SRAM are verified. Signed defaults and saved per-game Display controls support widescreen, 240-line rendering, extra sprites, dimmer flashes and earlier button-press intro skipping in native and Wasm. The original gameplay enhancement switches are available in a saved group and signed defaults; omitted switches default off. External MSU music, language selection, replay/save-state tools and complete enhancement/campaign interactions still need support or further behavior tests. | `engines/zelda3/adapters/engine.c`, `engines/zelda3/upstream/src/config.h` |
 | Arkanoo | Gravity, the speed-triggered portal and original ball-to-ball responses are restored and tested. Original world proportions and movement/contact order now match upstream reference checks. Per-ball launch timing, life recovery and victory/endless transitions also match original-code fixtures; prior item/score/level caps are removed. Brick health and original blast rules are also verified. Focused mouse movement and original Space/Escape controls are restored. Editor painting/erasing, all nine brick choices, names, save/load, clear confirmation and test return are restored. Saved custom patterns join the original twelve procedural patterns in endless play. Original ASCII pattern import/export now uses player-selected files. Gameplay cursor confinement/hiding, F11 fullscreen and pause Q-to-quit are verified in the native window and browser runtime checks. Normal size/fullscreen/maximized preferences persist through the native host. The six main menu actions and working fullscreen and sound-effects volume/mute controls are restored, with original captions, hover fills, borders, slider lettering and dimmed backdrop. Music/resolution/VSync settings, project-link/version display and original recorded audio remain unfinished. Fullscreen captions follow actual host observations, including external X11 window-manager changes, saved fullscreen restoration and browser Escape exits. Original shard particles, metallic ball, glass paddle and normal-brick textures and penguin/heart-loss animation are restored. All six campaign image backgrounds, twenty procedural backgrounds and animated campaign backgrounds 7–9 match captured original OpenGL logical frames. Original speed lettering is restored and directly verified in desktop/browser players. Original editor backgrounds, their selection controls and canonical grid colors/endpoints are restored. Original editor labels, palette, Unicode pattern-name lettering and saved-pattern browser composition are restored. Original startup artwork and its white-background fade are restored and checked against original SDL frames. Original level-complete, game-over and campaign-victory overlays, score formatting and instructions are also restored against SDL reference frames. Original score, lives/stolen heart, level/TEST, maximum-speed pulse, gravity indicator and real one-second FPS counter now use original HUD placement and Roboto lettering. The original ammo-gated cannon barrel, highlight and blinking launch caption are restored. Complete editor/menu composition, arbitrary original window/CSS scaling and other art/effects still need work. Best score/unlocked level/gravity/effects settings persist; active runs do not. | `ports/arkanoo/CREDITS.md`, `ports/arkanoo/source/src/lib.rs` |
 | 2048 | Original movement/spawn rules, merge scoring/best score, win/continue/game-over UI, restart, 128-step undo and saved board/history are supported. Tiles can merge beyond 32768. Cooperative expectimax assistance/autoplay matches pinned upstream reference decisions; one full deterministic game reaches 2048. Final signed-package delivery and broader platform checks remain open. | `ports/2048/source/src/model.rs`, `ports/2048/CREDITS.md`, `tests/game_2048.rs`, `tests/game_2048_play.rs` |
 
@@ -1048,3 +1061,54 @@ isolation and damaged-record fallback at 100%/150% interface size on a private L
 built host, Xvfb, Metacity, wmctrl, xdotool, ImageMagick, Pillow and the configured
 shader compiler. Python and these desktop test tools are maintainer dependencies,
 not player requirements. Window records are counted in per-game storage usage.
+
+
+On Linux, **Check game data** on the game page audits line-leading literal
+startup-script includes without running game code or changing the installation.
+The same read-only check is available from the CLI:
+
+```sh
+gamepkg check-game-data /path/to/original-installation
+gamepkg check-game-data /path/to/original-installation --json
+```
+
+The report names missing/unreadable scripts and their referring file/line. Unexpected
+missing scripts produce a nonzero CLI exit status. The exact verified r6889
+menu script has a stale include for a file absent in upstream itself; this is
+reported separately as a known upstream reference, not an omitted port feature.
+Modified parent scripts and linked targets do not receive that classification.
+Computed references are reported as unresolved. This bounded check does not evaluate conditional execution, certify
+complete media, or establish a matching asset version; the JSON explicitly keeps
+`matching_asset_version_verified` false. It follows only scoped `data/` and
+`packages/` configuration paths, rejects linked/special files and directories,
+and bounds scripts, bytes and unresolved reports. No Python is required.
+
+Maintainers can verify the ZIP parsing helpers on a real 32-bit Linux process with `python3 tools/check_cube2_zip32.py` after installing a multilib C compiler/runtime. This runs the complete current helper boundary test body, checks 32-bit pointers and the ELF32 output, and requires no original game assets or C++ standard library. CI includes this check. It does not qualify full 32-bit engine playback.
+
+Original Cube 2 `addzip`/`removezip` commands work with ZIP files under the selected installation's `packages` directory. For example, a ZIP containing `packages/example/start.cfg` can be loaded with `addzip packages/mods/example.zip` followed by `exec packages/example/start.cfg`. Put those commands in the scoped `autoexec.cfg` to repeat the mount on startup. ZIP content stays virtual; it is not extracted. Directory extents and minimum entry sizes are checked against the physical archive before allocating its directory buffer. Entry name, extra-field and comment lengths must fit the remaining directory bytes; malformed later headers reject the entire mount. Rebuild Cube 2 after updating GamePKG to include this guard. Stored and deflated script mount, unmount, remount and restart behavior are covered by an original-engine regression. ZIP-only PNG assets are also checked in actual rendered menu frames before and after restart. The same regression loads an original map and its full configuration from the ZIP and verifies player movement through the original controls. This does not certify every mod's assets, shaders, native extensions or compatibility.
+
+The scoped Cube 2 save retains root `autoexec.cfg` alongside the saved configuration. The original engine executes it after `config.cfg` on restart. Recording imports preserve it; recording lists and exports exclude startup commands and other private settings. Rebuild the engine after updating GamePKG to apply this persistence change.
+
+Saved original-engine recordings can be listed and exported on Linux:
+
+```sh
+gamepkg recordings GAME_ID
+gamepkg recordings GAME_ID --json
+gamepkg recording-import GAME_ID ./match.dmo
+gamepkg recording-import GAME_ID ./match.dmo --name demo/another-name.dmo
+gamepkg recording-export GAME_ID 'recordings/match.dmo' --output ./match.dmo
+gamepkg recording-export GAME_ID 'movie.avi' --output ./movie.avi
+```
+
+Use the recording name reported by the list. Export copies one validated demo
+or AVI from that game's creator-scoped save and requires a new destination
+filename. It preserves the original save and refuses existing files, including
+symlinks. Only completed recordings already committed within the existing save
+quotas are available; recordings in a running game appear after its next
+checkpoint or normal close. On the game page, **Recordings → Load recordings**
+shows the same list; **Export demo** or **Export movie** opens the system Save
+dialog. **Import recording** opens a system file picker; close the game first.
+Imports validate the recording and merge it without replacing existing names or
+preferences. Demos default to `demo/` and movies to `movies/`. Cancellation keeps
+the list and original recordings. File/tree quotas stay at 16/32 MiB; decoded
+demos are also bounded to 32 MiB. Large-recording streaming remains separate work.

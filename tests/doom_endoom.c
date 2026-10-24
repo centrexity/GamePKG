@@ -8,12 +8,13 @@ static int quit_requested,netgame;
 static unsigned quit_countdown;
 #include "../engines/doom/adapters/endoom.h"
 int main(void) {
+  assert(gamepkg_pixel_format()==1);
   screen.before=0xdeadbeef;screen.after=0xcafebabe;
   for(unsigned i=0;i<320*200;i++)screen.pixels[i]=0x12345678;
   gamepkg_begin_quit();assert(quit_countdown==90&&quit_frame[63999]==0x12345678);
   assert(ending_mask==0);
   uint8_t text[4000];for(unsigned i=0;i<2000;i++){text[i*2]=219;text[i*2+1]=0x1e;}
-  gamepkg_show_endoom(text);assert(quit_requested==1);render_ending();
+  gamepkg_show_endoom(text);assert(quit_requested==1);assert(gamepkg_pixel_format()==1);render_ending();assert(gamepkg_pixel_format()==0);
   for(unsigned i=0;i<320*200;i++)assert(screen.pixels[i]==ending_colors[14]);
   for(unsigned i=0;i<2000;i++)text[i*2+1]=0x9e;
   gamepkg_show_endoom(text);render_ending();assert(screen.pixels[0]==ending_colors[1]);
@@ -21,6 +22,8 @@ int main(void) {
   for(unsigned i=0;i<2000;i++){text[i*2]=(uint8_t)i;text[i*2+1]=(uint8_t)i;}
   gamepkg_show_endoom(text);for(unsigned i=0;i<31;i++)render_ending();
   assert(screen.before==0xdeadbeef&&screen.after==0xcafebabe);
+  quit_requested=2;assert(gamepkg_pixel_format()==0);
+  gamepkg_gameplay_pixels();assert(gamepkg_pixel_format()==1);
   quit_requested=0;quit_countdown=0;netgame=1;gamepkg_begin_quit();assert(quit_countdown==1);
   return 0;
 }

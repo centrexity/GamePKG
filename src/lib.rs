@@ -20,7 +20,22 @@ pub mod music;
 pub mod pack;
 mod portability;
 pub mod source;
+pub mod takedawn;
+#[doc(hidden)]
+pub mod takedawn_kit;
+#[doc(hidden)]
+#[cfg(target_os = "linux")]
+pub mod takedawn_player;
+#[doc(hidden)]
+#[cfg(windows)]
+#[path = "takedawn/windows_player.rs"]
+pub mod takedawn_player;
+#[cfg(any(windows, test))]
+mod takedawn_windows_sdk;
 pub mod verify;
+pub mod xbox_disc;
+pub mod zelda_replay;
+mod zelda_snapshots;
 
 pub mod registry;
 
@@ -30,6 +45,7 @@ pub mod runtime;
 pub mod server_selections;
 pub mod settings;
 pub mod support;
+pub mod video_selections;
 pub mod window_preferences;
 
 pub mod saves;
@@ -58,6 +74,7 @@ pub mod previews;
 
 pub mod pool;
 
+pub mod steam_shortcuts;
 pub mod store;
 
 pub mod dependencies;
@@ -83,17 +100,14 @@ pub mod web_export;
 
 mod zelda3;
 mod zelda3_rom;
-#[cfg(target_os = "linux")]
 mod zelda3_sources;
 
 mod builtin;
 mod doom;
 pub mod doom_input;
-#[cfg(target_os = "linux")]
 mod doom_sources;
 pub mod input_events;
 
-#[cfg(feature = "gui")]
 mod rom_selections;
 
 pub mod native;
