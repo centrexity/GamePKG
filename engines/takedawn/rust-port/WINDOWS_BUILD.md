@@ -68,3 +68,22 @@ neither is a player requirement. The complete native Windows game archive,
 original runtime link, current-build gameplay, app integration and player-kit
 promotion still require their own evidence. A native cache/SDK fixture does not
 qualify full campaign progression or Windows graphics hardware.
+
+## Private source-kit candidate
+
+The v10 candidate includes the native Windows build driver, portable checkpoint
+wrapper, export inventory and current Windows media/restart adapters. Its archive
+SHA-256 is `9a94b3e286286ab89506837cca3095b21a2f3bc844c5bbd8a2ca44d6ab42cb08`
+(55,262,902 compressed bytes; 4,256 inventoried files). The actual Rust source-kit
+loader accepts the archive. The installed player kit remains pinned to v8.
+
+The prepared game/build inputs exactly match the qualified v9 Linux inputs, so
+the candidate reuses that verified Rust archive. Its media bridge builds offline
+with an empty Cargo home, and the original native runtime links with all 24,032
+exports. Build commands contain neither Python nor generated C game bodies.
+All inventoried source files remain unchanged after build and gameplay checks.
+The rebuilt Linux executable passes the original race and crash control checks,
+including pause/resume, quit/results/continue, plus profile creation/reload with
+unchanged save hashes and non-silent stereo capture. These regressions preserve
+the working Linux path while Windows app integration proceeds; full campaign,
+audible fidelity and Windows player-build qualification remain separate gates.
