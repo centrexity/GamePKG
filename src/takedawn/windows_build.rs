@@ -132,11 +132,12 @@ pub fn compile_package(root: &Path, id: &str) -> Result<()> {
     );
     super::validate_recipe(&mut package)?;
     let archive_bytes = package.read(super::KIT_ASSET)?;
-    ensure!(crate::verify::digest(&archive_bytes) == super::WINDOWS_KIT_SHA256,
+    let kit_digest = super::reviewed_kit_digest(&archive_bytes)?;
+    ensure!(kit_digest != super::KIT_SHA256,
         "this package contains the older Linux-only source kit; update the package for native Windows builds");
     let mut archive = tempfile::NamedTempFile::new()?;
     archive.write_all(&archive_bytes)?;
-    let kit = crate::takedawn_kit::SourceKit::open(archive.path(), super::WINDOWS_KIT_SHA256)?;
+    let kit = crate::takedawn_kit::SourceKit::open(archive.path(), &kit_digest)?;
     drop(archive_bytes);
     let sdk = super::prepare_windows_tools(root)?.canonicalize()?;
     let helpers = helpers(root, &sdk)?;

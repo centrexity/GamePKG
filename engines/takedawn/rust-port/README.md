@@ -261,10 +261,17 @@ B mapping during impact time, aftertouch and Crashbreaker. Captures show the rea
 prompt, the effect after R2 and results with twelve vehicles totaled and $104,113.
 The original control assertions pass through return to the front end; the new
 high-score results table needs an additional reviewed Continue press. The ready
-prompt still shows B instead of the configured right trigger. This known pinned
-runtime glyph issue remains unfixed: its dedicated `B_Button` asset is selected
-by the Crashbreaker HUD, independently of the driving-input remap. Correct input
-delivery does not qualify that prompt as accurate.
+prompt in that v12 build still shows B instead of the configured right trigger.
+The v13 host adaptation fixes the shared sheet and dedicated A/B textures using
+only the runtime's own glyph drawings. It follows the actual original control
+mapper, with keyboard/touch unchanged and menu/results restoring the normal
+family. A native PlayStation-glyph Crash probe visibly shows R2 and exercises
+that trigger. The asset-free gate compares all button positions against the
+original input mapper, preserves all 15 normal glyph families, checks disconnect
+and shared-controller transitions, rejects changed/in-place upstream staging,
+and passes ASan/UBSan. Prepared Rust game inputs remain identical to v12; all
+24,032 exports remain present. Actual mixed-controller hardware validation and
+Windows original-game rendering still require qualification.
 
 ## GamePKG library integration
 

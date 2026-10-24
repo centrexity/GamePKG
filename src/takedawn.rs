@@ -7,11 +7,13 @@ pub const MEMORY: u64 = 4 * 1024 * 1024 * 1024;
 pub const KIT_SHA256: &str = "a40e9656476633125d2fd50cc6a71134a453f8942634e34ebef848a215b98a5a";
 pub const KIT_ASSET: &str = "assets/takedawn-source-kit.tar.gz";
 pub const WINDOWS_KIT_SHA256: &str =
+    "18afa3a1f2a0e9ddad89a33c2a3e33803e0764be0035da5e2c7a2e1a5235c885";
+pub const LEGACY_WINDOWS_KIT_SHA256: &str =
     "ab30c4e7a4a86580a6fbefe7f79be941c713a0dd2b089d73fba6180729ab845b";
 pub(crate) fn reviewed_kit_digest(bytes: &[u8]) -> Result<String> {
     let digest = crate::verify::digest(bytes);
     ensure!(
-        digest == KIT_SHA256 || digest == WINDOWS_KIT_SHA256,
+        digest == KIT_SHA256 || digest == WINDOWS_KIT_SHA256 || digest == LEGACY_WINDOWS_KIT_SHA256,
         "Takedawn source kit is not the host-reviewed version"
     );
     Ok(digest)
