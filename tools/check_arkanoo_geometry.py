@@ -36,6 +36,9 @@ def f32(value):
     return f'f32::from_bits(0x{bits:08x})'
 
 checks = []
+numeric = json.loads((root / 'tests/fixtures/arkanoo-trig-f32.json').read_text())
+for value, sine, cosine in numeric['cases']:
+    checks.append(f'check_trig({value}u32, {sine}u32, {cosine}u32);')
 fixture = json.loads((root / 'tests/fixtures/arkanoo-background.json').read_text())
 for index, case in enumerate(fixture['cases']):
     expected = work / f'background-{index}.bin'
@@ -64,8 +67,15 @@ main = '''#![allow(dead_code, unused_imports)]
 mod gamepkg { pub fn random_u64() -> u64 { 0 } }
 mod levels {}
 mod physics;
+#[path = PORTABLE_MATH]
+mod portable_math;
 #[path = BACKGROUND]
 mod background;
+fn check_trig(bits: u32, sine: u32, cosine: u32) {
+    let value = std::hint::black_box(f32::from_bits(bits));
+    let actual = portable_math::sin_cos(value);
+    assert_eq!([actual[0].to_bits(), actual[1].to_bits()], [sine, cosine], "trig input {bits:08x}");
+}
 fn check(points: &[physics::EffectPoint], expected: &[u8], label: &str) {
     let mut actual = Vec::new();
     for point in points {
@@ -82,7 +92,7 @@ fn main() {
 CHECKS
     println!("PASS: every recorded background/trail coordinate and color matches the original.");
 }
-'''.replace('BACKGROUND', path_literal(source / 'background.rs')).replace('CHECKS', '\n'.join(checks))
+'''.replace('BACKGROUND', path_literal(source / 'background.rs')).replace('PORTABLE_MATH', path_literal(source / 'portable_math.rs')).replace('CHECKS', '\n'.join(checks))
 (work / 'main.rs').write_text(main)
 binary = work / ('geometry.exe' if 'windows' in (args.target or '') or os.name == 'nt' else 'geometry')
 command = ['rustc', '--edition=2021', '-O', str(work / 'main.rs'), '-o', str(binary)]
