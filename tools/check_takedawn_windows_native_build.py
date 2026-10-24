@@ -68,6 +68,8 @@ def main():
                     raise RuntimeError("Unsafe SDK archive path")
                 if len(name.parts) < 3 or name.parts[1] != payload:
                     continue
+                if name.name == "manifest.in":
+                    continue
                 path = rust.joinpath(*name.parts[2:])
                 if item.isdir():
                     path.mkdir(parents=True, exist_ok=True)
