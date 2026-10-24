@@ -32,8 +32,11 @@ native runtime link and game qualification before it is playable.
 host-owned paths to previously admitted inputs. It builds the media bridge
 offline from the kit's vendored dependencies, compiles the pinned glslang source,
 derives the Vulkan loader import library from the pinned headers and builds the
-original C/C++ runtime through native Windows CMake/Ninja/Clang. CPU optimization
-applies to the media bridge and runtime as well as the prepared game units.
+original C/C++ runtime through native Windows CMake/Ninja/Clang. The prepared
+game and C/C++ runtime use the selected CPU target. The host media bridge keeps
+release optimization/LTO with the portable x64 CPU target: CPU-specific flags in
+that library regressed the original audio check, while native-built generic-CPU
+and previous baseline libraries pass with the same optimized C/C++ runtime.
 SDK paths containing spaces are passed as individual arguments, including
 Cargo's encoded linker flags. The runtime uses Vulkan and retains audio, input,
 settings and the original managed-restart connection.
@@ -95,8 +98,11 @@ it does not stand in for the still-running native-CPU game compilation. The new
 runtime passes original Crash controls/results/Continue and a sequential Xbox
 race check (+9.1 m/s acceleration), but fails the unchanged save/audio deadline.
 The preceding v3 executable passes that same check in the current environment.
-The regression is under component-by-component investigation; the new runtime is
-not qualified for player promotion. Parallel Wine runs also failed timing checks.
+The comparison isolates the media library: replacing only that library with the
+previous one restores a pass, as does a native-built generic-CPU media library.
+The current builder selects the verified x64 media target; the rebuilt final
+executable is being checked before qualification. Parallel Wine runs also failed
+timing checks. No failed result is counted as qualified for player promotion.
 
 ## Private source-kit candidate
 
@@ -122,4 +128,5 @@ to v10. SHA-256 is
 `4cde4a0dd61f02aa4c6946d8e8a2b2fc905a75ea09684fa45c8fcea1ef27b67b`
 (55,265,542 compressed bytes; 4,257 inventoried files). The actual Rust source-kit
 loader accepts it. Its prepared Rust and Linux runtime sources remain identical
-to v10; normal app build integration and player promotion remain open.
+to v10. It predates the media CPU fix and is not a promotion candidate; a new
+archive must include that fix. Normal app build integration remains open.
