@@ -21,6 +21,9 @@ pub(crate) fn cpu_identity() -> &'static str {
             let mut identity = Vec::new();
             // Exclude the per-core APIC ID; include model, features, brand and
             // OS vector-state support so native artifacts cannot cross CPUs.
+            // Rust 1.89 requires unsafe CPUID calls; newer toolchains make
+            // these same intrinsics safe. Keep compatibility with our MSRV.
+            #[allow(unused_unsafe)]
             unsafe {
                 let max = __cpuid(0).eax;
                 let extended = __cpuid(0x80000000).eax;

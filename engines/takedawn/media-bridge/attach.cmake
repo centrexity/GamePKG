@@ -2,7 +2,31 @@
 # -DCMAKE_PROJECT_TOP_LEVEL_INCLUDES=/absolute/path/to/this/attach.cmake
 # after building this directory's Rust static library. No upstream source edit
 # or asset extraction is needed. The reference executable keeps its own name.
+function(gamepkg_attach_input_glyphs)
+    if(NOT TARGET burnout3)
+        message(FATAL_ERROR "The pinned Takedawn burnout3 target is missing")
+    endif()
+    get_target_property(game_dir burnout3 SOURCE_DIR)
+    get_target_property(game_sources burnout3 SOURCES)
+    file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/gamepkg-media")
+    foreach(kind IN ITEMS glyphs controls)
+        list(FIND game_sources "${kind}.c" source_index)
+        if(source_index LESS 0)
+            message(FATAL_ERROR "Pinned ${kind}.c target source is missing")
+        endif()
+        set(staged "${CMAKE_BINARY_DIR}/gamepkg-media/${kind}.c")
+        execute_process(COMMAND "${CMAKE_COMMAND}"
+            "-DINPUT=${game_dir}/${kind}.c" "-DOUTPUT=${staged}" "-DKIND=${kind}"
+            -P "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/adapt_input_glyphs.cmake"
+            COMMAND_ERROR_IS_FATAL ANY)
+        list(REMOVE_AT game_sources ${source_index})
+        list(APPEND game_sources "${staged}")
+    endforeach()
+    set_property(TARGET burnout3 PROPERTY SOURCES "${game_sources}")
+endfunction()
+
 function(gamepkg_attach_disc_media)
+    gamepkg_attach_input_glyphs()
     if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
         include("${CMAKE_CURRENT_FUNCTION_LIST_DIR}/windows_attach.cmake")
         gamepkg_attach_windows_disc_media()

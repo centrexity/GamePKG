@@ -1,9 +1,9 @@
 name: Native Rust engine stream ABI
 on:
   push:
-    paths: ['ports', 'tools/check_arkanoo_geometry.py', 'tools/generate_arkanoo_trig_reference.py', 'tests/fixtures/arkanoo-trig-f32.json', 'engines/takedawn/rust-port/**', 'engines/takedawn/media-bridge/**', 'engines/takedawn/windows-runner/**', 'tools/check_takedawn_rust_stdio.py', 'tools/check_takedawn_rust_cache.py', 'tools/check_takedawn_windows_file.py', 'tools/check_takedawn_windows_kernel.py', 'tools/check_takedawn_windows_stream.py', 'tools/check_takedawn_windows_restart.py', 'tools/check_takedawn_windows_native_build.py', 'engines/takedawn/windows-dependencies.json', '.github/workflows/native_rust_ffi.yml']
+    paths: ['ports', 'tools/check_arkanoo_geometry.py', 'tools/generate_arkanoo_trig_reference.py', 'tests/fixtures/arkanoo-trig-f32.json', 'engines/takedawn/rust-port/**', 'engines/takedawn/media-bridge/**', 'engines/takedawn/windows-runner/**', 'tools/check_takedawn_input_glyphs.py', 'tools/check_takedawn_rust_stdio.py', 'tools/check_takedawn_rust_cache.py', 'tools/check_takedawn_windows_file.py', 'tools/check_takedawn_windows_kernel.py', 'tools/check_takedawn_windows_stream.py', 'tools/check_takedawn_windows_restart.py', 'tools/check_takedawn_windows_native_build.py', 'engines/takedawn/windows-dependencies.json', '.github/workflows/native_rust_ffi.yml']
   pull_request:
-    paths: ['ports', 'tools/check_arkanoo_geometry.py', 'tools/generate_arkanoo_trig_reference.py', 'tests/fixtures/arkanoo-trig-f32.json', 'engines/takedawn/rust-port/**', 'engines/takedawn/media-bridge/**', 'engines/takedawn/windows-runner/**', 'tools/check_takedawn_rust_stdio.py', 'tools/check_takedawn_rust_cache.py', 'tools/check_takedawn_windows_file.py', 'tools/check_takedawn_windows_kernel.py', 'tools/check_takedawn_windows_stream.py', 'tools/check_takedawn_windows_restart.py', 'tools/check_takedawn_windows_native_build.py', 'engines/takedawn/windows-dependencies.json', '.github/workflows/native_rust_ffi.yml']
+    paths: ['ports', 'tools/check_arkanoo_geometry.py', 'tools/generate_arkanoo_trig_reference.py', 'tests/fixtures/arkanoo-trig-f32.json', 'engines/takedawn/rust-port/**', 'engines/takedawn/media-bridge/**', 'engines/takedawn/windows-runner/**', 'tools/check_takedawn_input_glyphs.py', 'tools/check_takedawn_rust_stdio.py', 'tools/check_takedawn_rust_cache.py', 'tools/check_takedawn_windows_file.py', 'tools/check_takedawn_windows_kernel.py', 'tools/check_takedawn_windows_stream.py', 'tools/check_takedawn_windows_restart.py', 'tools/check_takedawn_windows_native_build.py', 'engines/takedawn/windows-dependencies.json', '.github/workflows/native_rust_ffi.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -77,3 +77,6 @@ jobs:
           cargo test --locked --manifest-path engines/takedawn/rust-port/Cargo.toml
           cargo fmt --manifest-path engines/takedawn/rust-port/Cargo.toml -- --check
           cargo clippy --locked --manifest-path engines/takedawn/rust-port/Cargo.toml --all-targets -- -D warnings
+      - name: Verify driving prompts against original input mapping
+        if: runner.os == 'Linux'
+        run: python3 tools/check_takedawn_input_glyphs.py
