@@ -46,7 +46,7 @@ fn game_file_role(manifest: &crate::manifest::Manifest, index: usize) -> Option<
 impl App {
     pub(super) fn play_blockers(&self, m: &crate::manifest::Manifest) -> Vec<String> {
         let mut blockers = Vec::new();
-        if !cfg!(target_os = "linux") {
+        if !crate::native::play_supported(m) {
             blockers.push(
                 "Native play requires Linux; use Play Wasm for supported games on this platform."
                     .into(),
@@ -208,6 +208,11 @@ impl App {
                 )?;
             }
             let mut child = std::process::Command::new(std::env::current_exe()?);
+            #[cfg(windows)]
+            {
+                use std::os::windows::process::CommandExt;
+                child.creation_flags(0x08000000);
+            }
             child
                 .arg("--library")
                 .arg(&root)
@@ -335,7 +340,7 @@ impl App {
                     });
                     ui.menu_button("More",|ui|{
                         if ui.add_enabled(!reviewing&&self.result.is_none(),egui::Button::new("Check integrity")).clicked(){let id=id.clone();self.begin_work(move||Ok(Work::Message(crate::integrity::check(&crate::registry::default_root()?,&id)?)));ui.close_menu();}
-                        if ui.add_enabled(cfg!(target_os="linux")&&!reviewing&&self.result.is_none(),egui::Button::new("Fix / rebuild native")).clicked(){let id=id.clone();self.begin_work(move||Ok(Work::Message(crate::integrity::fix_target(&crate::registry::default_root()?,&id,None,true)?)));ui.close_menu();}
+                    if ui.add_enabled(crate::native::build_supported(&m)&&!reviewing&&self.result.is_none(),egui::Button::new("Fix / rebuild native")).clicked(){let id=id.clone();self.begin_work(move||Ok(Work::Message(crate::integrity::fix_target(&crate::registry::default_root()?,&id,None,true)?)));ui.close_menu();}
                         if ui.add_enabled(!reviewing&&self.result.is_none(),egui::Button::new("Fix / rebuild Wasm")).clicked(){let id=id.clone();self.begin_work(move||Ok(Work::Message(crate::integrity::fix_target(&crate::registry::default_root()?,&id,None,false)?)));ui.close_menu();}
                         if !m.shared_assets.is_empty(){ui.label("Original .gamepkgstore path");ui.text_edit_singleline(&mut self.source);}
                         if !m.shared_assets.is_empty()&&ui.add_enabled(!reviewing&&self.result.is_none(),egui::Button::new("Repair assets from store")).clicked(){let id=id.clone();let source=self.source.clone();self.begin_work(move||Ok(Work::Message(crate::integrity::fix_target(&crate::registry::default_root()?,&id,Some(std::path::Path::new(source.trim())),true)?)));ui.close_menu();}
@@ -366,7 +371,7 @@ impl App {
                         self.begin_work(|| Ok(Work::Message("Game readiness refreshed.".into())));
                     }
                 });
-                if !cfg!(target_os="linux"){ui.label(if m.game_data.is_some(){"This engine currently requires Linux native process isolation."}else{"Native worker isolation is currently available on Linux. Use the explicit Wasm build and Play Wasm on this platform."});}
+                if !crate::native::play_supported(&m){ui.label(if m.game_data.is_some(){"This engine currently requires Linux native process isolation."}else{"Native play is not available for this game on this platform. Use Play Wasm if supported."});}
                 if m.requires_rom&&!self.rom_paths.get(&id).is_some_and(|p|crate::rom_selections::ready_for(&m,p)){ui.label("Choose the required ROM files below to enable Play.");}
             }else if self.pending.is_none(){
                 if let Some(entry)=self.catalog.iter().find(|e|e.id==id).cloned(){
@@ -725,8 +730,11 @@ mod tests {
             .iter()
             .any(|s| s.contains("4096 MiB")));
         app.applied_settings.as_mut().unwrap().memory_ceiling_mib = 4096;
-        assert_eq!(app.ready_to_play(&manifest), cfg!(target_os = "linux"));
-        if cfg!(target_os = "linux") {
+        assert_eq!(
+            app.ready_to_play(&manifest),
+            crate::native::play_supported(&manifest)
+        );
+        if crate::native::play_supported(&manifest) {
             assert!(app.play_blockers(&manifest).is_empty());
         }
         std::fs::remove_file(file).unwrap();

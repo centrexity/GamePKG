@@ -4,8 +4,10 @@ The standalone Windows pipeline compiles every prepared Rust game unit, builds
 the original C/C++ runtime and produces a native Windows executable. It invokes
 no WSL, translation tool, Python or game code during compilation. Python and Wine
 are maintainer diagnostics. The app's Windows Build action now dispatches this
-pipeline for the reviewed v12 kit. Normal Windows Play integration and player
-source-kit promotion remain unfinished; the installed Linux player pin remains v8.
+pipeline for the reviewed v12 kit. Windows CLI/GUI Play now uses the owned,
+confined session with remembered ISO selection and play history. App-level
+Windows qualification and player source-kit promotion remain unfinished; the
+installed Linux player pin remains v8.
 
 ## Managed SDK setup
 
@@ -127,10 +129,21 @@ candidate. The v6 build uses this exact source tree and its complete native-CPU
 archive. Older SDK metadata in this frozen kit is informational; the app admits
 managed tools against its current host-pinned inventory.
 
-The new app Build dispatch passes Windows cross-target compilation and local
-path/artifact fixtures; the complete signed-package Windows build still needs
-an app-level run. Windows Play, save/history integration, production
-filesystem/network confinement and player-kit promotion remain open. Actual
+The app Build/Play dispatch passes Windows cross-target compilation/lint and
+local readiness/path/artifact fixtures. Windows Play snapshots the verified
+executable and SDL companion, opens the selected ISO in place, locks saves by
+game/creator/schema and uses a per-game AppContainer without network capabilities.
+The same process owner retains its container, disc and original save path across
+normal restarts. Play time begins after disc admission and window readiness, is
+checkpointed by the host and is flushed on exit. A restart gets a fresh readiness
+deadline. CLI and GUI dispatch this path; no GamePKG game-window shell is opened.
+
+The new Windows app lifecycle fixture checks actual confined restart, original
+save retention, exclusive ownership, companion integrity and history. Its native
+Windows execution is pending CI; it does not exercise Vulkan or original game
+code. The complete signed-package Windows Build/Play still needs an app-level
+run. Container GPU/window access, resource-policy integration and player-kit
+promotion remain open. Actual
 Windows hardware gameplay, complete campaign progression, physical controllers
 and audible/steering fidelity still need evidence. Wine and narrow API fixtures
 do not establish those scopes. No stable release is promoted by these checks.

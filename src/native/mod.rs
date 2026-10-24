@@ -173,6 +173,9 @@ pub fn build_supported(manifest: &crate::manifest::Manifest) -> bool {
         || (cfg!(all(windows, target_arch = "x86_64"))
             && manifest.builtin_engine.as_deref() == Some(crate::takedawn::PROFILE))
 }
+pub fn play_supported(manifest: &crate::manifest::Manifest) -> bool {
+    build_supported(manifest)
+}
 pub fn compile(root: &Path, id: &str) -> Result<()> {
     #[cfg(windows)]
     if crate::registry::installed_manifest(root, id)?
