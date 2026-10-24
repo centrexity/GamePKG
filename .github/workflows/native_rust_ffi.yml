@@ -42,6 +42,7 @@ jobs:
         if: runner.os == 'Windows'
         run: |
           cargo test --locked --manifest-path engines/takedawn/windows-runner/Cargo.toml --target ${{ matrix.target }}
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo clippy --locked --manifest-path engines/takedawn/windows-runner/Cargo.toml --target ${{ matrix.target }} --all-targets -- -D warnings
       - name: Compare the read-only disc adapter with native Windows file APIs
         if: runner.os == 'Windows'

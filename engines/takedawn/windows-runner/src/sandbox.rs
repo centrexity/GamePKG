@@ -284,6 +284,10 @@ mod tests {
                 cwd: saves.clone(),
                 environment: vec![
                     ("SystemRoot".into(), std::env::var_os("SystemRoot").unwrap()),
+                    (
+                        "LOCALAPPDATA".into(),
+                        std::env::var_os("LOCALAPPDATA").unwrap(),
+                    ),
                     ("TEMP".into(), saves.as_os_str().to_owned()),
                     ("TMP".into(), saves.as_os_str().to_owned()),
                     (
