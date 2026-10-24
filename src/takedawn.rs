@@ -80,7 +80,7 @@ pub(crate) fn validate_recipe(package: &mut crate::archive::Package) -> Result<(
 
 /// Launches an installed signed package through its native window, with ROM
 /// selection and play history owned by the host. No GUI shell window is made.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 pub fn play(
     root: &Path,
     id: &str,
@@ -150,7 +150,7 @@ pub fn last_launch_error(root: &Path, id: &str) -> Result<Option<String>> {
     )?)?))
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 fn play_session(
     root: &Path,
     id: &str,
@@ -212,6 +212,8 @@ fn play_session(
     let began = std::time::Instant::now();
     let mut admitted_at = None;
     let mut remembered = false;
+    let mut waiting_since = std::time::Instant::now();
+    let mut was_ready = false;
     loop {
         if let Some(status) = session.poll()? {
             ensure!(
@@ -231,11 +233,16 @@ fn play_session(
             return Ok(());
         }
         if !session.ready() {
+            if was_ready {
+                waiting_since = std::time::Instant::now();
+                admitted_at = None;
+                was_ready = false;
+            }
             if session.disc_admitted() && admitted_at.is_none() {
                 admitted_at = Some(std::time::Instant::now());
             }
             ensure!(
-                admitted_at.map_or(began.elapsed().as_secs() < 300, |when| when
+                admitted_at.map_or(waiting_since.elapsed().as_secs() < 300, |when| when
                     .elapsed()
                     .as_secs()
                     < 60),
@@ -245,6 +252,7 @@ fn play_session(
             std::thread::sleep(std::time::Duration::from_millis(50));
             continue;
         }
+        was_ready = true;
         if !remembered {
             crate::rom_selections::save(root, &manifest, &paths)?;
             remembered = true;

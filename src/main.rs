@@ -566,7 +566,7 @@ fn main() -> Result<()> {
                 gamepkg::game_data::remember_for_game(&root, &id, &path)?;
             }
             let root = gamepkg::registry::default_root()?;
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", windows))]
             if gamepkg::registry::installed_manifest(&root, &id)?
                 .builtin_engine
                 .as_deref()

@@ -40,4 +40,19 @@ See engines/zelda3/README.md for controls and tests.
 
 Version 0.1.17 includes the pinned DOOM Wasm engine. The Linux compiler needs the same Clang 18 and WASI tools described above. See [DOOM engine setup](../engines/doom/README.md) and the [port instructions](https://github.com/centrexity/GamePKG_Ports/blob/main/DOOM.md). Select your own DOOM.WAD/DOOM2.WAD; no WAD is included. Windows compilation uses the existing opt-in WSL 2 exchange; native Windows DOOM playback has not been tested locally.
 
-The desktop renderer now defaults to Vulkan. Install the graphics driver’s Vulkan runtime, or launch `gamepkg-gui.exe --renderer opengl` to choose OpenGL explicitly. Direct native game-worker isolation is currently Linux-only. Windows uses the separate **Build Wasm** and **Play Wasm** controls with the matching Linux compiler configured above; the default native Build is disabled rather than silently selecting another target. HTTPS and TCP/UDP APIs are host-mediated for Wasm gameplay as well.
+The desktop renderer now defaults to Vulkan. Install the graphics driver’s Vulkan runtime, or launch `gamepkg-gui.exe --renderer opengl` to choose OpenGL explicitly. Other source engines on Windows use the separate **Build Wasm** and **Play Wasm** controls with the matching Linux compiler configured above. HTTPS and TCP/UDP APIs are host-mediated for Wasm gameplay as well.
+
+## Native Takedawn source preview
+
+The current development source connects native **Build**, **Play**, and integrity
+repair for the host-reviewed v12 Takedawn kit on 64-bit Windows. This path uses
+standalone Rust/Clang tools prepared through Settings or `gamepkg setup-native-tools`;
+it needs neither WSL nor Python. The older Linux-only package must be updated
+before building it on Windows. The v12 player package has not yet been promoted.
+
+The game owns its Vulkan window. GamePKG retains the selected ISO as a read-only
+handle, saves the selection after successful admission, keeps original saves
+scoped to the game/creator and tracks play time across the original restart flow.
+The player uses an AppContainer with networking disabled and explicit runtime/save
+access. App-level native Windows gameplay and GPU access still need qualification;
+see the [native Windows build notes](../engines/takedawn/rust-port/WINDOWS_BUILD.md).

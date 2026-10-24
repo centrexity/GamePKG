@@ -61,6 +61,9 @@ rfd = { version = "=0.17.2", optional = true }
 socket2 = "=0.6.3"
 wat = "1"
 
+[target.'cfg(windows)'.dependencies]
+gamepkg-takedawn-windows-runner = { path = "engines/takedawn/windows-runner" }
+
 [target.'cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))'.dependencies]
 gilrs = { version = "=0.10.10", optional = true, default-features = false, features = ["xinput"] }
 

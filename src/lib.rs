@@ -26,6 +26,10 @@ pub mod takedawn_kit;
 #[doc(hidden)]
 #[cfg(target_os = "linux")]
 pub mod takedawn_player;
+#[doc(hidden)]
+#[cfg(windows)]
+#[path = "takedawn/windows_player.rs"]
+pub mod takedawn_player;
 #[cfg(any(windows, test))]
 mod takedawn_windows_sdk;
 pub mod verify;

@@ -1,3 +1,4 @@
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 use clap::Parser;
 #[derive(Parser)]
 #[command(version, about = "GamePKG desktop library and game player")]
@@ -39,7 +40,7 @@ fn main() -> eframe::Result {
     let settings = gamepkg::settings::load().map_err(|error| {
         eframe::Error::AppCreation(Box::new(std::io::Error::other(error.to_string())))
     })?;
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", windows))]
     if let Some(id) = &args.play {
         let launch = || -> anyhow::Result<bool> {
             let root = gamepkg::registry::default_root()?;
