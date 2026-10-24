@@ -168,6 +168,11 @@ pub fn is_built(root: &Path, id: &str) -> Result<bool> {
             && crate::integrity::verify_build(&path, &bytes).is_ok(),
     )
 }
+pub fn build_supported(manifest: &crate::manifest::Manifest) -> bool {
+    cfg!(target_os = "linux")
+        || (cfg!(all(windows, target_arch = "x86_64"))
+            && manifest.builtin_engine.as_deref() == Some(crate::takedawn::PROFILE))
+}
 pub fn compile(root: &Path, id: &str) -> Result<()> {
     #[cfg(windows)]
     if crate::registry::installed_manifest(root, id)?

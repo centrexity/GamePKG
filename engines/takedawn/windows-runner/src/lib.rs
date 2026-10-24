@@ -1,7 +1,9 @@
 //! Host-owned Windows process lifetime and selected ISO handoff.
-//! This is not filesystem/network isolation or a package admission API. Callers
-//! must verify the executable and arrange its confinement before player use.
+//! Confined sessions use a per-game Windows AppContainer. Callers must verify
+//! packages and grant only their private runtime/save directories before launch.
 #![cfg(windows)]
+mod sandbox;
+pub use sandbox::Sandbox;
 use std::{
     ffi::{OsStr, OsString},
     fs::File,
@@ -154,11 +156,15 @@ struct Attributes {
     ptr: LPPROC_THREAD_ATTRIBUTE_LIST,
 }
 impl Attributes {
-    fn new(handles: &mut [HANDLE]) -> io::Result<Self> {
+    fn new(
+        handles: &mut [HANDLE],
+        capabilities: Option<&mut windows_sys::Win32::Security::SECURITY_CAPABILITIES>,
+    ) -> io::Result<Self> {
+        let count = if capabilities.is_some() { 2 } else { 1 };
         let mut bytes = 0;
         // SAFETY: Windows reports the allocation size through a valid output.
         unsafe {
-            InitializeProcThreadAttributeList(null_mut(), 1, 0, &mut bytes);
+            InitializeProcThreadAttributeList(null_mut(), count, 0, &mut bytes);
         }
         if bytes == 0 {
             return Err(io::Error::last_os_error());
@@ -168,7 +174,7 @@ impl Attributes {
         if ptr.is_null() {
             return Err(io::Error::other("unable to allocate process attributes"));
         }
-        if unsafe { InitializeProcThreadAttributeList(ptr, 1, 0, &mut bytes) } == 0 {
+        if unsafe { InitializeProcThreadAttributeList(ptr, count, 0, &mut bytes) } == 0 {
             let error = io::Error::last_os_error();
             unsafe {
                 HeapFree(GetProcessHeap(), 0, ptr.cast());
@@ -191,6 +197,17 @@ impl Attributes {
         } == 0
         {
             return Err(io::Error::last_os_error());
+        }
+        if let Some(capabilities) = capabilities {
+            if unsafe {
+                UpdateProcThreadAttribute(ptr, 0,
+                windows_sys::Win32::System::Threading::PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES as usize,
+                (capabilities as *mut windows_sys::Win32::Security::SECURITY_CAPABILITIES).cast(),
+                size_of::<windows_sys::Win32::Security::SECURITY_CAPABILITIES>(), null_mut(), null_mut())
+            } == 0
+            {
+                return Err(io::Error::last_os_error());
+            }
         }
         Ok(result)
     }
@@ -224,8 +241,9 @@ impl Process {
         disc: &File,
         output: &File,
     ) -> io::Result<Self> {
-        Self::spawn_inner(executable, args, cwd, values, disc, output, false)
+        Self::spawn_inner(executable, args, cwd, values, disc, output, false, None)
     }
+    #[allow(clippy::too_many_arguments)]
     fn spawn_inner(
         executable: &Path,
         args: &[OsString],
@@ -234,6 +252,7 @@ impl Process {
         disc: &File,
         output: &File,
         managed: bool,
+        sandbox: Option<&Sandbox>,
     ) -> io::Result<Self> {
         if !executable.is_absolute() || !cwd.is_absolute() {
             return Err(invalid(
@@ -281,7 +300,8 @@ impl Process {
         if let Some(event) = &inherited_restart {
             handles.push(event.as_raw_handle());
         }
-        let attributes = Attributes::new(&mut handles)?;
+        let mut capabilities = sandbox.map(Sandbox::capabilities);
+        let attributes = Attributes::new(&mut handles, capabilities.as_mut())?;
         let env = environment(
             values,
             source.as_raw_handle(),
@@ -433,7 +453,7 @@ pub struct Launch {
     pub output: File,
 }
 impl Launch {
-    fn spawn(&self) -> io::Result<Process> {
+    fn spawn(&self, sandbox: Option<&Sandbox>) -> io::Result<Process> {
         Process::spawn_inner(
             &self.executable,
             &self.args,
@@ -442,6 +462,7 @@ impl Launch {
             &self.disc,
             &self.output,
             true,
+            sandbox,
         )
     }
 }
@@ -459,16 +480,24 @@ pub struct Session {
     exit: Option<u32>,
     failure: Option<(io::ErrorKind, String)>,
     restarts: u64,
+    sandbox: Option<Sandbox>,
 }
 impl Session {
     pub fn start(launch: Launch) -> io::Result<Self> {
-        let process = launch.spawn()?;
+        Self::start_inner(launch, None)
+    }
+    pub fn start_confined(launch: Launch, sandbox: Sandbox) -> io::Result<Self> {
+        Self::start_inner(launch, Some(sandbox))
+    }
+    fn start_inner(launch: Launch, sandbox: Option<Sandbox>) -> io::Result<Self> {
+        let process = launch.spawn(sandbox.as_ref())?;
         Ok(Self {
             launch,
             process: Some(process),
             exit: None,
             failure: None,
             restarts: 0,
+            sandbox,
         })
     }
     pub fn poll(&mut self) -> io::Result<Option<Event>> {
@@ -494,7 +523,7 @@ impl Session {
             previous.stop()?;
             drop(previous);
             if code == 0 && restart {
-                let process = self.launch.spawn()?;
+                let process = self.launch.spawn(self.sandbox.as_ref())?;
                 self.process = Some(process);
                 self.restarts += 1;
                 Ok(Some(Event::Restarted {
