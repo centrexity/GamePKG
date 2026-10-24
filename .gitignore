@@ -1,4 +1,7 @@
 /target/
+/.verification/
+/gamepkg-build-release
+/gamepkg-build-release.exe
 /dist/
 /engines/takedawn/media-bridge/target/
 /engines/takedawn/native-gen/target/

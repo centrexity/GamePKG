@@ -125,11 +125,19 @@ Creators choose their own licenses for their games and assets. Using the GamePKG
 Build both entry points locally:
 
 ```sh
-cargo build --locked --release --features gui --bins
+rustup target add wasm32-unknown-unknown
+rustc --edition=2021 tools/build_release.rs -o gamepkg-build-release
+./gamepkg-build-release
 cargo test --locked --all-features
 ```
 
-Maintainer builds can [embed the host audio decoder](tools/audio-decoder/README.md#embedding-in-the-app) in both entry points. The companion uses Rust-only build commands on Linux or native Windows; packaged playback needs no separate decoder file or Python interpreter. Game-facing music integration remains tracked in [port fidelity](docs/PORT_FIDELITY.md).
+On Windows, compile the builder with `-o gamepkg-build-release.exe` and run
+`.\gamepkg-build-release.exe`. This Rust-only builder prepares both audio
+companions, embeds them in both entry points, and verifies copied executables
+without a display or external decoder files. Pass `--offline` when dependencies
+and the Wasm target are already installed. Packaged playback needs no compiler
+or Python interpreter. See [audio embedding](tools/audio-decoder/README.md#embedding-in-the-app)
+and [port fidelity](docs/PORT_FIDELITY.md) for integration details.
 
 The executables are `target/release/gamepkg` and `target/release/gamepkg-gui` (with `.exe` on Windows). Launch the GUI with `cargo run --locked --features gui --bin gamepkg-gui`. It lists installed packages and accepts a local package path or HTTPS URL. Inspection runs in a background worker and displays the verified creator fingerprint and permissions before installation. New creators require approval; updates use the installed creator key automatically. It compiles the supported source profile on Linux and plays core and versioned WIT component games with scoped assets, ROMs, saves, drawing, and audio. Resource-free fragment passes render through OpenGL; broader graphics remain unfinished. A desktop display is required to launch it.
 

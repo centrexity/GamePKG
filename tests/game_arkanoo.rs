@@ -2801,7 +2801,9 @@ fn original_campaign_background_points_colors_and_release_overflow_match() {
         flate2::read::ZlibDecoder::new(compressed.as_slice())
             .read_to_end(&mut original)
             .unwrap();
-        assert_eq!(actual, original, "level {level} frame {frame}");
+        assert!(actual == original,
+            "level {level} frame {frame}: {} actual bytes, {} original bytes, first differing byte {:?}",
+            actual.len(), original.len(), actual.iter().zip(&original).position(|(a,b)| a != b));
         assert_eq!(gamepkg_digest(&actual), case["trace_sha256"]);
         assert_eq!(
             scene.points.len(),
