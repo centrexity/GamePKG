@@ -246,6 +246,16 @@ Both runs read the ISO in place and reach no unresolved game-function stub.
 This qualifies the first campaign event and its persistence, not the remaining
 World Tour events or player-control equivalence.
 
+Use `xbox roadrage-complete` for the original driver's Single Event Road Rage
+route. It chooses among tracks already available in the supplied private save,
+drives with the original AI and waits for the natural event end and results.
+The exact signed v12 Linux executable passes on US/C3_V1: seven takedowns, vehicle
+totaled, the original new-record/results screen and test shutdown, with no
+unresolved game-function stub reached. The observed run takes 869 wall seconds,
+within the same twenty-minute complete-event bound. Its end-state log shares
+the race driver's generic placing/lap fields; those are not Road Rage rankings.
+The takedown count and Totaled result are verified in the renderer capture.
+
 ## GamePKG library integration
 
 `ports/takedawn` selects the fixed, host-reviewed native source kit. Its game
