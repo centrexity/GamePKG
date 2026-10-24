@@ -234,6 +234,18 @@ of six, 329.150 seconds, a 104.600-second best lap, the results screen and norma
 test shutdown. No unresolved stub is reached. This records one complete Single
 Event race, not a completed World Tour or physical-controller qualification.
 
+A separate private check of the same native executable completes the first
+World Tour Silver Lake race using the original AI: first of six over two laps,
+209.833 seconds, best lap 101.817 seconds. The original results award a gold medal,
+three newly unlocked events and 1,900 burnout points. Continue reaches the normal
+successful autosave and award screens. A fresh process then loads a private copy
+of that save: the region screen shows 1/55 USA and 1/173 overall gold medals, and
+the unlocked Downtown Road Rage event remains available. The active 59,904-byte
+profile and 54-byte metadata retain their post-autosave hashes through reload.
+Both runs read the ISO in place and reach no unresolved game-function stub.
+This qualifies the first campaign event and its persistence, not the remaining
+World Tour events or player-control equivalence.
+
 ## GamePKG library integration
 
 `ports/takedawn` selects the fixed, host-reviewed native source kit. Its game
