@@ -256,6 +256,16 @@ within the same twenty-minute complete-event bound. Its end-state log shares
 the race driver's generic placing/lap fields; those are not Road Rage rankings.
 The takedown count and Totaled result are verified in the renderer capture.
 
+An extended private PS2-layout Crash probe also exercises the physical R2-to-game
+B mapping during impact time, aftertouch and Crashbreaker. Captures show the ready
+prompt, the effect after R2 and results with twelve vehicles totaled and $104,113.
+The original control assertions pass through return to the front end; the new
+high-score results table needs an additional reviewed Continue press. The ready
+prompt still shows B instead of the configured right trigger. This known pinned
+runtime glyph issue remains unfixed: its dedicated `B_Button` asset is selected
+by the Crashbreaker HUD, independently of the driving-input remap. Correct input
+delivery does not qualify that prompt as accurate.
+
 ## GamePKG library integration
 
 `ports/takedawn` selects the fixed, host-reviewed native source kit. Its game
