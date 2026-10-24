@@ -39,6 +39,8 @@ fn build() -> std::io::Result<()> {
         Ok(out)
     }
     fn run(command: &mut Command) -> io::Result<()> {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x08000000);
         let status = command.stdin(Stdio::null()).status()?;
         if !status.success() {
             return Err(fail(&format!("native build command failed ({status})")));
@@ -46,6 +48,8 @@ fn build() -> std::io::Result<()> {
         Ok(())
     }
     fn capture(command: &mut Command) -> io::Result<Vec<u8>> {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x08000000);
         let output = command.stdin(Stdio::null()).output()?;
         if !output.status.success() {
             return Err(fail(&String::from_utf8_lossy(&output.stderr)));

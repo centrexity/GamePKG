@@ -211,7 +211,9 @@ fn compile_with_cache(
         cfg!(target_arch = "x86_64"),
         "This prepared Takedawn source kit currently supports Linux x86-64"
     );
-    let kit = crate::takedawn_kit::SourceKit::open(archive, super::KIT_SHA256)?;
+    let digest =
+        super::reviewed_kit_digest(&crate::files::read_regular(archive, 128 * 1048576, false)?)?;
+    let kit = crate::takedawn_kit::SourceKit::open(archive, &digest)?;
     let tools = rust_sysroot()?;
     let cache = unit_cache(kit.directory(), &tools, persistent)?;
     #[cfg(test)]

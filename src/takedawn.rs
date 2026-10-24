@@ -6,6 +6,16 @@ pub const PROFILE: &str = "takedawn-5a00fc10-rust-v1";
 pub const MEMORY: u64 = 4 * 1024 * 1024 * 1024;
 pub const KIT_SHA256: &str = "a40e9656476633125d2fd50cc6a71134a453f8942634e34ebef848a215b98a5a";
 pub const KIT_ASSET: &str = "assets/takedawn-source-kit.tar.gz";
+pub const WINDOWS_KIT_SHA256: &str =
+    "ab30c4e7a4a86580a6fbefe7f79be941c713a0dd2b089d73fba6180729ab845b";
+pub(crate) fn reviewed_kit_digest(bytes: &[u8]) -> Result<String> {
+    let digest = crate::verify::digest(bytes);
+    ensure!(
+        digest == KIT_SHA256 || digest == WINDOWS_KIT_SHA256,
+        "Takedawn source kit is not the host-reviewed version"
+    );
+    Ok(digest)
+}
 pub const LAUNCHER: &str =
     "pub fn game_tick(input: u32, state: u64) -> u64 { gamepkg::takedawn_tick(input, state) }\n";
 /// Prepare the fixed standalone Windows SDK without WSL or vendor installers.
@@ -15,7 +25,7 @@ pub fn prepare_windows_tools(root: &Path) -> Result<PathBuf> {
         std::env::consts::ARCH == "x86_64",
         "the native Takedawn build tools currently require 64-bit Windows"
     );
-    crate::takedawn_windows_sdk::prepare(root)
+    build::prepare_tools(root)
 }
 pub fn data_path(root: &Path, id: &str, creator: &str, schema: u32) -> PathBuf {
     let key = format!("GamePKG Takedawn native data v1\0{id}\0{creator}\0{schema}");
@@ -26,8 +36,15 @@ pub fn data_path(root: &Path, id: &str, creator: &str, schema: u32) -> PathBuf {
 #[cfg(target_os = "linux")]
 #[path = "takedawn/build.rs"]
 pub mod build;
+#[cfg(windows)]
+#[path = "takedawn/windows_build.rs"]
+pub mod build;
 
 pub fn cache_path(root: &Path, digest: &str) -> PathBuf {
+    #[cfg(windows)]
+    return crate::native::path_for_digest(root, digest)
+        .with_file_name(format!("takedawn-{}.exe", &WINDOWS_KIT_SHA256[..16]));
+    #[cfg(not(windows))]
     crate::native::path_for_digest(root, digest)
         .with_file_name(format!("takedawn-{}", &KIT_SHA256[..16]))
 }
@@ -57,10 +74,7 @@ pub(crate) fn validate_recipe(package: &mut crate::archive::Package) -> Result<(
     let cargo: toml::Value =
         toml::from_str(std::str::from_utf8(&package.read("source/Cargo.toml")?)?)?;
     crate::dependencies::validate(&cargo, &package.read("source/Cargo.lock")?)?;
-    ensure!(
-        crate::verify::digest(&package.read(KIT_ASSET)?) == KIT_SHA256,
-        "Takedawn source kit is not the host-reviewed version"
-    );
+    reviewed_kit_digest(&package.read(KIT_ASSET)?)?;
     Ok(())
 }
 
@@ -253,6 +267,7 @@ fn play_session(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(target_os = "linux")]
     fn package(root: &Path) -> crate::manifest::Manifest {
         let source = tempfile::tempdir().unwrap();
         let path = source.path().join("fixture.gamepkg");

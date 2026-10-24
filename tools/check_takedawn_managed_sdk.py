@@ -42,4 +42,10 @@ for relative,record in receipt['files'].items():
 for relative in ['rust-1.89.0-windows-gnu/bin/rustc.exe','rust-1.89.0-windows-gnu/bin/cargo.exe','llvm-mingw-windows/bin/x86_64-w64-mingw32-clang.exe','cmake-windows/bin/cmake.exe','ninja-windows/ninja.exe']:
  result=subprocess.run([str(sdk/relative),'--version'],env=env,capture_output=True,timeout=30)
  assert result.returncode==0,(relative,result.stderr)
+helpers=[p for p in (root/'native-build-tools').iterdir() if p.is_dir()]
+assert len(helpers)==1
+for name in ['rustc-cache.exe','build-windows-units.exe','build-windows-runtime.exe']:
+ path=helpers[0]/name
+ assert path.read_bytes()[:2]==b'MZ'
+ assert hashlib.sha256(path.read_bytes()).hexdigest()==path.with_suffix('.sha256').read_text()
 print('PASS: native app CLI installs and reuses the official pinned SDK, matches every reviewed payload file, and runs native tools without Python/WSL setup.',flush=True)

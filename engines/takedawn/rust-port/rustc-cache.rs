@@ -246,7 +246,13 @@ fn atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
 }
 
 fn run(real: &OsString, args: &[OsString]) -> io::Result<i32> {
-    Ok(Command::new(real).args(args).status()?.code().unwrap_or(1))
+    let mut command = Command::new(real);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x08000000);
+    }
+    Ok(command.args(args).status()?.code().unwrap_or(1))
 }
 
 fn cached(real: &OsString, args: &[OsString]) -> io::Result<i32> {
