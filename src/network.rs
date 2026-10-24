@@ -101,7 +101,7 @@ impl Endpoint {
             !addresses.is_empty() && addresses.len() <= 64,
             "invalid DNS result"
         );
-        let mut command = std::process::Command::new("curl");
+        let mut command = crate::registry::curl_command()?;
         command.env_clear().args([
             "-q",
             "--silent",

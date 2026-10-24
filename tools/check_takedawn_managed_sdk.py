@@ -19,9 +19,11 @@ exe=args.gamepkg.resolve(strict=True)
 work=Path(tempfile.mkdtemp(prefix='gamepkg-managed-sdk.'))
 root=work/'Windows library with spaces'
 env=dict(os.environ,GAMEPKG_HOME=str(root),PATH=str(Path(os.environ['SystemRoot'])/'System32'))
+# A library/current-directory executable must not shadow the Windows tool.
+(work/'curl.exe').write_bytes(b'MZ invalid downloader shadow fixture')
 print('Private managed SDK evidence:',work,flush=True)
 for phase in ['install','reuse']:
- result=subprocess.run([str(exe),'setup-native-tools'],env=env,capture_output=True,timeout=1800)
+ result=subprocess.run([str(exe),'setup-native-tools'],env=env,cwd=work,capture_output=True,timeout=1800)
  (work/(phase+'.stdout.log')).write_bytes(result.stdout)
  (work/(phase+'.stderr.log')).write_bytes(result.stderr)
  if result.returncode:raise RuntimeError(result.stderr.decode(errors='replace'))
