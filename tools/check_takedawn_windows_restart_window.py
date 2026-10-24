@@ -220,8 +220,15 @@ try:
     )
     command("key enter")
     command("key enter")
+    # The original teardown can close/restore its logging tee before the last
+    # atexit handler prints. The parent's event requires the restart signal,
+    # normal process exit and descendant cleanup; it is the authoritative
+    # confirmation when that late C-stdio diagnostic is unavailable. Clear
+    # consumed inputs immediately so the next process cannot replay them.
     wait(
-        lambda: "GamePKG: managed restart requested; normal exit pending." in text(), 25
+        lambda: "GamePKG: managed restart requested; normal exit pending." in text()
+        or "Native game restarted after normal shutdown: 1" in log.read_text(),
+        25,
     )
     control.write_text("")
     wait(
