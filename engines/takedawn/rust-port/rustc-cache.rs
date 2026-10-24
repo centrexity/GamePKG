@@ -12,7 +12,7 @@ use std::{
 const MAX_OBJECT: u64 = 128 * 1048576;
 
 #[cfg(not(windows))]
-fn digest(bytes: &[u8]) -> io::Result<String> {
+pub(crate) fn digest(bytes: &[u8]) -> io::Result<String> {
     let mut child = Command::new("/usr/bin/sha256sum")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -29,7 +29,7 @@ fn digest(bytes: &[u8]) -> io::Result<String> {
 }
 
 #[cfg(windows)]
-fn digest(bytes: &[u8]) -> io::Result<String> {
+pub(crate) fn digest(bytes: &[u8]) -> io::Result<String> {
     use std::{
         ffi::c_void,
         ptr::{null, null_mut},

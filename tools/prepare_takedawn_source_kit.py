@@ -113,6 +113,10 @@ def main():
         copy(prepared / 'src' / name, 'prepared/src/' + name)
     for name in ['build.rs', 'Cargo.toml', 'units.txt', 'native_tls.c', 'conversion.json']:
         copy(prepared / name, 'prepared/' + name)
+    export_path = output / 'prepared/exports.txt'
+    export_path.write_text('\n'.join(conversion['exports']) + '\n')
+    os.chmod(export_path, 0o644)
+    files['prepared/exports.txt'] = {'sha256': sha(export_path), 'bytes': export_path.stat().st_size, 'mode': 0o644}
     host = project / 'engines/takedawn'
     for name in ['Cargo.toml', 'Cargo.lock', 'src/lib.rs', 'src/windows_handle.rs', 'media.h', 'posix.c',
                  'engine.c', 'attach.cmake', 'adapt_paths.cmake', 'adapt_smoke.cmake', 'adapt_memory.cmake',
@@ -120,7 +124,7 @@ def main():
                  'windows_entry.c', 'windows_attach.cmake', 'windows_restart.h', 'adapt_windows_restart.cmake', 'adapt_windows_file.cmake',
                  'adapt_windows_startup.cmake', 'DotNET-RUNTIME-LICENSE.txt']:
         copy(host / 'media-bridge' / name, 'host/engines/takedawn/media-bridge/' + name)
-    for name in ['attach.cmake', 'C2Rust-LICENSE.txt']:
+    for name in ['attach.cmake', 'C2Rust-LICENSE.txt', 'rustc-cache.rs', 'rustc-cache-linux-v1.rs', 'build-windows-units.rs']:
         copy(host / 'rust-port' / name, 'host/engines/takedawn/rust-port/' + name)
     for name in ['ntsc-u-retail.manifest', 'upstream-lock.json', 'Takedawn-LICENSE.txt',
                  'Xboxrecomp-LICENSE.txt', 'windows-dependencies.json']:
