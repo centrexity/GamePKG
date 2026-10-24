@@ -222,6 +222,18 @@ The wrapper also enables upstream unresolved-function logging and rejects a run
 that reaches one of those stubs. The final source-kit Crash run passes that guard;
 it does not establish that all modes avoid the remaining upstream stubs.
 
+Use `xbox race-complete` for the separate whole-race gate. It runs the pinned
+original `race_drive.sh`: the title's own AI drives the first Silver Lake race
+through its laps, finish and results screen. It does not unlock tracks, shorten
+the race or inject a result. This is a wider native execution check, separate
+from player-control equivalence and full campaign progression. The maximum
+test duration is twenty minutes; the race/crash control checks keep their
+existing five-minute bound. Both paths reject reached unresolved game stubs.
+The exact signed v12 Linux executable passes this gate: all three laps, fourth
+of six, 329.150 seconds, a 104.600-second best lap, the results screen and normal
+test shutdown. No unresolved stub is reached. This records one complete Single
+Event race, not a completed World Tour or physical-controller qualification.
+
 ## GamePKG library integration
 
 `ports/takedawn` selects the fixed, host-reviewed native source kit. Its game
