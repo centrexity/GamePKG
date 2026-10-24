@@ -6,7 +6,10 @@ use std::{
     path::{Path, PathBuf},
     process::Command,
 };
-const RUST_CACHE_WRAPPER: &str = include_str!("../../engines/takedawn/rust-port/rustc-cache.rs");
+// Keep the verified Linux v1 checkpoint namespace stable while the portable
+// Windows wrapper is qualified separately. Its embedded source bytes are unchanged.
+const RUST_CACHE_WRAPPER: &str =
+    include_str!("../../engines/takedawn/rust-port/rustc-cache-linux-v1.rs");
 
 struct UnitCache {
     directory: PathBuf,
