@@ -138,12 +138,34 @@ normal restarts. Play time begins after disc admission and window readiness, is
 checkpointed by the host and is flushed on exit. A restart gets a fresh readiness
 deadline. CLI and GUI dispatch this path; no GamePKG game-window shell is opened.
 
-The new Windows app lifecycle fixture checks actual confined restart, original
-save retention, exclusive ownership, companion integrity and history. Its native
-Windows execution is pending CI; it does not exercise Vulkan or original game
-code. The complete signed-package Windows Build/Play still needs an app-level
+The new Windows app lifecycle fixture passes native Windows execution in job
+[120782362776](https://github.com/centrexity/GamePKG/actions/runs/40063096197/job/120782362776),
+including confined restart, original save retention, exclusive ownership,
+companion integrity and history. All 333 library tests pass (nine optional gates
+ignored). The broader job subsequently fails three unrelated Arkanoo native-CRT
+pixel comparisons; that run is not an overall pass. The lifecycle fixture does
+not exercise Vulkan or original game code. Complete signed-package Windows Build/Play still needs an app-level
 run. Container GPU/window access, resource-policy integration and player-kit
 promotion remain open. Actual
 Windows hardware gameplay, complete campaign progression, physical controllers
 and audible/steering fidelity still need evidence. Wine and narrow API fixtures
 do not establish those scopes. No stable release is promoted by these checks.
+
+## Normal signed Linux v12 candidate
+
+A private v0.1.1 package now passes normal signature verification, install, native
+Build and integrity. Its 66,783,496-byte executable has SHA-256
+`cf40fb68f443dff431c23bf1a1c1df95d6010b75fa2ecad926d2a0db510dda02`
+and retains all 24,032 exports. All 486 game objects are byte-identical to the
+qualified v9 inputs. Normal Run rejects an incorrect disc without remembering it
+or recording play time, accepts the selected original ISO, remembers it for the
+next run and increases host history; no ISO is copied into the library.
+
+The exact executable passes Xbox race (+11.1 m/s), pause/resume/Quit, PS2-layout
+Crash (+49.3 m/s), impact/results/Continue, original profile creation/reload and
+45 seconds of non-silent 48 kHz stereo capture. Two preceding audio attempts
+missed the unchanged capture deadline (28 and 43 seconds captured); the prior
+qualified executable passes the same control. A subsequent observed run of the
+unchanged new executable passes. These timing failures remain recorded and
+real-time audio consistency is not qualified by the successful run. Neither
+checker assertions nor deadlines were relaxed. No stable package is promoted.
