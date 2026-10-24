@@ -349,3 +349,12 @@ neither Python nor generated C game bodies. It passes the native-window process
 owner gate, original profile create/reload and 45-second stereo capture gate.
 A profile actually updated by the Crash event reloads into another race with
 passing controls, using only copied profile files and the ISO in place.
+
+## Standalone Windows compiler path
+
+The host now has a [native Windows prepared-source build driver](WINDOWS_BUILD.md)
+and Windows checkpoint backend, with an asset-free end-to-end standalone SDK
+test passing on actual Windows. It compiles Rust and links native C/Rust without
+WSL or Python in the build commands. The current Linux checkpoint code and player
+kit stay unchanged. The full Windows-native-compiler game build and normal app
+Build/Play integration remain separate release gates.
