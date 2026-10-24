@@ -41,19 +41,35 @@
     "components": {
       "rustc": {
         "url": "https://static.rust-lang.org/dist/2025-08-07/rustc-1.89.0-x86_64-pc-windows-gnu.tar.xz",
-        "sha256": "468bd74d627a689daadda438b1c0c4231f351e4dbf3b916b5554a429703747f5"
+        "sha256": "468bd74d627a689daadda438b1c0c4231f351e4dbf3b916b5554a429703747f5",
+        "gzip": {
+          "url": "https://static.rust-lang.org/dist/2025-08-07/rustc-1.89.0-x86_64-pc-windows-gnu.tar.gz",
+          "sha256": "5c10542dddeab3578e04e98aa4a99c03bdb6c000bae88bf1b251eecc95bb90b0"
+        }
       },
       "rust-std": {
         "url": "https://static.rust-lang.org/dist/2025-08-07/rust-std-1.89.0-x86_64-pc-windows-gnu.tar.xz",
-        "sha256": "fb33cad8b2973afd95c68cac5909d712b7e683d521edc7e4bc8cbd954c2480ad"
+        "sha256": "fb33cad8b2973afd95c68cac5909d712b7e683d521edc7e4bc8cbd954c2480ad",
+        "gzip": {
+          "url": "https://static.rust-lang.org/dist/2025-08-07/rust-std-1.89.0-x86_64-pc-windows-gnu.tar.gz",
+          "sha256": "a689e90454bffdf017c1a59702afcccd42b228a1aa4ff6cd63497c0f13f13ec3"
+        }
       },
       "cargo": {
         "url": "https://static.rust-lang.org/dist/2025-08-07/cargo-1.89.0-x86_64-pc-windows-gnu.tar.xz",
-        "sha256": "01d2816036ac1377bf23534644d3f754b1ea4d15111330040ef2deebc3f17572"
+        "sha256": "01d2816036ac1377bf23534644d3f754b1ea4d15111330040ef2deebc3f17572",
+        "gzip": {
+          "url": "https://static.rust-lang.org/dist/2025-08-07/cargo-1.89.0-x86_64-pc-windows-gnu.tar.gz",
+          "sha256": "0db676abe6603aedbf890ca14e3c17b5310437204973fc60e2a77e8f73bc9789"
+        }
       },
       "rust-mingw": {
         "url": "https://static.rust-lang.org/dist/2025-08-07/rust-mingw-1.89.0-x86_64-pc-windows-gnu.tar.xz",
-        "sha256": "4c2ef993649e3093978848b00ba9fc9cd173d36dcad37ef6c416402beb3ef70b"
+        "sha256": "4c2ef993649e3093978848b00ba9fc9cd173d36dcad37ef6c416402beb3ef70b",
+        "gzip": {
+          "url": "https://static.rust-lang.org/dist/2025-08-07/rust-mingw-1.89.0-x86_64-pc-windows-gnu.tar.gz",
+          "sha256": "e4d1e71c55438d5ebf007346abdceb66d109a78ca4dad8598f2f0f1b96b3c371"
+        }
       }
     }
   },
@@ -70,5 +86,6 @@
       "url": "https://github.com/ninja-build/ninja/releases/download/v1.13.2/ninja-win.zip",
       "sha256": "07fc8261b42b20e71d1720b39068c2e14ffcee6396b76fb7a795fb460b78dc65"
     }
-  }
+  },
+  "payload_inventory_sha256": "c26f09324eda2a9f8091bf7330d5363bd22f4cee9a98fb93fe58bbe3eb02ec67"
 }

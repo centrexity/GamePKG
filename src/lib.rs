@@ -23,6 +23,8 @@ pub mod source;
 pub mod takedawn;
 #[doc(hidden)]
 pub mod takedawn_kit;
+#[cfg(any(windows, test))]
+mod takedawn_windows_sdk;
 #[doc(hidden)]
 #[cfg(target_os = "linux")]
 pub mod takedawn_player;

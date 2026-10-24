@@ -1566,6 +1566,18 @@ impl eframe::App for App {
                     ui.label("Larger text and controls apply when you save. Display scaling also follows your system settings.");
                     #[cfg(windows)]
                     {
+                        ui.heading("Native build tools");
+                        ui.label("Download and verify the tools for native engine builds. These tools do not use Python or WSL.");
+                        ui.label("About 485 MB to download; about 2.4 GB of disk space including cached downloads.");
+                        if ui.add_enabled(self.result.is_none(), egui::Button::new("Prepare native build tools")).clicked() {
+                            let root = crate::registry::default_root();
+                            self.status = "Preparing native build tools…".into();
+                            self.begin_work(move || {
+                                crate::takedawn::prepare_windows_tools(&root?)?;
+                                Ok(Work::Message("Native build tools are ready.".into()))
+                            });
+                        }
+                        ui.add_space(12.0);
                         ui.heading("Windows compiler");
                         ui.label("WSL 2 distribution name (leave both fields empty to disable)");
                         ui.text_edit_singleline(&mut self.settings_draft.windows_compiler_distribution);

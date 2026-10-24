@@ -77,6 +77,9 @@ jobs:
         run: cargo test --locked --all-features
       - name: Check portable implementation warnings
         run: cargo clippy --locked --all-features --all-targets -- -D warnings
+      - name: Verify managed standalone Windows SDK setup before WSL preparation
+        if: runner.os == 'Windows'
+        run: python tools/check_takedawn_managed_sdk.py --gamepkg target/release/gamepkg.exe
       - name: Select packaging Python
         if: runner.os == 'Windows'
         uses: actions/setup-python@v5
