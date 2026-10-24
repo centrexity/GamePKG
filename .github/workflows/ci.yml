@@ -54,6 +54,10 @@ jobs:
         if: matrix.features == '--all-features'
         run: |
           sudo apt-get update && sudo apt-get install -y qemu-user qemu-system-x86 gcc-mips-linux-gnu libc6-dev-mips-cross
+          # The same gate runs native gcc -m32 fixtures as well as MIPS.
+          # Install its headers/runtime without the gcc-multilib meta-package,
+          # which conflicts with cross-compiler meta-packages on this image.
+          sudo apt-get install -y --no-install-recommends libc6-dev-i386 lib32gcc-13-dev
           GAMEPKG_ARITHMETIC_CORPUS_SOURCE="$RUNNER_TEMP/gamepkg-arithmetic-corpus.bin" bash tools/check_takedawn_arithmetic_portability.sh
           GAMEPKG_EXT80_CORPUS_SOURCE="$RUNNER_TEMP/gamepkg-ext80-corpus.bin" bash tools/check_takedawn_ext80_portability.sh
           GAMEPKG_MMX_SHIFT_CORPUS_SOURCE="$RUNNER_TEMP/gamepkg-mmx-shift-corpus.bin" bash tools/check_takedawn_mmx_shift_portability.sh
@@ -326,6 +330,9 @@ jobs:
         run: node tests/support_page.mjs
       - name: Lint
         run: cargo clippy --locked --all-targets ${{ matrix.features }} -- -D warnings
+      - name: Build CLI for headless verification
+        if: matrix.features == ''
+        run: cargo build --locked --release --bin gamepkg
       - name: Build decoder and converter companions
         if: matrix.features == '--all-features'
         run: |
