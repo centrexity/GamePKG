@@ -271,6 +271,23 @@ window-manager close returns successfully; an earlier forced X11 window destroy
 produced a BadWindow error and is not counted as a normal close test.
 These tests use temporary libraries and do not modify the player's library.
 
+The v12 kit also passes normal Linux signed-package Build, integrity, invalid-ISO
+rejection, Play and remembered-ISO launch in a fresh private library. The resulting
+66,783,496-byte executable has SHA-256
+`cf40fb68f443dff431c23bf1a1c1df95d6010b75fa2ecad926d2a0db510dda02`
+and all 24,032 required exports. That exact executable passes the original Xbox
+race controls and PS2-layout Crash results/Continue checks. Profile reload and
+45 seconds of non-silent stereo capture pass too, but two preceding unchanged
+runs missed the audio-capture deadline. Audio timing consistency remains open;
+the successful repeat does not resolve those failures. No test deadline or
+original gameplay assertion was relaxed.
+
+The native Windows app session fixture passes on Windows CI: original save
+retention, exclusive ownership, managed restart, play history and executable/SDL
+integrity. It uses a small host fixture; original-game Vulkan rendering and input
+inside the Windows AppContainer still require separate verification. Gameplay
+and fidelity take priority over additional resource-policy tuning.
+
 Full progression, audible fidelity, steering equivalence, physical Windows/
 32-bit/other-endian gameplay, comparative performance measurements and production
 isolation qualification remain open. The original ISO is still required at
