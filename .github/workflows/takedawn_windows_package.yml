@@ -1,0 +1,34 @@
+name: Full native Windows game package
+on:
+  push:
+    paths:
+      - '.github/workflows/takedawn_windows_package.yml'
+      - 'tools/check_takedawn_windows_package.ps1'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: gamepkg-full-native-windows-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  signed-native-build:
+    runs-on: windows-2022
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build the native app CLI
+        run: cargo build --locked --release --bin gamepkg
+      - name: Build and repair the signed native game with managed standalone tools
+        shell: pwsh
+        run: ./tools/check_takedawn_windows_package.ps1 -Gamepkg target/release/gamepkg.exe -Work "$env:RUNNER_TEMP/full-native-package"
+      - name: Preserve logs and verification results only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-windows-package-evidence
+          path: ${{ runner.temp }}/full-native-package/evidence
+          retention-days: 7
+          if-no-files-found: error
