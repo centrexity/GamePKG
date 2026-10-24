@@ -162,8 +162,13 @@ fn build() -> std::io::Result<()> {
     let mut encoded = OsString::from("-C\x1flinker=");
     encoded.push(&linker);
     encoded.push("\x1f-C\x1flink-self-contained=yes");
-    encoded.push("\x1f-C\x1ftarget-cpu=");
-    encoded.push(cpu);
+    // This host I/O bridge keeps the portable x64 CPU target and its full
+    // release/LTO optimization. Native CPU flags here regressed audio pacing
+    // in the complete runtime; both the baseline library and a native-built
+    // generic-CPU library passed the unchanged original save/audio gate.
+    // Prepared game code and the original C/C++ renderer retain the selected
+    // native CPU target. No game logic or audio/input deadline is changed.
+    encoded.push("\x1f-C\x1ftarget-cpu=x86-64");
     let mut cargo = command(&rust.join("bin/cargo.exe"));
     cargo
         .current_dir(kit.join("host/engines/takedawn/media-bridge"))
@@ -336,7 +341,7 @@ fn build() -> std::io::Result<()> {
         return Err(error("runtime build inputs changed"));
     }
     let hash = |p: &Path| checkpoint::digest(&fs::read(p)?);
-    fs::write(receipt, format!("{{\"format\":\"gamepkg-native-windows-runtime-v1\",\"cpu\":\"{cpu}\",\"retained_exports\":{},\"kit_manifest_sha256\":\"{}\",\"game_archive_sha256\":\"{game_hash}\",\"media_archive_sha256\":\"{}\",\"executable_sha256\":\"{}\",\"sdl2_sha256\":\"{}\",\"tool_versions_sha256\":\"{}\"}}\n", required.len(), checkpoint::digest(&kit_manifest)?, hash(&media)?, hash(&exe)?, hash(&sdl)?, checkpoint::digest(&versions)?))?;
+    fs::write(receipt, format!("{{\"format\":\"gamepkg-native-windows-runtime-v1\",\"cpu\":\"{cpu}\",\"media_cpu\":\"x86-64\",\"retained_exports\":{},\"kit_manifest_sha256\":\"{}\",\"game_archive_sha256\":\"{game_hash}\",\"media_archive_sha256\":\"{}\",\"executable_sha256\":\"{}\",\"sdl2_sha256\":\"{}\",\"tool_versions_sha256\":\"{}\"}}\n", required.len(), checkpoint::digest(&kit_manifest)?, hash(&media)?, hash(&exe)?, hash(&sdl)?, checkpoint::digest(&versions)?))?;
     println!(
         "GamePKG: native Windows executable ready: {}",
         exe.display()
