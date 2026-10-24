@@ -1,0 +1,358 @@
+//! Host-owned native Windows runtime builder. The caller admits the fixed source
+//! kit, SDK and prepared game archive before invoking this internal tool.
+//! No game execution, ROM access, translation, Python or WSL is involved.
+#[cfg(windows)]
+#[allow(dead_code)]
+#[path = "rustc-cache.rs"]
+mod checkpoint;
+
+#[cfg(windows)]
+fn build() -> std::io::Result<()> {
+    use std::{
+        collections::{BTreeMap, BTreeSet},
+        ffi::{OsStr, OsString},
+        fs, io,
+        path::{Path, PathBuf},
+        process::{Command, Stdio},
+    };
+    fn error(message: &str) -> io::Error {
+        io::Error::other(message)
+    }
+    if std::env::consts::ARCH != "x86_64" {
+        return Err(error(
+            "the reviewed native Windows runtime currently requires x86-64",
+        ));
+    }
+    fn run(command: &mut Command) -> io::Result<()> {
+        let status = command.stdin(Stdio::null()).status()?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err(error(&format!(
+                "native runtime build command failed ({status})"
+            )))
+        }
+    }
+    fn capture(command: &mut Command) -> io::Result<Vec<u8>> {
+        let result = command.stdin(Stdio::null()).output()?;
+        if !result.status.success() {
+            return Err(error(&String::from_utf8_lossy(&result.stderr)));
+        }
+        Ok(result.stdout)
+    }
+    fn cmake_path(path: &Path) -> io::Result<String> {
+        let text = path
+            .to_str()
+            .ok_or_else(|| error("CMake path is not Unicode"))?;
+        if text.contains([';', '\n', '\r']) {
+            return Err(error("CMake path contains a list separator or newline"));
+        }
+        Ok(text.replace('\\', "/"))
+    }
+    let args: Vec<_> = std::env::args_os().skip(1).collect();
+    let mut options = BTreeMap::new();
+    for pair in args.chunks(2) {
+        if pair.len() != 2 || options.insert(pair[0].clone(), pair[1].clone()).is_some() {
+            return Err(error("invalid or duplicate runtime builder arguments"));
+        }
+    }
+    let fields = [
+        "--kit",
+        "--sdk",
+        "--game-archive",
+        "--output",
+        "--cpu",
+        "--jobs",
+    ];
+    if options.len() != fields.len()
+        || fields
+            .iter()
+            .any(|key| !options.contains_key(OsStr::new(key)))
+    {
+        return Err(error(
+            "requires --kit --sdk --game-archive --output --cpu --jobs",
+        ));
+    }
+    let cpu = options
+        .get(OsStr::new("--cpu"))
+        .unwrap()
+        .to_str()
+        .ok_or_else(|| error("invalid CPU"))?;
+    if !matches!(cpu, "native" | "x86-64") {
+        return Err(error("CPU must be native or x86-64"));
+    }
+    let jobs: usize = options
+        .get(OsStr::new("--jobs"))
+        .unwrap()
+        .to_str()
+        .and_then(|v| v.parse().ok())
+        .filter(|v| *v > 0)
+        .ok_or_else(|| error("jobs must be a positive integer"))?;
+    let path = |key: &str| -> io::Result<PathBuf> {
+        let value = PathBuf::from(options.get(OsStr::new(key)).unwrap());
+        if !value.is_absolute() {
+            return Err(error("runtime build paths must be absolute"));
+        }
+        cmake_path(&value)?;
+        Ok(value)
+    };
+    let kit = path("--kit")?;
+    let sdk = path("--sdk")?;
+    let game = path("--game-archive")?;
+    let output = path("--output")?;
+    fs::create_dir_all(&output)?;
+    let lock = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(output.join("runtime.lock"))?;
+    lock.lock()?;
+    let receipt = output.join("runtime-qualification.json");
+    match fs::remove_file(&receipt) {
+        Ok(()) => {}
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e),
+    }
+    let kit_manifest = fs::read(kit.join("kit.json"))?;
+    let game_hash = checkpoint::digest(&fs::read(&game)?)?;
+    let llvm = sdk.join("llvm-mingw-windows/bin");
+    let rust = sdk.join("rust-1.89.0-windows-gnu");
+    let rustc = rust.join("bin/rustc.exe");
+    let cmake = sdk.join("cmake-windows/bin/cmake.exe");
+    let ninja = sdk.join("ninja-windows/ninja.exe");
+    let cc = llvm.join("x86_64-w64-mingw32-clang.exe");
+    let cxx = llvm.join("x86_64-w64-mingw32-clang++.exe");
+    let linker = rust
+        .join("lib/rustlib/x86_64-pc-windows-gnu/bin/self-contained/x86_64-w64-mingw32-gcc.exe");
+    // Children see only the verified SDK and Windows system commands. In
+    // particular no installed Python, rustup, MSVC or WSL participates.
+    let system = PathBuf::from(
+        std::env::var_os("SystemRoot").ok_or_else(|| error("missing Windows system root"))?,
+    )
+    .join("System32");
+    let command_path = std::env::join_paths([
+        rust.join("bin"),
+        llvm.clone(),
+        ninja.parent().unwrap().to_owned(),
+        cmake.parent().unwrap().to_owned(),
+        system,
+    ])
+    .map_err(|_| error("invalid SDK search path"))?;
+    let command = |exe: &Path| {
+        let mut c = Command::new(exe);
+        c.env("PATH", &command_path);
+        c
+    };
+    let mut versions = Vec::new();
+    for (exe, flags) in [
+        (&rustc, vec!["--version", "--verbose"]),
+        (&cc, vec!["--version"]),
+        (&cmake, vec!["--version"]),
+        (&ninja, vec!["--version"]),
+    ] {
+        versions.extend(capture(command(exe).args(flags))?);
+        versions.push(b'\n');
+    }
+    fs::write(output.join("runtime-tool-versions.txt"), &versions)?;
+    println!("GamePKG: building native Windows verified-disc reader (offline)");
+    let media_dir = output.join("media");
+    // Cargo splits RUSTFLAGS on spaces. Use its encoded form so SDK paths
+    // containing spaces remain one linker argument.
+    let mut encoded = OsString::from("-C\x1flinker=");
+    encoded.push(&linker);
+    encoded.push("\x1f-C\x1flink-self-contained=yes");
+    encoded.push("\x1f-C\x1ftarget-cpu=");
+    encoded.push(cpu);
+    let mut cargo = command(&rust.join("bin/cargo.exe"));
+    cargo
+        .current_dir(kit.join("host/engines/takedawn/media-bridge"))
+        .env_remove("RUSTFLAGS")
+        .env_remove("RUSTC_WRAPPER")
+        .env_remove("RUSTC_WORKSPACE_WRAPPER")
+        .env("CARGO_ENCODED_RUSTFLAGS", encoded)
+        .env("RUSTC", &rustc)
+        .env("CARGO_HOME", output.join("cargo-home"))
+        .env("CARGO_TARGET_DIR", &media_dir)
+        .env("CARGO_NET_OFFLINE", "true")
+        .args(["build", "--offline", "--locked", "--release"]);
+    run(&mut cargo)?;
+    let media = media_dir.join("release/libgamepkg_takedawn_media.a");
+    let glslang = output.join("glslang");
+    let glslang_build = output.join("glslang-build");
+    let configure = |source: &Path, build: &Path| -> io::Result<Command> {
+        let mut c = command(&cmake);
+        c.arg("-S")
+            .arg(source)
+            .arg("-B")
+            .arg(build)
+            .args(["-G", "Ninja"])
+            .arg(format!("-DCMAKE_MAKE_PROGRAM={}", cmake_path(&ninja)?))
+            .arg(format!("-DCMAKE_C_COMPILER={}", cmake_path(&cc)?))
+            .arg(format!("-DCMAKE_CXX_COMPILER={}", cmake_path(&cxx)?))
+            .arg("-DCMAKE_BUILD_TYPE=Release")
+            .arg(format!("-DCMAKE_C_FLAGS=-march={cpu}"))
+            .arg(format!("-DCMAKE_CXX_FLAGS=-march={cpu}"));
+        Ok(c)
+    };
+    println!("GamePKG: building native Windows shader library");
+    run(configure(&sdk.join("glslang-src"), &glslang_build)?
+        .arg(format!("-DCMAKE_INSTALL_PREFIX={}", cmake_path(&glslang)?))
+        .args([
+            "-DBUILD_SHARED_LIBS=OFF",
+            "-DENABLE_OPT=OFF",
+            "-DENABLE_GLSLANG_BINARIES=OFF",
+            "-DGLSLANG_TESTS=OFF",
+            "-DBUILD_EXTERNAL=OFF",
+        ]))?;
+    run(command(&cmake).arg("--build").arg(&glslang_build).args([
+        "--target",
+        "install",
+        "--parallel",
+        &jobs.to_string(),
+    ]))?;
+    // Match the original dependency recipe: derive the loader import symbols
+    // from the pinned Vulkan headers. The GPU driver supplies vulkan-1.dll.
+    let mut entries = BTreeSet::new();
+    for name in ["vulkan_core.h", "vulkan_win32.h"] {
+        let text = fs::read_to_string(sdk.join("vulkan-src/include/vulkan").join(name))?;
+        for tail in text.split("VKAPI_CALL").skip(1) {
+            let name: String = tail
+                .trim_start()
+                .chars()
+                .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+                .collect();
+            if name.starts_with("vk") {
+                entries.insert(name);
+            }
+        }
+    }
+    if !entries.contains("vkCreateInstance") || !entries.contains("vkGetInstanceProcAddr") {
+        return Err(error("Vulkan loader declarations missing"));
+    }
+    let imports = output.join("vulkan");
+    fs::create_dir_all(&imports)?;
+    let def = imports.join("vulkan-1.def");
+    fs::write(
+        &def,
+        format!(
+            "LIBRARY vulkan-1.dll\nEXPORTS\n{}\n",
+            entries.into_iter().collect::<Vec<_>>().join("\n")
+        ),
+    )?;
+    let import_library = imports.join("libvulkan-1.dll.a");
+    run(command(&llvm.join("llvm-dlltool.exe"))
+        .args(["-m", "i386:x86-64", "-d"])
+        .arg(&def)
+        .arg("-l")
+        .arg(&import_library))?;
+    println!("GamePKG: building original native Windows runtime and Vulkan renderer");
+    let runtime = output.join("runtime");
+    let bin = runtime.join("bin");
+    let mut c = configure(&kit.join("game"), &runtime)?;
+    for (key, value) in [
+        (
+            "CMAKE_TOOLCHAIN_FILE",
+            kit.join("game/cmake/llvm-mingw-x86_64.cmake"),
+        ),
+        ("LLVM_MINGW_ROOT", sdk.join("llvm-mingw-windows")),
+        (
+            "CMAKE_PROJECT_TOP_LEVEL_INCLUDES",
+            kit.join("host/engines/takedawn/rust-port/attach.cmake"),
+        ),
+        ("XBOXRECOMP_DIR", kit.join("toolkit")),
+        ("Vulkan_INCLUDE_DIR", sdk.join("vulkan-src/include")),
+        ("Vulkan_LIBRARY", import_library),
+        (
+            "SDL2_DIR",
+            sdk.join("SDL2/x86_64-w64-mingw32/lib/cmake/SDL2"),
+        ),
+        ("glslang_DIR", glslang.join("lib/cmake/glslang")),
+        ("BO3_GLYPHS_ART_DIR", kit.join("glyphs")),
+        ("BO3_BIN_DIR", bin.clone()),
+        ("GAMEPKG_TAKEDAWN_MEDIA_ARCHIVE", media.clone()),
+        ("GAMEPKG_TAKEDAWN_RUST_ARCHIVE", game.clone()),
+        (
+            "GAMEPKG_TAKEDAWN_RUST_TLS",
+            kit.join("prepared/native_tls.c"),
+        ),
+    ] {
+        c.arg(format!("-D{key}={}", cmake_path(&value)?));
+    }
+    c.args([
+        "-DBO3_OVERLAY=ON",
+        "-DBO3_RELEASE=OFF",
+        "-DBO3_WIN_VULKAN=ON",
+        "-DBO3_ENHANCE=ON",
+    ])
+    .arg(format!("-DBO3_COMPILE_JOBS={jobs}"));
+    run(&mut c)?;
+    let commands = capture(
+        command(&ninja)
+            .arg("-C")
+            .arg(&runtime)
+            .args(["-t", "commands", "burnout3"]),
+    )?;
+    let text = String::from_utf8_lossy(&commands).to_ascii_lowercase();
+    if text.contains("python")
+        || text
+            .lines()
+            .any(|line| line.contains("recomp/gen/recomp_") && line.contains(".c"))
+    {
+        return Err(error("unreviewed generation or C game compilation command"));
+    }
+    fs::write(output.join("runtime-build-commands.txt"), commands)?;
+    run(command(&cmake).arg("--build").arg(&runtime).args([
+        "--target",
+        "burnout3",
+        "--parallel",
+        &jobs.to_string(),
+    ]))?;
+    let exe = bin.join("burnout3-gamepkg-rust.exe");
+    let symbols = capture(
+        command(&llvm.join("llvm-nm.exe"))
+            .arg("--defined-only")
+            .arg(&exe),
+    )?;
+    let actual: BTreeSet<_> = String::from_utf8_lossy(&symbols)
+        .lines()
+        .filter_map(|line| line.split_whitespace().last().map(str::to_owned))
+        .collect();
+    let exports = fs::read_to_string(kit.join("prepared/exports.txt"))?;
+    let mut required = BTreeSet::new();
+    for name in exports.lines() {
+        if name.is_empty() || !required.insert(name) || !actual.contains(name) {
+            return Err(error("missing or duplicate prepared game export"));
+        }
+    }
+    if required.is_empty() {
+        return Err(error("empty game export inventory"));
+    }
+    let sdl = sdk.join("SDL2/x86_64-w64-mingw32/bin/SDL2.dll");
+    fs::copy(&sdl, bin.join("SDL2.dll"))?;
+    if fs::read(kit.join("kit.json"))? != kit_manifest
+        || checkpoint::digest(&fs::read(&game)?)? != game_hash
+    {
+        return Err(error("runtime build inputs changed"));
+    }
+    let hash = |p: &Path| checkpoint::digest(&fs::read(p)?);
+    fs::write(receipt, format!("{{\"format\":\"gamepkg-native-windows-runtime-v1\",\"cpu\":\"{cpu}\",\"retained_exports\":{},\"kit_manifest_sha256\":\"{}\",\"game_archive_sha256\":\"{game_hash}\",\"media_archive_sha256\":\"{}\",\"executable_sha256\":\"{}\",\"sdl2_sha256\":\"{}\",\"tool_versions_sha256\":\"{}\"}}\n", required.len(), checkpoint::digest(&kit_manifest)?, hash(&media)?, hash(&exe)?, hash(&sdl)?, checkpoint::digest(&versions)?))?;
+    println!(
+        "GamePKG: native Windows executable ready: {}",
+        exe.display()
+    );
+    Ok(())
+}
+
+fn main() {
+    #[cfg(windows)]
+    if let Err(error) = build() {
+        eprintln!("GamePKG: {error}");
+        std::process::exit(1);
+    }
+    #[cfg(not(windows))]
+    {
+        eprintln!("This internal native runtime builder requires Windows");
+        std::process::exit(2);
+    }
+}
