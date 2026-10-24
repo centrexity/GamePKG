@@ -1,142 +1,122 @@
 # Native Windows prepared-source build
 
-The native Windows builder compiles prepared Rust using a standalone Windows
-Rust toolchain and Windows LLVM tools. It does not invoke WSL, translation tools,
-Python, or game code during compilation. The app's normal Build/Play integration
-and managed SDK installer remain unfinished. This is currently an internal build
-path, separate from the verified Linux player source-kit pin.
+The standalone Windows pipeline compiles every prepared Rust game unit, builds
+the original C/C++ runtime and produces a native Windows executable. It invokes
+no WSL, translation tool, Python or game code during compilation. Python and Wine
+are maintainer diagnostics. The app's normal Windows Build/Play integration and
+player source-kit promotion remain unfinished; the installed Linux player pin
+remains v8.
 
-`../windows-dependencies.json` pins Rust 1.89.0's Windows GNU compiler, standard
-library, Cargo and MinGW components, plus LLVM-MinGW 20260922, CMake 3.31.12
-and Ninja 1.13.2. Each official
-archive is matched to its published SHA-256 before use. Keep the original
-component notices. Rust's bundled GNU linker bootstraps Rust tools explicitly;
-LLVM also has a gcc-named wrapper, which must not replace that linker on PATH.
+## Managed SDK setup
 
-`build-windows-units.rs` accepts only host-supplied paths to an already-admitted
-prepared tree, verified tools, output/cache directories and the CPU choice
-(`native` or `x86-64`). Its prepared inputs are `units.txt`, `exports.txt` and
-`src/`. The source-kit packager supplies the export inventory before players
-receive the kit. The caller still verifies the fixed source kit and SDK; this
-internal executable does not admit arbitrary game packages.
+On 64-bit Windows, run `gamepkg setup-native-tools`, or choose **Prepare native
+build tools** in Settings. Setup downloads about 485 MB and uses about 2.4 GB
+including cached archives. No vendor installer, Python, WSL or administrator
+installation is required. The downloader selects Windows' system curl directly,
+so an executable in the current library directory cannot shadow it.
 
-The driver compiles every prepared unit with Rust optimization level 3, uses
-`rustc-cache.rs` for verified checkpoints, builds the native object archive and
-bundles it with Rust's standard library. LLVM's symbol reader checks every
-required export before the driver writes `qualification.json`. Compilation or
-missing-symbol errors stop the pipeline. The archive still needs the original
-native runtime link and game qualification before it is playable.
+`src/takedawn_windows_sdk.rs` installs the official standalone tools. Rust 1.89.0
+GNU components have gzip pins from Rust's published channel metadata; LLVM-MinGW
+20260922, CMake 3.31.12, Ninja 1.13.2, SDL2, Vulkan headers and glslang are pinned in
+`../windows-dependencies.json`. Extraction verifies each archive before reading
+its payload. Rust component notices are retained; no install script executes.
 
-`build-windows-runtime.rs` supplies that original runtime link. It accepts
-`--kit`, `--sdk`, `--game-archive`, `--output`, `--cpu` and `--jobs`; these are
-host-owned paths to previously admitted inputs. It builds the media bridge
-offline from the kit's vendored dependencies, compiles the pinned glslang source,
-derives the Vulkan loader import library from the pinned headers and builds the
-original C/C++ runtime through native Windows CMake/Ninja/Clang. The prepared
-game and C/C++ runtime use the selected CPU target. The host media bridge keeps
-release optimization/LTO with the portable x64 CPU target: CPU-specific flags in
-that library regressed the original audio check, while native-built generic-CPU
-and previous baseline libraries pass with the same optimized C/C++ runtime.
-SDK paths containing spaces are passed as individual arguments, including
-Cargo's encoded linker flags. The runtime uses Vulkan and retains audio, input,
-settings and the original managed-restart connection.
+The expected payload inventory is independently derived from those official
+archives: **21,459 files, 1,858,144,785 bytes**, canonical inventory SHA-256
+`c26f09324eda2a9f8091bf7330d5363bd22f4cee9a98fb93fe58bbe3eb02ec67`.
+Every cached file is checked on reuse. Editing both a binary and its local cache
+manifest still fails the host's inventory pin. Bad caches are preserved under a
+quarantine name and replaced atomically. Links, special files, path escapes,
+Windows device names and case aliases are rejected. GitHub's PAX commit comments
+are metadata only; path overrides are not accepted.
 
-The tool checks every prepared game export, copies SDL2.dll beside the executable
-and records the source manifest, game/media archives, executable, companion DLL
-and tool-version hashes in `runtime-qualification.json`. A failed build removes
-any old qualification receipt. It does not read the ISO or run the game. The
-calling app still owns kit/SDK admission, final integrity publication and launch.
+Six local fixture tests pass, including cache reuse/repair, forged cache metadata,
+archive conflicts, links and path aliases. The real installer also passes with
+all official archives and the pinned full inventory. The resulting SDK builds
+the complete native game/runtime under Wine. Actual Windows app CI separately
+checks the CLI installation, reuse, every payload hash and native tool startup
+before its legacy WSL fixtures; that latest app-level gate is still running.
 
-Checkpoint identity includes the compiler, enabled CPU features, model/vendor,
-wrapper executable, export inventory, source bytes and exact compiler options.
-Windows uses its native SHA-256 provider. ELF and normal/BigObj COFF objects are
-checked for supported target architecture; damaged objects or receipts compile
-again. An explicit compiler path remap lets a subsequent private build directory
-reuse the same object without changing `file!()` and panic locations. Cache
-entries without that remap retain their actual source path in the key.
+## Build tools
 
-The current Linux builder retains its byte-identical `rustc-cache-linux-v1.rs`
-(SHA-256 `56918a38cd209dd5899111bb873ebe7d92d2cb1e49be70a8e19d92a4a14b97c7`)
-so this Windows work does not invalidate completed Linux checkpoints. The
-existing Linux cache regression test passes through the unchanged embedded code.
+`build-windows-units.rs` accepts host-supplied paths to an admitted prepared tree,
+verified SDK, output/cache directories and the CPU choice (`native` or `x86-64`).
+Inputs are `units.txt`, `exports.txt` and `src/`. It compiles at optimization level
+3, validates resumable COFF checkpoints, assembles the native archive with Rust's
+standard library and checks every required export before writing
+`qualification.json`.
+
+`build-windows-runtime.rs` accepts `--kit`, `--sdk`, `--game-archive`, `--output`,
+`--cpu` and `--jobs`. It builds the media bridge offline from vendored sources,
+compiles glslang, derives Vulkan loader imports from pinned headers, and builds
+the original runtime through native CMake/Ninja/Clang. It retains Vulkan, audio,
+input, original settings and managed restart. It copies SDL2.dll beside the game
+and records source, archive, executable, companion and tool-version hashes.
+A failed build removes any prior qualification receipt. The caller still owns
+source-kit/SDK admission, final integrity publication and launch.
+
+The game and renderer retain native CPU optimization. The host I/O bridge uses
+the portable x64 CPU target with release/LTO optimization: CPU-specific flags in
+that library reproducibly missed the original audio deadline. The preceding
+library, a replacement of that library alone, and a native-built generic-CPU
+library passed. The corrected full native build passes the unchanged check.
+
+Checkpoint identity includes compiler/CPU features, model/vendor, wrapper bytes,
+export inventory, source bytes and compiler options. Windows SHA-256 uses BCrypt.
+ELF and normal/BigObj COFF objects are validated. Explicit path remapping permits
+verified reuse across private source directories. Linux retains its byte-identical
+`rustc-cache-linux-v1.rs` so this work does not invalidate existing Linux cache
+identity.
 
 ## Qualification
 
 [40054185588](https://github.com/centrexity/GamePKG/actions/runs/40054185588)
-passes actual Windows checks:
+passes actual MSVC32/MSVC64 cache/hash/BigObj, media, file/stream/kernel and strict
+process/restart checks. Its x64 standalone SDK gate compiles both Rust builders,
+reuses real Rust checkpoints, and builds/runs C++/Rust heap allocation through
+native CMake/Ninja/Clang. Linux checks also pass.
 
-- MSVC32 and MSVC64 each pass three checkpoint/hash tests and an explicitly
-  invoked native MSVC BigObj fixture. The tests compile real Rust objects,
-  relocate a private source tree, recover from damaged checkpoints, reject
-  invalid Rust and check standard SHA-256 vectors. Linux also passes its three
-  portable-cache tests.
-- A standalone SDK test downloads the pinned Windows GNU Rust, LLVM, CMake and Ninja tools,
-  limits PATH to those tools plus Windows system files, compiles the Rust build
-  units driver, runtime driver and cache wrapper, then assembles two synthetic
-  Rust modules. Both checkpoints reuse on the next build. Native CMake/Ninja and
-  Clang compile and link a C++ executable with that archive, including C++ and
-  Rust heap allocation; execution returns the expected 11.
-  This path uses no rustup, Visual Studio linker, WSL or Python build command.
+The complete **486-unit, 24,032-export** prepared game archive now compiles with
+standalone native Windows Rust and `target-cpu=native` under isolated Wine. The
+resumed build preserved its verified checkpoints and completed in 5,806 seconds.
+Archive SHA-256 is
+`2b240179185bfcc3490decbf711e188480b0a9440fd68689482eba59bbf46c21`.
 
-The same standalone Windows compiler runs under isolated Wine as a maintainer
-check and compiles actual prepared game code with `target-cpu=native`. A complete
-486-unit native-compiler build is in progress. Its interrupted first attempt
-preserved 58 units; the resumed build verifies and reuses those checkpoints.
-An 11 MiB source unit requires more compiler memory than the game allowance;
-the diagnostic compiler scope is separate from game memory settings.
+Using GamePKG's managed SDK and that archive, the native runtime builder produces
+the v6 executable: **60,064,768 bytes**, SHA-256
+`c46120afab1ed10989ea0b9013cc30d45a9b6e98e7ac9b530948d48dd8576fc0`.
+All game and runtime compilation uses Windows tools; no Linux cross compiler
+supplies this build. It passes these original-engine checks under Wine:
 
-Python orchestrates the asset-free CI test and Wine is a compatibility diagnostic;
-neither is a player requirement. The complete native Windows game archive,
-original runtime link, current-build gameplay, app integration and player-kit
-promotion still require their own evidence. A native cache/SDK fixture does not
-qualify full campaign progression or Windows graphics hardware.
+- Xbox race controls, acceleration (+10.4 m/s), pause/resume and Quit.
+- PS2-layout Crash controls, impact, results and Continue.
+- Original profile creation/reload with unchanged 59,904-byte profile and 54-byte
+  metadata, plus 45 seconds of non-silent 48 kHz stereo capture.
+- Original settings UI changes render scale from 1x to 2x, cancels then confirms
+  restart, verifies the persisted setting without a pending-change prompt and
+  quits normally. One Rust session admits the read-only ISO twice despite an
+  invalid legacy filename, opens two Vulkan windows and completes both original
+  shutdowns. Renderer-owned captures are retained. The owner event is authoritative
+  when a late C-stdio teardown diagnostic is unavailable.
 
-The Rust runtime driver also builds the complete original Windows runtime under
-isolated Wine, offline from the v10 source kit, with all 24,032 exports. That
-comparison uses the previously qualified baseline-CPU prepared Rust game archive;
-it does not stand in for the still-running native-CPU game compilation. The new
-runtime passes original Crash controls/results/Continue and a sequential Xbox
-race check (+9.1 m/s acceleration), but fails the unchanged save/audio deadline.
-The preceding v3 executable passes that same check in the current environment.
-The comparison isolates the media library: replacing only that library with the
-previous one restores a pass, as does a native-built generic-CPU media library.
-The current builder selects the verified x64 media target. The rebuilt v5
-executable passes original profile creation/reload with unchanged save hashes,
-the complete 45-second non-silent stereo capture, and the actual window/settings
-restart gate. Render scale changes from 1x to 2x, persists after one managed
-restart, and both processes shut down normally in the same tracked session.
-The owner admits the read-only ISO twice despite an invalid legacy filename.
-Renderer-owned captures confirm the applied setting has no pending-change prompt.
-The restart gate accepts the authoritative parent event if the late C-stdio
-diagnostic is unavailable during teardown; every final shutdown, setting and
-window assertion remains. Parallel Wine runs also failed timing checks; those
-results are not counted as qualified.
+Earlier baseline-CPU v5 Crash testing hit its diagnostic deadline; it is not
+counted as a pass. The final native-CPU v6 build passes the original gate without
+weakening its input, result or timeout assertions. Parallel Wine timing failures
+are likewise retained as unqualified diagnostics.
 
-## Private source-kit candidate
+## Source-kit candidate and remaining gates
 
-The v10 candidate includes the native Windows build driver, portable checkpoint
-wrapper, export inventory and current Windows media/restart adapters. Its archive
-SHA-256 is `9a94b3e286286ab89506837cca3095b21a2f3bc844c5bbd8a2ca44d6ab42cb08`
-(55,262,902 compressed bytes; 4,256 inventoried files). The actual Rust source-kit
-loader accepts the archive. The installed player kit remains pinned to v8.
-
-The prepared game/build inputs exactly match the qualified v9 Linux inputs, so
-the candidate reuses that verified Rust archive. Its media bridge builds offline
-with an empty Cargo home, and the original native runtime links with all 24,032
-exports. Build commands contain neither Python nor generated C game bodies.
-All inventoried source files remain unchanged after build and gameplay checks.
-The rebuilt Linux executable passes the original race and crash control checks,
-including pause/resume, quit/results/continue, plus profile creation/reload with
-unchanged save hashes and non-silent stereo capture. These regressions preserve
-the working Linux path while Windows app integration proceeds; full campaign,
-audible fidelity and Windows player-build qualification remain separate gates.
-
-The v12 candidate adds the fixed runtime builder and updated SDK pins to v10.
-SHA-256 is
+Private v12 contains the fixed runtime builder and prepared Rust. Archive SHA-256:
 `ab30c4e7a4a86580a6fbefe7f79be941c713a0dd2b089d73fba6180729ab845b`
-(55,265,670 compressed bytes; 4,257 inventoried files). The actual Rust source-kit
-loader accepts it; all source hashes remain intact. Its prepared Rust and Linux
-runtime sources remain identical to v10. The v5 runtime qualification used the
-v10 source tree plus the current host runtime driver, whose source exactly
-matches the driver packaged in v12. Normal signed app build, complete native-CPU
-game compilation and player promotion remain open.
+(55,265,670 compressed bytes; 4,257 inventoried files). The actual Rust loader
+accepts it, all source hashes remain intact after the full Windows build/tests,
+and its prepared Rust/Linux runtime sources match the earlier qualified Linux
+candidate. The v6 build uses this exact source tree and its complete native-CPU
+archive. Older SDK metadata in this frozen kit is informational; the app admits
+managed tools against its current host-pinned inventory.
+
+Normal signed app Build/Play, Windows save/history integration, production
+filesystem/network confinement and player-kit promotion remain open. Actual
+Windows hardware gameplay, complete campaign progression, physical controllers
+and audible/steering fidelity still need evidence. Wine and narrow API fixtures
+do not establish those scopes. No stable release is promoted by these checks.
