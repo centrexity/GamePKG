@@ -32,7 +32,9 @@ fn command(executable: &Path) -> Command {
     command
 }
 pub(crate) fn prepare_tools(root: &Path) -> Result<PathBuf> {
-    let sdk = compiler_path(&crate::takedawn_windows_sdk::prepare(root)?.canonicalize()?)?;
+    // Preserve the verbatim SDK executable path: the bundled GCC lives deep
+    // enough to exceed MAX_PATH. Only its source/output arguments use DOS paths.
+    let sdk = crate::takedawn_windows_sdk::prepare(root)?.canonicalize()?;
     helpers(root, &sdk)?;
     Ok(sdk)
 }
@@ -136,7 +138,7 @@ pub fn compile_package(root: &Path, id: &str) -> Result<()> {
     archive.write_all(&archive_bytes)?;
     let kit = crate::takedawn_kit::SourceKit::open(archive.path(), super::WINDOWS_KIT_SHA256)?;
     drop(archive_bytes);
-    let sdk = compiler_path(&super::prepare_windows_tools(root)?.canonicalize()?)?;
+    let sdk = super::prepare_windows_tools(root)?.canonicalize()?;
     let helpers = helpers(root, &sdk)?;
     let cache = root.join("native-unit-cache/takedawn-windows");
     fs::create_dir_all(&cache)?;

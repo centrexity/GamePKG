@@ -21,6 +21,7 @@ const INVENTORY: &str = "gamepkg-sdk.json";
 /// Rust filesystem canonicalization uses verbatim Windows paths. The bundled
 /// GNU linker does not understand that prefix in output/search arguments.
 /// Preserve drive/UNC identity and spaces while using its ordinary path syntax.
+/// Executable paths must retain their verbatim form to launch beyond MAX_PATH.
 pub(crate) fn compiler_path(path: &Path) -> Result<PathBuf> {
     let text = path
         .to_str()
