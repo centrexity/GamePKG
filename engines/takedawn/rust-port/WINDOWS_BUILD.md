@@ -62,7 +62,7 @@ existing Linux cache regression test passes through the unchanged embedded code.
 
 ## Qualification
 
-[40052385314](https://github.com/centrexity/GamePKG/actions/runs/40052385314)
+[40054185588](https://github.com/centrexity/GamePKG/actions/runs/40054185588)
 passes actual Windows checks:
 
 - MSVC32 and MSVC64 each pass three checkpoint/hash tests and an explicitly
@@ -100,9 +100,17 @@ race check (+9.1 m/s acceleration), but fails the unchanged save/audio deadline.
 The preceding v3 executable passes that same check in the current environment.
 The comparison isolates the media library: replacing only that library with the
 previous one restores a pass, as does a native-built generic-CPU media library.
-The current builder selects the verified x64 media target; the rebuilt final
-executable is being checked before qualification. Parallel Wine runs also failed
-timing checks. No failed result is counted as qualified for player promotion.
+The current builder selects the verified x64 media target. The rebuilt v5
+executable passes original profile creation/reload with unchanged save hashes,
+the complete 45-second non-silent stereo capture, and the actual window/settings
+restart gate. Render scale changes from 1x to 2x, persists after one managed
+restart, and both processes shut down normally in the same tracked session.
+The owner admits the read-only ISO twice despite an invalid legacy filename.
+Renderer-owned captures confirm the applied setting has no pending-change prompt.
+The restart gate accepts the authoritative parent event if the late C-stdio
+diagnostic is unavailable during teardown; every final shutdown, setting and
+window assertion remains. Parallel Wine runs also failed timing checks; those
+results are not counted as qualified.
 
 ## Private source-kit candidate
 
@@ -123,10 +131,12 @@ unchanged save hashes and non-silent stereo capture. These regressions preserve
 the working Linux path while Windows app integration proceeds; full campaign,
 audible fidelity and Windows player-build qualification remain separate gates.
 
-The subsequent v11 candidate adds only the runtime builder and updated SDK pins
-to v10. SHA-256 is
-`4cde4a0dd61f02aa4c6946d8e8a2b2fc905a75ea09684fa45c8fcea1ef27b67b`
-(55,265,542 compressed bytes; 4,257 inventoried files). The actual Rust source-kit
-loader accepts it. Its prepared Rust and Linux runtime sources remain identical
-to v10. It predates the media CPU fix and is not a promotion candidate; a new
-archive must include that fix. Normal app build integration remains open.
+The v12 candidate adds the fixed runtime builder and updated SDK pins to v10.
+SHA-256 is
+`ab30c4e7a4a86580a6fbefe7f79be941c713a0dd2b089d73fba6180729ab845b`
+(55,265,670 compressed bytes; 4,257 inventoried files). The actual Rust source-kit
+loader accepts it; all source hashes remain intact. Its prepared Rust and Linux
+runtime sources remain identical to v10. The v5 runtime qualification used the
+v10 source tree plus the current host runtime driver, whose source exactly
+matches the driver packaged in v12. Normal signed app build, complete native-CPU
+game compilation and player promotion remain open.
