@@ -3,11 +3,11 @@
 # Python belongs to the upstream checker, not the player build or runtime.
 # GAMEPKG_GAMEPLAY_WINE=1 runs the Windows executable with the same assertions
 # in an isolated private Wine prefix. It does not qualify actual Windows.
-# race-complete uses the original AI driver through a whole race and results;
+# race-complete/roadrage-complete use the original AI driver through an event;
 # the race/crash modes retain the separate original player-control assertions.
 set -euo pipefail
 if [[ $# -lt 4 || $# -gt 6 ]]; then
-    echo "usage: bash $0 NATIVE_EXECUTABLE ISO PINNED_TAKEDAWN PRIVATE_REFERENCE_SAVES [xbox|ps2] [race|crash|race-complete]" >&2
+    echo "usage: bash $0 NATIVE_EXECUTABLE ISO PINNED_TAKEDAWN PRIVATE_REFERENCE_SAVES [xbox|ps2] [race|crash|race-complete|roadrage-complete]" >&2
     exit 2
 fi
 for task_tool in bwrap systemd-run timeout realpath sha256sum awk python3; do
@@ -31,11 +31,11 @@ if [[ "$task_wine" == 1 ]]; then
 fi
 [[ -x "$task_binary" && -f "$task_disc" && -d "$task_saves" ]] || exit 2
 [[ "$task_scheme" == xbox || "$task_scheme" == ps2 ]] || exit 2
-[[ "$task_event" == race || "$task_event" == crash || "$task_event" == race-complete ]] || exit 2
+[[ "$task_event" == race || "$task_event" == crash || "$task_event" == race-complete || "$task_event" == roadrage-complete ]] || exit 2
 task_timeout=300
 task_driver=controls_scene.sh
-if [[ "$task_event" == race-complete ]]; then
-    [[ "$task_scheme" == xbox ]] || { echo "race-complete uses the original AI driver, not a PS2 control-layout check" >&2; exit 2; }
+if [[ "$task_event" == race-complete || "$task_event" == roadrage-complete ]]; then
+    [[ "$task_scheme" == xbox ]] || { echo "complete events use the original AI driver, not a PS2 control-layout check" >&2; exit 2; }
     task_timeout=1200
     task_driver=race_drive.sh
 fi
@@ -49,7 +49,7 @@ for task_spec in \
         echo "unreviewed upstream gameplay driver: $task_file" >&2; exit 2;
     }
 done
-if [[ "$task_event" == race-complete ]]; then
+if [[ "$task_driver" == race_drive.sh ]]; then
     [[ $(sha256sum "$task_source/tools/headless/race_drive.sh" | cut -d' ' -f1) == 3d13d2fb92769a641e4e1d536b966104f4af4c5b14ae702935410a1c8c762b93 ]] || {
         echo "unreviewed upstream full-race driver" >&2; exit 2;
     }
@@ -88,7 +88,7 @@ awk '
     { print }
     END { if (n != 2) exit 1 }
 ' "$task_source/tools/headless/controls_scene.sh" > "$task_state/driver/tools/headless/controls_scene.sh"
-if [[ "$task_event" == race-complete ]]; then
+if [[ "$task_driver" == race_drive.sh ]]; then
     # Keep the complete original AI/race/results flow, without changing game
     # state, unlocking tracks, shortening laps or replacing the finish check.
     cp "$task_source/tools/headless/race_drive.sh" "$task_state/driver/tools/headless/race_drive.sh"
@@ -110,7 +110,7 @@ task_args=(--die-with-parent --unshare-net --clearenv
     --setenv GAMEPKG_TAKEDAWN_DISC "$task_disc_path" --setenv RECOMP_PB_BACKEND vulkan
     --setenv RECOMP_STUB_LOG 1
     --setenv SDL_AUDIODRIVER dummy --setenv RECOMP_FB_DUMP "$task_state/run/frame-")
-if [[ "$GAMEPKG_GAMEPLAY_EVENT" == race-complete ]]; then
+if [[ "$GAMEPKG_GAMEPLAY_EVENT" == race-complete || "$GAMEPKG_GAMEPLAY_EVENT" == roadrage-complete ]]; then
     task_args+=(--setenv RECOMP_DEBUG autopilot=1)
 fi
 for task_key in RECOMP_HEADLESS RECOMP_PAD_LIVE RECOMP_STDIO_LOG RECOMP_FLIP_MARK RECOMP_SAVE_DIR \
@@ -141,9 +141,14 @@ export LAUNCH="$task_state/launch.sh" GAME_DIR="$task_state/game" SAVES="$task_s
 # Golden-frame timing is backend-specific. Retain independent periodic frames
 # and every upstream state/input assertion instead of requiring those timings.
 export CAPTURE=0 STOP_AT_END=1 SCENE_TIMEOUT=180 RECOMP_PB_BACKEND=vulkan
-if [[ "$task_event" == race-complete ]]; then
+if [[ "$task_driver" == race_drive.sh ]]; then
     export RACES=1 RACE_REGION=1 RACE_TRACK=1 RACE_LIMIT=900
     unset PICK MIX MIX_PLAN EVENTS RACE_STOP RECOMP_DEBUG
+fi
+if [[ "$task_event" == roadrage-complete ]]; then
+    # The unchanged upstream driver selects Road Rage from Single Event. Its
+    # random choice uses only tracks already available in the supplied save.
+    export PICK=random EVENTS=roadrage
 fi
 task_result=0
 SCHEME="$task_scheme" EVENT="$task_event" timeout --signal=TERM --kill-after=5s "${task_timeout}s" \
