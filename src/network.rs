@@ -22,14 +22,19 @@ fn connect_tcp(addresses: &[SocketAddr]) -> Result<TcpStream> {
     );
     let deadline = Instant::now() + Duration::from_secs(2);
     let mut last_error = None;
-    for address in addresses {
+    for (index, address) in addresses.iter().enumerate() {
         let remaining = deadline.saturating_duration_since(Instant::now());
         if remaining.is_zero() {
             break;
         }
-        // A refusal or unavailable address family leaves the remaining original
-        // deadline for later candidates; no address receives a fresh deadline.
-        match TcpStream::connect_timeout(address, remaining) {
+        // Reserve part of the original deadline for every remaining address.
+        // A silently dropped SYN must not consume the entire budget before a
+        // reachable IPv4/IPv6 alternative can be attempted.
+        let allowance = remaining / (addresses.len() - index) as u32;
+        if allowance.is_zero() {
+            break;
+        }
+        match TcpStream::connect_timeout(address, allowance) {
             Ok(stream) => return Ok(stream),
             Err(error) => last_error = Some(error),
         }
@@ -1089,6 +1094,10 @@ mod tests {
         );
         request.truncate(6);
         assert_eq!(handle(service.call(4, &request, 4)), 2);
+        // A successful UDP send queues a datagram; delivery to the peer can
+        // still be asynchronous, including on the local macOS interface.
+        peer.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+        peer.set_nonblocking(false).unwrap();
         assert_eq!(peer.recv(&mut bytes).unwrap(), 2);
         assert_eq!(&bytes[..2], b"cd");
         assert_eq!(service.used, 256 * 1024);
@@ -1196,12 +1205,12 @@ mod tests {
         assert_eq!(service.call(6, &listener.to_le_bytes(), 0), [0]);
     }
     #[test]
-    fn tcp_falls_back_after_a_refused_resolved_address() {
+    fn tcp_falls_back_after_a_refused_or_timed_out_resolved_address() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let reachable = listener.local_addr().unwrap();
         // Hold a bound, non-listening TCP socket on the configured loopback.
-        // 127.0.0.2 is not necessarily routed on macOS, so it can time out
-        // instead of producing the refusal this regression is meant to test.
+        // Linux refuses it; macOS and Windows may drop its SYN instead. Both
+        // failures must leave enough of the original deadline for the peer.
         let reservation = socket2::Socket::new(
             socket2::Domain::IPV4,
             socket2::Type::STREAM,
@@ -1213,10 +1222,10 @@ mod tests {
             .unwrap();
         let refused = reservation.local_addr().unwrap().as_socket().unwrap();
         let error = connect_tcp(&[refused]).unwrap_err();
-        assert_eq!(
+        assert!(matches!(
             error.downcast_ref::<std::io::Error>().unwrap().kind(),
-            std::io::ErrorKind::ConnectionRefused
-        );
+            std::io::ErrorKind::ConnectionRefused | std::io::ErrorKind::TimedOut
+        ));
         let mut stream = connect_tcp(&[refused, reachable]).unwrap();
         stream.write_all(b"ping").unwrap();
         let (mut peer, _) = listener.accept().unwrap();

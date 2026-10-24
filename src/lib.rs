@@ -23,11 +23,11 @@ pub mod source;
 pub mod takedawn;
 #[doc(hidden)]
 pub mod takedawn_kit;
-#[cfg(any(windows, test))]
-mod takedawn_windows_sdk;
 #[doc(hidden)]
 #[cfg(target_os = "linux")]
 pub mod takedawn_player;
+#[cfg(any(windows, test))]
+mod takedawn_windows_sdk;
 pub mod verify;
 pub mod xbox_disc;
 pub mod zelda_replay;
