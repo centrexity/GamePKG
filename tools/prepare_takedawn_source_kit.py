@@ -124,7 +124,7 @@ def main():
                  'windows_entry.c', 'windows_attach.cmake', 'windows_restart.h', 'adapt_windows_restart.cmake', 'adapt_windows_file.cmake',
                  'adapt_windows_startup.cmake', 'DotNET-RUNTIME-LICENSE.txt']:
         copy(host / 'media-bridge' / name, 'host/engines/takedawn/media-bridge/' + name)
-    for name in ['attach.cmake', 'C2Rust-LICENSE.txt', 'rustc-cache.rs', 'rustc-cache-linux-v1.rs', 'build-windows-units.rs']:
+    for name in ['attach.cmake', 'C2Rust-LICENSE.txt', 'rustc-cache.rs', 'rustc-cache-linux-v1.rs', 'build-windows-units.rs', 'build-windows-runtime.rs']:
         copy(host / 'rust-port' / name, 'host/engines/takedawn/rust-port/' + name)
     for name in ['ntsc-u-retail.manifest', 'upstream-lock.json', 'Takedawn-LICENSE.txt',
                  'Xboxrecomp-LICENSE.txt', 'windows-dependencies.json']:

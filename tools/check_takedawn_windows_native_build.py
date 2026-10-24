@@ -85,24 +85,33 @@ def main():
         if not copied:
             raise RuntimeError("Empty SDK component")
         print("Verified standalone Rust component:", component, flush=True)
-    package = fetch(pins["llvm_mingw"]["windows_x86_64"])
-    with zipfile.ZipFile(package) as archive:
-        for item in archive.infolist():
-            name = PurePosixPath(item.filename)
-            if (
-                name.is_absolute()
-                or ".." in name.parts
-                or stat.S_ISLNK(item.external_attr >> 16)
-            ):
-                raise RuntimeError("Unsafe LLVM SDK member")
-            if len(name.parts) < 2:
-                continue
-            path = llvm.joinpath(*name.parts[1:])
-            if item.is_dir():
-                path.mkdir(parents=True, exist_ok=True)
-            else:
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_bytes(archive.read(item))
+    def unpack_zip(record, output, strip):
+        package = fetch(record)
+        with zipfile.ZipFile(package) as archive:
+            for item in archive.infolist():
+                name = PurePosixPath(item.filename)
+                if (
+                    name.is_absolute()
+                    or ".." in name.parts
+                    or stat.S_ISLNK(item.external_attr >> 16)
+                ):
+                    raise RuntimeError("Unsafe native SDK member")
+                if len(name.parts) <= strip:
+                    continue
+                path = output.joinpath(*name.parts[strip:])
+                if item.is_dir():
+                    path.mkdir(parents=True, exist_ok=True)
+                else:
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_bytes(archive.read(item))
+
+    unpack_zip(pins["llvm_mingw"]["windows_x86_64"], llvm, 1)
+    cmake_root = work / "cmake"
+    ninja_root = work / "ninja"
+    unpack_zip(pins["cmake"]["windows_x86_64"], cmake_root, 1)
+    unpack_zip(pins["ninja"]["windows_x86_64"], ninja_root, 0)
+    cmake = cmake_root / "bin/cmake.exe"
+    ninja = ninja_root / "ninja.exe"
     rustc = rust / "bin/rustc.exe"
     # Keep the compilation PATH to the verified SDK plus Windows system tools;
     # no rustup/MSVC/WSL/Python executable participates in native compilation.
@@ -112,6 +121,8 @@ def main():
             [
                 str(rust / "bin"),
                 str(llvm / "bin"),
+                str(cmake_root / "bin"),
+                str(ninja_root),
                 str(Path(os.environ["SystemRoot"]) / "System32"),
             ]
         ),
@@ -128,6 +139,7 @@ def main():
     for source, output in [
         (tools / "rustc-cache.rs", wrapper),
         (tools / "build-windows-units.rs", builder),
+        (tools / "build-windows-runtime.rs", work / "build-runtime.exe"),
     ]:
         subprocess.run(
             [
@@ -194,34 +206,42 @@ def main():
     assert (
         again.returncode == 0 and again.stderr.count(b"reused prepared Rust unit") == 2
     )
-    main = work / "main.c"
+    fixture = work / "native CMake sources"
+    fixture.mkdir()
+    main = fixture / "main.cpp"
     main.write_text(
-        '#include <stdint.h>\n#include <stdio.h>\nextern uint64_t gp_build_b(void);\nint main(void) { uint64_t n=gp_build_b(); printf("Native archive value: %llu\\n", (unsigned long long)n); return n==11 ? 0 : 1; }\n'
+        '#include <stdint.h>\n#include <stdio.h>\n#include <vector>\nextern "C" uint64_t gp_build_b(void);\nint main() { std::vector<uint64_t> values{gp_build_b()}; uint64_t n=values.at(0); printf("Native archive value: %llu\\n", (unsigned long long)n); return n==11 ? 0 : 1; }\n'
     )
-    exe = work / "native-fixture.exe"
+    (fixture / "CMakeLists.txt").write_text(
+        'cmake_minimum_required(VERSION 3.20)\n'
+        'project(gamepkg_native_fixture LANGUAGES C CXX)\n'
+        'add_executable(native-fixture main.cpp)\n'
+        'target_compile_features(native-fixture PRIVATE cxx_std_17)\n'
+        'target_link_libraries(native-fixture PRIVATE "${GAME_ARCHIVE}" ws2_32 userenv bcrypt ntdll)\n'
+        'target_link_options(native-fixture PRIVATE -static)\n'
+    )
+    cmake_build = work / "native CMake output"
     subprocess.run(
         [
-            str(llvm / "bin/x86_64-w64-mingw32-clang.exe"),
-            str(main),
-            str(output / "libgamepkg_takedawn_generated_full_windows.a"),
-            "-static",
-            "-lws2_32",
-            "-luserenv",
-            "-lbcrypt",
-            "-lntdll",
-            "-o",
-            str(exe),
+            str(cmake), "-S", str(fixture), "-B", str(cmake_build), "-G", "Ninja",
+            "-DCMAKE_MAKE_PROGRAM=" + ninja.as_posix(),
+            "-DCMAKE_C_COMPILER=" + (llvm / "bin/x86_64-w64-mingw32-clang.exe").as_posix(),
+            "-DCMAKE_CXX_COMPILER=" + (llvm / "bin/x86_64-w64-mingw32-clang++.exe").as_posix(),
+            "-DCMAKE_BUILD_TYPE=Release", "-DCMAKE_C_FLAGS=-march=native", "-DCMAKE_CXX_FLAGS=-march=native",
+            "-DGAME_ARCHIVE=" + (output / "libgamepkg_takedawn_generated_full_windows.a").as_posix(),
         ],
         env=env,
         check=True,
         timeout=120,
     )
+    subprocess.run([str(cmake), "--build", str(cmake_build), "--parallel", "2"], env=env, check=True, timeout=120)
+    exe = cmake_build / "native-fixture.exe"
     result = subprocess.run([str(exe)], env=env, capture_output=True, timeout=20)
     (work / "native.stdout.log").write_bytes(result.stdout)
     (work / "native.stderr.log").write_bytes(result.stderr)
     assert result.returncode == 0 and b"Native archive value: 11" in result.stdout
     print(
-        "PASS: standalone native Windows Rust/LLVM compile, both checkpoints reused, full archive exports, native C/Rust heap ABI and execution; no WSL or Python build dependency",
+        "PASS: standalone native Windows Rust/LLVM/CMake/Ninja compile, both checkpoints reused, full archive exports, native C++/Rust heap ABI and execution; no WSL or Python build dependency",
         flush=True,
     )
 
