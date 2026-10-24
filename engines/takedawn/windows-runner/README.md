@@ -1,8 +1,9 @@
 # Native Windows process and restart ownership
 
 This host Rust library owns native Windows Takedawn processes and restarts.
-The app's Build/Play actions, save/history integration and native builder still
-need connecting. This library introduces no game dependency, Python or WSL.
+The app's Build action dispatches the native builder; Windows Play and save/history
+integration still need connecting. This library introduces no game dependency,
+Python or WSL.
 
 `Process` transfers a duplicate of the caller's opened ISO with read access,
 a write-only runtime log and NUL stdin through an explicit
@@ -30,10 +31,23 @@ Staging reverses byte-for-byte and rejects changed/in-place inputs. An absent
 managed event retains upstream's standalone behavior. A broken managed signal
 logs a diagnostic and closes instead of creating an untracked process.
 
-Process ownership is separate from filesystem/network confinement and signed
-package admission. Those app responsibilities, normal launch/history integration,
-the native builder and player-kit promotion remain required. No extra game
-memory or execution deadlines are introduced here.
+`Session::start_confined` retains a host-prepared `Sandbox` across every restart.
+It starts the process with `PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES` and a
+per-game AppContainer identity, with no networking capabilities. The host grants
+that SID read/execute access to its private verified runtime directory and
+read/write/delete access to this game's save directory. ACL updates use held
+file/directory handles and reject final reparse points. The host still validates
+the package, directories and executable before granting access. The plain
+`Session::start` remains for maintainer probes; it does not provide confinement.
+No extra game memory or execution deadlines are introduced here.
+
+The new AppContainer fixture cross-compiles/lints for Windows x86 and x64; actual
+Windows execution is pending CI. It queries the child token, verifies selected
+ISO handle reads and denied writes, saves/reopens/deletes a profile fixture,
+rejects outside file reads/writes and loopback networking, then repeats those
+checks after a managed restart. Its result does not qualify Vulkan/SDL gameplay
+inside an AppContainer. Normal Windows Play/history integration and player-kit
+promotion remain required.
 
 Native validation passes on both MSVC architectures in
 [40039958125](https://github.com/centrexity/GamePKG/actions/runs/40039958125):
@@ -54,6 +68,9 @@ Microsoft documents the explicit
 [handle list](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute),
 [process startup](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessw)
 and [job assignment](https://learn.microsoft.com/en-us/windows/win32/api/jobapi2/nf-jobapi2-assignprocesstojobobject).
+The confined launch follows Microsoft's
+[AppContainer startup](https://learn.microsoft.com/en-us/windows/win32/secauthz/implementing-an-appcontainer)
+and [profile API](https://learn.microsoft.com/en-us/windows/win32/api/userenv/nf-userenv-createappcontainerprofile).
 
 ## Full native game check
 
