@@ -161,8 +161,6 @@ fn recorded_music_controls_keep_original_geometry_and_survive_run_restart() {
 mod audio;
 #[path = "../ports/arkanoo/source/src/background.rs"]
 mod background;
-#[path = "../ports/arkanoo/source/src/portable_math.rs"]
-mod portable_math;
 #[path = "../ports/arkanoo/source/src/editor.rs"]
 mod editor;
 #[path = "../ports/arkanoo/source/src/levels.rs"]
@@ -175,6 +173,8 @@ mod pattern_rng;
 // Guest source cannot use vec!; its bounded allocation uses capacity + resize.
 #[allow(clippy::slow_vector_initialization)]
 mod physics;
+#[path = "../ports/arkanoo/source/src/portable_math.rs"]
+mod portable_math;
 #[path = "../ports/arkanoo/source/src/procedural.rs"]
 mod procedural;
 fn menu_game() -> physics::Game {
