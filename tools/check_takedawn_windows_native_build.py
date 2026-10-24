@@ -116,6 +116,12 @@ def main():
             ]
         ),
     )
+    # Rust GNU's own linker/runtime must bootstrap Rust tools. LLVM also ships
+    # a gcc-named Clang wrapper, which must not shadow this bundled GCC.
+    bootstrap_linker = (
+        rust
+        / "lib/rustlib/x86_64-pc-windows-gnu/bin/self-contained/x86_64-w64-mingw32-gcc.exe"
+    )
     tools = project / "engines/takedawn/rust-port"
     wrapper = work / "cache.exe"
     builder = work / "build-units.exe"
@@ -129,6 +135,10 @@ def main():
                 "--edition=2021",
                 "-Dwarnings",
                 "-O",
+                "-C",
+                "linker=" + str(bootstrap_linker),
+                "-C",
+                "link-self-contained=yes",
                 str(source),
                 "-o",
                 str(output),
