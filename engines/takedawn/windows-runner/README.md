@@ -1,9 +1,10 @@
 # Native Windows process and restart ownership
 
 This host Rust library owns native Windows Takedawn processes and restarts.
-The app's Build action dispatches the native builder; Windows Play and save/history
-integration still need connecting. This library introduces no game dependency,
-Python or WSL.
+The app's Build action dispatches the native builder. Windows CLI/GUI Play now
+retains the selected ISO, original save paths, play history and this confined
+process owner. End-to-end app/game qualification and player-kit promotion remain
+open. This library introduces no game dependency, Python or WSL.
 
 `Process` transfers a duplicate of the caller's opened ISO with read access,
 a write-only runtime log and NUL stdin through an explicit
@@ -41,13 +42,19 @@ the package, directories and executable before granting access. The plain
 `Session::start` remains for maintainer probes; it does not provide confinement.
 No extra game memory or execution deadlines are introduced here.
 
-The new AppContainer fixture cross-compiles/lints for Windows x86 and x64; actual
-Windows execution is pending CI. It queries the child token, verifies selected
+The new AppContainer fixture passes on native MSVC x86 and x64 in
+[40062695599](https://github.com/centrexity/GamePKG/actions/runs/40062695599).
+Both architectures pass ten default process/container tests (one separately
+invoked original-runtime fixture is ignored by default). It queries the child token, verifies selected
 ISO handle reads and denied writes, saves/reopens/deletes a profile fixture,
 rejects outside file reads/writes and loopback networking, then repeats those
 checks after a managed restart. Its result does not qualify Vulkan/SDL gameplay
-inside an AppContainer. Normal Windows Play/history integration and player-kit
-promotion remain required.
+inside an AppContainer. The app-level lifecycle fixture and full original game
+flow still require native Windows qualification; player-kit promotion remains open.
+`LOCALAPPDATA` must be retained for Windows to resolve the container profile.
+The first fixture exposed missing profile environment (error 203); that run is
+not counted as a pass. The workflow now propagates a failing test's exit code
+before invoking lint, so a later successful command cannot hide a test failure.
 
 Native validation passes on both MSVC architectures in
 [40039958125](https://github.com/centrexity/GamePKG/actions/runs/40039958125):
