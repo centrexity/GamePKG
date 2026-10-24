@@ -1,9 +1,9 @@
 name: Native Rust engine stream ABI
 on:
   push:
-    paths: ['engines/takedawn/rust-port/**', 'engines/takedawn/media-bridge/**', 'engines/takedawn/windows-runner/**', 'tools/check_takedawn_rust_stdio.py', 'tools/check_takedawn_rust_cache.py', 'tools/check_takedawn_windows_file.py', 'tools/check_takedawn_windows_kernel.py', 'tools/check_takedawn_windows_stream.py', 'tools/check_takedawn_windows_restart.py', '.github/workflows/native_rust_ffi.yml']
+    paths: ['engines/takedawn/rust-port/**', 'engines/takedawn/media-bridge/**', 'engines/takedawn/windows-runner/**', 'tools/check_takedawn_rust_stdio.py', 'tools/check_takedawn_rust_cache.py', 'tools/check_takedawn_windows_file.py', 'tools/check_takedawn_windows_kernel.py', 'tools/check_takedawn_windows_stream.py', 'tools/check_takedawn_windows_restart.py', 'tools/check_takedawn_windows_native_build.py', 'engines/takedawn/windows-dependencies.json', '.github/workflows/native_rust_ffi.yml']
   pull_request:
-    paths: ['engines/takedawn/rust-port/**', 'engines/takedawn/media-bridge/**', 'engines/takedawn/windows-runner/**', 'tools/check_takedawn_rust_stdio.py', 'tools/check_takedawn_rust_cache.py', 'tools/check_takedawn_windows_file.py', 'tools/check_takedawn_windows_kernel.py', 'tools/check_takedawn_windows_stream.py', 'tools/check_takedawn_windows_restart.py', '.github/workflows/native_rust_ffi.yml']
+    paths: ['engines/takedawn/rust-port/**', 'engines/takedawn/media-bridge/**', 'engines/takedawn/windows-runner/**', 'tools/check_takedawn_rust_stdio.py', 'tools/check_takedawn_rust_cache.py', 'tools/check_takedawn_windows_file.py', 'tools/check_takedawn_windows_kernel.py', 'tools/check_takedawn_windows_stream.py', 'tools/check_takedawn_windows_restart.py', 'tools/check_takedawn_windows_native_build.py', 'engines/takedawn/windows-dependencies.json', '.github/workflows/native_rust_ffi.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -63,6 +63,9 @@ jobs:
       - name: Verify original teardown and managed Windows restart
         if: runner.os == 'Windows'
         run: python tools/check_takedawn_windows_restart.py --source target/windows-kernel-reference --target ${{ matrix.target }}
+      - name: Build and run with the standalone native Windows SDK
+        if: runner.os == 'Windows' && matrix.arch == 'x64'
+        run: python tools/check_takedawn_windows_native_build.py
       - name: Verify preparation transformations and rejected layouts
         if: runner.os == 'Linux'
         run: |
