@@ -84,6 +84,28 @@ identity.
 
 ## Qualification
 
+The **Full native Windows game package** workflow performs the complete app
+Build path on a disposable Windows runner. It signs and installs the real v12
+source package with a temporary key, prepares the managed SDK, builds all 486
+Rust units with native optimization, and checks library readiness and integrity.
+It then damages only that private library's SDL companion and uses the normal
+integrity-fix action to restore it. Every unit checkpoint must retain its hash
+and write time through repair. The installed signed package must stay unchanged.
+
+Run the same maintainer gate on 64-bit Windows with PowerShell 7:
+
+```powershell
+./tools/check_takedawn_windows_package.ps1 -Gamepkg /path/to/gamepkg.exe -Work /new/private/evidence-folder
+```
+
+The evidence folder must not already exist. The gate uses no ROM, WSL or Python;
+only the verified SDK and Windows system tools are discoverable by the app.
+The first build can take hours. CI retains logs and result metadata only, deletes
+the temporary signing key, and does not upload game executables or the library.
+This gate verifies compilation and repair, not original-game playback. Its first
+full Windows execution is pending; the smaller native compiler fixtures below
+do not substitute for that result.
+
 [40054185588](https://github.com/centrexity/GamePKG/actions/runs/40054185588)
 passes actual MSVC32/MSVC64 cache/hash/BigObj, media, file/stream/kernel and strict
 process/restart checks. Its x64 standalone SDK gate compiles both Rust builders,
