@@ -12,6 +12,9 @@ struct Cli {
 }
 #[derive(Subcommand)]
 enum Command {
+    /// Install the standalone Windows tools used by the native engine.
+    #[cfg(windows)]
+    SetupNativeTools,
     /// Verify the supported Xbox Burnout 3 disc directly from an ISO; extract nothing.
     CheckXboxDisc {
         path: PathBuf,
@@ -242,6 +245,15 @@ fn key(s: &str) -> Result<[u8; 32]> {
 }
 fn main() -> Result<()> {
     match Cli::parse().command {
+        #[cfg(windows)]
+        Command::SetupNativeTools => {
+            let sdk =
+                gamepkg::takedawn::prepare_windows_tools(&gamepkg::registry::default_root()?)?;
+            println!(
+                "Verified native Windows build tools ready: {}",
+                sdk.display()
+            );
+        }
         Command::CheckXboxDisc { path, json } => {
             let report = gamepkg::xbox_disc::Disc::open(&path)?.verify_takedawn()?;
             if json {

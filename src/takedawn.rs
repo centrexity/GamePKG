@@ -8,6 +8,15 @@ pub const KIT_SHA256: &str = "a40e9656476633125d2fd50cc6a71134a453f8942634e34ebe
 pub const KIT_ASSET: &str = "assets/takedawn-source-kit.tar.gz";
 pub const LAUNCHER: &str =
     "pub fn game_tick(input: u32, state: u64) -> u64 { gamepkg::takedawn_tick(input, state) }\n";
+/// Prepare the fixed standalone Windows SDK without WSL or vendor installers.
+#[cfg(windows)]
+pub fn prepare_windows_tools(root: &Path) -> Result<PathBuf> {
+    ensure!(
+        std::env::consts::ARCH == "x86_64",
+        "the native Takedawn build tools currently require 64-bit Windows"
+    );
+    crate::takedawn_windows_sdk::prepare(root)
+}
 pub fn data_path(root: &Path, id: &str, creator: &str, schema: u32) -> PathBuf {
     let key = format!("GamePKG Takedawn native data v1\0{id}\0{creator}\0{schema}");
     root.join("takedawn-data")
