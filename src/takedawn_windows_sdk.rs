@@ -17,6 +17,30 @@ const MAX_FILE: u64 = 512 * 1048576;
 const MAX_TOTAL: u64 = 4 * 1024 * 1048576;
 const MAX_FILES: usize = 100_000;
 const INVENTORY: &str = "gamepkg-sdk.json";
+
+/// Rust filesystem canonicalization uses verbatim Windows paths. The bundled
+/// GNU linker does not understand that prefix in output/search arguments.
+/// Preserve drive/UNC identity and spaces while using its ordinary path syntax.
+pub(crate) fn compiler_path(path: &Path) -> Result<PathBuf> {
+    let text = path
+        .to_str()
+        .context("native Windows build tools require Unicode paths")?;
+    if let Some(unc) = text.strip_prefix(r"\\?\UNC\") {
+        return Ok(PathBuf::from(format!(r"\\{unc}")));
+    }
+    if let Some(drive) = text.strip_prefix(r"\\?\") {
+        ensure!(
+            drive.as_bytes().get(1) == Some(&b':')
+                && drive
+                    .as_bytes()
+                    .first()
+                    .is_some_and(u8::is_ascii_alphabetic),
+            "native Windows build tools require a drive or UNC path"
+        );
+        return Ok(PathBuf::from(drive));
+    }
+    Ok(path.to_path_buf())
+}
 #[derive(Clone, Deserialize)]
 struct Download {
     url: String,
@@ -514,6 +538,29 @@ pub(crate) fn prepare(root: &Path) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn compiler_arguments_preserve_drive_unc_unicode_and_spaces() {
+        for (input, expected) in [
+            (
+                r"\\?\C:\Native library with spaces\工具\.tmp.exe",
+                r"C:\Native library with spaces\工具\.tmp.exe",
+            ),
+            (
+                r"\\?\UNC\server\share\Native library\.tmp.exe",
+                r"\\server\share\Native library\.tmp.exe",
+            ),
+            (r"D:\Native library\game.exe", r"D:\Native library\game.exe"),
+            (r"\\server\share\game.exe", r"\\server\share\game.exe"),
+        ] {
+            assert_eq!(
+                compiler_path(Path::new(input)).unwrap(),
+                PathBuf::from(expected)
+            );
+        }
+        assert!(
+            compiler_path(Path::new(r"\\?\GLOBALROOT\Device\HarddiskVolume1\game.exe")).is_err()
+        );
+    }
     fn archive(path: &Path, files: &[(&str, &[u8])]) {
         let mut tar = tar::Builder::new(flate2::write::GzEncoder::new(
             fs::File::create(path).unwrap(),

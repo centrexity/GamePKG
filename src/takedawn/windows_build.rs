@@ -1,5 +1,6 @@
 //! Native Windows build dispatch for the fixed, host-reviewed source kit.
 //! No ROM is opened and no game-supplied build script is accepted here.
+use crate::takedawn_windows_sdk::compiler_path;
 use anyhow::{ensure, Context, Result};
 use std::os::windows::process::CommandExt;
 use std::{
@@ -31,7 +32,7 @@ fn command(executable: &Path) -> Command {
     command
 }
 pub(crate) fn prepare_tools(root: &Path) -> Result<PathBuf> {
-    let sdk = crate::takedawn_windows_sdk::prepare(root)?.canonicalize()?;
+    let sdk = compiler_path(&crate::takedawn_windows_sdk::prepare(root)?.canonicalize()?)?;
     helpers(root, &sdk)?;
     Ok(sdk)
 }
@@ -56,7 +57,7 @@ fn helpers(root: &Path, sdk: &Path) -> Result<PathBuf> {
         .join("native-build-tools")
         .join(crate::verify::digest(identity.as_bytes()));
     fs::create_dir_all(&directory)?;
-    let directory = directory.canonicalize()?;
+    let directory = compiler_path(&directory.canonicalize()?)?;
     let lock = fs::OpenOptions::new()
         .read(true)
         .write(true)
@@ -135,11 +136,11 @@ pub fn compile_package(root: &Path, id: &str) -> Result<()> {
     archive.write_all(&archive_bytes)?;
     let kit = crate::takedawn_kit::SourceKit::open(archive.path(), super::WINDOWS_KIT_SHA256)?;
     drop(archive_bytes);
-    let sdk = super::prepare_windows_tools(root)?.canonicalize()?;
+    let sdk = compiler_path(&super::prepare_windows_tools(root)?.canonicalize()?)?;
     let helpers = helpers(root, &sdk)?;
     let cache = root.join("native-unit-cache/takedawn-windows");
     fs::create_dir_all(&cache)?;
-    let cache = cache.canonicalize()?;
+    let cache = compiler_path(&cache.canonicalize()?)?;
     let work = tempfile::tempdir()?;
     let units = work.path().join("units");
     let output = work.path().join("runtime");
@@ -150,7 +151,7 @@ pub fn compile_package(root: &Path, id: &str) -> Result<()> {
     };
     run(command(&helpers.join("build-windows-units.exe"))
         .arg("--prepared")
-        .arg(kit.directory().join("prepared"))
+        .arg(compiler_path(&kit.directory().join("prepared"))?)
         .arg("--rustc")
         .arg(sdk.join("rust-1.89.0-windows-gnu/bin/rustc.exe"))
         .arg("--ar")
@@ -167,7 +168,7 @@ pub fn compile_package(root: &Path, id: &str) -> Result<()> {
         .arg(cpu))?;
     run(command(&helpers.join("build-windows-runtime.exe"))
         .arg("--kit")
-        .arg(kit.directory())
+        .arg(compiler_path(kit.directory())?)
         .arg("--sdk")
         .arg(&sdk)
         .arg("--game-archive")
