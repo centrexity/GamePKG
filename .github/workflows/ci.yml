@@ -53,11 +53,12 @@ jobs:
       - name: Verify software SSE, extended math and MMX lanes on a 32-bit big-endian CPU
         if: matrix.features == '--all-features'
         run: |
+          sudo dpkg --add-architecture i386
           sudo apt-get update && sudo apt-get install -y qemu-user qemu-system-x86 gcc-mips-linux-gnu libc6-dev-mips-cross
           # The same gate runs native gcc -m32 fixtures as well as MIPS.
           # Install its headers/runtime without the gcc-multilib meta-package,
           # which conflicts with cross-compiler meta-packages on this image.
-          sudo apt-get install -y --no-install-recommends libc6-dev-i386 lib32gcc-13-dev
+          sudo apt-get install -y --no-install-recommends libc6-dev-i386 lib32gcc-13-dev linux-libc-dev:i386
           GAMEPKG_ARITHMETIC_CORPUS_SOURCE="$RUNNER_TEMP/gamepkg-arithmetic-corpus.bin" bash tools/check_takedawn_arithmetic_portability.sh
           GAMEPKG_EXT80_CORPUS_SOURCE="$RUNNER_TEMP/gamepkg-ext80-corpus.bin" bash tools/check_takedawn_ext80_portability.sh
           GAMEPKG_MMX_SHIFT_CORPUS_SOURCE="$RUNNER_TEMP/gamepkg-mmx-shift-corpus.bin" bash tools/check_takedawn_mmx_shift_portability.sh
