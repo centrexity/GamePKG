@@ -6,6 +6,45 @@
 #[path = "rustc-cache.rs"]
 mod checkpoint;
 
+#[cfg(any(windows, test))]
+fn cmake_path(path: &std::path::Path) -> std::io::Result<String> {
+    let text = path
+        .to_str()
+        .ok_or_else(|| std::io::Error::other("CMake path is not Unicode"))?;
+    if text.contains([';', '\n', '\r']) {
+        return Err(std::io::Error::other(
+            "CMake path contains a list separator or newline",
+        ));
+    }
+    // canonicalize() returns verbatim Windows paths. CMake needs ordinary
+    // drive/UNC paths rather than //?/C:/... or //?/UNC/server/share/....
+    let text = if let Some(unc) = text.strip_prefix("\\\\?\\UNC\\") {
+        format!("//{}", unc.replace('\\', "/"))
+    } else {
+        text.strip_prefix("\\\\?\\")
+            .unwrap_or(text)
+            .replace('\\', "/")
+    };
+    Ok(text)
+}
+
+#[cfg(any(windows, test))]
+fn admitted_commands(text: &str, roots: &[&std::path::Path]) -> std::io::Result<bool> {
+    let mut text = text.replace('\\', "/").to_ascii_lowercase();
+    let mut roots = roots
+        .iter()
+        .map(|p| cmake_path(p).map(|s| s.to_ascii_lowercase()))
+        .collect::<std::io::Result<Vec<_>>>()?;
+    roots.sort_by_key(|s| std::cmp::Reverse(s.len()));
+    for root in roots {
+        text = text.replace(&root, "/gamepkg-admitted-root");
+    }
+    Ok(!text.contains("python")
+        && !text
+            .lines()
+            .any(|line| line.contains("recomp/gen/recomp_") && line.contains(".c")))
+}
+
 #[cfg(windows)]
 fn build() -> std::io::Result<()> {
     use std::{
@@ -24,6 +63,8 @@ fn build() -> std::io::Result<()> {
         ));
     }
     fn run(command: &mut Command) -> io::Result<()> {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x08000000);
         let status = command.stdin(Stdio::null()).status()?;
         if status.success() {
             Ok(())
@@ -34,20 +75,13 @@ fn build() -> std::io::Result<()> {
         }
     }
     fn capture(command: &mut Command) -> io::Result<Vec<u8>> {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x08000000);
         let result = command.stdin(Stdio::null()).output()?;
         if !result.status.success() {
             return Err(error(&String::from_utf8_lossy(&result.stderr)));
         }
         Ok(result.stdout)
-    }
-    fn cmake_path(path: &Path) -> io::Result<String> {
-        let text = path
-            .to_str()
-            .ok_or_else(|| error("CMake path is not Unicode"))?;
-        if text.contains([';', '\n', '\r']) {
-            return Err(error("CMake path contains a list separator or newline"));
-        }
-        Ok(text.replace('\\', "/"))
     }
     let args: Vec<_> = std::env::args_os().skip(1).collect();
     let mut options = BTreeMap::new();
@@ -298,12 +332,7 @@ fn build() -> std::io::Result<()> {
             .arg(&runtime)
             .args(["-t", "commands", "burnout3"]),
     )?;
-    let text = String::from_utf8_lossy(&commands).to_ascii_lowercase();
-    if text.contains("python")
-        || text
-            .lines()
-            .any(|line| line.contains("recomp/gen/recomp_") && line.contains(".c"))
-    {
+    if !admitted_commands(&String::from_utf8_lossy(&commands), &[&sdk, &kit, &output])? {
         return Err(error("unreviewed generation or C game compilation command"));
     }
     fs::write(output.join("runtime-build-commands.txt"), commands)?;
@@ -359,5 +388,36 @@ fn main() {
     {
         eprintln!("This internal native runtime builder requires Windows");
         std::process::exit(2);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+    #[test]
+    fn windows_paths_and_generation_commands() {
+        assert_eq!(
+            cmake_path(Path::new(r"\\?\C:\Users\Python Fan\SDK")).unwrap(),
+            "C:/Users/Python Fan/SDK"
+        );
+        assert_eq!(
+            cmake_path(Path::new(r"\\?\UNC\server\share\SDK")).unwrap(),
+            "//server/share/SDK"
+        );
+        assert!(cmake_path(Path::new("C:/bad;path")).is_err());
+        let roots = [
+            Path::new(r"C:\Users\Python Fan\SDK"),
+            Path::new(r"C:\Users\Python Fan\kit"),
+        ];
+        assert!(admitted_commands(
+            r#""C:\Users\Python Fan\SDK\clang.exe" -c "C:\Users\Python Fan\kit\game\renderer.c""#,
+            &roots
+        )
+        .unwrap());
+        assert!(
+            !admitted_commands(r#"python "C:\Users\Python Fan\kit\generate.py""#, &roots).unwrap()
+        );
+        assert!(!admitted_commands(r#""C:\Users\Python Fan\SDK\clang.exe" -c "C:\Users\Python Fan\kit\game\src\game\recomp\gen\recomp_001.c""#, &roots).unwrap());
     }
 }

@@ -3,9 +3,9 @@
 The standalone Windows pipeline compiles every prepared Rust game unit, builds
 the original C/C++ runtime and produces a native Windows executable. It invokes
 no WSL, translation tool, Python or game code during compilation. Python and Wine
-are maintainer diagnostics. The app's normal Windows Build/Play integration and
-player source-kit promotion remain unfinished; the installed Linux player pin
-remains v8.
+are maintainer diagnostics. The app's Windows Build action now dispatches this
+pipeline for the reviewed v12 kit. Normal Windows Play integration and player
+source-kit promotion remain unfinished; the installed Linux player pin remains v8.
 
 ## Managed SDK setup
 
@@ -13,7 +13,10 @@ On 64-bit Windows, run `gamepkg setup-native-tools`, or choose **Prepare native
 build tools** in Settings. Setup downloads about 485 MB and uses about 2.4 GB
 including cached archives. No vendor installer, Python, WSL or administrator
 installation is required. The downloader selects Windows' system curl directly,
-so an executable in the current library directory cannot shadow it.
+so an executable in the current library directory cannot shadow it. Setup also
+compiles the three host-owned build helpers with the downloaded native Rust
+compiler and its bundled linker. Verified helpers are cached separately from
+the SDK, with source/SDK identity and stable paths for resumable unit builds.
 
 `src/takedawn_windows_sdk.rs` installs the official standalone tools. Rust 1.89.0
 GNU components have gzip pins from Rust's published channel metadata; LLVM-MinGW
@@ -53,7 +56,16 @@ the original runtime through native CMake/Ninja/Clang. It retains Vulkan, audio,
 input, original settings and managed restart. It copies SDL2.dll beside the game
 and records source, archive, executable, companion and tool-version hashes.
 A failed build removes any prior qualification receipt. The caller still owns
-source-kit/SDK admission, final integrity publication and launch.
+source-kit/SDK admission, final integrity publication and launch. The app now
+performs admission and publication through `src/takedawn/windows_build.rs`:
+it verifies a signed package snapshot, rejects the older Linux-only kit on
+Windows, prepares tools, invokes both builders and rechecks the installed package
+before publishing. SDL2 must match the admitted SDK; executable and companion
+integrity receipts are checked when inspecting the native cache. Cache identity
+includes the Windows tool recipe, helper sources, CPU model/features and OS AVX
+support. Windows PE artifacts are checked for architecture and executable type.
+The previous Linux recipe/cache behavior is preserved, and its source loader
+also admits the reviewed v12 kit. Compiler children do not open console windows.
 
 The game and renderer retain native CPU optimization. The host I/O bridge uses
 the portable x64 CPU target with release/LTO optimization: CPU-specific flags in
@@ -115,7 +127,9 @@ candidate. The v6 build uses this exact source tree and its complete native-CPU
 archive. Older SDK metadata in this frozen kit is informational; the app admits
 managed tools against its current host-pinned inventory.
 
-Normal signed app Build/Play, Windows save/history integration, production
+The new app Build dispatch passes Windows cross-target compilation and local
+path/artifact fixtures; the complete signed-package Windows build still needs
+an app-level run. Windows Play, save/history integration, production
 filesystem/network confinement and player-kit promotion remain open. Actual
 Windows hardware gameplay, complete campaign progression, physical controllers
 and audible/steering fidelity still need evidence. Wine and narrow API fixtures
