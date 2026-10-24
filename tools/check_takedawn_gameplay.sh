@@ -3,9 +3,11 @@
 # Python belongs to the upstream checker, not the player build or runtime.
 # GAMEPKG_GAMEPLAY_WINE=1 runs the Windows executable with the same assertions
 # in an isolated private Wine prefix. It does not qualify actual Windows.
+# race-complete uses the original AI driver through a whole race and results;
+# the race/crash modes retain the separate original player-control assertions.
 set -euo pipefail
 if [[ $# -lt 4 || $# -gt 6 ]]; then
-    echo "usage: bash $0 NATIVE_EXECUTABLE ISO PINNED_TAKEDAWN PRIVATE_REFERENCE_SAVES [xbox|ps2] [race|crash]" >&2
+    echo "usage: bash $0 NATIVE_EXECUTABLE ISO PINNED_TAKEDAWN PRIVATE_REFERENCE_SAVES [xbox|ps2] [race|crash|race-complete]" >&2
     exit 2
 fi
 for task_tool in bwrap systemd-run timeout realpath sha256sum awk python3; do
@@ -29,7 +31,14 @@ if [[ "$task_wine" == 1 ]]; then
 fi
 [[ -x "$task_binary" && -f "$task_disc" && -d "$task_saves" ]] || exit 2
 [[ "$task_scheme" == xbox || "$task_scheme" == ps2 ]] || exit 2
-[[ "$task_event" == race || "$task_event" == crash ]] || exit 2
+[[ "$task_event" == race || "$task_event" == crash || "$task_event" == race-complete ]] || exit 2
+task_timeout=300
+task_driver=controls_scene.sh
+if [[ "$task_event" == race-complete ]]; then
+    [[ "$task_scheme" == xbox ]] || { echo "race-complete uses the original AI driver, not a PS2 control-layout check" >&2; exit 2; }
+    task_timeout=1200
+    task_driver=race_drive.sh
+fi
 # Fail on changed drivers rather than silently adapting a different upstream test.
 for task_spec in \
     '86ec5ad1eecea98ac3f090d995f7c64696210c9a1763e1c253209942e5709c1b controls_scene.sh' \
@@ -40,8 +49,14 @@ for task_spec in \
         echo "unreviewed upstream gameplay driver: $task_file" >&2; exit 2;
     }
 done
+if [[ "$task_event" == race-complete ]]; then
+    [[ $(sha256sum "$task_source/tools/headless/race_drive.sh" | cut -d' ' -f1) == 3d13d2fb92769a641e4e1d536b966104f4af4c5b14ae702935410a1c8c762b93 ]] || {
+        echo "unreviewed upstream full-race driver" >&2; exit 2;
+    }
+fi
 task_state=$(mktemp -d /tmp/gamepkg-takedawn-gameplay.XXXXXXXX)
 export GAMEPKG_SCENE_STATE="$task_state" GAMEPKG_GAMEPLAY_BINARY="$task_binary" GAMEPKG_GAMEPLAY_DISC="$task_disc"
+export GAMEPKG_GAMEPLAY_TIMEOUT="$task_timeout" GAMEPKG_GAMEPLAY_EVENT="$task_event"
 mkdir -p "$task_state"/{game,home,data,cache,driver/tools/headless}
 echo "Private evidence directory: $task_state"
 cp "$task_source/tools/headless/"{scene_lib.sh,controls_check.py} "$task_state/driver/tools/headless/"
@@ -73,6 +88,11 @@ awk '
     { print }
     END { if (n != 2) exit 1 }
 ' "$task_source/tools/headless/controls_scene.sh" > "$task_state/driver/tools/headless/controls_scene.sh"
+if [[ "$task_event" == race-complete ]]; then
+    # Keep the complete original AI/race/results flow, without changing game
+    # state, unlocking tracks, shortening laps or replacing the finish check.
+    cp "$task_source/tools/headless/race_drive.sh" "$task_state/driver/tools/headless/race_drive.sh"
+fi
 cat > "$task_state/launch.sh" <<'LAUNCH'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -90,6 +110,9 @@ task_args=(--die-with-parent --unshare-net --clearenv
     --setenv GAMEPKG_TAKEDAWN_DISC "$task_disc_path" --setenv RECOMP_PB_BACKEND vulkan
     --setenv RECOMP_STUB_LOG 1
     --setenv SDL_AUDIODRIVER dummy --setenv RECOMP_FB_DUMP "$task_state/run/frame-")
+if [[ "$GAMEPKG_GAMEPLAY_EVENT" == race-complete ]]; then
+    task_args+=(--setenv RECOMP_DEBUG autopilot=1)
+fi
 for task_key in RECOMP_HEADLESS RECOMP_PAD_LIVE RECOMP_STDIO_LOG RECOMP_FLIP_MARK RECOMP_SAVE_DIR \
     RECOMP_RENDER_SHADER_CACHE BO3_CTL_LOG BO3_DRIVE_LOG BO3_CTL_SCRIPTED \
     RECOMP_INPUT_CONTROL_SCHEME RECOMP_INPUT_FACE_LAYOUT; do
@@ -110,7 +133,7 @@ fi
 # Physical memory accounting permits the runtime's original RAM aliases and
 # GPU reservations. This applies only to this private test process tree.
 exec systemd-run --user --scope --quiet --collect --property=MemoryMax=4294967296 \
-    --property=MemorySwapMax=0 -- timeout --signal=TERM --kill-after=5s 300s \
+    --property=MemorySwapMax=0 -- timeout --signal=TERM --kill-after=5s "${GAMEPKG_GAMEPLAY_TIMEOUT}s" \
     bwrap "${task_args[@]}" "${task_command[@]}"
 LAUNCH
 chmod 700 "$task_state/launch.sh"
@@ -118,9 +141,13 @@ export LAUNCH="$task_state/launch.sh" GAME_DIR="$task_state/game" SAVES="$task_s
 # Golden-frame timing is backend-specific. Retain independent periodic frames
 # and every upstream state/input assertion instead of requiring those timings.
 export CAPTURE=0 STOP_AT_END=1 SCENE_TIMEOUT=180 RECOMP_PB_BACKEND=vulkan
+if [[ "$task_event" == race-complete ]]; then
+    export RACES=1 RACE_REGION=1 RACE_TRACK=1 RACE_LIMIT=900
+    unset PICK MIX MIX_PLAN EVENTS RACE_STOP RECOMP_DEBUG
+fi
 task_result=0
-SCHEME="$task_scheme" EVENT="$task_event" timeout --signal=TERM --kill-after=5s 300s \
-    bash "$task_state/driver/tools/headless/controls_scene.sh" "$task_state/run" \
+SCHEME="$task_scheme" EVENT="$task_event" timeout --signal=TERM --kill-after=5s "${task_timeout}s" \
+    bash "$task_state/driver/tools/headless/$task_driver" "$task_state/run" \
     > "$task_state/driver.log" 2>&1 || task_result=$?
 if grep -aEq '\[STUB\] unresolved 0x' "$task_state/run/log.txt" "$task_state/run/out.txt" 2>/dev/null; then
     echo "FAIL: gameplay reached an unresolved upstream game-function stub" >> "$task_state/driver.log"
