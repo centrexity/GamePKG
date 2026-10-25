@@ -48,4 +48,18 @@ for name in ['rustc-cache.exe','build-windows-units.exe','build-windows-runtime.
  path=helpers[0]/name
  assert path.read_bytes()[:2]==b'MZ'
  assert hashlib.sha256(path.read_bytes()).hexdigest()==path.with_suffix('.sha256').read_text()
+# Compile and run the actual production shader configuration with canonical
+# extended SDK/source paths before any full prepared-game compilation.
+project=Path(__file__).resolve().parents[1]
+shader_test=work/'shader-path-check.exe'
+linker='\\\\?\\'+str(sdk/'rust-1.89.0-windows-gnu/lib/rustlib/x86_64-pc-windows-gnu/bin/self-contained/x86_64-w64-mingw32-gcc.exe')
+for phase,command in [
+ ('shader-test-compile',[str(sdk/'rust-1.89.0-windows-gnu/bin/rustc.exe'),'--edition=2021','--test','-Dwarnings','-O',str(project/'engines/takedawn/rust-port/build-windows-runtime.rs'),'-C','link-self-contained=yes','-C','linker='+linker,'-o',str(shader_test)]),
+ ('shader-test',[str(shader_test),'--ignored','--exact','tests::real_sdk_shader_source_and_include_paths','--nocapture']),
+]:
+ result=subprocess.run(command,env=dict(env,GAMEPKG_WINDOWS_SDK_ROOT=str(sdk)),capture_output=True,timeout=600)
+ (work/(phase+'.stdout.log')).write_bytes(result.stdout)
+ (work/(phase+'.stderr.log')).write_bytes(result.stderr)
+ assert result.returncode==0,(phase,result.stdout.decode(errors='replace'),result.stderr.decode(errors='replace'))
+print('PASS: real production shader compilation with canonical extended SDK paths and spaces.',flush=True)
 print('PASS: native app CLI installs and reuses the official pinned SDK, matches every reviewed payload file, and runs native tools without Python/WSL setup.',flush=True)

@@ -19,7 +19,7 @@ $library = Join-Path $Work 'Native library with spaces'
 $key = Join-Path $Work 'private-creator.key'
 $package = Join-Path $Work 'candidate.gamepkg'
 $savedEnvironment = @{}
-foreach ($name in @('GAMEPKG_HOME', 'GAMEPKG_CONFIG', 'PATH')) {
+foreach ($name in @('GAMEPKG_HOME', 'GAMEPKG_CONFIG', 'GAMEPKG_WINDOWS_SDK_ROOT', 'PATH')) {
     $savedEnvironment[$name] = [Environment]::GetEnvironmentVariable($name)
 }
 
@@ -96,6 +96,22 @@ try {
         throw 'The new private library unexpectedly contains a built game.'
     }
     Invoke-Gamepkg 'setup' @('setup-native-tools')
+    # Exercise the exact production CMake source/include path before spending
+    # hours compiling the prepared game. Rust canonicalizes this spaced SDK
+    # directory to an extended path inside the test.
+    $sdkDirectories = @(Get-ChildItem -LiteralPath (Join-Path $library 'native-sdk') -Directory | Where-Object { -not $_.Name.StartsWith('.') })
+    if ($sdkDirectories.Count -ne 1) { throw 'Expected one admitted native SDK.' }
+    $sdk = $sdkDirectories[0].FullName
+    $rust = Join-Path $sdk 'rust-1.89.0-windows-gnu'
+    $linker = '\\?\' + (Join-Path $rust 'lib/rustlib/x86_64-pc-windows-gnu/bin/self-contained/x86_64-w64-mingw32-gcc.exe')
+    $shaderTest = Join-Path $Work 'shader-path-check.exe'
+    Invoke-CheckedProcess -Executable (Join-Path $rust 'bin/rustc.exe') -Stage 'shader-check-compile' -CommandArguments @(
+        '--edition=2021', '--test', '-Dwarnings', '-O',
+        (Join-Path $project 'engines/takedawn/rust-port/build-windows-runtime.rs'),
+        '-C', 'link-self-contained=yes', '-C', "linker=$linker", '-o', $shaderTest)
+    $env:GAMEPKG_WINDOWS_SDK_ROOT = $sdk
+    Invoke-CheckedProcess -Executable $shaderTest -Stage 'shader-source-paths' -CommandArguments @(
+        '--ignored', '--exact', 'tests::real_sdk_shader_source_and_include_paths', '--nocapture')
     Invoke-Gamepkg 'build' @('build', 'com.gamepkg.takedawn')
     Invoke-Gamepkg 'integrity' @('integrity-check', 'com.gamepkg.takedawn')
     Invoke-Gamepkg 'library' @('list')
