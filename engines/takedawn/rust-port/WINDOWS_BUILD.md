@@ -183,6 +183,15 @@ normal restarts. Play time begins after disc admission and window readiness, is
 checkpointed by the host and is flushed on exit. A restart gets a fresh readiness
 deadline. CLI and GUI dispatch this path; no GamePKG game-window shell is opened.
 
+Windows Play now applies the profile's 4 GiB committed-memory job limit before
+execution, including across managed restart. Native 32/64-bit allocation probes
+and the exact 4 GiB configuration check pass in
+[run 40232579957](https://github.com/centrexity/GamePKG/actions/runs/40232579957).
+The new memory-configured owner also passes original settings 1x-to-2x restart
+and normal Vulkan-window close under Wine. Wine is compatibility evidence;
+actual Windows tests establish allocation enforcement. Original-game Windows
+hardware compatibility and native frame/hang time policy remain open.
+
 The new Windows app lifecycle fixture passes native Windows execution in job
 [120782362776](https://github.com/centrexity/GamePKG/actions/runs/40063096197/job/120782362776),
 including confined restart, original save retention, exclusive ownership,
