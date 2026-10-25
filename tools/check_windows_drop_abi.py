@@ -56,6 +56,14 @@ run(
     ],
     environment,
 )
+run(
+    "strict-production-handler",
+    [
+        "cargo", "clippy", "--locked", "--manifest-path",
+        str(fixture / "Cargo.toml"), "--target", options.target, "--", "-D", "warnings",
+    ],
+    environment,
+)
 dll = work / "Drop callbacks with spaces.dll"
 run(
     "native-sdk",
@@ -76,6 +84,7 @@ executable = (
 )
 output = run("callback-boundary", [str(executable), str(dll)])
 assert b"PASS: production Windows drop vtable matches native SDK callbacks" in output
+assert b"PASS: actual production drop handler queries, events and medium ownership" in output
 (work / "result.json").write_text(
     json.dumps(
         {
@@ -88,6 +97,17 @@ assert b"PASS: production Windows drop vtable matches native SDK callbacks" in o
                 ).read_bytes()
             ).hexdigest(),
             "callbacks": ["DragEnter", "DragOver", "DragLeave", "Drop"],
+            "production_handler_sha256": hashlib.sha256(
+                (project / "vendor/winit/src/platform_impl/windows/drop_handler.rs").read_bytes()
+            ).hexdigest(),
+            "production_handler_checks": [
+                "IUnknown and IDropTarget identity and balanced references",
+                "unsupported interface and null output rejection",
+                "provider-owned medium released on hover and drop",
+                "caller-owned HGLOBAL freed after hover",
+                "Unicode and over-MAX_PATH file events",
+                "rejected data and repeated leave emit no extra file events",
+            ],
             "exit": 0,
         },
         indent=2,

@@ -3,7 +3,44 @@
 #[cfg(windows)]
 #[allow(dead_code)]
 #[path = "../../../../vendor/winit/src/platform_impl/windows/definitions.rs"]
-mod definitions;
+pub mod definitions;
+
+// Minimal event plumbing lets this standalone fixture compile the actual
+// production handler without creating a window or using the user's library.
+#[cfg(windows)]
+#[allow(dead_code)]
+mod event {
+    #[derive(Debug, PartialEq)]
+    pub enum WindowEvent {
+        HoveredFile(std::path::PathBuf),
+        DroppedFile(std::path::PathBuf),
+        HoveredFileCancelled,
+    }
+    #[derive(Debug, PartialEq)]
+    pub enum Event<T> {
+        WindowEvent {
+            window_id: crate::window::WindowId,
+            event: WindowEvent,
+        },
+        UserEvent(T),
+    }
+}
+#[cfg(windows)]
+mod window {
+    #[derive(Debug, PartialEq)]
+    pub struct WindowId(pub crate::platform_impl::platform::WindowId);
+}
+#[cfg(windows)]
+mod platform_impl {
+    pub mod platform {
+        pub use crate::definitions;
+        #[derive(Debug, PartialEq)]
+        pub struct WindowId(pub isize);
+    }
+}
+#[cfg(windows)]
+#[path = "../../../../vendor/winit/src/platform_impl/windows/drop_handler.rs"]
+mod production_handler;
 
 #[cfg(windows)]
 mod check {
@@ -109,8 +146,8 @@ mod check {
         let path: Vec<_> = dll.encode_wide().chain(Some(0)).collect();
         let library = unsafe { LoadLibraryW(path.as_ptr()) };
         assert_ne!(library, 0, "cannot load native C fixture");
-        let address = unsafe { GetProcAddress(library, b"check_drop_abi\0".as_ptr()) }
-            .or_else(|| unsafe { GetProcAddress(library, b"_check_drop_abi\0".as_ptr()) })
+        let address = unsafe { GetProcAddress(library, c"check_drop_abi".as_ptr().cast()) }
+            .or_else(|| unsafe { GetProcAddress(library, c"_check_drop_abi".as_ptr().cast()) })
             .expect("native C export missing");
         // The fixture exports this exact cdecl signature. Its vtable calls use
         // the Windows SDK declarations, independently of our Rust definitions.
@@ -123,11 +160,70 @@ mod check {
         let raw = &mut target as *mut Target;
         assert_eq!(unsafe { call(raw.cast::<IDropTarget>()) }, 0);
         assert_eq!(target.stage, 4);
+        let address = unsafe { GetProcAddress(library, c"check_production_drop".as_ptr().cast()) }
+            .or_else(|| unsafe {
+                GetProcAddress(library, c"_check_production_drop".as_ptr().cast())
+            })
+            .expect("native production handler export missing");
+        let call: unsafe extern "C" fn(*mut IDropTarget, u32) -> i32 =
+            unsafe { std::mem::transmute(address) };
+        let events = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let received = events.clone();
+        let handler = crate::production_handler::FileDropHandler::new(
+            123,
+            Box::new(move |event| received.borrow_mut().push(event)),
+        );
+        let mode = std::env::args()
+            .nth(2)
+            .map(|s| s.parse().unwrap())
+            .unwrap_or(3);
+        assert_eq!(unsafe { call(handler.data.cast::<IDropTarget>(), mode) }, 0);
+        if mode & 2 != 0 {
+            use crate::event::{Event, WindowEvent};
+            let names = [
+                "C:\\Games\\雪.gamepkg".to_owned(),
+                format!("C:\\{}\\games.gamepkglist", "long".repeat(80)),
+            ];
+            let mut expected = Vec::new();
+            for name in &names {
+                expected.push(WindowEvent::HoveredFile(name.into()));
+            }
+            expected.push(WindowEvent::HoveredFileCancelled);
+            for name in &names {
+                expected.push(WindowEvent::DroppedFile(name.into()));
+            }
+            // Rejected data emits no files and cancels no valid hover.
+            expected.extend(
+                names
+                    .iter()
+                    .map(|name| WindowEvent::HoveredFile(name.into())),
+            );
+            expected.push(WindowEvent::HoveredFileCancelled);
+            assert_eq!(
+                *events.borrow(),
+                expected
+                    .into_iter()
+                    .map(|event| Event::WindowEvent {
+                        window_id: crate::window::WindowId(
+                            crate::platform_impl::platform::WindowId(123)
+                        ),
+                        event,
+                    })
+                    .collect::<Vec<_>>()
+            );
+        }
+        drop(handler);
+        assert_eq!(
+            std::rc::Rc::strong_count(&events),
+            1,
+            "COM references leaked the handler"
+        );
         assert_ne!(unsafe { FreeLibrary(library) }, 0);
         println!(
             "PASS: production Windows drop vtable matches native SDK callbacks ({}-bit)",
             usize::BITS
         );
+        println!("PASS: actual production drop handler queries, events and medium ownership");
     }
 }
 
