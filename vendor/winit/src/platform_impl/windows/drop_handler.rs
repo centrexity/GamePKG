@@ -80,7 +80,7 @@ impl FileDropHandler {
         this: *mut IDropTarget,
         pDataObj: *const IDataObject,
         _grfKeyState: u32,
-        _pt: *const POINTL,
+        _pt: POINTL,
         pdwEffect: *mut u32,
     ) -> HRESULT {
         use crate::event::WindowEvent::HoveredFile;
@@ -106,7 +106,7 @@ impl FileDropHandler {
     pub unsafe extern "system" fn DragOver(
         this: *mut IDropTarget,
         _grfKeyState: u32,
-        _pt: *const POINTL,
+        _pt: POINTL,
         pdwEffect: *mut u32,
     ) -> HRESULT {
         let drop_handler = unsafe { Self::from_interface(this) };
@@ -134,7 +134,7 @@ impl FileDropHandler {
         this: *mut IDropTarget,
         pDataObj: *const IDataObject,
         _grfKeyState: u32,
-        _pt: *const POINTL,
+        _pt: POINTL,
         _pdwEffect: *mut u32,
     ) -> HRESULT {
         use crate::event::WindowEvent::DroppedFile;
