@@ -29,6 +29,67 @@ fn cmake_path(path: &std::path::Path) -> std::io::Result<String> {
 }
 
 #[cfg(any(windows, test))]
+fn configure_command(
+    sdk: &std::path::Path,
+    source: &std::path::Path,
+    build: &std::path::Path,
+    cpu: &str,
+) -> std::io::Result<std::process::Command> {
+    let llvm = sdk.join("llvm-mingw-windows/bin");
+    // Keep the executable's extended path for deeply nested SDKs. CMake source
+    // and build arguments must use normal paths: its generated include paths
+    // contain `..`, which Windows verbatim paths deliberately do not resolve.
+    let mut command = std::process::Command::new(sdk.join("cmake-windows/bin/cmake.exe"));
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x08000000);
+    }
+    command
+        .arg("-S")
+        .arg(cmake_path(source)?)
+        .arg("-B")
+        .arg(cmake_path(build)?)
+        .args(["-G", "Ninja"])
+        .arg(format!(
+            "-DCMAKE_MAKE_PROGRAM={}",
+            cmake_path(&sdk.join("ninja-windows/ninja.exe"))?
+        ))
+        .arg(format!(
+            "-DCMAKE_C_COMPILER={}",
+            cmake_path(&llvm.join("x86_64-w64-mingw32-clang.exe"))?
+        ))
+        .arg(format!(
+            "-DCMAKE_CXX_COMPILER={}",
+            cmake_path(&llvm.join("x86_64-w64-mingw32-clang++.exe"))?
+        ))
+        .arg("-DCMAKE_BUILD_TYPE=Release")
+        .arg(format!("-DCMAKE_C_FLAGS=-march={cpu}"))
+        .arg(format!("-DCMAKE_CXX_FLAGS=-march={cpu}"));
+    Ok(command)
+}
+
+#[cfg(any(windows, test))]
+fn shader_configuration(
+    sdk: &std::path::Path,
+    build: &std::path::Path,
+    install: &std::path::Path,
+    cpu: &str,
+) -> std::io::Result<std::process::Command> {
+    let mut command = configure_command(sdk, &sdk.join("glslang-src"), build, cpu)?;
+    command
+        .arg(format!("-DCMAKE_INSTALL_PREFIX={}", cmake_path(install)?))
+        .args([
+            "-DBUILD_SHARED_LIBS=OFF",
+            "-DENABLE_OPT=OFF",
+            "-DENABLE_GLSLANG_BINARIES=OFF",
+            "-DGLSLANG_TESTS=OFF",
+            "-DBUILD_EXTERNAL=OFF",
+        ]);
+    Ok(command)
+}
+
+#[cfg(any(windows, test))]
 fn admitted_commands(text: &str, roots: &[&std::path::Path]) -> std::io::Result<bool> {
     let mut text = text.replace('\\', "/").to_ascii_lowercase();
     let mut roots = roots
@@ -156,7 +217,6 @@ fn build() -> std::io::Result<()> {
     let cmake = sdk.join("cmake-windows/bin/cmake.exe");
     let ninja = sdk.join("ninja-windows/ninja.exe");
     let cc = llvm.join("x86_64-w64-mingw32-clang.exe");
-    let cxx = llvm.join("x86_64-w64-mingw32-clang++.exe");
     let linker = rust
         .join("lib/rustlib/x86_64-pc-windows-gnu/bin/self-contained/x86_64-w64-mingw32-gcc.exe");
     // Children see only the verified SDK and Windows system commands. In
@@ -219,37 +279,18 @@ fn build() -> std::io::Result<()> {
     let media = media_dir.join("release/libgamepkg_takedawn_media.a");
     let glslang = output.join("glslang");
     let glslang_build = output.join("glslang-build");
-    let configure = |source: &Path, build: &Path| -> io::Result<Command> {
-        let mut c = command(&cmake);
-        c.arg("-S")
-            .arg(source)
-            .arg("-B")
-            .arg(build)
-            .args(["-G", "Ninja"])
-            .arg(format!("-DCMAKE_MAKE_PROGRAM={}", cmake_path(&ninja)?))
-            .arg(format!("-DCMAKE_C_COMPILER={}", cmake_path(&cc)?))
-            .arg(format!("-DCMAKE_CXX_COMPILER={}", cmake_path(&cxx)?))
-            .arg("-DCMAKE_BUILD_TYPE=Release")
-            .arg(format!("-DCMAKE_C_FLAGS=-march={cpu}"))
-            .arg(format!("-DCMAKE_CXX_FLAGS=-march={cpu}"));
-        Ok(c)
-    };
+    let configure = |source: &Path, build: &Path| configure_command(&sdk, source, build, cpu);
     println!("GamePKG: building native Windows shader library");
-    run(configure(&sdk.join("glslang-src"), &glslang_build)?
-        .arg(format!("-DCMAKE_INSTALL_PREFIX={}", cmake_path(&glslang)?))
-        .args([
-            "-DBUILD_SHARED_LIBS=OFF",
-            "-DENABLE_OPT=OFF",
-            "-DENABLE_GLSLANG_BINARIES=OFF",
-            "-DGLSLANG_TESTS=OFF",
-            "-DBUILD_EXTERNAL=OFF",
-        ]))?;
-    run(command(&cmake).arg("--build").arg(&glslang_build).args([
-        "--target",
-        "install",
-        "--parallel",
-        &jobs.to_string(),
-    ]))?;
+    run(&mut shader_configuration(
+        &sdk,
+        &glslang_build,
+        &glslang,
+        cpu,
+    )?)?;
+    run(command(&cmake)
+        .arg("--build")
+        .arg(cmake_path(&glslang_build)?)
+        .args(["--target", "install", "--parallel", &jobs.to_string()]))?;
     // Match the original dependency recipe: derive the loader import symbols
     // from the pinned Vulkan headers. The GPU driver supplies vulkan-1.dll.
     let mut entries = BTreeSet::new();
@@ -336,12 +377,10 @@ fn build() -> std::io::Result<()> {
         return Err(error("unreviewed generation or C game compilation command"));
     }
     fs::write(output.join("runtime-build-commands.txt"), commands)?;
-    run(command(&cmake).arg("--build").arg(&runtime).args([
-        "--target",
-        "burnout3",
-        "--parallel",
-        &jobs.to_string(),
-    ]))?;
+    run(command(&cmake)
+        .arg("--build")
+        .arg(cmake_path(&runtime)?)
+        .args(["--target", "burnout3", "--parallel", &jobs.to_string()]))?;
     let exe = bin.join("burnout3-gamepkg-rust.exe");
     let symbols = capture(
         command(&llvm.join("llvm-nm.exe"))
@@ -395,6 +434,112 @@ fn main() {
 mod tests {
     use super::*;
     use std::path::Path;
+    #[test]
+    fn shader_configuration_uses_normalized_roots() {
+        let command = shader_configuration(
+            Path::new(r"\\?\D:\SDK with spaces"),
+            Path::new(r"\\?\C:\shader build"),
+            Path::new(r"\\?\C:\shader install"),
+            "native",
+        )
+        .unwrap();
+        let args: Vec<_> = command.get_args().map(|a| a.to_str().unwrap()).collect();
+        assert_eq!(args[1], "D:/SDK with spaces/glslang-src");
+        assert!(args.contains(&"-DCMAKE_INSTALL_PREFIX=C:/shader install"));
+        assert!(args
+            .iter()
+            .all(|a| !a.contains("//?/") && !a.contains(r"\\?\")));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "real standalone SDK gate; set GAMEPKG_WINDOWS_SDK_ROOT"]
+    fn real_sdk_shader_source_and_include_paths() {
+        use std::{
+            fs,
+            process::Command,
+            time::{SystemTime, UNIX_EPOCH},
+        };
+        let sdk = std::path::PathBuf::from(
+            std::env::var_os("GAMEPKG_WINDOWS_SDK_ROOT").expect("SDK root"),
+        )
+        .canonicalize()
+        .unwrap();
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let output = std::env::temp_dir().join(format!(
+            "gamepkg shader paths {}-{nonce}",
+            std::process::id()
+        ));
+        fs::create_dir(&output).unwrap();
+        let output = output.canonicalize().unwrap();
+        let build = output.join("build");
+        let install = output.join("install");
+        let status = shader_configuration(&sdk, &build, &install, "native")
+            .unwrap()
+            .status()
+            .unwrap();
+        assert!(
+            status.success(),
+            "shader configuration failed; evidence: {}",
+            output.display()
+        );
+        let status = Command::new(sdk.join("cmake-windows/bin/cmake.exe"))
+            .arg("--build")
+            .arg(cmake_path(&build).unwrap())
+            .args(["--target", "install", "--parallel", "2"])
+            .status()
+            .unwrap();
+        assert!(
+            status.success(),
+            "shader compilation failed; evidence: {}",
+            output.display()
+        );
+        for library in ["libglslang.a", "libSPIRV.a"] {
+            assert!(
+                fs::metadata(install.join("lib").join(library))
+                    .unwrap()
+                    .len()
+                    > 0
+            );
+        }
+        fs::remove_dir_all(output).unwrap();
+    }
+    #[test]
+    fn configure_normalizes_source_build_and_tool_arguments() {
+        for (source, build, expected_source, expected_build) in [
+            (
+                r"\\?\D:\Native library with spaces\glslang-src",
+                r"\\?\C:\Temp\shader build",
+                "D:/Native library with spaces/glslang-src",
+                "C:/Temp/shader build",
+            ),
+            (
+                r"\\?\UNC\server\share\source",
+                r"\\?\UNC\server\share\build",
+                "//server/share/source",
+                "//server/share/build",
+            ),
+        ] {
+            let sdk = Path::new(r"\\?\D:\Native library with spaces\sdk");
+            let command =
+                configure_command(sdk, Path::new(source), Path::new(build), "native").unwrap();
+            let args: Vec<_> = command.get_args().map(|a| a.to_str().unwrap()).collect();
+            assert_eq!(&args[..4], &["-S", expected_source, "-B", expected_build]);
+            assert!(args
+                .iter()
+                .all(|a| !a.contains("//?/") && !a.contains(r"\\?\")));
+            assert!(args
+                .iter()
+                .any(|a| a.starts_with("-DCMAKE_CXX_COMPILER=D:/Native library with spaces/sdk/")));
+            assert_eq!(
+                command.get_program(),
+                sdk.join("cmake-windows/bin/cmake.exe")
+            );
+        }
+    }
     #[test]
     fn windows_paths_and_generation_commands() {
         assert_eq!(
