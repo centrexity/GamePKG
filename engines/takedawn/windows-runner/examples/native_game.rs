@@ -63,6 +63,7 @@ fn main() -> std::io::Result<()> {
         environment: values,
         disc,
         output,
+        memory_limit_bytes: Some(4 * 1024 * 1024 * 1024),
     })?;
     println!("Rust owner started the native game with the selected ISO handle.");
     loop {
