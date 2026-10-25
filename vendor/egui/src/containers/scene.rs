@@ -1,5 +1,3 @@
-use core::f32;
-
 use emath::{GuiRounding, Pos2};
 
 use crate::{

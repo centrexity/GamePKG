@@ -256,6 +256,17 @@ within the same twenty-minute complete-event bound. Its end-state log shares
 the race driver's generic placing/lap fields; those are not Road Rage rankings.
 The takedown count and Totaled result are verified in the renderer capture.
 
+The v13 signed-package executable also passes a bounded Single Event Time
+Attack session on Silver Lake Southbound. The maintainer mode
+`timeattack-session` uses the pinned title AI, 15,000 driving flips and normal
+Pause/Quit/Yes/Continue inputs through the record screens to the original
+front-end transition. The clean frozen-script run completes two laps (best
+110.150 seconds) and exits normally. Its cold-started HUD restores the previous
+1:50.15 record, verifying persistence through the original profile rather than
+an injected time. This does not qualify every campaign or multiplayer event.
+Earlier exploratory/harness failures are retained privately and are not counted
+as clean gate passes.
+
 An extended private PS2-layout Crash probe also exercises the physical R2-to-game
 B mapping during impact time, aftertouch and Crashbreaker. Captures show the ready
 prompt, the effect after R2 and results with twelve vehicles totaled and $104,113.
