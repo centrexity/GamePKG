@@ -495,7 +495,9 @@ jobs:
         run: python3 tests/doom_extra_mouse.py
       - name: Recording game page and native Open/Save dialogs
         if: matrix.features == '--all-features'
-        run: /usr/bin/python3 tests/cube2_recording_exports_gui.py
+        run: |
+          /usr/bin/python3 tests/cube2_recording_exports_gui.py
+          /usr/bin/python3 tests/cube2_recording_exports_gui.py --ui-scale 150
       - name: Native package and catalog drag-and-drop
         if: matrix.features == '--all-features'
         run: /usr/bin/python3 tests/drop_files_gui.py

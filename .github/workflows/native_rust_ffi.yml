@@ -77,6 +77,11 @@ jobs:
           cargo test --locked --manifest-path engines/takedawn/rust-port/Cargo.toml
           cargo fmt --manifest-path engines/takedawn/rust-port/Cargo.toml -- --check
           cargo clippy --locked --manifest-path engines/takedawn/rust-port/Cargo.toml --all-targets -- -D warnings
+      - name: Verify Windows CMake argument normalization
+        if: runner.os == 'Linux'
+        run: |
+          rustc --edition=2021 -Dwarnings --test engines/takedawn/rust-port/build-windows-runtime.rs -o target/takedawn-windows-paths
+          target/takedawn-windows-paths
       - name: Verify driving prompts against original input mapping
         if: runner.os == 'Linux'
         run: python3 tools/check_takedawn_input_glyphs.py

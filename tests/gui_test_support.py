@@ -42,7 +42,7 @@ def start_display(env, width=1024, height=900, *, local_only=False):
         os.close(reader)
 
 
-def click_text(window, env, text, directory, timeout=15, max_y=None, *, click=True):
+def click_text(window, env, text, directory, timeout=60, max_y=None, *, click=True):
     """Locate actual visible control text; never depend on a historical layout."""
     import csv
     import io
@@ -50,10 +50,14 @@ def click_text(window, env, text, directory, timeout=15, max_y=None, *, click=Tr
     directory = Path(directory)
     # Bare Xvfb has no window manager to restore focus after a player/picker closes.
     subprocess.run(['xdotool','windowfocus',window],env=env,check=True)
+    # Each visible page can require three enlarged OCR passes. Budget for
+    # several pages at larger UI scales; never change the control assertion.
     deadline = time.monotonic() + timeout
     wanted = text.split()
     last = ''
-    scroll_attempt = 0
+    scroll_button = "5"
+    previous_scroll_text = None
+    unchanged_scrolls = 0
     while True:
         screenshot = directory / 'control-screen.png'
         subprocess.run(['import', '-display', env['DISPLAY'], '-window', window, str(screenshot)], env=env, check=True)
@@ -86,8 +90,16 @@ def click_text(window, env, text, directory, timeout=15, max_y=None, *, click=Tr
         if max_y is None:
             geometry=subprocess.check_output(['xdotool','getwindowgeometry','--shell',window],env=env,text=True)
             size=dict(line.split('=',1) for line in geometry.splitlines() if '=' in line)
-            subprocess.run(['xdotool','mousemove','--window',window,str(min(400,int(size['WIDTH'])//2)),str(max(120,int(size['HEIGHT'])-180)),'click','--repeat','3','--delay','35','5' if scroll_attempt%8<4 else '4'],env=env,check=True)
-            scroll_attempt+=1
+            # Continue through tall pages instead of oscillating within the
+            # first twelve wheel ticks. Reverse only after the visible text
+            # stops changing at an edge. Use the right gutter so text fields
+            # and other controls cannot consume the scrolling gesture.
+            unchanged_scrolls = unchanged_scrolls + 1 if last == previous_scroll_text else 0
+            if unchanged_scrolls >= 2:
+                scroll_button = '4' if scroll_button == '5' else '5'
+                unchanged_scrolls = 0
+            previous_scroll_text = last
+            subprocess.run(['xdotool','mousemove','--window',window,str(max(20,int(size['WIDTH'])-40)),str(max(120,int(size['HEIGHT'])-180)),'click','--repeat','6','--delay','35',scroll_button],env=env,check=True)
         time.sleep(.1)
 
 
