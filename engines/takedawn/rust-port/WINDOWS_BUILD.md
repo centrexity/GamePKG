@@ -225,7 +225,7 @@ bounded event, not full campaign coverage.
 A reusable silent package check needs no ISO:
 
 ```sh
-python3 tools/check_windows_wine_package.py /path/to/gamepkg-VERSION-windows-x86_64.zip --gui
+python3 tools/check_windows_wine_package.py /path/to/gamepkg-VERSION-windows-x86_64.zip --gui --drop
 ```
 
 It verifies the adjacent checksum and executable metadata, initializes a fresh
@@ -236,7 +236,16 @@ is targeted. Evidence stays in a disposable directory; the temporary creator key
 is removed. A prior diagnostic prefix had missing COM proxy registrations and
 failed `RegisterDragDrop` with `E_NOINTERFACE`; Wine's own initialization fixed it
 without changes to the packaged application. This is a test-environment result,
-not evidence that drag-and-drop functionality itself has been exercised.
+not a production application fix. The optional `--drop` check compiles
+`tests/fixtures/windows-ole-drop-source.c` with maintainer MinGW tools. That source
+launches the GUI in the same Wine instance and uses real Windows `DoDragDrop`/
+`CF_HDROP`, rather than inserting an egui event. A fresh-prefix run passes the OLE
+copy operation, normal GUI close and independent CLI confirmation that the
+catalog entry persists with no downloaded package. The test releases its mouse
+button even on failure and targets only its uniquely named window. A first
+private harness attempt used separate Wine PID/tmp namespaces and could not
+exchange the marshalled window; it is retained as a harness failure, not a
+passing drop test or an application defect.
 
 ## Normal signed Linux v12 candidate
 
