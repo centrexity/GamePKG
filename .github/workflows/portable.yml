@@ -17,7 +17,7 @@ jobs:
         with:
           submodules: recursive
       - name: Install isolated compiler prerequisites
-        run: sudo apt-get update && sudo apt-get install -y bubblewrap clang-18 lld-18 wasi-libc libclang-rt-18-dev-wasm32 && rustup target add wasm32-unknown-unknown
+        run: bash tools/ci_ubuntu_apt.sh update && bash tools/ci_ubuntu_apt.sh install -y bubblewrap clang-18 lld-18 wasi-libc libclang-rt-18-dev-wasm32 && rustup target add wasm32-unknown-unknown
       - name: Build compiler host
         run: cargo build --locked --release --bin gamepkg
       - name: Report versioned Wasm linker selection

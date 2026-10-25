@@ -18,8 +18,8 @@ jobs:
       - name: Install 32-bit host dependencies
         run: |
           sudo dpkg --add-architecture i386
-          sudo apt-get update
-          sudo apt-get install -y gcc-multilib g++-multilib libasound2-dev:i386 libudev-dev:i386
+          bash tools/ci_ubuntu_apt.sh update
+          bash tools/ci_ubuntu_apt.sh install -y gcc-multilib g++-multilib libasound2-dev:i386 libudev-dev:i386
       - name: Build portable decoder companion
         run: |
           rustup target add wasm32-unknown-unknown

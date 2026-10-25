@@ -21,12 +21,12 @@ jobs:
         with:
           submodules: recursive
       - name: Install preview codecs
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg g++ libsdl2-dev openssl
+        run: bash tools/ci_ubuntu_apt.sh update && bash tools/ci_ubuntu_apt.sh install -y ffmpeg g++ libsdl2-dev openssl
       - name: Install Rust tools
         run: rustup update stable && rustup default stable && rustup component add rustfmt clippy
       - name: Install audio development headers
         if: matrix.features == '--all-features'
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev libsdl2-mixer-dev libmpg123-dev libmpfr-dev
+        run: bash tools/ci_ubuntu_apt.sh update && bash tools/ci_ubuntu_apt.sh install -y libasound2-dev libudev-dev libsdl2-mixer-dev libmpg123-dev libmpfr-dev
       - name: Verify original SDL music repeat count and callback continuity
         if: matrix.features == '--all-features'
         run: |
@@ -54,11 +54,11 @@ jobs:
         if: matrix.features == '--all-features'
         run: |
           sudo dpkg --add-architecture i386
-          sudo apt-get update && sudo apt-get install -y qemu-user qemu-system-x86 gcc-mips-linux-gnu libc6-dev-mips-cross
+          bash tools/ci_ubuntu_apt.sh update && bash tools/ci_ubuntu_apt.sh install -y qemu-user qemu-system-x86 gcc-mips-linux-gnu libc6-dev-mips-cross
           # The same gate runs native gcc -m32 fixtures as well as MIPS.
           # Install its headers/runtime without the gcc-multilib meta-package,
           # which conflicts with cross-compiler meta-packages on this image.
-          sudo apt-get install -y --no-install-recommends libc6-dev-i386 lib32gcc-13-dev linux-libc-dev:i386
+          bash tools/ci_ubuntu_apt.sh install -y --no-install-recommends libc6-dev-i386 lib32gcc-13-dev linux-libc-dev:i386
           GAMEPKG_ARITHMETIC_CORPUS_SOURCE="$RUNNER_TEMP/gamepkg-arithmetic-corpus.bin" bash tools/check_takedawn_arithmetic_portability.sh
           GAMEPKG_EXT80_CORPUS_SOURCE="$RUNNER_TEMP/gamepkg-ext80-corpus.bin" bash tools/check_takedawn_ext80_portability.sh
           GAMEPKG_MMX_SHIFT_CORPUS_SOURCE="$RUNNER_TEMP/gamepkg-mmx-shift-corpus.bin" bash tools/check_takedawn_mmx_shift_portability.sh
@@ -117,7 +117,7 @@ jobs:
       - name: Compile and link Windows mixed-compiler guest ABI fixtures
         if: matrix.features == '--all-features'
         run: |
-          sudo apt-get update && sudo apt-get install -y clang gcc-mingw-w64-i686
+          bash tools/ci_ubuntu_apt.sh update && bash tools/ci_ubuntu_apt.sh install -y clang gcc-mingw-w64-i686
           GAMEPKG_CLANG=clang GAMEPKG_WINDOWS_TLS_LINK_ONLY=1 bash tools/check_takedawn_windows_tls.sh
           GAMEPKG_CLANG=clang GAMEPKG_FP_CONTEXT_LINK_ONLY=1 bash tools/check_takedawn_fp_context.sh
           GAMEPKG_CLANG=clang GAMEPKG_STACK_FAULT_LINK_ONLY=1 bash tools/check_takedawn_stack_fault.sh
@@ -221,7 +221,7 @@ jobs:
         run: python3 tools/check_zelda_replay.py
       - name: Install big-endian source portability tools
         if: matrix.features == '--all-features'
-        run: sudo apt-get update && sudo apt-get install -y gcc-13-powerpc-linux-gnu qemu-user
+        run: bash tools/ci_ubuntu_apt.sh update && bash tools/ci_ubuntu_apt.sh install -y gcc-13-powerpc-linux-gnu qemu-user
       - name: Verify actual big-endian Zelda SPC RAM words
         if: matrix.features == '--all-features'
         run: |
@@ -375,7 +375,7 @@ jobs:
         run: python3 tests/tor_download.py
       - name: Install isolated build prerequisites
         if: matrix.features == '--all-features'
-        run: sudo apt-get update && sudo apt-get install -y bubblewrap clang-18 lld-18 wasi-libc libclang-rt-18-dev-wasm32 && rustup target add wasm32-unknown-unknown
+        run: bash tools/ci_ubuntu_apt.sh update && bash tools/ci_ubuntu_apt.sh install -y bubblewrap clang-18 lld-18 wasi-libc libclang-rt-18-dev-wasm32 && rustup target add wasm32-unknown-unknown
       - name: Install pinned shader compiler
         if: matrix.features == '--all-features'
         run: |
@@ -486,7 +486,7 @@ jobs:
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/drawing_game.py
       - name: Install virtual display tools
         if: matrix.features == '--all-features'
-        run: sudo apt-get install -y xvfb xdotool metacity x11-utils imagemagick optipng tesseract-ocr python3-pil python3-xlib python3-selenium zenity libxtst-dev libsdl2-dev libsdl2-ttf-dev libsdl2-image-dev pkg-config libxkbcommon-x11-0 libgl1-mesa-dri libvulkan1 libvulkan-dev mesa-vulkan-drivers
+        run: bash tools/ci_ubuntu_apt.sh install -y xvfb xdotool metacity x11-utils imagemagick optipng tesseract-ocr python3-pil python3-xlib python3-selenium zenity libxtst-dev libsdl2-dev libsdl2-ttf-dev libsdl2-image-dev pkg-config libxkbcommon-x11-0 libgl1-mesa-dri libvulkan1 libvulkan-dev mesa-vulkan-drivers
       - name: Verify X11 cursor reentry and exact click coordinates
         if: matrix.features == '--all-features'
         run: python3 tests/x11_cursor_reentry.py
@@ -844,7 +844,7 @@ jobs:
         with:
           submodules: recursive
       - name: Install multilib compiler and runtime
-        run: sudo apt-get update && sudo apt-get install -y gcc-multilib g++
+        run: bash tools/ci_ubuntu_apt.sh update && bash tools/ci_ubuntu_apt.sh install -y gcc-multilib g++
       - name: Execute checked Xbox RAM and blocking critical sections as ELF32
         run: |
           cc -m32 -std=c11 -O3 -Wall -Wextra -Werror -pthread -fsanitize=undefined -fsanitize-undefined-trap-on-error -I engines/takedawn/native-gen/runtime engines/takedawn/native-gen/tests/memory_runtime.c engines/takedawn/native-gen/runtime/gamepkg_x86_memory.c engines/takedawn/native-gen/runtime/gamepkg_x86_fault.c -o /tmp/gamepkg-memory32
