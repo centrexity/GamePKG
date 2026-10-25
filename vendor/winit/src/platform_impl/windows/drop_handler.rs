@@ -5,10 +5,16 @@ use std::ptr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use windows_sys::core::{IUnknown, GUID, HRESULT};
-use windows_sys::Win32::Foundation::{DV_E_FORMATETC, HWND, POINTL, S_OK};
-use windows_sys::Win32::System::Com::{IDataObject, DVASPECT_CONTENT, FORMATETC, TYMED_HGLOBAL};
-use windows_sys::Win32::System::Ole::{CF_HDROP, DROPEFFECT_COPY, DROPEFFECT_NONE};
-use windows_sys::Win32::UI::Shell::{DragFinish, DragQueryFileW, HDROP};
+use windows_sys::Win32::Foundation::{
+    DV_E_FORMATETC, E_NOINTERFACE, E_POINTER, HWND, POINTL, S_OK,
+};
+use windows_sys::Win32::System::Com::{
+    IDataObject, DVASPECT_CONTENT, FORMATETC, STGMEDIUM, TYMED_HGLOBAL,
+};
+use windows_sys::Win32::System::Ole::{
+    ReleaseStgMedium, CF_HDROP, DROPEFFECT_COPY, DROPEFFECT_NONE,
+};
+use windows_sys::Win32::UI::Shell::{DragQueryFileW, HDROP};
 
 use tracing::debug;
 
@@ -39,25 +45,48 @@ pub struct FileDropHandler {
 impl FileDropHandler {
     pub fn new(window: HWND, send_event: Box<dyn Fn(Event<()>)>) -> FileDropHandler {
         let data = Box::new(FileDropHandlerData {
-            interface: IDropTarget { lpVtbl: &DROP_TARGET_VTBL as *const IDropTargetVtbl },
+            interface: IDropTarget {
+                lpVtbl: &DROP_TARGET_VTBL as *const IDropTargetVtbl,
+            },
             refcount: AtomicUsize::new(1),
             window,
             send_event,
             cursor_effect: DROPEFFECT_NONE,
             hovered_is_valid: false,
         });
-        FileDropHandler { data: Box::into_raw(data) }
+        FileDropHandler {
+            data: Box::into_raw(data),
+        }
     }
 
     // Implement IUnknown
     pub unsafe extern "system" fn QueryInterface(
-        _this: *mut IUnknown,
-        _riid: *const GUID,
-        _ppvObject: *mut *mut c_void,
+        this: *mut IUnknown,
+        riid: *const GUID,
+        ppvObject: *mut *mut c_void,
     ) -> HRESULT {
-        // This function doesn't appear to be required for an `IDropTarget`.
-        // An implementation would be nice however.
-        unimplemented!();
+        if ppvObject.is_null() {
+            return E_POINTER;
+        }
+        unsafe { *ppvObject = ptr::null_mut() };
+        if riid.is_null() {
+            return E_POINTER;
+        }
+        let iid = unsafe { &*riid };
+        // IID_IUnknown and IID_IDropTarget share this COM identity/vtable.
+        if (iid.data1 == 0 || iid.data1 == 0x122)
+            && iid.data2 == 0
+            && iid.data3 == 0
+            && iid.data4 == [0xc0, 0, 0, 0, 0, 0, 0, 0x46]
+        {
+            unsafe {
+                Self::AddRef(this);
+                *ppvObject = this.cast();
+            }
+            S_OK
+        } else {
+            E_NOINTERFACE
+        }
     }
 
     pub unsafe extern "system" fn AddRef(this: *mut IUnknown) -> u32 {
@@ -94,8 +123,11 @@ impl FileDropHandler {
             })
         };
         drop_handler.hovered_is_valid = hdrop.is_some();
-        drop_handler.cursor_effect =
-            if drop_handler.hovered_is_valid { DROPEFFECT_COPY } else { DROPEFFECT_NONE };
+        drop_handler.cursor_effect = if drop_handler.hovered_is_valid {
+            DROPEFFECT_COPY
+        } else {
+            DROPEFFECT_NONE
+        };
         unsafe {
             *pdwEffect = drop_handler.cursor_effect;
         }
@@ -125,7 +157,9 @@ impl FileDropHandler {
                 window_id: RootWindowId(WindowId(drop_handler.window)),
                 event: HoveredFileCancelled,
             });
+            drop_handler.hovered_is_valid = false;
         }
+        drop_handler.cursor_effect = DROPEFFECT_NONE;
 
         S_OK
     }
@@ -135,7 +169,7 @@ impl FileDropHandler {
         pDataObj: *const IDataObject,
         _grfKeyState: u32,
         _pt: POINTL,
-        _pdwEffect: *mut u32,
+        pdwEffect: *mut u32,
     ) -> HRESULT {
         use crate::event::WindowEvent::DroppedFile;
         let drop_handler = unsafe { Self::from_interface(this) };
@@ -147,9 +181,15 @@ impl FileDropHandler {
                 });
             })
         };
-        if let Some(hdrop) = hdrop {
-            unsafe { DragFinish(hdrop) };
-        }
+        unsafe {
+            *pdwEffect = if hdrop.is_some() {
+                DROPEFFECT_COPY
+            } else {
+                DROPEFFECT_NONE
+            }
+        };
+        drop_handler.hovered_is_valid = false;
+        drop_handler.cursor_effect = DROPEFFECT_NONE;
 
         S_OK
     }
@@ -158,7 +198,7 @@ impl FileDropHandler {
         unsafe { &mut *(this as *mut _) }
     }
 
-    unsafe fn iterate_filenames<F>(data_obj: *const IDataObject, callback: F) -> Option<HDROP>
+    unsafe fn iterate_filenames<F>(data_obj: *const IDataObject, callback: F) -> Option<()>
     where
         F: Fn(PathBuf),
     {
@@ -174,7 +214,22 @@ impl FileDropHandler {
         let get_data_fn = unsafe { (*(*data_obj).cast::<IDataObjectVtbl>()).GetData };
         let get_data_result = unsafe { get_data_fn(data_obj as *mut _, &drop_format, &mut medium) };
         if get_data_result >= 0 {
-            let hdrop = unsafe { medium.u.hGlobal as HDROP };
+            // GetData transfers a STGMEDIUM, not a WM_DROPFILES handle.
+            // Release its provider or its storage after both hover and drop.
+            struct OwnedMedium(STGMEDIUM);
+            impl Drop for OwnedMedium {
+                fn drop(&mut self) {
+                    unsafe { ReleaseStgMedium(&mut self.0) };
+                }
+            }
+            let medium = OwnedMedium(medium);
+            if medium.0.tymed != TYMED_HGLOBAL as u32 {
+                return None;
+            }
+            let hdrop = unsafe { medium.0.u.hGlobal as HDROP };
+            if hdrop == 0 {
+                return None;
+            }
 
             // The second parameter (0xFFFFFFFF) instructs the function to return the item count
             let item_count = unsafe { DragQueryFileW(hdrop, 0xffffffff, ptr::null_mut(), 0) };
@@ -197,7 +252,7 @@ impl FileDropHandler {
                 callback(OsString::from_wide(&path_buf[0..character_count]).into());
             }
 
-            Some(hdrop)
+            Some(())
         } else if get_data_result == DV_E_FORMATETC {
             // If the dropped item is not a file this error will occur.
             // In this case it is OK to return without taking further action.
