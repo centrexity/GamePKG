@@ -4,10 +4,11 @@ The standalone Windows pipeline compiles every prepared Rust game unit, builds
 the original C/C++ runtime and produces a native Windows executable. It invokes
 no WSL, translation tool, Python or game code during compilation. Python and Wine
 are maintainer diagnostics. The app's Windows Build action now dispatches this
-pipeline for the reviewed v12 kit. Windows CLI/GUI Play now uses the owned,
-confined session with remembered ISO selection and play history. App-level
-Windows qualification and player source-kit promotion remain unfinished; the
-installed Linux player pin remains v8.
+pipeline for the reviewed v12 and v13 kits. Windows CLI/GUI Play now uses the owned,
+confined session with remembered ISO selection and play history. The current
+unreleased port recipe selects v13; the host also admits the older reviewed Linux
+v8 and universal v12 kits. Full Windows qualification and stable
+release promotion remain unfinished.
 
 ## Managed SDK setup
 
@@ -40,7 +41,8 @@ archive conflicts, links and path aliases. The real installer also passes with
 all official archives and the pinned full inventory. The resulting SDK builds
 the complete native game/runtime under Wine. Actual Windows app CI separately
 checks the CLI installation, reuse, every payload hash and native tool startup
-before its legacy WSL fixtures; that latest app-level gate is still running.
+before its legacy WSL fixtures. That managed SDK setup gate passes on actual
+Windows; it does not establish full original-game Build or playback.
 
 ## Build tools
 
@@ -67,7 +69,10 @@ integrity receipts are checked when inspecting the native cache. Cache identity
 includes the Windows tool recipe, helper sources, CPU model/features and OS AVX
 support. Windows PE artifacts are checked for architecture and executable type.
 The previous Linux recipe/cache behavior is preserved, and its source loader
-also admits the reviewed v12 kit. Compiler children do not open console windows.
+also admits the reviewed v12 and v13 kits. The source loader retains the exact
+admitted `kit.json` after every payload has verified, so the runtime builder
+receives the same manifest that the host checked. Compiler children do not open
+console windows.
 
 The game and renderer retain native CPU optimization. The host I/O bridge uses
 the portable x64 CPU target with release/LTO optimization: CPU-specific flags in
@@ -85,7 +90,7 @@ identity.
 ## Qualification
 
 The **Full native Windows game package** workflow performs the complete app
-Build path on a disposable Windows runner. It signs and installs the real v12
+Build path on a disposable Windows runner. It signs and installs the real v13
 source package with a temporary key, prepares the managed SDK, builds all 486
 Rust units with native optimization, and checks library readiness and integrity.
 It then damages only that private library's SDL companion and uses the normal
@@ -102,9 +107,13 @@ The evidence folder must not already exist. The gate uses no ROM, WSL or Python;
 only the verified SDK and Windows system tools are discoverable by the app.
 The first build can take hours. CI retains logs and result metadata only, deletes
 the temporary signing key, and does not upload game executables or the library.
-This gate verifies compilation and repair, not original-game playback. Its first
-full Windows execution is pending; the smaller native compiler fixtures below
-do not substitute for that result.
+This gate verifies compilation and repair, not original-game playback. Earlier
+full runs compiled all prepared units but exposed a missing extracted `kit.json`
+at runtime handoff. The loader now retains that admitted manifest; real-kit tests
+pass on Windows before compilation in the replacement
+[full run](https://github.com/centrexity/GamePKG/actions/runs/40204262860).
+Its complete Build/repair result remains pending; smaller compiler fixtures do
+not substitute for it.
 
 [40054185588](https://github.com/centrexity/GamePKG/actions/runs/40054185588)
 passes actual MSVC32/MSVC64 cache/hash/BigObj, media, file/stream/kernel and strict
@@ -166,12 +175,45 @@ including confined restart, original save retention, exclusive ownership,
 companion integrity and history. All 333 library tests pass (nine optional gates
 ignored). The broader job subsequently fails three unrelated Arkanoo native-CRT
 pixel comparisons; that run is not an overall pass. The lifecycle fixture does
-not exercise Vulkan or original game code. Complete signed-package Windows Build/Play still needs an app-level
-run. Container GPU/window access, resource-policy integration and player-kit
-promotion remain open. Actual
+not exercise Vulkan or original game code. A subsequent
+[Windows 32/64-bit run](https://github.com/centrexity/GamePKG/actions/runs/40211935157)
+also creates an owned native window inside the confined child, verifies its
+painted pixels, resizes/repaints it and closes it before and after managed
+restart. This establishes basic confined window access, not Vulkan access.
+Complete signed-package Windows Build/Play, container Vulkan access and stable
+release promotion remain open. Actual
 Windows hardware gameplay, complete campaign progression, physical controllers
 and audible/steering fidelity still need evidence. Wine and narrow API fixtures
 do not establish those scopes. No stable release is promoted by these checks.
+
+## Current v13 Wine verification
+
+The current v13 runtime executable has SHA-256
+`4b19dfdf55487125225b5c35851aa168949ec32b7f0a4678bbc1a41d1f044fb8`.
+It combines the complete Windows-Rust archive above with the current original
+runtime and reviewed input-glyph adaptation. This runtime was cross-linked on
+Linux, separately from the full normal Windows app Build gate.
+
+Private Wine checks pass keyboard profile navigation, a visible Vulkan window,
+1024-by-768 resize and normal close. The current Rust session owner also passes
+an original settings change from 1x to 2x, cancellation of the first restart
+confirmation, confirmed restart, two ISO admissions, two Vulkan windows and two
+normal shutdowns within the same tracked session. The 2x setting persists.
+Original profile creation/reload preserves both save-file hashes; 45 seconds of
+non-silent 48 kHz stereo capture passes without reported underruns in that run.
+The ISO is read in place and only disposable save folders are used. These results
+do not qualify actual Windows Vulkan access, physical controllers or audible
+fidelity. The current v13 executable also passes the original PS2-layout Crash
+control assertions under Wine: acceleration, impact/aftertouch/Crashbreaker,
+results and Continue back to the front end. The unchanged checker reports the
+layout active only during driving; title/menu controls keep their original map.
+The separate PS2-layout Race check passes acceleration, braking, pause/resume,
+right-trigger mapping and normal Quit/Yes back to the front end.
+
+The packaged Windows CLI and GUI from native host CI also pass relocated version
+and embedded-audio checks under Wine. The signed v13 source package verifies,
+installs into a disposable library and appears in the library listing. These
+smoke checks do not substitute for the full app Build/repair gate.
 
 ## Normal signed Linux v12 candidate
 

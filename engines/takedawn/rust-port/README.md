@@ -103,10 +103,10 @@ cover original race/Crash controls, profile create/reload, 45-second mixed stere
 and a keyboard-driven, resizable native Vulkan window with clean closing.
 The private universal v9 source candidate also passes Linux gameplay/save/audio
 regressions and full source-hash preservation. Details and remaining gates are in the
-[media integration notes](../media-bridge/README.md). The player source-kit pin
-remains the verified Linux v8 kit while actual Windows-host hardware checks,
-native app build/launch integration, process isolation and complete gameplay are
-qualified. These checks do not prove a completed Windows game release.
+[media integration notes](../media-bridge/README.md). The current unreleased port
+recipe selects v13; the host admits the reviewed Linux v8 and universal v12/v13 kits. Actual Windows-host original-game rendering,
+full app Build/repair and complete gameplay remain qualification gates. These
+checks do not prove a completed Windows game release.
 
 ### Linux gameplay baseline
 
@@ -352,8 +352,10 @@ original gameplay assertion was relaxed.
 
 The native Windows app session fixture passes on Windows CI: original save
 retention, exclusive ownership, managed restart, play history and executable/SDL
-integrity. It uses a small host fixture; original-game Vulkan rendering and input
-inside the Windows AppContainer still require separate verification. Gameplay
+integrity. The confined fixture also passes native window painting, resize,
+close and recreation across restart on actual 32-bit and 64-bit Windows. It uses
+a small host fixture; original-game Vulkan rendering and input inside the
+Windows AppContainer still require separate verification. Gameplay
 and fidelity take priority over additional resource-policy tuning.
 
 Full progression, audible fidelity, steering equivalence, physical Windows/
@@ -440,6 +442,8 @@ passing controls, using only copied profile files and the ISO in place.
 The host now has a [native Windows prepared-source build driver](WINDOWS_BUILD.md)
 and Windows checkpoint backend, with an asset-free end-to-end standalone SDK
 test passing on actual Windows. It compiles Rust and links native C/Rust without
-WSL or Python in the build commands. The current Linux checkpoint code and player
-kit stay unchanged. The full Windows-native-compiler game build and normal app
-Build/Play integration remain separate release gates.
+WSL or Python in the build commands. The Linux checkpoint algorithm is unchanged;
+the current unreleased recipe selects the reviewed v13 source kit. The complete
+prepared game archive also compiles with standalone Windows Rust under Wine.
+Full normal Windows app Build/repair and original-game Play remain separate
+release gates.
