@@ -213,7 +213,30 @@ right-trigger mapping and normal Quit/Yes back to the front end.
 The packaged Windows CLI and GUI from native host CI also pass relocated version
 and embedded-audio checks under Wine. The signed v13 source package verifies,
 installs into a disposable library and appears in the library listing. These
-smoke checks do not substitute for the full app Build/repair gate.
+smoke checks do not substitute for the full app Build/repair gate. The packaged
+GUI also opens its library with the default Vulkan renderer, displays the private
+installed recipe, resizes to 800 by 600 and closes normally under Wine.
+
+The same v13 Windows executable completes the original three-lap race under Wine:
+second of six, 315.817 seconds, best lap 102.050 seconds, original result screen.
+The original AI/menu driver and gameplay checker are unchanged. This is one
+bounded event, not full campaign coverage.
+
+A reusable silent package check needs no ISO:
+
+```sh
+python3 tools/check_windows_wine_package.py /path/to/gamepkg-VERSION-windows-x86_64.zip --gui
+```
+
+It verifies the adjacent checksum and executable metadata, initializes a fresh
+Wine prefix fully, checks both embedded audio entries, signs/installs/lists the
+collect-stars fixture and exercises the actual library window. Networking and
+app update checks are disabled, audio is muted/dummy, and only its unique window
+is targeted. Evidence stays in a disposable directory; the temporary creator key
+is removed. A prior diagnostic prefix had missing COM proxy registrations and
+failed `RegisterDragDrop` with `E_NOINTERFACE`; Wine's own initialization fixed it
+without changes to the packaged application. This is a test-environment result,
+not evidence that drag-and-drop functionality itself has been exercised.
 
 ## Normal signed Linux v12 candidate
 
