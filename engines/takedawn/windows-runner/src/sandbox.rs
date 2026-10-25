@@ -238,6 +238,7 @@ mod tests {
         assert_eq!(fs::read("temporary-save").unwrap(), b"original profile");
         fs::remove_file("temporary-save").unwrap();
         crate::window_fixture::verify();
+        crate::memory_allocation_probe(true);
         if !Path::new("restart-complete").exists() {
             fs::write("restart-complete", b"persisted").unwrap();
             let raw: usize = std::env::var("GAMEPKG_TAKEDAWN_RESTART_HANDLE")
@@ -302,6 +303,7 @@ mod tests {
                 ],
                 disc: File::open(&outside).unwrap(),
                 output: File::create(&log).unwrap(),
+                memory_limit_bytes: Some(128 * 1024 * 1024),
             },
             sandbox,
         )
@@ -325,6 +327,13 @@ mod tests {
         }
         drop(session);
         assert_eq!(restarts, 1);
+        assert_eq!(
+            fs::read_to_string(&log)
+                .unwrap()
+                .matches("MEMORY_POLICY_OK limited=true")
+                .count(),
+            2
+        );
         assert_eq!(
             fs::read_to_string(&log)
                 .unwrap()

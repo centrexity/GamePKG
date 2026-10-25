@@ -26,7 +26,8 @@ use windows_sys::Win32::{
             AssignProcessToJobObject, CreateJobObjectW, JobObjectBasicAccountingInformation,
             JobObjectExtendedLimitInformation, QueryInformationJobObject, SetInformationJobObject,
             TerminateJobObject, JOBOBJECT_BASIC_ACCOUNTING_INFORMATION,
-            JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+            JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_JOB_MEMORY,
+            JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
         },
         Memory::{GetProcessHeap, HeapAlloc, HeapFree},
         Threading::{
@@ -41,6 +42,39 @@ use windows_sys::Win32::{
 };
 const FILE_GENERIC_READ: u32 = 0x0012_0089;
 const FILE_GENERIC_WRITE: u32 = 0x0012_0116;
+
+#[cfg(test)]
+pub(crate) fn memory_allocation_probe(limited: bool) {
+    use windows_sys::Win32::System::Memory::{
+        VirtualAlloc, VirtualFree, MEM_COMMIT, MEM_RELEASE, MEM_RESERVE, PAGE_READWRITE,
+    };
+    // Small allocations remain usable. The paired unconfined control proves
+    // that this platform can normally commit the larger allocation too.
+    let small = unsafe {
+        VirtualAlloc(
+            null(),
+            8 * 1024 * 1024,
+            MEM_RESERVE | MEM_COMMIT,
+            PAGE_READWRITE,
+        )
+    };
+    assert!(!small.is_null(), "small committed allocation failed");
+    assert_ne!(unsafe { VirtualFree(small, 0, MEM_RELEASE) }, 0);
+    let large = unsafe {
+        VirtualAlloc(
+            null(),
+            256 * 1024 * 1024,
+            MEM_RESERVE | MEM_COMMIT,
+            PAGE_READWRITE,
+        )
+    };
+    let rejected = large.is_null();
+    if !large.is_null() {
+        assert_ne!(unsafe { VirtualFree(large, 0, MEM_RELEASE) }, 0);
+    }
+    assert_eq!(rejected, limited, "committed-memory policy was not applied");
+    println!("MEMORY_POLICY_OK limited={limited}");
+}
 
 fn invalid(message: &str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidInput, message)
@@ -243,7 +277,9 @@ impl Process {
         disc: &File,
         output: &File,
     ) -> io::Result<Self> {
-        Self::spawn_inner(executable, args, cwd, values, disc, output, false, None)
+        Self::spawn_inner(
+            executable, args, cwd, values, disc, output, false, None, None,
+        )
     }
     #[allow(clippy::too_many_arguments)]
     fn spawn_inner(
@@ -255,6 +291,7 @@ impl Process {
         output: &File,
         managed: bool,
         sandbox: Option<&Sandbox>,
+        memory_limit_bytes: Option<u64>,
     ) -> io::Result<Self> {
         if !executable.is_absolute() || !cwd.is_absolute() {
             return Err(invalid(
@@ -317,7 +354,17 @@ impl Process {
         let job = unsafe { OwnedHandle::from_raw_handle(raw) };
         let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { zeroed() };
         limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-        // No new memory/time policy is introduced by process ownership.
+        if let Some(bytes) = memory_limit_bytes {
+            let bytes = usize::try_from(bytes)
+                .map_err(|_| invalid("memory limit exceeds this Windows process architecture"))?;
+            if bytes == 0 {
+                return Err(invalid("memory limit must be positive"));
+            }
+            // Account committed memory across this entire job, including any
+            // descendants. Apply before the suspended child is resumed.
+            limits.BasicLimitInformation.LimitFlags |= JOB_OBJECT_LIMIT_JOB_MEMORY;
+            limits.JobMemoryLimit = bytes;
+        }
         if unsafe {
             SetInformationJobObject(
                 raw,
@@ -453,6 +500,8 @@ pub struct Launch {
     pub environment: Vec<(OsString, OsString)>,
     pub disc: File,
     pub output: File,
+    /// Job-wide committed-memory cap; retained across managed restarts.
+    pub memory_limit_bytes: Option<u64>,
 }
 impl Launch {
     fn spawn(&self, sandbox: Option<&Sandbox>) -> io::Result<Process> {
@@ -465,6 +514,7 @@ impl Launch {
             &self.output,
             true,
             sandbox,
+            self.memory_limit_bytes,
         )
     }
 }
@@ -629,7 +679,16 @@ mod tests {
             "CHILD READY: original ISO read-only; unrelated handle excluded; arguments intact"
         );
         io::stdout().flush().unwrap();
-        if matches!(mode.as_str(), "restart" | "request" | "request_error") {
+        if matches!(mode.as_str(), "memory_restart" | "memory_control") {
+            memory_allocation_probe(mode == "memory_restart");
+            if mode == "memory_control" {
+                std::process::exit(0);
+            }
+        }
+        if matches!(
+            mode.as_str(),
+            "restart" | "request" | "request_error" | "memory_restart"
+        ) {
             let handle: usize = std::env::var("GAMEPKG_TAKEDAWN_RESTART_HANDLE")
                 .unwrap()
                 .parse()
@@ -768,6 +827,82 @@ mod tests {
             out
         }
     }
+    #[test]
+    fn committed_memory_limit_is_enforced_and_retained_across_restart() {
+        for limited in [false, true] {
+            let mut fixture = Fixture::new(if limited {
+                "memory_restart"
+            } else {
+                "memory_control"
+            });
+            let mut launch = fixture.launch();
+            launch.memory_limit_bytes = limited.then_some(128 * 1024 * 1024);
+            let mut session = Session::start(launch).unwrap();
+            let check_limit = |session: &Session| {
+                let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { zeroed() };
+                assert_ne!(
+                    unsafe {
+                        QueryInformationJobObject(
+                            session.process.as_ref().unwrap().job.as_raw_handle(),
+                            JobObjectExtendedLimitInformation,
+                            (&mut limits as *mut JOBOBJECT_EXTENDED_LIMIT_INFORMATION).cast(),
+                            size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+                            null_mut(),
+                        )
+                    },
+                    0
+                );
+                assert_eq!(
+                    limits.BasicLimitInformation.LimitFlags & JOB_OBJECT_LIMIT_JOB_MEMORY != 0,
+                    limited
+                );
+                assert_eq!(
+                    limits.JobMemoryLimit,
+                    if limited { 128 * 1024 * 1024 } else { 0 }
+                );
+            };
+            check_limit(&session);
+            let began = Instant::now();
+            let mut restarts = 0;
+            loop {
+                match session.poll().unwrap() {
+                    Some(Event::Restarted { count: 1 }) => {
+                        restarts += 1;
+                        check_limit(&session);
+                    }
+                    Some(Event::Exited(0)) => break,
+                    Some(event) => panic!("unexpected memory probe event: {event:?}"),
+                    None => {}
+                }
+                assert!(began.elapsed() < Duration::from_secs(15));
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            assert_eq!(restarts, u32::from(limited));
+            assert_eq!(
+                fixture
+                    .log()
+                    .matches(&format!("MEMORY_POLICY_OK limited={limited}"))
+                    .count(),
+                if limited { 2 } else { 1 }
+            );
+        }
+    }
+    #[test]
+    fn invalid_memory_limits_reject_before_game_start() {
+        let mut fixture = Fixture::new("memory_control");
+        let mut invalid_limits = vec![0];
+        if usize::BITS == 32 {
+            invalid_limits.push(1u64 << 32);
+        }
+        for bytes in invalid_limits {
+            let mut launch = fixture.launch();
+            launch.memory_limit_bytes = Some(bytes);
+            assert!(
+                matches!(Session::start(launch), Err(error) if error.kind() == io::ErrorKind::InvalidInput)
+            );
+        }
+        assert!(fixture.log().is_empty());
+    }
     fn flags(file: &impl AsRawHandle) -> u32 {
         let mut flags = 0;
         assert_ne!(
@@ -878,6 +1013,7 @@ mod tests {
                 environment,
                 disc: self.disc.try_clone().unwrap(),
                 output: self.log.try_clone().unwrap(),
+                memory_limit_bytes: None,
             }
         }
     }
@@ -977,6 +1113,7 @@ mod tests {
             environment,
             disc,
             output: output.try_clone().unwrap(),
+            memory_limit_bytes: None,
         })
         .unwrap();
         let began = Instant::now();

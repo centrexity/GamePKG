@@ -212,6 +212,7 @@ impl Session {
                 environment,
                 disc,
                 output: log.reopen()?,
+                memory_limit_bytes: Some(crate::takedawn::MEMORY),
             },
             sandbox,
         )
