@@ -1260,7 +1260,7 @@ impl Ui {
                     crate::StrokeKind::Inside,
                 );
 
-                let stroke = Stroke::new(2.5, Color32::from_rgb(200, 0, 0));
+                let stroke = Stroke::new(2.5_f32, Color32::from_rgb(200, 0, 0));
                 let paint_line_seg = |a, b| self.painter().line_segment([a, b], stroke);
 
                 if debug_expand_width && too_wide {

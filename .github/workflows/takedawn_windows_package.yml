@@ -21,6 +21,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Build the native app CLI
         run: cargo build --locked --release --bin gamepkg
+      - name: Verify the actual source-kit handoff before compiling the game
+        env:
+          GAMEPKG_TAKEDAWN_KIT: ${{ github.workspace }}/ports/takedawn/assets/takedawn-source-kit.tar.gz
+          GAMEPKG_TAKEDAWN_KIT_SHA256: 18afa3a1f2a0e9ddad89a33c2a3e33803e0764be0035da5e2c7a2e1a5235c885
+        run: cargo test --locked --release --lib takedawn_kit::tests -- --include-ignored
       - name: Build and repair the signed native game with managed standalone tools
         shell: pwsh
         run: ./tools/check_takedawn_windows_package.ps1 -Gamepkg target/release/gamepkg.exe -Work "$env:RUNNER_TEMP/full-native-package"

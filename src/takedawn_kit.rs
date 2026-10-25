@@ -166,6 +166,15 @@ impl SourceKit {
             tar.into_inner().limit() > 0,
             "source-kit decompression limit exceeded"
         );
+        // The Windows runtime builder binds its receipt to these exact admitted
+        // manifest bytes. Retain them only after every payload member verifies.
+        let mut retained = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(directory.path().join("kit.json"))
+            .context("retain verified source-kit manifest for native build")?;
+        use std::io::Write;
+        retained.write_all(&metadata)?;
         Ok(Self { directory, count })
     }
 }
@@ -210,6 +219,18 @@ mod tests {
         let bytes = fixture("prepared/src/one.rs", b"native source", false, false);
         let kit = open(&bytes).unwrap();
         assert_eq!(kit.file_count(), 1);
+        let retained = fs::read(kit.directory().join("kit.json")).unwrap();
+        let mut original = tar::Archive::new(flate2::read::GzDecoder::new(bytes.as_slice()));
+        let mut expected = Vec::new();
+        original
+            .entries()
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .read_to_end(&mut expected)
+            .unwrap();
+        assert_eq!(retained, expected);
         assert_eq!(
             fs::read(kit.directory().join("prepared/src/one.rs")).unwrap(),
             b"native source"
@@ -267,6 +288,9 @@ mod tests {
         let digest = std::env::var("GAMEPKG_TAKEDAWN_KIT_SHA256").unwrap();
         let kit = SourceKit::open(Path::new(&path), &digest).unwrap();
         assert!(kit.file_count() > 4000);
+        let retained: Manifest =
+            serde_json::from_slice(&fs::read(kit.directory().join("kit.json")).unwrap()).unwrap();
+        assert_eq!(retained.files.len(), kit.file_count());
         assert_eq!(
             fs::read_dir(kit.directory().join("prepared/src"))
                 .unwrap()
