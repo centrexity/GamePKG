@@ -6,9 +6,27 @@ This archive contains `bin/gamepkg.exe` and `bin/gamepkg-gui.exe`, example sourc
 
 Run `bin\gamepkg.exe --help` in PowerShell, or launch `bin\gamepkg-gui.exe` for the desktop library. Inspection, creator approval and installed-library metadata use the same verified package format as Linux. The host requires a working desktop graphics driver.
 
+## Native Takedawn source preview
+
+The current development source connects native **Build**, **Play**, and integrity
+repair for the host-reviewed v13 Takedawn kit on 64-bit Windows. This path uses
+standalone Rust/Clang tools prepared through Settings or `gamepkg setup-native-tools`;
+it needs neither WSL nor Python. The older Linux-only package must be updated
+before building it on Windows; reviewed v12 packages remain accepted. The v13
+player package is an unreleased candidate.
+
+The game owns its Vulkan window. GamePKG retains the selected ISO as a read-only
+handle, saves the selection after successful admission, keeps original saves
+scoped to the game/creator and tracks play time across the original restart flow.
+The player uses an AppContainer with networking disabled and explicit runtime/save
+access. App-level native Windows gameplay and GPU access still need qualification;
+see the [native Windows build notes](../engines/takedawn/rust-port/WINDOWS_BUILD.md).
+
+## Optional Wasm compiler connection
+
 The current source has an **experimental, opt-in WSL 2 compiler connection**. End-to-end builds through WSL 2, core/component playback, integrity repair and actual native GUI shader rendering/input passed on a hosted Windows runner using software OpenGL. Hardware graphics drivers were not tested exhaustively. The existing Linux preview provides the verified build/play workflow.
 
-To configure the experimental connection, install a WSL 2 Linux distribution and prepare its GamePKG compiler with the same version as the Windows host, Rust's `wasm32-unknown-unknown` target, bubblewrap, and the pinned Slang compiler following the Linux setup instructions. Use the matching 0.1.17 Linux preview, which includes the internal compiler worker. Download its archive and checksum, verify and extract them inside WSL, and follow its `INSTALL.md` to install the compiler prerequisites. The Linux command-line binary also needs the listed ALSA runtime library; no Linux desktop display is needed for compilation. Test a source build inside Linux first. Older host/compiler versions cannot serve as the matching 0.1.17 compiler.
+To configure the experimental connection, install a WSL 2 Linux distribution and prepare its GamePKG compiler with the same version as the Windows host, Rust's `wasm32-unknown-unknown` target, bubblewrap, and the pinned Slang compiler following the Linux setup instructions. Use a Linux compiler built from the same GamePKG version as the Windows host; it includes the internal compiler worker. Download its archive and checksum, verify and extract them inside WSL, and follow its `INSTALL.md` to install the compiler prerequisites. The Linux command-line binary also needs the listed ALSA runtime library; no Linux desktop display is needed for compilation. Test a source build inside Linux first. A different host/compiler version cannot serve as the matching compiler.
 
 In the Windows settings page, supply the distribution name and the absolute Linux path to its `gamepkg` executable, for example `GamePKG-Ubuntu-24.04` and `/opt/gamepkg/bin/gamepkg`. Both fields must be supplied together; blank fields disable the connection. These values can also be set as `windows_compiler_distribution` and `windows_compiler_executable` in the settings file. Slang configuration inside the Linux distribution controls its compiler installation.
 
@@ -20,13 +38,13 @@ For an actual Windows/WSL integration check after setup, build the current Windo
 
 Add `--gui` with Pillow installed and a working OpenGL driver to verify actual blue/green shader pixels and held/released keyboard input for both runtime profiles. The hosted test uses checksum-pinned Mesa 26.2.4 DLLs only in its build folder; those test DLLs are excluded from the distribution. Screenshots and diagnostics are retained as a separate test artifact.
 
-The 0.1.17 Windows host requires a matching 0.1.17 Linux compiler worker. Use the Linux and Windows archives from the same release. The full source preflight policy and builtin engine version are checked before compiler outputs are accepted.
+The Windows host requires a Linux compiler worker with exactly the same GamePKG version. Use the Linux and Windows archives from the same release. The full source preflight policy and builtin engine version are checked before compiler outputs are accepted.
 
 ## Zelda3 optional engine
 
 Zelda3 uses the same opt-in WSL 2 compiler exchange as other source games.
 Install Clang 18, wasi-libc and libclang-rt-18-dev-wasm32 in that compiler's
-Ubuntu 24.04 environment. The matching 0.1.17 host includes the pinned engine
+Ubuntu 24.04 environment. The matching host includes the pinned engine
 sources and transfers its verified Wasm/receipt alongside the Rust entry.
 No player ROM or save data is sent to the compiler.
 
@@ -38,21 +56,6 @@ See engines/zelda3/README.md for controls and tests.
 
 ## DOOM source engine
 
-Version 0.1.17 includes the pinned DOOM Wasm engine. The Linux compiler needs the same Clang 18 and WASI tools described above. See [DOOM engine setup](../engines/doom/README.md) and the [port instructions](https://github.com/centrexity/GamePKG_Ports/blob/main/DOOM.md). Select your own DOOM.WAD/DOOM2.WAD; no WAD is included. Windows compilation uses the existing opt-in WSL 2 exchange; native Windows DOOM playback has not been tested locally.
+The host includes the pinned DOOM Wasm engine. The Linux compiler needs the same Clang 18 and WASI tools described above. See [DOOM engine setup](../engines/doom/README.md) and the [port instructions](https://github.com/centrexity/GamePKG_Ports/blob/main/DOOM.md). Select your own DOOM.WAD/DOOM2.WAD; no WAD is included. Windows compilation uses the existing opt-in WSL 2 exchange; native Windows DOOM playback has not been tested locally.
 
 The desktop renderer now defaults to Vulkan. Install the graphics driver’s Vulkan runtime, or launch `gamepkg-gui.exe --renderer opengl` to choose OpenGL explicitly. Other source engines on Windows use the separate **Build Wasm** and **Play Wasm** controls with the matching Linux compiler configured above. HTTPS and TCP/UDP APIs are host-mediated for Wasm gameplay as well.
-
-## Native Takedawn source preview
-
-The current development source connects native **Build**, **Play**, and integrity
-repair for the host-reviewed v12 Takedawn kit on 64-bit Windows. This path uses
-standalone Rust/Clang tools prepared through Settings or `gamepkg setup-native-tools`;
-it needs neither WSL nor Python. The older Linux-only package must be updated
-before building it on Windows. The v12 player package has not yet been promoted.
-
-The game owns its Vulkan window. GamePKG retains the selected ISO as a read-only
-handle, saves the selection after successful admission, keeps original saves
-scoped to the game/creator and tracks play time across the original restart flow.
-The player uses an AppContainer with networking disabled and explicit runtime/save
-access. App-level native Windows gameplay and GPU access still need qualification;
-see the [native Windows build notes](../engines/takedawn/rust-port/WINDOWS_BUILD.md).
