@@ -14,6 +14,23 @@ remain the caller's. Dropping the owner stops its process tree. Polling reports
 exact exit codes, including 259, separately from a running process. Arguments and
 the explicit environment use Unicode, without a command shell or executable search.
 
+`Launch::memory_limit_bytes` optionally sets a job-wide committed-memory budget
+before the child is resumed. The app supplies the signed profile's **4 GiB**
+budget; the same value is applied on every managed restart. This uses Windows'
+[committed-memory job limit](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-jobobject_extended_limit_information),
+not a working-set or GPU-memory limit. Zero and values too large for the host
+architecture reject before game execution.
+
+Native Windows 32/64-bit tests compare an unrestricted allocation control with
+an enforced 128 MiB test budget, verify small allocations still work, and repeat
+the allocation rejection after restart. The confined native-window/save fixture
+also checks the budget twice. On 64-bit Windows a separate case queries the exact
+4 GiB value without making a multi-GiB allocation. These checks pass in
+[run 40232579957](https://github.com/centrexity/GamePKG/actions/runs/40232579957).
+They establish the mechanism, not original-game GPU compatibility on Windows.
+Native frame/hang time policy remains separate; no whole-session CPU-time quota
+is imposed on normal gameplay.
+
 `Session` retains one `Launch` across restarts, including its owned ISO file,
 arguments, environment, working directory and log. It additionally transfers a
 private event with only permission to signal it. The pinned original runtime's
