@@ -829,14 +829,19 @@ mod tests {
     }
     #[test]
     fn committed_memory_limit_is_enforced_and_retained_across_restart() {
-        for limited in [false, true] {
+        let mut cases = vec![(None, false), (Some(128 * 1024 * 1024), true)];
+        if usize::BITS == 64 {
+            // Check the real title budget without committing multiple GiB.
+            cases.push((Some(1u64 << 32), false));
+        }
+        for (budget, limited) in cases {
             let mut fixture = Fixture::new(if limited {
                 "memory_restart"
             } else {
                 "memory_control"
             });
             let mut launch = fixture.launch();
-            launch.memory_limit_bytes = limited.then_some(128 * 1024 * 1024);
+            launch.memory_limit_bytes = budget;
             let mut session = Session::start(launch).unwrap();
             let check_limit = |session: &Session| {
                 let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { zeroed() };
@@ -854,11 +859,11 @@ mod tests {
                 );
                 assert_eq!(
                     limits.BasicLimitInformation.LimitFlags & JOB_OBJECT_LIMIT_JOB_MEMORY != 0,
-                    limited
+                    budget.is_some()
                 );
                 assert_eq!(
                     limits.JobMemoryLimit,
-                    if limited { 128 * 1024 * 1024 } else { 0 }
+                    usize::try_from(budget.unwrap_or(0)).unwrap()
                 );
             };
             check_limit(&session);
