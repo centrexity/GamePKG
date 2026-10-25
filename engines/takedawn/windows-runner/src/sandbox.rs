@@ -237,6 +237,7 @@ mod tests {
         fs::write("temporary-save", b"original profile").unwrap();
         assert_eq!(fs::read("temporary-save").unwrap(), b"original profile");
         fs::remove_file("temporary-save").unwrap();
+        crate::window_fixture::verify();
         if !Path::new("restart-complete").exists() {
             fs::write("restart-complete", b"persisted").unwrap();
             let raw: usize = std::env::var("GAMEPKG_TAKEDAWN_RESTART_HANDLE")
@@ -324,6 +325,13 @@ mod tests {
         }
         drop(session);
         assert_eq!(restarts, 1);
+        assert_eq!(
+            fs::read_to_string(&log)
+                .unwrap()
+                .matches("CONFINED_NATIVE_WINDOW_OK")
+                .count(),
+            2
+        );
         assert_eq!(
             fs::read_to_string(&log)
                 .unwrap()

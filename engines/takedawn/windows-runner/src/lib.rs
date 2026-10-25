@@ -3,6 +3,8 @@
 //! packages and grant only their private runtime/save directories before launch.
 #![cfg(windows)]
 mod sandbox;
+#[cfg(test)]
+mod window_fixture;
 pub use sandbox::Sandbox;
 use std::{
     ffi::{OsStr, OsString},
