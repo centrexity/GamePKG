@@ -57,7 +57,8 @@ read/write/delete access to this game's save directory. ACL updates use held
 file/directory handles and reject final reparse points. The host still validates
 the package, directories and executable before granting access. The plain
 `Session::start` remains for maintainer probes; it does not provide confinement.
-No extra game memory or execution deadlines are introduced here.
+The committed-memory budget described above also applies to confined launches
+and their restarts.
 
 The new AppContainer fixture passes on native MSVC x86 and x64 in
 [40062695599](https://github.com/centrexity/GamePKG/actions/runs/40062695599).
