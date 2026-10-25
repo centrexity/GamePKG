@@ -1,7 +1,7 @@
 """Verify actual library rows, rejection notices, and recovery from an unreadable folder."""
 from pathlib import Path
 import csv, io, os, shutil, subprocess, tempfile, time
-from gui_test_support import start_display
+from gui_test_support import start_display, click_text
 project=Path(__file__).resolve().parents[1]
 with tempfile.TemporaryDirectory(prefix='gamepkg-library-gui-') as directory:
     root=Path(directory);library=root/'library'
@@ -45,6 +45,13 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-library-gui-') as directory:
         text,_=read_screen('library-unreadable.png')
         assert 'Unable to read installed library' in text, text
         assert 'Recovery Game' not in text and 'com.gamepkg.minimal' not in text and 'broken.gamepkg' not in text, 'stale library rows remained: '+text
-        print('Library GUI passed: valid rows and rejected notices coexist; unreadable folders clear stale entries.')
+        library.unlink();(root/'saved-library').rename(library)
+        click_text(window,env,'Refresh library',root)
+        time.sleep(.5)
+        text,_=read_screen('library-recovered.png')
+        assert 'Recovery Game' in text and '0.1.0' in text and 'Not built' in text, text
+        assert 'Unavailable package:' in text and 'broken.gamepkg' in text, text
+        assert 'Unable to read installed library' not in text, text
+        print('Library GUI passed: valid rows and rejected notices coexist; unreadable folders clear stale entries; restoring the folder recovers the library.')
     finally:
         app.terminate();app.wait(timeout=10);display.terminate();display.wait(timeout=10)

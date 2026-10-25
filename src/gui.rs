@@ -315,7 +315,10 @@ impl App {
         }
         match crate::registry::default_root().and_then(|r| crate::catalog::entries(&r)) {
             Ok(entries) => self.catalog = entries,
-            Err(e) => self.status = format!("Unable to read catalog: {e:#}"),
+            Err(e) => {
+                self.catalog.clear();
+                self.status = format!("Unable to read catalog: {e:#}");
+            }
         }
         match crate::registry::default_root()
             .and_then(|root| crate::registry::inspect_library(&root))
@@ -1697,7 +1700,16 @@ impl eframe::App for App {
             }
             if self.installed.is_empty() && self.catalog.is_empty() && self.rejected.is_empty() { ui.label("No games yet. Import a game list or install a package."); }
             ui.label(&self.status);
-            if ui.add_enabled(self.result.is_none(), egui::Button::new("Refresh library")).on_hover_text("Reload local games and update all saved list URLs without downloading game packages.").clicked() { self.begin_work(|| Ok(Work::Message(crate::catalog::sources::refresh(&crate::registry::default_root()?)?))); }
+            if ui.add_enabled(self.result.is_none(), egui::Button::new("Refresh library")).on_hover_text("Reload local games and update all saved list URLs without downloading game packages.").clicked() {
+                self.begin_work(|| {
+                    // Always reload local rows, including when updating saved
+                    // lists fails because the library is no longer readable.
+                    let message = crate::registry::default_root()
+                        .and_then(|root| crate::catalog::sources::refresh(&root))
+                        .unwrap_or_else(|error| format!("Unable to refresh saved lists: {error:#}"));
+                    Ok(Work::Message(message))
+                });
+            }
             if let Some((id,fix,store)) = integrity {
                 self.begin_work(move || { let root=crate::registry::default_root()?; Ok(Work::Message(if fix {crate::integrity::fix_with_store(&root,&id,store.as_deref())?} else {crate::integrity::check(&root,&id)?})) });
             }
