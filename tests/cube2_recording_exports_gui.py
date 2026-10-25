@@ -1,11 +1,14 @@
 """Actual game-page recording controls and native Save dialog, private library."""
 from pathlib import Path
-import gzip,hashlib,os,struct,subprocess,tempfile,time,tomllib,zipfile
+import argparse,gzip,hashlib,os,struct,subprocess,tempfile,time,tomllib,zipfile
 from gui_test_support import start_display,game_window,click_text,choose_native_file
 PROJECT=Path(__file__).resolve().parents[1]
+parser=argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--ui-scale',type=int,choices=[100,150],default=100)
+options=parser.parse_args()
 with tempfile.TemporaryDirectory(prefix='gamepkg-recording-gui-') as temporary:
     root=Path(temporary);library=root/'library';key=root/'test.key';key.write_text('69'*32)
-    config=root/'settings.toml';config.write_text('automatic_update_checks=false\nmemory_ceiling_mib=2048\n')
+    config=root/'settings.toml';config.write_text('automatic_update_checks=false\nmemory_ceiling_mib=2048\nui_scale_percent='+str(options.ui_scale)+'\n')
     env=dict(os.environ,GAMEPKG_HOME=str(library),GAMEPKG_CONFIG=str(config),OMP_THREAD_LIMIT='1',LIBGL_ALWAYS_SOFTWARE='1',LP_NUM_THREADS='2',DBUS_SESSION_BUS_ADDRESS='unix:path=/tmp/gamepkg-no-session-bus')
     env.pop('WAYLAND_DISPLAY',None)
     def cli(*args):

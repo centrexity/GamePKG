@@ -109,11 +109,25 @@ The first build can take hours. CI retains logs and result metadata only, delete
 the temporary signing key, and does not upload game executables or the library.
 This gate verifies compilation and repair, not original-game playback. Earlier
 full runs compiled all prepared units but exposed a missing extracted `kit.json`
-at runtime handoff. The loader now retains that admitted manifest; real-kit tests
-pass on Windows before compilation in the replacement
-[full run](https://github.com/centrexity/GamePKG/actions/runs/40204262860).
-Its complete Build/repair result remains pending; smaller compiler fixtures do
-not substitute for it.
+at runtime handoff. The loader now retains that admitted manifest. The next
+[full run](https://github.com/centrexity/GamePKG/actions/runs/40204262860) got past
+that handoff and built the media bridge, then failed when CMake preserved an
+extended source path in glslang includes containing `..`.
+
+The host now normalizes CMake source/build arguments as well as `-D` paths,
+while retaining extended executable paths for deeply nested SDK tools. The
+corrected builder compiles the entire native runtime using the actual Windows
+SDK under isolated Wine, including a deliberately extended SDK path with spaces.
+Its executable retains all 24,032 exports and passes original profile
+creation/reload and 45-second non-silent stereo capture with dummy output.
+Both the managed SDK gate and the full package gate now compile the real shader
+library through the production configuration before attempting the expensive
+game units. Three argument/policy tests and the real shader test pass locally;
+the latter runs the Windows SDK under Wine with canonical extended paths.
+
+The replacement [full run](https://github.com/centrexity/GamePKG/actions/runs/40229229052)
+is active. Its complete app Build/repair result remains pending; the successful
+Wine runtime build does not substitute for actual Windows qualification.
 
 [40054185588](https://github.com/centrexity/GamePKG/actions/runs/40054185588)
 passes actual MSVC32/MSVC64 cache/hash/BigObj, media, file/stream/kernel and strict
