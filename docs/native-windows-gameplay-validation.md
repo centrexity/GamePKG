@@ -123,6 +123,19 @@ capture and unchanged profile reload, but reports at least 55 SDL queue
 underruns during the introductory sequence. A preceding unchanged run reports
 none. The capture gate therefore proves complete mixed output and save behavior,
 not consistently smooth playback; audio timing remains an open qualification.
+
+Two later unchanged Windows/Wine runs record the private null sink through
+WASAPI and compare its actual output with the game's capture. Each complete
+45-second stream matches every PCM byte at one fixed recording offset, with
+no queue-empty reports during either compared create process. The second
+reload logs one queue-empty event; its output has no separate WAV reference
+and is not qualified by the create comparison. These successful repeats do not
+resolve earlier intermittent failures or prove hardware audio.
+The maintainer tool `tools/check_takedawn_pcm_output.py` checks the complete
+48000 Hz stereo s16le stream, using the measured preroll in `--offset-frames`.
+Its fixtures reject inserted silence, dropped/reordered frames, changed
+channels, truncation, invalid formats and incorrect offsets.
+
 Wine gameplay also does not establish original-game GPU/audio/controller access
 inside an actual Windows AppContainer.
 
