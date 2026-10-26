@@ -44,34 +44,43 @@ past the driver's 900-second result deadline. They remain recorded as incomplete
 natural-finish checks. They are not counted as successes or silently replaced
 by the World Tour results above.
 
+## Online scope
+
+These routes qualify offline gameplay. The
+[pinned upstream plan](https://github.com/xenophobentx/takedawn/blob/5a00fc10f9548a189e9043c5a55975863ad49175/README.md#whats-next)
+lists System Link/LAN, XLink Kai and Insignia as future work. The signed profile
+currently disables networking. This integration does not claim those online
+modes, and local multiplayer/physical controller behavior is not qualified by
+the single-player probes. The separate GamePKG networking APIs do not establish
+that this original game's online services work.
+
 ## App and platform checks
 
-Native host validation and Windows packaging pass for app revision `1a0eacc` in
-[run 40240219657](https://github.com/centrexity/GamePKG/actions/runs/40240219657).
+Native Windows and macOS host validation pass for app revision `b2b43fd`,
+including the history contention fix, in
+[run 40254964579](https://github.com/centrexity/GamePKG/actions/runs/40254964579).
 The exact Windows ZIP has SHA-256
-`bdc729ee130017ca99483d53b07f8f071b4f4cbfe3a335c260014d53716bd0a7`.
+`2c77d459c8fd8073cc1aa7676deb86287ddd5f85760f96cf536f40279e34e644`.
 Its isolated Wine checks pass CLI/GUI versions and embedded audio, temporary
 signed-package installation, default Vulkan rendering, resize/close and actual
 OLE catalog import with persistence and no package download.
 
-A subsequent import audit found that this app artifact still requires an
-unbundled `VCRUNTIME140.dll`. Its functional checks do not qualify it as a
-standalone package. The release builder now requests the static MSVC runtime;
-packaging checks inspect normal and delayed PE imports, and Wine qualification
-disables the separate MSVC runtime DLLs.
+The release builder selects the static MSVC runtime. Both app binaries pass
+normal and delayed PE import checks, and the exact ZIP passes the Wine checks
+with external MSVC runtime DLLs disabled. The game executable and its SDL
+companion pass the external compiler-runtime import check independently. This
+avoids the unbundled runtime requirement found in an earlier app artifact.
 
-The replacement app at `d38f284` passed native Windows packaging in
-[run 40251483831](https://github.com/centrexity/GamePKG/actions/runs/40251483831).
-Its ZIP has SHA-256
-`0b5705fef780c04067267e8ce42323b12aac539b6b45a0d26e2be86beb41e5b7`.
-Both app binaries pass the import check. The exact package passes all of the
-isolated Wine CLI/GUI, Vulkan, resize/close and OLE catalog import checks above
-with the external MSVC runtime DLLs disabled. The game executable and its SDL
-companion pass the external compiler-runtime import check independently. The
-separate 32-bit packaging path uses the same static-runtime policy. Windows32,
-Linux32 and Android32 checks pass at the history-fix revision `b2b43fd` in
-[run 40254964650](https://github.com/centrexity/GamePKG/actions/runs/40254964650).
-The x86-64 game itself still requires a 64-bit system.
+Windows32, Linux32 and Android32 checks pass in
+[run 40257219069](https://github.com/centrexity/GamePKG/actions/runs/40257219069).
+The Windows32 gate also executes both actual app entries after relocation,
+without a display or external decoder files. The x86-64 game itself still
+requires a 64-bit system.
+
+The unpublished hardware preview uses this exact native app and the verified
+signed v13 recipe, with a separate library and settings. Every extracted app
+file matches the native ZIP. The source changes through `08fd7f0` affect tests
+and documentation only; production app source is unchanged from `b2b43fd`.
 
 All automated audio output is dummy/muted. Rendered captures and non-silent
 audio captures do not establish audible fidelity or physical controller access.
