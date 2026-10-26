@@ -72,6 +72,8 @@ A separate concurrent comparison fails Vulkan buffer initialization and falls
 back to CPU rendering. It is retained as invalid graphics qualification. The
 maintainer gameplay gate now requires the actual Vulkan executor's confirmation
 and rejects CPU fallback; a device-created message alone is insufficient.
+The save/audio gate applies the same check independently to its create and reload
+processes, before publishing a passing result. This includes native Linux runs.
 Regression fixtures cover incomplete initialization, mixed restart outcomes and
 markers split across log chunks. Earlier qualified route logs also pass this
 stronger check.

@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Maintainer-only original-engine save/reload + mixed-audio gate. No Python,
-# extracted disc folder, real user library or existing save directory is used.
+# Maintainer-only original-engine save/reload + mixed-audio gate. No extracted
+# disc folder, real user library or existing save directory is used.
 # GAMEPKG_GAMEPLAY_WINE=1 tests the native Windows build under isolated Wine.
 set -euo pipefail
 if [[ $# != 2 ]]; then
     echo "usage: bash $0 /path/to/private/burnout3-gamepkg-media /path/to/supported.iso" >&2
     exit 2
 fi
-for task_tool in bwrap timeout realpath awk grep sha256sum ffprobe ffmpeg find stat mktemp; do
+for task_tool in bwrap timeout realpath awk grep sha256sum ffprobe ffmpeg find stat mktemp python3; do
     command -v "$task_tool" >/dev/null || { echo "missing maintainer tool: $task_tool" >&2; exit 2; }
 done
 task_binary=$(realpath -- "$1")
@@ -158,13 +158,16 @@ ffmpeg -hide_banner -nostats -i "$task_state/audio.wav" -af astats=metadata=0:re
     > "$task_state/audio-stats.txt" 2>&1
 awk '/RMS level dB:/ { if ($NF != "-inf" && $NF < 0 && $NF > -90) good++ }
      END { exit good >= 3 ? 0 : 1 }' "$task_state/audio-stats.txt" || fail "silent or invalid mixed audio"
+# Each process must reach the actual executor, not merely enumerate a device.
+# Check before publishing a successful result, including on native Linux.
+for task_phase in create reload; do
+    python3 "$(dirname -- "${BASH_SOURCE[0]}")/check_takedawn_renderer.py" \
+        "$task_state/$task_phase.log" || fail "$task_phase did not render through Vulkan"
+    ! grep -aEq '\[STUB\] unresolved|\[UNIMPL\].*(stmxcsr|ldmxcsr)' "$task_state/$task_phase.log" || fail "$task_phase reached an unresolved game path"
+done
 printf '{"profile_bytes":59904,"metadata_bytes":54,"reload_unchanged":true,"audio_seconds":45,"sample_rate":48000,"channels":2}\n' \
     > "$task_state/result.json"
 if [[ "$task_wine" == 1 ]]; then
-    for task_phase in create reload; do
-        grep -aq '\[vulkan\] device up:' "$task_state/$task_phase.log" || fail "$task_phase did not initialize Vulkan"
-        ! grep -aEq '\[STUB\] unresolved|\[UNIMPL\].*(stmxcsr|ldmxcsr)' "$task_state/$task_phase.log" || fail "$task_phase reached an unresolved game path"
-    done
     printf 'windows-wine\n' > "$task_state/transport.txt"
 fi
 echo "PASS: original profile create/reload, unchanged save hashes and non-silent stereo capture"
