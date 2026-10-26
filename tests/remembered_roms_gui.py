@@ -38,10 +38,14 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-remembered-roms-') as temp:
   return [dict(w,left=int(w['left'])//2,top=int(w['top'])//2,width=int(w['width'])//2,height=int(w['height'])//2) for w in csv.DictReader(io.StringIO(tsv),delimiter='\t',quoting=csv.QUOTE_NONE) if w['text'].strip()]
  def click_word(w):subprocess.run(['xdotool','mousemove','--window',window,str(w['left']+w['width']//2),str(w['top']+w['height']//2),'click','1'],env=env,check=True);time.sleep(.2)
  def click_rom_field(name):
+  # Bare Xvfb does not restore the parent focus after a native chooser closes.
+  subprocess.run(['xdotool','windowfocus','--sync',window],env=env,check=True)
   ws=words();labels=[w for w in ws if w['text'].lower()==name and w['left']<200]
   assert labels,ws
   label=min(labels,key=lambda w:w['top'])
-  fields=[w for w in ws if label['top']+label['height']<w['top']<label['top']+110 and w['left']<650]
+  # OCR can read the rounded button border as '[' or '|'. Click its text,
+  # not the thin edge, when reopening an already selected file.
+  fields=[w for w in ws if label['top']+label['height']<w['top']<label['top']+110 and w['left']<650 and any(c.isalnum() for c in w['text'])]
   assert fields,ws
   click_word(min(fields,key=lambda w:w['top']))
  def expect_rom(byte):
