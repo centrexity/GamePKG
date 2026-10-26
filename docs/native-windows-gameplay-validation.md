@@ -118,6 +118,11 @@ and documentation only; production app source is unchanged from `b2b43fd`.
 
 All automated audio output is dummy/muted. Rendered captures and non-silent
 audio captures do not establish audible fidelity or physical controller access.
+A fresh serialized Windows/Wine save/audio repeat completes the 45-second
+capture and unchanged profile reload, but reports at least 55 SDL queue
+underruns during the introductory sequence. A preceding unchanged run reports
+none. The capture gate therefore proves complete mixed output and save behavior,
+not consistently smooth playback; audio timing remains an open qualification.
 Wine gameplay also does not establish original-game GPU/audio/controller access
 inside an actual Windows AppContainer.
 
