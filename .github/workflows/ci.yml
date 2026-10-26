@@ -20,6 +20,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+      - name: Reject unconfirmed Vulkan and CPU fallback in gameplay qualification
+        run: python3 tests/takedawn_renderer_gate.py
       - name: Install preview codecs
         run: bash tools/ci_ubuntu_apt.sh update && bash tools/ci_ubuntu_apt.sh install -y ffmpeg g++ libsdl2-dev openssl
       - name: Install Rust tools

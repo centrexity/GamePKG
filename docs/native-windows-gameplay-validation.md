@@ -59,10 +59,22 @@ A separate follow-up opens and resumes the player-two pause menu, then uses the
 original Quit/Yes flow to return to multiplayer setup and exits zero. Neither
 probe reaches an unresolved function.
 
-Player-one Start does not open a pause menu in these headless virtual-pad checks,
-with either 120 ms or 400 ms presses. That discrepancy remains unresolved; the
-player-two result does not establish that both pause inputs work. Physical pads,
-a complete multiplayer race and actual Windows hardware still need qualification.
+A controlled sequence confirms both players' pause/resume, including transfer
+back to player one. Original read-only state traces match in the native C
+reference, Linux Rust build and Windows Rust build. The Windows run also returns
+through player one's original Quit/Yes flow and exits zero. An additional Windows
+run with control logging disabled captures a fresh `Paused - Player 1` screen
+and exits zero. The earlier screenshot-only missing-pause finding is withdrawn;
+it did not establish a delivered-input failure. Physical pads, a complete
+multiplayer race and actual Windows hardware still need qualification.
+
+A separate concurrent comparison fails Vulkan buffer initialization and falls
+back to CPU rendering. It is retained as invalid graphics qualification. The
+maintainer gameplay gate now requires the actual Vulkan executor's confirmation
+and rejects CPU fallback; a device-created message alone is insufficient.
+Regression fixtures cover incomplete initialization, mixed restart outcomes and
+markers split across log chunks. Earlier qualified route logs also pass this
+stronger check.
 
 ## Online scope
 
