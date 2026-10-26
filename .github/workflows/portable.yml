@@ -68,7 +68,9 @@ jobs:
           rustc --edition=2021 tools/build_release.rs -o "$builder"
           "./$builder" --github-env
       - name: Verify embedded decoder
-        run: python tools/check_bundled_audio.py target/release
+        run: |
+          python tools/check_bundled_audio.py target/release
+          python tests/windows_crt.py
       - name: Verify managed standalone Windows SDK setup before WSL preparation
         if: runner.os == 'Windows'
         run: python tools/check_takedawn_managed_sdk.py --gamepkg target/release/gamepkg.exe
