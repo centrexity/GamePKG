@@ -25,7 +25,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-worklet-mixer-') as temporary:
  (root/'index.html').write_text('<script type="module">window.mixerReady=true;</script>')
  server=ThreadingHTTPServer(('127.0.0.1',0),partial(Quiet,directory=str(root)));threading.Thread(target=server.serve_forever,daemon=True).start()
  options=Options();options.binary_location=shutil.which('google-chrome') or shutil.which('google-chrome-stable') or shutil.which('chromium');assert options.binary_location
- for flag in ['--headless=new','--no-sandbox','--disable-dev-shm-usage','--autoplay-policy=no-user-gesture-required']:options.add_argument(flag)
+ for flag in ['--headless=new','--mute-audio','--no-sandbox','--disable-dev-shm-usage','--autoplay-policy=no-user-gesture-required']:options.add_argument(flag)
  driver=shutil.which('chromedriver') or str(Path(os.environ.get('CHROMEWEBDRIVER','/nonexistent'))/'chromedriver')
  browser=webdriver.Chrome(service=Service(driver),options=options)
  try:
