@@ -63,6 +63,8 @@ jobs:
           # Explicit --target keeps static CRT flags away from host build scripts.
           CARGO_TARGET_I686_PC_WINDOWS_MSVC_RUSTFLAGS: "-C target-feature=+crt-static"
         run: cargo build --locked --release --all-features --target i686-pc-windows-msvc --bins
+      - name: Verify relocated 32-bit CLI and GUI without runtime files
+        run: python tools/check_bundled_audio.py target/i686-pc-windows-msvc/release
       - name: Package matching 32-bit executables
         run: |
           python tests/package_architecture.py

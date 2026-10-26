@@ -24,10 +24,20 @@ World Tour checks. No medal, score, unlock or race result was injected.
 | Newly unlocked Downtown Road Rage 1 | Natural Totaled result with three takedowns. Silver, two new events, one award and 1,800 more points. | Original autosave succeeded. Another fresh process showed the silver event medal and the new face-off events. |
 
 After each cold load, the active profile and metadata matched their saved bytes
-exactly. The pre-medal reference stayed unchanged. All three private probes
-finished successfully, and none reached an unresolved upstream game-function
+exactly. The pre-medal reference stayed unchanged. These three race/Road Rage
+probes finished successfully and reached no unresolved upstream game-function
 stub. Probe termination after menu inspection is separate from a normal game
 shutdown; normal settings restart and shutdown have their own checks.
+
+The newly unlocked Waterfront Face-Off also reaches its original loss result:
+one lap, second of two, 2:17.01, 165 points and no takedowns. Original Continue,
+autosave and points screens return to the map without unlocking its reward. A
+fresh process retains 4,060 global points, six takedowns and two completed events;
+the Face-Off reward remains locked. The profile and metadata load byte-for-byte
+unchanged. This cold probe exits zero. The initial event probe's outer wrapper
+terminated with status 143 during its intentional stop after the menu return;
+that harness failure remains recorded separately. The cold probe isolates game
+and driver process sessions and stops cleanly. Neither reached an unresolved stub.
 
 The earlier original-driver Single Event Road Rage attempts remained in play
 past the driver's 900-second result deadline. They remain recorded as incomplete
@@ -58,8 +68,10 @@ Both app binaries pass the import check. The exact package passes all of the
 isolated Wine CLI/GUI, Vulkan, resize/close and OLE catalog import checks above
 with the external MSVC runtime DLLs disabled. The game executable and its SDL
 companion pass the external compiler-runtime import check independently. The
-separate 32-bit packaging path now requests the same static-runtime policy; its
-native result is pending.
+separate 32-bit packaging path uses the same static-runtime policy. Windows32,
+Linux32 and Android32 checks pass at the history-fix revision `b2b43fd` in
+[run 40254964650](https://github.com/centrexity/GamePKG/actions/runs/40254964650).
+The x86-64 game itself still requires a 64-bit system.
 
 All automated audio output is dummy/muted. Rendered captures and non-silent
 audio captures do not establish audible fidelity or physical controller access.
