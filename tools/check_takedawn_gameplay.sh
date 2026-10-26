@@ -207,6 +207,11 @@ if grep -aEq '\[UNIMPL\].*(stmxcsr|ldmxcsr)' "$task_state/run/log.txt" "$task_st
     echo "FAIL: gameplay skipped the original native SSE control setup" >> "$task_state/driver.log"
     task_result=1
 fi
+if ! python3 "$(dirname -- "${BASH_SOURCE[0]}")/check_takedawn_renderer.py" \
+    "$task_state/run/log.txt" "$task_state/run/out.txt" >> "$task_state/driver.log" 2>&1; then
+    # Preserve an existing driver failure, including its timeout status.
+    if (( task_result == 0 )); then task_result=1; fi
+fi
 printf 'exit_code=%s\nscheme=%s\nevent=%s\nnative_sha256=%s\n' \
     "$task_result" "$task_scheme" "$task_event" "$(sha256sum "$task_binary" | cut -d' ' -f1)" \
     > "$task_state/result.txt"
