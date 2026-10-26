@@ -48,9 +48,18 @@ A subsequent import audit found that this app artifact still requires an
 unbundled `VCRUNTIME140.dll`. Its functional checks do not qualify it as a
 standalone package. The release builder now requests the static MSVC runtime;
 packaging checks inspect normal and delayed PE imports, and Wine qualification
-disables the separate MSVC runtime DLLs. The replacement artifact must pass
-these checks before handoff. The game executable and its SDL companion pass the
-external compiler-runtime import check independently.
+disables the separate MSVC runtime DLLs.
+
+The replacement app at `d38f284` passed native Windows packaging in
+[run 40251483831](https://github.com/centrexity/GamePKG/actions/runs/40251483831).
+Its ZIP has SHA-256
+`0b5705fef780c04067267e8ce42323b12aac539b6b45a0d26e2be86beb41e5b7`.
+Both app binaries pass the import check. The exact package passes all of the
+isolated Wine CLI/GUI, Vulkan, resize/close and OLE catalog import checks above
+with the external MSVC runtime DLLs disabled. The game executable and its SDL
+companion pass the external compiler-runtime import check independently. The
+separate 32-bit packaging path now requests the same static-runtime policy; its
+native result is pending.
 
 All automated audio output is dummy/muted. Rendered captures and non-silent
 audio captures do not establish audible fidelity or physical controller access.
