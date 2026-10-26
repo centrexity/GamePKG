@@ -58,7 +58,10 @@ jobs:
           python tools/build_audio_companion.py --github-env
       - name: Execute native 32-bit runtime tests with embedded decoder
         run: cargo test --locked --all-features --target i686-pc-windows-msvc --test portability --test runtime --test components --test path_attacks --test dependency_attacks --test source_attacks --test memory_budget --test audio_effect_assets --test music_permissions
-      - name: Build 32-bit Windows CLI and GUI
+      - name: Build standalone 32-bit Windows CLI and GUI
+        env:
+          # Explicit --target keeps static CRT flags away from host build scripts.
+          CARGO_TARGET_I686_PC_WINDOWS_MSVC_RUSTFLAGS: "-C target-feature=+crt-static"
         run: cargo build --locked --release --all-features --target i686-pc-windows-msvc --bins
       - name: Package matching 32-bit executables
         run: |
