@@ -27,6 +27,41 @@ fn cargo(root: &Path, offline: bool) -> Command {
     }
     command
 }
+fn windows_msvc_target() -> io::Result<Option<&'static str>> {
+    if !cfg!(all(windows, target_env = "msvc")) {
+        return Ok(None);
+    }
+    match env::consts::ARCH {
+        "x86_64" => Ok(Some("x86_64-pc-windows-msvc")),
+        "x86" => Ok(Some("i686-pc-windows-msvc")),
+        "aarch64" => Ok(Some("aarch64-pc-windows-msvc")),
+        _ => Err(io::Error::other(
+            "unsupported native Windows build architecture",
+        )),
+    }
+}
+fn static_crt_flags(triple: &str) -> std::ffi::OsString {
+    // Cargo's encoded form preserves existing flag boundaries. An explicit
+    // --target keeps these target flags out of host procedural-macro builds.
+    let mut flags = env::var_os("CARGO_ENCODED_RUSTFLAGS").unwrap_or_else(|| {
+        let target_flags = format!(
+            "CARGO_TARGET_{}_RUSTFLAGS",
+            triple.to_uppercase().replace('-', "_")
+        );
+        env::var("RUSTFLAGS")
+            .or_else(|_| env::var(target_flags))
+            .unwrap_or_default()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join("\x1f")
+            .into()
+    });
+    if !flags.is_empty() {
+        flags.push("\x1f");
+    }
+    flags.push("-C\x1ftarget-feature=+crt-static");
+    flags
+}
 fn companion(root: &Path, target: &Path, offline: bool, kind: &str) -> io::Result<PathBuf> {
     let mut command = cargo(root, offline);
     command
@@ -155,12 +190,41 @@ fn build() -> io::Result<()> {
         }
     }
     println!("Building CLI and GUI with their embedded audio.");
-    run(cargo(&root, offline)
+    let mut command = cargo(&root, offline);
+    command
         .args(["--all-features", "--bins"])
         .env("CARGO_TARGET_DIR", &target)
         .env("GAMEPKG_BUNDLED_AUDIO_DECODER", decoder)
-        .env("GAMEPKG_BUNDLED_AUDIO_CONVERTER", converter))?;
-    verify_relocated(&target.join("release"))?;
+        .env("GAMEPKG_BUNDLED_AUDIO_CONVERTER", converter);
+    let triple = windows_msvc_target()?;
+    if let Some(triple) = triple {
+        command
+            .args(["--target", triple])
+            .env_remove("RUSTFLAGS")
+            .env("CARGO_ENCODED_RUSTFLAGS", static_crt_flags(triple));
+    }
+    run(&mut command)?;
+    let binaries = triple.map_or_else(
+        || target.join("release"),
+        |t| target.join(t).join("release"),
+    );
+    verify_relocated(&binaries)?;
+    if triple.is_some() {
+        // Keep the documented packaging paths while using Cargo's separate
+        // target directory for the standalone Windows executables.
+        fs::create_dir_all(target.join("release"))?;
+        for name in ["gamepkg.exe", "gamepkg-gui.exe"] {
+            let destination = target.join("release").join(name);
+            // Cargo may have hard-linked an earlier flat output into its deps
+            // cache. Replace that link rather than truncating the other entry.
+            match fs::remove_file(&destination) {
+                Ok(()) => {}
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error),
+            }
+            fs::copy(binaries.join(name), destination)?;
+        }
+    }
     println!(
         "CLI and GUI ready in {}. Relocated audio checks passed.",
         target.join("release").display()

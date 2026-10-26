@@ -44,6 +44,14 @@ Its isolated Wine checks pass CLI/GUI versions and embedded audio, temporary
 signed-package installation, default Vulkan rendering, resize/close and actual
 OLE catalog import with persistence and no package download.
 
+A subsequent import audit found that this app artifact still requires an
+unbundled `VCRUNTIME140.dll`. Its functional checks do not qualify it as a
+standalone package. The release builder now requests the static MSVC runtime;
+packaging checks inspect normal and delayed PE imports, and Wine qualification
+disables the separate MSVC runtime DLLs. The replacement artifact must pass
+these checks before handoff. The game executable and its SDL companion pass the
+external compiler-runtime import check independently.
+
 All automated audio output is dummy/muted. Rendered captures and non-silent
 audio captures do not establish audible fidelity or physical controller access.
 Wine gameplay also does not establish original-game GPU/audio/controller access

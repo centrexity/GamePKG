@@ -19,6 +19,7 @@ import subprocess
 import tempfile
 import time
 import zipfile
+from windows_pe_imports import require_standalone_crt
 
 
 def main():
@@ -101,6 +102,7 @@ def main():
             (
                 work / "bin" / (gui_name if name == "gamepkg-gui.exe" else name)
             ).write_bytes(data)
+            require_standalone_crt(work / "bin" / (gui_name if name == "gamepkg-gui.exe" else name))
     (work / "settings.toml").write_text(
         "automatic_update_checks=false\ncheck_app_updates_on_startup=false\nmute_audio=true\n"
     )
@@ -147,7 +149,7 @@ def main():
         "WINEARCH": "win64",
         "WINEPREFIX": "/state/prefix",
         "WINEDEBUG": "-all",
-        "WINEDLLOVERRIDES": "mscoree,mshtml=",
+        "WINEDLLOVERRIDES": "mscoree,mshtml=;vcruntime140,vcruntime140_1,msvcp140=",
         "SDL_AUDIODRIVER": "dummy",
         "GAMEPKG_HOME": "Z:\\state\\library",
         "GAMEPKG_CONFIG": "Z:\\state\\settings.toml",
@@ -227,6 +229,7 @@ def main():
                     "checks": records,
                     "dummy_audio": True,
                     "actual_windows_hardware": False,
+                    "external_msvc_runtime_disabled": True,
                 },
                 indent=2,
             )
