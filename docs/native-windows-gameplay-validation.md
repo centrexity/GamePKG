@@ -55,9 +55,17 @@ external compiler-runtime import check independently.
 All automated audio output is dummy/muted. Rendered captures and non-silent
 audio captures do not establish audible fidelity or physical controller access.
 Wine gameplay also does not establish original-game GPU/audio/controller access
-inside an actual Windows AppContainer. The full signed Windows Build/repair
-gate, native frame/hang policy, broader campaign coverage and actual Windows
-hardware qualification remain separate requirements. No stable release is
+inside an actual Windows AppContainer.
+
+The full signed Windows install, native Build and integrity repair gate passed in
+[run 40229229052](https://github.com/centrexity/GamePKG/actions/runs/40229229052).
+It compiled all 486 prepared Rust units with native optimizations, produced a
+ready-to-play library entry, rejected a damaged SDL companion, then repaired it
+while preserving every compiled object hash and modification time. No owned
+media or gameplay was used in that build gate.
+
+Native frame/hang policy, broader campaign coverage and actual Windows hardware
+qualification remain separate requirements. No stable release is
 qualified by these routes alone.
 
 See the [Windows build notes](../engines/takedawn/rust-port/WINDOWS_BUILD.md)
