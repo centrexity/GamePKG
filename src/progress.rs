@@ -5,7 +5,7 @@ use std::{
     collections::BTreeMap,
     io::{Read, Write},
     path::{Path, PathBuf},
-    time::{Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -70,6 +70,14 @@ pub fn duration(ms: u64) -> String {
         format!("{}h {}m", seconds / 3600, (seconds / 60) % 60)
     }
 }
+struct HistoryLock(std::fs::File);
+impl Drop for HistoryLock {
+    fn drop(&mut self) {
+        // Explicitly release the OS lock even if a cloned/inherited descriptor
+        // outlives this writer. Merely closing our descriptor may retain it.
+        let _ = self.0.unlock();
+    }
+}
 pub(crate) struct Session {
     path: PathBuf,
     last: Option<Instant>,
@@ -126,14 +134,18 @@ impl Session {
             self.accrue();
             self.last = None;
         }
-        for _ in 0..10 {
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
             self.commit()?;
             if self.pending_ms == 0 && self.pending.is_empty() {
                 return Ok(());
             }
-            std::thread::sleep(std::time::Duration::from_millis(2));
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                bail!("play history is busy; unable to flush this session");
+            }
+            std::thread::sleep(remaining.min(Duration::from_millis(5)));
         }
-        bail!("play history is busy; unable to flush this session")
     }
     fn commit(&mut self) -> Result<()> {
         if self.pending_ms == 0 && self.pending.is_empty() {
@@ -160,6 +172,7 @@ impl Session {
             Err(std::fs::TryLockError::WouldBlock) => return Ok(()),
             Err(std::fs::TryLockError::Error(e)) => return Err(e.into()),
         }
+        let _lock = HistoryLock(handle);
         let mut record = read(&self.path)?;
         record.played_ms = record.played_ms.saturating_add(self.pending_ms);
         for (id, when) in &self.pending {
@@ -234,6 +247,100 @@ mod tests {
             .unwrap()
             .unlocked
             .contains_key("started"));
+    }
+    #[test]
+    fn simultaneous_writers_preserve_every_session_and_first_unlock() {
+        let root = tempfile::tempdir().unwrap();
+        let mut first = Session::open(root.path(), "game", "creator").unwrap();
+        first.pending.insert("first".into(), 111);
+        first.finish().unwrap();
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(8));
+        std::thread::scope(|scope| {
+            for index in 0..8 {
+                let barrier = barrier.clone();
+                let root = root.path();
+                scope.spawn(move || {
+                    let mut session = Session::open(root, "game", "creator").unwrap();
+                    session.pending_ms = 1000 + index;
+                    session.pending.insert("first".into(), 999);
+                    session.pending.insert(format!("worker_{index}"), 222);
+                    barrier.wait();
+                    session.finish().unwrap();
+                });
+            }
+        });
+        let record = load(root.path(), "game", "creator").unwrap();
+        assert_eq!(
+            record.played_ms,
+            (0..8).map(|index| 1000 + index).sum::<u64>()
+        );
+        assert_eq!(record.unlocked["first"], 111);
+        assert_eq!(record.unlocked.len(), 9);
+        for index in 0..8 {
+            assert_eq!(record.unlocked[&format!("worker_{index}")], 222);
+        }
+    }
+    #[test]
+    fn writer_unlocks_even_if_a_duplicate_descriptor_outlives_it() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("history.lock");
+        let file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .unwrap();
+        file.lock().unwrap();
+        let duplicate = file.try_clone().unwrap();
+        let writer = HistoryLock(file);
+        let next = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&path)
+            .unwrap();
+        assert!(matches!(
+            next.try_lock(),
+            Err(std::fs::TryLockError::WouldBlock)
+        ));
+        drop(writer);
+        next.try_lock().unwrap();
+        next.unlock().unwrap();
+        drop(duplicate);
+    }
+    #[test]
+    fn finish_waits_for_brief_contention_and_preserves_pending_history() {
+        let root = tempfile::tempdir().unwrap();
+        let mut session = Session::open(root.path(), "game", "creator").unwrap();
+        std::fs::create_dir_all(session.path.parent().unwrap()).unwrap();
+        let lock = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(session.path.with_extension("lock"))
+            .unwrap();
+        lock.lock().unwrap();
+        session.pending_ms = 1234;
+        session.tick(&["started".into()]).unwrap();
+        // tick must defer immediately; finishing may wait for the other writer.
+        assert_eq!(session.pending_ms, 1234);
+        assert!(!session.pending.is_empty());
+        let release = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            lock.unlock().unwrap();
+        });
+        let result = session.finish();
+        release.join().unwrap();
+        result.unwrap();
+        let record = load(root.path(), "game", "creator").unwrap();
+        assert_eq!(record.played_ms, 1234);
+        assert!(record.unlocked.contains_key("started"));
+        // Retrying a completed flush must not count the same session twice.
+        session.finish().unwrap();
+        assert_eq!(
+            load(root.path(), "game", "creator").unwrap().played_ms,
+            1234
+        );
     }
     #[cfg(unix)]
     #[test]
