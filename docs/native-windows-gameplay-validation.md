@@ -44,14 +44,34 @@ past the driver's 900-second result deadline. They remain recorded as incomplete
 natural-finish checks. They are not counted as successes or silently replaced
 by the World Tour results above.
 
+## Offline two-player coverage
+
+A bounded Windows/Wine probe reaches the original multiplayer Race with two
+virtual pads, separate car selection, split cameras and both HUDs. Player one
+reaches 39 mph while player two stays at zero; a separate player-two throttle
+input produces 38 mph while player one is stopped. Both then receive concurrent
+throttle inputs and move through the track. Debug AI is off. The original main
+already defaults to two pads; no production default change is needed.
+
+The reviewed-input probe eventually exceeds its 900-second overall deadline
+while still in the race. It does not qualify a natural multiplayer race finish.
+A separate follow-up opens and resumes the player-two pause menu, then uses the
+original Quit/Yes flow to return to multiplayer setup and exits zero. Neither
+probe reaches an unresolved function.
+
+Player-one Start does not open a pause menu in these headless virtual-pad checks,
+with either 120 ms or 400 ms presses. That discrepancy remains unresolved; the
+player-two result does not establish that both pause inputs work. Physical pads,
+a complete multiplayer race and actual Windows hardware still need qualification.
+
 ## Online scope
 
 These routes qualify offline gameplay. The
 [pinned upstream plan](https://github.com/xenophobentx/takedawn/blob/5a00fc10f9548a189e9043c5a55975863ad49175/README.md#whats-next)
 lists System Link/LAN, XLink Kai and Insignia as future work. The signed profile
 currently disables networking. This integration does not claim those online
-modes, and local multiplayer/physical controller behavior is not qualified by
-the single-player probes. The separate GamePKG networking APIs do not establish
+modes. The bounded two-player observations above do not qualify physical
+controllers or complete multiplayer play. The separate GamePKG networking APIs do not establish
 that this original game's online services work.
 
 ## App and platform checks
