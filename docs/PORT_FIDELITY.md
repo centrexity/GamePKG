@@ -4657,3 +4657,31 @@ pass. The fixture now retains bounded worker/input traces, browser status,
 focus, console output and a screenshot on failure, and the scaled CI case runs
 three complete cycles. The original timeouts and two-level pixel tolerance
 are unchanged; no production input change is claimed without a reproduced cause.
+
+The retained browser trace narrows the timeout: the canvas stays focused and the
+new key reaches it, but playback stops with `Invalid or late audio output
+response`. The fixture's synchronous readback serializes 921,600 individual
+JavaScript values through WebDriver while that same main thread receives output
+replies. Live comparisons now use native lossless PNG encoding and retain the
+same crop and RGB comparisons. After Stop, both profiles additionally compare
+every decoded RGB byte of the final retained frame against the previous raw-array path. With the exact CI
+compiler/browser and Chrome restricted to two CPUs, all repeated flat controls
+and photographic-menu comparisons pass. Measured PNG main-thread delays are
+about 9–23 ms versus 91–95 ms for the stopped raw readback; output replies stay
+well inside their unchanged 250 ms deadline. The old local raw stress run did
+not reproduce the CI stop, so remote validation remains required. Bounded audio
+request/reply timing is retained if the issue recurs; no runtime deadline or
+pixel tolerance is relaxed.
+
+A separate networking gate failure came from treating 1,000 unpaced headless
+ticks as a wait for asynchronous sockets. The fixture also assumed a four-byte
+TCP message would arrive in one read. Its Rust runtime driver now waits on a
+bounded real ten-second deadline, yielding one millisecond between ticks.
+An acknowledgement protocol forces one- and three-byte receive checkpoints
+before the complete `pong`, and the guest retains partial writes/reads. A private
+250 ms delayed server reproduces the old fixed-frame failure; both core and
+component cases complete with the new driver. HTTPS, cached-HTTPS, TCP, UDP and
+listener permission denial still pass. The related listener fixture uses the
+same elapsed-time driver for native/core/component execution, retaining close
+and stale-handle assertions. CLI headless pacing and production networking caps
+are unchanged.

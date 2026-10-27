@@ -1,9 +1,13 @@
 """Signed native/core/component TCP listener, partial I/O and handle cleanup."""
 from pathlib import Path
-import os, shutil, socket, subprocess, tempfile, threading, time
+import json, os, shutil, socket, subprocess, tempfile, threading, time
 
 project = Path(__file__).resolve().parents[1]
 cli = Path(os.environ.get('GAMEPKG_TEST_BINARY_DIR', project/'target/release'))/'gamepkg'
+compiled = subprocess.run(['cargo','test','--locked','--release','--test','network_game_runtime','--no-run','--message-format=json'],cwd=project,capture_output=True,text=True,timeout=300)
+assert compiled.returncode == 0, compiled.stderr
+executables = [value['executable'] for line in compiled.stdout.splitlines() if line.startswith('{') and (value := json.loads(line)).get('reason') == 'compiler-artifact' and value.get('target', {}).get('name') == 'network_game_runtime' and value.get('executable')]
+assert len(executables) == 1, executables
 with tempfile.TemporaryDirectory(prefix='gamepkg-listener-') as temporary:
     root = Path(temporary)
     (root/'key').write_text('49'*32)
@@ -105,8 +109,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-listener-') as temporary:
         worker = threading.Thread(target=client)
         worker.start()
         try:
-            output = run('run', game_id, '--frames', '10000')
-            assert 'score: 42' in output, output
+            subprocess.run([executables[0], 'tcp_listener_partial_io_closes_and_retires_handles', '--ignored', '--nocapture'], cwd=project, env=dict(env, GAMEPKG_NETWORK_TEST_ROOT=str(root/'library'), GAMEPKG_NETWORK_TEST_ID=game_id), check=True, timeout=30)
         finally:
             stop.set()
             worker.join(7)
