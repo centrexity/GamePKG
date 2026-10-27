@@ -1081,14 +1081,11 @@ mod tests {
         let check = |socket: &UdpSocket| {
             assert_eq!(socket.ttl().unwrap(), 37);
             assert!(!socket.broadcast().unwrap());
-            assert_eq!(
-                socket.read_timeout().unwrap(),
-                Some(Duration::from_millis(250))
-            );
-            assert_eq!(
-                socket.write_timeout().unwrap(),
-                Some(Duration::from_millis(500))
-            );
+            // Linux stores SO_RCVTIMEO in jiffies and rounds up. At HZ=250 a
+            // 250 ms request is reported as 252 ms. The option still reached
+            // the socket and survived rebind.
+            assert_timeout_near(socket.read_timeout().unwrap(), 250);
+            assert_timeout_near(socket.write_timeout().unwrap(), 500);
             use std::os::fd::AsRawFd;
             for (option, minimum) in [
                 (libc::SO_RCVBUF, 32768),
@@ -1146,6 +1143,17 @@ mod tests {
         assert!(state.dispatch(11, &request(10, 42)).is_err());
         assert!(state.dispatch(12, &request(10, 0)[..8]).is_err());
     }
+
+    fn assert_timeout_near(actual: Option<Duration>, millis: u64) {
+        let actual = actual.expect("timeout reached the socket");
+        let requested = Duration::from_millis(millis);
+        let slack = Duration::from_millis(10);
+        assert!(
+            actual + slack >= requested && actual <= requested + slack,
+            "socket timeout {actual:?} is not the requested {requested:?}"
+        );
+    }
+
     #[test]
     fn master_snapshot_is_async_bounded_without_restricting_udp_destinations() {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();

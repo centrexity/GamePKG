@@ -152,7 +152,13 @@ pub fn launch(root: &Path, id: &str) -> Result<()> {
     let data_root = arrange_data(&runtime, engine, &data, executable.file_name())?;
     let log_path = runtime.join("engine.log");
     let log = fs::File::create(&log_path)?;
-    let mut child = command(&executable, &runtime, !manifest.permissions.network);
+    let settings = crate::settings::load().context("load settings before starting the engine")?;
+    let memory = address_space_limit(
+        engine.hard_memory,
+        engine.memory,
+        settings.memory_ceiling_mib,
+    )?;
+    let mut child = command(&executable, &runtime, !manifest.permissions.network, memory);
     if target.os == "windows" {
         child.env("USERPROFILE", runtime.join("home"));
     } else {
@@ -441,12 +447,38 @@ fn git(source: &Path, args: &[&str]) -> Result<String> {
     String::from_utf8(output.stdout).context("git output was not UTF-8")
 }
 
-fn command(binary: &Path, runtime: &Path, isolate_network: bool) -> Command {
-    if isolate_network
-        && cfg!(target_os = "linux")
-        && Command::new("bwrap").arg("--version").output().is_ok()
-    {
-        let mut command = Command::new("bwrap");
+fn command(binary: &Path, runtime: &Path, isolate_network: bool, memory_bytes: u64) -> Command {
+    let sandbox = isolate_network && cfg!(target_os = "linux") && tool_ready("bwrap");
+    let limited = cfg!(target_os = "linux") && memory_bytes > 0 && tool_ready("prlimit");
+    if isolate_network && cfg!(target_os = "linux") && !sandbox {
+        eprintln!(
+            "Network isolation needs bubblewrap; the engine process keeps this user's network."
+        );
+    }
+    if cfg!(target_os = "linux") && memory_bytes > 0 && !limited {
+        eprintln!(
+            "Memory cap needs prlimit; the engine process keeps this user's address-space limit."
+        );
+    }
+    let mut command = if limited {
+        let mut command = Command::new("prlimit");
+        command
+            .arg(format!("--as={memory_bytes}"))
+            .arg("--core=0")
+            .arg("--");
+        command
+    } else if sandbox {
+        Command::new("bwrap")
+    } else {
+        let mut command = Command::new(binary);
+        command.current_dir(runtime);
+        return command;
+    };
+    command.current_dir(runtime);
+    if sandbox {
+        if limited {
+            command.arg("bwrap");
+        }
         command
             .arg("--unshare-net")
             .arg("--die-with-parent")
@@ -458,6 +490,10 @@ fn command(binary: &Path, runtime: &Path, isolate_network: bool) -> Command {
             .arg("/dev")
             .arg("--proc")
             .arg("/proc")
+            .arg("--size")
+            .arg("16777216")
+            .arg("--tmpfs")
+            .arg("/tmp")
             .arg("--bind")
             .arg(runtime)
             .arg(runtime);
@@ -476,16 +512,30 @@ fn command(binary: &Path, runtime: &Path, isolate_network: bool) -> Command {
             }
         }
         command.arg("--chdir").arg(runtime).arg("--").arg(binary);
-        return command;
+    } else {
+        command.arg(binary);
     }
-    if isolate_network && cfg!(target_os = "linux") {
-        eprintln!(
-            "Network isolation needs bubblewrap; the engine process keeps this user's network."
-        );
-    }
-    let mut command = Command::new(binary);
-    command.current_dir(runtime);
     command
+}
+
+fn address_space_limit(hard_memory: u64, recommended: u64, ceiling_mib: u64) -> Result<u64> {
+    let memory = hard_memory.min(ceiling_mib.saturating_mul(1024 * 1024));
+    ensure!(
+        memory >= recommended,
+        "memory ceiling is {ceiling_mib} MiB and this engine needs at least {} MiB. Its hard cap is {} MiB.",
+        recommended / (1024 * 1024),
+        hard_memory / (1024 * 1024)
+    );
+    Ok(memory)
+}
+
+fn tool_ready(name: &str) -> bool {
+    Command::new(name)
+        .arg("--version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
 }
 
 fn write_file(path: &Path, bytes: &[u8]) -> Result<()> {
@@ -654,4 +704,110 @@ fn install_runtime_file(from: &Path, to: &Path, limit: u64) -> Result<()> {
         fs::remove_file(to)?;
     }
     write_file(to, &bytes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn address_space_limit_uses_the_lower_of_the_hard_cap_and_the_ceiling() {
+        let hard = 3_221_225_472u64;
+        let recommended = 2_147_483_648u64;
+        assert_eq!(address_space_limit(hard, recommended, 3072).unwrap(), hard);
+        assert_eq!(address_space_limit(hard, recommended, 4096).unwrap(), hard);
+        assert_eq!(
+            address_space_limit(hard, recommended, 2048).unwrap(),
+            recommended
+        );
+        let error = address_space_limit(hard, recommended, 512)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("512") && error.contains("2048"), "{error}");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn sandbox_caps_address_space_drops_network_and_keeps_the_root_read_only() {
+        let runtime = tempfile::tempdir().unwrap();
+        let probe = runtime.path().join("probe");
+        std::fs::write(
+            &probe,
+            r#"#!/usr/bin/python3
+import os, socket, resource
+soft, hard = resource.getrlimit(resource.RLIMIT_AS)
+open("limits.txt", "w").write("%s %s\n" % (soft, hard))
+open("runtime-write.txt", "w").write("ok\n")
+try:
+    open("/tmp/sandbox-tmp.txt", "w").write("ok\n")
+    open("tmp.txt", "w").write("writable\n")
+except OSError:
+    open("tmp.txt", "w").write("readonly\n")
+try:
+    open("/etc/gamepkg-sandbox-probe", "w").write("x")
+    open("root.txt", "w").write("writable\n")
+except OSError:
+    open("root.txt", "w").write("readonly\n")
+sock = socket.socket()
+sock.settimeout(2)
+try:
+    sock.connect(("127.0.0.1", int(os.environ["PROBE_PORT"])))
+    open("net.txt", "w").write("open\n")
+except OSError as error:
+    open("net.txt", "w").write("closed %s\n" % error.errno)
+"#,
+        )
+        .unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&probe, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port().to_string();
+        let memory = 3_221_225_472u64;
+        let mut sandboxed = command(&probe, runtime.path(), true, memory);
+        sandboxed.env("PROBE_PORT", &port);
+        let sandboxed = sandboxed.output().unwrap();
+        assert!(
+            sandboxed.status.success(),
+            "{}",
+            String::from_utf8_lossy(&sandboxed.stderr)
+        );
+        assert_eq!(
+            std::fs::read_to_string(runtime.path().join("limits.txt")).unwrap(),
+            format!("{memory} {memory}\n")
+        );
+        assert_eq!(
+            std::fs::read_to_string(runtime.path().join("root.txt")).unwrap(),
+            "readonly\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(runtime.path().join("runtime-write.txt")).unwrap(),
+            "ok\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(runtime.path().join("tmp.txt")).unwrap(),
+            "writable\n",
+            "the sandbox tmpfs must accept audio and display runtime files"
+        );
+        let net = std::fs::read_to_string(runtime.path().join("net.txt")).unwrap();
+        assert!(net.starts_with("closed"), "{net}");
+        for name in ["limits.txt", "root.txt", "runtime-write.txt", "net.txt"] {
+            std::fs::remove_file(runtime.path().join(name)).unwrap();
+        }
+        let mut open = command(&probe, runtime.path(), false, memory);
+        open.env("PROBE_PORT", &port);
+        let open = open.output().unwrap();
+        assert!(
+            open.status.success(),
+            "{}",
+            String::from_utf8_lossy(&open.stderr)
+        );
+        assert_eq!(
+            std::fs::read_to_string(runtime.path().join("net.txt")).unwrap(),
+            "open\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(runtime.path().join("limits.txt")).unwrap(),
+            format!("{memory} {memory}\n")
+        );
+    }
 }

@@ -83,15 +83,16 @@ diff --git a/port/linux/src/xbox_kernel.c b/port/linux/src/xbox_kernel.c
 index 39e1e21..b082b96 100644
 --- a/port/linux/src/xbox_kernel.c
 +++ b/port/linux/src/xbox_kernel.c
-@@ -6,6 +6,7 @@ threads, asynchronous procedure calls, time, memory and debug output.
+@@ -6,6 +6,8 @@ threads, asynchronous procedure calls, time, memory and debug output.
  */
  
  #include "platform.h"
-+#include "gamepkg_host.h"
++/* port/linux/src is on the include path; the shared header lives in port/include. */
++#include "../../include/gamepkg_host.h"
  
  #include <errno.h>
  #include <sched.h>
-@@ -25,15 +26,35 @@ threads, asynchronous procedure calls, time, memory and debug output.
+@@ -25,15 +27,35 @@ threads, asynchronous procedure calls, time, memory and debug output.
  
  /* ---------- logging */
  

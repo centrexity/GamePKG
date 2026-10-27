@@ -647,6 +647,37 @@ mod tests {
         assert_eq!(gamepkg_window_control(2, 0), 1);
         assert_eq!(gamepkg_window_control(2, 1), 0);
         assert_eq!(gamepkg_draw_clear(0xff), 0);
+        assert_eq!(gamepkg_draw_clip(0.0, 0.0, 10.0, 10.0), 0);
+        assert_eq!(gamepkg_draw_clip_reset(), 0);
+        assert_eq!(gamepkg_window_state(), 0);
+        assert_eq!(gamepkg_effect_call(0, std::ptr::null(), 0), 0);
+        let mut scratch = [0u8; 8];
+        assert_eq!(
+            gamepkg_file_call(0, std::ptr::null(), 0, scratch.as_mut_ptr(), 4),
+            -1
+        );
+        lock().as_mut().unwrap().roms = vec![b"rom-bytes".to_vec()];
+        lock()
+            .as_mut()
+            .unwrap()
+            .assets
+            .insert("note.txt".into(), b"asset".to_vec());
+        assert_eq!(gamepkg_rom_count(), 1);
+        assert_eq!(gamepkg_rom_size(), 9);
+        assert_eq!(gamepkg_rom_size_at(1), -1);
+        assert_eq!(gamepkg_rom_read(0, scratch.as_mut_ptr(), 4), 4);
+        assert_eq!(&scratch[..4], b"rom-");
+        assert_eq!(gamepkg_rom_read_at(0, 4, scratch.as_mut_ptr(), 5), 5);
+        let path = std::ffi::CString::new("note.txt").unwrap();
+        assert_eq!(
+            gamepkg_asset_read(path.as_ptr(), 0, scratch.as_mut_ptr(), 5),
+            5
+        );
+        assert_eq!(&scratch[..5], b"asset");
+        assert_eq!(
+            gamepkg_asset_read(std::ptr::null(), 0, scratch.as_mut_ptr(), 0),
+            -1
+        );
         assert_eq!(gamepkg_draw_rect(1281.0, 0.0, 1.0, 1.0, 0), -1);
         assert_eq!(gamepkg_draw_rect(0.0, 0.0, 1.0, 1.0, 0), 0);
         assert_eq!(gamepkg_draw_circle(10.0, 10.0, 4.0, 0xffffffff), 0);

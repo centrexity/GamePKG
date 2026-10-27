@@ -2,9 +2,9 @@
 use crate::manifest::Manifest;
 use anyhow::{bail, ensure, Context, Result};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashSet},
     io::Write,
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
 };
 pub(crate) fn identity(manifest: &Manifest) -> Result<String> {
     ensure!(
@@ -171,6 +171,9 @@ fn try_layout(root: &Path, layout: &crate::manifest::DataLayout) -> Result<DataM
                     "{relative} is outside the reviewed size range"
                 );
             }
+            for directory in &layout.directories {
+                reject_escaping_links(&root.join(directory))?;
+            }
             Ok(DataMatch::Link {
                 root: root.to_path_buf(),
                 directories: layout.directories.clone(),
@@ -211,6 +214,73 @@ fn try_layout(root: &Path, layout: &crate::manifest::DataLayout) -> Result<DataM
         }
         other => bail!("unsupported data layout {other}"),
     }
+}
+
+fn normalize(path: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                out.pop();
+            }
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
+}
+
+/// A link whose target leaves the reviewed directory would let the engine read
+/// or write something the player did not select. Links that stay inside are kept.
+fn reject_escaping_links(directory: &Path) -> Result<()> {
+    let base = normalize(directory);
+    let mut pending = vec![(directory.to_path_buf(), 0u32)];
+    let mut queued = HashSet::new();
+    queued.insert(base.clone());
+    let mut seen = 0u32;
+    while let Some((dir, depth)) = pending.pop() {
+        let entries = match std::fs::read_dir(&dir) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => {
+                return Err(error).with_context(|| format!("read {}", dir.display()));
+            }
+        };
+        for entry in entries {
+            let entry = entry?;
+            seen += 1;
+            ensure!(seen <= 100_000, "game data folder is too large to check");
+            let path = entry.path();
+            let metadata = std::fs::symlink_metadata(&path)?;
+            if !metadata.file_type().is_symlink() {
+                if metadata.is_dir() {
+                    let normalized = normalize(&path);
+                    if queued.insert(normalized) {
+                        pending.push((path, depth));
+                    }
+                }
+                continue;
+            }
+            let target = std::fs::read_link(&path)?;
+            let joined = if target.is_absolute() {
+                target
+            } else {
+                path.parent().unwrap_or(Path::new("/")).join(target)
+            };
+            let normalized = normalize(&joined);
+            ensure!(
+                normalized.starts_with(&base),
+                "{} is a link that leaves the game-data directory",
+                path.strip_prefix(directory).unwrap_or(&path).display()
+            );
+            if std::fs::metadata(&path).is_ok_and(|meta| meta.is_dir()) && queued.insert(normalized)
+            {
+                ensure!(depth < 32, "game data links are nested too deeply");
+                pending.push((path, depth + 1));
+            }
+        }
+    }
+    Ok(())
 }
 
 pub fn available(path: &Path) -> bool {
