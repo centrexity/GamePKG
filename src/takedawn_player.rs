@@ -72,6 +72,7 @@ pub struct Options {
     pub headless: bool,
     pub mute_audio: bool,
     pub audio_volume: u8,
+    pub watchdog_seconds: u16,
 }
 impl Default for Options {
     fn default() -> Self {
@@ -79,6 +80,7 @@ impl Default for Options {
             headless: false,
             mute_audio: false,
             audio_volume: 100,
+            watchdog_seconds: 0,
         }
     }
 }
@@ -401,6 +403,11 @@ impl Session {
             "--setenv",
             "RECOMP_AUDIO_VOLUME",
             &format!("{:.2}", f64::from(options.audio_volume) / 100.0),
+        ]);
+        command.args([
+            "--setenv",
+            "RECOMP_HANG_WATCHDOG",
+            &options.watchdog_seconds.to_string(),
         ]);
         if options.headless {
             command.args([

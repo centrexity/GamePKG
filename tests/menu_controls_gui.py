@@ -29,7 +29,10 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-menu-controls-gui-') as temp:
  try:
   states=[(0,0,0,64,0,0),(0,1,3,64,0,0),(1,0,10,127,1,0),(1,0,7,1,0,1),(0,0,9,64,0,0)]
   for phase,state in enumerate(states):
-   raw=subprocess.check_output([reference,font,args.original/'assets/background1.png',*map(str,state)],env=env);REFERENCES[phase]=Image.frombytes('RGBA',(1280,720),raw).convert('RGB')
+   # The original oracle also takes resolution, confirmation, VSync and music
+   # settings. These match the untouched Menu::new defaults in this fixture.
+   defaults=(0,0,0,0,64)
+   raw=subprocess.check_output([reference,font,args.original/'assets/background1.png',*map(str,(*state,*defaults))],env=env);REFERENCES[phase]=Image.frombytes('RGBA',(1280,720),raw).convert('RGB')
   def delta(actual,expected):return max(p[1] for p in ImageChops.difference(actual,expected).getextrema())
   for profile,suffix in [('core-v1','core'),('component-v1','component')]:
    game_id='com.gamepkg.menu-'+suffix
@@ -72,7 +75,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-menu-controls-gui-') as temp:
    from selenium.webdriver.common.keys import Keys
    from selenium.webdriver.support.ui import WebDriverWait
    output=root/(suffix+'-web');run('web-export',game_id,'--output',output);server=ThreadingHTTPServer(('127.0.0.1',0),partial(Quiet,directory=str(output)));threading.Thread(target=server.serve_forever,daemon=True).start();options=Options();options.binary_location=shutil.which('google-chrome') or shutil.which('google-chrome-stable') or shutil.which('chromium');assert options.binary_location
-   for value in ['--headless=new','--no-sandbox','--disable-dev-shm-usage','--enable-unsafe-swiftshader']:options.add_argument(value)
+   for value in ['--headless=new','--mute-audio','--no-sandbox','--disable-dev-shm-usage','--enable-unsafe-swiftshader']:options.add_argument(value)
    driver=shutil.which('chromedriver') or str(Path(os.environ.get('CHROMEWEBDRIVER','/nonexistent'))/'chromedriver');browser=webdriver.Chrome(service=Service(driver),options=options);held=False
    try:
     browser.get(f'http://127.0.0.1:{server.server_port}/');wait=WebDriverWait(browser,20);wait.until(lambda b:b.find_element('id','status').text=='Ready to play');browser.find_element('id','play').click();wait.until(lambda b:b.find_element('id','game').get_attribute('data-state'));browser.find_element('id','game').click()

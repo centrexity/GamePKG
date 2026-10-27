@@ -2429,6 +2429,13 @@ mod persistence_output_tests {
     use super::*;
     #[test]
     fn persistence_failures_discard_audio_and_drawing_from_the_rejected_tick() {
+        // This fixture tests persistence rollback, not the scheduler. Keep a
+        // finite supported budget while allowing loaded Windows CI workers.
+        // Deadline-specific tests retain the normal production settings.
+        let settings = crate::settings::Settings {
+            tick_deadline_ms: 1000,
+            ..Default::default()
+        };
         for component in [false, true] {
             let mut manifest =
                 Manifest::parse(include_bytes!("../examples/minimal/manifest.toml")).unwrap();
@@ -2488,7 +2495,7 @@ mod persistence_output_tests {
             } else {
                 module
             };
-            let mut game = Game::from_bytes(&bytes, &manifest).unwrap();
+            let mut game = Game::with_settings(&bytes, &manifest, &settings).unwrap();
             // Prove the fixture really emits both outputs on a successful tick.
             assert_eq!(game.step(4).unwrap(), 1);
             assert_eq!(game.audio_frame(), [1, -1]);
@@ -2511,7 +2518,11 @@ mod persistence_output_tests {
                 b"blocked history directory",
             )
             .unwrap();
-            assert!(game.step(4).is_err());
+            let error = game.step(4).unwrap_err();
+            assert!(
+                error.downcast_ref::<std::io::Error>().is_some(),
+                "expected the blocked history directory, not another trap: {error:#}"
+            );
             assert!(
                 game.take_homepage_url().is_none(),
                 "rejected tick retained homepage request"
@@ -2525,7 +2536,7 @@ mod persistence_output_tests {
                 game.frame().commands.is_empty(),
                 "component={component}: rejected tick retained drawing"
             );
-            let mut game = Game::from_bytes(&bytes, &manifest).unwrap();
+            let mut game = Game::with_settings(&bytes, &manifest, &settings).unwrap();
             let temporary = tempfile::tempdir().unwrap();
             let save = crate::saves::Save::open_for_game(temporary.path(), &manifest).unwrap();
             game.store.as_mut().unwrap().data_mut().save = Some(save);
@@ -2535,7 +2546,8 @@ mod persistence_output_tests {
             )
             .unwrap();
             std::fs::write(temporary.path().join("saves"), b"blocked save directory").unwrap();
-            assert!(game.step(4).is_err());
+            let error = game.step(4).unwrap_err();
+            assert_eq!(error.to_string(), "unable to persist game save");
             assert!(
                 game.take_homepage_url().is_none(),
                 "rejected tick retained homepage request"

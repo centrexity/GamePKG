@@ -19,6 +19,7 @@ pub struct Options {
     pub headless: bool,
     pub mute_audio: bool,
     pub audio_volume: u8,
+    pub watchdog_seconds: u16,
 }
 impl Default for Options {
     fn default() -> Self {
@@ -26,6 +27,7 @@ impl Default for Options {
             headless: false,
             mute_audio: false,
             audio_volume: 100,
+            watchdog_seconds: 0,
         }
     }
 }
@@ -184,6 +186,10 @@ impl Session {
                 data.join("shader-cache").into_os_string(),
             ),
             ("RECOMP_PB_BACKEND".into(), "vulkan".into()),
+            (
+                "RECOMP_HANG_WATCHDOG".into(),
+                options.watchdog_seconds.to_string().into(),
+            ),
             (
                 "RECOMP_AUDIO_MUTE".into(),
                 if options.mute_audio { "1" } else { "0" }.into(),
@@ -356,6 +362,9 @@ fn main() {
     assert_eq!(std::env::args().nth(1).unwrap(), "/gamepkg-disc/default.xbe");
     assert_eq!(std::env::var("RECOMP_AUDIO_MUTE").unwrap(), "1");
     assert_eq!(std::env::var("RECOMP_AUDIO_VOLUME").unwrap(), "0.37");
+    let watchdog = std::env::var("RECOMP_HANG_WATCHDOG").unwrap();
+    assert!(watchdog == "0" || watchdog == "17");
+    println!("watchdog seconds={watchdog}");
     let raw: usize = std::env::var("GAMEPKG_TAKEDAWN_DISC_HANDLE").unwrap().parse().unwrap();
     let mut disc = unsafe { fs::File::from_raw_handle(raw as _) };
     // Positional I/O preserves the selected capability's offset across restart.
@@ -408,6 +417,7 @@ fn main() {
         let options = Options {
             mute_audio: true,
             audio_volume: 37,
+            watchdog_seconds: 17,
             headless: false,
         };
         let mut session = Session::start_cached(
@@ -446,6 +456,29 @@ fn main() {
         }
         let text = session.diagnostics();
         assert_eq!(text.matches("[PRESENT] window up:").count(), 2);
+        assert_eq!(text.matches("watchdog seconds=17").count(), 2);
+        drop(session);
+        // A later launch with the default must explicitly turn the runtime's
+        // own default-on detector off, even after an enabled managed restart.
+        let mut session = Session::start_cached(
+            root.path(),
+            "fixture",
+            "creator",
+            1,
+            &executable,
+            &iso,
+            Options {
+                watchdog_seconds: Options::default().watchdog_seconds,
+                ..options
+            },
+        )
+        .unwrap();
+        let began = Instant::now();
+        while session.poll().unwrap().is_none() {
+            assert!(began.elapsed() < Duration::from_secs(30));
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(session.diagnostics().contains("watchdog seconds=0"));
         drop(session);
         let saves =
             crate::takedawn::data_path(root.path(), "fixture", "creator", 1).join("saves/profile");
