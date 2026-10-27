@@ -16,6 +16,7 @@ on:
       - 'tests/browser_png_exact.py'
       - 'tests/web_png_exact.mjs'
       - 'tests/web_image_cache.mjs'
+      - 'tests/web_render_resources.mjs'
       - 'tests/browser_image_cache.py'
       - 'tools/check_browser_png.py'
       - '.github/workflows/ci.yml'
@@ -36,6 +37,7 @@ on:
       - 'tests/browser_png_exact.py'
       - 'tests/web_png_exact.mjs'
       - 'tests/web_image_cache.mjs'
+      - 'tests/web_render_resources.mjs'
       - 'tests/browser_image_cache.py'
       - 'tools/check_browser_png.py'
       - '.github/workflows/ci.yml'
@@ -91,7 +93,9 @@ jobs:
         run: |
           sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-assets-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT=/tmp/gamepkg-assets-slang CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tests/window_commit_browser.py
       - name: Verify bounded image startup, eviction and reload
-        run: node tests/web_image_cache.mjs
+        run: |
+          node tests/web_image_cache.mjs
+          node tests/web_render_resources.mjs
       - name: Verify signed core and component image-cache pressure
         run: |
           sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-assets-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT=/tmp/gamepkg-assets-slang CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tests/browser_image_cache.py

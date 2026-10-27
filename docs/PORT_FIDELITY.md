@@ -4809,3 +4809,26 @@ console records on failure, with no WAV, guest-memory or draw-command copies.
 CI preserves that small diagnostic. Every original whole-WAV checksum,
 playback, quota, pending-loan close/release and recovery assertion remains;
 production decoding and deadlines are unchanged pending stronger evidence.
+
+
+The diagnostic follow-up workflow (`40556260274`, source `eff565f`) passes both
+asset lifetime and PNG startup jobs. This is a successful retry with bounded
+failure diagnostics, not an identified root cause for the earlier deadline.
+
+An explicit signed `limits.render_profile = "large-images-v1"` now selects
+32 MiB of image transfer per frame, 128 MiB/256 paths of desktop decoded-image
+cache, a 128 MiB browser decoded-image cache and 128 MiB of encoded web assets
+plus precise fallbacks. It requires at least 256 MiB declared hard memory and
+any recommended memory, and refuses a lower effective player ceiling. Built-in
+engines and unknown profile names are rejected. Omitted profiles retain all
+previous defaults; individual PNG/dimension/command and time bounds remain.
+
+The maintainer-only original-image runner privately prepares six pinned
+2816×1536 source images as 24 lossless tiles each. All 18 complete scenes across
+native/core/component preserve every tile hash and charge 17,430,768 image
+bytes per frame. Seventy-two desktop comparisons (Vulkan/OpenGL, two sizes,
+three runtime paths) and twelve exported-browser comparisons match independent
+SDL full-texture scaling within the unchanged two-channel-level tolerance.
+Lower user ceilings are rejected in all three runtime paths. These fixtures
+qualify the framework profile, not activation of new artwork in the actual
+port. Original media and generated fixture packages are not published.

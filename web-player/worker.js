@@ -11,17 +11,18 @@ let recordedControls=[],recordedReady=false,recordedMusicStatus='stopped',record
 let compressedAssetClass=null;
 let savePending=null;
 let instance, manifest, assets, roms, save, state=0n, commands=[], background=null, unlocks=[],saveDirty=false,saveBudget=0,images=new Map(),imageBudget=0,audioSamples=[],audioChannels=1,shaderCount=0;
-function imageCommand(x,y,w,h,pw,ph,pixels,kind='image'){if(commands.length>=1024||!finite(x,y,w,h)||w<0||h<0||!Number.isInteger(pw)||!Number.isInteger(ph)||pw<1||ph<1||pw>512||ph>512||pixels.length!==pw*ph*4||imageBudget+pixels.length>8388608)return -1;imageBudget+=pixels.length;return command([kind,x,y,w,h,pw,ph,pixels.slice()]);}
+function imageCommand(x,y,w,h,pw,ph,pixels,kind='image'){if(commands.length>=1024||!finite(x,y,w,h)||w<0||h<0||!Number.isInteger(pw)||!Number.isInteger(ph)||pw<1||ph<1||pw>512||ph>512||pixels.length!==pw*ph*4||imageBudget+pixels.length>frameImageLimit)return -1;imageBudget+=pixels.length;return command([kind,x,y,w,h,pw,ph,pixels.slice()]);}
 // Encoded plans refer to package storage; only decoded resident images spend
-// this cache allowance. Per-frame copies retain their separate 8 MiB bound.
-const MAX_IMAGE_CACHE_BYTES=33554432;
+// this cache allowance. Per-frame copies spend their separate selected bound.
+let imageCacheLimit=33554432;
 let imageSources=new Map(),imageCacheBytes=0,imageDecoder=null,imageValidator=null;
+let frameImageLimit=8388608,encodedAssetLimit=33554432;
 function preparedImage(name){
  const cached=images.get(name);
  if(cached){images.delete(name);images.set(name,cached);return cached;}
  const source=imageSources.get(name);if(!source)return null;
  const required=source.width*source.height*4;
- while(imageCacheBytes+required>MAX_IMAGE_CACHE_BYTES){
+ while(imageCacheBytes+required>imageCacheLimit){
   const oldest=images.keys().next().value,old=images.get(oldest);
   if(!old)throw Error('Invalid image cache accounting');
   imageCacheBytes-=old.pixels.length;images.delete(oldest);
@@ -32,6 +33,9 @@ function preparedImage(name){
 }
 async function prepareImages(precise={},exactNames=[]){
  if(!precise||typeof precise!=='object'||Array.isArray(precise)||!Array.isArray(exactNames)||exactNames.length+Object.keys(precise).length>Math.min(10000,assets.size))throw Error('Invalid packaged image plan');
+ let encodedTotal=assets.encodedBytes??[...assets.values()].reduce((n,value)=>n+value.length,0);
+ for(const raw of Object.values(precise)){if(!raw||typeof raw.rgba!=='string'||raw.rgba.length%2)throw Error('Invalid precise image');encodedTotal+=raw.rgba.length/2;if(encodedTotal>encodedAssetLimit)throw Error('Packaged images exceed the selected export allowance');}
+ if(encodedTotal>encodedAssetLimit)throw Error('Packaged assets exceed the selected export allowance');
  images=new Map();imageSources=new Map();imageCacheBytes=0;
  const exact=new Set(exactNames);
  if(exact.size!==exactNames.length)throw Error('Repeated exact packaged image');
@@ -51,12 +55,12 @@ async function prepareImages(precise={},exactNames=[]){
   }
   // Validate every encoded plan, but bound startup pixel decoding to the cache
   // allowance. Cold plans remain available for checked, synchronous loading.
-  if(imageCacheBytes+width*height*4<=MAX_IMAGE_CACHE_BYTES)preparedImage(name);
+  if(imageCacheBytes+width*height*4<=imageCacheLimit)preparedImage(name);
  }
 }
 function assetImageCommand(pointer,length,x,y,w,h,kind='image'){
  const name=assetName(pointer,length),source=images.get(name)??imageSources.get(name);
- if(!source||commands.length>=1024||!finite(x,y,w,h)||w<0||h<0||imageBudget+source.width*source.height*4>8388608)return -1;
+ if(!source||commands.length>=1024||!finite(x,y,w,h)||w<0||h<0||imageBudget+source.width*source.height*4>frameImageLimit)return -1;
  const image=preparedImage(name);
  if(!image||kind==='straight-linear-image'&&!image.precise)return -1;
  return imageCommand(x,y,w,h,image.width,image.height,image.pixels,kind);
@@ -221,8 +225,8 @@ const api={
  draw_asset_image_linear:(pointer,length,x,y,w,h)=>assetImageCommand(pointer,length,x,y,w,h,'linear-image'),
  draw_asset_image_linear_straight:(pointer,length,x,y,w,h)=>assetImageCommand(pointer,length,x,y,w,h,'straight-linear-image'),
  draw_shader:index=>Number.isInteger(index)&&index>=0&&index<shaderCount?command(['shader',index]):-1,
- draw_shader_asset_image:(index,pointer,length)=>{const name=assetName(pointer,length),source=images.get(name)??imageSources.get(name);if(!Number.isInteger(index)||index<0||index>=shaderCount||!source||imageBudget+source.width*source.height*4>8388608||commands.length>=1024)return -1;const image=preparedImage(name);imageBudget+=image.pixels.length;return command(['shader-image',index,image.width,image.height,image.pixels.slice()]);},
- draw_shader_image:(index,pw,ph,pointer,length)=>{const pixels=bytes(pointer,length,1048576);if(!Number.isInteger(index)||index<0||index>=shaderCount||!pixels||!Number.isInteger(pw)||!Number.isInteger(ph)||pw<1||ph<1||pw>512||ph>512||length!==pw*ph*4||imageBudget+length>8388608)return -1;imageBudget+=length;return command(['shader-image',index,pw,ph,pixels.slice()]);},
+ draw_shader_asset_image:(index,pointer,length)=>{const name=assetName(pointer,length),source=images.get(name)??imageSources.get(name);if(!Number.isInteger(index)||index<0||index>=shaderCount||!source||imageBudget+source.width*source.height*4>frameImageLimit||commands.length>=1024)return -1;const image=preparedImage(name);imageBudget+=image.pixels.length;return command(['shader-image',index,image.width,image.height,image.pixels.slice()]);},
+ draw_shader_image:(index,pw,ph,pointer,length)=>{const pixels=bytes(pointer,length,1048576);if(!Number.isInteger(index)||index<0||index>=shaderCount||!pixels||!Number.isInteger(pw)||!Number.isInteger(ph)||pw<1||ph<1||pw>512||ph>512||length!==pw*ph*4||imageBudget+length>frameImageLimit)return -1;imageBudget+=length;return command(['shader-image',index,pw,ph,pixels.slice()]);},
  effect_call:recordedCall,
  audio_submit:(pointer,count)=>audioSubmit(pointer,count,1),
  audio_submit_stereo:(pointer,count)=>audioSubmit(pointer,count,2),
@@ -237,7 +241,7 @@ onmessage=async ({data})=>{try{
   recordedBegin(null);frameClockReset();windowObserve(null);
   fileEntry=null;fileNext=1;fileGeneration++;fileGesture=false;windowCurrent=defaultWindow();windowPrevious=defaultWindow();windowStaged=defaultWindow();
   shaderCount=data.shaderCount||0;manifest=data.manifest;assets=null;compressedAssetClass=null;roms=data.roms.map(value=>new Uint8Array(value));save=new Uint8Array(data.save);state=0n;
-  if(data.asset_scratch_bytes){const module=await import('./asset-store.js');assets=new module.PackageAssets(data.assets);if(assets.scratchBytes!==data.asset_scratch_bytes)throw Error('Invalid asset scratch allowance');compressedAssetClass=module.CompressedAsset;}else {if(Object.values(data.assets).some(value=>typeof value!=='string'))throw Error('Undeclared compressed asset scratch');assets=new Map(Object.entries(data.assets).map(([key,value])=>[key,decode(value)]));}
+  const assetModule=await import('./asset-store.js'),resources=assetModule.renderResources(manifest);frameImageLimit=resources.frameBytes;imageCacheLimit=resources.cacheBytes;encodedAssetLimit=resources.assetBytes;assets=new assetModule.PackageAssets(data.assets,manifest);if(assets.scratchBytes!==(data.asset_scratch_bytes??0))throw Error('Invalid asset scratch allowance');compressedAssetClass=assetModule.CompressedAsset;
   await prepareImages(data.precise_images??{},data.exact_png_images??[]);
   const module=await WebAssembly.compile(data.wasm);
   const namespace=manifest.runtime_profile==='component-v1'?'gamepkg:engine/host@0.1.0':'gamepkg',imports=manifest.runtime_profile==='component-v1'?canonical:api;

@@ -273,6 +273,7 @@ impl Game {
             .limits
             .hard_memory_bytes
             .min(settings.memory_ceiling_mib * 1048576);
+        manifest.limits.ensure_render_memory(memory)?;
         let memory = if let Some(profile) = manifest.builtin_engine.as_deref() {
             let reserved = crate::builtin::memory(profile)?;
             if memory < reserved + 16 * 1048576 {
@@ -316,10 +317,12 @@ impl Game {
                 network: crate::network::Service::new(manifest.permissions.clone()),
                 limits,
                 package,
-                asset_image: crate::drawing::image::Cache::default(),
+                asset_image: crate::drawing::image::Cache::for_profile(
+                    manifest.limits.render_profile,
+                ),
                 rom,
                 save,
-                frame: crate::drawing::Frame::default(),
+                frame: crate::drawing::Frame::for_profile(manifest.limits.render_profile),
                 audio: Vec::new(),
                 audio_channels: 1,
                 audio_allowed: manifest.permissions.audio,
