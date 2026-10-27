@@ -16,7 +16,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifndef HALO_LAYOUT_H
 typedef uint32_t halo_addr;
+#endif
 typedef uint32_t halo_datum;
 
 typedef struct halo_arena {

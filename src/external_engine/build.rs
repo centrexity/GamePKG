@@ -261,34 +261,72 @@ fn ensure_source(root: &Path, engine: &Engine) -> Result<PathBuf> {
             "could not check out the pinned engine commit"
         );
     }
-    apply_patches(&source, engine)?;
+    apply_patches(&source, &engine.patches)?;
     verify_tree(&source, engine)?;
     Ok(source)
 }
 
-fn apply_patches(source: &Path, engine: &Engine) -> Result<()> {
-    for (name, body) in &engine.patches {
+fn apply_patches(source: &Path, patches: &[(String, String)]) -> Result<()> {
+    let mut files = Vec::with_capacity(patches.len());
+    for (name, body) in patches {
         let mut file = tempfile::NamedTempFile::new()?;
         file.write_all(body.as_bytes())?;
         file.as_file().sync_all()?;
-        let path = file.path().to_path_buf();
-        if git_apply(source, &path, &["apply", "--check", "--whitespace=nowarn"])? {
-            ensure!(
-                git_apply(source, &path, &["apply", "--whitespace=nowarn"])?,
-                "could not apply engine patch {name}"
-            );
+        files.push((name.as_str(), file));
+    }
+    for index in 0..files.len() {
+        let (name, file) = &files[index];
+        let path = file.path();
+        if let Some(outcome) = classify_patch(source, path)? {
+            if outcome {
+                ensure!(
+                    git_apply(source, path, &["apply", "--whitespace=nowarn"])?,
+                    "could not apply engine patch {name}"
+                );
+            }
             continue;
         }
+        // A later patch can rewrite lines this patch introduced. Neither
+        // direction matches then, but the earlier edit is already present
+        // when that later patch reverses cleanly.
         ensure!(
-            git_apply(
-                source,
-                &path,
-                &["apply", "--reverse", "--check", "--whitespace=nowarn"]
-            )?,
+            later_patch_is_applied(source, &files[index + 1..])?,
             "engine patch {name} does not apply to the pinned checkout"
         );
     }
     Ok(())
+}
+
+/// `Some(true)` means the patch applies forward. `Some(false)` means it is
+/// already applied. `None` means neither direction matches.
+fn classify_patch(source: &Path, patch: &Path) -> Result<Option<bool>> {
+    if git_apply(source, patch, &["apply", "--check", "--whitespace=nowarn"])? {
+        return Ok(Some(true));
+    }
+    if git_apply(
+        source,
+        patch,
+        &["apply", "--reverse", "--check", "--whitespace=nowarn"],
+    )? {
+        return Ok(Some(false));
+    }
+    Ok(None)
+}
+
+fn later_patch_is_applied(
+    source: &Path,
+    later: &[(&str, tempfile::NamedTempFile)],
+) -> Result<bool> {
+    for (_, patch) in later.iter().rev() {
+        if git_apply(
+            source,
+            patch.path(),
+            &["apply", "--reverse", "--check", "--whitespace=nowarn"],
+        )? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 fn git_apply(source: &Path, patch: &Path, args: &[&str]) -> Result<bool> {
@@ -709,6 +747,74 @@ fn install_runtime_file(from: &Path, to: &Path, limit: u64) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn commit_file(dir: &Path, name: &str, body: &str) {
+        std::fs::write(dir.join(name), body).unwrap();
+        let git = |args: &[&str]| {
+            let status = Command::new("git")
+                .arg("-C")
+                .arg(dir)
+                .args(args)
+                .env("GIT_AUTHOR_NAME", "patch-test")
+                .env("GIT_AUTHOR_EMAIL", "patch-test@example.com")
+                .env("GIT_COMMITTER_NAME", "patch-test")
+                .env("GIT_COMMITTER_EMAIL", "patch-test@example.com")
+                .status()
+                .unwrap();
+            assert!(status.success());
+        };
+        git(&["add", name]);
+        git(&["commit", "-m", name]);
+    }
+
+    #[test]
+    fn later_patch_keeps_an_edited_earlier_patch_applied() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        assert!(Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args(["init"])
+            .status()
+            .unwrap()
+            .success());
+        commit_file(root, "note.txt", "base\n");
+        let first = "\
+diff --git a/note.txt b/note.txt
+--- a/note.txt
++++ b/note.txt
+@@ -1 +1 @@
+-base
++one
+"
+        .to_owned();
+        let second = "\
+diff --git a/note.txt b/note.txt
+--- a/note.txt
++++ b/note.txt
+@@ -1 +1 @@
+-one
++two
+"
+        .to_owned();
+        let patches = vec![
+            ("0001-first.patch".to_owned(), first),
+            ("0002-second.patch".to_owned(), second),
+        ];
+        apply_patches(root, &patches).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(root.join("note.txt")).unwrap(),
+            "two\n"
+        );
+        apply_patches(root, &patches).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(root.join("note.txt")).unwrap(),
+            "two\n"
+        );
+        std::fs::write(root.join("note.txt"), "other\n").unwrap();
+        let error = apply_patches(root, &patches).unwrap_err().to_string();
+        assert!(error.contains("0001-first.patch"), "{error}");
+    }
 
     #[test]
     fn address_space_limit_uses_the_lower_of_the_hard_cap_and_the_ceiling() {
