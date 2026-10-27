@@ -163,12 +163,12 @@ fn browser_module(bytes: &[u8], profile: &str) -> Result<Vec<u8>> {
     selected.context("component lacks a browser-compatible GamePKG guest module")
 }
 
-// Header/chunk policy for the worker's bounded lossless RGB/RGBA/indexed decoder.
+// Header/chunk policy for the worker's bounded lossless PNG decoder.
 // Call only after the host PNG decoder has validated the source image.
 fn exact_png_source(bytes: &[u8]) -> bool {
     if bytes.len() < 33
-        || !matches!(bytes[25], 2 | 3 | 6)
-        || (if bytes[25] == 3 {
+        || !matches!(bytes[25], 0 | 2 | 3 | 4 | 6)
+        || (if matches!(bytes[25], 0 | 3) {
             !matches!(bytes[24], 1 | 2 | 4 | 8)
         } else {
             bytes[24] != 8
@@ -193,7 +193,7 @@ fn exact_png_source(bytes: &[u8]) -> bool {
             return false;
         };
         let kind = &bytes[at + 4..at + 8];
-        if kind == b"acTL" || (kind == b"tRNS" && bytes[25] != 3) {
+        if kind == b"acTL" || (kind == b"tRNS" && !matches!(bytes[25], 0 | 2 | 3)) {
             return false;
         }
         if kind == b"IEND" {
@@ -595,6 +595,38 @@ mod tests {
             unsupported[24] = 8;
             unsupported[28] = 1;
             assert!(!exact_png_source(&unsupported));
+        }
+    }
+
+    #[test]
+    fn exact_png_selection_retains_grayscale_and_gray_alpha_without_raw_duplicates() {
+        use image::ImageEncoder;
+        for (color, pixels) in [
+            (image::ExtendedColorType::L8, vec![0, 85, 170, 255]),
+            (
+                image::ExtendedColorType::La8,
+                vec![0, 255, 85, 0, 170, 127, 255, 255],
+            ),
+        ] {
+            let mut source = Vec::new();
+            image::codecs::png::PngEncoder::new(&mut source)
+                .write_image(&pixels, 2, 2, color)
+                .unwrap();
+            let decoded = crate::drawing::image::Image::from_png(&source).unwrap();
+            assert_eq!(decoded.size(), [2, 2]);
+            assert!(exact_png_source(&source));
+            let expected: Vec<_> = if color == image::ExtendedColorType::L8 {
+                pixels
+                    .iter()
+                    .flat_map(|&gray| [gray, gray, gray, 255])
+                    .collect()
+            } else {
+                pixels
+                    .chunks_exact(2)
+                    .flat_map(|pixel| [pixel[0], pixel[0], pixel[0], pixel[1]])
+                    .collect()
+            };
+            assert_eq!(decoded.pixels(), expected);
         }
     }
 

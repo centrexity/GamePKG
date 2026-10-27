@@ -22,12 +22,12 @@ output.mkdir(parents=True)
 rows = []
 original = optimized = precise = legacy_precise = 0
 def exact_png(encoded):
-    if encoded[25] not in [2,3,6] or encoded[28] or (encoded[24] not in ([1,2,4,8] if encoded[25]==3 else [8])):
+    if encoded[25] not in [0,2,3,4,6] or encoded[28] or (encoded[24] not in ([1,2,4,8] if encoded[25] in [0,3] else [8])):
         return False
     at=8
     while at+12<=len(encoded):
         length=int.from_bytes(encoded[at:at+4],"big");kind=encoded[at+4:at+8];end=at+12+length
-        if end>len(encoded) or kind==b"acTL" or kind==b"tRNS" and encoded[25]!=3:return False
+        if end>len(encoded) or kind==b"acTL" or kind==b"tRNS" and encoded[25] not in [0,2,3]:return False
         if kind==b"IEND":return end==len(encoded)
         at=end
     return False
