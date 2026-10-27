@@ -4862,3 +4862,26 @@ renderer, removes the opt-in profile and retains the 16 MiB legacy hard cap and
 remain unchanged. These are test fixtures, not additional files in the playable
 package; no player Python dependency is introduced. Historical audio/profile
 qualification above remains specific to the smaller legacy fixture.
+
+
+The preserved `eff565f` broad Rust runs 40556249072 and 40556260664 both fail in
+the native/Vulkan portal scene at timer 166. An unchanged old 0.1.74 recipe with
+the CI Rust 1.99.1 guest compiler on two CPUs reproduces the same failure.
+Bounded diagnostics identify a rejected 1,572,864-byte allocation; the old
+recorded profile leaves six MiB for the native process inside its 16/3/7 MiB shares.
+This is an actual native allocation failure, not an image-comparison timeout.
+
+The source repair composes the filled portal glow into its exact visible RGBA
+bounds in two passes, then applies the original white-disk overlay in order.
+The original point generator and all golden point/SDL data are retained.
+All 121 timer values 151–271 and all 18 original-reference cases retain exact
+compositor geometry and RGBA hashes. The repaired full-media old-budget probe,
+new tight-memory generated-geometry probe, and active 0.1.75 full-media probe each
+pass 56 actual desktop/browser comparisons, including maximum expansion at 180,
+with a measured maximum channel difference 2 against the unchanged limit 5.
+The last fixture retains all 178 images and all recordings. CI runs both the
+complete playable recipe and the separate 16/3/7 MiB geometry regression; only
+the extra geometry fixture omits unrelated assets. The full local Rust suite
+passes 806 tests with 171 opt-in ignores, and strict Clippy passes. Hosted
+requalification remains required. Temporary private GUI error instrumentation
+was removed and the production source/executable restored before positive runs.
