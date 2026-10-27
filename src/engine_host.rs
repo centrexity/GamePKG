@@ -179,6 +179,49 @@ pub extern "C" fn gamepkg_wall_time(seconds: *mut u64, nanoseconds: *mut u32) {
 }
 
 #[no_mangle]
+pub extern "C" fn gamepkg_thread_spawn(
+    start: Option<extern "C" fn(*mut libc::c_void)>,
+    context: *mut libc::c_void,
+    stack_bytes: u32,
+) -> i32 {
+    let Some(start) = start else {
+        return 0;
+    };
+    let stack = (stack_bytes as usize).max(1 << 20);
+    let context = context as usize;
+    let spawned = std::thread::Builder::new()
+        .name("gamepkg".into())
+        .stack_size(stack)
+        .spawn(move || start(context as *mut libc::c_void));
+    match spawned {
+        Ok(thread) => {
+            drop(thread);
+            1
+        }
+        Err(_) => 0,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn gamepkg_thread_sleep_ms(milliseconds: u32) {
+    if milliseconds == 0 {
+        std::thread::yield_now();
+        return;
+    }
+    if milliseconds == u32::MAX {
+        loop {
+            std::thread::park();
+        }
+    }
+    std::thread::sleep(std::time::Duration::from_millis(u64::from(milliseconds)));
+}
+
+#[no_mangle]
+pub extern "C" fn gamepkg_thread_yield() {
+    std::thread::yield_now();
+}
+
+#[no_mangle]
 pub extern "C" fn gamepkg_host_begin_frame() {
     if let Some(session) = lock().as_mut() {
         session.clock.begin();
@@ -663,6 +706,28 @@ mod tests {
             seconds > 1_700_000_000 && nanos < 1_000_000_000,
             "{seconds} {nanos}"
         );
+        assert_eq!(gamepkg_thread_spawn(None, std::ptr::null_mut(), 0), 0);
+        let flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let handed = std::sync::Arc::clone(&flag);
+        extern "C" fn mark_started(context: *mut libc::c_void) {
+            let flag = unsafe {
+                std::sync::Arc::from_raw(context as *const std::sync::atomic::AtomicBool)
+            };
+            flag.store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+        let raw = std::sync::Arc::into_raw(handed) as *mut libc::c_void;
+        assert_eq!(gamepkg_thread_spawn(Some(mark_started), raw, 0), 1);
+        let mut spins = 0;
+        while !flag.load(std::sync::atomic::Ordering::SeqCst) && spins < 1_000_000 {
+            gamepkg_thread_yield();
+            spins += 1;
+        }
+        assert!(
+            flag.load(std::sync::atomic::Ordering::SeqCst),
+            "spawned thread did not run"
+        );
+        gamepkg_thread_sleep_ms(0);
+        gamepkg_thread_yield();
         assert_eq!(gamepkg_window_control(0, 0), 0);
         assert_eq!(gamepkg_save_size(), -1);
         assert_eq!(gamepkg_audio_submit(std::ptr::null(), 0), -1);
