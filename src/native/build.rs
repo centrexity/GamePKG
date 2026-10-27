@@ -66,6 +66,10 @@ pub(super) fn compile(root: &Path, id: &str) -> Result<()> {
     }
     helpers.push_str("_=>None}}\n");
     bindings = bindings
+        .replace(
+            "/* GAMEPKG_CALL_LIMIT */",
+            &super::MAX_CALLS_PER_TICK.to_string(),
+        )
         .replace("// GAMEPKG_HELPERS", &helpers)
         .replace("// GAMEPKG_ENGINE", include_str!("engine.rs.txt"))
         .replace(
@@ -79,7 +83,7 @@ pub(super) fn compile(root: &Path, id: &str) -> Result<()> {
     let mut source = String::from_utf8(package.read("source/src/lib.rs")?)?;
     source.push_str(&bindings);
     fs::write(stage.path().join("src/lib.rs"), source)?;
-    fs::write(stage.path().join("src/main.rs"),"include!(\"lib.rs\");fn main(){gamepkg::__gamepkg_initialize_engine();gamepkg::__gamepkg_packet(&[255]);while let Some((input,state))=gamepkg::__gamepkg_next_tick(){let result:u64=game_tick(input,state);let mut b=vec![0];b.extend(result.to_le_bytes());gamepkg::__gamepkg_packet(&b);}}")?;
+    fs::write(stage.path().join("src/main.rs"),"include!(\"lib.rs\");fn main(){gamepkg::__gamepkg_initialize_engine();gamepkg::__gamepkg_packet(&[255]);while let Some((input,state))=gamepkg::__gamepkg_next_tick(){gamepkg::__gamepkg_begin_tick();let result:u64=game_tick(input,state);let mut b=vec![0];b.extend(result.to_le_bytes());gamepkg::__gamepkg_packet(&b);}}")?;
     let main = stage.path().join("src/main.rs");
     let mut text = fs::read_to_string(&main)?
         .replace("fn main(){", "fn main(){__gamepkg_security::lockdown();");

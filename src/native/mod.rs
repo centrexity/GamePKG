@@ -4,6 +4,8 @@ use anyhow::Context;
 use anyhow::{bail, ensure, Result};
 use std::path::{Path, PathBuf};
 #[cfg(target_os = "linux")]
+const MAX_CALLS_PER_TICK: usize = 8192;
+#[cfg(target_os = "linux")]
 mod build;
 #[cfg(target_os = "linux")]
 mod session;
@@ -89,6 +91,12 @@ fn sdk_identity() -> &'static str {
             )
             .as_bytes(),
         );
+        #[cfg(target_os = "linux")]
+        {
+            // The generated SDK embeds this value in addition to its source.
+            hash.update(b"native-host-call-limit\0");
+            hash.update((MAX_CALLS_PER_TICK as u64).to_le_bytes());
+        }
         // Adapter and engine fixes must invalidate native caches even when the
         // package signature and host version have not changed.
         #[cfg(windows)]

@@ -493,6 +493,12 @@ impl Session {
             Ok(v)
         }
         let ok = match op {
+            43 => {
+                ensure!(b.is_empty(), "invalid random-block request");
+                let mut bytes = vec![0; 512];
+                crate::random::fill(&mut bytes)?;
+                return Ok(bytes);
+            }
             41 => {
                 ensure!(
                     b.is_empty()
@@ -863,7 +869,10 @@ impl Session {
                     return Ok(u64::from_le_bytes(p[1..].try_into()?));
                 }
                 calls += 1;
-                ensure!(calls <= 8192, "native host call budget exceeded");
+                ensure!(
+                    calls <= super::MAX_CALLS_PER_TICK,
+                    "native host call budget exceeded"
+                );
                 self.service(&p, end)?;
             }
         })();

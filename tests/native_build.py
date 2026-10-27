@@ -1,5 +1,6 @@
 """Direct machine code, no implicit Wasm, native deadlines and controlled TCP/UDP."""
 from pathlib import Path
+from native_random_support import SOURCE as RANDOM_SOURCE,check_native_randomness
 import hashlib,os,re,shutil,socket,subprocess,tempfile,threading
 PROJECT=Path(__file__).resolve().parents[1];CLI=Path(os.environ.get('GAMEPKG_TEST_BINARY_DIR',PROJECT/'target/release'))/'gamepkg'
 with tempfile.TemporaryDirectory(prefix='gamepkg-native-') as temporary:
@@ -11,9 +12,10 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-native-') as temporary:
   r=subprocess.run([str(CLI),*map(str,args)],env=env,capture_output=True,text=True,timeout=120)
   assert (r.returncode==0)==good,r.stdout+r.stderr
   return r.stdout+r.stderr
- def install(name,code,permissions=''):
+ def install(name,code,permissions='',save=False):
   source=root/name;shutil.copytree(PROJECT/'examples/minimal',source)
   manifest=source/'manifest.toml';text=manifest.read_text().replace('com.gamepkg.minimal','com.example.'+name)
+  if save:text=text.replace('save = false','save = true')
   if permissions:text=text.replace('network = "none"',permissions)
   manifest.write_text(text);(source/'source/src/lib.rs').write_text(code)
   package=root/(name+'.gamepkg');run('pack',source,'-o',package,'--key',key);run('install',package,'--trust-creator');run('build','com.example.'+name)
@@ -25,6 +27,17 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-native-') as temporary:
  random_game=install('random','pub fn game_tick(_:u32,_:u64)->u64{gamepkg::random_u64() & 0xffffffff00000000}')
  scores={int(re.search(r'score: (\d+)',run('run',random_game,'--frames','1')).group(1)) for _ in range(4)}
  assert len(scores)==4,'Native workers reused fixed or truncated random values'
+ install('randombatch',RANDOM_SOURCE)
+ check_native_randomness(artifacts['randombatch'],env)
+ random_save=install('randomsave','''pub fn game_tick(_:u32,state:u64)->u64 {
+  if state==0 {if let Some(0)=gamepkg::save_size(){gamepkg::save_write(b"before");}return 1;}
+  gamepkg::save_write(b"after");for _ in 0..8192 {gamepkg::random_u64();}2
+ }''',save=True)
+ run('run',random_save,'--frames','1')
+ saves=list((root/'library/saves').glob('*.blob'));assert len(saves)==1
+ save=saves[0];before=(save.read_bytes(),save.stat().st_mtime_ns);assert before[0]==b'before'
+ error=run('run',random_save,'--frames','2',good=False);assert 'call budget exceeded' in error,error
+ assert (save.read_bytes(),save.stat().st_mtime_ns)==before,'A failed cached-random tick changed the committed save'
  random_loop=install('randomloop','pub fn game_tick(_:u32,_:u64)->u64{loop{gamepkg::random_u64();}}')
  error=run('run',random_loop,'--frames','1',good=False)
  assert 'time limit' in error or 'call budget exceeded' in error,error
