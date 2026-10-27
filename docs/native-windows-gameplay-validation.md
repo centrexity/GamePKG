@@ -113,10 +113,12 @@ requires a 64-bit system.
 
 The unpublished hardware preview uses this exact native app and the verified
 signed v13 recipe, with a separate library and settings. Every extracted app
-file matches the native ZIP. The source changes through `08fd7f0` affect tests
-and documentation only; production app source is unchanged from `b2b43fd`.
+file matches the native ZIP. This preview pins production app `b2b43fd`;
+the subsequent `c766be1` app change adds the optional frame-stall diagnostic
+watchdog described below. The handed-off preview predates that setting.
 
-All automated audio output is dummy/muted. Rendered captures and non-silent
+All automated audio output is dummy/muted or routed to a verified private
+null-only sink. Rendered captures and non-silent
 audio captures do not establish audible fidelity or physical controller access.
 A fresh serialized Windows/Wine save/audio repeat completes the 45-second
 capture and unchanged profile reload, but reports at least 55 SDL queue
@@ -136,6 +138,29 @@ The maintainer tool `tools/check_takedawn_pcm_output.py` checks the complete
 Its fixtures reject inserted silence, dropped/reordered frames, changed
 channels, truncation, invalid formats and incorrect offsets.
 
+
+An independent audio-path control queues a known 45-second stream completely
+before starting playback, with no game code, renderer or per-frame audio
+producer involved. The Linux SDL 2.30.0/PulseAudio path reproduces all 2,160,000
+stereo frames byte-for-byte (PCM SHA-256
+`8042adebd51f89b51fa3aa65b4e2a21d93c089adfe0d6615658e6af253c6f0eb`).
+Both Windows SDL 2.32.10/Wine/WASAPI control recordings contain discontinuities.
+In the second, the initial reference anchor is present and the first exact
+comparison fails at reference frame 489,568; later sampled anchors are displaced
+by 1,393 frames. The first also differs at startup and later within the stream.
+Only a private null sink and its monitor are loaded; the active Windows stream
+has unity volume, 48 kHz stereo and the server's copy resampler. All control
+processes finish successfully and consume their prequeued stream in about
+45 seconds. The captured output, rather than successful process exit or queue
+consumption, is what exposes the mismatch.
+
+These controls establish that this Windows-through-Wine recording path can fail
+without a game-side audio producer. They do not isolate Wine, SDL, host scheduling
+or the recorder as the cause: the Linux and Windows SDL versions and transport
+formats differ. They also do not resolve the game's separately observed
+queue-empty reports or qualify real Windows hardware. A failed Wine recording
+alone is insufficient evidence for changing the game's buffers or audio code.
+
 Wine gameplay also does not establish original-game GPU/audio/controller access
 inside an actual Windows AppContainer.
 
@@ -146,9 +171,14 @@ ready-to-play library entry, rejected a damaged SDL companion, then repaired it
 while preserving every compiled object hash and modification time. No owned
 media or gameplay was used in that build gate.
 
-Native frame/hang policy, broader campaign coverage and actual Windows hardware
-qualification remain separate requirements. No stable release is
-qualified by these routes alone.
+The native frame-stall watchdog is optional and explicitly off by default for
+new and existing settings. In the reviewed runtime it watches actual flips and
+writes diagnostic reports without terminating the game. Settings accepts 5–600
+seconds when enabled; startup allows at least 60 seconds. Saving, cancelling and
+disabling the option pass the real desktop settings checks. Actual Windows
+runtime checks for this new setting remain in CI. Broader campaign coverage and
+actual Windows hardware qualification remain open. No stable release is qualified
+by these routes alone.
 
 See the [Windows build notes](../engines/takedawn/rust-port/WINDOWS_BUILD.md)
 and [native process ownership notes](../engines/takedawn/windows-runner/README.md)
