@@ -886,6 +886,8 @@ jobs:
         run: |
           python3 tools/check_takedawn_native_mxcsr.py
           python3 tools/check_takedawn_native_mxcsr.py --target i686-unknown-linux-gnu
+      - name: Execute exact Unicode viewport regressions as ELF32
+        run: python3 tools/check_arkanoo_unicode32.py --linker /usr/bin/gcc --runtime-libraries /usr/lib32
       - name: Execute production controller look timing as ELF32
         run: python3 tools/check_controller_look.py --32-bit
       - name: Execute production touch camera with real egui as ELF32

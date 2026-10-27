@@ -5242,6 +5242,48 @@ fn every_missing_mark_ascii_composition_keeps_exact_viewport_pixels() {
 }
 
 #[test]
+fn repeated_short_mark_clusters_keep_eager_shaping_and_exact_viewport_pixels() {
+    for pattern in [
+        "A\u{327}",
+        "S\u{327}",
+        "A\u{301}",
+        "A\u{327}\u{315}",
+        "é\u{327}",
+    ] {
+        let name = pattern.repeat(1500);
+        let full = format!("Name: {name} (N to edit)");
+        let original = name.clone();
+        assert_eq!(
+            dynamic_font::unicode_shape(&full),
+            unicode_shape_eager_reference::unicode_shape(&full)
+        );
+        let expected = dynamic_font::unicode_layout(&full).unwrap();
+        for boundary in name.char_indices().map(|(at, _)| at).take(12) {
+            let display = dynamic_font::viewport_label_parts(
+                &[
+                    "Name: ",
+                    &name[..boundary],
+                    &name[boundary..],
+                    " (N to edit)",
+                ],
+                1270,
+            );
+            assert!(display.len() < full.len(), "unbounded {pattern:?}");
+            let actual = dynamic_font::unicode_layout(&display).unwrap();
+            assert_eq!(actual.height, expected.height);
+            for left in [0, 256, 512, 768, 1024] {
+                assert_eq!(
+                    dynamic_font::unicode_raster_slice(&actual, [200, 200, 200], left, 256),
+                    dynamic_font::unicode_raster_slice(&expected, [200, 200, 200], left, 256),
+                    "{pattern:?} boundary={boundary} at {left}"
+                );
+            }
+        }
+        assert_eq!(name, original);
+    }
+}
+
+#[test]
 fn composed_fallback_display_rejects_unproven_raw_marks_and_lost_vertical_extents() {
     for suffix in ["\u{301}", "\u{fe0f}", "\u{327}\u{122}"] {
         let full = format!("S{}{suffix}", "\u{315}".repeat(2500));
