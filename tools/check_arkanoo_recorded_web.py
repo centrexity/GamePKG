@@ -2,7 +2,7 @@
 from pathlib import Path
 from functools import partial
 from http.server import SimpleHTTPRequestHandler,ThreadingHTTPServer
-import argparse,json,os,shutil,subprocess,tempfile,threading
+import argparse,json,os,shutil,subprocess,tempfile,threading,tomllib
 from PIL import Image
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -12,6 +12,13 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 parser=argparse.ArgumentParser();parser.add_argument('candidate',type=Path);parser.add_argument('--optimized-images',type=Path,required=True);parser.add_argument('--unicode-name',help='Repeat this UTF-8 sample in the maximum-size active name');parser.add_argument('--selector-run',action='store_true',help='Use one maximum-length identical-selector run');parser.add_argument('--mixed-selector-run',action='store_true',help='Use one maximum-length alternating-selector cluster');parser.add_argument('--missing-mark-run',action='store_true',help='Use one maximum-size unconsumed combining-mark cluster');parser.add_argument('--mixed-missing-mark-run',action='store_true',help='Use a maximum same-class mixed missing-mark cluster');parser.add_argument('--mixed-class-missing-mark-run',action='store_true',help='Qualify one maximum-size mixed-class missing-mark cluster');parser.add_argument('--late-composing-mark-run',action='store_true',help='Qualify a maximum-size S name with a late composing cedilla');parser.add_argument('--playlist-case',choices=['empty','invalid-utf8','invalid-paths'],help='Verify recorded effects survive unusable packaged music');parser.add_argument('--corrupt-saves',action='store_true',help='Also verify actual IndexedDB retains malformed ARK1-ARK4 records');parser.add_argument('--corrupt-save-repeats',type=int,choices=range(1,4),default=1,help='Repeat the complete six-record restart matrix for diagnostics');parser.add_argument('--trace-worker-startup',action='store_true',help='Private export-only startup diagnostics; execution limits unchanged');args=parser.parse_args();assert not(args.corrupt_saves and args.playlist_case),'Choose corruption or playlist qualification separately'
 project=Path(__file__).resolve().parents[1]
+limits=tomllib.loads((args.candidate/'manifest.toml').read_text())['limits']
+large=limits.get('render_profile')=='large-images-v1'
+assert limits.get('render_profile') in [None,'large-images-v1']
+hard=268435456 if large else 16777216
+assert (limits['hard_memory_bytes'],limits['effects_memory_bytes'],limits['music_memory_bytes'])==(hard,3145728,7340032)
+image_count=178 if large else 76
+asset_limit=134217728 if large else 33554432
 class Quiet(SimpleHTTPRequestHandler):
  def log_message(self,*args):pass
 with tempfile.TemporaryDirectory(prefix='gamepkg-original-recorded-web-') as temporary:
@@ -22,7 +29,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-original-recorded-web-') as tem
  for profile in ['core-v1','component-v1']:
   recipe=root/(profile+'-source');shutil.copytree(args.candidate,recipe)
   if args.playlist_case:(recipe/'assets/audio/music-list.txt').write_bytes({'empty':b'', 'invalid-utf8':b'\xff', 'invalid-paths':b'../outside.mp3\nmusic/../outside.mp3\nmusic/file.wav\n'}[args.playlist_case])
-  for path in (project/'ports/arkanoo/assets').glob('*.png'):
+  for path in (args.candidate/'assets').glob('*.png'):
    replacement=args.optimized_images/path.name
    with Image.open(path) as original,Image.open(replacement) as optimized:
     assert original.size==optimized.size and original.convert('RGBA').tobytes()==optimized.convert('RGBA').tobytes(),path.name
@@ -49,11 +56,11 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-original-recorded-web-') as tem
    text=text.replace(before," for(let y=0;y<height;y++){if(y%128===0)postMessage({type:'init-trace',stage:'row:'+globalThis.traceImage+':'+y});")
    png.write_text(text)
   metadata=json.loads((web/'game.json').read_text());encoded=sum(len(value if isinstance(value,str) else value['zlib'])//2 for value in metadata['assets'].values())
-  assert encoded<=33554432 and len([name for name in metadata['assets'] if name.startswith('music/') and name.endswith('.mp3')])==9
-  assert len(metadata['exact_png_images'])==76 and metadata['precise_images']=={}
+  assert encoded<=asset_limit and len([name for name in metadata['assets'] if name.startswith('music/') and name.endswith('.mp3')])==9
+  assert len(metadata['exact_png_images'])==image_count and metadata['precise_images']=={}
   clips=[value for name,value in metadata['assets'].items() if name.endswith('.wav')];assert len(clips)==5 and all(isinstance(value,dict) for value in clips)
   scratch=max(value['length'] for value in clips)+263168;assert metadata['asset_scratch_bytes']==scratch
-  print(profile,'complete dataset exported:',encoded,'bytes; all 76 images, five effects and nine tracks retained; scratch per side:',scratch,flush=True)
+  print(profile,'complete dataset exported:',encoded,'bytes;',image_count,'images, five effects and nine tracks retained; scratch per side:',scratch,flush=True)
   server=ThreadingHTTPServer(('127.0.0.1',0),partial(Quiet,directory=str(web)));threading.Thread(target=server.serve_forever,daemon=True).start()
   options=Options();options.binary_location=shutil.which('google-chrome') or shutil.which('chromium') or shutil.which('google-chrome-stable')
   for flag in ['--headless=new','--mute-audio','--no-sandbox','--disable-dev-shm-usage','--autoplay-policy=no-user-gesture-required']:options.add_argument(flag)
@@ -64,8 +71,8 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-original-recorded-web-') as tem
    browser.set_window_size(1100,1000);browser.get(f'http://127.0.0.1:{server.server_port}/');wait=WebDriverWait(browser,20);wait.until(lambda b:b.find_element('id','status').text=='Ready to play')
    hooked=browser.execute_async_script('''const done=arguments[arguments.length-1];Promise.all([import('./recorded-session.js'),import('./progress-store.js'),import('./recorded-decoder-client.js')]).then(([{RecordedSession},{ProgressStore},{RecordedDecoderClient}])=>{const note=entry=>{window.decoderTrace.push(entry);if(window.decoderTrace.length>40)window.decoderTrace.shift();},openDecoder=RecordedDecoderClient.open,readDecoder=RecordedDecoderClient.prototype.read;RecordedDecoderClient.open=async function(...args){try{return await openDecoder.apply(this,args);}catch(error){note({operation:'open',encodedBytes:args[1]?.length,error:String(error)});throw error;}};RecordedDecoderClient.prototype.read=async function(...args){try{return await readDecoder.apply(this,args);}catch(error){note({operation:'read',error:String(error)});throw error;}};const load=ProgressStore.prototype.load,commit=ProgressStore.prototype.commit;ProgressStore.prototype.load=async function(...args){window.progressSaveKey=this.saveKey;let result=await load.apply(this,args);if(window.seedSave){result={...result,save:new Uint8Array(window.seedSave)};window.seedSave=null;}window.lastLoaded=Array.from(result.save);return result;};ProgressStore.prototype.commit=async function(save,...args){const result=await commit.call(this,save,...args);if(save)window.lastSaved=Array.from(save);return result;};const open=RecordedSession.open,snapshot=RecordedSession.prototype.snapshot;window.roots=[];window.states=[];RecordedSession.open=async(...args)=>{window.roots.push(args[4]);const session=await open(...args);window.guestBytes=session.guestBytes;return session;};RecordedSession.prototype.snapshot=async function(){const value=await snapshot.call(this);window.lastAudio=value;window.states.push(value);if(value.activeEffects)window.sawEffect=true;return value;};done(true);}).catch(error=>done(String(error)));''');assert hooked is True,hooked
    browser.find_element('id','play').click();wait.until(lambda b:b.execute_script('return window.lastAudio?.musicStatus===arguments[0]', 'stopped' if args.playlist_case else 'playing'))
-   assert browser.execute_script('return window.guestBytes')==16777216-3145728-7340032-2*scratch
-   assert browser.execute_script('return window.roots.at(-1).used')==16777216
+   assert browser.execute_script('return window.guestBytes')==hard-3145728-7340032-2*scratch
+   assert browser.execute_script('return window.roots.at(-1).used')==hard
    canvas=browser.find_element('id','game');canvas.send_keys(Keys.ENTER)
    def click(x,y):
     box=canvas.rect;ActionChains(browser).move_to_element_with_offset(canvas,(x-320)*box['width']/640,(y-240)*box['height']/480).click().perform()
@@ -113,7 +120,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-original-recorded-web-') as tem
      assert browser.execute_script('return window.expectedSave[24]===65&&window.expectedSave[1048576-201]===120&&window.expectedSave.subarray(25,1048576-201).every((value,index)=>value===[239,184,143][index%3])'),'single full-size selector-run fixture'
     browser.find_element('id','play').click()
     wait.until(lambda b:b.execute_script('return window.lastLoaded?.length===1048576&&window.lastAudio?.session!==arguments[0]&&window.lastAudio?.musicStatus==="paused"',previous_session))
-    assert browser.execute_script('return window.guestBytes')==16777216-3145728-7340032-2*scratch
+    assert browser.execute_script('return window.guestBytes')==hard-3145728-7340032-2*scratch
     canvas.send_keys(Keys.ENTER);click(320,285);click(320,180)
     wait.until(lambda b:b.execute_script('return window.lastSaved?.length===1048576'))
     assert browser.execute_script('return window.lastSaved.every((value,index)=>index>=12&&index<16||value===window.expectedSave[index])'),shape

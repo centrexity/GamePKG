@@ -13,7 +13,7 @@ for(const image of report.images){
  const broken=bytes.slice();broken[broken.length-1]^=1;await assert.rejects(()=>decodeExactPNG(broken),/CRC/);
  await assert.rejects(()=>decodeExactPNG(bytes.subarray(0,bytes.length-1)));
 }
-assert.equal(checked,76);console.log('All 76 original PNGs match independent decoded RGBA hashes; CRC and truncation reject.');
+assert.ok(report.render_profile==null||report.render_profile==='large-images-v1');const expected=report.render_profile==='large-images-v1'?178:76;assert.equal(checked,expected);console.log('All '+expected+' original PNGs match independent decoded RGBA hashes; CRC and truncation reject.');
 // Independent small encodings exercise every predictor, channels and malformed bounds.
 const {deflateSync}=await import('node:zlib');
 function crc(bytes){let value=0xffffffff;for(const byte of bytes){value^=byte;for(let i=0;i<8;i++)value=value&1?0xedb88320^(value>>>1):value>>>1;}return (value^0xffffffff)>>>0;}

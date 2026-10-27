@@ -4,6 +4,7 @@ import argparse, hashlib, json, os, shutil, subprocess, tempfile, tomllib, zipfi
 
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('candidate',type=Path)
+parser.add_argument('--original-art',action='store_true',help='Verify a separate signed full-resolution 256/3/7 MiB candidate; default retains 16/3/7 MiB checks')
 parser.add_argument('--full-save',action='store_true',help='Keep an exact 1 MiB, 5041-pattern archive resident during every scene')
 args=parser.parse_args()
 project=Path(__file__).resolve().parents[1]
@@ -11,7 +12,9 @@ import sys
 sys.path.insert(0, str(project/'tests'))
 from arkanoo_legacy_support import use_legacy_audio
 limits=tomllib.loads((args.candidate/'manifest.toml').read_text())['limits']
-assert (limits['hard_memory_bytes'],limits['effects_memory_bytes'],limits['music_memory_bytes'])==(16777216,3145728,7340032), 'Dense qualification requires the existing 16/3/7 MiB shares'
+expected_hard=268435456 if args.original_art else 16777216
+assert limits.get('render_profile')==('large-images-v1' if args.original_art else None)
+assert (limits['hard_memory_bytes'],limits['effects_memory_bytes'],limits['music_memory_bytes'])==(expected_hard,3145728,7340032), 'Require the explicitly selected hard limit and original 3/7 MiB audio shares'
 env=dict(os.environ,
  GAMEPKG_BUNDLED_AUDIO_DECODER=str(project/'tools/audio-decoder/target/wasm32-unknown-unknown/release/gamepkg_host_audio_decoder.wasm'),
  GAMEPKG_BUNDLED_AUDIO_CONVERTER=str(project/'tools/audio-converter/target/wasm32-unknown-unknown/release/gamepkg_host_audio_converter.wasm'))
@@ -32,7 +35,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-recorded-dense-') as temporary:
   library=root/('library-'+profile)
   environment['GAMEPKG_HOME']=str(library)
   environment['GAMEPKG_RECORDED_DENSE_ROOT']=str(library)
-  for label,source in [('baseline',project/'ports/arkanoo'),('recorded',args.candidate)]:
+  for label,source in [('baseline',args.candidate if args.original_art else project/'ports/arkanoo'),('recorded',args.candidate)]:
    recipe=root/(profile+'-'+label);shutil.copytree(source,recipe)
    if label == 'baseline': use_legacy_audio(recipe)
    entry=recipe/'source/src/lib.rs';text=entry.read_text();signature='pub fn game_tick(input: u32, state: u64) -> u64 {'

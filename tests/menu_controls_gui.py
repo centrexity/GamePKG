@@ -2,11 +2,11 @@
 from pathlib import Path
 from functools import partial
 from http.server import SimpleHTTPRequestHandler,ThreadingHTTPServer
-import argparse,base64,hashlib,io,json,os,platform,shutil,subprocess,tempfile,threading,time
+import argparse,base64,hashlib,io,json,os,platform,shutil,subprocess,tempfile,threading,time,tomllib
 from PIL import Image,ImageChops
 from gui_test_support import start_display
-parser=argparse.ArgumentParser();parser.add_argument('--original',type=Path,default=Path('/tmp/gamepkg-candidate-arkanoo'));parser.add_argument('--flat-background',action='store_true',help='Compare scaled controls directly against SDL without background resampling');parser.add_argument('--proof-output',type=Path);parser.add_argument('--browser-repeats',type=int,choices=range(1,6),default=1,help='Repeat the complete browser control cycle for input/worker diagnostics');args=parser.parse_args()
-PROJECT=Path(__file__).resolve().parents[1];BIN=Path(os.environ.get('GAMEPKG_TEST_BINARY_DIR',PROJECT/'target/release'));CLI=BIN/'gamepkg';GUI=BIN/'gamepkg-gui';PROOF=args.proof_output or PROJECT/'target/menu-controls-proof'
+parser=argparse.ArgumentParser();parser.add_argument('--candidate',type=Path,help='Separate staged recipe; defaults to the active port');parser.add_argument('--source-resolution',action='store_true',help='Compare scaled photographic backgrounds directly to original SDL');parser.add_argument('--original',type=Path,default=Path('/tmp/gamepkg-candidate-arkanoo'));parser.add_argument('--flat-background',action='store_true',help='Compare scaled controls directly against SDL without background resampling');parser.add_argument('--proof-output',type=Path);parser.add_argument('--browser-repeats',type=int,choices=range(1,6),default=1,help='Repeat the complete browser control cycle for input/worker diagnostics');args=parser.parse_args()
+PROJECT=Path(__file__).resolve().parents[1];CANDIDATE=args.candidate or PROJECT/'ports/arkanoo';DIRECT_SCALED=args.flat_background or args.source_resolution or tomllib.loads((CANDIDATE/'manifest.toml').read_text())['limits'].get('render_profile')=='large-images-v1';BIN=Path(os.environ.get('GAMEPKG_TEST_BINARY_DIR',PROJECT/'target/release'));CLI=BIN/'gamepkg';GUI=BIN/'gamepkg-gui';PROOF=args.proof_output or PROJECT/'target/menu-controls-proof'
 if PROOF.exists():PROOF.rename(PROJECT/'target'/('menu-controls-previous-'+str(time.time_ns())))
 PROOF.mkdir(parents=True)
 fixture=json.loads((PROJECT/'tests/fixtures/arkanoo-menu-controls.json').read_text());PHASES=[0,1,2,3,4,0];KEYS={4:'Left',1:'Right',2:'Up',3:'Down'};REFERENCES={};SMALL={};SMALL_REFERENCES={}
@@ -47,10 +47,10 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-menu-controls-gui-') as temp:
  if args.flat_background:
   background=root/'flat-background.png';Image.new('RGBA',(1,1),(18,52,86,255)).save(background)
  for profile,suffix in [('core-v1','core'),('component-v1','component')]:
-  source=root/suffix;shutil.copytree(PROJECT/'ports/arkanoo',source);entry=source/'source/src/lib.rs';modules=entry.read_text().split('use std::sync::Mutex;')[0]
+  source=root/suffix;shutil.copytree(CANDIDATE,source);entry=source/'source/src/lib.rs';modules=entry.read_text().split('use std::sync::Mutex;')[0]
   if args.flat_background:
    # Keep the original control code and font. Only the private backdrop is flat.
-   render=source/'source/src/render.rs';text=render.read_text();begin=text.index('pub fn draw_menu_background()');end=text.index('fn draw_world_tiles(',begin)
+   render=source/'source/src/render.rs';text=render.read_text();begin=text.index('pub fn draw_menu_background()');end=text.index('\nfn ',begin)+1
    render.write_text(text[:begin]+'pub fn draw_menu_background()->bool {let accepted=gamepkg::draw_rect(0.0,60.0,640.0,360.0,0x123456ff);if !gamepkg::draw_rect(0.0,60.0,640.0,360.0,150){return false;}accepted}\n'+text[end:])
   entry.write_text(modules+"""pub fn game_tick(input:u32,_:u64)->u64 {
  let phase=if input&gamepkg::HELD_RIGHT!=0 {1} else if input&gamepkg::HELD_UP!=0 {2} else if input&gamepkg::HELD_DOWN!=0 {3} else if input&gamepkg::HELD_LEFT!=0 {4} else {0};let mut game=physics::Game::new();game.mode=0;game.started=phase==1;game.menu.settings=phase==2||phase==3;game.menu.hover=if phase==1 {3} else if phase==2 {10} else if phase==3 {7} else if phase==4 {9} else {0};game.menu.sfx_volume=if phase==2 {127} else if phase==3 {1} else {64};game.menu.sfx_muted=phase==2;game.menu.fullscreen=phase==3;render::draw_menu(&game);
@@ -66,7 +66,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-menu-controls-gui-') as temp:
    defaults=(0,0,0,0,64)
    raw=subprocess.check_output([reference,font,background,*map(str,(*state,*defaults))],env=env);REFERENCES[phase]=Image.frombytes('RGBA',(1280,720),raw).convert('RGB')
    REFERENCES[phase].save(PROOF/('original-1280-'+str(phase)+'.png'))
-   if args.flat_background:
+   if DIRECT_SCALED:
     raw=subprocess.check_output([reference,font,background,*map(str,(*state,*defaults,640,360))],env=env);SMALL_REFERENCES[phase]=Image.frombytes('RGBA',(640,360),raw).convert('RGB');SMALL_REFERENCES[phase].save(PROOF/('original-640-'+str(phase)+'.png'))
   def delta(actual,expected):return max(p[1] for p in ImageChops.difference(actual,expected).getextrema())
   for profile,suffix in [('core-v1','core'),('component-v1','component')]:
@@ -83,7 +83,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-menu-controls-gui-') as temp:
        if found.returncode==0:window=found.stdout.splitlines()[0];break
        if time.monotonic()>=deadline:fail_start(label,'game window did not appear within 20 seconds',env)
        time.sleep(.05)
-      sizes=[(1280,960)]+([(640,480)] if args.flat_background or (suffix,target,renderer)==('core','native','vulkan') else [])
+      sizes=[(1280,960)]+([(640,480)] if DIRECT_SCALED or (suffix,target,renderer)==('core','native','vulkan') else [])
       for width,height in sizes:
        subprocess.run(['xdotool','windowsize',window,str(width),str(height),'windowfocus',window],env=env,check=True);time.sleep(.15)
        for phase in PHASES:
@@ -95,15 +95,15 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-menu-controls-gui-') as temp:
          actual=im.crop((0,height//8,width,height*7//8))
          if width==640:
           marker=im.getpixel((8,8));wanted={0:(255,0,0),1:(0,255,0),2:(0,0,255),3:(255,255,0),4:(255,0,255)}[phase]
-          if marker==wanted and (not args.flat_background or delta(actual,SMALL_REFERENCES[phase])<=2):
+          if marker==wanted and (not DIRECT_SCALED or delta(actual,SMALL_REFERENCES[phase])<=2):
            if (suffix,target,renderer)==('core','native','vulkan'):SMALL[phase]=actual.copy();actual.save(PROOF/('native-640-'+str(phase)+'.png'))
-           if args.flat_background:actual.save(PROOF/(label+'-640-'+str(phase)+'-canvas.png'))
+           if DIRECT_SCALED:actual.save(PROOF/(label+'-640-'+str(phase)+'-canvas.png'))
            break
          elif delta(actual,REFERENCES[phase])<=2:break
          if app.poll() is not None:fail_start(label,f'exited with {app.returncode}: '+app.stderr.read().decode(),env)
-         assert time.monotonic()<deadline,(label,phase,delta(actual,REFERENCES[phase]) if width==1280 else (marker,delta(actual,SMALL_REFERENCES[phase])) if args.flat_background else marker);time.sleep(.05)
+         assert time.monotonic()<deadline,(label,phase,delta(actual,REFERENCES[phase]) if width==1280 else (marker,delta(actual,SMALL_REFERENCES[phase])) if DIRECT_SCALED else marker);time.sleep(.05)
         if width==1280:print(label,phase,'complete implemented menu maximum difference',delta(actual,REFERENCES[phase]),flush=True)
-        elif args.flat_background:print(label,phase,'scaled controls/original SDL maximum difference',delta(actual,SMALL_REFERENCES[phase]),flush=True)
+        elif DIRECT_SCALED:print(label,phase,'scaled controls/original SDL maximum difference',delta(actual,SMALL_REFERENCES[phase]),flush=True)
      finally:
       if held:subprocess.run(['xdotool','keyup',held],env=env,check=True)
       if app.poll() is None:app.terminate()
@@ -132,7 +132,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-menu-controls-gui-') as temp:
       except Exception as error:report['webgl_error']=str(error)
       (PROOF/(profile+'-web-'+str(phase)+'-difference.json')).write_text(json.dumps(report,indent=2)+'\n')
      assert difference<=2,difference
-     if args.flat_background:
+     if DIRECT_SCALED:
       difference=delta(actual,SMALL_REFERENCES[phase]);print(profile,phase,'scaled browser controls/original SDL maximum difference',difference,flush=True);assert difference<=2,difference
     # Verify the serialization change against the old exact byte capture after
     # stopping playback, so the reference check cannot itself starve audio RPCs.

@@ -11,6 +11,19 @@ use std::{
 fn full_recorded_audio_shares_preserve_dense_scene_commands_and_pixels() {
     let root = PathBuf::from(std::env::var_os("GAMEPKG_RECORDED_DENSE_ROOT").unwrap());
     let native = std::env::var("GAMEPKG_RECORDED_DENSE_NATIVE").unwrap() == "1";
+    let mut package =
+        gamepkg::archive::Package::open(&root.join("com.gamepkg.arkanoo-dense-recorded.gamepkg"))
+            .unwrap();
+    let manifest = gamepkg::verify::verify_embedded(&mut package).unwrap();
+    let original_art =
+        manifest.limits.render_profile == Some(gamepkg::manifest::RenderProfile::LargeImagesV1);
+    assert_eq!(
+        manifest.limits.hard_memory_bytes,
+        if original_art { 268435456 } else { 16777216 }
+    );
+    assert_eq!(manifest.limits.effects_memory_bytes, Some(3145728));
+    assert_eq!(manifest.limits.music_memory_bytes, Some(7340032));
+
     let mut baseline = Game::load_target(
         &root,
         "com.gamepkg.arkanoo-dense-baseline",
@@ -86,7 +99,69 @@ fn full_recorded_audio_shares_preserve_dense_scene_commands_and_pixels() {
                 _ => None,
             })
             .sum();
-        assert!(image_bytes <= gamepkg::drawing::MAX_IMAGE_BYTES);
+        if original_art {
+            assert_eq!(
+                b.commands.len(),
+                300,
+                "Original tiles must not displace any existing draw"
+            );
+            assert_eq!(
+                image_bytes, 21640492,
+                "Every source tile and dense effect must remain"
+            );
+            assert!(image_bytes <= gamepkg::manifest::RenderProfile::LargeImagesV1.frame_bytes());
+            // Reconstruct the complete untiled original from actual frame pixels,
+            // then compare a separately pinned source-image hash, not the baseline.
+            use sha2::{Digest, Sha256};
+            let originals: serde_json::Value =
+                serde_json::from_str(include_str!("fixtures/arkanoo-original-image-pixels.json"))
+                    .unwrap();
+            let mut whole = vec![0u8; 2816 * 1536 * 4];
+            for index in 0..24 {
+                let Command::LinearImage { image, .. } = &b.commands[index * 3 + 1] else {
+                    panic!("Original tile {index} missing from scene {level}");
+                };
+                assert!(matches!(
+                    b.commands[index * 3],
+                    Command::Clip { rect: Some(_) }
+                ));
+                assert!(matches!(
+                    b.commands[index * 3 + 2],
+                    Command::Clip { rect: None }
+                ));
+                let x = index % 6 * 510usize;
+                let y = index / 6 * 510usize;
+                let width = (2816 - x).min(510);
+                let height = (1536 - y).min(510);
+                let pad_x = usize::from(x != 0);
+                let pad_y = usize::from(y != 0);
+                let size = image.size();
+                assert_eq!(
+                    size,
+                    [
+                        (x + width + 1).min(2816) - x + pad_x,
+                        (y + height + 1).min(1536) - y + pad_y
+                    ]
+                );
+                for row in 0..height {
+                    let source = ((row + pad_y) * size[0] + pad_x) * 4;
+                    let target = ((y + row) * 2816 + x) * 4;
+                    whole[target..target + width * 4]
+                        .copy_from_slice(&image.pixels()[source..source + width * 4]);
+                }
+            }
+            assert_eq!(
+                hex::encode(Sha256::digest(&whole)),
+                originals["images"][(level - 1) as usize]["rgba_sha256"]
+                    .as_str()
+                    .unwrap(),
+                "Scene {level} must preserve every pixel of the independent original source"
+            );
+        } else {
+            assert_eq!(b.commands.len(), 234);
+            assert_eq!(image_bytes, 7896124);
+            assert!(image_bytes <= gamepkg::drawing::MAX_IMAGE_BYTES);
+        }
         let mut plays = 0;
         for command in delivered.lock().unwrap().drain(..) {
             match command {

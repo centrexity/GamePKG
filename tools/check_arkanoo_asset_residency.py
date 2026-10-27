@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import subprocess
 import zlib
+import tomllib
 from PIL import Image
 
 parser = argparse.ArgumentParser(description=__doc__)
@@ -88,7 +89,7 @@ report = {'private_verification_inputs': True, 'original_assets_bytes': original
           'python_encoded_export_estimate_bytes': optimized+music+playlist+precise-effect_raw+effect_packed,
           'asset_scratch_bytes_per_owner': effect_max+263168,
           'estimate_note': 'Exact host encoder sizes and memory compatibility are verified by check_arkanoo_recorded_web.py',
-          'web_export_limit_bytes': 32*1024*1024, 'images': rows}
+          'web_export_limit_bytes': (128 if tomllib.loads((project/'ports/arkanoo/manifest.toml').read_text())['limits'].get('render_profile')=='large-images-v1' else 32)*1024*1024, 'images': rows}
 (output/'residency.json').write_text(json.dumps(report, indent=2)+'\n')
 print(json.dumps({key: value for key, value in report.items() if key != 'images'}, indent=2))
 print('All', len(rows), 'PNG dimensions and decoded RGBA bytes match exactly; published assets unchanged.')
