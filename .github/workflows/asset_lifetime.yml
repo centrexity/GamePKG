@@ -11,6 +11,8 @@ on:
       - 'tools/check_browser_audio_decoder.py'
       - 'tests/browser_audio_decoder.rs'
       - 'tests/browser_compressed_assets.py'
+      - 'tests/browser_png_exact.py'
+      - 'tools/check_browser_png.py'
       - '.github/workflows/ci.yml'
       - '.github/workflows/asset_lifetime.yml'
   pull_request:
@@ -24,6 +26,8 @@ on:
       - 'tools/check_browser_audio_decoder.py'
       - 'tests/browser_audio_decoder.rs'
       - 'tests/browser_compressed_assets.py'
+      - 'tests/browser_png_exact.py'
+      - 'tools/check_browser_png.py'
       - '.github/workflows/ci.yml'
       - '.github/workflows/asset_lifetime.yml'
   workflow_dispatch:
@@ -49,7 +53,7 @@ jobs:
       - name: Install isolated-compiler and headless browser prerequisites
         run: |
           bash tools/ci_ubuntu_apt.sh update
-          bash tools/ci_ubuntu_apt.sh install -y --no-install-recommends bubblewrap python3-selenium
+          bash tools/ci_ubuntu_apt.sh install -y --no-install-recommends bubblewrap python3-selenium python3-pil optipng
           test -x "$CHROMEWEBDRIVER/chromedriver"
           sudo ln -sf "$CHROMEWEBDRIVER/chromedriver" /usr/local/bin/chromedriver
           google-chrome --version
@@ -73,3 +77,20 @@ jobs:
       - name: Verify signed compressed reads, playback and pending-loan release
         run: |
           sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-assets-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT=/tmp/gamepkg-assets-slang CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tests/browser_compressed_assets.py
+      - name: Verify consecutive optimized PNG startup and exact original pixels
+        run: /usr/bin/python3 tools/check_browser_png.py --browser --optimize-assets
+      - name: Verify the Chrome 155 decoder-construction regression
+        run: |
+          browser_root="$RUNNER_TEMP/gamepkg-png-chrome155"
+          mkdir -p "$browser_root/bin"
+          curl --fail --location --retry 3 https://storage.googleapis.com/chrome-for-testing-public/155.0.8059.39/linux64/chrome-linux64.zip -o "$browser_root/chrome.zip"
+          curl --fail --location --retry 3 https://storage.googleapis.com/chrome-for-testing-public/155.0.8059.39/linux64/chromedriver-linux64.zip -o "$browser_root/driver.zip"
+          printf '%s  %s\n' 55672d1f392fd3e7b7a08621b6e804e6bcb39d40cf155504abb74b3a021ea8ea "$browser_root/chrome.zip" a65f025c692e686ec2a21fa6b9639c69fa9813683a47af9cabf1ba0b1f453e42 "$browser_root/driver.zip" | sha256sum --check
+          unzip -q "$browser_root/chrome.zip" -d "$browser_root"
+          unzip -q "$browser_root/driver.zip" -d "$browser_root"
+          ln -s "$browser_root/chrome-linux64/chrome" "$browser_root/bin/google-chrome"
+          ln -s "$browser_root/chromedriver-linux64/chromedriver" "$browser_root/bin/chromedriver"
+          export PATH="$browser_root/bin:$PATH"
+          google-chrome --version
+          chromedriver --version
+          /usr/bin/python3 tools/check_browser_png.py --browser --optimize-assets
