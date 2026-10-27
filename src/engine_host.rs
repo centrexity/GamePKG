@@ -221,6 +221,236 @@ pub extern "C" fn gamepkg_thread_yield() {
     std::thread::yield_now();
 }
 
+const PATH_NONE: u32 = 0;
+const PATH_FILE: u32 = 1;
+const PATH_DIRECTORY: u32 = 2;
+const PATH_READ_ONLY: u32 = 1;
+const DIR_SLOTS: usize = 256;
+
+#[repr(C)]
+pub struct PathInfo {
+    kind: u32,
+    flags: u32,
+    size: u64,
+    modification_seconds: u64,
+    modification_nanoseconds: u32,
+    reserved0: u32,
+    access_seconds: u64,
+    access_nanoseconds: u32,
+    reserved1: u32,
+    creation_seconds: u64,
+    creation_nanoseconds: u32,
+    reserved2: u32,
+}
+
+struct OpenDir {
+    read: std::fs::ReadDir,
+}
+
+fn directories() -> &'static Mutex<Vec<Option<OpenDir>>> {
+    static DIRECTORIES: Mutex<Vec<Option<OpenDir>>> = Mutex::new(Vec::new());
+    &DIRECTORIES
+}
+
+fn c_path(path: *const libc::c_char) -> Option<std::path::PathBuf> {
+    if path.is_null() {
+        return None;
+    }
+    let text = unsafe { std::ffi::CStr::from_ptr(path) };
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        Some(std::ffi::OsStr::from_bytes(text.to_bytes()).into())
+    }
+    #[cfg(not(unix))]
+    text.to_str().ok().map(std::path::PathBuf::from)
+}
+
+fn since_unix(time: std::io::Result<std::time::SystemTime>) -> (u64, u32) {
+    time.ok()
+        .and_then(|stamp| stamp.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|duration| (duration.as_secs(), duration.subsec_nanos()))
+        .unwrap_or((0, 0))
+}
+
+fn entry_bytes(name: &std::ffi::OsStr) -> Option<Vec<u8>> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        let bytes = name.as_bytes();
+        if bytes.contains(&0) {
+            return None;
+        }
+        Some(bytes.to_vec())
+    }
+    #[cfg(not(unix))]
+    name.to_str().map(|text| text.as_bytes().to_vec())
+}
+
+#[no_mangle]
+pub extern "C" fn gamepkg_path_stat(path: *const libc::c_char, info: *mut PathInfo) -> i32 {
+    if info.is_null() {
+        return -1;
+    }
+    let Some(path) = c_path(path) else {
+        return -1;
+    };
+    let mut record = PathInfo {
+        kind: PATH_NONE,
+        flags: 0,
+        size: 0,
+        modification_seconds: 0,
+        modification_nanoseconds: 0,
+        reserved0: 0,
+        access_seconds: 0,
+        access_nanoseconds: 0,
+        reserved1: 0,
+        creation_seconds: 0,
+        creation_nanoseconds: 0,
+        reserved2: 0,
+    };
+    if let Ok(metadata) = std::fs::metadata(&path) {
+        record.kind = if metadata.is_dir() {
+            PATH_DIRECTORY
+        } else if metadata.is_file() {
+            PATH_FILE
+        } else {
+            PATH_NONE
+        };
+        if record.kind == PATH_FILE {
+            record.size = metadata.len();
+        }
+        if metadata.permissions().readonly() {
+            record.flags |= PATH_READ_ONLY;
+        }
+        let (seconds, nanos) = since_unix(metadata.modified());
+        record.modification_seconds = seconds;
+        record.modification_nanoseconds = nanos;
+        let (seconds, nanos) = since_unix(metadata.accessed());
+        record.access_seconds = seconds;
+        record.access_nanoseconds = nanos;
+        let (seconds, nanos) = since_unix(metadata.created());
+        record.creation_seconds = seconds;
+        record.creation_nanoseconds = nanos;
+    }
+    unsafe { *info = record };
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn gamepkg_path_read(
+    path: *const libc::c_char,
+    offset: u64,
+    out: *mut u8,
+    length: u32,
+) -> i32 {
+    if length == 0 {
+        return 0;
+    }
+    if out.is_null() {
+        return -1;
+    }
+    let Some(path) = c_path(path) else {
+        return -1;
+    };
+    let mut file = match std::fs::File::open(path) {
+        Ok(file) => file,
+        Err(_) => return -1,
+    };
+    use std::io::{Read, Seek, SeekFrom};
+    if file.seek(SeekFrom::Start(offset)).is_err() {
+        return -1;
+    }
+    let mut buffer = vec![0u8; length as usize];
+    match file.read(&mut buffer) {
+        Ok(count) => {
+            unsafe { std::ptr::copy_nonoverlapping(buffer.as_ptr(), out, count) };
+            count as i32
+        }
+        Err(_) => -1,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn gamepkg_dir_open(path: *const libc::c_char, handle: *mut u32) -> i32 {
+    if handle.is_null() {
+        return 0;
+    }
+    let Some(path) = c_path(path) else {
+        return 0;
+    };
+    let read = match std::fs::read_dir(path) {
+        Ok(read) => read,
+        Err(_) => return 0,
+    };
+    let mut table = directories()
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    if let Some(slot) = table.iter().position(|entry| entry.is_none()) {
+        table[slot] = Some(OpenDir { read });
+        unsafe { *handle = (slot + 1) as u32 };
+        return 1;
+    }
+    if table.len() >= DIR_SLOTS {
+        return 0;
+    }
+    table.push(Some(OpenDir { read }));
+    unsafe { *handle = table.len() as u32 };
+    1
+}
+
+#[no_mangle]
+pub extern "C" fn gamepkg_dir_read(handle: u32, name: *mut u8, capacity: u32) -> i32 {
+    if handle == 0 || name.is_null() || capacity == 0 {
+        return -1;
+    }
+    let mut table = directories()
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    let Some(slot) = table
+        .get_mut(handle as usize - 1)
+        .and_then(|slot| slot.as_mut())
+    else {
+        return -1;
+    };
+    loop {
+        let Some(entry) = slot.read.next() else {
+            return 0;
+        };
+        let Ok(entry) = entry else {
+            continue;
+        };
+        let Some(bytes) = entry_bytes(&entry.file_name()) else {
+            continue;
+        };
+        if bytes == b"."
+            || bytes == b".."
+            || bytes.len() + 1 > capacity as usize
+            || bytes.len() > i32::MAX as usize
+        {
+            continue;
+        }
+        unsafe {
+            std::ptr::copy_nonoverlapping(bytes.as_ptr(), name, bytes.len());
+            *name.add(bytes.len()) = 0;
+        }
+        return bytes.len() as i32;
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn gamepkg_dir_close(handle: u32) {
+    if handle == 0 {
+        return;
+    }
+    let mut table = directories()
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    if let Some(slot) = table.get_mut(handle as usize - 1) {
+        *slot = None;
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn gamepkg_host_begin_frame() {
     if let Some(session) = lock().as_mut() {
@@ -738,6 +968,83 @@ mod tests {
         );
         let bad = [0xff, 0x00];
         assert_eq!(gamepkg_host_log(bad.as_ptr() as *const libc::c_char, 1), -1);
+    }
+
+    #[test]
+    fn directory_calls_list_stat_and_read_a_host_path() {
+        assert_eq!(std::mem::size_of::<PathInfo>(), 64);
+        assert_eq!(
+            gamepkg_path_stat(std::ptr::null(), std::ptr::null_mut()),
+            -1
+        );
+        assert_eq!(gamepkg_dir_open(std::ptr::null(), std::ptr::null_mut()), 0);
+        assert_eq!(gamepkg_dir_read(0, std::ptr::null_mut(), 8), -1);
+        assert_eq!(
+            gamepkg_path_read(std::ptr::null(), 0, std::ptr::null_mut(), 4),
+            -1
+        );
+        let root = std::env::temp_dir().join(format!("gamepkg-vfs-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let file = root.join("note.txt");
+        std::fs::write(&file, b"hello").unwrap();
+        let root_c = std::ffi::CString::new(root.to_str().unwrap()).unwrap();
+        let file_c = std::ffi::CString::new(file.to_str().unwrap()).unwrap();
+        let missing = std::ffi::CString::new(root.join("missing").to_str().unwrap()).unwrap();
+        let mut info = PathInfo {
+            kind: 9,
+            flags: 9,
+            size: 9,
+            modification_seconds: 9,
+            modification_nanoseconds: 9,
+            reserved0: 9,
+            access_seconds: 9,
+            access_nanoseconds: 9,
+            reserved1: 9,
+            creation_seconds: 9,
+            creation_nanoseconds: 9,
+            reserved2: 9,
+        };
+        assert_eq!(gamepkg_path_stat(missing.as_ptr(), &mut info), 0);
+        assert_eq!(info.kind, PATH_NONE);
+        assert_eq!(gamepkg_path_stat(file_c.as_ptr(), &mut info), 0);
+        assert_eq!(info.kind, PATH_FILE);
+        assert_eq!(info.size, 5);
+        assert!(info.modification_seconds > 1_700_000_000);
+        assert_eq!(gamepkg_path_stat(root_c.as_ptr(), &mut info), 0);
+        assert_eq!(info.kind, PATH_DIRECTORY);
+        let mut bytes = [0u8; 8];
+        assert_eq!(
+            gamepkg_path_read(file_c.as_ptr(), 1, bytes.as_mut_ptr(), 4),
+            4
+        );
+        assert_eq!(&bytes[..4], b"ello");
+        assert_eq!(
+            gamepkg_path_read(file_c.as_ptr(), 0, bytes.as_mut_ptr(), 0),
+            0
+        );
+        let mut handle = 0u32;
+        assert_eq!(gamepkg_dir_open(file_c.as_ptr(), &mut handle), 0);
+        assert_eq!(gamepkg_dir_open(root_c.as_ptr(), &mut handle), 1);
+        let mut name = [0u8; 64];
+        let mut saw = false;
+        loop {
+            let n = gamepkg_dir_read(handle, name.as_mut_ptr(), 64);
+            assert!(n >= 0);
+            if n == 0 {
+                break;
+            }
+            if &name[..n as usize] == b"note.txt" {
+                saw = true;
+            }
+        }
+        assert!(saw);
+        gamepkg_dir_close(handle);
+        assert_eq!(gamepkg_dir_read(handle, name.as_mut_ptr(), 64), -1);
+        assert_eq!(gamepkg_dir_open(root_c.as_ptr(), &mut handle), 1);
+        assert_eq!(gamepkg_dir_read(handle, name.as_mut_ptr(), 1), 0);
+        gamepkg_dir_close(handle);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

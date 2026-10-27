@@ -11,13 +11,16 @@
  *   network: payload byte count, -2 busy, -3 failed, -1 rejected
  * Frame time is the sample taken by gamepkg_host_begin_frame. It is not a
  * free-running clock.
- * gamepkg_host_log, the free-running clocks, and the thread calls are host
- * additions. Guests had no log import, no free-running clock, and no thread
- * import. The engine keeps its own mutexes and completion handles.
+ * gamepkg_host_log, the free-running clocks, the thread calls, and the
+ * directory calls are host additions. Guests had no log import, no
+ * free-running clock, no thread import, and no directory import.
+ * gamepkg_file_call stays the player-picked import and export. The directory
+ * calls read a host path the process already has. The engine keeps its own
+ * mutexes and completion handles.
  */
 #include <stdint.h>
 
-#define GAMEPKG_HOST_ABI 2
+#define GAMEPKG_HOST_ABI 3
 
 #define GAMEPKG_FILE_IMPORT 0u
 #define GAMEPKG_FILE_EXPORT 1u
@@ -80,6 +83,41 @@ int32_t gamepkg_thread_spawn(gamepkg_thread_start start, void *context, uint32_t
 #define GAMEPKG_THREAD_SLEEP_INFINITE 0xffffffffu
 void gamepkg_thread_sleep_ms(uint32_t milliseconds);
 void gamepkg_thread_yield(void);
+
+/* Host-path metadata. Not gamepkg_file_call. kind is GAMEPKG_PATH_NONE when
+   the path does not exist. flags uses GAMEPKG_PATH_READ_ONLY. Times are Unix
+   seconds and nanoseconds; a clock the host cannot read stays zero. The
+   struct is 64 bytes on every ABI. Returns 0, or -1 when path or info is null. */
+#define GAMEPKG_PATH_NONE 0u
+#define GAMEPKG_PATH_FILE 1u
+#define GAMEPKG_PATH_DIRECTORY 2u
+#define GAMEPKG_PATH_READ_ONLY 1u
+typedef struct gamepkg_path_info {
+	uint32_t kind;
+	uint32_t flags;
+	uint64_t size;
+	uint64_t modification_seconds;
+	uint32_t modification_nanoseconds;
+	uint32_t reserved0;
+	uint64_t access_seconds;
+	uint32_t access_nanoseconds;
+	uint32_t reserved1;
+	uint64_t creation_seconds;
+	uint32_t creation_nanoseconds;
+	uint32_t reserved2;
+} gamepkg_path_info;
+int32_t gamepkg_path_stat(const char *path, gamepkg_path_info *info);
+/* Bytes from a host path at offset. Returns the count read, 0 at the end,
+   or -1 when the path cannot be read. length 0 returns 0. */
+int32_t gamepkg_path_read(const char *path, uint64_t offset, uint8_t *out, uint32_t length);
+/* Small integer handle, never a pointer. Returns 1, or 0 when the directory
+   cannot be opened or the table is full. "." and ".." are not returned.
+   A name that does not fit in capacity, including its trailing NUL, is skipped.
+   gamepkg_dir_read returns the length excluding that NUL, 0 at the end, or -1
+   for an unknown handle or a null buffer. */
+int32_t gamepkg_dir_open(const char *path, uint32_t *handle);
+int32_t gamepkg_dir_read(uint32_t handle, uint8_t *name, uint32_t capacity);
+void gamepkg_dir_close(uint32_t handle);
 
 /* Bounded UTF-8 line, at most 1024 bytes, no NUL inside the length. */
 int32_t gamepkg_host_log(const char *text, uint32_t length);
