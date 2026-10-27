@@ -53,10 +53,15 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-window-commit-') as temporary:
         package=root/(suffix+'.gamepkg');game_id='com.gamepkg.window-commit-'+suffix
         run('pack',source,'-o',package,'--key',key);run('install',package,'--trust-creator');run('build',game_id,'--target','wasm')
         output=root/(suffix+'-web');run('web-export',game_id,'--output',output)
+        # Keep asynchronous save loading observable: recovery must wait for a
+        # new worker's committed frame, not a successful frame from the old one.
+        player=output/'player.js';text=player.read_text();needle='progressStore.load(),audioReady'
+        assert text.count(needle)==1
+        player.write_text(text.replace(needle,'progressStore.load().then(record=>new Promise(resolve=>setTimeout(()=>resolve(record),400))),audioReady'))
         server=ThreadingHTTPServer(('127.0.0.1',0),partial(Quiet,directory=str(output)))
         threading.Thread(target=server.serve_forever,daemon=True).start()
         options=Options();options.binary_location=shutil.which('google-chrome') or shutil.which('google-chrome-stable') or shutil.which('chromium');assert options.binary_location
-        for flag in ['--headless=new','--window-size=1100,1000','--no-sandbox','--disable-dev-shm-usage','--enable-unsafe-swiftshader','--autoplay-policy=no-user-gesture-required']:options.add_argument(flag)
+        for flag in ['--headless=new','--mute-audio','--window-size=1100,1000','--no-sandbox','--disable-dev-shm-usage','--enable-unsafe-swiftshader','--autoplay-policy=no-user-gesture-required']:options.add_argument(flag)
         downloads=root/(suffix+'-downloads');downloads.mkdir()
         options.add_experimental_option('prefs',{'download.default_directory':str(downloads),'download.prompt_for_download':False})
         driver=shutil.which('chromedriver') or str(Path(os.environ.get('CHROMEWEBDRIVER','/nonexistent'))/'chromedriver')
@@ -159,8 +164,9 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-window-commit-') as temporary:
             assert read_first(browser,'history','gamepkg:history:'+game_id+':')==bad_history
             assert browser.execute_script('return !window.windowCommits.at(-1).success')
             write_first(browser,'history','gamepkg:history:'+game_id+':',{'played_ms':0,'unlocked':[]})
+            previous_worker=browser.execute_script('return window.workerSerial')
             browser.find_element('id','play').click()
-            wait.until(lambda b:b.execute_script('const value=window.windowFrames.at(-1);return value.instance===window.workerSerial&&window.windowCommits.some(commit=>commit.instance===value.instance&&commit.success)'))
+            wait.until(lambda b:b.execute_script('const instance=window.workerSerial;return instance>arguments[0]&&window.windowFrames.some(value=>value.instance===instance&&window.windowCommits.some(commit=>commit.instance===instance&&commit.epoch===value.epoch&&commit.serial===value.serial&&commit.success))',previous_worker))
             # Final successful close proves explicit recovery did not leave a pending transaction.
 
             press(Keys.ARROW_DOWN,'value.window.closed',True)
