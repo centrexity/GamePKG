@@ -2,13 +2,13 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 const source=readFileSync(new URL('../web-player/player.js',import.meta.url),'utf8');
-const mainCalls=[],stageCalls=[],helpers=[];let time=0,allocations=0;
+const mainCalls=[],stageCalls=[],helpers=[],spriteClips=[];let time=0,allocations=0,failFinish=false;
 const drawing=calls=>({save(){calls.push('save');},restore(){calls.push('restore');},fillRect(...args){time+=3;calls.push(['rect',...args]);},drawImage(...args){time+=3;calls.push(['image',...args]);},beginPath(){},arc(){},fill(){time+=3;},rect(){},clip(){}});
 const main=drawing(mainCalls),stage=drawing(stageCalls),canvas={dataset:{state:'previous'}},score={textContent:'previous score'},surface={getContext:()=>stage};stage.canvas=surface;
 const ui=vm.createContext({context:main,canvas,data:{custom_renderer:true},color:()=> '#fff',Uint8Array,setTimeout,performance:{now:()=>time},
  document:{querySelector:()=>score,createElement:()=>{allocations++;return surface;}},
  shaderFrame(index,...args){if(index===9)throw Error('fixture graphics failure');helpers.push(['shader',args.at(-1)]);time+=3;},
- linearBegin(target){helpers.push(['begin',target]);},linearFinish(target){helpers.push(['finish',target]);},linearSprite(...args){helpers.push(['sprite',args[8]]);time+=3;},
+ linearBegin(target){helpers.push(['begin',target]);},linearFinish(target){helpers.push(['finish',target]);if(failFinish)throw Error('fixture batch publication failure');},linearSprite(...args){helpers.push(['sprite',args[8]]);spriteClips.push(args[10]&&Array.from(args[10]));time+=3;},
 });
 vm.runInContext(source.slice(source.indexOf('function render('),source.indexOf('function playAudio(')),ui);
 // Exercise the old synchronous preparation as a baseline before the new entry
@@ -40,4 +40,19 @@ await assert.rejects(prepare(frame,()=>true,()=>Promise.reject(Error('fixture sc
 assert.equal(mainCalls.length,1);assert.equal(canvas.dataset.state,'44');
 assert.equal(await prepare({state:'46',commands:[]},()=>true,()=>Promise.resolve(),()=>time),true);
 assert.equal(stageCalls.filter(call=>call==='save').length,stageCalls.filter(call=>call==='restore').length);assert.equal(allocations,1);
+// A suspended run keeps each replacement scissor without splitting the batch.
+const clipped={state:'47',background:0xffffffff,commands:Array.from({length:24},(_,index)=>[
+ ['clip',index+.5,index+.25,20.5,30.75],['linear-image',0,0,40,40,1,1,new Uint8Array(4)],['clip-reset'],
+]).flat()};
+const finishes=helpers.filter(([kind])=>kind==='finish').length,clipStart=spriteClips.length;
+assert.equal(await prepare(clipped,()=>true,()=>Promise.resolve(),()=>time),true);
+assert.equal(helpers.filter(([kind])=>kind==='finish').length-finishes,1);
+assert.deepEqual(spriteClips.slice(clipStart),Array.from({length:24},(_,index)=>[index+.5,index+.25,20.5,30.75]));
+assert.equal(mainCalls.length,1);assert.equal(canvas.dataset.state,'44');
+failFinish=true;
+await assert.rejects(prepare(clipped,()=>true,()=>Promise.resolve(),()=>time),/fixture batch publication failure/);
+failFinish=false;
+assert.equal(await prepare({state:'48',commands:[]},()=>true,()=>Promise.resolve(),()=>time),true);
+assert.equal(stageCalls.filter(call=>call==='save').length,stageCalls.filter(call=>call==='restore').length);
+assert.equal(mainCalls.length,1);assert.equal(canvas.dataset.state,'44');
 console.log('Offscreen frames yield without dropping commands, serialize cancellation/replacement, restore failed draws and preserve committed pixels.');
