@@ -334,6 +334,7 @@ jobs:
         run: |
           node tests/web_linear_images.mjs
           node tests/web_precise_images.mjs
+          node tests/web_image_cache.mjs
       - name: Verify browser frame timing and ordered input
         run: |
           node tests/web_frame_clock.mjs
@@ -710,6 +711,9 @@ jobs:
       - name: Verify signed exact PNG exports without duplicate raw assets
         if: matrix.features == '--all-features'
         run: sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tests/browser_png_player.py
+      - name: Verify signed browser images across bounded cache eviction
+        if: matrix.features == '--all-features'
+        run: sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tests/browser_image_cache.py
       - name: Verify compressed asset reads and decoding lifetime accounting
         if: matrix.features == '--all-features'
         run: sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tests/browser_compressed_assets.py

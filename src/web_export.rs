@@ -289,16 +289,23 @@ pub fn export(root: &Path, id: &str, output: &Path) -> Result<()> {
     } else {
         "gamepkg"
     };
-    let mut needs_precise_images = false;
+    let mut uses_asset_images = false;
     let mut uses_shaders = false;
     let mut custom_renderer = false;
     for payload in wasmparser::Parser::new(0).parse_all(&wasm) {
         if let wasmparser::Payload::ImportSection(imports) = payload? {
             for import in imports {
                 let import = import?;
-                needs_precise_images |= matches!(
+                uses_asset_images |= matches!(
                     import.name,
-                    "draw_asset_image_linear_straight" | "draw-asset-image-linear-straight"
+                    "draw_asset_image"
+                        | "draw-asset-image"
+                        | "draw_asset_image_linear"
+                        | "draw-asset-image-linear"
+                        | "draw_asset_image_linear_straight"
+                        | "draw-asset-image-linear-straight"
+                        | "draw_shader_asset_image"
+                        | "draw-shader-asset-image"
                 );
                 custom_renderer |=
                     import.name.starts_with("draw_") || import.name.starts_with("draw-");
@@ -350,17 +357,11 @@ pub fn export(root: &Path, id: &str, output: &Path) -> Result<()> {
     for name in names {
         let bytes = package.asset(&name)?;
         size += bytes.len();
-        if needs_precise_images && name.to_lowercase().ends_with(".png") {
+        if uses_asset_images && name.to_lowercase().ends_with(".png") {
             if let Some(image) = crate::drawing::image::Image::from_png(&bytes) {
                 if exact_png_source(&bytes) {
                     exact_png_images.push(name.clone());
-                } else if image
-                    .pixels()
-                    .as_chunks::<4>()
-                    .0
-                    .iter()
-                    .any(|p| p[3] != 255)
-                {
+                } else {
                     size += image.pixels().len();
                     if size > 32 * 1024 * 1024 {
                         bail!("web assets exceed 32 MiB export limit");

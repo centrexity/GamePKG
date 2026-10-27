@@ -21,7 +21,8 @@ impl Worker {
         let child = Command::new(binary)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
+            .stderr(Stdio::piped())
+            .env("RUST_BACKTRACE", "0")
             .spawn()
             .unwrap();
         let mut worker = Self(child);
@@ -44,6 +45,52 @@ impl Worker {
         input.write_all(&length.to_le_bytes()).unwrap();
         input.write_all(bytes).unwrap();
         input.flush().unwrap();
+    }
+    fn rejected_control(&mut self, bytes: &[u8], reason: &str) {
+        // Rejection may close the pipe immediately after the header. Only this
+        // negative path accepts BrokenPipe; valid requests still use send().
+        let mut input = self.0.stdin.take().unwrap();
+        let body = bytes.to_vec();
+        let writer = std::thread::spawn(move || -> std::io::Result<()> {
+            input.write_all(&(body.len() as u32 | 0x80000000).to_le_bytes())?;
+            input.write_all(&body)?;
+            input.flush()
+        });
+        let started = std::time::Instant::now();
+        let status = loop {
+            if let Some(status) = self.0.try_wait().unwrap() {
+                break status;
+            }
+            if started.elapsed() > std::time::Duration::from_secs(5) {
+                self.0.kill().unwrap();
+                self.0.wait().unwrap();
+                let _ = writer.join().unwrap();
+                panic!("worker did not reject control frame within the test deadline");
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        };
+        let sent = writer.join().unwrap();
+        if let Err(error) = &sent {
+            assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe);
+        }
+        assert!(!status.success(), "worker accepted rejected control frame");
+        let mut diagnostic = String::new();
+        self.0
+            .stderr
+            .as_mut()
+            .unwrap()
+            .take(4096)
+            .read_to_string(&mut diagnostic)
+            .unwrap();
+        assert!(
+            diagnostic.contains(reason),
+            "unexpected worker rejection: {diagnostic}"
+        );
+        println!(
+            "Rejected {} control bytes: write error={:?}, expected reason={reason}",
+            bytes.len(),
+            sent.err().map(|e| e.kind())
+        );
     }
     fn control(&mut self, bytes: &[u8]) -> Vec<u8> {
         self.send(true, bytes);
@@ -117,10 +164,11 @@ fn trusted_snapshot_protocol_bounds_rejections_and_full_width_tick_state() {
         worker.normal(0);
         worker.normal(1 << 63);
         if !zelda {
-            worker.send(true, &[0]);
-            assert!(
-                !worker.0.wait().unwrap().success(),
-                "ordinary game accepted snapshot control"
+            worker.rejected_control(&[0], "unsupported native control frame");
+            let mut early_close = Worker::start(&binary);
+            early_close.rejected_control(
+                &vec![0; 2 * 1024 * 1024],
+                "unsupported native control frame",
             );
             continue;
         }
@@ -173,10 +221,6 @@ fn trusted_snapshot_protocol_bounds_rejections_and_full_width_tick_state() {
         assert_eq!(worker.control(&numbers(3, &[SIZE])), [0x82, 1]);
         worker.normal(u64::MAX);
         worker.normal(0);
-        worker.send(true, &[]);
-        assert!(
-            !worker.0.wait().unwrap().success(),
-            "empty control frame was accepted"
-        );
+        worker.rejected_control(&[], "(1..=65541).contains(&n)");
     }
 }

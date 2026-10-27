@@ -4,6 +4,8 @@ on:
     paths:
       - 'ports'
       - 'web-player/recorded-*'
+      - 'web-player/worker.js'
+      - 'web-player/png-*'
       - 'tools/check_arkanoo_recorded*'
       - 'tests/arkanoo*'
       - 'tests/game_arkanoo*'
@@ -27,6 +29,8 @@ on:
     paths:
       - 'ports'
       - 'web-player/recorded-*'
+      - 'web-player/worker.js'
+      - 'web-player/png-*'
       - 'tools/check_arkanoo_recorded*'
       - 'tests/arkanoo*'
       - 'tests/game_arkanoo*'

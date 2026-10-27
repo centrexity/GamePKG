@@ -4,7 +4,9 @@ const SIGNATURE=[137,80,78,71,13,10,26,10],MAX_BYTES=2097152;
 const CRC=new Uint32Array(256);for(let n=0;n<256;n++){let value=n;for(let i=0;i<8;i++)value=value&1?0xedb88320^(value>>>1):value>>>1;CRC[n]=value>>>0;}
 function crc(bytes,start,end){let value=0xffffffff;for(let i=start;i<end;i++)value=CRC[(value^bytes[i])&255]^(value>>>8);return (value^0xffffffff)>>>0;}
 function paeth(a,b,c){const p=a+b-c,pa=Math.abs(p-a),pb=Math.abs(p-b),pc=Math.abs(p-c);return pa<=pb&&pa<=pc?a:pb<=pc?b:c;}
-export async function decodeExactPNG(bytes){
+export async function decodeExactPNG(bytes){return decodeExactPNGSync(bytes);}
+export function validateExactPNG(bytes){const parsed=parseExactPNG(bytes);return parsed?{width:parsed.width,height:parsed.height}:null;}
+function parseExactPNG(bytes){
  if(!(bytes instanceof Uint8Array)||!(bytes.buffer instanceof ArrayBuffer)||bytes.length<33||bytes.length>MAX_BYTES||!SIGNATURE.every((value,index)=>bytes[index]===value))throw Error('Invalid exact PNG');
  const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength),width=view.getUint32(16),height=view.getUint32(20),type=bytes[25],depth=bytes[24];
  // Other valid PNG representations retain the existing exporter-provided precise pixels.
@@ -36,6 +38,11 @@ export async function decodeExactPNG(bytes){
  }
  if(!ended)throw Error('Incomplete exact PNG');
  if(type===3&&!palette)throw Error('Missing exact PNG palette');
+ return {width,height,type,depth,compressed,palette,alpha,transparent};
+}
+export function decodeExactPNGSync(bytes){
+ const parsed=parseExactPNG(bytes);if(!parsed)return null;
+ const {width,height,type,depth,compressed,palette,alpha,transparent}=parsed;
  const channels=type===6?4:type===2?3:type===4?2:1,bpp=Math.max(1,Math.ceil(channels*depth/8)),stride=Math.ceil(width*channels*depth/8),expected=(stride+1)*height;
  const raw=inflatePNG(compressed,expected);
  const pixels=new Uint8Array(width*height*4);let previous=new Uint8Array(stride),current=new Uint8Array(stride);

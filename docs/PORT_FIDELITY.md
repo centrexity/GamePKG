@@ -4748,3 +4748,52 @@ the on-disk selection, and observes the actual popup before searching for an
 option. It keeps every persistence, restart, custom-width and image-size
 assertion, and retains a bounded screenshot/state diagnostic on popup failure.
 Remote validation is still required; no UI deadline or expected value changes.
+
+### Reloadable browser image cache
+
+Browser startup previously stopped preparing images after its 32 MiB decoded
+allowance was filled, silently making later valid images unavailable. The
+worker now retains bounded source plans and an LRU decoded-image cache with the
+same 32 MiB allowance. It checks the declared exact PNG chunk structure and CRCs
+at startup, warms at most 32 MiB of pixels, and decodes cold or evicted images
+when requested. Eviction happens before a replacement pixel allocation. Frame
+and command checks run before a cache miss can trigger decoding. The separate
+8 MiB frame allowance, 512-pixel image dimensions, 2 MiB PNG limit, 32 MiB encoded
+export cap and worker deadlines remain unchanged. These named buffers are not
+a cap on the whole browser, JavaScript heap, garbage collector or GPU.
+
+The exporter supplies exact-PNG or precise-RGBA plans for valid PNG assets used
+through nearest, filtered, straight-alpha or shader-image imports. Valid
+unsupported representations, including opaque 16-bit images, receive the same
+host-decoded precise pixels and count toward the encoded export cap. Reloading
+uses the shared synchronous bounded PNG decoder, without Canvas color or alpha
+conversion; the existing asynchronous decoder entry remains available.
+
+A regression against the previous worker reproduces a valid image being lost
+after the first 32 MiB. The current worker draws 37 MiB of exact/precise images
+through two complete cache cycles with unchanged hashes and hidden RGB. It
+checks bounded startup pixel work, exact/precise eviction and reuse, canonical
+and shader bindings, frame rejection without decode, invalid metadata, corrupt
+cold-image CRCs without cache/command publication, and recovery. Signed
+nearest-only core/component exports additionally verify 36 large PNGs and an
+opaque 16-bit fallback, including corruption at startup and a fresh restored
+worker. The reusable maintainer command is `python3 tests/browser_image_cache.py`.
+
+A private `--assets` run uses all 48 verified lossless tiles from two pinned
+original backgrounds: 34,861,536 decoded bytes exceed the cache allowance.
+Both browser profiles preserve every independent tile hash through two complete
+cycles, corruption rejection and restored playback. Each probe frame draws one
+tile: this establishes cache/data delivery, not full-background composition.
+Full original-resolution composition still exceeds the existing per-frame
+allowance and needs explicit bounded resource integration. The current full
+76-image/five-effect/nine-track port retains its 33,212,842 encoded asset bytes,
+original memory shares and saved/corrupt-save behavior.
+
+A final whole-suite run exposed an unrelated negative-test race: an ordinary
+worker rejects a control header before the sender necessarily finishes its
+body, so the correct rejection can produce `BrokenPipe`. A 2 MiB rejected body
+deterministically reproduces the old test failure locally. The fixture now
+joins a bounded rejection writer, requires worker failure with the specific
+trusted-guard diagnostic, and accepts only `BrokenPipe` on that negative path.
+Valid request writes remain strict. Empty controls, ordinary small controls
+and the large early-close case pass; production worker framing is unchanged.
