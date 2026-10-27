@@ -7,6 +7,9 @@ parser.add_argument('candidate',type=Path)
 parser.add_argument('--full-save',action='store_true',help='Keep an exact 1 MiB, 5041-pattern archive resident during every scene')
 args=parser.parse_args()
 project=Path(__file__).resolve().parents[1]
+import sys
+sys.path.insert(0, str(project/'tests'))
+from arkanoo_legacy_support import use_legacy_audio
 limits=tomllib.loads((args.candidate/'manifest.toml').read_text())['limits']
 assert (limits['hard_memory_bytes'],limits['effects_memory_bytes'],limits['music_memory_bytes'])==(16777216,3145728,7340032), 'Dense qualification requires the existing 16/3/7 MiB shares'
 env=dict(os.environ,
@@ -31,6 +34,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-recorded-dense-') as temporary:
   environment['GAMEPKG_RECORDED_DENSE_ROOT']=str(library)
   for label,source in [('baseline',project/'ports/arkanoo'),('recorded',args.candidate)]:
    recipe=root/(profile+'-'+label);shutil.copytree(source,recipe)
+   if label == 'baseline': use_legacy_audio(recipe)
    entry=recipe/'source/src/lib.rs';text=entry.read_text();signature='pub fn game_tick(input: u32, state: u64) -> u64 {'
    assert text.count(signature)==1
    injected=probe.replace('DENSE_EFFECT','gamepkg::effect_play("audio/bounce.wav");' if label=='recorded' else '')

@@ -312,7 +312,13 @@ accounted. Music advances on the output clock independently of game ticks, mixes
 at 44.1 kHz before the shared 48 kHz conversion, and can coexist with recorded
 effects. Declaring either recorded-audio share disables premixed PCM submission.
 No guest dependency, decoder file, Python installation or player file path is
-required. Source-built hosts support desktop native/core/component and core/component browser exports with embedded companions. Browser music loads asynchronously after a successful checkpoint; Stop/replacement cancels older startup. Declared shares include decoder, cache, transfer and converter reservations and reduce the guest memory ceiling. Browser compiler/JIT/GC and caller-owned asset storage are separate from those explicit reservations. Original port migration and wider platform verification remain open.
+required. Source-built hosts support desktop native/core/component and core/component browser exports with embedded companions. Browser music loads asynchronously after a successful checkpoint; Stop/replacement cancels older startup. Declared shares include decoder, cache, transfer and converter reservations and reduce the guest memory ceiling. Browser compiler/JIT/GC and caller-owned asset storage are separate from those explicit reservations. The canonical Arkanoo recipe now enables original recordings; wider platform and game fidelity verification remain open.
+
+Browser decoder input uses sequential transfers of at most 64 KiB. The complete
+upload has a fixed five-second allowance; each acknowledgement is limited to
+100 ms. Codec open, read and rewind each retain their 100 ms execution limit.
+This separates message scheduling for large assets from codec execution without
+renewing the aggregate upload allowance or increasing audio memory reservations.
 
 ## Slang shaders, textures and audio
 

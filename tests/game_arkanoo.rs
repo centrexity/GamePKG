@@ -69,11 +69,11 @@ mod gamepkg {
 }
 fn original_effect_wav(kind: u32) -> &'static [u8] {
     match kind {
-        1 => include_bytes!("../ports/arkanoo/assets/audio/bounce.wav"),
-        2 => include_bytes!("../ports/arkanoo/assets/audio/glass.wav"),
-        3 => include_bytes!("../ports/arkanoo/assets/audio/launch.wav"),
-        4 => include_bytes!("../ports/arkanoo/assets/audio/explosion.wav"),
-        5 => include_bytes!("../ports/arkanoo/assets/audio/life-loss.wav"),
+        1 => include_bytes!("fixtures/arkanoo-legacy-effects/bounce.wav"),
+        2 => include_bytes!("fixtures/arkanoo-legacy-effects/glass.wav"),
+        3 => include_bytes!("fixtures/arkanoo-legacy-effects/launch.wav"),
+        4 => include_bytes!("fixtures/arkanoo-legacy-effects/explosion.wav"),
+        5 => include_bytes!("fixtures/arkanoo-legacy-effects/life-loss.wav"),
         _ => panic!("unknown test effect"),
     }
 }
@@ -294,11 +294,16 @@ fn original_penguin_rectangle_art_and_fallback_heart_points_are_preserved() {
     }
     assert_eq!(
         gamepkg_host_heart_hash(),
-        "86b8ef21b5544f39542c247518155f4a856aab70851bbd76cfb67df4bd0fbd71"
+        "c1985ddc24f5609726db96061fd3c3cd2ee39c2ee523ccda568597c6c236062e"
     );
 }
 fn gamepkg_host_heart_hash() -> String {
-    ::gamepkg::verify::digest(include_bytes!("../ports/arkanoo/assets/heart.png"))
+    // Hash the original decoded art, independent of lossless PNG encoding.
+    let image = image::load_from_memory(include_bytes!("../ports/arkanoo/assets/heart.png"))
+        .unwrap()
+        .into_rgba8();
+    assert_eq!(image.dimensions(), (512, 472));
+    ::gamepkg::verify::digest(image.as_raw())
 }
 #[test]
 fn penguin_pause_replacement_level_restart_and_editor_test_follow_original_boundaries() {
@@ -4186,7 +4191,7 @@ fn recorded_effects_preserve_every_original_sdl_sample_and_full_stereo_duration(
 
 #[test]
 fn recording_headers_reject_truncation_wrong_formats_sizes_and_overflow() {
-    let original = include_bytes!("../ports/arkanoo/assets/audio/life-loss.wav");
+    let original = include_bytes!("fixtures/arkanoo-legacy-effects/life-loss.wav");
     for length in 0..44 {
         assert!(audio::recording_length(&original[..length]).is_none());
     }
@@ -4218,7 +4223,7 @@ fn recording_headers_reject_truncation_wrong_formats_sizes_and_overflow() {
 
 #[test]
 fn truncated_and_trailing_recordings_fail_atomically_and_cache_does_not_repeat_reads() {
-    let original = include_bytes!("../ports/arkanoo/assets/audio/life-loss.wav");
+    let original = include_bytes!("fixtures/arkanoo-legacy-effects/life-loss.wav");
     for length in [0usize, 20, 43, 44, 65580, original.len() - 1] {
         gamepkg::recording_override(Some(original[..length].to_vec()));
         let mut mixer = audio::Mixer::new();

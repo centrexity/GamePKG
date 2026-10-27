@@ -27,8 +27,13 @@ shutil.copy2(inputs/'audio/music-list.txt',out/'assets/audio/music-list.txt')
 # Game/control/runtime integration lives in the canonical source. Assembly only
 # supplies the complete matched assets and signed shares. The playlist selects
 # the recorded profile at startup, without source switches or implementations.
-manifest=out/'manifest.toml';text=manifest.read_text();assert 'effects_memory_bytes' not in text and 'music_memory_bytes' not in text
-manifest.write_text(text.replace('recommended_memory_bytes = 8388608','recommended_memory_bytes = 16777216').replace('[limits]','[limits]\neffects_memory_bytes = 3145728\nmusic_memory_bytes = 7340032'))
+manifest=out/'manifest.toml';text=manifest.read_text()
+if 'effects_memory_bytes' not in text and 'music_memory_bytes' not in text:
+ text=text.replace('recommended_memory_bytes = 8388608','recommended_memory_bytes = 16777216').replace('[limits]','[limits]\neffects_memory_bytes = 3145728\nmusic_memory_bytes = 7340032')
+import tomllib
+limits=tomllib.loads(text)['limits']
+assert (limits['hard_memory_bytes'],limits['effects_memory_bytes'],limits['music_memory_bytes'])==(16777216,3145728,7340032),'Require the qualified hard limit and audio shares'
+manifest.write_text(text)
 for source in (project/'ports/arkanoo/source/src').glob('*.rs'):
  expected=source.read_bytes()
  assert (out/'source/src'/source.name).read_bytes()==expected,'Assembly must not patch game implementations: '+source.name

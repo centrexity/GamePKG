@@ -192,6 +192,8 @@ jobs:
           GAMEPKG_CLANG=clang GAMEPKG_X87_REMAINDER_FIXTURE_SOURCE="$RUNNER_TEMP/gamepkg-x87-remainder-fixture.c" GAMEPKG_X87_REMAINDER_LINK_ONLY=1 bash tools/check_takedawn_x87_remainder_targets.sh
           GAMEPKG_CLANG=clang GAMEPKG_X87_SCALE_FIXTURE_SOURCE="$RUNNER_TEMP/gamepkg-x87-scale-fixture.c" GAMEPKG_X87_SCALE_LINK_ONLY=1 bash tools/check_takedawn_x87_scale_targets.sh
           GAMEPKG_CLANG=clang GAMEPKG_X87_STACK_FIXTURE_SOURCE="$RUNNER_TEMP/gamepkg-x87-stack-fixture.c" GAMEPKG_X87_STACK_LINK_ONLY=1 bash tools/check_takedawn_x87_stack_targets.sh
+      - name: Verify decoder upload scheduling and execution deadlines
+        run: node tests/web_decoder_upload_deadlines.mjs
       - name: Verify optional decoder embedding bounds and input reset
         run: python3 tests/embedded_audio_build.py
       - name: Test
@@ -720,6 +722,9 @@ jobs:
       - name: Verify complete original recorded-audio browser port within existing budgets
         if: matrix.features == '--all-features'
         run: |
+          /usr/bin/python3 tools/check_arkanoo_recorded_delivery.py
+          sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" /usr/bin/python3 tools/check_arkanoo_recorded_port.py ports/arkanoo
+          sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tools/check_arkanoo_recorded_web.py ports/arkanoo --optimized-images ports/arkanoo/assets
           recorded_checks=$(mktemp -d /tmp/gamepkg-recorded-checks.XXXXXX)
           trap 'rm -rf "$recorded_checks"' EXIT
           /usr/bin/python3 tools/check_effect_assets.py target/reference-arkanoo --private-output "$recorded_checks/inputs" --include-music
