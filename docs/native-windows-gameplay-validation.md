@@ -322,3 +322,13 @@ unsupported-path assertions, and does not qualify physical Windows hardware.
 See the [Windows build notes](../engines/takedawn/rust-port/WINDOWS_BUILD.md)
 and [native process ownership notes](../engines/takedawn/windows-runner/README.md)
 for the SDK, sandbox, committed-memory budget and restart mechanisms.
+
+A current v14 Linux completion probe reaches the original multiplayer module
+`003A939C`, with both player phases entering `2` (in play), under strict path
+checks and actual Vulkan. It does not establish a race finish: the pinned
+`src/game/autopilot.c` helper only permits the single-player module `003A9ACC`,
+so its player-one AI never engages here. The owned probe was stopped once this
+invalid driver assumption was identified; its reference profile remained
+unchanged. Enabling that debug flag is not evidence of multiplayer driving.
+A completion check still needs a reviewed ordinary-input driver; production
+AI guards, scores and results must not be patched to manufacture qualification.

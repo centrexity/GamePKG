@@ -4647,3 +4647,13 @@ native/Wasm target explicitly and captures private-display startup dialogs and
 window titles on failure. The package, reference pixels and tolerances are not
 reduced to bypass audio preparation. Its 2021-edition formatting check also uses
 the project formatter rather than an explicitly selected 2024 style.
+
+The corrected canonical recorded-port CI gate passes on source `61522b2`
+([run 40506358814](https://github.com/centrexity/GamePKG/actions/runs/40506358814)).
+The remaining menu gate has a browser state-transition timeout after desktop
+comparisons pass. Private Rust 1.89/1.91 and exact CI Rust 1.99.1/Chrome 156
+runs pass the complete matrix locally; five exact-version browser cycles also
+pass. The fixture now retains bounded worker/input traces, browser status,
+focus, console output and a screenshot on failure, and the scaled CI case runs
+three complete cycles. The original timeouts and two-level pixel tolerance
+are unchanged; no production input change is claimed without a reproduced cause.
