@@ -19,6 +19,7 @@ patches = [
     "0002-gamepkg-host-log.patch",
     "0003-x86-arch-and-portable-march.patch",
     "0004-lp64-long-width.patch",
+    "0005-halo-addr-pointer-fields.patch",
 ]
 
 [[layouts]]
@@ -38,7 +39,7 @@ max_bytes = 8589934592
 id = "linux-x86_64"
 os = "linux"
 arch = "x86_64"
-blocker = "This target is not ready. Patch 0004 stores Xbox long fields as halo_s32, which is 4 bytes on LP64. Pointer fields in size-asserted structs are still native pointers, so the Linux prefix still errors because game data structures assume 32-bit pointers. The prefix guard stays until those fields are halo_addr."
+blocker = "This target is not ready. Patch 0005 stores pointer fields in size-asserted structs as halo_addr. The Linux prefix still errors because game data structures assume 32-bit pointers. The prefix guard stays until a linux-x86_64 binary passes the stand-in startup check."
 tools = ["python3", "ninja", "clang", "cmake", "pkg-config"]
 configure = ["python3", "configure.py", "--release", "--portable", "--pgo=off", "--lto=off", "--arch", "x86_64"]
 build_program = "ninja"
@@ -82,7 +83,7 @@ warning = "32-bit ALSA was not found. The engine will start without sound."
 id = "windows-x64"
 os = "windows"
 arch = "x86_64"
-blocker = "This target is not ready. Win64 long is already 4 bytes, and patch 0004 stores Xbox long fields as halo_s32. Pointer fields in size-asserted structs are still native pointers, so the Windows prefix still errors because game data structures assume 32-bit pointers. The prefix guard stays until those fields are halo_addr."
+blocker = "This target is not ready. Patch 0005 stores pointer fields in size-asserted structs as halo_addr. Win64 long is already 4 bytes. The Windows prefix still errors because game data structures assume 32-bit pointers. The prefix guard stays until a windows-x64 binary passes the stand-in startup check."
 tools = ["python3", "ninja", "clang", "cmake", "pkg-config"]
 configure = ["python3", "configure.py", "--release", "--portable", "--pgo=off", "--lto=off", "--windows-cross", "--arch", "x86_64", "--windows-vctools-dir", "{vctools}", "--windows-sdk-dir", "{winsdk}"]
 build_program = "ninja"

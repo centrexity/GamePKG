@@ -62,7 +62,25 @@ fn external_engine_recipe_parses_and_rejects_layout_and_network_changes() {
     );
     assert!(
         !layout.contains("-#error the Linux port targets 32-bit x86"),
-        "the 32-bit prefix guard stays until pointer fields are converted"
+        "the 32-bit prefix guard stays until a 64-bit binary passes"
+    );
+    let pointers = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("engines/halo/patches/0005-halo-addr-pointer-fields.patch"),
+    )
+    .unwrap();
+    assert!(
+        pointers.contains("((halo_ty_") && pointers.contains("halo_ref("),
+        "pointer fields in size-asserted structs load through halo_addr"
+    );
+    assert!(
+        pointers.contains("#define halo_ref_any(value) ((halo_addr)(value))"),
+        "stores into halo_addr stay constant expressions"
+    );
+    assert!(
+        !pointers.contains("-#error the Linux port targets 32-bit x86")
+            && !pointers.contains("-#error the Windows port targets 32-bit x86"),
+        "the prefix guards stay until a 64-bit binary passes the stand-in check"
     );
     let pin: serde_json::Value = serde_json::from_str(
         &std::fs::read_to_string(
