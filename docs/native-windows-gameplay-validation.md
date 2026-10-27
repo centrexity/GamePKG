@@ -72,7 +72,10 @@ stereo capture, original Race and PS2-layout Crash control checks, keyboard prof
 navigation, a 1024×768 window resize and normal close under Wine. These use an
 independent headless GPU desktop and retain actual-Vulkan and unsupported-path
 assertions. The first resize attempt was constrained by a 720-pixel test desktop;
-the unchanged assertion passes on the taller desktop. Full signed-package Build,
+the unchanged assertion passes on the taller desktop. With instruction traps
+enabled, the Windows candidate also completes the original three-lap race:
+fifth of six, 345.483 seconds, best lap 108.517 seconds, normal results flow and
+strict path/Vulkan gates. Full signed-package Build,
 updated packaging and physical Windows qualification remain required. The rejection is not waived because
 the game reaches a menu or a result screen.
 
