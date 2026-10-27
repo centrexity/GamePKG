@@ -47,6 +47,23 @@ fn external_engine_recipe_parses_and_rejects_layout_and_network_changes() {
         march.contains("return \"-msse2 -maes -mpclmul\""),
         "portable i686 Windows must enable AES-NI intrinsics for mbedtls"
     );
+    let layout = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("engines/halo/patches/0004-lp64-long-width.patch"),
+    )
+    .unwrap();
+    assert!(
+        layout.contains("typedef int halo_s32;") && layout.contains("typedef long halo_s32;"),
+        "Xbox long fields must stay 32 bits on LP64 and stay long where long is already 32 bits"
+    );
+    assert!(
+        layout.contains("+#include \"halo_layout.h\""),
+        "the Linux prefix must see halo_s32 before game headers"
+    );
+    assert!(
+        !layout.contains("-#error the Linux port targets 32-bit x86"),
+        "the 32-bit prefix guard stays until pointer fields are converted"
+    );
     let pin: serde_json::Value = serde_json::from_str(
         &std::fs::read_to_string(
             Path::new(env!("CARGO_MANIFEST_DIR")).join("ports/tools/opence-pin.json"),
