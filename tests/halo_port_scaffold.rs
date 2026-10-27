@@ -38,6 +38,15 @@ fn external_engine_recipe_parses_and_rejects_layout_and_network_changes() {
     assert!(halo.contains("requires_rom = false"));
     assert!(halo.contains("i686"));
     assert!(halo.contains("/v0.1.6/halo.gamepkg"));
+    let march = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("engines/halo/patches/0003-x86-arch-and-portable-march.patch"),
+    )
+    .unwrap();
+    assert!(
+        march.contains("return \"-msse2 -maes -mpclmul\""),
+        "portable i686 Windows must enable AES-NI intrinsics for mbedtls"
+    );
     let pin: serde_json::Value = serde_json::from_str(
         &std::fs::read_to_string(
             Path::new(env!("CARGO_MANIFEST_DIR")).join("ports/tools/opence-pin.json"),
@@ -136,6 +145,81 @@ fn data_layouts_accept_maps_or_one_archive() {
         gamepkg::game_data::matches(&maps, layouts).unwrap(),
         gamepkg::game_data::DataMatch::Link { .. }
     ));
+    std::fs::write(maps.join("also.iso"), vec![0; 2048]).unwrap();
+    assert!(
+        matches!(
+            gamepkg::game_data::matches(&maps, layouts).unwrap(),
+            gamepkg::game_data::DataMatch::Link { .. }
+        ),
+        "maps stay preferred when a disc image is also present"
+    );
+    let wrong = root.path().join("wrong");
+    std::fs::create_dir(&wrong).unwrap();
+    std::fs::write(wrong.join("notes.txt"), vec![0; 2048]).unwrap();
+    assert!(gamepkg::game_data::matches(&wrong, layouts).is_err());
+    #[cfg(unix)]
+    {
+        let linked_dir = root.path().join("linked-dir");
+        std::fs::create_dir_all(linked_dir.join("real")).unwrap();
+        std::fs::write(linked_dir.join("real/ui.map"), b"not-a-real-map").unwrap();
+        std::os::unix::fs::symlink("real", linked_dir.join("maps")).unwrap();
+        assert!(gamepkg::game_data::matches(&linked_dir, layouts).is_err());
+        let linked_file = root.path().join("linked-file");
+        std::fs::create_dir_all(linked_file.join("maps")).unwrap();
+        std::fs::write(linked_file.join("maps/real.map"), b"not-a-real-map").unwrap();
+        std::os::unix::fs::symlink("real.map", linked_file.join("maps/ui.map")).unwrap();
+        assert!(gamepkg::game_data::matches(&linked_file, layouts).is_err());
+        let escape = root.path().join("escape");
+        std::fs::create_dir_all(escape.join("maps")).unwrap();
+        std::fs::write(escape.join("maps/ui.map"), b"not-a-real-map").unwrap();
+        std::os::unix::fs::symlink("/etc/passwd", escape.join("maps/outside")).unwrap();
+        let error = gamepkg::game_data::matches(&escape, layouts)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("leaves the game-data directory"), "{error}");
+        let linked_disc = root.path().join("linked-disc");
+        std::fs::create_dir(&linked_disc).unwrap();
+        std::fs::write(linked_disc.join("real.iso"), vec![0; 2048]).unwrap();
+        std::os::unix::fs::symlink("real.iso", linked_disc.join("halo.iso")).unwrap();
+        assert!(gamepkg::game_data::matches(&linked_disc, layouts).is_err());
+        let inside = root.path().join("inside-link");
+        std::fs::create_dir_all(inside.join("maps")).unwrap();
+        std::fs::write(inside.join("maps/ui.map"), b"not-a-real-map").unwrap();
+        std::os::unix::fs::symlink("ui.map", inside.join("maps/alias.map")).unwrap();
+        assert!(matches!(
+            gamepkg::game_data::matches(&inside, layouts).unwrap(),
+            gamepkg::game_data::DataMatch::Link { .. }
+        ));
+    }
+    let tiny = root.path().join("tiny");
+    std::fs::create_dir(&tiny).unwrap();
+    std::fs::write(tiny.join("halo.iso"), vec![0; 32]).unwrap();
+    assert!(gamepkg::game_data::matches(&tiny, layouts).is_err());
+    let huge_map = root.path().join("huge-map");
+    std::fs::create_dir_all(huge_map.join("maps")).unwrap();
+    let map = huge_map.join("maps/ui.map");
+    std::fs::File::create(&map)
+        .unwrap()
+        .set_len(67_108_865)
+        .unwrap();
+    assert!(gamepkg::game_data::matches(&huge_map, layouts).is_err());
+    let huge_disc = root.path().join("huge-disc");
+    std::fs::create_dir(&huge_disc).unwrap();
+    let disc_file = huge_disc.join("halo.iso");
+    std::fs::File::create(&disc_file)
+        .unwrap()
+        .set_len(8_589_934_593)
+        .unwrap();
+    assert!(gamepkg::game_data::matches(&huge_disc, layouts).is_err());
+    let nested = root.path().join("nested");
+    std::fs::create_dir_all(nested.join("inner/maps")).unwrap();
+    std::fs::write(nested.join("inner/maps/ui.map"), b"not-a-real-map").unwrap();
+    let via_parent = nested.join("inner/extra/..");
+    std::fs::create_dir_all(nested.join("inner/extra")).unwrap();
+    assert!(matches!(
+        gamepkg::game_data::matches(&via_parent, layouts).unwrap(),
+        gamepkg::game_data::DataMatch::Link { .. }
+    ));
 }
 
 #[test]
@@ -230,17 +314,27 @@ fn pinned_checkout_caches_the_i686_engine_without_copying_game_data() {
     std::fs::write(data.join("maps/ui.map"), b"placeholder").unwrap();
     gamepkg::game_data::remember_for_game(library.path(), "com.gamepkg.halo", &data).unwrap();
     let previous_home = std::env::var_os("GAMEPKG_HOME");
+    let previous_config = std::env::var_os("GAMEPKG_CONFIG");
+    let config = library.path().join("settings.toml");
+    std::fs::write(&config, "memory_ceiling_mib = 3072\n").unwrap();
     std::env::set_var("GAMEPKG_HOME", library.path());
+    std::env::set_var("GAMEPKG_CONFIG", &config);
     std::env::set_var("SDL_VIDEODRIVER", "offscreen");
     std::env::set_var("SDL_AUDIODRIVER", "dummy");
     std::env::set_var("HALO_HIDDEN_WINDOW", "1");
     std::env::set_var("HALO_NULL_RENDERER", "1");
+    std::env::set_var("HALO_EXIT_AFTER", "1");
     let error = gamepkg::external_engine::launch(library.path(), "com.gamepkg.halo")
         .unwrap_err()
         .to_string();
+    std::env::remove_var("HALO_EXIT_AFTER");
     match previous_home {
         Some(home) => std::env::set_var("GAMEPKG_HOME", home),
         None => std::env::remove_var("GAMEPKG_HOME"),
+    }
+    match previous_config {
+        Some(config) => std::env::set_var("GAMEPKG_CONFIG", config),
+        None => std::env::remove_var("GAMEPKG_CONFIG"),
     }
     match previous {
         Some(source) => std::env::set_var("GAMEPKG_ENGINE_SOURCE", source),

@@ -101,6 +101,71 @@ static int test_datum(void)
 	return 0;
 }
 
+static uint32_t lcg(uint32_t *state)
+{
+	*state = *state * 1664525u + 1013904223u;
+	return *state;
+}
+
+static int test_bounds(void)
+{
+	enum { SIZE = 4096 };
+	uint8_t storage[SIZE];
+	uint8_t other[16];
+	halo_arena arena;
+	uint32_t state = 0xC0FFEEu;
+	uint32_t i;
+
+	memset(storage, 0x5a, sizeof(storage));
+	arena.base = storage;
+	arena.origin = 0x803A6000u;
+	arena.size = SIZE;
+	if (halo_addr_resolve(&arena, arena.origin) != (void *)storage)
+		return fail("origin maps to base");
+	if (halo_addr_from_host(&arena, storage) != arena.origin)
+		return fail("base stores origin");
+	if (halo_addr_resolve(&arena, arena.origin + SIZE - 1) != (void *)(storage + SIZE - 1))
+		return fail("last byte");
+	if (halo_addr_resolve(&arena, arena.origin + SIZE) != NULL)
+		return fail("one past end");
+	if (halo_addr_resolve(&arena, arena.origin - 1) != NULL)
+		return fail("below origin");
+	if (halo_addr_resolve(NULL, 1) != NULL)
+		return fail("null arena");
+	arena.base = NULL;
+	if (halo_addr_resolve(&arena, 0x803A6000u) != NULL)
+		return fail("null base");
+	arena.base = storage;
+	arena.origin = 0xFFFFFFF0u;
+	arena.size = 32;
+	if (halo_addr_from_host(&arena, storage + 20) != 0)
+		return fail("wrap store");
+	if (halo_addr_resolve(&arena, 4) != NULL)
+		return fail("wrapped guest address");
+	arena.origin = 0x803A6000u;
+	arena.size = SIZE;
+	for (i = 0; i < SIZE; i++) {
+		halo_addr addr = arena.origin + i;
+		if (halo_addr_resolve(&arena, addr) != (void *)(storage + i))
+			return fail("in-range sweep");
+		if (halo_addr_from_host(&arena, storage + i) != addr)
+			return fail("store sweep");
+	}
+	for (i = 0; i < 10000; i++) {
+		halo_addr addr = lcg(&state);
+		void *resolved = halo_addr_resolve(&arena, addr);
+		if (addr == 0 || addr < arena.origin || (addr - arena.origin) >= (uint32_t)SIZE) {
+			if (resolved != NULL)
+				return fail("fuzz accepted an outside address");
+		} else if (resolved != (void *)(storage + (addr - arena.origin))) {
+			return fail("fuzz missed an inside address");
+		}
+	}
+	if (halo_addr_from_host(&arena, other) != 0)
+		return fail("pointer outside the arena was stored");
+	return 0;
+}
+
 int main(void)
 {
 	int result = test_round_trip();
@@ -109,5 +174,8 @@ int main(void)
 	result = test_map_fixture();
 	if (result)
 		return result;
-	return test_datum();
+	result = test_datum();
+	if (result)
+		return result;
+	return test_bounds();
 }
