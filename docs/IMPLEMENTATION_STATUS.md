@@ -44,6 +44,14 @@ including all 487 units, native readiness and corruption/repair with unchanged
 unit hashes/timestamps. Physical game hardware qualification remains separate
 from those compiler checks and the Windows-under-Wine routes. See the [gameplay validation scope](native-windows-gameplay-validation.md).
 
+The current v14 Linux build also earns an original Downtown Road Rage1 Bronze
+medal through normal steering, accelerator and boost inputs with debug AI off.
+Original rewards, two event unlocks and autosave survive a fresh process with
+unchanged saved bytes. Reviewed actions use the original pause menus; this is
+scoped medal/persistence coverage, not a continuous real-time campaign or physical
+Windows qualification. The private Windows preview uses app `f87f383` and a
+verified actual-Windows CI archive; original-game hardware checks remain pending.
+
 The web library displays metadata and cached icons; installation, builds, gameplay and repair remain in the native app or CLI. Browser cache quotas and eviction are browser-controlled. Native signed records and saves remain the recovery source.
 
 Source checks complement process isolation and host validation; they are not a complete security boundary by themselves. Source availability and signatures do not prove that a game is harmless or identify a real-world author.
