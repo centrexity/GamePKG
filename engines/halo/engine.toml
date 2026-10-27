@@ -21,6 +21,8 @@ patches = [
     "0004-lp64-long-width.patch",
     "0005-halo-addr-pointer-fields.patch",
     "0006-lp64-layout-and-load-time-fixups.patch",
+    "0007-gamepkg-clock.patch",
+    "0008-map-validate-layout.patch",
 ]
 
 [[layouts]]

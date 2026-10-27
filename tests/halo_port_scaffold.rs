@@ -100,6 +100,16 @@ fn external_engine_recipe_parses_and_rejects_layout_and_network_changes() {
         fixups.contains("-#error the Windows port targets 32-bit x86"),
         "the Windows prefix guard comes out only after windows-x64 passes"
     );
+    let clock = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("engines/halo/patches/0007-gamepkg-clock.patch"),
+    )
+    .unwrap();
+    assert!(
+        clock.contains("gamepkg_monotonic_time_ns")
+            && clock.contains("gamepkg_wall_time")
+            && clock.contains("__attribute__((weak))"),
+        "the game clock goes through the host ABI, with a weak clock_gettime fallback"
+    );
     let pin: serde_json::Value = serde_json::from_str(
         &std::fs::read_to_string(
             Path::new(env!("CARGO_MANIFEST_DIR")).join("ports/tools/opence-pin.json"),
