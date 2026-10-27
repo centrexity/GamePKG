@@ -100,7 +100,7 @@ start() {
         --setenv PATH /usr/bin:/bin --setenv LANG C.UTF-8 \
         --setenv GAMEPKG_TAKEDAWN_DISC /disc.iso --setenv RECOMP_SAVE_DIR /state/saves \
         --setenv XDG_DATA_HOME /state/data --setenv XDG_CACHE_HOME /state/cache \
-        --setenv RECOMP_PB_BACKEND vulkan --setenv RECOMP_STUB_LOG 1 --setenv SDL_AUDIODRIVER dummy \
+        --setenv RECOMP_PB_BACKEND vulkan --setenv RECOMP_STUB_LOG 1 --setenv RECOMP_UNIMPL_TRAP 1 --setenv SDL_AUDIODRIVER dummy \
         --setenv RECOMP_FLIP_MARK 1 --setenv RECOMP_PAD_LIVE /state/pad.txt \
         --setenv RECOMP_FB_DUMP "/state/$task_phase-frame-" --setenv RECOMP_PB_REPORT_MS 5000 \
         "${task_audio[@]}" "${task_platform[@]}" "${task_command[@]}" > "$task_log" 2>&1 &

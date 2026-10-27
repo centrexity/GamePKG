@@ -38,7 +38,7 @@ fn unit_cache(kit: &Path, tools: &Path, persistent: Option<&Path>) -> Result<Uni
     let context = crate::verify::digest(
         format!(
             "GamePKG Rust unit toolchain v1\0{}\0{}\0{}\0{}",
-            super::KIT_SHA256,
+            super::CURRENT_KIT_SHA256,
             crate::native::cpu_identity(),
             std::str::from_utf8(&version.stdout)?,
             crate::verify::digest(RUST_CACHE_WRAPPER.as_bytes())

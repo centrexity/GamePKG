@@ -48,6 +48,7 @@ fn main() -> std::io::Result<()> {
         ("RECOMP_PB_BACKEND", "vulkan".into()),
         ("RECOMP_FLIP_MARK", "1".into()),
         ("RECOMP_STUB_LOG", "1".into()),
+        ("RECOMP_UNIMPL_TRAP", "1".into()),
         ("SDL_AUDIODRIVER", "dummy".into()),
     ] {
         values.push((key.into(), value));
