@@ -234,6 +234,7 @@ pub fn export(root: &Path, id: &str, output: &Path) -> Result<()> {
     let _guard = crate::registry::LibraryChange::acquire(root)?;
     let mut package = crate::archive::Package::open(&root.join(format!("{id}.gamepkg")))?;
     let manifest = crate::verify::verify_embedded(&mut package)?;
+    let asset_limit = manifest.limits.web_asset_bytes();
     let effects = manifest.limits.effects_memory_bytes.unwrap_or(0);
     let music = manifest.limits.music_memory_bytes.unwrap_or(0);
     let recorded = effects != 0 || music != 0;
@@ -363,8 +364,11 @@ pub fn export(root: &Path, id: &str, output: &Path) -> Result<()> {
                     exact_png_images.push(name.clone());
                 } else {
                     size += image.pixels().len();
-                    if size > 32 * 1024 * 1024 {
-                        bail!("web assets exceed 32 MiB export limit");
+                    if size > asset_limit {
+                        bail!(
+                            "web assets exceed the selected {} MiB export limit",
+                            asset_limit / 1048576
+                        );
                     }
                     precise_images.insert(name.clone(),serde_json::json!({"width":image.size()[0],"height":image.size()[1],"rgba":hex::encode(image.pixels())}));
                 }
@@ -391,8 +395,11 @@ pub fn export(root: &Path, id: &str, output: &Path) -> Result<()> {
         } else {
             serde_json::Value::String(hex::encode(bytes))
         };
-        if size > 32 * 1024 * 1024 {
-            bail!("web assets exceed 32 MiB export limit");
+        if size > asset_limit {
+            bail!(
+                "web assets exceed the selected {} MiB export limit",
+                asset_limit / 1048576
+            );
         }
         assets.insert(name, payload);
     }

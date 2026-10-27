@@ -56,8 +56,23 @@ pub struct Frame {
     pub background: Option<u32>,
     pub commands: Vec<Command>,
     image_bytes: usize,
+    image_limit_bytes: usize,
 }
 impl Frame {
+    pub fn for_profile(profile: Option<crate::manifest::RenderProfile>) -> Self {
+        Self {
+            image_limit_bytes: profile
+                .map_or(MAX_IMAGE_BYTES, crate::manifest::RenderProfile::frame_bytes),
+            ..Self::default()
+        }
+    }
+    fn image_limit(&self) -> usize {
+        if self.image_limit_bytes == 0 {
+            MAX_IMAGE_BYTES
+        } else {
+            self.image_limit_bytes
+        }
+    }
     pub fn reset(&mut self) {
         self.background = None;
         self.commands.clear();
@@ -94,7 +109,7 @@ impl Frame {
             && (0.0..=1280.0).contains(&width)
             && (0.0..=960.0).contains(&height)
             && self.commands.len() < MAX_COMMANDS
-            && bytes <= MAX_IMAGE_BYTES.saturating_sub(self.image_bytes)
+            && bytes <= self.image_limit().saturating_sub(self.image_bytes)
     }
     pub fn image(&mut self, x: f32, y: f32, width: f32, height: f32, image: image::Image) -> bool {
         self.image_arc(x, y, width, height, std::sync::Arc::new(image), false)

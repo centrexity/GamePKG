@@ -161,6 +161,7 @@ impl Session {
             .limits
             .hard_memory_bytes
             .min(settings.memory_ceiling_mib * 1048576);
+        manifest.limits.ensure_render_memory(memory)?;
         if let Some(profile) = manifest.builtin_engine.as_deref() {
             ensure!(
                 memory >= crate::builtin::memory(profile)?,
@@ -269,6 +270,7 @@ impl Session {
                 return Err(std::io::Error::last_os_error().into());
             }
         }
+        let render_profile = manifest.limits.render_profile;
         let mut session = Self {
             effects,
             clock: crate::frame_clock::Clock::default(),
@@ -280,7 +282,7 @@ impl Session {
             engine_log_done,
             _binary: binary,
             package,
-            asset_image: crate::drawing::image::Cache::default(),
+            asset_image: crate::drawing::image::Cache::for_profile(render_profile),
             network: crate::network::Service::new(manifest.permissions.clone()),
             input_events: crate::input_events::Queue::new(manifest.permissions.input),
             window,
@@ -291,7 +293,7 @@ impl Session {
             engine_data: None,
             video,
             video_configured: false,
-            frame: Default::default(),
+            frame: crate::drawing::Frame::for_profile(render_profile),
             audio: Vec::new(),
             audio_channels: 1,
             achievements: Vec::new(),

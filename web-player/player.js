@@ -1,3 +1,4 @@
+import {renderResources} from './asset-store.js';
 import {ProgressStore,ProgressDataError} from './progress-store.js';
 import {RecordedBudget} from './recorded-budget.js';
 const canvas=document.querySelector('#game'),context=canvas.getContext('2d'),status=document.querySelector('#status'),play=document.querySelector('#play'),stop=document.querySelector('#stop'),restart=document.querySelector('#restart');
@@ -194,7 +195,7 @@ play.onclick=start;restart.onclick=async()=>{if(recordedSession&&running){await 
  catch{if(running&&worker===active&&homepageEpoch===epoch)halt('Unable to reload browser progress.');}
 }};stop.onclick=()=>halt('Stopped');
 try{
- const response=await fetch('game.json',{cache:'no-store'});if(!response.ok)throw Error('Missing export metadata');data=await response.json();if(data.format_version!==1)throw Error('Unsupported web export');
+ const response=await fetch('game.json',{cache:'no-store'});if(!response.ok)throw Error('Missing export metadata');data=await response.json();if(data.format_version!==1)throw Error('Unsupported web export');renderResources(data.manifest);
  const binary=await fetch('game.wasm',{cache:'no-store'});if(!binary.ok)throw Error('Missing compiled game');wasm=await binary.arrayBuffer();
  const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',wasm)),byte=>byte.toString(16).padStart(2,'0')).join('');if(digest!==data.wasm_sha256)throw Error('Compiled game integrity check failed');
  setupShaders(data.shaders||[]);

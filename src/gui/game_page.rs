@@ -524,6 +524,9 @@ impl App {
                 m.limits.recommended_memory_bytes() as f64 / 1048576.0,
                 m.limits.hard_memory_bytes as f64 / 1048576.0
             ));
+            if let Some(profile) = m.limits.render_profile {
+                ui.label(format!("Artwork cache: up to {} MiB, plus up to {} MiB per frame, game memory and graphics-driver storage.", profile.cache_bytes()/1048576, profile.frame_bytes()/1048576));
+            }
             ui.label(if m.requires_rom { format!("Requires {} ROM file(s) supplied by you. They are not included in this package.",m.required_rom_count()) } else if m.game_data.is_some(){"Original game-data folder required (read-only).".into()} else { "No user ROM required.".into() });
             for (position, index) in game_file_order(&m).into_iter().enumerate() {
                 if let Some(rom) = m.roms.get(index) {

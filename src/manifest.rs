@@ -257,6 +257,30 @@ impl Shader {
         Ok(())
     }
 }
+/// Fixed, signed renderer allowances; omitted profiles retain legacy defaults.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+pub enum RenderProfile {
+    #[serde(rename = "large-images-v1")]
+    LargeImagesV1,
+}
+impl RenderProfile {
+    pub const fn frame_bytes(self) -> usize {
+        32 * 1048576
+    }
+    pub const fn cache_bytes(self) -> usize {
+        128 * 1048576
+    }
+    pub const fn cache_paths(self) -> usize {
+        256
+    }
+    pub const fn web_asset_bytes(self) -> usize {
+        128 * 1048576
+    }
+    pub const fn minimum_memory_bytes(self) -> u64 {
+        256 * 1048576
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Limits {
@@ -272,6 +296,9 @@ pub struct Limits {
     /// Host-owned asynchronous music shares, rather than extends, the hard limit.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub music_memory_bytes: Option<u64>,
+    /// Separately bounded host rendering resources, never an ambient game API.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub render_profile: Option<RenderProfile>,
     // Accepted only for packages signed with the earlier schema; never enforced or emitted.
     #[serde(default, rename = "fuel", skip_serializing)]
     pub legacy_execution_budget: Option<u64>,
@@ -537,6 +564,16 @@ impl Manifest {
         {
             bail!("invalid resource limits");
         }
+        if let Some(profile) = m.limits.render_profile {
+            if m.builtin_engine.is_some()
+                || m.limits.hard_memory_bytes < profile.minimum_memory_bytes()
+                || m.limits
+                    .recommended_memory_bytes
+                    .is_some_and(|n| n < profile.minimum_memory_bytes())
+            {
+                bail!("large-images-v1 requires a source game and at least 256 MiB hard/recommended memory");
+            }
+        }
         if m.limits.recommended_storage_bytes == Some(0) {
             bail!("recommended storage must be positive");
         }
@@ -619,6 +656,18 @@ impl Manifest {
 }
 
 impl Limits {
+    pub fn ensure_render_memory(&self, effective_memory: u64) -> Result<()> {
+        if let Some(profile) = self.render_profile {
+            if effective_memory < profile.minimum_memory_bytes() {
+                bail!("large-images-v1 requires a memory ceiling of at least 256 MiB");
+            }
+        }
+        Ok(())
+    }
+    pub fn web_asset_bytes(&self) -> usize {
+        self.render_profile
+            .map_or(32 * 1048576, RenderProfile::web_asset_bytes)
+    }
     pub fn recommended_memory_bytes(&self) -> u64 {
         self.recommended_memory_bytes
             .unwrap_or(self.hard_memory_bytes)

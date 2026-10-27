@@ -3,14 +3,22 @@ pub const MAX_DIMENSION: u32 = 512;
 pub const MAX_BYTES: usize = 512 * 512 * 4;
 pub const MAX_PNG_BYTES: usize = 2 * 1024 * 1024;
 /// Session-scoped immutable assets: retain at most one image's maximum pixel
-/// budget across up to 32 bounded paths. Frames own separate Arc references and
+/// budget across up to 32 bounded paths by default; the signed large-image
+/// profile permits 128 MiB across 256 paths. Frames own separate Arc references and
 /// still charge every draw against their normal transfer/command budgets.
 #[derive(Default)]
 pub(crate) struct Cache {
     entries: std::collections::VecDeque<(String, std::sync::Arc<Image>)>,
     bytes: usize,
+    profile: Option<crate::manifest::RenderProfile>,
 }
 impl Cache {
+    pub(crate) fn for_profile(profile: Option<crate::manifest::RenderProfile>) -> Self {
+        Self {
+            profile,
+            ..Self::default()
+        }
+    }
     pub(crate) fn get(&mut self, path: &str) -> Option<std::sync::Arc<Image>> {
         let index = self.entries.iter().position(|(name, _)| name == path)?;
         let entry = self.entries.remove(index)?;
@@ -27,7 +35,13 @@ impl Cache {
             let (_, old) = self.entries.remove(index).unwrap();
             self.bytes -= old.pixels().len();
         }
-        while self.entries.len() >= 32 || self.bytes + bytes > MAX_BYTES {
+        let limit = self
+            .profile
+            .map_or(MAX_BYTES, crate::manifest::RenderProfile::cache_bytes);
+        let paths = self
+            .profile
+            .map_or(32, crate::manifest::RenderProfile::cache_paths);
+        while self.entries.len() >= paths || self.bytes + bytes > limit {
             let (_, old) = self.entries.pop_front().unwrap();
             self.bytes -= old.pixels().len();
         }
@@ -200,6 +214,26 @@ mod cache_tests {
         assert_eq!(cache.bytes, MAX_BYTES - 512 * 128 * 4 + 4);
         assert_eq!(retained.pixels()[0], 37);
         assert_eq!(Arc::strong_count(&retained), 1);
+    }
+    #[test]
+    fn large_profile_evicts_at_pixel_and_path_bounds_and_preserves_live_frames() {
+        let mut cache = Cache::for_profile(Some(crate::manifest::RenderProfile::LargeImagesV1));
+        let first = image(512, 512);
+        cache.insert("first", first.clone());
+        for index in 1..=128 {
+            cache.insert(&index.to_string(), image(512, 512));
+        }
+        assert_eq!(cache.bytes, 128 * 1048576);
+        assert!(cache.get("first").is_none());
+        assert_eq!(first.pixels()[0], 37);
+        assert_eq!(Arc::strong_count(&first), 1);
+        let mut tiny = Cache::for_profile(Some(crate::manifest::RenderProfile::LargeImagesV1));
+        for index in 0..=256 {
+            tiny.insert(&index.to_string(), image(1, 1));
+        }
+        assert_eq!((tiny.entries.len(), tiny.bytes), (256, 1024));
+        assert!(tiny.get("0").is_none());
+        assert!(tiny.get("256").is_some());
     }
     #[test]
     fn replacement_accounting_maximum_images_and_path_bounds_are_bounded() {
