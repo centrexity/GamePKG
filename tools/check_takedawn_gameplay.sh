@@ -199,13 +199,9 @@ task_result=0
 SCHEME="$task_scheme" EVENT="$task_event" timeout --signal=TERM --kill-after=5s "${task_timeout}s" \
     bash "$task_state/driver/tools/headless/$task_driver" "$task_state/run" \
     > "$task_state/driver.log" 2>&1 || task_result=$?
-if grep -aEq '\[STUB\] unresolved 0x' "$task_state/run/log.txt" "$task_state/run/out.txt" 2>/dev/null; then
-    echo "FAIL: gameplay reached an unresolved upstream game-function stub" >> "$task_state/driver.log"
-    task_result=1
-fi
-if grep -aEq '\[UNIMPL\].*(stmxcsr|ldmxcsr)' "$task_state/run/log.txt" "$task_state/run/out.txt" 2>/dev/null; then
-    echo "FAIL: gameplay skipped the original native SSE control setup" >> "$task_state/driver.log"
-    task_result=1
+if ! python3 "$(dirname -- "${BASH_SOURCE[0]}")/check_takedawn_paths.py" \
+    "$task_state/run/log.txt" "$task_state/run/out.txt" >> "$task_state/driver.log" 2>&1; then
+    if (( task_result == 0 )); then task_result=1; fi
 fi
 if ! python3 "$(dirname -- "${BASH_SOURCE[0]}")/check_takedawn_renderer.py" \
     "$task_state/run/log.txt" "$task_state/run/out.txt" >> "$task_state/driver.log" 2>&1; then

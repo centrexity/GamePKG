@@ -15,6 +15,7 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
+from check_takedawn_paths import require_supported_paths
 
 parser = argparse.ArgumentParser(description=__doc__)
 for field in ["runner", "game", "iso", "saves"]:
@@ -262,7 +263,7 @@ try:
     assert data.count("[QUIT] the title's executor is held at a frame") == 2
     assert owner.count("Native game restarted after normal shutdown: 1") == 1
     assert "Native game exited: 0" in owner and "Intentional end" not in owner
-    assert "[STUB] unresolved" not in data
+    require_supported_paths([work / "window-game.log"])
     result = {
         "exit_code": 0,
         "transport": "native Windows executable under Wine",
