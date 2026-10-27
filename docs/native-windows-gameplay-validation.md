@@ -44,6 +44,24 @@ past the driver's 900-second result deadline. They remain recorded as incomplete
 natural-finish checks. They are not counted as successes or silently replaced
 by the World Tour results above.
 
+## Reached untranslated paths
+
+The stricter executed-path audit finds that the current v13 runtime reaches
+`wbinvd` at `0x00353DB5`, `cli` at `0x00367C86` and `sti` at `0x00367C97` in
+both profile-create and reload logs. The upstream translator currently reports
+these instructions and treats them as no-ops. Historical route and save/audio
+results above remain observed outcomes; they do not prove complete instruction
+semantics. The current v13 executable fails the stronger path gate.
+
+The shared maintainer gate now rejects every reached untranslated instruction,
+rather than checking only the two MXCSR instruction names, and still rejects
+reached unresolved function stubs. Window/restart checks use the same rule;
+the native restart probe explicitly enables upstream stub logging. Its fixtures
+cover arbitrary future instruction names, split log chunks, earlier failed
+restart phases and missing logs. Correct native handling of the reached cache
+and interrupt operations, followed by replay of these routes, remains required.
+The rejection is not waived because the game reaches a menu or a result screen.
+
 ## Offline two-player coverage
 
 A bounded Windows/Wine probe reaches the original multiplayer Race with two

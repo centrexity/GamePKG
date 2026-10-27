@@ -7,6 +7,7 @@ separate from this Wine transport check.
 """
 
 from pathlib import Path
+from check_takedawn_paths import require_supported_paths
 import argparse
 import hashlib
 import re
@@ -289,7 +290,7 @@ try:
     key("alt+F4", 0.15)
     code = p.wait(timeout=20)
     assert code == 0, code
-    assert "[STUB] unresolved" not in text()
+    require_supported_paths([work / "game.log"])
     assert "[QUIT] the title's executor is held at a frame" in text()
     geometry = (work / "resized-geometry.txt").read_text()
     assert "WIDTH=1024\n" in geometry and "HEIGHT=768\n" in geometry

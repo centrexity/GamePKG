@@ -47,6 +47,7 @@ fn main() -> std::io::Result<()> {
         ("RECOMP_SAVE_DIR", saves.into_os_string()),
         ("RECOMP_PB_BACKEND", "vulkan".into()),
         ("RECOMP_FLIP_MARK", "1".into()),
+        ("RECOMP_STUB_LOG", "1".into()),
         ("SDL_AUDIODRIVER", "dummy".into()),
     ] {
         values.push((key.into(), value));

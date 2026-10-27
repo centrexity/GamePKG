@@ -163,7 +163,8 @@ awk '/RMS level dB:/ { if ($NF != "-inf" && $NF < 0 && $NF > -90) good++ }
 for task_phase in create reload; do
     python3 "$(dirname -- "${BASH_SOURCE[0]}")/check_takedawn_renderer.py" \
         "$task_state/$task_phase.log" || fail "$task_phase did not render through Vulkan"
-    ! grep -aEq '\[STUB\] unresolved|\[UNIMPL\].*(stmxcsr|ldmxcsr)' "$task_state/$task_phase.log" || fail "$task_phase reached an unresolved game path"
+    python3 "$(dirname -- "${BASH_SOURCE[0]}")/check_takedawn_paths.py" \
+        "$task_state/$task_phase.log" || fail "$task_phase reached an unresolved game path"
 done
 printf '{"profile_bytes":59904,"metadata_bytes":54,"reload_unchanged":true,"audio_seconds":45,"sample_rate":48000,"channels":2}\n' \
     > "$task_state/result.json"
