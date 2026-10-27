@@ -2742,7 +2742,26 @@ fn original_portal_stages_preserve_every_ordered_point_color_and_frame_precision
         assert_eq!(dots.len(), case["point_count"].as_u64().unwrap() as usize);
         assert_eq!(trace, expected, "portal frame {frame} timer {timer}");
         assert_eq!(gamepkg_digest(&trace), case["trace_sha256"]);
-        if let Some(image) = physics::effect_image(&dots) {
+        let original_image = physics::effect_image(&dots);
+        let direct_image = physics::portal_image(frame, timer);
+        assert_eq!(
+            original_image.as_ref().map(|i| (
+                i.left,
+                i.top,
+                i.width,
+                i.height,
+                gamepkg_digest(&i.pixels)
+            )),
+            direct_image.as_ref().map(|i| (
+                i.left,
+                i.top,
+                i.width,
+                i.height,
+                gamepkg_digest(&i.pixels)
+            )),
+            "direct portal must preserve every original compositor byte at {frame}/{timer}"
+        );
+        if let Some(image) = direct_image {
             assert_eq!(
                 serde_json::json!([
                     image.left,
@@ -2780,6 +2799,22 @@ fn original_portal_stages_preserve_every_ordered_point_color_and_frame_precision
         }
     }
     println!("portal software SDL worst grouping delta {maximum}");
+}
+
+#[test]
+fn direct_portal_preserves_all_glow_rounding_boundaries_without_point_storage() {
+    for timer in 151..=271 {
+        let old = physics::effect_image(&physics::portal_points(0, timer));
+        let direct = physics::portal_image(0, timer);
+        assert_eq!(
+            old.as_ref()
+                .map(|i| (i.left, i.top, i.width, i.height, gamepkg_digest(&i.pixels))),
+            direct
+                .as_ref()
+                .map(|i| (i.left, i.top, i.width, i.height, gamepkg_digest(&i.pixels))),
+            "portal timer {timer}"
+        );
+    }
 }
 
 fn gamepkg_digest(bytes: &[u8]) -> String {
