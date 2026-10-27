@@ -56,8 +56,8 @@ for path in sorted(source.rglob('*')):
                 rgba = image.convert('RGBA').tobytes()
                 if any(value != 255 for value in rgba[3::4]):
                     legacy_precise += len(rgba)
-                    if not exact_png(destination.read_bytes()):
-                        precise += len(rgba)
+                if not exact_png(destination.read_bytes()):
+                    precise += len(rgba)
                 rows.append({'asset': name, 'source_sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
                              'rgba_sha256': hashlib.sha256(rgba).hexdigest(),
                              'optimized_sha256': hashlib.sha256(destination.read_bytes()).hexdigest(),
