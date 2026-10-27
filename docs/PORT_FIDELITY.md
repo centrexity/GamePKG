@@ -4715,3 +4715,36 @@ listener permission denial still pass. The related listener fixture uses the
 same elapsed-time driver for native/core/component execution, retaining close
 and stale-handle assertions. CLI headless pacing and production networking caps
 are unchanged.
+
+### Single-pass desktop image reads and original-resolution tiling study
+
+Cold image assets now use one bounded reader over a verified package member.
+The old 64 KiB chunk loop restarted ZIP decompression for each offset. The new
+path checks the 33-byte PNG header and available frame allowance before its
+bounded encoded allocation, consumes the member once, and completes the ZIP
+checksum check before decoding or caching an image. Invalid container CRCs are
+rejected even when the embedded PNG itself is valid; failure leaves the cache
+empty and a subsequent valid member still loads. Stored and Zstandard members,
+exact pixels, cache identity, verification/path rejection and frame exhaustion
+have direct regression coverage. The 512-pixel dimension, 2 MiB encoded image,
+1 MiB cache and 8 MiB per-frame image allowances are unchanged.
+
+A separate private study retains all pixels of the six pinned upstream
+2816×1536 backgrounds in 24 overlapping tiles per image. Exact reconstruction
+matches each original RGBA hash. Thirty independent SDL comparisons at 640×360,
+1280×720, 1366×768, 1920×1080 and original size stay within the existing two-level
+channel tolerance. This is a preparation/rendering proof, not delivery of
+original-resolution backgrounds: one tiled background requires 17,430,768
+decoded bytes and cannot fit the current 8 MiB frame allowance. Integrating that
+artwork still requires explicit bounded resource accounting and browser image
+loading/export changes; no resource limit is raised by this reader fix.
+
+The broader hosted suite exposed a separate display-settings fixture failure:
+after saving, it could not find the original-width dropdown option, and its
+retained screenshot shows a closed popup and a changed vertical-view toggle.
+The unchanged test passes locally, so this is not a reproduced production UI
+fix. The fixture now observes the UI's save-completion message after checking
+the on-disk selection, and observes the actual popup before searching for an
+option. It keeps every persistence, restart, custom-width and image-size
+assertion, and retains a bounded screenshot/state diagnostic on popup failure.
+Remote validation is still required; no UI deadline or expected value changes.
