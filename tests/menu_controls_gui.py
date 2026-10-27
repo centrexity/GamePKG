@@ -5,7 +5,7 @@ from http.server import SimpleHTTPRequestHandler,ThreadingHTTPServer
 import argparse,hashlib,json,os,platform,shutil,subprocess,tempfile,threading,time
 from PIL import Image,ImageChops
 from gui_test_support import start_display
-parser=argparse.ArgumentParser();parser.add_argument('--original',type=Path,default=Path('/tmp/gamepkg-candidate-arkanoo'));parser.add_argument('--flat-background',action='store_true',help='Compare scaled controls directly against SDL without background resampling');parser.add_argument('--proof-output',type=Path);args=parser.parse_args()
+parser=argparse.ArgumentParser();parser.add_argument('--original',type=Path,default=Path('/tmp/gamepkg-candidate-arkanoo'));parser.add_argument('--flat-background',action='store_true',help='Compare scaled controls directly against SDL without background resampling');parser.add_argument('--proof-output',type=Path);parser.add_argument('--browser-repeats',type=int,choices=range(1,6),default=1,help='Repeat the complete browser control cycle for input/worker diagnostics');args=parser.parse_args()
 PROJECT=Path(__file__).resolve().parents[1];BIN=Path(os.environ.get('GAMEPKG_TEST_BINARY_DIR',PROJECT/'target/release'));CLI=BIN/'gamepkg';GUI=BIN/'gamepkg-gui';PROOF=args.proof_output or PROJECT/'target/menu-controls-proof'
 if PROOF.exists():PROOF.rename(PROJECT/'target'/('menu-controls-previous-'+str(time.time_ns())))
 PROOF.mkdir(parents=True)
@@ -109,9 +109,10 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-menu-controls-gui-') as temp:
    output=root/(suffix+'-web');run('web-export',game_id,'--output',output);server=ThreadingHTTPServer(('127.0.0.1',0),partial(Quiet,directory=str(output)));threading.Thread(target=server.serve_forever,daemon=True).start();options=Options();options.binary_location=shutil.which('google-chrome') or shutil.which('google-chrome-stable') or shutil.which('chromium');assert options.binary_location
    for value in ['--headless=new','--mute-audio','--no-sandbox','--disable-dev-shm-usage','--enable-unsafe-swiftshader']:options.add_argument(value)
    driver=shutil.which('chromedriver') or str(Path(os.environ.get('CHROMEWEBDRIVER','/nonexistent'))/'chromedriver');browser=webdriver.Chrome(service=Service(driver),options=options);held=False
+   browser.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument',{'source':"""window.menuTrace=[];const note=value=>{window.menuTrace.push({at:performance.now(),...value});if(window.menuTrace.length>48)window.menuTrace.shift();};for(const kind of ['keydown','keyup','focus','blur'])document.addEventListener(kind,event=>note({kind,key:event.key,code:event.code,repeat:event.repeat,target:event.target?.id}),true);const NativeWorker=window.Worker;window.Worker=class extends NativeWorker{constructor(...args){super(...args);this.addEventListener('message',({data})=>note({kind:'reply',type:data?.type,state:String(data?.state),serial:data?.serial,error:data?.error}));this.addEventListener('error',event=>note({kind:'worker-error',error:event.message}));}postMessage(data,...args){if(data?.type==='tick'&&data.input)note({kind:'tick',input:data.input});return super.postMessage(data,...args);}};"""})
    try:
     browser.get(f'http://127.0.0.1:{server.server_port}/');wait=WebDriverWait(browser,20);wait.until(lambda b:b.find_element('id','status').text=='Ready to play');browser.find_element('id','play').click();wait.until(lambda b:b.find_element('id','game').get_attribute('data-state'));browser.find_element('id','game').click()
-    for phase in PHASES:
+    for phase in PHASES*args.browser_repeats:
      if held:ActionChains(browser).key_up(held).perform();held=False
      if phase:held={1:Keys.ARROW_RIGHT,2:Keys.ARROW_UP,3:Keys.ARROW_DOWN,4:Keys.ARROW_LEFT}[phase];ActionChains(browser).key_down(held).perform()
      wait.until(lambda b:b.find_element('id','game').get_attribute('data-state')==str(phase));raw=browser.execute_script('return Array.from(document.querySelector("#game").getContext("2d").getImageData(0,60,640,360).data);');actual=Image.frombytes('RGBA',(640,360),bytes(raw)).convert('RGB');difference=delta(actual,SMALL[phase]);actual.save(PROOF/(profile+'-web-'+str(phase)+'.png'));print(profile,phase,'implemented menu browser/native maximum difference',difference,flush=True)
@@ -125,6 +126,15 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-menu-controls-gui-') as temp:
      assert difference<=2,difference
      if args.flat_background:
       difference=delta(actual,SMALL_REFERENCES[phase]);print(profile,phase,'scaled browser controls/original SDL maximum difference',difference,flush=True);assert difference<=2,difference
+   except Exception as error:
+    details={'error':str(error),'profile':profile,'phase':phase if 'phase' in locals() else None}
+    try:
+     details.update(browser.execute_script('return {status:document.querySelector("#status")?.textContent,state:document.querySelector("#game")?.dataset.state,active:document.activeElement?.id,focused:document.hasFocus(),trace:window.menuTrace};'))
+     details['console']=browser.get_log('browser');browser.save_screenshot(str(PROOF/(profile+'-browser-failure.png')))
+    except Exception as diagnostic:details['diagnostic_error']=str(diagnostic)
+    (PROOF/(profile+'-browser-failure.json')).write_text(json.dumps(details,indent=2)+'\n')
+    print('Browser menu failure:',json.dumps(details),flush=True)
+    raise
    finally:
     if held:ActionChains(browser).key_up(held).perform()
     browser.quit();server.shutdown();server.server_close()
