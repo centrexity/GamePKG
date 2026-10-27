@@ -107,10 +107,12 @@ pub fn usage(root: &Path, manifest: &crate::manifest::Manifest) -> Result<Usage>
         .join("game.wasm");
     let mut built_bytes = scoped_total(root, build.parent().unwrap())?;
     if manifest.builtin_engine.as_deref() == Some(crate::takedawn::PROFILE) {
-        built_bytes = built_bytes.saturating_add(scoped_total(
-            root,
-            &root.join("native-unit-cache/takedawn"),
-        )?);
+        for cache in ["takedawn", "takedawn-windows"] {
+            built_bytes = built_bytes.saturating_add(scoped_total(
+                root,
+                &root.join("native-unit-cache").join(cache),
+            )?);
+        }
     }
     let mut shader_bytes = 0u64;
     let shaders = root.join("shader-builds");
