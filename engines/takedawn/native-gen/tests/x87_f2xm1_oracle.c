@@ -157,6 +157,32 @@ static void one(GamePkgExt80 a, GamePkgExt80 b, unsigned cw, unsigned top,
     wr(after.b + 2, sw);
     accuracy(a, (GamePkgExt80){sig, (uint16_t)se}, cw, sw);
   }
+  /* Exact endpoints also have a fixed approximation profile. In particular,
+   * Intel Xeon 8573C clears C1 for +1/nearest where the earlier qualified
+   * hardware sets it. Do not select a profile from the machine running CI or
+   * ignore C1: check the adapter's explicit endpoint table instead. Exception
+   * flags, commit/stack behavior and every other register still use hardware.
+   * This does not establish original Xbox endpoint equivalence. */
+  if (!(empty & 1) && exponent == 0x3fff &&
+      a.significand == UINT64_C(0x8000000000000000)) {
+    static const GamePkgExt80 positive[4] = {
+        {UINT64_C(0x8000000000000000), 0x3fff},
+        {UINT64_MAX, 0x3ffe},
+        {UINT64_C(0x8000000000000000), 0x3fff},
+        {UINT64_MAX, 0x3ffe}};
+    unsigned rc = (cw >> 10) & 3, negative = a.sign_exponent >> 15;
+    GamePkgExt80 value = negative
+                            ? (GamePkgExt80){UINT64_C(0x8000000000000000), 0xbffe}
+                            : positive[rc];
+    unsigned c1 = !negative && (rc == 0 || rc == 2);
+    if (value.significand != get64(after.b + 32) ||
+        value.sign_exponent != rd(after.b + 40) || c1 != ((sw >> 9) & 1))
+      ++profile_differences;
+    put80(after.b + 32, value);
+    sw = (sw & ~0x200u) | (c1 << 9);
+    wr(after.b + 2, sw);
+    accuracy(a, value, cw, sw);
+  }
   if ((z->status & ~0x4500u) != (sw & ~0x4500u)) {
     fprintf(stderr,
             "F2XM1 case%u cw%x top%u empty%u a%04x:%016llx b%04x:%016llx sw "
