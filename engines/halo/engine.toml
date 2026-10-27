@@ -20,6 +20,7 @@ patches = [
     "0003-x86-arch-and-portable-march.patch",
     "0004-lp64-long-width.patch",
     "0005-halo-addr-pointer-fields.patch",
+    "0006-lp64-layout-and-load-time-fixups.patch",
 ]
 
 [[layouts]]
@@ -39,14 +40,13 @@ max_bytes = 8589934592
 id = "linux-x86_64"
 os = "linux"
 arch = "x86_64"
-blocker = "This target is not ready. Patch 0005 stores pointer fields in size-asserted structs as halo_addr. The Linux prefix still errors because game data structures assume 32-bit pointers. The prefix guard stays until a linux-x86_64 binary passes the stand-in startup check."
 tools = ["python3", "ninja", "clang", "cmake", "pkg-config"]
 configure = ["python3", "configure.py", "--release", "--portable", "--pgo=off", "--lto=off", "--arch", "x86_64"]
 build_program = "ninja"
 build_args = ["linux"]
 binary = "build/linux/halo"
 image = { kind = "elf", class = 2, machine = 62 }
-note = "Do not build this target until the prefix guard is removed. The recorded command is the one the arch switch accepts."
+note = "Ready. Portable x86_64 builds SDL3 with the host compiler; the Debian 11 i386 sysroot stays on linux-i686. A stand-in ui.map exits with ui.map version 0. On x86_64 Linux this is the default target."
 
 [[targets.companions]]
 relative = "build/linux/libSDL3.so.0"
@@ -83,14 +83,13 @@ warning = "32-bit ALSA was not found. The engine will start without sound."
 id = "windows-x64"
 os = "windows"
 arch = "x86_64"
-blocker = "This target is not ready. Patch 0005 stores pointer fields in size-asserted structs as halo_addr. Win64 long is already 4 bytes. The Windows prefix still errors because game data structures assume 32-bit pointers. The prefix guard stays until a windows-x64 binary passes the stand-in startup check."
 tools = ["python3", "ninja", "clang", "cmake", "pkg-config"]
 configure = ["python3", "configure.py", "--release", "--portable", "--pgo=off", "--lto=off", "--windows-cross", "--arch", "x86_64", "--windows-vctools-dir", "{vctools}", "--windows-sdk-dir", "{winsdk}"]
 build_program = "ninja"
 build_args = ["windows"]
 binary = "build/windows/halo.exe"
 image = { kind = "pe", machine = 34404, magic = 523 }
-note = "Blocked until layouts match. The portable march flag is fixed in the engine patch so this command can enable SSE2."
+note = "Ready. The cross link uses /BASE:0x400000, /DYNAMICBASE:NO, /HIGHENTROPYVA:NO, and /FIXED so a halo_addr round-trips. A stand-in ui.map under Wine exits with ui.map version 0. A Linux host caches the PE and does not launch it."
 
 [[targets.companions]]
 relative = "build/windows/SDL3.dll"
