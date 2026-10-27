@@ -11,6 +11,8 @@ on:
       - 'tools/check_browser_audio_decoder.py'
       - 'tests/browser_audio_decoder.rs'
       - 'tests/browser_compressed_assets.py'
+      - 'tests/window_commit_browser.py'
+      - 'tests/browser_storage_support.py'
       - 'tests/browser_png_exact.py'
       - 'tools/check_browser_png.py'
       - '.github/workflows/ci.yml'
@@ -26,6 +28,8 @@ on:
       - 'tools/check_browser_audio_decoder.py'
       - 'tests/browser_audio_decoder.rs'
       - 'tests/browser_compressed_assets.py'
+      - 'tests/window_commit_browser.py'
+      - 'tests/browser_storage_support.py'
       - 'tests/browser_png_exact.py'
       - 'tools/check_browser_png.py'
       - '.github/workflows/ci.yml'
@@ -77,6 +81,9 @@ jobs:
       - name: Verify signed compressed reads, playback and pending-loan release
         run: |
           sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-assets-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT=/tmp/gamepkg-assets-slang CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tests/browser_compressed_assets.py
+      - name: Verify browser window commits after asynchronous persistence recovery
+        run: |
+          sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-assets-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT=/tmp/gamepkg-assets-slang CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tests/window_commit_browser.py
   png-startup:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
