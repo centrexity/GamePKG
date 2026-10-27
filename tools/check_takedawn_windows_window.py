@@ -107,6 +107,7 @@ for k, v in {
     "SDL_AUDIODRIVER": "dummy",
     "RECOMP_FLIP_MARK": "1",
     "RECOMP_STUB_LOG": "1",
+    "RECOMP_UNIMPL_TRAP": "1",
     "RECOMP_KEY_TRACE": "1",
     "RECOMP_STDIO_LOG": "Z:\\state\\game.log",
     "BO3_CTL_LOG": "Z:\\state\\ctl.txt",

@@ -58,9 +58,35 @@ rather than checking only the two MXCSR instruction names, and still rejects
 reached unresolved function stubs. Window/restart checks use the same rule;
 the native restart probe explicitly enables upstream stub logging. Its fixtures
 cover arbitrary future instruction names, split log chunks, earlier failed
-restart phases and missing logs. Correct native handling of the reached cache
-and interrupt operations, followed by replay of these routes, remains required.
-The rejection is not waived because the game reaches a menu or a result screen.
+restart phases and missing logs. The v14 candidate implements the reached cache and interrupt operations through
+native Rust helpers and the original kernel's host dispatch gate, retaining the
+original following-instruction interrupt shadow. Both real-kernel Linux and
+standalone Windows conformance checks pass, including rejected masking-guard
+mutations. Its complete standalone Windows Rust build retains all 24,035 exports
+across 487 units; native runtime linking also succeeds (executable SHA-256
+`4467bfd5ae1b91565a99cd06792d6695bc2d61e22626f62f4e6b5dbd66ae6540`).
+The Linux candidate passes profile create/reload, full three-lap Race, original
+Race/Crash control checks, and a 15,000-flip Time Attack session with normal
+Quit/Yes/Continue back to the front end. The Windows candidate also passes profile create/reload, unchanged save hashes,
+stereo capture, original Race and PS2-layout Crash control checks, keyboard profile
+navigation, a 1024×768 window resize and normal close under Wine. These use an
+independent headless GPU desktop and retain actual-Vulkan and unsupported-path
+assertions. The first resize attempt was constrained by a 720-pixel test desktop;
+the unchanged assertion passes on the taller desktop. Full signed-package Build,
+updated packaging and physical Windows qualification remain required. The rejection is not waived because
+the game reaches a menu or a result screen.
+
+## Player handling of unsupported paths
+
+The native player enables the runtime's immediate untranslated-instruction trap
+and unresolved-stub logging. Linux and Windows also audit the original output
+stream: a reached unsupported instruction or unresolved function stops the owned
+session and produces a launch error. Failure state survives verbose output,
+fragmented reads and managed restarts. Final output is audited even when the
+process exits zero or the host requests a stop. These checks are separate from
+the optional, default-off frame-stall watchdog. They report missing execution;
+they do not implement unqualified game paths. Older admitted source packages can
+therefore require a package update before they play.
 
 ## Offline two-player coverage
 
@@ -194,9 +220,33 @@ new and existing settings. In the reviewed runtime it watches actual flips and
 writes diagnostic reports without terminating the game. Settings accepts 5–600
 seconds when enabled; startup allows at least 60 seconds. Saving, cancelling and
 disabling the option pass the real desktop settings checks. Actual Windows
-runtime checks for this new setting remain in CI. Broader campaign coverage and
-actual Windows hardware qualification remain open. No stable release is qualified
+host checks pass in [run 40433416799](https://github.com/centrexity/GamePKG/actions/runs/40433416799),
+including saved-setting restart and default-off launch. This host fixture does
+not qualify the original game's physical Windows graphics or controls. Broader
+campaign coverage and actual Windows hardware qualification remain open. No stable release is qualified
 by these routes alone.
+
+## Private GPU display for maintainer Wine checks
+
+On Linux, the window and keyboard probes can run on a separate headless
+Weston/Xwayland desktop, without activating windows on the user's desktop:
+
+```sh
+python3 tools/with_private_gpu_display.py --vulkan-probe -- \
+  python3 tools/check_takedawn_windows_window.py \
+  /private/build/burnout3-gamepkg-rust.exe /path/to/owned.iso /private/reference-saves
+```
+
+The helper needs Weston, Xwayland, Metacity, D-Bus, xauth, xprop and xdotool;
+`--vulkan-probe` also needs vulkaninfo. These are maintainer tools, not Windows
+player dependencies. It creates its own short Wayland socket path, authenticated
+X11 display, window manager and compositor data directories. Rootful Xwayland
+allows real XTest key events and focus checks without a physical Wayland input
+seat. Child test commands retain their existing memory scopes and audio controls;
+the game probes explicitly use dummy audio. The helper cleans up only its own
+process groups and records display logs. A successful Vulkan probe or display
+startup does not replace the game's actual-executor, input, save, audio or
+unsupported-path assertions, and does not qualify physical Windows hardware.
 
 See the [Windows build notes](../engines/takedawn/rust-port/WINDOWS_BUILD.md)
 and [native process ownership notes](../engines/takedawn/windows-runner/README.md)

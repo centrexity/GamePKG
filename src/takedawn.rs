@@ -2,18 +2,33 @@
 //! they cannot supply replacement engine code, build scripts or dependencies.
 use anyhow::{ensure, Result};
 use std::path::{Path, PathBuf};
+#[cfg(any(target_os = "linux", windows, test))]
+mod path_audit;
+#[cfg(any(target_os = "linux", windows))]
+pub(crate) use path_audit::PathAudit;
 pub const PROFILE: &str = "takedawn-5a00fc10-rust-v1";
 pub const MEMORY: u64 = 4 * 1024 * 1024 * 1024;
+// Retain old package admission so updates preserve creator identity and saves.
+// New builds use the current shared Linux/Windows cache namespace below.
 pub const KIT_SHA256: &str = "a40e9656476633125d2fd50cc6a71134a453f8942634e34ebef848a215b98a5a";
 pub const KIT_ASSET: &str = "assets/takedawn-source-kit.tar.gz";
-pub const WINDOWS_KIT_SHA256: &str =
+pub const CURRENT_KIT_SHA256: &str =
+    "7cfd18d26b8a6e51005f75d7cedc1c01925237574bc579df5027b0167413a986";
+pub const WINDOWS_KIT_SHA256: &str = CURRENT_KIT_SHA256;
+pub const LEGACY_WINDOWS_V13_KIT_SHA256: &str =
     "18afa3a1f2a0e9ddad89a33c2a3e33803e0764be0035da5e2c7a2e1a5235c885";
 pub const LEGACY_WINDOWS_KIT_SHA256: &str =
     "ab30c4e7a4a86580a6fbefe7f79be941c713a0dd2b089d73fba6180729ab845b";
 pub(crate) fn reviewed_kit_digest(bytes: &[u8]) -> Result<String> {
     let digest = crate::verify::digest(bytes);
     ensure!(
-        digest == KIT_SHA256 || digest == WINDOWS_KIT_SHA256 || digest == LEGACY_WINDOWS_KIT_SHA256,
+        [
+            KIT_SHA256,
+            CURRENT_KIT_SHA256,
+            LEGACY_WINDOWS_V13_KIT_SHA256,
+            LEGACY_WINDOWS_KIT_SHA256
+        ]
+        .contains(&digest.as_str()),
         "Takedawn source kit is not the host-reviewed version"
     );
     Ok(digest)
@@ -48,7 +63,7 @@ pub fn cache_path(root: &Path, digest: &str) -> PathBuf {
         .with_file_name(format!("takedawn-{}.exe", &WINDOWS_KIT_SHA256[..16]));
     #[cfg(not(windows))]
     crate::native::path_for_digest(root, digest)
-        .with_file_name(format!("takedawn-{}", &KIT_SHA256[..16]))
+        .with_file_name(format!("takedawn-{}", &CURRENT_KIT_SHA256[..16]))
 }
 
 pub(crate) fn validate_recipe(package: &mut crate::archive::Package) -> Result<()> {

@@ -24,8 +24,8 @@ substantial; a complete prepared Rust build took about 77 minutes on the test
 machine. Verified per-unit compiler checkpoints let interrupted or repeated
 builds reuse completed work. Source, compiler, CPU and option changes invalidate
 the corresponding checkpoints; corrupt objects are compiled again. These
-compiler files count toward the game's displayed storage use. The current kit
-supports Linux x86-64.
+compiler files count toward the game's displayed storage use. The current shared kit
+supports Linux x86-64 and the native Windows x64 preview.
 
 Play opens the original Vulkan window in its own native process. The selected
 supported Xbox ISO is opened read-only and read in place. Saves and caches use
@@ -34,6 +34,12 @@ it. A successful startup remembers the selected ISO and begins play tracking.
 An invalid disc does neither. The native process uses a 4 GiB physical-memory
 scope; **Memory ceiling** must be at least 4096 MiB. GamePKG's mute and volume
 settings apply to the original runtime.
+
+Native playback also enables immediate traps for untranslated instructions and
+logs unresolved functions. A sticky host audit stops the session and reports any
+reached unsupported path, including final output and managed-restart history.
+This does not fill in missing game behavior. Update an older game package if its
+runtime reaches such a path.
 
 The optional **Native frame-stall watchdog** in Settings is off by default,
 including for existing settings files. In the reviewed standalone Takedawn

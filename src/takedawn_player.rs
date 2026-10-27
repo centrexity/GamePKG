@@ -29,6 +29,7 @@ struct Diagnostics {
     admitted: bool,
     window: bool,
     frames: u32,
+    failure: Option<&'static str>,
 }
 impl Diagnostics {
     fn observe(&mut self, bytes: &[u8]) {
@@ -114,11 +115,14 @@ fn drain(
     std::thread::spawn(move || {
         let mut bytes = [0; 4096];
         let mut overlap = Vec::new();
+        let mut audit = crate::takedawn::PathAudit::default();
         loop {
             match pipe.read(&mut bytes) {
                 Ok(0) => break,
                 Ok(n) => {
+                    audit.observe(&bytes[..n]);
                     let mut log = log.lock().unwrap_or_else(|e| e.into_inner());
+                    log.failure = log.failure.or(audit.failure());
                     overlap.extend_from_slice(&bytes[..n]);
                     log.observe(&overlap);
                     let keep = overlap.len().saturating_sub(64);
@@ -245,6 +249,7 @@ pub struct Session {
     headless: bool,
     started: bool,
     data_lock: Option<File>,
+    readers: Vec<std::thread::JoinHandle<()>>,
 }
 impl Session {
     pub fn start_cached(
@@ -393,6 +398,12 @@ impl Session {
                 "--setenv",
                 "RECOMP_PB_BACKEND",
                 "vulkan",
+                "--setenv",
+                "RECOMP_UNIMPL_TRAP",
+                "1",
+                "--setenv",
+                "RECOMP_STUB_LOG",
+                "1",
             ]);
         command.args([
             "--setenv",
@@ -457,11 +468,11 @@ impl Session {
             .recv()
             .context("native launcher thread stopped")??;
         let log = Arc::new(Mutex::new(Diagnostics::default()));
-        drain(
+        let stdout = drain(
             child.stdout.take().context("missing game output")?,
             log.clone(),
         );
-        drain(
+        let stderr = drain(
             child.stderr.take().context("missing game diagnostics")?,
             log.clone(),
         );
@@ -476,6 +487,7 @@ impl Session {
             headless: options.headless,
             started: false,
             data_lock: Some(data_lock),
+            readers: vec![stdout, stderr],
         })
     }
     pub fn diagnostics(&self) -> String {
@@ -484,7 +496,8 @@ impl Session {
     }
     pub fn ready(&self) -> bool {
         let log = self.log.lock().unwrap_or_else(|e| e.into_inner());
-        log.admitted
+        log.failure.is_none()
+            && log.admitted
             && if self.headless {
                 log.frames > 0
             } else {
@@ -498,11 +511,18 @@ impl Session {
         self.log.lock().unwrap_or_else(|e| e.into_inner()).frames
     }
     pub fn poll(&mut self) -> Result<Option<ExitStatus>> {
+        let status = self.child.try_wait()?;
+        if status.is_some() {
+            self.collect_output()?;
+        }
+        let failure = self.log.lock().unwrap_or_else(|e| e.into_inner()).failure;
+        if failure.is_some() {
+            return self.stop().map(|_| None);
+        }
         if !self.started && self.ready() {
             self.history.start();
             self.started = true;
         }
-        let status = self.child.try_wait()?;
         if status.is_some() && !self.finished {
             self.history.finish()?;
             self.finished = true;
@@ -513,7 +533,28 @@ impl Session {
         }
         Ok(status)
     }
+    fn collect_output(&mut self) -> Result<()> {
+        self.parent.take();
+        for reader in self.readers.drain(..) {
+            reader
+                .join()
+                .map_err(|_| anyhow::anyhow!("native output reader stopped unexpectedly"))?;
+        }
+        Ok(())
+    }
     pub fn stop(&mut self) -> Result<()> {
+        let cleanup = self.stop_process();
+        let failure = self.log.lock().unwrap_or_else(|e| e.into_inner()).failure;
+        if let Some(reason) = failure {
+            anyhow::bail!(
+                "This native build reached {reason}. The game was stopped. Update its game package.\n{}{}",
+                self.diagnostics(),
+                cleanup.err().map(|e| format!("\nSession cleanup: {e:#}")).unwrap_or_default()
+            );
+        }
+        cleanup
+    }
+    fn stop_process(&mut self) -> Result<()> {
         if self.child.try_wait()?.is_none() {
             let _ = Command::new("/usr/bin/systemctl")
                 .args(["--user", "stop", &self.unit])
@@ -524,11 +565,11 @@ impl Session {
             let _ = self.child.kill();
             self.child.wait()?;
         }
-        self.parent.take();
-        self.history.finish()?;
+        self.collect_output()?;
+        let history = self.history.finish();
         self.finished = true;
         self.data_lock.take();
-        Ok(())
+        history
     }
 }
 impl Drop for Session {
@@ -540,6 +581,169 @@ impl Drop for Session {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn separate_output_streams_cannot_hide_a_split_path_failure() {
+        struct Scripted<F>(F);
+        impl<F: FnMut(&mut [u8]) -> io::Result<usize>> Read for Scripted<F> {
+            fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
+                (self.0)(bytes)
+            }
+        }
+        let (prefix_sent, prefix_read) = std::sync::mpsc::channel();
+        let (noise_sent, noise_read) = std::sync::mpsc::channel();
+        let mut part = 0;
+        let output = Scripted(move |bytes: &mut [u8]| {
+            let text: &[u8] = match part {
+                0 => b"[STUB] unres",
+                1 => {
+                    prefix_sent.send(()).unwrap();
+                    noise_read.recv().unwrap();
+                    b"olved 0x12345678\n"
+                }
+                _ => return Ok(0),
+            };
+            part += 1;
+            bytes[..text.len()].copy_from_slice(text);
+            Ok(text.len())
+        });
+        let mut part = 0;
+        let error_output = Scripted(move |bytes: &mut [u8]| {
+            if part == 0 {
+                prefix_read.recv().unwrap();
+                bytes[..1024].fill(b'x');
+                part += 1;
+                Ok(1024)
+            } else {
+                noise_sent.send(()).unwrap();
+                Ok(0)
+            }
+        });
+        let log = Arc::new(Mutex::new(Diagnostics::default()));
+        let output = drain(output, log.clone());
+        let error_output = drain(error_output, log.clone());
+        output.join().unwrap();
+        error_output.join().unwrap();
+        let mut log = log.lock().unwrap();
+        log.append(&vec![b'x'; LOG_BYTES * 2]);
+        assert_eq!(log.failure, Some("an unresolved native game function"));
+        assert!(log.startup.len() + log.recent.len() <= LOG_BYTES);
+    }
+
+    #[test]
+    #[ignore = "requires Linux bubblewrap, systemd user scope and native Rust compiler; no game media"]
+    fn native_path_failure_stops_the_owned_process_and_drains_final_output() {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("path-failure.rs");
+        fs::write(
+            &source,
+            r#"
+use std::{fs, io::{self, Write}, time::Duration};
+fn main() {
+    assert_eq!(std::env::var("RECOMP_UNIMPL_TRAP").unwrap(), "1");
+    assert_eq!(std::env::var("RECOMP_STUB_LOG").unwrap(), "1");
+    let saves = std::path::PathBuf::from(std::env::var_os("RECOMP_SAVE_DIR").unwrap());
+    let mode = fs::read_to_string(saves.join("mode")).unwrap();
+    let mut out = io::stdout().lock();
+    if mode == "running" {
+        writeln!(out, "verified disc admitted in place\n[GPU] flip 1 0 ms").unwrap();
+        out.flush().unwrap();
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    if mode == "late" {
+        for _ in 0..48 { out.write_all(&[b'x';65536]).unwrap(); }
+    }
+    out.write_all(b"[STUB] unres").unwrap(); out.flush().unwrap();
+    out.write_all(b"olved 0x12345678\n").unwrap(); out.flush().unwrap();
+    fs::write(saves.join("output-written"), b"1").unwrap();
+    if mode == "running" || mode == "stopping" {
+        std::thread::sleep(Duration::from_secs(5));
+        fs::write(saves.join("continued"), b"must not happen").unwrap();
+    }
+}
+"#,
+        )
+        .unwrap();
+        let binary = root.path().join("fixture");
+        let output = Command::new("rustc")
+            .arg("--edition=2021")
+            .arg(&source)
+            .arg("-o")
+            .arg(&binary)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let bytes = fs::read(&binary).unwrap();
+        crate::integrity::record_build(&binary, &bytes).unwrap();
+        let iso = root.path().join("fixture.iso");
+        File::create(&iso).unwrap().set_len(33 * 2048).unwrap();
+        for mode in ["immediate", "running", "late", "stopping"] {
+            let id = format!("path-failure-{mode}");
+            let saves = scope_path(root.path(), &id, "fixture", 1).join("saves");
+            fs::create_dir_all(&saves).unwrap();
+            fs::write(saves.join("mode"), mode).unwrap();
+            let mut session = Session::start_cached(
+                root.path(),
+                &id,
+                "fixture",
+                1,
+                &binary,
+                &iso,
+                Options {
+                    headless: true,
+                    mute_audio: true,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+            if mode == "stopping" {
+                while !saves.join("output-written").exists() {
+                    assert!(std::time::Instant::now() < deadline);
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                let error = session.stop().unwrap_err();
+                assert!(
+                    error
+                        .to_string()
+                        .contains("an unresolved native game function"),
+                    "{error:#}"
+                );
+            } else {
+                loop {
+                    match session.poll() {
+                        Err(error) => {
+                            assert!(
+                                error
+                                    .to_string()
+                                    .contains("an unresolved native game function"),
+                                "{error:#}"
+                            );
+                            break;
+                        }
+                        Ok(Some(status)) => {
+                            panic!("unsupported game reported successful exit: {status}")
+                        }
+                        Ok(None) => {}
+                    }
+                    assert!(
+                        std::time::Instant::now() < deadline,
+                        "{}",
+                        session.diagnostics()
+                    );
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                }
+            }
+            assert!(!session.ready());
+            assert!(session.finished && session.child.try_wait().unwrap().is_some());
+            assert!(!saves.join("continued").exists());
+            assert!(session.data_lock.is_none());
+        }
+    }
+
     #[test]
     fn data_is_scoped_and_directory_links_are_rejected() {
         let root = tempfile::tempdir().unwrap();

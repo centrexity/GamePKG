@@ -82,6 +82,7 @@ pub struct Session {
     startup: Vec<u8>,
     recent: VecDeque<u8>,
     overlap: Vec<u8>,
+    path_audit: crate::takedawn::PathAudit,
     admitted: bool,
     window: bool,
     frames: u32,
@@ -186,6 +187,8 @@ impl Session {
                 data.join("shader-cache").into_os_string(),
             ),
             ("RECOMP_PB_BACKEND".into(), "vulkan".into()),
+            ("RECOMP_UNIMPL_TRAP".into(), "1".into()),
+            ("RECOMP_STUB_LOG".into(), "1".into()),
             (
                 "RECOMP_HANG_WATCHDOG".into(),
                 options.watchdog_seconds.to_string().into(),
@@ -232,6 +235,7 @@ impl Session {
             startup: Vec::new(),
             recent: VecDeque::new(),
             overlap: Vec::new(),
+            path_audit: crate::takedawn::PathAudit::default(),
             admitted: false,
             window: false,
             frames: 0,
@@ -241,15 +245,16 @@ impl Session {
             exit: None,
         })
     }
-    fn observe(&mut self) -> Result<()> {
+    fn observe(&mut self) -> Result<bool> {
         let mut bytes = [0u8; 8192];
         // Read through an independently opened file handle, so inspection never
         // seeks the game's stdout handle or affects its shared restart position.
         for _ in 0..128 {
             let n = self.log.as_file_mut().read(&mut bytes)?;
             if n == 0 {
-                break;
+                return Ok(false);
             }
+            self.path_audit.observe(&bytes[..n]);
             self.overlap.extend_from_slice(&bytes[..n]);
             let text = String::from_utf8_lossy(&self.overlap);
             self.admitted |= text.contains("verified disc admitted in place");
@@ -274,10 +279,11 @@ impl Session {
             self.recent
                 .drain(..self.recent.len().saturating_sub(112 * 1024));
         }
-        Ok(())
+        Ok(true)
     }
     pub fn ready(&self) -> bool {
-        self.admitted
+        self.path_audit.failure().is_none()
+            && self.admitted
             && if self.headless {
                 self.frames > 0
             } else {
@@ -298,6 +304,7 @@ impl Session {
     }
     pub fn poll(&mut self) -> Result<Option<ExitStatus>> {
         self.observe()?;
+        self.check_path()?;
         let event = self
             .owner
             .as_mut()
@@ -309,7 +316,11 @@ impl Session {
             self.frames = 0;
             self.overlap.clear();
         }
-        self.observe()?;
+        let more = self.observe()?;
+        if matches!(event, Some(Event::Exited(_))) && more {
+            while self.observe()? {}
+        }
+        self.check_path()?;
         if !self.started && self.ready() {
             self.history.start();
             self.started = true;
@@ -326,14 +337,31 @@ impl Session {
         }
         Ok(self.exit)
     }
-    pub fn stop(&mut self) -> Result<()> {
-        if let Some(mut owner) = self.owner.take() {
-            owner.stop()?;
+    fn check_path(&mut self) -> Result<()> {
+        if self.path_audit.failure().is_some() {
+            self.stop()?;
         }
-        self.history.finish()?;
+        Ok(())
+    }
+    pub fn stop(&mut self) -> Result<()> {
+        let cleanup: Result<()> = self
+            .owner
+            .take()
+            .map_or(Ok(()), |mut owner| owner.stop().map_err(Into::into));
+        // With the job stopped the log is finite. Audit its full remainder,
+        // including a fault written immediately before a requested close.
+        while self.observe()? {}
+        let history = self.history.finish();
         self.finished = true;
         self.data_lock.take();
-        Ok(())
+        if let Some(reason) = self.path_audit.failure() {
+            anyhow::bail!(
+                "This native build reached {reason}. The game was stopped. Update its game package.\n{}{}",
+                self.diagnostics(),
+                cleanup.err().or_else(|| history.err()).map(|e| format!("\nSession cleanup: {e:#}")).unwrap_or_default()
+            );
+        }
+        cleanup.and(history)
     }
 }
 impl Drop for Session {
@@ -364,6 +392,38 @@ fn main() {
     assert_eq!(std::env::var("RECOMP_AUDIO_VOLUME").unwrap(), "0.37");
     let watchdog = std::env::var("RECOMP_HANG_WATCHDOG").unwrap();
     assert!(watchdog == "0" || watchdog == "17");
+    assert_eq!(std::env::var("RECOMP_UNIMPL_TRAP").unwrap(), "1");
+    assert_eq!(std::env::var("RECOMP_STUB_LOG").unwrap(), "1");
+    let saves = std::path::PathBuf::from(std::env::var_os("RECOMP_SAVE_DIR").unwrap());
+    if let Ok(mode) = fs::read_to_string(saves.join("unsupported-mode")) {
+        use std::io::Write;
+        let mut out = std::io::stdout().lock();
+        if mode == "restart" && saves.join("restart-requested").exists() {
+            writeln!(out, "verified disc admitted in place\n[PRESENT] window up: restarted fixture").unwrap();
+            return;
+        }
+        if mode == "running" {
+            writeln!(out, "verified disc admitted in place\n[PRESENT] window up: fixture").unwrap();
+            out.flush().unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }
+        if mode == "late" { out.write_all(&vec![b'x'; 3*1024*1024]).unwrap(); }
+        // Force the marker across the first one-MiB observation budget. The
+        // owner then restarts before the second half is observed.
+        if mode == "restart" { out.write_all(&vec![b'x';1024*1024-10]).unwrap(); }
+        out.write_all(b"[STUB] unresolved 0x12345678\n").unwrap(); out.flush().unwrap();
+        if mode == "restart" {
+            let raw: usize = std::env::var("GAMEPKG_TAKEDAWN_RESTART_HANDLE").unwrap().parse().unwrap();
+            assert_ne!(unsafe { SetEvent(raw as _) }, 0);
+            fs::write(saves.join("restart-requested"), b"1").unwrap();
+        }
+        fs::write(saves.join("output-written"), b"1").unwrap();
+        if mode == "running" || mode == "stopping" {
+            std::thread::sleep(std::time::Duration::from_secs(5));
+            fs::write(saves.join("continued"), b"must not happen").unwrap();
+        }
+        return;
+    }
     println!("watchdog seconds={watchdog}");
     let raw: usize = std::env::var("GAMEPKG_TAKEDAWN_DISC_HANDLE").unwrap().parse().unwrap();
     let mut disc = unsafe { fs::File::from_raw_handle(raw as _) };
@@ -496,6 +556,67 @@ fn main() {
             0
         );
         assert_eq!(&fs::read(&iso).unwrap()[..4], b"ISO!");
+        for mode in ["immediate", "running", "late", "restart", "stopping"] {
+            let id = format!("unsupported-{mode}");
+            let saves = crate::takedawn::data_path(root.path(), &id, "creator", 1).join("saves");
+            fs::create_dir_all(&saves).unwrap();
+            fs::write(saves.join("unsupported-mode"), mode).unwrap();
+            let mut session =
+                Session::start_cached(root.path(), &id, "creator", 1, &executable, &iso, options)
+                    .unwrap();
+            let began = Instant::now();
+            if mode != "running" {
+                let ready = saves.join(if mode == "restart" {
+                    "restart-requested"
+                } else {
+                    "output-written"
+                });
+                while !ready.exists() {
+                    assert!(
+                        began.elapsed() < Duration::from_secs(15),
+                        "fixture did not publish its log"
+                    );
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            if mode == "stopping" {
+                let error = session.stop().unwrap_err();
+                assert!(
+                    error
+                        .to_string()
+                        .contains("an unresolved native game function"),
+                    "{error:#}"
+                );
+            } else {
+                loop {
+                    match session.poll() {
+                        Err(error) => {
+                            assert!(
+                                error
+                                    .to_string()
+                                    .contains("an unresolved native game function"),
+                                "{error:#}"
+                            );
+                            break;
+                        }
+                        Ok(Some(status)) => {
+                            panic!("unsupported game reported successful exit: {status}")
+                        }
+                        Ok(None) => {}
+                    }
+                    assert!(
+                        began.elapsed() < Duration::from_secs(20),
+                        "{}",
+                        session.diagnostics()
+                    );
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+            }
+            assert!(session.finished && session.owner.is_none());
+            assert!(session.data_lock.is_none() && !session.ready());
+            assert!(!saves.join("continued").exists());
+        }
         fs::write(&dll, b"changed companion").unwrap();
         assert!(Session::start_cached(
             root.path(),
