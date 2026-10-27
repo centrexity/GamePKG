@@ -76,12 +76,22 @@ polynomial evaluation use the same fixed intermediate widths. Exact tiny
 ratios receive a lower tail because atan(q)<q; tiny divisions are normalized
 before evaluation to avoid early binary128 precision loss. This adaptation
 corrects directed-rounding/underflow behavior in the original profile. The
-physical oracle checks corrected dyadic inputs directly; other finite inputs
-match the independently compiled original source, listed in
+physical oracle checks corrected dyadic result bytes directly; their C1 bit
+uses an independent exact MPFR ratio comparison, because modern hosts can
+report different approximation flags for the same tiny result. Unsupported
+raw80 operands retain the unmodified physical exception/state checks. Other
+finite inputs match the independently compiled original source, listed in
 fpatan-reference-sources.txt, and MPFR512 verifies accuracy. FPATAN replay tools
 use GAMEPKG_X87_FPATAN_CORPUS_SOURCE and x87_fpatan names. The pinned original
 sources are unchanged; no complete CPU/game fidelity or player delivery is
 claimed by these tests.
+
+The C1 regression reverses every captured host flag in the qualified tiny
+domain while retaining all result bytes and other state checks. A separate
+probe corrupts the generated implementation's tiny-result C1 and must fail on
+the exact case observed in CI. Only the normal fixture may export a replay
+corpus; probe variants remove that output setting to avoid file races. These
+are maintainer-oracle changes, with no runtime or player delivery changes.
 
 
 The gamepkg_fsincos adapter evaluates standalone FSIN/FCOS

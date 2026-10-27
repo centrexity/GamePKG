@@ -54,6 +54,28 @@ static void accuracy_clear(void) {
     accuracy_ready = 0;
   }
 }
+/* Only for exact_tiny() inputs. Their ratio q has at most 64 significant
+ * bits and |q|<2^-40. Since 0<|q|-|atan(q)|<|q|^3/3, the curvature is less
+ * than the gap from q to any distinct raw80 result (including subnormals).
+ * Thus a result has rounded upward in magnitude exactly when |result|>=|q|.
+ * Compute the ratio independently with MPFR, not the implementation under
+ * test or the host CPU's approximation flag. Undo an unmasked range wrap.
+ */
+static unsigned tiny_round_up(GamePkgExt80 input, GamePkgExt80 multiplier,
+                              GamePkgExt80 output, unsigned cw, unsigned sw) {
+  mpfr_t x, q, result;
+  mpfr_inits2(128, x, q, result, (mpfr_ptr)0);
+  mp_raw(x, input);
+  mp_raw(q, multiplier);
+  assert(mpfr_div(q, q, x, MPFR_RNDN) == 0 && mpfr_min_prec(q) <= 64);
+  mp_raw(result, output);
+  unsigned wrapped = (sw & 24u) & ~cw;
+  if (wrapped)
+    mpfr_mul_2si(result, result, (wrapped & 8u) ? 24576 : -24576, MPFR_RNDN);
+  unsigned up = mpfr_cmpabs(result, q) >= 0;
+  mpfr_clears(x, q, result, (mpfr_ptr)0);
+  return up;
+}
 #else
 static void accuracy(GamePkgExt80 input, GamePkgExt80 multiplier,
                      GamePkgExt80 output, unsigned cw, unsigned sw) {

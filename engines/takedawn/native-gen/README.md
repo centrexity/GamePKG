@@ -2615,11 +2615,28 @@ smaller in magnitude. For x=1,y=minimum-normal and RC down/toward-zero, this
 misses both predecessor rounding and the wrapped underflow response. The C
 adaptation keeps a nonzero lower tail for an exact tiny ratio, and normalizes
 all tiny divisions before evaluating them so intermediate binary128 gradual
-underflow cannot reduce precision. The strict physical oracle covers this
-corrected dyadic domain directly; general finite results still match the
+underflow cannot reduce precision. The strict physical oracle covers result
+bytes in this corrected dyadic domain; an independent MPFR ratio comparison
+checks C1, because modern hosts can report different approximation flags for
+the same tiny result. General finite results still match the
 independently compiled original profile. Approximation differences do not
 replace defined physical status/exception/commit checks. Original source
 files are unchanged; source and tests document the correction.
+
+The hosted runner exposed that C1 difference for x=1,y=minimum-normal with
+control word 0x40 (case85), while the local AMD oracle passed. Reversing the
+captured tiny-domain flags reproduces the exact failure with the old oracle.
+For an exact dyadic q with at most64 significant bits and |q|<2^-40,
+0<|q|-|atan(q)|<|q|^3/3 is smaller than the distance to any distinct raw80
+result. The corrected oracle therefore checks round-up independently via
+|result|>=|q|, after undoing any unmasked range wrap. MPFR verifies the ratio
+division is exact. Unsupported raw80 operands are excluded from this
+mathematical domain and retain their physical invalid-operation checks.
+The complete state matrix passes with both captured C1 values; a separately
+corrupted implementation flag is still rejected on case85. Numerical bytes,
+other status bits, stack/tags, deferred faults and accuracy/monotonicity
+assertions remain intact. Probe variants cannot overwrite the normal replay
+corpus. No runtime, source-kit or current native-port code changes are involved.
 
 2,409,580 state cases/1,085,424 deferred next-wait faults pass, plus8,000 worker
 cases. All64 masks/four PC/four RC/TOP/empty/special pairs, full-range ratios,
