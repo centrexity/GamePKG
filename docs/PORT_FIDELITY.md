@@ -4101,9 +4101,10 @@ the maintainer Python/compiler/test tools.
 
 ### Exact browser PNG decoding without duplicate raw assets
 
-Source-built exports now select validated noninterlaced RGB/RGBA8 and indexed
-1/2/4/8-bit PNGs for a trusted exact worker decoder. Package PNG bytes remain
-available to guest asset reads. Image preparation decodes them directly to the
+Source-built exports now select validated noninterlaced 8-bit RGB, RGBA and
+grayscale with alpha, plus 1/2/4/8-bit grayscale and indexed PNGs, for a trusted
+exact worker decoder. Package PNG bytes remain available to guest asset reads.
+Image preparation decodes them directly to the
 existing image cache, avoiding separately exported raw RGBA copies. Unsupported
 representations retain the previous precise-pixel fallback when needed.
 
@@ -4121,18 +4122,28 @@ These named buffers do not establish a whole-browser/JIT/GC memory bound.
 `tools/check_browser_png.py --browser` independently decodes all 76 current
 source images with Pillow as a reference, then verifies exact RGBA hashes in
 Node and an actual classic Chromium worker. The same check passes for all 76
-private losslessly optimized PNGs, including packed palettes. Synthetic cases
-cover all five filters, RGB/RGBA expansion, split input, exact transparency,
+private losslessly optimized PNGs, including packed palettes and grayscale.
+Synthetic cases cover all five filters, RGB/RGBA/grayscale/gray-alpha expansion,
+partial packed rows, split input, exact palette and color-key transparency,
 invalid chunks/CRCs/palettes/dimensions/filters and output overflow. Sixty-four
 independent zlib encodings cover stored/fixed/dynamic/RLE behavior; a 4 MiB
 expansion with a 16-byte allowance fails before exceeding the allowance.
 
-Actual signed core/component exports emit exact indexed, packed-palette and
-RGBA draw-command pixels without duplicate raw assets. A legacy RGB transparency
-case retains its previous raw fallback. Corrupt PNG CRCs fail explicitly and
+Actual signed core/component exports emit exact indexed, packed-palette,
+grayscale, gray-alpha, RGB color-key and RGBA draw-command pixels without
+duplicate raw assets. A valid 16-bit RGBA case retains its precise host-pixel
+fallback. Hidden RGB at zero alpha is preserved. Corrupt PNG CRCs fail explicitly and
 restored exports recover freshly. Existing browser export gameplay/storage/media/
 shader/shutdown checks, signed recorded-audio player lifecycle, host exporter
 checks and strict lint pass. CI gates the corpus and signed-player tests.
+
+The optimized-corpus CI check exposed an omitted representation: optipng
+converts the ball to 8-bit grayscale with a transparent color key. The grayscale
+path compares that key before expanding packed samples; it retains exact RGB
+even for fully transparent pixels. Both Chromium 155 and 156 workers preserve
+all 76 independent image hashes. Full signed core/component exports using this
+optimized corpus retain all 76 images, five effects and nine tracks, with no
+raw image duplicates and no memory, export-size or execution-limit changes.
 
 The revised complete private dataset audit reports 12,945,752 optimized asset
 bytes with original-rate replacement effects, 21,118,219 music bytes and a
@@ -4617,6 +4628,12 @@ independently in test fixtures. The legacy signed suite passes 72 checks each
 in Wasm and native execution; original pixel, sample and geometry references
 remain unchanged. Structural assertions now recognize the corrected solid
 rectangle commands and identify text tiles by clip plus original geometry.
+
+The deadline-sensitive legacy runtime cases run one at a time: concurrent
+fixture copying and reference rasterization must not consume another game's
+wall deadline on a two-core runner. Each complete 72-case suite has a 300-second
+maintainer observation allowance; the individual game deadline remains 100 ms.
+Particle counts, exact pixels, geometry and memory assertions are unchanged.
 
 The longer canonical browser run caught a real intermittent upload failure:
 59 sequential transfers of the largest MP3 could exhaust a shared 100 ms

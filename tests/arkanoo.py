@@ -370,7 +370,11 @@ pub fn game_tick(input:u32,state:u64)->u64 {
             entry=fixture/'source/src/lib.rs';entry.write_text(entry.read_text().replace('pub fn game_tick(input: u32, state: u64) -> u64 {','pub fn game_tick(input: u32, state: u64) -> u64 {\n if input&0xc00000ff==0xc000004b {'+'game_tick((input>>8)&255,state);let now=gamepkg::frame_time_us();if let Ok(slot)=GAME.lock(){if let Some(game)=slot.as_ref(){return (now<<32)|u64::from(game.fps);}}return u64::MAX;'+'}'))
         manifest.write_text(text);run('pack',fixture,'-o',root/(suffix+'.gamepkg'),'--key',key);run('install',root/(suffix+'.gamepkg'),'--trust-creator');run('build','com.gamepkg.arkanoo-'+suffix)
     probe_env=dict(env,GAMEPKG_ARKANOO_TEST_ROOT=str(root/'library'))
-    subprocess.run([str(RUNTIME_TEST),'--ignored'],env=probe_env,check=True,timeout=120)
+    # These cases enforce real per-frame wall deadlines and start child games.
+    # Run one case at a time so another case's reference rasterizer or library
+    # copy does not consume a game's deadline on a two-core CI runner. The
+    # outer suite allowance covers all 72 cases; game limits stay unchanged.
+    subprocess.run([str(RUNTIME_TEST),'--ignored','--test-threads=1'],env=probe_env,check=True,timeout=300)
     run('build','com.gamepkg.arkanoo','--target','native')
     run('build','com.gamepkg.arkanoo-nosave','--target','native')
     run('build','com.gamepkg.arkanoo-nofiles','--target','native')
@@ -380,7 +384,7 @@ pub fn game_tick(input:u32,state:u64)->u64 {
     run('build','com.gamepkg.arkanoo-events','--target','native')
     run('build','com.gamepkg.arkanoo-events-denied','--target','native')
     run('integrity-check','com.gamepkg.arkanoo')
-    subprocess.run([str(RUNTIME_TEST),'--ignored'],env=probe_env,check=True,timeout=120)
+    subprocess.run([str(RUNTIME_TEST),'--ignored','--test-threads=1'],env=probe_env,check=True,timeout=300)
     if args.runtime_only:
         print('Signed Arkanoo checks passed in Wasm and native execution; GUI workflows were not requested.')
         raise SystemExit(0)
