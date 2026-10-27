@@ -376,16 +376,63 @@ mod tests {
     use std::time::{Duration, Instant};
     #[test]
     fn native_player_owns_saves_history_and_companions_across_restart() {
-        // This std-only host fixture tests app ownership, not Vulkan rendering
-        // or original game fidelity. Actual game checks use the prepared kit.
+        // This std-only host fixture tests ownership and real Win32 window
+        // access under the production confinement. It does not test Vulkan
+        // rendering or original game fidelity; those use the prepared kit.
         let root = tempfile::tempdir().unwrap();
         let source = root.path().join("fixture.rs");
         fs::write(
             &source,
             r#"
-use std::{fs, io::Read, os::windows::io::FromRawHandle};
+use std::{fs, os::windows::io::FromRawHandle};
 #[link(name="kernel32")]
-extern "system" { fn SetEvent(handle: *mut core::ffi::c_void) -> i32; }
+extern "system" {
+    fn SetEvent(handle: *mut core::ffi::c_void) -> i32;
+    fn GetModuleHandleW(name: *const u16) -> *mut core::ffi::c_void;
+}
+#[repr(C)]
+struct Message {
+    window: *mut core::ffi::c_void,
+    message: u32,
+    wparam: usize,
+    lparam: isize,
+    time: u32,
+    x: i32,
+    y: i32,
+    private: u32,
+}
+#[link(name="user32")]
+extern "system" {
+    fn CreateWindowExW(ex: u32, class: *const u16, title: *const u16, style: u32,
+        x: i32, y: i32, width: i32, height: i32, parent: *mut core::ffi::c_void,
+        menu: *mut core::ffi::c_void, instance: *mut core::ffi::c_void,
+        parameter: *mut core::ffi::c_void) -> *mut core::ffi::c_void;
+    fn IsWindowVisible(window: *mut core::ffi::c_void) -> i32;
+    fn UpdateWindow(window: *mut core::ffi::c_void) -> i32;
+    fn DestroyWindow(window: *mut core::ffi::c_void) -> i32;
+    fn PeekMessageW(message: *mut Message, window: *mut core::ffi::c_void,
+        first: u32, last: u32, remove: u32) -> i32;
+    fn TranslateMessage(message: *const Message) -> i32;
+    fn DispatchMessageW(message: *const Message) -> isize;
+}
+fn window() -> *mut core::ffi::c_void {
+    let class: Vec<u16> = "STATIC\0".encode_utf16().collect();
+    let title: Vec<u16> = "GamePKG confined native window fixture\0".encode_utf16().collect();
+    // WS_VISIBLE | WS_OVERLAPPEDWINDOW, using the built-in STATIC class.
+    let window = unsafe { CreateWindowExW(0, class.as_ptr(), title.as_ptr(),
+        0x10cf0000, 0, 0, 320, 240, std::ptr::null_mut(), std::ptr::null_mut(),
+        GetModuleHandleW(std::ptr::null()), std::ptr::null_mut()) };
+    assert!(!window.is_null(), "CreateWindowExW: {}", std::io::Error::last_os_error());
+    assert_ne!(unsafe { IsWindowVisible(window) }, 0);
+    unsafe { UpdateWindow(window); }
+    window
+}
+fn pump_window() {
+    let mut message: Message = unsafe { std::mem::zeroed() };
+    while unsafe { PeekMessageW(&mut message, std::ptr::null_mut(), 0, 0, 1) } != 0 {
+        unsafe { TranslateMessage(&message); DispatchMessageW(&message); }
+    }
+}
 fn main() {
     assert_eq!(std::env::args().nth(1).unwrap(), "/gamepkg-disc/default.xbe");
     assert_eq!(std::env::var("RECOMP_AUDIO_MUTE").unwrap(), "1");
@@ -426,7 +473,7 @@ fn main() {
     }
     println!("watchdog seconds={watchdog}");
     let raw: usize = std::env::var("GAMEPKG_TAKEDAWN_DISC_HANDLE").unwrap().parse().unwrap();
-    let mut disc = unsafe { fs::File::from_raw_handle(raw as _) };
+    let disc = unsafe { fs::File::from_raw_handle(raw as _) };
     // Positional I/O preserves the selected capability's offset across restart.
     use std::os::windows::fs::FileExt;
     let mut bytes = [0; 4];
@@ -434,9 +481,17 @@ fn main() {
     assert_eq!(&bytes, b"ISO!");
     let saves = std::path::PathBuf::from(std::env::var_os("RECOMP_SAVE_DIR").unwrap());
     let profile = saves.join("profile");
+    let window = window();
+    println!("fixture Win32 window created and visible");
     println!("GamePKG: verified disc admitted in place");
     println!("[PRESENT] window up: app lifecycle fixture");
-    std::thread::sleep(std::time::Duration::from_millis(150));
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(150);
+    while std::time::Instant::now() < deadline {
+        pump_window();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert_ne!(unsafe { DestroyWindow(window) }, 0);
+    println!("fixture Win32 window closed");
     if !profile.exists() {
         fs::write(profile, b"original save fixture").unwrap();
         let raw: usize = std::env::var("GAMEPKG_TAKEDAWN_RESTART_HANDLE").unwrap().parse().unwrap();
@@ -451,6 +506,7 @@ fn main() {
         let executable = root.path().join("fixture.exe");
         let compiled = std::process::Command::new("rustc")
             .arg("--edition=2021")
+            .arg("-Dwarnings")
             .arg(&source)
             .arg("-o")
             .arg(&executable)
@@ -517,6 +573,12 @@ fn main() {
         let text = session.diagnostics();
         assert_eq!(text.matches("[PRESENT] window up:").count(), 2);
         assert_eq!(text.matches("watchdog seconds=17").count(), 2);
+        assert_eq!(
+            text.matches("fixture Win32 window created and visible")
+                .count(),
+            2
+        );
+        assert_eq!(text.matches("fixture Win32 window closed").count(), 2);
         drop(session);
         // A later launch with the default must explicitly turn the runtime's
         // own default-on detector off, even after an enabled managed restart.
@@ -539,7 +601,11 @@ fn main() {
             std::thread::sleep(Duration::from_millis(10));
         }
         assert!(session.diagnostics().contains("watchdog seconds=0"));
+        assert!(session
+            .diagnostics()
+            .contains("fixture Win32 window closed"));
         drop(session);
+        println!("Verified real confined Win32 windows: two managed-restart launches and one default-watchdog launch, all visible and closed.");
         let saves =
             crate::takedawn::data_path(root.path(), "fixture", "creator", 1).join("saves/profile");
         assert_eq!(fs::read(saves).unwrap(), b"original save fixture");

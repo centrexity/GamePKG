@@ -1,0 +1,51 @@
+name: Confined native Windows window
+on:
+  push:
+    paths:
+      - 'src/takedawn/windows_player.rs'
+      - 'src/takedawn/path_audit.rs'
+      - 'engines/takedawn/windows-runner/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/native_windows_window.yml'
+  pull_request:
+    paths:
+      - 'src/takedawn/windows_player.rs'
+      - 'src/takedawn/path_audit.rs'
+      - 'engines/takedawn/windows-runner/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/native_windows_window.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: native-windows-window-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  native-window:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: native-windows-window
+      - name: Exercise the production owner and real child windows without game media
+        shell: pwsh
+        run: |
+          cargo test --locked --lib takedawn_player::tests::native_player_owns_saves_history_and_companions_across_restart -- --exact --nocapture 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP/native-window.log"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $log = Get-Content -Raw "$env:RUNNER_TEMP/native-window.log"
+          if ($log -notmatch 'test result: ok\. 1 passed; 0 failed;') { throw 'The exact native owner/window test did not run successfully' }
+      - name: Preserve the media-free window and ownership test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-windows-window-evidence
+          path: ${{ runner.temp }}/native-window.log
+          retention-days: 7
+          if-no-files-found: warn
