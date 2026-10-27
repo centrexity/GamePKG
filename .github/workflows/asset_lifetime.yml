@@ -77,6 +77,23 @@ jobs:
       - name: Verify signed compressed reads, playback and pending-loan release
         run: |
           sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-assets-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT=/tmp/gamepkg-assets-slang CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tests/browser_compressed_assets.py
+  png-startup:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install exact-image browser prerequisites
+        run: |
+          bash tools/ci_ubuntu_apt.sh update
+          bash tools/ci_ubuntu_apt.sh install -y --no-install-recommends python3-selenium python3-pil optipng
+          test -x "$CHROMEWEBDRIVER/chromedriver"
+          sudo ln -sf "$CHROMEWEBDRIVER/chromedriver" /usr/local/bin/chromedriver
+          google-chrome --version
+          chromedriver --version
+      - name: Verify consecutive original PNG startup and exact pixels
+        run: /usr/bin/python3 tools/check_browser_png.py --browser
       - name: Verify consecutive optimized PNG startup and exact original pixels
         run: /usr/bin/python3 tools/check_browser_png.py --browser --optimize-assets
       - name: Verify the Chrome 155 decoder-construction regression

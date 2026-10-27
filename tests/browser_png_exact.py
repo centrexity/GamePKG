@@ -34,7 +34,11 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-exact-png-') as temporary:
  options=Options();options.binary_location=shutil.which('google-chrome') or shutil.which('chromium') or shutil.which('google-chrome-stable')
  for flag in ['--headless=new','--mute-audio','--no-sandbox','--disable-dev-shm-usage']:options.add_argument(flag)
  driver=shutil.which('chromedriver') or str(Path(os.environ.get('CHROMEWEBDRIVER','/nonexistent'))/'chromedriver')
- browser=webdriver.Chrome(service=Service(driver),options=options)
+ driver_log=root/'chromedriver.log'
+ try:browser=webdriver.Chrome(service=Service(driver,log_output=str(driver_log)),options=options)
+ except Exception:
+  print('Chrome startup log:',driver_log.read_text(errors='replace')[-8192:] if driver_log.exists() else 'unavailable',flush=True)
+  server.shutdown();server.server_close();raise
  try:
   browser.set_script_timeout(30);browser.get(f'http://127.0.0.1:{server.server_port}/')
   result=browser.execute_async_script('const done=arguments[arguments.length-1],worker=new Worker("worker.js");let last;const timer=setTimeout(()=>{worker.terminate();done({error:"PNG startup deadline exceeded",last});},10000);worker.onmessage=({data})=>{if(data.stage){last=data.stage;return;}clearTimeout(timer);worker.terminate();done(data);};worker.onerror=e=>{clearTimeout(timer);worker.terminate();done({error:e.message});};worker.postMessage({});')
