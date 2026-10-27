@@ -622,7 +622,9 @@ mod tests {
                     .collect()
             } else {
                 pixels
-                    .chunks_exact(2)
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
                     .flat_map(|pixel| [pixel[0], pixel[0], pixel[0], pixel[1]])
                     .collect()
             };
