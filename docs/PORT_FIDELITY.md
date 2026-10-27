@@ -222,12 +222,25 @@ Particle implementation and draw function; 114 observations cover each ordered
 point and age/alpha value, including negative/edge coordinates. Actual native and
 wasm32 image pixels match these observations. A 200-brick burst retains
 2,000–3,000 shards within the unchanged host-call, draw-command and image budgets. The layer
-uses at most six 512×512 tiles; full-viewport corner coverage prevents silent
+uses occupied 128×128 tiles; full-viewport corner coverage prevents silent
 loss through the per-texture dimension limit.
 Disjoint random-word fields and rejection sampling preserve independent uniform
 ranges without per-field host RPCs. Native desktop and both browser profiles pass
 ordinary gameplay/editor checks with the restored effects. Ball trails/fireball glows and penguin/heart-loss behavior are restored below;
 remaining original art/audio stay open.
+
+A hosted dense-frame timeout persisted after isolating the tests. Thousands
+of individual entropy round trips dominated the native burst cost. The trusted
+SDK now batches 64 host-generated words in a fixed 512-byte cache while charging
+each consumed value against the original shared 8,192-call allowance. Particle
+generation, random sampling, geometry, pixels and all time/memory limits remain
+unchanged. A two-core local comparison reduces 5,000 random requests from about
+13.8 ms to 0.33 ms and the complete dense frames from 22–35 ms to 7–12 ms.
+The signed 72-case native and Wasm suites pass. Protocol checks retain full
+little-endian values, exact shared call boundaries across cached/drawing calls,
+per-tick reset, and rejection of malformed/truncated blocks; a failed cached
+random tick preserves both the committed save bytes and modification time.
+Hosted confirmation of the optimized native frame remains pending.
 
 Arkanoo ball-history trails now follow the original pre-physics 800/1400 px/s
 thresholds and one-entry trimming, including the original tier-drop behavior.

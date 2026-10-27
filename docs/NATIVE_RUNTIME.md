@@ -85,6 +85,17 @@ Native gameplay runs in a separate worker; game code is not loaded into the desk
 
 The worker's address space is capped at the lower of the signed hard memory limit and the user's ceiling, including its native runtime and C engine. Startup has a five-second limit; each tick uses the configured deadline. Stalled or failed workers are terminated, and incomplete tick output and saves are discarded. Host rendering, ROM snapshots and network buffers have separate bounds; the worker limit is not a cap on the entire desktop application or GPU.
 
+The Linux source-game SDK receives host randomness in fixed 512-byte blocks
+and retains at most 64 values in its private worker cache. `random_u64` still
+returns host-supplied bits; it does not substitute a game PRNG. Every cached
+draw spends one call from the same 8,192-call tick allowance as other host
+operations. Trusted entry code resets that allowance each tick, and source
+verification rejects access to that entry point. The parent retains its
+separate message-count guard. Block sizes, packet bounds, time and memory
+limits remain fixed, and failed ticks cannot commit pending saves. The SDK
+cache identity binds both the source and its embedded call limit, so affected
+native builds require rebuilding after a binding change.
+
 Cached executables are checked against their integrity receipt and copied into a private, read-only execution snapshot before launch. Native and optional Wasm caches remain separate. Source checks, OS isolation and host validation work together; source inspection alone is not a security boundary.
 
 ## Rendering
