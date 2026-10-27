@@ -57,7 +57,7 @@ jobs:
       - name: Install isolated-compiler and browser prerequisites
         run: |
           bash tools/ci_ubuntu_apt.sh update
-          bash tools/ci_ubuntu_apt.sh install -y --no-install-recommends bubblewrap python3-selenium python3-pil
+          bash tools/ci_ubuntu_apt.sh install -y --no-install-recommends bubblewrap python3-selenium python3-pil libsdl2-dev
           test -x "$CHROMEWEBDRIVER/chromedriver"
           sudo ln -sf "$CHROMEWEBDRIVER/chromedriver" /usr/local/bin/chromedriver
       - name: Verify complete canonical data and bounded decoder scheduling

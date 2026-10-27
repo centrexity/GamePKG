@@ -4634,3 +4634,16 @@ This is an unreleased recipe change, with a dedicated canonical-delivery CI
 gate. It does not establish complete port fidelity: noncanonical-resolution
 original-photo sampling, decoder arithmetic differences from upstream SDL and
 broader platform/gameplay qualification remain separate work.
+
+The first canonical-delivery CI run exposed missing runner prerequisites rather
+than an omitted media asset: its independent Rust/SDL reference tests need
+`libsdl2-dev`. The dedicated menu job also built the app without either audio
+companion, which the canonical recipe now requires. An explicitly incomplete
+app reproduces the failure in a private display; the native error dialog reads
+"this app was built without the audio decoder companion". The complete app
+passes the same menu matrix. The menu job now builds both companions and checks
+both relocated entries before pixel comparisons. The fixture selects its stated
+native/Wasm target explicitly and captures private-display startup dialogs and
+window titles on failure. The package, reference pixels and tolerances are not
+reduced to bypass audio preparation. Its 2021-edition formatting check also uses
+the project formatter rather than an explicitly selected 2024 style.

@@ -692,12 +692,11 @@ fn original_brick_geometry_and_pair_before_paddle_order_reach_real_runtime() {
         16,
         "integer brick collision did not match original geometry"
     );
-    assert!(
-        game.frame()
-            .commands
-            .iter()
-            .any(|command| ball_position(command) == Some((34.0, 113.0)))
-    );
+    assert!(game
+        .frame()
+        .commands
+        .iter()
+        .any(|command| ball_position(command) == Some((34.0, 113.0))));
     drop(game);
     let mut game = load_menu(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
     assert_eq!(
@@ -724,12 +723,11 @@ fn per_ball_launch_delay_and_life_victory_flow_work_in_real_runtime() {
         "auto-launch moved before the original next frame"
     );
     game.step(0).unwrap();
-    assert!(
-        game.frame()
-            .commands
-            .iter()
-            .any(|command| ball_position(command).is_some_and(|(_, y)| y == 390.0))
-    );
+    assert!(game
+        .frame()
+        .commands
+        .iter()
+        .any(|command| ball_position(command).is_some_and(|(_, y)| y == 390.0)));
     let state = game.step(16384).unwrap();
     assert_eq!(state >> 32, 80);
     assert_eq!((state >> 8) & 3, 2);
@@ -1053,12 +1051,11 @@ fn original_editor_workflow_persists_patterns_and_preserves_corrupt_saves_in_rea
     let mut game = load_menu(root.path(), "com.gamepkg.arkanoo").unwrap();
     game.step(0).unwrap();
     editor_key(&mut game, 101);
-    assert!(
-        game.frame()
-            .commands
-            .iter()
-            .any(|c| solid_rect(c) == Some(([20.0, 100.0, 600.5, 0.5], [80, 80, 100, 255])))
-    );
+    assert!(game
+        .frame()
+        .commands
+        .iter()
+        .any(|c| solid_rect(c) == Some(([20.0, 100.0, 600.5, 0.5], [80, 80, 100, 255]))));
     for (index, key) in [54, 55, 56, 53].iter().enumerate() {
         editor_key(&mut game, *key);
         editor_click(&mut game, 20.0 + index as f32 * 30.0, 100.0, 1);
@@ -1081,12 +1078,11 @@ fn original_editor_workflow_persists_patterns_and_preserves_corrupt_saves_in_rea
     editor_key(&mut game, 116); // Test the actual edited board, then clear through the original Q action.
     game.step(8).unwrap(); // Pause and return to editing without completing the test.
     editor_key(&mut game, 101);
-    assert!(
-        game.frame()
-            .commands
-            .iter()
-            .any(|c| solid_rect(c) == Some(([20.0, 100.0, 600.5, 0.5], [80, 80, 100, 255])))
-    );
+    assert!(game
+        .frame()
+        .commands
+        .iter()
+        .any(|c| solid_rect(c) == Some(([20.0, 100.0, 600.5, 0.5], [80, 80, 100, 255]))));
     editor_key(&mut game, 116);
     assert_eq!(
         game.frame()
@@ -1099,12 +1095,11 @@ fn original_editor_workflow_persists_patterns_and_preserves_corrupt_saves_in_rea
         3
     );
     editor_key(&mut game, 113);
-    assert!(
-        game.frame()
-            .commands
-            .iter()
-            .any(|c| solid_rect(c) == Some(([20.0, 100.0, 600.5, 0.5], [80, 80, 100, 255])))
-    );
+    assert!(game
+        .frame()
+        .commands
+        .iter()
+        .any(|c| solid_rect(c) == Some(([20.0, 100.0, 600.5, 0.5], [80, 80, 100, 255]))));
     drop(game);
     let mut game = load_menu(root.path(), "com.gamepkg.arkanoo").unwrap();
     game.step(0).unwrap();
@@ -1590,13 +1585,12 @@ fn actual_menu_clicks_start_resume_restart_gravity_editor_settings_fullscreen_an
         })
         .unwrap();
         game.step(0).unwrap();
-        assert!(
-            game.frame()
-                .commands
-                .iter()
-                .any(|command| solid_rect(command)
-                    == Some(([20.0, 100.0, 600.5, 0.5], [80, 80, 100, 255])))
-        );
+        assert!(game
+            .frame()
+            .commands
+            .iter()
+            .any(|command| solid_rect(command)
+                == Some(([20.0, 100.0, 600.5, 0.5], [80, 80, 100, 255]))));
         game.input_event(Event {
             kind: 9,
             x: 0.0,
@@ -1978,13 +1972,11 @@ fn original_ball_texture_and_integer_geometry_reach_native_and_wasm() {
         assert_eq!((left, top, width, height), (x, y, 6.0, 6.0));
         assert_eq!(image.size(), [12, 12]);
         assert_eq!(image.pixels(), expected.as_slice());
-        assert!(
-            !game
-                .frame()
-                .commands
-                .iter()
-                .any(|c| matches!(c, Command::Circle { .. }))
-        );
+        assert!(!game
+            .frame()
+            .commands
+            .iter()
+            .any(|c| matches!(c, Command::Circle { .. })));
     }
 }
 
@@ -2275,14 +2267,12 @@ fn original_ice_glints_refractions_cracks_and_clipped_shine_reach_real_runtimes(
                 "Ice mask case {index}, layer {name}: {:?}",
                 mismatch.map(|at| (at, actual[at], expected[at]))
             );
-            assert!(
-                image
-                    .pixels()
-                    .as_chunks::<4>()
-                    .0
-                    .iter()
-                    .all(|p| p[..3] == [255, 255, 255])
-            );
+            assert!(image
+                .pixels()
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .all(|p| p[..3] == [255, 255, 255]));
         }
     }
     assert_eq!(game.step(2147483904 | 512).unwrap(), (5u64 << 32) | 1);
@@ -2457,15 +2447,13 @@ fn original_glass_bonus_layers_preserve_types_symbols_order_and_full_drop_budget
     let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
     for (index, case) in cases.iter().enumerate() {
         assert_eq!(game.step(2147485696 | index as u32).unwrap(), 1);
-        let [
-            Command::Image {
-                x,
-                y,
-                width: 20.5,
-                height: 20.5,
-                image,
-            },
-        ] = game.frame().commands.as_slice()
+        let [Command::Image {
+            x,
+            y,
+            width: 20.5,
+            height: 20.5,
+            image,
+        }] = game.frame().commands.as_slice()
         else {
             panic!("Bonus must retain inclusive nearest-sampled bounds");
         };
@@ -2623,15 +2611,13 @@ fn original_rocket_art_and_integer_positions_reach_the_signed_runtime() {
     let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
     for (index, case) in fixture["cases"].as_array().unwrap().iter().enumerate() {
         assert_eq!(game.step(2147485696 | 64 | index as u32).unwrap(), 1);
-        let [
-            Command::Image {
-                x,
-                y,
-                width: 5.0,
-                height: 10.0,
-                image,
-            },
-        ] = game.frame().commands.as_slice()
+        let [Command::Image {
+            x,
+            y,
+            width: 5.0,
+            height: 10.0,
+            image,
+        }] = game.frame().commands.as_slice()
         else {
             panic!("Rocket must use one nearest-sampled original sprite")
         };
@@ -2699,15 +2685,13 @@ fn original_four_portal_stages_reach_signed_runtimes_with_unchanged_budgets() {
             assert!(game.frame().commands.is_empty());
             continue;
         }
-        let [
-            Command::Image {
-                x,
-                y,
-                width,
-                height,
-                image,
-            },
-        ] = game.frame().commands.as_slice()
+        let [Command::Image {
+            x,
+            y,
+            width,
+            height,
+            image,
+        }] = game.frame().commands.as_slice()
         else {
             panic!("Each original portal layer fits one bounded nearest image")
         };
@@ -2982,15 +2966,13 @@ fn sdl_default_line_coverage_and_clipping_reach_native_and_wasm() {
             assert!(game.frame().commands.is_empty());
             continue;
         }
-        let [
-            Command::Image {
-                x,
-                y,
-                width,
-                height,
-                image,
-            },
-        ] = game.frame().commands.as_slice()
+        let [Command::Image {
+            x,
+            y,
+            width,
+            height,
+            image,
+        }] = game.frame().commands.as_slice()
         else {
             panic!("Expected one bounded line layer")
         };
@@ -3138,15 +3120,13 @@ fn original_ball_speed_font_pixels_and_integer_placement_reach_every_profile() {
                     .unwrap(),
                 1
             );
-            let [
-                Command::LinearImage {
-                    x,
-                    y,
-                    width: w,
-                    height: h,
-                    image,
-                },
-            ] = game.frame().commands.as_slice()
+            let [Command::LinearImage {
+                x,
+                y,
+                width: w,
+                height: h,
+                image,
+            }] = game.frame().commands.as_slice()
             else {
                 panic!("Speed label did not use filtered drawing")
             };

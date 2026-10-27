@@ -62,8 +62,12 @@ jobs:
           done
           test -n "$gamepkg_software_icd"
           echo "VK_ICD_FILENAMES=$gamepkg_software_icd" >> "$GITHUB_ENV"
+      - name: Build the embedded audio companions required by the canonical port
+        run: python3 tools/build_audio_companion.py --github-env
       - name: Build the actual desktop and CLI entries
         run: cargo build --locked --release --features gui --bins
+      - name: Verify both relocated app entries retain their audio companions
+        run: python3 tools/check_bundled_audio.py target/release
       - name: Install the pinned shader compiler and stage the isolated Rust compiler
         run: |
           python3 tools/install_slang.py /tmp/gamepkg-menu-slang
