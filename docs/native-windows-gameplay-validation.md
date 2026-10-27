@@ -42,18 +42,25 @@ normal close. It finishes an original three-lap Race, fifth of six in 345.483
 seconds, with a best lap of 108.517 seconds. Traps, actual-Vulkan and unsupported
 path gates are enabled. Wine does not establish physical Windows game behavior.
 
-Actual Windows/macOS host validation passes at `2003f48` in
-[run 40446324843](https://github.com/centrexity/GamePKG/actions/runs/40446324843);
-Windows runs 340 passing tests, zero failures and nine explicit ignores. The
+Actual Windows/macOS host validation passes at `03c8768` in
+[run 40465504287](https://github.com/centrexity/GamePKG/actions/runs/40465504287).
+Across the host test binaries, Windows reports 705 passes and 134 explicit
+ignores; macOS reports 724 passes and 134 ignores. Neither has a test failure.
+The Windows library subset reports 340 passes and nine ignores. Both hosts
+pass strict lint, and Windows passes managed SDK setup, isolated playback,
+the optional WSL profile checks and verified ZIP packaging. The new Windows
+compiler-cache storage regression and default-off watchdog persistence pass.
+These results do not turn ignored platform/fixture tests into qualifications. The
 focused [confined Windows window gate](https://github.com/centrexity/GamePKG/actions/runs/40456563923)
 at `658a9c8` also passes: its exact asset-free test creates, shows and destroys
 real windows across two managed-restart launches and a default-watchdog launch.
 It uses the production owner, synthetic media and no WSL. This is basic Win32
 window access, not original-game SDL/Vulkan/audio/controller qualification.
 
-The current private Windows hardware bundle uses app `7ed3067` and the signed
-v14/0.1.3 recipe with a separate preview library/settings. Every app file matches
-its verified native Windows ZIP. It includes the default-off watchdog and no
+The current private Windows hardware bundle uses app `03c8768` and the signed
+v14/0.1.3 recipe with a separate preview library/settings. All 18,480 app files
+match its verified native Windows ZIP. It includes the native Windows storage
+and game-window color fixes, the default-off watchdog and no
 ISO, private signing key or prebuilt CPU-specific game. The full v14 native
 Windows signed Build/repair gate passes on actual Windows in
 [run 40446319498](https://github.com/centrexity/GamePKG/actions/runs/40446319498):
