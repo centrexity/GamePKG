@@ -4595,3 +4595,42 @@ sampling the original 2816-by-1536 image directly does not. Resolving that
 requires sampling original-resolution image data, or an equivalent lossless
 representation, at the output resolution. The current memory and transfer
 budgets are unchanged; the background difference is not counted as fixed.
+
+### Canonical recorded-audio delivery, recipe 0.1.74
+
+The canonical recipe now selects the previously qualified host recording path.
+It includes all five original SDL-decoded 44.1 kHz effects and all nine original
+MP3 music tracks. Its signed asset provenance records upstream hashes and the
+76 losslessly optimized PNGs. Music retains the upstream-credited Pixabay
+Content License separately from the code license; no standalone audio library
+is offered. The 16 MiB hard limit is unchanged: effects reserve 3 MiB, music
+7 MiB, leaving 6 MiB for the game. Both complete browser exports are 33,212,842
+encoded asset bytes, below the existing 32 MiB cap, with no omitted images or
+tracks and no duplicate raw images. Players need no Python or external decoder.
+
+Actual canonical native/core/component checks pass music controls, mute clock
+freeze, effects, saved preferences, restart and damaged-save preservation. Both
+browser profiles pass maximum-size single-name and pattern-collection saves,
+all six damaged-save cases, cancellation/memory release and all six dense scenes
+with the full 1 MiB archive resident. The old 48 kHz SDL effect assets are frozen
+independently in test fixtures. The legacy signed suite passes 72 checks each
+in Wasm and native execution; original pixel, sample and geometry references
+remain unchanged. Structural assertions now recognize the corrected solid
+rectangle commands and identify text tiles by clip plus original geometry.
+
+The longer canonical browser run caught a real intermittent upload failure:
+59 sequential transfers of the largest MP3 could exhaust a shared 100 ms
+wall-clock allowance before codec open. Upload now has one fixed five-second
+aggregate bound and 100 ms per acknowledgement; actual codec open/read/rewind
+still have their separate 100 ms execution limits. This supersedes the earlier
+aggregate-upload description. A deterministic clock regression rejects the
+previous client, accepts finite scheduling delays, rejects aggregate renewal
+and per-operation stalls, and proves worker/budget cleanup. Actual Chromium
+passes all nine full tracks with deliberately delayed input transfers, unchanged
+116,310,370 native PCM sample values and memory charges. Infinite open/read,
+malformed output, cancellation and fresh-worker recovery tests also pass.
+
+This is an unreleased recipe change, with a dedicated canonical-delivery CI
+gate. It does not establish complete port fidelity: noncanonical-resolution
+original-photo sampling, decoder arithmetic differences from upstream SDL and
+broader platform/gameplay qualification remain separate work.

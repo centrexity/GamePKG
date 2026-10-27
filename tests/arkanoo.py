@@ -1,5 +1,6 @@
 """Signed Arkanoo port: isolated builds, native keyboard play and browser export."""
 from browser_storage_support import read_first
+from arkanoo_legacy_support import copy_legacy_port
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -91,25 +92,25 @@ with (nullcontext(tempfile.mkdtemp(prefix='gamepkg-arkanoo-',dir=PROJECT/'target
         r=subprocess.run([str(CLI),*map(str,args)],env=env,text=True,capture_output=True,timeout=120)
         assert r.returncode==0,r.stderr
         return r.stdout
-    production=root/'production';shutil.copytree(PROJECT/'ports/arkanoo',production)
+    production=root/'production';copy_legacy_port(production)
     entry=production/'source/src/lib.rs';entry.write_text(entry.read_text().replace('pub fn game_tick(input: u32, state: u64) -> u64 {','pub fn game_tick(input: u32, state: u64) -> u64 {\n if input&0xc00000ff==0xc000004b {'+'game_tick((input>>8)&255,state);let now=gamepkg::frame_time_us();if let Ok(slot)=GAME.lock(){if let Some(game)=slot.as_ref(){return (now<<32)|u64::from(game.fps);}}return u64::MAX;'+'}'))
     run('pack',production,'-o',root/'arkanoo.gamepkg','--key',key)
     run('install',root/'arkanoo.gamepkg','--trust-creator');run('build','com.gamepkg.arkanoo')
     result=run('run','com.gamepkg.arkanoo','--frames',180)
     assert 'Ran 180 frames' in result and 'draw commands: 1024' not in result,result
     run('integrity-check','com.gamepkg.arkanoo')
-    nosave=root/'nosave';shutil.copytree(PROJECT/'ports/arkanoo',nosave)
+    nosave=root/'nosave';copy_legacy_port(nosave)
     file=nosave/'manifest.toml';file.write_text(file.read_text().replace('com.gamepkg.arkanoo','com.gamepkg.arkanoo-nosave').replace('save = true','save = false'))
     run('pack',nosave,'-o',root/'nosave.gamepkg','--key',key);run('install',root/'nosave.gamepkg','--trust-creator');run('build','com.gamepkg.arkanoo-nosave')
-    custom=root/'custom';shutil.copytree(PROJECT/'ports/arkanoo',custom)
+    custom=root/'custom';copy_legacy_port(custom)
     file=custom/'manifest.toml';file.write_text(file.read_text().replace('com.gamepkg.arkanoo','com.gamepkg.arkanoo-custom'))
     boards=json.loads((PROJECT/'tests/fixtures/arkanoo-custom-levels.json').read_text())['patterns']
     assert boards==[[i if i<9 else 255 for i in range(200)],[i//20%6 if i//20==i%20 else 255 for i in range(200)],[255]*200]
-    (custom/'source/src/lib.rs').write_text('mod procedural;mod background;mod audio;mod editor;mod levels;mod menu;mod pattern_rng;mod physics;mod render;mod speed_font;mod editor_font;mod dynamic_font;mod dynamic_font_data;pub fn game_tick(input:u32,_:u64)->u64 {let mut game=physics::Game::new();for which in 0..3 {let mut board=[255u8;200];if which==0 {for col in 0..9 {board[col]=col as u8;}}if which==1 {for row in 0..10 {board[row*20+row]=(row%6) as u8;}}game.editor.patterns.push(editor::Pattern::pattern_from_cells(editor::Name::from_string(String::new()),board).unwrap());}game.level=input;game.populate();game.mode=1;render::draw(&game);let mut result=14695981039346656037u64;for index in 0..200 {let cell=if game.blocks[index]==0 {255} else if game.block_type[index]>0 {game.block_type[index]+5} else {game.block_color[index]};result=(result^u64::from(cell)).wrapping_mul(1099511628211);}result}')
+    (custom/'source/src/lib.rs').write_text('mod portable_math;mod procedural;mod background;mod audio;mod editor;mod levels;mod menu;mod pattern_rng;mod physics;mod render;mod speed_font;mod editor_font;mod dynamic_font;mod dynamic_font_data;pub fn game_tick(input:u32,_:u64)->u64 {let mut game=physics::Game::new();for which in 0..3 {let mut board=[255u8;200];if which==0 {for col in 0..9 {board[col]=col as u8;}}if which==1 {for row in 0..10 {board[row*20+row]=(row%6) as u8;}}game.editor.patterns.push(editor::Pattern::pattern_from_cells(editor::Name::from_string(String::new()),board).unwrap());}game.level=input;game.populate();game.mode=1;render::draw(&game);let mut result=14695981039346656037u64;for index in 0..200 {let cell=if game.blocks[index]==0 {255} else if game.block_type[index]>0 {game.block_type[index]+5} else {game.block_color[index]};result=(result^u64::from(cell)).wrapping_mul(1099511628211);}result}')
     run('pack',custom,'-o',root/'custom.gamepkg','--key',key);run('install',root/'custom.gamepkg','--trust-creator');run('build','com.gamepkg.arkanoo-custom')
     # Trigger the production portal at its original speed threshold without
     # depending on a long random play session. Only fixture setup is replaced.
-    modes=root/'modes';shutil.copytree(PROJECT/'ports/arkanoo',modes)
+    modes=root/'modes';copy_legacy_port(modes)
     mode_manifest=modes/'manifest.toml';mode_manifest.write_text(mode_manifest.read_text().replace('com.gamepkg.arkanoo','com.gamepkg.arkanoo-modes'))
     sound_cases=json.loads((PROJECT/'tests/fixtures/arkanoo-bricks.json').read_text())['fixtures']
     sound_branches=''
@@ -124,7 +125,7 @@ with (nullcontext(tempfile.mkdtemp(prefix='gamepkg-arkanoo-',dir=PROJECT/'target
                     x,y,vx,vy=case['ball'];branch+=f'g.balls.clear();g.balls.push(physics::Ball{{x:{x}f32*0.5+3.0,y:{y}f32*0.5+63.0,vx:{vx}f32*0.5,vy:{vy}f32*0.5,spin:0.0,attached:false,launch_timer:0,trail:Vec::new()}});g.collide_blocks(0);'
                 else:branch+='g.update_rockets();'
             sound_branches+=branch+'return u64::from(g.sound);}'
-    (modes/'source/src/lib.rs').write_text('''mod procedural;mod background;mod audio;mod editor;mod levels;mod menu;mod pattern_rng;mod physics;mod render;mod speed_font;mod editor_font;mod dynamic_font;mod dynamic_font_data;use std::sync::Mutex;
+    (modes/'source/src/lib.rs').write_text('''mod portable_math;mod procedural;mod background;mod audio;mod editor;mod levels;mod menu;mod pattern_rng;mod physics;mod render;mod speed_font;mod editor_font;mod dynamic_font;mod dynamic_font_data;use std::sync::Mutex;
 static GAME:Mutex<Option<physics::Game>>=Mutex::new(None);
 static RECORDINGS:Mutex<Option<audio::Mixer>>=Mutex::new(None);
 pub fn game_tick(input:u32,state:u64)->u64 {
@@ -339,9 +340,9 @@ fn penguin_probe(input:u32)->u64 {
     text+='\nfn menu_probe_values(index:usize)->Option<[u32;11]> {'+MENU_STATES+'None}\n'
     probe_file.write_text(text+penguin_probe)
     run('pack',modes,'-o',root/'modes.gamepkg','--key',key);run('install',root/'modes.gamepkg','--trust-creator');run('build','com.gamepkg.arkanoo-modes')
-    layouts=root/'layouts';shutil.copytree(PROJECT/'ports/arkanoo',layouts)
+    layouts=root/'layouts';copy_legacy_port(layouts)
     layout_manifest=layouts/'manifest.toml';layout_manifest.write_text(layout_manifest.read_text().replace('com.gamepkg.arkanoo','com.gamepkg.arkanoo-levels'))
-    (layouts/'source/src/lib.rs').write_text('''mod procedural;mod background;mod audio;mod editor;mod levels;mod menu;mod pattern_rng;mod physics;mod render;mod speed_font;mod editor_font;mod dynamic_font;mod dynamic_font_data;use std::sync::Mutex;
+    (layouts/'source/src/lib.rs').write_text('''mod portable_math;mod procedural;mod background;mod audio;mod editor;mod levels;mod menu;mod pattern_rng;mod physics;mod render;mod speed_font;mod editor_font;mod dynamic_font;mod dynamic_font_data;use std::sync::Mutex;
 static GAME:Mutex<Option<physics::Game>>=Mutex::new(None);
 pub fn game_tick(input:u32,state:u64)->u64 {
  if let Ok(mut slot)=GAME.lock(){
@@ -351,7 +352,7 @@ pub fn game_tick(input:u32,state:u64)->u64 {
 }''')
     run('pack',layouts,'-o',root/'layouts.gamepkg','--key',key);run('install',root/'layouts.gamepkg','--trust-creator');run('build','com.gamepkg.arkanoo-levels')
     for suffix,profile,allowed in [('events','core-v1',True),('events-denied','core-v1',False),('events-component','component-v1',True),('events-component-denied','component-v1',False)]:
-        fixture=root/suffix;shutil.copytree(PROJECT/'ports/arkanoo',fixture)
+        fixture=root/suffix;copy_legacy_port(fixture)
         manifest=fixture/'manifest.toml';text=manifest.read_text().replace('com.gamepkg.arkanoo','com.gamepkg.arkanoo-'+suffix).replace('runtime_profile = "core-v1"','runtime_profile = "'+profile+'"')
         if 'runtime_profile =' not in text:text=text.replace('entry_world = "game"','runtime_profile = "'+profile+'"\nentry_world = "game"')
         assert tomllib.loads(text)['runtime_profile']==profile
@@ -360,7 +361,7 @@ pub fn game_tick(input:u32,state:u64)->u64 {
         (fixture/'source/src/lib.rs').write_text('pub fn game_tick(_:u32,_:u64)->u64 {if let Some(events)=gamepkg::input_events(){let mut result=0;for event in events {if event.kind==1 {gamepkg::draw_rect(event.x,event.y,1.0,1.0,0xffffffff);}result=(u64::from(event.kind)<<32)|u64::from(event.code);}result}else{u64::MAX}}')
         run('pack',fixture,'-o',root/(suffix+'.gamepkg'),'--key',key);run('install',root/(suffix+'.gamepkg'),'--trust-creator');run('build','com.gamepkg.arkanoo-'+suffix)
     for suffix,profile,allowed in [('files-component','component-v1',True),('nosave-component','component-v1',True),('nofiles','core-v1',False)]:
-        fixture=root/suffix;shutil.copytree(PROJECT/'ports/arkanoo',fixture)
+        fixture=root/suffix;copy_legacy_port(fixture)
         manifest=fixture/'manifest.toml';text=manifest.read_text().replace('com.gamepkg.arkanoo','com.gamepkg.arkanoo-'+suffix)
         text='runtime_profile = "'+profile+'"\n'+text
         if not allowed:text=text.split('[[permissions.files]]')[0]
@@ -588,7 +589,7 @@ pub fn game_tick(input:u32,state:u64)->u64 {
     for component in [False,True]:
         game_id='com.gamepkg.arkanoo'
         if component:
-            source=root/'component';shutil.copytree(PROJECT/'ports/arkanoo',source)
+            source=root/'component';copy_legacy_port(source)
             manifest=source/'manifest.toml';manifest.write_text('runtime_profile = "component-v1"\n'+manifest.read_text().replace('com.gamepkg.arkanoo','com.gamepkg.arkanoo-component'))
             game_id+='-component'
             run('pack',source,'-o',root/'component.gamepkg','--key',key);run('install',root/'component.gamepkg','--trust-creator');run('build',game_id)

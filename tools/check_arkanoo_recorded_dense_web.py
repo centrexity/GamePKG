@@ -15,6 +15,9 @@ parser.add_argument('candidate', type=Path)
 parser.add_argument('--optimized-images', type=Path, required=True)
 args = parser.parse_args()
 project = Path(__file__).resolve().parents[1]
+import sys
+sys.path.insert(0, str(project/'tests'))
+from arkanoo_legacy_support import use_legacy_audio
 
 class Quiet(SimpleHTTPRequestHandler):
     def log_message(self, *args):
@@ -33,6 +36,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-recorded-dense-web-') as tempor
         for label, source in [('baseline', project/'ports/arkanoo'), ('recorded', args.candidate)]:
             recipe = root/(profile+'-'+label)
             shutil.copytree(source, recipe)
+            if label == 'baseline': use_legacy_audio(recipe)
             entry = recipe/'source/src/lib.rs'
             text = entry.read_text()
             signature = 'pub fn game_tick(input: u32, state: u64) -> u64 {'

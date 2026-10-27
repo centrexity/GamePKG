@@ -37,6 +37,10 @@ for path in sorted(source.rglob('*')):
     assert not path.is_symlink(), 'Symlink asset refused'
     name = path.relative_to(source).as_posix()
     original += path.stat().st_size
+    # Account playlist/music from the verified migration set below, whether
+    # canonical assets already include them or still use the legacy profile.
+    if name.startswith('music/') or name == 'audio/music-list.txt':
+        continue
     size = path.stat().st_size
     if path.suffix.lower() == '.png':
         destination = output/name
