@@ -57,7 +57,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-graphics-recovery-') as tempora
     threading.Thread(target=server.serve_forever,daemon=True).start()
     options = Options()
     options.binary_location = shutil.which('google-chrome') or shutil.which('chromium') or shutil.which('google-chrome-stable')
-    for flag in ['--headless=new','--no-sandbox','--disable-dev-shm-usage']: options.add_argument(flag)
+    for flag in ['--headless=new','--mute-audio','--no-sandbox','--disable-dev-shm-usage']: options.add_argument(flag)
     driver = shutil.which('chromedriver') or str(Path(os.environ.get('CHROMEWEBDRIVER','/nonexistent'))/'chromedriver')
     browser = webdriver.Chrome(service=Service(driver),options=options)
     browser.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument', {'source': '''
