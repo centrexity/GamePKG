@@ -6,8 +6,8 @@ use std::{
     path::{Path, PathBuf},
     process::Command,
 };
-// Keep the verified Linux v1 checkpoint namespace stable while the portable
-// Windows wrapper is qualified separately. Its embedded source bytes are unchanged.
+// Retain the Linux v1 cache-wrapper format. The reviewed source-kit identity
+// below changes its namespace when the admitted current kit changes.
 const RUST_CACHE_WRAPPER: &str =
     include_str!("../../engines/takedawn/rust-port/rustc-cache-linux-v1.rs");
 

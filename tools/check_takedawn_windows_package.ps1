@@ -69,7 +69,7 @@ function Invoke-Gamepkg {
 function Get-UnitInventory {
     $inventory = @{}
     $objects = @(Get-ChildItem -LiteralPath (Join-Path $library 'native-unit-cache/takedawn-windows') -Filter '*.o' -File)
-    if ($objects.Count -ne 486) { throw "Expected all 486 compiled Rust units, found $($objects.Count)." }
+    if ($objects.Count -ne 487) { throw "Expected all 487 compiled Rust units, found $($objects.Count)." }
     foreach ($object in $objects) {
         $hash = (Get-FileHash -LiteralPath $object.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
         $receipt = [IO.File]::ReadAllText([IO.Path]::ChangeExtension($object.FullName, 'sha256'))
