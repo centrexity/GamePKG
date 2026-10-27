@@ -1,0 +1,75 @@
+name: Browser asset lifetime and build companions
+on:
+  push:
+    paths:
+      - 'build.rs'
+      - 'src/web_export.rs'
+      - 'src/audio_decode.rs'
+      - 'web-player/**'
+      - 'tools/audio-decoder/**'
+      - 'tools/audio-converter/**'
+      - 'tools/check_browser_audio_decoder.py'
+      - 'tests/browser_audio_decoder.rs'
+      - 'tests/browser_compressed_assets.py'
+      - '.github/workflows/ci.yml'
+      - '.github/workflows/asset_lifetime.yml'
+  pull_request:
+    paths:
+      - 'build.rs'
+      - 'src/web_export.rs'
+      - 'src/audio_decode.rs'
+      - 'web-player/**'
+      - 'tools/audio-decoder/**'
+      - 'tools/audio-converter/**'
+      - 'tools/check_browser_audio_decoder.py'
+      - 'tests/browser_audio_decoder.rs'
+      - 'tests/browser_compressed_assets.py'
+      - '.github/workflows/ci.yml'
+      - '.github/workflows/asset_lifetime.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: asset-lifetime-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  asset-lifetime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: browser-asset-lifetime
+      - name: Install isolated-compiler and headless browser prerequisites
+        run: |
+          bash tools/ci_ubuntu_apt.sh update
+          bash tools/ci_ubuntu_apt.sh install -y --no-install-recommends bubblewrap python3-selenium
+          test -x "$CHROMEWEBDRIVER/chromedriver"
+          sudo ln -sf "$CHROMEWEBDRIVER/chromedriver" /usr/local/bin/chromedriver
+          google-chrome --version
+          chromedriver --version
+      - name: Build both embedded audio companions and the actual CLI
+        run: |
+          python3 tools/build_audio_companion.py --github-env
+      - run: cargo build --locked --release --bin gamepkg
+      - name: Stage the isolated compiler and pinned shader compiler
+        run: |
+          python3 tools/install_slang.py /tmp/gamepkg-assets-slang
+          sudo cp -a "$(rustc --print sysroot)" /tmp/gamepkg-assets-toolchain
+          sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-assets-rustup rustup toolchain link gamepkg-assets /tmp/gamepkg-assets-toolchain
+          sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-assets-rustup rustup default gamepkg-assets
+      - name: Reproduce the privileged maintainer build without stripping companions
+        run: |
+          # Cargo also rebuilds the CLI for this integration-test target.
+          # The historical command dropped both build inputs through sudo.
+          sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-assets-rustup CARGO_HOME="$HOME/.cargo" cargo test --locked --release --test browser_audio_decoder --no-run
+          target/release/gamepkg check-bundled-audio
+      - name: Verify signed compressed reads, playback and pending-loan release
+        run: |
+          sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-assets-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT=/tmp/gamepkg-assets-slang CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tests/browser_compressed_assets.py
