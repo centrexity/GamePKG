@@ -8,8 +8,28 @@ Generation and conversion happen during release preparation. Python and C2Rust
 are maintainer tools. Players receive prepared Rust game source, compile it to
 native code locally and launch it through GamePKG. Original assets are read
 from their selected ISO in place through `../media-bridge`; no extracted media
-folder is required. The existing renderer/system runtime remains C/C++ initially.
+folder is required. The existing renderer/system runtime remains C/C++.
 This does not mean the whole Takedawn engine has been rewritten in Rust.
+
+## Current delivery path
+
+The unreleased 0.1.3 recipe selects the host-admitted v14 kit. Its 24,003 prepared
+Rust game functions compile across 487 units, retaining 24,035 native exports.
+The normal signed Linux package passes cold Build, ISO-in-place Play with
+remembered selection/history, and integrity repair without rebuilding verified
+unit objects. Original World Tour completion, unlocks, loss/results screens and
+fresh-process save reload have scoped checks using that repaired executable.
+
+All units also compile with actual standalone Windows Rust, and the native
+runtime links and plays original routes under Wine. The [Windows build guide](WINDOWS_BUILD.md)
+describes the managed toolchain, passing full Windows Build/repair and remaining
+hardware checks. Actual Windows tests separately verify real windows under the
+production confined owner across restart. The current private preview contains
+the v14 recipe and default-off watchdog; it is not a stable release.
+
+The preparation and staged verification records below include older kits and
+their measured inventories. Their results are not interchangeable with the
+[current v14 gameplay qualification](../../../docs/native-windows-gameplay-validation.md).
 
 ## Conversion
 
@@ -436,8 +456,10 @@ candidate retains all 24,003 game functions in 487 compiled Rust units and
 24,035 expected exports. Its Linux native build and strict original profile
 create/reload, save-hash and 45-second stereo capture checks pass with actual
 Vulkan rendering in both processes and no reached untranslated instructions or
-stubs. The full standalone Windows source build and broader gameplay replay
-remain required. The app has not yet admitted or shipped this candidate.
+stubs. The complete standalone Windows source build, native runtime link and
+strict profile/Race/Crash/window/full-race checks also pass under Wine. The app
+now admits v14, and the normal signed Linux Build/Play/repair path passes. This
+does not establish physical Windows game qualification or a stable release.
 
 ## Native process owner
 
@@ -474,7 +496,8 @@ The host now has a [native Windows prepared-source build driver](WINDOWS_BUILD.m
 and Windows checkpoint backend, with an asset-free end-to-end standalone SDK
 test passing on actual Windows. It compiles Rust and links native C/Rust without
 WSL or Python in the build commands. The Linux checkpoint algorithm is unchanged;
-the current unreleased recipe selects the reviewed v13 source kit. The complete
+the current unreleased recipe selects the reviewed v14 source kit. The complete
 prepared game archive also compiles with standalone Windows Rust under Wine.
-Full normal Windows app Build/repair and original-game Play remain separate
-release gates.
+Normal Windows app Build/repair passes for v14 with all 487 unit checkpoints
+preserved through repair. Physical original-game Play remains a separate release
+gate.

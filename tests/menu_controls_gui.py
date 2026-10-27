@@ -2,14 +2,22 @@
 from pathlib import Path
 from functools import partial
 from http.server import SimpleHTTPRequestHandler,ThreadingHTTPServer
-import argparse,hashlib,json,os,shutil,subprocess,tempfile,threading,time
+import argparse,hashlib,json,os,platform,shutil,subprocess,tempfile,threading,time
 from PIL import Image,ImageChops
 from gui_test_support import start_display
 parser=argparse.ArgumentParser();parser.add_argument('--original',type=Path,default=Path('/tmp/gamepkg-candidate-arkanoo'));args=parser.parse_args()
-PROJECT=Path(__file__).resolve().parents[1];CLI=PROJECT/'target/release/gamepkg';GUI=PROJECT/'target/release/gamepkg-gui';PROOF=PROJECT/'target/menu-controls-proof';PROOF.mkdir(parents=True,exist_ok=True)
+PROJECT=Path(__file__).resolve().parents[1];CLI=PROJECT/'target/release/gamepkg';GUI=PROJECT/'target/release/gamepkg-gui';PROOF=PROJECT/'target/menu-controls-proof'
+if PROOF.exists():PROOF.rename(PROJECT/'target'/('menu-controls-previous-'+str(time.time_ns())))
+PROOF.mkdir(parents=True)
 fixture=json.loads((PROJECT/'tests/fixtures/arkanoo-menu-controls.json').read_text());PHASES=[0,1,2,3,4,0];KEYS={4:'Left',1:'Right',2:'Up',3:'Down'};REFERENCES={};SMALL={}
 class Quiet(SimpleHTTPRequestHandler):
  def log_message(self,*args):pass
+def pixel_report(actual,expected):
+ a=actual.tobytes();b=expected.tobytes();points=[];channels=0
+ for index in range(0,len(a),3):
+  errors=[abs(a[index+c]-b[index+c]) for c in range(3)];channels+=sum(v>2 for v in errors)
+  if max(errors)>2 and len(points)<32:points.append(dict(x=(index//3)%actual.width,y=(index//3)//actual.width,actual=list(a[index:index+3]),expected=list(b[index:index+3])))
+ return dict(size=actual.size,actual_sha256=hashlib.sha256(a).hexdigest(),expected_sha256=hashlib.sha256(b).hexdigest(),channels_over_limit=channels,first_differing_pixels=points)
 with tempfile.TemporaryDirectory(prefix='gamepkg-menu-controls-gui-') as temp:
  root=Path(temp);config=root/'settings.toml';config.write_text('automatic_update_checks=false\ncheck_app_updates_on_startup=false\nmute_audio=true\n');env=dict(os.environ,GAMEPKG_HOME=str(root/'library'),GAMEPKG_CONFIG=str(config),LIBGL_ALWAYS_SOFTWARE='1',DBUS_SESSION_BUS_ADDRESS='unix:path=/tmp/gamepkg-no-session-bus');env.pop('WAYLAND_DISPLAY',None)
  def run(*args):
@@ -33,6 +41,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-menu-controls-gui-') as temp:
    # settings. These match the untouched Menu::new defaults in this fixture.
    defaults=(0,0,0,0,64)
    raw=subprocess.check_output([reference,font,args.original/'assets/background1.png',*map(str,(*state,*defaults))],env=env);REFERENCES[phase]=Image.frombytes('RGBA',(1280,720),raw).convert('RGB')
+   REFERENCES[phase].save(PROOF/('original-1280-'+str(phase)+'.png'))
   def delta(actual,expected):return max(p[1] for p in ImageChops.difference(actual,expected).getextrema())
   for profile,suffix in [('core-v1','core'),('component-v1','component')]:
    game_id='com.gamepkg.menu-'+suffix
@@ -59,7 +68,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-menu-controls-gui-') as temp:
          actual=im.crop((0,height//8,width,height*7//8))
          if width==640:
           marker=im.getpixel((8,8));wanted={0:(255,0,0),1:(0,255,0),2:(0,0,255),3:(255,255,0),4:(255,0,255)}[phase]
-          if marker==wanted:SMALL[phase]=actual.copy();break
+          if marker==wanted:SMALL[phase]=actual.copy();actual.save(PROOF/('native-640-'+str(phase)+'.png'));break
          elif delta(actual,REFERENCES[phase])<=2:break
          if app.poll() is not None:raise RuntimeError(app.stderr.read().decode())
          assert time.monotonic()<deadline,(label,phase,delta(actual,REFERENCES[phase]) if width==1280 else marker);time.sleep(.05)
@@ -67,7 +76,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-menu-controls-gui-') as temp:
      finally:
       if held:subprocess.run(['xdotool','keyup',held],env=env,check=True)
       if app.poll() is None:app.terminate()
-      app.communicate(timeout=10)
+      stdout,stderr=app.communicate(timeout=10);(PROOF/(label+'-stdout.log')).write_bytes(stdout);(PROOF/(label+'-stderr.log')).write_bytes(stderr)
    from selenium import webdriver
    from selenium.webdriver.chrome.options import Options
    from selenium.webdriver.chrome.service import Service
@@ -82,7 +91,15 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-menu-controls-gui-') as temp:
     for phase in PHASES:
      if held:ActionChains(browser).key_up(held).perform();held=False
      if phase:held={1:Keys.ARROW_RIGHT,2:Keys.ARROW_UP,3:Keys.ARROW_DOWN,4:Keys.ARROW_LEFT}[phase];ActionChains(browser).key_down(held).perform()
-     wait.until(lambda b:b.find_element('id','game').get_attribute('data-state')==str(phase));raw=browser.execute_script('return Array.from(document.querySelector("#game").getContext("2d").getImageData(0,60,640,360).data);');actual=Image.frombytes('RGBA',(640,360),bytes(raw)).convert('RGB');difference=delta(actual,SMALL[phase]);actual.save(PROOF/(profile+'-web-'+str(phase)+'.png'));print(profile,phase,'implemented menu browser/native maximum difference',difference,flush=True);assert difference<=2,difference
+     wait.until(lambda b:b.find_element('id','game').get_attribute('data-state')==str(phase));raw=browser.execute_script('return Array.from(document.querySelector("#game").getContext("2d").getImageData(0,60,640,360).data);');actual=Image.frombytes('RGBA',(640,360),bytes(raw)).convert('RGB');difference=delta(actual,SMALL[phase]);actual.save(PROOF/(profile+'-web-'+str(phase)+'.png'));print(profile,phase,'implemented menu browser/native maximum difference',difference,flush=True)
+     if difference>2:
+      report=pixel_report(actual,SMALL[phase]);report.update(maximum_difference=difference,profile=profile,phase=phase,browser_version=browser.capabilities.get('browserVersion'),driver_version=browser.capabilities.get('chrome',{}).get('chromedriverVersion'),platform=platform.platform())
+      cpu=Path('/proc/cpuinfo')
+      if cpu.exists():report['cpu']=next((line.split(':',1)[1].strip() for line in cpu.read_text().splitlines() if line.startswith('model name')),None)
+      try:report['webgl']=browser.execute_script('const g=new OffscreenCanvas(1,1).getContext("webgl2");if(!g)return null;const ext=g.getExtension("WEBGL_debug_renderer_info"),out={vendor:g.getParameter(ext?ext.UNMASKED_VENDOR_WEBGL:g.VENDOR),renderer:g.getParameter(ext?ext.UNMASKED_RENDERER_WEBGL:g.RENDERER),version:g.getParameter(g.VERSION)};g.getExtension("WEBGL_lose_context")?.loseContext();return out;')
+      except Exception as error:report['webgl_error']=str(error)
+      (PROOF/(profile+'-web-'+str(phase)+'-difference.json')).write_text(json.dumps(report,indent=2)+'\n')
+     assert difference<=2,difference
    finally:
     if held:ActionChains(browser).key_up(held).perform()
     browser.quit();server.shutdown();server.server_close()

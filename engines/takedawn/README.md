@@ -5,16 +5,35 @@ complete generated C game functions into prepared Rust before players receive
 them. Players compile that Rust locally; the selected supported ISO supplies
 assets in place. Python and C2Rust are maintainer preparation tools.
 
-See [rust-port/README.md](rust-port/README.md) for the preparation and native
-archive attachment. All 24,001 generated game functions have been converted,
-compiled with stable Rust and linked in place of the C game-function objects.
-The private Linux build renders the original menus, creates the original
-profile save and drives the first race with throttle, boost and braking inputs.
-Full progression, audio qualification, signed source-kit delivery and
-normal GamePKG library integration still need completion.
+The current unreleased recipe is 0.1.3/v14 and requires the 0.1.18 development
+app. It retains 24,003 prepared Rust game functions across 487 units and 24,035
+native exports. Linux x64 and standalone Windows x64 tools compile and link the
+native game; players need neither Python nor WSL. The normal signed Linux
+package passes Build, remembered ISO-in-place Play, history and integrity repair.
+The exact repaired executable also finishes an original World Tour race, saves
+its unlocks and reloads the earned profile in a fresh process. Race, Crash and
+Road Rage routes have scoped checks; this does not prove a complete campaign.
+
+Windows-under-Wine checks cover original Vulkan gameplay, saves, controls,
+window resize/close and a full three-lap race. Actual Windows host tests verify
+owned restarts, saves, history and basic real-window access inside the production
+confinement. Normal v14 signed Build, readiness and integrity repair also pass on
+actual Windows, preserving all 487 Rust objects through repair. Physical
+original-game Vulkan, sound and controllers remain qualification gates. The signed
+profile is offline; upstream System Link/online modes remain future work.
+
+See [preparation and native archive attachment](rust-port/README.md),
+[standalone Windows setup](rust-port/WINDOWS_BUILD.md), and the
+[current gameplay validation scope](../../docs/native-windows-gameplay-validation.md).
 
 The historical `native-gen/` replacement CPU/runtime experiments below are
 preserved as development evidence; they are not this port's delivery path.
+
+## Staged development records
+
+The component measurements and experiments below retain their original scope.
+Statements about unfinished integration describe those earlier stages; use the
+current delivery summary and linked gameplay validation for player requirements.
 
 ## Verified source and disc
 
