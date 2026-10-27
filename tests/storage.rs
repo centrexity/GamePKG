@@ -103,3 +103,45 @@ fn storage_inventory_does_not_follow_links_outside_the_library() {
     std::os::unix::fs::symlink(outside.path(), root.path().join("external")).unwrap();
     assert_eq!(storage::total(root.path()).unwrap(), 4);
 }
+
+#[test]
+fn reviewed_native_storage_counts_both_platform_caches_without_charging_other_games() {
+    let root = tempfile::tempdir().unwrap();
+    let root = root.path();
+    let mut manifest = Manifest::parse(include_bytes!("../ports/takedawn/manifest.toml")).unwrap();
+    manifest.creator_key = hex::encode([4u8; 32]);
+    fs::write(root.join(format!("{}.gamepkg", manifest.id)), b"package").unwrap();
+    let windows = root.join("native-unit-cache/takedawn-windows");
+    fs::create_dir_all(&windows).unwrap();
+    fs::write(windows.join("unit.o"), b"windows-obj").unwrap();
+    fs::write(windows.join("unit.sha256"), b"checkpoint").unwrap();
+    // A native Windows library has no Linux cache. Its compiled work must still
+    // appear on the game page, even though the cache lives outside builds/.
+    assert_eq!(storage::usage(root, &manifest).unwrap().built_bytes, 21);
+
+    let linux = root.join("native-unit-cache/takedawn");
+    fs::create_dir_all(&linux).unwrap();
+    fs::write(linux.join("unit.o"), b"linux-obj").unwrap();
+    let build = root.join("builds").join(gamepkg::verify::digest(b"package"));
+    fs::create_dir_all(&build).unwrap();
+    fs::write(build.join("native-game"), b"native").unwrap();
+    for folder in ["native-sdk/tools", "native-unit-cache/another-engine"] {
+        let folder = root.join(folder);
+        fs::create_dir_all(&folder).unwrap();
+        fs::write(folder.join("unrelated"), vec![0; 4096]).unwrap();
+    }
+    assert_eq!(storage::usage(root, &manifest).unwrap().built_bytes, 36);
+    let mut other = Manifest::parse(include_bytes!("../examples/minimal/manifest.toml")).unwrap();
+    other.creator_key = hex::encode([5u8; 32]);
+    fs::write(root.join(format!("{}.gamepkg", other.id)), b"other package").unwrap();
+    assert_eq!(storage::usage(root, &other).unwrap().built_bytes, 0);
+
+    #[cfg(unix)]
+    {
+        let outside = tempfile::tempdir().unwrap();
+        fs::write(outside.path().join("external"), vec![0; 8192]).unwrap();
+        fs::rename(&windows, root.join("old-windows-cache")).unwrap();
+        std::os::unix::fs::symlink(outside.path(), windows).unwrap();
+        assert_eq!(storage::usage(root, &manifest).unwrap().built_bytes, 15);
+    }
+}
