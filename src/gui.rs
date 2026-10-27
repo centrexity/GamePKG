@@ -1555,6 +1555,17 @@ impl eframe::App for App {
                     if self.focus_memory_settings { memory_control.scroll_to_me(Some(egui::Align::Center));self.focus_memory_settings=false; }
                     let tick_control = ui.horizontal(|ui| { ui.label("Tick deadline (ms)");ui.add(egui::Slider::new(&mut self.settings_draft.tick_deadline_ms,10..=1000).step_by(10.0)) }).inner;
                     if self.focus_tick_settings { tick_control.scroll_to_me(Some(egui::Align::Center));self.focus_tick_settings=false; }
+                    let mut watchdog_enabled = self.settings_draft.native_watchdog_seconds != 0;
+                    if ui.checkbox(&mut watchdog_enabled,"Native frame-stall watchdog (diagnostic reports)").changed() {
+                        self.settings_draft.native_watchdog_seconds = if watchdog_enabled { 30 } else { 0 };
+                    }
+                    if watchdog_enabled {
+                        ui.horizontal(|ui| {
+                            ui.label("Report after (seconds)");
+                            ui.add(egui::DragValue::new(&mut self.settings_draft.native_watchdog_seconds).range(5..=600));
+                        });
+                    }
+                    ui.label("Off by default. Supported standalone native games write a hang report if frames stop; they keep running. Loading or minimizing can trigger a report. Startup allows at least 60 seconds. Changes apply next launch.");
                     ui.checkbox(&mut self.settings_draft.render_limit_enabled,"Limit game render resolution");
                     ui.add_enabled_ui(self.settings_draft.render_limit_enabled,|ui| {
                         ui.horizontal(|ui| {

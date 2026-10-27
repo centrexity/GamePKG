@@ -37,6 +37,8 @@ pub struct Settings {
     #[serde(default, rename = "fuel_ceiling", skip_serializing)]
     pub legacy_execution_ceiling: Option<u64>,
     pub tick_deadline_ms: u64,
+    /// Zero disables native frame-stall diagnostics; never terminates the game.
+    pub native_watchdog_seconds: u16,
     pub render_limit_enabled: bool,
     pub render_max_width: u32,
     pub render_max_height: u32,
@@ -71,6 +73,7 @@ impl Default for Settings {
             memory_ceiling_mib: 512,
             legacy_execution_ceiling: None,
             tick_deadline_ms: 100,
+            native_watchdog_seconds: 0,
             render_limit_enabled: false,
             render_max_width: 1920,
             render_max_height: 1080,
@@ -195,6 +198,9 @@ impl Settings {
             || !self.tick_deadline_ms.is_multiple_of(10)
         {
             bail!("tick deadline must be 10–1000 ms in steps of 10");
+        }
+        if self.native_watchdog_seconds != 0 && !(5..=600).contains(&self.native_watchdog_seconds) {
+            bail!("native watchdog must be off (0), or 5–600 seconds");
         }
         Ok(())
     }

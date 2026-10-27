@@ -35,6 +35,16 @@ An invalid disc does neither. The native process uses a 4 GiB physical-memory
 scope; **Memory ceiling** must be at least 4096 MiB. GamePKG's mute and volume
 settings apply to the original runtime.
 
+The optional **Native frame-stall watchdog** in Settings is off by default,
+including for existing settings files. In the reviewed standalone Takedawn
+runtime it watches actual frame flips and writes a hang report under the game's
+save directory (`crash`) after the chosen 5–600 second delay. It does not kill or
+restart the game. Before the first frame it allows at least 60 seconds. Loading
+and minimized windows can legitimately stop producing frames, so enable this
+only when investigating a stall. Changes apply on the next launch and also to
+managed game restarts. This diagnostic option does not change sandboxed tick
+deadlines, memory limits, or maintainer headless-test deadlines.
+
 This reviewed host engine contains unsafe Rust and native C/C++ code. It uses
 its own process isolation rather than the generic worker's per-tick host API
 and syscall allowlist described below. Its namespace exposes system libraries,

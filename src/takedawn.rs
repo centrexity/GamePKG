@@ -208,6 +208,7 @@ fn play_session(
             headless: frames.is_some(),
             mute_audio: settings.mute_audio,
             audio_volume: settings.audio_volume,
+            watchdog_seconds: settings.native_watchdog_seconds,
         },
     )?;
     drop(_guard);
