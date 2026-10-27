@@ -1,9 +1,9 @@
 name: Native Rust engine stream ABI
 on:
   push:
-    paths: ['engines/takedawn/native-gen/tests/streaming*', 'vendor/winit/src/platform_impl/windows/definitions.rs', 'vendor/winit/src/platform_impl/windows/drop_handler.rs', 'tools/check_windows_drop_abi.py', 'tests/fixtures/windows-drop-abi/**', 'ports', 'tools/check_arkanoo_geometry.py', 'tools/generate_arkanoo_trig_reference.py', 'tests/fixtures/arkanoo-trig-f32.json', 'engines/takedawn/rust-port/**', 'engines/takedawn/media-bridge/**', 'engines/takedawn/windows-runner/**', 'tools/check_takedawn_input_glyphs.py', 'tools/check_takedawn_rust_stdio.py', 'tools/check_takedawn_rust_cache.py', 'tools/check_takedawn_windows_file.py', 'tools/check_takedawn_windows_kernel.py', 'tools/check_takedawn_windows_stream.py', 'tools/check_takedawn_windows_restart.py', 'tools/check_takedawn_windows_native_build.py', 'engines/takedawn/windows-dependencies.json', '.github/workflows/native_rust_ffi.yml']
+    paths: ['engines/takedawn/native-gen/tests/streaming*', 'vendor/winit/src/platform_impl/windows/definitions.rs', 'vendor/winit/src/platform_impl/windows/drop_handler.rs', 'tools/check_windows_drop_abi.py', 'tests/fixtures/windows-drop-abi/**', 'ports', 'tools/check_arkanoo_geometry.py', 'tools/generate_arkanoo_trig_reference.py', 'tests/fixtures/arkanoo-trig-f32.json', 'engines/takedawn/rust-port/**', 'engines/takedawn/media-bridge/**', 'engines/takedawn/windows-runner/**', 'tools/check_takedawn_input_glyphs.py', 'tools/check_takedawn_native_privileged.py', 'tools/takedawn_native_privileged.py', 'tools/check_takedawn_rust_stdio.py', 'tools/check_takedawn_rust_cache.py', 'tools/check_takedawn_windows_file.py', 'tools/check_takedawn_windows_kernel.py', 'tools/check_takedawn_windows_stream.py', 'tools/check_takedawn_windows_restart.py', 'tools/check_takedawn_windows_native_build.py', 'engines/takedawn/windows-dependencies.json', '.github/workflows/native_rust_ffi.yml']
   pull_request:
-    paths: ['engines/takedawn/native-gen/tests/streaming*', 'vendor/winit/src/platform_impl/windows/definitions.rs', 'vendor/winit/src/platform_impl/windows/drop_handler.rs', 'tools/check_windows_drop_abi.py', 'tests/fixtures/windows-drop-abi/**', 'ports', 'tools/check_arkanoo_geometry.py', 'tools/generate_arkanoo_trig_reference.py', 'tests/fixtures/arkanoo-trig-f32.json', 'engines/takedawn/rust-port/**', 'engines/takedawn/media-bridge/**', 'engines/takedawn/windows-runner/**', 'tools/check_takedawn_input_glyphs.py', 'tools/check_takedawn_rust_stdio.py', 'tools/check_takedawn_rust_cache.py', 'tools/check_takedawn_windows_file.py', 'tools/check_takedawn_windows_kernel.py', 'tools/check_takedawn_windows_stream.py', 'tools/check_takedawn_windows_restart.py', 'tools/check_takedawn_windows_native_build.py', 'engines/takedawn/windows-dependencies.json', '.github/workflows/native_rust_ffi.yml']
+    paths: ['engines/takedawn/native-gen/tests/streaming*', 'vendor/winit/src/platform_impl/windows/definitions.rs', 'vendor/winit/src/platform_impl/windows/drop_handler.rs', 'tools/check_windows_drop_abi.py', 'tests/fixtures/windows-drop-abi/**', 'ports', 'tools/check_arkanoo_geometry.py', 'tools/generate_arkanoo_trig_reference.py', 'tests/fixtures/arkanoo-trig-f32.json', 'engines/takedawn/rust-port/**', 'engines/takedawn/media-bridge/**', 'engines/takedawn/windows-runner/**', 'tools/check_takedawn_input_glyphs.py', 'tools/check_takedawn_native_privileged.py', 'tools/takedawn_native_privileged.py', 'tools/check_takedawn_rust_stdio.py', 'tools/check_takedawn_rust_cache.py', 'tools/check_takedawn_windows_file.py', 'tools/check_takedawn_windows_kernel.py', 'tools/check_takedawn_windows_stream.py', 'tools/check_takedawn_windows_restart.py', 'tools/check_takedawn_windows_native_build.py', 'engines/takedawn/windows-dependencies.json', '.github/workflows/native_rust_ffi.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -94,3 +94,29 @@ jobs:
       - name: Verify driving prompts against original input mapping
         if: runner.os == 'Linux'
         run: python3 tools/check_takedawn_input_glyphs.py
+
+  native-critical-sections:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@1.89.0
+      - uses: actions/checkout@v4
+        with:
+          repository: xenophobentx/xboxrecomp
+          ref: 5ae8ad90d984425e834dee759592c15592679880
+          path: target/irq-kernel-reference
+          persist-credentials: false
+      - name: Install native IRQ fixture prerequisites
+        run: bash tools/ci_ubuntu_apt.sh update && bash tools/ci_ubuntu_apt.sh install -y cmake ninja-build libssl-dev libsdl2-dev libepoxy-dev
+      - name: Verify real kernel masking, native Rust bindings and rejected mutations
+        run: python3 tools/check_takedawn_native_privileged.py --toolkit target/irq-kernel-reference --without-vulkan
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-critical-section-evidence
+          path: |
+            /tmp/gamepkg-native-privileged.*/*.log
+            /tmp/gamepkg-native-privileged.*/*.json
+          retention-days: 3
