@@ -21,7 +21,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-pattern-browser-gui-') as temp:
  for profile,suffix in [('core-v1','core'),('component-v1','component')]:
   source=root/suffix;shutil.copytree(PROJECT/'ports/arkanoo',source);entry=source/'source/src/lib.rs';modules=entry.read_text().split('use std::sync::Mutex;')[0]
   entry.write_text(modules+'''pub fn game_tick(input:u32,_:u64)->u64 {
- let phase=if input&gamepkg::HELD_RIGHT!=0 {1} else if input&gamepkg::HELD_UP!=0 {2} else {0};let mut edit=editor::Editor::new();edit.selection=if phase==2 {9} else {0};let names=['''+','.join(json.dumps(n,ensure_ascii=False) for n in fixture['names'])+'''];if phase!=0 {for name in names {edit.patterns.push(editor::Pattern{name:String::from(name),cells:[255;200]});}}
+ let phase=if input&gamepkg::HELD_RIGHT!=0 {1} else if input&gamepkg::HELD_UP!=0 {2} else {0};let mut edit=editor::Editor::new();edit.selection=if phase==2 {9} else {0};let names=['''+','.join(json.dumps(n,ensure_ascii=False) for n in fixture['names'])+'''];if phase!=0 {for name in names {edit.patterns.push(editor::Pattern::pattern_from_cells(editor::Name::from_string(String::from(name)),[255;200]).unwrap());}}
  gamepkg::draw_clear(0x78b4f0ff);gamepkg::draw_rect(0.0,135.0,640.0,100.0,0xe6325aff);render::draw_pattern_browser(&edit);gamepkg::draw_rect(4.0,4.0,16.0,16.0,if phase==1 {0x00ff00ff} else if phase==2 {0x0000ffff} else {0xff0000ff});phase
 }''')
   manifest=source/'manifest.toml';manifest.write_text('runtime_profile="'+profile+'"\n'+manifest.read_text().replace('com.gamepkg.arkanoo','com.gamepkg.browser-'+suffix));package=root/(suffix+'.gamepkg');run('pack',source,'-o',package,'--key',key);run('install',package,'--trust-creator');run('build','com.gamepkg.browser-'+suffix,'--target','wasm')
@@ -71,7 +71,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-pattern-browser-gui-') as temp:
    from selenium.webdriver.common.keys import Keys
    from selenium.webdriver.support.ui import WebDriverWait
    output=root/(suffix+'-web');run('web-export',game_id,'--output',output);server=ThreadingHTTPServer(('127.0.0.1',0),partial(Quiet,directory=str(output)));threading.Thread(target=server.serve_forever,daemon=True).start();options=Options();options.binary_location=shutil.which('google-chrome') or shutil.which('google-chrome-stable') or shutil.which('chromium');assert options.binary_location
-   for value in ['--headless=new','--no-sandbox','--disable-dev-shm-usage','--enable-unsafe-swiftshader']:options.add_argument(value)
+   for value in ['--headless=new','--mute-audio','--no-sandbox','--disable-dev-shm-usage','--enable-unsafe-swiftshader']:options.add_argument(value)
    driver=shutil.which('chromedriver') or str(Path(os.environ.get('CHROMEWEBDRIVER','/nonexistent'))/'chromedriver');browser=webdriver.Chrome(service=Service(driver),options=options);held=False
    try:
     browser.get(f'http://127.0.0.1:{server.server_port}/');wait=WebDriverWait(browser,20);wait.until(lambda b:b.find_element('id','status').text=='Ready to play');browser.find_element('id','play').click();wait.until(lambda b:b.find_element('id','game').get_attribute('data-state'));browser.find_element('id','game').click()

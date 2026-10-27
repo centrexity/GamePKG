@@ -4564,3 +4564,34 @@ profile also passes all 71 runtime regressions without changing resource caps.
 This does not complete the original settings menu. Resolution selection,
 confirmation/revert and VSync still need host support; the recorded-music
 candidate and broader browser/platform fidelity remain separate work.
+
+### Scaled solid controls and glyph edges (unreleased recipe 0.1.73)
+
+Solid editor and menu primitives now use the existing rectangle API. A one-texel
+texture has different coverage at half-pixel edges, which shifted thin outlines
+and low-volume slider fills at smaller window sizes. This follows SDL's
+[scaled solid-primitive implementation](https://github.com/libsdl-org/SDL/blob/release-2.30.0/src/render/SDL_render.c#L2686).
+Text tiles keep their internal seam clips, while their outer edges use the image
+quad and world bounds. This retains the first visible pixel of a glyph when a
+label begins at a half-pixel position.
+
+The original photo-backed full-size menu comparisons still pass. A separate
+uniform-backdrop fixture compares the complete controls directly against
+original SDL at full and half size, without masking pixels or changing the
+two-level tolerance. Native and Wasm desktop playback pass with Vulkan and
+OpenGL; both browser profiles pass. The new fixture rejects the old renderer
+with a maximum difference of 156. The corrected half-size desktop controls have
+maximum differences of zero or one. Independent font, palette, pattern-browser,
+editor-label and text-tile comparisons also pass. The pattern-browser fixture
+uses the current pattern constructor, preserving its original names, empty
+cells and selection states. Recorded-audio dense scenes and maximum saves pass
+in native playback and both browser profiles with the existing memory shares.
+
+This does not establish direct original-photo parity at arbitrary resolutions.
+At half size, the original background still differs by up to 53 levels. An
+independent SDL comparison confirms the cause: sampling the port's already
+resampled 1280-by-720 background matches the port within one level, while
+sampling the original 2816-by-1536 image directly does not. Resolving that
+requires sampling original-resolution image data, or an equivalent lossless
+representation, at the output resolution. The current memory and transfer
+budgets are unchanged; the background difference is not counted as fixed.
