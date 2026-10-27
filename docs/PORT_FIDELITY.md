@@ -4797,3 +4797,15 @@ joins a bounded rejection writer, requires worker failure with the specific
 trusted-guard diagnostic, and accepts only `BrokenPipe` on that negative path.
 Valid request writes remain strict. Empty controls, ordinary small controls
 and the large early-close case pass; production worker framing is unchanged.
+
+The `edf2819` hosted asset-lifetime job stops on the compressed-WAV fixture's
+first-tick deadline; its separate PNG corpus job passes. The unchanged source
+passes locally with both the default guest compiler and a guest compiled with
+CI Rust 1.99.1, using Chrome 156 restricted to two CPUs. Bounded first-tick round trips across twelve fresh
+worker launches measure about 11–20 ms against the unchanged 250 ms deadline.
+This does not reproduce or fix the hosted stop. The fixture now retains at most
+48 worker timing/framing events, eight first-frame timings and eight truncated
+console records on failure, with no WAV, guest-memory or draw-command copies.
+CI preserves that small diagnostic. Every original whole-WAV checksum,
+playback, quota, pending-loan close/release and recovery assertion remains;
+production decoding and deadlines are unchanged pending stronger evidence.
