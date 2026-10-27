@@ -26,6 +26,19 @@ int main(void)
 	gamepkg_host_begin_frame();
 	if (gamepkg_frame_time_us() != 0)
 		return fail("frame time");
+	{
+		uint64_t first = gamepkg_monotonic_time_ns();
+		uint64_t second = gamepkg_monotonic_time_ns();
+		uint64_t seconds = 0;
+		uint32_t nanos = 0;
+
+		if (first == 0 || second < first)
+			return fail("monotonic");
+		gamepkg_wall_time(NULL, NULL);
+		gamepkg_wall_time(&seconds, &nanos);
+		if (seconds < 1700000000ULL || nanos >= 1000000000u)
+			return fail("wall");
+	}
 	if (gamepkg_window_state() != 0)
 		return fail("window state");
 	if (gamepkg_window_control(GAMEPKG_WINDOW_VISIBLE, 0) != 0)

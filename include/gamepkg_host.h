@@ -9,9 +9,10 @@
  *   window control: 1 accepted, 0 rejected or unbound
  *   file, input, rom, asset, save read: byte count, or -1
  *   network: payload byte count, -2 busy, -3 failed, -1 rejected
- * Frame time is the sample taken by gamepkg_host_begin_frame. The engine
- * does not sample the clock itself.
- * gamepkg_host_log is the one addition. Guests had no log import.
+ * Frame time is the sample taken by gamepkg_host_begin_frame. It is not a
+ * free-running clock.
+ * gamepkg_host_log, gamepkg_monotonic_time_ns, and gamepkg_wall_time are
+ * host additions. Guests had no log import and no free-running clock import.
  */
 #include <stdint.h>
 
@@ -32,6 +33,12 @@ extern "C" {
 
 int32_t gamepkg_effect_call(uint32_t operation, const char *path, uint32_t value);
 uint64_t gamepkg_frame_time_us(void);
+/* Nanoseconds from a monotonic clock. Zero if the clock cannot be read.
+   Independent of gamepkg_frame_time_us. */
+uint64_t gamepkg_monotonic_time_ns(void);
+/* Unix time. Null pointers are ignored. Both outputs are zero if the clock
+   cannot be read. */
+void gamepkg_wall_time(uint64_t *seconds, uint32_t *nanoseconds);
 uint32_t gamepkg_window_state(void);
 int32_t gamepkg_window_control(uint32_t operation, uint32_t value);
 int32_t gamepkg_file_call(uint32_t operation, const uint8_t *request, uint32_t request_len,

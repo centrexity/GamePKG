@@ -152,6 +152,32 @@ pub extern "C" fn gamepkg_frame_time_us() -> u64 {
     with_session(|session| session.clock.micros(), 0)
 }
 
+/// Enough that a caller can subtract 10 seconds and still see a positive
+/// clock on the first sample. `Instant` itself starts at zero.
+const MONOTONIC_BIAS_NS: u64 = 60_000_000_000;
+
+#[no_mangle]
+pub extern "C" fn gamepkg_monotonic_time_ns() -> u64 {
+    static ORIGIN: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+    let origin = ORIGIN.get_or_init(std::time::Instant::now);
+    let elapsed = origin.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
+    elapsed.saturating_add(MONOTONIC_BIAS_NS)
+}
+
+#[no_mangle]
+pub extern "C" fn gamepkg_wall_time(seconds: *mut u64, nanoseconds: *mut u32) {
+    let (secs, nanos) = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| (duration.as_secs(), duration.subsec_nanos()))
+        .unwrap_or((0, 0));
+    if !seconds.is_null() {
+        unsafe { *seconds = secs };
+    }
+    if !nanoseconds.is_null() {
+        unsafe { *nanoseconds = nanos };
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn gamepkg_host_begin_frame() {
     if let Some(session) = lock().as_mut() {
@@ -626,6 +652,17 @@ mod tests {
         let _guard = session_lock();
         unbind();
         assert_eq!(gamepkg_frame_time_us(), 0);
+        let first = gamepkg_monotonic_time_ns();
+        let second = gamepkg_monotonic_time_ns();
+        assert!(first > 0 && second >= first, "{first} {second}");
+        let mut seconds = 1u64;
+        let mut nanos = 1u32;
+        gamepkg_wall_time(std::ptr::null_mut(), std::ptr::null_mut());
+        gamepkg_wall_time(&mut seconds, &mut nanos);
+        assert!(
+            seconds > 1_700_000_000 && nanos < 1_000_000_000,
+            "{seconds} {nanos}"
+        );
         assert_eq!(gamepkg_window_control(0, 0), 0);
         assert_eq!(gamepkg_save_size(), -1);
         assert_eq!(gamepkg_audio_submit(std::ptr::null(), 0), -1);
