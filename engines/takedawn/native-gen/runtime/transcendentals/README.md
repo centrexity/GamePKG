@@ -31,7 +31,12 @@ It is checked bit-for-bit against an independently compiled original Bochs
 implementation for nonzero normal inputs inside (-1,1). Modern physical x87
 can differ in the last result bit and C1 for approximate transcendentals.
 Tests retain exact physical comparisons for stack/exception behavior and the
-remaining registers. Endpoint behavior is handled by the host adapter.
+remaining registers. Endpoint behavior is handled by the host adapter and
+checked against an explicit fixed table, including C1 and directed rounding.
+Current Intel Xeon 8573C endpoint C1 differs from earlier physical qualification;
+CI must not choose a different numerical profile based on its host processor.
+Exception flags, stack/commit responses and the other registers still use the
+physical oracle at endpoints. This table is not original-Xbox qualification.
 
 The maintainer oracle also checks the output against MPFR at 512 bits, with
 Intel's strict error bounds (less than 1 ulp nearest, less than 1.5 ulp for
