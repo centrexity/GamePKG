@@ -122,7 +122,9 @@ fn reviewed_native_storage_counts_both_platform_caches_without_charging_other_ga
     let linux = root.join("native-unit-cache/takedawn");
     fs::create_dir_all(&linux).unwrap();
     fs::write(linux.join("unit.o"), b"linux-obj").unwrap();
-    let build = root.join("builds").join(gamepkg::verify::digest(b"package"));
+    let build = root
+        .join("builds")
+        .join(gamepkg::verify::digest(b"package"));
     fs::create_dir_all(&build).unwrap();
     fs::write(build.join("native-game"), b"native").unwrap();
     for folder in ["native-sdk/tools", "native-unit-cache/another-engine"] {

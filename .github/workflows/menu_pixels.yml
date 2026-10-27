@@ -5,6 +5,7 @@ on:
       - 'tests/menu_controls_gui.py'
       - 'tests/reference/arkanoo_menu_controls.py'
       - 'web-player/**'
+      - 'src/bin/gui.rs'
       - 'src/gui.rs'
       - 'src/gui/**'
       - 'src/drawing*'
@@ -18,6 +19,7 @@ on:
       - 'tests/menu_controls_gui.py'
       - 'tests/reference/arkanoo_menu_controls.py'
       - 'web-player/**'
+      - 'src/bin/gui.rs'
       - 'src/gui.rs'
       - 'src/gui/**'
       - 'src/drawing*'
@@ -54,6 +56,12 @@ jobs:
           sudo ln -sf "$CHROMEWEBDRIVER/chromedriver" /usr/local/bin/chromedriver
           google-chrome --version
           chromedriver --version
+          gamepkg_software_icd=
+          for gamepkg_icd_path in /usr/share/vulkan/icd.d/lvp_icd*.json; do
+            if test -f "$gamepkg_icd_path"; then gamepkg_software_icd="$gamepkg_icd_path"; break; fi
+          done
+          test -n "$gamepkg_software_icd"
+          echo "VK_ICD_FILENAMES=$gamepkg_software_icd" >> "$GITHUB_ENV"
       - name: Build the actual desktop and CLI entries
         run: cargo build --locked --release --features gui --bins
       - name: Install the pinned shader compiler and stage the isolated Rust compiler
@@ -70,7 +78,7 @@ jobs:
           path: target/reference-arkanoo
           persist-credentials: false
       - name: Compare original menu pixels without changing the two-level limit
-        run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-menu-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT=/tmp/gamepkg-menu-slang CHROMEWEBDRIVER="$CHROMEWEBDRIVER" ALSA_CONFIG_PATH=/tmp/gamepkg-menu-null-alsa.conf SDL_AUDIODRIVER=dummy /usr/bin/python3 tests/menu_controls_gui.py --original target/reference-arkanoo
+        run: sudo env PATH="$PATH" VK_ICD_FILENAMES="$VK_ICD_FILENAMES" RUSTUP_HOME=/tmp/gamepkg-menu-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT=/tmp/gamepkg-menu-slang CHROMEWEBDRIVER="$CHROMEWEBDRIVER" ALSA_CONFIG_PATH=/tmp/gamepkg-menu-null-alsa.conf SDL_AUDIODRIVER=dummy /usr/bin/python3 tests/menu_controls_gui.py --original target/reference-arkanoo
       - name: Preserve native, browser, reference and difference evidence
         if: always()
         uses: actions/upload-artifact@v4
