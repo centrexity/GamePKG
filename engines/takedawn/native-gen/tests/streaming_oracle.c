@@ -74,12 +74,20 @@ static void handler(int signal,siginfo_t*info,void*raw){(void)signal;ucontext_t*
 }
 static unsigned physical_checks;
 static void fault_cases(const Image*original,uint64_t*rng){
+ /* Faulting MOVNTQ has a host-dependent TOP transition: the Intel family6,
+  * model207 stepping2 CI host resets TOP on #PF with tags still empty; AMD
+  * family26/model68 and EPYC9V74 preserve it. Use TOP0 for this physical
+  * comparison, retaining exact status/tag/register checks rather than masking
+  * the discrepancy after capture. This does not qualify nonzero-TOP #PF
+  * behavior on an original Xbox CPU. The generated adapter's explicit rollback
+  * policy is checked separately at every TOP in software_faults below; successful
+  * instructions still compare against hardware at every TOP in one(). */
  const unsigned forms[]={0,48,96,288,296};
  unsigned scenarios=4;
 #if !defined(__x86_64__)
  scenarios=6;
 #endif
- for(unsigned index=0;index<5;++index)for(unsigned pending=0;pending<2;++pending)for(unsigned scenario=0;scenario<scenarios;++scenario)for(unsigned selector=0;selector<(index==2&&!pending&&scenario<2?256u:1u);++selector){unsigned form=forms[index];Image input;prepare(&input,original,form,5,index==2&&!pending&&scenario<2?selector:scenario?255:0,rng);if(pending){input.b[0]=0x7e;input.b[2]|=0x81;input.b[3]|=0x80;}long page=sysconf(_SC_PAGESIZE);assert(page>=16);unsigned char*map=mmap(0,(size_t)page*2,PROT_READ|PROT_WRITE,MAP_SHARED|MAP_ANONYMOUS,-1,0);assert(map!=MAP_FAILED);memset(map,0xa5,(size_t)page*2);unsigned char*target=scenario==0?map+page-4:scenario==1?map+page:scenario==2?map+1:scenario==4?(unsigned char*)(uintptr_t)0xfffffffcu:scenario==5?(unsigned char*)(uintptr_t)0xfffffff8u:map;int fd[2];assert(pipe(fd)==0);pid_t child=fork();assert(child>=0);
+ for(unsigned index=0;index<5;++index)for(unsigned pending=0;pending<2;++pending)for(unsigned scenario=0;scenario<scenarios;++scenario)for(unsigned selector=0;selector<(index==2&&!pending&&scenario<2?256u:1u);++selector){unsigned form=forms[index];Image input;prepare(&input,original,form,kinds[form]==0?0:5,index==2&&!pending&&scenario<2?selector:scenario?255:0,rng);if(pending){input.b[0]=0x7e;input.b[2]|=0x81;input.b[3]|=0x80;}long page=sysconf(_SC_PAGESIZE);assert(page>=16);unsigned char*map=mmap(0,(size_t)page*2,PROT_READ|PROT_WRITE,MAP_SHARED|MAP_ANONYMOUS,-1,0);assert(map!=MAP_FAILED);memset(map,0xa5,(size_t)page*2);unsigned char*target=scenario==0?map+page-4:scenario==1?map+page:scenario==2?map+1:scenario==4?(unsigned char*)(uintptr_t)0xfffffffcu:scenario==5?(unsigned char*)(uintptr_t)0xfffffff8u:map;int fd[2];assert(pipe(fd)==0);pid_t child=fork();assert(child>=0);
   if(!child){close(fd[0]);channel=fd[1];struct rlimit core={0,0};assert(setrlimit(RLIMIT_CORE,&core)==0);if(scenario<2){assert(mprotect(map+page,(size_t)page,scenario==0?PROT_NONE:PROT_READ)==0);}
   /* Force a present read-only PTE; otherwise Linux can report a lazy,
    * nonpresent write fault for the same VMA permission denial. */
@@ -93,11 +101,11 @@ static unsigned physical_checks;
 static void fault_cases(const Image*original,uint64_t*rng){(void)original;(void)rng;}
 #endif
 static void software_faults(const Image*original,uint64_t*rng){
- for(unsigned form=0;form<@FORMS@;++form)if(kinds[form]<3){Image input;prepare(&input,original,form,4,0,rng);unsigned char actual[32];memset(actual,0xa5,sizeof(actual));GamePkgX86Region r={1024,4,3,actual};GamePkgX86Memory*m=gamepkg_x86_memory_create(&r,1,1);assert(m);gamepkg_x86_memory_bind(m);import(&input);registers(form,1024);gamepkg_x86_set_mxcsr(get32(input.b+24),0,0);GamePkgX87State before=*gamepkg_x86_x87_state();completed=0;GamePkgX86Fault f;assert(gamepkg_x86_run(generated[form],&f)==1&&f.vector==14&&f.fault_address==1028&&f.error_code==6&&completed==0);for(unsigned i=0;i<32;++i)assert(actual[i]==0xa5);if(kinds[form]==2){before.tags=0;before.status&=(uint16_t)~0x3800u;}assert(memcmp(&before,gamepkg_x86_x87_state(),sizeof(before))==0);gamepkg_x86_memory_bind(0);gamepkg_x86_memory_release(m);
+ for(unsigned form=0;form<@FORMS@;++form)if(kinds[form]<3)for(unsigned top=0;top<8;++top){Image input;prepare(&input,original,form,top,0,rng);unsigned char actual[32];memset(actual,0xa5,sizeof(actual));GamePkgX86Region r={1024,4,3,actual};GamePkgX86Memory*m=gamepkg_x86_memory_create(&r,1,1);assert(m);gamepkg_x86_memory_bind(m);import(&input);registers(form,1024);gamepkg_x86_set_mxcsr(get32(input.b+24),0,0);GamePkgX87State before=*gamepkg_x86_x87_state();completed=0;GamePkgX86Fault f;assert(gamepkg_x86_run(generated[form],&f)==1&&f.vector==14&&f.fault_address==1028&&f.error_code==6&&completed==0);for(unsigned i=0;i<32;++i)assert(actual[i]==0xa5);if(kinds[form]==2){before.tags=0;before.status&=(uint16_t)~0x3800u;}assert(memcmp(&before,gamepkg_x86_x87_state(),sizeof(before))==0);gamepkg_x86_memory_bind(0);gamepkg_x86_memory_release(m);
  }
  /* Logical offsets cross the flat32 segment limit before RAM admission.
   * A nonzero FS base must not hide an overflowing logical operand. */
- for(unsigned form=0;form<288;++form)if((kinds[form]==2&&modes[form]<2)||(kinds[form]<2&&(modes[form]==0||modes[form]==1||modes[form]==3||modes[form]==5))){Image input;prepare(&input,original,form,3,0,rng);import(&input);registers(form,0xfffffffcu);if(modes[form]==1){g_fs_base=16;if(kinds[form]==2)g_edi=0xfffffffcu;else g_esi=0xfffffffcu;}gamepkg_x86_set_mxcsr(get32(input.b+24),0,0);GamePkgX87State before=*gamepkg_x86_x87_state();if(kinds[form]==2){before.tags=0;before.status&=(uint16_t)~0x3800u;}completed=0;GamePkgX86Fault f;assert(gamepkg_x86_run(generated[form],&f)==1&&f.vector==13&&f.fault_address==0&&f.error_code==0&&completed==0&&memcmp(&before,gamepkg_x86_x87_state(),sizeof(before))==0);}
+ for(unsigned form=0;form<288;++form)if((kinds[form]==2&&modes[form]<2)||(kinds[form]<2&&(modes[form]==0||modes[form]==1||modes[form]==3||modes[form]==5)))for(unsigned top=0;top<8;++top){Image input;prepare(&input,original,form,top,0,rng);import(&input);registers(form,0xfffffffcu);if(modes[form]==1){g_fs_base=16;if(kinds[form]==2)g_edi=0xfffffffcu;else g_esi=0xfffffffcu;}gamepkg_x86_set_mxcsr(get32(input.b+24),0,0);GamePkgX87State before=*gamepkg_x86_x87_state();if(kinds[form]==2){before.tags=0;before.status&=(uint16_t)~0x3800u;}completed=0;GamePkgX86Fault f;assert(gamepkg_x86_run(generated[form],&f)==1&&f.vector==13&&f.fault_address==0&&f.error_code==0&&completed==0&&memcmp(&before,gamepkg_x86_x87_state(),sizeof(before))==0);}
  /* Misaligned packed stores must fail before the RAM adapter is accessed. */
  for(unsigned form=48;form<96;++form)if(modes[form]!=4)for(unsigned offset=1;offset<16;++offset){Image input;prepare(&input,original,form,3,0,rng);import(&input);registers(form,1024+offset);gamepkg_x86_set_mxcsr(get32(input.b+24),0,0);GamePkgX87State before=*gamepkg_x86_x87_state();completed=0;GamePkgX86Fault f;assert(gamepkg_x86_run(generated[form],&f)==1&&f.vector==13&&f.fault_address==0&&completed==0&&memcmp(&before,gamepkg_x86_x87_state(),sizeof(before))==0);}
 }
