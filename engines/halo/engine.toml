@@ -24,6 +24,7 @@ patches = [
     "0007-gamepkg-clock.patch",
     "0008-map-validate-layout.patch",
     "0009-gamepkg-threads.patch",
+    "0010-gamepkg-directory.patch",
 ]
 
 [[layouts]]

@@ -5,6 +5,15 @@
 
 #include <stdio.h>
 #include <stdint.h>
+#include <string.h>
+
+#if defined(_WIN32)
+#include <direct.h>
+#define abi_mkdir(path) _mkdir(path)
+#else
+#include <sys/stat.h>
+#define abi_mkdir(path) mkdir((path), 0700)
+#endif
 
 static void spawn_mark(void *context)
 {
@@ -27,10 +36,12 @@ int main(void)
 	const char *line = "abi";
 	int32_t result;
 
-	if (GAMEPKG_HOST_ABI != 2)
+	if (GAMEPKG_HOST_ABI != 3)
 		return fail("ABI version");
 	if (sizeof(int32_t) != 4 || sizeof(uint32_t) != 4 || sizeof(uint64_t) != 8 || sizeof(float) != 4)
 		return fail("scalar width");
+	if (sizeof(gamepkg_path_info) != 64)
+		return fail("path info size");
 	gamepkg_host_begin_frame();
 	if (gamepkg_frame_time_us() != 0)
 		return fail("frame time");
@@ -98,6 +109,53 @@ int main(void)
 	}
 	gamepkg_thread_sleep_ms(0);
 	gamepkg_thread_yield();
+	{
+		gamepkg_path_info info;
+		uint32_t handle = 0;
+		uint8_t name[64];
+		uint8_t body[8];
+		int32_t length;
+		int saw = 0;
+		FILE *note;
+		const char *dir = "abi-vfs";
+		char file[64];
+
+		if (gamepkg_path_stat(NULL, &info) != -1 || gamepkg_dir_open(NULL, &handle) != 0)
+			return fail("vfs null");
+		if (gamepkg_dir_read(0, name, sizeof(name)) != -1 || gamepkg_path_read(NULL, 0, body, 4) != -1)
+			return fail("vfs bad handle");
+		snprintf(file, sizeof(file), "%s/note.txt", dir);
+		abi_mkdir(dir);
+		note = fopen(file, "wb");
+		if (!note)
+			return fail("vfs fixture");
+		if (fwrite("hello", 1, 5, note) != 5)
+			return fail("vfs fixture");
+		fclose(note);
+		memset(&info, 0x5a, sizeof(info));
+		if (gamepkg_path_stat("abi-vfs/missing", &info) != 0 || info.kind != GAMEPKG_PATH_NONE)
+			return fail("vfs missing");
+		if (gamepkg_path_stat(file, &info) != 0 || info.kind != GAMEPKG_PATH_FILE || info.size != 5)
+			return fail("vfs file");
+		if (gamepkg_path_stat(dir, &info) != 0 || info.kind != GAMEPKG_PATH_DIRECTORY)
+			return fail("vfs dir");
+		if (gamepkg_path_read(file, 1, body, 4) != 4 || memcmp(body, "ello", 4) != 0)
+			return fail("vfs read");
+		if (gamepkg_dir_open(file, &handle) != 0)
+			return fail("vfs open file");
+		if (gamepkg_dir_open(dir, &handle) != 1)
+			return fail("vfs open");
+		while ((length = gamepkg_dir_read(handle, name, sizeof(name))) > 0)
+		{
+			if (strcmp((char *)name, "note.txt") == 0)
+				saw = 1;
+		}
+		if (length != 0 || !saw)
+			return fail("vfs list");
+		gamepkg_dir_close(handle);
+		if (gamepkg_dir_read(handle, name, sizeof(name)) != -1)
+			return fail("vfs closed");
+	}
 	result = gamepkg_host_log(line, 3);
 	if (result != 0)
 		return fail("log");

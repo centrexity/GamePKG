@@ -122,6 +122,19 @@ fn external_engine_recipe_parses_and_rejects_layout_and_network_changes() {
             && threads.contains("__attribute__((weak))"),
         "CreateThread, SleepEx, and SwitchToThread go through the host ABI"
     );
+    let directory = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("engines/halo/patches/0010-gamepkg-directory.patch"),
+    )
+    .unwrap();
+    assert!(
+        directory.contains("gamepkg_path_stat")
+            && directory.contains("gamepkg_path_read")
+            && directory.contains("gamepkg_dir_open")
+            && directory.contains("gamepkg_dir_read")
+            && directory.contains("__attribute__((weak))"),
+        "map folder stat, listing, and header reads go through the host ABI"
+    );
     let pin: serde_json::Value = serde_json::from_str(
         &std::fs::read_to_string(
             Path::new(env!("CARGO_MANIFEST_DIR")).join("ports/tools/opence-pin.json"),
