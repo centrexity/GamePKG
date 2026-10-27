@@ -31,13 +31,12 @@ fn fpatan_rejects_unqualified_inputs() {
     bad.bytes_hex = "d9f0".into();
     assert!(instruction(&bad).is_err());
 }
-#[test]
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-fn generated_fpatan_matches_reference_accuracy_and_hardware_state() {
+fn run_fixture(source_text: String, export_corpus: bool) -> std::process::Output {
     let dir = tempfile::tempdir().unwrap();
     let source = dir.path().join("fpatan.c");
     let binary = dir.path().join("fpatan");
-    std::fs::write(&source, fixture()).unwrap();
+    std::fs::write(&source, source_text).unwrap();
     let runtime = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("runtime");
     let sf = runtime.join("softfloat");
     let trans = runtime.join("transcendentals");
@@ -132,7 +131,17 @@ fn generated_fpatan_matches_reference_accuracy_and_hardware_state() {
         "{}",
         String::from_utf8_lossy(&out.stderr)
     );
-    let out = std::process::Command::new(binary).output().unwrap();
+    let mut command = std::process::Command::new(binary);
+    if !export_corpus {
+        // Probe variants must not overwrite or race the canonical replay corpus.
+        command.env_remove("GAMEPKG_TAKEDAWN_X87_FPATAN_CORPUS");
+    }
+    command.output().unwrap()
+}
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn assert_fixture_matches(source_text: String, export_corpus: bool) {
+    let out = run_fixture(source_text, export_corpus);
     assert!(
         out.status.success(),
         "{}\n{}",
@@ -140,4 +149,41 @@ fn generated_fpatan_matches_reference_accuracy_and_hardware_state() {
         String::from_utf8_lossy(&out.stderr)
     );
     print!("{}", String::from_utf8_lossy(&out.stdout));
+}
+
+#[test]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn generated_fpatan_matches_reference_accuracy_and_hardware_state() {
+    assert_fixture_matches(fixture(), true);
+}
+
+#[test]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn generated_fpatan_tiny_rounding_does_not_depend_on_host_c1() {
+    let source = fixture();
+    let marker = "unsigned sw = rd(after.b + 2), valid = 0;";
+    assert_eq!(source.matches(marker).count(), 1);
+    // The hosted CPU returned a different approximation C1 for the same tiny
+    // dyadic ratio. Exercise the opposite captured flag without altering any
+    // result bytes, exceptions, stack/tags or the generated implementation.
+    let altered = source.replace(marker, &format!(
+        "{marker}\nif (!empty && exact_tiny(a, b) && ((sw >> 11) & 7) == ((top + 1) & 7)) {{ sw ^= 0x200u; wr(after.b + 2, sw); }}"
+    ));
+    assert_fixture_matches(altered, false);
+}
+
+#[test]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn generated_fpatan_rejects_corrupted_tiny_rounding_flag() {
+    let mut source = fixture();
+    // Damage the implementation's flag after execution, preserving its value.
+    // The independent reference must catch the exact case reported by CI even
+    // though it accepts either captured approximation flag from the host CPU.
+    let end = source.rfind("}\n").unwrap();
+    source.insert_str(end, "GamePkgX87State *bad=gamepkg_x86_x87_state();unsigned t=(bad->status>>11)&7; if(bad->sign_exponent[t]==1 && bad->significand[t]==UINT64_C(0x8000000000000000))bad->status^=0x200u;");
+    let out = run_fixture(source, false);
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("FPATAN case85 cw40"));
+    assert!(String::from_utf8_lossy(&out.stderr)
+        .contains("value got0001:8000000000000000 expected0001:8000000000000000"));
 }

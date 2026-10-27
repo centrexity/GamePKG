@@ -97,7 +97,9 @@ static void next_wait(void) { gamepkg_x86_x87_wait(0x20000, 0x9876); }
 static unsigned exact_tiny(GamePkgExt80 a, GamePkgExt80 b) {
   if ((a.sign_exponent & 0x8000) || !a.significand || !b.significand ||
       (a.sign_exponent & 0x7fff) == 0x7fff ||
-      (b.sign_exponent & 0x7fff) == 0x7fff)
+      (b.sign_exponent & 0x7fff) == 0x7fff ||
+      ((a.sign_exponent & 0x7fff) && !(a.significand >> 63)) ||
+      ((b.sign_exponent & 0x7fff) && !(b.significand >> 63)))
     return 0;
   int ex = (a.sign_exponent & 0x7fff) ? (a.sign_exponent & 0x7fff) : 1,
       ey = (b.sign_exponent & 0x7fff) ? (b.sign_exponent & 0x7fff) : 1;
@@ -192,10 +194,20 @@ static void one(GamePkgExt80 a, GamePkgExt80 b, unsigned cw, unsigned top,
     wr(after.b + 2, sw);
     accuracy(a, b, (GamePkgExt80){sig, (uint16_t)se}, cw, sw);
   }
-  if (!empty && exact_tiny(a, b) && ((sw >> 11) & 7) == ((top + 1) & 7))
-    accuracy(a, b,
-             (GamePkgExt80){get64(after.b + 32), (uint16_t)rd(after.b + 40)},
-             cw, sw);
+  if (!empty && exact_tiny(a, b) && ((sw >> 11) & 7) == ((top + 1) & 7)) {
+    GamePkgExt80 result = {get64(after.b + 32), (uint16_t)rd(after.b + 40)};
+    accuracy(a, b, result, cw, sw);
+#ifdef GAMEPKG_FPATAN_MPFR
+    /* Modern CPUs can return the same tiny numerical result with different
+     * approximation C1 bits. Retain the physical result and every other state
+     * bit; independently require the mathematically corrected tiny C1. */
+    unsigned c1 = tiny_round_up(a, b, result, cw, sw);
+    if (c1 != ((sw >> 9) & 1))
+      ++profile_differences;
+    sw = (sw & ~0x200u) | (c1 << 9);
+    wr(after.b + 2, sw);
+#endif
+  }
   if ((z->status & ~0x4500u) != (sw & ~0x4500u)) {
     fprintf(stderr,
             "FPATAN case%u cw%x top%u empty%u a%04x:%016llx b%04x:%016llx sw "
@@ -203,7 +215,7 @@ static void one(GamePkgExt80 a, GamePkgExt80 b, unsigned cw, unsigned top,
             cases, cw, top, empty, a.sign_exponent,
             (unsigned long long)a.significand, b.sign_exponent,
             (unsigned long long)b.significand, z->status, sw);
-    unsigned pp = (s.status >> 11) & 7;
+    unsigned pp = (z->status >> 11) & 7;
     fprintf(stderr, "value got%04x:%016llx expected%04x:%016llx\n",
             z->sign_exponent[pp], (unsigned long long)z->significand[pp],
             rd(after.b + 40), (unsigned long long)get64(after.b + 32));
