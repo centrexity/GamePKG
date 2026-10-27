@@ -80,7 +80,25 @@ fn external_engine_recipe_parses_and_rejects_layout_and_network_changes() {
     assert!(
         !pointers.contains("-#error the Linux port targets 32-bit x86")
             && !pointers.contains("-#error the Windows port targets 32-bit x86"),
-        "the prefix guards stay until a 64-bit binary passes the stand-in check"
+        "patch 0005 leaves both prefix guards in place"
+    );
+    let fixups = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("engines/halo/patches/0006-lp64-layout-and-load-time-fixups.patch"),
+    )
+    .unwrap();
+    assert!(
+        fixups.contains("constructor(100)")
+            && fixups.contains("#if defined(__LP64__) || defined(_WIN64)"),
+        "pointer-to-halo_addr initializers are filled at load time on LP64 and Win64"
+    );
+    assert!(
+        fixups.contains("-#error the Linux port targets 32-bit x86"),
+        "the Linux prefix guard comes out only after linux-x86_64 passes"
+    );
+    assert!(
+        fixups.contains("-#error the Windows port targets 32-bit x86"),
+        "the Windows prefix guard comes out only after windows-x64 passes"
     );
     let pin: serde_json::Value = serde_json::from_str(
         &std::fs::read_to_string(
@@ -258,23 +276,20 @@ fn data_layouts_accept_maps_or_one_archive() {
 }
 
 #[test]
-fn blocked_targets_fail_before_fetching_source() {
-    let library = tempfile::tempdir().unwrap();
-    let package = library.path().join("halo.gamepkg");
-    gamepkg::pack::pack(
-        &Path::new(env!("CARGO_MANIFEST_DIR")).join("ports/halo"),
-        &package,
-        &[9; 32],
-    )
-    .unwrap();
-    gamepkg::registry::install(library.path(), &package, true).unwrap();
-    for target in ["linux-x86_64", "windows-x64"] {
-        let error = gamepkg::native::compile_for(library.path(), "com.gamepkg.halo", Some(target))
-            .unwrap_err()
-            .to_string();
-        assert!(error.contains("32-bit pointers"), "{target}: {error}");
+fn sixty_four_bit_targets_have_no_blocker() {
+    for id in ["linux-x86_64", "windows-x64"] {
+        let target = engine()
+            .targets
+            .iter()
+            .find(|target| target.id == id)
+            .unwrap_or_else(|| panic!("missing {id}"));
+        assert!(
+            target.blocker.is_none(),
+            "{id} stays blocked: {:?}",
+            target.blocker
+        );
+        assert!(!target.configure.is_empty(), "{id}");
     }
-    assert!(library.path().join("engine-sources").read_dir().is_err());
 }
 
 #[cfg(target_os = "linux")]
@@ -340,7 +355,7 @@ fn pinned_checkout_caches_the_i686_engine_without_copying_game_data() {
     )
     .unwrap();
     gamepkg::registry::install(library.path(), &package, true).unwrap();
-    gamepkg::native::compile(library.path(), "com.gamepkg.halo").unwrap();
+    gamepkg::native::compile_for(library.path(), "com.gamepkg.halo", Some("linux-i686")).unwrap();
     assert!(gamepkg::native::is_built(library.path(), "com.gamepkg.halo").unwrap());
     let report = gamepkg::integrity::check(library.path(), "com.gamepkg.halo").unwrap();
     assert!(report.contains("compiled game verified"), "{report}");
