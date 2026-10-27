@@ -2,7 +2,7 @@
 from pathlib import Path
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
-import argparse, os, shutil, subprocess, tempfile, threading
+import argparse, json, os, shutil, subprocess, tempfile, threading, tomllib
 from PIL import Image
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -15,6 +15,14 @@ parser.add_argument('candidate', type=Path)
 parser.add_argument('--optimized-images', type=Path, required=True)
 args = parser.parse_args()
 project = Path(__file__).resolve().parents[1]
+limits=tomllib.loads((args.candidate/'manifest.toml').read_text())['limits']
+large=limits.get('render_profile')=='large-images-v1'
+assert limits.get('render_profile') in [None,'large-images-v1']
+hard=268435456 if large else 16777216
+assert (limits['hard_memory_bytes'],limits['effects_memory_bytes'],limits['music_memory_bytes'])==(hard,3145728,7340032)
+expected_commands,expected_bytes=(300,21640492) if large else (234,7896124)
+original_tiles=json.loads((args.candidate/'assets/ASSET_PROVENANCE.json').read_text()).get('original_backgrounds',{}).get('tiles',[])
+if large:assert len(original_tiles)==144
 import sys
 sys.path.insert(0, str(project/'tests'))
 from arkanoo_legacy_support import use_legacy_audio
@@ -33,7 +41,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-recorded-dense-web-') as tempor
         assert result.returncode == 0, result.stdout+'\n'+result.stderr
     for profile in ['core-v1', 'component-v1']:
         references = None
-        for label, source in [('baseline', project/'ports/arkanoo'), ('recorded', args.candidate)]:
+        for label, source in [('baseline', args.candidate if large else project/'ports/arkanoo'), ('recorded', args.candidate)]:
             recipe = root/(profile+'-'+label)
             shutil.copytree(source, recipe)
             if label == 'baseline': use_legacy_audio(recipe)
@@ -47,7 +55,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-recorded-dense-web-') as tempor
             fixture = probe.replace('((game.editor.patterns.len() as u64) << 32) | game.particles.len() as u64', counter)
             effect = 'if state != ('+counter+') { gamepkg::effect_play("audio/bounce.wav"); }' if label == 'recorded' else ''
             entry.write_text(text.replace(signature, signature+fixture.replace('DENSE_EFFECT', effect)))
-            for path in (project/'ports/arkanoo/assets').glob('*.png'):
+            for path in (args.candidate/'assets').glob('*.png'):
                 replacement = args.optimized_images/path.name
                 with Image.open(path) as original, Image.open(replacement) as optimized:
                     assert original.size == optimized.size and original.convert('RGBA').tobytes() == optimized.convert('RGBA').tobytes(), path.name
@@ -65,7 +73,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-recorded-dense-web-') as tempor
             threading.Thread(target=server.serve_forever, daemon=True).start()
             options = Options()
             options.binary_location = shutil.which('google-chrome') or shutil.which('chromium') or shutil.which('google-chrome-stable')
-            for flag in ['--headless=new', '--no-sandbox', '--disable-dev-shm-usage', '--autoplay-policy=no-user-gesture-required']:
+            for flag in ['--headless=new', '--mute-audio', '--no-sandbox', '--disable-dev-shm-usage', '--autoplay-policy=no-user-gesture-required']:
                 options.add_argument(flag)
             options.set_capability('goog:loggingPrefs', {'browser': 'ALL'})
             driver = shutil.which('chromedriver') or str(Path(os.environ.get('CHROMEWEBDRIVER', '/nonexistent'))/'chromedriver')
@@ -109,8 +117,8 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-recorded-dense-web-') as tempor
                 browser.find_element('id', 'play').click()
                 if label == 'recorded':
                     wait.until(lambda b: b.execute_script('return window.lastAudio?.musicStatus==="playing"'))
-                    assert browser.execute_script('return window.guestBytes') == 3891008
-                    assert browser.execute_script('return window.roots.at(-1).used') == 16777216
+                    assert browser.execute_script('return window.guestBytes') == hard-3145728-7340032-2*1200224
+                    assert browser.execute_script('return window.roots.at(-1).used') == hard
                 wait.until(lambda b: b.execute_script('return window.lastState!==undefined'))
                 results = []
                 for scene in range(1, 7):
@@ -119,10 +127,15 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-recorded-dense-web-') as tempor
                     result = browser.execute_script('return window.results[arguments[0]]', scene)
                     assert browser.find_element('id', 'status').text == 'Playing'
                     assert int(result['state']) == (5041 << 32) | 3000 | (scene << 16), result['state']
-                    assert len(result['commands']) == 234 and result['bytes'] == 7896124, (scene, result['bytes'], len(result['commands']))
+                    assert len(result['commands']) == expected_commands and result['bytes'] == expected_bytes, (scene, result['bytes'], len(result['commands']))
+                    if large:
+                        for index in range(24):
+                            command=result['commands'][index*3+1]
+                            tile=next(row for row in original_tiles if row['asset']==f'background{scene}-{index}.png')
+                            assert command[0]=='linear-image' and command[-1]['sha256']==tile['rgba_sha256'],(scene,index)
                     if label == 'recorded':
                         assert browser.execute_script('return window.lastAudio.musicStatus') == 'playing'
-                        assert browser.execute_script('return window.roots.at(-1).used') == 16777216
+                        assert browser.execute_script('return window.roots.at(-1).used') == hard
                         assert result == references[scene-1], f'{profile} scene {scene} changed commands or pixels'
                     results.append(result)
                     print(profile, label, 'maximum archive plus dense scene', scene, 'passed', flush=True)

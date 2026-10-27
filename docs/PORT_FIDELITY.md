@@ -4832,3 +4832,33 @@ SDL full-texture scaling within the unchanged two-channel-level tolerance.
 Lower user ceilings are rejected in all three runtime paths. These fixtures
 qualify the framework profile, not activation of new artwork in the actual
 port. Original media and generated fixture packages are not published.
+
+
+Recipe 0.1.75 now activates the source-resolution artwork path locally. All six
+2816×1536 backgrounds use lossless tiles with filtering halos; the menu reuses
+background1. The package contains 178 images, all five original-rate effects
+and all nine original music tracks. The selected signed profile raises the game
+hard/recommended memory to 256 MiB; the effect/music shares remain 3/7 MiB.
+The complete browser export measures 61,023,757 encoded asset bytes. No artwork,
+track, particle or drawing is omitted to fit the old resource profile.
+
+Actual port rendering passes 36 full-size and 36 half-size desktop menu checks
+across Vulkan/OpenGL and native/core/component, plus twelve browser comparisons
+against the independent original SDL reference, within the unchanged two-level
+channel tolerance. Eighteen dense gameplay scenes retain 200 blocks, 3,000
+particles, the full 1 MiB save, 300 commands and 21,640,492 image bytes. Every
+actual background is reconstructed from those frame tiles and matches an
+independent pinned untiled-source pixel hash. Both browser runtimes also retain
+all six dense scenes, every tile hash, original audio and exact parent/guest
+budgets and complete release. The complete browser save/corruption/restart
+matrix passes with the new resources. All 178 PNGs match independent Node and
+actual Chromium decoder hashes; malformed PNG rejection is unchanged.
+
+The earlier 0.1.74 renderer, 42 derived background images, provenance and license
+texts are frozen in the host's `tests/fixtures/arkanoo-legacy-artwork.zip`, with
+per-file and archive hashes. `copy_legacy_port` restores only that artwork and
+renderer, removes the opt-in profile and retains the 16 MiB legacy hard cap and
+8 MiB frame cap. Other game logic remains current. The separate 48 kHz clips
+remain unchanged. These are test fixtures, not additional files in the playable
+package; no player Python dependency is introduced. Historical audio/profile
+qualification above remains specific to the smaller legacy fixture.

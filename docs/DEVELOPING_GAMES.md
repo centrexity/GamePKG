@@ -354,6 +354,8 @@ Omitting `render_profile` preserves the existing 8 MiB frame allowance, 1 MiB/32
 
 The maintainer-only `tools/check_original_image_frames.py ORIGINAL_ASSET_DIRECTORY --desktop --browser` verifies pinned original-image hashes, prepares private signed fixtures, checks every complete frame in native/core/component runtimes and compares full scenes to an independent SDL reference. It publishes no original artwork and adds no Python requirement for players.
 
+The maintainer migration tool `tools/prepare_arkanoo_original_art.py ORIGINAL_ASSETS NEW_DIRECTORY --base-port PINNED_0_1_74_RECIPE` prepares the complete source-resolution recipe without rewriting the active port. It rejects changed, missing or symlinked original images and an existing destination, validates exact source reconstruction, retains every recording and produces per-source/per-tile provenance. This tool requires the pinned pre-migration recipe; players receive the prepared Rust source and data. The historical renderer and derived images are separately frozen in the host test fixtures so larger artwork does not weaken the old frame-budget regressions.
+
 ## Execution limits
 
 There is no instruction metering or instruction-budget setting. The runtime interrupts Wasm ticks and start functions using host time deadlines, enforces the lower of the signed memory cap and player ceiling, and bounds draw commands, images, audio and saves. A stopped tick discards pending drawing/audio/save changes. Old instruction-budget fields are accepted only for reading existing packages/settings; they are ignored and omitted when writing new data.

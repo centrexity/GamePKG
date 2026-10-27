@@ -42,6 +42,8 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-exact-png-') as temporary:
  try:
   browser.set_script_timeout(30);browser.get(f'http://127.0.0.1:{server.server_port}/')
   result=browser.execute_async_script('const done=arguments[arguments.length-1],worker=new Worker("worker.js");let last;const timer=setTimeout(()=>{worker.terminate();done({error:"PNG startup deadline exceeded",last});},10000);worker.onmessage=({data})=>{if(data.stage){last=data.stage;return;}clearTimeout(timer);worker.terminate();done(data);};worker.onerror=e=>{clearTimeout(timer);worker.terminate();done({error:e.message});};worker.postMessage({});')
-  assert result=={'checked':76},result
-  print('Actual Chromium worker: consecutive startup and individual decoding preserve all 76 original PNG RGBA hashes; corrupted CRC rejects.')
+  assert report.get('render_profile') in [None,'large-images-v1']
+  expected=178 if report.get('render_profile')=='large-images-v1' else 76
+  assert result=={'checked':expected},result
+  print('Actual Chromium worker: consecutive startup and individual decoding preserve all',expected,'original PNG RGBA hashes; corrupted CRC rejects.')
  finally:browser.quit();server.shutdown();server.server_close()
