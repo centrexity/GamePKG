@@ -95,6 +95,14 @@ jobs:
       - name: Verify signed core and component image-cache pressure
         run: |
           sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-assets-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT=/tmp/gamepkg-assets-slang CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tests/browser_image_cache.py
+      - name: Preserve bounded compressed-asset timing after failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-compressed-assets-failure
+          path: target/browser-compressed-assets-failure.json
+          retention-days: 7
+          if-no-files-found: ignore
   png-startup:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
