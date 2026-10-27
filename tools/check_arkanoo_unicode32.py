@@ -33,6 +33,7 @@ names=[
 'late_composing_mark_viewports_preserve_full_shaping_and_saved_source',
 'pinned_supported_composition_graph_is_acyclic_and_has_two_transitions',
 'every_missing_mark_ascii_composition_keeps_exact_viewport_pixels',
+'repeated_short_mark_clusters_keep_eager_shaping_and_exact_viewport_pixels',
 'composed_fallback_display_rejects_unproven_raw_marks_and_lost_vertical_extents',
 ]
 # Select complete existing test sections; their bodies stay byte-identical.
