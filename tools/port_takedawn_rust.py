@@ -30,6 +30,8 @@ parser.add_argument('--recover-gameplay-paths', type=Path, metavar='ISO',
                     help='Recover reviewed missing native paths from the supported ISO in RAM')
 parser.add_argument('--native-mxcsr', action='store_true',
                     help='Restore the reviewed native SSE setup pair using real x86 control state')
+parser.add_argument('--native-privileged', action='store_true',
+                    help='Bind reviewed cache/interrupt sites to native host synchronization')
 args = parser.parse_args()
 project = Path(__file__).resolve().parents[1]
 lock = json.loads((project / 'engines/takedawn/upstream-lock.json').read_text())
@@ -114,6 +116,17 @@ if args.native_mxcsr:
             unit.write_text(text)
             adapted[unit.stem] = seen
     mxcsr = receipt(project, adapted)
+
+privileged = None
+if args.native_privileged:
+    from takedawn_native_privileged import adapt as adapt_privileged, receipt as privileged_receipt
+    adapted = {}
+    for unit, _ in units:
+        text, seen = adapt_privileged(unit.read_text())
+        if seen:
+            unit.write_text(text)
+            adapted[unit.stem] = seen
+    privileged = privileged_receipt(project, adapted)
 
 unknown_structured = set(args.structured_unit) - {unit.stem for unit, _ in units}
 if unknown_structured:
@@ -219,6 +232,14 @@ if mxcsr:
         (project / 'engines/takedawn/rust-port/native_mxcsr.rs').read_bytes())
     prepared_units.append(name)
     exports.update(mxcsr['native_exports'])
+if privileged:
+    name = 'gamepkg_native_privileged'
+    if exports.intersection(privileged['native_exports']):
+        raise RuntimeError('duplicate native cache/interrupt support symbol')
+    (rust / (name + '.rs')).write_bytes(
+        (project / 'engines/takedawn/rust-port/native_privileged.rs').read_bytes())
+    prepared_units.append(name)
+    exports.update(privileged['native_exports'])
 shim = '#define RECOMP_GENERATED_CODE\n#include "recomp_types.h"\n'
 for name in sorted(tls):
     if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', name):
@@ -277,6 +298,8 @@ if recovery:
     manifest['recovered_paths'] = recovery
 if mxcsr:
     manifest['native_mxcsr'] = mxcsr
+if privileged:
+    manifest['native_privileged'] = privileged
 (output / 'conversion.json').write_text(json.dumps(manifest, indent=2))
 print(f'Prepared all {len(expected)} game functions in {len(prepared_units)} Rust units.', flush=True)
 print('Compilation, C/Rust behavior comparison and gameplay validation remain required.', flush=True)

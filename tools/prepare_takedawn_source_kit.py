@@ -44,6 +44,16 @@ def main():
             raise RuntimeError('prepared native MXCSR implementation differs')
         units += 1
         native_exports += 2
+    privileged = conversion.get('native_privileged')
+    if privileged:
+        from takedawn_native_privileged import ADAPTED_UNITS, receipt as privileged_receipt
+        expected_privileged = privileged_receipt(project, ADAPTED_UNITS)
+        if privileged != expected_privileged:
+            raise RuntimeError('unsupported native cache/interrupt adaptation')
+        if sha(prepared / 'src/gamepkg_native_privileged.rs') != privileged['implementation_sha256']:
+            raise RuntimeError('prepared native cache/interrupt implementation differs')
+        units += 1
+        native_exports += len(privileged['native_exports'])
     if recovery:
         spec = project / 'engines/takedawn/rust-port/recovered-paths.json'
         if (recovery['specification_sha256'] != sha(spec)
@@ -101,6 +111,14 @@ def main():
             if Path(name).suffix.lower() in ['.iso', '.xbe', '.xmv', '.xwb', '.xsb']:
                 raise RuntimeError('disc-like input in runtime source: ' + name)
             copy(path / name, prefix + '/' + name)
+    if privileged:
+        from takedawn_native_privileged import patch_kernel
+        implementation = project / 'engines/takedawn/rust-port/native_irq.inc.h'
+        copy(implementation, 'host/engines/takedawn/rust-port/native_irq.inc.h')
+        name = 'toolkit/src/kernel/kernel_hal.c'
+        patched = output / name
+        patched.write_text(patch_kernel(patched.read_text(), implementation.read_text()))
+        files[name] = {'sha256': sha(patched), 'bytes': patched.stat().st_size, 'mode': 0o644}
     # Only generated declarations/stamp are needed by the original runtime.
     # No generated C game bodies are shipped or compiled.
     gen = args.source / 'src/game/recomp/gen'

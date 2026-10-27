@@ -22,7 +22,7 @@ Build this directory's maintainer tool with Cargo, then run:
 python3 tools/port_takedawn_rust.py \
   --source /private/pinned/takedawn --toolkit /private/pinned/xboxrecomp \
   --c2rust /private/tools/c2rust --normalizer /path/to/gamepkg-takedawn-rust-port \
-  --recover-gameplay-paths /path/to/owned.iso --native-mxcsr \
+  --recover-gameplay-paths /path/to/owned.iso --native-mxcsr --native-privileged \
   --output /tmp/private-mode-700-directory/new-conversion
 ```
 
@@ -407,6 +407,37 @@ library approximations.
 maintainer patch. The normalizer and prepared build helper are host preparation
 code; they do not change the ordinary package validator's dependency or unsafe
 code policies.
+
+## Native interrupt and cache binding candidate
+
+The `--native-privileged` preparation option replaces the reviewed reached cache
+site and the APU sample-read CLI/STI pair with native Rust support calls. The
+original three loads remain between disable and enable. Enable runs after the
+original following `MOV ESI,EAX`, preserving the
+[STI interrupt shadow](https://www.intel.com/content/dam/www/public/us/en/documents/manuals/64-ia-32-architectures-software-developer-vol-2b-manual.pdf).
+No runtime instruction decoder is added. Other untranslated instruction sites
+are unchanged and remain rejected if reached by the strict gameplay checker.
+
+The pinned kernel receives a checked host-gate adaptation. Masking changes IF
+without changing guest-visible IRQL; same-thread recursive posting, safe points
+and legacy/forced diagnostic delivery cannot enter the protected read. Repeated
+CLI clears the same flag rather than adding a nesting level. Re-enable delivers
+pending interrupts only after the shadow instruction and leaves enclosing IRQL
+ownership intact. For WBINVD, guest RAM aliases already share coherent host
+pages; the Rust support function publishes prior writes with a sequentially
+consistent fence. It does not issue a privileged host-cache instruction or
+replace the renderer's Vulkan visibility operations.
+
+`tools/check_takedawn_native_privileged.py` tests these bindings against the
+actual pinned kernel, the original IRQ suite, and focused native Rust ABI cases.
+Two targeted mutations must fail the matching behavioral assertions. The
+IRQ-only `--without-vulkan` mode does not qualify game rendering. The private v14
+candidate retains all 24,003 game functions in 487 compiled Rust units and
+24,035 expected exports. Its Linux native build and strict original profile
+create/reload, save-hash and 45-second stereo capture checks pass with actual
+Vulkan rendering in both processes and no reached untranslated instructions or
+stubs. The full standalone Windows source build and broader gameplay replay
+remain required. The app has not yet admitted or shipped this candidate.
 
 ## Native process owner
 
