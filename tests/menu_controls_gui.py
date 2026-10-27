@@ -6,12 +6,21 @@ import argparse,hashlib,json,os,platform,shutil,subprocess,tempfile,threading,ti
 from PIL import Image,ImageChops
 from gui_test_support import start_display
 parser=argparse.ArgumentParser();parser.add_argument('--original',type=Path,default=Path('/tmp/gamepkg-candidate-arkanoo'));parser.add_argument('--flat-background',action='store_true',help='Compare scaled controls directly against SDL without background resampling');parser.add_argument('--proof-output',type=Path);args=parser.parse_args()
-PROJECT=Path(__file__).resolve().parents[1];CLI=PROJECT/'target/release/gamepkg';GUI=PROJECT/'target/release/gamepkg-gui';PROOF=args.proof_output or PROJECT/'target/menu-controls-proof'
+PROJECT=Path(__file__).resolve().parents[1];BIN=Path(os.environ.get('GAMEPKG_TEST_BINARY_DIR',PROJECT/'target/release'));CLI=BIN/'gamepkg';GUI=BIN/'gamepkg-gui';PROOF=args.proof_output or PROJECT/'target/menu-controls-proof'
 if PROOF.exists():PROOF.rename(PROJECT/'target'/('menu-controls-previous-'+str(time.time_ns())))
 PROOF.mkdir(parents=True)
 fixture=json.loads((PROJECT/'tests/fixtures/arkanoo-menu-controls.json').read_text());PHASES=[0,1,2,3,4,0];KEYS={4:'Left',1:'Right',2:'Up',3:'Down'};REFERENCES={};SMALL={};SMALL_REFERENCES={}
 class Quiet(SimpleHTTPRequestHandler):
  def log_message(self,*args):pass
+def fail_start(label,message,env):
+ # Capture only this test's private display, including native error dialogs.
+ try:
+  subprocess.run(['import','-window','root',str(PROOF/(label+'-startup.png'))],env=env,capture_output=True,timeout=5)
+  titles=subprocess.run(['xdotool','search','--onlyvisible','--name','.','getwindowname','%@'],env=env,capture_output=True,text=True,timeout=5)
+  details={'message':message,'visible_windows':titles.stdout,'window_error':titles.stderr}
+ except Exception as error:details={'message':message,'capture_error':str(error)}
+ (PROOF/(label+'-startup.json')).write_text(json.dumps(details,indent=2)+'\n')
+ raise RuntimeError(label+': '+message+'; '+details.get('visible_windows',''))
 def pixel_report(actual,expected):
  a=actual.tobytes();b=expected.tobytes();points=[];channels=0
  for index in range(0,len(a),3):
@@ -57,14 +66,15 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-menu-controls-gui-') as temp:
    for target in (['wasm','native'] if suffix=='core' else ['wasm']):
     run('build',game_id,'--target',target)
     for renderer in ['vulkan','opengl']:
-     label=profile+'-'+target+'-'+renderer;app=subprocess.Popen([GUI,'--play',game_id,'--renderer',renderer],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE);held=False
+     label=profile+'-'+target+'-'+renderer;app=subprocess.Popen([GUI,'--play',game_id,'--target',target,'--renderer',renderer],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE);held=False
      try:
       deadline=time.monotonic()+20
       while True:
-       if app.poll() is not None:raise RuntimeError(app.stderr.read().decode())
+       if app.poll() is not None:fail_start(label,f'exited with {app.returncode}: '+app.stderr.read().decode(),env)
        found=subprocess.run(['xdotool','search','--onlyvisible','--name',r'^(GamePKG|com\..*)$'],env=env,capture_output=True,text=True)
        if found.returncode==0:window=found.stdout.splitlines()[0];break
-       assert time.monotonic()<deadline;time.sleep(.05)
+       if time.monotonic()>=deadline:fail_start(label,'game window did not appear within 20 seconds',env)
+       time.sleep(.05)
       sizes=[(1280,960)]+([(640,480)] if args.flat_background or (suffix,target,renderer)==('core','native','vulkan') else [])
       for width,height in sizes:
        subprocess.run(['xdotool','windowsize',window,str(width),str(height),'windowfocus',window],env=env,check=True);time.sleep(.15)
@@ -82,7 +92,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-menu-controls-gui-') as temp:
            if args.flat_background:actual.save(PROOF/(label+'-640-'+str(phase)+'-canvas.png'))
            break
          elif delta(actual,REFERENCES[phase])<=2:break
-         if app.poll() is not None:raise RuntimeError(app.stderr.read().decode())
+         if app.poll() is not None:fail_start(label,f'exited with {app.returncode}: '+app.stderr.read().decode(),env)
          assert time.monotonic()<deadline,(label,phase,delta(actual,REFERENCES[phase]) if width==1280 else (marker,delta(actual,SMALL_REFERENCES[phase])) if args.flat_background else marker);time.sleep(.05)
         if width==1280:print(label,phase,'complete implemented menu maximum difference',delta(actual,REFERENCES[phase]),flush=True)
         elif args.flat_background:print(label,phase,'scaled controls/original SDL maximum difference',delta(actual,SMALL_REFERENCES[phase]),flush=True)
