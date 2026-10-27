@@ -6,9 +6,68 @@ C/C++. Players do not need Python, C2Rust or WSL. The owned supported ISO is rea
 in place. Maintainer tools and private test saves are separate from player
 requirements and the user's library.
 
-## Verified routes
+## Current v14 profile
 
-The production runtime builder was exercised with the actual standalone Windows
+The current unreleased 0.1.3 recipe selects v14, with source-kit SHA-256
+`7cfd18d26b8a6e51005f75d7cedc1c01925237574bc579df5027b0167413a986`.
+It requires the 0.1.18 development app. All 24,003 prepared Rust game functions
+are retained across 487 units and 24,035 native exports. The older 0.1.17 stable
+app does not include this native engine.
+
+The normal signed Linux package passes a cold native Build, wrong-disc rejection,
+ISO-in-place Play, a second launch with its remembered ISO, play-history saving
+and integrity checks. Intentional private-cache corruption is detected and
+repaired; all 487 unit-object hashes and modification times, signed package,
+settings, ROM selections and player data are preserved. The exact repaired
+executable passes original Race and PS2-layout Crash controls.
+
+Private tests of that same repaired executable also cover:
+
+| Route | Observed result | Fresh-process check |
+| --- | --- | --- |
+| First World Tour race, Silver Lake | Second of six, two laps, 222.383 seconds; best lap 105.467 seconds. Original results, reward/save flow and a new Downtown Road Rage event. | Profile/metadata load with identical hashes; the new Road Rage1 event is selectable. This is not a gold-medal result. |
+| Newly unlocked Downtown Road Rage1 | Natural Out of time loss with zero takedowns, zero new points and no medal. Original Continue, successful autosave and return to Select Location. | Profile/metadata load unchanged; Driver Details retains one completed event, 1,135 points and one takedown from the preceding race. |
+
+The title's own debug AI drives these tests with reviewed menu/pad inputs. No
+score, medal, unlock, event time limit or save result is injected. All four processes use
+dummy audio and pass the actual-Vulkan and unsupported-path gates. These are
+scoped campaign checks, not verification of all 173 events.
+
+The complete v14 Windows archive also builds with actual standalone Windows
+Rust under Wine. Its linked executable has SHA-256
+`4467bfd5ae1b91565a99cd06792d6695bc2d61e22626f62f4e6b5dbd66ae6540`.
+It passes original profile create/reload, unchanged saves, stereo capture,
+Race/PS2-layout Crash controls, keyboard menu navigation, 1024×768 resize and
+normal close. It finishes an original three-lap Race, fifth of six in 345.483
+seconds, with a best lap of 108.517 seconds. Traps, actual-Vulkan and unsupported
+path gates are enabled. Wine does not establish physical Windows game behavior.
+
+Actual Windows/macOS host validation passes at `2003f48` in
+[run 40446324843](https://github.com/centrexity/GamePKG/actions/runs/40446324843);
+Windows runs 340 passing tests, zero failures and nine explicit ignores. The
+focused [confined Windows window gate](https://github.com/centrexity/GamePKG/actions/runs/40456563923)
+at `658a9c8` also passes: its exact asset-free test creates, shows and destroys
+real windows across two managed-restart launches and a default-watchdog launch.
+It uses the production owner, synthetic media and no WSL. This is basic Win32
+window access, not original-game SDL/Vulkan/audio/controller qualification.
+
+The current private Windows hardware bundle uses app `7ed3067` and the signed
+v14/0.1.3 recipe with a separate preview library/settings. Every app file matches
+its verified native Windows ZIP. It includes the default-off watchdog and no
+ISO, private signing key or prebuilt CPU-specific game. The full v14 native
+Windows signed Build/repair gate passes on actual Windows in
+[run 40446319498](https://github.com/centrexity/GamePKG/actions/runs/40446319498):
+all 487 units build with native optimization, the library recognizes the built
+game automatically, integrity rejects an intentionally damaged SDL companion,
+and repair restores it while preserving every unit hash/modification time and
+the signed installed package. The build takes 7,517 seconds and repair 74 seconds
+on that runner. Compiler children can discover only the verified SDK and Windows
+System32 tools. This gate uses no ROM and does not qualify original-game playback;
+physical Windows game checks remain required before stable promotion.
+
+## Historical v13 Windows routes
+
+The earlier v13 production runtime builder was exercised with the actual standalone Windows
 tools under Wine, including an extended SDK path containing spaces. The resulting
 executable has SHA-256
 `6f858f72c89957abf6b5c0b38afbddae6ca7ed0dfffbf63980db4de34eb8efeb`
@@ -46,12 +105,12 @@ by the World Tour results above.
 
 ## Reached untranslated paths
 
-The stricter executed-path audit finds that the current v13 runtime reaches
+The stricter executed-path audit found that the older v13 runtime reaches
 `wbinvd` at `0x00353DB5`, `cli` at `0x00367C86` and `sti` at `0x00367C97` in
 both profile-create and reload logs. The upstream translator currently reports
 these instructions and treats them as no-ops. Historical route and save/audio
 results above remain observed outcomes; they do not prove complete instruction
-semantics. The current v13 executable fails the stronger path gate.
+semantics. That v13 executable fails the stronger path gate.
 
 The shared maintainer gate now rejects every reached untranslated instruction,
 rather than checking only the two MXCSR instruction names, and still rejects
@@ -75,8 +134,9 @@ assertions. The first resize attempt was constrained by a 720-pixel test desktop
 the unchanged assertion passes on the taller desktop. With instruction traps
 enabled, the Windows candidate also completes the original three-lap race:
 fifth of six, 345.483 seconds, best lap 108.517 seconds, normal results flow and
-strict path/Vulkan gates. Full signed-package Build,
-updated packaging and physical Windows qualification remain required. The rejection is not waived because
+strict path/Vulkan gates. Normal signed Linux Build/Play/repair and the updated
+private preview and full v14 Windows signed Build/repair are now verified as
+described above; physical Windows qualification remains required. The rejection is not waived because
 the game reaches a menu or a result screen.
 
 ## Player handling of unsupported paths
@@ -135,7 +195,7 @@ modes. The bounded two-player observations above do not qualify physical
 controllers or complete multiplayer play. The separate GamePKG networking APIs do not establish
 that this original game's online services work.
 
-## App and platform checks
+## Earlier app and platform checks
 
 Native Windows and macOS host validation pass for app revision `b2b43fd`,
 including the history contention fix, in
@@ -158,11 +218,12 @@ The Windows32 gate also executes both actual app entries after relocation,
 without a display or external decoder files. The x86-64 game itself still
 requires a 64-bit system.
 
-The unpublished hardware preview uses this exact native app and the verified
+The superseded hardware preview used this exact native app and the verified
 signed v13 recipe, with a separate library and settings. Every extracted app
-file matches the native ZIP. This preview pins production app `b2b43fd`;
+file matched the native ZIP. That preview pinned production app `b2b43fd`;
 the subsequent `c766be1` app change adds the optional frame-stall diagnostic
-watchdog described below. The handed-off preview predates that setting.
+watchdog described below. That older preview predates the setting; the current
+v14 bundle described above includes it.
 
 All automated audio output is dummy/muted or routed to a verified private
 null-only sink. Rendered captures and non-silent

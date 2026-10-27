@@ -8,19 +8,34 @@ Run `bin\gamepkg.exe --help` in PowerShell, or launch `bin\gamepkg-gui.exe` for 
 
 ## Native Takedawn source preview
 
-The current development source connects native **Build**, **Play**, and integrity
-repair for the host-reviewed v13 Takedawn kit on 64-bit Windows. This path uses
+The 0.1.18 development source connects native **Build**, **Play**, and integrity
+repair for the host-reviewed v14 Takedawn kit on 64-bit Windows. This path uses
 standalone Rust/Clang tools prepared through Settings or `gamepkg setup-native-tools`;
 it needs neither WSL nor Python. The older Linux-only package must be updated
-before building it on Windows; reviewed v12 packages remain accepted. The v13
-player package is an unreleased candidate.
+before building it on Windows. Recipe 0.1.3 selects v14; older admitted recipes
+retain creator/save continuity but can stop on unsupported execution and need
+an update. This is an unreleased candidate and requires the development app;
+the published 0.1.17 app does not include this native engine.
+
+In the development app, choose **Settings → Prepare native build tools**, then
+save settings with **Memory ceiling** set to at least 4096 MiB. Import the signed
+compatible recipe through **Add**, open its game page, choose your supported
+original Xbox USA ISO, and select **Build**. The first optimized build can take
+an hour or more; verified completed units are reused after interruption. **Play**
+becomes available after a successful build and disc selection. Keep the whole
+portable app folder together. A private hardware-test bundle uses a separate
+preview library and its included recipe rather than changing the normal library.
 
 The game owns its Vulkan window. GamePKG retains the selected ISO as a read-only
 handle, saves the selection after successful admission, keeps original saves
 scoped to the game/creator and tracks play time across the original restart flow.
 The player uses an AppContainer with networking disabled and explicit runtime/save
-access. App-level native Windows gameplay and GPU access still need qualification;
-see the [native Windows build notes](../engines/takedawn/rust-port/WINDOWS_BUILD.md).
+access. Actual Windows tests verify real child-window creation and closure across
+managed restarts under this confinement. The full native signed Build and
+integrity-repair workflow also passes on Windows, preserving all 487 compiled
+Rust units through repair. Original-game Vulkan, sound and physical
+controllers still need Windows hardware qualification; Wine checks do not replace
+that. See the [native Windows build notes](../engines/takedawn/rust-port/WINDOWS_BUILD.md).
 
 ## Optional Wasm compiler connection
 
@@ -38,7 +53,7 @@ For an actual Windows/WSL integration check after setup, build the current Windo
 
 Add `--gui` with Pillow installed and a working OpenGL driver to verify actual blue/green shader pixels and held/released keyboard input for both runtime profiles. The hosted test uses checksum-pinned Mesa 26.2.4 DLLs only in its build folder; those test DLLs are excluded from the distribution. Screenshots and diagnostics are retained as a separate test artifact.
 
-The Windows host requires a Linux compiler worker with exactly the same GamePKG version. Use the Linux and Windows archives from the same release. The full source preflight policy and builtin engine version are checked before compiler outputs are accepted.
+The optional Wasm compiler connection requires a Linux worker with exactly the same GamePKG version. Use the Linux and Windows archives from the same release for that connection. The full source preflight policy and builtin engine version are checked before compiler outputs are accepted. The standalone Takedawn native pipeline above uses its managed Windows tools instead.
 
 ## Zelda3 optional engine
 
