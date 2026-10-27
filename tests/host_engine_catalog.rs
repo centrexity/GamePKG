@@ -40,6 +40,18 @@ fn host_header_in_the_engine_patch_matches_the_canonical_abi() {
         .status()
         .unwrap();
     assert!(status.success());
+    let status = std::process::Command::new("git")
+        .arg("-C")
+        .arg(dir.path())
+        .args([
+            "apply",
+            "--whitespace=nowarn",
+            "--include=port/include/gamepkg_host.h",
+        ])
+        .arg(root.join("engines/halo/patches/0009-gamepkg-threads.patch"))
+        .status()
+        .unwrap();
+    assert!(status.success());
     let canonical = std::fs::read_to_string(root.join("include/gamepkg_host.h")).unwrap();
     assert_eq!(std::fs::read_to_string(&header).unwrap(), canonical);
 }

@@ -6,6 +6,14 @@
 #include <stdio.h>
 #include <stdint.h>
 
+static void spawn_mark(void *context)
+{
+	volatile int *started = context;
+
+	if (started != NULL)
+		*started = 1;
+}
+
 static int fail(const char *message)
 {
 	fprintf(stderr, "engine_host_abi: %s\n", message);
@@ -19,7 +27,7 @@ int main(void)
 	const char *line = "abi";
 	int32_t result;
 
-	if (GAMEPKG_HOST_ABI != 1)
+	if (GAMEPKG_HOST_ABI != 2)
 		return fail("ABI version");
 	if (sizeof(int32_t) != 4 || sizeof(uint32_t) != 4 || sizeof(uint64_t) != 8 || sizeof(float) != 4)
 		return fail("scalar width");
@@ -74,6 +82,22 @@ int main(void)
 		return fail("image linear");
 	if (gamepkg_audio_submit(samples, 4) != -1 || gamepkg_audio_submit_stereo(samples, 4) != -1)
 		return fail("audio");
+	if (gamepkg_thread_spawn(NULL, NULL, 0) != 0)
+		return fail("spawn null");
+	{
+		static volatile int started;
+		int spins;
+
+		started = 0;
+		if (gamepkg_thread_spawn(spawn_mark, (void *)&started, 0) != 1)
+			return fail("spawn");
+		for (spins = 0; spins < 1000000 && !started; spins++)
+			gamepkg_thread_yield();
+		if (!started)
+			return fail("spawn did not run");
+	}
+	gamepkg_thread_sleep_ms(0);
+	gamepkg_thread_yield();
 	result = gamepkg_host_log(line, 3);
 	if (result != 0)
 		return fail("log");

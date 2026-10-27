@@ -11,12 +11,13 @@
  *   network: payload byte count, -2 busy, -3 failed, -1 rejected
  * Frame time is the sample taken by gamepkg_host_begin_frame. It is not a
  * free-running clock.
- * gamepkg_host_log, gamepkg_monotonic_time_ns, and gamepkg_wall_time are
- * host additions. Guests had no log import and no free-running clock import.
+ * gamepkg_host_log, the free-running clocks, and the thread calls are host
+ * additions. Guests had no log import, no free-running clock, and no thread
+ * import. The engine keeps its own mutexes and completion handles.
  */
 #include <stdint.h>
 
-#define GAMEPKG_HOST_ABI 1
+#define GAMEPKG_HOST_ABI 2
 
 #define GAMEPKG_FILE_IMPORT 0u
 #define GAMEPKG_FILE_EXPORT 1u
@@ -69,6 +70,16 @@ int32_t gamepkg_draw_image_linear(float x, float y, float width, float height,
     uint32_t pixel_width, uint32_t pixel_height, const uint8_t *pixels, uint32_t length);
 int32_t gamepkg_audio_submit(const int16_t *samples, uint32_t count);
 int32_t gamepkg_audio_submit_stereo(const int16_t *samples, uint32_t count);
+
+/* Detached thread. start is called on the new thread with context.
+   Returns 1, or 0 when start is null or the thread cannot be created.
+   stack_bytes 0 selects the host default, which is at least 1 MiB. */
+typedef void (*gamepkg_thread_start)(void *context);
+int32_t gamepkg_thread_spawn(gamepkg_thread_start start, void *context, uint32_t stack_bytes);
+/* 0 yields. GAMEPKG_THREAD_SLEEP_INFINITE does not return. */
+#define GAMEPKG_THREAD_SLEEP_INFINITE 0xffffffffu
+void gamepkg_thread_sleep_ms(uint32_t milliseconds);
+void gamepkg_thread_yield(void);
 
 /* Bounded UTF-8 line, at most 1024 bytes, no NUL inside the length. */
 int32_t gamepkg_host_log(const char *text, uint32_t length);

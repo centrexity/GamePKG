@@ -110,6 +110,18 @@ fn external_engine_recipe_parses_and_rejects_layout_and_network_changes() {
             && clock.contains("__attribute__((weak))"),
         "the game clock goes through the host ABI, with a weak clock_gettime fallback"
     );
+    let threads = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("engines/halo/patches/0009-gamepkg-threads.patch"),
+    )
+    .unwrap();
+    assert!(
+        threads.contains("gamepkg_thread_spawn")
+            && threads.contains("gamepkg_thread_sleep_ms")
+            && threads.contains("gamepkg_thread_yield")
+            && threads.contains("__attribute__((weak))"),
+        "CreateThread, SleepEx, and SwitchToThread go through the host ABI"
+    );
     let pin: serde_json::Value = serde_json::from_str(
         &std::fs::read_to_string(
             Path::new(env!("CARGO_MANIFEST_DIR")).join("ports/tools/opence-pin.json"),
