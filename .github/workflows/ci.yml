@@ -859,6 +859,7 @@ jobs:
           name: gamepkg-desktop-failure-screenshots
           path: |
             target/*.png
+            target/zelda-display-failure.json
             target/menu-controls-proof
             target/menu-controls-flat-proof
           retention-days: 7

@@ -235,26 +235,27 @@ pub(crate) fn asset(
             .can_image(x, y, w, h, image.pixels().len())
             .then_some(image);
     }
-    let Ok(size) = package.asset_size(path) else {
-        return None;
-    };
-    if !(33..=MAX_PNG_BYTES as u64).contains(&size) {
-        return None;
-    }
-    let Ok(header) = package.asset_chunk(path, 0, 33) else {
-        return None;
-    };
-    let pixel_bytes = Image::png_byte_length(&header)?;
-    if !frame.can_image(x, y, w, h, pixel_bytes) {
-        return None;
-    }
-    let mut encoded = Vec::with_capacity(size as usize);
-    for offset in (0..size).step_by(65536) {
-        let Ok(chunk) = package.asset_chunk(path, offset, 65536) else {
-            return None;
-        };
-        encoded.extend(chunk);
-    }
+    // Keep one reader for the complete member: chunk reads restart compressed
+    // ZIP entries from the beginning. Validate the small header and frame
+    // allowance before allocating, and publish only after the final ZIP CRC.
+    let (encoded, pixel_bytes) = package
+        .with_asset_reader(path, MAX_PNG_BYTES as u64, |input, length| {
+            anyhow::ensure!(length >= 33, "incomplete PNG header");
+            let mut header = [0; 33];
+            input.read_exact(&mut header)?;
+            let Some(pixel_bytes) = Image::png_byte_length(&header) else {
+                anyhow::bail!("invalid or oversized PNG header");
+            };
+            anyhow::ensure!(
+                frame.can_image(x, y, w, h, pixel_bytes),
+                "image exceeds frame allowance"
+            );
+            let mut encoded = vec![0; length];
+            encoded[..33].copy_from_slice(&header);
+            input.read_exact(&mut encoded[33..])?;
+            Ok((encoded, pixel_bytes))
+        })
+        .ok()?;
     let image = Image::from_png(&encoded)?;
     if image.pixels().len() != pixel_bytes {
         return None;
@@ -262,4 +263,219 @@ pub(crate) fn asset(
     let image = std::sync::Arc::new(image);
     cache.insert(path, image.clone());
     Some(image)
+}
+
+#[cfg(test)]
+mod asset_reader_tests {
+    use super::*;
+    use crate::{archive::Package, drawing::Frame};
+    use ::image::ImageEncoder;
+    use std::{fs::File, io::Write, sync::Arc};
+
+    fn picture() -> (Vec<u8>, Vec<u8>) {
+        let mut value = 0x12345678u32;
+        let rgb: Vec<u8> = (0..512 * 512 * 3)
+            .map(|_| {
+                value ^= value << 13;
+                value ^= value >> 17;
+                value ^= value << 5;
+                value as u8
+            })
+            .collect();
+        let mut png = Vec::new();
+        ::image::codecs::png::PngEncoder::new(&mut png)
+            .write_image(&rgb, 512, 512, ::image::ExtendedColorType::Rgb8)
+            .unwrap();
+        assert!(png.len() > 65536 && png.len() < MAX_PNG_BYTES);
+        let rgba = rgb
+            .as_chunks::<3>()
+            .0
+            .iter()
+            .flat_map(|p| [p[0], p[1], p[2], 255])
+            .collect();
+        (png, rgba)
+    }
+
+    fn fixture(
+        png: &[u8],
+        method: zip::CompressionMethod,
+        corrupt_crc: bool,
+    ) -> (tempfile::TempDir, Package) {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("images.gamepkg");
+        let mut writer = zip::ZipWriter::new(File::create(&path).unwrap());
+        for name in ["picture.png", "next.png"] {
+            writer
+                .start_file(
+                    format!("assets/{name}"),
+                    zip::write::SimpleFileOptions::default().compression_method(method),
+                )
+                .unwrap();
+            writer.write_all(png).unwrap();
+        }
+        writer.finish().unwrap();
+        if corrupt_crc {
+            // The PNG remains complete and valid. Only its container checksum
+            // is wrong, so a decoder alone cannot detect this failure.
+            let mut bytes = std::fs::read(&path).unwrap();
+            let central = bytes.windows(4).position(|w| w == b"PK\x01\x02").unwrap();
+            bytes[central + 16] ^= 1;
+            std::fs::write(&path, bytes).unwrap();
+        }
+        let package = Package::open(&path).unwrap();
+        (temp, package)
+    }
+
+    #[test]
+    fn cold_assets_preserve_all_pixels_across_zip_codecs_and_cache_hits() {
+        let (png, rgba) = picture();
+        for method in [zip::CompressionMethod::Stored, zip::CompressionMethod::Zstd] {
+            let (_temp, mut package) = fixture(&png, method, false);
+            package.mark_verified();
+            let mut cache = Cache::default();
+            let frame = Frame::default();
+            let image = asset(
+                &mut package,
+                &mut cache,
+                &frame,
+                "picture.png",
+                [0., 0., 1., 1.],
+            )
+            .unwrap();
+            assert_eq!(image.pixels(), rgba, "{method:?}");
+            let cached = asset(
+                &mut package,
+                &mut cache,
+                &frame,
+                "picture.png",
+                [0., 0., 1., 1.],
+            )
+            .unwrap();
+            assert!(Arc::ptr_eq(&image, &cached));
+            assert_eq!(cache.bytes, MAX_BYTES);
+            assert!(frame.commands.is_empty());
+        }
+    }
+
+    #[test]
+    fn complete_png_with_invalid_zip_crc_is_never_published_or_cached() {
+        let (png, rgba) = picture();
+        for method in [zip::CompressionMethod::Stored, zip::CompressionMethod::Zstd] {
+            let (_temp, mut package) = fixture(&png, method, true);
+            package.mark_verified();
+            let mut cache = Cache::default();
+            let frame = Frame::default();
+            for _ in 0..2 {
+                assert!(
+                    asset(
+                        &mut package,
+                        &mut cache,
+                        &frame,
+                        "picture.png",
+                        [0., 0., 1., 1.]
+                    )
+                    .is_none(),
+                    "{method:?}"
+                );
+                assert_eq!((cache.bytes, cache.entries.len()), (0, 0));
+                assert!(frame.commands.is_empty());
+            }
+            let valid = asset(
+                &mut package,
+                &mut cache,
+                &frame,
+                "next.png",
+                [0., 0., 1., 1.],
+            )
+            .unwrap();
+            assert_eq!(
+                valid.pixels(),
+                rgba,
+                "a failed member must not poison the next read"
+            );
+        }
+    }
+
+    #[test]
+    fn image_reads_require_verified_paths_and_available_frame_budget() {
+        let (png, _) = picture();
+        let (_temp, mut package) = fixture(&png, zip::CompressionMethod::Zstd, false);
+        let mut cache = Cache::default();
+        let mut frame = Frame::default();
+        assert!(asset(
+            &mut package,
+            &mut cache,
+            &frame,
+            "picture.png",
+            [0., 0., 1., 1.]
+        )
+        .is_none());
+        package.mark_verified();
+        for path in [
+            "../picture.png",
+            "assets/picture.png",
+            "C:picture.png",
+            "picture.png/..",
+            "missing.png",
+        ] {
+            assert!(asset(&mut package, &mut cache, &frame, path, [0., 0., 1., 1.]).is_none());
+        }
+        let image = Arc::new(Image::new(512, 512, &vec![0; MAX_BYTES]).unwrap());
+        for _ in 0..crate::drawing::MAX_IMAGE_BYTES / MAX_BYTES {
+            assert!(frame.image_arc(0., 0., 1., 1., image.clone(), false));
+        }
+        assert!(asset(
+            &mut package,
+            &mut cache,
+            &frame,
+            "picture.png",
+            [0., 0., 1., 1.]
+        )
+        .is_none());
+        assert_eq!((cache.bytes, cache.entries.len()), (0, 0));
+        frame.reset();
+        assert!(asset(
+            &mut package,
+            &mut cache,
+            &frame,
+            "picture.png",
+            [0., 0., 1., 1.]
+        )
+        .is_some());
+    }
+
+    #[test]
+    #[ignore = "maintainer cold-image throughput measurement; no timing assertion"]
+    fn cold_compressed_image_read_measurement() {
+        let (png, rgba) = picture();
+        for method in [zip::CompressionMethod::Stored, zip::CompressionMethod::Zstd] {
+            let (_temp, mut package) = fixture(&png, method, false);
+            package.mark_verified();
+            let frame = Frame::default();
+            let mut samples = Vec::new();
+            for _ in 0..30 {
+                let mut cache = Cache::default();
+                let start = std::time::Instant::now();
+                let image = asset(
+                    &mut package,
+                    &mut cache,
+                    &frame,
+                    "picture.png",
+                    [0., 0., 1., 1.],
+                )
+                .unwrap();
+                samples.push(start.elapsed().as_micros());
+                assert_eq!(image.pixels(), rgba);
+            }
+            samples.sort_unstable();
+            println!(
+                "{method:?}: encoded={} samples={} min_us={} median_us={} max_us={}",
+                png.len(),
+                samples.len(),
+                samples[0],
+                samples[samples.len() / 2],
+                samples[samples.len() - 1]
+            );
+        }
+    }
 }

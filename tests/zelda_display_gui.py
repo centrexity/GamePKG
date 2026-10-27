@@ -31,7 +31,11 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-display-gui-') as temporary:
             deadline=time.monotonic()+15
             while True:
                 entries=values()
-                if list(entries.values())==expected:return
+                if list(entries.values())==expected:
+                    # The worker commits the file before the UI consumes its
+                    # completion. Wait for the visible, enabled form as well.
+                    click_text(window,environment,'Display settings saved',root,click=False)
+                    return
                 if time.monotonic()>=deadline:
                     subprocess.run(['import','-display',environment['DISPLAY'],'-window',window,'/tmp/gamepkg-display-save-failure.png'],env=environment,check=True)
                     raise AssertionError((entries,expected))
@@ -43,8 +47,18 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-display-gui-') as temporary:
                 subprocess.run(['import','-display',environment['DISPLAY'],'-window',window,str(shot)],env=environment,check=True)
                 text=subprocess.check_output(['tesseract',str(shot),'stdout','--psm','11'],stderr=subprocess.DEVNULL,text=True)
                 if re.search(pattern,text,re.I):return
-                assert time.monotonic()<deadline,(pattern,text)
+                if time.monotonic()>=deadline:
+                    shutil.copy2(shot,project/'target/zelda-display-failure.png')
+                    diagnostic={'expected_visible':pattern,'observed_text':text,'saved_selections':values()}
+                    (project/'target/zelda-display-failure.json').write_text(json.dumps(diagnostic,indent=2))
+                    raise AssertionError(diagnostic)
                 time.sleep(.1)
+        def select_view(window,current,choice):
+            click_text(window,environment,current,root)
+            # Observe the popup before searching for its option. Otherwise a
+            # failed opening can scroll the underlying form instead.
+            wait_visible(window,r'Widest\s+view')
+            click_text(window,environment,choice,root)
         def image_size(window,width,height):
             click_text(window,environment,'Game image:',root,click=False)
             subprocess.run(['xdotool','mousemove','--window',window,'1300','60'],env=environment,check=True);time.sleep(.2)
@@ -62,15 +76,15 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-display-gui-') as temporary:
         click_text(window,environment,'Save display settings',root)
         wait_value([{'extra_width':32,'extend_height':False,'no_sprite_limits':True,'dim_flashes':True,'skip_intro_on_keypress':True,'enhancements':{'item_switch_lr':True,'item_switch_lr_limit':True,'disable_low_health_beep':True,'cancel_bird_travel':True}}])
         stop();window=launch();click_text(window,environment,'Custom',root,click=False);image_size(window,320,224)
-        click_text(window,environment,'Custom',root);click_text(window,environment,'Widescreen',root)
+        select_view(window,'Custom','Widescreen')
         click_text(window,environment,'Extended vertical view',root);image_size(window,426,240)
         click_text(window,environment,'Save display settings',root)
         expected=[{'extra_width':85,'extend_height':True,'no_sprite_limits':True,'dim_flashes':True,'skip_intro_on_keypress':True,'enhancements':{'item_switch_lr':True,'item_switch_lr_limit':True,'disable_low_health_beep':True,'cancel_bird_travel':True}}];wait_value(expected)
         # A change without Save must not leak into the stored launch preference.
-        click_text(window,environment,'Widescreen',root);click_text(window,environment,'Original width',root)
+        select_view(window,'Widescreen','Original width')
         assert list(values().values())==expected
         stop();window=launch();click_text(window,environment,'Widescreen',root,click=False);image_size(window,426,240)
-        click_text(window,environment,'Widescreen',root);wait_visible(window,r'Widest\s+view');click_text(window,environment,'Package default',root)
+        select_view(window,'Widescreen','Package default')
         image_size(window,320,224);click_text(window,environment,'Save display settings',root);wait_value([])
         stop();window=launch();click_text(window,environment,'Package default',root,click=False);image_size(window,320,224)
         print('Real GUI: independent presentation and gameplay toggles, preserved custom width, widescreen/extended selection, explicit save, unsaved change, restart and package-default reset passed.',flush=True)
