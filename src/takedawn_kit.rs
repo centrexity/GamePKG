@@ -92,7 +92,7 @@ impl SourceKit {
                 && manifest.toolkit_commit
                     == lock["toolkit"]["commit"].as_str().unwrap_or_default()
                 && manifest.generated_game_functions == 24003
-                && manifest.native_exports == 24032,
+                && matches!(manifest.native_exports, 24032 | 24035),
             "unsupported source-kit revision"
         );
         ensure!(
@@ -182,9 +182,18 @@ impl SourceKit {
 mod tests {
     use super::*;
     fn fixture(name: &str, payload: &[u8], extra: bool, link: bool) -> Vec<u8> {
+        fixture_with_exports(name, payload, extra, link, 24032)
+    }
+    fn fixture_with_exports(
+        name: &str,
+        payload: &[u8],
+        extra: bool,
+        link: bool,
+        native_exports: u32,
+    ) -> Vec<u8> {
         let lock: serde_json::Value =
             serde_json::from_str(include_str!("../engines/takedawn/upstream-lock.json")).unwrap();
-        let manifest = serde_json::json!({"format":"gamepkg-takedawn-source-kit-v1", "game_commit":lock["game"]["commit"],"toolkit_commit":lock["toolkit"]["commit"],"generated_game_functions":24003,"native_exports":24032,"omitted_maintainer_fixtures":["toolkit/tools/conformance/test.xbe"],"files":{name:{"sha256":crate::verify::digest(payload),"bytes":payload.len(),"mode":420}}});
+        let manifest = serde_json::json!({"format":"gamepkg-takedawn-source-kit-v1", "game_commit":lock["game"]["commit"],"toolkit_commit":lock["toolkit"]["commit"],"generated_game_functions":24003,"native_exports":native_exports,"omitted_maintainer_fixtures":["toolkit/tools/conformance/test.xbe"],"files":{name:{"sha256":crate::verify::digest(payload),"bytes":payload.len(),"mode":420}}});
         let gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
         let mut tar = tar::Builder::new(gz);
         let mut append = |name: &str, data: &[u8], symlink: bool| {
@@ -238,6 +247,23 @@ mod tests {
         let mut file = tempfile::NamedTempFile::new().unwrap();
         file.write_all(&bytes).unwrap();
         assert!(SourceKit::open(file.path(), &"0".repeat(64)).is_err());
+    }
+    #[test]
+    fn only_known_native_export_inventories_are_supported() {
+        for exports in [24032, 24035] {
+            let bytes =
+                fixture_with_exports("prepared/src/one.rs", b"source", false, false, exports);
+            assert!(open(&bytes).is_ok());
+        }
+        for exports in [0, 24030, 24031, 24033, 24034, 24036, u32::MAX] {
+            let bytes =
+                fixture_with_exports("prepared/src/one.rs", b"source", false, false, exports);
+            assert!(open(&bytes)
+                .err()
+                .expect("unknown native inventory was accepted")
+                .to_string()
+                .contains("unsupported source-kit revision"));
+        }
     }
     #[test]
     fn unsafe_inventory_paths_and_generated_c_are_rejected() {
@@ -295,7 +321,11 @@ mod tests {
             fs::read_dir(kit.directory().join("prepared/src"))
                 .unwrap()
                 .count(),
-            487
+            if retained.native_exports == 24035 {
+                488
+            } else {
+                487
+            }
         );
         assert!(kit
             .directory()
@@ -305,5 +335,15 @@ mod tests {
             .directory()
             .join("prepared/src/gamepkg_native_mxcsr.rs")
             .is_file());
+        if retained.native_exports == 24035 {
+            assert!(kit
+                .directory()
+                .join("prepared/src/gamepkg_native_privileged.rs")
+                .is_file());
+            assert!(kit
+                .directory()
+                .join("host/engines/takedawn/rust-port/native_irq.inc.h")
+                .is_file());
+        }
     }
 }
