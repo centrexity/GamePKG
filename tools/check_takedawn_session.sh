@@ -89,7 +89,7 @@ start() {
             --setenv HOME /state/home --setenv WINEPREFIX /state/wine-prefix --setenv WINEARCH win64
             --setenv WINEDEBUG -all --setenv WINEDLLOVERRIDES 'mscoree,mshtml='
             --setenv GAMEPKG_TAKEDAWN_DISC 'Z:\disc.iso'
-            --setenv RECOMP_FB_DUMP_FLIPS 120 --setenv RECOMP_STUB_LOG 1)
+            --setenv RECOMP_FB_DUMP_FLIPS 120)
         task_command=(/usr/bin/wine "/engine-dir/$(basename -- "$task_binary")" --headless /gamepkg-disc/default.xbe)
     fi
     timeout --signal=TERM --kill-after=5s 100s bwrap --die-with-parent --unshare-net --clearenv \
@@ -100,7 +100,7 @@ start() {
         --setenv PATH /usr/bin:/bin --setenv LANG C.UTF-8 \
         --setenv GAMEPKG_TAKEDAWN_DISC /disc.iso --setenv RECOMP_SAVE_DIR /state/saves \
         --setenv XDG_DATA_HOME /state/data --setenv XDG_CACHE_HOME /state/cache \
-        --setenv RECOMP_PB_BACKEND vulkan --setenv SDL_AUDIODRIVER dummy \
+        --setenv RECOMP_PB_BACKEND vulkan --setenv RECOMP_STUB_LOG 1 --setenv SDL_AUDIODRIVER dummy \
         --setenv RECOMP_FLIP_MARK 1 --setenv RECOMP_PAD_LIVE /state/pad.txt \
         --setenv RECOMP_FB_DUMP "/state/$task_phase-frame-" --setenv RECOMP_PB_REPORT_MS 5000 \
         "${task_audio[@]}" "${task_platform[@]}" "${task_command[@]}" > "$task_log" 2>&1 &
