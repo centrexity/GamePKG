@@ -33,6 +33,20 @@ score, medal, unlock, event time limit or save result is injected. All four proc
 dummy audio and pass the actual-Vulkan and unsupported-path gates. These are
 scoped campaign checks, not verification of all 173 events.
 
+A separate current-v14 run disables the title's debug AI and uses normal steering,
+accelerator and boost inputs. It earns the original Downtown Road Rage1 Bronze
+medal with one event takedown, 400 points and two newly unlocked events. The
+original Totaled result, Continue, autosave, points breakdown and map all run.
+A fresh process shows the bronze icon beside Road Rage1, 2/173 completed events,
+1,535 global points and two total takedowns. The earned profile and metadata
+remain byte-for-byte unchanged through cold loading. Both processes exit zero
+with actual-Vulkan and strict unsupported-path gates enabled and dummy audio.
+The driver uses the original pause/resume menus between reviewed actions, then
+holds normal acceleration continuously to the natural finish. It writes no game
+memory, score, event timer, medal, unlock or result. This qualifies that medal and
+persistence path; it does not establish an entirely uninterrupted real-time event,
+higher medal tiers, all campaign events or physical controller behavior.
+
 The complete v14 Windows archive also builds with actual standalone Windows
 Rust under Wine. Its linked executable has SHA-256
 `4467bfd5ae1b91565a99cd06792d6695bc2d61e22626f62f4e6b5dbd66ae6540`.
@@ -42,26 +56,25 @@ normal close. It finishes an original three-lap Race, fifth of six in 345.483
 seconds, with a best lap of 108.517 seconds. Traps, actual-Vulkan and unsupported
 path gates are enabled. Wine does not establish physical Windows game behavior.
 
-Actual Windows/macOS host validation passes at `03c8768` in
-[run 40465504287](https://github.com/centrexity/GamePKG/actions/runs/40465504287).
-Across the host test binaries, Windows reports 705 passes and 134 explicit
-ignores; macOS reports 724 passes and 134 ignores. Neither has a test failure.
-The Windows library subset reports 340 passes and nine ignores. Both hosts
-pass strict lint, and Windows passes managed SDK setup, isolated playback,
-the optional WSL profile checks and verified ZIP packaging. The new Windows
-compiler-cache storage regression and default-off watchdog persistence pass.
-These results do not turn ignored platform/fixture tests into qualifications. The
-focused [confined Windows window gate](https://github.com/centrexity/GamePKG/actions/runs/40456563923)
-at `658a9c8` also passes: its exact asset-free test creates, shows and destroys
-real windows across two managed-restart launches and a default-watchdog launch.
-It uses the production owner, synthetic media and no WSL. This is basic Win32
-window access, not original-game SDL/Vulkan/audio/controller qualification.
+Actual Windows/macOS host validation passes at app `f87f383` in
+[run 40581542080](https://github.com/centrexity/GamePKG/actions/runs/40581542080).
+Both hosts pass their test and strict lint jobs. Windows also passes managed
+standalone SDK setup, isolated playback fixtures, optional WSL profile checks
+and verified ZIP packaging. These host fixtures do not establish original-game
+SDL/Vulkan/audio/controller behavior on physical Windows hardware.
+The focused [confined Windows window gate](https://github.com/centrexity/GamePKG/actions/runs/40581541946)
+also passes at that app revision. It uses production ownership with synthetic
+media and no WSL, including the default-off watchdog launch.
 
-The current private Windows hardware bundle uses app `03c8768` and the signed
-v14/0.1.3 recipe with a separate preview library/settings. All 18,480 app files
-match its verified native Windows ZIP. It includes the native Windows storage
-and game-window color fixes, the default-off watchdog and no
-ISO, private signing key or prebuilt CPU-specific game. The full v14 native
+The current private Windows hardware bundle uses app `f87f383`, ports `e230359`
+and the signed v14/0.1.3 recipe with separate preview library/settings. All 18,593
+app files match its verified native Windows ZIP, and all 178 bundled port PNGs
+match the reviewed source. It includes the native Windows storage and window
+color fixes and default-off watchdog. It contains no ISO, private signing key or
+prebuilt CPU-specific game. Its complete ZIP SHA-256 is
+`19f9a53d9f84c468c003f71f82ef5174c02f7d2cf171951224b49d1f3936c676`.
+This is a private hardware-test bundle, not a stable release qualification.
+The full v14 native
 Windows signed Build/repair gate passes on actual Windows in
 [run 40446319498](https://github.com/centrexity/GamePKG/actions/runs/40446319498):
 all 487 units build with native optimization, the library recognizes the built
