@@ -465,3 +465,26 @@ invalid driver assumption was identified; its reference profile remained
 unchanged. Enabling that debug flag is not evidence of multiplayer driving.
 A completion check still needs a reviewed ordinary-input driver; production
 AI guards, scores and results must not be patched to manufacture qualification.
+
+## Ordinary Windows source compiler diagnostic
+
+This is separate from the passing signed v15 prepared-game Build/repair and the
+immutable v15b hardware preview. Ordinary Windows source-game support remains
+disabled while its standalone compiler is being qualified.
+
+[Paired Windows controls](https://github.com/centrexity/GamePKG/actions/runs/40651190995)
+at `7441a6c` show the pinned LLD version probe succeeds outside confinement with
+the same cleared environment, but fails inside AppContainer with either regular
+file or private-pipe output. Output writer read-attribute rights do not fix it.
+[Focused path checks](https://github.com/centrexity/GamePKG/actions/runs/40651991680)
+at `0c5c292` show `GetLongPathNameW` returns access denied for both ordinary and
+extended paths, including the probe's own executable. LLVM's Windows startup
+uses this lookup before processing linker inputs. An ordinary image path also
+fails; no relaxation of confinement or compiler fallback has been added.
+The [ancestor diagnostic](https://github.com/centrexity/GamePKG/actions/runs/40652577335)
+at `ba013a0` returns the same access-denied result for every ancestor through
+`C:\`. The compiler fix remains unqualified; no ancestor ACLs are widened.
+
+The optional watchdog remains off by default. Its exact settings persistence and
+validation regression passes locally; both above Windows runs pass the separate
+real-window/default-off watchdog test before reaching the compiler failure.
