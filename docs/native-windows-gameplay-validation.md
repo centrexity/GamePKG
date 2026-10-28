@@ -901,3 +901,47 @@ Linux with all features/targets and for both Windows GNU executable widths.
 Actual Windows normal-loader and game-window qualification remains required
 before treating the draft as complete. No stable release or preview replacement
 is made by these changes.
+
+
+The normal-launcher revision `a9730aa` now passes its actual Windows x64
+compiler/link/worker/normal-Game-loader job (`123162507564`, run `40786978771`).
+The 2,004-byte evidence archive `12860172001` matches SHA-256
+`0add180c07e5f39e24f3d232fb4d4f87a1edb48d0914983ec3fa2f2e2d51eda2`;
+both expected log entries and ZIP CRCs verify. It includes the explicit
+qualified-profile admission controls and the complete normal-loader marker,
+including populated-checkpoint reload and increasing play history. The i686 job also passes: its 2,010-byte archive `12860292535` matches
+SHA-256 `858c0f65e074213b58a7d2337c4cd1ad0a57c3d9b3262acbdd59a3520448da55`,
+with both logs, ZIP CRCs, admission controls and normal-loader markers verified.
+Both are actual Windows tests; the i686 executable runs on a 64-bit OS.
+
+The Windows graphics workflow now adds `tests/windows_doom_gui.py` after the
+existing exact shader/viewport checks. It builds the signed DOOM recipe through
+the normal default CLI Build, rejects implicit Wasm output, and opens the normal
+GUI with a private remembered path to the separately pinned public Freedoom WAD.
+Each OpenGL/Vulkan first launch and restart checks visible colored gameplay,
+physical keyboard movement/save-name input, a populated original checkpoint,
+original F11 gamma persistence without changing window size, resize, normal
+close and increasing history. Only the process/window created by the fixture
+receives input or capture. Audio stays muted, selected WAD bytes stay unchanged,
+and no test hook is added to the app. The Win32 save-file reader shares delete
+access so observing an atomic save cannot block its replacement.
+
+Five local verifier controls reject configuration-only bundles, malformed or
+oversized entries, missing/duplicate/invalid gamma, blank/gray output, thumbnail
+output and nonblack letterbox pixels. These controls and Python/YAML syntax
+checks pass locally. The new actual Windows GUI gate is pending. Its captures
+qualify presentation/input integration, not independent pixel-perfect game
+fidelity or physical GPU/audio/controller behavior; existing exact shader and
+original-engine reference comparisons remain separate requirements. Python and
+Pillow are maintainer tools only.
+
+
+The complete `03e4378` portability run `40785617177` now reports success for
+Linux32, Windows32 and Android32. The Windows runtime-stage log explicitly
+executes the independent MPFR test and original procedural-scene suite; the
+previous five Windows32 differences are fixed without changing expected scenes
+or tolerances. The Windows job also completes the standalone compiler/worker,
+matching CLI/GUI build, relocated binary checks and package. Its terminal job
+and log are independently retained; this is not a physical 32-bit OS claim.
+Linux32 and Android32 terminal results still require their separate detailed
+log audit before using them as expanded qualification evidence.
