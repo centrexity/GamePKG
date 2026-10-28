@@ -3,6 +3,24 @@
 use super::*;
 use windows_sys::Win32::System::JobObjects::JOB_OBJECT_LIMIT_ACTIVE_PROCESS;
 
+fn require_profile_environment(values: &[(OsString, OsString)]) -> io::Result<()> {
+    // AppContainer startup resolves its profile through LOCALAPPDATA. Keep the
+    // required OS paths explicit instead of restoring the inherited environment.
+    // https://learn.microsoft.com/windows/win32/secauthz/implementing-an-appcontainer
+    for required in [b"LOCALAPPDATA".as_slice(), b"SystemRoot"] {
+        let value = values
+            .iter()
+            .find(|(key, _)| key.as_encoded_bytes().eq_ignore_ascii_case(required))
+            .map(|(_, value)| value);
+        if !value.is_some_and(|value| Path::new(value).is_absolute()) {
+            return Err(invalid(
+                "confined workers require explicit absolute LOCALAPPDATA and SystemRoot paths",
+            ));
+        }
+    }
+    Ok(())
+}
+
 pub struct WorkerProcess {
     process: Process,
     io: WorkerPipe,
@@ -62,6 +80,9 @@ impl WorkerProcess {
     ) -> io::Result<Self> {
         if !executable.is_absolute() || !cwd.is_absolute() {
             return Err(invalid("worker executable and directory must be absolute"));
+        }
+        if sandbox.is_some() {
+            require_profile_environment(values)?;
         }
         let bytes = usize::try_from(memory_limit_bytes)
             .map_err(|_| invalid("worker memory limit exceeds this process architecture"))?;
@@ -285,8 +306,11 @@ mod tests {
             ("GP_STDIO_CHILD".into(), "1".into()),
             ("GP_DENIED_FILE".into(), secret.as_os_str().to_owned()),
         ];
-        if let Some(root) = std::env::var_os("SystemRoot") {
-            values.push(("SystemRoot".into(), root));
+        for key in ["SystemRoot", "LOCALAPPDATA"] {
+            values.push((
+                key.into(),
+                std::env::var_os(key).expect("native Windows profile environment"),
+            ));
         }
         for mode in ["control", "worker", "tool"] {
             let mut values = values.clone();
@@ -318,7 +342,7 @@ mod tests {
                     128 * 1048576,
                 ),
             }
-            .unwrap();
+            .unwrap_or_else(|error| panic!("worker launch mode {mode}: {error}"));
             let (process, mut pipe, mut errors) = worker.into_parts();
             let end = Instant::now() + Duration::from_secs(10);
             let mut header = Vec::new();
@@ -362,5 +386,25 @@ mod tests {
         assert_eq!(environment_block(&[], None, None).unwrap(), [0, 0]);
         let env = environment_block(&[("MODE".into(), "native".into())], None, None).unwrap();
         assert_eq!(String::from_utf16(&env).unwrap(), "MODE=native\0\0");
+    }
+    #[test]
+    fn confined_worker_requires_only_explicit_profile_paths() {
+        assert!(require_profile_environment(&[]).is_err());
+        assert!(
+            require_profile_environment(&[("SystemRoot".into(), r"C:\Windows".into())]).is_err()
+        );
+        assert!(require_profile_environment(&[
+            ("SystemRoot".into(), r"C:\Windows".into()),
+            ("LOCALAPPDATA".into(), "relative".into())
+        ])
+        .is_err());
+        assert!(require_profile_environment(&[
+            ("systemroot".into(), r"C:\Windows".into()),
+            (
+                "localappdata".into(),
+                r"C:\Users\Tester\AppData\Local".into()
+            )
+        ])
+        .is_ok());
     }
 }
