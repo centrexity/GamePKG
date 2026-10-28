@@ -6,7 +6,7 @@ use anyhow::{ensure, Context, Result};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fs,
     io::{Read, Seek},
     path::{Path, PathBuf},
@@ -50,6 +50,8 @@ struct Download {
 #[derive(Clone)]
 enum Layout {
     Zip(usize),
+    // Only the pinned Microsoft DXC SDK uses vendor Windows separators.
+    WindowsZip,
     Tar(usize),
     Rust(String),
 }
@@ -200,6 +202,25 @@ fn relative(name: &str, strip: usize) -> Result<Option<String>> {
     }
     Ok(Some(parts[strip..].join("/")))
 }
+// Vendor-specific normalization happens before the same strict portable path
+// validation. Never apply this to game packages or ordinary ZIP toolchains.
+fn windows_zip_name(raw: &str) -> Result<String> {
+    ensure!(
+        !raw.starts_with(['/', '\\']),
+        "absolute Windows SDK archive path"
+    );
+    let normalized = raw.replace('\\', "/");
+    let name = normalized
+        .split('/')
+        .filter(|p| !p.is_empty())
+        .collect::<Vec<_>>()
+        .join("/");
+    ensure!(
+        crate::archive::valid_path(&name),
+        "unsafe Windows SDK archive path: {raw}"
+    );
+    Ok(name)
+}
 fn publish_file(
     root: &Path,
     name: &str,
@@ -260,10 +281,22 @@ fn unpack_zip(
 ) -> Result<()> {
     let mut zip = zip::ZipArchive::new(reader)?;
     ensure!(zip.len() <= MAX_FILES, "SDK archive has too many members");
+    let windows = matches!(part.layout, Layout::WindowsZip);
+    let mut unique = BTreeSet::new();
     for index in 0..zip.len() {
         let mut item = zip.by_index(index)?;
-        let Some(name) = relative(item.name(), strip)? else {
-            continue;
+        let name = if windows {
+            let name = windows_zip_name(item.name())?;
+            ensure!(
+                unique.insert(name.to_ascii_lowercase()),
+                "duplicate Windows SDK archive path"
+            );
+            name
+        } else {
+            let Some(name) = relative(item.name(), strip)? else {
+                continue;
+            };
+            name
         };
         let kind = item.unix_mode().unwrap_or(0) & 0o170000;
         ensure!(
@@ -378,6 +411,7 @@ fn unpack(
     file.rewind()?;
     match part.layout {
         Layout::Zip(strip) => unpack_zip(file, part, root, inventory, total, strip, names),
+        Layout::WindowsZip => unpack_zip(file, part, root, inventory, total, 0, names),
         _ => unpack_tar(file, part, root, inventory, total, names),
     }
 }
@@ -672,6 +706,62 @@ pub(crate) fn prepare_slang(root: &Path, selected: Option<&Path>) -> Result<Path
     Ok(prepare_parts(root, &parts, &identity, &expected)?.join("slang-windows"))
 }
 
+const DXC_PINS: &str = include_str!("../engines/native/windows-dxc.json");
+fn dxc_plan() -> Result<(Vec<Part>, String, String)> {
+    let pins: serde_json::Value = serde_json::from_str(DXC_PINS)?;
+    ensure!(
+        pins["version"] == "1.9.2609",
+        "DXC toolchain version differs"
+    );
+    let download: Download = serde_json::from_value(pins["windows"].clone())?;
+    ensure!(download.url == "https://github.com/microsoft/DirectXShaderCompiler/releases/download/v1.9.2609/dxc_2026_09_29.zip"
+        && download.sha256.len() == 64
+        && download.sha256.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()), "invalid Windows DXC pin");
+    let expected = pins["payload_inventory_sha256"]
+        .as_str()
+        .context("missing DXC payload inventory")?
+        .to_owned();
+    ensure!(
+        expected.len() == 64
+            && expected
+                .bytes()
+                .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()),
+        "invalid DXC payload inventory"
+    );
+    let identity =
+        crate::verify::digest(format!("GamePKG Windows DXC extraction v1\0{DXC_PINS}").as_bytes());
+    Ok((
+        vec![Part {
+            download,
+            destination: "dxc-windows".into(),
+            layout: Layout::WindowsZip,
+        }],
+        identity,
+        expected,
+    ))
+}
+
+/// Verify the complete official SDK before Slang loads any downstream DLL.
+pub(crate) fn prepare_dxc(root: &Path, selected: Option<&Path>) -> Result<PathBuf> {
+    if let Some(selected) = selected {
+        let selected = selected.canonicalize()?;
+        real_directory(&selected)?;
+        let pins: serde_json::Value = serde_json::from_str(DXC_PINS)?;
+        let expected = pins["directory_inventory_sha256"]
+            .as_str()
+            .context("missing DXC directory inventory")?;
+        let mut files = BTreeMap::new();
+        scan(&selected, &selected, &mut files, &mut 0)?;
+        ensure!(
+            payload_digest(&files)? == expected,
+            "DXC directory differs from the pinned official Windows payload"
+        );
+        return Ok(selected);
+    }
+    let (parts, identity, expected) = dxc_plan()?;
+    Ok(prepare_parts(root, &parts, &identity, &expected)?.join("dxc-windows"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -698,6 +788,107 @@ mod tests {
         prepare_slang(root.path(), Some(&installed.join("slang-windows"))).unwrap();
         std::fs::write(installed.join("slang-windows/bin/slangc.exe"), b"damaged").unwrap();
         assert!(prepare_slang(root.path(), Some(&installed.join("slang-windows"))).is_err());
+    }
+    #[test]
+    #[ignore = "requires the independently downloaded official DXC Windows ZIP"]
+    fn official_dxc_payload_installs_and_reuses_without_fetching() {
+        let archive = PathBuf::from(
+            std::env::var_os("GAMEPKG_DXC_TEST_ARCHIVE").expect("set official DXC test archive"),
+        );
+        let root = tempfile::tempdir().unwrap();
+        let (parts, identity, expected) = dxc_plan().unwrap();
+        let installed = install(root.path(), &parts, &identity, &expected, |_| {
+            Ok(archive.clone())
+        })
+        .unwrap();
+        assert_eq!(
+            install(root.path(), &parts, &identity, &expected, |_| panic!(
+                "verified cache must not fetch"
+            ))
+            .unwrap(),
+            installed
+        );
+        let selected = installed.join("dxc-windows");
+        prepare_dxc(root.path(), Some(&selected)).unwrap();
+        assert!(selected.join("bin/x64/dxcompiler.dll").is_file());
+        fs::write(selected.join("bin/x64/dxcompiler.dll"), b"damaged").unwrap();
+        assert!(prepare_dxc(root.path(), Some(&selected)).is_err());
+        install(root.path(), &parts, &identity, &expected, |_| {
+            Ok(archive.clone())
+        })
+        .unwrap();
+        prepare_dxc(root.path(), Some(&selected)).unwrap();
+    }
+    #[test]
+    fn windows_vendor_separators_do_not_allow_unsafe_paths() {
+        assert_eq!(
+            windows_zip_name(r"bin\\x64\\dxc.exe").unwrap(),
+            "bin/x64/dxc.exe"
+        );
+        for name in [
+            r"\server\share",
+            r"\?\C:\file",
+            r"C:\file",
+            r"C:file",
+            "/absolute",
+            r"root\..\escape",
+            r"root\.\file",
+            r"root\CON.txt",
+            r"root\COM¹.txt",
+            r"root\name.",
+            r"root\name ",
+            r"root\a:b",
+            "",
+            "root/../file",
+        ] {
+            assert!(windows_zip_name(name).is_err(), "{name}");
+        }
+        // Game and ordinary SDK archives continue to reject backslashes.
+        assert!(relative(r"bin\x64\dxc.exe", 0).is_err());
+        assert!(!crate::archive::valid_path(r"assets\file"));
+    }
+    #[test]
+    fn windows_vendor_zip_aliases_links_and_traversal_cannot_publish() {
+        use std::io::Write;
+        for names in [
+            vec![r"bin\..\outside"],
+            vec![r"bin\CON.txt"],
+            vec![r"bin\A.txt", "bin/a.txt"],
+            vec![r"bin\\same.txt", "bin/same.txt"],
+            vec![r"Include\a.h", r"include\b.h"],
+            vec![r"bin\link"],
+        ] {
+            let temp = tempfile::tempdir().unwrap();
+            let path = temp.path().join("sdk.zip");
+            let mut zip = zip::ZipWriter::new(fs::File::create(&path).unwrap());
+            for name in names {
+                if name.ends_with("link") {
+                    zip.add_symlink(name, "../outside", zip::write::SimpleFileOptions::default())
+                        .unwrap();
+                } else {
+                    zip.start_file(name, zip::write::SimpleFileOptions::default())
+                        .unwrap();
+                    zip.write_all(b"payload").unwrap();
+                }
+            }
+            zip.finish().unwrap();
+            let part = Part {
+                download: Download {
+                    url: "https://example.invalid/sdk.zip".into(),
+                    sha256: digest_file(&path).unwrap().sha256,
+                },
+                destination: "tools".into(),
+                layout: Layout::WindowsZip,
+            };
+            assert!(
+                install(temp.path(), &[part], "fixture", &fixture_digest(), |_| Ok(
+                    path.clone()
+                ))
+                .is_err()
+            );
+            assert!(!temp.path().join("native-sdk/fixture").exists());
+            assert!(!temp.path().join("outside").exists());
+        }
     }
     #[test]
     fn compiler_arguments_preserve_drive_unc_unicode_and_spaces() {

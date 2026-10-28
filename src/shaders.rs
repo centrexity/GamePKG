@@ -83,7 +83,7 @@ pub fn compile(
     }
     settings.validate()?;
     let (compiler, cache) = compiler_cache(root, archive, settings)?;
-    let dxc = dxc_root(settings)?;
+    let dxc = dxc_root(root, settings)?;
     let defaults = vec![Shader {
         source: "shaders/main.slang".into(),
         entry: "fragmentMain".into(),
@@ -276,18 +276,26 @@ fn run_shader(
     stage: &Path,
     args: &[OsString],
 ) -> Result<Vec<u8>> {
-    use anyhow::ensure;
     use gamepkg_takedawn_windows_runner::Sandbox;
     use std::time::{Duration, Instant};
-    ensure!(
-        dxc.is_none(),
-        "Windows DXIL requires a verified Windows DXC toolchain"
-    );
     let stage = stage.canonicalize()?;
     let compiler = compiler.canonicalize()?;
     let identity = digest(stage.as_os_str().as_encoded_bytes());
     let sandbox = Sandbox::open(&format!("GamePKG.Shader.{}", &identity[..32]))?;
     sandbox.grant_runtime(&compiler)?;
+    let mut args = args.to_vec();
+    let mut paths = vec![crate::takedawn_windows_sdk::compiler_path(
+        &compiler.join("bin"),
+    )?];
+    if let Some(dxc) = dxc {
+        let dxc = dxc.canonicalize()?;
+        sandbox.grant_runtime(&dxc)?;
+        let bin = crate::takedawn_windows_sdk::compiler_path(&dxc.join("bin/x64"))?;
+        args.push("-dxc-path".into());
+        // Slang expects the directory, not the DLL filename.
+        args.push(bin.as_os_str().to_owned());
+        paths.push(bin);
+    }
     sandbox.grant_saves(&stage)?;
     let directory = crate::takedawn_windows_sdk::compiler_path(&stage)?;
     let temporary = directory.join("tmp");
@@ -301,16 +309,13 @@ fn run_shader(
             "LOCALAPPDATA".into(),
             std::env::var_os("LOCALAPPDATA").context("Windows profile directory unavailable")?,
         ),
-        (
-            "PATH".into(),
-            crate::takedawn_windows_sdk::compiler_path(&compiler.join("bin"))?.into_os_string(),
-        ),
+        ("PATH".into(), std::env::join_paths(paths)?),
         ("TEMP".into(), temporary.as_os_str().to_owned()),
         ("TMP".into(), temporary.into_os_string()),
     ];
     crate::windows_compiler::run(
         &compiler.join("bin/slangc.exe"),
-        args,
+        &args,
         &directory,
         &values,
         &sandbox,
@@ -381,13 +386,21 @@ pub fn validate_source(bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
-fn dxc_root(settings: &Settings) -> Result<Option<PathBuf>> {
+fn dxc_root(_root: &Path, settings: &Settings) -> Result<Option<PathBuf>> {
     if settings.shader_backend != "dxil" {
         return Ok(None);
     }
     #[cfg(windows)]
     {
-        bail!("Windows DXIL requires a verified Windows DXC toolchain");
+        let selected = std::env::var_os("GAMEPKG_DXC_ROOT")
+            .map(PathBuf::from)
+            .or_else(|| {
+                (!settings.dxc_directory.is_empty()).then(|| PathBuf::from(&settings.dxc_directory))
+            });
+        Ok(Some(crate::takedawn_windows_sdk::prepare_dxc(
+            _root,
+            selected.as_deref(),
+        )?))
     }
     #[cfg(not(windows))]
     {
@@ -471,7 +484,7 @@ fn compiler_cache(root: &Path, archive: &[u8], settings: &Settings) -> Result<(P
     if !version_ok || version_text.trim() != SLANG_VERSION {
         bail!("Slang version must be exactly {SLANG_VERSION}");
     }
-    let dxc_identity = if dxc_root(settings)?.is_some() {
+    let dxc_identity = if dxc_root(root, settings)?.is_some() {
         ":dxc-1.9.2609"
     } else {
         ""
@@ -995,36 +1008,82 @@ mod platform_tests {
             .is_err());
             println!("Verified signed native {backend} shader Build, reflection/translation, native SDK request and damaged shader rejection");
         }
-        let settings = Settings::default();
-        let (compiler, _) = compiler_cache(root.path(), &archive, &settings).unwrap();
-        let stage = root.path().join("include-boundary");
-        fs::create_dir_all(&stage).unwrap();
-        let canary = root.path().join("not-granted.slang");
-        fs::write(
-            &canary,
-            "float4 privateColor() { return float4(0.75,0.5,0.25,1.0); }",
-        )
-        .unwrap();
-        fs::write(stage.join("main.slang"), format!("#include \"{}\"\n[shader(\"fragment\")] float4 fragmentMain() : SV_Target {{ return privateColor(); }}", canary.to_str().unwrap().replace('\\', "/"))).unwrap();
-        let shader = Shader {
-            source: "main.slang".into(),
-            entry: "fragmentMain".into(),
-            stage: "fragment".into(),
-        };
-        let args = shader_args(&shader, &settings, "control.spv", "control.json");
-        let mut command = std::process::Command::new(compiler.join(if cfg!(windows) {
-            "bin/slangc.exe"
+        #[cfg(windows)]
+        {
+            let settings = Settings {
+                shader_backend: "dxil".into(),
+                ..Settings::default()
+            };
+            let mut package = Package::open(&path).unwrap();
+            crate::verify::verify_embedded(&mut package).unwrap();
+            compile(root.path(), &archive, &mut package, &manifest, &settings).unwrap();
+            let (cache, _) = playback_cache(root.path(), &archive, &settings, 1).unwrap();
+            assert!(fs::read(cache.join("0.shader"))
+                .unwrap()
+                .starts_with(b"DXBC"));
+            assert!(
+                load_desktop_sources(root.path(), &archive, &manifest, &settings)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("Vulkan shaders need")
+            );
+            fs::write(cache.join("0.shader"), b"damaged DXIL").unwrap();
+            assert!(
+                compile(root.path(), &archive, &mut package, &manifest, &settings)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("shader cache is damaged")
+            );
+            println!("Verified signed confined DXIL compilation, reflection/cache, corrupt-output rejection and explicit renderer limitation; no DXIL playback claim");
+        }
+        let backends = if cfg!(windows) {
+            vec!["spirv", "dxil"]
         } else {
-            "bin/slangc"
-        }));
-        command.args(&args).current_dir(&stage);
-        let control =
-            crate::compiler::run_timed(&mut command, std::time::Duration::from_secs(20)).unwrap();
-        assert!(control.status.success(), "{}", control.stderr);
-        assert!(
-            run_shader(&compiler, None, &stage, &args).is_err(),
-            "confined Slang must not read an ungranted host include"
-        );
-        println!("Verified confined host-include denial with successful same-file unconfined control; no game media used");
+            vec!["spirv"]
+        };
+        for backend in backends {
+            let settings = Settings {
+                shader_backend: backend.into(),
+                ..Settings::default()
+            };
+            let (compiler, _) = compiler_cache(root.path(), &archive, &settings).unwrap();
+            let dxc = dxc_root(root.path(), &settings).unwrap();
+            let stage = root.path().join(format!("include-boundary-{backend}"));
+            fs::create_dir_all(&stage).unwrap();
+            let canary = root.path().join("not-granted.slang");
+            fs::write(
+                &canary,
+                "float4 privateColor() { return float4(0.75,0.5,0.25,1.0); }",
+            )
+            .unwrap();
+            fs::write(stage.join("main.slang"), format!("#include \"{}\"\n[shader(\"fragment\")] float4 fragmentMain() : SV_Target {{ return privateColor(); }}", canary.to_str().unwrap().replace('\\', "/"))).unwrap();
+            let shader = Shader {
+                source: "main.slang".into(),
+                entry: "fragmentMain".into(),
+                stage: "fragment".into(),
+            };
+            let args = shader_args(&shader, &settings, "control.spv", "control.json");
+            let mut command = std::process::Command::new(compiler.join(if cfg!(windows) {
+                "bin/slangc.exe"
+            } else {
+                "bin/slangc"
+            }));
+            command.args(&args).current_dir(&stage);
+            #[cfg(windows)]
+            if let Some(dxc) = &dxc {
+                command
+                    .arg("-dxc-path")
+                    .arg(crate::takedawn_windows_sdk::compiler_path(&dxc.join("bin/x64")).unwrap());
+            }
+            let control =
+                crate::compiler::run_timed(&mut command, std::time::Duration::from_secs(20))
+                    .unwrap();
+            assert!(control.status.success(), "{}", control.stderr);
+            assert!(
+                run_shader(&compiler, dxc.as_deref(), &stage, &args).is_err(),
+                "confined Slang must not read an ungranted host include"
+            );
+            println!("Verified confined {backend} host-include denial with successful same-file unconfined control; no game media used");
+        }
     }
 }
