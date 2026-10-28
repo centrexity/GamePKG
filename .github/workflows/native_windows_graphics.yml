@@ -13,6 +13,10 @@ on:
       - 'engines/native/**'
       - 'engines/takedawn/windows-runner/**'
       - 'tests/windows_native_gui.py'
+      - 'tests/windows_owned_window.py'
+      - 'tests/windows_doom_gui.py'
+      - 'tests/doom_gui_proof.py'
+      - 'tests/doom_gui_proof_test.py'
       - 'tests/windows_gui_support.py'
       - 'tests/windows_graphics_capture.py'
       - 'tests/reference/windows-native-graphics/**'
@@ -37,6 +41,10 @@ on:
       - 'engines/native/**'
       - 'engines/takedawn/windows-runner/**'
       - 'tests/windows_native_gui.py'
+      - 'tests/windows_owned_window.py'
+      - 'tests/windows_doom_gui.py'
+      - 'tests/doom_gui_proof.py'
+      - 'tests/doom_gui_proof_test.py'
       - 'tests/windows_gui_support.py'
       - 'tests/windows_graphics_capture.py'
       - 'tests/reference/windows-native-graphics/**'
@@ -95,6 +103,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python tests/windows_graphics_capture.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python tests/doom_gui_proof_test.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python tools/install_mesa_test.py target/release --architecture ${{ matrix.mesa }}
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify native shader textures, keyboard input, resize, restart and history
@@ -127,6 +137,19 @@ jobs:
           $log = Get-Content -Raw target/windows-gui-proof/native-vulkan.log
           foreach ($backend in @('spirv', 'wgsl')) {
             if ($log -notmatch "Verified native Windows shader texture/input/clear/resize/restart/history: $backend vulkan") { throw "Missing native $backend Vulkan qualification" }
+          }
+      - name: Verify public DOOM through default Build and owned game windows
+        shell: pwsh
+        env:
+          GAMEPKG_TEST_EXPECTED_ARCH: ${{ matrix.architecture }}
+        run: |
+          python tests/windows_doom_gui.py 2>&1 | Tee-Object -FilePath target/windows-gui-proof/doom-integration.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $log = Get-Content -Raw target/windows-gui-proof/doom-integration.log
+          foreach ($renderer in @('opengl', 'vulkan')) {
+            foreach ($launch in @('first', 'restart')) {
+              if ($log -notmatch "Verified Windows DOOM GUI: $renderer $launch;") { throw "Missing DOOM $renderer $launch integration" }
+            }
           }
       - name: Preserve native window pixels and diagnostics
         if: always()
