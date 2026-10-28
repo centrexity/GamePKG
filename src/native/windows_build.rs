@@ -405,7 +405,40 @@ fn main() {
     }
 
     fn compare_linker_controls(stage: &Path, toolchain: &Path, target: &str, linker: &Path) {
+        let probe = stage.join("path-probe.exe");
+        std::fs::copy(std::env::current_exe().unwrap(), &probe).unwrap();
+        let probe_output = run(
+            &probe,
+            &[
+                "--exact".into(),
+                "native::windows_build::tests::path_api_child_fixture".into(),
+                "--nocapture".into(),
+                "--".into(),
+                linker.as_os_str().to_owned(),
+            ],
+            stage,
+            toolchain,
+            target,
+            Instant::now() + Duration::from_secs(10),
+        )
+        .unwrap();
+        println!(
+            "Confined path API probe: {}",
+            String::from_utf8_lossy(&probe_output)
+        );
         let args: Vec<OsString> = ["-flavor", "gnu", "--version"].map(Into::into).into();
+        println!(
+            "Confined ordinary-image-path control: {:?}",
+            run(
+                &crate::takedawn_windows_sdk::compiler_path(linker).unwrap(),
+                &args,
+                stage,
+                toolchain,
+                target,
+                Instant::now() + Duration::from_secs(10),
+            )
+            .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+        );
         let (directory, values) = environment(stage, toolchain, target).unwrap();
         let mut command = std::process::Command::new(linker);
         command
@@ -464,6 +497,41 @@ fn main() {
             "Confined regular-file output control: exit={code} log={}",
             std::fs::read_to_string(log).unwrap()
         );
+    }
+
+    #[test]
+    fn path_api_child_fixture() {
+        use std::os::windows::ffi::OsStrExt;
+        let Some(path) =
+            std::env::args_os().find(|arg| arg.to_string_lossy().ends_with("rust-lld.exe"))
+        else {
+            return;
+        };
+        #[link(name = "kernel32")]
+        unsafe extern "system" {
+            fn GetLongPathNameW(input: *const u16, output: *mut u16, size: u32) -> u32;
+        }
+        for (label, path) in [
+            ("canonical", PathBuf::from(&path)),
+            (
+                "ordinary",
+                crate::takedawn_windows_sdk::compiler_path(Path::new(&path)).unwrap(),
+            ),
+            ("self", std::env::current_exe().unwrap()),
+        ] {
+            let input: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+            let mut output = [0u16; 32768];
+            // SAFETY: input is terminated; output is writable for its declared length.
+            let count = unsafe {
+                GetLongPathNameW(input.as_ptr(), output.as_mut_ptr(), output.len() as u32)
+            };
+            let error = if count == 0 {
+                Some(io::Error::last_os_error().raw_os_error())
+            } else {
+                None
+            };
+            println!("GetLongPathNameW {label}: count={count} error={error:?}");
+        }
     }
 
     fn signed_package_uses_generated_sdk(root: &Path, settings: &crate::settings::Settings) {
