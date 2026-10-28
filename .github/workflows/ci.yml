@@ -432,6 +432,9 @@ jobs:
       - name: Shared signed native SDK assets and persistent saves
         if: matrix.features == '--all-features'
         run: sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" cargo test --locked --all-features --lib native::signed_fixture::signed_native_sdk_assets_saves_and_integrity -- --ignored --exact --nocapture
+      - name: Shared signed native shader build and host include denial
+        if: matrix.features == '--all-features'
+        run: sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" cargo test --locked --all-features --lib shaders::platform_tests::signed_native_shader_builds_and_denied_host_include -- --ignored --exact --nocapture
       - name: Signed native core and component recorded-effect playback
         if: matrix.features == '--all-features'
         run: sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tools/check_effect_sdk.py

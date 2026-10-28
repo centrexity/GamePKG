@@ -7,6 +7,14 @@ use std::path::{Path, PathBuf};
 const MAX_CALLS_PER_TICK: usize = 8192;
 #[cfg(any(target_os = "linux", windows))]
 mod build;
+#[cfg(all(test, any(target_os = "linux", all(windows, target_arch = "x86_64"))))]
+pub(crate) fn compile_with_settings(
+    root: &Path,
+    id: &str,
+    settings: &crate::settings::Settings,
+) -> Result<()> {
+    build::compile_with_settings(root, id, settings)
+}
 #[cfg(any(target_os = "linux", windows))]
 mod session;
 #[cfg(all(test, any(target_os = "linux", windows)))]
@@ -108,6 +116,7 @@ fn sdk_identity() -> &'static str {
         #[cfg(windows)]
         {
             hash.update(include_str!("windows_build.rs").as_bytes());
+            hash.update(include_str!("../windows_compiler.rs").as_bytes());
             hash.update(include_str!("../../engines/native/windows-rust.json").as_bytes());
             hash.update(include_str!("../takedawn/windows_build.rs").as_bytes());
             hash.update(crate::takedawn::build::SDK.as_bytes());

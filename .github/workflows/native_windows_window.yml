@@ -5,6 +5,9 @@ on:
       - 'src/takedawn/windows_player.rs'
       - 'src/takedawn/path_audit.rs'
       - 'src/native/**'
+      - 'src/shaders.rs'
+      - 'src/windows_compiler.rs'
+      - 'src/lib.rs'
       - 'src/takedawn_windows_sdk.rs'
       - 'engines/native/**'
       - 'engines/takedawn/windows-runner/**'
@@ -16,6 +19,9 @@ on:
       - 'src/takedawn/windows_player.rs'
       - 'src/takedawn/path_audit.rs'
       - 'src/native/**'
+      - 'src/shaders.rs'
+      - 'src/windows_compiler.rs'
+      - 'src/lib.rs'
       - 'src/takedawn_windows_sdk.rs'
       - 'engines/native/**'
       - 'engines/takedawn/windows-runner/**'
@@ -82,6 +88,13 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $log = Get-Content -Raw "$env:RUNNER_TEMP/native-source-compiler.log"
           if ($log -notmatch 'test result: ok\. 1 passed; 0 failed;') { throw 'The exact native source compiler/worker test did not run successfully' }
+      - name: Verify signed native Slang builds and denied host includes
+        shell: pwsh
+        run: |
+          cargo test --locked --lib shaders::platform_tests::signed_native_shader_builds_and_denied_host_include -- --ignored --exact --nocapture 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP/native-shader-compiler.log"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $log = Get-Content -Raw "$env:RUNNER_TEMP/native-shader-compiler.log"
+          if ($log -notmatch 'test result: ok\. 1 passed; 0 failed;') { throw 'The exact signed native shader/compiler test did not run successfully' }
       - name: Preserve the media-free window and ownership test log
         if: always()
         uses: actions/upload-artifact@v4
@@ -90,5 +103,6 @@ jobs:
           path: |
             ${{ runner.temp }}/native-window.log
             ${{ runner.temp }}/native-source-compiler.log
+            ${{ runner.temp }}/native-shader-compiler.log
           retention-days: 7
           if-no-files-found: warn
