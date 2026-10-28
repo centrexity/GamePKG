@@ -555,11 +555,40 @@ Rust game/compiler remain 32-bit. Genuinely 32-bit Windows can use shader-free
 source builds, but still needs a suitable shader compiler before shader support
 can be qualified there. These hosted 32-bit processes run on a 64-bit OS.
 
-Windows DXIL setup, physical GPU/input/audio and full original-game fidelity stay
-open. A private audit verifies Microsoft's DXC 1.9.2609 Windows ZIP and its 33
-files. Its Windows separator layout is not yet part of the production installer.
+At that head, Windows DXIL setup, physical GPU/input/audio and full original-game
+fidelity stayed open. The initial private audit verified Microsoft's DXC 1.9.2609
+Windows ZIP and its 33 files, before production installer integration.
 A headless Wine prototype compiles DXIL and Metal using Slang's explicit DXC
 *directory* option; the earlier full-DLL-path load failures are retained. That
 prototype does not qualify DXIL in AppContainer or production playback. The
 existing immutable v15b hardware preview remains unchanged and does not include
 these newer ordinary-source features. No whole-game 487-unit build is repeated.
+
+
+### Confined Windows DXIL compilation
+
+[Run 40676730080](https://github.com/centrexity/GamePKG/actions/runs/40676730080)
+passes at `f0d1dc3278265b53ccb68cd374207e3235b5d954`. Both PE32 and PE64 app/game
+jobs on AMD64 Windows retain the source and three desktop shader regressions,
+then compile signed DXIL through Slang and the pinned Microsoft DXC 1.9.2609 SDK
+inside the same AppContainer/owned job. They verify DXBC output and reflection,
+cache publication, corrupt DXIL cache rejection on recompilation and the explicit
+unsupported-renderer message. Ungranted host includes fail for both SPIR-V and
+DXIL, while each same-file deliberate unconfined control succeeds.
+
+The vendor-specific DXC ZIP rule normalizes Windows separators before strict
+portable validation. It is confined to that pinned SDK; ordinary tool ZIP and
+`.gamepkg` paths still reject backslashes. New fixtures reject traversal,
+reserved device names, separator/case/prefix aliases and links. Full official
+33-file installation, no-fetch reuse, selected damaged-DLL rejection and repair
+pass locally. Both Windows log archives match published sizes/SHA-256 and pass
+all CRCs with only the expected logs. This qualifies compilation and integrity,
+not DXIL playback or physical graphics/audio/controllers.
+
+`5ca7061` adds a Windows native game-window fixture before optional WSL setup in
+[the native host workflow](https://github.com/centrexity/GamePKG/actions/runs/40677284329).
+It checks native-only PE builds, GLSL/SPIR-V/WGSL texture pixels, held/released
+keyboard input, texture clearing/restoration, resize, normal close, restart and
+increasing play history under test-only software OpenGL. Syntax/YAML checks pass;
+actual Windows execution is still pending. Audio is muted; Python/Pillow are
+maintainer test tools. Physical Vulkan/audio/controllers remain separate.
