@@ -3793,6 +3793,83 @@ fn editor_toolbar_hover_uses_original_integer_boxes_and_nonmotion_retention() {
 mod dynamic_font;
 #[path = "../ports/arkanoo/source/src/dynamic_font_data.rs"]
 mod dynamic_font_data;
+#[path = "fixtures/arkanoo_unicode_raster_eager.rs"]
+#[allow(clippy::slow_vector_initialization)]
+mod unicode_raster_eager_reference;
+
+#[test]
+fn indexed_unicode_tiles_preserve_eager_pixels_across_group_edges() {
+    for sample in [
+        "jAV fi ",
+        "A\u{301}j",
+        "S\u{315}\u{327}",
+        "A\u{327}\u{328}",
+        "\u{301}\u{327}A",
+        "A\u{fe0f}\u{327}",
+        "אבג ج ",
+        "\u{2000}\u{34f}fij",
+    ] {
+        for count in [1, 63, 64, 65, 129] {
+            let text = sample.repeat(count);
+            let actual = dynamic_font::unicode_layout(&text).unwrap();
+            let expected = unicode_raster_eager_reference::unicode_layout(&text).unwrap();
+            assert_eq!(
+                (actual.width, actual.height),
+                (expected.width, expected.height)
+            );
+            for left in [
+                -257,
+                0,
+                1,
+                255,
+                256,
+                actual.width / 2,
+                actual.width - 1,
+                actual.width,
+            ] {
+                for width in [0, 1, 31, 256, 1282] {
+                    assert_eq!(
+                        dynamic_font::unicode_raster_slice(&actual, [29, 87, 201], left, width),
+                        unicode_raster_eager_reference::unicode_raster_slice(
+                            &expected,
+                            [29, 87, 201],
+                            left,
+                            width
+                        ),
+                        "sample={sample:?} count={count} left={left} width={width}",
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn maximum_centered_unicode_name_preserves_full_layout_and_viewport_pixels() {
+    let text = format!("{}x", "A\u{301}".repeat((1048576 - 225) / 3));
+    let actual = dynamic_font::unicode_layout(&text).unwrap();
+    let expected = unicode_raster_eager_reference::unicode_layout(&text).unwrap();
+    assert_eq!(
+        (actual.width, actual.height),
+        (expected.width, expected.height)
+    );
+    for left in [
+        0,
+        actual.width / 2 - 640,
+        actual.width / 2,
+        actual.width - 256,
+    ] {
+        assert_eq!(
+            dynamic_font::unicode_raster_slice(&actual, [200, 200, 200], left, 256),
+            unicode_raster_eager_reference::unicode_raster_slice(
+                &expected,
+                [200, 200, 200],
+                left,
+                256
+            ),
+        );
+    }
+}
 #[test]
 fn dynamic_unicode_font_matches_every_recorded_original_sdl_text_surface() {
     let fixture: serde_json::Value =
