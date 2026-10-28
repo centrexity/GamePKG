@@ -37,7 +37,7 @@ controls and the optional Linux compiler exchange. See [native profile boundarie
 
 The current development recipe is v15/0.1.4 and requires the 0.1.18 development app.
 Its multiplayer PS2 input fix has sanitized 32/64-bit and native reference
-pause/resume checks; the normal signed v15 build and Windows qualification are
+pause/resume plus original single-player Race/Crash checks; the normal signed v15 build and Windows qualification are
 still in progress. The v14 build/gameplay evidence below remains specific to v14.
 The published 0.1.17 app does not include this native engine. A Windows host build
 or asset-free window test does not prove original-game Vulkan/audio/controller

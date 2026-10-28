@@ -31,11 +31,20 @@ input object and relinks hash-verified existing runtime/Rust objects; it retains
 all 24,035 exports. It is not a fresh rebuild of every source file.
 Actual split-screen checks pass PS2 accelerator mapping for both players,
 held-button suppression when pause opens, and mapping restoration after Resume.
-Both Xbox and Nintendo face layouts pass with player one pausing. Player two's
-pause-owner check is recorded separately. Original Vulkan and unsupported-path
+Both Xbox and Nintendo face layouts pass with player one pausing. A separate
+completed run verifies player two owning Pause, suppressing both held buttons
+and restoring both accelerators after Resume. Original Vulkan and unsupported-path
 gates pass, with dummy audio and unchanged private references. A first helper
 assertion incorrectly excluded controller reads on the exact pause-transition
 frame; its failure and same-frame traces are preserved before the corrected run.
+
+The same incremental reference executable also passes the pinned original
+single-player Xbox Race and PS2-layout Crash assertions. Race retains countdown,
+acceleration, held-button pause/Resume and Quit/Yes. Crash retains countdown,
+accelerator response, impact/aftertouch/crashbreaker, results handover and
+Continue to the front end. These two runs pass original Vulkan/unsupported-path
+gates with dummy audio and read-only ISO access; they remain incremental
+reference evidence rather than normal signed v15 Build/Play qualification.
 
 Both app entries build and six real source-kit handoff/rejection tests pass.
 The normal unseeded signed-package v15 Build is in progress: the initial private
