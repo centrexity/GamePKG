@@ -50,7 +50,13 @@ jobs:
           PKG_CONFIG_LIBDIR: /usr/lib/i386-linux-gnu/pkgconfig
         run: cargo build --locked --release --all-features --target i686-unknown-linux-gnu --bins
       - name: Prepare pinned shader compiler for 32-bit native graphics
-        run: python3 tools/install_slang.py "$RUNNER_TEMP/gamepkg-native32-slang"
+        run: |
+          # Bubblewrap cannot traverse the runner's private _temp parents after
+          # entering its user namespace. Grant access only to this test folder.
+          native32_tools=$(mktemp -d /tmp/gamepkg-native32-tools.XXXXXXXX)
+          chmod 755 "$native32_tools"
+          python3 tools/install_slang.py "$native32_tools/slang"
+          printf 'GAMEPKG_NATIVE32_SLANG=%s/slang\n' "$native32_tools" >> "$GITHUB_ENV"
       - name: Verify actual native 32-bit OpenGL and Vulkan game windows
         run: |
           set -euo pipefail
@@ -61,10 +67,10 @@ jobs:
           if [ ! -f "$native32_icd" ]; then native32_icd=/usr/share/vulkan/icd.d/lvp_icd.json; fi
           test -f "$native32_icd"
           for backend in glsl spirv wgsl; do
-            sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-native32-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$RUNNER_TEMP/gamepkg-native32-slang" GAMEPKG_TEST_BINARY_DIR="$PWD/target/i686-unknown-linux-gnu/release" ALSA_CONFIG_PATH="$native32_proof/alsa-null.conf" SDL_AUDIODRIVER=dummy PULSE_SERVER=unix:/tmp/gamepkg-native32-no-pulse LIBGL_ALWAYS_SOFTWARE=1 python3 tests/shader_gui.py --native --texture --restart --backend "$backend" --renderer opengl --evidence-directory "$native32_proof/opengl" 2>&1 | tee "$native32_proof/opengl-$backend.log"
+            sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-native32-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_NATIVE32_SLANG" GAMEPKG_TEST_BINARY_DIR="$PWD/target/i686-unknown-linux-gnu/release" ALSA_CONFIG_PATH="$native32_proof/alsa-null.conf" SDL_AUDIODRIVER=dummy PULSE_SERVER=unix:/tmp/gamepkg-native32-no-pulse LIBGL_ALWAYS_SOFTWARE=1 python3 tests/shader_gui.py --native --texture --restart --backend "$backend" --renderer opengl --evidence-directory "$native32_proof/opengl" 2>&1 | tee "$native32_proof/opengl-$backend.log"
           done
           for backend in spirv wgsl; do
-            sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-native32-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$RUNNER_TEMP/gamepkg-native32-slang" GAMEPKG_TEST_BINARY_DIR="$PWD/target/i686-unknown-linux-gnu/release" ALSA_CONFIG_PATH="$native32_proof/alsa-null.conf" SDL_AUDIODRIVER=dummy PULSE_SERVER=unix:/tmp/gamepkg-native32-no-pulse LIBGL_ALWAYS_SOFTWARE=1 VK_DRIVER_FILES="$native32_icd" VK_ICD_FILENAMES="$native32_icd" python3 tests/shader_gui.py --native --texture --restart --backend "$backend" --renderer vulkan --evidence-directory "$native32_proof/vulkan" 2>&1 | tee "$native32_proof/vulkan-$backend.log"
+            sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-native32-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_NATIVE32_SLANG" GAMEPKG_TEST_BINARY_DIR="$PWD/target/i686-unknown-linux-gnu/release" ALSA_CONFIG_PATH="$native32_proof/alsa-null.conf" SDL_AUDIODRIVER=dummy PULSE_SERVER=unix:/tmp/gamepkg-native32-no-pulse LIBGL_ALWAYS_SOFTWARE=1 VK_DRIVER_FILES="$native32_icd" VK_ICD_FILENAMES="$native32_icd" python3 tests/shader_gui.py --native --texture --restart --backend "$backend" --renderer vulkan --evidence-directory "$native32_proof/vulkan" 2>&1 | tee "$native32_proof/vulkan-$backend.log"
           done
       - name: Preserve 32-bit native graphics and history evidence
         if: always()
