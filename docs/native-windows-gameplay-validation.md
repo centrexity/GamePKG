@@ -742,3 +742,21 @@ connection deadline, protocol/redirect rules, byte ceiling, pinned SHA-256 and
 full payload inventory verification. The eight registry integration tests pass,
 and both Windows GNU widths pass strict all-target Clippy. This timeout change
 is not evidence that the separate restricted Clang startup issue is resolved.
+
+The [paired Windows32 control](https://github.com/centrexity/GamePKG/actions/runs/40746196201)
+at `d83091e` establishes that Clang 23.1.2 starts through the private toolchain
+root under the unchanged AppContainer grants. The same frontend and cleared
+environment work outside confinement; ordinary and extended image paths both
+fail with regular-file output inside it. The private-root version probe succeeds
+with private pipes. The old final original-image assertion still fails, so this
+run does not qualify C compilation, target ABI or include denial.
+
+The following fixture retains an owned, randomly named root through those
+remaining assertions. A separate exact test checks two simultaneous roots,
+independent explicit/Drop cleanup, removal from the DOS namespace, and rejection
+of relative roots. The helper is test-only until its complete restricted compile
+and denial gates pass; no public C-engine admission changes. Both Windows GNU
+widths pass strict all-target Clippy. A private Wine API probe cannot open any
+of the three custom-device namespace forms (error 66), although exact cleanup
+succeeds. That Wine limitation is not evidence against the actual Windows
+startup result or proof of Windows process restrictions.

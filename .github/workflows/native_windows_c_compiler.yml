@@ -44,6 +44,13 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: native-windows-c-${{ matrix.target }}
+      - name: Verify private compiler roots are unique and cleaned up
+        shell: pwsh
+        run: |
+          cargo test --locked --target ${{ matrix.target }} --lib windows_compiler::private_root_tests::private_tool_roots_are_unique_and_removed_independently -- --exact --nocapture 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP/private-compiler-root.log"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $log = Get-Content -Raw "$env:RUNNER_TEMP/private-compiler-root.log"
+          if ($log -notmatch 'test result: ok\. 1 passed; 0 failed;') { throw 'The exact private-root lifecycle test did not pass' }
       - name: Verify target-sized C objects and denied host includes
         shell: pwsh
         run: |
@@ -57,6 +64,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: reviewed-c-compiler-${{ matrix.target }}
-          path: ${{ runner.temp }}/reviewed-c-compiler.log
+          path: |
+            ${{ runner.temp }}/reviewed-c-compiler.log
+            ${{ runner.temp }}/private-compiler-root.log
           retention-days: 7
           if-no-files-found: warn

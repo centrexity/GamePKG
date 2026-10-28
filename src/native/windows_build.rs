@@ -319,92 +319,6 @@ mod tests {
                 std::fs::read_to_string(output).unwrap()
             );
         }
-        // Test a unique, temporary DOS-device name rooted at the already
-        // granted toolchain. LLVM's startup expands its own image path before
-        // reading options. A private root may avoid querying ungranted parents
-        // without granting the compiler any additional host files.
-        {
-            use std::os::windows::ffi::OsStrExt;
-            #[link(name = "kernel32")]
-            unsafe extern "system" {
-                fn DefineDosDeviceW(flags: u32, name: *const u16, target: *const u16) -> i32;
-                fn QueryDosDeviceW(name: *const u16, target: *mut u16, length: u32) -> u32;
-            }
-            struct Device {
-                name: Vec<u16>,
-                target: Vec<u16>,
-                active: bool,
-            }
-            impl Device {
-                fn remove(&mut self) -> bool {
-                    if !self.active {
-                        return true;
-                    }
-                    // SAFETY: both buffers are terminated. Exact-match removal
-                    // can remove only this mapping, never another device.
-                    let removed = unsafe {
-                        DefineDosDeviceW(2 | 4 | 8, self.name.as_ptr(), self.target.as_ptr()) != 0
-                    };
-                    if removed {
-                        self.active = false;
-                    }
-                    removed
-                }
-            }
-            impl Drop for Device {
-                fn drop(&mut self) {
-                    self.remove();
-                }
-            }
-            let name = format!("GamePKGCompiler{}", &identity[..32]);
-            let mut device = Device {
-                active: false,
-                name: std::ffi::OsStr::new(&name)
-                    .encode_wide()
-                    .chain(Some(0))
-                    .collect(),
-                target: crate::takedawn_windows_sdk::compiler_path(&llvm)
-                    .unwrap()
-                    .as_os_str()
-                    .encode_wide()
-                    .chain(Some(0))
-                    .collect(),
-            };
-            let mut previous = [0u16; 32768];
-            // SAFETY: terminated name, valid writable buffer and declared length.
-            let exists = unsafe {
-                QueryDosDeviceW(
-                    device.name.as_ptr(),
-                    previous.as_mut_ptr(),
-                    previous.len() as u32,
-                )
-            };
-            assert_eq!(exists, 0, "unique test device unexpectedly exists");
-            assert_eq!(std::io::Error::last_os_error().raw_os_error(), Some(2));
-            // SAFETY: terminated buffers and a unique temporary name. No
-            // drive letter, mount point or broadcast is changed.
-            let created =
-                unsafe { DefineDosDeviceW(8, device.name.as_ptr(), device.target.as_ptr()) };
-            assert_ne!(
-                created,
-                0,
-                "temporary test device: {}",
-                std::io::Error::last_os_error()
-            );
-            device.active = true;
-            let image = PathBuf::from(format!(r"\\?\{name}\bin\clang-23.exe"));
-            let result = crate::windows_compiler::run(
-                &image,
-                &["-no-canonical-prefixes".into(), "--version".into()],
-                &directory,
-                &values,
-                &sandbox,
-                Instant::now() + Duration::from_secs(20),
-            );
-            println!("Confined private-root startup: {result:?}");
-            assert!(device.remove(), "temporary test device cleanup failed");
-            drop(device);
-        }
         match execute(&["--version".into()]) {
             Ok(output) => println!(
                 "Confined Clang default-path control: {}",
@@ -412,8 +326,27 @@ mod tests {
             ),
             Err(error) => println!("Confined Clang default-path control failed: {error:#}"),
         }
+        // The paired Windows control proves this root starts the reviewed
+        // frontend without widening ancestor ACLs. Keep it alive through every
+        // target/ABI and host-include assertion below.
+        let mut private_root = crate::windows_compiler::PrivateToolRoot::open(&llvm).unwrap();
+        let private_compiler = private_root.path().join("bin/clang-23.exe");
+        let execute = |arguments: &[OsString]| {
+            crate::windows_compiler::run(
+                &private_compiler,
+                arguments,
+                &directory,
+                &values,
+                &sandbox,
+                Instant::now() + Duration::from_secs(60),
+            )
+        };
         let version = execute(&["-no-canonical-prefixes".into(), "--version".into()])
-            .expect("confined Clang startup with explicit executable paths");
+            .expect("confined Clang startup through the private toolchain root");
+        println!(
+            "Confined private-root startup: {}",
+            String::from_utf8_lossy(&version)
+        );
         assert!(String::from_utf8_lossy(&version).contains("clang version"));
         let arguments = |input: &str, output: &str| -> Vec<OsString> {
             [
@@ -466,6 +399,7 @@ mod tests {
         let control = crate::compiler::run_timed(&mut control, Duration::from_secs(20)).unwrap();
         assert!(control.status.success(), "{}", control.stderr);
         verify_object("control.o");
+        private_root.close().unwrap();
         println!("Verified confined reviewed C compiler: {target}; correct COFF/ABI and denied host include with same-file positive control; no engine admission or game media.");
     }
 

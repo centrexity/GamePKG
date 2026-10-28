@@ -93,3 +93,126 @@ pub(crate) fn run(
     );
     Ok(diagnostics)
 }
+
+/// A temporary name rooted at an already verified toolchain. LLVM expands its
+/// image name before parsing options, so ancestors outside its granted folder
+/// must not be part of that name. This adds no ACL or process capabilities.
+#[cfg(test)]
+pub(crate) struct PrivateToolRoot {
+    path: std::path::PathBuf,
+    name: Vec<u16>,
+    target: Vec<u16>,
+    active: bool,
+}
+#[cfg(test)]
+#[link(name = "kernel32")]
+unsafe extern "system" {
+    fn DefineDosDeviceW(flags: u32, name: *const u16, target: *const u16) -> i32;
+    fn QueryDosDeviceW(name: *const u16, target: *mut u16, length: u32) -> u32;
+}
+#[cfg(test)]
+impl PrivateToolRoot {
+    pub(crate) fn open(directory: &Path) -> Result<Self> {
+        use std::os::windows::ffi::OsStrExt;
+        ensure!(
+            directory.is_absolute() && directory.is_dir(),
+            "compiler root must be an absolute directory"
+        );
+        let target = crate::takedawn_windows_sdk::compiler_path(&directory.canonicalize()?)?;
+        let mut nonce = [0u8; 16];
+        getrandom::fill(&mut nonce)
+            .map_err(|error| anyhow::anyhow!("private compiler name: {error}"))?;
+        let name = format!("GamePKGCompiler{}", hex::encode(nonce));
+        let mut root = Self {
+            path: std::path::PathBuf::from(format!(r"\\?\{name}\")),
+            name: std::ffi::OsStr::new(&name)
+                .encode_wide()
+                .chain(Some(0))
+                .collect(),
+            target: target.as_os_str().encode_wide().chain(Some(0)).collect(),
+            active: false,
+        };
+        let mut previous = [0u16; 32768];
+        // SAFETY: terminated name and writable buffer with its exact length.
+        let exists = unsafe {
+            QueryDosDeviceW(
+                root.name.as_ptr(),
+                previous.as_mut_ptr(),
+                previous.len() as u32,
+            )
+        };
+        let error = io::Error::last_os_error();
+        ensure!(
+            exists == 0 && error.raw_os_error() == Some(2),
+            "private compiler name already exists or cannot be queried: {error}"
+        );
+        // SAFETY: terminated buffers and a fresh random name. No drive letter,
+        // mount point, existing device, file grant or broadcast is changed.
+        ensure!(
+            unsafe { DefineDosDeviceW(8, root.name.as_ptr(), root.target.as_ptr()) } != 0,
+            "private compiler root: {}",
+            io::Error::last_os_error()
+        );
+        root.active = true;
+        Ok(root)
+    }
+    pub(crate) fn path(&self) -> &Path {
+        &self.path
+    }
+    pub(crate) fn close(&mut self) -> Result<()> {
+        if !self.active {
+            return Ok(());
+        }
+        // SAFETY: exact-match removal only removes our own mapping. The active
+        // flag is set only after successful creation and cleared after removal.
+        ensure!(
+            unsafe { DefineDosDeviceW(2 | 4 | 8, self.name.as_ptr(), self.target.as_ptr()) } != 0,
+            "private compiler root cleanup: {}",
+            io::Error::last_os_error()
+        );
+        self.active = false;
+        Ok(())
+    }
+}
+#[cfg(test)]
+impl Drop for PrivateToolRoot {
+    fn drop(&mut self) {
+        let _ = self.close();
+    }
+}
+
+#[cfg(test)]
+mod private_root_tests {
+    use super::*;
+    #[test]
+    fn private_tool_roots_are_unique_and_removed_independently() {
+        let temp = tempfile::tempdir().unwrap();
+        std::fs::write(temp.path().join("marker"), b"private root marker").unwrap();
+        let mut first = PrivateToolRoot::open(temp.path()).unwrap();
+        let second = PrivateToolRoot::open(temp.path()).unwrap();
+        let first_path = first.path().join("marker");
+        let second_path = second.path().join("marker");
+        assert_ne!(first.path(), second.path());
+        assert_eq!(std::fs::read(&first_path).unwrap(), b"private root marker");
+        assert_eq!(std::fs::read(&second_path).unwrap(), b"private root marker");
+        first.close().unwrap();
+        let mut mapping = [0u16; 32768];
+        // SAFETY: the name is terminated and the output buffer has its stated length.
+        let exists = unsafe {
+            QueryDosDeviceW(
+                first.name.as_ptr(),
+                mapping.as_mut_ptr(),
+                mapping.len() as u32,
+            )
+        };
+        let error = io::Error::last_os_error();
+        assert_eq!(exists, 0);
+        assert_eq!(error.raw_os_error(), Some(2));
+        assert!(!first_path.exists());
+        assert_eq!(std::fs::read(&second_path).unwrap(), b"private root marker");
+        drop(second);
+        assert!(!second_path.exists());
+        first.close().unwrap();
+        assert!(PrivateToolRoot::open(Path::new("relative")).is_err());
+    }
+}
