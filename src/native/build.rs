@@ -10,6 +10,13 @@ use std::path::PathBuf;
 use std::{fs, path::Path};
 pub(super) fn compile(root: &Path, id: &str) -> Result<()> {
     let settings = crate::settings::load()?;
+    compile_with_settings(root, id, &settings)
+}
+pub(super) fn compile_with_settings(
+    root: &Path,
+    id: &str,
+    settings: &crate::settings::Settings,
+) -> Result<()> {
     settings.validate()?;
     let _guard = crate::build::BuildChange::acquire(root, id)?;
     crate::registry::installed_manifest(root, id)?;
@@ -91,12 +98,12 @@ pub(super) fn compile(root: &Path, id: &str) -> Result<()> {
         &original,
         &mut package,
         &m,
-        &settings,
+        settings,
         stage.path(),
         needs_shaders,
     )?;
     #[cfg(windows)]
-    let binary = super::windows_build::compile(root, stage.path(), &m, &settings, needs_shaders)?;
+    let binary = super::windows_build::compile(root, stage.path(), &m, settings, needs_shaders)?;
     let bytes = crate::files::read_regular(&binary, 64 * 1048576, false)?;
     super::validate_executable(&bytes)?;
     ensure!(
