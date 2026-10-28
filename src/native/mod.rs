@@ -210,12 +210,13 @@ pub fn play_supported(manifest: &crate::manifest::Manifest) -> bool {
 }
 pub fn compile(root: &Path, id: &str) -> Result<()> {
     #[cfg(windows)]
-    if crate::registry::installed_manifest(root, id)?
-        .builtin_engine
-        .as_deref()
-        == Some(crate::takedawn::PROFILE)
     {
-        return crate::takedawn::build::compile_package(root, id);
+        let manifest = crate::registry::installed_manifest(root, id)?;
+        ensure!(build_supported(&manifest), "native build is not supported for this game on this platform; choose the separate Wasm build");
+        if manifest.builtin_engine.as_deref() == Some(crate::takedawn::PROFILE) {
+            return crate::takedawn::build::compile_package(root, id);
+        }
+        build::compile(root, id)
     }
     #[cfg(target_os = "linux")]
     {
@@ -233,10 +234,6 @@ pub fn compile(root: &Path, id: &str) -> Result<()> {
         {
             return crate::cube2::build::compile_package(root, id);
         }
-        build::compile(root, id)
-    }
-    #[cfg(windows)]
-    {
         build::compile(root, id)
     }
     #[cfg(not(any(target_os = "linux", windows)))]
