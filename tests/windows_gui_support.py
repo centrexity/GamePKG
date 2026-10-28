@@ -4,7 +4,7 @@ from ctypes import wintypes as W
 from pathlib import Path
 from PIL import Image
 
-def verify_shader_input(project,env,game_id,label):
+def verify_shader_input(project,env,game_id,label,*,texture=False):
  assert os.name=='nt'
  user=ctypes.WinDLL('user32',use_last_error=True);gdi=ctypes.WinDLL('gdi32',use_last_error=True)
  callback_type=ctypes.WINFUNCTYPE(W.BOOL,W.HWND,W.LPARAM)
@@ -25,9 +25,9 @@ def verify_shader_input(project,env,game_id,label):
   _fields_=[('kind',W.DWORD),('data',InputData)]
  assert ctypes.sizeof(Input)==(40 if ctypes.sizeof(ctypes.c_void_p)==8 else 28)
  user.SendInput.argtypes=[W.UINT,ctypes.POINTER(Input),ctypes.c_int];user.SendInput.restype=W.UINT
- def right_key(release):
+ def key(scan,release):
   event=Input();event.kind=1
-  event.data.keyboard=KeyboardInput(0,0x4d,0x8|0x1|(0x2 if release else 0),0,0)
+  event.data.keyboard=KeyboardInput(0,scan,0x8|0x1|(0x2 if release else 0),0,0)
   assert user.SendInput(1,ctypes.byref(event),ctypes.sizeof(event))==1,ctypes.get_last_error()
  class Header(ctypes.Structure):
   _fields_=[('size',W.DWORD),('width',W.LONG),('height',W.LONG),('planes',W.WORD),('bits',W.WORD),('compression',W.DWORD),('image_size',W.DWORD),('x',W.LONG),('y',W.LONG),('colors',W.DWORD),('important',W.DWORD)]
@@ -104,13 +104,29 @@ def verify_shader_input(project,env,game_id,label):
    # Exercise the Windows input queue and keyboard state. Posting WM_KEYDOWN
    # directly does not establish a real held key for the native event loop.
    assert user.GetForegroundWindow()==window,'Native game lost keyboard focus'
-   right_key(False);key_held=True
+   key(0x4d,False);key_held=0x4d
    require_color(1,'green')
-   right_key(True);key_held=False
+   key(0x4d,True);key_held=False
    require_color(2,'released-blue')
-   print('Native Windows shader pixels and held/released keyboard input passed:',label)
+   if texture:
+    # Replacing the image by a plain draw must remove the previous texture.
+    key(0x50,False);key_held=0x50
+    deadline=time.monotonic()+30
+    while True:
+     assert app.poll() is None,log_path.read_text(errors='replace')
+     image=capture(window);image.save(proof/(label+'-plain-black.png'))
+     samples=[image.getpixel((image.width*x//4,image.height*y//4)) for x in [1,2,3] for y in [1,2,3]]
+     if all(rgb==(0,0,0) for rgb in samples):break
+     assert time.monotonic()<deadline,f'Plain shader retained a stale texture: {samples}';time.sleep(.1)
+    key(0x50,True);key_held=False
+    require_color(2,'texture-restored-blue')
+    assert user.SetWindowPos(window,None,0,0,853,641,0x2|0x4|0x10)
+    require_color(2,'resized-blue')
+   assert user.PostMessageW(window,0x10,0,0),'Could not request normal game close'
+   assert app.wait(timeout=20)==0,log_path.read_text(errors='replace')
+   print('Native Windows shader pixels, held/released keyboard input and normal close passed:',label)
   finally:
-   if key_held:right_key(True)
+   if key_held:key(key_held,True)
    if app.poll() is None:
     if window:user.PostMessageW(window,0x10,0,0)
     try:app.wait(timeout=10)
