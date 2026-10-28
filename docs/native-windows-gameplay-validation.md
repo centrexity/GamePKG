@@ -469,8 +469,8 @@ AI guards, scores and results must not be patched to manufacture qualification.
 ## Ordinary Windows source compiler diagnostic
 
 This is separate from the passing signed v15 prepared-game Build/repair and the
-immutable v15b hardware preview. Ordinary Windows source-game support remains
-disabled pending the broader platform integration beyond this compiler fixture.
+immutable v15b hardware preview. Ordinary Windows source-game support remained disabled during these diagnostics;
+the subsequent normal-loader integration is recorded below.
 
 [Paired Windows controls](https://github.com/centrexity/GamePKG/actions/runs/40651190995)
 at `7441a6c` show the pinned LLD version probe succeeds outside confinement with
@@ -516,7 +516,50 @@ asset/verification fixture failures remain recorded. The final fixture follows
 production's signature verification before asset access. No owned media or
 original-game gameplay is exercised here.
 
-This qualifies the standalone compiler/shared SDK contract. Ordinary Windows
-source-game entry points remain disabled pending platform integration; Windows
-shader compilation/rendering and physical original-game checks remain open. The
+This qualified the standalone compiler/shared SDK contract at `b818f30`; its
+ordinary Windows source-game entry points were still disabled at that head.
+Subsequent shader and normal-loader integration is recorded below. Physical
+original-game checks remain open. The
 immutable v15b hardware preview and earlier whole-game Build/repair are separate.
+
+### Native Windows source-game and shader entry points
+
+The [shader/compiler workflow](https://github.com/centrexity/GamePKG/actions/runs/40662676099)
+passes at `5df761a`, and the [normal-loader integration](https://github.com/centrexity/GamePKG/actions/runs/40670512933)
+passes at `0f9c0a0`. Ordinary Rust source packages now use native Windows x86/x64
+Build/Play entry points in the development source. The normal loader discovers
+the native artifact, verifies its signed package, restores scoped saved bytes,
+records actual elapsed play time and rejects damaged native/shader artifacts.
+Its explicit-settings test seam shares the production loading body and avoids
+process-global test configuration changes. Reviewed engines retain their own
+platform support; this does not enable every C-based engine on Windows.
+
+Slang 2026.19 is installed from its pinned official Windows archive without any
+vendor installer or user Python requirement. All 4,942 files are checked on reuse;
+selected external Slang folders must match that complete reviewed payload. Native
+shader compilation uses the shared bounded AppContainer/job runner, private work
+files and explicit cleared environment. Linux retains its existing bubblewrap
+compiler boundary. Signed SPIR-V/WGSL/GLSL native builds pass reflection and
+translation validation, normal game loading and shader requests. Damaged shader
+outputs fail playback, and an ungranted host include is denied while the same
+file compiles in the deliberate unconfined test control. This is compilation and
+runtime-request evidence, not a native GPU pixel/rendering qualification.
+
+The [mixed-bitness workflow](https://github.com/centrexity/GamePKG/actions/runs/40672606863)
+passes at `3442e33ec00553849d89973a8c1a1338f518b552`. It includes both PE32/PE64
+source regressions, all three native shader backends through normal game loading
+at both app/game widths, and the actual Win32 window/restart/default-off watchdog
+fixture. The 32-bit app launches the verified 64-bit Slang tool on AMD64 Windows;
+OS capability is checked independently of the app's pointer width. Its native
+Rust game/compiler remain 32-bit. Genuinely 32-bit Windows can use shader-free
+source builds, but still needs a suitable shader compiler before shader support
+can be qualified there. These hosted 32-bit processes run on a 64-bit OS.
+
+Windows DXIL setup, physical GPU/input/audio and full original-game fidelity stay
+open. A private audit verifies Microsoft's DXC 1.9.2609 Windows ZIP and its 33
+files. Its Windows separator layout is not yet part of the production installer.
+A headless Wine prototype compiles DXIL and Metal using Slang's explicit DXC
+*directory* option; the earlier full-DLL-path load failures are retained. That
+prototype does not qualify DXIL in AppContainer or production playback. The
+existing immutable v15b hardware preview remains unchanged and does not include
+these newer ordinary-source features. No whole-game 487-unit build is repeated.

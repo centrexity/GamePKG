@@ -29,16 +29,25 @@ The optional browser cache is implemented by GamePKG using the standard IndexedD
 
 ## Platform limits
 
-The ordinary checked-source native worker currently requires Linux. The separate
-reviewed Takedawn profile builds directly for Linux x64 and Windows x64, using a
-host-admitted prepared source kit. Its managed standalone Windows compiler needs
-no WSL or Python. Other Windows source profiles use explicit Wasm build/play
-controls and the optional Linux compiler exchange. The candidate ordinary Windows
-standalone compiler and shared SDK now pass actual PE32/PE64 signed-package,
-asset, save-persistence and integrity checks in
-[run 40656721386](https://github.com/centrexity/GamePKG/actions/runs/40656721386).
-Its public source-game support gates remain disabled pending platform integration;
-Windows shader support is still unfinished. See [native profile boundaries](NATIVE_RUNTIME.md).
+The ordinary checked-source native worker supports Linux and Windows x86/x64 in
+the current development source. The normal loading path selects native builds,
+retains scoped saves and records play history. Verified Rust/linker tools and
+Windows Slang tools are prepared without WSL/Python. Slang currently requires a
+64-bit AMD64 OS (a 32-bit app can launch its compiler there); shader-free games
+also build on 32-bit Windows. The reviewed Takedawn profile remains Windows x64;
+other reviewed engine profiles retain their separate documented platform limits.
+
+[Actual Windows shader/source checks](https://github.com/centrexity/GamePKG/actions/runs/40662676099)
+pass at `5df761a`; the [normal game loader integration](https://github.com/centrexity/GamePKG/actions/runs/40670512933)
+passes at `0f9c0a0`. The [mixed-bitness workflow](https://github.com/centrexity/GamePKG/actions/runs/40672606863)
+also passes at `3442e33`: both app/game widths build and load all three desktop
+shader backends on 64-bit AMD64 Windows. The 32-bit CI processes run on a 64-bit
+OS; genuinely 32-bit-OS and physical driver qualification remain separate.
+These checks cover signed native builds, scoped assets/saves/history,
+SPIR-V/WGSL/GLSL validation and native requests, corrupt outputs and denied host
+includes. They do not verify actual native shader pixels or every physical
+GPU/controller/audio setup. A truly 32-bit-OS shader compiler, Windows DXIL and
+broader platform/engine delivery remain open. See [native profile boundaries](NATIVE_RUNTIME.md).
 
 The current development recipe is v15/0.1.4 and requires the 0.1.18 development app.
 Its multiplayer PS2 input fix has sanitized 32/64-bit input checks. The normal
