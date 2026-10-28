@@ -403,7 +403,12 @@ fn main() {
 
     fn signed_package_uses_generated_sdk(root: &Path, settings: &crate::settings::Settings) {
         let source = root.join("signed source");
-        for name in ["manifest.toml", "source/Cargo.toml", "source/Cargo.lock"] {
+        for name in [
+            "manifest.toml",
+            "thumbnail.png",
+            "source/Cargo.toml",
+            "source/Cargo.lock",
+        ] {
             let path = source.join(name);
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
             std::fs::copy(
