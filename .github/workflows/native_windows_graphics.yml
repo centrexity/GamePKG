@@ -19,6 +19,7 @@ on:
       - 'tools/build_release.rs'
       - 'tools/install_mesa_test.py'
       - 'tools/build_vulkan_test.py'
+      - 'tools/windows_vulkan_test_probe.c'
       - 'build.rs'
       - 'Cargo.toml'
       - 'Cargo.lock'
@@ -42,6 +43,7 @@ on:
       - 'tools/build_release.rs'
       - 'tools/install_mesa_test.py'
       - 'tools/build_vulkan_test.py'
+      - 'tools/windows_vulkan_test_probe.c'
       - 'build.rs'
       - 'Cargo.toml'
       - 'Cargo.lock'
@@ -115,6 +117,11 @@ jobs:
           python tools/build_vulkan_test.py target/release --architecture ${{ matrix.mesa }}
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Copy-Item target/release/vulkan-test-loader.json target/windows-gui-proof/
+          $env:VK_DRIVER_FILES = (Resolve-Path "target/release/lvp_icd.${{ matrix.mesa == 'x86' && 'x86' || 'x86_64' }}.json").Path
+          $env:VK_ICD_FILENAMES = $env:VK_DRIVER_FILES
+          $env:VK_LOADER_DEBUG = 'all'
+          ./target/release/gamepkg-vulkan-test-probe.exe 2>&1 | Tee-Object -FilePath target/windows-gui-proof/vulkan-probe.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python tests/windows_native_gui.py --renderer vulkan 2>&1 | Tee-Object -FilePath target/windows-gui-proof/native-vulkan.log
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $log = Get-Content -Raw target/windows-gui-proof/native-vulkan.log

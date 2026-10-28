@@ -57,7 +57,11 @@ def main():
             ['cmake', '--install', str(root/'headers-build'), '--config', 'Release'],
             ['cmake', '-S', str(loader), '-B', str(root/'loader-build'), '-A', generator_arch,
              f'-DCMAKE_PREFIX_PATH={prefix}', f'-DCMAKE_INSTALL_PREFIX={prefix}',
-             '-DBUILD_TESTS=OFF', '-DUPDATE_DEPS=OFF', '-DLOADER_CODEGEN=OFF'],
+             '-DBUILD_TESTS=OFF', '-DUPDATE_DEPS=OFF', '-DLOADER_CODEGEN=OFF',
+             # Hosted Windows runners are elevated. This private test loader
+             # must honor the explicitly selected private ICD instead of
+             # requiring registry/system driver changes. Never ship this DLL.
+             '-DLOADER_USE_UNSAFE_FILE_SEARCH=ON'],
             ['cmake', '--build', str(root/'loader-build'), '--config', 'Release', '--parallel', '2'],
             ['cmake', '--install', str(root/'loader-build'), '--config', 'Release'],
         ]
@@ -69,7 +73,28 @@ def main():
         destination.parent.mkdir(parents=True, exist_ok=True)
         with destination.open('xb') as output, dll.open('rb') as input_file:
             shutil.copyfileobj(input_file, output)
+        import_libraries = [p for p in [prefix/'lib/vulkan-1.lib',prefix/'lib/libvulkan-1.dll.a'] if p.is_file()]
+        assert len(import_libraries) == 1
+        probe = root / 'probe'
+        probe.mkdir()
+        probe_source = (Path(__file__).resolve().parent/'windows_vulkan_test_probe.c').as_posix()
+        (probe/'CMakeLists.txt').write_text(
+            'cmake_minimum_required(VERSION 3.22.1)\n'
+            'project(GamePkgVulkanProbe C)\n'
+            'set(CMAKE_C_STANDARD 11)\n'
+            'set(CMAKE_MSVC_RUNTIME_LIBRARY MultiThreaded)\n'
+            f'add_executable(gamepkg-vulkan-test-probe "{probe_source}")\n'
+            f'target_include_directories(gamepkg-vulkan-test-probe PRIVATE "{(prefix/"include").as_posix()}")\n'
+            f'target_link_libraries(gamepkg-vulkan-test-probe PRIVATE "{import_libraries[0].as_posix()}" advapi32)\n')
+        subprocess.run(['cmake','-S',str(probe),'-B',str(root/'probe-build'),'-A',generator_arch,
+                        f'-DCMAKE_PREFIX_PATH={prefix}'],check=True,timeout=120)
+        subprocess.run(['cmake','--build',str(root/'probe-build'),'--config','Release'],check=True,timeout=120)
+        candidates = list((root/'probe-build').rglob('gamepkg-vulkan-test-probe.exe'))
+        assert len(candidates) == 1 and executable_architecture(candidates[0],True) == expected
+        with (destination.parent/'gamepkg-vulkan-test-probe.exe').open('xb') as output, candidates[0].open('rb') as input_file:
+            shutil.copyfileobj(input_file,output)
         record = {'version': VERSION, 'architecture': expected, 'sources': SOURCES,
+                  'test_only_env_driver_selection': True,
                   'dll_sha256': hashlib.sha256(destination.read_bytes()).hexdigest()}
         (destination.parent/'vulkan-test-loader.json').write_text(json.dumps(record, indent=2)+'\n')
         print('Pinned test-only Vulkan loader built:', json.dumps(record), flush=True)
