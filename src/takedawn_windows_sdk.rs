@@ -561,7 +561,7 @@ fn prepare_parts(root: &Path, parts: &[Part], identity: &str, expected: &str) ->
             return Ok(path);
         }
         println!("GamePKG: downloading native Windows build tools");
-        let downloaded = crate::registry::download_direct(&record.url, MAX_ARCHIVE)?;
+        let downloaded = crate::registry::download_build_tool(&record.url, MAX_ARCHIVE)?;
         ensure!(
             digest_file(downloaded.path())?.sha256 == record.sha256,
             "SDK download integrity failed"

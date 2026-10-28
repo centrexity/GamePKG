@@ -733,3 +733,12 @@ Both Windows GNU target widths pass strict all-target Clippy for these controls.
 Actual Windows MSVC execution remains required. The final compiler startup,
 target-sized COFF/ABI, denied host include and same-file positive-control
 assertions remain mandatory and unchanged.
+
+Windows build-tool downloads now allow 900 seconds per transfer. A reviewed
+151,102,614-byte archive previously hit the ordinary 120-second deadline after
+receiving 90,000,000 bytes, before graphics execution. Package and metadata
+requests retain their existing deadline. Tool downloads retain the same
+connection deadline, protocol/redirect rules, byte ceiling, pinned SHA-256 and
+full payload inventory verification. The eight registry integration tests pass,
+and both Windows GNU widths pass strict all-target Clippy. This timeout change
+is not evidence that the separate restricted Clang startup issue is resolved.
