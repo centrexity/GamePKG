@@ -209,6 +209,22 @@ fn github_release_asset(
 }
 
 pub(crate) fn download_direct(value: &str, limit: u64) -> Result<tempfile::NamedTempFile> {
+    download_with_timeout(value, limit, 120)
+}
+
+#[cfg(windows)]
+pub(crate) fn download_build_tool(value: &str, limit: u64) -> Result<tempfile::NamedTempFile> {
+    // Official compiler archives can exceed 100 MiB. A healthy connection can
+    // need longer than the ordinary package/metadata transfer deadline.
+    // Keep the same protocol, redirect, size and integrity boundaries.
+    download_with_timeout(value, limit, 900)
+}
+
+fn download_with_timeout(
+    value: &str,
+    limit: u64,
+    transfer_seconds: u16,
+) -> Result<tempfile::NamedTempFile> {
     let mut current = parsed_url(value)?;
     let mut tor_only = current.host_str().is_some_and(|h| h.ends_with(".onion"));
     let file = tempfile::NamedTempFile::new()?;
@@ -232,7 +248,7 @@ pub(crate) fn download_direct(value: &str, limit: u64) -> Result<tempfile::Named
                 "--connect-timeout",
                 "15",
                 "--max-time",
-                "120",
+                &transfer_seconds.to_string(),
                 "--max-filesize",
                 &limit.to_string(),
                 "--user-agent",
