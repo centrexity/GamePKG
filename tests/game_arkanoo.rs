@@ -175,6 +175,44 @@ mod pattern_rng;
 mod physics;
 #[path = "../ports/arkanoo/source/src/portable_math.rs"]
 mod portable_math;
+#[test]
+fn portable_trigonometry_matches_independent_mpfr_bits_across_binary32_range() {
+    let reference: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-trig-mpfr.json")).unwrap();
+    assert_eq!(reference["precision_bits"], 512);
+    assert_eq!(reference["rounding"], "MPFR_RNDN");
+    let cases = reference["cases"].as_array().unwrap();
+    assert!(cases.len() >= 2550);
+    for case in cases {
+        let bits = u32::try_from(case["bits"].as_u64().unwrap()).unwrap();
+        let expected = [
+            u32::try_from(case["sin"].as_u64().unwrap()).unwrap(),
+            u32::try_from(case["cos"].as_u64().unwrap()).unwrap(),
+        ];
+        let value = f32::from_bits(bits);
+        let actual = portable_math::sin_cos(value);
+        assert_eq!(
+            [actual[0].to_bits(), actual[1].to_bits()],
+            expected,
+            "input {bits:#010x}"
+        );
+        assert_eq!(
+            portable_math::sin(value).to_bits(),
+            expected[0],
+            "scalar sine {bits:#010x}"
+        );
+        assert_eq!(
+            portable_math::cos(value).to_bits(),
+            expected[1],
+            "scalar cosine {bits:#010x}"
+        );
+    }
+    for bits in [0x7f800000, 0xff800000, 0x7f800001, 0x7fc00000, 0xffc00000] {
+        let value = f32::from_bits(bits);
+        assert!(portable_math::sin(value).is_nan());
+        assert!(portable_math::cos(value).is_nan());
+    }
+}
 #[path = "../ports/arkanoo/source/src/procedural.rs"]
 mod procedural;
 fn menu_game() -> physics::Game {
