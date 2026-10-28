@@ -78,12 +78,13 @@
             #[cfg(gamepkg_doom)] if state==0&&STARTED{reset_engine();}
             #[cfg(gamepkg_zelda)] if state==0{reset_engine();}
             let first_tick=!STARTED;
+            let tick_started=std::time::Instant::now();
             STARTED=true;
             if first_tick{eprintln!("Native engine: beginning first tick");}
             #[cfg(gamepkg_doom)] let buttons=input;
             #[cfg(gamepkg_zelda)] let buttons={let mut buttons=0;for (mask,bit) in [(0x101,6),(0x202,7),(0x404,4),(0x808,5),(0x1010,0),(0x2020,1),(0x4040,3),(0x8080,2),(0x110000,8),(0x220000,9),(0x440000,10),(0x880000,11)]{if input&mask!=0{buttons|=1<<bit;}}buttons};
             assert_eq!(step(buttons),0);
-            if first_tick{eprintln!("Native engine: first C step complete");}
+            if first_tick{eprintln!("Native engine: first C step complete at {} us",tick_started.elapsed().as_micros());}
             #[cfg(gamepkg_doom)] let (w,h)=(320,200);
             #[cfg(gamepkg_zelda)] let (w,h)=(256+2*(VIDEO as usize&255),if VIDEO&256!=0{240}else{224});
             #[cfg(gamepkg_doom)] let ending=controller()&(1<<25)!=0;
@@ -91,14 +92,24 @@
             let words_little_endian=super::__gamepkg_engine_little_endian(pixel_format(),cfg!(target_endian="little"));
             let mut p=std::slice::from_raw_parts(pixels(),w*h*4).to_vec();
             super::__gamepkg_engine_rgba(&mut p,words_little_endian);
-            if first_tick{eprintln!("Native engine: first pixel conversion complete");}
+            if first_tick{eprintln!("Native engine: first pixel conversion complete at {} us",tick_started.elapsed().as_micros());}
             super::draw_clear(0x000000ff);
             #[cfg(gamepkg_doom)] {super::draw_image(0.0,if ending{40.0}else{0.0},640.0,if ending{400.0}else{480.0},w as u32,h as u32,&p);}
             #[cfg(gamepkg_zelda)] {let scale=(640.0/w as f32).min(480.0/h as f32).min(2.0);let width=w as f32*scale;let height=h as f32*scale;super::draw_image((640.0-width)*0.5,(480.0-height)*0.5,width,height,w as u32,h as u32,&p);}
-            if first_tick{eprintln!("Native engine: first frame transferred");}
+            if first_tick{eprintln!("Native engine: first frame transferred at {} us",tick_started.elapsed().as_micros());}
             super::__gamepkg_audio_submit_stereo(std::slice::from_raw_parts(audio(),1600));
-            if first_tick{eprintln!("Native engine: first audio transferred");}
-            #[cfg(gamepkg_doom)] {if savedirty()!=0{let n=savedlength() as usize;assert!(n<=4*1024*1024);assert!(super::__gamepkg_engine_save_write(std::slice::from_raw_parts(savedata(),n)));}super::rpc(21,&super::u32s(&[status(),position(),controller()]));if quitrequested()!=0{super::rpc(25,&[]);}}
+            if first_tick{eprintln!("Native engine: first audio transferred at {} us",tick_started.elapsed().as_micros());}
+            #[cfg(gamepkg_doom)] {
+                let dirty=savedirty();
+                if first_tick{eprintln!("Native engine: first save state inspected at {} us",tick_started.elapsed().as_micros());}
+                if dirty!=0{let n=savedlength() as usize;assert!(n<=4*1024*1024);assert!(super::__gamepkg_engine_save_write(std::slice::from_raw_parts(savedata(),n)));}
+                if first_tick{eprintln!("Native engine: first save transferred at {} us",tick_started.elapsed().as_micros());}
+                let diagnostic=[status(),position(),controller()];
+                if first_tick{eprintln!("Native engine: first diagnostics inspected at {} us",tick_started.elapsed().as_micros());}
+                super::rpc(21,&super::u32s(&diagnostic));
+                if first_tick{eprintln!("Native engine: first diagnostics transferred at {} us",tick_started.elapsed().as_micros());}
+                if quitrequested()!=0{super::rpc(25,&[]);}
+            }
             #[cfg(gamepkg_zelda)] {if save_changed()!=0{super::save_write(std::slice::from_raw_parts(sram(),8192));}super::rpc(21,&super::u32s(&[engine_status(),engine_position(),engine_controller()]));}
             state.wrapping_add(1)
         }}
