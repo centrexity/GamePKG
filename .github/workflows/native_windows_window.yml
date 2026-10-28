@@ -55,12 +55,21 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $log = Get-Content -Raw "$env:RUNNER_TEMP/native-source-compiler32.log"
           if ($log -notmatch 'test result: ok\. 1 passed; 0 failed;') { throw 'The exact 32-bit native source compiler/worker test did not run successfully' }
+      - name: Verify 32-bit native games with the 64-bit shader tool on 64-bit Windows
+        shell: pwsh
+        run: |
+          cargo test --locked --target i686-pc-windows-msvc --lib shaders::platform_tests::signed_native_shader_builds_and_denied_host_include -- --ignored --exact --nocapture 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP/native-shader-compiler32.log"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $log = Get-Content -Raw "$env:RUNNER_TEMP/native-shader-compiler32.log"
+          if ($log -notmatch 'test result: ok\. 1 passed; 0 failed;') { throw 'The exact 32-bit native game/shader compiler test did not run successfully' }
       - name: Preserve the 32-bit native compiler test log
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: native-windows-source32-evidence
-          path: ${{ runner.temp }}/native-source-compiler32.log
+          path: |
+            ${{ runner.temp }}/native-source-compiler32.log
+            ${{ runner.temp }}/native-shader-compiler32.log
           retention-days: 7
           if-no-files-found: warn
   native-window:

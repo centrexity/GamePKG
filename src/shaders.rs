@@ -916,7 +916,7 @@ mod reflection_tests {
     }
 }
 
-#[cfg(all(test, any(target_os = "linux", all(windows, target_arch = "x86_64"))))]
+#[cfg(all(test, any(target_os = "linux", windows)))]
 mod platform_tests {
     use super::*;
     #[test]
