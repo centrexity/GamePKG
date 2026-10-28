@@ -651,10 +651,8 @@ fn slang_plan() -> Result<(Vec<Part>, String, String)> {
 /// Verify an explicitly selected Slang folder or install the pinned official ZIP.
 /// Tool contents are checked before any executable or library is loaded.
 pub(crate) fn prepare_slang(root: &Path, selected: Option<&Path>) -> Result<PathBuf> {
-    ensure!(
-        std::env::consts::ARCH == "x86_64",
-        "the pinned Windows Slang compiler currently requires 64-bit Windows"
-    );
+    #[cfg(windows)]
+    ensure!(gamepkg_takedawn_windows_runner::supports_amd64_tools(), "the pinned Slang compiler needs 64-bit Windows; shader-free games can build on 32-bit Windows");
     if let Some(selected) = selected {
         let selected = selected.canonicalize()?;
         real_directory(&selected)?;

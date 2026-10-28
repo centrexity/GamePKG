@@ -47,6 +47,26 @@ use windows_sys::Win32::{
 const FILE_GENERIC_READ: u32 = 0x0012_0089;
 const FILE_GENERIC_WRITE: u32 = 0x0012_0116;
 
+/// Whether the current app can launch our pinned AMD64 compiler tools. A
+/// 32-bit process on AMD64 Windows can do so just like a 64-bit process.
+pub fn supports_amd64_tools() -> bool {
+    if cfg!(target_arch = "x86_64") {
+        return true;
+    }
+    use windows_sys::Win32::System::SystemInformation::{
+        GetNativeSystemInfo, PROCESSOR_ARCHITECTURE_AMD64, SYSTEM_INFO,
+    };
+    // SAFETY: SYSTEM_INFO contains only integer/pointer fields and permits
+    // zero initialization before GetNativeSystemInfo fills it.
+    let mut system: SYSTEM_INFO = unsafe { zeroed() };
+    // SAFETY: system is writable for the documented structure size. The API
+    // fills its architecture union, independently of WOW64/environment values.
+    unsafe {
+        GetNativeSystemInfo(&mut system);
+        system.Anonymous.Anonymous.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_AMD64
+    }
+}
+
 #[cfg(test)]
 pub(crate) fn memory_allocation_probe(limited: bool) {
     use windows_sys::Win32::System::Memory::{

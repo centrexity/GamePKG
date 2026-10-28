@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 const MAX_CALLS_PER_TICK: usize = 8192;
 #[cfg(any(target_os = "linux", windows))]
 mod build;
-#[cfg(all(test, any(target_os = "linux", all(windows, target_arch = "x86_64"))))]
+#[cfg(all(test, any(target_os = "linux", windows)))]
 pub(crate) fn compile_with_settings(
     root: &Path,
     id: &str,
