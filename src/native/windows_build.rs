@@ -45,7 +45,10 @@ fn run(
     let sandbox = Sandbox::open(&format!("GamePKG.Compiler.{}", &identity[..32]))?;
     sandbox.grant_runtime(toolchain)?;
     sandbox.grant_saves(stage)?;
-    let temporary = stage.join("tmp");
+    // Third-party CRTs must receive ordinary drive/UNC working and temp paths;
+    // keep canonical extended paths for image selection and ACL operations.
+    let directory = crate::takedawn_windows_sdk::compiler_path(stage)?;
+    let temporary = crate::takedawn_windows_sdk::compiler_path(&stage.join("tmp"))?;
     std::fs::create_dir_all(&temporary)?;
     let binary = crate::takedawn_windows_sdk::compiler_path(&toolchain.join("bin"))?;
     let linker = crate::takedawn_windows_sdk::compiler_path(
@@ -74,7 +77,7 @@ fn run(
     let worker = WorkerProcess::spawn_tool(
         compiler,
         args,
-        stage,
+        &directory,
         &values,
         &sandbox,
         crate::compiler::ADDRESS_SPACE,
@@ -316,6 +319,23 @@ fn main() {
         ))
         .unwrap();
         let settings = crate::settings::Settings::default();
+        let (toolchain, target) = crate::takedawn_windows_sdk::prepare_source(root.path()).unwrap();
+        let toolchain = toolchain.canonicalize().unwrap();
+        let linker = toolchain.join(format!("lib/rustlib/{target}/bin/rust-lld.exe"));
+        let version = run(
+            &linker,
+            &["-flavor".into(), "gnu".into(), "--version".into()],
+            &stage.canonicalize().unwrap(),
+            &toolchain,
+            target,
+            Instant::now() + Duration::from_secs(10),
+        )
+        .context("confined linker version probe before reading game inputs")
+        .unwrap();
+        println!(
+            "Confined linker startup: {}",
+            String::from_utf8_lossy(&version)
+        );
         let binary = compile(root.path(), &stage, &manifest, &settings, false).unwrap();
         let bytes = std::fs::read(&binary).unwrap();
         super::super::validate_executable(&bytes).unwrap();
