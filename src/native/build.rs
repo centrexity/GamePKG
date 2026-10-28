@@ -2,11 +2,12 @@ use crate::{
     archive::Package,
     verify::{digest, verify_embedded},
 };
-use anyhow::{bail, ensure, Context, Result};
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+#[cfg(target_os = "linux")]
+use anyhow::{bail, Context};
+use anyhow::{ensure, Result};
+#[cfg(target_os = "linux")]
+use std::path::PathBuf;
+use std::{fs, path::Path};
 pub(super) fn compile(root: &Path, id: &str) -> Result<()> {
     let settings = crate::settings::load()?;
     settings.validate()?;
@@ -84,7 +85,49 @@ pub(super) fn compile(root: &Path, id: &str) -> Result<()> {
     source.push_str(&bindings);
     fs::write(stage.path().join("src/lib.rs"), source)?;
     fs::write(stage.path().join("src/main.rs"),"include!(\"lib.rs\");fn main(){gamepkg::__gamepkg_initialize_engine();gamepkg::__gamepkg_packet(&[255]);while let Some((input,state))=gamepkg::__gamepkg_next_tick(){gamepkg::__gamepkg_begin_tick();let result:u64=game_tick(input,state);let mut b=vec![0];b.extend(result.to_le_bytes());gamepkg::__gamepkg_packet(&b);}}")?;
-    let main = stage.path().join("src/main.rs");
+    #[cfg(target_os = "linux")]
+    let binary = compile_linux(
+        root,
+        &original,
+        &mut package,
+        &m,
+        &settings,
+        stage.path(),
+        needs_shaders,
+    )?;
+    #[cfg(windows)]
+    let binary = super::windows_build::compile(root, stage.path(), &m, &settings, needs_shaders)?;
+    let bytes = crate::files::read_regular(&binary, 64 * 1048576, false)?;
+    super::validate_executable(&bytes)?;
+    ensure!(
+        digest(&crate::files::read_regular(
+            &root.join(format!("{id}.gamepkg")),
+            crate::archive::MAX_TOTAL,
+            false
+        )?) == digest(&original),
+        "The installed package changed during the build"
+    );
+    let target = super::path_for_digest(root, &digest(&original));
+    fs::create_dir_all(target.parent().unwrap())?;
+    let mut saved = tempfile::NamedTempFile::new_in(target.parent().unwrap())?;
+    saved.write_all(&bytes)?;
+    saved.as_file().sync_all()?;
+    saved.persist(&target).map_err(|e| e.error)?;
+    crate::integrity::record_build(&target, &bytes)?;
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn compile_linux(
+    root: &Path,
+    original: &[u8],
+    package: &mut Package,
+    m: &crate::manifest::Manifest,
+    settings: &crate::settings::Settings,
+    stage: &Path,
+    needs_shaders: bool,
+) -> Result<PathBuf> {
+    let main = stage.join("src/main.rs");
     let mut text = fs::read_to_string(&main)?
         .replace("fn main(){", "fn main(){__gamepkg_security::lockdown();");
     let mut allowed = vec![
@@ -156,7 +199,7 @@ pub(super) fn compile(root: &Path, id: &str) -> Result<()> {
             .replace("/* GAMEPKG_ARCH */", &arch.to_string()),
     );
     fs::write(main, text)?;
-    crate::source::parse_build_tree(stage.path())?;
+    crate::source::parse_build_tree(stage)?;
     let rustup = std::env::var_os("CARGO_HOME")
         .map(PathBuf::from)
         .into_iter()
@@ -179,13 +222,13 @@ pub(super) fn compile(root: &Path, id: &str) -> Result<()> {
         .context("invalid Rust installation")?;
     let mut extra = Vec::new();
     if let Some(profile) = m.builtin_engine.as_deref() {
-        extra = engine(stage.path(), profile, settings.optimize_builds)?;
+        extra = engine(stage, profile, settings.optimize_builds)?;
     }
     if needs_shaders {
-        crate::shaders::compile(root, &original, &mut package, &m, &settings)?;
+        crate::shaders::compile(root, original, package, m, settings)?;
     }
     let mut cmd = crate::compiler::command(64 * 1048576);
-    sandbox(&mut cmd, stage.path());
+    sandbox(&mut cmd, stage);
     cmd.arg("--ro-bind")
         .arg(toolchain)
         .arg("/toolchain")
@@ -231,25 +274,10 @@ pub(super) fn compile(root: &Path, id: &str) -> Result<()> {
         "native build failed: {}",
         output.stderr
     );
-    let bytes = crate::files::read_regular(&stage.path().join("game"), 64 * 1048576, false)?;
-    super::validate_executable(&bytes)?;
-    ensure!(
-        digest(&crate::files::read_regular(
-            &root.join(format!("{id}.gamepkg")),
-            crate::archive::MAX_TOTAL,
-            false
-        )?) == digest(&original),
-        "The installed package changed during the build"
-    );
-    let target = super::path_for_digest(root, &digest(&original));
-    fs::create_dir_all(target.parent().unwrap())?;
-    let mut saved = tempfile::NamedTempFile::new_in(target.parent().unwrap())?;
-    saved.write_all(&bytes)?;
-    saved.as_file().sync_all()?;
-    saved.persist(&target).map_err(|e| e.error)?;
-    crate::integrity::record_build(&target, &bytes)?;
-    Ok(())
+    Ok(stage.join("game"))
 }
+
+#[cfg(target_os = "linux")]
 fn sandbox(cmd: &mut std::process::Command, stage: &Path) {
     cmd.args([
         "bwrap",
@@ -271,6 +299,7 @@ fn sandbox(cmd: &mut std::process::Command, stage: &Path) {
         .arg("/work")
         .args(["--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp"]);
 }
+#[cfg(target_os = "linux")]
 fn engine(stage: &Path, profile: &str, optimize: bool) -> Result<Vec<String>> {
     let doom = profile == crate::doom::PROFILE;
     ensure!(

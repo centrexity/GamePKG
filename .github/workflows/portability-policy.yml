@@ -58,6 +58,8 @@ jobs:
           python tools/build_audio_companion.py --github-env
       - name: Execute native 32-bit runtime tests with embedded decoder
         run: cargo test --locked --all-features --target i686-pc-windows-msvc --test portability --test runtime --test components --test path_attacks --test dependency_attacks --test source_attacks --test render_resources --test memory_budget --test audio_effect_assets --test music_permissions
+      - name: Verify confined standalone 32-bit source compiler and worker
+        run: cargo test --locked --all-features --target i686-pc-windows-msvc --lib native::windows_build::tests::managed_compiler_and_native_worker_without_wsl -- --ignored --exact --nocapture
       - name: Build standalone 32-bit Windows CLI and GUI
         env:
           # Explicit --target keeps static CRT flags away from host build scripts.

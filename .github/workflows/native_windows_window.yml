@@ -4,6 +4,9 @@ on:
     paths:
       - 'src/takedawn/windows_player.rs'
       - 'src/takedawn/path_audit.rs'
+      - 'src/native/**'
+      - 'src/takedawn_windows_sdk.rs'
+      - 'engines/native/**'
       - 'engines/takedawn/windows-runner/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
@@ -12,6 +15,9 @@ on:
     paths:
       - 'src/takedawn/windows_player.rs'
       - 'src/takedawn/path_audit.rs'
+      - 'src/native/**'
+      - 'src/takedawn_windows_sdk.rs'
+      - 'engines/native/**'
       - 'engines/takedawn/windows-runner/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
@@ -41,11 +47,20 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $log = Get-Content -Raw "$env:RUNNER_TEMP/native-window.log"
           if ($log -notmatch 'test result: ok\. 1 passed; 0 failed;') { throw 'The exact native owner/window test did not run successfully' }
+      - name: Verify confined standalone Rust source compiler and worker without WSL
+        shell: pwsh
+        run: |
+          cargo test --locked --lib native::windows_build::tests::managed_compiler_and_native_worker_without_wsl -- --ignored --exact --nocapture 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP/native-source-compiler.log"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $log = Get-Content -Raw "$env:RUNNER_TEMP/native-source-compiler.log"
+          if ($log -notmatch 'test result: ok\. 1 passed; 0 failed;') { throw 'The exact native source compiler/worker test did not run successfully' }
       - name: Preserve the media-free window and ownership test log
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: native-windows-window-evidence
-          path: ${{ runner.temp }}/native-window.log
+          path: |
+            ${{ runner.temp }}/native-window.log
+            ${{ runner.temp }}/native-source-compiler.log
           retention-days: 7
           if-no-files-found: warn
