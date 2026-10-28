@@ -864,6 +864,26 @@ impl Game {
         rom_paths: &[std::path::PathBuf],
         native: Option<bool>,
     ) -> Result<Self> {
+        Self::load_target_inner(root, id, rom_paths, native, None)
+    }
+    #[cfg(all(test, any(target_os = "linux", windows)))]
+    pub(crate) fn load_target_configured(
+        root: &Path,
+        id: &str,
+        rom_paths: &[std::path::PathBuf],
+        native: Option<bool>,
+        settings: &crate::settings::Settings,
+    ) -> Result<Self> {
+        settings.validate()?;
+        Self::load_target_inner(root, id, rom_paths, native, Some(settings))
+    }
+    fn load_target_inner(
+        root: &Path,
+        id: &str,
+        rom_paths: &[std::path::PathBuf],
+        native: Option<bool>,
+        configured: Option<&crate::settings::Settings>,
+    ) -> Result<Self> {
         crate::registry::installed_manifest(root, id)?;
         let _build_read = crate::build::BuildChange::read(root, id)?;
         let archive = crate::files::read_regular(
@@ -895,7 +915,10 @@ impl Game {
             bail!("Cube 2 native process isolation is currently available on Linux");
             #[cfg(target_os = "linux")]
             {
-                let settings = crate::settings::load()?;
+                let settings = match configured {
+                    Some(settings) => settings.clone(),
+                    None => crate::settings::load()?,
+                };
                 let player = crate::cube2::player::Player::load(
                     root,
                     &manifest,
@@ -961,7 +984,10 @@ impl Game {
             snapshots.push(bytes);
         }
         let rom = (!snapshots.is_empty()).then_some(snapshots);
-        let settings = crate::settings::load()?;
+        let settings = match configured {
+            Some(settings) => settings.clone(),
+            None => crate::settings::load()?,
+        };
         let native = native.unwrap_or(
             crate::native::cache_path(root, id)?
                 .symlink_metadata()

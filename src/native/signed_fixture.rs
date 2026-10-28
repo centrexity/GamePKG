@@ -36,8 +36,9 @@ if gamepkg::asset_read("fixture.bin",0,&mut asset) != Some(4)
     || asset != [0,255,65,33] { return 0xffff000000000001; }
 let mut saved = [0;8];
 let _ = gamepkg::save_read(0,&mut saved);
-if u64::from_le_bytes(saved) != state { return 0xffff000000000002; }
-let next = state + (u64::from(input) << 32);
+let previous = u64::from_le_bytes(saved);
+if state != 0 && previous != state { return 0xffff000000000002; }
+let next = previous + (u64::from(input) << 32);
 if !gamepkg::save_write(&u64::to_le_bytes(next)) { return 0xffff000000000003; }
 let _ = gamepkg::draw_clear(0x123456ff);
 next
@@ -90,9 +91,44 @@ next
             .bytes,
         (6u64 << 32).to_le_bytes()
     );
+    assert!(super::build_supported(&manifest));
+    let mut game =
+        crate::runtime::Game::load_target_configured(root, &manifest.id, &[], None, settings)
+            .unwrap();
+    assert!(game.custom_renderer);
+    assert_eq!(game.step(5).unwrap(), 11u64 << 32);
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    assert_eq!(game.step(1).unwrap(), 12u64 << 32);
+    drop(game);
+    assert!(
+        crate::progress::load(root, &manifest.id, &manifest.creator_key)
+            .unwrap()
+            .played_ms
+            > 0
+    );
+    assert_eq!(
+        crate::saves::Save::open_for_game(root, &manifest)
+            .unwrap()
+            .bytes,
+        (12u64 << 32).to_le_bytes()
+    );
+    println!("Verified normal game loader defaults to native playback, restores scoped saves and persists play history");
     bytes.extend_from_slice(b"corrupt");
     std::fs::write(&built, bytes).unwrap();
-    assert!(super::Session::new(root, &digest, open(), manifest, Vec::new(), settings, 0).is_err());
+    assert!(super::Session::new(
+        root,
+        &digest,
+        open(),
+        manifest.clone(),
+        Vec::new(),
+        settings,
+        0
+    )
+    .is_err());
+    assert!(
+        crate::runtime::Game::load_target_configured(root, &manifest.id, &[], None, settings)
+            .is_err()
+    );
     println!("Verified signed source package, native-only Build, generated SDK assets/drawing/ticks, scoped saves across fresh sessions and corrupted native-build rejection through the production session.");
 }
 

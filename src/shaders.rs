@@ -953,7 +953,6 @@ mod platform_tests {
         crate::pack::pack(&source, &path, &[113; 32]).unwrap();
         let manifest = crate::registry::install(root.path(), &path, true).unwrap();
         let archive = fs::read(&path).unwrap();
-        let hash = digest(&archive);
         for backend in ["spirv", "wgsl", "glsl"] {
             let settings = Settings {
                 shader_backend: backend.into(),
@@ -969,26 +968,31 @@ mod platform_tests {
             let sources =
                 load_desktop_sources(root.path(), &archive, &manifest, &settings).unwrap();
             assert_eq!(sources.len(), 1);
-            let mut package = Package::open(&path).unwrap();
-            crate::verify::verify_embedded(&mut package).unwrap();
-            package.resolve_shared_assets(root.path()).unwrap();
-            let mut session = crate::native::Session::new(
+            let mut game = crate::runtime::Game::load_target_configured(
                 root.path(),
-                &hash,
-                package,
-                manifest.clone(),
-                Vec::new(),
+                &manifest.id,
+                &[],
+                None,
                 &settings,
-                1,
             )
             .unwrap();
-            assert_eq!(session.step(1, 0, &[]).unwrap(), 1);
-            drop(session);
+            assert!(game.custom_renderer);
+            assert_eq!(game.shader_sources.len(), 1);
+            assert_eq!(game.step(1).unwrap(), 1);
+            drop(game);
             let cache = playback_cache(root.path(), &archive, &settings, 1)
                 .unwrap()
                 .0;
             fs::write(cache.join("0.shader"), b"damaged shader").unwrap();
             assert!(load_desktop_sources(root.path(), &archive, &manifest, &settings).is_err());
+            assert!(crate::runtime::Game::load_target_configured(
+                root.path(),
+                &manifest.id,
+                &[],
+                None,
+                &settings
+            )
+            .is_err());
             println!("Verified signed native {backend} shader Build, reflection/translation, native SDK request and damaged shader rejection");
         }
         let settings = Settings::default();
