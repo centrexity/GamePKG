@@ -1,15 +1,29 @@
 # Native builds and playback
 
-On Linux, **Build** and **Rebuild** compile the signed game source directly for the current operating system and CPU. They do not also build Wasm or a web player. **Build Wasm**, **Play Wasm**, and **Export for web** are separate actions. The CLI equivalents are `gamepkg build GAME_ID` and `gamepkg build GAME_ID --target wasm`.
+On Linux, and for ordinary checked Rust games in the current Windows x86/x64 development source, **Build** and **Rebuild** compile directly for the current operating system and CPU. They do not also build Wasm or a web player. **Build Wasm**, **Play Wasm**, and **Export for web** are separate actions. The CLI equivalents are `gamepkg build GAME_ID` and `gamepkg build GAME_ID --target wasm`.
 
 Native C-based ports need Clang 18 and lld-18; they do not need wasi-libc or a WASI sysroot. The optional Wasm build of a C-based port does need those libraries. The saved **C/WASI build tools folder** applies to that optional compiler. Games that do not call shader functions do not require Slang for their native build. Shader games require the pinned Slang compiler.
 
 Native executable caches are specific to the package contents, host version, host bindings, operating system, CPU architecture and detected CPU features. Moving source packages between machines remains supported; build them for the destination machine. A native build does not replace a separately built Wasm artifact. Optional DOOM Wasm engines also record the reviewed source-kit fingerprint. When that kit changes, readiness, launch and integrity checks require rebuilding the engine; Integrity fix rebuilds it while retaining the signed package and saves. This compatibility marker supplements the build receipt and runtime validation.
 
-The ordinary checked-source native worker requires Linux. The separate reviewed
-Takedawn profile below also builds directly for Windows x64 with standalone
-native tools. Other Windows source profiles retain explicit Wasm build/play
-controls and the optional configured Linux compiler exchange.
+The ordinary checked-source native worker supports Linux and Windows x86/x64.
+Windows uses managed, checksum-verified Rust 1.89.0 and GNU Binutils 2.42; both
+compiler stages run inside AppContainer/job boundaries. The game runs in a
+separate confined process with the same scoped protocol and signed permissions
+as Linux. Default loading selects its native build and retains saves/play history.
+
+Native shader compilation uses Slang 2026.19. Windows prepares its verified
+compiler automatically when the Slang folder is empty. Its compiler currently
+requires 64-bit Windows; a 32-bit app on a 64-bit AMD64 OS can launch that tool
+and still build/run native 32-bit game code. Shader-free games also build on
+32-bit Windows. SPIR-V/WGSL work with Vulkan; GLSL also works with OpenGL. Windows
+DXIL integration and a shader compiler for a genuinely 32-bit OS remain open.
+Current checks validate shader compilation, reflection/translation and runtime
+requests; they do not substitute for physical GPU/input/audio qualification.
+
+Reviewed C-based engines retain their own platform support. Takedawn below builds
+natively for Windows x64. Other reviewed engines can still use their documented
+optional Wasm build/play controls and configured Linux compiler exchange.
 
 ## Reviewed native engine profiles
 

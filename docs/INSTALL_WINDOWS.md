@@ -6,13 +6,41 @@ This archive contains `bin/gamepkg.exe` and `bin/gamepkg-gui.exe`, example sourc
 
 Run `bin\gamepkg.exe --help` in PowerShell, or launch `bin\gamepkg-gui.exe` for the desktop library. Inspection, creator approval and installed-library metadata use the same verified package format as Linux. The host requires a working desktop graphics driver.
 
+## Ordinary Rust source games in the development app
+
+The current development source (commit `0f9c0a0` and later) connects the default
+**Build** and **Play** actions to direct Windows x86/x64 machine code for ordinary
+Rust game packages. Its verified Rust compiler, standard library and native
+linker are prepared automatically. Players need neither WSL nor Python. The
+published 0.1.17 app and older engine-only 0.1.18 hardware previews do not include
+this newer integration.
+
+Import a signed package, approve its creator, open the game page and select
+**Build**. Its native build is selected automatically for Play. Native source
+uses scoped asset, ROM, input, drawing, audio, save and network operations; raw
+file/process/network access remains blocked. The compiler and game use separate
+AppContainer/jobs with explicit private file grants and memory/time bounds.
+
+On 64-bit Windows, native Slang shader tools are also prepared automatically;
+leave the Slang folder empty unless selecting the exact official 2026.19 SDK.
+Both 32-bit and 64-bit apps can use that compiler on an AMD64 64-bit OS. SPIR-V
+and WGSL serve Vulkan, and GLSL serves OpenGL. Shader-free native games also work
+on 32-bit Windows; a shader compiler for that OS and native Windows DXIL setup
+remain unfinished. The native source-game pipeline passes signed Build, normal
+loading, save/history, shader validation, corrupt-output and denied-host-include
+checks. These checks do not prove physical GPU/controller/audio compatibility
+for every game.
+
+Reviewed C-based engines have separate support below; this does not enable every
+engine profile on Windows. **Build Wasm** and web export remain explicit alternatives.
+
 ## Native Takedawn source preview
 
 The 0.1.18 development source connects native **Build**, **Play**, and integrity
-repair for the host-reviewed v14 Takedawn kit on 64-bit Windows. This path uses
+repair for the host-reviewed v15 Takedawn kit on 64-bit Windows. This path uses
 standalone Rust/Clang tools prepared through Settings or `gamepkg setup-native-tools`;
 it needs neither WSL nor Python. The older Linux-only package must be updated
-before building it on Windows. Recipe 0.1.3 selects v14; older admitted recipes
+before building it on Windows. Recipe 0.1.4 selects v15; 0.1.3 selects v14 and older admitted recipes
 retain creator/save continuity but can stop on unsupported execution and need
 an update. This is an unreleased candidate and requires the development app;
 the published 0.1.17 app does not include this native engine.

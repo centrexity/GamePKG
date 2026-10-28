@@ -424,11 +424,11 @@ gamepkg run com.example.game --frames 60
 gamepkg-gui
 ```
 
-Replace the ID with your manifest ID. For the input example use `com.gamepkg.input`. The desktop player supplies controller and touch controls; the CLI is useful for deterministic frame checks. Linux source builds use bubblewrap; Windows source builds use the configured Linux compiler connection through WSL 2. Optimization settings change local builds without expanding game permissions.
+Replace the ID with your manifest ID. For the input example use `com.gamepkg.input`. The desktop player supplies controller and touch controls; the CLI is useful for deterministic frame checks. Linux source builds use bubblewrap; ordinary Windows Rust source builds use verified native tools in AppContainer/jobs. The optional Windows Wasm build uses its configured Linux compiler connection. Optimization settings change local builds without expanding game permissions.
 
 ## Native builds, Vulkan and networking
 
-The default Linux Build compiles directly for the local CPU in an isolated native worker. Build Wasm is an explicit alternative. The same source and no-dependency rules apply to both. Direct standard I/O and thread APIs are also rejected; use the host functions. Vulkan is the default desktop renderer, with WGSL or SPIR-V output compiled from Slang. Guests receive no raw window, Vulkan or socket handles.
+The default Build for ordinary Rust games on Linux/Windows compiles directly for the local CPU in an isolated native worker. Build Wasm is an explicit alternative. The same source and no-dependency rules apply to both. Direct standard I/O and thread APIs are also rejected; use the host functions. Vulkan is the default desktop renderer, with WGSL or SPIR-V output compiled from Slang. Guests receive no raw window, Vulkan or socket handles.
 
 See [native runtime and build rules](https://github.com/centrexity/GamePKG/blob/main/docs/NATIVE_RUNTIME.md) and [network permissions and API](https://github.com/centrexity/GamePKG/blob/main/docs/NETWORKING.md). HTTPS GET, TCP and UDP use asynchronous host calls controlled by the signed `network = true`/`false` permission. Enabled games can use internet and local-network addresses without endpoint lists. Legacy `network = "none"` remains disabled; earlier enabled transport names now enable all supported networking.
 

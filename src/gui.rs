@@ -1618,8 +1618,10 @@ impl eframe::App for App {
                         ui.selectable_value(&mut self.settings_draft.renderer,"vulkan".into(),"Vulkan");
                         ui.selectable_value(&mut self.settings_draft.renderer,"opengl".into(),"OpenGL");
                     });
-                    ui.label("Slang 2026.19 installation folder");
+                    ui.label(if cfg!(windows) { "Slang 2026.19 folder (optional)" } else { "Slang 2026.19 installation folder" });
                     ui.text_edit_singleline(&mut self.settings_draft.slang_directory);
+                    if cfg!(windows) { ui.weak("Leave empty for automatic native shader setup. Shader compilation currently needs 64-bit Windows."); }
+                    if std::env::var_os("GAMEPKG_SLANG_ROOT").is_some() { ui.weak("GAMEPKG_SLANG_ROOT overrides this folder for the current launch."); }
                     egui::ComboBox::from_label("Shader backend").selected_text(&self.settings_draft.shader_backend).show_ui(ui, |ui| {
                         for backend in ["spirv", "wgsl", "metal", "dxil", "glsl"] { ui.selectable_value(&mut self.settings_draft.shader_backend, backend.to_string(), backend); }
                     });
