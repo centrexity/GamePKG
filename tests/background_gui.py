@@ -19,23 +19,7 @@ if any('opengl_rgba_zlib_hex' not in case for case in REFERENCE):
   for case in json.loads((PROJECT/'tests/fixtures'/filename).read_text())['cases']:canonical[(case['level'],case['frame'])]=case
  REFERENCE=[canonical[(case['level'],case['frame'])] if 'opengl_rgba_zlib_hex' not in case else case for case in REFERENCE]
 ORIGINAL=[zlib.decompress(bytes.fromhex(case['opengl_rgba_zlib_hex'])) for case in REFERENCE]
-if args.editor_images:
- import hashlib
- ORIGINAL=[]
- for case in REFERENCE:
-  image=Image.new('RGBA',(1280,720))
-  for tile in case['tiles']:
-   with Image.open(PROJECT/'ports/arkanoo/assets'/tile['path']) as part:image.paste(part,tile['origin'])
-  assert hashlib.sha256(image.tobytes()).hexdigest()==case['bright_rgba_sha256']
-  image=image.point([(value*102+127)//255 for value in range(256)]*3+list(range(256)));raw=image.tobytes()
-  assert hashlib.sha256(raw).hexdigest()==case['editor_rgba_sha256']
-  if args.editor_grid:
-   from PIL import ImageDraw
-   drawing=ImageDraw.Draw(image)
-   for row in range(11):drawing.line([(40,80+row*20),(1240,80+row*20)],fill=(80,80,100,255),width=1)
-   for col in range(21):drawing.line([(40+col*60,80),(40+col*60,280)],fill=(80,80,100,255),width=1)
-   raw=image.tobytes();assert hashlib.sha256(raw).hexdigest()==case['editor_grid_rgba_sha256']
-  ORIGINAL.append(raw)
+image_reference=None
 
 PHASES=[0,3,7,10,14,17,0]
 KEYS={3:'Right',7:'Up',10:'z',14:'Left',17:'Down'}
@@ -82,7 +66,7 @@ def expected(case,width,height):
    choices=[math.floor(value)]
    if abs(value-round(value))<0.00001:choices.append(round(value)-1)
    return choices
-  values.append([source_pixel(case,sx,sy) for sx in texels((px+.5-ox)*2/scale) for sy in texels(((py+.5-oy)/scale-60)*2)])
+  values.append([image_reference.sample(case,width,height,px,py,sx,sy) if args.images else source_pixel(case,sx,sy) for sx in texels((px+.5-ox)*2/scale) for sy in texels(((py+.5-oy)/scale-60)*2)])
  return values
 def check(actual,wanted,label):
  deltas=[min(max(abs(a-b) for a,b in zip(p,q)) for q in choices) for p,choices in zip(actual,wanted)];delta=max(deltas);print(label,'maximum original SDL channel difference (nearest boundaries accounted):',delta,flush=True)
@@ -94,6 +78,10 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-background-ui-',dir=PROJECT/'ta
  env=dict(os.environ,GAMEPKG_HOME=str(root/'library'),GAMEPKG_CONFIG=str(config),LIBGL_ALWAYS_SOFTWARE='1',DBUS_SESSION_BUS_ADDRESS='unix:path=/tmp/gamepkg-no-session-bus');env.pop('WAYLAND_DISPLAY',None)
  display=start_display(env,width=1600 if args.editor_grid else 1100,height=1200 if args.editor_grid else 850)
  try:
+  if args.images:
+   from original_background_reference import OriginalBackgroundReference
+   image_reference=OriginalBackgroundReference(PROJECT,root/'original-reference',env,editor=args.editor_images,grid=args.editor_grid)
+   (PROOF/'original-reference-controls.json').write_text(json.dumps(image_reference.controls,indent=2)+'\n')
   source=root/'source';shutil.copytree(PROJECT/'ports/arkanoo',source);entry=source/'source/src/lib.rs';modules=entry.read_text().split('use std::sync::Mutex;')[0]
   entry.write_text(modules+'pub fn game_tick(input:u32,_:u64)->u64 {let which=if input&gamepkg::HELD_RIGHT!=0 {3} else if input&gamepkg::HELD_UP!=0 {7} else if input&gamepkg::HELD_B!=0 {10} else if input&gamepkg::HELD_LEFT!=0 {14} else if input&gamepkg::HELD_DOWN!=0 {17} else {0};let cases='+str([[c['level'],c['frame']] for c in REFERENCE]).replace(' ', '')+';gamepkg::draw_clear(0x0b1020ff);render::draw_background(cases[which][0] as u32,cases[which][1]);which as u64}')
   masks={'Right':'HELD_RIGHT','Up':'HELD_UP','z':'HELD_B','Left':'HELD_LEFT','Down':'HELD_DOWN','x':'HELD_Y','Return':'HELD_START','c':'HELD_A'}
@@ -159,7 +147,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-background-ui-',dir=PROJECT/'ta
     from selenium.webdriver.common.action_chains import ActionChains
     from selenium.webdriver.common.keys import Keys
     output=root/(profile+'-web');run('web-export',game_id,'--output',output);server=ThreadingHTTPServer(('127.0.0.1',0),partial(Quiet,directory=str(output)));threading.Thread(target=server.serve_forever,daemon=True).start();options=Options();chrome=shutil.which('google-chrome') or shutil.which('google-chrome-stable') or shutil.which('chromium');assert chrome,'Install Chrome or Chromium for browser checks';options.binary_location=chrome
-    for value in ['--headless=new','--no-sandbox','--disable-dev-shm-usage','--enable-unsafe-swiftshader','--window-size=1200,1000']:options.add_argument(value)
+    for value in ['--headless=new','--mute-audio','--no-sandbox','--disable-dev-shm-usage','--enable-unsafe-swiftshader','--window-size=1200,1000']:options.add_argument(value)
     driver=shutil.which('chromedriver') or str(Path(os.environ.get('CHROMEWEBDRIVER','/nonexistent'))/'chromedriver');assert Path(driver).is_file(),'Install matching ChromeDriver'
     browser=webdriver.Chrome(service=Service(driver),options=options);held=False
     try:

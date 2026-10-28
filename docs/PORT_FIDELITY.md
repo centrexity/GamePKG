@@ -4885,3 +4885,25 @@ the extra geometry fixture omits unrelated assets. The full local Rust suite
 passes 806 tests with 171 opt-in ignores, and strict Clippy passes. Hosted
 requalification remains required. Temporary private GUI error instrumentation
 was removed and the production source/executable restored before positive runs.
+
+### Full-photograph editor and campaign reference correction
+
+The broad hosted check at `8e07cc8` passes the corrected bonus/rocket scenes,
+then stops before launching the editor-grid game because its older harness still
+expects resized background tiles. The editor and campaign image harness now
+reconstructs all six full-resolution original photographs from lossless tile
+cores. Independent full-RGBA pins, original PNG identities and every encoded/tile
+hash are checked. Original SDL renders each untiled photograph at the actual
+integer physical viewport, retaining original black modulation and original grid
+line operations. This avoids comparing a resized old screenshot with a newly
+sampled full-resolution image.
+
+All 24 frozen bright, game, editor and grid controls still match exactly. The
+complete local matrix passes 122 editor-grid, 104 editor-background and 56
+campaign-background comparisons: 282 total, across core Wasm/native and component
+Wasm desktop players with Vulkan/OpenGL and both browser profiles. Grid resizes
+include 1280×960, 853×641 and 700×800. Maximum channel difference remains one,
+with the existing one-level tolerance unchanged. Original assets, goldens,
+production rendering and resource/deadline limits are unchanged. Automated audio
+is muted. Earlier stale-reference and fractional-viewport failures are retained;
+new-head hosted requalification remains pending.
