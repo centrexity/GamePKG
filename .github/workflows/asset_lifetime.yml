@@ -17,6 +17,7 @@ on:
       - 'tests/web_png_exact.mjs'
       - 'tests/web_image_cache.mjs'
       - 'tests/web_render_resources.mjs'
+      - 'tests/web_recorded_output.mjs'
       - 'tests/browser_image_cache.py'
       - 'tools/check_browser_png.py'
       - '.github/workflows/ci.yml'
@@ -38,6 +39,7 @@ on:
       - 'tests/web_png_exact.mjs'
       - 'tests/web_image_cache.mjs'
       - 'tests/web_render_resources.mjs'
+      - 'tests/web_recorded_output.mjs'
       - 'tests/browser_image_cache.py'
       - 'tools/check_browser_png.py'
       - '.github/workflows/ci.yml'
@@ -86,6 +88,8 @@ jobs:
           # The historical command dropped both build inputs through sudo.
           sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-assets-rustup CARGO_HOME="$HOME/.cargo" cargo test --locked --release --test browser_audio_decoder --no-run
           target/release/gamepkg check-bundled-audio
+      - name: Verify audio startup, steady deadlines and cancellation
+        run: node tests/web_recorded_output.mjs
       - name: Verify signed compressed reads, playback and pending-loan release
         run: |
           sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-assets-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT=/tmp/gamepkg-assets-slang CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tests/browser_compressed_assets.py
