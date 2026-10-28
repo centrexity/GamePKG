@@ -3,6 +3,10 @@
 //! packages and grant only their private runtime/save directories before launch.
 #![cfg(windows)]
 mod sandbox;
+mod worker_pipe;
+mod worker_process;
+pub use worker_pipe::{WorkerLog, WorkerPipe};
+pub use worker_process::WorkerProcess;
 #[cfg(test)]
 mod window_fixture;
 pub use sandbox::Sandbox;
@@ -118,6 +122,13 @@ fn environment(
     disc: HANDLE,
     restart: Option<HANDLE>,
 ) -> io::Result<Vec<u16>> {
+    environment_block(values, Some(disc), restart)
+}
+fn environment_block(
+    values: &[(OsString, OsString)],
+    disc: Option<HANDLE>,
+    restart: Option<HANDLE>,
+) -> io::Result<Vec<u16>> {
     let mut entries = Vec::new();
     for (key, value) in values {
         let key = wide(key)?;
@@ -142,14 +153,15 @@ fn environment(
         pair.extend(value);
         entries.push((name, pair));
     }
-    let mut pair = wide(OsStr::new(&format!(
-        "GAMEPKG_TAKEDAWN_DISC_HANDLE={}",
-        disc as usize
-    )))?;
-    entries.push((
-        "GAMEPKG_TAKEDAWN_DISC_HANDLE".into(),
-        std::mem::take(&mut pair),
-    ));
+    if let Some(disc) = disc {
+        entries.push((
+            "GAMEPKG_TAKEDAWN_DISC_HANDLE".into(),
+            wide(OsStr::new(&format!(
+                "GAMEPKG_TAKEDAWN_DISC_HANDLE={}",
+                disc as usize
+            )))?,
+        ));
+    }
     if let Some(handle) = restart {
         entries.push((
             "GAMEPKG_TAKEDAWN_RESTART_HANDLE".into(),
@@ -161,6 +173,9 @@ fn environment(
     }
     entries.sort_by(|a, b| a.0.cmp(&b.0));
     let mut out: Vec<u16> = entries.into_iter().flat_map(|(_, pair)| pair).collect();
+    if out.is_empty() {
+        out.push(0);
+    }
     out.push(0);
     Ok(out)
 }
