@@ -47,13 +47,35 @@ gates with dummy audio and read-only ISO access; they remain incremental
 reference evidence rather than normal signed v15 Build/Play qualification.
 
 Both app entries build and six real source-kit handoff/rejection tests pass.
-The normal unseeded signed-package v15 Build is in progress: the initial private
-configuration omitted the native tools folder and stopped before compiling any
-game unit; the documented folder is now configured for the cold build. Full
-signed Build/repair/play and actual Windows build/hardware checks remain open
-for v15. Mixed split-screen result/driving prompt presentation, natural
-multiplayer completion and full campaigns also remain unqualified. The verified
-v14 hardware preview remains unchanged; it does not qualify this new input fix.
+The normal signed Linux v15 package now passes an unseeded optimized native Build:
+all 487 units compile from an empty game-object cache in approximately 62 minutes,
+and all 24,035 prepared exports remain. The initial private preflight omitted the
+native tools folder and stopped before any unit compiled; configuring the
+existing documented folder resolves that setup error.
+
+Normal integrity, wrong-disc rejection without saved selection/play time,
+selected-ISO Play, a second launch with remembered ISO and increasing play history
+all pass. The ISO stays in place. Deliberately damaging the private executable
+fails integrity; source repair and final integrity succeed while preserving all
+487 compiled-unit hashes and modification times, the signed package, settings,
+ROM selection, play history and player data.
+
+The exact repaired executable (SHA-256
+`621988980facdace69fc4dbf1e2b6de4043b442dd8d910854f09df38002b30df`)
+then passes five actual native control routes: the pinned original Xbox Race and
+PS2 Crash checks, plus split-screen Xbox-face/P1 Pause, Nintendo-face/P1 Pause and
+Xbox-face/P2 Pause. The latter three verify both accelerators, held-button
+suppression while paused and restored mapping after Resume. Viewed resumed
+screens show both players moving. All runs pass strict executed-path and actual
+Vulkan gates with dummy audio, read-only ISO access and unchanged private
+reference saves. Virtual pads stand in for physical controllers. These are
+scoped control routes, not completed multiplayer races or physical device tests.
+
+The full Windows v15 signed Build/repair workflow remains in progress. Physical
+Windows original-game graphics/audio/controllers, mixed split-screen
+result/driving prompt presentation, natural multiplayer completion, higher medals
+and full campaigns remain unqualified. The immutable v14 hardware preview stays
+unchanged and does not contain the v15 input fix.
 
 ## Verified v14 baseline
 

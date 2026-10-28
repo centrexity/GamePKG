@@ -36,9 +36,13 @@ no WSL or Python. Other Windows source profiles use explicit Wasm build/play
 controls and the optional Linux compiler exchange. See [native profile boundaries](NATIVE_RUNTIME.md).
 
 The current development recipe is v15/0.1.4 and requires the 0.1.18 development app.
-Its multiplayer PS2 input fix has sanitized 32/64-bit and native reference
-pause/resume plus original single-player Race/Crash checks; the normal signed v15 build and Windows qualification are
-still in progress. The v14 build/gameplay evidence below remains specific to v14.
+Its multiplayer PS2 input fix has sanitized 32/64-bit input checks. The normal
+signed Linux v15 package passes cold optimized Build, in-place/remembered ISO
+launches, play history and integrity repair with all 487 object hashes/timestamps
+and player data preserved. The exact repaired executable passes original Race
+and Crash plus three both-player acceleration/pause/Resume routes. The full
+Windows v15 Build/repair and hardware qualification remain open. The v14 evidence
+below remains specific to that earlier kit.
 The published 0.1.17 app does not include this native engine. A Windows host build
 or asset-free window test does not prove original-game Vulkan/audio/controller
 behavior on physical Windows hardware. The v14 Windows signed Build/repair
