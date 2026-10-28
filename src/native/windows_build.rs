@@ -51,6 +51,9 @@ fn run(
     let linker = crate::takedawn_windows_sdk::compiler_path(
         &toolchain.join(format!("lib/rustlib/{target}/bin/self-contained")),
     )?;
+    let llvm = crate::takedawn_windows_sdk::compiler_path(
+        &toolchain.join(format!("lib/rustlib/{target}/bin")),
+    )?;
     let values = [
         (
             "SystemRoot".into(),
@@ -60,7 +63,7 @@ fn run(
             "LOCALAPPDATA".into(),
             std::env::var_os("LOCALAPPDATA").context("Windows profile directory unavailable")?,
         ),
-        ("PATH".into(), std::env::join_paths([binary, linker])?),
+        ("PATH".into(), std::env::join_paths([binary, llvm, linker])?),
         ("TEMP".into(), temporary.as_os_str().to_owned()),
         ("TMP".into(), temporary.as_os_str().to_owned()),
     ];
@@ -142,8 +145,8 @@ pub(super) fn compile(
     // syntax. Only GNU file/search/output arguments need ordinary syntax.
     // Use the official bundled LLD directly rather than the legacy GCC driver.
     let linker = toolchain.join(format!("lib/rustlib/{target}/bin/rust-lld.exe"));
-    // Rust 1.89's captured-child streams open the system pipe filesystem,
-    // which is not available inside this AppContainer. Let Rust create its
+    // Avoid depending on Rust 1.89's captured-child streams, whose system
+    // pipe-filesystem access can fail in an AppContainer. Let Rust create its
     // normal static library (including allocator/runtime support), then launch
     // LLD directly through the host's private pipes in another confined job.
     // No game code executes during either compilation stage.
@@ -197,7 +200,8 @@ pub extern "C" fn __gamepkg_native_entry()->i32 {
         &toolchain,
         target,
         end,
-    )?;
+    )
+    .context("native Rust static-library stage")?;
     let bytes = crate::files::read_regular(&archive, 256 * 1048576, false)?;
     ensure!(
         bytes.len() > 8 && bytes.starts_with(b"!<arch>\n"),
@@ -256,7 +260,8 @@ pub extern "C" fn __gamepkg_native_entry()->i32 {
         link.push("-O1".into());
     }
     link.extend(["--strip-all".into(), "-o".into(), file(&output)?]);
-    let _ = run(&linker, &link, &stage, &toolchain, target, end)?;
+    let _ = run(&linker, &link, &stage, &toolchain, target, end)
+        .context("native Windows linker stage")?;
     Ok(output)
 }
 
