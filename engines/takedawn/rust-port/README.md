@@ -13,23 +13,30 @@ This does not mean the whole Takedawn engine has been rewritten in Rust.
 
 ## Current delivery path
 
-The unreleased 0.1.3 recipe selects the host-admitted v14 kit. Its 24,003 prepared
-Rust game functions compile across 487 units, retaining 24,035 native exports.
-The normal signed Linux package passes cold Build, ISO-in-place Play with
-remembered selection/history, and integrity repair without rebuilding verified
-unit objects. Original World Tour completion, unlocks, loss/results screens and
-fresh-process save reload have scoped checks using that repaired executable.
+The unreleased 0.1.4 recipe selects the host-admitted v15 kit, SHA-256
+`7f56741fa8f0a56d3e718af1f772bae9200514b6293c2d218e56cde700123c8b`.
+Its 24,003 prepared Rust game functions compile across 487 units, retaining
+24,035 native exports. These prepared units are unchanged from v14; v15 fixes
+native multiplayer controller assignment and driving-button mapping.
 
-All units also compile with actual standalone Windows Rust, and the native
-runtime links and plays original routes under Wine. The [Windows build guide](WINDOWS_BUILD.md)
-describes the managed toolchain, passing full Windows Build/repair and remaining
-hardware checks. Actual Windows tests separately verify real windows under the
-production confined owner across restart. The current private preview contains
-the v14 recipe and default-off watchdog; it is not a stable release.
+The normal signed Linux package passes an empty-cache optimized Build,
+ISO-in-place Play with remembered selection/history, and integrity repair that
+preserves verified unit objects. Its repaired executable passes the Race and
+Crash control routes and three split-screen pause/Resume layouts. A natural
+player-one three-lap finish is observed separately; a player-two finish and
+Continue after the shared results remain unverified. Earlier World Tour and
+save-reload records retain their original package/executable identities.
 
-The preparation and staged verification records below include older kits and
-their measured inventories. Their results are not interchangeable with the
-[current v14 gameplay qualification](../../../docs/native-windows-gameplay-validation.md).
+Actual Windows also passes the complete signed v15 Build/repair gate, preserving
+all 487 object hashes/timestamps during repair. The current private v15b preview
+contains the 0.1.4 recipe and default-off diagnostic watchdog; it is not a stable
+release. The [Windows build guide](WINDOWS_BUILD.md) describes the standalone
+toolchain, separate app/window checks and remaining original-game hardware work.
+No Python, WSL or code generation is required by players.
+
+Preparation records below include older kits. Their inventories and results
+must be read with the exact versions recorded in the
+[current gameplay qualification](../../../docs/native-windows-gameplay-validation.md).
 
 ## Conversion
 

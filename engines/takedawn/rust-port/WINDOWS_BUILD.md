@@ -4,10 +4,10 @@ The standalone Windows pipeline compiles every prepared Rust game unit, builds
 the original C/C++ runtime and produces a native Windows executable. It invokes
 no WSL, translation tool, Python or game code during compilation. Python and Wine
 are maintainer diagnostics. The app's Windows Build action now dispatches this
-pipeline for the reviewed v14 kit and older admitted recipes. Windows CLI/GUI Play now uses the owned,
+pipeline for the reviewed v15 kit and older admitted recipes. Windows CLI/GUI Play now uses the owned,
 confined session with remembered ISO selection and play history. The current
-unreleased port recipe selects v14; the host also admits the older reviewed Linux
-v8 and universal v12/v13 kits for package continuity. The player stops on any
+unreleased 0.1.4 port recipe selects v15; the host also admits the older reviewed Linux
+v8 and universal v12/v13/v14 kits for package continuity. The player stops on any
 reported unsupported execution; older recipes may need updating. Physical Windows gameplay qualification and stable
 release promotion remain unfinished.
 
@@ -91,22 +91,21 @@ identity.
 ## Qualification
 
 The **Full native Windows game package** workflow performs the complete app
-Build path on a disposable Windows runner. It signs and installs the real v14
-0.1.3 source package with a temporary key, prepares the managed SDK, builds all 487
-Rust units with native optimization, and checks library readiness and integrity.
-It then damages only that private library's SDL companion and uses the normal
-integrity-fix action to restore it. Every unit checkpoint must retain its hash
-and write time through repair. The installed signed package must stay unchanged.
-The gate pins source-kit SHA-256
-`7cfd18d26b8a6e51005f75d7cedc1c01925237574bc579df5027b0167413a986`.
-The updated gate passes on actual Windows in
-[run 40446319498](https://github.com/centrexity/GamePKG/actions/runs/40446319498).
-The native build takes 7,517 seconds on that runner; repair takes 74 seconds.
-All 487 object hashes and modification times survive repair, the signed package
-is unchanged, and the original admitted SDL companion is restored. Only the
-verified SDK and Windows System32 tools are discoverable by compiler children.
-No ROM or original-game playback is used by this gate. The older v13 result
-below is a separate historical measurement.
+Build path on a disposable Windows runner. Its current source-kit pin is
+`7f56741fa8f0a56d3e718af1f772bae9200514b6293c2d218e56cde700123c8b`
+(v15, recipe 0.1.4). It signs and installs the real source package with a
+temporary key, builds all 487 prepared Rust units with native optimization,
+and checks readiness and integrity. It damages the private SDL companion and
+repairs it through the normal app action, retaining every object hash and
+modification time and the unchanged signed package.
+
+[Run 40612591810](https://github.com/centrexity/GamePKG/actions/runs/40612591810)
+passes this current v15 gate on actual Windows: cold Build takes about 4 hours
+26 minutes on that runner and repair about 112 seconds. It uses no original
+media and does not establish gameplay or physical graphics/audio/controllers.
+The earlier v14 [run 40446319498](https://github.com/centrexity/GamePKG/actions/runs/40446319498)
+remains a historical 7,517-second Build/74-second repair measurement with its
+own kit pin. The older v13 result below is separate too.
 
 The separate **Confined native Windows window** gate runs the production owner
 with an exact synthetic-media fixture. It creates, shows, pumps and destroys

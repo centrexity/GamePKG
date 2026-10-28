@@ -600,8 +600,8 @@ capture geometry, and rejects the frozen clipped capture while accepting the
 full resized capture. It retains the existing one-level RGB tolerance for the
 shader field and requires exact black fallback. The earlier alpha-oracle failure
 and clipped captures remain recorded. Python/Pillow are maintainer tools and
-all automated audio is muted. Windows32 GUI, Windows Vulkan and physical
-original-game graphics/audio/controllers remain unqualified.
+all automated audio is muted. The later Windows32/64 Vulkan qualification below extends this software-window
+evidence. Physical original-game graphics/audio/controllers remain unqualified.
 
 ### Platform admission regression
 
@@ -639,17 +639,66 @@ The tests use separate displays, libraries, settings, network namespaces and
 private temporary directories. Initial parallel close failures with shared X11
 socket paths remain recorded; all five cases pass with private temporary paths.
 
-`8b5ae99` adds these five native GUI cases to Linux32 CI. Its remote result must
-be checked separately from the passing local evidence. This does not qualify a
-genuinely 32-bit OS shader toolchain, original-game 32-bit gameplay, physical GPU,
-audio/controllers, Windows32 GUI or Android native game delivery.
+`8b5ae99` adds these five native GUI cases to Linux32 CI. The first run fails
+before rendering because bubblewrap cannot traverse the SDK under private runner
+temporary parents. `5382576` places that test SDK under its own traversable `/tmp`
+folder without changing compiler isolation or system permissions.
+[Run 40725961506](https://github.com/centrexity/GamePKG/actions/runs/40725961506)
+then passes all three platform jobs, including the five Linux32 native graphics
+cases and packaging. The graphics archive matches its published size, SHA-256
+and CRCs with exactly 36 files. Independent inspection verifies all 25 complete
+960x720 fields exactly and all five normal-close, cached-restart and increasing
+history records. The original failure is retained. This does not qualify a
+genuinely 32-bit OS shader toolchain, original-game 32-bit gameplay, physical
+GPU/audio/controllers or Android native game delivery.
 
-### Outstanding older generator test
+### Host-independent older-generator reference
 
-The broad all-features job in
-[run 40715301601](https://github.com/centrexity/GamePKG/actions/runs/40715301601)
-fails the old `engines/takedawn/native-gen` FPATAN hardware comparison at a tiny
-unmasked-underflow boundary. Its cause and fix remain unqualified. These tests
-are retained and the full suite is not reported green. This experimental CPU
-project is separate from the delivered prepared-Rust game functions and pinned
-Takedawn C/C++ runtime; it is not the player delivery path.
+The broad all-features [run 40715301601](https://github.com/centrexity/GamePKG/actions/runs/40715301601)
+exposes a tiny FPATAN underflow boundary where AMD and Intel physical results
+differ beyond C1. The legacy test incorrectly treated the host approximation
+as a universal reference. `778b6ee` derives exact-tiny dyadic result bytes, C1,
+UE and range wrapping independently with MPFR, retaining all other physical
+state checks and the existing numerical-accuracy and monotonicity bounds.
+
+All seven focused tests and all 230 tests across 70 suites pass locally, with
+zero ignored tests, strict all-target Clippy and formatting. The complete
+616,852,492-byte AMD state corpus is unchanged, SHA-256
+`fa7632c0b879c45eb541a066d20f6f47d0be7f5272fcbb1124b90e3af4d2dabd`.
+Both opposite-host-C1 and captured-Intel-underflow variants pass; corrupted
+implementation C1, UE and numerical bits still fail at the exact boundary cases.
+Hosted [AMD EPYC run 40728736496](https://github.com/centrexity/GamePKG/actions/runs/40728736496)
+and [Intel Xeon 8370C run 40728749559](https://github.com/centrexity/GamePKG/actions/runs/40728749559)
+pass the seven tests and strict Clippy. CPU inventories are checked from each
+job, and both one-log archives match published sizes/digests/CRCs. The old
+failure remains recorded. This experimental CPU project is separate from the
+prepared-Rust game functions and original Takedawn C/C++ player runtime; neither
+production numerical code nor game delivery changes. Full-project checks still
+need their own terminal results.
+
+### Actual Windows32/64 OpenGL and Vulkan windows
+
+[Run 40728736217](https://github.com/centrexity/GamePKG/actions/runs/40728736217)
+at `b2e1b0eaa3575be1093e205eb350eda974c541fc` passes both app widths on AMD64
+Windows. Each tests native-only game builds for three OpenGL outputs
+(GLSL/SPIR-V/WGSL) and two Vulkan outputs (SPIR-V/WGSL), using private pinned
+software graphics. Both archives match published size, SHA-256 and CRCs and
+contain exactly 137 expected files. All 120 captures pass independent
+whole-viewport/letterbox checks, including resize. Input, exact black texture
+fallback/recovery, normal close, cached restart and increasing play history pass.
+Actual CLI, GUI, game and graphics-library architectures are checked.
+
+The first Vulkan attempt fails before opening a window. The follow-up native
+probe confirms that the CI processes are elevated; the loader normally ignores
+an environment-selected driver at that privilege level. The private test loader
+honors that explicit selection, without installing system drivers or changing
+production loader behavior. Each width confirms its own loader, the exact
+pinned Lavapipe DLL hash, Win32 surface support and exactly one CPU Vulkan
+device. The test-only loader and probe are not player requirements or releases.
+
+This closes the hosted native source-game window gap for both Windows widths,
+including Vulkan. It does not establish genuinely 32-bit OS shader tools,
+physical graphics/audio/controllers, original-game Windows gameplay, other
+reviewed Windows engine profiles, Android GUI/native workers, full campaigns or
+complete multiplayer qualification. Existing preview ZIPs remain immutable;
+no full 487-unit cold build, merge or stable release is repeated here.
