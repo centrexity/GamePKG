@@ -592,3 +592,20 @@ keyboard input, texture clearing/restoration, resize, normal close, restart and
 increasing play history under test-only software OpenGL. Syntax/YAML checks pass;
 actual Windows execution is still pending. Audio is muted; Python/Pillow are
 maintainer test tools. Physical Vulkan/audio/controllers remain separate.
+
+
+### Platform admission regression
+
+[Run 40678994989](https://github.com/centrexity/GamePKG/actions/runs/40678994989)
+passes at `c3ea1983fc7a3eba3e732a34b7b4c8017186ec30` in both Windows app widths.
+The broader portability run had stopped on an obsolete test that expected every
+non-Linux native compile to fail: a successful Windows build failed `unwrap_err`,
+and macOS expected the older Linux-only shader error text. That failure is retained.
+The corrected test preserves unavailable compiler-exchange rejection, reserves
+native/shader-unavailable assertions for platforms without those implementations,
+and verifies ordinary Windows source-game admission. Unsupported reviewed engine
+profiles now reject before tool preparation, staging or build locks/output.
+Three exact boundary tests and the existing source/normal-loader/shader/DXIL and
+Win32 window/watchdog regressions pass. Both log-only archives match published
+sizes/SHA-256 and CRCs. Actual native game-window pixels remain under the separate
+running native host workflow; no pixel pass is inferred from these boundary checks.

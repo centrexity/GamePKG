@@ -51,6 +51,16 @@ pass at `f0d1dc3` in both app widths on AMD64 Windows, including verified DXC
 setup, corrupt output and denied host includes. DXIL playback, a truly 32-bit-OS
 shader compiler and broader platform/engine delivery remain open. See [native profile boundaries](NATIVE_RUNTIME.md).
 
+Linux source builds now select the app's exact target for both Rust and Clang,
+including a 32-bit app using a 64-bit installed compiler. Local signed ELF32 and
+ELF64 fixtures pass native Build, assets/drawing, scoped saves across fresh
+processes, normal-loader native selection, increasing play history, wrong-width
+and corrupt-artifact rejection. Optimized signed DOOM and Zelda3 C-engine builds
+and artifact integrity also pass at both widths without original media. Matching
+32-bit development libraries/headers are needed; the 32-bit CI job now explicitly
+installs them and runs both native fixtures. These build checks do not establish
+32-bit original-game graphics/audio/controllers or gameplay.
+
 The current development recipe is v15/0.1.4 and requires the 0.1.18 development app.
 Its multiplayer PS2 input fix has sanitized 32/64-bit input checks. The normal
 signed Linux v15 package passes cold optimized Build, in-place/remembered ISO
