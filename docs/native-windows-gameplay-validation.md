@@ -77,6 +77,30 @@ result/driving prompt presentation, natural multiplayer completion, higher medal
 and full campaigns remain unqualified. The immutable v14 hardware preview stays
 unchanged and does not contain the v15 input fix.
 
+
+The new private v15b hardware-test bundle pins the verified `081a5b1` Windows
+app and ports `d8672b5`, with a separately signed 0.1.4/v15 recipe. All 18,595
+app files match the verified native archive byte for byte. Its native game
+builder/engine/ports inputs match the successful `b40bbbe` full-game build;
+the app additionally retains explicit Steam settings and browser startup fixes.
+It deliberately does not include the newer, unqualified generic Windows
+source-compiler work. The bundle contains no ISO, original-media extraction,
+private creator seed or prebuilt CPU-specific game.
+
+`GamePKG-Windows-Preview-v15b-081a5b1.zip` is 268,594,298 bytes, SHA-256
+`776039653964b13ae7ce0c4059ad21b5b500afade02551f67638f94591f82b68`.
+Its launcher uses absolute paths beside the script for a separate preview
+library and settings; default-off watchdog and disabled automatic updates remain.
+A private, network-disabled Wine desktop verifies the actual packaged Windows
+CLI signature/import and original CMD launcher, visible v15 library with Needs
+ROM, explicit settings overriding invalid inherited settings and normal Alt+F4
+close. Automated audio is dummy/null with no host audio device exposed. It does
+not build or play the original game during this launcher check. The first v15
+candidate and failed private launcher/forced-window-destruction checks remain
+preserved; the v15b archive is a distinct immutable file, and old v14 ZIPs are
+untouched. Physical Windows original-game GPU, sound and controller testing,
+complete multiplayer/campaign qualification and stable publication remain open.
+
 ## Verified v14 baseline
 
 The verified 0.1.3 recipe selects v14, with source-kit SHA-256
@@ -162,7 +186,7 @@ The focused [confined Windows window gate](https://github.com/centrexity/GamePKG
 also passes at that app revision. It uses production ownership with synthetic
 media and no WSL, including the default-off watchdog launch.
 
-The current private Windows hardware bundle uses app `f87f383`, ports `e230359`
+The earlier private Windows hardware bundle uses app `f87f383`, ports `e230359`
 and the signed v14/0.1.3 recipe with separate preview library/settings. All 18,593
 app files match its verified native Windows ZIP, and all 178 bundled port PNGs
 match the reviewed source. It includes the native Windows storage and window
