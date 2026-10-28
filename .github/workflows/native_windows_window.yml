@@ -55,7 +55,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $log = Get-Content -Raw "$env:RUNNER_TEMP/native-source-compiler32.log"
           if ($log -notmatch 'test result: ok\. 1 passed; 0 failed;') { throw 'The exact 32-bit native source compiler/worker test did not run successfully' }
-      - name: Verify 32-bit native games with the 64-bit shader tool on 64-bit Windows
+      - name: Verify 32-bit native games and confined DXIL with 64-bit shader tools
         shell: pwsh
         run: |
           cargo test --locked --target i686-pc-windows-msvc --lib shaders::platform_tests::signed_native_shader_builds_and_denied_host_include -- --ignored --exact --nocapture 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP/native-shader-compiler32.log"
@@ -97,7 +97,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $log = Get-Content -Raw "$env:RUNNER_TEMP/native-source-compiler.log"
           if ($log -notmatch 'test result: ok\. 1 passed; 0 failed;') { throw 'The exact native source compiler/worker test did not run successfully' }
-      - name: Verify signed native Slang builds and denied host includes
+      - name: Verify signed native Slang and DXIL builds and denied host includes
         shell: pwsh
         run: |
           cargo test --locked --lib shaders::platform_tests::signed_native_shader_builds_and_denied_host_include -- --ignored --exact --nocapture 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP/native-shader-compiler.log"

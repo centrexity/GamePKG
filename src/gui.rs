@@ -1627,9 +1627,9 @@ impl eframe::App for App {
                     });
                     ui.label("Vulkan uses WGSL or SPIR-V for bounded texture fragment passes. OpenGL also supports GLSL. Other backends compile and cache shaders.");
                     if self.settings_draft.shader_backend == "dxil" {
-                        ui.label("DXC 1.9.2609 installation folder");
+                        ui.label(if cfg!(windows) { "DXC 1.9.2609 folder (optional)" } else { "DXC 1.9.2609 installation folder" });
                         ui.text_edit_singleline(&mut self.settings_draft.dxc_directory);
-                        ui.label("Choose the pinned DXC installation. GamePKG verifies its compiler libraries before each build.");
+                        ui.label(if cfg!(windows) { "Leave empty for automatic DXIL compiler setup. DXIL compilation does not enable DXIL playback; use SPIR-V/WGSL for Vulkan or GLSL for OpenGL." } else { "Choose the pinned DXC installation. GamePKG verifies its compiler libraries before each build." });
                         if std::env::var_os("GAMEPKG_DXC_ROOT").is_some() { ui.label("GAMEPKG_DXC_ROOT overrides this folder for the current launch."); }
                     }
                     ui.separator();
