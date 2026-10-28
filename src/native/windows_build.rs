@@ -39,7 +39,8 @@ fn run(
     stage: &Path,
     toolchain: &Path,
     target: &str,
-) -> Result<()> {
+    end: Instant,
+) -> Result<Vec<u8>> {
     let identity = crate::verify::digest(stage.as_os_str().as_encoded_bytes());
     let sandbox = Sandbox::open(&format!("GamePKG.Compiler.{}", &identity[..32]))?;
     sandbox.grant_runtime(toolchain)?;
@@ -63,7 +64,10 @@ fn run(
         ("TEMP".into(), temporary.as_os_str().to_owned()),
         ("TMP".into(), temporary.as_os_str().to_owned()),
     ];
-    let end = Instant::now() + Duration::from_secs(60);
+    ensure!(
+        Instant::now() < end,
+        "native compiler exceeded its time limit"
+    );
     let worker = WorkerProcess::spawn_tool(
         compiler,
         args,
@@ -103,11 +107,15 @@ fn run(
         );
     }
     ensure!(
+        Instant::now() < end,
+        "native compiler exceeded its time limit"
+    );
+    ensure!(
         status == 0,
         "native build failed (Windows exit {status}): {}",
         String::from_utf8_lossy(&diagnostics)
     );
-    Ok(())
+    Ok(diagnostics)
 }
 
 pub(super) fn compile(
@@ -134,46 +142,121 @@ pub(super) fn compile(
     // syntax. Only GNU file/search/output arguments need ordinary syntax.
     // Use the official bundled LLD directly rather than the legacy GCC driver.
     let linker = toolchain.join(format!("lib/rustlib/{target}/bin/rust-lld.exe"));
+    // Rust 1.89's captured-child streams open the system pipe filesystem,
+    // which is not available inside this AppContainer. Let Rust create its
+    // normal static library (including allocator/runtime support), then launch
+    // LLD directly through the host's private pipes in another confined job.
+    // No game code executes during either compilation stage.
+    let entry = stage.join("src/gamepkg_native_entry.rs");
+    std::fs::write(
+        &entry,
+        r#"include!("main.rs");
+#[export_name="main"]
+pub extern "C" fn __gamepkg_native_entry()->i32 {
+    main();
+    let _=std::io::Write::flush(&mut std::io::stdout());
+    let _=std::io::Write::flush(&mut std::io::stderr());
+    0
+}
+"#,
+    )?;
+    let archive = stage.join("game.a");
+    let end = Instant::now() + Duration::from_secs(60);
     let mut args: Vec<OsString> = [
         "--edition=2021",
         "-Awarnings",
         "--crate-name",
         "gamepkg_native_worker",
-        "src/main.rs",
+        "src/gamepkg_native_entry.rs",
+        "--crate-type=staticlib",
         "-C",
         "panic=abort",
         "-C",
         "strip=symbols",
         "-C",
         "target-cpu=native",
-        "-C",
-        "link-self-contained=yes",
-        "-C",
-        "linker-flavor=ld.lld",
         "--target",
         target,
-        "-C",
     ]
     .into_iter()
     .map(Into::into)
     .collect();
-    args.push(format!("linker={}", linker.display()).into());
     args.extend([
         "-C".into(),
         format!("opt-level={}", if settings.optimize_builds { 3 } else { 0 }).into(),
     ]);
     if settings.optimize_builds {
-        args.extend(["-C", "lto=thin", "-C", "codegen-units=1"].map(Into::into));
+        args.extend(["-C", "lto=fat", "-C", "codegen-units=1"].map(Into::into));
     }
     args.push("-o".into());
-    args.push(crate::takedawn_windows_sdk::compiler_path(&output)?.into_os_string());
-    run(
+    args.push(crate::takedawn_windows_sdk::compiler_path(&archive)?.into_os_string());
+    let _ = run(
         &toolchain.join("bin/rustc.exe"),
         &args,
         &stage,
         &toolchain,
         target,
+        end,
     )?;
+    let bytes = crate::files::read_regular(&archive, 256 * 1048576, false)?;
+    ensure!(
+        bytes.len() > 8 && bytes.starts_with(b"!<arch>\n"),
+        "invalid native Rust static library"
+    );
+    drop(bytes);
+    let lib = toolchain.join(format!("lib/rustlib/{target}/lib"));
+    let file = |path: &Path| -> Result<OsString> {
+        Ok(crate::takedawn_windows_sdk::compiler_path(path)?.into_os_string())
+    };
+    let machine = match target {
+        "x86_64-pc-windows-gnu" => "i386pep",
+        "i686-pc-windows-gnu" => "i386pe",
+        _ => anyhow::bail!("unsupported native Windows linker target"),
+    };
+    let mut link: Vec<OsString> = [
+        "-flavor",
+        "gnu",
+        "-m",
+        machine,
+        "--dynamicbase",
+        "--disable-auto-image-base",
+        "--nxcompat",
+    ]
+    .into_iter()
+    .map(Into::into)
+    .collect();
+    link.push(file(&lib.join("self-contained/crt2.o"))?);
+    link.push(file(&lib.join("rsbegin.o"))?);
+    link.push("--start-group".into());
+    link.push(file(&archive)?);
+    link.push("-L".into());
+    link.push(file(&lib.join("self-contained"))?);
+    // Native libraries required by the pinned Windows GNU Rust std and CRT.
+    // The verified Rust static library supplies every Rust dependency itself.
+    for name in [
+        "kernel32",
+        "ntdll",
+        "userenv",
+        "ws2_32",
+        "dbghelp",
+        "gcc_eh",
+        ":libpthread.a",
+        "msvcrt",
+        "mingwex",
+        "mingw32",
+        "gcc",
+        "user32",
+    ] {
+        link.push(format!("-l{name}").into());
+    }
+    link.push("--end-group".into());
+    link.push(file(&lib.join("rsend.o"))?);
+    link.push("--gc-sections".into());
+    if settings.optimize_builds {
+        link.push("-O1".into());
+    }
+    link.extend(["--strip-all".into(), "-o".into(), file(&output)?]);
+    let _ = run(&linker, &link, &stage, &toolchain, target, end)?;
     Ok(output)
 }
 
@@ -196,6 +279,22 @@ mod tests {
             r#"
 use std::io::{Read, Write};
 fn main() {
+    if let Some(mode) = std::env::args().nth(1) {
+        if mode == "--child" { println!("CAPTURED_CHILD"); return; }
+        assert_eq!(mode, "--probe");
+        let executable = std::env::current_exe().unwrap();
+        assert!(std::process::Command::new(&executable).arg("--child").status().unwrap().success());
+        println!("INHERITED_CHILD_OK");
+        match std::process::Command::new(&executable).arg("--child").output() {
+            Ok(output) => {
+                assert!(output.status.success());
+                assert!(String::from_utf8_lossy(&output.stdout).contains("CAPTURED_CHILD"));
+                println!("CAPTURED_CHILD_OK");
+            }
+            Err(error) => { println!("CAPTURED_CHILD_ERROR={:?}", error.raw_os_error()); }
+        }
+        return;
+    }
     assert_eq!(u64::from_le_bytes([1,2,3,4,5,6,7,8]), 0x0807060504030201);
     std::io::stdout().write_all(b"nativeIO").unwrap();
     std::io::stdout().flush().unwrap();
@@ -215,6 +314,24 @@ fn main() {
         let binary = compile(root.path(), &stage, &manifest, &settings, false).unwrap();
         let bytes = std::fs::read(&binary).unwrap();
         super::super::validate_executable(&bytes).unwrap();
+        let (toolchain, target) = crate::takedawn_windows_sdk::prepare_source(root.path()).unwrap();
+        let diagnostic = run(
+            &binary.canonicalize().unwrap(),
+            &["--probe".into()],
+            &stage.canonicalize().unwrap(),
+            &toolchain.canonicalize().unwrap(),
+            target,
+            Instant::now() + Duration::from_secs(10),
+        )
+        .unwrap();
+        let diagnostic = String::from_utf8(diagnostic).unwrap();
+        assert!(diagnostic.contains("INHERITED_CHILD_OK"), "{diagnostic}");
+        assert!(
+            diagnostic.contains("CAPTURED_CHILD_OK")
+                || diagnostic.contains("CAPTURED_CHILD_ERROR=Some(5)"),
+            "{diagnostic}"
+        );
+        println!("Actual confined inherited/captured stdio probe: {diagnostic}");
         let runtime = root.path().join("verified worker");
         std::fs::create_dir(&runtime).unwrap();
         std::fs::write(runtime.join("game.exe"), &bytes).unwrap();
