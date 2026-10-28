@@ -607,9 +607,100 @@ pub(crate) fn prepare_source(root: &Path) -> Result<(PathBuf, &'static str)> {
     ))
 }
 
+const SLANG_PINS: &str = include_str!("../engines/native/windows-slang.json");
+fn slang_plan() -> Result<(Vec<Part>, String, String)> {
+    let pins: serde_json::Value = serde_json::from_str(SLANG_PINS)?;
+    ensure!(
+        pins["version"].as_str() == Some(crate::shaders::SLANG_VERSION),
+        "Slang toolchain version differs"
+    );
+    let download: Download = serde_json::from_value(pins["windows_x86_64"].clone())?;
+    ensure!(
+        download.url == format!(
+            "https://github.com/shader-slang/slang/releases/download/v{0}/slang-{0}-windows-x86_64.zip",
+            crate::shaders::SLANG_VERSION
+        ) && download.sha256.len() == 64
+            && download.sha256.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()),
+        "invalid Windows Slang pin"
+    );
+    let expected = pins["payload_inventory_sha256"]
+        .as_str()
+        .context("missing Slang payload inventory")?
+        .to_owned();
+    ensure!(
+        expected.len() == 64
+            && expected
+                .bytes()
+                .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()),
+        "invalid Slang payload inventory"
+    );
+    let identity = crate::verify::digest(
+        format!("GamePKG Windows Slang extraction v1\0{SLANG_PINS}").as_bytes(),
+    );
+    Ok((
+        vec![Part {
+            download,
+            destination: "slang-windows".into(),
+            layout: Layout::Zip(0),
+        }],
+        identity,
+        expected,
+    ))
+}
+
+/// Verify an explicitly selected Slang folder or install the pinned official ZIP.
+/// Tool contents are checked before any executable or library is loaded.
+pub(crate) fn prepare_slang(root: &Path, selected: Option<&Path>) -> Result<PathBuf> {
+    ensure!(
+        std::env::consts::ARCH == "x86_64",
+        "the pinned Windows Slang compiler currently requires 64-bit Windows"
+    );
+    if let Some(selected) = selected {
+        let selected = selected.canonicalize()?;
+        real_directory(&selected)?;
+        let pins: serde_json::Value = serde_json::from_str(SLANG_PINS)?;
+        let expected = pins["directory_inventory_sha256"]
+            .as_str()
+            .context("missing Slang directory inventory")?;
+        let mut files = BTreeMap::new();
+        scan(&selected, &selected, &mut files, &mut 0)?;
+        ensure!(
+            payload_digest(&files)? == expected,
+            "Slang directory differs from the pinned official Windows payload"
+        );
+        return Ok(selected);
+    }
+    let (parts, identity, expected) = slang_plan()?;
+    Ok(prepare_parts(root, &parts, &identity, &expected)?.join("slang-windows"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    #[ignore = "requires the independently downloaded official Slang Windows ZIP"]
+    fn official_slang_payload_installs_and_reuses_without_fetching() {
+        let archive = PathBuf::from(
+            std::env::var_os("GAMEPKG_SLANG_TEST_ARCHIVE")
+                .expect("set official Slang test archive"),
+        );
+        let root = tempfile::tempdir().unwrap();
+        let (parts, identity, expected) = slang_plan().unwrap();
+        let installed = install(root.path(), &parts, &identity, &expected, |_| {
+            Ok(archive.clone())
+        })
+        .unwrap();
+        assert_eq!(
+            install(root.path(), &parts, &identity, &expected, |_| panic!(
+                "verified cache must not fetch"
+            ))
+            .unwrap(),
+            installed
+        );
+        prepare_slang(root.path(), Some(&installed.join("slang-windows"))).unwrap();
+        std::fs::write(installed.join("slang-windows/bin/slangc.exe"), b"damaged").unwrap();
+        assert!(prepare_slang(root.path(), Some(&installed.join("slang-windows"))).is_err());
+    }
     #[test]
     fn compiler_arguments_preserve_drive_unc_unicode_and_spaces() {
         for (input, expected) in [

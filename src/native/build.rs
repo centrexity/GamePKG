@@ -103,7 +103,13 @@ pub(super) fn compile_with_settings(
         needs_shaders,
     )?;
     #[cfg(windows)]
-    let binary = super::windows_build::compile(root, stage.path(), &m, settings, needs_shaders)?;
+    let binary = {
+        crate::source::parse_build_tree(stage.path())?;
+        if needs_shaders {
+            crate::shaders::compile(root, &original, &mut package, &m, settings)?;
+        }
+        super::windows_build::compile(root, stage.path(), &m, settings)?
+    };
     let bytes = crate::files::read_regular(&binary, 64 * 1048576, false)?;
     super::validate_executable(&bytes)?;
     ensure!(

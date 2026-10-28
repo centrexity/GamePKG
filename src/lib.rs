@@ -33,6 +33,8 @@ pub mod takedawn_player;
 #[cfg(any(windows, test))]
 mod takedawn_windows_sdk;
 pub mod verify;
+#[cfg(windows)]
+mod windows_compiler;
 pub mod xbox_disc;
 pub mod zelda_replay;
 mod zelda_snapshots;
