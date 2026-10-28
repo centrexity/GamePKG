@@ -313,7 +313,12 @@ fn main() {
         .unwrap();
         let error = compile(root.path(), &stage, &manifest, &settings).unwrap_err();
         let message = format!("{error:#}");
-        assert!(message.contains("native build failed"), "{message}");
+        assert!(
+            message.contains("native Rust static-library stage"),
+            "{message}"
+        );
+        assert!(message.contains("isolated build failed"), "{message}");
+        assert!(message.contains("os error 5"), "{message}");
         assert!(!message.contains("private compiler marker"));
         assert_eq!(std::fs::read(&secret).unwrap(), b"private compiler marker");
         println!("Verified pinned standalone Rust compile, PE identity, confined binary worker exchange and denied host-file include; no WSL or Python process is used.");
