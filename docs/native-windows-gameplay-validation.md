@@ -822,3 +822,22 @@ time. These are diagnostics, not a timeout increase or gameplay fix. The same
 native Linux gameplay/save/reload/restart fixture still passes with the exact
 new SDK source embedded in its test binary. Actual Windows traces are required
 to locate and fix the stalled phase.
+
+At `dcd8855`, both actual Windows widths complete the C step, pixel conversion,
+image transfer and stereo-audio transfer before the same first-frame timeout.
+The next diagnostics retain elapsed microseconds and the last host request,
+and distinguish save-state inspection/transfer from end-of-frame diagnostics.
+The unchanged Linux native gameplay/save/reload/restart fixture passes; the
+Windows cause is still unproven and no deadline is increased.
+
+The Unicode raster correction also passes all 133 rendering tests as a real
+ELF32/i386 executable on the local Linux64 host. The test links the real 32-bit
+app library and SDL mixer; this is not a physical 32-bit OS qualification.
+The 32-bit Linux/Windows/Android workflow now includes the complete game suite
+(the SDL-only comparison is Linux-specific). Android's runner previously built
+the render-resource suite without executing it; it now runs every named suite.
+Its filesystem-dependent signing fixture is embedded byte-for-byte so the
+device needs no checkout. Three black-box controls compare compiled suites
+with actual runner invocations, require failure propagation and reject a
+missing binary. The four resource tests and strict lint pass locally; actual
+new Windows/Android execution remains required.

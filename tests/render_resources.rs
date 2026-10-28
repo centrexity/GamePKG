@@ -142,23 +142,32 @@ fn unsigned_manifest_edits_cannot_grant_the_larger_profile() {
     use std::io::{Read, Write};
     let temp = tempfile::tempdir().unwrap();
     let recipe = temp.path().join("recipe");
-    for name in [
-        "thumbnail.png",
-        "LICENSE",
-        "CREDITS.md",
-        "source/Cargo.toml",
-        "source/Cargo.lock",
-        "source/src/lib.rs",
+    for (name, bytes) in [
+        (
+            "thumbnail.png",
+            include_bytes!("../examples/minimal/thumbnail.png") as &[u8],
+        ),
+        ("LICENSE", include_bytes!("../examples/minimal/LICENSE")),
+        (
+            "CREDITS.md",
+            include_bytes!("../examples/minimal/CREDITS.md"),
+        ),
+        (
+            "source/Cargo.toml",
+            include_bytes!("../examples/minimal/source/Cargo.toml"),
+        ),
+        (
+            "source/Cargo.lock",
+            include_bytes!("../examples/minimal/source/Cargo.lock"),
+        ),
+        (
+            "source/src/lib.rs",
+            include_bytes!("../examples/minimal/source/src/lib.rs"),
+        ),
     ] {
         let output = recipe.join(name);
         std::fs::create_dir_all(output.parent().unwrap()).unwrap();
-        std::fs::copy(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("examples/minimal")
-                .join(name),
-            output,
-        )
-        .unwrap();
+        std::fs::write(output, bytes).unwrap();
     }
     let standard = text(false)
         .replace(

@@ -716,6 +716,9 @@ impl Session {
         self.audio_channels = 1;
         self.achievements.clear();
         let previous = self.save.as_ref().map(|s| s.bytes.clone());
+        let began = Instant::now();
+        let mut calls = 0;
+        let mut last_request = None;
         let result = (|| {
             let end = Instant::now() + self.deadline;
             let mut request = input.to_le_bytes().to_vec();
@@ -724,7 +727,6 @@ impl Session {
                 event.encode(&mut request)?;
             }
             self.send(&request, end)?;
-            let mut calls = 0;
             loop {
                 let p = self.receive(end)?;
                 if p.first() == Some(&0) {
@@ -732,6 +734,7 @@ impl Session {
                     return Ok(u64::from_le_bytes(p[1..].try_into()?));
                 }
                 calls += 1;
+                last_request = Some((p[0], p.len()));
                 ensure!(
                     calls <= super::MAX_CALLS_PER_TICK,
                     "native host call budget exceeded"
@@ -757,6 +760,7 @@ impl Session {
                 Ok(v)
             }
             Err(e) => {
+                let elapsed = began.elapsed().as_micros();
                 let _ = self.effects.finish(false);
                 self.user_files.finish(false);
                 self.window.finish(false);
@@ -768,7 +772,9 @@ impl Session {
                     save.bytes = bytes;
                     save.dirty = false;
                 }
-                Err(self.stop_with_log(e))
+                Err(self.stop_with_log(e.context(format!(
+                    "native tick stopped after {elapsed} us; {calls} host calls; last request {last_request:?}"
+                ))))
             }
         }
     }
