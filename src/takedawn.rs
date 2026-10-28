@@ -13,6 +13,8 @@ pub const MEMORY: u64 = 4 * 1024 * 1024 * 1024;
 pub const KIT_SHA256: &str = "a40e9656476633125d2fd50cc6a71134a453f8942634e34ebef848a215b98a5a";
 pub const KIT_ASSET: &str = "assets/takedawn-source-kit.tar.gz";
 pub const CURRENT_KIT_SHA256: &str =
+    "7f56741fa8f0a56d3e718af1f772bae9200514b6293c2d218e56cde700123c8b";
+pub const LEGACY_WINDOWS_V14_KIT_SHA256: &str =
     "7cfd18d26b8a6e51005f75d7cedc1c01925237574bc579df5027b0167413a986";
 pub const WINDOWS_KIT_SHA256: &str = CURRENT_KIT_SHA256;
 pub const LEGACY_WINDOWS_V13_KIT_SHA256: &str =
@@ -25,6 +27,7 @@ pub(crate) fn reviewed_kit_digest(bytes: &[u8]) -> Result<String> {
         [
             KIT_SHA256,
             CURRENT_KIT_SHA256,
+            LEGACY_WINDOWS_V14_KIT_SHA256,
             LEGACY_WINDOWS_V13_KIT_SHA256,
             LEGACY_WINDOWS_KIT_SHA256
         ]

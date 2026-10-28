@@ -6,9 +6,49 @@ C/C++. Players do not need Python, C2Rust or WSL. The owned supported ISO is rea
 in place. Maintainer tools and private test saves are separate from player
 requirements and the user's library.
 
-## Current v14 profile
+## Prepared v15 multiplayer input follow-up
 
-The current unreleased 0.1.3 recipe selects v14, with source-kit SHA-256
+The unreleased 0.1.4 recipe selects the v15 kit, SHA-256
+`7f56741fa8f0a56d3e718af1f772bae9200514b6293c2d218e56cde700123c8b`.
+It changes only the staged native controller policy and its CMake attachment;
+all 487 prepared Rust units and 24,035 exports are unchanged from v14.
+Older v14 recipes remain admitted for identity/save continuity.
+
+An actual v14 split-screen run reproduces a missing PS2-control gate: both
+players are in play under the original multiplayer module, but their physical
+bottom buttons remain Xbox A instead of the accelerator. The new read-only gate
+follows the title's own controller assignments and device ports, then checks
+each player's phase, intro and result state. It does not assume that the first
+physical controller owns player one. Shared pause/exit transitions stop driving
+controls; one player's results do not change the other player's active controls.
+Keyboard/touch input keeps the existing source exclusions and slot ownership.
+
+The complete staged input source passes 213 assignment/state/handover checks
+under Address, UndefinedBehavior and Leak sanitizers at both native pointer
+widths, with a compile-time 32-bit requirement for the ELF32 CI mode. All 15
+glyph-family checks still pass. A native reference build compiles the changed
+input object and relinks hash-verified existing runtime/Rust objects; it retains
+all 24,035 exports. It is not a fresh rebuild of every source file.
+Actual split-screen checks pass PS2 accelerator mapping for both players,
+held-button suppression when pause opens, and mapping restoration after Resume.
+Both Xbox and Nintendo face layouts pass with player one pausing. Player two's
+pause-owner check is recorded separately. Original Vulkan and unsupported-path
+gates pass, with dummy audio and unchanged private references. A first helper
+assertion incorrectly excluded controller reads on the exact pause-transition
+frame; its failure and same-frame traces are preserved before the corrected run.
+
+Both app entries build and six real source-kit handoff/rejection tests pass.
+The normal unseeded signed-package v15 Build is in progress: the initial private
+configuration omitted the native tools folder and stopped before compiling any
+game unit; the documented folder is now configured for the cold build. Full
+signed Build/repair/play and actual Windows build/hardware checks remain open
+for v15. Mixed split-screen result/driving prompt presentation, natural
+multiplayer completion and full campaigns also remain unqualified. The verified
+v14 hardware preview remains unchanged; it does not qualify this new input fix.
+
+## Verified v14 baseline
+
+The verified 0.1.3 recipe selects v14, with source-kit SHA-256
 `7cfd18d26b8a6e51005f75d7cedc1c01925237574bc579df5027b0167413a986`.
 It requires the 0.1.18 development app. All 24,003 prepared Rust game functions
 are retained across 487 units and 24,035 native exports. The older 0.1.17 stable
@@ -46,6 +86,31 @@ holds normal acceleration continuously to the natural finish. It writes no game
 memory, score, event timer, medal, unlock or result. This qualifies that medal and
 persistence path; it does not establish an entirely uninterrupted real-time event,
 higher medal tiers, all campaign events or physical controller behavior.
+
+A separate unpaused headless check now drives the entire event with normal
+steering, accelerator and boost inputs and debug AI disabled. It reaches the
+original Totaled/Bronze result with one takedown, 400 points and two new events.
+The actual controller-read log shows all five Continue presses reaching the
+game. Original reward and successful autosave screens run, and saved bytes
+change. A fresh process loads that exact earned save and displays 2/173 events,
+1,535 global points, two takedowns and the Road Rage1 bronze icon. Its active
+profile, metadata and earned reference remain byte-for-byte identical after
+loading. Both owned processes exit zero under the actual-Vulkan and strict
+unsupported-path gates, using dummy audio and the ISO in place. There are no
+pause transitions after initial unpaused state, game-memory/result writes or
+debug-AI activation. This qualifies an unpaused headless event/save path; physical
+controllers, Windows hardware and exact wall-clock pacing remain separate.
+
+An earlier unpaused check earns Bronze with two takedowns but stops before
+Continue; it does not qualify that result's persistence. Private save-driver
+errors are retained separately: a long held input postpones menu commands, and
+parse-time input scheduling was incorrectly treated as controller delivery.
+The latter attempt finishes with Bronze but never delivers Continue and leaves
+the save unchanged; its zero process exit is not a passing save qualification.
+The corrected driver bounds queued holds by the observed game clock, waits for
+actual controller reads and rejects unchanged earned saves. A negative/positive
+check rejects the undelivered trace and recognizes the earlier real delivery.
+These are maintainer-driver corrections, not production deadline changes.
 
 The complete v14 Windows archive also builds with actual standalone Windows
 Rust under Wine. Its linked executable has SHA-256

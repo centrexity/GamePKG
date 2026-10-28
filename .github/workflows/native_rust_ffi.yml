@@ -91,9 +91,17 @@ jobs:
           mkdir -p target
           rustc --edition=2021 -Dwarnings --test engines/takedawn/rust-port/build-windows-runtime.rs -o target/takedawn-windows-paths
           target/takedawn-windows-paths
-      - name: Verify driving prompts against original input mapping
+      - name: Verify driving input and prompts against original mapping
         if: runner.os == 'Linux'
         run: python3 tools/check_takedawn_input_glyphs.py
+      - name: Install 32-bit input regression prerequisites
+        if: runner.os == 'Linux'
+        run: |
+          bash tools/ci_ubuntu_apt.sh update
+          bash tools/ci_ubuntu_apt.sh install -y gcc-multilib libc6-dev-i386
+      - name: Execute driving input and prompts as real ELF32
+        if: runner.os == 'Linux'
+        run: python3 tools/check_takedawn_input_glyphs.py --m32
 
   native-critical-sections:
     runs-on: ubuntu-24.04
