@@ -199,6 +199,127 @@ mod tests {
     use super::*;
 
     #[test]
+    #[ignore = "downloads the reviewed Windows C toolchain and checks confined compilation"]
+    fn reviewed_c_compiler_preserves_target_and_denies_host_include() {
+        assert!(gamepkg_takedawn_windows_runner::supports_amd64_tools());
+        let root = tempfile::Builder::new()
+            .prefix("gamepkg C compiler with spaces ")
+            .tempdir()
+            .unwrap();
+        let sdk = crate::takedawn_windows_sdk::prepare(root.path()).unwrap();
+        let llvm = sdk.join("llvm-mingw-windows").canonicalize().unwrap();
+        let compiler = llvm.join("bin/clang.exe");
+        assert!(compiler.is_file(), "reviewed Clang executable missing");
+        let stage = root.path().join("private C source");
+        std::fs::create_dir_all(&stage).unwrap();
+        let stage = stage.canonicalize().unwrap();
+        let (target, machine, pointer_bytes) = if cfg!(target_arch = "x86") {
+            ("i686-w64-mingw32", 0x14cu16, 4)
+        } else {
+            ("x86_64-w64-mingw32", 0x8664u16, 8)
+        };
+        std::fs::write(stage.join("probe.c"), format!(
+            "#include <stdint.h>\n#include <stddef.h>\n_Static_assert(sizeof(void*)=={pointer_bytes},\"wrong pointer width\");\n_Static_assert(sizeof(long)==4,\"wrong Windows ABI\");\nuint64_t probe(uint64_t x){{return x^UINT64_C(0x1122334455667788);}}\n"
+        )).unwrap();
+        let canary = root.path().join("host-canary.h");
+        std::fs::write(&canary, "#define GAMEPKG_HOST_CANARY 0x5137\n").unwrap();
+        let canary_path = crate::takedawn_windows_sdk::compiler_path(&canary)
+            .unwrap()
+            .to_string_lossy()
+            .replace('\\', "/");
+        std::fs::write(
+            stage.join("host-include.c"),
+            format!(
+            "#include \"{canary_path}\"\nint host_canary(void){{return GAMEPKG_HOST_CANARY;}}\n"
+        ),
+        )
+        .unwrap();
+        let identity = crate::verify::digest(stage.as_os_str().as_encoded_bytes());
+        let sandbox = Sandbox::open(&format!("GamePKG.CCompiler.{}", &identity[..32])).unwrap();
+        sandbox.grant_runtime(&llvm).unwrap();
+        sandbox.grant_saves(&stage).unwrap();
+        let (directory, mut values) = environment(&stage, &llvm, target).unwrap();
+        let path = crate::takedawn_windows_sdk::compiler_path(&llvm.join("bin")).unwrap();
+        values
+            .iter_mut()
+            .find(|(name, _)| name == "PATH")
+            .unwrap()
+            .1 = path.into_os_string();
+        let execute = |arguments: &[OsString]| {
+            crate::windows_compiler::run(
+                &compiler,
+                arguments,
+                &directory,
+                &values,
+                &sandbox,
+                Instant::now() + Duration::from_secs(60),
+            )
+        };
+        match execute(&["--version".into()]) {
+            Ok(output) => println!(
+                "Confined Clang default-path control: {}",
+                String::from_utf8_lossy(&output)
+            ),
+            Err(error) => println!("Confined Clang default-path control failed: {error:#}"),
+        }
+        let version = execute(&["-no-canonical-prefixes".into(), "--version".into()])
+            .expect("confined Clang startup with explicit executable paths");
+        assert!(String::from_utf8_lossy(&version).contains("clang version"));
+        let arguments = |input: &str, output: &str| -> Vec<OsString> {
+            [
+                "-no-canonical-prefixes",
+                "--target",
+                target,
+                "-std=c11",
+                "-O3",
+                "-fno-strict-aliasing",
+                "-fno-builtin",
+                "-D__USE_MINGW_ANSI_STDIO=0",
+                "-D_CRTIMP=",
+                "-c",
+                input,
+                "-o",
+                output,
+            ]
+            .into_iter()
+            .map(Into::into)
+            .collect()
+        };
+        execute(&arguments("probe.c", "probe.o")).expect("confined target-sized C compilation");
+        let verify_object = |name: &str| {
+            let object = crate::files::read_regular(&stage.join(name), 2 * 1048576, false).unwrap();
+            assert!(object.len() > 20);
+            assert_eq!(
+                u16::from_le_bytes([object[0], object[1]]),
+                machine,
+                "wrong COFF target"
+            );
+        };
+        verify_object("probe.o");
+        let failure = execute(&arguments("host-include.c", "denied.o"))
+            .expect_err("confined Clang read an ungranted host include");
+        let diagnostic = format!("{failure:#}");
+        assert!(
+            diagnostic.contains("host-canary.h")
+                && (diagnostic.contains("not found") || diagnostic.contains("Permission denied")),
+            "wrong host-include rejection: {diagnostic}"
+        );
+        assert!(!stage.join("denied.o").exists());
+        // Deliberate test control with the same compiler, environment and file.
+        // Production compilation always uses the restricted process above.
+        let mut control = std::process::Command::new(&compiler);
+        control
+            .args(arguments("host-include.c", "control.o"))
+            .current_dir(&directory)
+            .env_clear()
+            .envs(values.iter().map(|(k, v)| (k, v)));
+        let control = crate::compiler::run_timed(&mut control, Duration::from_secs(20)).unwrap();
+        assert!(control.status.success(), "{}", control.stderr);
+        verify_object("control.o");
+        println!("Verified confined reviewed C compiler: {target}; correct COFF/ABI and denied host include with same-file positive control; no engine admission or game media.");
+    }
+
+    #[test]
     #[ignore = "downloads and executes the official standalone Windows Rust compiler"]
     fn managed_compiler_and_native_worker_without_wsl() {
         let root = tempfile::Builder::new()

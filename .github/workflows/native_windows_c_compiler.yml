@@ -1,0 +1,62 @@
+name: Confined reviewed Windows C compiler
+on:
+  push:
+    paths:
+      - 'src/native/windows_build.rs'
+      - 'src/windows_compiler.rs'
+      - 'src/takedawn_windows_sdk.rs'
+      - 'engines/takedawn/windows-dependencies.json'
+      - 'engines/takedawn/windows-runner/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/native_windows_c_compiler.yml'
+  pull_request:
+    paths:
+      - 'src/native/windows_build.rs'
+      - 'src/windows_compiler.rs'
+      - 'src/takedawn_windows_sdk.rs'
+      - 'engines/takedawn/windows-dependencies.json'
+      - 'engines/takedawn/windows-runner/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/native_windows_c_compiler.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: native-windows-c-compiler-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  reviewed-c-compiler:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [i686-pc-windows-msvc, x86_64-pc-windows-msvc]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: native-windows-c-${{ matrix.target }}
+      - name: Verify target-sized C objects and denied host includes
+        shell: pwsh
+        run: |
+          cargo test --locked --target ${{ matrix.target }} --lib native::windows_build::tests::reviewed_c_compiler_preserves_target_and_denies_host_include -- --ignored --exact --nocapture 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP/reviewed-c-compiler.log"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $log = Get-Content -Raw "$env:RUNNER_TEMP/reviewed-c-compiler.log"
+          if ($log -notmatch 'Verified confined reviewed C compiler:') { throw 'Missing target/ABI and denied-include qualification' }
+          if ($log -notmatch 'test result: ok\. 1 passed; 0 failed;') { throw 'The exact C compiler test did not pass' }
+      - name: Preserve the C compiler diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reviewed-c-compiler-${{ matrix.target }}
+          path: ${{ runner.temp }}/reviewed-c-compiler.log
+          retention-days: 7
+          if-no-files-found: warn
