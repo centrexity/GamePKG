@@ -54,6 +54,21 @@ next
     let built = super::path_for_digest(root, &digest);
     let mut bytes = std::fs::read(&built).unwrap();
     super::validate_executable(&bytes).unwrap();
+    #[cfg(target_os = "linux")]
+    {
+        assert_eq!(bytes[4], if usize::BITS == 32 { 1 } else { 2 });
+        let mut wrong_width = bytes.clone();
+        wrong_width[4] = if bytes[4] == 1 { 2 } else { 1 };
+        assert!(super::validate_executable(&wrong_width)
+            .unwrap_err()
+            .to_string()
+            .contains("pointer width"));
+        println!(
+            "Verified native ELF{} build and rejection of a mismatched-width artifact",
+            usize::BITS
+        );
+    }
+
     let open = || {
         let mut package = crate::archive::Package::open(&package_path).unwrap();
         crate::verify::verify_embedded(&mut package).unwrap();
@@ -138,4 +153,32 @@ next
 fn signed_native_sdk_assets_saves_and_integrity() {
     let root = tempfile::tempdir().unwrap();
     verify_signed_sdk(root.path(), &crate::settings::Settings::default());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+#[ignore = "requires Clang 18, matching native system libraries and bubblewrap"]
+fn reviewed_c_engines_build_for_app_width() {
+    let root = tempfile::tempdir().unwrap();
+    let settings = crate::settings::Settings::default();
+    for name in ["doom", "zelda3"] {
+        let package = root.path().join(format!("{name}.gamepkg"));
+        crate::pack::pack(
+            &Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("ports")
+                .join(name),
+            &package,
+            &[119; 32],
+        )
+        .unwrap();
+        let manifest = crate::registry::install(root.path(), &package, true).unwrap();
+        super::build::compile_with_settings(root.path(), &manifest.id, &settings).unwrap();
+        let digest = crate::verify::digest(&std::fs::read(&package).unwrap());
+        let built = super::path_for_digest(root.path(), &digest);
+        let bytes = std::fs::read(&built).unwrap();
+        super::validate_executable(&bytes).unwrap();
+        assert_eq!(bytes[4], if usize::BITS == 32 { 1 } else { 2 });
+        crate::integrity::verify_build(&built, &bytes).unwrap();
+        println!("Verified optimized signed native {name} ELF{} engine Build and integrity; no original ROM/media or gameplay used", usize::BITS);
+    }
 }

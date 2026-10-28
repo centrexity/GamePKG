@@ -266,6 +266,10 @@ pub(crate) fn validate_executable(bytes: &[u8]) -> Result<()> {
             "compiler did not produce a native executable"
         );
         ensure!(
+            bytes[4] == if usize::BITS == 64 { 2 } else { 1 },
+            "native artifact has an incompatible pointer width"
+        );
+        ensure!(
             bytes[5] == 1,
             "native artifact has an incompatible byte order"
         );

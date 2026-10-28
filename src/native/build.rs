@@ -253,6 +253,8 @@ fn compile_linux(
             "/toolchain/bin:/usr/bin",
             "--",
             "/toolchain/bin/rustc",
+            "--target",
+            env!("GAMEPKG_BUILD_TARGET"),
             "--edition=2021",
             "-Awarnings",
             "-C",
@@ -302,7 +304,7 @@ fn sandbox(cmd: &mut std::process::Command, stage: &Path) {
         "/usr",
         "/usr",
     ]);
-    for p in ["/lib", "/lib64"] {
+    for p in ["/lib", "/lib64", "/lib32"] {
         if Path::new(p).exists() {
             cmd.args(["--ro-bind", p, p]);
         }
@@ -496,6 +498,8 @@ fn engine(stage: &Path, profile: &str, optimize: bool) -> Result<Vec<String>> {
         "/work/objects",
         "--",
         "/usr/bin/clang-18",
+        "-target",
+        env!("GAMEPKG_BUILD_TARGET"),
         "-c",
         "-fPIC",
         "-fno-strict-aliasing",

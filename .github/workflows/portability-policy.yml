@@ -19,7 +19,7 @@ jobs:
         run: |
           sudo dpkg --add-architecture i386
           bash tools/ci_ubuntu_apt.sh update
-          bash tools/ci_ubuntu_apt.sh install -y gcc-multilib g++-multilib libasound2-dev:i386 libudev-dev:i386
+          bash tools/ci_ubuntu_apt.sh install -y gcc-multilib g++-multilib libc6-dev:i386 linux-libc-dev:i386 libasound2-dev:i386 libudev-dev:i386 bubblewrap clang-18 lld-18
       - name: Build portable decoder companion
         run: |
           rustup target add wasm32-unknown-unknown
@@ -29,6 +29,21 @@ jobs:
           PKG_CONFIG_ALLOW_CROSS: '1'
           PKG_CONFIG_LIBDIR: /usr/lib/i386-linux-gnu/pkgconfig
         run: cargo test --locked --all-features --target i686-unknown-linux-gnu --test portability --test runtime --test components --test path_attacks --test dependency_attacks --test source_attacks --test render_resources --test memory_budget --test audio_effect_assets --test music_permissions
+      - name: Stage a matching Rust toolchain for isolated native 32-bit builds
+        run: |
+          sudo cp -a "$(rustc --print sysroot)" /tmp/gamepkg-ci-native32-toolchain
+          sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-native32-rustup rustup toolchain link gamepkg-ci-native32 /tmp/gamepkg-ci-native32-toolchain
+          sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-native32-rustup rustup default gamepkg-ci-native32
+      - name: Compile and execute signed 32-bit native source games
+        env:
+          PKG_CONFIG_ALLOW_CROSS: '1'
+          PKG_CONFIG_LIBDIR: /usr/lib/i386-linux-gnu/pkgconfig
+        run: sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER,PKG_CONFIG_ALLOW_CROSS,PKG_CONFIG_LIBDIR env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-native32-rustup CARGO_HOME="$HOME/.cargo" cargo test --locked --all-features --target i686-unknown-linux-gnu --lib native::signed_fixture::signed_native_sdk_assets_saves_and_integrity -- --ignored --exact --nocapture
+      - name: Compile signed 32-bit reviewed C engine ports
+        env:
+          PKG_CONFIG_ALLOW_CROSS: '1'
+          PKG_CONFIG_LIBDIR: /usr/lib/i386-linux-gnu/pkgconfig
+        run: sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER,PKG_CONFIG_ALLOW_CROSS,PKG_CONFIG_LIBDIR env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-native32-rustup CARGO_HOME="$HOME/.cargo" cargo test --locked --all-features --target i686-unknown-linux-gnu --lib native::signed_fixture::reviewed_c_engines_build_for_app_width -- --ignored --exact --nocapture
       - name: Build 32-bit Linux CLI and GUI
         env:
           PKG_CONFIG_ALLOW_CROSS: '1'
