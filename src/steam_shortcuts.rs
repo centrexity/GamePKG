@@ -285,17 +285,52 @@ fn quoted_path(path: &Path) -> Result<String> {
     );
     Ok(format!("\"{text}\""))
 }
-fn launch_options(library: &Path, id: &str, target: &str) -> Result<String> {
+fn launch_options(
+    library: &Path,
+    id: &str,
+    target: &str,
+    configuration: Option<&Path>,
+) -> Result<String> {
     ensure!(
         id.bytes()
             .all(|b| b.is_ascii_alphanumeric() || b".-_".contains(&b)),
         "invalid game ID"
     );
     ensure!(matches!(target, "native" | "wasm"), "invalid game target");
-    Ok(format!(
+    let mut options = format!(
         "--library {} --play {id} --target {target}",
         quoted_path(library)?
-    ))
+    );
+    if let Some(configuration) = configuration {
+        options.push_str(" --config ");
+        options.push_str(&quoted_path(configuration)?);
+    }
+    Ok(options)
+}
+
+// Match the game's identity across a target/settings change, including legacy
+// shortcuts without --config. Accept only the options this host generates;
+// arbitrary extra arguments must not identify an unrelated shortcut as ours.
+fn matching_options(options: &[u8], base: &str) -> bool {
+    let Ok(options) = std::str::from_utf8(options) else {
+        return false;
+    };
+    if options == base {
+        return true;
+    }
+    let Some(configuration) = options
+        .strip_prefix(base)
+        .and_then(|s| s.strip_prefix(" --config "))
+    else {
+        return false;
+    };
+    let Some(path) = configuration
+        .strip_prefix('"')
+        .and_then(|s| s.strip_suffix('"'))
+    else {
+        return false;
+    };
+    !path.is_empty() && !path.chars().any(|c| c == '"' || c.is_control())
 }
 fn entry(index: u32, appid: u32, title: &str, exe: &Path, options: &str) -> Result<Vec<u8>> {
     let start = quoted_path(
@@ -343,27 +378,29 @@ fn add_bytes(
     library: &Path,
     id: &str,
     target: &str,
+    configuration: Option<&Path>,
 ) -> Result<(Vec<u8>, bool)> {
     checked_text(title, "game title")?;
     ensure!(title.len() <= 250, "game title is too long for Steam");
-    let options = launch_options(library, id, target)?;
+    let options = launch_options(library, id, target, configuration)?;
+    let legacy = launch_options(library, id, target, None)?;
     let alternate = launch_options(
         library,
         id,
         if target == "native" { "wasm" } else { "native" },
+        None,
     )?;
     let parsed = parse(existing)?;
-    let matches = parsed
-        .entries
-        .iter()
-        .filter(|entry| {
-            entry
-                .fields
-                .options
-                .as_deref()
-                .is_some_and(|o| o == options.as_bytes() || o == alternate.as_bytes())
-        })
-        .collect::<Vec<_>>();
+    let matches =
+        parsed
+            .entries
+            .iter()
+            .filter(|entry| {
+                entry.fields.options.as_deref().is_some_and(|o| {
+                    matching_options(o, &legacy) || matching_options(o, &alternate)
+                })
+            })
+            .collect::<Vec<_>>();
     ensure!(
         matches.len() <= 1,
         "multiple matching GamePKG shortcuts exist in Steam; remove duplicates there first"
@@ -573,7 +610,16 @@ pub fn add(
         b"\0shortcuts\0\x08".to_vec()
     };
     let title = shortcut_title(installed.display_title(), &installed.id);
-    let (output, changed) = add_bytes(&existing, &title, exe, library, &manifest.id, target)?;
+    let configuration = std::path::absolute(crate::settings::path()?)?;
+    let (output, changed) = add_bytes(
+        &existing,
+        &title,
+        exe,
+        library,
+        &manifest.id,
+        target,
+        Some(&configuration),
+    )?;
     if !changed {
         return Ok(format!("{title} is already in {}.", account.label));
     }
@@ -594,12 +640,163 @@ mod tests {
 
     const EMPTY: &[u8] = b"\0shortcuts\0\x08";
     #[test]
+    fn retains_settings_and_migrates_old_shortcuts_without_changing_appid() {
+        let exe = Path::new("/opt/Game PKG/gamepkg-gui");
+        let library = Path::new("/home/player/My Games");
+        let first_config = Path::new("/home/player/Preview settings.toml");
+        let second_config = Path::new("/home/player/Other settings.toml");
+        let (legacy, _) =
+            add_bytes(EMPTY, "Game", exe, library, "one.game", "native", None).unwrap();
+        let old_id = parse(&legacy).unwrap().entries[0].fields.appid;
+        let (migrated, changed) = add_bytes(
+            &legacy,
+            "Game",
+            exe,
+            library,
+            "one.game",
+            "native",
+            Some(first_config),
+        )
+        .unwrap();
+        assert!(changed);
+        let parsed = parse(&migrated).unwrap();
+        assert_eq!(parsed.entries.len(), 1);
+        assert_eq!(parsed.entries[0].fields.appid, old_id);
+        assert_eq!(parsed.entries[0].fields.options.as_deref(), Some(b"--library \"/home/player/My Games\" --play one.game --target native --config \"/home/player/Preview settings.toml\"".as_slice()));
+        let (same, changed) = add_bytes(
+            &migrated,
+            "Game",
+            exe,
+            library,
+            "one.game",
+            "native",
+            Some(first_config),
+        )
+        .unwrap();
+        assert!(!changed);
+        assert_eq!(same, migrated);
+        let (updated, changed) = add_bytes(
+            &migrated,
+            "Game",
+            exe,
+            library,
+            "one.game",
+            "wasm",
+            Some(second_config),
+        )
+        .unwrap();
+        assert!(changed);
+        let parsed = parse(&updated).unwrap();
+        assert_eq!(parsed.entries.len(), 1);
+        assert_eq!(parsed.entries[0].fields.appid, old_id);
+        assert_eq!(parsed.entries[0].fields.options.as_deref(), Some(b"--library \"/home/player/My Games\" --play one.game --target wasm --config \"/home/player/Other settings.toml\"".as_slice()));
+    }
+
+    #[test]
+    fn settings_identity_rejects_extra_arguments_and_unsafe_paths() {
+        let base = "--library \"/home/player/games\" --play one.game --target native";
+        assert!(matching_options(base.as_bytes(), base));
+        assert!(matching_options(
+            format!("{base} --config \"C:\\Users\\Player\\My Settings.toml\"").as_bytes(),
+            base
+        ));
+        for suffix in [
+            " --config \"\"",
+            " --config \"one\" --support",
+            " --config \"one\" --config \"two\"",
+            " --config \"line\nbreak\"",
+            " --config unquoted",
+            " --unknown",
+            "junk",
+        ] {
+            assert!(
+                !matching_options(format!("{base}{suffix}").as_bytes(), base),
+                "{suffix:?}"
+            );
+        }
+        assert!(!matching_options(b"\xff", base));
+        for config in [
+            "/tmp/quote\".toml",
+            "/tmp/line\nbreak.toml",
+            "/tmp/zero\0.toml",
+        ] {
+            assert!(launch_options(
+                Path::new("/games"),
+                "game",
+                "native",
+                Some(Path::new(config))
+            )
+            .is_err());
+        }
+    }
+
+    #[test]
+    fn preserves_extra_argument_shortcuts_and_rejects_ambiguous_settings_duplicates() {
+        let exe = Path::new("/opt/gamepkg-gui");
+        let library = Path::new("/home/player/games");
+        let config = Path::new("/home/player/settings.toml");
+        let base = launch_options(library, "one.game", "native", None).unwrap();
+        let foreign_options = format!("{base} --config \"/other/settings.toml\" --support");
+        let mut foreign = b"\0shortcuts\0".to_vec();
+        foreign.extend(entry(0, 123, "Different launch", exe, &foreign_options).unwrap());
+        foreign.push(8);
+        let (output, changed) = add_bytes(
+            &foreign,
+            "Game",
+            exe,
+            library,
+            "one.game",
+            "native",
+            Some(config),
+        )
+        .unwrap();
+        assert!(changed);
+        let parsed = parse(&output).unwrap();
+        assert_eq!(parsed.entries.len(), 2);
+        assert_eq!(
+            parsed.entries[0].fields.options.as_deref(),
+            Some(foreign_options.as_bytes())
+        );
+        assert_eq!(parsed.entries[0].fields.appid, Some(123));
+
+        let mut duplicates = b"\0shortcuts\0".to_vec();
+        for (index, path) in ["/first.toml", "/second.toml"].iter().enumerate() {
+            let options =
+                launch_options(library, "one.game", "native", Some(Path::new(path))).unwrap();
+            duplicates
+                .extend(entry(index as u32, 123 + index as u32, "Game", exe, &options).unwrap());
+        }
+        duplicates.push(8);
+        let before = duplicates.clone();
+        let error = add_bytes(
+            &duplicates,
+            "Game",
+            exe,
+            library,
+            "one.game",
+            "native",
+            Some(config),
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("multiple matching"));
+        assert_eq!(duplicates, before);
+    }
+
+    #[test]
     fn adds_idempotently_and_updates_existing_game_without_erasing_other_shortcuts() {
         let old = Path::new("/opt/Game PKG/bin/gamepkg-gui");
         let new = Path::new("/opt/GamePKG 2/bin/gamepkg-gui");
         let library = Path::new("/home/player/My Games");
-        let (one, changed) =
-            add_bytes(EMPTY, "One (GamePKG)", old, library, "one.game", "native").unwrap();
+        let (one, changed) = add_bytes(
+            EMPTY,
+            "One (GamePKG)",
+            old,
+            library,
+            "one.game",
+            "native",
+            None,
+        )
+        .unwrap();
         assert!(changed);
         let first = parse(&one).unwrap();
         assert_eq!(first.entries.len(), 1);
@@ -611,12 +808,28 @@ mod tests {
             first.entries[0].fields.options.as_deref(),
             Some(b"--library \"/home/player/My Games\" --play one.game --target native".as_slice())
         );
-        let (same, changed) =
-            add_bytes(&one, "One (GamePKG)", old, library, "one.game", "native").unwrap();
+        let (same, changed) = add_bytes(
+            &one,
+            "One (GamePKG)",
+            old,
+            library,
+            "one.game",
+            "native",
+            None,
+        )
+        .unwrap();
         assert!(!changed);
         assert_eq!(same, one);
-        let (two, changed) =
-            add_bytes(&one, "Two (GamePKG)", old, library, "two.game", "native").unwrap();
+        let (two, changed) = add_bytes(
+            &one,
+            "Two (GamePKG)",
+            old,
+            library,
+            "two.game",
+            "native",
+            None,
+        )
+        .unwrap();
         assert!(changed);
         assert_eq!(parse(&two).unwrap().entries.len(), 2);
         let (updated, changed) = add_bytes(
@@ -626,6 +839,7 @@ mod tests {
             library,
             "one.game",
             "wasm",
+            None,
         )
         .unwrap();
         assert!(changed);
@@ -659,20 +873,21 @@ mod tests {
             b"\0shortcuts\0\x09a\0\x08",
             b"\0shortcuts\0\x08junk",
         ] {
-            assert!(add_bytes(malformed, "Game", exe, library, "game", "native").is_err());
+            assert!(add_bytes(malformed, "Game", exe, library, "game", "native", None).is_err());
         }
-        assert!(add_bytes(EMPTY, "Game\0Bad", exe, library, "game", "native").is_err());
+        assert!(add_bytes(EMPTY, "Game\0Bad", exe, library, "game", "native", None).is_err());
         assert!(add_bytes(
             EMPTY,
             "Game",
             Path::new("/tmp/quote\"name"),
             library,
             "game",
-            "native"
+            "native",
+            None,
         )
         .is_err());
-        assert!(add_bytes(EMPTY, "Game", exe, library, "game;rm", "native").is_err());
-        assert!(add_bytes(EMPTY, "Game", exe, library, "game", "other").is_err());
+        assert!(add_bytes(EMPTY, "Game", exe, library, "game;rm", "native", None).is_err());
+        assert!(add_bytes(EMPTY, "Game", exe, library, "game", "other", None).is_err());
     }
     #[test]
     fn only_numeric_local_account_folders_are_offered() {
@@ -711,6 +926,7 @@ mod tests {
             Path::new("/home/player/games"),
             "game",
             "native",
+            None,
         )
         .unwrap();
         persist(&account, EMPTY, &updated).unwrap();
@@ -722,6 +938,7 @@ mod tests {
             Path::new("/home/player/games"),
             "game",
             "wasm",
+            None,
         )
         .unwrap();
         persist(&account, &updated, &replaced).unwrap();
