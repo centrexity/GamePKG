@@ -202,14 +202,18 @@ impl Session {
     }
     fn receive_bounded(&mut self, end: Instant, maximum: usize) -> Result<Vec<u8>> {
         let mut len = [0; 4];
-        self.transport.read_exact(&mut len, end)?;
+        self.transport
+            .read_exact(&mut len, end)
+            .context("reading native packet length")?;
         let n = u32::from_le_bytes(len) as usize;
         ensure!(
             (1..=maximum).contains(&n),
             "native worker sent an invalid packet size"
         );
         let mut b = vec![0; n];
-        self.transport.read_exact(&mut b, end)?;
+        self.transport
+            .read_exact(&mut b, end)
+            .with_context(|| format!("reading native packet body ({n} bytes)"))?;
         Ok(b)
     }
     fn send(&mut self, bytes: &[u8], end: Instant) -> Result<()> {
@@ -315,8 +319,17 @@ impl Session {
         Ok(())
     }
     fn service(&mut self, packet: &[u8], end: Instant) -> Result<()> {
+        let began = Instant::now();
         let reply = self.request(packet).unwrap_or_else(|_| vec![1]);
-        self.send(&reply, end)
+        self.send(&reply, end).with_context(|| {
+            format!(
+                "replying to native host request {} ({} input bytes, {} reply bytes, {} ms servicing)",
+                packet.first().copied().unwrap_or(0),
+                packet.len(),
+                reply.len(),
+                began.elapsed().as_millis()
+            )
+        })
     }
     fn request(&mut self, p: &[u8]) -> Result<Vec<u8>> {
         let (&op, b) = p.split_first().context("empty native request")?;

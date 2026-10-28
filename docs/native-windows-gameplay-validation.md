@@ -812,3 +812,13 @@ and requires the runtime marker as well as the existing compiler/link checks.
 It reuses the real just-built signed package and tests continued public-loader
 denial before starting the private worker. Actual Windows runtime results remain
 pending; Linux success does not qualify Windows CRT or process behavior.
+
+The first Windows runtime attempt at `3d8dfdc` builds and initializes the signed
+game at both widths, then fails on frame zero with the existing 100 ms native
+I/O deadline. Public admission stays closed. Bounded first-tick messages now
+identify C execution, pixel conversion, image transfer and audio transfer; host
+errors identify packet framing and the exact request/reply size and service
+time. These are diagnostics, not a timeout increase or gameplay fix. The same
+native Linux gameplay/save/reload/restart fixture still passes with the exact
+new SDK source embedded in its test binary. Actual Windows traces are required
+to locate and fix the stalled phase.
