@@ -71,7 +71,7 @@ jobs:
       - name: Install isolated-compiler and headless browser prerequisites
         run: |
           bash tools/ci_ubuntu_apt.sh update
-          bash tools/ci_ubuntu_apt.sh install -y --no-install-recommends bubblewrap python3-selenium python3-pil optipng
+          bash tools/ci_ubuntu_apt.sh install -y --no-install-recommends bubblewrap python3-selenium python3-websocket python3-pil optipng
           test -x "$CHROMEWEBDRIVER/chromedriver"
           sudo ln -sf "$CHROMEWEBDRIVER/chromedriver" /usr/local/bin/chromedriver
           google-chrome --version
