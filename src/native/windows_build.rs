@@ -130,16 +130,10 @@ pub(super) fn compile(
     let toolchain = toolchain.canonicalize()?;
     let stage = stage.canonicalize()?;
     let output = stage.join("game.exe");
-    let linker_name = match target {
-        "x86_64-pc-windows-gnu" => "x86_64-w64-mingw32-gcc.exe",
-        "i686-pc-windows-gnu" => "i686-w64-mingw32-gcc.exe",
-        _ => anyhow::bail!("unsupported native Windows compiler target"),
-    };
     // This is an executable path, so retain canonical Windows extended-path
     // syntax. Only GNU file/search/output arguments need ordinary syntax.
-    let linker = toolchain.join(format!(
-        "lib/rustlib/{target}/bin/self-contained/{linker_name}"
-    ));
+    // Use the official bundled LLD directly rather than the legacy GCC driver.
+    let linker = toolchain.join(format!("lib/rustlib/{target}/bin/rust-lld.exe"));
     let mut args: Vec<OsString> = [
         "--edition=2021",
         "-Awarnings",
@@ -154,6 +148,8 @@ pub(super) fn compile(
         "target-cpu=native",
         "-C",
         "link-self-contained=yes",
+        "-C",
+        "linker-flavor=ld.lld",
         "--target",
         target,
         "-C",
@@ -253,5 +249,62 @@ fn main() {
         assert!(!message.contains("private compiler marker"));
         assert_eq!(std::fs::read(&secret).unwrap(), b"private compiler marker");
         println!("Verified pinned standalone Rust compile, PE identity, confined binary worker exchange and denied host-file include; no WSL or Python process is used.");
+        signed_package_uses_generated_sdk(root.path(), &settings);
+    }
+
+    fn signed_package_uses_generated_sdk(root: &Path, settings: &crate::settings::Settings) {
+        let source = root.join("signed source");
+        for name in ["manifest.toml", "source/Cargo.toml", "source/Cargo.lock"] {
+            let path = source.join(name);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::copy(
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("examples/minimal")
+                    .join(name),
+                path,
+            )
+            .unwrap();
+        }
+        std::fs::create_dir_all(source.join("source/src")).unwrap();
+        std::fs::write(
+            source.join("source/src/lib.rs"),
+            "pub fn game_tick(input:u32,state:u64)->u64{state+(u64::from(input)<<32)}",
+        )
+        .unwrap();
+        let package_path = root.join("signed.gamepkg");
+        crate::pack::pack(&source, &package_path, &[97; 32]).unwrap();
+        let manifest = crate::registry::install(root, &package_path, true).unwrap();
+        super::super::build::compile_with_settings(root, &manifest.id, settings).unwrap();
+        let digest = crate::verify::digest(&std::fs::read(&package_path).unwrap());
+        let built = super::super::path_for_digest(root, &digest);
+        let mut bytes = std::fs::read(&built).unwrap();
+        super::super::validate_executable(&bytes).unwrap();
+        let open = || crate::archive::Package::open(&package_path).unwrap();
+        let mut session = super::super::Session::new(
+            root,
+            &digest,
+            open(),
+            manifest.clone(),
+            Vec::new(),
+            settings,
+            0,
+        )
+        .unwrap();
+        assert_eq!(session.step(1, 0, &[]).unwrap(), 1u64 << 32);
+        assert_eq!(session.step(3, 1u64 << 32, &[]).unwrap(), 4u64 << 32);
+        drop(session);
+        bytes.extend_from_slice(b"corrupt");
+        std::fs::write(&built, bytes).unwrap();
+        assert!(super::super::Session::new(
+            root,
+            &digest,
+            open(),
+            manifest,
+            Vec::new(),
+            settings,
+            0
+        )
+        .is_err());
+        println!("Verified signed source package, native-only Build, generated SDK ticks and corrupted native-build rejection through the production session.");
     }
 }
