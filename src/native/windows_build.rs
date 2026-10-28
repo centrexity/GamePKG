@@ -8,6 +8,16 @@ use std::{
     time::{Duration, Instant},
 };
 
+const C_SECTION_FLAGS: &[&str] = &[
+    "-ffunction-sections",
+    "-fdata-sections",
+    // These C engines never unwind (Rust also uses panic=abort). On x64
+    // MinGW, unwind-table references otherwise retain unused emulator-only
+    // functions when GNU ld collects sections, unlike the ELF/i686 builds.
+    "-fno-asynchronous-unwind-tables",
+    "-fno-unwind-tables",
+];
+
 fn environment(
     stage: &Path,
     toolchain: &Path,
@@ -296,8 +306,6 @@ fn compile_engine(
         "-c",
         "-fno-builtin",
         "-fno-strict-aliasing",
-        "-ffunction-sections",
-        "-fdata-sections",
         "-D__USE_MINGW_ANSI_STDIO=0",
         "-D_CRTIMP=",
         if optimize { "-O3" } else { "-O0" },
@@ -305,6 +313,7 @@ fn compile_engine(
     ]
     .map(Into::into)
     .into();
+    args.extend(C_SECTION_FLAGS.iter().map(OsString::from));
     for include in &plan.includes {
         args.push(format!("-I../{include}").into());
     }
@@ -537,9 +546,75 @@ mod tests {
         let control = crate::compiler::run_timed(&mut control, Duration::from_secs(20)).unwrap();
         assert!(control.status.success(), "{}", control.stderr);
         verify_object("control.o");
+        verify_c_section_collection(root.path(), &stage, target, &execute);
         private_root.close().unwrap();
         println!("Verified confined reviewed C compiler: {target}; correct COFF/ABI and denied host include with same-file positive control; no engine admission or game media.");
         verify_reviewed_engine_links(root.path());
+    }
+
+    fn verify_c_section_collection(
+        root: &Path,
+        stage: &Path,
+        c_target: &str,
+        execute: &impl Fn(&[OsString]) -> Result<Vec<u8>>,
+    ) {
+        let (rust, target) = crate::takedawn_windows_sdk::prepare_source(root).unwrap();
+        let linker = rust.join(format!("lib/rustlib/{target}/bin/self-contained/ld.exe"));
+        let (machine, entry) = if c_target.starts_with("i686") {
+            ("i386pe", "_entry")
+        } else {
+            ("i386pep", "entry")
+        };
+        for live in [false, true] {
+            // A missing symbol may be discarded only when it is unreachable.
+            // Keep the opposite control: real missing calls must still fail.
+            let name = if live { "live-call" } else { "dead-call" };
+            std::fs::write(stage.join(format!("{name}.c")), format!(
+                "extern int gamepkg_missing_control(void);\nint unused(void){{return gamepkg_missing_control();}}\nint entry(void){{return {};}}\n",
+                if live { "gamepkg_missing_control()" } else { "7" }
+            )).unwrap();
+            let mut arguments: Vec<OsString> =
+                ["-no-canonical-prefixes", "-target", c_target, "-c", "-O3"]
+                    .map(Into::into)
+                    .into();
+            arguments.extend(C_SECTION_FLAGS.iter().map(OsString::from));
+            arguments.extend([
+                format!("{name}.c").into(),
+                "-o".into(),
+                format!("{name}.o").into(),
+            ]);
+            execute(&arguments).unwrap();
+            let output = stage.join(format!("{name}.exe"));
+            let args = vec![
+                "-m".into(),
+                machine.into(),
+                "--gc-sections".into(),
+                format!("--entry={entry}").into(),
+                crate::takedawn_windows_sdk::compiler_path(&stage.join(format!("{name}.o")))
+                    .unwrap()
+                    .into_os_string(),
+                "-o".into(),
+                crate::takedawn_windows_sdk::compiler_path(&output)
+                    .unwrap()
+                    .into_os_string(),
+            ];
+            let result = run(
+                &linker,
+                &args,
+                stage,
+                &rust,
+                target,
+                Instant::now() + Duration::from_secs(30),
+            );
+            if live {
+                let error = format!("{:#}", result.expect_err("a live unresolved call linked"));
+                assert!(error.contains("gamepkg_missing_control"), "{error}");
+            } else {
+                result.expect("unreferenced C function was retained");
+                super::super::validate_executable(&std::fs::read(output).unwrap()).unwrap();
+            }
+        }
+        println!("Verified reviewed C section collection: dead missing call discarded; live missing call rejected.");
     }
 
     fn verify_reviewed_engine_links(root: &Path) {

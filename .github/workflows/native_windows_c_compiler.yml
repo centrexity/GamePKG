@@ -3,6 +3,14 @@ on:
   push:
     paths:
       - 'src/native/windows_build.rs'
+      - 'src/native/engine_sources.rs'
+      - 'src/native/build.rs'
+      - 'src/native/engine.rs.txt'
+      - 'src/native/zelda_stdio.c.txt'
+      - 'src/doom.rs'
+      - 'src/zelda3.rs'
+      - 'engines/doom/**'
+      - 'engines/zelda3/**'
       - 'src/windows_compiler.rs'
       - 'src/takedawn_windows_sdk.rs'
       - 'engines/takedawn/windows-dependencies.json'
@@ -13,6 +21,14 @@ on:
   pull_request:
     paths:
       - 'src/native/windows_build.rs'
+      - 'src/native/engine_sources.rs'
+      - 'src/native/build.rs'
+      - 'src/native/engine.rs.txt'
+      - 'src/native/zelda_stdio.c.txt'
+      - 'src/doom.rs'
+      - 'src/zelda3.rs'
+      - 'engines/doom/**'
+      - 'engines/zelda3/**'
       - 'src/windows_compiler.rs'
       - 'src/takedawn_windows_sdk.rs'
       - 'engines/takedawn/windows-dependencies.json'
@@ -58,6 +74,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $log = Get-Content -Raw "$env:RUNNER_TEMP/reviewed-c-compiler.log"
           if ($log -notmatch 'Verified confined reviewed C compiler:') { throw 'Missing target/ABI and denied-include qualification' }
+          if ($log -notmatch 'Verified reviewed C section collection: dead missing call discarded; live missing call rejected\.') { throw 'Missing paired dead/live C link controls' }
           if ($log -notmatch 'test result: ok\. 1 passed; 0 failed;') { throw 'The exact C compiler test did not pass' }
           foreach ($port in @('doom','zelda3')) {
             if ($log -notmatch "Verified signed Windows native engine link: $port;") { throw "Missing native engine link: $port" }
