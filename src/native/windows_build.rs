@@ -258,6 +258,153 @@ mod tests {
                 Instant::now() + Duration::from_secs(60),
             )
         };
+        // Paired startup controls use only the verified compiler and the same
+        // cleared environment. They never compile game inputs outside the
+        // restricted process and cannot enable a production fallback.
+        let mut control = std::process::Command::new(&compiler);
+        control
+            .args(["-no-canonical-prefixes", "--version"])
+            .current_dir(&directory)
+            .env_clear()
+            .envs(values.iter().map(|(k, v)| (k, v)));
+        let control = crate::compiler::run_timed(&mut control, Duration::from_secs(20)).unwrap();
+        assert!(
+            control.status.success(),
+            "unconfined startup control: {}",
+            control.stderr
+        );
+        assert!(control.stdout.contains("clang version"));
+        println!(
+            "Same-image/environment startup control: {}",
+            control.stdout.trim()
+        );
+        for (label, image) in [
+            ("canonical", compiler.clone()),
+            (
+                "ordinary",
+                crate::takedawn_windows_sdk::compiler_path(&compiler).unwrap(),
+            ),
+        ] {
+            use gamepkg_takedawn_windows_runner::{Event, Launch, Session};
+            let output = stage.join(format!("clang-{label}-startup.log"));
+            let launch = Launch {
+                executable: image,
+                args: vec!["-no-canonical-prefixes".into(), "--version".into()],
+                cwd: directory.clone(),
+                environment: values.clone(),
+                disc: std::fs::File::open(stage.join("probe.c")).unwrap(),
+                output: std::fs::File::create(&output).unwrap(),
+                memory_limit_bytes: Some(crate::compiler::ADDRESS_SPACE),
+            };
+            let identity =
+                Sandbox::open(&format!("GamePKG.CCompiler.{}", &identity[..32])).unwrap();
+            let mut session = Session::start_confined(launch, identity).unwrap();
+            let end = Instant::now() + Duration::from_secs(20);
+            let code = loop {
+                if let Some(event) = session.poll().unwrap() {
+                    match event {
+                        Event::Exited(code) => break code,
+                        Event::Restarted { .. } => panic!("compiler requested a game restart"),
+                    }
+                }
+                assert!(
+                    Instant::now() < end,
+                    "confined regular-file startup timed out"
+                );
+                std::thread::sleep(Duration::from_millis(10));
+            };
+            drop(session);
+            println!(
+                "Confined regular-file {label} startup: exit={code}; {}",
+                std::fs::read_to_string(output).unwrap()
+            );
+        }
+        // Test a unique, temporary DOS-device name rooted at the already
+        // granted toolchain. LLVM's startup expands its own image path before
+        // reading options. A private root may avoid querying ungranted parents
+        // without granting the compiler any additional host files.
+        {
+            use std::os::windows::ffi::OsStrExt;
+            #[link(name = "kernel32")]
+            unsafe extern "system" {
+                fn DefineDosDeviceW(flags: u32, name: *const u16, target: *const u16) -> i32;
+                fn QueryDosDeviceW(name: *const u16, target: *mut u16, length: u32) -> u32;
+            }
+            struct Device {
+                name: Vec<u16>,
+                target: Vec<u16>,
+                active: bool,
+            }
+            impl Device {
+                fn remove(&mut self) -> bool {
+                    if !self.active {
+                        return true;
+                    }
+                    // SAFETY: both buffers are terminated. Exact-match removal
+                    // can remove only this mapping, never another device.
+                    let removed = unsafe {
+                        DefineDosDeviceW(2 | 4 | 8, self.name.as_ptr(), self.target.as_ptr()) != 0
+                    };
+                    if removed {
+                        self.active = false;
+                    }
+                    removed
+                }
+            }
+            impl Drop for Device {
+                fn drop(&mut self) {
+                    self.remove();
+                }
+            }
+            let name = format!("GamePKGCompiler{}", &identity[..32]);
+            let mut device = Device {
+                active: false,
+                name: std::ffi::OsStr::new(&name)
+                    .encode_wide()
+                    .chain(Some(0))
+                    .collect(),
+                target: crate::takedawn_windows_sdk::compiler_path(&llvm)
+                    .unwrap()
+                    .as_os_str()
+                    .encode_wide()
+                    .chain(Some(0))
+                    .collect(),
+            };
+            let mut previous = [0u16; 32768];
+            // SAFETY: terminated name, valid writable buffer and declared length.
+            let exists = unsafe {
+                QueryDosDeviceW(
+                    device.name.as_ptr(),
+                    previous.as_mut_ptr(),
+                    previous.len() as u32,
+                )
+            };
+            assert_eq!(exists, 0, "unique test device unexpectedly exists");
+            assert_eq!(std::io::Error::last_os_error().raw_os_error(), Some(2));
+            // SAFETY: terminated buffers and a unique temporary name. No
+            // drive letter, mount point or broadcast is changed.
+            let created =
+                unsafe { DefineDosDeviceW(8, device.name.as_ptr(), device.target.as_ptr()) };
+            assert_ne!(
+                created,
+                0,
+                "temporary test device: {}",
+                std::io::Error::last_os_error()
+            );
+            device.active = true;
+            let image = PathBuf::from(format!(r"\\?\{name}\bin\clang-23.exe"));
+            let result = crate::windows_compiler::run(
+                &image,
+                &["-no-canonical-prefixes".into(), "--version".into()],
+                &directory,
+                &values,
+                &sandbox,
+                Instant::now() + Duration::from_secs(20),
+            );
+            println!("Confined private-root startup: {result:?}");
+            assert!(device.remove(), "temporary test device cleanup failed");
+            drop(device);
+        }
         match execute(&["--version".into()]) {
             Ok(output) => println!(
                 "Confined Clang default-path control: {}",

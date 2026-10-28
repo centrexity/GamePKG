@@ -702,3 +702,34 @@ physical graphics/audio/controllers, original-game Windows gameplay, other
 reviewed Windows engine profiles, Android GUI/native workers, full campaigns or
 complete multiplayer qualification. Existing preview ZIPs remain immutable;
 no full 487-unit cold build, merge or stable release is repeated here.
+
+### Reviewed C compiler startup controls
+
+The pinned Clang frontend still fails its restricted `--version` probe before
+any C input is compiled. This remains a failed qualification, and reviewed
+Windows C-engine admission stays disabled. The source-game Rust compiler uses
+the separately qualified GNU linker path.
+
+The maintainer fixture now pairs that failure with the exact frontend and cleared
+environment outside the restricted process, then tests regular-file output with
+ordinary and extended executable paths. It also tries a unique temporary
+DOS-device name rooted at the already granted toolchain. This last experiment
+changes the image's path namespace, grants no additional file access, uses no
+drive letter, and removes only its own exact mapping. Creation ownership is
+tracked so an unsuccessful creation cannot remove somebody else's device.
+It is a test control, not a production compiler fallback or qualified fix.
+
+The hypothesis comes from LLVM's Windows initialization:
+[`InitLLVM.cpp`](https://github.com/llvm/llvm-project/blob/main/llvm/lib/Support/InitLLVM.cpp)
+obtains its arguments through
+[`Process.inc`](https://github.com/llvm/llvm-project/blob/main/llvm/lib/Support/Windows/Process.inc),
+which expands the image name before driver options are handled.
+[Microsoft documents](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-getlongpathnamew)
+that this lookup needs access to parent directories.
+The actual paired controls must determine whether the reviewed binary has that
+same cause; source inspection alone does not establish a runtime fix.
+
+Both Windows GNU target widths pass strict all-target Clippy for these controls.
+Actual Windows MSVC execution remains required. The final compiler startup,
+target-sized COFF/ABI, denied host include and same-file positive-control
+assertions remain mandatory and unchanged.
