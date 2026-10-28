@@ -208,8 +208,11 @@ mod tests {
             .unwrap();
         let sdk = crate::takedawn_windows_sdk::prepare(root.path()).unwrap();
         let llvm = sdk.join("llvm-mingw-windows").canonicalize().unwrap();
-        let compiler = llvm.join("bin/clang.exe");
-        assert!(compiler.is_file(), "reviewed Clang executable missing");
+        // The pinned SDK's clang.exe is a launcher that starts clang-23.
+        // Select its verified frontend directly so no launcher lookup or
+        // extra child process is needed inside the restricted environment.
+        let compiler = llvm.join("bin/clang-23.exe");
+        assert!(compiler.is_file(), "reviewed Clang frontend missing");
         let stage = root.path().join("private C source");
         std::fs::create_dir_all(&stage).unwrap();
         let stage = stage.canonicalize().unwrap();
@@ -268,7 +271,7 @@ mod tests {
         let arguments = |input: &str, output: &str| -> Vec<OsString> {
             [
                 "-no-canonical-prefixes",
-                "--target",
+                "-target",
                 target,
                 "-std=c11",
                 "-O3",
