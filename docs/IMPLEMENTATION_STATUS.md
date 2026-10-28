@@ -46,8 +46,10 @@ OS; genuinely 32-bit-OS and physical driver qualification remain separate.
 These checks cover signed native builds, scoped assets/saves/history,
 SPIR-V/WGSL/GLSL validation and native requests, corrupt outputs and denied host
 includes. They do not verify actual native shader pixels or every physical
-GPU/controller/audio setup. A truly 32-bit-OS shader compiler, Windows DXIL and
-broader platform/engine delivery remain open. See [native profile boundaries](NATIVE_RUNTIME.md).
+GPU/controller/audio setup. [Confined DXIL compilation and cache checks](https://github.com/centrexity/GamePKG/actions/runs/40676730080)
+pass at `f0d1dc3` in both app widths on AMD64 Windows, including verified DXC
+setup, corrupt output and denied host includes. DXIL playback, a truly 32-bit-OS
+shader compiler and broader platform/engine delivery remain open. See [native profile boundaries](NATIVE_RUNTIME.md).
 
 The current development recipe is v15/0.1.4 and requires the 0.1.18 development app.
 Its multiplayer PS2 input fix has sanitized 32/64-bit input checks. The normal

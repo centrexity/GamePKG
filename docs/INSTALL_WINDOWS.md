@@ -25,8 +25,11 @@ On 64-bit Windows, native Slang shader tools are also prepared automatically;
 leave the Slang folder empty unless selecting the exact official 2026.19 SDK.
 Both 32-bit and 64-bit apps can use that compiler on an AMD64 64-bit OS. SPIR-V
 and WGSL serve Vulkan, and GLSL serves OpenGL. Shader-free native games also work
-on 32-bit Windows; a shader compiler for that OS and native Windows DXIL setup
-remain unfinished. The native source-game pipeline passes signed Build, normal
+on 32-bit Windows; a shader compiler for that OS remains unfinished. Windows
+DXIL builds prepare the verified Microsoft DXC 1.9.2609 SDK automatically when
+the DXC folder is empty. Selecting a folder requires the complete exact official
+SDK. DXIL compilation/cache checks pass, but DXIL has no desktop playback
+renderer yet; keep SPIR-V/WGSL for Vulkan or GLSL for OpenGL. The native source-game pipeline passes signed Build, normal
 loading, save/history, shader validation, corrupt-output and denied-host-include
 checks. These checks do not prove physical GPU/controller/audio compatibility
 for every game.
