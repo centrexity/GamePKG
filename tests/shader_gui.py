@@ -11,7 +11,7 @@ os.chdir(project)
 binaries=Path(os.environ.get('GAMEPKG_TEST_BINARY_DIR',project/'target/release'))
 with tempfile.TemporaryDirectory(prefix='gamepkg-shader-ui-') as directory:
  root=Path(directory)
- env=dict(os.environ,DISPLAY=':97',LIBGL_ALWAYS_SOFTWARE='1',GAMEPKG_CONFIG=str(root/'settings.toml'),GAMEPKG_HOME=str(root/'library'),GAMEPKG_SLANG_ROOT=os.environ.get('GAMEPKG_SLANG_ROOT',''));env.pop('WAYLAND_DISPLAY',None)
+ env=dict(os.environ,DISPLAY=':97',LIBGL_ALWAYS_SOFTWARE='1',GAMEPKG_CONFIG=str(root/'settings.toml'),GAMEPKG_HOME=str(root/'library'),GAMEPKG_SLANG_ROOT=os.environ.get('GAMEPKG_SLANG_ROOT',''));env.pop('WAYLAND_DISPLAY',None);env.pop('GAMEPKG_RENDERER',None)
  # No backend setting by default: first-launch defaults must support desktop playback.
  (root/'settings.toml').write_text('automatic_update_checks=false\ncheck_app_updates_on_startup=false\nmute_audio=true\n')
  if args.backend:(root/'settings.toml').write_text((root/'settings.toml').read_text()+f'shader_backend = "{args.backend}"\n')
