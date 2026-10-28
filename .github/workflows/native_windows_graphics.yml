@@ -53,21 +53,31 @@ concurrency:
 jobs:
   native-graphics:
     runs-on: windows-2022
-    timeout-minutes: 35
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-pc-windows-msvc
+            mesa: x64
+            architecture: x86_64
+          - target: i686-pc-windows-msvc
+            mesa: x86
+            architecture: i686
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: wasm32-unknown-unknown
+          targets: wasm32-unknown-unknown, ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
         with:
-          key: native-windows-graphics
+          key: native-windows-graphics-${{ matrix.target }}
       - name: Build the native CLI and game window with embedded audio companions
         shell: pwsh
         run: |
-          rustc --edition=2021 tools/build_release.rs -o gamepkg-build-release.exe
+          rustc --edition=2021 --target ${{ matrix.target }} tools/build_release.rs -o gamepkg-build-release.exe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           ./gamepkg-build-release.exe --github-env
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -81,10 +91,12 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python tests/windows_graphics_capture.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python tools/install_mesa_test.py target/release
+          python tools/install_mesa_test.py target/release --architecture ${{ matrix.mesa }}
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify native shader textures, keyboard input, resize, restart and history
         shell: pwsh
+        env:
+          GAMEPKG_TEST_EXPECTED_ARCH: ${{ matrix.architecture }}
         run: |
           New-Item -ItemType Directory -Force target/windows-gui-proof | Out-Null
           python tests/windows_native_gui.py 2>&1 | Tee-Object -FilePath target/windows-gui-proof/native-graphics.log
@@ -97,7 +109,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: native-windows-graphics-evidence
+          name: native-windows-graphics-evidence-${{ matrix.architecture }}
           path: target/windows-gui-proof
           retention-days: 7
           if-no-files-found: warn
