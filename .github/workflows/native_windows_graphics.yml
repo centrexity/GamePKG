@@ -1,0 +1,97 @@
+name: Native Windows game graphics
+on:
+  push:
+    paths:
+      - 'src/gui.rs'
+      - 'src/bin/gui.rs'
+      - 'src/gpu*.rs'
+      - 'src/runtime.rs'
+      - 'src/native/**'
+      - 'src/shaders.rs'
+      - 'src/windows_compiler.rs'
+      - 'src/takedawn_windows_sdk.rs'
+      - 'engines/native/**'
+      - 'engines/takedawn/windows-runner/**'
+      - 'tests/windows_native_gui.py'
+      - 'tests/windows_gui_support.py'
+      - 'tools/build_release.rs'
+      - 'tools/install_mesa_test.py'
+      - 'build.rs'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/native_windows_graphics.yml'
+  pull_request:
+    paths:
+      - 'src/gui.rs'
+      - 'src/bin/gui.rs'
+      - 'src/gpu*.rs'
+      - 'src/runtime.rs'
+      - 'src/native/**'
+      - 'src/shaders.rs'
+      - 'src/windows_compiler.rs'
+      - 'src/takedawn_windows_sdk.rs'
+      - 'engines/native/**'
+      - 'engines/takedawn/windows-runner/**'
+      - 'tests/windows_native_gui.py'
+      - 'tests/windows_gui_support.py'
+      - 'tools/build_release.rs'
+      - 'tools/install_mesa_test.py'
+      - 'build.rs'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/native_windows_graphics.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: native-windows-graphics-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  native-graphics:
+    runs-on: windows-2022
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: native-windows-graphics
+      - name: Build the native CLI and game window with embedded audio companions
+        shell: pwsh
+        run: |
+          rustc --edition=2021 tools/build_release.rs -o gamepkg-build-release.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./gamepkg-build-release.exe --github-env
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Prepare test-only software OpenGL and screenshot tools
+        shell: pwsh
+        run: |
+          python -m pip install Pillow==11.3.0
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python tools/install_mesa_test.py target/release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify native shader textures, keyboard input, resize, restart and history
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force target/windows-gui-proof | Out-Null
+          python tests/windows_native_gui.py 2>&1 | Tee-Object -FilePath target/windows-gui-proof/native-graphics.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $log = Get-Content -Raw target/windows-gui-proof/native-graphics.log
+          foreach ($backend in @('glsl', 'spirv', 'wgsl')) {
+            if ($log -notmatch "Verified native Windows shader texture/input/clear/resize/restart/history: $backend") { throw "Missing native $backend window qualification" }
+          }
+      - name: Preserve native window pixels and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-windows-graphics-evidence
+          path: target/windows-gui-proof
+          retention-days: 7
+          if-no-files-found: warn

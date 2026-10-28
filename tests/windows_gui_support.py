@@ -1,5 +1,5 @@
 """Capture only a controlled native GamePKG window and verify guest shader input."""
-import ctypes,os,subprocess,time
+import ctypes,json,os,subprocess,time
 from ctypes import wintypes as W
 from pathlib import Path
 from PIL import Image
@@ -13,6 +13,9 @@ def verify_shader_input(project,env,game_id,label,*,texture=False):
   function=getattr(library,name);function.argtypes=arguments;function.restype=result
  for name,arguments,result in [('ShowWindow',[W.HWND,ctypes.c_int],W.BOOL),('SetWindowPos',[W.HWND,W.HWND,ctypes.c_int,ctypes.c_int,ctypes.c_int,ctypes.c_int,W.UINT],W.BOOL),('ClientToScreen',[W.HWND,ctypes.POINTER(W.POINT)],W.BOOL),('SetCursorPos',[ctypes.c_int,ctypes.c_int],W.BOOL),('WindowFromPoint',[W.POINT],W.HWND)]:
   function=getattr(user,name);function.argtypes=arguments;function.restype=result
+ user.SetThreadDpiAwarenessContext.argtypes=[W.HANDLE];user.SetThreadDpiAwarenessContext.restype=W.HANDLE
+ user.GetDpiForWindow.argtypes=[W.HWND];user.GetDpiForWindow.restype=W.UINT
+ user.GetWindowRect.argtypes=[W.HWND,ctypes.POINTER(W.RECT)];user.GetWindowRect.restype=W.BOOL
  class MouseInput(ctypes.Structure):
   _fields_=[('dx',W.LONG),('dy',W.LONG),('data',W.DWORD),('flags',W.DWORD),('time',W.DWORD),('extra',W.WPARAM)]
  class KeyboardInput(ctypes.Structure):
@@ -42,15 +45,26 @@ def verify_shader_input(project,env,game_id,label,*,texture=False):
   previous=gdi.SelectObject(memory,bitmap)
   try:
    assert gdi.BitBlt(memory,0,0,width,height,dc,0,0,0x00CC0020)
-   return Image.frombytes('RGB',(width,height),ctypes.string_at(pixels,width*height*4),'raw','BGRX')
+   image=Image.frombytes('RGB',(width,height),ctypes.string_at(pixels,width*height*4),'raw','BGRX')
+   outer=W.RECT();assert user.GetWindowRect(window,ctypes.byref(outer))
+   image.info['window']={'client_pixels':[width,height],'outer_pixels':[outer.left,outer.top,outer.right,outer.bottom],'dpi':user.GetDpiForWindow(window),'capture_thread_dpi':'per-monitor-v2'}
+   return image
   finally:gdi.SelectObject(memory,previous);gdi.DeleteObject(bitmap);gdi.DeleteDC(memory);user.ReleaseDC(window,dc)
  proof=Path(project)/'target/windows-gui-proof';proof.mkdir(parents=True,exist_ok=True)
- log_path=proof/(label+'.log');window=None;key_held=False
+ def evidence(name,image):
+  image.save(proof/(label+'-'+name+'.png'))
+  (proof/(label+'-'+name+'.json')).write_text(json.dumps(image.info['window'],indent=2)+'\n')
+ log_path=proof/(label+'.log');window=None;key_held=False;old_awareness=None
  player_env=dict(env,GALLIUM_DRIVER='llvmpipe',LIBGL_ALWAYS_SOFTWARE='1',GAMEPKG_RENDERER='opengl')
  player_env.pop('GAMEPKG_SLANG_ROOT',None)
  with log_path.open('wb') as log:
   app=subprocess.Popen([str(Path(project)/'target/release/gamepkg-gui.exe'),'--play',game_id],env=player_env,stdout=log,stderr=log)
   try:
+   # Query/capture physical client pixels consistently with winit. This only
+   # changes this test thread, and the original context is restored below.
+   # https://learn.microsoft.com/windows/win32/api/winuser/nf-winuser-setthreaddpiawarenesscontext
+   old_awareness=user.SetThreadDpiAwarenessContext(W.HANDLE(-4))
+   assert old_awareness,'Could not select per-monitor-v2 capture coordinates'
    deadline=time.monotonic()+30
    while window is None:
     assert app.poll() is None,log_path.read_text(errors='replace')
@@ -96,7 +110,7 @@ def verify_shader_input(project,env,game_id,label,*,texture=False):
     deadline=time.monotonic()+30
     while True:
      assert app.poll() is None,log_path.read_text(errors='replace')
-     image=capture(window);image.save(proof/(label+'-'+name+'.png'))
+     image=capture(window);evidence(name,image)
      count=sum(1 for rgb in image.getdata() if rgb[channel]>150 and rgb[channel]>2*rgb[1 if channel==2 else 2])
      if count>20000:return
      assert time.monotonic()<deadline,f'Native {name} guest pixels missing: {count}';time.sleep(.1)
@@ -114,7 +128,7 @@ def verify_shader_input(project,env,game_id,label,*,texture=False):
     deadline=time.monotonic()+30
     while True:
      assert app.poll() is None,log_path.read_text(errors='replace')
-     image=capture(window);image.save(proof/(label+'-plain-black.png'))
+     image=capture(window);evidence('plain-black',image)
      samples=[image.getpixel((image.width*x//4,image.height*y//4)) for x in [1,2,3] for y in [1,2,3]]
      if all(rgb==(0,0,0) for rgb in samples):break
      assert time.monotonic()<deadline,f'Plain shader retained a stale texture: {samples}';time.sleep(.1)
@@ -131,3 +145,4 @@ def verify_shader_input(project,env,game_id,label,*,texture=False):
     if window:user.PostMessageW(window,0x10,0,0)
     try:app.wait(timeout=10)
     except subprocess.TimeoutExpired:app.terminate();app.wait(timeout=10)
+   if old_awareness:assert user.SetThreadDpiAwarenessContext(old_awareness)
