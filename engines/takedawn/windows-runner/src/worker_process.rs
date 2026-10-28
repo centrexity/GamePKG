@@ -1,6 +1,7 @@
 //! Confined stdio workers. No selected-disc, restart, parent-console or other
 //! handle is inherited. File access remains an explicit Sandbox grant.
 use super::*;
+use windows_sys::Win32::Storage::FileSystem::FILE_READ_ATTRIBUTES;
 use windows_sys::Win32::System::JobObjects::JOB_OBJECT_LIMIT_ACTIVE_PROCESS;
 
 fn require_profile_environment(values: &[(OsString, OsString)]) -> io::Result<()> {
@@ -113,8 +114,17 @@ impl WorkerProcess {
         let (io, peer) = WorkerPipe::pair()?;
         let (errors, error_peer) = WorkerPipe::pair()?;
         let input = duplicate(peer.as_raw_handle(), FILE_GENERIC_READ)?;
-        let output = duplicate(peer.as_raw_handle(), FILE_GENERIC_WRITE)?;
-        let error = duplicate(error_peer.as_raw_handle(), FILE_GENERIC_WRITE)?;
+        // Native CRTs query pipe attributes when initializing stdout/stderr.
+        // Match Rust's own inherited write end: writable data, readable
+        // attributes, but no read-data access to the diagnostic channel.
+        let output = duplicate(
+            peer.as_raw_handle(),
+            FILE_GENERIC_WRITE | FILE_READ_ATTRIBUTES,
+        )?;
+        let error = duplicate(
+            error_peer.as_raw_handle(),
+            FILE_GENERIC_WRITE | FILE_READ_ATTRIBUTES,
+        )?;
         let mut handles = [
             input.as_raw_handle(),
             output.as_raw_handle(),
