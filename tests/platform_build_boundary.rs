@@ -103,3 +103,20 @@ fn ordinary_windows_rust_games_admit_native_build_and_play() {
     assert!(gamepkg::native::build_supported(&manifest));
     assert!(gamepkg::native::play_supported(&manifest));
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn reviewed_takedawn_admission_matches_the_prepared_builder_architecture() {
+    let manifest =
+        gamepkg::manifest::Manifest::parse(include_bytes!("../ports/takedawn/manifest.toml"))
+            .unwrap();
+    let supported = cfg!(target_arch = "x86_64");
+    assert_eq!(gamepkg::native::build_supported(&manifest), supported);
+    assert_eq!(gamepkg::native::play_supported(&manifest), supported);
+    // The reviewed engine's architecture does not restrict ordinary Rust games.
+    let ordinary =
+        gamepkg::manifest::Manifest::parse(include_bytes!("../examples/minimal/manifest.toml"))
+            .unwrap();
+    assert!(gamepkg::native::build_supported(&ordinary));
+    assert!(gamepkg::native::play_supported(&ordinary));
+}

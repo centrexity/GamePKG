@@ -197,13 +197,17 @@ pub fn is_built(root: &Path, id: &str) -> Result<bool> {
     )
 }
 pub fn build_supported(manifest: &crate::manifest::Manifest) -> bool {
+    if manifest.builtin_engine.as_deref() == Some(crate::takedawn::PROFILE) {
+        return cfg!(all(
+            target_arch = "x86_64",
+            any(target_os = "linux", windows)
+        ));
+    }
     cfg!(target_os = "linux")
         || (cfg!(all(
             windows,
             any(target_arch = "x86_64", target_arch = "x86")
         )) && manifest.builtin_engine.is_none())
-        || (cfg!(all(windows, target_arch = "x86_64"))
-            && manifest.builtin_engine.as_deref() == Some(crate::takedawn::PROFILE))
 }
 pub fn play_supported(manifest: &crate::manifest::Manifest) -> bool {
     build_supported(manifest)
@@ -220,18 +224,15 @@ pub fn compile(root: &Path, id: &str) -> Result<()> {
     }
     #[cfg(target_os = "linux")]
     {
-        if crate::registry::installed_manifest(root, id)?
-            .builtin_engine
-            .as_deref()
-            == Some(crate::takedawn::PROFILE)
-        {
+        let manifest = crate::registry::installed_manifest(root, id)?;
+        ensure!(
+            build_supported(&manifest),
+            "native build is not supported for this game on this platform"
+        );
+        if manifest.builtin_engine.as_deref() == Some(crate::takedawn::PROFILE) {
             return crate::takedawn::build::compile_package(root, id);
         }
-        if crate::registry::installed_manifest(root, id)?
-            .builtin_engine
-            .as_deref()
-            == Some(crate::cube2::PROFILE)
-        {
+        if manifest.builtin_engine.as_deref() == Some(crate::cube2::PROFILE) {
             return crate::cube2::build::compile_package(root, id);
         }
         build::compile(root, id)
