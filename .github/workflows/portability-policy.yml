@@ -28,7 +28,7 @@ jobs:
         env:
           PKG_CONFIG_ALLOW_CROSS: '1'
           PKG_CONFIG_LIBDIR: /usr/lib/i386-linux-gnu/pkgconfig
-        run: cargo test --locked --all-features --target i686-unknown-linux-gnu --test portability --test runtime --test components --test path_attacks --test dependency_attacks --test source_attacks --test render_resources --test memory_budget --test audio_effect_assets --test music_permissions
+        run: cargo test --locked --all-features --target i686-unknown-linux-gnu --test platform_build_boundary --test portability --test runtime --test components --test path_attacks --test dependency_attacks --test source_attacks --test render_resources --test memory_budget --test audio_effect_assets --test music_permissions
       - name: Stage a matching Rust toolchain for isolated native 32-bit builds
         run: |
           sudo cp -a "$(rustc --print sysroot)" /tmp/gamepkg-ci-native32-toolchain
