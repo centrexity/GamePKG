@@ -198,6 +198,10 @@ pub fn is_built(root: &Path, id: &str) -> Result<bool> {
 }
 pub fn build_supported(manifest: &crate::manifest::Manifest) -> bool {
     cfg!(target_os = "linux")
+        || (cfg!(all(
+            windows,
+            any(target_arch = "x86_64", target_arch = "x86")
+        )) && manifest.builtin_engine.is_none())
         || (cfg!(all(windows, target_arch = "x86_64"))
             && manifest.builtin_engine.as_deref() == Some(crate::takedawn::PROFILE))
 }
