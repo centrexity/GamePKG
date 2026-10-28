@@ -514,10 +514,14 @@ pub(crate) fn prepare(root: &Path) -> Result<PathBuf> {
     let expected = pins["payload_inventory_sha256"]
         .as_str()
         .context("missing reviewed SDK inventory digest")?;
+    prepare_parts(root, &parts, &identity, expected)
+}
+
+fn prepare_parts(root: &Path, parts: &[Part], identity: &str, expected: &str) -> Result<PathBuf> {
     let archives = root.join("native-sdk-archives");
     fs::create_dir_all(&archives)?;
     real_directory(&archives)?;
-    install(root, &parts, &identity, expected, |record| {
+    install(root, parts, identity, expected, |record| {
         let path = archives.join(&record.sha256);
         if digest_file(&path).is_ok_and(|entry| entry.sha256 == record.sha256) {
             return Ok(path);
@@ -534,6 +538,73 @@ pub(crate) fn prepare(root: &Path) -> Result<PathBuf> {
         file.persist(&path).map_err(|e| e.error)?;
         Ok(path)
     })
+}
+
+const SOURCE_PINS: &str = include_str!("../engines/native/windows-rust.json");
+fn source_plan(target: &str) -> Result<(Vec<Part>, String, String)> {
+    let pins: serde_json::Value = serde_json::from_str(SOURCE_PINS)?;
+    ensure!(
+        matches!(target, "x86_64-pc-windows-gnu" | "i686-pc-windows-gnu"),
+        "unsupported standalone Windows Rust target"
+    );
+    let record = &pins["targets"][target];
+    let version = pins["version"].as_str().context("missing Rust version")?;
+    let mut parts = Vec::new();
+    for component in ["rustc", "rust-std", "rust-mingw"] {
+        let download: Download = serde_json::from_value(record["components"][component].clone())?;
+        ensure!(
+            download
+                .url
+                .starts_with("https://static.rust-lang.org/dist/2025-08-07/")
+                && download
+                    .url
+                    .ends_with(&format!("{component}-{version}-{target}.tar.gz"))
+                && download.sha256.len() == 64
+                && download
+                    .sha256
+                    .bytes()
+                    .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()),
+            "invalid standalone Rust pin"
+        );
+        parts.push(Part {
+            download,
+            destination: format!("rust-{version}-{target}"),
+            layout: Layout::Rust(if component == "rust-std" {
+                format!("rust-std-{target}")
+            } else {
+                component.to_owned()
+            }),
+        });
+    }
+    let expected = record["payload_inventory_sha256"]
+        .as_str()
+        .context("missing standalone Rust inventory")?
+        .to_owned();
+    ensure!(
+        expected.len() == 64
+            && expected
+                .bytes()
+                .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()),
+        "invalid standalone Rust inventory"
+    );
+    let identity = crate::verify::digest(
+        format!("GamePKG source Windows Rust extraction v1\0{target}\0{SOURCE_PINS}").as_bytes(),
+    );
+    Ok((parts, identity, expected))
+}
+/// Installs only the pinned compiler, standard library and self-contained linker.
+/// This is separate from the reviewed-engine SDK and executes no installer.
+pub(crate) fn prepare_source(root: &Path) -> Result<(PathBuf, &'static str)> {
+    let target = match std::env::consts::ARCH {
+        "x86_64" => "x86_64-pc-windows-gnu",
+        "x86" => "i686-pc-windows-gnu",
+        _ => anyhow::bail!("standalone Windows Rust is unavailable for this CPU"),
+    };
+    let (parts, identity, expected) = source_plan(target)?;
+    Ok((
+        prepare_parts(root, &parts, &identity, &expected)?.join(format!("rust-1.89.0-{target}")),
+        target,
+    ))
 }
 
 #[cfg(test)]
@@ -625,6 +696,66 @@ mod tests {
             .iter()
             .filter(|p| matches!(p.layout, Layout::Rust(_)))
             .all(|p| p.download.url.ends_with(".tar.gz")));
+    }
+    #[test]
+    fn source_plans_are_pinned_compiler_std_and_linker_for_both_widths() {
+        let mut identities = Vec::new();
+        for target in ["x86_64-pc-windows-gnu", "i686-pc-windows-gnu"] {
+            let (parts, identity, payload) = source_plan(target).unwrap();
+            assert_eq!(parts.len(), 3);
+            assert_eq!(payload.len(), 64);
+            assert!(parts.iter().all(|p| matches!(p.layout, Layout::Rust(_))));
+            assert!(parts.iter().all(|p| p.destination.ends_with(target)));
+            assert!(parts.iter().all(|p| !p.download.url.contains("cargo-")));
+            identities.push(identity);
+        }
+        assert_ne!(identities[0], identities[1]);
+        for target in ["", "../x86_64-pc-windows-gnu", "aarch64-pc-windows-msvc"] {
+            assert!(source_plan(target).is_err());
+        }
+    }
+
+    #[test]
+    #[ignore = "official source compiler extraction gate; set GAMEPKG_WINDOWS_SOURCE_RUST_ARCHIVES"]
+    fn official_source_toolchain_installation() {
+        let archives: Vec<_> = std::env::split_paths(
+            &std::env::var_os("GAMEPKG_WINDOWS_SOURCE_RUST_ARCHIVES").expect("archive directories"),
+        )
+        .collect();
+        let root = tempfile::Builder::new()
+            .prefix("gamepkg-source-rust-install.")
+            .tempdir()
+            .unwrap();
+        for target in ["x86_64-pc-windows-gnu", "i686-pc-windows-gnu"] {
+            let (parts, identity, payload) = source_plan(target).unwrap();
+            let fetch = |pin: &Download| -> Result<PathBuf> {
+                archives
+                    .iter()
+                    .flat_map(|base| {
+                        [
+                            base.join(&pin.sha256),
+                            base.join(pin.url.rsplit('/').next().unwrap()),
+                        ]
+                    })
+                    .find(|p| p.is_file())
+                    .context("missing official source compiler archive")
+            };
+            let installed = install(root.path(), &parts, &identity, &payload, fetch).unwrap();
+            verify(&installed, &identity, &payload).unwrap();
+            let reused = install(root.path(), &parts, &identity, &payload, |_| {
+                anyhow::bail!("verified cache should not fetch")
+            })
+            .unwrap();
+            assert_eq!(installed, reused);
+            let toolchain = installed.join(format!("rust-1.89.0-{target}"));
+            assert!(toolchain.join("bin/rustc.exe").is_file());
+            assert!(!toolchain.join("bin/cargo.exe").exists());
+            println!("Verified source compiler {target}: {}", toolchain.display());
+        }
+        println!(
+            "Retained source compiler evidence: {}",
+            root.keep().display()
+        );
     }
     #[test]
     fn installer_reuses_verified_cache_and_repairs_corruption_without_deleting_prior_data() {

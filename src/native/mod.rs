@@ -5,12 +5,14 @@ use anyhow::{bail, ensure, Result};
 use std::path::{Path, PathBuf};
 #[cfg(any(target_os = "linux", windows))]
 const MAX_CALLS_PER_TICK: usize = 8192;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 mod build;
 #[cfg(any(target_os = "linux", windows))]
 mod session;
 #[cfg(any(target_os = "linux", windows))]
 mod transport;
+#[cfg(windows)]
+mod windows_build;
 #[cfg(any(target_os = "linux", windows))]
 pub(crate) use session::Session;
 pub(crate) fn cpu_identity() -> &'static str {
@@ -93,7 +95,7 @@ fn sdk_identity() -> &'static str {
             )
             .as_bytes(),
         );
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", windows))]
         {
             // The generated SDK embeds this value in addition to its source.
             hash.update(b"native-host-call-limit\0");
@@ -103,6 +105,8 @@ fn sdk_identity() -> &'static str {
         // package signature and host version have not changed.
         #[cfg(windows)]
         {
+            hash.update(include_str!("windows_build.rs").as_bytes());
+            hash.update(include_str!("../../engines/native/windows-rust.json").as_bytes());
             hash.update(include_str!("../takedawn/windows_build.rs").as_bytes());
             hash.update(crate::takedawn::build::SDK.as_bytes());
             for (name, source) in crate::takedawn::build::SOURCES {
@@ -216,7 +220,11 @@ pub fn compile(root: &Path, id: &str) -> Result<()> {
         }
         build::compile(root, id)
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(windows)]
+    {
+        build::compile(root, id)
+    }
+    #[cfg(not(any(target_os = "linux", windows)))]
     {
         if crate::registry::installed_manifest(root, id)?
             .builtin_engine
