@@ -585,14 +585,23 @@ pass locally. Both Windows log archives match published sizes/SHA-256 and pass
 all CRCs with only the expected logs. This qualifies compilation and integrity,
 not DXIL playback or physical graphics/audio/controllers.
 
-`5ca7061` adds a Windows native game-window fixture before optional WSL setup in
-[the native host workflow](https://github.com/centrexity/GamePKG/actions/runs/40677284329).
-It checks native-only PE builds, GLSL/SPIR-V/WGSL texture pixels, held/released
-keyboard input, texture clearing/restoration, resize, normal close, restart and
-increasing play history under test-only software OpenGL. Syntax/YAML checks pass;
-actual Windows execution is still pending. Audio is muted; Python/Pillow are
-maintainer test tools. Physical Vulkan/audio/controllers remain separate.
+The native game-window fixture now passes on actual Windows AMD64 in
+[run 40713577705](https://github.com/centrexity/GamePKG/actions/runs/40713577705)
+at `d42d7d206ee15e0d580509279622d7a30c2ab4a9`. It builds native-only PE games,
+then checks GLSL/SPIR-V/WGSL outputs through test-only software OpenGL: held and
+released keys, transparent-black fallback and recovery, resize, normal close,
+cached restart and increasing saved play time. All 36 captures pass independent
+whole-viewport and letterbox checks, including resized windows. The complete
+79-file evidence archive matches its published size, SHA-256 and CRCs.
 
+An earlier capture could include offscreen white edges despite passing center
+checks. The fixture now places its own window fully onscreen, records DPI and
+capture geometry, and rejects the frozen clipped capture while accepting the
+full resized capture. It retains the existing one-level RGB tolerance for the
+shader field and requires exact black fallback. The earlier alpha-oracle failure
+and clipped captures remain recorded. Python/Pillow are maintainer tools and
+all automated audio is muted. Windows32 GUI, Windows Vulkan and physical
+original-game graphics/audio/controllers remain unqualified.
 
 ### Platform admission regression
 
@@ -607,5 +616,40 @@ and verifies ordinary Windows source-game admission. Unsupported reviewed engine
 profiles now reject before tool preparation, staging or build locks/output.
 Three exact boundary tests and the existing source/normal-loader/shader/DXIL and
 Win32 window/watchdog regressions pass. Both log-only archives match published
-sizes/SHA-256 and CRCs. Actual native game-window pixels remain under the separate
-running native host workflow; no pixel pass is inferred from these boundary checks.
+sizes/SHA-256 and CRCs. The separate Windows AMD64 game-window qualification above supplies pixel
+evidence; these boundary checks alone do not establish graphical behavior.
+
+
+### Packaged 32-bit native rendering
+
+[Run 40681411252](https://github.com/centrexity/GamePKG/actions/runs/40681411252)
+at `cfa8038298cfbaeedb5b7db7fc7fd7ba39888607` passes Linux32, Windows32 and
+Android32 jobs. Published artifact sizes, digests, archive CRCs and executable
+architectures were verified. Android evidence covers its CLI and emulator tests,
+not an Android GUI or native game worker.
+
+The actual packaged Linux ELF32 CLI and GUI also pass local native game-window
+checks on a 64-bit Linux host. GLSL, SPIR-V and WGSL outputs pass through software
+OpenGL; SPIR-V and WGSL pass through explicitly selected, checksum-pinned private
+32-bit Lavapipe Vulkan. Across the five cases, all 25 captured 960-by-720 fields
+match every pixel exactly. Tests cover input, texture clearing/restoration,
+normal window close with exit zero, cached restart, increasing play history,
+and shader/cache/reflection rejection cases. Audio uses null/dummy outputs.
+The tests use separate displays, libraries, settings, network namespaces and
+private temporary directories. Initial parallel close failures with shared X11
+socket paths remain recorded; all five cases pass with private temporary paths.
+
+`8b5ae99` adds these five native GUI cases to Linux32 CI. Its remote result must
+be checked separately from the passing local evidence. This does not qualify a
+genuinely 32-bit OS shader toolchain, original-game 32-bit gameplay, physical GPU,
+audio/controllers, Windows32 GUI or Android native game delivery.
+
+### Outstanding older generator test
+
+The broad all-features job in
+[run 40715301601](https://github.com/centrexity/GamePKG/actions/runs/40715301601)
+fails the old `engines/takedawn/native-gen` FPATAN hardware comparison at a tiny
+unmasked-underflow boundary. Its cause and fix remain unqualified. These tests
+are retained and the full suite is not reported green. This experimental CPU
+project is separate from the delivered prepared-Rust game functions and pinned
+Takedawn C/C++ runtime; it is not the player delivery path.
