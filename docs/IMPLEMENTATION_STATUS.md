@@ -33,7 +33,12 @@ The ordinary checked-source native worker currently requires Linux. The separate
 reviewed Takedawn profile builds directly for Linux x64 and Windows x64, using a
 host-admitted prepared source kit. Its managed standalone Windows compiler needs
 no WSL or Python. Other Windows source profiles use explicit Wasm build/play
-controls and the optional Linux compiler exchange. See [native profile boundaries](NATIVE_RUNTIME.md).
+controls and the optional Linux compiler exchange. The candidate ordinary Windows
+standalone compiler and shared SDK now pass actual PE32/PE64 signed-package,
+asset, save-persistence and integrity checks in
+[run 40656721386](https://github.com/centrexity/GamePKG/actions/runs/40656721386).
+Its public source-game support gates remain disabled pending platform integration;
+Windows shader support is still unfinished. See [native profile boundaries](NATIVE_RUNTIME.md).
 
 The current development recipe is v15/0.1.4 and requires the 0.1.18 development app.
 Its multiplayer PS2 input fix has sanitized 32/64-bit input checks. The normal
@@ -41,8 +46,13 @@ signed Linux v15 package passes cold optimized Build, in-place/remembered ISO
 launches, play history and integrity repair with all 487 object hashes/timestamps
 and player data preserved. The exact repaired executable passes original Race
 and Crash plus three both-player acceleration/pause/Resume routes. The full
-Windows v15 Build/repair and hardware qualification remain open. The v14 evidence
-below remains specific to that earlier kit.
+Windows v15 signed cold Build/repair passes in
+[run 40612591810](https://github.com/centrexity/GamePKG/actions/runs/40612591810):
+15,968-second optimized Build, automatic native readiness, rejected companion
+corruption and 112-second repair retaining all 487 object hashes/timestamps and
+signed package identity. That check uses no original game media. Physical Windows
+gameplay qualification remains open. The v14 evidence below remains specific to
+that earlier kit.
 The published 0.1.17 app does not include this native engine. A Windows host build
 or asset-free window test does not prove original-game Vulkan/audio/controller
 behavior on physical Windows hardware. The v14 Windows signed Build/repair
@@ -60,8 +70,12 @@ Windows qualification. A separate unpaused headless run also earns Bronze and
 verifies original rewards/autosave plus an unchanged fresh-process medal and
 progress reload, with actual controller-read and strict native-path checks.
 This does not qualify exact wall-clock pacing or physical controllers.
-The private Windows preview uses app `f87f383` and a
-verified actual-Windows CI archive; original-game hardware checks remain pending.
+The earlier v14 preview uses app `f87f383`. The current immutable v15b hardware
+bundle uses verified app `081a5b1`, the admitted v15 recipe and separate preview
+library/settings. Its actual Windows CLI signature import and CMD launcher pass
+under private Wine. It deliberately excludes newer generic-compiler changes;
+original-game physical Windows checks remain pending. See the
+[bundle and evidence](native-windows-gameplay-validation.md).
 
 The web library displays metadata and cached icons; installation, builds, gameplay and repair remain in the native app or CLI. Browser cache quotas and eviction are browser-controlled. Native signed records and saves remain the recovery source.
 
