@@ -195,18 +195,18 @@ static void one(GamePkgExt80 a, GamePkgExt80 b, unsigned cw, unsigned top,
     accuracy(a, b, (GamePkgExt80){sig, (uint16_t)se}, cw, sw);
   }
   if (!empty && exact_tiny(a, b) && ((sw >> 11) & 7) == ((top + 1) & 7)) {
-    GamePkgExt80 result = {get64(after.b + 32), (uint16_t)rd(after.b + 40)};
-    accuracy(a, b, result, cw, sw);
 #ifdef GAMEPKG_FPATAN_MPFR
-    /* Modern CPUs can return the same tiny numerical result with different
-     * approximation C1 bits. Retain the physical result and every other state
-     * bit; independently require the mathematically corrected tiny C1. */
-    unsigned c1 = tiny_round_up(a, b, result, cw, sw);
-    if (c1 != ((sw >> 9) & 1))
+    unsigned physical_sw = sw;
+    GamePkgExt80 result = tiny_reference(a, b, cw, s.status, &sw);
+    if (result.significand != get64(after.b + 32) ||
+        result.sign_exponent != rd(after.b + 40) || sw != physical_sw)
       ++profile_differences;
-    sw = (sw & ~0x200u) | (c1 << 9);
+    put80(after.b + 32, result);
     wr(after.b + 2, sw);
+#else
+    GamePkgExt80 result = {get64(after.b + 32), (uint16_t)rd(after.b + 40)};
 #endif
+    accuracy(a, b, result, cw, sw);
   }
   if ((z->status & ~0x4500u) != (sw & ~0x4500u)) {
     fprintf(stderr,
