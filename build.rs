@@ -29,6 +29,12 @@ fn embed(variable: &str, name: &str) {
 }
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
+    // Native games must match this app, even when rustup itself is a different
+    // width (for example a 32-bit app on a 64-bit Linux installation).
+    println!(
+        "cargo:rustc-env=GAMEPKG_BUILD_TARGET={}",
+        env::var("TARGET").expect("Cargo target")
+    );
     embed("GAMEPKG_BUNDLED_AUDIO_DECODER", "audio-decoder.wasm");
     embed("GAMEPKG_BUNDLED_AUDIO_CONVERTER", "audio-converter.wasm");
 }

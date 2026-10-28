@@ -133,7 +133,7 @@ mod platform {
                 "/usr",
                 "/usr",
             ]);
-            for p in ["/lib", "/lib64"] {
+            for p in ["/lib", "/lib64", "/lib32"] {
                 if Path::new(p).exists() {
                     command.args(["--ro-bind", p, p]);
                 }
