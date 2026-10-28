@@ -628,10 +628,8 @@ mod tests {
             let package = archives.join(format!("{port}.gamepkg"));
             crate::pack::pack(&source, &package, &[81; 32]).unwrap();
             let manifest = crate::registry::install(root, &package, true).unwrap();
-            assert!(
-                !super::super::build_supported(&manifest),
-                "unqualified C engine exposed publicly"
-            );
+            let public = port == "doom";
+            assert_eq!(super::super::build_supported(&manifest), public);
             super::super::build::compile_with_settings(root, &manifest.id, &settings).unwrap();
             let installed = root.join(format!("{}.gamepkg", manifest.id));
             let digest = crate::verify::digest(&std::fs::read(installed).unwrap());
@@ -639,8 +637,8 @@ mod tests {
             let bytes = crate::files::read_regular(&built, 64 * 1048576, false).unwrap();
             super::super::validate_executable(&bytes).unwrap();
             crate::integrity::verify_build(&built, &bytes).unwrap();
-            assert!(!super::super::play_supported(&manifest));
-            println!("Verified signed Windows native engine link: {port}; correct PE target and integrity; public admission closed; no ROM read.");
+            assert_eq!(super::super::play_supported(&manifest), public);
+            println!("Verified signed Windows native engine link: {port}; correct PE target and integrity; public admission={public}; no ROM read.");
         }
         if let Some(wad) = std::env::var_os("GAMEPKG_PUBLIC_DOOM_WAD") {
             super::super::doom_fixture::verify(root, &settings, Path::new(&wad));

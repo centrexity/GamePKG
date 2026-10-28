@@ -73,6 +73,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $log = Get-Content -Raw "$env:RUNNER_TEMP/private-compiler-root.log"
           if ($log -notmatch 'test result: ok\. 1 passed; 0 failed;') { throw 'The exact private-root lifecycle test did not pass' }
+          cargo test --locked --target ${{ matrix.target }} --lib native::windows_artifact_tests::windows_native_profiles_admit_only_qualified_engines -- --exact --nocapture 2>&1 | Tee-Object -Append -FilePath "$env:RUNNER_TEMP/private-compiler-root.log"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $log = Get-Content -Raw "$env:RUNNER_TEMP/private-compiler-root.log"
+          if ($log -notmatch 'windows_native_profiles_admit_only_qualified_engines \.\.\. ok') { throw 'Missing explicit native-profile admission controls' }
       - name: Verify target-sized C objects, signed engine links and denied host includes
         shell: pwsh
         run: |
@@ -95,6 +99,7 @@ jobs:
           if ($log -notmatch 'Verified confined reviewed C compiler:') { throw 'Missing target/ABI and denied-include qualification' }
           if ($log -notmatch 'Verified reviewed C section collection: dead missing call discarded; live missing call rejected\.') { throw 'Missing paired dead/live C link controls' }
           if ($log -notmatch 'Verified private native DOOM worker: public Freedoom;') { throw 'Missing actual native-worker gameplay/audio/save/reload qualification' }
+          if ($log -notmatch 'Verified public native DOOM loader:') { throw 'Missing normal native loader/save/history qualification' }
           if ($log -notmatch 'Verified native DOOM fatal diagnostics: missing PLAYPAL reported;') { throw 'Missing native fatal-error propagation qualification' }
           if ($log -notmatch 'test result: ok\. 1 passed; 0 failed;') { throw 'The exact C compiler test did not pass' }
           foreach ($port in @('doom','zelda3')) {

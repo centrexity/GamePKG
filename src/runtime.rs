@@ -999,7 +999,7 @@ impl Game {
             #[cfg(any(target_os = "linux", windows))]
             {
                 #[cfg(windows)]
-                if !crate::native::play_supported(&manifest) || manifest.builtin_engine.is_some() {
+                if !crate::native::play_supported(&manifest) {
                     bail!("native game isolation is not available for this package on Windows");
                 }
                 let mut uses_shaders = false;

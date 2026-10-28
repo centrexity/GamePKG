@@ -217,7 +217,10 @@ pub fn build_supported(manifest: &crate::manifest::Manifest) -> bool {
         || (cfg!(all(
             windows,
             any(target_arch = "x86_64", target_arch = "x86")
-        )) && manifest.builtin_engine.is_none())
+        )) && matches!(
+            manifest.builtin_engine.as_deref(),
+            None | Some(crate::doom::PROFILE)
+        ))
 }
 pub fn play_supported(manifest: &crate::manifest::Manifest) -> bool {
     build_supported(manifest)
@@ -375,6 +378,27 @@ mod pixel_tests;
 #[cfg(test)]
 mod windows_artifact_tests {
     use super::validate_pe;
+    #[cfg(windows)]
+    #[test]
+    fn windows_native_profiles_admit_only_qualified_engines() {
+        let mut manifest = crate::manifest::Manifest::parse(include_bytes!(
+            "../../examples/minimal/manifest.toml"
+        ))
+        .unwrap();
+        let qualified = cfg!(any(target_arch = "x86", target_arch = "x86_64"));
+        for (profile, supported) in [
+            (None, qualified),
+            (Some(crate::doom::PROFILE), qualified),
+            (Some(crate::zelda3::PROFILE), false),
+            (Some(crate::cube2::PROFILE), false),
+            (Some("unreviewed-engine"), false),
+        ] {
+            manifest.builtin_engine = profile.map(str::to_owned);
+            assert_eq!(super::build_supported(&manifest), supported, "{profile:?}");
+            assert_eq!(super::play_supported(&manifest), supported, "{profile:?}");
+        }
+    }
+
     #[test]
     fn checks_windows_format_width_machine_and_dll_flag() {
         let mut bytes = vec![0u8; 512];
