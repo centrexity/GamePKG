@@ -43,17 +43,23 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-remembered-roms-') as temp:
  def click_rom_field(name,selected_path=None):
   # Bare Xvfb does not restore the parent focus after a native chooser closes.
   subprocess.run(['xdotool','windowfocus','--sync',window],env=env,check=True)
-  ws=words();labels=[w for w in ws if w['text'].lower()==name and w['left']<200]
-  assert labels,ws
-  label=min(labels,key=lambda w:w['top'])
-  # OCR can read the rounded button border as '[' or '|'. Click its text,
-  # not the thin edge, when reopening an already selected file.
-  fields=[w for w in ws if label['top']+label['height']<w['top']<label['top']+110 and w['left']<650 and any(c.isalnum() for c in w['text'])]
-  if selected_path is not None:
-   # Match the known file name, not OCR of the random temporary directory:
-   # it can confuse letters and digits. Exclude the explanatory text below.
-   fields=[w for w in fields if w['text'].rstrip('[]()|').endswith(selected_path.name)]
-  assert fields,ws
+  deadline=time.monotonic()+10
+  while True:
+   ws=words();labels=[w for w in ws if w['text'].lower()==name and w['left']<200]
+   assert labels,ws
+   label=min(labels,key=lambda w:w['top'])
+   # OCR can read the rounded button border as '[' or '|'. Click its text,
+   # not the thin edge, when reopening an already selected file.
+   fields=[w for w in ws if label['top']+label['height']<w['top']<label['top']+110 and w['left']<650 and any(c.isalnum() for c in w['text'])]
+   if selected_path is not None:
+    # Match the known file name, not OCR of the random temporary directory:
+    # it can confuse letters and digits. Exclude the explanatory text below.
+    fields=[w for w in fields if w['text'].rstrip('[]()|').endswith(selected_path.name)]
+   # Persistence can complete before the UI receives the picker result.
+   # Observe the selected filename and idle UI before trying to reopen it.
+   if fields and not any(w['text'].startswith('Working') for w in ws):break
+   assert time.monotonic()<deadline,ws
+   time.sleep(.1)
   target=min(fields,key=lambda w:w['top'])
   print('ROM field target:',name,target,flush=True)
   click_word(target)
