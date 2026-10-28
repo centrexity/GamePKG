@@ -38,7 +38,7 @@ jobs:
           # Selenium's recommended Chromium package is a Snap transition on
           # Ubuntu. Use the runner image's matching Chrome/ChromeDriver pair
           # instead of making GUI tests depend on a Snap Store transaction.
-          bash tools/ci_ubuntu_apt.sh install -y --no-install-recommends xvfb xdotool metacity x11-utils imagemagick optipng tesseract-ocr python3-pil python3-xlib python3-selenium zenity libxtst-dev libsdl2-dev libsdl2-ttf-dev libsdl2-image-dev pkg-config libxkbcommon-x11-0 libgl1-mesa-dri libvulkan1 libvulkan-dev mesa-vulkan-drivers
+          bash tools/ci_ubuntu_apt.sh install -y --no-install-recommends xvfb xdotool metacity x11-utils imagemagick optipng tesseract-ocr python3-pil python3-xlib python3-selenium python3-websocket zenity libxtst-dev libsdl2-dev libsdl2-ttf-dev libsdl2-image-dev pkg-config libxkbcommon-x11-0 libgl1-mesa-dri libvulkan1 libvulkan-dev mesa-vulkan-drivers
           chrome_browser=$(readlink -f "$(command -v google-chrome)")
           chrome_driver="${CHROMEWEBDRIVER:-/nonexistent}/chromedriver"
           if [[ ! -x "$chrome_driver" ]]; then chrome_driver=$(command -v chromedriver); fi
