@@ -71,7 +71,7 @@ Vulkan gates with dummy audio, read-only ISO access and unchanged private
 reference saves. Virtual pads stand in for physical controllers. These are
 scoped control routes, not completed multiplayer races or physical device tests.
 
-The full Windows v15 signed Build/repair workflow remains in progress. Physical
+The full Windows v15 signed Build/repair [workflow 40612591810](https://github.com/centrexity/GamePKG/actions/runs/40612591810) now passes on actual Windows at `b40bbbe`. Its cold optimized Build completes in about 4 hours 26 minutes on the CI machine. The library recognizes the native build automatically, deliberate SDL-companion damage fails integrity, and normal repair restores it in about 112 seconds while preserving all 487 Rust object hashes/timestamps and the signed package. The verification-only artifact passes its published SHA-256 and archive CRCs; no original media is used and no gameplay is claimed. The executable is 59,915,264 bytes, SHA-256 `fd95c9d028d6d5eb17ae810efa4e0530ee70fd1766a4f6608fddb8cf69caa12e`. This qualifies the v15 build/repair path, not the newer generic Windows source compiler work or a stable release. Physical
 Windows original-game graphics/audio/controllers, mixed split-screen
 result/driving prompt presentation, natural multiplayer completion, higher medals
 and full campaigns remain unqualified. The immutable v14 hardware preview stays
