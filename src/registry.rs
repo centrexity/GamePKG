@@ -212,7 +212,7 @@ pub(crate) fn download_direct(value: &str, limit: u64) -> Result<tempfile::Named
     download_with_timeout(value, limit, 120)
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, test))]
 pub(crate) fn download_build_tool(value: &str, limit: u64) -> Result<tempfile::NamedTempFile> {
     // Official compiler archives can exceed 100 MiB. A healthy connection can
     // need longer than the ordinary package/metadata transfer deadline.

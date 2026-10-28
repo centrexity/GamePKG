@@ -29,7 +29,7 @@ concurrency:
 jobs:
   reviewed-c-compiler:
     runs-on: windows-2022
-    timeout-minutes: 30
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -51,7 +51,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $log = Get-Content -Raw "$env:RUNNER_TEMP/private-compiler-root.log"
           if ($log -notmatch 'test result: ok\. 1 passed; 0 failed;') { throw 'The exact private-root lifecycle test did not pass' }
-      - name: Verify target-sized C objects and denied host includes
+      - name: Verify target-sized C objects, signed engine links and denied host includes
         shell: pwsh
         run: |
           cargo test --locked --target ${{ matrix.target }} --lib native::windows_build::tests::reviewed_c_compiler_preserves_target_and_denies_host_include -- --ignored --exact --nocapture 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP/reviewed-c-compiler.log"
@@ -59,6 +59,9 @@ jobs:
           $log = Get-Content -Raw "$env:RUNNER_TEMP/reviewed-c-compiler.log"
           if ($log -notmatch 'Verified confined reviewed C compiler:') { throw 'Missing target/ABI and denied-include qualification' }
           if ($log -notmatch 'test result: ok\. 1 passed; 0 failed;') { throw 'The exact C compiler test did not pass' }
+          foreach ($port in @('doom','zelda3')) {
+            if ($log -notmatch "Verified signed Windows native engine link: $port;") { throw "Missing native engine link: $port" }
+          }
       - name: Preserve the C compiler diagnostics
         if: always()
         uses: actions/upload-artifact@v4

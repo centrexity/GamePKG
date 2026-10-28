@@ -7,6 +7,8 @@ use std::path::{Path, PathBuf};
 const MAX_CALLS_PER_TICK: usize = 8192;
 #[cfg(any(target_os = "linux", windows))]
 mod build;
+#[cfg(any(target_os = "linux", windows))]
+mod engine_sources;
 #[cfg(all(test, any(target_os = "linux", windows)))]
 pub(crate) fn compile_with_settings(
     root: &Path,
@@ -94,6 +96,7 @@ fn sdk_identity() -> &'static str {
         hash.update(
             concat!(
                 include_str!("build.rs"),
+                include_str!("engine_sources.rs"),
                 include_str!("guest.rs.txt"),
                 include_str!("engine.rs.txt"),
                 include_str!("pixels.rs.txt"),
@@ -118,6 +121,9 @@ fn sdk_identity() -> &'static str {
             hash.update(include_str!("windows_build.rs").as_bytes());
             hash.update(include_str!("../windows_compiler.rs").as_bytes());
             hash.update(include_str!("../../engines/native/windows-rust.json").as_bytes());
+            hash.update(
+                include_str!("../../engines/takedawn/windows-dependencies.json").as_bytes(),
+            );
             hash.update(include_str!("../takedawn/windows_build.rs").as_bytes());
             hash.update(crate::takedawn::build::SDK.as_bytes());
             for (name, source) in crate::takedawn::build::SOURCES {
@@ -125,7 +131,7 @@ fn sdk_identity() -> &'static str {
                 hash.update(source.as_bytes());
             }
         }
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", windows))]
         for (name, bytes) in crate::doom_sources::FILES
             .iter()
             .chain(crate::zelda3_sources::FILES.iter())

@@ -760,3 +760,29 @@ widths pass strict all-target Clippy. A private Wine API probe cannot open any
 of the three custom-device namespace forms (error 66), although exact cleanup
 succeeds. That Wine limitation is not evidence against the actual Windows
 startup result or proof of Windows process restrictions.
+
+### Shared native C sources and Windows engine links
+
+The native builder now shares pinned C-source staging and reviewed adaptations
+between Linux and Windows. Windows stages those same engines, compiles through
+the qualified private root, validates every expected target COFF object, builds
+the Rust SDK static library with the engine configuration, and links the C
+objects and virtual-file wrappers with the managed GNU linker. Directory calls
+retain their Windows ABI and remain denied by virtual storage. Compiler execution
+has one 180-second deadline after tool installation; tool downloads keep their
+separate bounds. The cache identity includes engine sources and compiler pins.
+
+Public Windows C-engine admission remains closed. The actual Windows fixture now
+packs and installs both real source packages, builds their native executables,
+and checks target identity, integrity and continued admission denial. Those new
+link checks must pass before runtime/media qualification and public enablement;
+they do not read or upload game data.
+
+The shared staging passes strict Linux and both Windows GNU target checks.
+A fresh private Linux run passes 431 library tests (47 separate-fixture tests
+remain ignored), native DOOM gameplay/audio/save-and-reload, and native Zelda3
+snapshot restoration and exact replay. Selected media are read-only and retain
+their hashes; audio is muted/null. A compiled-source fingerprint rejects an
+initial stale-library run from the shared target cache. Only the fresh run with
+the exact new source plan embedded in the CLI and both gameplay test binaries
+qualifies this refactor. No full Takedawn game build is repeated.
