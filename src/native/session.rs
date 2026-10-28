@@ -126,7 +126,9 @@ impl Session {
         let binary = tempfile::tempdir()?;
         #[cfg(windows)]
         ensure!(
-            manifest.builtin_engine.is_none(),
+            manifest.builtin_engine.as_deref().is_none_or(|profile| {
+                profile == crate::doom::PROFILE || profile == crate::zelda3::PROFILE
+            }),
             "this engine uses its separate native player"
         );
         let name = if cfg!(windows) { "game.exe" } else { "game" };

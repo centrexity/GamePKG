@@ -6,6 +6,8 @@ on:
       - 'src/native/engine_sources.rs'
       - 'src/native/build.rs'
       - 'src/native/engine.rs.txt'
+      - 'src/native/doom_fixture.rs'
+      - 'src/native/session.rs'
       - 'src/native/zelda_stdio.c.txt'
       - 'src/doom.rs'
       - 'src/zelda3.rs'
@@ -24,6 +26,8 @@ on:
       - 'src/native/engine_sources.rs'
       - 'src/native/build.rs'
       - 'src/native/engine.rs.txt'
+      - 'src/native/doom_fixture.rs'
+      - 'src/native/session.rs'
       - 'src/native/zelda_stdio.c.txt'
       - 'src/doom.rs'
       - 'src/zelda3.rs'
@@ -70,11 +74,25 @@ jobs:
       - name: Verify target-sized C objects, signed engine links and denied host includes
         shell: pwsh
         run: |
+          # Public compatible data only; no player ROM or ISO enters CI.
+          $archive = Join-Path $env:RUNNER_TEMP 'freedoom-0.13.0.zip'
+          Invoke-WebRequest -Uri 'https://github.com/freedoom/freedoom/releases/download/v0.13.0/freedoom-0.13.0.zip' -OutFile $archive -TimeoutSec 180
+          if ((Get-Item $archive).Length -ne 24143781 -or (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne '3f9b264f3e3ce503b4fb7f6bdcb1f419d93c7b546f4df3e874dd878db9688f59') { throw 'Public fixture archive pin mismatch' }
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $zip = [System.IO.Compression.ZipFile]::OpenRead($archive)
+          try {
+            $entry = $zip.GetEntry('freedoom-0.13.0/freedoom1.wad')
+            if ($null -eq $entry -or $entry.Length -ne 28795076) { throw 'Public fixture entry mismatch' }
+            $env:GAMEPKG_PUBLIC_DOOM_WAD = Join-Path $env:RUNNER_TEMP 'public-freedoom1.wad'
+            [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $env:GAMEPKG_PUBLIC_DOOM_WAD)
+          } finally { $zip.Dispose() }
+          if ((Get-FileHash $env:GAMEPKG_PUBLIC_DOOM_WAD -Algorithm SHA256).Hash.ToLowerInvariant() -ne '7323bcc168c5a45ff10749b339960e98314740a734c30d4b9f3337001f9e703d') { throw 'Public test data pin mismatch' }
           cargo test --locked --target ${{ matrix.target }} --lib native::windows_build::tests::reviewed_c_compiler_preserves_target_and_denies_host_include -- --ignored --exact --nocapture 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP/reviewed-c-compiler.log"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $log = Get-Content -Raw "$env:RUNNER_TEMP/reviewed-c-compiler.log"
           if ($log -notmatch 'Verified confined reviewed C compiler:') { throw 'Missing target/ABI and denied-include qualification' }
           if ($log -notmatch 'Verified reviewed C section collection: dead missing call discarded; live missing call rejected\.') { throw 'Missing paired dead/live C link controls' }
+          if ($log -notmatch 'Verified private native DOOM worker: public Freedoom;') { throw 'Missing actual native-worker gameplay/audio/save/reload qualification' }
           if ($log -notmatch 'test result: ok\. 1 passed; 0 failed;') { throw 'The exact C compiler test did not pass' }
           foreach ($port in @('doom','zelda3')) {
             if ($log -notmatch "Verified signed Windows native engine link: $port;") { throw "Missing native engine link: $port" }
