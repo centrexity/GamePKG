@@ -54,27 +54,60 @@ static void accuracy_clear(void) {
     accuracy_ready = 0;
   }
 }
-/* Only for exact_tiny() inputs. Their ratio q has at most 64 significant
- * bits and |q|<2^-40. Since 0<|q|-|atan(q)|<|q|^3/3, the curvature is less
- * than the gap from q to any distinct raw80 result (including subnormals).
- * Thus a result has rounded upward in magnitude exactly when |result|>=|q|.
- * Compute the ratio independently with MPFR, not the implementation under
- * test or the host CPU's approximation flag. Undo an unmasked range wrap.
+/* Independent reference for exact_tiny()'s dyadic q, with <=64 significant
+ * bits and |q|<2^-40. atan(q) is strictly below q in magnitude by less than
+ * q^3/3, too little to cross a distinct raw80 rounding boundary. A 128-bit
+ * predecessor supplies that strict lower tail, independently of the runtime's
+ * binary128 helpers. Round with MPFR to 64 bits or the fixed subnormal grid.
+ * This also derives UE, wrapped results and C1; Intel/AMD approximations can
+ * disagree on all three at the minimum-normal boundary, not just C1.
  */
-static unsigned tiny_round_up(GamePkgExt80 input, GamePkgExt80 multiplier,
-                              GamePkgExt80 output, unsigned cw, unsigned sw) {
-  mpfr_t x, q, result;
-  mpfr_inits2(128, x, q, result, (mpfr_ptr)0);
+static GamePkgExt80 tiny_reference(GamePkgExt80 input, GamePkgExt80 multiplier,
+                                    unsigned cw, unsigned old_status,
+                                    unsigned *sw) {
+  mpfr_t x, q, scaled, rounded;
+  mpfr_inits2(128, x, q, scaled, (mpfr_ptr)0);
+  mpfr_init2(rounded, 64);
   mp_raw(x, input);
   mp_raw(q, multiplier);
   assert(mpfr_div(q, q, x, MPFR_RNDN) == 0 && mpfr_min_prec(q) <= 64);
-  mp_raw(result, output);
-  unsigned wrapped = (sw & 24u) & ~cw;
-  if (wrapped)
-    mpfr_mul_2si(result, result, (wrapped & 8u) ? 24576 : -24576, MPFR_RNDN);
-  unsigned up = mpfr_cmpabs(result, q) >= 0;
-  mpfr_clears(x, q, result, (mpfr_ptr)0);
-  return up;
+  unsigned sign = mpfr_signbit(q) != 0, rc = (cw >> 10) & 3;
+  mpfr_abs(q, q, MPFR_RNDN);
+  mpfr_nextbelow(q);
+  mpfr_rnd_t mode = rc == 0 ? MPFR_RNDN
+                     : ((rc == 1 && sign) || (rc == 2 && !sign))
+                         ? MPFR_RNDU : MPFR_RNDD;
+  mpfr_set(rounded, q, mode);
+  unsigned underflow = 0;
+  GamePkgExt80 value;
+  if (mpfr_get_exp(rounded) < -16381 && (cw & 16u)) {
+    mpfr_mul_2si(scaled, q, 16445, MPFR_RNDN);
+    value.significand = (uint64_t)mpfr_get_uj(scaled, mode);
+    value.sign_exponent = (uint16_t)((sign << 15) |
+                                        (value.significand >> 63));
+    /* Tininess follows the rounded unbounded 64-bit result. Rounding again
+     * on the subnormal grid can carry into minimum normal without clearing UE. */
+    underflow = 1;
+    mp_raw(scaled, value);
+    mpfr_abs(scaled, scaled, MPFR_RNDN);
+  } else {
+    underflow = mpfr_get_exp(rounded) < -16381;
+    mpfr_exp_t exponent = mpfr_get_exp(rounded);
+    mpfr_mul_2si(scaled, rounded, 64 - exponent, MPFR_RNDN);
+    value.significand = (uint64_t)mpfr_get_uj(scaled, MPFR_RNDN);
+    value.sign_exponent = (uint16_t)((sign << 15) |
+                           (unsigned)(exponent + 16382 +
+                                      (underflow ? 24576 : 0)));
+    mpfr_set(scaled, rounded, MPFR_RNDN);
+  }
+  unsigned up = mpfr_cmp(scaled, q) > 0;
+  assert(*sw & 32u); /* Every committed nonzero finite arctangent is inexact. */
+  *sw = (*sw & ~(16u | 0x200u | 0x8080u)) | (old_status & 16u) |
+          (underflow ? 16u : 0u) | (up << 9);
+  if (*sw & ~cw & 63u)
+    *sw |= 0x8080u;
+  mpfr_clears(x, q, scaled, rounded, (mpfr_ptr)0);
+  return value;
 }
 #else
 static void accuracy(GamePkgExt80 input, GamePkgExt80 multiplier,

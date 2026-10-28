@@ -76,22 +76,30 @@ polynomial evaluation use the same fixed intermediate widths. Exact tiny
 ratios receive a lower tail because atan(q)<q; tiny divisions are normalized
 before evaluation to avoid early binary128 precision loss. This adaptation
 corrects directed-rounding/underflow behavior in the original profile. The
-physical oracle checks corrected dyadic result bytes directly; their C1 bit
-uses an independent exact MPFR ratio comparison, because modern hosts can
-report different approximation flags for the same tiny result. Unsupported
-raw80 operands retain the unmodified physical exception/state checks. Other
-finite inputs match the independently compiled original source, listed in
+oracle derives exact-tiny dyadic result bytes, C1 and UE independently with
+MPFR, including unmasked range wrapping. Modern AMD and Intel hosts disagree
+on the minimum-normal boundary's numerical result and UE as well as C1.
+The dyadic domain has at most 64 significant bits and |q|<2^-40; a strict lower
+tail preserves atan(q)<q without crossing any distinct raw80 rounding boundary.
+The reference rounds the unbounded result to 64 bits before determining
+underflow, then applies the fixed subnormal grid or exponent wrap. A final
+subnormal-grid carry to minimum normal does not clear that underflow.
+Unsupported raw80 operands retain unmodified physical exception/state checks.
+Other finite inputs match the independently compiled original source, listed in
 fpatan-reference-sources.txt, and MPFR512 verifies accuracy. FPATAN replay tools
 use GAMEPKG_X87_FPATAN_CORPUS_SOURCE and x87_fpatan names. The pinned original
 sources are unchanged; no complete CPU/game fidelity or player delivery is
 claimed by these tests.
 
-The C1 regression reverses every captured host flag in the qualified tiny
-domain while retaining all result bytes and other state checks. A separate
-probe corrupts the generated implementation's tiny-result C1 and must fail on
-the exact case observed in CI. Only the normal fixture may export a replay
-corpus; probe variants remove that output setting to avoid file races. These
-are maintainer-oracle changes, with no runtime or player delivery changes.
+Regression variants reverse the captured tiny-domain C1 and reproduce the
+Intel non-wrapped minimum-normal result where AMD reports UE with a wrapped
+result. Both must preserve the same independently checked implementation state.
+Separate probes corrupt implementation C1, UE and numerical bits and must fail
+on the exact boundary cases. Only the normal fixture exports a replay corpus;
+probe variants remove that output setting. The complete AMD-host state corpus
+remains byte-for-byte unchanged (SHA-256
+fa7632c0b879c45eb541a066d20f6f47d0be7f5272fcbb1124b90e3af4d2dabd).
+These are maintainer-oracle changes; no runtime or player delivery changes.
 
 
 The gamepkg_fsincos adapter evaluates standalone FSIN/FCOS

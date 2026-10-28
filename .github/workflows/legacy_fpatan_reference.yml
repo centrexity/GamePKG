@@ -1,0 +1,50 @@
+name: Legacy FPATAN mathematical reference
+on:
+  push:
+    paths:
+      - 'engines/takedawn/native-gen/**'
+      - 'engines/takedawn/media-bridge/**'
+      - '.github/workflows/legacy_fpatan_reference.yml'
+  pull_request:
+    paths:
+      - 'engines/takedawn/native-gen/**'
+      - 'engines/takedawn/media-bridge/**'
+      - '.github/workflows/legacy_fpatan_reference.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: legacy-fpatan-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  physical-reference:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: engines/takedawn/native-gen
+          key: legacy-fpatan-reference
+      - name: Prepare independent high-precision reference
+        run: |
+          lscpu
+          bash tools/ci_ubuntu_apt.sh update
+          bash tools/ci_ubuntu_apt.sh install -y g++ libmpfr-dev
+      - name: Verify exact state and damaged-result rejection
+        run: |
+          set -euo pipefail
+          cargo fmt --manifest-path engines/takedawn/native-gen/Cargo.toml -- --check
+          cargo test --locked --release --manifest-path engines/takedawn/native-gen/Cargo.toml --test x87_fpatan -- --nocapture 2>&1 | tee "$RUNNER_TEMP/fpatan-reference.log"
+          cargo clippy --locked --release --manifest-path engines/takedawn/native-gen/Cargo.toml --test x87_fpatan -- -D warnings
+      - name: Preserve reference diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: legacy-fpatan-reference
+          path: ${{ runner.temp }}/fpatan-reference.log
+          if-no-files-found: warn
+          retention-days: 7

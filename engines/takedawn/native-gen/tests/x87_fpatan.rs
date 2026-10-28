@@ -187,3 +187,35 @@ fn generated_fpatan_rejects_corrupted_tiny_rounding_flag() {
     assert!(String::from_utf8_lossy(&out.stderr)
         .contains("value got0001:8000000000000000 expected0001:8000000000000000"));
 }
+
+#[test]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn generated_fpatan_tiny_underflow_does_not_depend_on_host_profile() {
+    let source = fixture();
+    let marker = "unsigned sw = rd(after.b + 2), valid = 0;";
+    assert_eq!(source.matches(marker).count(), 1);
+    // Reproduce the Intel capture for the boundary where AMD returns a wrapped
+    // UE result. The independent mathematical oracle must check the same
+    // implementation bits regardless of this host observation.
+    let altered = source.replace(marker, &format!(
+        "{marker}\nif (!empty && a.sign_exponent==0x3fff && a.significand==UINT64_C(0x8000000000000000) && b.sign_exponent==1 && b.significand==UINT64_C(0x8000000000000000) && ((cw>>10)&1) && !(cw&16) && ((sw>>11)&7)==((top+1)&7)) {{ put80(after.b+32,b); sw=(sw&~16u)|0x200u; wr(after.b+2,sw); }}"
+    ));
+    assert_fixture_matches(altered, false);
+}
+
+#[test]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn generated_fpatan_rejects_corrupted_tiny_underflow() {
+    for damage in ["bad->status^=16u;", "bad->significand[t]^=1;"] {
+        let mut source = fixture();
+        let end = source.rfind("}\n").unwrap();
+        source.insert_str(end, &format!("GamePkgX87State *bad=gamepkg_x86_x87_state();unsigned t=(bad->status>>11)&7; if(bad->sign_exponent[t]==0x6000 && bad->significand[t]==UINT64_MAX){{{damage}}}"));
+        let out = run_fixture(source, false);
+        assert!(!out.status.success());
+        assert!(
+            String::from_utf8_lossy(&out.stderr).contains("FPATAN case87701 cw440"),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+}

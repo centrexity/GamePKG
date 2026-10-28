@@ -2623,20 +2623,25 @@ independently compiled original profile. Approximation differences do not
 replace defined physical status/exception/commit checks. Original source
 files are unchanged; source and tests document the correction.
 
-The hosted runner exposed that C1 difference for x=1,y=minimum-normal with
-control word 0x40 (case85), while the local AMD oracle passed. Reversing the
-captured tiny-domain flags reproduces the exact failure with the old oracle.
-For an exact dyadic q with at most64 significant bits and |q|<2^-40,
-0<|q|-|atan(q)|<|q|^3/3 is smaller than the distance to any distinct raw80
-result. The corrected oracle therefore checks round-up independently via
-|result|>=|q|, after undoing any unmasked range wrap. MPFR verifies the ratio
-division is exact. Unsupported raw80 operands are excluded from this
-mathematical domain and retain their physical invalid-operation checks.
-The complete state matrix passes with both captured C1 values; a separately
-corrupted implementation flag is still rejected on case85. Numerical bytes,
-other status bits, stack/tags, deferred faults and accuracy/monotonicity
-assertions remain intact. Probe variants cannot overwrite the normal replay
-corpus. No runtime, source-kit or current native-port code changes are involved.
+Hosted Intel CPUs expose both C1 and underflow differences for x=1,
+y=minimum-normal. At CW0x40 (case85), numerical bytes agree but C1 can differ.
+At CW0x440 (case87701), Intel returns minimum normal without UE, whereas the
+AMD physical result and the mathematically corrected implementation wrap the
+underflow result. For exact dyadic q with at most64 significant bits and
+|q|<2^-40, 0<|q|-|atan(q)|<|q|^3/3 cannot cross a distinct raw80 rounding
+boundary. The independent MPFR oracle therefore supplies a strict lower tail,
+rounds at unbounded 64-bit precision to determine UE and then applies subnormal
+rounding or wrapping. It derives result bytes, C1, UE and deferred-error flags;
+all other physical state checks remain. Unsupported operands retain physical
+invalid-operation assertions. MPFR512 accuracy and quadrant monotonicity remain.
+
+Reversed-host-C1 and captured-Intel-underflow variants pass the complete matrix.
+Corrupt implementation C1, UE and result-bit probes still fail at case85 or
+case87701. The 616,852,492-byte AMD replay corpus remains byte-for-byte unchanged
+(SHA-256 fa7632c0b879c45eb541a066d20f6f47d0be7f5272fcbb1124b90e3af4d2dabd).
+Variants cannot overwrite the canonical corpus. No runtime, source-kit or
+current native-port code changes are involved. Actual Intel CI confirmation of
+the new oracle remains separate from these local results.
 
 2,409,580 state cases/1,085,424 deferred next-wait faults pass, plus8,000 worker
 cases. All64 masks/four PC/four RC/TOP/empty/special pairs, full-range ratios,
