@@ -155,12 +155,12 @@ pub(super) fn compile(
     let output = stage.join("game.exe");
     // This is an executable path, so retain canonical Windows extended-path
     // syntax. Only GNU file/search/output arguments need ordinary syntax.
-    // Use the official bundled LLD directly rather than the legacy GCC driver.
-    let linker = toolchain.join(format!("lib/rustlib/{target}/bin/rust-lld.exe"));
-    // Avoid depending on Rust 1.89's captured-child streams, whose system
-    // pipe-filesystem access can fail in an AppContainer. Let Rust create its
-    // normal static library (including allocator/runtime support), then launch
-    // LLD directly through the host's private pipes in another confined job.
+    // The official bundled GNU linker avoids LLVM's GetLongPathNameW startup
+    // lookup, which requires access outside the private toolchain directory.
+    let linker = toolchain.join(format!("lib/rustlib/{target}/bin/self-contained/ld.exe"));
+    // Rust creates a normal static library with allocator/runtime support.
+    // The host launches both tools through the same confined process boundary,
+    // so neither stage needs to launch a nested compiler/linker process.
     // No game code executes during either compilation stage.
     let entry = stage.join("src/gamepkg_native_entry.rs");
     std::fs::write(
@@ -230,8 +230,6 @@ pub extern "C" fn __gamepkg_native_entry()->i32 {
         _ => anyhow::bail!("unsupported native Windows linker target"),
     };
     let mut link: Vec<OsString> = [
-        "-flavor",
-        "gnu",
         "-m",
         machine,
         "--dynamicbase",
@@ -330,11 +328,10 @@ fn main() {
         let settings = crate::settings::Settings::default();
         let (toolchain, target) = crate::takedawn_windows_sdk::prepare_source(root.path()).unwrap();
         let toolchain = toolchain.canonicalize().unwrap();
-        let linker = toolchain.join(format!("lib/rustlib/{target}/bin/rust-lld.exe"));
-        compare_linker_controls(&stage, &toolchain, target, &linker);
+        let linker = toolchain.join(format!("lib/rustlib/{target}/bin/self-contained/ld.exe"));
         let version = run(
             &linker,
-            &["-flavor".into(), "gnu".into(), "--version".into()],
+            &["--version".into()],
             &stage.canonicalize().unwrap(),
             &toolchain,
             target,
@@ -402,147 +399,6 @@ fn main() {
         assert_eq!(std::fs::read(&secret).unwrap(), b"private compiler marker");
         println!("Verified pinned standalone Rust compile, PE identity, confined binary worker exchange and denied host-file include; no WSL or Python process is used.");
         signed_package_uses_generated_sdk(root.path(), &settings);
-    }
-
-    fn compare_linker_controls(stage: &Path, toolchain: &Path, target: &str, linker: &Path) {
-        let probe = stage.join("path-probe.exe");
-        std::fs::copy(std::env::current_exe().unwrap(), &probe).unwrap();
-        let probe_output = run(
-            &probe,
-            &[
-                "--exact".into(),
-                "native::windows_build::tests::path_api_child_fixture".into(),
-                "--nocapture".into(),
-                "--".into(),
-                linker.as_os_str().to_owned(),
-            ],
-            stage,
-            toolchain,
-            target,
-            Instant::now() + Duration::from_secs(10),
-        )
-        .unwrap();
-        println!(
-            "Confined path API probe: {}",
-            String::from_utf8_lossy(&probe_output)
-        );
-        let args: Vec<OsString> = ["-flavor", "gnu", "--version"].map(Into::into).into();
-        println!(
-            "Confined ordinary-image-path control: {:?}",
-            run(
-                &crate::takedawn_windows_sdk::compiler_path(linker).unwrap(),
-                &args,
-                stage,
-                toolchain,
-                target,
-                Instant::now() + Duration::from_secs(10),
-            )
-            .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
-        );
-        let (directory, values) = environment(stage, toolchain, target).unwrap();
-        let mut command = std::process::Command::new(linker);
-        command
-            .args(&args)
-            .current_dir(&directory)
-            .env_clear()
-            .envs(values.iter().cloned());
-        let control = crate::compiler::run_timed(&mut command, Duration::from_secs(10)).unwrap();
-        println!(
-            "Unconfined same-tool/environment control: {} stdout={} stderr={}",
-            control.status, control.stdout, control.stderr
-        );
-        assert!(
-            control.status.success(),
-            "the linker must work in the positive control"
-        );
-
-        // The existing reviewed-engine launcher uses regular log files, not
-        // private duplex stdio pipes. Compare that boundary independently.
-        let sandbox = Sandbox::open(&format!(
-            "GamePKG.LinkerFileControl.p{}",
-            std::process::id()
-        ))
-        .unwrap();
-        sandbox.grant_runtime(toolchain).unwrap();
-        sandbox.grant_saves(stage).unwrap();
-        let disc = stage.join("synthetic-read-only-capability");
-        std::fs::write(&disc, b"no original media").unwrap();
-        let log = stage.join("linker-file-control.log");
-        let launch = gamepkg_takedawn_windows_runner::Launch {
-            executable: linker.to_owned(),
-            args,
-            cwd: directory,
-            environment: values,
-            disc: std::fs::File::open(disc).unwrap(),
-            output: std::fs::File::create(&log).unwrap(),
-            memory_limit_bytes: Some(crate::compiler::ADDRESS_SPACE),
-        };
-        let mut session =
-            gamepkg_takedawn_windows_runner::Session::start_confined(launch, sandbox).unwrap();
-        let end = Instant::now() + Duration::from_secs(10);
-        let code = loop {
-            if let Some(event) = session.poll().unwrap() {
-                match event {
-                    gamepkg_takedawn_windows_runner::Event::Exited(code) => break code,
-                    gamepkg_takedawn_windows_runner::Event::Restarted { .. } => {
-                        panic!("version probe unexpectedly requested a restart")
-                    }
-                }
-            }
-            assert!(Instant::now() < end, "file-log linker control timed out");
-            std::thread::sleep(Duration::from_millis(10));
-        };
-        drop(session);
-        println!(
-            "Confined regular-file output control: exit={code} log={}",
-            std::fs::read_to_string(log).unwrap()
-        );
-    }
-
-    #[test]
-    fn path_api_child_fixture() {
-        use std::os::windows::ffi::OsStrExt;
-        let Some(path) =
-            std::env::args_os().find(|arg| arg.to_string_lossy().ends_with("rust-lld.exe"))
-        else {
-            return;
-        };
-        #[link(name = "kernel32")]
-        unsafe extern "system" {
-            fn GetLongPathNameW(input: *const u16, output: *mut u16, size: u32) -> u32;
-        }
-        let mut paths: Vec<(String, PathBuf)> = [
-            ("canonical", PathBuf::from(&path)),
-            (
-                "ordinary",
-                crate::takedawn_windows_sdk::compiler_path(Path::new(&path)).unwrap(),
-            ),
-            ("self", std::env::current_exe().unwrap()),
-        ]
-        .into_iter()
-        .map(|(label, path)| (label.to_owned(), path))
-        .collect();
-        let ordinary = crate::takedawn_windows_sdk::compiler_path(Path::new(&path)).unwrap();
-        paths.extend(ordinary.ancestors().enumerate().map(|(index, path)| {
-            (
-                format!("ancestor{index} {}", path.display()),
-                path.to_owned(),
-            )
-        }));
-        for (label, path) in paths {
-            let input: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
-            let mut output = [0u16; 32768];
-            // SAFETY: input is terminated; output is writable for its declared length.
-            let count = unsafe {
-                GetLongPathNameW(input.as_ptr(), output.as_mut_ptr(), output.len() as u32)
-            };
-            let error = if count == 0 {
-                Some(io::Error::last_os_error().raw_os_error())
-            } else {
-                None
-            };
-            println!("GetLongPathNameW {label}: count={count} error={error:?}");
-        }
     }
 
     fn signed_package_uses_generated_sdk(root: &Path, settings: &crate::settings::Settings) {
