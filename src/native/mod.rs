@@ -99,6 +99,8 @@ fn sdk_identity() -> &'static str {
             concat!(
                 include_str!("build.rs"),
                 include_str!("engine_sources.rs"),
+                include_str!("doom_stdio.c.txt"),
+                include_str!("zelda_stdio.c.txt"),
                 include_str!("guest.rs.txt"),
                 include_str!("engine.rs.txt"),
                 include_str!("pixels.rs.txt"),

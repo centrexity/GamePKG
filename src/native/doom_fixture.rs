@@ -144,7 +144,58 @@ pub(super) fn verify(root: &Path, settings: &crate::settings::Settings, wad: &Pa
         hash,
         "test data changed"
     );
+    verify_missing_palette_error(root, settings, &bytes);
     println!("Verified private native DOOM worker: public Freedoom; gameplay, controller, stereo PCM, nonblank frame, scoped save, close/reload and restart; no physical audio.");
+}
+
+fn verify_missing_palette_error(root: &Path, settings: &crate::settings::Settings, wad: &[u8]) {
+    // Derive an invalid input in RAM. Keep the original public file unchanged
+    // and copy only the already-verified executable into a fresh save scope.
+    let fresh = tempfile::tempdir().unwrap();
+    let archive = root.join("com.gamepkg.doom.gamepkg");
+    let manifest = crate::registry::install(fresh.path(), &archive, true).unwrap();
+    let digest = crate::verify::digest(&std::fs::read(&archive).unwrap());
+    let source = super::path_for_digest(root, &digest);
+    let executable = std::fs::read(source).unwrap();
+    let target = super::path_for_digest(fresh.path(), &digest);
+    std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+    std::fs::write(&target, &executable).unwrap();
+    crate::integrity::record_build(&target, &executable).unwrap();
+    let mut invalid = wad.to_vec();
+    let count = u32::from_le_bytes(invalid[4..8].try_into().unwrap()) as usize;
+    let offset = u32::from_le_bytes(invalid[8..12].try_into().unwrap()) as usize;
+    let mut changed = 0;
+    for entry in invalid[offset..offset + count * 16].chunks_exact_mut(16) {
+        if &entry[8..16] == b"PLAYPAL\0" {
+            entry[8..16].copy_from_slice(b"BADPAL\0\0");
+            changed += 1;
+        }
+    }
+    assert_eq!(changed, 1, "expected the pinned public palette resource");
+    let mut package = crate::archive::Package::open(&archive).unwrap();
+    crate::verify::verify_embedded(&mut package).unwrap();
+    package.resolve_shared_assets(fresh.path()).unwrap();
+    let error = Session::new(
+        fresh.path(),
+        &digest,
+        package,
+        manifest,
+        vec![invalid],
+        settings,
+        0,
+    )
+    .err()
+    .expect("missing palette unexpectedly initialized the game");
+    let message = format!("{error:#}");
+    assert!(
+        message.contains("W_GetNumForName") && message.contains("PLAYPAL"),
+        "missing original native engine error: {message}"
+    );
+    assert!(
+        !message.contains("deadline") && !message.contains("time limit"),
+        "native engine error was replaced by a timeout: {message}"
+    );
+    println!("Verified native DOOM fatal diagnostics: missing PLAYPAL reported; no timeout or error dialog; original file unchanged.");
 }
 
 fn position(game: &Session) -> (u32, u16, u16) {
@@ -159,9 +210,10 @@ fn position(game: &Session) -> (u32, u16, u16) {
 fn tick(game: &mut Session, state: &mut u64, frames: u32, input: u32) -> bool {
     let mut audible = false;
     for frame in 0..frames {
+        let before = *state;
         *state = game
             .step(input, *state, &[])
-            .unwrap_or_else(|error| panic!("frame {frame}: {error:#}"));
+            .unwrap_or_else(|error| panic!("tick state={before}, batch frame={frame}, input={input:#x}, last engine diagnostic={:?}: {error:#}",game.diagnostic));
         assert_eq!(game.audio_channels, 2);
         assert_eq!(game.audio.len(), 1600);
         audible |= game.audio.iter().any(|sample| *sample != 0);

@@ -814,7 +814,7 @@ denial before starting the private worker. Actual Windows runtime results remain
 pending; Linux success does not qualify Windows CRT or process behavior.
 
 The first Windows runtime attempt at `3d8dfdc` builds and initializes the signed
-game at both widths, then fails on frame zero with the existing 100 ms native
+game at both widths, then reports batch frame zero at the existing 100 ms native
 I/O deadline. Public admission stays closed. Bounded first-tick messages now
 identify C execution, pixel conversion, image transfer and audio transfer; host
 errors identify packet framing and the exact request/reply size and service
@@ -824,7 +824,7 @@ new SDK source embedded in its test binary. Actual Windows traces are required
 to locate and fix the stalled phase.
 
 At `dcd8855`, both actual Windows widths complete the C step, pixel conversion,
-image transfer and stereo-audio transfer before the same first-frame timeout.
+image transfer and stereo-audio transfer in an early tick before a later timeout.
 The next diagnostics retain elapsed microseconds and the last host request,
 and distinguish save-state inspection/transfer from end-of-frame diagnostics.
 The unchanged Linux native gameplay/save/reload/restart fixture passes; the
@@ -841,3 +841,28 @@ device needs no checkout. Three black-box controls compare compiled suites
 with actual runner invocations, require failure propagation and reject a
 missing binary. The four resource tests and strict lint pass locally; actual
 new Windows/Android execution remains required.
+
+The actual `04030c0` traces correct the earlier frame interpretation: the fixture
+reset its local frame index for every input batch. The first complete frame
+takes about 1.6 ms; a later tick fails before making any host call. Error labels
+now include tick state, input and previous engine diagnostics. Native DOOM's
+Windows save paths also used a backslash while its virtual store accepts fixed
+forward-slash names. Native source staging now preserves that canonical spelling
+on every OS and the C compiler asserts it. The store accepts no new aliases.
+
+Native stdio now formats into a bounded buffer and forwards diagnostic bytes
+through Rust stderr, without passing a CRT-owned FILE object across libraries
+or contaminating the protocol stream. The worker selects DOOM's `-nogui` error
+mode so a fatal loading error cannot block on a worker dialog. Cache identities
+include both native stdio adapters. Linux native gameplay/audio/save/reload and
+a RAM-only missing-PLAYPAL control pass; the latter must report the original
+engine error without a timeout. Windows qualification remains required.
+
+Hosted `04030c0` canonical delivery, Linux32 and Android32 gates pass completely.
+The canonical gate includes the exact full-size decomposed-name typing fixture
+in all three runtimes and complete browser/legacy checks. Linux32 runs all 133
+game tests; Android actually executes all eight named suites, including 132
+game tests (the SDL-specific comparison is Linux-only) and four resource tests.
+The added Windows32 suite exposes five original procedural-scene reference
+failures, including maximum frame-counter cases. These remain blocking; no
+goldens or tolerances are relaxed.

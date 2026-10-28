@@ -1,0 +1,25 @@
+/* Native diagnostics share the virtual-file formatter but never its protocol
+ * stream, host filesystem or a CRT-owned FILE structure. GPL-2.0-or-later. */
+_Static_assert(DIR_SEPARATOR=='/',"native virtual DOOM paths must be platform independent");
+int __wrap_fprintf(FILE *stream,const char *format,...) {
+  va_list args;
+  va_start(args,format);
+  int result=__wrap_vfprintf(stream,format,args);
+  va_end(args);
+  return result;
+}
+int __wrap_printf(const char *format,...) {
+  va_list args;
+  va_start(args,format);
+  int result=__wrap_vfprintf(NULL,format,args);
+  va_end(args);
+  return result;
+}
+int __wrap_puts(const char *text) {
+  return __wrap_fprintf(NULL,"%s\n",text);
+}
+int __wrap_putchar(int c) {
+  uint8_t byte=(uint8_t)c;
+  gamepkg_native_doom_log(&byte,1);
+  return byte;
+}
