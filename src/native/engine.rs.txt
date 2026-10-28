@@ -1,5 +1,12 @@
     #[cfg(any(gamepkg_doom,gamepkg_zelda))]
     mod engine {
+        #[cfg(gamepkg_doom)]
+        #[no_mangle]
+        pub unsafe extern "C" fn gamepkg_native_doom_log(bytes:*const u8,length:u32) {
+            if !bytes.is_null() && length<=4096 {
+                let _=std::io::Write::write_all(&mut std::io::stderr().lock(),std::slice::from_raw_parts(bytes,length as usize));
+            }
+        }
         #[cfg(gamepkg_doom)] unsafe extern "C" {fn initialize(data:*mut u8,length:u32,save:u32)->i32;fn add_patch(data:*mut u8,length:u32)->i32;fn set_patch_mode(index:u32,mode:u32)->i32;}
         #[cfg(gamepkg_zelda)] unsafe extern "C" {fn initialize(data:*mut u8,length:u32)->i32;fn configure_video(extra:u32,tall:u32)->i32;}
         unsafe extern "C" {fn step(input:u32)->i32;fn pixels()->*mut u8;fn pixel_format()->u32;fn audio()->*mut i16;fn reset_engine();}

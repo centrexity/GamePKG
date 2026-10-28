@@ -9,6 +9,7 @@ on:
       - 'src/native/doom_fixture.rs'
       - 'src/native/session.rs'
       - 'src/native/zelda_stdio.c.txt'
+      - 'src/native/doom_stdio.c.txt'
       - 'src/doom.rs'
       - 'src/zelda3.rs'
       - 'engines/doom/**'
@@ -29,6 +30,7 @@ on:
       - 'src/native/doom_fixture.rs'
       - 'src/native/session.rs'
       - 'src/native/zelda_stdio.c.txt'
+      - 'src/native/doom_stdio.c.txt'
       - 'src/doom.rs'
       - 'src/zelda3.rs'
       - 'engines/doom/**'
@@ -93,6 +95,7 @@ jobs:
           if ($log -notmatch 'Verified confined reviewed C compiler:') { throw 'Missing target/ABI and denied-include qualification' }
           if ($log -notmatch 'Verified reviewed C section collection: dead missing call discarded; live missing call rejected\.') { throw 'Missing paired dead/live C link controls' }
           if ($log -notmatch 'Verified private native DOOM worker: public Freedoom;') { throw 'Missing actual native-worker gameplay/audio/save/reload qualification' }
+          if ($log -notmatch 'Verified native DOOM fatal diagnostics: missing PLAYPAL reported;') { throw 'Missing native fatal-error propagation qualification' }
           if ($log -notmatch 'test result: ok\. 1 passed; 0 failed;') { throw 'The exact C compiler test did not pass' }
           foreach ($port in @('doom','zelda3')) {
             if ($log -notmatch "Verified signed Windows native engine link: $port;") { throw "Missing native engine link: $port" }

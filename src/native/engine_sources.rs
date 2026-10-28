@@ -24,6 +24,7 @@ const DOOM_WRAPS: &[&str] = &[
     "fgetc",
     "fputc",
     "fprintf",
+    "vfprintf",
     "fgets",
     "fscanf",
     "__isoc99_fscanf",
@@ -73,6 +74,24 @@ pub(super) fn stage(stage: &Path, profile: &str) -> Result<Plan> {
     }
     if doom {
         crate::doom::stage_desktop_sources(stage)?;
+        // These are virtual names, never paths on the worker's OS. Keep the
+        // original save/config construction inside the exact storage whitelist.
+        let path = stage.join("engines/doom/upstream/doomtype.h");
+        let mut source = fs::read_to_string(&path)?;
+        for (previous, replacement) in [
+            (r"#define DIR_SEPARATOR '\\'", "#define DIR_SEPARATOR '/'"),
+            (
+                r#"#define DIR_SEPARATOR_S "\\""#,
+                "#define DIR_SEPARATOR_S \"/\"",
+            ),
+        ] {
+            ensure!(
+                source.matches(previous).count() == 1,
+                "pinned virtual path separators changed"
+            );
+            source = source.replace(previous, replacement);
+        }
+        fs::write(path, source)?;
     }
     if !doom {
         let path = stage.join("engines/zelda3/upstream/src/zelda_rtl.c");
@@ -131,6 +150,28 @@ pub(super) fn stage(stage: &Path, profile: &str) -> Result<Plan> {
             "#define EXPORT(name) __attribute__((export_name(name)))",
             "#define EXPORT(name)",
         );
+        for (previous, replacement) in [
+            ("static char *args[26];", "static char *args[27];"),
+            ("\"-mb\", \"16\"};", "\"-mb\", \"16\", \"-nogui\"};"),
+            ("int argc=11;", "int argc=12;"),
+        ] {
+            ensure!(
+                text.matches(previous).count() == 1,
+                "pinned native DOOM arguments changed"
+            );
+            text = text.replace(previous, replacement);
+        }
+        let storage = stage.join("engines/doom/adapters/storage.h");
+        let source = fs::read_to_string(&storage)?;
+        let previous = "int __wrap_fprintf(FILE *stream,const char *format,...) {\n  File *f=file(stream); if (!f) return 0;\n  char text[4096]; va_list args; va_start(args,format);\n  int n=vsnprintf(text,sizeof(text),format,args); va_end(args);";
+        ensure!(
+            source.matches(previous).count() == 1,
+            "pinned virtual fprintf changed"
+        );
+        // The native worker has one protocol stream. Capture diagnostic stdio
+        // separately without passing a FILE object between different CRTs.
+        let replacement = "void gamepkg_native_doom_log(const uint8_t *bytes,uint32_t length);\nint __wrap_vfprintf(FILE *stream,const char *format,va_list args) {\n  File *f=file(stream);\n  char text[4096]={0};\n  int n=vsnprintf(text,sizeof(text),format,args);\n  if (!f) {\n    uint32_t length=0;\n    while(length<sizeof(text)-1 && text[length]) length++;\n    gamepkg_native_doom_log((const uint8_t *)text,length);\n    return n;\n  }";
+        fs::write(storage, source.replace(previous, replacement))?;
     } else {
         text = text.replace(
             "const char *file, int line, const char *function",
@@ -163,7 +204,7 @@ pub(super) fn stage(stage: &Path, profile: &str) -> Result<Plan> {
         }
     }
     if doom {
-        text.push_str("\nint __wrap_printf(const char *format,...){return 0;} int __wrap_puts(const char *text){return 0;} int __wrap_putchar(int c){return c;}\n");
+        text.push_str(include_str!("doom_stdio.c.txt"));
     }
     if !doom {
         text.push_str(include_str!("zelda_stdio.c.txt"));
