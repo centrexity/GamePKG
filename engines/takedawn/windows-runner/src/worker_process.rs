@@ -219,8 +219,15 @@ mod tests {
             let control = std::env::var_os("GP_SECURITY_CONTROL").is_some();
             let allow_child = std::env::var_os("GP_ALLOW_TOOL_CHILD").is_some();
             assert_eq!(File::open(path).is_ok(), control, "ungranted file boundary");
+            // Binding a socket does not establish network access. Attempt a
+            // real connection to the parent's live listener; the unconfined
+            // control proves the endpoint is reachable on this same machine.
+            let address = std::env::var("GP_NETWORK_ENDPOINT")
+                .unwrap()
+                .parse()
+                .unwrap();
             assert_eq!(
-                std::net::TcpListener::bind("127.0.0.1:0").is_ok(),
+                std::net::TcpStream::connect_timeout(&address, Duration::from_millis(500)).is_ok(),
                 control,
                 "direct networking boundary"
             );
@@ -297,6 +304,7 @@ mod tests {
         let name = format!("GamePKG.WorkerTest.p{}", std::process::id());
         let sandbox = Sandbox::open(&name).unwrap();
         sandbox.grant_runtime(&runtime).unwrap();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let args = vec![
             "--exact".into(),
             "worker_process::tests::stdio_child_fixture".into(),
@@ -305,6 +313,10 @@ mod tests {
         let mut values = vec![
             ("GP_STDIO_CHILD".into(), "1".into()),
             ("GP_DENIED_FILE".into(), secret.as_os_str().to_owned()),
+            (
+                "GP_NETWORK_ENDPOINT".into(),
+                listener.local_addr().unwrap().to_string().into(),
+            ),
         ];
         for key in ["SystemRoot", "LOCALAPPDATA"] {
             values.push((
@@ -374,7 +386,7 @@ mod tests {
             assert_eq!(
                 process.poll().unwrap(),
                 Some(0),
-                "{}",
+                "worker mode {mode}: {}",
                 String::from_utf8_lossy(&log)
             );
         }
