@@ -1,5 +1,5 @@
 """Prepare pinned per-application Mesa DLLs for native Windows CI rendering only."""
-import argparse,hashlib,shutil,subprocess,tempfile,urllib.request
+import argparse,hashlib,json,shutil,subprocess,tempfile,urllib.request
 from pathlib import Path
 from package_release import executable_architecture
 VERSION='26.2.4';SHA256='351fc8c8b695878ffb3eaa044b3ead08672a48b1a045e3c3e3975811df0f6695'
@@ -18,9 +18,14 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-mesa-test-') as temporary:
  source=extracted/args.architecture
  assert (source/'opengl32.dll').is_file() and (source/'libgallium_wgl.dll').is_file()
  dlls=list(source.glob('*.dll'));assert len(dlls)<=64
+ icd=source/('lvp_icd.'+('x86' if args.architecture=='x86' else 'x86_64')+'.json')
+ metadata=json.loads(icd.read_text())
+ assert metadata['ICD']['library_path']=='.\\vulkan_lvp.dll'
+ assert metadata['ICD']['library_arch']==('32' if args.architecture=='x86' else '64')
+ files=[*dlls,icd]
  expected={'x86':'i686','x64':'x86_64'}[args.architecture]
  assert all(executable_architecture(file,True)==expected for file in dlls),'Mesa DLL architecture mismatch'
  args.directory.mkdir(parents=True,exist_ok=True)
- assert all(not (args.directory/file.name).exists() for file in dlls),'Refusing to replace existing graphics DLLs'
- for file in dlls:shutil.copy2(file,args.directory/file.name)
+ assert all(not (args.directory/file.name).exists() for file in files),'Refusing to replace existing graphics DLLs'
+ for file in files:shutil.copy2(file,args.directory/file.name)
 print('Pinned Mesa test runtime prepared:',VERSION,args.architecture,SHA256)
