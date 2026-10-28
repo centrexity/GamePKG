@@ -511,14 +511,25 @@ fn main() {
         unsafe extern "system" {
             fn GetLongPathNameW(input: *const u16, output: *mut u16, size: u32) -> u32;
         }
-        for (label, path) in [
+        let mut paths: Vec<(String, PathBuf)> = [
             ("canonical", PathBuf::from(&path)),
             (
                 "ordinary",
                 crate::takedawn_windows_sdk::compiler_path(Path::new(&path)).unwrap(),
             ),
             ("self", std::env::current_exe().unwrap()),
-        ] {
+        ]
+        .into_iter()
+        .map(|(label, path)| (label.to_owned(), path))
+        .collect();
+        let ordinary = crate::takedawn_windows_sdk::compiler_path(Path::new(&path)).unwrap();
+        paths.extend(ordinary.ancestors().enumerate().map(|(index, path)| {
+            (
+                format!("ancestor{index} {}", path.display()),
+                path.to_owned(),
+            )
+        }));
+        for (label, path) in paths {
             let input: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
             let mut output = [0u16; 32768];
             // SAFETY: input is terminated; output is writable for its declared length.
