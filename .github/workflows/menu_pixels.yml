@@ -3,6 +3,8 @@ on:
   push:
     paths:
       - 'tests/menu_controls_gui.py'
+      - 'tests/gui_test_support.py'
+      - 'tests/gui_display_support_test.py'
       - 'tests/reference/arkanoo_menu_controls.py'
       - 'web-player/**'
       - 'src/bin/gui.rs'
@@ -17,6 +19,8 @@ on:
   pull_request:
     paths:
       - 'tests/menu_controls_gui.py'
+      - 'tests/gui_test_support.py'
+      - 'tests/gui_display_support_test.py'
       - 'tests/reference/arkanoo_menu_controls.py'
       - 'web-player/**'
       - 'src/bin/gui.rs'
@@ -42,6 +46,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+      - name: Verify virtual-display startup and failure diagnostics
+        run: python3 -W error::ResourceWarning tests/gui_display_support_test.py
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
