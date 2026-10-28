@@ -786,3 +786,13 @@ their hashes; audio is muted/null. A compiled-source fingerprint rejects an
 initial stale-library run from the shared target cache. Only the fresh run with
 the exact new source plan embedded in the CLI and both gameplay test binaries
 qualifies this refactor. No full Takedawn game build is repeated.
+
+The first actual Windows engine-link run passes both engines at i686. At x64,
+DOOM links, but Zelda fails because MinGW unwind tables retain unused
+emulator-only C routines through section collection. A small local Clang/MinGW
+control reproduces that failure; compiling the non-unwinding C code without
+unwind tables permits collection. The Windows C builder now uses those flags
+and tests both directions with its pinned tools: a dead unresolved call must be
+discarded, while a reachable unresolved call must still fail. The unchanged
+real signed-engine link checks remain required on both Windows targets. Public
+admission remains closed until runtime qualification as well as linking passes.
