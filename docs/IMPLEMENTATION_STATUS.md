@@ -35,21 +35,28 @@ host-admitted prepared source kit. Its managed standalone Windows compiler needs
 no WSL or Python. Other Windows source profiles use explicit Wasm build/play
 controls and the optional Linux compiler exchange. See [native profile boundaries](NATIVE_RUNTIME.md).
 
-The current development recipe is v14/0.1.3 and requires the 0.1.18 development app.
+The current development recipe is v15/0.1.4 and requires the 0.1.18 development app.
+Its multiplayer PS2 input fix has sanitized 32/64-bit and native reference
+pause/resume checks; the normal signed v15 build and Windows qualification are
+still in progress. The v14 build/gameplay evidence below remains specific to v14.
 The published 0.1.17 app does not include this native engine. A Windows host build
 or asset-free window test does not prove original-game Vulkan/audio/controller
-behavior on physical Windows hardware. The full v14 Windows signed Build/repair
+behavior on physical Windows hardware. The v14 Windows signed Build/repair
 gate passes in [run 40446319498](https://github.com/centrexity/GamePKG/actions/runs/40446319498),
 including all 487 units, native readiness and corruption/repair with unchanged
 unit hashes/timestamps. Physical game hardware qualification remains separate
 from those compiler checks and the Windows-under-Wine routes. See the [gameplay validation scope](native-windows-gameplay-validation.md).
 
-The current v14 Linux build also earns an original Downtown Road Rage1 Bronze
+The verified v14 Linux build also earns an original Downtown Road Rage1 Bronze
 medal through normal steering, accelerator and boost inputs with debug AI off.
 Original rewards, two event unlocks and autosave survive a fresh process with
 unchanged saved bytes. Reviewed actions use the original pause menus; this is
 scoped medal/persistence coverage, not a continuous real-time campaign or physical
-Windows qualification. The private Windows preview uses app `f87f383` and a
+Windows qualification. A separate unpaused headless run also earns Bronze and
+verifies original rewards/autosave plus an unchanged fresh-process medal and
+progress reload, with actual controller-read and strict native-path checks.
+This does not qualify exact wall-clock pacing or physical controllers.
+The private Windows preview uses app `f87f383` and a
 verified actual-Windows CI archive; original-game hardware checks remain pending.
 
 The web library displays metadata and cached icons; installation, builds, gameplay and repair remain in the native app or CLI. Browser cache quotas and eviction are browser-controlled. Native signed records and saves remain the recovery source.
