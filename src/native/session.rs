@@ -1,23 +1,11 @@
+#[cfg(test)]
+use super::transport::append_engine_log;
+use super::transport::Worker;
 use anyhow::{bail, ensure, Context, Result};
 use std::{
-    io::{Read, Write},
-    os::fd::{AsRawFd, RawFd},
     path::Path,
-    process::{Child, ChildStdin, ChildStdout, Stdio},
     time::{Duration, Instant},
 };
-fn append_engine_log(log: &mut Vec<u8>, bytes: &[u8]) {
-    const MAX: usize = 4096;
-    if bytes.len() >= MAX {
-        log.clear();
-        log.extend_from_slice(&bytes[bytes.len() - MAX..]);
-        return;
-    }
-    if log.len() + bytes.len() > MAX {
-        log.drain(..log.len() + bytes.len() - MAX);
-    }
-    log.extend_from_slice(bytes);
-}
 const PACKET: usize = 8 * 1048576 + 65536;
 fn validate_engine_save(manifest: &crate::manifest::Manifest, length: usize) -> Result<()> {
     ensure!(
@@ -66,12 +54,7 @@ pub(crate) struct Session {
     pub(crate) window: crate::window_control::Service,
     pub(crate) user_files: crate::user_files::Service,
     input_events: crate::input_events::Queue,
-    child: Child,
-    _parent_thread: std::sync::mpsc::Sender<()>,
-    input: ChildStdin,
-    output: ChildStdout,
-    engine_log: std::sync::Arc<std::sync::Mutex<Vec<u8>>>,
-    engine_log_done: std::sync::mpsc::Receiver<()>,
+    transport: Worker,
     _binary: tempfile::TempDir,
     package: crate::archive::Package,
     asset_image: crate::drawing::image::Cache,
@@ -93,49 +76,8 @@ pub(crate) struct Session {
 }
 impl Drop for Session {
     fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        self.transport.stop();
     }
-}
-fn ready(fd: RawFd, events: i16, deadline: Instant) -> Result<()> {
-    loop {
-        let left = deadline.saturating_duration_since(Instant::now());
-        ensure!(!left.is_zero(), "native game exceeded its time limit");
-        let mut p = libc::pollfd {
-            fd,
-            events,
-            revents: 0,
-        };
-        let n = unsafe {
-            libc::poll(
-                &mut p,
-                1,
-                left.as_millis().min(i32::MAX as u128).max(1) as i32,
-            )
-        };
-        if n < 0 {
-            let e = std::io::Error::last_os_error();
-            if e.kind() == std::io::ErrorKind::Interrupted {
-                continue;
-            }
-            return Err(e.into());
-        }
-        ensure!(n > 0, "native game exceeded its time limit");
-        ensure!(p.revents & libc::POLLNVAL == 0, "native worker pipe closed");
-        return Ok(());
-    }
-}
-fn transfer(pipe: &mut impl Read, fd: RawFd, mut out: &mut [u8], end: Instant) -> Result<()> {
-    while !out.is_empty() {
-        ready(fd, libc::POLLIN, end)?;
-        match pipe.read(out) {
-            Ok(0) => bail!("native game stopped"),
-            Ok(n) => out = &mut out[n..],
-            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
-            Err(e) => return Err(e.into()),
-        }
-    }
-    Ok(())
 }
 impl Session {
     pub fn new(
@@ -182,104 +124,27 @@ impl Session {
             None
         };
         let binary = tempfile::tempdir()?;
-        std::fs::write(binary.path().join("game"), bytes)?;
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(
-            binary.path().join("game"),
-            std::fs::Permissions::from_mode(0o500),
-        )?;
-        let mut command = std::process::Command::new("prlimit");
-        command.arg(format!("--as={memory}")).args([
-            "--core=0",
-            "--fsize=0",
-            "--",
-            "bwrap",
-            "--unshare-all",
-            "--die-with-parent",
-            "--new-session",
-            "--clearenv",
-            "--ro-bind",
-            "/usr",
-            "/usr",
-        ]);
-        for p in ["/lib", "/lib64"] {
-            if Path::new(p).exists() {
-                command.args(["--ro-bind", p, p]);
-            }
+        #[cfg(windows)]
+        ensure!(
+            manifest.builtin_engine.is_none(),
+            "this engine uses its separate native player"
+        );
+        let name = if cfg!(windows) { "game.exe" } else { "game" };
+        std::fs::write(binary.path().join(name), bytes)?;
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(
+                binary.path().join("game"),
+                std::fs::Permissions::from_mode(0o500),
+            )?;
         }
-        command
-            .arg("--ro-bind")
-            .arg(binary.path())
-            .arg("/game")
-            .args([
-                "--proc",
-                "/proc",
-                "--dev",
-                "/dev",
-                "--tmpfs",
-                "/tmp",
-                "--chdir",
-                "/game",
-                "--",
-                "/game/game",
-            ])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-        // Linux parent-death signals follow the spawning thread. Keep that thread
-        // alive when an asynchronous load hands the game to the UI thread.
-        let (spawn_send, spawn_receive) = std::sync::mpsc::sync_channel(1);
-        let (parent_thread, parent_lifetime) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
-            let _ = spawn_send.send(command.spawn());
-            let _ = parent_lifetime.recv();
-        });
-        let mut child = spawn_receive
-            .recv()
-            .context("native launcher thread stopped")?
-            .context("native playback requires bubblewrap and prlimit; isolation is mandatory")?;
-        let mut stderr = child.stderr.take().unwrap();
-        let engine_log = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-        let sink = engine_log.clone();
-        let (log_done, engine_log_done) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
-            let mut buffer = [0u8; 2048];
-            loop {
-                match stderr.read(&mut buffer) {
-                    Ok(0) => break,
-                    Ok(n) => {
-                        let Ok(mut log) = sink.lock() else {
-                            break;
-                        };
-                        append_engine_log(&mut log, &buffer[..n]);
-                    }
-                    Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
-                    Err(_) => break,
-                }
-            }
-            let _ = log_done.send(());
-        });
-        let input = child.stdin.take().unwrap();
-        let output = child.stdout.take().unwrap();
-        for fd in [input.as_raw_fd(), output.as_raw_fd()] {
-            let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
-            if flags < 0 || unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0
-            {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err(std::io::Error::last_os_error().into());
-            }
-        }
+        let transport = Worker::spawn(binary.path(), memory, digest)?;
         let render_profile = manifest.limits.render_profile;
         let mut session = Self {
             effects,
             clock: crate::frame_clock::Clock::default(),
-            child,
-            _parent_thread: parent_thread,
-            input,
-            output,
-            engine_log,
-            engine_log_done,
+            transport,
             _binary: binary,
             package,
             asset_image: crate::drawing::image::Cache::for_profile(render_profile),
@@ -322,17 +187,8 @@ impl Session {
         Ok(session)
     }
     fn stop_with_log(&mut self, error: anyhow::Error) -> anyhow::Error {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
-        let _ = self
-            .engine_log_done
-            .recv_timeout(Duration::from_millis(100));
-        let message = self
-            .engine_log
-            .lock()
-            .ok()
-            .map(|log| String::from_utf8_lossy(&log).trim().to_owned())
-            .unwrap_or_default();
+        self.transport.stop();
+        let message = self.transport.message();
         if message.is_empty() {
             error
         } else {
@@ -343,16 +199,15 @@ impl Session {
         self.receive_bounded(end, PACKET)
     }
     fn receive_bounded(&mut self, end: Instant, maximum: usize) -> Result<Vec<u8>> {
-        let fd = self.output.as_raw_fd();
         let mut len = [0; 4];
-        transfer(&mut self.output, fd, &mut len, end)?;
+        self.transport.read_exact(&mut len, end)?;
         let n = u32::from_le_bytes(len) as usize;
         ensure!(
             (1..=maximum).contains(&n),
             "native worker sent an invalid packet size"
         );
         let mut b = vec![0; n];
-        transfer(&mut self.output, fd, &mut b, end)?;
+        self.transport.read_exact(&mut b, end)?;
         Ok(b)
     }
     fn send(&mut self, bytes: &[u8], end: Instant) -> Result<()> {
@@ -363,18 +218,9 @@ impl Session {
         let prefix = bytes.len() as u32 | if control { 0x80000000 } else { 0 };
         let mut data = prefix.to_le_bytes().to_vec();
         data.extend(bytes);
-        let mut rest = data.as_slice();
-        while !rest.is_empty() {
-            ready(self.input.as_raw_fd(), libc::POLLOUT, end)?;
-            match self.input.write(rest) {
-                Ok(0) => bail!("native worker stopped reading"),
-                Ok(n) => rest = &rest[n..],
-                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
-                Err(e) => return Err(e.into()),
-            }
-        }
-        Ok(())
+        self.transport.write_all(&data, end)
     }
+
     // Only the trusted Zelda bridge handles these messages, between ordinary ticks.
     // A rejected state is recoverable; framing/transport errors terminate the worker.
     fn snapshot_command(

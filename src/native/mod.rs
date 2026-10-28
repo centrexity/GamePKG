@@ -3,13 +3,15 @@
 use anyhow::Context;
 use anyhow::{bail, ensure, Result};
 use std::path::{Path, PathBuf};
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 const MAX_CALLS_PER_TICK: usize = 8192;
 #[cfg(target_os = "linux")]
 mod build;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 mod session;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
+mod transport;
+#[cfg(any(target_os = "linux", windows))]
 pub(crate) use session::Session;
 pub(crate) fn cpu_identity() -> &'static str {
     static ID: std::sync::OnceLock<String> = std::sync::OnceLock::new();
@@ -301,7 +303,7 @@ fn validate_pe(bytes: &[u8], architecture: &str) -> Result<()> {
     Ok(())
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 pub(crate) fn source_flags(source: &str) -> Result<(bool, bool)> {
     use syn::visit::Visit;
     #[derive(Default)]
