@@ -3,12 +3,20 @@
 Uses pinned per-app Mesa only in CI; it does not qualify a physical Vulkan GPU.
 Python and Pillow are test tools, never player requirements.
 """
-import hashlib,json,os,platform,shutil,subprocess,tempfile
+import hashlib,json,os,platform,shutil,subprocess,sys,tempfile
 from pathlib import Path
 from windows_gui_support import verify_shader_input
 assert platform.system()=='Windows','This fixture requires actual Windows'
 PROJECT=Path(__file__).resolve().parents[1]
 CLI=PROJECT/'target/release/gamepkg.exe'
+sys.path.insert(0,str(PROJECT/'tools'))
+from package_release import executable_architecture
+architecture=executable_architecture(CLI,True)
+assert architecture==os.environ.get('GAMEPKG_TEST_EXPECTED_ARCH',architecture),'CLI architecture differs from requested test'
+assert executable_architecture(PROJECT/'target/release/gamepkg-gui.exe',True)==architecture,'GUI architecture differs from CLI'
+assert executable_architecture(PROJECT/'target/release/opengl32.dll',True)==architecture,'Graphics DLL architecture differs from CLI'
+proof=PROJECT/'target/windows-gui-proof';proof.mkdir(parents=True,exist_ok=True)
+(proof/'architecture.json').write_text(json.dumps({'app':architecture,'os_machine':platform.machine(),'python_bits':64 if sys.maxsize>2**32 else 32},indent=2)+'\n')
 with tempfile.TemporaryDirectory(prefix='gamepkg native shader GUI ') as directory:
  root=Path(directory);home=root/'library';config=root/'settings.toml'
  env=dict(os.environ,GAMEPKG_HOME=str(home),GAMEPKG_CONFIG=str(config))
@@ -48,7 +56,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg native shader GUI ') as directo
   build=home/'builds'/digest
   assert not list(build.rglob('*.wasm')),'Default native Build produced a Wasm game'
   binaries=list(build.glob('native-v1-*/game'));assert len(binaries)==1,binaries
-  assert binaries[0].read_bytes().startswith(b'MZ')
+  assert executable_architecture(binaries[0],True)==architecture,'Native game architecture differs from app'
   run('integrity-check',game_id)
   for launch in ['first','restart']:
    verify_shader_input(PROJECT,env,game_id,f'native-{backend}-{launch}',texture=True)
@@ -58,4 +66,5 @@ with tempfile.TemporaryDirectory(prefix='gamepkg native shader GUI ') as directo
    previous=played
   run('integrity-check',game_id)
   print('Verified native Windows shader texture/input/clear/resize/restart/history:',backend,flush=True)
+ print('Verified native app, GUI, game and OpenGL DLL architecture:',architecture,flush=True)
  print('Actual Windows native game GUI checks passed; no WSL/Python player dependency, media or audible output.')
