@@ -642,6 +642,9 @@ mod tests {
             assert!(!super::super::play_supported(&manifest));
             println!("Verified signed Windows native engine link: {port}; correct PE target and integrity; public admission closed; no ROM read.");
         }
+        if let Some(wad) = std::env::var_os("GAMEPKG_PUBLIC_DOOM_WAD") {
+            super::super::doom_fixture::verify(root, &settings, Path::new(&wad));
+        }
     }
 
     #[test]

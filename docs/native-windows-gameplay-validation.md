@@ -796,3 +796,19 @@ and tests both directions with its pinned tools: a dead unresolved call must be
 discarded, while a reachable unresolved call must still fail. The unchanged
 real signed-engine link checks remain required on both Windows targets. Public
 admission remains closed until runtime qualification as well as linking passes.
+
+The internal worker can now initialize the two reviewed C profiles. Public
+Build/Play and normal-loader admission remain closed on Windows. A shared
+private fixture uses only the exact SHA-256-pinned public Freedoom 0.13.0 phase
+1 data: it checks single-player movement and controller forwarding, stereo PCM,
+a nonblank full-resolution image, a bounded scoped save, a new worker restoring
+that checkpoint, and restart/menu input. It reads diagnostics without changing
+game state. No physical audio device or user media is needed.
+
+That exact fixture passes an empty temporary signed-package Build and native
+worker run on Linux. The Windows compiler workflow downloads the pinned public
+archive, extracts only the fixed expected WAD entry, verifies its separate hash,
+and requires the runtime marker as well as the existing compiler/link checks.
+It reuses the real just-built signed package and tests continued public-loader
+denial before starting the private worker. Actual Windows runtime results remain
+pending; Linux success does not qualify Windows CRT or process behavior.
