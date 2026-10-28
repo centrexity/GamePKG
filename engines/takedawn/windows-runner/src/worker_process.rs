@@ -92,7 +92,16 @@ impl WorkerProcess {
         let exe = wide(executable.as_os_str())?;
         let cwd = wide(cwd.as_os_str())?;
         let mut command = Vec::new();
-        quoted(executable.as_os_str(), &mut command)?;
+        // lpApplicationName below selects the exact absolute image. Keep the
+        // extended Windows path out of argv[0]: MinGW/LLVM startup code may
+        // interpret the device prefix as a command or filesystem namespace.
+        // A basename here cannot redirect image selection or invoke PATH lookup.
+        quoted(
+            executable
+                .file_name()
+                .ok_or_else(|| invalid("worker executable has no filename"))?,
+            &mut command,
+        )?;
         for arg in args {
             command.push(b' ' as u16);
             quoted(arg, &mut command)?;
