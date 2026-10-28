@@ -92,6 +92,10 @@ jobs:
           sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-recorded-rustup rustup default gamepkg-recorded
       - name: Verify original game and artwork references
         run: cargo test --locked --release --test game_arkanoo --test game_arkanoo_art
+      - name: Verify full-size decomposed Unicode editor saves in every runtime
+        run: |
+          export SDL_AUDIODRIVER=dummy
+          sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER,SDL_AUDIODRIVER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-recorded-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT=/tmp/gamepkg-recorded-slang /usr/bin/python3 tools/check_arkanoo_recorded_port.py ports/arkanoo --typing --unicode-name $'A\u0301'
       - name: Verify canonical playback, saves and complete browser exports
         run: |
           export SDL_AUDIODRIVER=dummy
