@@ -9,6 +9,8 @@ const MAX_CALLS_PER_TICK: usize = 8192;
 mod build;
 #[cfg(any(target_os = "linux", windows))]
 mod session;
+#[cfg(all(test, any(target_os = "linux", windows)))]
+mod signed_fixture;
 #[cfg(any(target_os = "linux", windows))]
 mod transport;
 #[cfg(windows)]
