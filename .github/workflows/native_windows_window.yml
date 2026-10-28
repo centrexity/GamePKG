@@ -5,6 +5,7 @@ on:
       - 'src/takedawn/windows_player.rs'
       - 'src/takedawn/path_audit.rs'
       - 'src/native/**'
+      - 'tests/platform_build_boundary.rs'
       - 'src/shaders.rs'
       - 'src/windows_compiler.rs'
       - 'src/lib.rs'
@@ -19,6 +20,7 @@ on:
       - 'src/takedawn/windows_player.rs'
       - 'src/takedawn/path_audit.rs'
       - 'src/native/**'
+      - 'tests/platform_build_boundary.rs'
       - 'src/shaders.rs'
       - 'src/windows_compiler.rs'
       - 'src/lib.rs'
@@ -48,6 +50,13 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: native-windows-source32
+      - name: Verify supported source games and reject unsupported engine builds before tools
+        shell: pwsh
+        run: |
+          cargo test --locked --target i686-pc-windows-msvc --test platform_build_boundary -- --nocapture 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP/platform-build-boundary32.log"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $log = Get-Content -Raw "$env:RUNNER_TEMP/platform-build-boundary32.log"
+          if ($log -notmatch 'test result: ok\. 3 passed; 0 failed;') { throw 'The three exact Windows platform boundary tests did not run successfully' }
       - name: Verify confined standalone 32-bit source compiler and worker without WSL
         shell: pwsh
         run: |
@@ -68,6 +77,7 @@ jobs:
         with:
           name: native-windows-source32-evidence
           path: |
+            ${{ runner.temp }}/platform-build-boundary32.log
             ${{ runner.temp }}/native-source-compiler32.log
             ${{ runner.temp }}/native-shader-compiler32.log
           retention-days: 7
@@ -83,6 +93,13 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: native-windows-window
+      - name: Verify supported source games and reject unsupported engine builds before tools
+        shell: pwsh
+        run: |
+          cargo test --locked --test platform_build_boundary -- --nocapture 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP/platform-build-boundary.log"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $log = Get-Content -Raw "$env:RUNNER_TEMP/platform-build-boundary.log"
+          if ($log -notmatch 'test result: ok\. 3 passed; 0 failed;') { throw 'The three exact Windows platform boundary tests did not run successfully' }
       - name: Exercise the production owner and real child windows without game media
         shell: pwsh
         run: |
@@ -110,6 +127,7 @@ jobs:
         with:
           name: native-windows-window-evidence
           path: |
+            ${{ runner.temp }}/platform-build-boundary.log
             ${{ runner.temp }}/native-window.log
             ${{ runner.temp }}/native-source-compiler.log
             ${{ runner.temp }}/native-shader-compiler.log
