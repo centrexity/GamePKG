@@ -470,7 +470,7 @@ AI guards, scores and results must not be patched to manufacture qualification.
 
 This is separate from the passing signed v15 prepared-game Build/repair and the
 immutable v15b hardware preview. Ordinary Windows source-game support remains
-disabled while its standalone compiler is being qualified.
+disabled pending the broader platform integration beyond this compiler fixture.
 
 [Paired Windows controls](https://github.com/centrexity/GamePKG/actions/runs/40651190995)
 at `7441a6c` show the pinned LLD version probe succeeds outside confinement with
@@ -483,8 +483,40 @@ uses this lookup before processing linker inputs. An ordinary image path also
 fails; no relaxation of confinement or compiler fallback has been added.
 The [ancestor diagnostic](https://github.com/centrexity/GamePKG/actions/runs/40652577335)
 at `ba013a0` returns the same access-denied result for every ancestor through
-`C:\`. The compiler fix remains unqualified; no ancestor ACLs are widened.
+`C:\`. Those diagnostics alone did not qualify a compiler fix; no ancestor ACLs were widened.
 
 The optional watchdog remains off by default. Its exact settings persistence and
 validation regression passes locally; both above Windows runs pass the separate
 real-window/default-off watchdog test before reaching the compiler failure.
+
+### Qualified standalone compiler and shared SDK
+
+[Actual Windows run 40656721386](https://github.com/centrexity/GamePKG/actions/runs/40656721386)
+passes both PE32 and PE64 jobs at `b818f303020d9aed22fdde3c7fc7e5fdece41dc3`.
+The selected linker is GNU Binutils 2.42 `ld.exe` already included in the pinned
+Rust 1.89.0 toolchain. Rust produces its optimized fat-LTO static library; the
+host starts the native linker separately. Both stages retain AppContainer/job
+bounds, private streams, one absolute deadline and the existing directory grants.
+There is no unconfined fallback, additional download or ancestor ACL expansion.
+
+Each actual Windows width passes compiler startup, native PE identity, exact
+binary-message exchange and rejection of an ungranted host-file include. The
+signed source package passes native Build and generated SDK execution, including
+asset reads, drawing requests, high 32 bits of u64 state, scoped save data retained
+across fresh processes, and damaged-build rejection. The shared fixture also
+passes locally under Linux's normal build/worker isolation and is invoked
+explicitly in Linux CI. The separate Win32 window/restart/default-off watchdog
+fixture passes in the same Windows run.
+
+The verification-only archives match their published SHA-256 and CRCs: 32-bit
+artifact 12802221666 is `24494f318c282fb7cd87332f17de3e817e32beece6d06b199b87cf66ba92e830`;
+64-bit artifact 12801504559 is `600e60da6095de684c5a1d831de6248ba2a0896205579455aed6015e9d2a8abf`.
+They contain only test logs. Earlier missing-thumbnail/license and incorrect
+asset/verification fixture failures remain recorded. The final fixture follows
+production's signature verification before asset access. No owned media or
+original-game gameplay is exercised here.
+
+This qualifies the standalone compiler/shared SDK contract. Ordinary Windows
+source-game entry points remain disabled pending platform integration; Windows
+shader compilation/rendering and physical original-game checks remain open. The
+immutable v15b hardware preview and earlier whole-game Build/repair are separate.
