@@ -3,41 +3,85 @@ import os
 import select
 import subprocess
 import time
+import threading
 
-def start_display(env, width=1024, height=900, *, local_only=False):
+def start_display(env, width=1024, height=900, *, local_only=False, startup_timeout=30):
     reader, writer = os.pipe()
+    process = None
+    collector = None
+    diagnostics = bytearray()
     try:
-        arguments=['Xvfb', '-displayfd', str(writer), '-screen', '0',
-             f'{width}x{height}x24', '-ac', '-noreset']
-        if local_only:
-            arguments+=['-nolisten','tcp']
-        process = subprocess.Popen(
-            arguments, pass_fds=(writer,),
-            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-    finally:
-        os.close(writer)
-    try:
-        ready, _, _ = select.select([reader], [], [], 10)
-        if not ready:
-            raise RuntimeError('Xvfb did not report a ready display within 10 seconds')
-        display = os.read(reader, 32).decode().strip()
-        if not display.isdigit():
-            raise RuntimeError('Xvfb did not provide a valid display number')
-        if process.poll() is not None:
-            raise RuntimeError('Xvfb startup failed: ' + process.stderr.read().decode())
-        env['DISPLAY'] = ':' + display
-        for _ in range(100):
+        try:
+            arguments=['Xvfb', '-displayfd', str(writer), '-screen', '0',
+                 f'{width}x{height}x24', '-ac', '-noreset']
+            if local_only:
+                arguments+=['-nolisten','tcp']
+            process = subprocess.Popen(arguments, pass_fds=(writer,), env=env,
+                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        finally:
+            os.close(writer)
+        # Xvfb can fill its stderr pipe before it writes the display number.
+        # Drain continuously, retaining only a bounded tail for failure reports.
+        def collect():
+            try:
+                while True:
+                    try:
+                        block = os.read(process.stderr.fileno(), 4096)
+                    except (OSError,ValueError):
+                        return
+                    if not block:
+                        return
+                    diagnostics.extend(block)
+                    if len(diagnostics)>65536:
+                        del diagnostics[:-65536]
+            finally:
+                process.stderr.close()
+        collector = threading.Thread(target=collect, daemon=True)
+        collector.start()
+        process._gamepkg_display_diagnostics = diagnostics
+        process._gamepkg_display_collector = collector
+        deadline = time.monotonic()+startup_timeout
+        while True:
+            if process.poll() is not None:
+                raise RuntimeError('Xvfb exited before reporting a ready display')
+            remaining = deadline-time.monotonic()
+            if remaining<=0:
+                raise RuntimeError(f'Xvfb did not report a ready display within {startup_timeout} seconds')
+            ready, _, _ = select.select([reader], [], [], min(.25,remaining))
+            if ready:
+                display = os.read(reader, 32).decode().strip()
+                if not display.isdigit():
+                    raise RuntimeError('Xvfb did not provide a valid display number')
+                break
+        env['DISPLAY'] = ':'+display
+        while time.monotonic()<deadline:
             if process.poll() is not None:
                 raise RuntimeError('Xvfb exited before accepting clients')
-            connection = subprocess.run(['xdotool', 'getdisplaygeometry'], env=env, capture_output=True, timeout=2)
-            if connection.returncode == 0:
-                return process
+            try:
+                connection = subprocess.run(['xdotool','getdisplaygeometry'], env=env,
+                    capture_output=True, timeout=max(.001,min(2,deadline-time.monotonic())))
+                if connection.returncode==0:
+                    return process
+            except subprocess.TimeoutExpired:
+                pass
             time.sleep(.1)
-        raise RuntimeError('Xvfb did not accept a client connection')
-    except BaseException:
-        process.terminate()
-        process.wait(timeout=10)
-        raise
+        raise RuntimeError('Xvfb did not accept a client connection before its startup deadline')
+    except BaseException as error:
+        if process is not None:
+            if process.poll() is None:
+                process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=5)
+        if collector is not None:
+            collector.join(timeout=1)
+        if isinstance(error,(KeyboardInterrupt,SystemExit)):
+            raise
+        detail = diagnostics.decode(errors='replace').strip() or '(no stderr)'
+        code = process.returncode if process is not None else 'not started'
+        raise RuntimeError(f'{error}; Xvfb exit={code}; stderr: {detail}') from error
     finally:
         os.close(reader)
 

@@ -13,6 +13,8 @@ on:
       - 'tests/browser_compressed_assets.py'
       - 'tests/window_commit_browser.py'
       - 'tests/browser_storage_support.py'
+      - 'tests/browser_download_support.py'
+      - 'tests/browser_download_support_test.py'
       - 'tests/browser_png_exact.py'
       - 'tests/web_png_exact.mjs'
       - 'tests/web_image_cache.mjs'
@@ -35,6 +37,8 @@ on:
       - 'tests/browser_compressed_assets.py'
       - 'tests/window_commit_browser.py'
       - 'tests/browser_storage_support.py'
+      - 'tests/browser_download_support.py'
+      - 'tests/browser_download_support_test.py'
       - 'tests/browser_png_exact.py'
       - 'tests/web_png_exact.mjs'
       - 'tests/web_image_cache.mjs'
@@ -72,6 +76,8 @@ jobs:
           sudo ln -sf "$CHROMEWEBDRIVER/chromedriver" /usr/local/bin/chromedriver
           google-chrome --version
           chromedriver --version
+      - name: Verify export completion waits and cancellation failures
+        run: /usr/bin/python3 tests/browser_download_support_test.py
       - name: Build both embedded audio companions and the actual CLI
         run: |
           python3 tools/build_audio_companion.py --github-env
@@ -108,7 +114,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: browser-compressed-assets-failure
-          path: target/browser-compressed-assets-failure.json
+          path: |
+            target/browser-compressed-assets-failure.json
+            target/window-commit-browser-failure.json
           retention-days: 7
           if-no-files-found: ignore
   png-startup:
