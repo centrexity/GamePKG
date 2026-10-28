@@ -7,6 +7,8 @@ struct Args {
     check_bundled_audio: bool,
     #[arg(long)]
     library: Option<std::path::PathBuf>,
+    #[arg(long, help = "Use a specific GamePKG settings file")]
+    config: Option<std::path::PathBuf>,
     #[arg(long)]
     play: Option<String>,
     #[arg(long, requires="play", value_parser=["native","wasm"])]
@@ -30,6 +32,9 @@ fn main() -> eframe::Result {
             })
         );
         return Ok(());
+    }
+    if let Some(config) = args.config {
+        std::env::set_var("GAMEPKG_CONFIG", config);
     }
     if let Some(root) = args.library {
         std::env::set_var("GAMEPKG_HOME", root);
