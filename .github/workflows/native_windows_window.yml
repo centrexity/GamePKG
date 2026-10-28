@@ -29,6 +29,34 @@ concurrency:
   group: native-windows-window-${{ github.ref }}
   cancel-in-progress: false
 jobs:
+  native-source32:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: i686-pc-windows-msvc
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: native-windows-source32
+      - name: Verify confined standalone 32-bit source compiler and worker without WSL
+        shell: pwsh
+        run: |
+          cargo test --locked --target i686-pc-windows-msvc --lib native::windows_build::tests::managed_compiler_and_native_worker_without_wsl -- --ignored --exact --nocapture 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP/native-source-compiler32.log"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $log = Get-Content -Raw "$env:RUNNER_TEMP/native-source-compiler32.log"
+          if ($log -notmatch 'test result: ok\. 1 passed; 0 failed;') { throw 'The exact 32-bit native source compiler/worker test did not run successfully' }
+      - name: Preserve the 32-bit native compiler test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-windows-source32-evidence
+          path: ${{ runner.temp }}/native-source-compiler32.log
+          retention-days: 7
+          if-no-files-found: warn
   native-window:
     runs-on: windows-2022
     timeout-minutes: 45
