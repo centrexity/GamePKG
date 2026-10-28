@@ -4,6 +4,8 @@ On Linux, and for ordinary checked Rust games in the current Windows x86/x64 dev
 
 Native C-based ports need Clang 18 and lld-18; they do not need wasi-libc or a WASI sysroot. The optional Wasm build of a C-based port does need those libraries. The saved **C/WASI build tools folder** applies to that optional compiler. Games that do not call shader functions do not require Slang for their native build. Shader games require the pinned Slang compiler.
 
+Linux native Rust and reviewed C-engine compilation explicitly targets the same architecture as the app. A 32-bit app on a 64-bit system builds an ELF32 game, using the matching Rust standard library and 32-bit C development libraries/headers; it does not inherit the installed compiler's default width. Standard `/lib32` is exposed read-only when present. Native loading rejects an incompatible artifact width. Signed Rust SDK/save/history and optimized DOOM/Zelda3 engine builds pass at both actual ELF32 and ELF64 widths; this does not qualify every game's 32-bit graphics or gameplay.
+
 Native executable caches are specific to the package contents, host version, host bindings, operating system, CPU architecture and detected CPU features. Moving source packages between machines remains supported; build them for the destination machine. A native build does not replace a separately built Wasm artifact. Optional DOOM Wasm engines also record the reviewed source-kit fingerprint. When that kit changes, readiness, launch and integrity checks require rebuilding the engine; Integrity fix rebuilds it while retaining the signed package and saves. This compatibility marker supplements the build receipt and runtime validation.
 
 The ordinary checked-source native worker supports Linux and Windows x86/x64.
@@ -49,7 +51,7 @@ supports Linux x86-64 and the native Windows x64 preview.
 On Windows x64, **Prepare native build tools** in Settings (or
 `gamepkg setup-native-tools`) installs the verified standalone Rust/LLVM-MinGW,
 CMake, Ninja, SDL and Vulkan/glslang tools. No Python, WSL or vendor installer is
-required. The current unreleased 0.1.3 recipe selects v14, with 24,003 prepared
+required. The current unreleased 0.1.4 recipe selects v15 (0.1.3 selects the older v14), with 24,003 prepared
 Rust game functions across 487 units and 24,035 native exports. It requires the
 0.1.18 development app. See [Windows source builds](../engines/takedawn/rust-port/WINDOWS_BUILD.md).
 
