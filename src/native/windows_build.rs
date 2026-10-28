@@ -33,18 +33,11 @@ fn capture(mut read: impl FnMut(&mut [u8]) -> io::Result<usize>) -> io::Result<V
     Ok(output)
 }
 
-fn run(
-    compiler: &Path,
-    args: &[OsString],
+fn environment(
     stage: &Path,
     toolchain: &Path,
     target: &str,
-    end: Instant,
-) -> Result<Vec<u8>> {
-    let identity = crate::verify::digest(stage.as_os_str().as_encoded_bytes());
-    let sandbox = Sandbox::open(&format!("GamePKG.Compiler.{}", &identity[..32]))?;
-    sandbox.grant_runtime(toolchain)?;
-    sandbox.grant_saves(stage)?;
+) -> Result<(PathBuf, Vec<(OsString, OsString)>)> {
     // Third-party CRTs must receive ordinary drive/UNC working and temp paths;
     // keep canonical extended paths for image selection and ACL operations.
     let directory = crate::takedawn_windows_sdk::compiler_path(stage)?;
@@ -57,7 +50,7 @@ fn run(
     let llvm = crate::takedawn_windows_sdk::compiler_path(
         &toolchain.join(format!("lib/rustlib/{target}/bin")),
     )?;
-    let values = [
+    let values = vec![
         (
             "SystemRoot".into(),
             std::env::var_os("SystemRoot").context("Windows system directory unavailable")?,
@@ -70,6 +63,22 @@ fn run(
         ("TEMP".into(), temporary.as_os_str().to_owned()),
         ("TMP".into(), temporary.as_os_str().to_owned()),
     ];
+    Ok((directory, values))
+}
+
+fn run(
+    compiler: &Path,
+    args: &[OsString],
+    stage: &Path,
+    toolchain: &Path,
+    target: &str,
+    end: Instant,
+) -> Result<Vec<u8>> {
+    let identity = crate::verify::digest(stage.as_os_str().as_encoded_bytes());
+    let sandbox = Sandbox::open(&format!("GamePKG.Compiler.{}", &identity[..32]))?;
+    sandbox.grant_runtime(toolchain)?;
+    sandbox.grant_saves(stage)?;
+    let (directory, values) = environment(stage, toolchain, target)?;
     ensure!(
         Instant::now() < end,
         "native compiler exceeded its time limit"
@@ -322,6 +331,7 @@ fn main() {
         let (toolchain, target) = crate::takedawn_windows_sdk::prepare_source(root.path()).unwrap();
         let toolchain = toolchain.canonicalize().unwrap();
         let linker = toolchain.join(format!("lib/rustlib/{target}/bin/rust-lld.exe"));
+        compare_linker_controls(&stage, &toolchain, target, &linker);
         let version = run(
             &linker,
             &["-flavor".into(), "gnu".into(), "--version".into()],
@@ -392,6 +402,68 @@ fn main() {
         assert_eq!(std::fs::read(&secret).unwrap(), b"private compiler marker");
         println!("Verified pinned standalone Rust compile, PE identity, confined binary worker exchange and denied host-file include; no WSL or Python process is used.");
         signed_package_uses_generated_sdk(root.path(), &settings);
+    }
+
+    fn compare_linker_controls(stage: &Path, toolchain: &Path, target: &str, linker: &Path) {
+        let args: Vec<OsString> = ["-flavor", "gnu", "--version"].map(Into::into).into();
+        let (directory, values) = environment(stage, toolchain, target).unwrap();
+        let mut command = std::process::Command::new(linker);
+        command
+            .args(&args)
+            .current_dir(&directory)
+            .env_clear()
+            .envs(values.iter().cloned());
+        let control = crate::compiler::run_timed(&mut command, Duration::from_secs(10)).unwrap();
+        println!(
+            "Unconfined same-tool/environment control: {} stdout={} stderr={}",
+            control.status, control.stdout, control.stderr
+        );
+        assert!(
+            control.status.success(),
+            "the linker must work in the positive control"
+        );
+
+        // The existing reviewed-engine launcher uses regular log files, not
+        // private duplex stdio pipes. Compare that boundary independently.
+        let sandbox = Sandbox::open(&format!(
+            "GamePKG.LinkerFileControl.p{}",
+            std::process::id()
+        ))
+        .unwrap();
+        sandbox.grant_runtime(toolchain).unwrap();
+        sandbox.grant_saves(stage).unwrap();
+        let disc = stage.join("synthetic-read-only-capability");
+        std::fs::write(&disc, b"no original media").unwrap();
+        let log = stage.join("linker-file-control.log");
+        let launch = gamepkg_takedawn_windows_runner::Launch {
+            executable: linker.to_owned(),
+            args,
+            cwd: directory,
+            environment: values,
+            disc: std::fs::File::open(disc).unwrap(),
+            output: std::fs::File::create(&log).unwrap(),
+            memory_limit_bytes: Some(crate::compiler::ADDRESS_SPACE),
+        };
+        let mut session =
+            gamepkg_takedawn_windows_runner::Session::start_confined(launch, sandbox).unwrap();
+        let end = Instant::now() + Duration::from_secs(10);
+        let code = loop {
+            if let Some(event) = session.poll().unwrap() {
+                match event {
+                    gamepkg_takedawn_windows_runner::Event::Exited(code) => break code,
+                    gamepkg_takedawn_windows_runner::Event::Restarted { .. } => {
+                        panic!("version probe unexpectedly requested a restart")
+                    }
+                }
+            }
+            assert!(Instant::now() < end, "file-log linker control timed out");
+            std::thread::sleep(Duration::from_millis(10));
+        };
+        drop(session);
+        println!(
+            "Confined regular-file output control: exit={code} log={}",
+            std::fs::read_to_string(log).unwrap()
+        );
     }
 
     fn signed_package_uses_generated_sdk(root: &Path, settings: &crate::settings::Settings) {
