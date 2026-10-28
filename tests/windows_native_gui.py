@@ -28,7 +28,14 @@ with tempfile.TemporaryDirectory(prefix='gamepkg native shader GUI ') as directo
  }
  state+1
 }''')
- (source/'shaders/main.slang').write_bytes((PROJECT/'examples/good/shader-texture/shaders/main.slang').read_bytes())
+ shader=(PROJECT/'examples/good/shader-texture/shaders/main.slang').read_text()
+ sample='return sampleImage(position.xy / float2(640, 480));'
+ assert shader.count(sample)==2,'Texture fixture entries changed'
+ # Expose sampled RGB and alpha as opaque output, as the Linux fixture does.
+ # Otherwise transparent black blends into the game background and conceals
+ # both a nonzero RGB value at alpha zero and the fallback alpha itself.
+ shader=shader.replace(sample,'float4 color = sampleImage(position.xy / float2(640, 480)); return float4(color.r + color.a * 0.25, color.g, color.b, 1.0);')
+ (source/'shaders/main.slang').write_text(shader)
  key=root/'creator.key';run('keygen','-o',key)
  package=root/'game.gamepkg';run('pack',source,'-o',package,'--key',key)
  game_id='com.gamepkg.shader-switch';run('install',package,'--trust-creator')
