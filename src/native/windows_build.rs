@@ -64,7 +64,9 @@ pub(super) fn compile(
     settings: &crate::settings::Settings,
 ) -> Result<PathBuf> {
     ensure!(
-        manifest.builtin_engine.is_none(),
+        manifest.builtin_engine.as_deref().is_none_or(
+            |profile| profile == crate::doom::PROFILE || profile == crate::zelda3::PROFILE
+        ),
         "this engine requires its reviewed native builder"
     );
     crate::source::parse_build_tree(stage)?;
@@ -95,7 +97,22 @@ pub extern "C" fn __gamepkg_native_entry()->i32 {
 "#,
     )?;
     let archive = stage.join("game.a");
-    let end = Instant::now() + Duration::from_secs(60);
+    let prepared_engine = if let Some(profile) = manifest.builtin_engine.as_deref() {
+        let plan = super::engine_sources::stage(&stage, profile)?;
+        let sdk = crate::takedawn_windows_sdk::prepare(root)?;
+        Some((plan, sdk.join("llvm-mingw-windows").canonicalize()?))
+    } else {
+        None
+    };
+    // This bounds actual compilation/linking. Verified tool installation has
+    // its separate bounded download/verification path before the clock starts.
+    let end =
+        Instant::now() + Duration::from_secs(if prepared_engine.is_some() { 180 } else { 60 });
+    let objects = if let Some((plan, llvm)) = &prepared_engine {
+        compile_engine(&stage, plan, llvm, target, settings.optimize_builds, end)?
+    } else {
+        Vec::new()
+    };
     let mut args: Vec<OsString> = [
         "--edition=2021",
         "-Awarnings",
@@ -121,6 +138,9 @@ pub extern "C" fn __gamepkg_native_entry()->i32 {
     ]);
     if settings.optimize_builds {
         args.extend(["-C", "lto=fat", "-C", "codegen-units=1"].map(Into::into));
+    }
+    if let Some((plan, _)) = &prepared_engine {
+        args.extend(["--cfg".into(), plan.configuration.into()]);
     }
     args.push("-o".into());
     args.push(crate::takedawn_windows_sdk::compiler_path(&archive)?.into_os_string());
@@ -162,6 +182,18 @@ pub extern "C" fn __gamepkg_native_entry()->i32 {
     link.push(file(&lib.join("rsbegin.o"))?);
     link.push("--start-group".into());
     link.push(file(&archive)?);
+    for object in &objects {
+        link.push(file(object)?);
+    }
+    if let Some((plan, _)) = &prepared_engine {
+        for name in plan.wraps {
+            link.push(format!("--wrap={name}").into());
+        }
+        if plan.label == "doom" {
+            link.extend(["--wrap=_mkdir".into(), "--wrap=_access".into()]);
+        }
+    }
+
     link.push("-L".into());
     link.push(file(&lib.join("self-contained"))?);
     // Native libraries required by the pinned Windows GNU Rust std and CRT.
@@ -192,6 +224,112 @@ pub extern "C" fn __gamepkg_native_entry()->i32 {
     let _ = run(&linker, &link, &stage, &toolchain, target, end)
         .context("native Windows linker stage")?;
     Ok(output)
+}
+
+fn compile_engine(
+    stage: &Path,
+    plan: &super::engine_sources::Plan,
+    llvm: &Path,
+    target: &str,
+    optimize: bool,
+    end: Instant,
+) -> Result<Vec<PathBuf>> {
+    let (c_target, machine) = match target {
+        "i686-pc-windows-gnu" => ("i686-w64-mingw32", 0x14cu16),
+        "x86_64-pc-windows-gnu" => ("x86_64-w64-mingw32", 0x8664u16),
+        _ => anyhow::bail!("unsupported Windows C target"),
+    };
+    if plan.label == "doom" {
+        // Windows mkdir has one argument. The virtual implementation still
+        // refuses directory creation; keep its callable ABI exact as well.
+        let storage = stage.join("engines/doom/adapters/storage.h");
+        let text = std::fs::read_to_string(&storage)?;
+        let previous =
+            "int __wrap_mkdir(const char *path,mode_t mode) { (void)path;(void)mode; return -1; }";
+        ensure!(
+            text.matches(previous).count() == 1,
+            "pinned virtual mkdir changed"
+        );
+        std::fs::write(
+            storage,
+            text.replace(
+                previous,
+                "int __wrap_mkdir(const char *path) { (void)path; return -1; }",
+            ),
+        )?;
+        use std::io::Write;
+        let mut adapter = std::fs::OpenOptions::new()
+            .append(true)
+            .open(stage.join("engines/doom/adapters/engine.c"))?;
+        adapter.write_all(b"\nint __wrap__mkdir(const char *p){return __wrap_mkdir(p);}\nint __wrap__access(const char *p,int m){return __wrap_access(p,m);}\n")?;
+    }
+    let objects = stage.join("objects");
+    std::fs::create_dir(&objects)?;
+    let mut names = std::collections::BTreeSet::new();
+    for source in &plan.sources {
+        let name = Path::new(source)
+            .file_name()
+            .context("invalid reviewed C source")?;
+        let name = Path::new(name).with_extension("o").into_os_string();
+        ensure!(
+            names.insert(name),
+            "reviewed C sources have colliding object names"
+        );
+    }
+    let identity = crate::verify::digest(stage.as_os_str().as_encoded_bytes());
+    let sandbox = Sandbox::open(&format!("GamePKG.EngineCompiler.{}", &identity[..32]))?;
+    sandbox.grant_runtime(llvm)?;
+    sandbox.grant_saves(stage)?;
+    let (_, mut values) = environment(stage, llvm, target)?;
+    values
+        .iter_mut()
+        .find(|(name, _)| name == "PATH")
+        .unwrap()
+        .1 = crate::takedawn_windows_sdk::compiler_path(&llvm.join("bin"))?.into_os_string();
+    let directory = crate::takedawn_windows_sdk::compiler_path(&objects)?;
+    let mut private_root = crate::windows_compiler::PrivateToolRoot::open(llvm)?;
+    let compiler = private_root.path().join("bin").join("clang-23.exe");
+    let mut args: Vec<OsString> = [
+        "-no-canonical-prefixes",
+        "-target",
+        c_target,
+        "-c",
+        "-fno-builtin",
+        "-fno-strict-aliasing",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-D__USE_MINGW_ANSI_STDIO=0",
+        "-D_CRTIMP=",
+        if optimize { "-O3" } else { "-O0" },
+        "-march=native",
+    ]
+    .map(Into::into)
+    .into();
+    for include in &plan.includes {
+        args.push(format!("-I../{include}").into());
+    }
+    for definition in plan.definitions {
+        args.push(format!("-D{definition}").into());
+    }
+    args.extend(plan.sources.iter().map(|path| format!("../{path}").into()));
+    crate::windows_compiler::run(&compiler, &args, &directory, &values, &sandbox, end)
+        .with_context(|| format!("native {} C engine compilation", plan.label))?;
+    private_root.close()?;
+    let mut outputs = Vec::new();
+    for name in names {
+        let path = objects.join(name);
+        let bytes = crate::files::read_regular(&path, 64 * 1048576, false)?;
+        ensure!(
+            bytes.len() > 20 && u16::from_le_bytes([bytes[0], bytes[1]]) == machine,
+            "wrong native C engine object architecture"
+        );
+        outputs.push(path);
+    }
+    ensure!(
+        outputs.len() == plan.sources.len(),
+        "incomplete native engine object set"
+    );
+    Ok(outputs)
 }
 
 #[cfg(test)]
@@ -401,6 +539,34 @@ mod tests {
         verify_object("control.o");
         private_root.close().unwrap();
         println!("Verified confined reviewed C compiler: {target}; correct COFF/ABI and denied host include with same-file positive control; no engine admission or game media.");
+        verify_reviewed_engine_links(root.path());
+    }
+
+    fn verify_reviewed_engine_links(root: &Path) {
+        let archives = root.join("signed engine inputs");
+        std::fs::create_dir(&archives).unwrap();
+        let settings = crate::settings::Settings::default();
+        for port in ["doom", "zelda3"] {
+            let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("ports")
+                .join(port);
+            let package = archives.join(format!("{port}.gamepkg"));
+            crate::pack::pack(&source, &package, &[81; 32]).unwrap();
+            let manifest = crate::registry::install(root, &package, true).unwrap();
+            assert!(
+                !super::super::build_supported(&manifest),
+                "unqualified C engine exposed publicly"
+            );
+            super::super::build::compile_with_settings(root, &manifest.id, &settings).unwrap();
+            let installed = root.join(format!("{}.gamepkg", manifest.id));
+            let digest = crate::verify::digest(&std::fs::read(installed).unwrap());
+            let built = super::super::path_for_digest(root, &digest);
+            let bytes = crate::files::read_regular(&built, 64 * 1048576, false).unwrap();
+            super::super::validate_executable(&bytes).unwrap();
+            crate::integrity::verify_build(&built, &bytes).unwrap();
+            assert!(!super::super::play_supported(&manifest));
+            println!("Verified signed Windows native engine link: {port}; correct PE target and integrity; public admission closed; no ROM read.");
+        }
     }
 
     #[test]

@@ -6,7 +6,7 @@ use wasmtime::{
 pub const PROFILE: &str = "doom-e257a095";
 pub const MEMORY: u64 = 64 * 1048576;
 pub const SAVE_MAX: usize = 4 * 1024 * 1024;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 pub(crate) const MUSIC_SOURCES: &[&str] = &[
     "music_opl.c",
     "midi_memory.c",
@@ -14,7 +14,7 @@ pub(crate) const MUSIC_SOURCES: &[&str] = &[
     "opl_memory.c",
     "opl_synth.c",
 ];
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 pub(crate) fn verify_music_sources(root: &std::path::Path) -> Result<()> {
     let lock: serde_json::Value =
         serde_json::from_slice(include_bytes!("../engines/doom/music/upstream-lock.json"))?;
@@ -31,7 +31,7 @@ pub(crate) fn verify_music_sources(root: &std::path::Path) -> Result<()> {
     }
     Ok(())
 }
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 pub(crate) fn verify_merge_sources(root: &std::path::Path) -> Result<()> {
     let lock: serde_json::Value =
         serde_json::from_slice(include_bytes!("../engines/doom/merge/upstream-lock.json"))?;
@@ -47,7 +47,7 @@ pub(crate) fn verify_merge_sources(root: &std::path::Path) -> Result<()> {
     }
     Ok(())
 }
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", windows, test))]
 fn adapt_video(source: &str) -> Result<String> {
     let patches: serde_json::Value = serde_json::from_slice(include_bytes!(
         "../engines/doom/adapters/video-patches.json"
@@ -70,7 +70,7 @@ fn adapt_video(source: &str) -> Result<String> {
     }
     Ok(staged)
 }
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", windows, test))]
 fn adapt_endian(source: &str) -> Result<String> {
     let patches: serde_json::Value = serde_json::from_slice(include_bytes!(
         "../engines/doom/adapters/endian-patches.json"
@@ -89,7 +89,7 @@ fn adapt_endian(source: &str) -> Result<String> {
     }
     Ok(staged)
 }
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", windows, test))]
 fn adapt_map(source: &str) -> Result<String> {
     let patches: serde_json::Value =
         serde_json::from_slice(include_bytes!("../engines/doom/adapters/map-patches.json"))?;
@@ -107,7 +107,7 @@ fn adapt_map(source: &str) -> Result<String> {
     }
     Ok(staged)
 }
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", windows, test))]
 fn adapt_sprites(source: &str) -> Result<String> {
     let patches: serde_json::Value = serde_json::from_slice(include_bytes!(
         "../engines/doom/adapters/sprite-patches.json"
@@ -128,7 +128,7 @@ fn adapt_sprites(source: &str) -> Result<String> {
     }
     Ok(staged)
 }
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", windows, test))]
 fn adapt_fixed(source: &str) -> Result<String> {
     let patches: serde_json::Value = serde_json::from_slice(include_bytes!(
         "../engines/doom/adapters/fixed-patches.json"
@@ -153,7 +153,7 @@ fn adapt_fixed(source: &str) -> Result<String> {
     }
     Ok(staged)
 }
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", windows, test))]
 fn adapt_sound(source: &str) -> Result<String> {
     let patches: serde_json::Value = serde_json::from_slice(include_bytes!(
         "../engines/doom/adapters/sound-patches.json"
@@ -174,7 +174,7 @@ fn adapt_sound(source: &str) -> Result<String> {
     }
     Ok(staged)
 }
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", windows, test))]
 fn adapt_angles(source: &str) -> Result<String> {
     let patches: serde_json::Value = serde_json::from_slice(include_bytes!(
         "../engines/doom/adapters/angle-patches.json"
@@ -195,7 +195,7 @@ fn adapt_angles(source: &str) -> Result<String> {
     }
     Ok(staged)
 }
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", windows, test))]
 fn adapt_music_devices(source: &str) -> Result<String> {
     let patches: serde_json::Value = serde_json::from_slice(include_bytes!(
         "../engines/doom/adapters/music-device-patches.json"
@@ -220,7 +220,7 @@ fn adapt_music_devices(source: &str) -> Result<String> {
     }
     Ok(staged)
 }
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 pub(crate) fn stage_desktop_sources(root: &std::path::Path) -> Result<()> {
     let devices = root.join("engines/doom/upstream/i_sound.c");
     std::fs::write(

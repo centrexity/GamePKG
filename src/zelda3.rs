@@ -42,7 +42,7 @@ fn isolated(kit: &Path, max_file: u64) -> Command {
     cmd.args(["--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp"]);
     cmd
 }
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", windows, test))]
 pub(crate) fn adapt_ppu(source: &str) -> Result<String> {
     let patch: serde_json::Value =
         serde_json::from_str(include_str!("../engines/zelda3/adapters/ppu-patches.json"))?;
@@ -69,7 +69,7 @@ pub(crate) fn adapt_ppu(source: &str) -> Result<String> {
     }
     Ok(adapted)
 }
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", windows, test))]
 pub(crate) fn adapt_dma_state(source: &str) -> Result<String> {
     let patches: serde_json::Value = serde_json::from_slice(include_bytes!(
         "../engines/zelda3/adapters/dma-state-patches.json"
@@ -94,7 +94,7 @@ pub(crate) fn adapt_dma_state(source: &str) -> Result<String> {
     }
     Ok(staged)
 }
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", windows, test))]
 pub(crate) fn adapt_dsp_state(source: &str) -> Result<String> {
     let patches: serde_json::Value = serde_json::from_slice(include_bytes!(
         "../engines/zelda3/adapters/dsp-state-patches.json"
@@ -119,7 +119,7 @@ pub(crate) fn adapt_dsp_state(source: &str) -> Result<String> {
     }
     Ok(staged)
 }
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", windows, test))]
 pub(crate) fn adapt_ppu_state(source: &str) -> Result<String> {
     let patches: serde_json::Value = serde_json::from_slice(include_bytes!(
         "../engines/zelda3/adapters/ppu-state-patches.json"
@@ -145,7 +145,7 @@ pub(crate) fn adapt_ppu_state(source: &str) -> Result<String> {
     }
     Ok(staged)
 }
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", windows, test))]
 pub(crate) fn stage_snapshot_bridge(source: &str) -> Result<String> {
     for anchor in [
         "static void InternalSaveLoad(",
@@ -165,7 +165,7 @@ pub(crate) fn stage_snapshot_bridge(source: &str) -> Result<String> {
         "{source}\n#include \"gamepkg_snapshot_bridge.h\"\n"
     ))
 }
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", windows, test))]
 pub(crate) fn adapt_spc_state(source: &str) -> Result<String> {
     let patches: serde_json::Value = serde_json::from_slice(include_bytes!(
         "../engines/zelda3/adapters/spc-state-patches.json"
@@ -190,7 +190,7 @@ pub(crate) fn adapt_spc_state(source: &str) -> Result<String> {
     }
     Ok(staged)
 }
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", windows, test))]
 pub(crate) fn adapt_spc_playback(source: &str) -> Result<String> {
     let patches: serde_json::Value = serde_json::from_slice(include_bytes!(
         "../engines/zelda3/adapters/spc-playback-patches.json"

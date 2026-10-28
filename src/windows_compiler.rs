@@ -97,20 +97,17 @@ pub(crate) fn run(
 /// A temporary name rooted at an already verified toolchain. LLVM expands its
 /// image name before parsing options, so ancestors outside its granted folder
 /// must not be part of that name. This adds no ACL or process capabilities.
-#[cfg(test)]
 pub(crate) struct PrivateToolRoot {
     path: std::path::PathBuf,
     name: Vec<u16>,
     target: Vec<u16>,
     active: bool,
 }
-#[cfg(test)]
 #[link(name = "kernel32")]
 unsafe extern "system" {
     fn DefineDosDeviceW(flags: u32, name: *const u16, target: *const u16) -> i32;
     fn QueryDosDeviceW(name: *const u16, target: *mut u16, length: u32) -> u32;
 }
-#[cfg(test)]
 impl PrivateToolRoot {
     pub(crate) fn open(directory: &Path) -> Result<Self> {
         use std::os::windows::ffi::OsStrExt;
@@ -174,7 +171,6 @@ impl PrivateToolRoot {
         Ok(())
     }
 }
-#[cfg(test)]
 impl Drop for PrivateToolRoot {
     fn drop(&mut self) {
         let _ = self.close();

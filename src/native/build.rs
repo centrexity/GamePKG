@@ -316,180 +316,9 @@ fn sandbox(cmd: &mut std::process::Command, stage: &Path) {
 }
 #[cfg(target_os = "linux")]
 fn engine(stage: &Path, profile: &str, optimize: bool) -> Result<Vec<String>> {
-    let doom = profile == crate::doom::PROFILE;
-    ensure!(
-        doom || profile == crate::zelda3::PROFILE,
-        "unsupported native engine"
-    );
     ensure!(Path::new("/usr/bin/clang-18").is_file(),"Native source ports need Clang 18 (install clang-18); WASI libraries are only needed for the separate Wasm build");
-    let (kit, label) = if doom {
-        (crate::doom_sources::FILES, "doom")
-    } else {
-        (crate::zelda3_sources::FILES, "zelda3")
-    };
-    for (name, bytes) in kit {
-        let p = stage.join(name);
-        fs::create_dir_all(p.parent().unwrap())?;
-        fs::write(p, bytes)?;
-    }
-    let lock: serde_json::Value = serde_json::from_slice(if doom {
-        include_bytes!("../../engines/doom/upstream-lock.json")
-    } else {
-        include_bytes!("../../engines/zelda3/upstream-lock.json")
-    })?;
-    for (name, hash) in lock["files"].as_object().context("invalid engine lock")? {
-        if name.ends_with(".py") {
-            continue;
-        }
-        ensure!(
-            digest(&fs::read(
-                stage.join(format!("engines/{label}/upstream/{name}"))
-            )?) == hash.as_str().unwrap_or(""),
-            "pinned engine source changed: {name}"
-        );
-    }
-    if doom {
-        crate::doom::stage_desktop_sources(stage)?;
-    }
-    if !doom {
-        let path = stage.join("engines/zelda3/upstream/src/zelda_rtl.c");
-        let mut source = fs::read_to_string(&path)?;
-        for name in ["ZeldaReadSram", "ZeldaWriteSram"] {
-            let begin = source
-                .find(&format!("void {name}() {{"))
-                .context("missing pinned SRAM function")?;
-            let brace = begin + source[begin..].find('{').unwrap();
-            let mut depth = 0;
-            let mut end = None;
-            for (offset, byte) in source.as_bytes()[brace..].iter().enumerate() {
-                match byte {
-                    b'{' => depth += 1,
-                    b'}' => depth -= 1,
-                    _ => {}
-                }
-                if depth == 0 {
-                    end = Some(brace + offset + 1);
-                    break;
-                }
-            }
-            source.replace_range(begin..end.context("invalid pinned SRAM function")?, "");
-        }
-        fs::write(path, crate::zelda3::stage_snapshot_bridge(&source)?)?;
-        let ppu = stage.join("engines/zelda3/upstream/snes/ppu.c");
-        fs::write(
-            &ppu,
-            crate::zelda3::adapt_ppu_state(&crate::zelda3::adapt_ppu(&fs::read_to_string(&ppu)?)?)?,
-        )?;
-        let dma = stage.join("engines/zelda3/upstream/snes/dma.c");
-        fs::write(
-            &dma,
-            crate::zelda3::adapt_dma_state(&fs::read_to_string(&dma)?)?,
-        )?;
-        let dsp = stage.join("engines/zelda3/upstream/snes/dsp.c");
-        fs::write(
-            &dsp,
-            crate::zelda3::adapt_dsp_state(&fs::read_to_string(&dsp)?)?,
-        )?;
-        let spc = stage.join("engines/zelda3/upstream/src/spc_player.c");
-        fs::write(
-            &spc,
-            crate::zelda3::adapt_spc_playback(&crate::zelda3::adapt_spc_state(
-                &fs::read_to_string(&spc)?,
-            )?)?,
-        )?;
-    }
-    let adapter = stage.join(format!("engines/{label}/adapters/engine.c"));
-    let mut text = fs::read_to_string(&adapter)?;
-    if doom {
-        let a = text.find("__wasi_errno_t __wrap___wasi_fd_write").unwrap();
-        let b = text.find("void DG_Init").unwrap();
-        text.replace_range(a..b, "");
-        text = text.replace("#include <wasi/api.h>", "").replace(
-            "#define EXPORT(name) __attribute__((export_name(name)))",
-            "#define EXPORT(name)",
-        );
-    } else {
-        text = text.replace(
-            "const char *file, int line, const char *function",
-            "const char *file, unsigned int line, const char *function",
-        );
-        let a = text.find("#include <wasi/api.h>").unwrap();
-        let b = text[a..]
-            .find("__attribute__((export_name(\"reset\")))")
-            .unwrap()
-            + a;
-        text.replace_range(a..b, "");
-        for name in [
-            "renderer_revision",
-            "configure_video",
-            "allocate",
-            "initialize",
-            "step",
-            "pixels",
-            "pixel_format",
-            "audio",
-            "audio_channels",
-            "sram",
-            "save_dirty",
-            "reset",
-            "status",
-            "position",
-            "controller",
-        ] {
-            text = text.replace(&format!("__attribute__((export_name(\"{name}\")))"), "");
-        }
-    }
-    if doom {
-        text.push_str("\nint __wrap_printf(const char *format,...){return 0;} int __wrap_puts(const char *text){return 0;} int __wrap_putchar(int c){return c;}\n");
-    }
-    if !doom {
-        text.push_str(include_str!("zelda_stdio.c.txt"));
-    }
-    fs::write(adapter, text)?;
-    let mut sources: Vec<String> = if doom {
-        lock["sources"]
-            .as_array()
-            .context("missing sources")?
-            .iter()
-            .map(|n| format!("/work/engines/doom/upstream/{}", n.as_str().unwrap()))
-            .collect()
-    } else {
-        let mut v = Vec::new();
-        for (name, _) in kit {
-            if let Some(tail) = name.strip_prefix("engines/zelda3/upstream/src/") {
-                if tail.ends_with(".c")
-                    && !tail.contains('/')
-                    && ![
-                        "main.c",
-                        "audio.c",
-                        "config.c",
-                        "glsl_shader.c",
-                        "opengl.c",
-                        "zelda_cpu_infra.c",
-                    ]
-                    .contains(&tail)
-                {
-                    v.push(format!("/work/{name}"));
-                }
-            }
-        }
-        v.sort();
-        for n in ["ppu.c", "dma.c", "dsp.c", "snes_other.c"] {
-            v.push(format!("/work/engines/zelda3/upstream/snes/{n}"));
-        }
-        v
-    };
-    sources.push(format!("/work/engines/{label}/adapters/engine.c"));
-    if doom {
-        crate::doom::verify_music_sources(stage)?;
-        crate::doom::verify_merge_sources(stage)?;
-        sources.push("/work/engines/doom/merge/upstream/w_merge.c".into());
-        sources.extend(
-            crate::doom::MUSIC_SOURCES
-                .iter()
-                .map(|name| format!("/work/engines/doom/music/{name}")),
-        );
-    }
+    let plan = super::engine_sources::stage(stage, profile)?;
+    let label = plan.label;
     fs::create_dir(stage.join("objects"))?;
     let mut cmd = crate::compiler::command(64 * 1048576);
     sandbox(&mut cmd, stage);
@@ -511,34 +340,19 @@ fn engine(stage: &Path, profile: &str, optimize: bool) -> Result<Vec<String>> {
         "-mcpu=native"
     } else {
         "-march=native"
-    })
-    .arg(format!("-I/work/engines/{label}/upstream"))
-    .arg(format!("-I/work/engines/{label}/adapters/include"));
-    if doom {
-        cmd.args([
-            "-I/work/engines/doom/music",
-            "-I/work/engines/doom/music/upstream",
-            "-DDOOMGENERIC_RESX=320",
-            "-DDOOMGENERIC_RESY=200",
-            "-DFEATURE_SOUND",
-            "-DFEATURE_WAD_MERGE",
-            "-DNORMALUNIX",
-            "-D_DEFAULT_SOURCE",
-        ]);
+    });
+    for include in &plan.includes {
+        cmd.arg(format!("-I/work/{include}"));
     }
-    cmd.args(sources);
+    for definition in plan.definitions {
+        cmd.arg(format!("-D{definition}"));
+    }
+    cmd.args(plan.sources.iter().map(|source| format!("/work/{source}")));
     let out = crate::compiler::run(&mut cmd)?;
     if !out.status.success() {
         bail!("native {label} engine compilation failed: {}", out.stderr);
     }
-    let mut args = vec![
-        "--cfg".into(),
-        if doom {
-            "gamepkg_doom".into()
-        } else {
-            "gamepkg_zelda".into()
-        },
-    ];
+    let mut args = vec!["--cfg".into(), plan.configuration.into()];
     for entry in fs::read_dir(stage.join("objects"))? {
         let entry = entry?;
         if entry.path().extension().is_some_and(|e| e == "o") {
@@ -552,41 +366,8 @@ fn engine(stage: &Path, profile: &str, optimize: bool) -> Result<Vec<String>> {
         }
     }
     args.extend(["-C".into(), "link-arg=-lm".into()]);
-    if doom {
-        for name in [
-            "fopen",
-            "fclose",
-            "fread",
-            "fwrite",
-            "fseek",
-            "ftell",
-            "feof",
-            "ferror",
-            "fflush",
-            "fgetc",
-            "fputc",
-            "fprintf",
-            "fgets",
-            "fscanf",
-            "__isoc99_fscanf",
-            "remove",
-            "rename",
-            "mkdir",
-            "getenv",
-            "access",
-            "printf",
-            "puts",
-            "putchar",
-        ] {
-            args.extend(["-C".into(), format!("link-arg=-Wl,--wrap={name}")]);
-        }
-    }
-    if !doom {
-        for name in [
-            "printf", "puts", "putchar", "fprintf", "fopen", "fread", "fwrite", "fclose", "getenv",
-        ] {
-            args.extend(["-C".into(), format!("link-arg=-Wl,--wrap={name}")]);
-        }
+    for name in plan.wraps {
+        args.extend(["-C".into(), format!("link-arg=-Wl,--wrap={name}")]);
     }
     Ok(args)
 }
