@@ -10,27 +10,6 @@ pub(super) fn verify(root: &Path, settings: &crate::settings::Settings, wad: &Pa
         "expected public Freedoom 0.13.0 phase 1"
     );
     let archive = root.join("com.gamepkg.doom.gamepkg");
-    #[cfg(windows)]
-    {
-        let manifest = crate::registry::installed_manifest(root, "com.gamepkg.doom").unwrap();
-        assert!(!super::build_supported(&manifest));
-        assert!(!super::play_supported(&manifest));
-        let error = crate::runtime::Game::load_target_configured(
-            root,
-            &manifest.id,
-            &[wad.to_path_buf()],
-            Some(true),
-            settings,
-        )
-        .err()
-        .expect("public Windows C-engine loader unexpectedly admitted the port");
-        assert!(
-            error
-                .to_string()
-                .contains("native game isolation is not available"),
-            "{error:#}"
-        );
-    }
     let digest = crate::verify::digest(&std::fs::read(&archive).unwrap());
     let open = || {
         let mut package = crate::archive::Package::open(&archive).unwrap();
@@ -145,6 +124,7 @@ pub(super) fn verify(root: &Path, settings: &crate::settings::Settings, wad: &Pa
         "test data changed"
     );
     verify_missing_palette_error(root, settings, &bytes);
+    verify_public_loader(root, settings, wad);
     println!("Verified private native DOOM worker: public Freedoom; gameplay, controller, stereo PCM, nonblank frame, scoped save, close/reload and restart; no physical audio.");
 }
 
@@ -236,4 +216,150 @@ fn public_freedoom_worker_gameplay_audio_and_save() {
         &settings,
         &std::path::PathBuf::from(std::env::var_os("GAMEPKG_PUBLIC_DOOM_WAD").unwrap()),
     );
+}
+
+fn public_tick(game: &mut crate::runtime::Game, frames: u32, input: u32) -> bool {
+    let mut audible = false;
+    for _ in 0..frames {
+        game.step(input).unwrap();
+        assert_eq!(game.audio_channels(), 2);
+        assert_eq!(game.audio_frame().len(), 1600);
+        audible |= game.audio_frame().iter().any(|sample| *sample != 0);
+    }
+    audible
+}
+
+fn verify_public_loader(root: &Path, settings: &crate::settings::Settings, wad: &Path) {
+    // Exercise the ordinary loader/progress path in a separate signed scope.
+    // Reuse the verified native artifact; no game source or worker shortcut.
+    let fresh = tempfile::tempdir().unwrap();
+    let archive = root.join("com.gamepkg.doom.gamepkg");
+    let manifest = crate::registry::install(fresh.path(), &archive, true).unwrap();
+    assert!(super::build_supported(&manifest));
+    assert!(super::play_supported(&manifest));
+    let digest = crate::verify::digest(&std::fs::read(&archive).unwrap());
+    let executable = std::fs::read(super::path_for_digest(root, &digest)).unwrap();
+    let target = super::path_for_digest(fresh.path(), &digest);
+    std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+    std::fs::write(&target, &executable).unwrap();
+    crate::integrity::record_build(&target, &executable).unwrap();
+    assert!(super::is_built(fresh.path(), &manifest.id).unwrap());
+    let open = |native| {
+        crate::runtime::Game::load_target_configured(
+            fresh.path(),
+            &manifest.id,
+            &[wad.to_path_buf()],
+            native,
+            settings,
+        )
+        .unwrap()
+    };
+    let mut game = open(Some(true));
+    assert!(game.custom_renderer && game.doom_engine && game.audio_allowed);
+    public_tick(&mut game, 120, 0);
+    for _ in 0..4 {
+        public_tick(&mut game, 1, 64);
+        public_tick(&mut game, 12, 0);
+    }
+    public_tick(&mut game, 120, 0);
+    let initial = game.builtin_state().unwrap().unwrap();
+    assert_eq!(
+        initial.0 & 0xffff,
+        0,
+        "normal loader did not reach gameplay"
+    );
+    public_tick(&mut game, 60, 4 << 8);
+    let moved = game.builtin_state().unwrap().unwrap();
+    assert_ne!((initial.1, initial.2), (moved.1, moved.2));
+    assert_ne!(game.builtin_controller().unwrap().unwrap() & 4, 0);
+    assert!(public_tick(&mut game, 60, 16 << 8));
+    let image = game
+        .frame()
+        .commands
+        .iter()
+        .find_map(|command| match command {
+            crate::drawing::Command::Image { image, .. } => Some(image),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(image.pixels().len(), 320 * 200 * 4);
+    let unique: std::collections::BTreeSet<_> = image.pixels().as_chunks::<4>().0.iter().collect();
+    assert!(unique.len() > 64);
+    public_tick(&mut game, 1, (1 << 22) | (1 << 23) | 64);
+    let mut committed = None;
+    for _ in 0..60 {
+        public_tick(&mut game, 1, 0);
+        if let Ok(entries) = std::fs::read_dir(fresh.path().join("saves")) {
+            let saves: Vec<_> = entries.map(|entry| entry.unwrap().path()).collect();
+            assert!(saves.len() <= 1);
+            if let Some(path) = saves.first() {
+                let bytes = std::fs::read(path).unwrap();
+                // The engine also saves configuration before a checkpoint.
+                // Wait for a selected, populated slot, rather than any file.
+                if bytes.len() >= 44
+                    && &bytes[..8] == b"\x89GPD2\r\n\x1a"
+                    && u32::from_le_bytes(bytes[8..12].try_into().unwrap()) == 0
+                    && u32::from_le_bytes(bytes[12..16].try_into().unwrap()) > 1000
+                {
+                    committed = Some(bytes);
+                    break;
+                }
+            }
+        }
+    }
+    assert!(
+        committed.is_some(),
+        "normal loader did not commit checkpoint slot zero"
+    );
+    let saved = game.builtin_state().unwrap().unwrap();
+    game.finish().unwrap();
+    drop(game);
+    let first = crate::progress::load(fresh.path(), &manifest.id, &manifest.creator_key)
+        .unwrap()
+        .played_ms;
+    assert!(first > 0, "normal close did not record play time");
+    let mut game = open(None); // Default native selection, without a Wasm build.
+    for _ in 0..30 {
+        public_tick(&mut game, 1, 0);
+        if game.builtin_state().unwrap().unwrap().0 & 0xffff == 0 {
+            break;
+        }
+    }
+    let restored = game.builtin_state().unwrap().unwrap();
+    assert_eq!(restored.0 & 0xffff, 0);
+    assert!(
+        restored.1.abs_diff(saved.1) <= 2 && restored.2.abs_diff(saved.2) <= 2,
+        "normal loader did not restore save: {restored:?} vs {saved:?}"
+    );
+    public_tick(&mut game, 60, 8 << 8);
+    game.finish().unwrap();
+    drop(game);
+    let second = crate::progress::load(fresh.path(), &manifest.id, &manifest.creator_key)
+        .unwrap()
+        .played_ms;
+    assert!(second > first, "cached restart did not add play time");
+    let error = crate::runtime::Game::load_target_configured(
+        fresh.path(),
+        &manifest.id,
+        &[],
+        Some(true),
+        settings,
+    )
+    .err()
+    .expect("missing ROM admitted by normal loader");
+    assert!(error.to_string().contains("requires 1 ROM"), "{error:#}");
+    let mut damaged = executable;
+    damaged.push(0);
+    std::fs::write(target, damaged).unwrap();
+    let error = crate::runtime::Game::load_target_configured(
+        fresh.path(),
+        &manifest.id,
+        &[wad.to_path_buf()],
+        None,
+        settings,
+    )
+    .err()
+    .expect("damaged native cache admitted by normal loader");
+    assert!(format!("{error:#}").contains("integrity"), "{error:#}");
+    println!("Verified public native DOOM loader: explicit/default native launch, controller, PCM, image, save/reload, increasing history, missing-ROM and damaged-cache rejection.");
 }

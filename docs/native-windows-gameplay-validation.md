@@ -866,3 +866,38 @@ game tests (the SDL-specific comparison is Linux-only) and four resource tests.
 The added Windows32 suite exposes five original procedural-scene reference
 failures, including maximum frame-counter cases. These remain blocking; no
 goldens or tolerances are relaxed.
+
+
+### Current native worker and normal-launcher follow-up
+
+The Windows save-path/stdio revision `286b72c` passes the complete reviewed
+C-engine qualification at both executable widths in run
+[40781018454](https://github.com/centrexity/GamePKG/actions/runs/40781018454).
+Both signed engine links and the public-Freedoom private-worker gameplay,
+controller, stereo PCM, full image, checkpoint reload, restart and missing-palette
+fatal-error controls pass. Published archive digests, sizes and ZIP CRCs are
+independently verified. This does not qualify original user media or physical
+Windows graphics/audio/controllers.
+
+The portable-effect revision `03e4378` routes binary32 effects through the
+existing deterministic reduction and preserves the original binary64 fire-brick
+calculations. The final local 64-bit and actual ELF32 suites each pass 134 tests,
+including 3,607 independent 512-bit MPFR reference cases and unchanged original
+scene pixels/commands. Exact scalar/glyph property caching also removes repeated
+Unicode lookups. Complete signed native/core/component maximum-name typing,
+music/effects, checkpoint/restart, corrupt-save preservation and six dense
+original-artwork scenes pass with unchanged deadlines and memory limits. Hosted
+current Windows32/Android32 qualification remains pending.
+
+The next draft enables only the reviewed DOOM C profile in ordinary Windows
+Build/Play; Zelda and other unqualified C profiles remain gated. The normal Game
+loader fixture checks explicit and default native selection, controller input,
+stereo PCM, full image, actual checkpoint-slot reload, increasing play history,
+and rejection of missing ROMs and damaged cached artifacts. Configuration-only
+bundles do not satisfy the checkpoint assertion. This complete signed Linux
+fixture passes with public Freedoom and silent output; 337 default-feature
+library tests pass with 46 separately ignored fixtures. Strict lint passes on
+Linux with all features/targets and for both Windows GNU executable widths.
+Actual Windows normal-loader and game-window qualification remains required
+before treating the draft as complete. No stable release or preview replacement
+is made by these changes.
