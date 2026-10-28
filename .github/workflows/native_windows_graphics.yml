@@ -18,6 +18,7 @@ on:
       - 'tests/reference/windows-native-graphics/**'
       - 'tools/build_release.rs'
       - 'tools/install_mesa_test.py'
+      - 'tools/build_vulkan_test.py'
       - 'build.rs'
       - 'Cargo.toml'
       - 'Cargo.lock'
@@ -40,6 +41,7 @@ on:
       - 'tests/reference/windows-native-graphics/**'
       - 'tools/build_release.rs'
       - 'tools/install_mesa_test.py'
+      - 'tools/build_vulkan_test.py'
       - 'build.rs'
       - 'Cargo.toml'
       - 'Cargo.lock'
@@ -104,6 +106,20 @@ jobs:
           $log = Get-Content -Raw target/windows-gui-proof/native-graphics.log
           foreach ($backend in @('glsl', 'spirv', 'wgsl')) {
             if ($log -notmatch "Verified native Windows shader texture/input/clear/resize/restart/history: $backend") { throw "Missing native $backend window qualification" }
+          }
+      - name: Build a test-local Vulkan loader and exercise native Vulkan windows
+        shell: pwsh
+        env:
+          GAMEPKG_TEST_EXPECTED_ARCH: ${{ matrix.architecture }}
+        run: |
+          python tools/build_vulkan_test.py target/release --architecture ${{ matrix.mesa }}
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Copy-Item target/release/vulkan-test-loader.json target/windows-gui-proof/
+          python tests/windows_native_gui.py --renderer vulkan 2>&1 | Tee-Object -FilePath target/windows-gui-proof/native-vulkan.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $log = Get-Content -Raw target/windows-gui-proof/native-vulkan.log
+          foreach ($backend in @('spirv', 'wgsl')) {
+            if ($log -notmatch "Verified native Windows shader texture/input/clear/resize/restart/history: $backend vulkan") { throw "Missing native $backend Vulkan qualification" }
           }
       - name: Preserve native window pixels and diagnostics
         if: always()

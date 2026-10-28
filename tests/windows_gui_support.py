@@ -22,7 +22,7 @@ def texture_frame_error(image,channel):
  if any(image.getpixel(point)!=(0,0,0) for point in points):return 'Texture viewport letterbox did not match the client aspect ratio'
  return None
 
-def verify_shader_input(project,env,game_id,label,*,texture=False):
+def verify_shader_input(project,env,game_id,label,*,texture=False,renderer="opengl"):
  assert os.name=='nt'
  user=ctypes.WinDLL('user32',use_last_error=True);gdi=ctypes.WinDLL('gdi32',use_last_error=True)
  callback_type=ctypes.WINFUNCTYPE(W.BOOL,W.HWND,W.LPARAM)
@@ -66,7 +66,7 @@ def verify_shader_input(project,env,game_id,label,*,texture=False):
    assert gdi.BitBlt(memory,0,0,width,height,dc,0,0,0x00CC0020)
    image=Image.frombytes('RGB',(width,height),ctypes.string_at(pixels,width*height*4),'raw','BGRX')
    outer=W.RECT();assert user.GetWindowRect(window,ctypes.byref(outer))
-   image.info['window']={'client_pixels':[width,height],'outer_pixels':[outer.left,outer.top,outer.right,outer.bottom],'dpi':user.GetDpiForWindow(window),'capture_thread_dpi':'per-monitor-v2','screen_pixels':[user.GetSystemMetrics(0),user.GetSystemMetrics(1)]}
+   image.info['window']={'renderer':renderer,'client_pixels':[width,height],'outer_pixels':[outer.left,outer.top,outer.right,outer.bottom],'dpi':user.GetDpiForWindow(window),'capture_thread_dpi':'per-monitor-v2','screen_pixels':[user.GetSystemMetrics(0),user.GetSystemMetrics(1)]}
    return image
   finally:gdi.SelectObject(memory,previous);gdi.DeleteObject(bitmap);gdi.DeleteDC(memory);user.ReleaseDC(window,dc)
  proof=Path(project)/'target/windows-gui-proof';proof.mkdir(parents=True,exist_ok=True)
@@ -74,7 +74,8 @@ def verify_shader_input(project,env,game_id,label,*,texture=False):
   image.save(proof/(label+'-'+name+'.png'))
   (proof/(label+'-'+name+'.json')).write_text(json.dumps(image.info['window'],indent=2)+'\n')
  log_path=proof/(label+'.log');window=None;key_held=False;old_awareness=None
- player_env=dict(env,GALLIUM_DRIVER='llvmpipe',LIBGL_ALWAYS_SOFTWARE='1',GAMEPKG_RENDERER='opengl')
+ assert renderer in ['opengl','vulkan']
+ player_env=dict(env,GALLIUM_DRIVER='llvmpipe',LIBGL_ALWAYS_SOFTWARE='1',GAMEPKG_RENDERER=renderer)
  player_env.pop('GAMEPKG_SLANG_ROOT',None)
  with log_path.open('wb') as log:
   app=subprocess.Popen([str(Path(project)/'target/release/gamepkg-gui.exe'),'--play',game_id],env=player_env,stdout=log,stderr=log)
