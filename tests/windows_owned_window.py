@@ -22,6 +22,9 @@ class OwnedGameWindow:
    (self.user,'SetCursorPos',[ctypes.c_int,ctypes.c_int],W.BOOL),(self.user,'WindowFromPoint',[W.POINT],W.HWND),
    (self.user,'SetThreadDpiAwarenessContext',[W.HANDLE],W.HANDLE),
    (self.user,'GetDpiForWindow',[W.HWND],W.UINT),
+   (self.user,'GetWindowRect',[W.HWND,ctypes.POINTER(W.RECT)],W.BOOL),
+   (self.user,'MonitorFromWindow',[W.HWND,W.DWORD],W.HANDLE),
+   (self.user,'GetSystemMetrics',[ctypes.c_int],ctypes.c_int),
    (self.gdi,'CreateCompatibleDC',[W.HDC],W.HDC),(self.gdi,'SelectObject',[W.HDC,W.HGDIOBJ],W.HGDIOBJ),
    (self.gdi,'DeleteObject',[W.HGDIOBJ],W.BOOL),(self.gdi,'DeleteDC',[W.HDC],W.BOOL),
    (self.gdi,'BitBlt',[W.HDC,ctypes.c_int,ctypes.c_int,ctypes.c_int,ctypes.c_int,W.HDC,ctypes.c_int,ctypes.c_int,W.DWORD],W.BOOL)]
@@ -37,6 +40,10 @@ class OwnedGameWindow:
   class Header(ctypes.Structure):
    _fields_=[('size',W.DWORD),('width',W.LONG),('height',W.LONG),('planes',W.WORD),('bits',W.WORD),('compression',W.DWORD),('image_size',W.DWORD),('x',W.LONG),('y',W.LONG),('colors',W.DWORD),('important',W.DWORD)]
   class Info(ctypes.Structure):_fields_=[('header',Header),('colors',W.DWORD*3)]
+  class MonitorInfo(ctypes.Structure):
+   _fields_=[('size',W.DWORD),('monitor',W.RECT),('work',W.RECT),('flags',W.DWORD)]
+  self.MonitorInfo=MonitorInfo
+  self.user.GetMonitorInfoW.argtypes=[W.HANDLE,ctypes.POINTER(MonitorInfo)];self.user.GetMonitorInfoW.restype=W.BOOL
   self.Input=Input;self.Keyboard=Keyboard;self.Header=Header;self.Info=Info
   assert ctypes.sizeof(Input)==(40 if ctypes.sizeof(ctypes.c_void_p)==8 else 28)
   self.user.SendInput.argtypes=[W.UINT,ctypes.POINTER(Input),ctypes.c_int];self.user.SendInput.restype=W.UINT
@@ -67,8 +74,33 @@ class OwnedGameWindow:
    self.__exit__(None,None,None);raise
  def size(self):
   rect=W.RECT();assert self.user.GetClientRect(self.window,ctypes.byref(rect));return rect.right,rect.bottom
+ def outer(self):
+  rectangle=W.RECT();assert self.user.GetWindowRect(self.window,ctypes.byref(rectangle))
+  return rectangle.left,rectangle.top,rectangle.right,rectangle.bottom
+ def monitor(self):
+  handle=self.user.MonitorFromWindow(self.window,2);assert handle
+  info=self.MonitorInfo();info.size=ctypes.sizeof(info)
+  assert self.user.GetMonitorInfoW(handle,ctypes.byref(info))
+  return info
+ def fit_on_monitor(self):
+  info=self.monitor();outer=self.outer();work=info.work
+  width=min(outer[2]-outer[0],work.right-work.left)
+  height=min(outer[3]-outer[1],work.bottom-work.top)
+  assert self.user.SetWindowPos(self.window,None,work.left,work.top,width,height,0x4|0x10)
+ def geometry(self):
+  width,height=self.size();origin=W.POINT(0,0)
+  assert self.user.ClientToScreen(self.window,ctypes.byref(origin))
+  monitor=self.monitor();work=monitor.work
+  data={'client_pixels':[width,height],'client_origin_pixels':[origin.x,origin.y],
+        'outer_pixels':list(self.outer()),'monitor_pixels':[monitor.monitor.left,monitor.monitor.top,monitor.monitor.right,monitor.monitor.bottom],
+        'work_pixels':[work.left,work.top,work.right,work.bottom],
+        'screen_pixels':[self.user.GetSystemMetrics(0),self.user.GetSystemMetrics(1)],
+        'dpi':self.user.GetDpiForWindow(self.window),'owner_pid':self.app.pid,'capture_thread_dpi':'per-monitor-v2'}
+  assert work.left<=origin.x and work.top<=origin.y and origin.x+width<=work.right and origin.y+height<=work.bottom,'owned client is partly outside visible monitor work area'
+  return data
  def activate(self):
   self.user.ShowWindow(self.window,9)
+  self.fit_on_monitor()
   assert self.user.SetWindowPos(self.window,W.HWND(-1),0,0,0,0,0x1|0x10|0x40)
   try:
    width,height=self.size();point=W.POINT(width//2,height//2)
@@ -94,7 +126,7 @@ class OwnedGameWindow:
  def tap(self,scan,extended=False):
   self.key(scan,True,extended);time.sleep(.06);self.key(scan,False,extended);time.sleep(.06)
  def capture(self,name):
-  self.alive();width,height=self.size();assert 1<=width<=4096 and 1<=height<=4096
+  self.alive();geometry=self.geometry();width,height=geometry['client_pixels'];assert 1<=width<=4096 and 1<=height<=4096
   dc=self.user.GetDC(self.window);memory=self.gdi.CreateCompatibleDC(dc);assert dc and memory
   info=self.Info();info.header=self.Header(ctypes.sizeof(self.Header),width,-height,1,32,0,0,0,0,0,0)
   pixels=ctypes.c_void_p();bitmap=self.gdi.CreateDIBSection(dc,ctypes.byref(info),0,ctypes.byref(pixels),None,0);assert bitmap and pixels.value
@@ -103,10 +135,18 @@ class OwnedGameWindow:
    assert self.gdi.BitBlt(memory,0,0,width,height,dc,0,0,0x00CC0020)
    image=Image.frombytes('RGB',(width,height),ctypes.string_at(pixels,width*height*4),'raw','BGRX')
    image.save(self.proof/(self.label+'-'+name+'.png'))
-   (self.proof/(self.label+'-'+name+'.json')).write_text(json.dumps({'client_pixels':[width,height],'dpi':self.user.GetDpiForWindow(self.window),'owner_pid':self.app.pid,'capture_thread_dpi':'per-monitor-v2'},indent=2)+'\n')
+   (self.proof/(self.label+'-'+name+'.json')).write_text(json.dumps(geometry,indent=2)+'\n')
    return image
   finally:self.gdi.SelectObject(memory,previous);self.gdi.DeleteObject(bitmap);self.gdi.DeleteDC(memory);self.user.ReleaseDC(self.window,dc)
- def resize(self,width,height):assert self.user.SetWindowPos(self.window,None,0,0,width,height,0x2|0x4|0x10)
+ def resize(self,width,height):
+  work=self.monitor().work
+  assert 0<width<=work.right-work.left and 0<height<=work.bottom-work.top,'requested test window does not fit monitor work area'
+  assert self.user.SetWindowPos(self.window,None,work.left,work.top,width,height,0x4|0x10)
+ def alternate_client_size(self):
+  current=self.size();outer=self.outer();work=self.monitor().work
+  frame=(outer[2]-outer[0]-current[0],outer[3]-outer[1]-current[1])
+  outer_size=alternate_outer_size(current,frame,[work.right-work.left,work.bottom-work.top])
+  return outer_size
  def close(self):
   assert self.user.PostMessageW(self.window,0x10,0,0)
   assert self.app.wait(timeout=20)==0,self.diagnostics()
@@ -146,3 +186,15 @@ def read_shared_file(path,maximum):
   assert read.value==size.value,'short host proof file'
   return data.raw
  finally:assert kernel.CloseHandle(handle)
+
+
+def alternate_outer_size(current,frame,work):
+ """Exercise the opposite aspect ratio with every client pixel onscreen."""
+ assert min(current)>0 and min(frame)>=0
+ available=[work[index]-frame[index] for index in range(2)]
+ side=min(available)
+ fractions=(85,90) if current[0]*3>=current[1]*4 else (95,60)
+ client=[side*fraction//100 for fraction in fractions]
+ assert client[0]>=320 and client[1]>=240,'test monitor is too small for both aspect ratios'
+ assert tuple(client)!=tuple(current)
+ return tuple(client[index]+frame[index] for index in range(2))

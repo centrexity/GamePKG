@@ -963,3 +963,25 @@ frame, and records both sizes with the history proof. Product window preferences
 rendering, game data and deadlines are unchanged. The stronger actual Windows
 OpenGL/Vulkan first/restart checks remain required. Five local adversarial
 verifier controls and syntax checks still pass.
+
+
+The first stronger-resize run `40791395885` fails both widths at the first
+Vulkan launch restored from the taller OpenGL window. Both OpenGL launches
+finish, including actual geometry changes. Captures show a white stripe in
+Vulkan's bottom rows. The same run's shader-window metadata records a
+1024x768 desktop; the fixture requested a 1000x800 outer window. With the
+39-pixel window frame its 761-pixel client exceeds the visible desktop below
+its caption. Both renderers stop capturing game pixels at row 737; OpenGL's
+remaining captured rows are black and Vulkan's are white. This is evidence of
+an invalid offscreen measurement; it does not yet prove a game-rendering bug.
+Both immutable failed archives and logs are retained.
+
+The follow-up queries the owned window's monitor/work area and frame dimensions,
+places it wholly inside that area, and derives alternating wide/tall sizes from
+the available client dimensions. Every capture asserts full client visibility
+and records client origin, outer/monitor/work rectangles, screen dimensions and
+DPI. Actual size changes, black letterbox fields and game-image checks remain
+mandatory. Six local controls cover malformed save/gamma/output and alternating
+visible geometry across three work-area/frame configurations. The corrected
+actual Windows runs remain required; neither the offscreen captures nor local
+math controls qualify those runs.

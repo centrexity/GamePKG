@@ -134,9 +134,9 @@ def main():
       window.alive();assert time.monotonic()<end,'F11 did not persist original gamma';time.sleep(.1)
      assert window.size()==size,'F11 resized the game window'
      window.capture('gamma')
-     # Restored windows retain the last dimensions. Pick the other size so
-     # every renderer/restart actually exercises a new client geometry.
-     requested=(1000,800) if size[0]<900 else (853,641)
+     # Pick the opposite aspect within the actual work area. GDI cannot
+     # qualify pixels below the desktop or behind the taskbar.
+     requested=window.alternate_client_size()
      window.resize(*requested);time.sleep(.3)
      end=time.monotonic()+15
      while True:
