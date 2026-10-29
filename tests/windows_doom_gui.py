@@ -133,10 +133,17 @@ def main():
      while gamma(checkpoint(home))!=(base_gamma+1)%5:
       window.alive();assert time.monotonic()<end,'F11 did not persist original gamma';time.sleep(.1)
      assert window.size()==size,'F11 resized the game window'
-     window.capture('gamma');window.resize(853,641);time.sleep(.3)
+     window.capture('gamma')
+     # Restored windows retain the last dimensions. Pick the other size so
+     # every renderer/restart actually exercises a new client geometry.
+     requested=(1000,800) if size[0]<900 else (853,641)
+     window.resize(*requested);time.sleep(.3)
      end=time.monotonic()+15
      while True:
-      try:require_game_viewport(window.capture('resized'));break
+      try:
+       resized=window.capture('resized')
+       assert resized.size!=size,'resize did not change client geometry'
+       require_game_viewport(resized);break
       except AssertionError:
        window.alive();assert time.monotonic()<end,'resized game viewport did not settle';time.sleep(.1)
      window.close()
@@ -145,7 +152,7 @@ def main():
     previous=played;assert selections.read_bytes()==remembered,'launch changed remembered ROM selection'
     assert hashlib.sha256(wad.read_bytes()).hexdigest()==WAD_SHA,'public WAD changed'
     run('integrity-check','com.gamepkg.doom')
-    (proof/(label+'-history.json')).write_text(json.dumps({'architecture':architecture,'renderer':renderer,'launch':launch,'played_ms':played,'gamma':gamma(checkpoint(home)),'wad_sha256':WAD_SHA,'native_build_only':True,'remembered_rom_unchanged':True},indent=2)+'\n')
+    (proof/(label+'-history.json')).write_text(json.dumps({'architecture':architecture,'renderer':renderer,'launch':launch,'played_ms':played,'gamma':gamma(checkpoint(home)),'wad_sha256':WAD_SHA,'native_build_only':True,'remembered_rom_unchanged':True,'resize_from_pixels':list(size),'resize_to_pixels':list(resized.size)},indent=2)+'\n')
     print(f'Verified Windows DOOM GUI: {renderer} {launch}; default native Build/Play, remembered WAD, visible image/movement, named checkpoint, F11 gamma, resize, close and increasing history.',flush=True)
   print('Windows public-Freedoom normal launcher integration passed; muted audio; no user media or WSL/Python player dependency.',flush=True)
 
