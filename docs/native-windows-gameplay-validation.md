@@ -1109,3 +1109,40 @@ the package and rebuilding; existing immutable v15 previews contain recipe 0.1.4
 The full Windows cold-build workflow is explicitly dispatched release
 qualification; maintaining its kit pin does not automatically repeat the complete
 487-unit build. Its retained v15 results do not qualify v16.
+
+
+### Current v16 Windows runtime and results replay under Wine
+
+The v16 Windows runtime now rebuilds successfully using the exact pinned
+standalone Windows SDK under Wine. The recovered private SDK inventory matches
+`c26f09324eda2a9f8091bf7330d5363bd22f4cee9a98fb93fe58bbe3eb02ec67`.
+All 494 prepared Rust and ABI files are identical to the qualified retained
+archive. Each of the 487 current source/compiler-argument/cache keys and object
+receipts matches; the archive hash remains
+`59b5eb0baff73b051cf7f8b429b718df64a881d6304d9dc92c1b2c980861562c`.
+The actual Windows helper compiles with standalone Rust 1.89 under Wine, and the
+C/runtime rebuild takes 64.46 seconds. No complete Rust-unit rebuild is repeated.
+All 24,035 exports remain in the resulting native Windows executable, SHA-256
+`5201c4c976ffebbed58117fc29569f054a1ea4bf9da487098ca4c41e97c465d8`.
+This is runtime integration with a verified reused archive, not a new signed
+Windows app Build/repair or cold-build qualification.
+
+That exact executable passes the original two-player Team Crush results route
+under Wine in a private virtual display. The owned ISO is admitted read-only in
+place and automated audio uses dummy output. Normal physical PS2 virtual-pad
+inputs select the mode, junction and cars and accelerate both players; no game
+state, AI or result is injected. During the shared results replay, both car
+phases are 2 and the shared word is `0x01010000`. A fresh A at flip 5,611 remains
+A with RT zero. The complete 640×480 result capture shows the original A Select
+and B Replay prompts, $3,359 plus $3,377 damage and the correct $6,736 total.
+Continue reaches **Autosave successful**, with a changed private profile. The
+final capture still awaits Continue on that confirmation; mode selection and
+fresh-process persistence are not claimed. All five captures pass independent
+full PNG decoding and hash checks. Strict executed-path and actual-Vulkan gates
+pass, and the reference profile and executable remain unchanged.
+
+This extends the observed results-input fix to the Windows binary under Wine.
+Actual Windows graphics/audio/controllers, the normal current Windows app
+Build/Play path, fresh-process profile behavior, other native control routes,
+player-two natural Race completion, mixed viewport prompts and broader campaign
+fidelity remain separate qualification. Existing preview archives stay unchanged.
