@@ -1,9 +1,7 @@
 name: Full native Windows game package
+# Explicit release qualification: do not start a multi-hour cold game build
+# merely to maintain this workflow or update its reviewed source-kit pin.
 on:
-  push:
-    paths:
-      - '.github/workflows/takedawn_windows_package.yml'
-      - 'tools/check_takedawn_windows_package.ps1'
   workflow_dispatch:
 permissions:
   contents: read
@@ -24,7 +22,7 @@ jobs:
       - name: Verify the actual source-kit handoff before compiling the game
         env:
           GAMEPKG_TAKEDAWN_KIT: ${{ github.workspace }}/ports/takedawn/assets/takedawn-source-kit.tar.gz
-          GAMEPKG_TAKEDAWN_KIT_SHA256: 7f56741fa8f0a56d3e718af1f772bae9200514b6293c2d218e56cde700123c8b
+          GAMEPKG_TAKEDAWN_KIT_SHA256: d11056c7b8e1306023b0229dd32f6afb60194fd786b73e3abf187210eeb0de5f
         run: cargo test --locked --release --lib takedawn_kit::tests -- --include-ignored
       - name: Build and repair the signed native game with managed standalone tools
         shell: pwsh

@@ -1037,3 +1037,75 @@ commands, input-syntax rejection and wrong-player pause/finished-player guards.
 They run in both broad CI configurations without Pillow; capture operations alone
 load Pillow when needed. Player-two natural finish, mixed result prompts and
 normal Continue after shared results remain open.
+
+## v16 shared-results replay input correction
+
+The normal signed v15 executable exposed a real Team Crush results bug. The
+original shared results menu runs a looping replay behind its score table. Both
+cars return to phase 2/countdown state, while neither per-player results byte is
+set. The shared word at `0x752D30` is `0x01010000`: the original replay byte and
+no-pause byte are both set. The previous multiplayer gate treated those replay
+cars as driving. A fresh physical A became RT and could not select Continue;
+the prompt displayed the mapped shoulder button instead. A shoulder press did
+select Continue and reached the original autosave screen. Road Rage gameplay,
+its normal pause/Quit confirmation and return to mode selection also passed in
+that baseline session; no completed Road Rage event is claimed.
+
+The reviewed v16 policy keeps the original menu layout when both shared flags
+are set. No-pause alone still cannot disable the other player's live controls
+after one finishes. Existing player assignments, pause/held-button handover,
+Nintendo face layout and all 15 glyph families remain intact. The new recorded
+state regression fails before the fix. The complete staged source then passes
+261 checks on both 64-bit and actual 32-bit Linux with address, undefined-behavior
+and leak sanitizers enabled. These are source checks, not Windows hardware proof.
+
+The 0.1.5 candidate's source kit SHA-256 is
+`d11056c7b8e1306023b0229dd32f6afb60194fd786b73e3abf187210eeb0de5f`.
+Its inventory differs from v15 in exactly one file, the host C input policy.
+Prepared Rust, ABI support and every other kit file are byte-identical. The
+reviewed prepared-unit cache namespace is therefore retained, while kit admission
+and final artifacts use the distinct new identity. Every expected source/compiler
+argument/cache key matches one of 487 checksum-verified copied v15 objects.
+Normal signed key generation, packing, installation, Build and integrity checks
+pass; Build takes 24.56 seconds. All 24,035 exports remain present, and both the
+original and copied objects preserve their hashes and timestamps. This is a warm
+build, not another cold qualification.
+
+The first two build attempts stopped before any game-unit compilation: a private
+settings override used the wrong variable, then the restored glslang prefix
+lacked its standalone tool required by the package's CMake metadata. The accepted
+prefix is private and uses GPG-verified Ubuntu updates metadata plus package
+hashes for glslang 15.1.0, SPIR-V Tools 2025.1 and matching tools. No system package
+is installed. Another driver audit wrongly expected successful compiler stderr
+to be forwarded to the CLI; its failure is retained separately from the actual
+successful Build/integrity and verified artifact/cache identities.
+
+The resulting native executable SHA-256 is
+`329c48d0a3eba805d389043732eebc2a4a030881b180520dd3404c6db741367f`.
+A fresh bounded normal-input Team Crush session passes the original results flow.
+A is pressed while both replay cars are in phase 2 and both shared flags are set;
+actual controller reads preserve A and return RT zero. The original A Select and
+B Replay prompts are restored. Complete 640×480 captures show $3,357 plus $3,380
+vehicle damage and a $20,000 cash bonus, totaling $26,737. Normal Continue reaches
+**Autosave successful**, and the private profile changes. Final capture is that
+autosave confirmation awaiting another Continue, not a captured return to mode
+selection. The reference profile and executable hashes remain unchanged; strict
+native-path and actual-Vulkan checks pass. All automated audio uses dummy output.
+The first fixture pressed A during the camera fly-by; its corrected version
+waits for the original instruction-page flag, with no runtime or timeout change.
+
+Targeted host tests pass (24, with nine explicitly separate checks ignored), the
+explicit current source-kit archive test passes, strict all-feature/all-target
+lint passes, and both CLI and GUI build with embedded audio companions. Relocated
+entry points validate the same decoder without a display or decoder files. The
+catalog matches all six dependency-free recipes and their original artwork
+notices.
+
+This closes the observed Linux Team Crush results-input defect. Fresh-process
+profile behavior, remaining native control routes, current Windows game/runtime
+qualification, player-two natural Race finish/Continue, mixed prompts and broader
+campaign/hardware fidelity remain separate work. Recipe 0.1.5 requires updating
+the package and rebuilding; existing immutable v15 previews contain recipe 0.1.4.
+The full Windows cold-build workflow is explicitly dispatched release
+qualification; maintaining its kit pin does not automatically repeat the complete
+487-unit build. Its retained v15 results do not qualify v16.

@@ -13,30 +13,38 @@ This does not mean the whole Takedawn engine has been rewritten in Rust.
 
 ## Current delivery path
 
-The unreleased 0.1.4 recipe selects the host-admitted v15 kit, SHA-256
-`7f56741fa8f0a56d3e718af1f772bae9200514b6293c2d218e56cde700123c8b`.
-Its 24,003 prepared Rust game functions compile across 487 units, retaining
-24,035 native exports. These prepared units are unchanged from v14; v15 fixes
-native multiplayer controller assignment and driving-button mapping.
+The unreleased 0.1.5 recipe selects the host-admitted v16 kit, SHA-256
+`d11056c7b8e1306023b0229dd32f6afb60194fd786b73e3abf187210eeb0de5f`.
+It retains 24,003 prepared Rust game functions across 487 units and 24,035 native
+exports. The sole change from v15 is the host C input guard for shared results:
+background replay car phases must not activate driving controls over the menu.
+All prepared Rust and ABI support files remain byte-identical.
 
-The normal signed Linux package passes an empty-cache optimized Build,
+Normal signed Linux Build and integrity checks pass. Verified prepared-unit cache
+identities are preserved across this C-only update; the runtime rebuilds and the
+new kit/artifact identities remain distinct. Actual native Team Crush produces
+separate player scores, a combined result, correct original menu prompts and
+normal confirmation during the background replay, followed by successful autosave.
+The profile changes while reference saves and the built binary remain unchanged.
+The full input/glyph source passes 261 cases on both 32-bit and 64-bit Linux with
+address, undefined-behavior and leak checks.
+
+The v15 baseline separately passes an empty-cache optimized signed Linux Build,
 ISO-in-place Play with remembered selection/history, and integrity repair that
-preserves verified unit objects. Its repaired executable passes the Race and
-Crash control routes and three split-screen pause/Resume layouts. A natural
-player-one three-lap finish is observed separately; a player-two finish and
-Continue after the shared results remain unverified. Earlier World Tour and
-save-reload records retain their original package/executable identities.
+preserves all unit objects. Its executable passes Race/Crash and three
+split-screen pause/Resume routes. Player one's natural three-lap finish is
+observed; player two's natural race finish and complete Race results flow remain
+open. The v16 results check above covers Team Crush, not those missing routes.
 
-Actual Windows also passes the complete signed v15 Build/repair gate, preserving
-all 487 object hashes/timestamps during repair. The current private v15b preview
-contains the 0.1.4 recipe and default-off diagnostic watchdog; it is not a stable
-release. The [Windows build guide](WINDOWS_BUILD.md) describes the standalone
-toolchain, separate app/window checks and remaining original-game hardware work.
-No Python, WSL or code generation is required by players.
+Actual Windows passes the complete signed v15 Build/repair gate, preserving all
+487 object hashes/timestamps during repair. The immutable private v15b preview
+contains recipe 0.1.4 and the default-off diagnostic watchdog; it is not a stable
+release and does not contain the v16 fix. Current Windows gameplay/hardware and
+broader campaign qualification remain open. No player needs Python, WSL or code
+generation. See the [Windows build guide](WINDOWS_BUILD.md).
 
-Preparation records below include older kits. Their inventories and results
-must be read with the exact versions recorded in the
-[current gameplay qualification](../../../docs/native-windows-gameplay-validation.md).
+Preparation records below include older kits and must be read with their exact
+versions in the [gameplay qualification](../../../docs/native-windows-gameplay-validation.md).
 
 ## Conversion
 
@@ -343,7 +351,7 @@ uninterrupted cold standard Build.
 
 Host-owned per-unit checkpoints let later builds resume without repeating the
 longest compilations. Keys bind source bytes, compiler identity, local CPU, the
-pinned kit and exact compilation arguments. Object checksums are checked before
+reviewed prepared-Rust ABI identity and exact compilation arguments. Object checksums are checked before
 reuse. Missing or corrupt checkpoints compile again. This compiler cache contains
 no ROMs or saves; its size is included in game/library storage accounting.
 

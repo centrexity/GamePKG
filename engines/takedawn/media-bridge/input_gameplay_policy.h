@@ -19,6 +19,7 @@
 #define GAMEPKG_CTL_CONTROLLERS 0x004AE724u
 #define GAMEPKG_CTL_CONTROLLER_SIZE 0x188u
 #define GAMEPKG_CTL_CAR_SIZE 0x27E0u
+#define GAMEPKG_CTL_SHARED_REPLAY 0x00752D32u
 
 static int gamepkg_ctl_words(uint32_t address, uint32_t bytes)
 {
@@ -61,6 +62,13 @@ static int gamepkg_ctl_player_driving(unsigned player)
      * classify each player's input. One player's results must not turn the
      * other player's accelerator back into a menu button. */
     if (players == 1 && M8(CTL_NO_PAUSE)) return 0;
+    /* Shared results can run a looping replay behind their menu. Its cars
+     * keep returning to phase 2 without either per-player results byte set.
+     * The original stage replay flag (set by sub_0001A8B0), together with
+     * the no-pause flag, distinguishes this from one player finishing while
+     * the other still drives. Keep confirmation and replay-menu buttons in
+     * their menu layout, regardless of the background cars' phase. */
+    if (players == 2 && M8(CTL_NO_PAUSE) && M8(GAMEPKG_CTL_SHARED_REPLAY)) return 0;
     state = CTL_P1 + player * CTL_P_SIZE;
     if (M8(state + CTL_P_INTRO) || M8(state + CTL_P_RESULTS)) return 0;
     phase = M32(CTL_PHASE + player * GAMEPKG_CTL_CAR_SIZE);

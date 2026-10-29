@@ -31,7 +31,7 @@ static void playing(unsigned players)
     M32(0x10000u) = players == 1 ? CTL_VT_GAME : GAMEPKG_CTL_VT_MULTI;
     M32(CTL_PAUSED_BY) = 0xFFFFFFFFu;
     M32(CTL_MODULE_STEP) = 5;
-    M8(CTL_NO_PAUSE) = 0;
+    M32(0x00752D30u) = 0;
     for (unsigned player = 0; player < 2; player++) {
         M8(CTL_P1 + player * CTL_P_SIZE + CTL_P_RESULTS) = 0;
         M8(CTL_P1 + player * CTL_P_SIZE + CTL_P_INTRO) = 0;
@@ -154,11 +154,52 @@ static void held_button_handover(void)
     }
 }
 
+static void shared_results_replay(void)
+{
+    /* Recorded Team Crush results: the original replay keeps restarting
+     * both cars (phase/countdown look live), while this shared word is
+     * 0x01010000 and both per-player results bytes stay zero. Menu buttons
+     * must keep their configured face layout instead of becoming throttle. */
+    for (unsigned no_pause = 0; no_pause <= 1; no_pause++) {
+        for (unsigned replay = 0; replay <= 1; replay++) {
+            playing(2);
+            M8(0x00752D32u) = (uint8_t)replay;
+            M8(CTL_NO_PAUSE) = (uint8_t)no_pause;
+            for (unsigned player = 0; player < 2; player++)
+                CHECK(gamepkg_ctl_port_driving(player + 2) == !(no_pause && replay));
+        }
+    }
+    for (int nintendo = 0; nintendo <= 1; nintendo++) {
+        bo3_ctl_port ports[2] = {{0}, {0}};
+        playing(2);
+        for (unsigned player = 0; player < 2; player++) {
+            XBOX_GAMEPAD pad = {0}; pad.bAnalogButtons[XBOX_BUTTON_A] = 255;
+            if (nintendo) bo3_ctl_mirror(&pad);
+            bo3_ctl_apply(&ports[player], &pad,
+                          gamepkg_ctl_port_driving(player + 2), nintendo);
+            CHECK(pad.bAnalogButtons[XBOX_BUTTON_RTRIGGER] == 255);
+        }
+        M32(0x00752D30u) = 0x01010000u;
+        for (unsigned player = 0; player < 2; player++) {
+            for (unsigned press = 0; press < 3; press++) {
+                XBOX_GAMEPAD pad = {0};
+                if (press != 1) pad.bAnalogButtons[XBOX_BUTTON_A] = 255;
+                if (nintendo) bo3_ctl_mirror(&pad);
+                bo3_ctl_apply(&ports[player], &pad,
+                              gamepkg_ctl_port_driving(player + 2), nintendo);
+                CHECK(pad.bAnalogButtons[XBOX_BUTTON_RTRIGGER] == 0);
+                CHECK(pad.bAnalogButtons[XBOX_BUTTON_A] == (!nintendo && press == 2 ? 255 : 0));
+                CHECK(pad.bAnalogButtons[XBOX_BUTTON_B] == (nintendo && press == 2 ? 255 : 0));
+            }
+        }
+    }
+}
+
 int main(void)
 {
     void *ram = calloc(1, 0x04000000u); assert(ram);
     g_xbox_mem_offset = (ptrdiff_t)ram;
-    mappings(); transitions(); malformed(); held_button_handover();
+    mappings(); transitions(); malformed(); held_button_handover(); shared_results_replay();
     free(ram);
     printf("PASS: %u original input-gate/assignment/transition checks (%zu-bit pointers)\n",
            checks, sizeof(void *) * 8);
