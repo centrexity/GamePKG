@@ -1101,9 +1101,10 @@ entry points validate the same decoder without a display or decoder files. The
 catalog matches all six dependency-free recipes and their original artwork
 notices.
 
-This closes the observed Linux Team Crush results-input defect. Fresh-process
-profile behavior, remaining native control routes, current Windows game/runtime
-qualification, player-two natural Race finish/Continue, mixed prompts and broader
+This closes the observed Linux Team Crush results-input defect. The subsequent
+Windows runtime/Wine and fresh-process record checks below extend that evidence.
+Remaining native control routes, the current signed Windows app Build/Play path,
+player-two natural Race finish/Continue, mixed prompts and broader
 campaign/hardware fidelity remain separate work. Recipe 0.1.5 requires updating
 the package and rebuilding; existing immutable v15 previews contain recipe 0.1.4.
 The full Windows cold-build workflow is explicitly dispatched release
@@ -1160,3 +1161,39 @@ audit failure is retained. An independent audit reads the actual saved file,
 checks both successful Run outputs and increasing history, without repeating
 Build or Play. This establishes the current CLI launch path, not GUI interaction
 or loading the earned Team Crush result into an original profile screen.
+
+
+### Current v16 earned-profile reload on Linux and Wine
+
+Fresh original game processes now load the earned profiles from the accepted
+v16 Team Crush sessions and display their saved records. These checks copy each
+closed session's actual private save files into a new private game directory;
+they never edit profile contents, game state, AI, cash values or outcomes.
+The admitted native binaries are unchanged. The owned ISO is read-only in place,
+audio uses dummy output, and normal virtual-pad menu presses load Profile 1.
+
+In the Linux process, **Driver Details > Records > Team Crush > USA** displays
+**Trailer Trash**, players P1/P2 and **$26,737**, exactly matching the preceding
+original results capture. Driver Details also shows 2/173 completed events,
+4,060 burnout points and six takedowns. The junction selector itself does not
+show a high score; the independent records page supplies the persistence proof.
+Seven complete 640×480 captures decode and match their hashes. One external
+observation helper could not see the owned process from the restricted process
+namespace after it had submitted a normal Back press; inspection continued in
+the same original session with the appropriate process visibility. No game or
+harness source was changed while running and no session was restarted.
+
+A separate fresh Windows executable process under Wine loads its own earned
+profile and follows the same original records route. **Trailer Trash** shows
+P1/P2 and **$6,736**, exactly matching that Windows/Wine results session. Both
+complete captures decode and match their hashes. This is a separately earned
+result, not a copy of the Linux score or an exact simulation-equivalence claim.
+
+Both owned processes exit zero, pass strict executed-path and actual-Vulkan
+gates, and leave every UDATA profile file and reference file byte-identical.
+The native executable hashes also remain unchanged. These checks establish
+original earned-record persistence across fresh processes for the current v16
+Linux and Windows-under-Wine runtimes. They do not qualify the current app's GUI
+launch path, the normal signed Windows app Build/Play integration, physical
+Windows graphics/audio/controllers, natural player-two Race completion or the
+remaining campaign/multiplayer routes. Existing previews remain immutable.
