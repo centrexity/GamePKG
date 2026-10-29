@@ -1,0 +1,9 @@
+{
+  "version": "1.9.2609",
+  "windows": {
+    "url": "https://github.com/microsoft/DirectXShaderCompiler/releases/download/v1.9.2609/dxc_2026_09_29.zip",
+    "sha256": "ad31b1fc8443175d204f77a611fdb3ef2ec42759bdc2f1167368de24a4a7e7f1"
+  },
+  "payload_inventory_sha256": "240e823c113d3be6ac96269b8bfda5e3b74272189fcf87e63ecfa3b0cf188fd2",
+  "directory_inventory_sha256": "d9de385ab410fbe6fff1167910f30f7134d6c300ff75feeace943c65d3a2f8bd"
+}

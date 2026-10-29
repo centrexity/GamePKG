@@ -5,6 +5,16 @@
 static SDL_SpinLock gamepkg_audio_lock = 0;
 static int16_t gamepkg_audio_ring[4800*2];
 static unsigned gamepkg_audio_head = 0, gamepkg_audio_count = 0;
+static void (*gamepkg_recording_mix)(void *, Uint8 *, int) = NULL;
+static void *gamepkg_recording_userdata = NULL;
+// The same lock fences callback removal before the recorder frees its state.
+void gamepkg_audio_postmix(void (*callback)(void *, Uint8 *, int), void *userdata)
+{
+    SDL_AtomicLock(&gamepkg_audio_lock);
+    gamepkg_recording_mix = callback;
+    gamepkg_recording_userdata = userdata;
+    SDL_AtomicUnlock(&gamepkg_audio_lock);
+}
 static void gamepkg_mix(void *, Uint8 *bytes, int length)
 {
     if(length < 0 || length > 1048576 || length%4) return;
@@ -22,6 +32,7 @@ static void gamepkg_mix(void *, Uint8 *bytes, int length)
         gamepkg_audio_ring[frame*2+1]=samples[i*2+1];
         gamepkg_audio_count++;
     }
+    if(gamepkg_recording_mix) gamepkg_recording_mix(gamepkg_recording_userdata, bytes, length);
     SDL_AtomicUnlock(&gamepkg_audio_lock);
 }
 void gamepkg_audio_hook()

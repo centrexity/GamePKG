@@ -87,4 +87,92 @@ function decoder(total,value){return {reads:0,closed:false,async read(size){asse
  port2.postMessage({kind:'begin',generation:1});await new Promise(resolve=>setTimeout(resolve,5));assert.equal(source.reads,6);
  queue.stop(2);sender.stop(2);await wait(()=>source.closed);assert.equal(queue.queuedFrames,0);assert.equal(queue.status,'stopped');sender.close();receiver.close();
 }
-console.log('Real MessageChannel: bounded demand, complete PCM, replacement, stale success/failure, stop, bad credit, decoder fault passed');
+// A committed replacement can fail before its decoder sends begin. A prior
+// terminal generation must not hide the replacement's failure indefinitely.
+for(const terminal of ['ended','failed','stopped'])for(const paused of [false,true]){
+ const {queue,port2,receiver}=fixture(),sender=new RecordedMusicSender(port2);
+ try{
+  if(terminal==='stopped'){sender.stop(1);await wait(()=>queue.status==='stopped'&&queue.generation===1);}
+  else if(terminal==='failed'){sender.start(1,{async read(){throw Error('old codec failure');},close(){}});await wait(()=>queue.status==='failed');}
+  else{sender.start(1,decoder(0,0));await wait(()=>queue.status==='ended');}
+  assert.ok(queue.begin(2));if(paused)assert.ok(queue.pause(true));
+  port2.postMessage({kind:'failed',generation:1});await new Promise(resolve=>setTimeout(resolve,5));
+  assert.equal(queue.status,paused?'paused':'loading','stale failure changed the replacement');
+  assert.ok(sender.failGeneration(2));await wait(()=>queue.status==='failed');
+  port2.postMessage({kind:'begin',generation:2});await new Promise(resolve=>setTimeout(resolve,5));
+  assert.equal(queue.status,'failed','late begin resurrected a failed generation');
+  assert.ok(queue.begin(3));assert.ok(sender.start(3,decoder(1600,321)));
+  await wait(()=>queue.queuedFrames===800);assert.equal(queue.status,'playing');
+ }finally{sender.close();receiver.close();}
+}
+{
+ const {queue,port2,receiver}=fixture(),sender=new RecordedMusicSender(port2);
+ try{
+  const source=decoder(1600,432);let acknowledgements=0;
+  port2.addEventListener('message',({data})=>{if(data.kind==='ack')acknowledgements++;});
+  sender.start(1,source);await wait(()=>queue.queuedFrames===800&&source.closed&&acknowledgements===2);
+  // EOF is acknowledged while the final PCM block is still queued.
+  port2.postMessage({kind:'failed',generation:1});
+  await new Promise(resolve=>setTimeout(resolve,10));assert.equal(queue.queuedFrames,800);assert.equal(queue.status,'playing');
+  queue.read(new Int16Array(1600));assert.equal(queue.status,'ended');
+ }finally{sender.close();receiver.close();}
+}
+// A committed output generation can grant credit before the sender's begin
+// crosses the opposite MessagePort direction. Begin must retain that read.
+for(const paused of [false,true])for(const firstDelivered of [false,true])for(const generation of [1,2]){
+ const {queue,port2,receiver}=fixture();let begin,release,reads=0;
+ const delayed={set onmessage(value){port2.onmessage=value;},set onmessageerror(value){port2.onmessageerror=value;},start(){port2.start();},close(){port2.close();},postMessage(data,...args){if(data.kind==='begin'){begin=data;return;}port2.postMessage(data,...args);}};
+ const sender=new RecordedMusicSender(delayed),source={closed:false,read(){reads++;if(firstDelivered&&reads===1)return Promise.resolve(new Int16Array(1600).fill(567));return new Promise(resolve=>release=resolve);},close(){this.closed=true;}};
+ try{
+  queue.begin(generation);if(paused)queue.pause(true);receiver.poll();assert.ok(sender.start(generation,source));
+  await wait(()=>release);assert.equal(reads,firstDelivered?2:1);
+  port2.postMessage(begin);await new Promise(resolve=>setTimeout(resolve,10));
+  assert.notEqual(queue.status,'failed','Late begin invalidated a current-generation read');
+  assert.equal(source.closed,false);assert.equal(reads,firstDelivered?2:1,'Begin issued duplicate credit');
+  release(new Int16Array(1600).fill(456));await wait(()=>queue.queuedFrames===(firstDelivered?1600:800));
+  assert.equal(queue.status,paused?'paused':'playing');if(paused)queue.pause(false);
+  const output=new Int16Array(1600);assert.equal(queue.read(output),800);assert.ok(output.every(value=>value===(firstDelivered?567:456)));
+  if(firstDelivered){assert.equal(queue.read(output),800);assert.ok(output.every(value=>value===456));}
+ }finally{sender.close();receiver.close();release?.(new Int16Array(0));}
+}
+// Preserving a current read must not retain credit issued for an older generation.
+{
+ const {queue,port2,receiver}=fixture(),sender=new RecordedMusicSender(port2),source=decoder(1600,789);
+ try{
+  queue.begin(1);receiver.poll();queue.begin(2);assert.ok(sender.start(2,source));
+  await wait(()=>queue.queuedFrames===800);const output=new Int16Array(1600);assert.equal(queue.read(output),800);assert.ok(output.every(value=>value===789));
+ }finally{sender.close();receiver.close();}
+}
+for(const terminal of ['stopped','ended','failed']){
+ const {queue,port2,receiver}=fixture();let reads=0;port2.onmessage=({data})=>{if(data.kind==='read')reads++;};port2.start();
+ try{
+  queue.begin(1);if(terminal==='stopped')queue.stop(2);else if(terminal==='ended')queue.finish(1);else queue.fail(1);
+  receiver.poll();await new Promise(resolve=>setTimeout(resolve,10));assert.equal(reads,0,'Terminal generation received decoder credit');
+ }finally{receiver.close();port2.close();}
+}
+// Credit may also arrive while no decoder has been attached yet. Begin must
+// resend it, while the sender must deduplicate an already accepted request.
+for(const paused of [false,true]){
+ const {queue,port2,receiver}=fixture(),sender=new RecordedMusicSender(port2),source=decoder(1600,654);let early=0;
+ port2.addEventListener('message',({data})=>{if(data.kind==='read')early++;});
+ try{
+  queue.begin(1);if(paused)queue.pause(true);receiver.poll();await wait(()=>early===1);assert.equal(source.reads,0);
+  sender.start(1,source);await wait(()=>queue.queuedFrames===800&&source.closed);
+  assert.equal(source.reads,2);assert.equal(queue.status,paused?'paused':'playing');if(paused)queue.pause(false);
+  const output=new Int16Array(1600);assert.equal(queue.read(output),800);assert.ok(output.every(value=>value===654));
+ }finally{sender.close();receiver.close();}
+}
+// Retransmission is idempotent only for the exact accepted request. It does
+// not admit a changed block size or recycle an old generation's credit.
+{
+ const {port1,port2}=new MessageChannel(),budget=new RecordedBudget(3200),sender=new RecordedMusicSender(port1,budget);let release,reads=0;
+ const source={closed:false,read(){reads++;return new Promise(resolve=>release=resolve);},close(){this.closed=true;}};
+ try{
+  sender.start(1,source);port2.postMessage({kind:'read',generation:1,credit:1,frames:800});await wait(()=>release);
+  port2.postMessage({kind:'read',generation:1,credit:1,frames:800});await new Promise(resolve=>setTimeout(resolve,10));
+  assert.equal(reads,1);assert.equal(source.closed,false);assert.equal(budget.used,3200);
+  port2.postMessage({kind:'read',generation:1,credit:1,frames:799});await wait(()=>source.closed);
+  const replacement=decoder(1600,777);sender.start(2,replacement);port2.postMessage({kind:'read',generation:2,credit:1,frames:800});await wait(()=>replacement.closed);assert.equal(replacement.reads,0);
+ }finally{sender.close();port2.close();release?.(new Int16Array(0));await wait(()=>budget.used===0);}
+}
+console.log('Real MessageChannel: bounded demand, complete PCM, replacement, stale success/failure, stop, bad credit, decoder fault, terminal replacement failures, delayed begin credit ownership and recovery passed');

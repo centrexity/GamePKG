@@ -1,0 +1,108 @@
+name: Canonical recorded port
+on:
+  push:
+    paths:
+      - 'ports'
+      - 'web-player/recorded-*'
+      - 'web-player/worker.js'
+      - 'web-player/png-*'
+      - 'tools/check_arkanoo_recorded*'
+      - 'tests/arkanoo*'
+      - 'tests/game_arkanoo*'
+      - 'tests/fixtures/arkanoo*'
+      - 'tests/fixtures/arkanoo*/**'
+      - 'src/audio*'
+      - 'src/runtime*'
+      - 'src/drawing.rs'
+      - 'src/drawing/**'
+      - 'src/archive.rs'
+      - 'src/archive_file.rs'
+      - 'src/component_runtime.rs'
+      - 'src/native/**'
+      - 'src/random.rs'
+      - 'src/web_export.rs'
+      - 'tools/audio-decoder/**'
+      - 'tools/audio-converter/**'
+      - 'tests/web_decoder_upload_deadlines.mjs'
+      - '.github/workflows/recorded_port.yml'
+  pull_request:
+    paths:
+      - 'ports'
+      - 'web-player/recorded-*'
+      - 'web-player/worker.js'
+      - 'web-player/png-*'
+      - 'tools/check_arkanoo_recorded*'
+      - 'tests/arkanoo*'
+      - 'tests/game_arkanoo*'
+      - 'tests/fixtures/arkanoo*'
+      - 'tests/fixtures/arkanoo*/**'
+      - 'src/audio*'
+      - 'src/runtime*'
+      - 'src/drawing.rs'
+      - 'src/drawing/**'
+      - 'src/archive.rs'
+      - 'src/archive_file.rs'
+      - 'src/component_runtime.rs'
+      - 'src/native/**'
+      - 'src/random.rs'
+      - 'src/web_export.rs'
+      - 'tools/audio-decoder/**'
+      - 'tools/audio-converter/**'
+      - 'tests/web_decoder_upload_deadlines.mjs'
+      - '.github/workflows/recorded_port.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: recorded-port-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  delivery:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: canonical-recorded-port
+      - name: Install isolated-compiler and browser prerequisites
+        run: |
+          bash tools/ci_ubuntu_apt.sh update
+          bash tools/ci_ubuntu_apt.sh install -y --no-install-recommends bubblewrap python3-selenium python3-pil libsdl2-dev
+          test -x "$CHROMEWEBDRIVER/chromedriver"
+          sudo ln -sf "$CHROMEWEBDRIVER/chromedriver" /usr/local/bin/chromedriver
+      - name: Verify complete canonical data and bounded decoder scheduling
+        run: |
+          /usr/bin/python3 tools/check_arkanoo_recorded_delivery.py
+          node tests/web_decoder_upload_deadlines.mjs
+      - name: Build embedded audio companions and CLI
+        run: |
+          python3 tools/build_audio_companion.py --github-env
+      - run: cargo build --locked --release --bin gamepkg
+      - name: Stage isolated compiler and shader compiler
+        run: |
+          python3 tools/install_slang.py /tmp/gamepkg-recorded-slang
+          sudo cp -a "$(rustc --print sysroot)" /tmp/gamepkg-recorded-toolchain
+          sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-recorded-rustup rustup toolchain link gamepkg-recorded /tmp/gamepkg-recorded-toolchain
+          sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-recorded-rustup rustup default gamepkg-recorded
+      - name: Verify original game and artwork references
+        run: cargo test --locked --release --test game_arkanoo --test game_arkanoo_art
+      - name: Verify full-size decomposed Unicode editor saves in every runtime
+        run: |
+          export SDL_AUDIODRIVER=dummy
+          sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER,SDL_AUDIODRIVER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-recorded-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT=/tmp/gamepkg-recorded-slang /usr/bin/python3 tools/check_arkanoo_recorded_port.py ports/arkanoo --typing --unicode-name $'A\u0301'
+      - name: Verify canonical playback, saves and complete browser exports
+        run: |
+          export SDL_AUDIODRIVER=dummy
+          sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER,SDL_AUDIODRIVER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-recorded-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT=/tmp/gamepkg-recorded-slang /usr/bin/python3 tools/check_arkanoo_recorded_port.py ports/arkanoo
+          sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-recorded-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT=/tmp/gamepkg-recorded-slang CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tools/check_arkanoo_recorded_web.py ports/arkanoo --optimized-images ports/arkanoo/assets --corrupt-saves
+          sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-recorded-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT=/tmp/gamepkg-recorded-slang /usr/bin/python3 tools/check_arkanoo_recorded_dense.py ports/arkanoo --original-art --full-save
+          sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-recorded-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT=/tmp/gamepkg-recorded-slang CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tools/check_arkanoo_recorded_dense_web.py ports/arkanoo --optimized-images ports/arkanoo/assets
+      - name: Verify signed legacy effect-only package compatibility
+        run: |
+          sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-recorded-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT=/tmp/gamepkg-recorded-slang /usr/bin/python3 tests/arkanoo.py --runtime-only

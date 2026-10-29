@@ -1,4 +1,4 @@
-//! Pinned Slang compilation inside the same deny-by-default Linux build boundary.
+//! Pinned Slang compilation inside platform-specific confined build workers.
 use crate::{
     archive::Package,
     manifest::{Manifest, Shader},
@@ -7,6 +7,7 @@ use crate::{
 };
 use anyhow::{bail, Context, Result};
 use std::{
+    ffi::OsString,
     fs,
     io::Write,
     path::{Path, PathBuf},
@@ -77,12 +78,12 @@ pub fn compile(
     manifest: &Manifest,
     settings: &Settings,
 ) -> Result<PathBuf> {
-    if !cfg!(target_os = "linux") {
-        bail!("isolated shader builds currently require Linux");
+    if !cfg!(any(target_os = "linux", windows)) {
+        bail!("isolated shader builds require Linux or Windows");
     }
     settings.validate()?;
     let (compiler, cache) = compiler_cache(root, archive, settings)?;
-    let dxc = dxc_root(settings)?;
+    let dxc = dxc_root(root, settings)?;
     let defaults = vec![Shader {
         source: "shaders/main.slang".into(),
         entry: "fragmentMain".into(),
@@ -113,73 +114,12 @@ pub fn compile(
         }
         let binary = format!("{index}.shader");
         let reflection = format!("{index}.reflection.json");
-        let mut command = crate::compiler::command(16 * 1024 * 1024);
-        command.args([
-            "bwrap",
-            "--unshare-all",
-            "--die-with-parent",
-            "--new-session",
-            "--clearenv",
-            "--ro-bind",
-            "/usr",
-            "/usr",
-        ]);
-        for path in ["/lib", "/lib64"] {
-            if Path::new(path).exists() {
-                command.args(["--ro-bind", path, path]);
-            }
-        }
-        if let Some(dxc) = &dxc {
-            command.arg("--ro-bind").arg(dxc.join("lib")).arg("/dxc");
-        }
-        command
-            .arg("--ro-bind")
-            .arg(&compiler)
-            .arg("/compiler")
-            .args([
-                "--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp", "--bind",
-            ])
-            .arg(stage.path())
-            .arg("/work")
-            .args([
-                "--chdir",
-                "/work",
-                "--setenv",
-                "LD_LIBRARY_PATH",
-                if dxc.is_some() {
-                    "/dxc:/compiler/lib"
-                } else {
-                    "/compiler/lib"
-                },
-                "--",
-                "/compiler/bin/slangc",
-            ])
-            .arg(&shader.source)
-            .args([
-                "-entry",
-                &shader.entry,
-                "-stage",
-                &shader.stage,
-                "-target",
-                &settings.shader_backend,
-                "-o",
-                &binary,
-                "-reflection-json",
-                &reflection,
-            ]);
-        if settings.shader_backend == "spirv" {
-            command.args(["-profile", "glsl_450", "-DGAMEPKG_SEPARATE_SAMPLER=1"]);
-        }
-        if settings.shader_backend == "glsl" {
-            command.args(["-profile", "glsl_330"]);
-        }
-        if settings.shader_backend == "dxil" {
-            command.args(["-profile", "sm_6_0"]);
-        }
-        let output = crate::compiler::run(&mut command)?;
-        if !output.status.success() {
-            bail!("isolated shader build failed: {}", output.stderr);
-        }
+        let _ = run_shader(
+            &compiler,
+            dxc.as_deref(),
+            stage.path(),
+            &shader_args(shader, settings, &binary, &reflection),
+        )?;
         let bytes = read_output(&stage.path().join(&binary))?;
         if bytes.is_empty()
             || (settings.shader_backend == "spirv" && !bytes.starts_with(&[3, 2, 35, 7]))
@@ -240,6 +180,154 @@ pub fn compile(
     publish_receipt(root, archive, settings, &receipt)?;
     Ok(cache)
 }
+fn shader_args(
+    shader: &Shader,
+    settings: &Settings,
+    binary: &str,
+    reflection: &str,
+) -> Vec<OsString> {
+    let mut args: Vec<OsString> = [
+        shader.source.as_str(),
+        "-entry",
+        &shader.entry,
+        "-stage",
+        &shader.stage,
+        "-target",
+        &settings.shader_backend,
+        "-o",
+        binary,
+        "-reflection-json",
+        reflection,
+    ]
+    .into_iter()
+    .map(Into::into)
+    .collect();
+    match settings.shader_backend.as_str() {
+        "spirv" => {
+            args.extend(["-profile", "glsl_450", "-DGAMEPKG_SEPARATE_SAMPLER=1"].map(Into::into))
+        }
+        "glsl" => args.extend(["-profile", "glsl_330"].map(Into::into)),
+        "dxil" => args.extend(["-profile", "sm_6_0"].map(Into::into)),
+        _ => (),
+    }
+    args
+}
+
+#[cfg(target_os = "linux")]
+fn run_shader(
+    compiler: &Path,
+    dxc: Option<&Path>,
+    stage: &Path,
+    args: &[OsString],
+) -> Result<Vec<u8>> {
+    let mut command = crate::compiler::command(16 * 1024 * 1024);
+    command.args([
+        "bwrap",
+        "--unshare-all",
+        "--die-with-parent",
+        "--new-session",
+        "--clearenv",
+        "--ro-bind",
+        "/usr",
+        "/usr",
+    ]);
+    for path in ["/lib", "/lib64"] {
+        if Path::new(path).exists() {
+            command.args(["--ro-bind", path, path]);
+        }
+    }
+    if let Some(dxc) = dxc {
+        command.arg("--ro-bind").arg(dxc.join("lib")).arg("/dxc");
+    }
+    command
+        .arg("--ro-bind")
+        .arg(compiler)
+        .arg("/compiler")
+        .args([
+            "--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp", "--bind",
+        ])
+        .arg(stage)
+        .arg("/work")
+        .args([
+            "--chdir",
+            "/work",
+            "--setenv",
+            "LD_LIBRARY_PATH",
+            if dxc.is_some() {
+                "/dxc:/compiler/lib"
+            } else {
+                "/compiler/lib"
+            },
+            "--",
+            "/compiler/bin/slangc",
+        ])
+        .args(args);
+    let output = crate::compiler::run(&mut command)?;
+    if !output.status.success() {
+        bail!("isolated shader build failed: {}", output.stderr);
+    }
+    Ok([output.stdout.as_bytes(), output.stderr.as_bytes()].concat())
+}
+
+#[cfg(windows)]
+fn run_shader(
+    compiler: &Path,
+    dxc: Option<&Path>,
+    stage: &Path,
+    args: &[OsString],
+) -> Result<Vec<u8>> {
+    use gamepkg_takedawn_windows_runner::Sandbox;
+    use std::time::{Duration, Instant};
+    let stage = stage.canonicalize()?;
+    let compiler = compiler.canonicalize()?;
+    let identity = digest(stage.as_os_str().as_encoded_bytes());
+    let sandbox = Sandbox::open(&format!("GamePKG.Shader.{}", &identity[..32]))?;
+    sandbox.grant_runtime(&compiler)?;
+    let mut args = args.to_vec();
+    let mut paths = vec![crate::takedawn_windows_sdk::compiler_path(
+        &compiler.join("bin"),
+    )?];
+    if let Some(dxc) = dxc {
+        let dxc = dxc.canonicalize()?;
+        sandbox.grant_runtime(&dxc)?;
+        let bin = crate::takedawn_windows_sdk::compiler_path(&dxc.join("bin/x64"))?;
+        args.push("-dxc-path".into());
+        // Slang expects the directory, not the DLL filename.
+        args.push(bin.as_os_str().to_owned());
+        paths.push(bin);
+    }
+    sandbox.grant_saves(&stage)?;
+    let directory = crate::takedawn_windows_sdk::compiler_path(&stage)?;
+    let temporary = directory.join("tmp");
+    fs::create_dir_all(&temporary)?;
+    let values = [
+        (
+            "SystemRoot".into(),
+            std::env::var_os("SystemRoot").context("Windows system directory unavailable")?,
+        ),
+        (
+            "LOCALAPPDATA".into(),
+            std::env::var_os("LOCALAPPDATA").context("Windows profile directory unavailable")?,
+        ),
+        ("PATH".into(), std::env::join_paths(paths)?),
+        ("TEMP".into(), temporary.as_os_str().to_owned()),
+        ("TMP".into(), temporary.into_os_string()),
+    ];
+    crate::windows_compiler::run(
+        &compiler.join("bin/slangc.exe"),
+        &args,
+        &directory,
+        &values,
+        &sandbox,
+        Instant::now() + Duration::from_secs(60),
+    )
+}
+
+#[cfg(not(any(target_os = "linux", windows)))]
+fn run_shader(_: &Path, _: Option<&Path>, _: &Path, _: &[OsString]) -> Result<Vec<u8>> {
+    bail!("isolated shader builds require Linux or Windows")
+}
+
 fn read_output(path: &Path) -> Result<Vec<u8>> {
     crate::files::read_regular(path, 16 * 1024 * 1024, false)
         .context("shader output must be a regular file of at most 16 MiB")
@@ -298,11 +386,25 @@ pub fn validate_source(bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
-fn dxc_root(settings: &Settings) -> Result<Option<PathBuf>> {
+fn dxc_root(_root: &Path, settings: &Settings) -> Result<Option<PathBuf>> {
     if settings.shader_backend != "dxil" {
         return Ok(None);
     }
-    let root = std::env::var_os("GAMEPKG_DXC_ROOT")
+    #[cfg(windows)]
+    {
+        let selected = std::env::var_os("GAMEPKG_DXC_ROOT")
+            .map(PathBuf::from)
+            .or_else(|| {
+                (!settings.dxc_directory.is_empty()).then(|| PathBuf::from(&settings.dxc_directory))
+            });
+        Ok(Some(crate::takedawn_windows_sdk::prepare_dxc(
+            _root,
+            selected.as_deref(),
+        )?))
+    }
+    #[cfg(not(windows))]
+    {
+        let root = std::env::var_os("GAMEPKG_DXC_ROOT")
         .map(PathBuf::from)
         .or_else(|| {
             (!settings.dxc_directory.is_empty()).then(|| PathBuf::from(&settings.dxc_directory))
@@ -310,53 +412,79 @@ fn dxc_root(settings: &Settings) -> Result<Option<PathBuf>> {
         .context(
             "DXIL requires pinned DXC 1.9.2609; run tools/install_dxc.py and set GAMEPKG_DXC_ROOT",
         )?;
-    let root = fs::canonicalize(root)?;
-    for (name, expected) in [
-        (
-            "libdxcompiler.so",
-            "d40e4a7b3b46490313f4bfd08101946483a673831b3ea65c93d746de1c2f9216",
-        ),
-        (
-            "libdxil.so",
-            "730b31420ea0c38f711c1eb581613bfd0797c53371a55f721838b29d10881c8c",
-        ),
-    ] {
-        let mut bytes = Vec::new();
-        use std::io::Read;
-        fs::File::open(root.join("lib").join(name))?
-            .take(64 * 1024 * 1024 + 1)
-            .read_to_end(&mut bytes)?;
-        if bytes.len() > 64 * 1024 * 1024 {
-            bail!("DXC library exceeds size limit");
+        let root = fs::canonicalize(root)?;
+        for (name, expected) in [
+            (
+                "libdxcompiler.so",
+                "d40e4a7b3b46490313f4bfd08101946483a673831b3ea65c93d746de1c2f9216",
+            ),
+            (
+                "libdxil.so",
+                "730b31420ea0c38f711c1eb581613bfd0797c53371a55f721838b29d10881c8c",
+            ),
+        ] {
+            let mut bytes = Vec::new();
+            use std::io::Read;
+            fs::File::open(root.join("lib").join(name))?
+                .take(64 * 1024 * 1024 + 1)
+                .read_to_end(&mut bytes)?;
+            if bytes.len() > 64 * 1024 * 1024 {
+                bail!("DXC library exceeds size limit");
+            }
+            if digest(&bytes) != expected {
+                bail!("DXC library checksum mismatch: {name}");
+            }
         }
-        if digest(&bytes) != expected {
-            bail!("DXC library checksum mismatch: {name}");
-        }
+        Ok(Some(root))
     }
-    Ok(Some(root))
 }
 
 fn compiler_cache(root: &Path, archive: &[u8], settings: &Settings) -> Result<(PathBuf, PathBuf)> {
-    let compiler = std::env::var_os("GAMEPKG_SLANG_ROOT")
+    let selected = std::env::var_os("GAMEPKG_SLANG_ROOT")
         .map(PathBuf::from)
         .or_else(|| {
             (!settings.slang_directory.is_empty()).then(|| PathBuf::from(&settings.slang_directory))
-        })
-        .context("install Slang 2026.19 and set its folder in Settings or GAMEPKG_SLANG_ROOT")?;
-    let compiler = fs::canonicalize(compiler)?;
-    let exe = compiler.join("bin/slangc");
-    let version = crate::compiler::run(
-        crate::compiler::command(16 * 1024 * 1024)
-            .arg(&exe)
-            .arg("-version"),
-    )
-    .context("unable to run Slang compiler")?;
-    if !version.status.success()
-        || format!("{}{}", version.stdout, version.stderr).trim() != SLANG_VERSION
-    {
+        });
+    #[cfg(windows)]
+    let compiler = crate::takedawn_windows_sdk::prepare_slang(root, selected.as_deref())?;
+    #[cfg(not(windows))]
+    let compiler =
+        fs::canonicalize(selected.context(
+            "install Slang 2026.19 and set its folder in Settings or GAMEPKG_SLANG_ROOT",
+        )?)?;
+    #[cfg(windows)]
+    let (exe, library) = (
+        compiler.join("bin/slangc.exe"),
+        compiler.join("bin/slang-compiler.dll"),
+    );
+    #[cfg(not(windows))]
+    let (exe, library) = (
+        compiler.join("bin/slangc"),
+        compiler.join("lib/libslang-compiler.so"),
+    );
+    #[cfg(windows)]
+    let (version_ok, version_text) = {
+        let stage = tempfile::tempdir()?;
+        let output = run_shader(&compiler, None, stage.path(), &["-version".into()])?;
+        (true, String::from_utf8_lossy(&output).into_owned())
+    };
+    #[cfg(not(windows))]
+    let (version_ok, version_text) = {
+        let version = crate::compiler::run(
+            crate::compiler::command(16 * 1024 * 1024)
+                .arg(&exe)
+                .arg("-version"),
+        )
+        .context("unable to run Slang compiler")?;
+        (
+            version.status.success(),
+            format!("{}{}", version.stdout, version.stderr),
+        )
+    };
+    if !version_ok || version_text.trim() != SLANG_VERSION {
         bail!("Slang version must be exactly {SLANG_VERSION}");
     }
-    let dxc_identity = if dxc_root(settings)?.is_some() {
+    let dxc_identity = if dxc_root(root, settings)?.is_some() {
         ":dxc-1.9.2609"
     } else {
         ""
@@ -372,7 +500,7 @@ fn compiler_cache(root: &Path, archive: &[u8], settings: &Settings) -> Result<(P
             digest(archive),
             settings.shader_backend,
             digest(&fs::read(&exe)?),
-            digest(&fs::read(compiler.join("lib/libslang-compiler.so"))?)
+            digest(&fs::read(library)?)
         )
         .as_bytes(),
     );
@@ -797,6 +925,165 @@ mod reflection_tests {
             serde_json::json!({"parameters":[],"entryPoints":[{"name":"blueMain"},{"name":"greenMain"}]}),
         ] {
             assert!(super::validate_fragment_reflection(&value, "blueMain").is_err());
+        }
+    }
+}
+
+#[cfg(all(test, any(target_os = "linux", windows)))]
+mod platform_tests {
+    use super::*;
+    #[test]
+    #[ignore = "requires pinned Slang and executes confined native compiler processes"]
+    fn signed_native_shader_builds_and_denied_host_include() {
+        let root = tempfile::Builder::new()
+            .prefix("gamepkg shaders with spaces ")
+            .tempdir()
+            .unwrap();
+        let source = root.path().join("source");
+        for name in [
+            "manifest.toml",
+            "thumbnail.png",
+            "LICENSE",
+            "NOTICE",
+            "CREDITS.md",
+            "source/Cargo.toml",
+            "source/Cargo.lock",
+            "shaders/main.slang",
+        ] {
+            let path = source.join(name);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::copy(
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("examples/minimal")
+                    .join(name),
+                path,
+            )
+            .unwrap();
+        }
+        fs::create_dir_all(source.join("source/src")).unwrap();
+        fs::write(source.join("source/src/lib.rs"), "pub fn game_tick(_:u32,state:u64)->u64 { if gamepkg::draw_shader(0) { state+1 } else { state } }").unwrap();
+        let path = root.path().join("shader.gamepkg");
+        crate::pack::pack(&source, &path, &[113; 32]).unwrap();
+        let manifest = crate::registry::install(root.path(), &path, true).unwrap();
+        let archive = fs::read(&path).unwrap();
+        for backend in ["spirv", "wgsl", "glsl"] {
+            let settings = Settings {
+                shader_backend: backend.into(),
+                renderer: if backend == "glsl" {
+                    "opengl"
+                } else {
+                    "vulkan"
+                }
+                .into(),
+                ..Settings::default()
+            };
+            crate::native::compile_with_settings(root.path(), &manifest.id, &settings).unwrap();
+            let sources =
+                load_desktop_sources(root.path(), &archive, &manifest, &settings).unwrap();
+            assert_eq!(sources.len(), 1);
+            let mut game = crate::runtime::Game::load_target_configured(
+                root.path(),
+                &manifest.id,
+                &[],
+                None,
+                &settings,
+            )
+            .unwrap();
+            assert!(game.custom_renderer);
+            assert_eq!(game.shader_sources.len(), 1);
+            assert_eq!(game.step(1).unwrap(), 1);
+            drop(game);
+            let cache = playback_cache(root.path(), &archive, &settings, 1)
+                .unwrap()
+                .0;
+            fs::write(cache.join("0.shader"), b"damaged shader").unwrap();
+            assert!(load_desktop_sources(root.path(), &archive, &manifest, &settings).is_err());
+            assert!(crate::runtime::Game::load_target_configured(
+                root.path(),
+                &manifest.id,
+                &[],
+                None,
+                &settings
+            )
+            .is_err());
+            println!("Verified signed native {backend} shader Build, reflection/translation, native SDK request and damaged shader rejection");
+        }
+        #[cfg(windows)]
+        {
+            let settings = Settings {
+                shader_backend: "dxil".into(),
+                ..Settings::default()
+            };
+            let mut package = Package::open(&path).unwrap();
+            crate::verify::verify_embedded(&mut package).unwrap();
+            compile(root.path(), &archive, &mut package, &manifest, &settings).unwrap();
+            let (cache, _) = playback_cache(root.path(), &archive, &settings, 1).unwrap();
+            assert!(fs::read(cache.join("0.shader"))
+                .unwrap()
+                .starts_with(b"DXBC"));
+            assert!(
+                load_desktop_sources(root.path(), &archive, &manifest, &settings)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("Vulkan shaders need")
+            );
+            fs::write(cache.join("0.shader"), b"damaged DXIL").unwrap();
+            assert!(
+                compile(root.path(), &archive, &mut package, &manifest, &settings)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("shader cache is damaged")
+            );
+            println!("Verified signed confined DXIL compilation, reflection/cache, corrupt-output rejection and explicit renderer limitation; no DXIL playback claim");
+        }
+        let backends = if cfg!(windows) {
+            vec!["spirv", "dxil"]
+        } else {
+            vec!["spirv"]
+        };
+        for backend in backends {
+            let settings = Settings {
+                shader_backend: backend.into(),
+                ..Settings::default()
+            };
+            let (compiler, _) = compiler_cache(root.path(), &archive, &settings).unwrap();
+            let dxc = dxc_root(root.path(), &settings).unwrap();
+            let stage = root.path().join(format!("include-boundary-{backend}"));
+            fs::create_dir_all(&stage).unwrap();
+            let canary = root.path().join("not-granted.slang");
+            fs::write(
+                &canary,
+                "float4 privateColor() { return float4(0.75,0.5,0.25,1.0); }",
+            )
+            .unwrap();
+            fs::write(stage.join("main.slang"), format!("#include \"{}\"\n[shader(\"fragment\")] float4 fragmentMain() : SV_Target {{ return privateColor(); }}", canary.to_str().unwrap().replace('\\', "/"))).unwrap();
+            let shader = Shader {
+                source: "main.slang".into(),
+                entry: "fragmentMain".into(),
+                stage: "fragment".into(),
+            };
+            let args = shader_args(&shader, &settings, "control.spv", "control.json");
+            let mut command = std::process::Command::new(compiler.join(if cfg!(windows) {
+                "bin/slangc.exe"
+            } else {
+                "bin/slangc"
+            }));
+            command.args(&args).current_dir(&stage);
+            #[cfg(windows)]
+            if let Some(dxc) = &dxc {
+                command
+                    .arg("-dxc-path")
+                    .arg(crate::takedawn_windows_sdk::compiler_path(&dxc.join("bin/x64")).unwrap());
+            }
+            let control =
+                crate::compiler::run_timed(&mut command, std::time::Duration::from_secs(20))
+                    .unwrap();
+            assert!(control.status.success(), "{}", control.stderr);
+            assert!(
+                run_shader(&compiler, dxc.as_deref(), &stage, &args).is_err(),
+                "confined Slang must not read an ungranted host include"
+            );
+            println!("Verified confined {backend} host-include denial with successful same-file unconfined control; no game media used");
         }
     }
 }

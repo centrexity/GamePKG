@@ -1,3 +1,4 @@
+import {renderResources} from './asset-store.js';
 import {ProgressStore,ProgressDataError} from './progress-store.js';
 import {RecordedBudget} from './recorded-budget.js';
 const canvas=document.querySelector('#game'),context=canvas.getContext('2d'),status=document.querySelector('#status'),play=document.querySelector('#play'),stop=document.querySelector('#stop'),restart=document.querySelector('#restart');
@@ -34,8 +35,21 @@ function tick(){
  if(recordedSession)recordedSession.snapshot().then(send).catch(error=>{if(running&&worker===active)halt(String(error));});else send(null);
 }
 function shader(type,source){const value=gl.createShader(type);gl.shaderSource(value,source);gl.compileShader(value);if(!gl.getShaderParameter(value,gl.COMPILE_STATUS)){const error=gl.getShaderInfoLog(value);gl.deleteShader(value);throw Error('WebGL shader compilation failed: '+error);}return value;}
-function setupShaders(sources){if(!sources.length)return;shaderSurface=new OffscreenCanvas(640,480);gl=shaderSurface.getContext('webgl2',{alpha:true,depth:false,antialias:false,premultipliedAlpha:false,preserveDrawingBuffer:true});if(!gl)throw Error('This game requires WebGL 2');const vertex=shader(gl.VERTEX_SHADER,'#version 300 es\nvoid main(){vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2);gl_Position=vec4(p*2.0-1.0,0.0,1.0);}');for(const source of sources){const adapted=source.replace(/^#version[^\n]*\n/,'#version 300 es\nprecision highp float;\nprecision highp int;\n').replace(/layout\(row_major\) (uniform|buffer);/g,'').replace(/layout\(binding\s*=\s*0\)\s*/g,'');const fragment=shader(gl.FRAGMENT_SHADER,adapted),program=gl.createProgram();gl.attachShader(program,vertex);gl.attachShader(program,fragment);gl.linkProgram(program);gl.deleteShader(fragment);if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw Error('WebGL shader link failed: '+gl.getProgramInfoLog(program));for(let i=0;i<gl.getProgramParameter(program,gl.ACTIVE_UNIFORMS);i++){const uniform=gl.getActiveUniform(program,i);if(uniform.name!=='gamepkgTexture_0'||uniform.type!==gl.SAMPLER_2D||uniform.size!==1)throw Error('Forbidden shader resource');}programs.push(program);}gl.deleteShader(vertex);texture=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,texture);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);gl.bindVertexArray(gl.createVertexArray());}
-function shaderFrame(index,width=1,height=1,pixels=new Uint8Array(4),target=context){if(!programs[index]||gl.isContextLost())throw Error('Shader graphics context unavailable');gl.viewport(0,0,640,480);gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT);gl.useProgram(programs[index]);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,texture);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA8,width,height,0,gl.RGBA,gl.UNSIGNED_BYTE,pixels);const sampler=gl.getUniformLocation(programs[index],'gamepkgTexture_0');if(sampler!==null)gl.uniform1i(sampler,0);gl.drawArrays(gl.TRIANGLES,0,3);target.drawImage(shaderSurface,0,0);}
+function discardShaderGraphics(){
+ const failed=gl,partial=programs,partialTexture=texture;
+ programs=[];texture=null;shaderSurface=null;gl=null;
+ if(failed&&!failed.isContextLost()){for(const program of partial)failed.deleteProgram(program);if(partialTexture)failed.deleteTexture(partialTexture);failed.getExtension('WEBGL_lose_context')?.loseContext();}
+}
+function setupShaders(sources){if(!sources.length)return;try{shaderSurface=new OffscreenCanvas(640,480);gl=shaderSurface.getContext('webgl2',{alpha:true,depth:false,antialias:false,premultipliedAlpha:false,preserveDrawingBuffer:true});if(!gl)throw Error('This game requires WebGL 2');const vertex=shader(gl.VERTEX_SHADER,'#version 300 es\nvoid main(){vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2);gl_Position=vec4(p*2.0-1.0,0.0,1.0);}');for(const source of sources){const adapted=source.replace(/^#version[^\n]*\n/,'#version 300 es\nprecision highp float;\nprecision highp int;\n').replace(/layout\(row_major\) (uniform|buffer);/g,'').replace(/layout\(binding\s*=\s*0\)\s*/g,'');const fragment=shader(gl.FRAGMENT_SHADER,adapted),program=gl.createProgram();gl.attachShader(program,vertex);gl.attachShader(program,fragment);gl.linkProgram(program);gl.deleteShader(fragment);if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw Error('WebGL shader link failed: '+gl.getProgramInfoLog(program));for(let i=0;i<gl.getProgramParameter(program,gl.ACTIVE_UNIFORMS);i++){const uniform=gl.getActiveUniform(program,i);if(uniform.name!=='gamepkgTexture_0'||uniform.type!==gl.SAMPLER_2D||uniform.size!==1)throw Error('Forbidden shader resource');}programs.push(program);}gl.deleteShader(vertex);texture=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,texture);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);gl.bindVertexArray(gl.createVertexArray());}catch(error){discardShaderGraphics();throw error;}}
+// Rebuild only lost host contexts, after any cancelled preparation is closed.
+function recoverGraphics(){
+ if(linearGraphics?.g.isContextLost())linearGraphics=null;
+ if((data.shaders||[]).length&&(!gl||gl.isContextLost())){
+  programs=[];texture=null;shaderSurface=null;gl=null;
+  setupShaders(data.shaders);
+ }
+}
+function shaderFrame(index,width=1,height=1,pixels=new Uint8Array(4),target=context){if(!programs[index]||gl.isContextLost())throw Error('Shader graphics context unavailable');gl.viewport(0,0,640,480);gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT);gl.useProgram(programs[index]);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,texture);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA8,width,height,0,gl.RGBA,gl.UNSIGNED_BYTE,pixels);const sampler=gl.getUniformLocation(programs[index],'gamepkgTexture_0');if(sampler!==null)gl.uniform1i(sampler,0);gl.drawArrays(gl.TRIANGLES,0,3);if(gl.isContextLost())throw Error('Shader graphics context unavailable');target.drawImage(shaderSurface,0,0);if(gl.isContextLost())throw Error('Shader graphics context unavailable');}
 // Use one-level GPU bilinear sampling rather than Canvas2D's implementation-
 // dependent minification filter. Match desktop encoded-byte premultiplication.
 let linearGraphics=null;
@@ -43,7 +57,8 @@ function linearBegin(target){
  if(!linearGraphics){
   const surface=new OffscreenCanvas(640,480),g=surface.getContext('webgl2',{alpha:true,depth:false,antialias:false,premultipliedAlpha:true,preserveDrawingBuffer:true});
   if(!g)throw Error('Filtered game images require WebGL 2');
-  const compile=(type,source)=>{const shader=g.createShader(type);g.shaderSource(shader,source);g.compileShader(shader);if(!g.getShaderParameter(shader,g.COMPILE_STATUS))throw Error('Filtered image shader failed');return shader;};
+  try{
+  const compile=(type,source)=>{const shader=g.createShader(type);g.shaderSource(shader,source);g.compileShader(shader);if(!g.getShaderParameter(shader,g.COMPILE_STATUS)){g.deleteShader(shader);throw Error('Filtered image shader failed');}return shader;};
   const vertex=compile(g.VERTEX_SHADER,`#version 300 es
   uniform vec4 bounds;uniform vec4 coverage;out vec2 uv;
   void main(){vec2 p[6]=vec2[6](vec2(0,0),vec2(1,0),vec2(0,1),vec2(0,1),vec2(1,0),vec2(1,1));vec2 at=coverage.xy+p[gl_VertexID]*coverage.zw;uv=bounds.xy+p[gl_VertexID]*bounds.zw;gl_Position=vec4(at.x/320.0-1.0,1.0-at.y/240.0,0,1);}`);
@@ -54,16 +69,18 @@ function linearBegin(target){
   if(!g.getProgramParameter(program,g.LINK_STATUS))throw Error('Filtered image program failed');
   const image=g.createTexture();g.bindTexture(g.TEXTURE_2D,image);g.texParameteri(g.TEXTURE_2D,g.TEXTURE_MIN_FILTER,g.LINEAR);g.texParameteri(g.TEXTURE_2D,g.TEXTURE_MAG_FILTER,g.LINEAR);g.texParameteri(g.TEXTURE_2D,g.TEXTURE_WRAP_S,g.CLAMP_TO_EDGE);g.texParameteri(g.TEXTURE_2D,g.TEXTURE_WRAP_T,g.CLAMP_TO_EDGE);g.bindVertexArray(g.createVertexArray());
   linearGraphics={surface,g,program,image,bounds:g.getUniformLocation(program,'bounds')};
+  }catch(error){if(!g.isContextLost())g.getExtension('WEBGL_lose_context')?.loseContext();throw error;}
  }
  const {surface,g,program,image,bounds}=linearGraphics;if(g.isContextLost())throw Error('Filtered image context unavailable');
- g.viewport(0,0,640,480);g.useProgram(program);g.activeTexture(g.TEXTURE0);g.bindTexture(g.TEXTURE_2D,image);g.uniform1i(g.getUniformLocation(program,'image'),0);
+ g.disable(g.SCISSOR_TEST);g.viewport(0,0,640,480);g.useProgram(program);g.activeTexture(g.TEXTURE0);g.bindTexture(g.TEXTURE_2D,image);g.uniform1i(g.getUniformLocation(program,'image'),0);
  g.uniform1i(g.getUniformLocation(program,'straightAlpha'),0);g.disable(g.BLEND);g.texImage2D(g.TEXTURE_2D,0,g.RGBA8,g.RGBA,g.UNSIGNED_BYTE,target.canvas);g.uniform4f(bounds,0,0,1,1);g.uniform4f(g.getUniformLocation(program,'coverage'),0,0,640,480);g.drawArrays(g.TRIANGLES,0,6);
 }
-function linearFinish(target){target.imageSmoothingEnabled=false;target.drawImage(linearGraphics.surface,0,0);}
-function linearSprite(x,y,w,h,width,height,pixels,straight=false,target=context,batch=false){
+function linearFinish(target){if(!linearGraphics||linearGraphics.g.isContextLost())throw Error('Filtered image context unavailable');target.imageSmoothingEnabled=false;target.drawImage(linearGraphics.surface,0,0);if(linearGraphics.g.isContextLost())throw Error('Filtered image context unavailable');}
+function linearSprite(x,y,w,h,width,height,pixels,straight=false,target=context,batch=false,clip=null){
  if(w<=0||h<=0)return;
  if(!batch)linearBegin(target);
  const {g,program,image,bounds}=linearGraphics;if(g.isContextLost())throw Error('Filtered image context unavailable');
+ if(clip){const left=Math.max(0,Math.min(640,Math.round(clip[0]))),top=Math.max(0,Math.min(480,Math.round(clip[1]))),right=Math.max(0,Math.min(640,Math.round(clip[0]+clip[2]))),bottom=Math.max(0,Math.min(480,Math.round(clip[1]+clip[3])));g.enable(g.SCISSOR_TEST);g.scissor(left,480-bottom,Math.max(0,right-left),Math.max(0,bottom-top));}else g.disable(g.SCISSOR_TEST);
  const premultiplied=new Uint8Array(pixels.length);
  for(let i=0;i<pixels.length;i+=4){const a=pixels[i+3];for(let c=0;c<3;c++)premultiplied[i+c]=straight?pixels[i+c]:Math.floor((pixels[i+c]*a+127)/255);premultiplied[i+3]=a;}
  // Blend before framebuffer quantization, matching the desktop GPU. A
@@ -71,28 +88,47 @@ function linearSprite(x,y,w,h,width,height,pixels,straight=false,target=context,
  g.uniform1i(g.getUniformLocation(program,'straightAlpha'),straight?1:0);g.enable(g.BLEND);g.blendFunc(g.ONE,g.ONE_MINUS_SRC_ALPHA);g.texImage2D(g.TEXTURE_2D,0,g.RGBA8,width,height,0,g.RGBA,g.UNSIGNED_BYTE,premultiplied);const left=Math.ceil(x-.5),top=Math.floor(y-.5)+1,right=Math.ceil(x+w-.5),bottom=Math.floor(y+h-.5)+1;g.uniform4f(bounds,(left-x)/w,(top-y)/h,(right-left)/w,(bottom-top)/h);g.uniform4f(g.getUniformLocation(program,'coverage'),left,top,right-left,bottom-top);g.drawArrays(g.TRIANGLES,0,6);
  if(!batch)linearFinish(target);
 }
-function render(frame,target=context,publish=true){
+function render(frame,target=context,publish=true){for(const step of renderSteps(frame,target,publish)){} }
+function* renderSteps(frame,target=context,publish=true){
  // Every tick is a fresh frame, matching the native player's black backdrop.
  const background=frame.background??0x10171dff;
  if((background&255)!==255){target.fillStyle='#000000';target.fillRect(0,0,640,480);}
  target.fillStyle=color(background);target.fillRect(0,0,640,480);
- target.save();let linearBatch=false;const flushLinear=()=>{if(linearBatch){linearFinish(target);linearBatch=false;}};
- try {for(const entry of frame.commands){const [kind,x,y,a,b,rgba]=entry;if(kind!=='linear-image'&&kind!=='straight-linear-image')flushLinear();if(kind==='clip'||kind==='clip-reset'){target.restore();target.save();if(kind==='clip'){const left=Math.round(x),top=Math.round(y),right=Math.round(x+a),bottom=Math.round(y+b);target.beginPath();target.rect(left,top,right-left,bottom-top);target.clip();}}else if(kind==='shader'){shaderFrame(x,1,1,new Uint8Array(4),target);}else if(kind==='shader-image'){shaderFrame(x,y,a,b,target);}else if(kind==='rect'){const left=Math.ceil(x-.5),top=Math.floor(y-.5)+1,right=Math.ceil(x+a-.5),bottom=Math.floor(y+b-.5)+1;target.fillStyle=color(rgba);target.fillRect(left,top,Math.max(0,right-left),Math.max(0,bottom-top));}else if(kind==='linear-image'||kind==='straight-linear-image'){const [,,,,,width,height,pixels]=entry;if(!linearBatch){linearBegin(target);linearBatch=true;}linearSprite(x,y,a,b,width,height,pixels,kind==='straight-linear-image',target,true);}else if(kind==='image'){const [,,,,,width,height,pixels]=entry;if(width===1&&height===1){const left=Math.floor(x-.5)+1,top=Math.floor(y-.5)+1,right=Math.floor(x+a-.5)+1,bottom=Math.floor(y+b-.5)+1;target.fillStyle=color((pixels[0]<<24)|(pixels[1]<<16)|(pixels[2]<<8)|pixels[3]);target.fillRect(left,top,right-left,bottom-top);}else{const surface=document.createElement('canvas');surface.width=width;surface.height=height;surface.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(pixels),width,height),0,0);target.imageSmoothingEnabled=false;target.drawImage(surface,x,y,a,b);}}else{target.fillStyle=color(b);target.beginPath();target.arc(x,y,a,0,Math.PI*2);target.fill();}}} finally {try{flushLinear();}finally{target.restore();}}
+ target.save();let linearBatch=false,clip=null;
+ const applyClip=()=>{if(clip){const [x,y,w,h]=clip,left=Math.round(x),top=Math.round(y),right=Math.round(x+w),bottom=Math.round(y+h);target.beginPath();target.rect(left,top,right-left,bottom-top);target.clip();}};
+ // Filtered sprites carry their own scissors. Clip changes do not require a
+ // full canvas upload/readback for every tile. Publish the complete batch
+ // without the final tile's canvas clip, then restore it for other draws.
+ const flushLinear=()=>{if(linearBatch){linearBatch=false;target.restore();target.save();try{linearFinish(target);}finally{applyClip();}}};
+ try {for(const entry of frame.commands){const [kind,x,y,a,b,rgba]=entry;if(kind!=='linear-image'&&kind!=='straight-linear-image'&&kind!=='clip'&&kind!=='clip-reset')flushLinear();if(kind==='clip'||kind==='clip-reset'){clip=kind==='clip'?[x,y,a,b]:null;target.restore();target.save();applyClip();}else if(kind==='shader'){shaderFrame(x,1,1,new Uint8Array(4),target);}else if(kind==='shader-image'){shaderFrame(x,y,a,b,target);}else if(kind==='rect'){const left=Math.ceil(x-.5),top=Math.floor(y-.5)+1,right=Math.ceil(x+a-.5),bottom=Math.floor(y+b-.5)+1;target.fillStyle=color(rgba);target.fillRect(left,top,Math.max(0,right-left),Math.max(0,bottom-top));}else if(kind==='linear-image'||kind==='straight-linear-image'){const [,,,,,width,height,pixels]=entry;if(!linearBatch){linearBegin(target);linearBatch=true;}linearSprite(x,y,a,b,width,height,pixels,kind==='straight-linear-image',target,true,clip);}else if(kind==='image'){const [,,,,,width,height,pixels]=entry;if(width===1&&height===1){const left=Math.floor(x-.5)+1,top=Math.floor(y-.5)+1,right=Math.floor(x+a-.5)+1,bottom=Math.floor(y+b-.5)+1;target.fillStyle=color((pixels[0]<<24)|(pixels[1]<<16)|(pixels[2]<<8)|pixels[3]);target.fillRect(left,top,right-left,bottom-top);}else{const surface=document.createElement('canvas');surface.width=width;surface.height=height;surface.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(pixels),width,height),0,0);target.imageSmoothingEnabled=false;target.drawImage(surface,x,y,a,b);}}else{target.fillStyle=color(b);target.beginPath();target.arc(x,y,a,0,Math.PI*2);target.fill();}yield;}} finally {try{flushLinear();}finally{target.restore();}}
 
  if(!data.custom_renderer&&frame.commands.length===0&&frame.background===null){const state=BigInt(frame.state);target.fillStyle='#111a2c';target.fillRect(0,0,640,480);const x=Number(state&15n),y=Number(state>>8n&255n),tx=Number(state>>16n&255n),ty=Number(state>>24n&255n);target.fillStyle='#ffd45d';target.fillRect(tx*40,ty*40,32,32);target.fillStyle='#6ee7ac';target.fillRect(x*40,y*40,32,32);}
  if(publish)publishFrameIdentity(frame);
+}
+// Yield between complete commands while retaining the offscreen framebuffer.
+// This is scheduling fairness, not a command/frame cap or a visible partial draw.
+async function renderCooperatively(frame,target,publish,live,cooperate=()=>new Promise(resolve=>setTimeout(resolve,0)),clock=()=>performance.now()){
+ const steps=renderSteps(frame,target,publish);let until=clock()+8;
+ try{for(;;){if(!live())return false;const step=steps.next();if(step.done)return true;if(clock()>=until){await cooperate();until=clock()+8;}}}
+ finally{steps.return();}
 }
 function publishFrameIdentity(frame){
  document.querySelector('#score').textContent=data.custom_renderer?'':`Score ${BigInt(frame.state)>>32n}`;
  canvas.dataset.state=frame.state;
 }
 let stagedSurface=null;
-function prepareFrame(frame){
+function frameTarget(){
  // Reuse one bounded backing surface; failed persistence never touches the
  // visible canvas, including shader/filter draws that sample earlier pixels.
  if(!stagedSurface){stagedSurface=document.createElement('canvas');stagedSurface.width=640;stagedSurface.height=480;}
  const target=stagedSurface.getContext('2d');if(!target)throw Error('Frame staging unavailable');
- render(frame,target,false);
+ return target;
+}
+function prepareFrame(frame){render(frame,frameTarget(),false);}
+let stagedRendering=Promise.resolve();
+function prepareFrameCooperatively(frame,live,cooperate,clock){
+ const preparing=stagedRendering.then(()=>live()?renderCooperatively(frame,frameTarget(),false,live,cooperate,clock):false);
+ stagedRendering=preparing.catch(()=>{});return preparing;
 }
 function publishFrame(frame){context.drawImage(stagedSurface,0,0);publishFrameIdentity(frame);
 }
@@ -104,8 +140,9 @@ async function start(){
  halt('Loading saved progress…');play.disabled=true;restart.disabled=true;stop.disabled=false;
  const launch=startSerial,needsRecorded=data.manifest.limits.effects_memory_bytes!==undefined||data.manifest.limits.music_memory_bytes!==undefined;let audioReady=Promise.resolve();
  if(data.manifest.permissions.audio&&!needsRecorded){try{if(!audioContext){audioContext=new AudioContext({sampleRate:48000});audioGain=audioContext.createGain();audioGain.gain.value=muted?0:.5;audioGain.connect(audioContext.destination);}audioReady=Promise.race([audioContext.resume(),new Promise(resolve=>setTimeout(resolve,2000))]).catch(()=>{});}catch{}}
- let saved;try{const [record]=await Promise.all([progressStore.load(),audioReady,audioClosing]);saved=record.save;}catch(error){if(launch===startSerial)halt(error instanceof ProgressDataError?'Game stopped: browser progress is invalid.':'Unable to load progress or finish the previous audio session.');return;}
+ let saved;try{const [record]=await Promise.all([progressStore.load(),audioReady,audioClosing,stagedRendering]);saved=record.save;}catch(error){if(launch===startSerial)halt(error instanceof ProgressDataError?'Game stopped: browser progress is invalid.':'Unable to load progress or finish the previous audio session.');return;}
  if(launch!==startSerial)return;
+ try{recoverGraphics();}catch(error){if(launch===startSerial)halt(String(error));return;}
  delete canvas.dataset.state;running=true;
  try{
   gameBudget=new RecordedBudget(data.manifest.limits.hard_memory_bytes);
@@ -131,7 +168,8 @@ async function start(){
   if(message.type==='frame'){
    if(!Number.isInteger(message.serial)||message.serial!==lastWindowSerial+1||message.window?.homepage_epoch!==homepageEpoch){halt('Invalid window frame');return;}
    lastWindowSerial=message.serial;
-   try{prepareFrame(message);}catch(error){halt(String(error));return;}
+   try{if(!await prepareFrameCooperatively(message,()=>running&&worker===active&&message.epoch===homepageEpoch))return;}catch(error){if(running&&worker===active&&message.epoch===homepageEpoch)halt(String(error));return;}
+   if(!running||worker!==active||message.epoch!==homepageEpoch)return;
    const frameAudio=recordedSession;
    if(frameAudio){try{if(!await frameAudio.prepare(message))throw Error('Recorded audio frame was rejected');}catch(error){if(running&&worker===active)halt(String(error));return;}if(!running||worker!==active||message.epoch!==homepageEpoch)return;}
    let committed=false,invalid=false;
@@ -163,7 +201,7 @@ play.onclick=start;restart.onclick=async()=>{if(recordedSession&&running){await 
  catch{if(running&&worker===active&&homepageEpoch===epoch)halt('Unable to reload browser progress.');}
 }};stop.onclick=()=>halt('Stopped');
 try{
- const response=await fetch('game.json',{cache:'no-store'});if(!response.ok)throw Error('Missing export metadata');data=await response.json();if(data.format_version!==1)throw Error('Unsupported web export');
+ const response=await fetch('game.json',{cache:'no-store'});if(!response.ok)throw Error('Missing export metadata');data=await response.json();if(data.format_version!==1)throw Error('Unsupported web export');renderResources(data.manifest);
  const binary=await fetch('game.wasm',{cache:'no-store'});if(!binary.ok)throw Error('Missing compiled game');wasm=await binary.arrayBuffer();
  const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',wasm)),byte=>byte.toString(16).padStart(2,'0')).join('');if(digest!==data.wasm_sha256)throw Error('Compiled game integrity check failed');
  setupShaders(data.shaders||[]);

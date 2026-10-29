@@ -2,6 +2,8 @@
 Synthetic games, local server, private browser profiles; no player data or ROMs.
 """
 from browser_storage_support import read_first,write_first
+from browser_download_support import Downloads
+import json
 from pathlib import Path
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -12,7 +14,7 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 PROJECT=Path(__file__).resolve().parents[1]
-CLI=PROJECT/'target/release/gamepkg'
+CLI=Path(os.environ.get('GAMEPKG_TEST_BINARY_DIR',str(PROJECT/'target/release')))/'gamepkg'
 class Quiet(SimpleHTTPRequestHandler):
     def log_message(self,*args):pass
 with tempfile.TemporaryDirectory(prefix='gamepkg-window-commit-') as temporary:
@@ -53,15 +55,20 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-window-commit-') as temporary:
         package=root/(suffix+'.gamepkg');game_id='com.gamepkg.window-commit-'+suffix
         run('pack',source,'-o',package,'--key',key);run('install',package,'--trust-creator');run('build',game_id,'--target','wasm')
         output=root/(suffix+'-web');run('web-export',game_id,'--output',output)
+        # Keep asynchronous save loading observable: recovery must wait for a
+        # new worker's committed frame, not a successful frame from the old one.
+        player=output/'player.js';text=player.read_text();needle='progressStore.load(),audioReady'
+        assert text.count(needle)==1
+        player.write_text(text.replace(needle,'progressStore.load().then(record=>new Promise(resolve=>setTimeout(()=>resolve(record),400))),audioReady'))
         server=ThreadingHTTPServer(('127.0.0.1',0),partial(Quiet,directory=str(output)))
         threading.Thread(target=server.serve_forever,daemon=True).start()
         options=Options();options.binary_location=shutil.which('google-chrome') or shutil.which('google-chrome-stable') or shutil.which('chromium');assert options.binary_location
-        for flag in ['--headless=new','--window-size=1100,1000','--no-sandbox','--disable-dev-shm-usage','--enable-unsafe-swiftshader','--autoplay-policy=no-user-gesture-required']:options.add_argument(flag)
+        for flag in ['--headless=new','--mute-audio','--window-size=1100,1000','--no-sandbox','--disable-dev-shm-usage','--enable-unsafe-swiftshader','--autoplay-policy=no-user-gesture-required']:options.add_argument(flag)
         downloads=root/(suffix+'-downloads');downloads.mkdir()
         options.add_experimental_option('prefs',{'download.default_directory':str(downloads),'download.prompt_for_download':False})
         driver=shutil.which('chromedriver') or str(Path(os.environ.get('CHROMEWEBDRIVER','/nonexistent'))/'chromedriver')
         browser=webdriver.Chrome(service=Service(driver),options=options)
-        browser.execute_cdp_cmd('Page.setDownloadBehavior',{'behavior':'allow','downloadPath':str(downloads)})
+        download_events=Downloads(browser,downloads)
         browser.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument',{'source':'''window.windowFrames=[];window.windowCommits=[];window.workerSerial=0;
             window.outputSnapshots=[];window.pendingOutputs=new Map();window.audioBufferCount=0;window.audioSources=[];
             const originalBuffer=AudioContext.prototype.createBuffer;
@@ -138,9 +145,10 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-window-commit-') as temporary:
                 browser.execute_script('Object.defineProperty(window,"showSaveFilePicker",{value:undefined,configurable:true})')
                 press('x','Number(value.state)>=2147483648',True)
                 wait.until(lambda b:b.find_element('id','user-files').is_displayed())
+                previous_downloads=set(download_events.records)
                 browser.find_element('css selector','#user-files button').click()
-                wait.until(lambda b:outgoing.exists())
-                assert outgoing.read_bytes()==bytes([1,2,3])
+                completed=download_events.completed('state.txt',previous_downloads)
+                assert outgoing.read_bytes()==bytes([1,2,3]), (completed,outgoing.read_bytes())
                 wait.until(lambda b:not b.find_element('id','user-files').is_displayed())
                 time.sleep(.1)
                 print(suffix,failure,'failure rolls back cursor/fullscreen/close/import/export/pixels/state/PCM; fresh recovery transfer works.',flush=True)
@@ -159,15 +167,18 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-window-commit-') as temporary:
             assert read_first(browser,'history','gamepkg:history:'+game_id+':')==bad_history
             assert browser.execute_script('return !window.windowCommits.at(-1).success')
             write_first(browser,'history','gamepkg:history:'+game_id+':',{'played_ms':0,'unlocked':[]})
+            previous_worker=browser.execute_script('return window.workerSerial')
             browser.find_element('id','play').click()
-            wait.until(lambda b:b.execute_script('const value=window.windowFrames.at(-1);return value.instance===window.workerSerial&&window.windowCommits.some(commit=>commit.instance===value.instance&&commit.success)'))
+            wait.until(lambda b:b.execute_script('const instance=window.workerSerial;return instance>arguments[0]&&window.windowFrames.some(value=>value.instance===instance&&window.windowCommits.some(commit=>commit.instance===instance&&commit.epoch===value.epoch&&commit.serial===value.serial&&commit.success))',previous_worker))
             # Final successful close proves explicit recovery did not leave a pending transaction.
 
             press(Keys.ARROW_DOWN,'value.window.closed',True)
             wait.until(lambda b:b.find_element('id','status').text=='Game closed')
             print(suffix,'actual confinement, fullscreen, restart and close work after persistence recovery.',flush=True)
         except Exception:
+            evidence={'profile':profile,'downloads':download_events.records,'files':{p.name:list(p.read_bytes()[:64]) for p in downloads.iterdir() if p.is_file()}}
+            (PROJECT/'target/window-commit-browser-failure.json').write_text(json.dumps(evidence,indent=2))
             print(suffix,'failure state:',browser.execute_script('return {frames:window.windowFrames.slice(-5),commits:window.windowCommits.slice(-5),status:document.querySelector("#status").textContent}'),flush=True)
             raise
         finally:
-            browser.quit();server.shutdown();server.server_close()
+            download_events.close();browser.quit();server.shutdown();server.server_close()

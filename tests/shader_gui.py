@@ -1,9 +1,9 @@
 """Isolated shader playback, exact fallback sampling, recovery and cache validation."""
-from gui_test_support import start_display
+from gui_test_support import start_display,close_game
 import os, subprocess, tempfile, time, argparse, shutil, hashlib, json
 from pathlib import Path
 from PIL import Image
-parser=argparse.ArgumentParser();parser.add_argument('--wrapped',action='store_true');parser.add_argument('--component',action='store_true');parser.add_argument('--texture',action='store_true');parser.add_argument('--backend',choices=['glsl','spirv','wgsl']);parser.add_argument('--without-compiler',action='store_true');parser.add_argument('--native',action='store_true');args=parser.parse_args()
+parser=argparse.ArgumentParser();parser.add_argument('--wrapped',action='store_true');parser.add_argument('--component',action='store_true');parser.add_argument('--texture',action='store_true');parser.add_argument('--backend',choices=['glsl','spirv','wgsl']);parser.add_argument('--without-compiler',action='store_true');parser.add_argument('--native',action='store_true');parser.add_argument('--renderer',choices=['vulkan','opengl']);parser.add_argument('--restart',action='store_true');parser.add_argument('--evidence-directory',type=Path);args=parser.parse_args()
 if args.native and args.component:parser.error('native execution uses core-v1')
 if args.wrapped: args.texture=True
 project=Path(__file__).resolve().parents[1]
@@ -11,10 +11,18 @@ os.chdir(project)
 binaries=Path(os.environ.get('GAMEPKG_TEST_BINARY_DIR',project/'target/release'))
 with tempfile.TemporaryDirectory(prefix='gamepkg-shader-ui-') as directory:
  root=Path(directory)
- env=dict(os.environ,DISPLAY=':97',LIBGL_ALWAYS_SOFTWARE='1',GAMEPKG_CONFIG=str(root/'settings.toml'),GAMEPKG_HOME=str(root/'library'),GAMEPKG_SLANG_ROOT=os.environ.get('GAMEPKG_SLANG_ROOT',''));env.pop('WAYLAND_DISPLAY',None)
+ env=dict(os.environ,DISPLAY=':97',LIBGL_ALWAYS_SOFTWARE='1',GAMEPKG_CONFIG=str(root/'settings.toml'),GAMEPKG_HOME=str(root/'library'),GAMEPKG_SLANG_ROOT=os.environ.get('GAMEPKG_SLANG_ROOT',''));env.pop('WAYLAND_DISPLAY',None);env.pop('GAMEPKG_RENDERER',None)
  # No backend setting by default: first-launch defaults must support desktop playback.
- (root/'settings.toml').write_text('automatic_update_checks=false\ncheck_app_updates_on_startup=false\n')
- if args.backend: (root/'settings.toml').write_text((root/'settings.toml').read_text()+f'shader_backend = "{args.backend}"\nrenderer = "'+('opengl' if args.backend=='glsl' else 'vulkan')+'"\n')
+ (root/'settings.toml').write_text('automatic_update_checks=false\ncheck_app_updates_on_startup=false\nmute_audio=true\n')
+ if args.backend:(root/'settings.toml').write_text((root/'settings.toml').read_text()+f'shader_backend = "{args.backend}"\n')
+ if args.renderer or args.backend:
+  renderer=args.renderer or ('opengl' if args.backend=='glsl' else 'vulkan')
+  (root/'settings.toml').write_text((root/'settings.toml').read_text()+f'renderer = "{renderer}"\n')
+ def evidence(path,name):
+  if args.evidence_directory:
+   directory=args.evidence_directory.resolve();directory.mkdir(parents=True,exist_ok=True)
+   shutil.copy2(path,directory/f"{'native' if args.native else 'wasm'}-{args.backend or 'default'}-{name}.png")
+
  def run(*arguments):
   if arguments and arguments[0] in ('build','integrity-fix') and '--target' not in arguments: arguments=(*arguments,'--target','native' if args.native else 'wasm')
   result=subprocess.run([str(binaries/'gamepkg'),*map(str,arguments)],env=env,capture_output=True,text=True,timeout=140)
@@ -44,13 +52,20 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-shader-ui-') as directory:
   if args.without_compiler:player_env.pop('GAMEPKG_SLANG_ROOT',None)
   app=subprocess.Popen([str(binaries/'gamepkg-gui'),'--play','com.gamepkg.shader-switch'],env=player_env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
   try:
-   for _ in range(100):
-    if app.poll() is not None:raise RuntimeError(app.stderr.read().decode())
-    state=subprocess.run(['xdotool','search','--onlyvisible','--name',r'^(GamePKG|com\..*)$'],env=env,capture_output=True,text=True)
-    if state.returncode==0:break
-    time.sleep(.1)
-   window=state.stdout.strip().splitlines()[0]
-   subprocess.run(['xdotool','windowfocus',window],env=env,check=True)
+   def wait_window(process):
+    deadline=time.monotonic()+30
+    while True:
+     if process.poll() is not None:raise RuntimeError(process.stderr.read().decode())
+     state=subprocess.run(['xdotool','search','--onlyvisible','--name',r'^(GamePKG|com\..*)$'],env=env,capture_output=True,text=True)
+     if state.returncode==0:
+      window=state.stdout.strip().splitlines()[0]
+      owner=int(subprocess.check_output(['xdotool','getwindowpid',window],env=env,text=True))
+      assert owner==process.pid,'Shader capture belongs to another process'
+      subprocess.run(['xdotool','windowfocus',window],env=env,check=True)
+      return window
+     assert time.monotonic()<deadline,'Shader game window did not open'
+     time.sleep(.1)
+   window=wait_window(app)
    time.sleep(.5)
    before=root/'before.png'
    subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(before)],env=env,check=True)
@@ -64,10 +79,12 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-shader-ui-') as directory:
     if app.poll() is not None:raise RuntimeError(app.stderr.read().decode())
     time.sleep(.1)
     subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(before)],env=env,check=True)
+   evidence(before,'blue')
    subprocess.run(['xdotool','keydown','Right'],env=env,check=True);time.sleep(.5)
    after=root/'after.png'
    subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(after)],env=env,check=True)
    assert dominant(after,1), 'Package green shader pixels missing'
+   evidence(after,'green')
    subprocess.run(['xdotool','keyup','Right'],env=env,check=True)
    if args.texture:
     subprocess.run(['xdotool','keydown','Down'],env=env,check=True);time.sleep(.5)
@@ -79,6 +96,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-shader-ui-') as directory:
      assert time.monotonic()<deadline, f'Plain shader must sample transparent black, got {samples}'
      if app.poll() is not None:raise RuntimeError(app.stderr.read().decode())
      time.sleep(.1);subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(after)],env=env,check=True)
+    evidence(after,'transparent-black')
     subprocess.run(['xdotool','keyup','Down'],env=env,check=True)
     deadline=time.monotonic()+10
     while True:
@@ -87,11 +105,32 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-shader-ui-') as directory:
      assert time.monotonic()<deadline,'Texture did not recover after plain shader draw'
      if app.poll() is not None:raise RuntimeError(app.stderr.read().decode())
      time.sleep(.1)
+   evidence(after,'restored-blue')
    shutil.copy2(after,project/'target'/f'shader-player-{args.backend}-{args.component}-{args.texture}.png')
    print(f"Shader playback passed: {'native' if args.native else 'wasm'}, {'component-v1' if args.component else 'core-v1'}, {args.backend or 'default'}; texture={args.texture}, wrapped={args.wrapped}.")
    if args.texture:print('Nine transparent-black fallback samples and recovery after held input passed.')
+   close_game(window,env);assert app.wait(timeout=10)==0,app.stderr.read().decode()
+   records=list((root/'library/progress').glob('*.json'));assert len(records)==1,records
+   played=json.loads(records[0].read_text())['played_ms'];assert played>0
+   history={'first_played_ms':played,'normal_close':True}
+   if args.restart:
+    app=subprocess.Popen([str(binaries/'gamepkg-gui'),'--play','com.gamepkg.shader-switch'],env=player_env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+    window=wait_window(app);deadline=time.monotonic()+15
+    while True:
+     if app.poll() is not None:raise RuntimeError(app.stderr.read().decode())
+     subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(after)],env=env,check=True)
+     if dominant(after,2):break
+     assert time.monotonic()<deadline,'Native cached shader did not restore blue pixels after restart';time.sleep(.1)
+    evidence(after,'restart-blue')
+    close_game(window,env);assert app.wait(timeout=10)==0,app.stderr.read().decode()
+    restarted=json.loads(records[0].read_text())['played_ms'];assert restarted>played,(played,restarted)
+    history['restarted_played_ms']=restarted
+   if args.evidence_directory:
+    (args.evidence_directory/f"{'native' if args.native else 'wasm'}-{args.backend or 'default'}-history.json").write_text(json.dumps(history,indent=2)+'\n')
+   print('Normal game-window close and saved play time passed; cached restart checked:',args.restart)
+
   finally:
-   app.terminate();app.wait(timeout=5)
+   if app.poll() is None:app.terminate();app.wait(timeout=5)
  finally:
   display.terminate();display.wait(timeout=5)
 

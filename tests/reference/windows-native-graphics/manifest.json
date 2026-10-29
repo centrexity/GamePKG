@@ -1,0 +1,45 @@
+{
+  "source_commit": "e9bf7613ee64bb7beec15d59afbbc5dc069773fb",
+  "run": 40683603098,
+  "artifact": 12814825991,
+  "artifact_sha256": "57f6bbf4f917c49ee9a186b61234b6bed5cfdb92bd5250abb9ee378be1edec5d",
+  "original_game_media": false,
+  "fixtures": {
+    "resized-texture.png": {
+      "sha256": "61a4307983e803293042098d05986e3f75872ab9b0050bd970176529ff17ec61",
+      "capture": {
+        "client_pixels": [
+          837,
+          602
+        ],
+        "outer_pixels": [
+          52,
+          52,
+          905,
+          693
+        ],
+        "dpi": 96,
+        "capture_thread_dpi": "per-monitor-v2"
+      },
+      "source_name": "native-glsl-first-resized-blue.png"
+    },
+    "clipped-texture.png": {
+      "sha256": "f5a991527a5ba7cbbc2f7678f698c79d251ee9a0335e5b8a67bd272cc728ccb8",
+      "capture": {
+        "client_pixels": [
+          960,
+          720
+        ],
+        "outer_pixels": [
+          52,
+          52,
+          1028,
+          811
+        ],
+        "dpi": 96,
+        "capture_thread_dpi": "per-monitor-v2"
+      },
+      "source_name": "native-glsl-first-blue.png"
+    }
+  }
+}

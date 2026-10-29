@@ -1,0 +1,60 @@
+{
+  "revision": "9d613e78c9ed5657ae7fda9206cd4a82a893b7c8",
+  "method": "Independent Pillow RGBA hashes of pinned untiled original source PNGs; no game image output used.",
+  "images": [
+    {
+      "level": 1,
+      "source_sha256": "21c34d3db19f1d2f8560bada107af03762a4003dfbc2c9a3c9b80b0bc9b3f8b2",
+      "size": [
+        2816,
+        1536
+      ],
+      "rgba_sha256": "9ce3908ca652b1f5e8dad1456269a9c38249498d6bc63c438c3dae96ae8e42af"
+    },
+    {
+      "level": 2,
+      "source_sha256": "f5b14219e8b265d6bb2e669b1050768cd2a57688a8691a142569e458a4ba35e9",
+      "size": [
+        2816,
+        1536
+      ],
+      "rgba_sha256": "34739205a3fd404f3373bcf057c3b81ce68d00dfdd045b2083f7fd3fe2ee6fa8"
+    },
+    {
+      "level": 3,
+      "source_sha256": "5634e4eb36fc4ef61120064f003f0fe69fdaf23302e0bfaf64ad1fed84aeb56d",
+      "size": [
+        2816,
+        1536
+      ],
+      "rgba_sha256": "802609d84afa682f814c80c42d228d4c19ee9ceb0e1253110c77e48a85bfcd9a"
+    },
+    {
+      "level": 4,
+      "source_sha256": "053b1263b2647d128a73d6f0236781a873790fb473af95348fbba1b1b1793eeb",
+      "size": [
+        2816,
+        1536
+      ],
+      "rgba_sha256": "ceb5f32440ff64d24530121b84cb5f3c13bfa7d28e5f3c104bc4e4c2b5aa1da3"
+    },
+    {
+      "level": 5,
+      "source_sha256": "cf7808cee9e154e3ab8b064867557717806476ecbeefa2fd4c16eab0860cee68",
+      "size": [
+        2816,
+        1536
+      ],
+      "rgba_sha256": "1ef0f5d22c2471fa57ce725cb966992dda60226209dd7f167b0c5fb7f4b0a237"
+    },
+    {
+      "level": 6,
+      "source_sha256": "a45a1912f5e7d3b6251a0794612a1cd6cd42507b1d38a27bddd24250daf9dcf3",
+      "size": [
+        2816,
+        1536
+      ],
+      "rgba_sha256": "0abd8a6f51d34ef1bf3cce0f4c5253490a221653072a97f27e7892dbb0202b26"
+    }
+  ]
+}

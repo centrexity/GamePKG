@@ -5,6 +5,11 @@ Project: https://gamepkg.com
 GamePKG is licensed under the Apache License, Version 2.0.
 This notice identifies the origin of the GamePKG software.
 
+Host UI: egui 0.31.1 by Emil Ernerfeldt and contributors, MIT OR Apache-2.0.
+Source: https://github.com/emilk/egui/tree/0.31.1
+GamePKG adds explicit pointer-button cancellation for interrupted native touches.
+Original sources, licenses and modification notes are in vendor/egui.
+
 Zelda3 engine and native ROM loader adaptations:
 Source: https://github.com/snesrev/zelda3
 Pinned revision: 45a149d8b4bb8098f53d1009f76e76e7d8b79bbf
@@ -389,3 +394,35 @@ Desktop physical input integration:
 egui-winit 0.31.1, copyright the egui contributors, MIT OR Apache-2.0.
 Pinned source, both licenses and GamePKG integration notes are included in
 vendor/egui-winit. This is a host dependency, not a guest crate permission.
+
+Xbox Takedawn disc identification:
+Public disc-file manifest from xenophobentx/takedawn, pinned in
+engines/takedawn/upstream-lock.json. The original MIT notice is preserved in
+engines/takedawn/Takedawn-LICENSE.txt. This metadata contains no game assets
+or executable code. GamePKG's read-only XDVDFS reader is an independent Rust
+implementation of the documented on-disc format.
+
+Native Xbox generator frontend:
+Instruction model and control-flow/basic-block algorithms are ported from the
+pinned Xboxrecomp toolkit, copyright (c)2026 sp00nz, MIT. The full notice is in
+engines/takedawn/Xboxrecomp-LICENSE.txt. The native host decoder uses capstone
+0.14.0 and capstone-sys0.18.0 with bundled Capstone C5.0.6; retained MIT and C
+framework notices are under engines/takedawn/native-gen/licenses. These are
+host build-tool dependencies, not guest crate permissions. No game-derived C,
+game executable or disc assets are included in this frontend source.
+
+Portable SSE, x87 and wider-intermediate arithmetic host services:
+Selected Berkeley SoftFloat Release3e sources, copyright2011-2018 The Regents
+of the University of California, by John R. Hauser. BSD3-clause license text is
+retained in engines/takedawn/native-gen/runtime/softfloat/COPYING.txt. Source:
+https://www.jhauser.us/arithmetic/SoftFloat-3e.zip . The exact archive/file hashes
+and reviewed adaptations are in that folder's upstream-lock.json. This is
+host runtime code, not a guest crate permission. No game assets are included.
+
+Portable F2XM1, FYL2X/FYL2XP1, FPATAN and trigonometric host components:
+Adapted from Bochs revision b0c88410501f48bbe1a966cab1c0592fb504915a,
+LGPL-2.1-or-later, with retained original SoftFloat extension notices.
+Original sources, exact hashes, license, adaptation and source/relink notes:
+engines/takedawn/native-gen/runtime/transcendentals/. Pinned C++ numerical
+reference files there are maintainer-test inputs only. This is a host runtime
+component, not permission for guest crates. No game assets are included.

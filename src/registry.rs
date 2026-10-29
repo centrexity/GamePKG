@@ -7,6 +7,33 @@ use std::{
     process::Command,
 };
 
+pub(crate) fn curl_command() -> Result<Command> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let windows =
+            PathBuf::from(std::env::var_os("SystemRoot").context("missing Windows system folder")?);
+        if !windows.is_absolute() {
+            bail!("Windows system folder must be absolute");
+        }
+        // Do not resolve a downloaded curl.exe in the current game/library
+        // directory. Windows includes this tool in its system installation.
+        #[cfg(target_arch = "x86")]
+        if windows.join("Sysnative/curl.exe").is_file() {
+            let mut command = Command::new(windows.join("Sysnative/curl.exe"));
+            command.creation_flags(0x08000000);
+            return Ok(command);
+        }
+        let mut command = Command::new(windows.join("System32/curl.exe"));
+        command.creation_flags(0x08000000);
+        Ok(command)
+    }
+    #[cfg(not(windows))]
+    {
+        Ok(Command::new("curl"))
+    }
+}
+
 pub fn default_root() -> Result<PathBuf> {
     if let Some(path) = std::env::var_os("GAMEPKG_HOME") {
         return Ok(PathBuf::from(path));
@@ -182,6 +209,22 @@ fn github_release_asset(
 }
 
 pub(crate) fn download_direct(value: &str, limit: u64) -> Result<tempfile::NamedTempFile> {
+    download_with_timeout(value, limit, 120)
+}
+
+#[cfg(any(windows, test))]
+pub(crate) fn download_build_tool(value: &str, limit: u64) -> Result<tempfile::NamedTempFile> {
+    // Official compiler archives can exceed 100 MiB. A healthy connection can
+    // need longer than the ordinary package/metadata transfer deadline.
+    // Keep the same protocol, redirect, size and integrity boundaries.
+    download_with_timeout(value, limit, 900)
+}
+
+fn download_with_timeout(
+    value: &str,
+    limit: u64,
+    transfer_seconds: u16,
+) -> Result<tempfile::NamedTempFile> {
     let mut current = parsed_url(value)?;
     let mut tor_only = current.host_str().is_some_and(|h| h.ends_with(".onion"));
     let file = tempfile::NamedTempFile::new()?;
@@ -193,7 +236,7 @@ pub(crate) fn download_direct(value: &str, limit: u64) -> Result<tempfile::Named
         tor_only |= onion;
         let headers = tempfile::NamedTempFile::new()?;
         // Ignore curlrc, never auto-follow redirects, and override NO_PROXY for Tor.
-        let mut command = Command::new("curl");
+        let mut command = curl_command()?;
         command
             .args([
                 "--disable",
@@ -205,7 +248,7 @@ pub(crate) fn download_direct(value: &str, limit: u64) -> Result<tempfile::Named
                 "--connect-timeout",
                 "15",
                 "--max-time",
-                "120",
+                &transfer_seconds.to_string(),
                 "--max-filesize",
                 &limit.to_string(),
                 "--user-agent",

@@ -3,43 +3,90 @@ import os
 import select
 import subprocess
 import time
+import threading
 
-def start_display(env, width=1024, height=900):
+def start_display(env, width=1024, height=900, *, local_only=False, startup_timeout=30):
     reader, writer = os.pipe()
+    process = None
+    collector = None
+    diagnostics = bytearray()
     try:
-        process = subprocess.Popen(
-            ['Xvfb', '-displayfd', str(writer), '-screen', '0',
-             f'{width}x{height}x24', '-ac', '-noreset'], pass_fds=(writer,),
-            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-    finally:
-        os.close(writer)
-    try:
-        ready, _, _ = select.select([reader], [], [], 10)
-        if not ready:
-            raise RuntimeError('Xvfb did not report a ready display within 10 seconds')
-        display = os.read(reader, 32).decode().strip()
-        if not display.isdigit():
-            raise RuntimeError('Xvfb did not provide a valid display number')
-        if process.poll() is not None:
-            raise RuntimeError('Xvfb startup failed: ' + process.stderr.read().decode())
-        env['DISPLAY'] = ':' + display
-        for _ in range(100):
+        try:
+            arguments=['Xvfb', '-displayfd', str(writer), '-screen', '0',
+                 f'{width}x{height}x24', '-ac', '-noreset']
+            if local_only:
+                arguments+=['-nolisten','tcp']
+            process = subprocess.Popen(arguments, pass_fds=(writer,), env=env,
+                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        finally:
+            os.close(writer)
+        # Xvfb can fill its stderr pipe before it writes the display number.
+        # Drain continuously, retaining only a bounded tail for failure reports.
+        def collect():
+            try:
+                while True:
+                    try:
+                        block = os.read(process.stderr.fileno(), 4096)
+                    except (OSError,ValueError):
+                        return
+                    if not block:
+                        return
+                    diagnostics.extend(block)
+                    if len(diagnostics)>65536:
+                        del diagnostics[:-65536]
+            finally:
+                process.stderr.close()
+        collector = threading.Thread(target=collect, daemon=True)
+        collector.start()
+        process._gamepkg_display_diagnostics = diagnostics
+        process._gamepkg_display_collector = collector
+        deadline = time.monotonic()+startup_timeout
+        while True:
+            if process.poll() is not None:
+                raise RuntimeError('Xvfb exited before reporting a ready display')
+            remaining = deadline-time.monotonic()
+            if remaining<=0:
+                raise RuntimeError(f'Xvfb did not report a ready display within {startup_timeout} seconds')
+            ready, _, _ = select.select([reader], [], [], min(.25,remaining))
+            if ready:
+                display = os.read(reader, 32).decode().strip()
+                if not display.isdigit():
+                    raise RuntimeError('Xvfb did not provide a valid display number')
+                break
+        env['DISPLAY'] = ':'+display
+        while time.monotonic()<deadline:
             if process.poll() is not None:
                 raise RuntimeError('Xvfb exited before accepting clients')
-            connection = subprocess.run(['xdotool', 'getdisplaygeometry'], env=env, capture_output=True, timeout=2)
-            if connection.returncode == 0:
-                return process
+            try:
+                connection = subprocess.run(['xdotool','getdisplaygeometry'], env=env,
+                    capture_output=True, timeout=max(.001,min(2,deadline-time.monotonic())))
+                if connection.returncode==0:
+                    return process
+            except subprocess.TimeoutExpired:
+                pass
             time.sleep(.1)
-        raise RuntimeError('Xvfb did not accept a client connection')
-    except BaseException:
-        process.terminate()
-        process.wait(timeout=10)
-        raise
+        raise RuntimeError('Xvfb did not accept a client connection before its startup deadline')
+    except BaseException as error:
+        if process is not None:
+            if process.poll() is None:
+                process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=5)
+        if collector is not None:
+            collector.join(timeout=1)
+        if isinstance(error,(KeyboardInterrupt,SystemExit)):
+            raise
+        detail = diagnostics.decode(errors='replace').strip() or '(no stderr)'
+        code = process.returncode if process is not None else 'not started'
+        raise RuntimeError(f'{error}; Xvfb exit={code}; stderr: {detail}') from error
     finally:
         os.close(reader)
 
 
-def click_text(window, env, text, directory, timeout=15, max_y=None, *, click=True):
+def click_text(window, env, text, directory, timeout=60, max_y=None, *, click=True, min_y=None):
     """Locate actual visible control text; never depend on a historical layout."""
     import csv
     import io
@@ -47,10 +94,14 @@ def click_text(window, env, text, directory, timeout=15, max_y=None, *, click=Tr
     directory = Path(directory)
     # Bare Xvfb has no window manager to restore focus after a player/picker closes.
     subprocess.run(['xdotool','windowfocus',window],env=env,check=True)
+    # Each visible page can require three enlarged OCR passes. Budget for
+    # several pages at larger UI scales; never change the control assertion.
     deadline = time.monotonic() + timeout
     wanted = text.split()
     last = ''
-    scroll_attempt = 0
+    scroll_button = "5"
+    previous_scroll_text = None
+    unchanged_scrolls = 0
     while True:
         screenshot = directory / 'control-screen.png'
         subprocess.run(['import', '-display', env['DISPLAY'], '-window', window, str(screenshot)], env=env, check=True)
@@ -59,7 +110,7 @@ def click_text(window, env, text, directory, timeout=15, max_y=None, *, click=Tr
             crop = ['-crop', f'0x{max_y}+0+0', '+repage'] if max_y is not None else []
             subprocess.run(['convert', str(screenshot), *crop, *filters, '-resize', '300%', str(enlarged)], env=env, check=True)
             tsv = subprocess.check_output(['tesseract', str(enlarged), 'stdout', '--psm', '6' if max_y is not None else '11', 'tsv'], stderr=subprocess.DEVNULL, text=True)
-            words = [w for w in csv.DictReader(io.StringIO(tsv), delimiter='\t',quoting=csv.QUOTE_NONE) if w['text'].strip() and (max_y is None or int(w['top'])//3 < max_y)]
+            words = [w for w in csv.DictReader(io.StringIO(tsv), delimiter='\t',quoting=csv.QUOTE_NONE) if w['text'].strip() and (min_y is None or int(w['top'])//3 >= min_y) and (max_y is None or int(w['top'])//3 < max_y)]
             last = ' '.join(w['text'] for w in words)
             # OCR may merge adjacent words in a compact button label.
             for count in range(1, len(wanted)+1):
@@ -83,8 +134,16 @@ def click_text(window, env, text, directory, timeout=15, max_y=None, *, click=Tr
         if max_y is None:
             geometry=subprocess.check_output(['xdotool','getwindowgeometry','--shell',window],env=env,text=True)
             size=dict(line.split('=',1) for line in geometry.splitlines() if '=' in line)
-            subprocess.run(['xdotool','mousemove','--window',window,str(min(400,int(size['WIDTH'])//2)),str(max(120,int(size['HEIGHT'])-180)),'click','--repeat','3','--delay','35','5' if scroll_attempt%8<4 else '4'],env=env,check=True)
-            scroll_attempt+=1
+            # Continue through tall pages instead of oscillating within the
+            # first twelve wheel ticks. Reverse only after the visible text
+            # stops changing at an edge. Use the right gutter so text fields
+            # and other controls cannot consume the scrolling gesture.
+            unchanged_scrolls = unchanged_scrolls + 1 if last == previous_scroll_text else 0
+            if unchanged_scrolls >= 2:
+                scroll_button = '4' if scroll_button == '5' else '5'
+                unchanged_scrolls = 0
+            previous_scroll_text = last
+            subprocess.run(['xdotool','mousemove','--window',window,str(max(20,int(size['WIDTH'])-40)),str(max(120,int(size['HEIGHT'])-180)),'click','--repeat','6','--delay','35',scroll_button],env=env,check=True)
         time.sleep(.1)
 
 
@@ -119,7 +178,7 @@ def choose_native_file(env, title, path=None, windows=False):
     while True:
         subprocess.run(['import','-display',env['DISPLAY'],'-window',dialog,str(proof)],env=env,check=True)
         text=subprocess.check_output(['tesseract',str(proof),'stdout','--psm','11'],env=env,stderr=subprocess.DEVNULL,text=True).casefold()
-        if re.search(r'\bcancel\b',text) and re.search(r'\b(open|select|ok)\b',text):
+        if re.search(r'\bcancel\b',text) and re.search(r'\b(open|select|ok|save)\b',text):
             break
         assert time.monotonic()<ready_deadline, f'Native picker controls were not ready: {text}'
         time.sleep(.1)

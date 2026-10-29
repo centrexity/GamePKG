@@ -36,14 +36,33 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-remembered-roms-') as temp:
   Image.open(path).resize((3400,2200)).save(root/'ocr.png')
   tsv=subprocess.check_output(['tesseract',str(root/'ocr.png'),'stdout','--psm','11','tsv'],stderr=subprocess.DEVNULL,text=True)
   return [dict(w,left=int(w['left'])//2,top=int(w['top'])//2,width=int(w['width'])//2,height=int(w['height'])//2) for w in csv.DictReader(io.StringIO(tsv),delimiter='\t',quoting=csv.QUOTE_NONE) if w['text'].strip()]
- def click_word(w):subprocess.run(['xdotool','mousemove','--window',window,str(w['left']+w['width']//2),str(w['top']+w['height']//2),'click','1'],env=env,check=True);time.sleep(.2)
- def click_rom_field(name):
-  ws=words();labels=[w for w in ws if w['text'].lower()==name and w['left']<200]
-  assert labels,ws
-  label=min(labels,key=lambda w:w['top'])
-  fields=[w for w in ws if label['top']+label['height']<w['top']<label['top']+110 and w['left']<650]
-  assert fields,ws
-  click_word(min(fields,key=lambda w:w['top']))
+ def click_word(w):
+  subprocess.run(['xdotool','mousemove','--sync','--window',window,str(w['left']+w['width']//2),str(w['top']+w['height']//2)],env=env,check=True)
+  time.sleep(.15)
+  subprocess.run(['xdotool','click','1'],env=env,check=True);time.sleep(.2)
+ def click_rom_field(name,selected_path=None):
+  # Bare Xvfb does not restore the parent focus after a native chooser closes.
+  subprocess.run(['xdotool','windowfocus','--sync',window],env=env,check=True)
+  deadline=time.monotonic()+10
+  while True:
+   ws=words();labels=[w for w in ws if w['text'].lower()==name and w['left']<200]
+   assert labels,ws
+   label=min(labels,key=lambda w:w['top'])
+   # OCR can read the rounded button border as '[' or '|'. Click its text,
+   # not the thin edge, when reopening an already selected file.
+   fields=[w for w in ws if label['top']+label['height']<w['top']<label['top']+110 and w['left']<650 and any(c.isalnum() for c in w['text'])]
+   if selected_path is not None:
+    # Match the known file name, not OCR of the random temporary directory:
+    # it can confuse letters and digits. Exclude the explanatory text below.
+    fields=[w for w in fields if w['text'].rstrip('[]()|').endswith(selected_path.name)]
+   # Persistence can complete before the UI receives the picker result.
+   # Observe the selected filename and idle UI before trying to reopen it.
+   if fields and not any(w['text'].startswith('Working') for w in ws):break
+   assert time.monotonic()<deadline,ws
+   time.sleep(.1)
+  target=min(fields,key=lambda w:w['top'])
+  print('ROM field target:',name,target,flush=True)
+  click_word(target)
  def expect_rom(byte):
   wait_game_frame(window,env,root,(255,0,0) if byte==65 else (0,255,0))
 
@@ -61,7 +80,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-remembered-roms-') as temp:
     time.sleep(.1)
    if name=='alpha':
     before=(home/'rom-selections.json').read_bytes()
-    click_rom_field(name)
+    click_rom_field(name,path)
     choose_native_file(env,'Choose Alpha ROM')
     assert (home/'rom-selections.json').read_bytes()==before,'Cancel changed remembered ROMs'
    time.sleep(.3);click_text(window,env,'Back to library',root)

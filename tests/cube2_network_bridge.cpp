@@ -7,7 +7,8 @@
 #include <string.h>
 #include <errno.h>
 #include <time.h>
-#include "../engines/cube2/upstream/enet/include/enet/enet.h"
+#include <enet/enet.h>
+#include <set>
 #include "../engines/cube2/adapters/syscall_guard.h"
 #include "../engines/cube2/adapters/network.h"
 struct job { int values[16]; };
@@ -35,7 +36,7 @@ int main(int argc,char **argv)
     }
     else if(!strcmp(argv[1],"invalid-local"))
     {
-        if(enet_socket_shutdown(32,(ENetSocketShutdown)3)!=-1 || enet_socket_shutdown(-1,ENET_SOCKET_SHUTDOWN_READ)!=-1 || enet_socket_listen(32,129)!=-1 || enet_socket_accept(1024,NULL)!=ENET_SOCKET_NULL) return 13;
+        if(enet_socket_shutdown(32,(ENetSocketShutdown)3)!=-1 || enet_socket_shutdown(-1,ENET_SOCKET_SHUTDOWN_READ)!=-1 || enet_socket_listen(32,129)!=-1 || enet_socket_accept(31,NULL)!=ENET_SOCKET_NULL) return 13;
     }
     else if(!strcmp(argv[1],"accept") || !strcmp(argv[1],"accept-null"))
     {
@@ -47,8 +48,46 @@ int main(int argc,char **argv)
     }
     else if(!strcmp(argv[1],"select"))
     {
-        ENetSocketSet reads,writes;FD_ZERO(&reads);FD_ZERO(&writes);FD_SET(32,&reads);FD_SET(32,&writes);
+        ENetSocketSet reads,writes;ENET_SOCKETSET_EMPTY(reads);ENET_SOCKETSET_EMPTY(writes);ENET_SOCKETSET_ADD(reads,32);ENET_SOCKETSET_ADD(writes,32);
         printf("%d\n",enet_socketset_select(32,&reads,&writes,0));
+    }
+    else if(!strcmp(argv[1],"select-high"))
+    {
+        ENetSocketSet reads,writes;ENET_SOCKETSET_EMPTY(reads);ENET_SOCKETSET_EMPTY(writes);
+        ENET_SOCKETSET_ADD(reads,1000000);ENET_SOCKETSET_ADD(writes,1000000);
+        int result=enet_socketset_select(1000000,&reads,&writes,0);
+        if(result!=1 || !ENET_SOCKETSET_CHECK(reads,1000000) || ENET_SOCKETSET_CHECK(writes,1000000)) return 16;
+        printf("%d\n",result);
+    }
+    else if(!strcmp(argv[1],"select-sparse") || !strcmp(argv[1],"select-atomic"))
+    {
+        ENetSocketSet reads,writes;ENET_SOCKETSET_EMPTY(reads);ENET_SOCKETSET_EMPTY(writes);
+        ENET_SOCKETSET_ADD(reads,32);ENET_SOCKETSET_ADD(reads,1000000);
+        if(!strcmp(argv[1],"select-sparse")) {ENET_SOCKETSET_ADD(writes,1000000);ENET_SOCKETSET_ADD(writes,2147483647);}
+        int result=enet_socketset_select(2147483647,&reads,&writes,0);
+        if(!strcmp(argv[1],"select-atomic")) {
+            if(result!=-1 || !ENET_SOCKETSET_CHECK(reads,32) || !ENET_SOCKETSET_CHECK(reads,1000000)) return 17;
+        } else if(result!=2 || ENET_SOCKETSET_CHECK(reads,32) || !ENET_SOCKETSET_CHECK(reads,1000000) || ENET_SOCKETSET_CHECK(writes,1000000) || !ENET_SOCKETSET_CHECK(writes,2147483647)) return 18;
+        printf("%d\n",result);
+    }
+    else if(!strcmp(argv[1],"select-alias"))
+    {
+        ENetSocketSet set;ENET_SOCKETSET_EMPTY(set);ENET_SOCKETSET_ADD(set,1000000);
+        int result=enet_socketset_select(1000000,&set,&set,0);
+        if(result!=1 || ENET_SOCKETSET_CHECK(set,1000000)) return 20;
+        printf("%d\n",result);
+    }
+    else if(!strcmp(argv[1],"select-union-overflow"))
+    {
+        ENetSocketSet reads,writes;ENET_SOCKETSET_EMPTY(reads);ENET_SOCKETSET_EMPTY(writes);
+        for(int i=0;i<16;i++) {ENET_SOCKETSET_ADD(reads,1000000+i);ENET_SOCKETSET_ADD(writes,2000000+i);}
+        if(enet_socketset_select(2000016,&reads,&writes,0)!=-1) return 21;
+    }
+    else if(!strcmp(argv[1],"select-overflow"))
+    {
+        ENetSocketSet reads;ENET_SOCKETSET_EMPTY(reads);
+        for(int i=0;i<17;i++) ENET_SOCKETSET_ADD(reads,1000000+i);
+        if(enet_socketset_select(1000017,&reads,NULL,0)!=-1) return 19;
     }
     else if(!strcmp(argv[1],"set-option"))
         printf("%d\n",enet_socket_set_option(32,ENET_SOCKOPT_TTL,37));
@@ -85,12 +124,12 @@ int main(int argc,char **argv)
     }
     else if(!strcmp(argv[1],"threads"))
     {
-        pthread_t threads[4]; job jobs[4]; bool seen[1024]={};
+        pthread_t threads[4]; job jobs[4]; std::set<int> seen;
         for(int i=0;i<4;i++) if(pthread_create(&threads[i],NULL,requests,&jobs[i])) return 6;
         for(int i=0;i<4;i++) pthread_join(threads[i],NULL);
         for(int i=0;i<4;i++) for(int j=0;j<16;j++)
         {
-            int id=jobs[i].values[j];if(id<32 || id>=1024 || seen[id]) return 7;seen[id]=true;
+            int id=jobs[i].values[j];if(id<32 || !seen.insert(id).second) return 7;
         }
     }
     else return 8;

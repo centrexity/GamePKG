@@ -1,0 +1,8 @@
+{
+  "repository": "https://github.com/chocolate-doom/chocolate-doom",
+  "revision": "2ddd290b8226e1d1f0c52e344e76150261a8c0c3",
+  "release": "chocolate-doom-2.2.1",
+  "files": {
+    "w_merge.c": "922fa5c3a4d5cc39629e6c81612c8b0e3f8415caf19f89338b9d63b8227c9e82"
+  }
+}

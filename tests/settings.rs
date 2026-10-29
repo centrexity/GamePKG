@@ -221,3 +221,26 @@ fn render_resolution_limit_is_opt_in_and_persists() {
     settings.render_max_width = 0;
     assert!(settings.validate().is_err());
 }
+
+#[test]
+fn native_watchdog_is_opt_in_persists_and_rejects_invalid_delays() {
+    let old: Settings = toml::from_str("format_version=1").unwrap();
+    assert_eq!(old.native_watchdog_seconds, 0);
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("settings.toml");
+    for seconds in [0, 5, 30, 600] {
+        let settings = Settings {
+            native_watchdog_seconds: seconds,
+            ..old.clone()
+        };
+        settings.save(&path).unwrap();
+        assert_eq!(Settings::read(&path).unwrap(), settings);
+    }
+    for seconds in [1, 4, 601, u16::MAX] {
+        let settings = Settings {
+            native_watchdog_seconds: seconds,
+            ..old.clone()
+        };
+        assert!(settings.validate().is_err());
+    }
+}

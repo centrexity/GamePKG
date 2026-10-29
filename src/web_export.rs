@@ -5,6 +5,7 @@ use std::{collections::BTreeMap, fs, io::Write, path::Path};
 const SUPPORTED: &[&str] = &[
     "frame_time_us",
     "window_state",
+    "window_size",
     "random_u64",
     "input_events",
     "file_call",
@@ -18,6 +19,7 @@ const SUPPORTED: &[&str] = &[
     "save_size",
     "save_read",
     "save_write",
+    "save_chunk",
     "draw_clear",
     "draw_clip",
     "draw_clip_reset",
@@ -161,12 +163,12 @@ fn browser_module(bytes: &[u8], profile: &str) -> Result<Vec<u8>> {
     selected.context("component lacks a browser-compatible GamePKG guest module")
 }
 
-// Header/chunk policy for the worker's bounded lossless RGB/RGBA/indexed decoder.
+// Header/chunk policy for the worker's bounded lossless PNG decoder.
 // Call only after the host PNG decoder has validated the source image.
 fn exact_png_source(bytes: &[u8]) -> bool {
     if bytes.len() < 33
-        || !matches!(bytes[25], 2 | 3 | 6)
-        || (if bytes[25] == 3 {
+        || !matches!(bytes[25], 0 | 2 | 3 | 4 | 6)
+        || (if matches!(bytes[25], 0 | 3) {
             !matches!(bytes[24], 1 | 2 | 4 | 8)
         } else {
             bytes[24] != 8
@@ -191,7 +193,7 @@ fn exact_png_source(bytes: &[u8]) -> bool {
             return false;
         };
         let kind = &bytes[at + 4..at + 8];
-        if kind == b"acTL" || (kind == b"tRNS" && bytes[25] != 3) {
+        if kind == b"acTL" || (kind == b"tRNS" && !matches!(bytes[25], 0 | 2 | 3)) {
             return false;
         }
         if kind == b"IEND" {
@@ -232,6 +234,7 @@ pub fn export(root: &Path, id: &str, output: &Path) -> Result<()> {
     let _guard = crate::registry::LibraryChange::acquire(root)?;
     let mut package = crate::archive::Package::open(&root.join(format!("{id}.gamepkg")))?;
     let manifest = crate::verify::verify_embedded(&mut package)?;
+    let asset_limit = manifest.limits.web_asset_bytes();
     let effects = manifest.limits.effects_memory_bytes.unwrap_or(0);
     let music = manifest.limits.music_memory_bytes.unwrap_or(0);
     let recorded = effects != 0 || music != 0;
@@ -287,16 +290,23 @@ pub fn export(root: &Path, id: &str, output: &Path) -> Result<()> {
     } else {
         "gamepkg"
     };
-    let mut needs_precise_images = false;
+    let mut uses_asset_images = false;
     let mut uses_shaders = false;
     let mut custom_renderer = false;
     for payload in wasmparser::Parser::new(0).parse_all(&wasm) {
         if let wasmparser::Payload::ImportSection(imports) = payload? {
             for import in imports {
                 let import = import?;
-                needs_precise_images |= matches!(
+                uses_asset_images |= matches!(
                     import.name,
-                    "draw_asset_image_linear_straight" | "draw-asset-image-linear-straight"
+                    "draw_asset_image"
+                        | "draw-asset-image"
+                        | "draw_asset_image_linear"
+                        | "draw-asset-image-linear"
+                        | "draw_asset_image_linear_straight"
+                        | "draw-asset-image-linear-straight"
+                        | "draw_shader_asset_image"
+                        | "draw-shader-asset-image"
                 );
                 custom_renderer |=
                     import.name.starts_with("draw_") || import.name.starts_with("draw-");
@@ -348,20 +358,17 @@ pub fn export(root: &Path, id: &str, output: &Path) -> Result<()> {
     for name in names {
         let bytes = package.asset(&name)?;
         size += bytes.len();
-        if needs_precise_images && name.to_lowercase().ends_with(".png") {
+        if uses_asset_images && name.to_lowercase().ends_with(".png") {
             if let Some(image) = crate::drawing::image::Image::from_png(&bytes) {
                 if exact_png_source(&bytes) {
                     exact_png_images.push(name.clone());
-                } else if image
-                    .pixels()
-                    .as_chunks::<4>()
-                    .0
-                    .iter()
-                    .any(|p| p[3] != 255)
-                {
+                } else {
                     size += image.pixels().len();
-                    if size > 32 * 1024 * 1024 {
-                        bail!("web assets exceed 32 MiB export limit");
+                    if size > asset_limit {
+                        bail!(
+                            "web assets exceed the selected {} MiB export limit",
+                            asset_limit / 1048576
+                        );
                     }
                     precise_images.insert(name.clone(),serde_json::json!({"width":image.size()[0],"height":image.size()[1],"rgba":hex::encode(image.pixels())}));
                 }
@@ -388,8 +395,11 @@ pub fn export(root: &Path, id: &str, output: &Path) -> Result<()> {
         } else {
             serde_json::Value::String(hex::encode(bytes))
         };
-        if size > 32 * 1024 * 1024 {
-            bail!("web assets exceed 32 MiB export limit");
+        if size > asset_limit {
+            bail!(
+                "web assets exceed the selected {} MiB export limit",
+                asset_limit / 1048576
+            );
         }
         assets.insert(name, payload);
     }
@@ -593,6 +603,40 @@ mod tests {
             unsupported[24] = 8;
             unsupported[28] = 1;
             assert!(!exact_png_source(&unsupported));
+        }
+    }
+
+    #[test]
+    fn exact_png_selection_retains_grayscale_and_gray_alpha_without_raw_duplicates() {
+        use image::ImageEncoder;
+        for (color, pixels) in [
+            (image::ExtendedColorType::L8, vec![0, 85, 170, 255]),
+            (
+                image::ExtendedColorType::La8,
+                vec![0, 255, 85, 0, 170, 127, 255, 255],
+            ),
+        ] {
+            let mut source = Vec::new();
+            image::codecs::png::PngEncoder::new(&mut source)
+                .write_image(&pixels, 2, 2, color)
+                .unwrap();
+            let decoded = crate::drawing::image::Image::from_png(&source).unwrap();
+            assert_eq!(decoded.size(), [2, 2]);
+            assert!(exact_png_source(&source));
+            let expected: Vec<_> = if color == image::ExtendedColorType::L8 {
+                pixels
+                    .iter()
+                    .flat_map(|&gray| [gray, gray, gray, 255])
+                    .collect()
+            } else {
+                pixels
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
+                    .flat_map(|pixel| [pixel[0], pixel[0], pixel[0], pixel[1]])
+                    .collect()
+            };
+            assert_eq!(decoded.pixels(), expected);
         }
     }
 

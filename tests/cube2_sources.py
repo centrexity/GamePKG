@@ -41,3 +41,83 @@ for source in ['missing', 'before before']:
         continue
     raise AssertionError('Changed adaptation anchor accepted')
 print('Cube 2 pinned sources: hashes, extra/missing files, symlinks and changed adaptation anchors rejected.')
+
+with tempfile.TemporaryDirectory(prefix='cube2-socket-headers-') as temporary:
+    stage=Path(temporary)
+    shutil.copytree(build.SOURCE/'enet/include',stage/'enet/include')
+    header=stage/'enet/include/enet/unix.h';original=header.read_text()
+    build.adapt_socket_sets(stage)
+    assert 'typedef fd_set ENetSocketSet;' not in header.read_text()
+    assert (stage/'enet/include/enet/gamepkg_socket_set.h').read_bytes()==(PROJECT/'engines/cube2/adapters/socket_set.h').read_bytes()
+    try:build.adapt_socket_sets(stage)
+    except ValueError:pass
+    else:raise AssertionError('Repeated socket adaptation accepted')
+    header.write_text(original.replace('typedef fd_set ENetSocketSet;','typedef int ENetSocketSet;'))
+    try:build.adapt_socket_sets(stage)
+    except ValueError:pass
+    else:raise AssertionError('Changed socket-set anchor accepted')
+build.verify()
+print('Opaque socket-set overlay: staged only; repeated/tampered anchors rejected; original source hashes unchanged.')
+
+with tempfile.TemporaryDirectory(prefix='cube2-movie-audio-') as temporary:
+    stage=Path(temporary);(stage/'engine').mkdir()
+    movie=stage/'engine/movie.cpp'
+    original=(build.SOURCE/'engine/movie.cpp').read_text();movie.write_text(original)
+    build.adapt_movie_audio(stage)
+    assert 'Mix_SetPostMix(' not in movie.read_text()
+    assert movie.read_text().count('gamepkg_audio_postmix(')==3
+    try:build.adapt_movie_audio(stage)
+    except ValueError:pass
+    else:raise AssertionError('Repeated movie audio adaptation accepted')
+    movie.write_text(original.replace('Mix_SetPostMix(soundencoder, NULL);','Mix_SetPostMix(NULL, NULL);'))
+    try:build.adapt_movie_audio(stage)
+    except ValueError:pass
+    else:raise AssertionError('Changed movie audio adaptation anchor accepted')
+build.verify()
+print('Movie audio overlay: staged only; callback anchors checked; pinned original hashes unchanged.')
+
+with tempfile.TemporaryDirectory(prefix='cube2-movie-limit-') as temporary:
+    stage=Path(temporary);(stage/'engine').mkdir()
+    movie=stage/'engine/movie.cpp'
+    original=(build.SOURCE/'engine/movie.cpp').read_text();movie.write_text(original)
+    build.adapt_movie_audio(stage)
+    build.adapt_movie_limits(stage)
+    assert (stage/'engine/gamepkg_movie_limit.h').read_bytes()==(PROJECT/'engines/cube2/adapters/movie_limit.h').read_bytes()
+    assert (stage/'engine/gamepkg_movie_io.h').read_bytes()==(PROJECT/'engines/cube2/adapters/movie_io.h').read_bytes()
+    assert movie.read_text().count('gamepkg_budget.allow(')==2
+    assert 'return writechunk("01wb", data, framesize);' in movie.read_text()
+    assert 'return writechunk("00dc", format == VID_YUV420 ? pixels : yuv, framesize);' in movie.read_text()
+    assert 'seg.indexframes = indexframes;' in movie.read_text()
+    assert 'f->putlil<uint>(segments[0].videoframes);' not in movie.read_text()
+    assert 'f->putlil<uint>(segments[0].soundsamples);' in movie.read_text()
+    assert 'f->putlil<uint>(seg.soundsamples);' in movie.read_text()
+    try:build.adapt_movie_limits(stage)
+    except ValueError:pass
+    else:raise AssertionError('Repeated movie limit adaptation accepted')
+    movie.write_text(original.replace('vector<aviindexentry> index;', 'vector<aviindexentry> changed;'))
+    try:build.adapt_movie_limits(stage)
+    except ValueError:pass
+    else:raise AssertionError('Changed movie limit adaptation anchor accepted')
+build.verify()
+print('Movie limit overlay: staged only; repeated/tampered anchors rejected; pinned sources unchanged.')
+
+with tempfile.TemporaryDirectory(prefix='cube2-zip-bounds-') as temporary:
+    stage=Path(temporary);(stage/'shared').mkdir()
+    source=stage/'shared/zip.cpp'
+    original=(build.SOURCE/'shared/zip.cpp').read_text();source.write_text(original)
+    build.adapt_zip_bounds(stage)
+    adapted=source.read_text()
+    assert 'lilswap(*(uint *)src)' not in adapted and 'lilswap(*(ushort *)src)' not in adapted
+    assert '*(uint *)search' not in adapted
+    assert 'gamepkg_zip_find_end(buf' in adapted
+    assert adapted.index('gamepkg_zip_directory_valid(ftell(f)') < adapted.index('new (false) uchar[size]')
+    assert (stage/'shared/gamepkg_zip_bounds.h').read_bytes()==(PROJECT/'engines/cube2/adapters/zip_bounds.h').read_bytes()
+    try:build.adapt_zip_bounds(stage)
+    except ValueError:pass
+    else:raise AssertionError('Repeated ZIP bounds adaptation accepted')
+    source.write_text(original.replace('uchar *buf = new (false) uchar[size], *src = buf;', 'uchar *buf = NULL, *src = buf;'))
+    try:build.adapt_zip_bounds(stage)
+    except ValueError:pass
+    else:raise AssertionError('Changed ZIP bounds adaptation anchor accepted')
+build.verify()
+print('ZIP directory bounds overlay: before-allocation guard, repeated/tampered anchors and pinned source integrity passed.')

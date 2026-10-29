@@ -25,9 +25,13 @@ export class RecordedDecoderClient {
   const abort=()=>client.close();signal?.addEventListener('abort',abort,{once:true});
   try{
    await client.#ready;const module=owned(wasm,4194304);await client.#request('compile',{bytes:module,limit},[module.buffer]);
-   const expires=performance.now()+EXECUTION_MS;await client.#request('reserve',{length:encoded.length},[],expires);
-   for(let at=0;at<encoded.length;at+=65536){const bytes=owned(encoded.subarray(at,Math.min(at+65536,encoded.length)),65536);await client.#request('input',{offset:at,bytes},[bytes.buffer],expires);}
-   await client.#request('open',{},[],expires);return client;
+   // Upload is trusted bounded copying plus inter-worker scheduling, not codec
+   // execution. Bound the whole upload and every individual acknowledgement;
+   // codec open/read/rewind retain their independent 100 ms execution deadline.
+   const expires=performance.now()+STARTUP_MS;
+   await client.#request('reserve',{length:encoded.length},[],Math.min(expires,performance.now()+EXECUTION_MS));
+   for(let at=0;at<encoded.length;at+=65536){const bytes=owned(encoded.subarray(at,Math.min(at+65536,encoded.length)),65536);await client.#request('input',{offset:at,bytes},[bytes.buffer],Math.min(expires,performance.now()+EXECUTION_MS));}
+   await client.#request('open');return client;
   }
   catch(error){client.close();throw error;}finally{signal?.removeEventListener('abort',abort);}
  }

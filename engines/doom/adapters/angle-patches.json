@@ -1,0 +1,7 @@
+[
+  {
+    "before": "R_PointToAngle\n( fixed_t\tx,\n  fixed_t\ty )\n{\t\n    x -= viewx;\n    y -= viewy;",
+    "after": "R_PointToAngle\n( fixed_t\tpoint_x,\n  fixed_t\tpoint_y )\n{\n    int64_t x = (int64_t)point_x - (int64_t)viewx;\n    int64_t y = (int64_t)point_y - (int64_t)viewy;",
+    "count": 1
+  }
+]

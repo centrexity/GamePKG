@@ -125,12 +125,17 @@ impl App {
             && !self
                 .rom_paths
                 .get(&m.id)
-                .is_some_and(|paths| crate::rom_selections::ready(paths, m.required_rom_count()))
+                .is_some_and(|paths| crate::rom_selections::ready_for(m, paths))
     }
     pub(super) fn ready_to_play(&self, m: &crate::manifest::Manifest) -> bool {
-        cfg!(target_os = "linux")
+        crate::native::play_supported(m)
             && self.built.contains(&m.id)
             && !self.needs_rom(m)
+            && (m.builtin_engine.as_deref() != Some(crate::takedawn::PROFILE)
+                || self
+                    .applied_settings
+                    .as_ref()
+                    .is_some_and(|s| s.memory_ceiling_mib >= 4096))
             && (m.game_data.is_none()
                 || (self
                     .data_paths

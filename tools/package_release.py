@@ -12,6 +12,7 @@ import tarfile
 import tempfile
 import tomllib
 import zipfile
+from windows_pe_imports import require_standalone_crt
 
 PROJECT = Path(__file__).resolve().parents[1]
 
@@ -111,6 +112,7 @@ def package(output_directory, binary_directory, *, system=None, target_triple=No
                 with source.open('rb') as binary:
                     if binary.read(2) != b'MZ':
                         raise ValueError(f'{executable} must be a Windows executable')
+                require_standalone_crt(source)
             elif not is_elf(source):
                 raise ValueError(f'{executable} must be an ELF executable')
             shutil.copyfile(source, root / 'bin' / executable)

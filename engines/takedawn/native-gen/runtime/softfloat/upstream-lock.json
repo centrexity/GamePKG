@@ -1,0 +1,441 @@
+{
+  "release": "Berkeley SoftFloat 3e",
+  "source": "https://www.jhauser.us/arithmetic/SoftFloat-3e.zip",
+  "archive_sha256": "21130ce885d35c1fe73fc1e1bf2244178167e05c6747cad5f450cc991714c746",
+  "license": "BSD-3-Clause",
+  "specialization": "8086-SSE",
+  "adaptations": [
+    {
+      "file": "source/f32_sqrt.c",
+      "before": "((expA - 0x7F)>>1)",
+      "after": "((expA - 0x7F - (expA < 0x7F))/2)",
+      "reason": "Defined floor division for negative exponent; avoid implementation-defined signed right shift."
+    },
+    {
+      "file": "source/s_roundPackToF32.c",
+      "before": "\r\n    roundBits = sig & 0x7F;\r\n",
+      "after": "\r\n    roundBits = sig & 0x7F;\r\n    gamepkg_softfloat_unbounded_inexact = (roundBits != 0);\r\n",
+      "reason": "Observe inexactness at unbounded-exponent destination precision before denormalization or overflow clamping; required for SSE unmasked fault flags."
+    },
+    {
+      "file": "source/extF80M_mul.c",
+      "before": "    uint_fast16_t exp, uiZ64;",
+      "after": "    uint_fast16_t uiZ64;",
+      "reason": "Remove an unused declaration; no numerical change."
+    },
+    {
+      "file": "source/extF80M_sqrt.c",
+      "before": "((expA - 0x3FFF)>>1)",
+      "after": "((expA - 0x3FFF - (expA < 0x3FFF))/2)",
+      "reason": "Defined floor division for bounded negative exponents; avoid implementation-defined signed shift."
+    },
+    {
+      "file": "source/s_addExtF80M.c",
+      "before": "\r\n roundPack:\r\n",
+      "after": "\r\n",
+      "reason": "Remove an unreferenced label; no numerical change."
+    },
+    {
+      "file": "source/s_shiftRightJamM.c",
+      "before": "#include <stdint.h>",
+      "after": "#include <stdint.h>\r\n#include <stdlib.h>",
+      "reason": "Check the documented positive-distance/nonempty-word preconditions, avoiding an uninitialized-path warning and rejecting invalid host calls."
+    },
+    {
+      "file": "source/s_shiftRightJamM.c",
+      "before": "    wordJam = 0;",
+      "after": "    if (!size_words || !dist) abort();\r\n    wordJam = 0;",
+      "reason": "Enforce existing upstream preconditions before using multiword pointers."
+    },
+    {
+      "file": "source/s_roundPackMToExtF80M.c",
+      "before": "    roundingMode = softfloat_roundingMode;",
+      "after": "    gamepkg_softfloat_ext80_observe(sign, exp, extSigPtr);\r\n    roundingMode = softfloat_roundingMode;",
+      "reason": "Observe the normalized unrounded96bit significand and exponent without changing the numerical algorithm; enables guest C1 and wrapped unmasked range results."
+    },
+    {
+      "file": "source/s_shiftNormSigF128M.c",
+      "before": "leadingBit = 0x00010000<<shiftDist;",
+      "after": "leadingBit = UINT32_C(0x00010000)<<shiftDist;",
+      "reason": "Unsigned32 leading-bit shift: conversion uses distance15, where signed int shift to bit31 has undefined behavior."
+    },
+    {
+      "file": "source/8086-SSE/s_commonNaNToF128M.c",
+      "before": "    softfloat_shortShiftRight128M( (const uint32_t *) &aPtr->v0, 16, zWPtr );",
+      "after": "    zWPtr[indexWord( 4, 0 )] = (uint32_t) (aPtr->v0>>16);\r\n    zWPtr[indexWord( 4, 1 )] = (uint32_t) (aPtr->v0>>48)\r\n                                | (uint32_t) (aPtr->v64<<16);\r\n    zWPtr[indexWord( 4, 2 )] = (uint32_t) (aPtr->v64>>16);\r\n    zWPtr[indexWord( 4, 3 )] = (uint32_t) (aPtr->v64>>48);",
+      "reason": "Use logical payload fields instead of treating the address of v0 as a128bit array; v0 is not the first payload field on big-endian hosts, causing out-of-object reads/writes and corrupt NaN payloads."
+    },
+    {
+      "file": "source/8086-SSE/s_f128MToCommonNaN.c",
+      "before": "    softfloat_shortShiftLeft128M( aWPtr, 16, (uint32_t *) &zPtr->v0 );",
+      "after": "    zPtr->v64 = (uint64_t) aWPtr[indexWord( 4, 3 )]<<48\r\n                    | (uint64_t) aWPtr[indexWord( 4, 2 )]<<16\r\n                    | aWPtr[indexWord( 4, 1 )]>>16;\r\n    zPtr->v0 = (uint64_t) aWPtr[indexWord( 4, 1 )]<<48\r\n                   | (uint64_t) aWPtr[indexWord( 4, 0 )]<<16;",
+      "reason": "Use logical payload fields instead of treating the address of v0 as a128bit array; v0 is not the first payload field on big-endian hosts, causing out-of-object reads/writes and corrupt NaN payloads."
+    }
+  ],
+  "files": [
+    {
+      "path": "COPYING.txt",
+      "sha256": "1a9bde4daac8f2fd9593128ef605238471209e79c9fc2cabc22557d3da29fa65",
+      "upstream_sha256": "1a9bde4daac8f2fd9593128ef605238471209e79c9fc2cabc22557d3da29fa65"
+    },
+    {
+      "path": "source/8086-SSE/extF80M_isSignalingNaN.c",
+      "sha256": "539c9d8d6a7784e26242b42dfe110ef3915fcd6e3edb40eefd80be1b36d64388",
+      "upstream_sha256": "539c9d8d6a7784e26242b42dfe110ef3915fcd6e3edb40eefd80be1b36d64388"
+    },
+    {
+      "path": "source/8086-SSE/s_propagateNaNExtF80M.c",
+      "sha256": "28b50b81d042b625896b31b9740563690b3fcf15e87d9daf311d3bb2d5b6f7e3",
+      "upstream_sha256": "28b50b81d042b625896b31b9740563690b3fcf15e87d9daf311d3bb2d5b6f7e3"
+    },
+    {
+      "path": "source/8086-SSE/s_propagateNaNF32UI.c",
+      "sha256": "f8f73de609b7ffa17310f21ab3ee713fbc26415b5c90154ab612e3c03ab884bf",
+      "upstream_sha256": "f8f73de609b7ffa17310f21ab3ee713fbc26415b5c90154ab612e3c03ab884bf"
+    },
+    {
+      "path": "source/8086-SSE/softfloat_raiseFlags.c",
+      "sha256": "d5ae072b697424e2696c0f122f8dacb5fce9f798629266d51c0a0f6c85486034",
+      "upstream_sha256": "d5ae072b697424e2696c0f122f8dacb5fce9f798629266d51c0a0f6c85486034"
+    },
+    {
+      "path": "source/8086-SSE/specialize.h",
+      "sha256": "df46e75514f9f1051acb6f0bad7322231c927bba1d4493f33fa606376b20e3e8",
+      "upstream_sha256": "df46e75514f9f1051acb6f0bad7322231c927bba1d4493f33fa606376b20e3e8"
+    },
+    {
+      "path": "source/extF80M_add.c",
+      "sha256": "a50a21c4265270d4036dd5ba6afe736b98cc4b272bd734e0e65a9fbfe32af4f8",
+      "upstream_sha256": "a50a21c4265270d4036dd5ba6afe736b98cc4b272bd734e0e65a9fbfe32af4f8"
+    },
+    {
+      "path": "source/extF80M_div.c",
+      "sha256": "219cbfb19832146ce3bcf1df9bf195f8ec226623cde27f1738cdaa7693015910",
+      "upstream_sha256": "219cbfb19832146ce3bcf1df9bf195f8ec226623cde27f1738cdaa7693015910"
+    },
+    {
+      "path": "source/extF80M_mul.c",
+      "sha256": "15c6c0e8a596398d0cac32669dfb116af197644683bff988c6fff190f2a7cb73",
+      "upstream_sha256": "33da658644084ce439fe5eedf63f178546c56f50dd5a5f3d23cb274308b2be6d"
+    },
+    {
+      "path": "source/extF80M_sqrt.c",
+      "sha256": "723719edf0e2b2fae997122cd6f205bc51923020fb673a0c9d9efa71a67e5fec",
+      "upstream_sha256": "652e8765c3120c939ea9e36e558d889ff73ceb04c0051f50470481533d91b62c"
+    },
+    {
+      "path": "source/extF80M_sub.c",
+      "sha256": "9c8fe11b1d5cb67aa793aa096b8cd0d691cdae94e5da56ac970c6a06034c8206",
+      "upstream_sha256": "9c8fe11b1d5cb67aa793aa096b8cd0d691cdae94e5da56ac970c6a06034c8206"
+    },
+    {
+      "path": "source/f32_add.c",
+      "sha256": "9e394bb6e5fcb8c1c97e8a6cfeb59a54b6e56299d95cc7e00ec9337c6eac9ad5",
+      "upstream_sha256": "9e394bb6e5fcb8c1c97e8a6cfeb59a54b6e56299d95cc7e00ec9337c6eac9ad5"
+    },
+    {
+      "path": "source/f32_div.c",
+      "sha256": "b8af0f916df265b8e78952376da526fd446e222cc9be1ec7a7194ebd9dcb561c",
+      "upstream_sha256": "b8af0f916df265b8e78952376da526fd446e222cc9be1ec7a7194ebd9dcb561c"
+    },
+    {
+      "path": "source/f32_mul.c",
+      "sha256": "aeee48f05d0e2c38ae0da33117e390ab85e11f903e2e2fc942a280e81392f2c3",
+      "upstream_sha256": "aeee48f05d0e2c38ae0da33117e390ab85e11f903e2e2fc942a280e81392f2c3"
+    },
+    {
+      "path": "source/f32_sqrt.c",
+      "sha256": "9ebf596594231beaf8c83edaad5129cbb43cac05ac96ef847a18fc37ad38ed63",
+      "upstream_sha256": "7e6c3c65e5cff08b05ddd34c6d29330f8fe30237a809086af394072488bf80fe"
+    },
+    {
+      "path": "source/f32_sub.c",
+      "sha256": "0c4e5f92660d59ff4b94ddd7b9afdb39d5bfbcb9f22888e72bcf4b40ddda59a0",
+      "upstream_sha256": "0c4e5f92660d59ff4b94ddd7b9afdb39d5bfbcb9f22888e72bcf4b40ddda59a0"
+    },
+    {
+      "path": "source/include/internals.h",
+      "sha256": "e7205630a8087895388cb6c6afbc5dfe8a8c201f4eb3eab2586e91a73e36bd4e",
+      "upstream_sha256": "e7205630a8087895388cb6c6afbc5dfe8a8c201f4eb3eab2586e91a73e36bd4e"
+    },
+    {
+      "path": "source/include/primitives.h",
+      "sha256": "146644301372c13af893119485269d54f3d718df9ce8b1a96cb908d3b828b1ed",
+      "upstream_sha256": "146644301372c13af893119485269d54f3d718df9ce8b1a96cb908d3b828b1ed"
+    },
+    {
+      "path": "source/include/primitiveTypes.h",
+      "sha256": "ab4e4209a90b07dcc7600636dcf1c04f910ba4ff63d0eec64b0141769c16a221",
+      "upstream_sha256": "ab4e4209a90b07dcc7600636dcf1c04f910ba4ff63d0eec64b0141769c16a221"
+    },
+    {
+      "path": "source/include/softfloat_types.h",
+      "sha256": "d0876f30a0d3dde97dd16007dbf635d98ef8262476ab8913930548a70f140afa",
+      "upstream_sha256": "d0876f30a0d3dde97dd16007dbf635d98ef8262476ab8913930548a70f140afa"
+    },
+    {
+      "path": "source/include/softfloat.h",
+      "sha256": "0359d1f1c5bef11bcb728b5f065655bf0f144c918692f1350d5f44e25d68acd4",
+      "upstream_sha256": "0359d1f1c5bef11bcb728b5f065655bf0f144c918692f1350d5f44e25d68acd4"
+    },
+    {
+      "path": "source/s_addExtF80M.c",
+      "sha256": "fc759871eb3fe338d5f664756d3d87d9024dc5ecfe4b425a779fedd79a6bb341",
+      "upstream_sha256": "890a54eec8ba8051f122144391207d9ad71824a72264e8b2f33367ba85898b92"
+    },
+    {
+      "path": "source/s_addM.c",
+      "sha256": "6eb3855b3cbf671766f26ce7af14308f930b93c07209c50e6b809818f039f0cc",
+      "upstream_sha256": "6eb3855b3cbf671766f26ce7af14308f930b93c07209c50e6b809818f039f0cc"
+    },
+    {
+      "path": "source/s_addMagsF32.c",
+      "sha256": "e0a47096f669348a0f068c0732e0154815f2a840d284cf9cc465949e262dc072",
+      "upstream_sha256": "e0a47096f669348a0f068c0732e0154815f2a840d284cf9cc465949e262dc072"
+    },
+    {
+      "path": "source/s_approxRecipSqrt_1Ks.c",
+      "sha256": "31b5b77d4e98b898c9cf661947c8530da00a5632350fe280249087e846be6f97",
+      "upstream_sha256": "31b5b77d4e98b898c9cf661947c8530da00a5632350fe280249087e846be6f97"
+    },
+    {
+      "path": "source/s_approxRecipSqrt32_1.c",
+      "sha256": "2107412b2c94d0b19c5b584d645bbad2cd4f0c3596ab11c95d00a282903f1731",
+      "upstream_sha256": "2107412b2c94d0b19c5b584d645bbad2cd4f0c3596ab11c95d00a282903f1731"
+    },
+    {
+      "path": "source/s_compare96M.c",
+      "sha256": "13fd5f60b30423dc375e1b210d6653b4a42e9286e46ccf56c2e086497e4b759e",
+      "upstream_sha256": "13fd5f60b30423dc375e1b210d6653b4a42e9286e46ccf56c2e086497e4b759e"
+    },
+    {
+      "path": "source/s_countLeadingZeros32.c",
+      "sha256": "1d9e7a84ac8f2823de61a493a0392d96248f87d2a7932e245de70265687bf800",
+      "upstream_sha256": "1d9e7a84ac8f2823de61a493a0392d96248f87d2a7932e245de70265687bf800"
+    },
+    {
+      "path": "source/s_countLeadingZeros64.c",
+      "sha256": "34406fc742b3fb19303d0b82d932c50129c634b67b3d9168f03c39c09c341cbf",
+      "upstream_sha256": "34406fc742b3fb19303d0b82d932c50129c634b67b3d9168f03c39c09c341cbf"
+    },
+    {
+      "path": "source/s_countLeadingZeros8.c",
+      "sha256": "84c5c634e61a4898cccb587f6048010a1e07b6edcb1a815ffea33a4d2663658a",
+      "upstream_sha256": "84c5c634e61a4898cccb587f6048010a1e07b6edcb1a815ffea33a4d2663658a"
+    },
+    {
+      "path": "source/s_invalidExtF80M.c",
+      "sha256": "974ea9c0700f5046176d3785b8c5cf1667da15f423d9ffc9b71b2e4e629884de",
+      "upstream_sha256": "974ea9c0700f5046176d3785b8c5cf1667da15f423d9ffc9b71b2e4e629884de"
+    },
+    {
+      "path": "source/s_mul64To128M.c",
+      "sha256": "ef3cbc59dccb53b62afc124c555b0bdea77b5f6ce5da57fbc6ff1fe087622c09",
+      "upstream_sha256": "ef3cbc59dccb53b62afc124c555b0bdea77b5f6ce5da57fbc6ff1fe087622c09"
+    },
+    {
+      "path": "source/s_normExtF80SigM.c",
+      "sha256": "b2ee3c5e742a80b4acab839ed6e9c4d7cca0fd542f9decc656895f82bab80fff",
+      "upstream_sha256": "b2ee3c5e742a80b4acab839ed6e9c4d7cca0fd542f9decc656895f82bab80fff"
+    },
+    {
+      "path": "source/s_normRoundPackMToExtF80M.c",
+      "sha256": "fdb493e9295978a10dc562f77e544871e632f4246dfd18a55216aef68e480aa4",
+      "upstream_sha256": "fdb493e9295978a10dc562f77e544871e632f4246dfd18a55216aef68e480aa4"
+    },
+    {
+      "path": "source/s_normRoundPackToF32.c",
+      "sha256": "c248909aae4e4496f3bf42f6431fa0657e0be1534e6a6319bf3fd9bca3b2d048",
+      "upstream_sha256": "c248909aae4e4496f3bf42f6431fa0657e0be1534e6a6319bf3fd9bca3b2d048"
+    },
+    {
+      "path": "source/s_normSubnormalF32Sig.c",
+      "sha256": "8e0f15899c33364c3cfe33644b389d34dc39ee5680a51e0aa18a8bb92401a3bb",
+      "upstream_sha256": "8e0f15899c33364c3cfe33644b389d34dc39ee5680a51e0aa18a8bb92401a3bb"
+    },
+    {
+      "path": "source/s_remStepMBy32.c",
+      "sha256": "22d01049d0b6c2f3392bf5e6bf6cce92e3a369e9a0a1e0b3969d27c65d20315b",
+      "upstream_sha256": "22d01049d0b6c2f3392bf5e6bf6cce92e3a369e9a0a1e0b3969d27c65d20315b"
+    },
+    {
+      "path": "source/s_roundPackMToExtF80M.c",
+      "sha256": "ff0edfcced021451dd098d37589dbb4d6d176f2d78f328413fdc5551cd1caa22",
+      "upstream_sha256": "303b5a9ec5832707910bcddc18e13ec7a82abe3bab691308d36abaf35c297c5c"
+    },
+    {
+      "path": "source/s_roundPackToF32.c",
+      "sha256": "b02d4e6c4ef2bad0fb17f306b9e1416a004bba552c33d0a29468a2788d10eccf",
+      "upstream_sha256": "4232db3446ab841912658297a05a04a39f8198dee8581a8f030f18f9dbf279f9"
+    },
+    {
+      "path": "source/s_shiftLeftM.c",
+      "sha256": "71cb3710b140c1cff63a53efed7fb0a629bb1cafcfe8b4352f2f53bc00b11df6",
+      "upstream_sha256": "71cb3710b140c1cff63a53efed7fb0a629bb1cafcfe8b4352f2f53bc00b11df6"
+    },
+    {
+      "path": "source/s_shiftRightJam32.c",
+      "sha256": "6c17203abc851217a1cfa3561d389dd54af0bb3001e3b9195282589c756afe32",
+      "upstream_sha256": "6c17203abc851217a1cfa3561d389dd54af0bb3001e3b9195282589c756afe32"
+    },
+    {
+      "path": "source/s_shiftRightJam64.c",
+      "sha256": "bf5f98460d427c7d36d54dec5426d78366a24e84740ce0b06732a993eb6814d3",
+      "upstream_sha256": "bf5f98460d427c7d36d54dec5426d78366a24e84740ce0b06732a993eb6814d3"
+    },
+    {
+      "path": "source/s_shiftRightJamM.c",
+      "sha256": "d7393fa1a54842862a1abf966b59f4eebf4465efb3fdb91e4248f5240f6a37fe",
+      "upstream_sha256": "355dc08176ba16bc34fa3fdee0da24dd340b88b4fdf66bdbe0c7b70805ea2b83"
+    },
+    {
+      "path": "source/s_shortShiftLeft64To96M.c",
+      "sha256": "4d3e962e009148621020bbb95cd17a1d4ac571cc411cb48dd86bdd34e11bc6c3",
+      "upstream_sha256": "4d3e962e009148621020bbb95cd17a1d4ac571cc411cb48dd86bdd34e11bc6c3"
+    },
+    {
+      "path": "source/s_shortShiftLeftM.c",
+      "sha256": "62d9831e888195fa511daf6643d8db995574ed82000725f9f3b5ef35a2c4d2c5",
+      "upstream_sha256": "62d9831e888195fa511daf6643d8db995574ed82000725f9f3b5ef35a2c4d2c5"
+    },
+    {
+      "path": "source/s_shortShiftRightJam64.c",
+      "sha256": "be62320db279314179b14da8f2b30d510a9cbb80194c94cf382db8de11c58749",
+      "upstream_sha256": "be62320db279314179b14da8f2b30d510a9cbb80194c94cf382db8de11c58749"
+    },
+    {
+      "path": "source/s_shortShiftRightJamM.c",
+      "sha256": "8713d1e56b5a4dc241e9b7595dcf1f1f8cbc4074758230c5254bbd99b9f1ac86",
+      "upstream_sha256": "8713d1e56b5a4dc241e9b7595dcf1f1f8cbc4074758230c5254bbd99b9f1ac86"
+    },
+    {
+      "path": "source/s_sub1XM.c",
+      "sha256": "b5b7a07f3bf5068711a7b6657de7d10afc7b9ab41daa00141af70a6749e37819",
+      "upstream_sha256": "b5b7a07f3bf5068711a7b6657de7d10afc7b9ab41daa00141af70a6749e37819"
+    },
+    {
+      "path": "source/s_subM.c",
+      "sha256": "1b860d2516bfdcf1f84782cf7ba80a2534a22ab3762cba8b6cd1753ac77790c1",
+      "upstream_sha256": "1b860d2516bfdcf1f84782cf7ba80a2534a22ab3762cba8b6cd1753ac77790c1"
+    },
+    {
+      "path": "source/s_subMagsF32.c",
+      "sha256": "e131bf24f7c1a734f102cd842938d74f5373a4adb9dcdec296026c43579cc09f",
+      "upstream_sha256": "e131bf24f7c1a734f102cd842938d74f5373a4adb9dcdec296026c43579cc09f"
+    },
+    {
+      "path": "source/s_tryPropagateNaNExtF80M.c",
+      "sha256": "e3b08f6b4bb4347b250679a76db393504f1b4df2cbbb9947869d24a15a88d523",
+      "upstream_sha256": "e3b08f6b4bb4347b250679a76db393504f1b4df2cbbb9947869d24a15a88d523"
+    },
+    {
+      "path": "source/softfloat_state.c",
+      "sha256": "245e85655da222174390eab9687be7b32c1704d312934bbaadd81b1a4329a5f2",
+      "upstream_sha256": "245e85655da222174390eab9687be7b32c1704d312934bbaadd81b1a4329a5f2"
+    },
+    {
+      "path": "source/f128M_add.c",
+      "sha256": "ac17f1961ab8e082c948dee06e437e872ae4ee490c864c178328adb208fd06be"
+    },
+    {
+      "path": "source/f128M_sub.c",
+      "sha256": "d856dc20a92c4f62d0aebf2b175465b48c664527a658fa5813c050e2cd768ef3"
+    },
+    {
+      "path": "source/f128M_mul.c",
+      "sha256": "2ad738d30acddf2fdb8c7778b38d9c891d83c7e0da11612f6d2784deb14d5252"
+    },
+    {
+      "path": "source/f128M_div.c",
+      "sha256": "1b090cd130c82d16e041dc4db8d2f3b6f432da0e62afd27cb271d09a3d7b4119"
+    },
+    {
+      "path": "source/extF80M_to_f128M.c",
+      "sha256": "287311207635cdf5894d4431a08667aaabb6f28ce71a5a5e745a622e6389c37c"
+    },
+    {
+      "path": "source/f128M_to_extF80M.c",
+      "sha256": "7c463742a9e96e892846c9341712e6c415db5b091e294c7de6be73f415c29c97"
+    },
+    {
+      "path": "source/ui32_to_f128M.c",
+      "sha256": "13d1ae302a759a696dd098d90917f74a4905e4a028015e6a97968fe55d871b15"
+    },
+    {
+      "path": "source/s_addF128M.c",
+      "sha256": "41530d75dccdcdaefa4c12c72ff8587d5a0759c9a08bc77cab4e10a37081096f"
+    },
+    {
+      "path": "source/s_invalidF128M.c",
+      "sha256": "e9f063b3179f6fce46f1bb9a543b5238c86efe5225215c41930dbc7171bbc686"
+    },
+    {
+      "path": "source/s_mul128MTo256M.c",
+      "sha256": "7a5e674240d9d5863c774196c6c6c48541dfccb0ae1d4893044c653a103de819"
+    },
+    {
+      "path": "source/s_roundPackMToF128M.c",
+      "sha256": "a1120c6c9cbcc4d1381d2f79a3c33596981203168706c3fd7b633f9f55619888"
+    },
+    {
+      "path": "source/s_shiftNormSigF128M.c",
+      "sha256": "c2b117691d26dffb24597272366f81d50daf6533cda13a2913402ac02e2acaed"
+    },
+    {
+      "path": "source/s_tryPropagateNaNF128M.c",
+      "sha256": "7e9d429219e8fd7896d57f8a57773bf2baf7ad494f03ba0996c541e595209d7a"
+    },
+    {
+      "path": "source/s_compare128M.c",
+      "sha256": "fd49d9066075fdd8c739ca8a40f381c353faaf0ccded4df2e61b0e8ed875370c"
+    },
+    {
+      "path": "source/8086-SSE/s_commonNaNToF128M.c",
+      "sha256": "e2880a076abbcf8598edd6827d2aa29a0e9c5a751fe23af6b40c08535ef9448c"
+    },
+    {
+      "path": "source/8086-SSE/s_extF80MToCommonNaN.c",
+      "sha256": "66b857733b24bf0cf37a7e70774211339afae032738523cd3389a154aecce7d5"
+    },
+    {
+      "path": "source/s_shiftRightM.c",
+      "sha256": "74041fc2f2731a013616852c91bdfef53ddfeff6cc7a461a8f36b495a8922eba"
+    },
+    {
+      "path": "source/8086-SSE/s_commonNaNToExtF80M.c",
+      "sha256": "bf64a590afaa59809d3ea05fdfd901857be5db78c9870a1bda638839e19cfdda"
+    },
+    {
+      "path": "source/8086-SSE/s_f128MToCommonNaN.c",
+      "sha256": "2aa87b5c73bf8e96db87fc3a24a5ad897ea85513d97299b4ddbe48e890b21c6f"
+    },
+    {
+      "path": "source/s_isNaNF128M.c",
+      "sha256": "2c2a40bd3685ecd26402770472fac3ed3735d8f36a32fbdc25bbd2fedf18799e"
+    },
+    {
+      "path": "source/s_addCarryM.c",
+      "sha256": "e2df01037d089ae10f3b84063bd5f0a07e46ab5c0a845cd56c712b26a7723a3c"
+    },
+    {
+      "path": "source/s_addComplCarryM.c",
+      "sha256": "958d781711d1d9fb9d4315a7ee0f7f71c592564736b85bf87b7daf09cf6e056a"
+    },
+    {
+      "path": "source/s_normRoundPackMToF128M.c",
+      "sha256": "a594a4fe6851c11954955969df3ff931260bea0f25a4516fce18815d87b628fc"
+    },
+    {
+      "path": "source/8086-SSE/s_propagateNaNF128M.c",
+      "sha256": "e94585358a084d16f43468dd99917b829b29036ca3b7cddae732c4a0cf6f1176"
+    },
+    {
+      "path": "source/s_shortShiftRightM.c",
+      "sha256": "c18bc45f4f4b3033cfcf2eb5c30347ec06cb96eb9b058edcdaa158d2e9c627e7"
+    },
+    {
+      "path": "source/8086-SSE/f128M_isSignalingNaN.c",
+      "sha256": "ba28212fda9bb97d7ce602ca1f356cb8c6956b85d3c43ce9c9940f2426d45601"
+    }
+  ]
+}

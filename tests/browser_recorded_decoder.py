@@ -24,7 +24,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-chromium-decoder-') as temporar
  (root/'index.html').write_text('<script type="module">import * as api from "./recorded-decoder.js";window.decoderAPI=api;</script>')
  server=ThreadingHTTPServer(('127.0.0.1',0),partial(Quiet,directory=str(root)));threading.Thread(target=server.serve_forever,daemon=True).start()
  options=Options();options.binary_location=shutil.which('google-chrome') or shutil.which('google-chrome-stable') or shutil.which('chromium');assert options.binary_location
- for flag in ['--headless=new','--no-sandbox','--disable-dev-shm-usage']:options.add_argument(flag)
+ for flag in ['--headless=new','--mute-audio','--no-sandbox','--disable-dev-shm-usage']:options.add_argument(flag)
  driver=shutil.which('chromedriver') or str(Path(os.environ.get('CHROMEWEBDRIVER','/nonexistent'))/'chromedriver')
  browser=webdriver.Chrome(service=Service(driver),options=options)
  try:
@@ -83,11 +83,11 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-chromium-decoder-') as temporar
   corpus=browser.execute_async_script('''const done=arguments[arguments.length-1];(async()=>{
    const {RecordedDecoderClient}=await import('./recorded-decoder-client.js'),{RecordedBudget}=await import('./recorded-budget.js'),records=await(await fetch('all-tracks.json')).json(),wasm=new Uint8Array(await(await fetch('decoder.wasm')).arrayBuffer()),budget=new RecordedBudget(8388608),results=[];
    const post=Worker.prototype.postMessage,timers=[];let timedOut=false;
-   Worker.prototype.postMessage=function(data,...rest){if(data?.kind==='input'){timers.push(setTimeout(()=>post.call(this,data,...rest),60));return;}return post.call(this,data,...rest);};
+   Worker.prototype.postMessage=function(data,...rest){if(data?.kind==='input'){timers.push(setTimeout(()=>post.call(this,data,...rest),150));return;}return post.call(this,data,...rest);};
    try{await RecordedDecoderClient.open(wasm,new Uint8Array(131072),6291456,undefined,budget);}catch(error){timedOut=String(error).includes('deadline');}finally{Worker.prototype.postMessage=post;for(const timer of timers)clearTimeout(timer);}
-   if(!timedOut||budget.used)throw Error('Chunk requests reset the aggregate open deadline or leaked capacity');
+   if(!timedOut||budget.used)throw Error('Stalled chunk escaped its 100 ms deadline or leaked capacity');
    for(const track of records){
-    let transferred=0,maximumChunkBytes=0,inputChunks=0;Worker.prototype.postMessage=function(data,...rest){if(data?.kind==='input'){if(data.offset!==transferred||data.bytes.byteOffset!==0||data.bytes.buffer.byteLength!==data.bytes.length||data.bytes.length>65536)throw Error('Invalid chunk transfer ownership/order');transferred+=data.bytes.length;maximumChunkBytes=Math.max(maximumChunkBytes,data.bytes.length);inputChunks++;}return post.call(this,data,...rest);};
+    let transferred=0,maximumChunkBytes=0,inputChunks=0;Worker.prototype.postMessage=function(data,...rest){if(data?.kind==='input'){if(data.offset!==transferred||data.bytes.byteOffset!==0||data.bytes.buffer.byteLength!==data.bytes.length||data.bytes.length>65536)throw Error('Invalid chunk transfer ownership/order');transferred+=data.bytes.length;maximumChunkBytes=Math.max(maximumChunkBytes,data.bytes.length);inputChunks++;setTimeout(()=>post.call(this,data,...rest),4);return;}return post.call(this,data,...rest);};
     const encoded=new Uint8Array(await(await fetch('tracks/'+encodeURIComponent(track.name))).arrayBuffer()),start=performance.now(),client=await RecordedDecoderClient.open(wasm,encoded,6291456,undefined,budget),openMs=performance.now()-start,expectedCharge=6291456+wasm.length*2+65536+1600*2*3;
     if(budget.used!==expectedCharge)throw Error('Chunk input reservation grew with encoded length');
     const pcm=new Uint8Array(track.samples*2),view=new DataView(pcm.buffer);let at=0;

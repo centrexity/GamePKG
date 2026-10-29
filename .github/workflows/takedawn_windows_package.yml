@@ -1,0 +1,37 @@
+name: Full native Windows game package
+# Explicit release qualification: do not start a multi-hour cold game build
+# merely to maintain this workflow or update its reviewed source-kit pin.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: gamepkg-full-native-windows-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  signed-native-build:
+    runs-on: windows-2022
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build the native app CLI
+        run: cargo build --locked --release --bin gamepkg
+      - name: Verify the actual source-kit handoff before compiling the game
+        env:
+          GAMEPKG_TAKEDAWN_KIT: ${{ github.workspace }}/ports/takedawn/assets/takedawn-source-kit.tar.gz
+          GAMEPKG_TAKEDAWN_KIT_SHA256: d11056c7b8e1306023b0229dd32f6afb60194fd786b73e3abf187210eeb0de5f
+        run: cargo test --locked --release --lib takedawn_kit::tests -- --include-ignored
+      - name: Build and repair the signed native game with managed standalone tools
+        shell: pwsh
+        run: ./tools/check_takedawn_windows_package.ps1 -Gamepkg target/release/gamepkg.exe -Work "$env:RUNNER_TEMP/full-native-package"
+      - name: Preserve logs and verification results only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-windows-package-evidence
+          path: ${{ runner.temp }}/full-native-package/evidence
+          retention-days: 7
+          if-no-files-found: error

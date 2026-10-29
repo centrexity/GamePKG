@@ -17,9 +17,14 @@ jobs:
         with:
           submodules: recursive
       - name: Install isolated compiler prerequisites
-        run: sudo apt-get update && sudo apt-get install -y bubblewrap clang-18 lld-18 wasi-libc libclang-rt-18-dev-wasm32 && rustup target add wasm32-unknown-unknown
+        run: bash tools/ci_ubuntu_apt.sh update && bash tools/ci_ubuntu_apt.sh install -y bubblewrap clang-18 lld-18 wasi-libc libclang-rt-18-dev-wasm32 && rustup target add wasm32-unknown-unknown
       - name: Build compiler host
         run: cargo build --locked --release --bin gamepkg
+      - name: Report versioned Wasm linker selection
+        run: |
+          /usr/bin/clang-18 --version
+          /usr/bin/wasm-ld-18 --version
+          if test -x /usr/bin/wasm-ld; then /usr/bin/wasm-ld --version; fi
       - name: Install pinned shader compiler
         run: python3 tools/install_slang.py /tmp/gamepkg-slang
       - name: Stage isolated toolchain
@@ -54,14 +59,21 @@ jobs:
         run: rustup update stable
       - name: Select Rust
         run: rustup default stable
-      - name: Build decoder companion
+      - name: Build CLI and desktop with the native Rust release builder
+        shell: bash
         run: |
           rustup target add wasm32-unknown-unknown
-          python tools/build_audio_companion.py --github-env
-      - name: Embed decoder in CLI and desktop entry points
-        run: cargo build --locked --release --all-features --bins
+          builder=gamepkg-build-release
+          if [ "$RUNNER_OS" = Windows ]; then builder="$builder.exe"; fi
+          rustc --edition=2021 tools/build_release.rs -o "$builder"
+          "./$builder" --github-env
       - name: Verify embedded decoder
-        run: python tools/check_bundled_audio.py target/release
+        run: |
+          python tools/check_bundled_audio.py target/release
+          python tests/windows_crt.py
+      - name: Verify managed standalone Windows SDK setup before WSL preparation
+        if: runner.os == 'Windows'
+        run: python tools/check_takedawn_managed_sdk.py --gamepkg target/release/gamepkg.exe
       - uses: actions/download-artifact@v4
         with:
           name: isolated-compiler-exchange
@@ -77,6 +89,15 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Prepare software graphics for native rendering tests
+        if: runner.os == 'Windows'
+        run: |
+          python -m pip install Pillow==11.3.0
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python tools/install_mesa_test.py target/release
+      - name: Verify native Windows shader textures and input before WSL setup
+        if: runner.os == 'Windows'
+        run: python tests/windows_native_gui.py
       - name: Prepare disposable WSL 2 distribution
         if: runner.os == 'Windows'
         uses: Vampire/setup-wsl@d1da7f2c0322a5ee4f24975344f67fc0f5baf364 # v7.0.0
@@ -94,12 +115,6 @@ jobs:
         if: runner.os == 'Windows'
         shell: wsl-bash_Ubuntu-24.04 {0}
         run: bash tools/setup_wsl_ci.sh
-      - name: Prepare software graphics for native rendering tests
-        if: runner.os == 'Windows'
-        run: |
-          python -m pip install Pillow==11.3.0
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python tools/install_mesa_test.py target/release
       - name: Verify actual Windows WSL builds, playback and repair
         if: runner.os == 'Windows'
         run: python tests/windows_wsl.py --distribution Ubuntu-24.04 --compiler /opt/gamepkg/bin/gamepkg --gui

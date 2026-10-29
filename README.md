@@ -4,26 +4,28 @@
 
 **Know what you run. Control what it can access.** GamePKG is building a safer way to share and play games: inspectable source, creator-signed packages, isolated compilation, and a host that is designed to grant only the capabilities a game needs.
 
-**Current status:** this is a development preview. Package verification, catalog import, installation, update checks, and isolated Cargo Wasm and Slang shader builds on Linux and the configured Windows WSL 2 connection work today. The default Linux build uses a direct CPU executable in an isolated native worker. Optional Wasm profiles play in the GUI and terminal under Wasmtime with scoped asset reads, memory limits, and epoch deadlines. Vulkan is the default renderer; bounded Slang fragment passes use WGSL or SPIR-V, with OpenGL available explicitly; versioned WIT components are supported alongside the legacy core profile; broader rendering remains pending; this is not a guarantee that a package is harmless.
+**Build and playback:** ordinary checked Rust games build directly for the local CPU on Linux and in the current Windows x86/x64 development source. Windows prepares verified native Rust/linker tools automatically, with no WSL or Python; native Slang shader builds need 64-bit Windows. Reviewed C-based engine profiles have their own platform support. Optional Wasm builds are separate actions and play under Wasmtime with scoped asset reads, memory limits and epoch deadlines. Vulkan is the default renderer, with OpenGL available explicitly. See [native builds and isolation](docs/NATIVE_RUNTIME.md).
 
-Download the [0.1.17 Linux and Windows CLI/desktop apps](https://github.com/centrexity/GamePKG/releases/tag/v0.1.17), including the checksum for your platform. Windows source builds use the matching Linux compiler inside WSL 2; playback runs in the native Windows app. See [Windows setup](docs/INSTALL_WINDOWS.md). Host distributions can also be prepared with `python3 tools/package_release.py /tmp/gamepkg-distribution` after building both release entry points. The archive includes CLI/GUI executables, setup tools, examples, original resolved dependency sources and notices, and integrity hashes. See [installation instructions](docs/INSTALL.md). See the [implementation and verification audit](docs/IMPLEMENTATION_STATUS.md) for requirement coverage and remaining limits. The public repository's **Package Linux preview** workflow produces the same artifact on Ubuntu 24.04.
+Download the [published 0.1.17 Linux and Windows CLI/desktop apps](https://github.com/centrexity/GamePKG/releases/tag/v0.1.17), including the checksum for your platform. The standalone Windows native pipelines require the current 0.1.18 development source; the published 0.1.17 app does not contain them. Earlier 0.1.18 hardware previews target a specific reviewed engine and do not include the newer ordinary-source integration. See [Windows setup](docs/INSTALL_WINDOWS.md). Portable app bundles include CLI/GUI executables, setup tools, examples, original resolved dependency sources and notices, and integrity hashes. Players need no Python. Maintainers can build both app entry points with the [native Rust release builder](tools/build_release.rs); packaging helpers are maintainer tools. See [installation instructions](docs/INSTALL.md) and the [implementation and verification audit](docs/IMPLEMENTATION_STATUS.md) for profile support and remaining limits.
 
 Try the [signed demo catalog](https://github.com/centrexity/GamePKG/releases/download/v0.1.6/demos.gamepkglist) by choosing **Add** in the desktop library, then **Import .gamepkglist**. It adds Collect Stars, Shape Playground, PNG Sprite Playground and Zelda3 as **Not downloaded**. Choose a game to download, approve its creator on first installation, then **Build** and **Play**. The three original demos need no ROM; Zelda3 requires your supported USA ROM. Players need no signing key. The [portable demo store](https://github.com/centrexity/GamePKG/releases/download/v0.1.6/demos.gamepkgstore) includes all four signed games for offline import. Compare downloads against [demo checksums](https://github.com/centrexity/GamePKG/releases/download/v0.1.6/demo-packages.sha256).
 
+For a built game, open its page and choose **Add to Steam**, then select a local Steam account. Close Steam before adding and reopen it afterward. The non-Steam shortcut starts the selected game through the GamePKG desktop app with the same library, settings file and build target, so GamePKG still records play time and achievements. Updating the shortcut keeps its Steam ID, including existing artwork and controller settings. If Steam is installed in a custom location, use **Choose Steam folder…**. Steam treats this as a [non-Steam shortcut](https://help.steampowered.com/en/faqs/view/4B8B-9697-2338-40EC); Steam does not provide package updates or ownership for it.
 
-## Why distribute GamePKG instead of an opaque executable?
+
+## Why use a GamePKG instead of an opaque executable?
 
 A conventional game executable can be difficult to inspect, and launching it without a sandbox may give it the permissions of your user account. That can include reading personal files, making network connections, or starting other programs. Signed binaries and separately sandboxed applications can also provide protections; the benefit of GamePKG is making source visibility, package verification, restricted builds, and declared capabilities part of one transparent workflow.
 
-A `.gamepkg` contains Rust source, Slang shader source, assets, and a signed manifest. You can inspect the code and declared permissions before choosing to install it. The host checks the package, compiles its supported source profile into Wasm, and keeps game assets in the archive. The runtime exposes scoped game operations through the host rather than the operating system’s full set of interfaces.
+A `.gamepkg` contains Rust source, Slang shader source, assets, and a signed manifest. You can inspect the code and declared permissions before choosing to install it. The host checks the package, builds its supported native or optional Wasm profile, and keeps packaged assets in the archive. Ordinary game source uses scoped host operations. Reviewed native-engine recipes select exact engine source admitted by the host and run in their own confined processes; packages cannot supply arbitrary native runtime code.
 
 | Protection | What it changes | Available today? |
 | --- | --- | --- |
 | Inspectable source | Games ship source rather than a bundled native executable; review is possible before building. Source visibility alone does not prove safety. | Yes |
 | Signed identity and updates | The manifest and package contents are signed. Updates must keep the installed creator key and package ID, with a higher version. | Yes; first creator approval is still required |
 | Restricted package contents | Rejects traversal paths, duplicate entries, symlinks, oversized archive contents, unsupported shaders, and source outside the initial policy. | Yes |
-| Isolated compilation | Supported Linux builds run inside bubblewrap with a private work area, no network, and no access to your home directory. | Yes; checked source modules with no Cargo dependencies |
-| Limited game access | Games receive host-approved asset, input, ROM, drawing, audio, save and endpoint-scoped network operations. | Available in the native worker and optional core/WIT Wasm profiles |
+| Isolated compilation | Linux uses bubblewrap; Windows ordinary-source builds use AppContainer/jobs, private work areas and no network capability. | Yes; checked source modules with no Cargo dependencies |
+| Limited game access | Ordinary source receives host-approved asset, input, ROM, drawing, audio, save and networking operations under the signed on/off permission. | Available in the Linux/Windows ordinary native worker and optional core/WIT Wasm profiles; reviewed native engines have their own documented process boundaries |
 | Runtime resource limits | Memory caps and deadlines constrain running games. | Enforced for native workers and optional Wasmtime profiles; GPU work is outside CPU time limits |
 
 ## Build locally, improve over time
@@ -34,7 +36,7 @@ These are opportunities, not a promise that every local build will be faster. Ga
 
 ## What can a GamePKG do—and what can it access?
 
-Today, importing a `.gamepkglist` adds catalog entries without fetching games or trusting creators. Downloading fetches the package you select. Installation verifies and stores it; it runs no game code or package-provided install scripts. Update checks stage a signed candidate for review. Supported builds compile the verified Rust source to Wasm inside an isolated Linux process.
+Importing a `.gamepkglist` adds catalog entries without fetching games or trusting creators. Downloading fetches the package you select. Installation verifies and stores it; it runs no game code or package-provided install scripts. Update checks stage a signed candidate for review. Ordinary source builds compile checked Rust in isolation for the chosen native or Wasm target. Reviewed native-engine recipes use the host's fixed source kit and build pipeline. See [native profile boundaries](docs/NATIVE_RUNTIME.md).
 
 The package policy supports checked Rust source modules with no Cargo dependencies. Scoped functions are injected by the host. It rejects build scripts, proc-macro configuration, compile-time file includes, unsafe blocks, foreign declarations, and filesystem, network, process, or environment paths detected by the source scanner. Shader files must be Slang source. The scanner is a policy filter, not a substitute for compiler isolation or a runtime sandbox.
 
@@ -123,11 +125,19 @@ Creators choose their own licenses for their games and assets. Using the GamePKG
 Build both entry points locally:
 
 ```sh
-cargo build --locked --release --features gui --bins
+rustup target add wasm32-unknown-unknown
+rustc --edition=2021 tools/build_release.rs -o gamepkg-build-release
+./gamepkg-build-release
 cargo test --locked --all-features
 ```
 
-Maintainer builds can [embed the host audio decoder](tools/audio-decoder/README.md#embedding-in-the-app) in both entry points. The companion uses Rust-only build commands on Linux or native Windows; packaged playback needs no separate decoder file or Python interpreter. Game-facing music integration remains tracked in [port fidelity](docs/PORT_FIDELITY.md).
+On Windows, compile the builder with `-o gamepkg-build-release.exe` and run
+`.\gamepkg-build-release.exe`. This Rust-only builder prepares both audio
+companions, embeds them in both entry points, and verifies copied executables
+without a display or external decoder files. Pass `--offline` when dependencies
+and the Wasm target are already installed. Packaged playback needs no compiler
+or Python interpreter. See [audio embedding](tools/audio-decoder/README.md#embedding-in-the-app)
+and [port fidelity](docs/PORT_FIDELITY.md) for integration details.
 
 The executables are `target/release/gamepkg` and `target/release/gamepkg-gui` (with `.exe` on Windows). Launch the GUI with `cargo run --locked --features gui --bin gamepkg-gui`. It lists installed packages and accepts a local package path or HTTPS URL. Inspection runs in a background worker and displays the verified creator fingerprint and permissions before installation. New creators require approval; updates use the installed creator key automatically. It compiles the supported source profile on Linux and plays core and versioned WIT component games with scoped assets, ROMs, saves, drawing, and audio. Resource-free fragment passes render through OpenGL; broader graphics remain unfinished. A desktop display is required to launch it.
 
@@ -159,6 +169,8 @@ Creators may set `update_url = "https://creator.example/latest.gamepkg"` at the 
 Downloads require the `curl` executable, enforce HTTPS for ordinary hosts, Tor-only routing for onion hosts, certificate verification for HTTPS, connection/transfer timeouts, and a 256 MiB transfer limit. No game code runs during installation. Host downloads are separate from guest network permissions, which are separately declared in the signed manifest.
 
 Installed archives reside under `GAMEPKG_HOME` when set, otherwise `$XDG_DATA_HOME/gamepkg`, `%LOCALAPPDATA%/gamepkg`, or `$HOME/.local/share/gamepkg`. Installation snapshots and verifies the bytes before replacement, uses an install lock, and leaves the old version intact on validation failure. An interrupted process may leave `.install-lock`; remove it only after confirming no install process is active.
+
+Supported engine ports offer optional private snapshot slots alongside normal in-game saves. The game page lists their controls; see [snapshot slots](engines/zelda3/README.md#snapshot-slots) for key bindings, headless CLI commands and storage details. Slots remain in the user's library; packaging does not collect them.
 
 For a local HTTPS end-to-end test (requires Python 3, OpenSSL, and curl), run `python3 tests/https_download.py` after the release build. It creates temporary certificates and packages, verifies URL installation and updates, and checks signer and ID substitution rejection. The server and temporary keys are cleaned up afterward.
 
@@ -444,9 +456,10 @@ product decisions before claiming full parity.
 
 | Port | Confirmed gaps | Implementation evidence |
 | --- | --- | --- |
+| Takedawn | The original native implementation links 24,003 generated game functions converted to Rust. Linux x86-64 signed-package Build/Play, ISO reads in place, profile persistence, stereo capture, Xbox/PS2 race-control gates and Crash results have private verification. Desktop keyboard input also reaches and drives the first World Tour race. Per-unit compiler checkpoints preserve completed work across interrupted builds. Full campaign/progression, steering/audio equivalence, physical controllers, other platforms and official package publication remain open. The 0.1.5 candidate fixes shared Team Crush results/replay input and prompts, verified through normal signed Linux Build, in-game confirmation and successful autosave. Two genuine missing native bodies are recovered and pass 128 C/Rust behavior cases; 13 unresolved upstream labels remain under audit and are not all proven to be valid function entries. Current Windows and broader campaign qualification remain open. | `ports/takedawn`, `src/takedawn.rs`, `engines/takedawn/rust-port/README.md` |
 | Cube 2 | Original startup/menu, HUD/FPS preferences and ordered desktop movement/menu key events have been restored. Physical keys now bypass egui normalization, including Pause, keypad distinctions, modifier sides and media/browser keys with SDL equivalents. Initial OS lock state and remaining uncommon-key/platform behavior still need verification. The broker now provides nonblocking TCP and UDP with unlisted peers/listeners, local addresses and broadcast under the signed on/off permission. Original registration with UDP verification, cryptographic master authentication and saved auth-key reload pass against a private master. Private Ethernet LAN broadcast discovery, original browser-row joining, wrong-key rejection and corrected-key retry are now verified. Further authentication/registration faults, live-service/platform interoperability and first-use rendering performance remain unverified. Persistence accepts selected file types, so arbitrary custom assets, movie recordings and other output formats are not equivalent to the desktop engine. Rendering inside the engine remains software OpenGL; Vulkan presents its frames. Native isolation currently requires Linux. | `src/cube2/session.rs`, `src/gui/cube2_input.rs`, `src/cube2/discovery.rs`, `engines/cube2/adapters/network.h`, `engines/cube2/adapters/persistence.h` |
-| DOOM | Original WAD music, spatial stereo effects, all six original save slots and configuration persistence now work. Original desktop keyboard/mouse input, saved bindings and the quit/ENDOOM flow pass native, Wasm and desktop GUI checks. Music backend selection and broader control/platform coverage remain unfinished. Multiplayer and extra WAD/mod loading are absent. | `engines/doom/adapters/engine.c`, `engines/doom/README.md` |
-| Zelda3 | Normal ROM-based SPC/DSP music and SRAM are supported. External MSU music is disabled; the desktop replay logger is removed. The adapter fixes the view to 256×224, disables extra side area, selects the default language and supplies no desktop configuration UI. Desktop enhancements, replay/save-state tools and alternate resource sets need individual support and tests. | `engines/zelda3/adapters/engine.c`, `engines/zelda3/upstream/src/config.h` |
+| DOOM | Original WAD music, spatial stereo effects, all six original save slots and configuration persistence now work. Original desktop keyboard/mouse input, saved bindings and the quit/ENDOOM flow pass native, Wasm and desktop GUI checks. Music backend selection and broader control/platform coverage remain unfinished. Signed recipes can declare up to six ordered patch WADs after the base IWAD. Original native/Wasm override order, all six slots, gameplay and save/reload pass private tests. Multiplayer and complete mod compatibility remain unfinished. | `engines/doom/adapters/engine.c`, `engines/doom/README.md` |
+| Zelda3 | ROM-based SPC/DSP music, stereo and SRAM are verified. Signed defaults and saved per-game Display controls support widescreen, 240-line rendering, extra sprites, dimmer flashes and earlier button-press intro skipping in native and Wasm. The original gameplay enhancement switches are available in a saved group and signed defaults; omitted switches default off. External MSU music, language selection, replay/save-state tools and complete enhancement/campaign interactions still need support or further behavior tests. | `engines/zelda3/adapters/engine.c`, `engines/zelda3/upstream/src/config.h` |
 | Arkanoo | Gravity, the speed-triggered portal and original ball-to-ball responses are restored and tested. Original world proportions and movement/contact order now match upstream reference checks. Per-ball launch timing, life recovery and victory/endless transitions also match original-code fixtures; prior item/score/level caps are removed. Brick health and original blast rules are also verified. Focused mouse movement and original Space/Escape controls are restored. Editor painting/erasing, all nine brick choices, names, save/load, clear confirmation and test return are restored. Saved custom patterns join the original twelve procedural patterns in endless play. Original ASCII pattern import/export now uses player-selected files. Gameplay cursor confinement/hiding, F11 fullscreen and pause Q-to-quit are verified in the native window and browser runtime checks. Normal size/fullscreen/maximized preferences persist through the native host. The six main menu actions and working fullscreen and sound-effects volume/mute controls are restored, with original captions, hover fills, borders, slider lettering and dimmed backdrop. Music/resolution/VSync settings, project-link/version display and original recorded audio remain unfinished. Fullscreen captions follow actual host observations, including external X11 window-manager changes, saved fullscreen restoration and browser Escape exits. Original shard particles, metallic ball, glass paddle and normal-brick textures and penguin/heart-loss animation are restored. All six campaign image backgrounds, twenty procedural backgrounds and animated campaign backgrounds 7–9 match captured original OpenGL logical frames. Original speed lettering is restored and directly verified in desktop/browser players. Original editor backgrounds, their selection controls and canonical grid colors/endpoints are restored. Original editor labels, palette, Unicode pattern-name lettering and saved-pattern browser composition are restored. Original startup artwork and its white-background fade are restored and checked against original SDL frames. Original level-complete, game-over and campaign-victory overlays, score formatting and instructions are also restored against SDL reference frames. Original score, lives/stolen heart, level/TEST, maximum-speed pulse, gravity indicator and real one-second FPS counter now use original HUD placement and Roboto lettering. The original ammo-gated cannon barrel, highlight and blinking launch caption are restored. Complete editor/menu composition, arbitrary original window/CSS scaling and other art/effects still need work. Best score/unlocked level/gravity/effects settings persist; active runs do not. | `ports/arkanoo/CREDITS.md`, `ports/arkanoo/source/src/lib.rs` |
 | 2048 | Original movement/spawn rules, merge scoring/best score, win/continue/game-over UI, restart, 128-step undo and saved board/history are supported. Tiles can merge beyond 32768. Cooperative expectimax assistance/autoplay matches pinned upstream reference decisions; one full deterministic game reaches 2048. Final signed-package delivery and broader platform checks remain open. | `ports/2048/source/src/model.rs`, `ports/2048/CREDITS.md`, `tests/game_2048.rs`, `tests/game_2048_play.rs` |
 
@@ -749,7 +762,7 @@ Fragment builds for the desktop GLSL, SPIR-V, and WGSL backends validate reflect
 
 The static site includes browser-readable [format notes](html/spec/index.html), [security model](html/guide/security.html), and [library policy](html/guide/allowlist.html). After editing the specification or security Markdown sources, run `python3 tools/render_site_docs.py` (requires Python-Markdown, packaged as `python3-markdown` on Debian/Ubuntu) and commit the generated HTML. The site serves directly from `html/` without a server-side renderer.
 
-Games can draw RGBA sprites with `gamepkg::draw_image(x, y, width, height, pixel_width, pixel_height, &pixels)` in either runtime profile. Pixels use row-major red/green/blue/alpha bytes, with exactly four bytes per pixel. Images must be 1–512 pixels in each dimension. The host snapshots accepted pixels, checks guest memory ranges, and limits queued sprite bytes to 8 MiB per frame within the existing 1,024-command limit. Frame resets and trapped ticks discard queued images. The desktop draws sprites with nearest-neighbor sampling and alpha transparency. Shader texture access uses the separate bounded API described below. See `examples/good/sprite-playground` and `tests/sprites_gui.py`.
+Games can draw RGBA sprites with `gamepkg::draw_image(x, y, width, height, pixel_width, pixel_height, &pixels)` in either runtime profile. Pixels use row-major red/green/blue/alpha bytes, with exactly four bytes per pixel. Images must be 1–512 pixels in each dimension. The host snapshots accepted pixels, checks guest memory ranges, and limits queued sprite bytes to 8 MiB per frame by default within the existing 1,024-command limit. Frame resets and trapped ticks discard queued images. The desktop draws sprites with nearest-neighbor sampling and alpha transparency. Shader texture access uses the separate bounded API described below. See `examples/good/sprite-playground` and `tests/sprites_gui.py`.
 
 Each tick supplies a fresh frame. With no `draw_clear` call, the viewport uses opaque dark RGB `#10171d`. A clear color with alpha below 255 is composited against opaque black for that frame, including a fully transparent clear. Redraw every visible primitive each tick; earlier frames do not supply retained pixels. Native and browser players use the same rule.
 
@@ -757,11 +770,13 @@ Game rectangle/circle colors and sprite pixels use straight RGBA bytes. Native g
 
 The desktop reuses sprite textures when their pixel content is unchanged, updates the existing texture when pixels change, and releases textures when sprites disappear from the current frame or play ends. `tests/sprites_gui.py` verifies live pixel changes through held input in both runtime profiles.
 
-Use `gamepkg::draw_asset_image("sprite.png", x, y, width, height)` to draw a PNG from a verified virtual asset path in either runtime. Embedded files and verified shared-pool snapshots work through the same archive API. Encoded PNGs are capped at 2 MiB, decoded dimensions at 512×512, and decoder allocations at 8 MiB. The host validates PNG dimensions and frame capacity before decoding the complete image. Images remain subject to the 8 MiB frame budget; missing, malformed, oversized, or traversal paths return false. These host rendering budgets are separate from guest linear-memory limits. `gamepkg::draw_asset_image_linear(path, x, y, width, height)` selects linear filtering for smooth scaling; `draw_asset_image` retains nearest-neighbor filtering. Both use the same path checks and per-draw budgets, including repeated draws of a cached image. Native and Wasm instances retain up to 32 decoded asset images within a shared 1 MiB pixel budget, using least-recently-used eviction and paths capped at 1,024 bytes. Every draw still spends its full frame budget. This session-scoped cache grants no filesystem access. The linear helper requires a host built from current source and is not available in the published 0.1.17 binaries. See `examples/good/png-sprite-playground` and `tests/sprites_gui.py --png`.
+Use `gamepkg::draw_asset_image("sprite.png", x, y, width, height)` to draw a PNG from a verified virtual asset path in either runtime. Embedded files and verified shared-pool snapshots work through the same archive API. Encoded PNGs are capped at 2 MiB, decoded dimensions at 512×512, and decoder allocations at 8 MiB. The host validates PNG dimensions and frame capacity before decoding the complete image. Images remain subject to the selected frame budget (8 MiB by default); missing, malformed, oversized, or traversal paths return false. These host rendering budgets are separate from guest linear-memory limits. `gamepkg::draw_asset_image_linear(path, x, y, width, height)` selects linear filtering for smooth scaling; `draw_asset_image` retains nearest-neighbor filtering. Both use the same path checks and per-draw budgets, including repeated draws of a cached image. By default, native and Wasm instances retain up to 32 decoded asset images within a shared 1 MiB pixel budget, using least-recently-used eviction and paths capped at 1,024 bytes. Every draw still spends its full frame budget. This session-scoped cache grants no filesystem access. The linear helper requires a host built from current source and is not available in the published 0.1.17 binaries. See `examples/good/png-sprite-playground` and `tests/sprites_gui.py --png`.
 
 Native linear sprite sampling interpolates premultiplied encoded RGB bytes using host-owned textures, separately from UI rendering. `tests/filtering_gui.py` compares opaque gradients, nearest controls, clipped sprites and downscaled textures with SDL across static, moved and resized-source frames. Tested OpenGL output matches exactly; Vulkan and both browser profiles differ by at most one 8-bit channel level. Transparent straight-alpha SDL interpolation and complete original-game frames remain separate fidelity work.
 
-Games can supply a texture to a supported fragment pass with `gamepkg::draw_shader_image(index, pixel_width, pixel_height, &rgba)`. The Slang pass may declare exactly one `Sampler2D gamepkgTexture` at binding 0. For SPIR-V, the host defines `GAMEPKG_SEPARATE_SAMPLER=1`: use `Texture2D<float4> gamepkgTexture` and `SamplerState gamepkgSampler` at bindings 0 and 1 in that branch, as the example demonstrates. Additional uniforms, samplers, arrays, storage buffers, and texture bindings remain rejected. Both core and WIT profiles snapshot pixels before returning, and share the 8 MiB frame image budget and 512×512 dimension limits with sprites. The renderer owns one reusable texture, uses nearest-neighbor sampling and clamp-to-edge, and replaces its contents before each pass; a plain `draw_shader` uses a transparent 1×1 texture so another pass's image cannot leak. The shader receives straight RGBA and must produce the renderer's expected output alpha convention. Textured passes support GLSL, SPIR-V, and WGSL. See `examples/good/shader-texture` and `tests/shader_gui.py --texture` (also `--component`).
+Ordinary source recipes can opt into signed `limits.render_profile = "large-images-v1"` to preserve larger original artwork. It allows 32 MiB of images per frame, a 128 MiB decoded-image cache (256 paths on desktop), and 128 MiB of encoded web assets plus precise fallbacks. The signed hard/recommended memory and effective player ceiling must be at least 256 MiB. Artwork buffers are additional to guest memory and graphics-driver storage and are shown on the game page. Individual image dimensions, PNG bounds, commands and tick deadlines still apply. Omitting the profile retains previous limits. See [developer instructions](docs/DEVELOPING_GAMES.md#larger-original-artwork).
+
+Games can supply a texture to a supported fragment pass with `gamepkg::draw_shader_image(index, pixel_width, pixel_height, &rgba)`. The Slang pass may declare exactly one `Sampler2D gamepkgTexture` at binding 0. For SPIR-V, the host defines `GAMEPKG_SEPARATE_SAMPLER=1`: use `Texture2D<float4> gamepkgTexture` and `SamplerState gamepkgSampler` at bindings 0 and 1 in that branch, as the example demonstrates. Additional uniforms, samplers, arrays, storage buffers, and texture bindings remain rejected. Both core and WIT profiles snapshot pixels before returning, and share the selected frame image budget (8 MiB by default) and 512×512 dimension limits with sprites. The renderer owns one reusable texture, uses nearest-neighbor sampling and clamp-to-edge, and replaces its contents before each pass; a plain `draw_shader` uses a transparent 1×1 texture so another pass's image cannot leak. The shader receives straight RGBA and must produce the renderer's expected output alpha convention. Textured passes support GLSL, SPIR-V, and WGSL. See `examples/good/shader-texture` and `tests/shader_gui.py --texture` (also `--component`).
 
 Translated texture passes validate one non-arrayed, non-multisampled float 2D image at group 0/binding 0 and one non-comparison sampler at binding 1. Naga validates the complete module and its generated texture mapping before the renderer binds any pixels. Slang's combined WGSL sampler reflection occupies two descriptor slots; SPIR-V uses the explicit separate-sampler source branch. Input and output retain the 16 MiB translation bounds. Changing the SPIR-V compiler definition produces a new shader cache identity; rebuild affected games. The CI tests actual texture pixels, held-input changes, transparent fallback, and malformed caches in both runtime profiles for both translated backends. The fallback probe makes sampled RGB and alpha observable through opaque output, checks nine interior pixels, and verifies that textured drawing recovers afterward. `tests/shader_gui.py --texture --native --backend wgsl` also checks native execution; GLSL and SPIR-V use the same test options.
 
@@ -889,9 +904,12 @@ package-supplied scripts.
 `ports/arkanoo` ports gameplay from [c0m4r's Arkanoo](https://github.com/c0m4r/arkanoo).
 It includes nine campaign layouts followed by endless stages, paddle spin,
 three lives, multiball, long-paddle and ghost bonuses, explosive rockets, particles,
-synthesized sound effects, achievements, and saved high scores/level checkpoints.
+recorded music/effects, achievements, and saved high scores/level checkpoints.
 The exact upstream revision, original license and adaptation credits are included.
-Rendering and synthesized effects are replacements; original music and recorded effects remain separate fidelity work.
+The canonical recipe includes original licensed artwork, fonts and recordings.
+Rendering and playback use GamePKG's host functions. Original-code and full-image
+reference checks cover the restored presentation; exact MP3 decoder parity and
+complete game/platform fidelity remain tracked separately.
 
 Mouse movement, left/right arrows or A/D move the paddle. Space launches or fires;
 Escape pauses or resumes. Up/W also starts, launches, fires and confirms level
@@ -909,15 +927,18 @@ L opens the saved-pattern browser, and T tests the board. Test completion return
 to the editor. Saved patterns also join the endless-level pool. Patterns and
 metadata share the scoped save; legacy `ARK1`/`ARK2` data migrates to `ARK3`. Original
 ASCII patterns can be imported with I or exported with X using the system file
-picker (or browser upload/download controls). Original art/fonts and native IME
-activation remain unfinished. Names are stored as identifiers and never become host paths.
+picker (or browser upload/download controls). Original font rendering preserves
+case and Unicode names without truncating stored text. Names are stored as
+identifiers and never become host paths.
 
 Settings includes an effects mute toggle and a volume slider, with the original
 0–128 range shown as 0–100% and a 50% default. Drag the slider to change volume.
 Preferences survive New Game, Restart and relaunch in the existing scoped save.
 Unavailable saving and damaged saves show warnings; damaged data stays preserved.
-All five original recorded effects are restored. Original music and the
-remaining menu/display controls stay tracked in the fidelity audit.
+All five original recorded effects and the original music playlist are restored.
+Recorded playback advances independently of game ticks. Music volume/mute,
+resolution confirmation/revert and VSync controls have dedicated runtime checks;
+see the [fidelity audit](docs/PORT_FIDELITY.md) for their scope and remaining work.
 The main-menu Github button opens the signed manifest homepage through the host
 after a fresh click and successful tick. It works in current source-built desktop
 and browser players; games supply no URL or process arguments.
@@ -1048,3 +1069,54 @@ isolation and damaged-record fallback at 100%/150% interface size on a private L
 built host, Xvfb, Metacity, wmctrl, xdotool, ImageMagick, Pillow and the configured
 shader compiler. Python and these desktop test tools are maintainer dependencies,
 not player requirements. Window records are counted in per-game storage usage.
+
+
+On Linux, **Check game data** on the game page audits line-leading literal
+startup-script includes without running game code or changing the installation.
+The same read-only check is available from the CLI:
+
+```sh
+gamepkg check-game-data /path/to/original-installation
+gamepkg check-game-data /path/to/original-installation --json
+```
+
+The report names missing/unreadable scripts and their referring file/line. Unexpected
+missing scripts produce a nonzero CLI exit status. The exact verified r6889
+menu script has a stale include for a file absent in upstream itself; this is
+reported separately as a known upstream reference, not an omitted port feature.
+Modified parent scripts and linked targets do not receive that classification.
+Computed references are reported as unresolved. This bounded check does not evaluate conditional execution, certify
+complete media, or establish a matching asset version; the JSON explicitly keeps
+`matching_asset_version_verified` false. It follows only scoped `data/` and
+`packages/` configuration paths, rejects linked/special files and directories,
+and bounds scripts, bytes and unresolved reports. No Python is required.
+
+Maintainers can verify the ZIP parsing helpers on a real 32-bit Linux process with `python3 tools/check_cube2_zip32.py` after installing a multilib C compiler/runtime. This runs the complete current helper boundary test body, checks 32-bit pointers and the ELF32 output, and requires no original game assets or C++ standard library. CI includes this check. It does not qualify full 32-bit engine playback.
+
+Original Cube 2 `addzip`/`removezip` commands work with ZIP files under the selected installation's `packages` directory. For example, a ZIP containing `packages/example/start.cfg` can be loaded with `addzip packages/mods/example.zip` followed by `exec packages/example/start.cfg`. Put those commands in the scoped `autoexec.cfg` to repeat the mount on startup. ZIP content stays virtual; it is not extracted. Directory extents and minimum entry sizes are checked against the physical archive before allocating its directory buffer. Entry name, extra-field and comment lengths must fit the remaining directory bytes; malformed later headers reject the entire mount. Rebuild Cube 2 after updating GamePKG to include this guard. Stored and deflated script mount, unmount, remount and restart behavior are covered by an original-engine regression. ZIP-only PNG assets are also checked in actual rendered menu frames before and after restart. The same regression loads an original map and its full configuration from the ZIP and verifies player movement through the original controls. This does not certify every mod's assets, shaders, native extensions or compatibility.
+
+The scoped Cube 2 save retains root `autoexec.cfg` alongside the saved configuration. The original engine executes it after `config.cfg` on restart. Recording imports preserve it; recording lists and exports exclude startup commands and other private settings. Rebuild the engine after updating GamePKG to apply this persistence change.
+
+Saved original-engine recordings can be listed and exported on Linux:
+
+```sh
+gamepkg recordings GAME_ID
+gamepkg recordings GAME_ID --json
+gamepkg recording-import GAME_ID ./match.dmo
+gamepkg recording-import GAME_ID ./match.dmo --name demo/another-name.dmo
+gamepkg recording-export GAME_ID 'recordings/match.dmo' --output ./match.dmo
+gamepkg recording-export GAME_ID 'movie.avi' --output ./movie.avi
+```
+
+Use the recording name reported by the list. Export copies one validated demo
+or AVI from that game's creator-scoped save and requires a new destination
+filename. It preserves the original save and refuses existing files, including
+symlinks. Only completed recordings already committed within the existing save
+quotas are available; recordings in a running game appear after its next
+checkpoint or normal close. On the game page, **Recordings → Load recordings**
+shows the same list; **Export demo** or **Export movie** opens the system Save
+dialog. **Import recording** opens a system file picker; close the game first.
+Imports validate the recording and merge it without replacing existing names or
+preferences. Demos default to `demo/` and movies to `movies/`. Cancellation keeps
+the list and original recordings. File/tree quotas stay at 16/32 MiB; decoded
+demos are also bounded to 32 MiB. Large-recording streaming remains separate work.

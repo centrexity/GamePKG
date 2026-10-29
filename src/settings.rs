@@ -5,6 +5,26 @@ use std::{
     io::{Read, Write},
     path::{Path, PathBuf},
 };
+#[cfg(test)]
+mod snapshot_shortcut_tests {
+    use super::*;
+    #[test]
+    fn old_settings_keep_original_keys_and_custom_slots_round_trip() {
+        let mut settings: Settings = toml::from_str("format_version=1").unwrap();
+        assert_eq!(settings.snapshot_load_slots, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+        assert_eq!(settings.snapshot_save_slots, settings.snapshot_load_slots);
+        settings.snapshot_save_slots = [10, 11, 12, 13, 14, 15, 16, 17, 18, 19];
+        settings.snapshot_load_slots[0] = 20;
+        settings.validate().unwrap();
+        let restored: Settings = toml::from_str(&toml::to_string(&settings).unwrap()).unwrap();
+        assert_eq!(settings, restored);
+        for invalid in [21, 255] {
+            settings.snapshot_save_slots[9] = invalid;
+            assert!(settings.validate().is_err());
+        }
+        assert!(toml::from_str::<Settings>("snapshot_load_slots=[0]").is_err());
+    }
+}
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Settings {
@@ -17,6 +37,8 @@ pub struct Settings {
     #[serde(default, rename = "fuel_ceiling", skip_serializing)]
     pub legacy_execution_ceiling: Option<u64>,
     pub tick_deadline_ms: u64,
+    /// Zero disables native frame-stall diagnostics; never terminates the game.
+    pub native_watchdog_seconds: u16,
     pub render_limit_enabled: bool,
     pub render_max_width: u32,
     pub render_max_height: u32,
@@ -25,6 +47,8 @@ pub struct Settings {
     pub ui_scale_percent: u16,
     pub slang_directory: String,
     pub wasi_sysroot_directory: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub native_sysroot_directory: String,
     pub dxc_directory: String,
     pub windows_compiler_distribution: String,
     pub windows_compiler_executable: String,
@@ -35,6 +59,9 @@ pub struct Settings {
     pub automatic_update_checks: bool,
     pub check_app_updates_on_startup: bool,
     pub update_interval_hours: u64,
+    /// Zero-based slots; 20 disables a shortcut. Keys are F1..F10.
+    pub snapshot_load_slots: [u8; 10],
+    pub snapshot_save_slots: [u8; 10],
 }
 impl Default for Settings {
     fn default() -> Self {
@@ -46,6 +73,7 @@ impl Default for Settings {
             memory_ceiling_mib: 512,
             legacy_execution_ceiling: None,
             tick_deadline_ms: 100,
+            native_watchdog_seconds: 0,
             render_limit_enabled: false,
             render_max_width: 1920,
             render_max_height: 1080,
@@ -54,6 +82,7 @@ impl Default for Settings {
             ui_scale_percent: 100,
             slang_directory: String::new(),
             wasi_sysroot_directory: String::new(),
+            native_sysroot_directory: String::new(),
             dxc_directory: String::new(),
             windows_compiler_distribution: String::new(),
             windows_compiler_executable: String::new(),
@@ -64,11 +93,27 @@ impl Default for Settings {
             automatic_update_checks: true,
             check_app_updates_on_startup: true,
             update_interval_hours: 24,
+            snapshot_load_slots: std::array::from_fn(|i| i as u8),
+            snapshot_save_slots: std::array::from_fn(|i| i as u8),
         }
     }
 }
 impl Settings {
     pub fn validate(&self) -> Result<()> {
+        if !self.native_sysroot_directory.is_empty()
+            && (!Path::new(&self.native_sysroot_directory).is_absolute()
+                || self.native_sysroot_directory.chars().any(char::is_control))
+        {
+            bail!("Native tools folder must be an absolute path without control characters");
+        }
+        if self
+            .snapshot_load_slots
+            .iter()
+            .chain(&self.snapshot_save_slots)
+            .any(|slot| *slot > 20)
+        {
+            bail!("Snapshot shortcuts must select slots 1–20 or Off");
+        }
         let distribution = &self.windows_compiler_distribution;
         let executable = &self.windows_compiler_executable;
         if distribution.is_empty() != executable.is_empty() {
@@ -153,6 +198,9 @@ impl Settings {
             || !self.tick_deadline_ms.is_multiple_of(10)
         {
             bail!("tick deadline must be 10–1000 ms in steps of 10");
+        }
+        if self.native_watchdog_seconds != 0 && !(5..=600).contains(&self.native_watchdog_seconds) {
+            bail!("native watchdog must be off (0), or 5–600 seconds");
         }
         Ok(())
     }

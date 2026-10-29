@@ -18,8 +18,8 @@ jobs:
       - name: Install 32-bit host dependencies
         run: |
           sudo dpkg --add-architecture i386
-          sudo apt-get update
-          sudo apt-get install -y gcc-multilib g++-multilib libasound2-dev:i386 libudev-dev:i386
+          bash tools/ci_ubuntu_apt.sh update
+          bash tools/ci_ubuntu_apt.sh install -y gcc-multilib g++-multilib libsdl2-dev:i386 libc6-dev:i386 linux-libc-dev:i386 libasound2-dev:i386 libudev-dev:i386 libxkbcommon-x11-0:i386 libx11-6:i386 libxrandr2:i386 libxi6:i386 libxcursor1:i386 libgl1:i386 libglx-mesa0:i386 libgl1-mesa-dri:i386 libegl1:i386 libegl-mesa0:i386 libvulkan1:i386 mesa-vulkan-drivers:i386 bubblewrap clang-18 lld-18 xvfb xdotool imagemagick python3-pil python3-xlib
       - name: Build portable decoder companion
         run: |
           rustup target add wasm32-unknown-unknown
@@ -28,12 +28,58 @@ jobs:
         env:
           PKG_CONFIG_ALLOW_CROSS: '1'
           PKG_CONFIG_LIBDIR: /usr/lib/i386-linux-gnu/pkgconfig
-        run: cargo test --locked --all-features --target i686-unknown-linux-gnu --test portability --test runtime --test components --test path_attacks --test dependency_attacks --test source_attacks --test memory_budget --test audio_effect_assets --test music_permissions
+        run: cargo test --locked --all-features --target i686-unknown-linux-gnu --test platform_build_boundary --test portability --test runtime --test components --test path_attacks --test dependency_attacks --test source_attacks --test render_resources --test memory_budget --test audio_effect_assets --test music_permissions --test game_arkanoo
+      - name: Stage a matching Rust toolchain for isolated native 32-bit builds
+        run: |
+          sudo cp -a "$(rustc --print sysroot)" /tmp/gamepkg-ci-native32-toolchain
+          sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-native32-rustup rustup toolchain link gamepkg-ci-native32 /tmp/gamepkg-ci-native32-toolchain
+          sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-native32-rustup rustup default gamepkg-ci-native32
+      - name: Compile and execute signed 32-bit native source games
+        env:
+          PKG_CONFIG_ALLOW_CROSS: '1'
+          PKG_CONFIG_LIBDIR: /usr/lib/i386-linux-gnu/pkgconfig
+        run: sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER,PKG_CONFIG_ALLOW_CROSS,PKG_CONFIG_LIBDIR env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-native32-rustup CARGO_HOME="$HOME/.cargo" cargo test --locked --all-features --target i686-unknown-linux-gnu --lib native::signed_fixture::signed_native_sdk_assets_saves_and_integrity -- --ignored --exact --nocapture
+      - name: Compile signed 32-bit reviewed C engine ports
+        env:
+          PKG_CONFIG_ALLOW_CROSS: '1'
+          PKG_CONFIG_LIBDIR: /usr/lib/i386-linux-gnu/pkgconfig
+        run: sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER,PKG_CONFIG_ALLOW_CROSS,PKG_CONFIG_LIBDIR env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-native32-rustup CARGO_HOME="$HOME/.cargo" cargo test --locked --all-features --target i686-unknown-linux-gnu --lib native::signed_fixture::reviewed_c_engines_build_for_app_width -- --ignored --exact --nocapture
       - name: Build 32-bit Linux CLI and GUI
         env:
           PKG_CONFIG_ALLOW_CROSS: '1'
           PKG_CONFIG_LIBDIR: /usr/lib/i386-linux-gnu/pkgconfig
         run: cargo build --locked --release --all-features --target i686-unknown-linux-gnu --bins
+      - name: Prepare pinned shader compiler for 32-bit native graphics
+        run: |
+          # Bubblewrap cannot traverse the runner's private _temp parents after
+          # entering its user namespace. Grant access only to this test folder.
+          native32_tools=$(mktemp -d /tmp/gamepkg-native32-tools.XXXXXXXX)
+          chmod 755 "$native32_tools"
+          python3 tools/install_slang.py "$native32_tools/slang"
+          printf 'GAMEPKG_NATIVE32_SLANG=%s/slang\n' "$native32_tools" >> "$GITHUB_ENV"
+      - name: Verify actual native 32-bit OpenGL and Vulkan game windows
+        run: |
+          set -euo pipefail
+          native32_proof="$PWD/target/native32-graphics-proof"
+          mkdir -p "$native32_proof"
+          printf '%s\n' 'pcm.!default { type null }' > "$native32_proof/alsa-null.conf"
+          native32_icd=/usr/share/vulkan/icd.d/lvp_icd.i686.json
+          if [ ! -f "$native32_icd" ]; then native32_icd=/usr/share/vulkan/icd.d/lvp_icd.json; fi
+          test -f "$native32_icd"
+          for backend in glsl spirv wgsl; do
+            sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-native32-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_NATIVE32_SLANG" GAMEPKG_TEST_BINARY_DIR="$PWD/target/i686-unknown-linux-gnu/release" ALSA_CONFIG_PATH="$native32_proof/alsa-null.conf" SDL_AUDIODRIVER=dummy PULSE_SERVER=unix:/tmp/gamepkg-native32-no-pulse LIBGL_ALWAYS_SOFTWARE=1 python3 tests/shader_gui.py --native --texture --restart --backend "$backend" --renderer opengl --evidence-directory "$native32_proof/opengl" 2>&1 | tee "$native32_proof/opengl-$backend.log"
+          done
+          for backend in spirv wgsl; do
+            sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-native32-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_NATIVE32_SLANG" GAMEPKG_TEST_BINARY_DIR="$PWD/target/i686-unknown-linux-gnu/release" ALSA_CONFIG_PATH="$native32_proof/alsa-null.conf" SDL_AUDIODRIVER=dummy PULSE_SERVER=unix:/tmp/gamepkg-native32-no-pulse LIBGL_ALWAYS_SOFTWARE=1 VK_DRIVER_FILES="$native32_icd" VK_ICD_FILENAMES="$native32_icd" python3 tests/shader_gui.py --native --texture --restart --backend "$backend" --renderer vulkan --evidence-directory "$native32_proof/vulkan" 2>&1 | tee "$native32_proof/vulkan-$backend.log"
+          done
+      - name: Preserve 32-bit native graphics and history evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gamepkg-linux-i686-native-graphics
+          path: target/native32-graphics-proof
+          retention-days: 7
+          if-no-files-found: ignore
       - name: Package matching 32-bit executables
         run: |
           python3 tests/package_architecture.py
@@ -57,9 +103,16 @@ jobs:
           rustup target add wasm32-unknown-unknown
           python tools/build_audio_companion.py --github-env
       - name: Execute native 32-bit runtime tests with embedded decoder
-        run: cargo test --locked --all-features --target i686-pc-windows-msvc --test portability --test runtime --test components --test path_attacks --test dependency_attacks --test source_attacks --test memory_budget --test audio_effect_assets --test music_permissions
-      - name: Build 32-bit Windows CLI and GUI
+        run: cargo test --locked --all-features --target i686-pc-windows-msvc --test portability --test runtime --test components --test path_attacks --test dependency_attacks --test source_attacks --test render_resources --test memory_budget --test audio_effect_assets --test music_permissions --test game_arkanoo
+      - name: Verify confined standalone 32-bit source compiler and worker
+        run: cargo test --locked --all-features --target i686-pc-windows-msvc --lib native::windows_build::tests::managed_compiler_and_native_worker_without_wsl -- --ignored --exact --nocapture
+      - name: Build standalone 32-bit Windows CLI and GUI
+        env:
+          # Explicit --target keeps static CRT flags away from host build scripts.
+          CARGO_TARGET_I686_PC_WINDOWS_MSVC_RUSTFLAGS: "-C target-feature=+crt-static"
         run: cargo build --locked --release --all-features --target i686-pc-windows-msvc --bins
+      - name: Verify relocated 32-bit CLI and GUI without runtime files
+        run: python tools/check_bundled_audio.py target/i686-pc-windows-msvc/release
       - name: Package matching 32-bit executables
         run: |
           python tests/package_architecture.py
@@ -76,6 +129,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+      - name: Verify compiled Android suites must execute and propagate failures
+        run: python3 tests/android_runtime_runner.py
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: armv7-linux-androideabi,i686-linux-android
@@ -97,7 +152,7 @@ jobs:
       - name: Embed decoder in Android CLI and test executables
         run: |
           cargo build --locked --release --target armv7-linux-androideabi --bin gamepkg
-          cargo test --locked --target i686-linux-android --lib --test portability --test runtime --test components --test memory_budget --test audio_effect_assets --test music_permissions --no-run --message-format=json > android-tests.json
+          cargo test --locked --target i686-linux-android --lib --test portability --test runtime --test components --test render_resources --test memory_budget --test audio_effect_assets --test music_permissions --test game_arkanoo --no-run --message-format=json > android-tests.json
       - name: Allow runner access to KVM
         run: sudo setfacl -m u:"$USER":rw /dev/kvm
       - name: Execute tests in 32-bit Android userspace

@@ -14,6 +14,11 @@ pub struct Preferences {
     pub height: u32,
     pub fullscreen: bool,
     pub maximized: bool,
+    #[serde(default = "default_vsync")]
+    pub vsync: bool,
+}
+fn default_vsync() -> bool {
+    true
 }
 impl Default for Preferences {
     fn default() -> Self {
@@ -23,6 +28,7 @@ impl Default for Preferences {
             height: 720,
             fullscreen: false,
             maximized: false,
+            vsync: true,
         }
     }
 }
@@ -148,6 +154,47 @@ impl Session {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn legacy_window_records_default_to_vsync_and_new_choices_persist_per_game() {
+        let root = tempfile::tempdir().unwrap();
+        let mut session = Session::open(root.path(), "game", "creator").unwrap();
+        session.persist().unwrap();
+        let mut old: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&session.path).unwrap()).unwrap();
+        old.as_object_mut().unwrap().remove("vsync");
+        std::fs::write(&session.path, serde_json::to_vec(&old).unwrap()).unwrap();
+        let mut session = Session::open(root.path(), "game", "creator").unwrap();
+        assert!(session.preferences.vsync);
+        session.preferences.vsync = false;
+        session.persist().unwrap();
+        assert!(
+            !Session::open(root.path(), "game", "creator")
+                .unwrap()
+                .preferences
+                .vsync
+        );
+        assert!(
+            Session::open(root.path(), "other", "creator")
+                .unwrap()
+                .preferences
+                .vsync
+        );
+        assert!(
+            Session::open(root.path(), "game", "other")
+                .unwrap()
+                .preferences
+                .vsync
+        );
+        let mut invalid = old;
+        invalid["vsync"] = serde_json::json!("false");
+        let bytes = serde_json::to_vec(&invalid).unwrap();
+        std::fs::write(&session.path, &bytes).unwrap();
+        assert!(Session::open(root.path(), "game", "creator").is_err());
+        assert!(session.persist().is_ok()); // Unchanged session never overwrites a damaged record.
+        session.preferences.vsync = true;
+        assert!(session.persist().is_err());
+        assert_eq!(std::fs::read(&session.path).unwrap(), bytes);
+    }
     #[test]
     fn records_follow_game_creator_and_library_but_survive_version_changes() {
         let a = tempfile::tempdir().unwrap();

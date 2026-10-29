@@ -42,13 +42,15 @@ struct Data {
     deadline_epochs: u64,
     network: crate::network::Service,
 }
+pub use crate::zelda_snapshots::Snapshot as ZeldaSnapshot;
 pub struct Game {
+    zelda_snapshots: Option<crate::zelda_snapshots::Context>,
     queued_input: crate::input_events::Queue,
     doom_events: Vec<crate::doom_input::Event>,
     progress: Option<crate::progress::Session>,
     store: Option<Store<Data>>,
     tick: Option<Tick>,
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", windows))]
     native: Option<crate::native::Session>,
     #[cfg(target_os = "linux")]
     cube2: Option<Box<crate::cube2::player::Player>>,
@@ -90,8 +92,11 @@ impl Game {
     ) -> Result<Self> {
         settings.validate()?;
         anyhow::ensure!(
-            manifest.builtin_engine.as_deref() != Some(crate::cube2::PROFILE),
-            "Cube 2 can only run from its verified native engine cache"
+            !matches!(
+                manifest.builtin_engine.as_deref(),
+                Some(crate::cube2::PROFILE) | Some(crate::takedawn::PROFILE)
+            ),
+            "this engine can only run from its verified native cache"
         );
         if !matches!(
             manifest.runtime_profile.as_str(),
@@ -152,10 +157,12 @@ impl Game {
                             | "rom_read_at"
                             | "save_read"
                             | "save_write"
+                            | "save_chunk"
                             | "save_size"
                             | "random_u64"
                             | "frame_time_us"
                             | "window_state"
+                            | "window_size"
                             | "input_events"
                             | "file_call"
                             | "window_control"
@@ -219,10 +226,12 @@ impl Game {
                                 | "rom-read-at"
                                 | "save-read"
                                 | "save-write"
+                                | "save-chunk"
                                 | "save-size"
                                 | "random-u64"
                                 | "frame-time-us"
                                 | "window-state"
+                                | "window-size"
                                 | "input-events"
                                 | "file-call"
                                 | "window-control"
@@ -264,6 +273,7 @@ impl Game {
             .limits
             .hard_memory_bytes
             .min(settings.memory_ceiling_mib * 1048576);
+        manifest.limits.ensure_render_memory(memory)?;
         let memory = if let Some(profile) = manifest.builtin_engine.as_deref() {
             let reserved = crate::builtin::memory(profile)?;
             if memory < reserved + 16 * 1048576 {
@@ -274,6 +284,7 @@ impl Game {
             memory
         };
 
+        let memory = crate::zelda_snapshots::guest_memory(manifest, memory)?;
         let (effects, memory) = crate::audio_effects::Runtime::new(
             package.as_ref(),
             manifest.limits.effects_memory_bytes,
@@ -306,10 +317,12 @@ impl Game {
                 network: crate::network::Service::new(manifest.permissions.clone()),
                 limits,
                 package,
-                asset_image: crate::drawing::image::Cache::default(),
+                asset_image: crate::drawing::image::Cache::for_profile(
+                    manifest.limits.render_profile,
+                ),
                 rom,
                 save,
-                frame: crate::drawing::Frame::default(),
+                frame: crate::drawing::Frame::for_profile(manifest.limits.render_profile),
                 audio: Vec::new(),
                 audio_channels: 1,
                 audio_allowed: manifest.permissions.audio,
@@ -769,6 +782,11 @@ impl Game {
             )?;
             linker.func_wrap(
                 "gamepkg",
+                "window_size",
+                |caller: Caller<'_, Data>| -> u32 { caller.data().window.size_observation() },
+            )?;
+            linker.func_wrap(
+                "gamepkg",
                 "frame_time_us",
                 |caller: Caller<'_, Data>| -> i64 { caller.data().clock.micros() as i64 },
             )?;
@@ -776,6 +794,7 @@ impl Game {
                 Ok(crate::random::value()? as i64)
             })?;
             linker.func_wrap("gamepkg", "save_write", save_write)?;
+            linker.func_wrap("gamepkg", "save_chunk", save_chunk)?;
             linker.func_wrap("gamepkg", "save_size", |caller: Caller<'_, Data>| -> i32 {
                 caller
                     .data()
@@ -806,12 +825,13 @@ impl Game {
             }
         };
         Ok(Self {
+            zelda_snapshots: crate::zelda_snapshots::Context::new(manifest)?,
             doom_events: Vec::new(),
             queued_input: crate::input_events::Queue::new(manifest.permissions.input),
             progress: None,
             store: Some(store),
             tick: Some(tick),
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", windows))]
             native: None,
             #[cfg(target_os = "linux")]
             cube2: None,
@@ -844,6 +864,26 @@ impl Game {
         rom_paths: &[std::path::PathBuf],
         native: Option<bool>,
     ) -> Result<Self> {
+        Self::load_target_inner(root, id, rom_paths, native, None)
+    }
+    #[cfg(all(test, any(target_os = "linux", windows)))]
+    pub(crate) fn load_target_configured(
+        root: &Path,
+        id: &str,
+        rom_paths: &[std::path::PathBuf],
+        native: Option<bool>,
+        settings: &crate::settings::Settings,
+    ) -> Result<Self> {
+        settings.validate()?;
+        Self::load_target_inner(root, id, rom_paths, native, Some(settings))
+    }
+    fn load_target_inner(
+        root: &Path,
+        id: &str,
+        rom_paths: &[std::path::PathBuf],
+        native: Option<bool>,
+        configured: Option<&crate::settings::Settings>,
+    ) -> Result<Self> {
         crate::registry::installed_manifest(root, id)?;
         let _build_read = crate::build::BuildChange::read(root, id)?;
         let archive = crate::files::read_regular(
@@ -857,6 +897,10 @@ impl Game {
         snapshot.flush()?;
         let mut package = crate::archive::Package::open(snapshot.path())?;
         let manifest = crate::verify::verify_embedded(&mut package)?;
+        anyhow::ensure!(
+            manifest.builtin_engine.as_deref() != Some(crate::takedawn::PROFILE),
+            "Takedawn runs in its own native window; use the desktop Play action or gamepkg run"
+        );
         package.resolve_shared_assets(root)?;
         if manifest.builtin_engine.as_deref() == Some(crate::cube2::PROFILE) {
             anyhow::ensure!(
@@ -871,7 +915,10 @@ impl Game {
             bail!("Cube 2 native process isolation is currently available on Linux");
             #[cfg(target_os = "linux")]
             {
-                let settings = crate::settings::load()?;
+                let settings = match configured {
+                    Some(settings) => settings.clone(),
+                    None => crate::settings::load()?,
+                };
                 let player = crate::cube2::player::Player::load(
                     root,
                     &manifest,
@@ -879,6 +926,7 @@ impl Game {
                     &settings,
                 )?;
                 return Ok(Self {
+                    zelda_snapshots: None,
                     doom_events: Vec::new(),
                     queued_input: crate::input_events::Queue::new(manifest.permissions.input),
                     progress: Some(crate::progress::Session::open(
@@ -936,17 +984,24 @@ impl Game {
             snapshots.push(bytes);
         }
         let rom = (!snapshots.is_empty()).then_some(snapshots);
-        let settings = crate::settings::load()?;
+        let settings = match configured {
+            Some(settings) => settings.clone(),
+            None => crate::settings::load()?,
+        };
         let native = native.unwrap_or(
             crate::native::cache_path(root, id)?
                 .symlink_metadata()
                 .is_ok(),
         );
         if native {
-            #[cfg(not(target_os = "linux"))]
+            #[cfg(not(any(target_os = "linux", windows)))]
             bail!("native game isolation is not available on this platform");
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", windows))]
             {
+                #[cfg(windows)]
+                if !crate::native::play_supported(&manifest) {
+                    bail!("native game isolation is not available for this package on Windows");
+                }
                 let mut uses_shaders = false;
                 let mut custom_renderer = manifest.builtin_engine.is_some();
                 for name in package
@@ -976,6 +1031,7 @@ impl Game {
                     shader_sources.len(),
                 )?;
                 return Ok(Self {
+                    zelda_snapshots: crate::zelda_snapshots::Context::new(&manifest)?,
                     doom_events: Vec::new(),
                     queued_input: crate::input_events::Queue::new(manifest.permissions.input),
                     progress: Some(crate::progress::Session::open(
@@ -986,6 +1042,7 @@ impl Game {
                     store: None,
                     tick: None,
                     native: Some(session),
+                    #[cfg(target_os = "linux")]
                     cube2: None,
                     deadline_epochs: 0,
                     stop: Arc::new(AtomicBool::new(false)),
@@ -1035,6 +1092,7 @@ impl Game {
                 rom,
                 save,
                 game.deadline_epochs,
+                crate::video_selections::effective(root, &manifest)?,
             )?;
             game.store.as_mut().unwrap().data_mut().zelda = Some(zelda);
         }
@@ -1050,10 +1108,13 @@ impl Game {
                 .and_then(|roms| roms.first())
                 .context("select your DOOM WAD")?;
             let save = data.save.as_ref().map(|s| s.bytes.as_slice());
+            let patches = &data.rom.as_ref().unwrap()[1..];
             let doom = crate::doom::Doom::new(
                 game.store.as_ref().unwrap().engine(),
                 &bytes,
                 wad,
+                patches,
+                &manifest.doom_wad_modes,
                 save,
                 game.deadline_epochs,
             )?;
@@ -1070,6 +1131,72 @@ impl Game {
             &manifest.creator_key,
         )?);
         Ok(game)
+    }
+    /// Capture without advancing a game tick. The buffer counts against the game's ceiling.
+    pub fn capture_zelda_snapshot(&mut self) -> Result<ZeldaSnapshot> {
+        let context = self
+            .zelda_snapshots
+            .as_ref()
+            .context("this game does not support Zelda snapshots")?;
+        let _scratch = context.scratch()?;
+        let mut snapshot = context.allocate(self.state)?;
+        #[cfg(any(target_os = "linux", windows))]
+        if let Some(native) = &mut self.native {
+            native.capture_snapshot(&mut snapshot.bytes)?;
+            return Ok(snapshot);
+        }
+        self.store
+            .as_mut()
+            .and_then(|s| s.data_mut().zelda.as_mut())
+            .context("Zelda engine is unavailable")?
+            .capture_snapshot(&mut snapshot.bytes, self.deadline_epochs)?;
+        Ok(snapshot)
+    }
+    pub fn supports_zelda_snapshot_slots(&self) -> bool {
+        self.zelda_snapshots.is_some()
+    }
+    /// Save a host-selected slot (0..20); game source cannot choose its path.
+    pub fn save_zelda_slot(&mut self, root: &Path, slot: u8) -> Result<()> {
+        anyhow::ensure!(slot < 20, "snapshot slot must be between 1 and 20");
+        let snapshot = self.capture_zelda_snapshot()?;
+        self.zelda_snapshots
+            .as_ref()
+            .unwrap()
+            .write_slot(root, slot, &snapshot)
+    }
+    /// Read a bounded, creator/game/schema-scoped slot and restore it.
+    pub fn load_zelda_slot(&mut self, root: &Path, slot: u8) -> Result<()> {
+        let snapshot = self
+            .zelda_snapshots
+            .as_ref()
+            .context("this game does not support Zelda snapshot slots")?
+            .read_slot(root, slot)?;
+        self.restore_zelda_snapshot(&snapshot)
+    }
+    /// Restore the engine and its wrapper counter together, preventing a first-tick reset.
+    pub fn restore_zelda_snapshot(&mut self, snapshot: &ZeldaSnapshot) -> Result<()> {
+        let context = self
+            .zelda_snapshots
+            .as_ref()
+            .context("this game does not support Zelda snapshots")?;
+        let _incoming = context.incoming(snapshot)?;
+        let _scratch = context.scratch()?;
+        #[cfg(any(target_os = "linux", windows))]
+        if let Some(native) = &mut self.native {
+            native.restore_snapshot(&snapshot.bytes)?;
+            self.state = snapshot.state;
+            return Ok(());
+        }
+        self.store
+            .as_mut()
+            .and_then(|s| s.data_mut().zelda.as_mut())
+            .context("Zelda engine is unavailable")?
+            .restore_snapshot(&snapshot.bytes, self.deadline_epochs)?;
+        let data = self.store.as_mut().unwrap().data_mut();
+        data.frame.reset();
+        data.audio.clear();
+        self.state = snapshot.state;
+        Ok(())
     }
     pub fn is_cube2(&self) -> bool {
         #[cfg(target_os = "linux")]
@@ -1175,7 +1302,7 @@ impl Game {
         if let Some(cube) = &self.cube2 {
             return cube.exited;
         }
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", windows))]
         if let Some(native) = &self.native {
             return native.exited;
         }
@@ -1207,7 +1334,7 @@ impl Game {
         if self.is_cube2() {
             return Ok(None);
         }
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", windows))]
         if let Some(n) = &self.native {
             return Ok(n.diagnostic.map(|d| d.2));
         }
@@ -1227,7 +1354,7 @@ impl Game {
         if self.is_cube2() {
             return Ok(None);
         }
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", windows))]
         if let Some(n) = &self.native {
             return Ok(n.diagnostic.map(|d| (d.0, d.1 as u16, (d.1 >> 16) as u16)));
         }
@@ -1248,7 +1375,7 @@ impl Game {
         if let Some(cube) = &self.cube2 {
             return cube.audio_channels;
         }
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", windows))]
         if let Some(native) = &self.native {
             return native.audio_channels;
         }
@@ -1259,7 +1386,7 @@ impl Game {
         if let Some(cube) = &self.cube2 {
             return &cube.audio;
         }
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", windows))]
         if let Some(n) = &self.native {
             return &n.audio;
         }
@@ -1270,7 +1397,7 @@ impl Game {
         if let Some(cube) = &self.cube2 {
             return &cube.frame;
         }
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", windows))]
         if let Some(n) = &self.native {
             return &n.frame;
         }
@@ -1324,7 +1451,7 @@ impl Game {
         self.input_allowed && !self.builtin_engine
     }
     fn user_files_mut(&mut self) -> Option<&mut crate::user_files::Service> {
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", windows))]
         if let Some(native) = &mut self.native {
             return Some(&mut native.user_files);
         }
@@ -1333,7 +1460,7 @@ impl Game {
             .map(|store| &mut store.data_mut().user_files)
     }
     pub fn observe_fullscreen(&mut self, fullscreen: Option<bool>) {
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", windows))]
         if let Some(native) = &mut self.native {
             native.window.observe_fullscreen(fullscreen);
             return;
@@ -1342,8 +1469,29 @@ impl Game {
             store.data_mut().window.observe_fullscreen(fullscreen);
         }
     }
+    pub fn observe_window_vsync(&mut self, vsync: Option<bool>) {
+        #[cfg(any(target_os = "linux", windows))]
+        if let Some(native) = &mut self.native {
+            native.window.observe_vsync(vsync);
+            return;
+        }
+        if let Some(store) = &mut self.store {
+            store.data_mut().window.observe_vsync(vsync);
+        }
+    }
+    /// Update actual client-area pixels; absent for headless/embedded hosts.
+    pub fn observe_window_size(&mut self, size: Option<[u32; 2]>) {
+        #[cfg(any(target_os = "linux", windows))]
+        if let Some(native) = &mut self.native {
+            native.window.observe_size(size);
+            return;
+        }
+        if let Some(store) = &mut self.store {
+            store.data_mut().window.observe_size(size);
+        }
+    }
     pub fn window_state(&self) -> crate::window_control::State {
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", windows))]
         if let Some(native) = &self.native {
             return native.window.state();
         }
@@ -1354,14 +1502,14 @@ impl Game {
     }
     /// Consume one committed request for the signed manifest homepage.
     pub fn take_homepage_url(&mut self) -> Option<String> {
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", windows))]
         if let Some(native) = &mut self.native {
             return native.window.take_homepage();
         }
         self.store.as_mut()?.data_mut().window.take_homepage()
     }
     fn effects_mut(&mut self) -> Option<&mut crate::audio_effects::Runtime> {
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", windows))]
         if let Some(native) = &mut self.native {
             return Some(&mut native.effects);
         }
@@ -1429,7 +1577,7 @@ impl Game {
             }
             return Ok(self.state);
         }
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", windows))]
         if let Some(n) = &mut self.native {
             n.window.begin(file_gesture);
             n.set_input_events(input_events);
@@ -1462,6 +1610,9 @@ impl Game {
                 n.user_files.shutdown();
             }
             return Ok(self.state);
+        }
+        if let Some(save) = self.store.as_mut().unwrap().data_mut().save.as_mut() {
+            save.discard_pending();
         }
         self.store.as_mut().unwrap().data_mut().effects.begin()?;
         self.store.as_mut().unwrap().data_mut().clock.begin();
@@ -1737,6 +1888,37 @@ fn rom_read_at(
     bytes.len() as i32
 }
 
+fn save_chunk(
+    mut caller: Caller<'_, Data>,
+    offset: i32,
+    total: i32,
+    pointer: i32,
+    length: i32,
+) -> i32 {
+    if offset < 0 || total < 0 || pointer < 0 || !(0..=65536).contains(&length) {
+        return -1;
+    }
+    let Some(memory) = caller.get_export("memory").and_then(|e| e.into_memory()) else {
+        return -1;
+    };
+    let Some(end) = (pointer as usize).checked_add(length as usize) else {
+        return -1;
+    };
+    let Some(bytes) = memory.data(&caller).get(pointer as usize..end) else {
+        return -1;
+    };
+    let bytes = bytes.to_vec();
+    if caller
+        .data_mut()
+        .save
+        .as_mut()
+        .is_some_and(|save| save.chunk(offset as usize, total as usize, &bytes))
+    {
+        0
+    } else {
+        -1
+    }
+}
 fn save_write(mut caller: Caller<'_, Data>, pointer: i32, length: i32) -> i32 {
     if pointer < 0
         || !(0..=crate::saves::MAX_SAVE as i32).contains(&length)
@@ -1759,6 +1941,7 @@ fn save_write(mut caller: Caller<'_, Data>, pointer: i32, length: i32) -> i32 {
         return -1;
     }
     let save = caller.data_mut().save.as_mut().unwrap();
+    save.discard_pending();
     save.bytes = bytes;
     save.dirty = true;
     0
@@ -1971,9 +2154,20 @@ fn zelda3_tick(mut caller: Caller<'_, Data>, input: i32, state: i64) -> Result<i
         .step(input as u32, state == 0, deadline)?;
     let data = caller.data_mut();
     data.frame.background = Some(0x000000ff);
-    let image = crate::drawing::image::Image::new(256, 224, &frame.pixels)
+    let image = crate::drawing::image::Image::new(frame.width, frame.height, &frame.pixels)
         .context("invalid Zelda3 engine image")?;
-    if !data.frame.image(64.0, 16.0, 512.0, 448.0, image) {
+    let scale = (640.0 / frame.width as f32)
+        .min(480.0 / frame.height as f32)
+        .min(2.0);
+    let width = frame.width as f32 * scale;
+    let height = frame.height as f32 * scale;
+    if !data.frame.image(
+        (640.0 - width) * 0.5,
+        (480.0 - height) * 0.5,
+        width,
+        height,
+        image,
+    ) {
         bail!("Zelda3 image exceeds the host frame budget");
     }
     if data.audio_allowed {
@@ -2269,6 +2463,13 @@ mod persistence_output_tests {
     use super::*;
     #[test]
     fn persistence_failures_discard_audio_and_drawing_from_the_rejected_tick() {
+        // This fixture tests persistence rollback, not the scheduler. Keep a
+        // finite supported budget while allowing loaded Windows CI workers.
+        // Deadline-specific tests retain the normal production settings.
+        let settings = crate::settings::Settings {
+            tick_deadline_ms: 1000,
+            ..Default::default()
+        };
         for component in [false, true] {
             let mut manifest =
                 Manifest::parse(include_bytes!("../examples/minimal/manifest.toml")).unwrap();
@@ -2328,7 +2529,7 @@ mod persistence_output_tests {
             } else {
                 module
             };
-            let mut game = Game::from_bytes(&bytes, &manifest).unwrap();
+            let mut game = Game::with_settings(&bytes, &manifest, &settings).unwrap();
             // Prove the fixture really emits both outputs on a successful tick.
             assert_eq!(game.step(4).unwrap(), 1);
             assert_eq!(game.audio_frame(), [1, -1]);
@@ -2351,7 +2552,11 @@ mod persistence_output_tests {
                 b"blocked history directory",
             )
             .unwrap();
-            assert!(game.step(4).is_err());
+            let error = game.step(4).unwrap_err();
+            assert!(
+                error.downcast_ref::<std::io::Error>().is_some(),
+                "expected the blocked history directory, not another trap: {error:#}"
+            );
             assert!(
                 game.take_homepage_url().is_none(),
                 "rejected tick retained homepage request"
@@ -2365,7 +2570,7 @@ mod persistence_output_tests {
                 game.frame().commands.is_empty(),
                 "component={component}: rejected tick retained drawing"
             );
-            let mut game = Game::from_bytes(&bytes, &manifest).unwrap();
+            let mut game = Game::with_settings(&bytes, &manifest, &settings).unwrap();
             let temporary = tempfile::tempdir().unwrap();
             let save = crate::saves::Save::open_for_game(temporary.path(), &manifest).unwrap();
             game.store.as_mut().unwrap().data_mut().save = Some(save);
@@ -2375,7 +2580,8 @@ mod persistence_output_tests {
             )
             .unwrap();
             std::fs::write(temporary.path().join("saves"), b"blocked save directory").unwrap();
-            assert!(game.step(4).is_err());
+            let error = game.step(4).unwrap_err();
+            assert_eq!(error.to_string(), "unable to persist game save");
             assert!(
                 game.take_homepage_url().is_none(),
                 "rejected tick retained homepage request"
