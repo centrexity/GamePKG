@@ -904,9 +904,12 @@ package-supplied scripts.
 `ports/arkanoo` ports gameplay from [c0m4r's Arkanoo](https://github.com/c0m4r/arkanoo).
 It includes nine campaign layouts followed by endless stages, paddle spin,
 three lives, multiball, long-paddle and ghost bonuses, explosive rockets, particles,
-synthesized sound effects, achievements, and saved high scores/level checkpoints.
+recorded music/effects, achievements, and saved high scores/level checkpoints.
 The exact upstream revision, original license and adaptation credits are included.
-Rendering and synthesized effects are replacements; original music and recorded effects remain separate fidelity work.
+The canonical recipe includes original licensed artwork, fonts and recordings.
+Rendering and playback use GamePKG's host functions. Original-code and full-image
+reference checks cover the restored presentation; exact MP3 decoder parity and
+complete game/platform fidelity remain tracked separately.
 
 Mouse movement, left/right arrows or A/D move the paddle. Space launches or fires;
 Escape pauses or resumes. Up/W also starts, launches, fires and confirms level
@@ -924,15 +927,18 @@ L opens the saved-pattern browser, and T tests the board. Test completion return
 to the editor. Saved patterns also join the endless-level pool. Patterns and
 metadata share the scoped save; legacy `ARK1`/`ARK2` data migrates to `ARK3`. Original
 ASCII patterns can be imported with I or exported with X using the system file
-picker (or browser upload/download controls). Original art/fonts and native IME
-activation remain unfinished. Names are stored as identifiers and never become host paths.
+picker (or browser upload/download controls). Original font rendering preserves
+case and Unicode names without truncating stored text. Names are stored as
+identifiers and never become host paths.
 
 Settings includes an effects mute toggle and a volume slider, with the original
 0–128 range shown as 0–100% and a 50% default. Drag the slider to change volume.
 Preferences survive New Game, Restart and relaunch in the existing scoped save.
 Unavailable saving and damaged saves show warnings; damaged data stays preserved.
-All five original recorded effects are restored. Original music and the
-remaining menu/display controls stay tracked in the fidelity audit.
+All five original recorded effects and the original music playlist are restored.
+Recorded playback advances independently of game ticks. Music volume/mute,
+resolution confirmation/revert and VSync controls have dedicated runtime checks;
+see the [fidelity audit](docs/PORT_FIDELITY.md) for their scope and remaining work.
 The main-menu Github button opens the signed manifest homepage through the host
 after a fresh click and successful tick. It works in current source-built desktop
 and browser players; games supply no URL or process arguments.
