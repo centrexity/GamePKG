@@ -1197,3 +1197,40 @@ Linux and Windows-under-Wine runtimes. They do not qualify the current app's GUI
 launch path, the normal signed Windows app Build/Play integration, physical
 Windows graphics/audio/controllers, natural player-two Race completion or the
 remaining campaign/multiplayer routes. Existing previews remain immutable.
+
+
+### Current Linux native app game-window integration
+
+The current bundled `gamepkg-gui --play com.gamepkg.takedawn` entry also passes
+with the signed v16 package. Explicit private `--library` and `--config` flags
+override deliberately invalid inherited locations; the wrong library is never
+created and the inherited settings file stays unchanged. The remembered ISO
+starts the native executable in a separate SDL window titled Takedawn. No
+GamePKG library window or additional app controls open. Its window PID is 2 in
+the game's PID namespace, distinct from the app process; this is not a host PID.
+
+Real X11 keyboard events, through the unchanged SDL keyboard map, load the
+copied earned profile and navigate **Driver Details > Records > Team Crush >
+USA**. The actual 960×720 game-window capture displays **Trailer Trash** and
+**$26,737**. It and the main-menu capture pass full PNG decoding and hash checks.
+A normal `WM_DELETE_WINDOW` closes the game and app with exit zero. Persisted
+play time increases from 6,002 to 57,024 ms. All saved profile/reference files,
+app/game/package bytes and explicit/inherited settings remain unchanged. Actual
+Vulkan and strict executed-path checks pass.
+
+The private display never appears on the user's desktop. A separate private
+PulseAudio server has exactly `module-null-sink` and
+`module-native-protocol-unix`, a single `gamepkg_silent` sink and no hardware
+modules; the actual app settings additionally mute audio and leave the watchdog
+off. Its runtime socket is the only audio socket exposed to the game. The
+private audio server exits zero after the successful check.
+
+The first window test reached the correct saved record, but the Xlib close
+helper read its parent display credentials instead of the private display's
+credentials. Its terminal failure and forced cleanup are retained; the owned
+session lock was confirmed released. Only that helper was corrected before a
+fresh test with the same frozen app/game source and unchanged normal close
+protocol. No production change, assertion relaxation or live source edit was
+used. The second complete check passes. This qualifies the current Linux direct
+GUI game entry and normal window lifecycle, not clicking Play through the
+library page, current Windows app integration or physical hardware.
