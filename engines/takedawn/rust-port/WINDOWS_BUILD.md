@@ -4,12 +4,16 @@ The standalone Windows pipeline compiles every prepared Rust game unit, builds
 the original C/C++ runtime and produces a native Windows executable. It invokes
 no WSL, translation tool, Python or game code during compilation. Python and Wine
 are maintainer diagnostics. The app's Windows Build action now dispatches this
-pipeline for the reviewed v15 kit and older admitted recipes. Windows CLI/GUI Play now uses the owned,
-confined session with remembered ISO selection and play history. The current
-unreleased 0.1.4 port recipe selects v15; the host also admits the older reviewed Linux
-v8 and universal v12/v13/v14 kits for package continuity. The player stops on any
-reported unsupported execution; older recipes may need updating. Physical Windows gameplay qualification and stable
-release promotion remain unfinished.
+pipeline for the reviewed v16 kit and older admitted recipes. Windows CLI/GUI
+Play uses the owned confined session with remembered ISO selection and play
+history. The unreleased 0.1.5 recipe selects v16; older Linux v8 and universal
+v12/v13/v14/v15 kits remain admitted for continuity.
+
+The complete actual Windows signed Build/repair evidence is for v15. The v16
+shared-results input fix has signed Linux Build/gameplay and sanitized 32/64-bit
+source checks; current Windows game/runtime qualification remains open. Existing
+preview archives retain their original identities and do not contain this fix.
+Physical Windows gameplay and stable release promotion remain unfinished.
 
 ## Managed SDK setup
 

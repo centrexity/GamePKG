@@ -6,8 +6,9 @@ use std::{
     path::{Path, PathBuf},
     process::Command,
 };
-// Retain the Linux v1 cache-wrapper format. The reviewed source-kit identity
-// below changes its namespace when the admitted current kit changes.
+// Retain the Linux v1 cache-wrapper format. The reviewed prepared-Rust ABI
+// identity changes its namespace when Rust/support inputs change. C-only
+// runtime policy updates rebuild the runtime without recompiling game units.
 const RUST_CACHE_WRAPPER: &str =
     include_str!("../../engines/takedawn/rust-port/rustc-cache-linux-v1.rs");
 
@@ -38,7 +39,7 @@ fn unit_cache(kit: &Path, tools: &Path, persistent: Option<&Path>) -> Result<Uni
     let context = crate::verify::digest(
         format!(
             "GamePKG Rust unit toolchain v1\0{}\0{}\0{}\0{}",
-            super::CURRENT_KIT_SHA256,
+            super::RUST_UNIT_CACHE_KIT_SHA256,
             crate::native::cpu_identity(),
             std::str::from_utf8(&version.stdout)?,
             crate::verify::digest(RUST_CACHE_WRAPPER.as_bytes())
