@@ -1146,3 +1146,17 @@ Actual Windows graphics/audio/controllers, the normal current Windows app
 Build/Play path, fresh-process profile behavior, other native control routes,
 player-two natural Race completion, mixed viewport prompts and broader campaign
 fidelity remain separate qualification. Existing preview archives stay unchanged.
+
+
+The current Linux CLI additionally passes ordinary default-native Run with the
+signed v16 package: an invalid ISO is rejected, an explicitly selected in-place
+ISO renders 120 frames, and a fresh invocation renders 240 frames using the
+remembered selection. Persisted play time increases from 2,030 to 6,002 ms.
+The actual compiled cache artifact matches the qualified v16 executable and its
+receipt; app, signed package, settings and retained native-copy hashes remain
+unchanged. Audio is muted and the watchdog stays zero/off. The first audit
+looked for a ROM-selections directory instead of `rom-selections.json`; that
+audit failure is retained. An independent audit reads the actual saved file,
+checks both successful Run outputs and increasing history, without repeating
+Build or Play. This establishes the current CLI launch path, not GUI interaction
+or loading the earned Team Crush result into an original profile screen.
