@@ -945,3 +945,21 @@ matching CLI/GUI build, relocated binary checks and package. Its terminal job
 and log are independently retained; this is not a physical 32-bit OS claim.
 Linux32 and Android32 terminal results still require their separate detailed
 log audit before using them as expanded qualification evidence.
+
+
+The initial Windows GUI run `40789067293` reports success at both widths.
+Its two 186-file evidence archives match published size/SHA-256 and ZIP CRCs;
+all 160 PNGs decode. Independent checks confirm 120 complete shader fields and
+all eight DOOM launch/history/gamma routes. Visual inspection confirms original
+gameplay/HUD in game-only windows. This is partial GUI qualification: the audit
+also caught that restored window preferences made three of four resize calls
+per width no-ops. Each width actually resized only its first OpenGL launch.
+The strict failed audit is retained and the older results are explicitly labeled
+partial; they do not establish all-route resize coverage.
+
+The follow-up chooses alternate outer dimensions based on the current client
+width, requires a changed captured client size before accepting the resized
+frame, and records both sizes with the history proof. Product window preferences,
+rendering, game data and deadlines are unchanged. The stronger actual Windows
+OpenGL/Vulkan first/restart checks remain required. Five local adversarial
+verifier controls and syntax checks still pass.
