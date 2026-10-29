@@ -145,7 +145,7 @@ fn verify_missing_palette_error(root: &Path, settings: &crate::settings::Setting
     let count = u32::from_le_bytes(invalid[4..8].try_into().unwrap()) as usize;
     let offset = u32::from_le_bytes(invalid[8..12].try_into().unwrap()) as usize;
     let mut changed = 0;
-    for entry in invalid[offset..offset + count * 16].chunks_exact_mut(16) {
+    for entry in invalid[offset..offset + count * 16].as_chunks_mut::<16>().0 {
         if &entry[8..16] == b"PLAYPAL\0" {
             entry[8..16].copy_from_slice(b"BADPAL\0\0");
             changed += 1;

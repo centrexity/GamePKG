@@ -985,3 +985,22 @@ mandatory. Six local controls cover malformed save/gamma/output and alternating
 visible geometry across three work-area/frame configurations. The corrected
 actual Windows runs remain required; neither the offscreen captures nor local
 math controls qualify those runs.
+
+
+The complete hosted canonical run `40791404759` at `6995119` succeeds with
+all steps complete. Its retained terminal log verifies 134 game tests, complete
+original artwork/audio, full-size decomposed-name editing across all three
+runtimes, browser playback/exports and 24 baseline/recorded core/component dense
+scenes with maximum saves. Both signed legacy suites run all 72 tests. Original
+source data, expected pixels, tolerances, memory ceilings and deadlines are
+unchanged. This supersedes the earlier pending/cancelled canonical statuses.
+
+Broader Rust CI at `a1af190` stops at a new Clippy 1.99 lint in the private
+missing-palette fixture: constant-size mutable chunks should use fixed arrays.
+The helper now uses `as_chunks_mut::<16>()`, retaining every exact WAD directory
+entry and the assertion that one palette entry changes. Rust 1.89 minimum-version
+compilation and strict all-feature/all-target lint pass locally, and the complete
+public-Freedoom native worker/normal-loader plus fatal-error control passes again
+with unchanged WAD bytes and silent output. No warning is suppressed and no
+runtime, scene or failure assertion is relaxed. Corrected hosted broad checks
+remain required.
