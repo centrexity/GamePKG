@@ -1004,3 +1004,36 @@ public-Freedoom native worker/normal-loader plus fatal-error control passes agai
 with unchanged WAD bytes and silent output. No warning is suppressed and no
 runtime, scene or failure assertion is relaxed. Corrected hosted broad checks
 remain required.
+
+## Independent player-two normal-input probe
+
+The maintainer bridge in `tools/takedawn_input_probe.py` selects either player,
+uses that player's original phase and pause owner, and prefixes all pad actions
+for the selected controller. It supports physical Xbox and PS2 pedal/boost
+layouts. The runtime applies the original controller assignment and layout;
+the bridge writes only ordinary virtual-pad commands and capture requests.
+It does not write game memory, activate AI or alter race outcomes. Players need
+none of this Python tooling.
+
+A bounded local Linux session of the exact signed v15 native executable
+(`621988980facdace69fc4dbf1e2b6de4043b442dd8d910854f09df38002b30df`)
+passes player-two acceleration, left/right input acceptance, pause owned by
+player two, normal Resume and normal driver shutdown. Original controller reads
+show physical PS2 acceleration reaching the game's RT input. Three complete
+640×480 game captures remain nonblank; the player-two viewport changes on both
+steering steps. Visual inspection confirms split-screen gameplay. Strict path
+and actual Vulkan gates pass, audio uses the dummy output, the ISO is read in
+place and reference profile/binary hashes remain unchanged. This qualifies the
+probe's routing and active game presentation, not exact steering equivalence,
+physical controllers or a completed multiplayer race.
+
+The first launch failed before the game started because its copied launcher
+lacked execute permission. A later checker incorrectly included player-two menu
+A presses from before the race layout was active. Both failed reports are
+retained locally; the accepted check scopes actual controller reads to the race
+start. No game code, layout, deadline or assertion about driving inputs changed.
+Three dependency-free adversarial tests cover player selection, physical layout
+commands, input-syntax rejection and wrong-player pause/finished-player guards.
+They run in both broad CI configurations without Pillow; capture operations alone
+load Pillow when needed. Player-two natural finish, mixed result prompts and
+normal Continue after shared results remain open.
