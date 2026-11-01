@@ -48,7 +48,18 @@ print('200',end='')
         click_text(window,env,'Review app update',root,max_y=800)
         time.sleep(.5)
         click_text(window,env,'Check for app updates when GamePKG opens',root,max_y=650)
-        click_text(window,env,'Save settings',root)
+        # Select the actual Save action, not its mention in the help copy.
+        _,save_y=click_text(window,env,'Cancel edits',root,click=False)
+        click_text(window,env,'Save settings',root,min_y=save_y-20,max_y=save_y+25)
+        # Await the queued mouse event's actual write before reading the file.
+        deadline=time.monotonic()+10
+        while True:
+            saved=tomllib.loads(config.read_text())
+            if saved.get('check_app_updates_on_startup') is False:break
+            if app.poll() is not None or time.monotonic()>=deadline:
+                subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(project/'target/app-updates-save-failed.png')],env=env)
+                raise AssertionError(f'Updater opt-out was not saved: {saved!r}')
+            time.sleep(.05)
         assert tomllib.loads(config.read_text())['check_app_updates_on_startup'] is False
         app.terminate(); app.wait(timeout=10)
         requests=(root/'requests').read_text()
