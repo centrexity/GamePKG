@@ -90,6 +90,17 @@ pub(crate) fn cpu_identity() -> &'static str {
         }
     })
 }
+/// Compare relocated app entries before packaging; this is cache compatibility,
+/// not a signature or proof of the publisher's identity.
+pub fn build_identity() -> serde_json::Value {
+    serde_json::json!({
+        "schema": 1,
+        "version": env!("CARGO_PKG_VERSION"),
+        "os": std::env::consts::OS,
+        "architecture": std::env::consts::ARCH,
+        "native_sdk": sdk_identity(),
+    })
+}
 fn sdk_identity() -> &'static str {
     static ID: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     ID.get_or_init(|| {

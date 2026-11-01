@@ -69,6 +69,7 @@ jobs:
           "./$builder" --github-env
       - name: Verify embedded decoder
         run: |
+          python tests/app_identity.py
           python tools/check_bundled_audio.py target/release
           python tests/windows_crt.py
       - name: Verify managed standalone Windows SDK setup before WSL preparation

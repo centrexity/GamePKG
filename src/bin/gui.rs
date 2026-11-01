@@ -5,6 +5,8 @@ use clap::Parser;
 struct Args {
     #[arg(long, hide = true)]
     check_bundled_audio: bool,
+    #[arg(long, hide = true)]
+    check_build_identity: bool,
     #[arg(long)]
     library: Option<std::path::PathBuf>,
     #[arg(long, help = "Use a specific GamePKG settings file")]
@@ -20,6 +22,10 @@ struct Args {
 }
 fn main() -> eframe::Result {
     let args = Args::parse();
+    if args.check_build_identity {
+        println!("{}", gamepkg::native::build_identity());
+        return Ok(());
+    }
     if args.check_bundled_audio {
         let factory = gamepkg::audio_decode::Factory::bundled().map_err(|error| {
             eframe::Error::AppCreation(Box::new(std::io::Error::other(error.to_string())))

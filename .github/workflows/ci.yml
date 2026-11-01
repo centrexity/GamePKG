@@ -384,6 +384,7 @@ jobs:
       - name: Verify embedded decoder
         if: matrix.features == '--all-features'
         run: |
+          python3 tests/app_identity.py
           python3 tools/check_bundled_audio.py target/release
           python3 tests/audio_companion_metadata.py
       - name: Verify physical input capture isolation and ordering

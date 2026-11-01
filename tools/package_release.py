@@ -13,6 +13,7 @@ import tempfile
 import tomllib
 import zipfile
 from windows_pe_imports import require_standalone_crt
+from app_identity import verify_pair
 
 PROJECT = Path(__file__).resolve().parents[1]
 
@@ -97,6 +98,7 @@ def package(output_directory, binary_directory, *, system=None, target_triple=No
     destination = output_directory / (name + ('.zip' if windows else '.tar.gz'))
     if destination.exists() or destination.is_symlink():
         raise FileExistsError(destination)
+    identity = verify_pair(binary_directory, version=version, system=system, architecture=architecture)
     metadata = dependency_metadata(target)
     resolved = {node['id'] for node in metadata['resolve']['nodes']}
     with tempfile.TemporaryDirectory(prefix='gamepkg-distribution-') as directory:
@@ -117,7 +119,9 @@ def package(output_directory, binary_directory, *, system=None, target_triple=No
                 raise ValueError(f'{executable} must be an ELF executable')
             shutil.copyfile(source, root / 'bin' / executable)
             (root / 'bin' / executable).chmod(0o755)
-            binaries[executable] = sha256(source)
+            binaries[executable] = sha256(root / 'bin' / executable)
+            if binaries[executable] != identity['executables_sha256'][executable]:
+                raise ValueError('App executable changed after build identity validation')
         for filename in ['LICENSE', 'NOTICE', 'Cargo.lock']:
             shutil.copyfile(PROJECT / filename, root / filename)
         (root / 'tools').mkdir()
@@ -146,7 +150,7 @@ def package(output_directory, binary_directory, *, system=None, target_triple=No
                 shutil.copyfile(document, target / relative)
             notices.append({'name': dependency['name'], 'version': dependency['version'], 'license': dependency.get('license'), 'source': dependency.get('source'), 'notices': [str(p.relative_to(source)) for p in sorted(documents)]})
         (root / 'DEPENDENCIES.json').write_text(json.dumps(notices, indent=2) + '\n')
-        (root / 'BUILD.json').write_text(json.dumps({'version': version, 'platform': host, 'binary_profile': binary_directory.name, 'libc': platform.libc_ver(), 'executables_sha256': binaries, 'cargo_lock_sha256': sha256(PROJECT / 'Cargo.lock')}, indent=2) + '\n')
+        (root / 'BUILD.json').write_text(json.dumps({'version': version, 'platform': host, 'binary_profile': binary_directory.name, 'libc': platform.libc_ver(), 'executables_sha256': binaries, 'app_build_identity': identity['identity'], 'cargo_lock_sha256': sha256(PROJECT / 'Cargo.lock')}, indent=2) + '\n')
         with tempfile.NamedTemporaryFile(dir=output_directory, prefix='.release-', delete=False) as temporary:
             temporary_path = Path(temporary.name)
         try:

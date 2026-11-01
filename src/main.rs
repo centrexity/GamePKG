@@ -30,6 +30,9 @@ enum Command {
     /// Maintainer packaging check; never reads a runtime decoder path.
     #[command(hide = true)]
     CheckBundledAudio,
+    /// Maintainer check for matching CLI/GUI native cache recipes.
+    #[command(hide = true)]
+    CheckBuildIdentity,
     /// Remember a display preference for the pinned Zelda engine.
     ConfigureDisplay {
         id: String,
@@ -266,6 +269,9 @@ fn main() -> Result<()> {
                 );
                 println!("Select this ISO on the game's page, build the native game, then Play. The ISO stays in place.");
             }
+        }
+        Command::CheckBuildIdentity => {
+            println!("{}", gamepkg::native::build_identity());
         }
         Command::CheckBundledAudio => {
             let factory = gamepkg::audio_decode::Factory::bundled()?;

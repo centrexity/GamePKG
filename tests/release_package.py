@@ -49,6 +49,9 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-release-test-') as directory:
     assert build['version'] in run('--version')
     gui_version = subprocess.run([str(distribution / 'bin' / 'gamepkg-gui'),'--version'],env=env,capture_output=True,text=True,timeout=10)
     assert gui_version.returncode == 0 and build['version'] in gui_version.stdout, gui_version.stderr
+    assert json.loads(run('check-build-identity')) == build['app_build_identity']
+    gui_identity = subprocess.run([str(distribution / 'bin' / 'gamepkg-gui'), '--check-build-identity'], env=env, capture_output=True, text=True, timeout=10)
+    assert gui_identity.returncode == 0 and json.loads(gui_identity.stdout) == build['app_build_identity'], gui_identity.stderr
     assert 'web-library' in run('--help')
     assert '--store' in run('integrity-fix','--help')
     run('keygen', '-o', root / 'creator.key')
