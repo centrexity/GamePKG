@@ -111,6 +111,31 @@ impl Frame {
             && self.commands.len() < MAX_COMMANDS
             && bytes <= self.image_limit().saturating_sub(self.image_bytes)
     }
+    /// Reuse only an immutable, byte-identical adjacent snapshot. Submission
+    /// still charges its complete transfer size, including reused snapshots.
+    pub(crate) fn image_snapshot(
+        &self,
+        width: u32,
+        height: u32,
+        pixels: &[u8],
+    ) -> Option<std::sync::Arc<image::Image>> {
+        if image::Image::byte_length(width, height)? != pixels.len() {
+            return None;
+        }
+        let previous = match self.commands.last() {
+            Some(Command::Image { image, .. })
+            | Some(Command::LinearImage { image, .. })
+            | Some(Command::StraightLinearImage { image, .. })
+            | Some(Command::ShaderImage { image, .. }) => Some(image),
+            _ => None,
+        };
+        if let Some(image) = previous {
+            if image.size() == [width as usize, height as usize] && image.pixels() == pixels {
+                return Some(image.clone());
+            }
+        }
+        image::Image::new(width, height, pixels).map(std::sync::Arc::new)
+    }
     pub fn image(&mut self, x: f32, y: f32, width: f32, height: f32, image: image::Image) -> bool {
         self.image_arc(x, y, width, height, std::sync::Arc::new(image), false)
     }
@@ -242,6 +267,48 @@ fn valid_position(x: f32, y: f32) -> bool {
 #[cfg(test)]
 mod clip_tests {
     use super::*;
+    #[test]
+    fn image_snapshots_require_exact_shape_bytes_and_ownership() {
+        let mut frame = Frame::default();
+        let mut pixels = vec![0; 8];
+        let first = frame.image_snapshot(2, 1, &pixels).unwrap();
+        assert!(frame.image_arc(0., 0., 2., 1., first.clone(), false));
+        let same = frame.image_snapshot(2, 1, &pixels).unwrap();
+        assert!(std::sync::Arc::ptr_eq(&first, &same));
+        let reshaped = frame.image_snapshot(1, 2, &pixels).unwrap();
+        assert!(!std::sync::Arc::ptr_eq(&first, &reshaped));
+        assert_eq!(reshaped.size(), [1, 2]);
+        pixels[7] = 255;
+        let changed = frame.image_snapshot(2, 1, &pixels).unwrap();
+        assert!(!std::sync::Arc::ptr_eq(&first, &changed));
+        assert_eq!(first.pixels(), &[0; 8]);
+        pixels.fill(17);
+        assert_eq!(changed.pixels(), &[0, 0, 0, 0, 0, 0, 0, 255]);
+        for (width, height, length) in [(0, 1, 8), (513, 1, 8), (2, 1, 7), (2, 1, 9)] {
+            assert!(frame
+                .image_snapshot(width, height, &vec![0; length])
+                .is_none());
+        }
+        frame.clear(0);
+        let after_clear = frame.image_snapshot(2, 1, &[0; 8]).unwrap();
+        assert!(!std::sync::Arc::ptr_eq(&first, &after_clear));
+    }
+    #[test]
+    fn image_snapshot_compares_the_last_byte_of_maximum_size_images() {
+        let mut frame = Frame::default();
+        let mut pixels = vec![0; image::MAX_BYTES];
+        let first = frame.image_snapshot(512, 512, &pixels).unwrap();
+        assert!(frame.image_arc(0., 0., 640., 480., first.clone(), false));
+        assert!(std::sync::Arc::ptr_eq(
+            &first,
+            &frame.image_snapshot(512, 512, &pixels).unwrap()
+        ));
+        *pixels.last_mut().unwrap() = 255;
+        let changed = frame.image_snapshot(512, 512, &pixels).unwrap();
+        assert!(!std::sync::Arc::ptr_eq(&first, &changed));
+        assert_eq!(first.pixels().last(), Some(&0));
+        assert_eq!(changed.pixels(), pixels);
+    }
     #[test]
     fn clip_replacement_reset_and_empty_regions_are_bounded_commands() {
         let mut frame = Frame::default();

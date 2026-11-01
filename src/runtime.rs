@@ -534,18 +534,14 @@ impl Game {
                             return -1;
                         }
 
-                        let Some(image) = crate::drawing::image::Image::new(
+                        let Some(image) = caller.data().frame.image_snapshot(
                             pw,
                             ph,
                             &memory.data(&caller)[pointer as usize..end],
                         ) else {
                             return -1;
                         };
-                        let accepted = if linear {
-                            caller.data_mut().frame.linear_image(x, y, w, h, image)
-                        } else {
-                            caller.data_mut().frame.image(x, y, w, h, image)
-                        };
+                        let accepted = caller.data_mut().frame.image_arc(x, y, w, h, image, linear);
                         if accepted {
                             0
                         } else {

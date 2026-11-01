@@ -121,6 +121,18 @@ fn core_and_component_hosts_select_the_profile_and_keep_real_memory_ceiling() {
             let mut game = Game::from_bytes(&bytes, &manifest).unwrap();
             assert_eq!(game.step(0).unwrap(), accepted);
             assert_eq!(game.frame().commands.len(), accepted as usize);
+            let gamepkg::drawing::Command::Image { image: first, .. } = &game.frame().commands[0]
+            else {
+                panic!("first image")
+            };
+            let expected_pixels = vec![0; 1048576];
+            for command in &game.frame().commands {
+                let gamepkg::drawing::Command::Image { image, .. } = command else {
+                    panic!("image command")
+                };
+                assert!(Arc::ptr_eq(first, image));
+                assert_eq!(image.pixels(), expected_pixels.as_slice());
+            }
             assert_eq!(game.step(0).unwrap(), accepted);
             if large {
                 let settings = gamepkg::settings::Settings {
@@ -134,6 +146,74 @@ fn core_and_component_hosts_select_the_profile_and_keep_real_memory_ceiling() {
                 assert!(error.contains("memory ceiling"), "{error}");
             }
         }
+    }
+}
+
+#[test]
+fn adjacent_guest_images_share_only_exact_immutable_snapshots() {
+    for component in [false, true] {
+        let mut manifest = Manifest::parse(text(false).as_bytes()).unwrap();
+        let (namespace, image, linear, entry) = if component {
+            manifest.runtime_profile = "component-v1".into();
+            (
+                "gamepkg:engine/host@0.1.0",
+                "draw-image",
+                "draw-image-linear",
+                "tick",
+            )
+        } else {
+            ("gamepkg", "draw_image", "draw_image_linear", "gamepkg_tick")
+        };
+        let call = |name, x| {
+            format!("f32.const {x} f32.const 0 f32.const 2 f32.const 1 i32.const 2 i32.const 1 i32.const 0 i32.const 8 call ${name} drop")
+        };
+        let wasm = wat::parse_str(format!(r#"(module
+          (import "{namespace}" "{image}" (func $image (param f32 f32 f32 f32 i32 i32 i32 i32) (result i32)))
+          (import "{namespace}" "{linear}" (func $linear (param f32 f32 f32 f32 i32 i32 i32 i32) (result i32)))
+          (memory (export "memory") 1)
+          (func (export "{entry}") (param i32 i64) (result i64)
+            {} {} i32.const 7 i32.const 255 i32.store8 {} i64.const 0))"#,
+            call("image", 0), call("linear", 1), call("image", 2))).unwrap();
+        let bytes = if component {
+            gamepkg::hostapi::componentize(wasm).unwrap()
+        } else {
+            wasm
+        };
+        let mut game = Game::from_bytes(&bytes, &manifest).unwrap();
+        game.step(0).unwrap();
+        let commands = &game.frame().commands;
+        assert_eq!(commands.len(), 3);
+        let gamepkg::drawing::Command::Image {
+            image: first,
+            x: 0.,
+            ..
+        } = &commands[0]
+        else {
+            panic!("first image")
+        };
+        let gamepkg::drawing::Command::LinearImage {
+            image: second,
+            x: 1.,
+            ..
+        } = &commands[1]
+        else {
+            panic!("linear image")
+        };
+        let gamepkg::drawing::Command::Image {
+            image: changed,
+            x: 2.,
+            ..
+        } = &commands[2]
+        else {
+            panic!("changed image")
+        };
+        assert!(Arc::ptr_eq(first, second));
+        assert!(!Arc::ptr_eq(first, changed));
+        assert_eq!(first.pixels(), &[0; 8]);
+        assert_eq!(changed.pixels(), &[0, 0, 0, 0, 0, 0, 0, 255]);
+        let retained = first.clone();
+        game.step(0).unwrap();
+        assert_eq!(retained.pixels(), &[0; 8]);
     }
 }
 
