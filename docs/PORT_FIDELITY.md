@@ -4917,3 +4917,31 @@ with the existing one-level tolerance unchanged. Original assets, goldens,
 production rendering and resource/deadline limits are unchanged. Automated audio
 is muted. Earlier stale-reference and fractional-viewport failures are retained;
 new-head hosted requalification remains pending.
+
+
+## Missing-mark cache lookup cost (0.1.76)
+
+The current hosted full-suite failure at source `85297c3` interrupts the
+maximum-size missing-mark name in core/component Wasm while native passes.
+The stack points into the viewport shaper. An exact cache hit already carries
+the mark's acceptance result and canonical class, but `MissingCompositionRun`
+still computes the starter's nominal glyph before calling a function that
+immediately returns those cached bits. The follow-up uses the same cached
+acceptance bit directly; misses and every canonical-order/composition proof
+retain their previous checks.
+
+With Rust 1.99.1, optimization level 2 and Wasmtime 36.0.20, isolated font
+benchmarks for four one-megabyte names move from median 43.9–45.5 ms to
+9.1–11.2 ms (4.07–4.80 times faster), with matching display-text checksums.
+This measures font work, not a complete frame or every machine. All 134
+original game/font tests pass, including complete combining-class contexts,
+original SDL rasters, late composition and unchanged saved source. Strict
+reference-test Clippy passes. The original failing real-package scenario
+passes native/core/component with the same 100 ms deadline, 256 MiB manifest
+limit, full-size saved name, typing, PCM, corrupt-save and restart assertions.
+
+A broader mixed-name attempt subsequently times out during early background
+drawing, before reaching the large name, in all three runtimes on a heavily
+loaded local machine. That failure is retained separately and is not a pass or
+proof of its cause. Other mixed-name scenarios and fresh hosted qualification
+remain required; no limit, original reference or assertion is changed.
