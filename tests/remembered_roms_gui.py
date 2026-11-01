@@ -44,6 +44,13 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-remembered-roms-') as temp:
   fields=[w for w in ws if label['top']+label['height']<w['top']<label['top']+110 and w['left']<650]
   assert fields,ws
   click_word(min(fields,key=lambda w:w['top']))
+ def back_to_library():
+  # Playback controls can leave the game page scrolled below its Back button.
+  # Reveal the real navigation control before locating it by its visible label.
+  subprocess.run(['xdotool','mousemove','--window',window,'400','800','click','--repeat','20','--delay','30','4'],env=env,check=True)
+  time.sleep(.2)
+  click_text(window,env,'Back to library',root)
+
  def expect_rom(byte):
   wait_game_frame(window,env,root,(255,0,0) if byte==65 else (0,255,0))
 
@@ -64,11 +71,11 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-remembered-roms-') as temp:
     click_rom_field(name)
     choose_native_file(env,'Choose Alpha ROM')
     assert (home/'rom-selections.json').read_bytes()==before,'Cancel changed remembered ROMs'
-   time.sleep(.3);click_text(window,env,'Back to library',root)
+   time.sleep(.3);back_to_library()
   stored=json.loads((home/'rom-selections.json').read_text());assert sorted(stored.values())==sorted([[str(a)],[str(b)]])
   close();launch()
-  click_text(window,env,'com.example.alpha',root);click_primary_play(window,env,root);library_window=window;window,pid=game_window(env,'com.example.alpha');assert pid != app.pid;expect_rom(65);close_game(window,env);window=library_window;click_text(window,env,'Back to library',root)
-  click_text(window,env,'com.example.beta',root);click_primary_play(window,env,root);library_window=window;window,pid=game_window(env,'com.example.beta');assert pid != app.pid;expect_rom(66);close_game(window,env);window=library_window;click_text(window,env,'Back to library',root)
+  click_text(window,env,'com.example.alpha',root);click_primary_play(window,env,root);library_window=window;window,pid=game_window(env,'com.example.alpha');assert pid != app.pid;expect_rom(65);close_game(window,env);window=library_window;back_to_library()
+  click_text(window,env,'com.example.beta',root);click_primary_play(window,env,root);library_window=window;window,pid=game_window(env,'com.example.beta');assert pid != app.pid;expect_rom(66);close_game(window,env);window=library_window;back_to_library()
   proof=PROJECT/'target/remembered-roms-library.png';subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(proof)],env=env,check=True)
   close();launch('--play','com.example.alpha');expect_rom(65)
   print('Remembered ROMs passed: separate file paths, game switching, restart and direct --play without reselecting files.')
