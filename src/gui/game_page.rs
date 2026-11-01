@@ -292,7 +292,7 @@ impl App {
                         && self.data_paths.get(&id).is_some_and(|path| crate::game_data::validate(std::path::Path::new(path)).is_ok())
                     ));
                 ui.label(if ready{"Ready to play"}else if built{"Native build verified — setup required"}else{"Native build: Not built or no longer valid"});
-                if let Some(usage)=self.usage.get(&id){ui.label(format!("Storage: {} used",crate::storage::bytes(usage.used_bytes())));}
+                if let Some(usage)=self.usage.get(&id){ui.label(format!("Storage: {}",usage.space().label())).on_hover_text(usage.space().details());}
                 ui.horizontal_wrapped(|ui|{
                     if ui.add_enabled(!reviewing&&ready&&self.result.is_none(),super::theme::primary("Play")).clicked(){self.launch_selected(id.clone(),true);}
                     if ui.add_enabled(crate::native::build_supported(&m)&&!reviewing&&self.result.is_none(),egui::Button::new(if built{"Rebuild"}else{"Build"}).min_size(egui::vec2(100.0,36.0))).clicked(){let id=id.clone();self.begin_work(move||{crate::native::compile(&crate::registry::default_root()?,&id)?;Ok(Work::NativeBuilt(id))});if m.builtin_engine.as_deref()==Some(crate::takedawn::PROFILE){self.status="Building this game for your computer. The first build can take an hour or more. Your ISO is not copied.".into();}}
