@@ -94,6 +94,7 @@ fn verify_relocated(binaries: &Path) -> io::Result<()> {
     ));
     fs::create_dir(&directory)?;
     let mut previous = None;
+    let mut previous_build = None;
     for (name, option) in [
         ("gamepkg", "check-bundled-audio"),
         ("gamepkg-gui", "--check-bundled-audio"),
@@ -101,7 +102,7 @@ fn verify_relocated(binaries: &Path) -> io::Result<()> {
         let name = format!("{name}{}", env::consts::EXE_SUFFIX);
         let executable = directory.join(&name);
         fs::copy(binaries.join(name), &executable)?;
-        let output = Command::new(executable)
+        let output = Command::new(&executable)
             .arg(option)
             .current_dir(&directory)
             .env("GAMEPKG_HOME", directory.join("library"))
@@ -135,6 +136,43 @@ fn verify_relocated(binaries: &Path) -> io::Result<()> {
             ));
         }
         previous = Some(record);
+        let option = if option.starts_with("--") {
+            "--check-build-identity"
+        } else {
+            "check-build-identity"
+        };
+        let output = Command::new(&executable)
+            .arg(option)
+            .current_dir(&directory)
+            .env("GAMEPKG_HOME", directory.join("library"))
+            .env("GAMEPKG_CONFIG", directory.join("settings.toml"))
+            .env_remove("DISPLAY")
+            .env_remove("WAYLAND_DISPLAY")
+            .stdin(Stdio::null())
+            .output()?;
+        let record = String::from_utf8(output.stdout).map_err(io::Error::other)?;
+        if !output.status.success()
+            || !record.contains("\"schema\":1")
+            || !record.contains("\"native_sdk\":")
+            || !record.contains("\"architecture\":")
+            || !record.contains("\"version\":")
+            || !record.contains("\"os\":")
+        {
+            return Err(io::Error::other(format!(
+                "relocated build identity failed; rebuild both app entries together: {}; evidence: {}",
+                String::from_utf8_lossy(&output.stderr),
+                directory.display()
+            )));
+        }
+        if previous_build
+            .as_ref()
+            .is_some_and(|old: &String| old.trim() != record.trim())
+        {
+            return Err(io::Error::other(
+                "CLI and GUI use different native build recipes; rebuild both app entries together",
+            ));
+        }
+        previous_build = Some(record);
     }
     fs::remove_dir_all(directory)?;
     Ok(())
@@ -226,7 +264,7 @@ fn build() -> io::Result<()> {
         }
     }
     println!(
-        "CLI and GUI ready in {}. Relocated audio checks passed.",
+        "CLI and GUI ready in {}. Relocated native recipe and audio checks passed.",
         target.join("release").display()
     );
     Ok(())

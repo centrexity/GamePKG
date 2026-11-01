@@ -8,6 +8,16 @@ Linux native Rust and reviewed C-engine compilation explicitly targets the same 
 
 Native executable caches are specific to the package contents, host version, host bindings, operating system, CPU architecture and detected CPU features. Moving source packages between machines remains supported; build them for the destination machine. A native build does not replace a separately built Wasm artifact. Optional DOOM Wasm engines also record the reviewed source-kit fingerprint. When that kit changes, readiness, launch and integrity checks require rebuilding the engine; Integrity fix rebuilds it while retaining the signed package and saves. This compatibility marker supplements the build receipt and runtime validation.
 
+Maintainers must build the CLI and GUI together. Two binaries can report the same
+app version and audio decoder while using different native build recipes, causing
+a CLI-built game to appear unbuilt in the desktop app. The native Rust release
+builder, relocated-entry check and release packager reject such pairs. The hidden
+`check-build-identity` CLI command and `--check-build-identity` GUI option report
+the version, platform, architecture and native recipe without opening a window or
+loading player settings. `BUILD.json` records that matching identity and the
+packager verifies the copied executable hashes against the validated pair.
+This is a compatibility check, not a creator signature or source provenance proof.
+
 The ordinary checked-source native worker supports Linux and Windows x86/x64.
 Windows uses managed, checksum-verified Rust 1.89.0 and GNU Binutils 2.42; both
 compiler stages run inside AppContainer/job boundaries. The game runs in a
