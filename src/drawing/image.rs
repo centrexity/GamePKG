@@ -94,8 +94,21 @@ impl Image {
         limits.max_image_height = Some(MAX_DIMENSION);
         limits.max_alloc = Some(8 * 1024 * 1024);
         reader.limits(limits);
-        let decoded = reader.decode().ok()?.to_rgba8();
-        Self::new(decoded.width(), decoded.height(), decoded.as_raw())
+        let decoded = reader.decode().ok()?.into_rgba8();
+        let (width, height) = decoded.dimensions();
+        let length = Self::byte_length(width, height)?;
+        // The decoder already owns an immutable snapshot. Keep its RGBA buffer
+        // instead of cloning it during conversion and again in `Self::new`.
+        // Discard any spare capacity so retained memory matches cache accounting.
+        let pixels = decoded.into_raw().into_boxed_slice().into_vec();
+        if pixels.len() != length {
+            return None;
+        }
+        Some(Self {
+            width,
+            height,
+            pixels,
+        })
     }
     pub fn byte_length(width: u32, height: u32) -> Option<usize> {
         if width == 0 || height == 0 || width > MAX_DIMENSION || height > MAX_DIMENSION {
@@ -139,6 +152,70 @@ mod tests {
             .unwrap();
         assert!(Image::from_png(&oversized).is_none());
     }
+    #[test]
+    fn png_color_conversion_preserves_known_pixels_and_alpha() {
+        use ::image::{ExtendedColorType, ImageEncoder};
+        fn words(samples: &[u16]) -> Vec<u8> {
+            samples
+                .iter()
+                .flat_map(|sample| sample.to_ne_bytes())
+                .collect()
+        }
+        let cases = [
+            (
+                ExtendedColorType::Rgba8,
+                vec![0, 128, 255, 1, 255, 1, 0, 128],
+                vec![0, 128, 255, 1, 255, 1, 0, 128],
+            ),
+            (
+                ExtendedColorType::Rgb8,
+                vec![0, 128, 255, 255, 1, 0],
+                vec![0, 128, 255, 255, 255, 1, 0, 255],
+            ),
+            (
+                ExtendedColorType::L8,
+                vec![0, 128],
+                vec![0, 0, 0, 255, 128, 128, 128, 255],
+            ),
+            (
+                ExtendedColorType::La8,
+                vec![0, 1, 128, 255],
+                vec![0, 0, 0, 1, 128, 128, 128, 255],
+            ),
+            (
+                ExtendedColorType::Rgba16,
+                words(&[0, 32896, 65535, 257, 65535, 257, 0, 32896]),
+                vec![0, 128, 255, 1, 255, 1, 0, 128],
+            ),
+            (
+                ExtendedColorType::Rgb16,
+                words(&[0, 32896, 65535, 65535, 257, 0]),
+                vec![0, 128, 255, 255, 255, 1, 0, 255],
+            ),
+            (
+                ExtendedColorType::L16,
+                words(&[0, 32896]),
+                vec![0, 0, 0, 255, 128, 128, 128, 255],
+            ),
+            (
+                ExtendedColorType::La16,
+                words(&[0, 257, 32896, 65535]),
+                vec![0, 0, 0, 1, 128, 128, 128, 255],
+            ),
+        ];
+        for (color, pixels, expected) in cases {
+            let mut png = Vec::new();
+            ::image::codecs::png::PngEncoder::new(&mut png)
+                .write_image(&pixels, 2, 1, color)
+                .unwrap();
+            let image = Image::from_png(&png).unwrap();
+            png.fill(0);
+            assert_eq!(image.size(), [2, 1], "{color:?}");
+            assert_eq!(image.pixels(), expected, "{color:?}");
+            assert_eq!(image.pixels.capacity(), expected.len(), "{color:?}");
+        }
+    }
+
     #[test]
     fn image_is_a_private_exact_size_snapshot() {
         let mut bytes = vec![255, 0, 0, 255, 0, 255, 0, 128];

@@ -4945,3 +4945,38 @@ drawing, before reaching the large name, in all three runtimes on a heavily
 loaded local machine. That failure is retained separately and is not a pass or
 proof of its cause. Other mixed-name scenarios and fresh hosted qualification
 remain required; no limit, original reference or assertion is changed.
+
+
+## Follow-up maximum-name runtime qualification
+
+After measured local load fell from roughly 15.5 to 3.1, recipe 0.1.76 passed
+all three additional full-size names: alternating same-class missing marks,
+mixed-class marks requiring canonical reordering, and a late composing cedilla.
+Each passed native, core Wasm and component Wasm with the original 100 ms tick
+deadline and 256 MiB manifest limit. The 1,048,352-byte name, typing, real host
+PCM, all six corrupt-save cases, and saved restart checks remain unchanged.
+These nine successful runtime/scenario combinations supplement the earlier
+single missing-mark qualification. The earlier loaded-machine background-draw
+timeout remains recorded; the new observations do not prove its cause or
+replace fresh hosted and physical-platform qualification.
+
+## Owned PNG decode buffers
+
+The host now takes ownership of the decoder's RGBA buffer instead of cloning
+an already-RGBA image and then copying it again into the host image. Other
+accepted color formats use the same conversion and retain its output directly.
+The exact dimension and byte-length checks remain, and spare vector capacity
+is discarded so retained allocation agrees with cache accounting. Encoded-size,
+decoder allocation, archive CRC, verified-path, frame-charge and cache bounds
+are unchanged; no image content or drawing command is omitted.
+
+A differential allocation probe using the pinned image 0.25.10 crate measures
+two fewer allocations and 2 MiB fewer requested allocation bytes per 512×512
+RGBA decode (3,559,384 to 1,462,232 bytes). This is an allocation measurement,
+not a whole-frame timing guarantee. RGB, grayscale, grayscale-alpha and small
+16-bit RGBA conversions also retain identical pixels with one fewer output
+allocation. The oversized encoded 16-bit RGBA fixture is still rejected. All 178
+original PNG assets decode to exactly matching dimensions and complete pixel
+buffers in the before/after comparison. Known 8/16-bit color and alpha samples
+have independent expected-pixel assertions; existing archive-integrity, cache,
+resource and immutable-snapshot tests keep their original checks.
