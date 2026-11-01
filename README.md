@@ -322,30 +322,40 @@ permission denial and trap rollback.
 
 ## Pinned shader builds
 
-Build/Rebuild now compiles the signed Slang shader source in a network-isolated
-Linux process before publishing the Wasm artifact. Install the supported
-compiler into a new folder:
+Build/Rebuild compiles signed Slang shader sources before publishing a playable
+artifact. Windows prepares its pinned 64-bit shader tools automatically when
+needed. Players do not need Python.
+
+On Linux x86-64, download the
+[official Slang 2026.19 archive](https://github.com/shader-slang/slang/releases/download/v2026.19/slang-2026.19-linux-x86_64-glibc-2.27.tar.gz).
+From the download folder, verify its checksum and extract it into a new folder:
 
 ```sh
-python3 tools/install_slang.py /absolute/path/gamepkg-slang
+printf '%s\n' '5899bd40c3d1ee60eadd1d1b37acc4e88ae65cc25ac61651534d55b71a85fe75  slang-2026.19-linux-x86_64-glibc-2.27.tar.gz' |
+    sha256sum --check &&
+mkdir /absolute/path/gamepkg-slang &&
+tar -xzf slang-2026.19-linux-x86_64-glibc-2.27.tar.gz -C /absolute/path/gamepkg-slang &&
 export GAMEPKG_SLANG_ROOT=/absolute/path/gamepkg-slang
 ```
 
-The installer downloads the official Slang 2026.19 Linux x86-64 release and
-checks a pinned SHA-256 before unpacking it. Alternatively set the installation
-folder and backend in the desktop Settings page. New configurations default to
-WGSL or SPIR-V for Vulkan shader playback. OpenGL also accepts GLSL. SPIR-V, WGSL, Metal,
-and DXIL compilation outputs are also tested. DXIL requires the pinned
-DXC 1.9.2609 Linux x86-64 distribution:
+Alternatively select the extracted compiler folder in Settings. New
+configurations default to WGSL or SPIR-V for Vulkan shader playback. OpenGL also
+accepts GLSL. SPIR-V, WGSL, Metal and DXIL compilation outputs are tested. DXIL
+builds on Linux x86-64 additionally need the
+[official DXC 1.9.2609 archive](https://github.com/microsoft/DirectXShaderCompiler/releases/download/v1.9.2609/linux_dxc_2026_09_28.x86_x64.tar.gz):
 
 ```sh
-python3 tools/install_dxc.py /absolute/path/gamepkg-dxc
+printf '%s\n' '96faadc7f5c282d2ffda49804beb4c3ee38127bc252b723234e3c5cdf7aa39a1  linux_dxc_2026_09_28.x86_x64.tar.gz' |
+    sha256sum --check &&
+mkdir /absolute/path/gamepkg-dxc &&
+tar -xzf linux_dxc_2026_09_28.x86_x64.tar.gz -C /absolute/path/gamepkg-dxc &&
 export GAMEPKG_DXC_ROOT=/absolute/path/gamepkg-dxc
 ```
 
-The installer verifies the official release archive checksum. The host checks
-both DXC library hashes before compilation, mounts them read-only inside the
-build sandbox, and includes the pinned DXC identity in the shader cache key.
+The host checks both DXC library hashes before compilation, mounts them
+read-only inside the build worker, and includes the pinned DXC identity in the
+shader cache key. The Python installer scripts under `tools/` are maintainer
+utilities; neither app entry nor game playback requires them.
 Missing or modified libraries fail the build. No backend fallback occurs. Select GLSL, SPIR-V, or WGSL and rebuild to use resource-free
 fragment passes in the OpenGL desktop player. SPIR-V is parsed and validated by
 pinned Naga 24.0.0, then translated to host-owned GLSL 330 before graphics setup.
@@ -648,7 +658,7 @@ invalid paths, and assets declared both embedded and shared are rejected.
 
 Run `python3 tests/shared_assets_game.py` to verify both core and WIT source
 games using signed store packages, missing-blob refusal, deduplication, and
-small reads from large shared assets. Portable store bundles support remote distribution as described below. Pool
+small reads from large shared assets. Portable store bundles support importing from a URL as described below. Pool
 garbage collection remains future work.
 
 ## Portable store bundles
