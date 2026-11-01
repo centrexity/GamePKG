@@ -29,7 +29,7 @@ wit-component = "=0.236.1"
 wit-parser = "=0.236.1"
 wasmparser = "=0.236.1"
 naga = { version = "=24.0.0", features = ["spv-in", "wgsl-in", "glsl-out", "wgsl-out"] }
-wasmtime = { version = "36.0.17", default-features = false, features = ["cranelift", "runtime", "std", "component-model"] }
+wasmtime = { version = "36.0.20", default-features = false, features = ["cranelift", "runtime", "std", "component-model"] }
 image = { version = "0.25", default-features = false, features = ["png"] }
 eframe = { version = "0.31", optional = true, default-features = false, features = ["default_fonts", "glow", "wgpu", "x11", "wayland"] }
 anyhow = "1"
