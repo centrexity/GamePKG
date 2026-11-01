@@ -1326,3 +1326,19 @@ image differing only in its last byte cannot reuse the earlier snapshot. The
 100 ms deadline, memory ceilings, accepted counts, and pixel assertions remain
 unchanged. New hosted Android evidence is still required before calling the
 timing failure resolved. Native game source and immutable previews are unchanged.
+
+
+### Matching Windows app preview artifacts
+
+Successful native Windows graphics jobs now package the matching CLI/GUI,
+dependency notices and sources using the normal release packager. Artifacts are
+named with the source head and executable architecture and include a separate
+PREVIEW.json recording both source head and actual checkout commit. Packaging
+runs only after shader, Vulkan, DOOM first/restart and sparse-storage checks pass.
+It checks executable architecture and the standalone CRT requirements, then
+preserves the normal archive SHA-256 sidecar. Test-only graphics drivers are not
+added by the release packager. These are unreleased app test artifacts with
+seven-day retention, not replacements for published releases or immutable
+previews. They allow the current app to be exercised under Wine without another
+full 487-unit game build. Current artifact creation and runtime integration
+still require their own successful results.
