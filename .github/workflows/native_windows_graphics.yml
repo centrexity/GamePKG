@@ -27,6 +27,9 @@ on:
       - 'tools/install_mesa_test.py'
       - 'tools/build_vulkan_test.py'
       - 'tools/windows_vulkan_test_probe.c'
+      - 'tools/package_release.py'
+      - 'tools/windows_pe_imports.py'
+      - 'tests/package_architecture.py'
       - 'build.rs'
       - 'Cargo.toml'
       - 'Cargo.lock'
@@ -58,6 +61,9 @@ on:
       - 'tools/install_mesa_test.py'
       - 'tools/build_vulkan_test.py'
       - 'tools/windows_vulkan_test_probe.c'
+      - 'tools/package_release.py'
+      - 'tools/windows_pe_imports.py'
+      - 'tests/package_architecture.py'
       - 'build.rs'
       - 'Cargo.toml'
       - 'Cargo.lock'
@@ -162,6 +168,33 @@ jobs:
               if ($log -notmatch "Verified Windows DOOM GUI: $renderer $launch;") { throw "Missing DOOM $renderer $launch integration" }
             }
           }
+      - name: Package matching apps after successful native graphics checks
+        shell: pwsh
+        env:
+          GAMEPKG_PREVIEW_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python tests/package_architecture.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python tools/package_release.py target/windows-app-preview --binary-directory target/release --target ${{ matrix.target }}
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $preview = @{
+            schema = 1
+            kind = 'unreleased app preview'
+            source_head = $env:GAMEPKG_PREVIEW_HEAD
+            checkout_commit = (git rev-parse HEAD)
+            architecture = '${{ matrix.architecture }}'
+            target = '${{ matrix.target }}'
+            workflow_run = '${{ github.run_id }}'
+            required_checks = @('native shader windows', 'Vulkan windows', 'DOOM first/restart windows', 'sparse storage allocation')
+          }
+          $preview | ConvertTo-Json -Depth 4 | Set-Content -Encoding utf8 target/windows-app-preview/PREVIEW.json
+      - name: Preserve matching app packages for runtime integration
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-windows-app-preview-${{ github.event.pull_request.head.sha || github.sha }}-${{ matrix.architecture }}
+          path: target/windows-app-preview
+          retention-days: 7
+          if-no-files-found: error
       - name: Preserve native window pixels and diagnostics
         if: always()
         uses: actions/upload-artifact@v4
