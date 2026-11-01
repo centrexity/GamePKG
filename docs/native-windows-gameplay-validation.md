@@ -1285,8 +1285,12 @@ independent compressed-size API returns the logical length for this sparse
 fixture. This proves the honest unavailable fallback and executable-width ABI;
 it does not qualify native Windows allocation. The Windows graphics workflow
 now runs a strict sparse-allocation storage gate at both app widths on real
-Windows, requiring agreement with the independent compressed-size API. That
-hosted result remains required.
+Windows, requiring agreement with the independent compressed-size API. The
+patched-engine run [41325179420](https://github.com/centrexity/GamePKG/actions/runs/41325179420)
+at `f2d8e8e` passes all four applicable storage tests at both MSVC executable
+widths, including the sparse write beyond 4 GiB. The full graphics workflow
+also completes successfully at both widths. This qualifies actual Windows file
+allocation; the Wine result remains limited to its unavailable-query fallback.
 
 Private fixture failures are retained separately: a too-long null-audio socket
 name, text recognition over animated screens, timing assumptions in normal menu
@@ -1297,3 +1301,28 @@ storage requirement was weakened to obtain a pass. The first current-head
 full-suite ancestor run also has an independent Arkanoo maximum missing-mark
 name-edit timeout in core/component Wasm, while its native counterpart passes;
 this remains open and is not an allocation-test success or a full-suite pass.
+
+
+### Adjacent raw-image snapshot reuse
+
+At `f2d8e8e`, the push portability run 41325172841 passes Linux32 and Windows32
+but Android32 interrupts the component large-image quota fixture on its existing
+100 ms tick deadline. Core/component and basic portability suites otherwise
+pass before that failure; this is not an Android-wide qualification.
+
+Raw core/component image submission now compares the complete pixel bytes and
+exact dimensions with the immediately preceding immutable image. An identical
+image shares that snapshot rather than allocating and copying it again. A
+changed byte or shape still creates a private copy. No guest memory is retained,
+no cross-frame cache is added, and every draw still charges its full transfer
+size and command count. Clear keeps its existing transfer charges.
+
+Fifteen local drawing tests pass (one cold-image measurement remains explicitly
+ignored), along with all 11 component and five resource tests and strict
+all-feature/all-target Clippy. Both runtime profiles verify actual snapshot
+identity at the full 8/32 MiB quotas, retained pixels across guest mutation and
+subsequent ticks, and distinct nearest/linear command positions. A maximum-size
+image differing only in its last byte cannot reuse the earlier snapshot. The
+100 ms deadline, memory ceilings, accepted counts, and pixel assertions remain
+unchanged. New hosted Android evidence is still required before calling the
+timing failure resolved. Native game source and immutable previews are unchanged.

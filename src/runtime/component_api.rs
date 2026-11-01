@@ -312,11 +312,11 @@ pub(super) fn linker(engine: &Engine) -> Result<Linker<Data>> {
                 return Ok((false,));
             }
             let Some(image) =
-                crate::drawing::image::Image::new(pw, ph, pixels.as_le_slice(store.as_context()))
+                store.data().frame.image_snapshot(pw, ph, pixels.as_le_slice(store.as_context()))
             else {
                 return Ok((false,));
             };
-            Ok((if linear {store.data_mut().frame.linear_image(x,y,w,h,image)} else {store.data_mut().frame.image(x,y,w,h,image)},))
+            Ok((store.data_mut().frame.image_arc(x,y,w,h,image,linear),))
         },
     )?;
     }
