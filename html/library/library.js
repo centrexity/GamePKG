@@ -12,7 +12,7 @@ function render(snapshot,cached) {
         const m=game.manifest;installed.add(m.id);
         const definitions=m.achievements||[];
         const count=game.history?`${definitions.filter(a=>Object.hasOwn(game.history.unlocked,a.id)).length}/${definitions.length} unlocked`:'History unavailable';
-        const used=game.used_bytes===null?'Unavailable':`${game.used_bytes} bytes used`;
+        const used=game.storage_label??(game.used_bytes==null?'Unavailable':`${game.used_bytes} bytes in files`);
         const expected=game.expected_bytes==null?'Expected size unknown':`${game.expected_bytes} bytes expected`;
         const state=cached?'Cached installed metadata':game.built===true?'Built':game.built===false?'Not built':'Build status unavailable';
         const tr=row(['🎮',m.title||m.id,m.version,state,game.history?`${Math.floor(game.history.played_ms/1000)} seconds`:'Unavailable',count,`${used}; ${expected}`]);
@@ -32,7 +32,7 @@ function render(snapshot,cached) {
         const rom=document.createElement('p');rom.textContent=m.roms?.length?`Your ROM files, in order: ${m.roms.map(r=>r.title).join(', ')}`:m.requires_rom?'One ROM supplied by you':'No user ROM required';requirements.append(rom);tr.children[1].append(requirements);
         if(game.icon_identity)loadIcon(game,tr.firstElementChild,cached,current);
     }
-    document.getElementById('library-space').textContent=snapshot.library_used_bytes==null?'Library storage unavailable':`Library storage used: ${snapshot.library_used_bytes} bytes`;
+    document.getElementById('library-space').textContent=snapshot.library_storage_label?`Library storage used: ${snapshot.library_storage_label}`:snapshot.library_used_bytes==null?'Library storage unavailable':`Library file sizes: ${snapshot.library_used_bytes} bytes`;
 
     for(const game of snapshot.catalog){if(!installed.has(game.id)){const tr=row(['🎮',game.title,game.version||'Unknown',cached?'Cached catalog metadata':'Not downloaded','Not played','—','Unknown']);if(game.description){const detail=document.createElement('p');detail.textContent=game.description;tr.children[1].append(detail);}}}
     for(const [name,error] of snapshot.rejected)row(['🎮',name,'Unknown',`Unavailable: ${error}`,'Unavailable','Unavailable','Unavailable']);

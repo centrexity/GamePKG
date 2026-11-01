@@ -305,7 +305,7 @@ impl App {
                         let storage = self
                             .usage
                             .get(id)
-                            .map(|u| crate::storage::bytes(u.used_bytes()))
+                            .map(|u| u.space().label())
                             .unwrap_or_else(|| "Unknown".into());
                         if wide {
                             let name_width = (ui.available_width() - 505.0).max(180.0);

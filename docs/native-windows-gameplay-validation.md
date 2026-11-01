@@ -1234,3 +1234,66 @@ protocol. No production change, assertion relaxation or live source edit was
 used. The second complete check passes. This qualifies the current Linux direct
 GUI game entry and normal window lifecycle, not clicking Play through the
 library page, current Windows app integration or physical hardware.
+
+### Allocated storage and the actual library Play route
+
+The current Linux library's visible Play control is now exercised, rather than
+only invoking the direct `--play` entry. It launches the separate native process
+with the selected library, remembered in-place ISO and unchanged v16 native
+executable. Real keyboard input loads the earned profile and displays the
+original $26,737 Trailer Trash record. Normal window-manager close removes and
+reaps the player, keeps the library running, and refreshes its Played/readiness
+labels without pressing Refresh. The library and private null-only audio server
+then exit zero. All profile/reference files, app/game/package/settings bytes and
+native-path/Vulkan checks pass. Eighteen complete original captures decode and
+match their recorded hashes.
+
+This exposes a storage-reporting defect: the original sparse Xbox disk images
+have roughly 5.1 GiB of combined file sizes while the game's actual inventoried
+files occupy about 174 MiB. Storage now keeps both values. Linux/Unix uses
+OS-reported 512-byte file blocks; Windows asks for compression/allocation through
+an open regular-file handle that does not follow reparse points. Unsupported
+allocation queries stay unavailable: the UI says **in files**, not **on disk**.
+Logical category counts, `total()`, `used_bytes()` and existing JSON fields retain
+their previous meaning. Desktop, CLI and browser displays use allocation when
+available, and browser v1 snapshots without the new fields remain readable with
+explicit file-size labels. Filesystem metadata and exclusive extent ownership
+are outside this file-allocation measurement; shared storage can be attributed
+to several game entries.
+
+All five targeted storage tests pass, including a 6 GiB-plus-123-byte sparse
+native disk with an actual write beyond 4 GiB, creator scoping, external-link
+exclusion and unavailable-allocation wording. An actual ELF32 backend probe
+reports 6,442,451,067 logical bytes and 4,096 allocated bytes, agreeing with GNU
+`du`. Its initial restricted execution was stopped by the tool's 32-bit syscall
+filter; the authorized host execution passes. Strict all-feature/all-target
+Clippy and bundled CLI/GUI release builds pass. Development checks use no debug
+symbols or incremental copies to avoid recreating the previous oversized caches.
+
+The actual Linux game page displays **174.0 MiB on disk**. Independent filesystem
+counts give 182,427,648 bytes for the per-game inventory and 182,431,744 bytes
+for the library, versus 5,425,521,550 logical library bytes. The table/footer and
+page agree with those counts. Normal Play, the original saved record, close,
+reaping and automatic history/readiness refresh pass in the same final session.
+The authenticated headless browser test also passes new allocation fields,
+visible labels, legacy cached metadata, icons, achievement text and cross-origin
+rejection.
+
+Both PE32 and PE64 versions of the exact backend compile and execute under Wine.
+Wine returns **Invalid function** for handle compression information, while its
+independent compressed-size API returns the logical length for this sparse
+fixture. This proves the honest unavailable fallback and executable-width ABI;
+it does not qualify native Windows allocation. The Windows graphics workflow
+now runs a strict sparse-allocation storage gate at both app widths on real
+Windows, requiring agreement with the independent compressed-size API. That
+hosted result remains required.
+
+Private fixture failures are retained separately: a too-long null-audio socket
+name, text recognition over animated screens, timing assumptions in normal menu
+navigation, and an interrupted private display. Original captures remain intact;
+the final run uses the observed short-tap route and an extra recognition pass.
+No production renderer, game state, deadline, memory ceiling, expected score or
+storage requirement was weakened to obtain a pass. The first current-head
+full-suite ancestor run also has an independent Arkanoo maximum missing-mark
+name-edit timeout in core/component Wasm, while its native counterpart passes;
+this remains open and is not an allocation-test success or a full-suite pass.

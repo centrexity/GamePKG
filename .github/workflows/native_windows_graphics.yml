@@ -2,6 +2,9 @@ name: Native Windows game graphics
 on:
   push:
     paths:
+      - 'src/storage.rs'
+      - 'src/storage/**'
+      - 'tests/storage.rs'
       - 'src/gui.rs'
       - 'src/bin/gui.rs'
       - 'src/gpu*.rs'
@@ -30,6 +33,9 @@ on:
       - '.github/workflows/native_windows_graphics.yml'
   pull_request:
     paths:
+      - 'src/storage.rs'
+      - 'src/storage/**'
+      - 'tests/storage.rs'
       - 'src/gui.rs'
       - 'src/bin/gui.rs'
       - 'src/gpu*.rs'
@@ -92,6 +98,11 @@ jobs:
           rustc --edition=2021 --target ${{ matrix.target }} tools/build_release.rs -o gamepkg-build-release.exe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           ./gamepkg-build-release.exe --github-env
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify sparse storage allocation at the app executable width
+        shell: pwsh
+        run: |
+          cargo test --locked --release --target ${{ matrix.target }} --test storage -- --nocapture
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/setup-python@v5
         with:

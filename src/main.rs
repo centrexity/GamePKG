@@ -819,11 +819,7 @@ fn main() -> Result<()> {
                         .map(gamepkg::storage::bytes)
                         .unwrap_or_else(|| "unknown until built".into())
                 );
-                    println!(
-                        "Storage used: {}; {}",
-                        gamepkg::storage::bytes(usage.used_bytes()),
-                        usage.breakdown()
-                    );
+                    println!("Storage used: {}", usage.breakdown());
                     for a in &m.achievements {
                         println!(
                             "  [{}] {} — {}",

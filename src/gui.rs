@@ -126,7 +126,7 @@ pub struct App {
     wasm_built: HashSet<String>,
     history: HashMap<String, crate::progress::Record>,
     usage: HashMap<String, crate::storage::Usage>,
-    library_bytes: Option<u64>,
+    library_space: Option<crate::storage::Space>,
     preview: Option<(Vec<Vec<u8>>, std::time::Instant, egui::TextureHandle)>,
 }
 impl App {
@@ -343,7 +343,7 @@ impl App {
                     self.data_paths.clear();
                     self.history.clear();
                     self.usage.clear();
-                    self.library_bytes = crate::storage::total(&root).ok();
+                    self.library_space = crate::storage::space(&root).ok();
                     for m in &games {
                         if let Ok(scope) = crate::video_selections::identity(m) {
                             match crate::video_selections::load(&root, m) {
@@ -468,7 +468,7 @@ impl App {
                 self.additional_rom_paths.clear();
                 self.history.clear();
                 self.usage.clear();
-                self.library_bytes = None;
+                self.library_space = None;
                 self.rejected.clear();
                 self.icons.clear();
                 self.package_notices.clear();
@@ -1689,7 +1689,7 @@ impl eframe::App for App {
             ui.horizontal_wrapped(|ui| {
                 ui.heading("Your games");
                 if ui.add_enabled(self.result.is_none(), egui::Button::new("Add")).clicked() { self.open_add_page(); }
-                for (label,value) in [("Installed",self.installed.len().to_string()),("Ready to play",self.installed.iter().filter(|m|self.ready_to_play(m)).count().to_string()),("Storage used",self.library_bytes.map(crate::storage::bytes).unwrap_or_else(||"—".into()))] {
+                for (label,value) in [("Installed",self.installed.len().to_string()),("Ready to play",self.installed.iter().filter(|m|self.ready_to_play(m)).count().to_string()),(if self.library_space.is_some_and(|s|s.on_disk_bytes.is_none()){"File sizes"}else{"Storage used"},self.library_space.map(|s| s.display_bytes()).unwrap_or_else(||"—".into()))] {
                     let width = ui.fonts(|fonts| {
                         fonts.layout_no_wrap(label.to_owned(), egui::TextStyle::Body.resolve(ui.style()), ui.visuals().text_color()).size().x
                             + fonts.layout_no_wrap(value.clone(), egui::FontId::proportional(18.0), ui.visuals().hyperlink_color).size().x
@@ -1727,7 +1727,7 @@ impl eframe::App for App {
                 self.begin_work(move || { let root=crate::registry::default_root()?; Ok(Work::Message(if fix {crate::integrity::fix_with_store(&root,&id,store.as_deref())?} else {crate::integrity::check(&root,&id)?})) });
             }
             if let Some(id)=inspect {self.open_game_page(&id);}
-            ui.label(format!("Library storage used: {} (file bytes, including shared assets, caches, saves and play history)", self.library_bytes.map(crate::storage::bytes).unwrap_or_else(||"Unavailable".into())));
+            ui.label(format!("Library storage used: {} (shared assets, caches, saves and play history included)", self.library_space.map(|s| s.details()).unwrap_or_else(||"Unavailable".into())));
             ui.separator(); ui.label(concat!("GamePKG ", env!("CARGO_PKG_VERSION")));
             ui.hyperlink_to("GamePKG • Apache 2.0", "https://gamepkg.com");
             });
