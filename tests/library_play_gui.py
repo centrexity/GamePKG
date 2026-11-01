@@ -64,6 +64,13 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-library-play-') as directory:
         def click_word(words, label):
             word=next(word for word in words if word['text'].strip('[](){}|')==label or (label=='Back' and word['text'].strip('[](){}|').startswith('Back')))
             subprocess.run(['xdotool','mousemove','--window',window,str(int(word['left'])+int(word['width'])//2),str(int(word['top'])+int(word['height'])//2),'click','1'],env=env,check=True)
+        def back_to_library():
+            # The Back control is above the current game/Add-page scroll position.
+            # Reveal it before asking OCR to locate and click the actual button.
+            subprocess.run(['xdotool','mousemove','--window',window,'400','800','click','--repeat','20','--delay','30','4'],env=env,check=True)
+            time.sleep(.2)
+            click_text(window,env,'Back to library',root)
+            time.sleep(.2)
         def enter_source(words, source):
             click_text(window,env,'Add',root)
             time.sleep(.2)
@@ -127,20 +134,20 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-library-play-') as directory:
         wait_screen(lambda text:'Native build complete. Ready to play.' in text,'library-rebuilt.png')
         assert len(list((library/'builds').glob('*/native-v1-*/game')))==1
         text,words=read_screen('library-before-catalog.png')
-        click_text(window,env,'Back to library',root)
+        back_to_library()
         text,words=read_screen('library-catalog-source.png')
         catalog=root/'games.gamepkglist'
         catalog.write_text("format_version = 1\n[[games]]\nid = 'com.example.offline'\ntitle = 'Offline Catalog Game'\nversion = '2.0.0'\ndownload_url = 'https://unreachable.invalid/game.gamepkg'\nrequires_rom = true\n")
         words=enter_source(words,catalog)
         click_text(window,env,'Import .gamepkglist',root)
         wait_screen(lambda text:'No game packages downloaded' in text,'add-catalog-imported.png',20)
-        click_text(window,env,'Back to library',root)
+        back_to_library()
         text,words=wait_screen(lambda text:'Offline Catalog Game' in text and 'No game packages downloaded' in text,'library-catalog-imported.png',20)
         click_word(words,'Offline')
         text,words=wait_screen(lambda text:'Back to library' in text and 'Catalog information is unverified' in text,'game-catalog-page.png',20)
         assert 'Requires your own ROM' in text, text
         assert 'com.gamepkg.collect-stars' not in text and 'Import .gamepkglist' not in text, text
-        click_text(window,env,'Back to library',root)
+        back_to_library()
         text,words=wait_screen(lambda text:'Offline Catalog Game' in text and 'com.gamepkg.collect-stars' in text,'game-page-return-to-library.png',20)
         click_text(window,env,'Collect Stars',root)
         # Reopening a game preserves its detail scroll position. Return that
