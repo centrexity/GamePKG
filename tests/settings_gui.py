@@ -24,7 +24,13 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-settings-gui-') as directory:
                 direction='5' if label=='Optimize new builds' else '4'
                 subprocess.run(['xdotool','mousemove','--window',window,'400','600','click','--repeat','40','--delay','10',direction],env=env,check=True)
                 time.sleep(.3)
-            click_text(window, env, label, root, max_y=60 if label == 'Settings' else None)
+            if label == 'Save settings':
+                # The help copy also contains this phrase. Select the actual
+                # action beside Cancel instead of the explanatory text.
+                _,save_y=click_text(window,env,'Cancel edits',root,click=False)
+                click_text(window,env,label,root,min_y=save_y-20,max_y=save_y+25)
+            else:
+                click_text(window, env, label, root, max_y=60 if label == 'Settings' else None)
             time.sleep(.3)
         def open_and_toggle():
             click('Settings')
