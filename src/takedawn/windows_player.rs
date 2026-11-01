@@ -427,9 +427,13 @@ fn window() -> *mut core::ffi::c_void {
     unsafe { UpdateWindow(window); }
     window
 }
-fn pump_window() {
+fn pump_window(deadline: std::time::Instant) {
     let mut message: Message = unsafe { std::mem::zeroed() };
-    while unsafe { PeekMessageW(&mut message, std::ptr::null_mut(), 0, 0, 1) } != 0 {
+    // Paint or activation messages can refill the queue while it is drained.
+    // Check the existing display deadline inside the pump as well.
+    while std::time::Instant::now() < deadline
+        && unsafe { PeekMessageW(&mut message, std::ptr::null_mut(), 0, 0, 1) } != 0
+    {
         unsafe { TranslateMessage(&message); DispatchMessageW(&message); }
     }
 }
@@ -486,10 +490,12 @@ fn main() {
     println!("GamePKG: verified disc admitted in place");
     println!("[PRESENT] window up: app lifecycle fixture");
     let deadline = std::time::Instant::now() + std::time::Duration::from_millis(150);
+    println!("fixture Win32 timed message pump started");
     while std::time::Instant::now() < deadline {
-        pump_window();
+        pump_window(deadline);
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
+    println!("fixture Win32 timed message pump completed");
     assert_ne!(unsafe { DestroyWindow(window) }, 0);
     println!("fixture Win32 window closed");
     if !profile.exists() {
@@ -572,6 +578,11 @@ fn main() {
         }
         let text = session.diagnostics();
         assert_eq!(text.matches("[PRESENT] window up:").count(), 2);
+        assert_eq!(
+            text.matches("fixture Win32 timed message pump completed")
+                .count(),
+            2
+        );
         assert_eq!(text.matches("watchdog seconds=17").count(), 2);
         assert_eq!(
             text.matches("fixture Win32 window created and visible")

@@ -884,7 +884,13 @@ mod tests {
             .iter()
             .any(|text| text.contains("64 MiB") && text.contains(&manifest.roms[0].title)));
         handle.set_len(64 * 1024 * 1024).unwrap();
-        assert_eq!(app.ready_to_play(&manifest), cfg!(target_os = "linux"));
+        assert_eq!(
+            app.ready_to_play(&manifest),
+            cfg!(any(
+                target_os = "linux",
+                all(windows, any(target_arch = "x86_64", target_arch = "x86"))
+            ))
+        );
         assert!(!app
             .play_blockers(&manifest)
             .iter()
