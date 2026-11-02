@@ -88,7 +88,7 @@ def click_text(window, env, text, directory, timeout=15, max_y=None, *, click=Tr
         time.sleep(.1)
 
 
-def choose_native_file(env, title, path=None, windows=False):
+def choose_native_file(env, title, path=None, windows=False, *, from_list=False):
     """Operate the real Linux picker, including cancelling without selecting."""
     import re
     deadline = time.monotonic() + 20
@@ -119,13 +119,13 @@ def choose_native_file(env, title, path=None, windows=False):
     # Earlier sudo-run fixtures may own this disposable artifact.
     # Replace it through the writable target directory, without chmod/sudo.
     proof.unlink(missing_ok=True)
-    # GTK4 maps its chooser before the controls are drawn. Sending Ctrl+L at
+    # The native chooser can map before its controls are drawn. Sending Ctrl+L at
     # that point can lose the shortcut and type into the wrong widget.
     ready_deadline=time.monotonic()+20
     while True:
         subprocess.run(['import','-display',env['DISPLAY'],'-window',dialog,str(proof)],env=env,check=True)
         text=subprocess.check_output(['tesseract',str(proof),'stdout','--psm','11'],env=env,stderr=subprocess.DEVNULL,text=True).casefold()
-        if re.search(r'\bcancel\b',text) and re.search(r'\b(open|select|ok)\b',text):
+        if re.search(r'\bcancel\b',text) and re.search(r'\b(open|select|ok|save)\b',text):
             break
         assert time.monotonic()<ready_deadline, f'Native picker controls were not ready: {text}'
         time.sleep(.1)
@@ -140,11 +140,38 @@ def choose_native_file(env, title, path=None, windows=False):
         folder=Path(path).is_dir()
         if folder and not windows:
             location=location.rstrip('/')+'/'
-        # Send the path as one burst: GTK4's asynchronous completion can
+        if from_list:
+            assert not windows and Path(path).is_file(), 'List selection requires an existing Linux file'
+            # Entering a complete filename can only navigate to its parent on
+            # some GTK/completion states. Navigate explicitly, then select the
+            # actual visible file row instead of depending on entry activation.
+            location=str(Path(path).parent).rstrip('/')+'/'
+        # Send the path as one burst: asynchronous completion can
         # otherwise rewrite the entry between synthetic character events.
         subprocess.run(['xdotool','type','--clearmodifiers','--delay','0',location],env=env,check=True)
         time.sleep(.3)
         subprocess.run(['xdotool','key','--clearmodifiers','Return'],env=env,check=True)
+        if from_list:
+            import json
+            import shutil
+            import tempfile
+            list_proof=proof.parent/'native-rom-picker-list.png'
+            list_proof.unlink(missing_ok=True)
+            with tempfile.TemporaryDirectory(prefix='native-picker-list-',dir=proof.parent) as directory:
+                x,y=click_text(dialog,env,Path(path).name,directory,click=False)
+                shutil.copy2(Path(directory)/'control-screen.png',list_proof)
+            with (proof.parent/'native-rom-picker-targets.jsonl').open('a') as log:
+                log.write(json.dumps(dict(file=str(path),x=x,y=y))+"\n")
+            # Settle the pointer and row selection before activating the row.
+            # GTK can otherwise handle Return using the previous selection.
+            subprocess.run(['xdotool','mousemove','--sync','--window',dialog,str(x),str(y)],env=env,check=True)
+            time.sleep(.15)
+            subprocess.run(['xdotool','click','1'],env=env,check=True)
+            time.sleep(.2)
+            selected_proof=proof.parent/'native-rom-picker-list-selected.png'
+            selected_proof.unlink(missing_ok=True)
+            subprocess.run(['import','-display',env['DISPLAY'],'-window',dialog,str(selected_proof)],env=env,check=True)
+            subprocess.run(['xdotool','key','--clearmodifiers','Return'],env=env,check=True)
     close_deadline=time.monotonic()+15
     while True:
         visible=subprocess.run(['xdotool','search','--onlyvisible','--name','^('+re.escape(title)+'|Select a [Ff]ile|zenity)$'],env=env,capture_output=True,text=True)
