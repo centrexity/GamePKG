@@ -67,9 +67,12 @@ scoped completion evidence. In the Race with zero CPU rivals, both players
 finish naturally: P1 first in 10:20.03 and P2 second in 11:26.56. Normal Continue
 actions traverse results, Score (1–0), successful autosave and mode selection.
 The private profile changes while the original reference saves and executable
-remain unchanged. This is Linux headless Vulkan coverage with dummy audio;
-fresh-process Race-record reload, other rival configurations, complete campaign,
-physics/audio equivalence and physical Windows qualification remain open.
+remain unchanged. A fresh process loads that earned profile and displays the
+Downtown Southbound lap records P2 2:25.15 and P1 2:38.53, matching the completed
+race; all five UDATA/TDATA profile files remain byte-identical after reload.
+This is Linux headless Vulkan coverage with dummy audio. Other rival
+configurations, complete campaign, physics/audio equivalence and physical
+Windows qualification remain open.
 The Double Impact route independently retains its 0–1 win count on return to
 mode selection. Linux library Play at app commit `85297c3` additionally verifies
 the remembered in-place ISO, earned profile, separate game window, normal
