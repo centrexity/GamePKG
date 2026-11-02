@@ -30,6 +30,9 @@ jobs:
       CARGO_PROFILE_TEST_DEBUG: '0'
       CARGO_PROFILE_RELEASE_DEBUG: '0'
       CARGO_BUILD_JOBS: '2'
+      # Reserve CPU time for the timed worker beside Mesa's software GPU.
+      # https://docs.mesa3d.org/envvars.html
+      LP_NUM_THREADS: '1'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -47,6 +50,12 @@ jobs:
           for gamepkg_picker_tool in Xvfb xdotool xprop import convert metacity zenity tesseract; do
             command -v "$gamepkg_picker_tool"
           done
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          quota = Path('/sys/fs/cgroup/cpu.max')
+          print(json.dumps({'affinity_cpus': len(os.sched_getaffinity(0)), 'logical_cpus': os.cpu_count(), 'cpu_max': quota.read_text().strip() if quota.exists() else None, 'software_renderer_threads': os.environ['LP_NUM_THREADS']}))
+          PY
           gamepkg_picker_icd=
           for gamepkg_icd_path in /usr/share/vulkan/icd.d/lvp_icd*.json; do
             if test -f "$gamepkg_icd_path"; then gamepkg_picker_icd="$gamepkg_icd_path"; break; fi
@@ -65,7 +74,7 @@ jobs:
           sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-picker-rustup rustup toolchain link gamepkg-picker /tmp/gamepkg-picker-toolchain
           sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-picker-rustup rustup default gamepkg-picker
       - name: Verify both signed runtime profiles and native import cancel and export
-        run: sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" VK_ICD_FILENAMES="$VK_ICD_FILENAMES" RUSTUP_HOME=/tmp/gamepkg-picker-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT=/tmp/gamepkg-picker-slang ALSA_CONFIG_PATH=/tmp/gamepkg-picker-null-alsa.conf SDL_AUDIODRIVER=dummy /usr/bin/python3 tests/arkanoo.py --skip-browser --keep-fixtures
+        run: sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" VK_ICD_FILENAMES="$VK_ICD_FILENAMES" LP_NUM_THREADS="$LP_NUM_THREADS" RUSTUP_HOME=/tmp/gamepkg-picker-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT=/tmp/gamepkg-picker-slang ALSA_CONFIG_PATH=/tmp/gamepkg-picker-null-alsa.conf SDL_AUDIODRIVER=dummy /usr/bin/python3 tests/arkanoo.py --skip-browser --keep-fixtures
       - name: Preserve native editor and actual picker evidence
         if: always()
         uses: actions/upload-artifact@v4
