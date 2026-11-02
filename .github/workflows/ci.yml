@@ -32,6 +32,8 @@ jobs:
           python3 tests/takedawn_renderer_gate.py
           python3 tests/takedawn_pcm_output.py
           python3 -S tests/takedawn_input_probe.py
+      - name: Verify private GUI tool environment
+        run: python3 tests/gui_test_support_env_test.py
       - name: Install preview codecs
         run: bash tools/ci_ubuntu_apt.sh update && bash tools/ci_ubuntu_apt.sh install -y ffmpeg g++ libsdl2-dev openssl
       - name: Install Rust tools
@@ -819,7 +821,7 @@ jobs:
         run: sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" /usr/bin/python3 tests/game_2048_state.py
       - name: Verify Arkanoo isolated build, gameplay, audio, saves and native controls
         if: matrix.features == '--all-features'
-        run: sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" LP_NUM_THREADS=1 /usr/bin/python3 tests/arkanoo.py --skip-browser
+        run: sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" /usr/bin/python3 tests/arkanoo.py --skip-browser
       - name: Verify original Arkanoo resolution controls, confirmation and timeout
         if: matrix.features == '--all-features'
         run: sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" /usr/bin/python3 tests/arkanoo_resolution_gui.py
