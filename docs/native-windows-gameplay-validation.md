@@ -1342,3 +1342,37 @@ seven-day retention, not replacements for published releases or immutable
 previews. They allow the current app to be exercised under Wine without another
 full 487-unit game build. Current artifact creation and runtime integration
 still require their own successful results.
+
+
+### v16 original Double Impact results and score continuation
+
+The immutable native v16 executable (SHA-256
+`329c48d0a3eba805d389043732eebc2a4a030881b180520dd3404c6db741367f`)
+now passes an additional original Double Impact route. Normal PS2 virtual-pad
+inputs select the mode and Trailer Trash junction, start both players and
+accelerate both cars. Each player naturally reaches the event-finished phase
+before the shared results replay begins. No debug AI or game-state writes are
+used. The actual result is P2 wins: P1 $3,357, P2 $23,380, including the original
+$20,000 cash bonus.
+
+During the active background replay, both original car phases are 2. Normal A
+is read as Xbox menu A with RT zero, opens the separate SCORE menu, and a second
+normal A selects its Continue action. The original Multiplayer mode selector
+then displays the retained P1/P2 total wins 0–1. Six actual 640×480 captures
+fully decode and match their recorded SHA-256 hashes. Strict native-path and
+actual Vulkan checks pass; executable and reference-save hashes are unchanged.
+The supported ISO stays read-only in place and audio uses the dummy device.
+
+Two earlier observations remain failures of the adapted probe, rather than
+being relabeled as passes: one awaited the active replay phase before preparing
+its capture; the next expected the front-end module immediately after the first
+Continue and captured the intervening SCORE menu instead. The qualified probe
+prepares capture at replay initialization after observing both natural finishes,
+retains the active-phase confirmation check, verifies SCORE/RETRY text, and
+follows the original second Continue action. Its 45/30/20-second observation
+limits and 360-second outer bound remain unchanged.
+
+This qualifies the original results-to-score-to-mode-selection route. It does
+not establish player-two natural Race completion, all campaign events, complete
+physics/audio equivalence, physical Windows behavior, or normal window-manager
+close: the headless harness ends this owned process after the final capture.
