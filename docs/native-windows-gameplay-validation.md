@@ -81,6 +81,30 @@ combined with the table/string reviews. All 13 guards remain. The other five
 targets, possible dynamic entries, complete crypto behavior and full gameplay
 and platform qualification remain open.
 
+### Six-entry switch-table follow-up
+
+The recorded branch at `0006EA35` to `E9DAEA40` decodes bytes within the
+original six-entry table at `0006EA30..0006EA48`. Requalification against the
+current v16 kit follows all 64 reachable instructions from `0006E950`,
+including the six switch destinations, original returns and the original
+external tail jump to `000AB850`. The unsigned comparison against five
+and its guard dominate the table dispatch. Every table destination is an
+instruction boundary before the data span; no reviewed entry path reaches
+the apparent branch.
+
+The supported image hash, current prepared Rust/table-dispatch source hashes,
+and existing v16 executable identity match. Controls changing a table entry
+into data, increasing the bound, substituting a signed guard or changing the
+external tail destination are rejected. The audit assumes unchanged original
+table bytes and ordinary returning external calls; it does not establish
+all possible dynamic entries or behavior within those external functions.
+
+Together these reviews explain recorded data-derived references to nine of
+the 13 guarded targets. The four remaining targets, global reachability,
+complete crypto behavior, full gameplay and physical-platform qualification
+remain open. All guards and compiled objects are preserved; the ISO is read
+in place without writing media to disk.
+
 ## Prepared v15 multiplayer input follow-up
 
 The unreleased 0.1.4 recipe selects the v15 kit, SHA-256
