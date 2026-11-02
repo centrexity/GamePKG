@@ -129,6 +129,36 @@ read path remains unverified. All 13 guards remain. These checks establish
 the reviewed key-use path, without claiming a crypto-result oracle, global
 dynamic-entry safety, full gameplay or physical-platform completion.
 
+### WMA word-table-derived references
+
+The apparent conditional branches at `00310AC0` and `00310AC2` to
+`00310A76` and `00310A78` are two words within the original decoder table
+at `003103B8..00310D70`. The known initializer `00309A89` installs that
+table pointer in the second argument object's field at offset `0x14` on
+its reviewed selection path. The original caller `003098B5` passes that
+field to the word-table reader `0030C891`.
+
+The reader requests 23 input bits. Its three lookup loops take five and
+three two-bit choices, followed by up to six one-bit choices. A traversal
+matching the original instructions covers all possible choices: every
+lookup stays inside the 1,244-word table and reaches a marked terminal
+entry. It covers 889 terminal entries, with encoded lengths up to 20 bits;
+both apparent branch words are actual table reads. This table uses no
+extended-symbol reads, whose address calculation is also checked.
+
+Four controls reject a child offset outside the table, an extended-symbol
+read beyond its end, a changed reader loop bound and an unaligned initializer
+pointer. Prepared Rust source hashes and the existing v16 executable identity
+match. All reads remain in memory, and all game guards remain unchanged.
+
+Combined with the preceding reviews, this explains recorded data-derived
+references to 12 guarded targets. `003152C1` remains open: its exact
+coefficient-pattern match still needs a qualified read path. The word-table
+proof assumes the selected pointer and original table bytes; it does not
+qualify every interprocedural state, the bitstream callback, decoded-audio
+equivalence, possible dynamic code entries or complete gameplay/platform
+behavior.
+
 ## Prepared v15 multiplayer input follow-up
 
 The unreleased 0.1.4 recipe selects the v15 kit, SHA-256
