@@ -159,8 +159,9 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-window-commit-') as temporary:
             assert read_first(browser,'history','gamepkg:history:'+game_id+':')==bad_history
             assert browser.execute_script('return !window.windowCommits.at(-1).success')
             write_first(browser,'history','gamepkg:history:'+game_id+':',{'played_ms':0,'unlocked':[]})
+            previous_worker=browser.execute_script('return window.workerSerial')
             browser.find_element('id','play').click()
-            wait.until(lambda b:b.execute_script('const value=window.windowFrames.at(-1);return value.instance===window.workerSerial&&window.windowCommits.some(commit=>commit.instance===value.instance&&commit.success)'))
+            wait.until(lambda b:b.execute_script('const instance=window.workerSerial;return instance>arguments[0]&&window.windowFrames.some(value=>value.instance===instance&&window.windowCommits.some(commit=>commit.instance===instance&&commit.epoch===value.epoch&&commit.serial===value.serial&&commit.success))',previous_worker))
             # Final successful close proves explicit recovery did not leave a pending transaction.
 
             press(Keys.ARROW_DOWN,'value.window.closed',True)
