@@ -99,6 +99,11 @@ jobs:
       - name: Verify native Windows shader textures and input before WSL setup
         if: runner.os == 'Windows'
         run: python tests/windows_native_gui.py
+      - name: Install verified optional WSL test runtime and Ubuntu image
+        if: runner.os == 'Windows'
+        run: |
+          ./tests/install_wsl_ci.ps1
+          ./tools/install_wsl_ci.ps1
       - name: Prepare disposable WSL 2 distribution
         if: runner.os == 'Windows'
         uses: Vampire/setup-wsl@d1da7f2c0322a5ee4f24975344f67fc0f5baf364 # v7.0.0
