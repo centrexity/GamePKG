@@ -105,7 +105,7 @@ with (nullcontext(tempfile.mkdtemp(prefix='gamepkg-arkanoo-',dir=PROJECT/'target
     file=custom/'manifest.toml';file.write_text(file.read_text().replace('com.gamepkg.arkanoo','com.gamepkg.arkanoo-custom'))
     boards=json.loads((PROJECT/'tests/fixtures/arkanoo-custom-levels.json').read_text())['patterns']
     assert boards==[[i if i<9 else 255 for i in range(200)],[i//20%6 if i//20==i%20 else 255 for i in range(200)],[255]*200]
-    (custom/'source/src/lib.rs').write_text('mod procedural;mod background;mod audio;mod editor;mod levels;mod menu;mod pattern_rng;mod physics;mod render;mod speed_font;mod editor_font;mod dynamic_font;mod dynamic_font_data;pub fn game_tick(input:u32,_:u64)->u64 {let mut game=physics::Game::new();for which in 0..3 {let mut board=[255u8;200];if which==0 {for col in 0..9 {board[col]=col as u8;}}if which==1 {for row in 0..10 {board[row*20+row]=(row%6) as u8;}}game.editor.patterns.push(editor::Pattern{name:String::new(),cells:board});}game.level=input;game.populate();game.mode=1;render::draw(&game);let mut result=14695981039346656037u64;for index in 0..200 {let cell=if game.blocks[index]==0 {255} else if game.block_type[index]>0 {game.block_type[index]+5} else {game.block_color[index]};result=(result^u64::from(cell)).wrapping_mul(1099511628211);}result}')
+    (custom/'source/src/lib.rs').write_text('mod portable_math;mod procedural;mod background;mod audio;mod editor;mod levels;mod menu;mod pattern_rng;mod physics;mod render;mod speed_font;mod editor_font;mod dynamic_font;mod dynamic_font_data;pub fn game_tick(input:u32,_:u64)->u64 {let mut game=physics::Game::new();for which in 0..3 {let mut board=[255u8;200];if which==0 {for col in 0..9 {board[col]=col as u8;}}if which==1 {for row in 0..10 {board[row*20+row]=(row%6) as u8;}}game.editor.patterns.push(editor::Pattern{name:String::new(),cells:board});}game.level=input;game.populate();game.mode=1;render::draw(&game);let mut result=14695981039346656037u64;for index in 0..200 {let cell=if game.blocks[index]==0 {255} else if game.block_type[index]>0 {game.block_type[index]+5} else {game.block_color[index]};result=(result^u64::from(cell)).wrapping_mul(1099511628211);}result}')
     run('pack',custom,'-o',root/'custom.gamepkg','--key',key);run('install',root/'custom.gamepkg','--trust-creator');run('build','com.gamepkg.arkanoo-custom')
     # Trigger the production portal at its original speed threshold without
     # depending on a long random play session. Only fixture setup is replaced.
@@ -124,7 +124,7 @@ with (nullcontext(tempfile.mkdtemp(prefix='gamepkg-arkanoo-',dir=PROJECT/'target
                     x,y,vx,vy=case['ball'];branch+=f'g.balls.clear();g.balls.push(physics::Ball{{x:{x}f32*0.5+3.0,y:{y}f32*0.5+63.0,vx:{vx}f32*0.5,vy:{vy}f32*0.5,spin:0.0,attached:false,launch_timer:0,trail:Vec::new()}});g.collide_blocks(0);'
                 else:branch+='g.update_rockets();'
             sound_branches+=branch+'return u64::from(g.sound);}'
-    (modes/'source/src/lib.rs').write_text('''mod procedural;mod background;mod audio;mod editor;mod levels;mod menu;mod pattern_rng;mod physics;mod render;mod speed_font;mod editor_font;mod dynamic_font;mod dynamic_font_data;use std::sync::Mutex;
+    (modes/'source/src/lib.rs').write_text('''mod portable_math;mod procedural;mod background;mod audio;mod editor;mod levels;mod menu;mod pattern_rng;mod physics;mod render;mod speed_font;mod editor_font;mod dynamic_font;mod dynamic_font_data;use std::sync::Mutex;
 static GAME:Mutex<Option<physics::Game>>=Mutex::new(None);
 static RECORDINGS:Mutex<Option<audio::Mixer>>=Mutex::new(None);
 pub fn game_tick(input:u32,state:u64)->u64 {
@@ -340,7 +340,7 @@ fn penguin_probe(input:u32)->u64 {
     run('pack',modes,'-o',root/'modes.gamepkg','--key',key);run('install',root/'modes.gamepkg','--trust-creator');run('build','com.gamepkg.arkanoo-modes')
     layouts=root/'layouts';shutil.copytree(PROJECT/'ports/arkanoo',layouts)
     layout_manifest=layouts/'manifest.toml';layout_manifest.write_text(layout_manifest.read_text().replace('com.gamepkg.arkanoo','com.gamepkg.arkanoo-levels'))
-    (layouts/'source/src/lib.rs').write_text('''mod procedural;mod background;mod audio;mod editor;mod levels;mod menu;mod pattern_rng;mod physics;mod render;mod speed_font;mod editor_font;mod dynamic_font;mod dynamic_font_data;use std::sync::Mutex;
+    (layouts/'source/src/lib.rs').write_text('''mod portable_math;mod procedural;mod background;mod audio;mod editor;mod levels;mod menu;mod pattern_rng;mod physics;mod render;mod speed_font;mod editor_font;mod dynamic_font;mod dynamic_font_data;use std::sync::Mutex;
 static GAME:Mutex<Option<physics::Game>>=Mutex::new(None);
 pub fn game_tick(input:u32,state:u64)->u64 {
  if let Ok(mut slot)=GAME.lock(){
