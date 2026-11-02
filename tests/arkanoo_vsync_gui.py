@@ -53,10 +53,27 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-arkanoo-vsync-') as temporary:
             if app is not None and app.poll() is not None:
                 raise AssertionError((message, app.communicate()))
             time.sleep(.05)
-        if (root/'screen.png').exists():
-            shutil.copy2(root/'screen.png', '/tmp/gamepkg-vsync-failure.png')
+        # Keep failures in the workflow's artifact directory, including the
+        # exact route and forwarding backend trace. Only replace known proofs.
+        proofs = PROJECT/'target'
+        for source, name in [(root/'screen.png', 'vsync-failure.png'),
+                             (root/'label.png', 'vsync-label-failure.png'),
+                             (trace, 'vsync-presentation.log')]:
+            if source.exists():
+                destination = proofs/name
+                destination.unlink(missing_ok=True)
+                shutil.copy2(source, destination)
+        receipt = proofs/'vsync-failure.json'
+        receipt.unlink(missing_ok=True)
+        receipt.write_text(json.dumps({
+            'waiting_for': message,
+            'renderer': globals().get('renderer'),
+            'profile': globals().get('profile'),
+            'target': globals().get('target'),
+            'window': globals().get('window'),
+            'backend_calls': trace.read_text() if trace.exists() else None,
+        }, indent=2)+'\n')
         if (root/'label.png').exists():
-            shutil.copy2(root/'label.png', '/tmp/gamepkg-vsync-label-failure.png')
             print('Last button OCR:', run('tesseract', root/'label.png', 'stdout', '--psm', '7'), flush=True)
         raise AssertionError((message, trace.read_text() if trace.exists() else 'no backend calls'))
 
