@@ -1412,3 +1412,36 @@ default/nonzero rival configurations, other tracks/campaign events, complete
 physics/audio equivalence and physical Windows controls remain unverified.
 The harness stop does not qualify normal window-manager close; that separate
 app/window integration retains its previously recorded scope.
+
+
+### v16 earned Race records survive a fresh process
+
+A fresh process of the same unchanged native v16 executable loads a private
+copy of the profile earned by the natural three-lap two-player Race above.
+Normal menu input opens Driver Details → Records → Racing → USA, then the
+Downtown Southbound records. The original Top Lap Times screen displays
+**P2 2:25.15** and **P1 2:38.53**, matching both best laps from the completed
+race. This verifies actual saved-record consumption, beyond a successful
+profile load or merely finding changed save bytes.
+
+All five UDATA/TDATA profile files retain their exact hashes after reload, and
+the preserved earned snapshot and executable remain unchanged. Seventeen
+640×480 captures fully decode and match recorded SHA-256 hashes. Existing
+strict native-path and actual-Vulkan checks pass on the NVIDIA GeForce RTX3090
+(Vulkan 1.4.312, headless); audio stays dummy and the owned ISO is read in place.
+The runtime creates its ordinary private cache partitions, logs and backups;
+those generated files are separate from the unchanged profile comparison.
+
+The original observation session exits143 while the owned game remains alive.
+Inspection resumes through normal pad input in that same process, with its
+owned path and PID/start identity checked; the game is not relaunched. The
+final owned scene-stop marker ends the game, and the owned driver and engine
+are confirmed absent. Long directional holds repeat in the original menu;
+short normal taps select the intended records page. No state, car, lap or
+result is injected. This is headless harness termination, not another normal
+window-manager-close qualification.
+
+This closes fresh-process reload for the selected earned Race lap records.
+Default/nonzero rivals, further tracks and campaign events, exact physics/audio
+fidelity, original online behavior and physical Windows qualification remain
+open. The immutable Windows source preview and native game package are unchanged.
