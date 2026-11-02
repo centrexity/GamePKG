@@ -555,6 +555,7 @@ jobs:
             target/homepage-failed-*.json
             target/roms-picker-output.jsonl
             target/remembered-roms-picker-output.jsonl
+            target/remembered-roms-clicks.jsonl
           retention-days: 7
           if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
