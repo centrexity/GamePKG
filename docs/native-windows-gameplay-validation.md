@@ -1623,10 +1623,32 @@ private/reference save files remain unchanged. No autopilot or game-state
 writes are used. The earlier probe, whose B presses preceded impact, remains
 an incomplete attempt rather than an activation pass.
 
-The new probe's long mixed A/B sequence also continues into the original
-replay/tally screens. Its later Player 1 results show $108,327 vehicle damage
-and $5,000 cash, totaling $113,327, but this is not counted as a clean extra
-turn or results-navigation qualification. A repeatable end-to-end gate still
-needs a shorter activation sequence and explicit phase-aware results input.
-This observation qualifies native activation on this route, not complete
-Crashbreaker physics, every junction, other platforms or the full campaign.
+Its Player 1 results show $108,327 vehicle damage and $5,000 cash, totaling
+$113,327. A subsequent log audit corrects the initial interpretation of the
+results flow: the last pad change precedes the finish, with no pad changes
+afterward. The original runtime explicitly documents that the title can reset
+its phase to prepare a retry while the results flag stays set. That phase
+reset alone does not establish a replay or another turn. The initial driver
+lacks explicit results-latch and no-postfinish-input assertions; a shorter
+probe adds those checks. This observation qualifies native activation on this
+route, not complete Crashbreaker physics, every junction, other platforms or
+the full campaign.
+
+A fresh shorter-input run now passes explicit activation-through-results
+checks on the same v16 binary. Four post-impact B pulses activate the original
+state at flip 5343; frame 5345 visibly shows the explosion and CRASHBREAKER!
+banner. The last neutral pad change is at 5360, before the finish at 5793.
+There are no further pad changes; the driving gate stays off, and the results
+flag remains set through the title's internal retry preparation. Frame 6932
+shows Player 1's original results: $90,609 damage plus $5,000 cash, totaling
+$95,609, with no multiplier. All 62 retained captures decode and match their
+hashes; the owned driver exits normally, and the executable and all five
+private/reference save files remain unchanged.
+
+The first shorter-input wrapper failed an incorrect assertion that the raw
+phase must never reset after finishing. That failed wrapper is retained; it
+is not a game failure or a passing gate. The fresh passing run instead checks
+the original results flag, driving gate and absence of post-finish input,
+consistent with the runtime's documented results handling. This adds a
+repeatable bounded activation/results observation, not new multiplayer
+handoffs, exact physics fidelity or complete campaign/platform coverage.
