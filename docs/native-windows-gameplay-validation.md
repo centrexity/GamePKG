@@ -1567,3 +1567,40 @@ qualify random-junction selection correctness, other party types/counts,
 Crashbreaker/cash/multiplier branches, campaign, exact original-hardware
 physics/audio, or physical Windows/Android gameplay. No game rebuild, package
 change, immutable Windows preview replacement, stable merge or release occurs.
+
+
+### v16 four-player Party Crash turn ownership and standings
+
+A separate unchanged-v16 check selects Solo, **four players**, one round, locked
+car type Yes and random junctions Yes through the original menus. The selected
+junction is Trailer Trash. The four original Get Ready screens identify Player
+1, Player 2, Player 3 and Player 4 in order. Each uses the same shared controller,
+with normal A followed immediately by a held right trigger for 30,000 ms. All
+four turns reach their original finished phase and visibly show Round 1 of 1
+Results for the correct player: **$84,633 vehicle damage**, $0 cash bonuses, no
+multiplier and **$84,633 Crash $**. No game-state, traffic, AI or score is written.
+
+Final Standings visibly contains all four rows, listing Players 1 through 4
+first through fourth with $84,633 each. No Draw label or tie-break rule is
+inferred. Normal A traverses the original Continue/Retry choice and returns to
+Select Option with Multiplayer selected. All 54 actual 640×480 captures decode
+and match their hashes. Numeric values and player names are visually checked
+independently of the OCR used to recognize screen readiness.
+
+The first observer exits 143 during Player 2's result loading; the original
+finished-phase capture is retained. The game and its exact original driver are
+confirmed still live. A detached observer verifies that driver's arguments and
+start time, resumes observing the same result, and completes the remaining
+turns without a game restart. Its final report is terminal without error. The
+normal stop-file signal produces the scene's stopped receipt at flip 21,713,
+471 seconds; the exact driver, timeout, native executor and recovery observer
+are confirmed absent. The original observer's exit cause remains untraced, and
+an independent driver exit code is not captured after its original parent ends.
+
+Strict executed-path and actual RTX 3090 Vulkan 1.4.312 checks pass, headless
+with dummy audio and the owned ISO read-only in place. The executable and all
+five reference/private UDATA/TDATA files remain unchanged. This qualifies the
+selected four-player turn/standings route, not saved Party Crash scores,
+random-junction correctness, other counts/types, Crashbreaker/cash/multiplier,
+campaign, exact hardware physics/audio, app history, window-manager close or
+physical Windows/Android gameplay. No game rebuild or package change occurs.
