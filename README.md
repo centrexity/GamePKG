@@ -139,7 +139,7 @@ and the Wasm target are already installed. Packaged playback needs no compiler
 or Python interpreter. See [audio embedding](tools/audio-decoder/README.md#embedding-in-the-app)
 and [port fidelity](docs/PORT_FIDELITY.md) for integration details.
 
-The executables are `target/release/gamepkg` and `target/release/gamepkg-gui` (with `.exe` on Windows). Launch the GUI with `cargo run --locked --features gui --bin gamepkg-gui`. It lists installed packages and accepts a local package path or HTTPS URL. Inspection runs in a background worker and displays the verified creator fingerprint and permissions before installation. New creators require approval; updates use the installed creator key automatically. It compiles the supported source profile on Linux and plays core and versioned WIT component games with scoped assets, ROMs, saves, drawing, and audio. Resource-free fragment passes render through OpenGL; broader graphics remain unfinished. A desktop display is required to launch it.
+The executables are `target/release/gamepkg` and `target/release/gamepkg-gui` (with `.exe` on Windows). Launch the GUI with `target/release/gamepkg-gui` on Linux or `.\target\release\gamepkg-gui.exe` in Windows PowerShell. These executables retain the audio companions embedded by the release builder. It lists installed packages and accepts a local package path or HTTPS URL. Inspection runs in a background worker and displays the verified creator fingerprint and permissions before installation. New creators require approval; updates use the installed creator key automatically. It compiles the supported source profile on Linux and plays core and versioned WIT component games with scoped assets, ROMs, saves, drawing, and audio. Resource-free fragment passes render through OpenGL; broader graphics remain unfinished. A desktop display is required to launch it.
 
 Game windows remember their normal size, fullscreen and maximized state separately
 for each game and creator in the selected library. F11 toggles the actual window
@@ -150,7 +150,7 @@ are host-owned metadata, never a guest filesystem permission or packaged game da
 
 On Linux, running the complete maintainer test suite also needs SDL development files (`libsdl2-dev` on Debian/Ubuntu) for the direct audio comparison test. This test dependency is separate from building or running the app.
 
-The CLI remains available without desktop dependencies: `cargo build --locked --release --bin gamepkg`. See [examples](examples/README.md) for valid and deliberately rejected packages. Local integration tests exercise the actual CLI binary, every example, and signed archive tampering.
+The CLI remains available without desktop dependencies: `cargo build --locked --release --bin gamepkg`. Recorded-audio playback and exports require the companions embedded by the release builder above. See [examples](examples/README.md) for valid and deliberately rejected packages. Local integration tests exercise the actual CLI binary, every example, and signed archive tampering.
 
 ## Install, download, and update
 
