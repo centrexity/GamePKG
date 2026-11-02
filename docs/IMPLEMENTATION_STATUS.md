@@ -62,9 +62,9 @@ installs them and runs both native fixtures. These build checks do not establish
 32-bit original-game graphics/audio/controllers or gameplay.
 
 The current development recipe is v16/0.1.5 and requires the 0.1.18 development
-app. Native Team Crush, Double Impact and a three-lap two-player Race now have
-scoped completion evidence. In the Race with zero CPU rivals, both players
-finish naturally: P1 first in 10:20.03 and P2 second in 11:26.56. Normal Continue
+app. Native Team Crush, Double Impact, Party Crash and a three-lap two-player
+Race now have scoped completion evidence. In the Race with zero CPU rivals, both
+players finish naturally: P1 first in 10:20.03 and P2 second in 11:26.56. Normal Continue
 actions traverse results, Score (1–0), successful autosave and mode selection.
 The private profile changes while the original reference saves and executable
 remain unchanged. A fresh process loads that earned profile and displays the
@@ -77,6 +77,12 @@ recovery and boost free cars after collisions; no game-state edits are used.
 This is Linux headless Vulkan coverage with dummy audio. Other rival counts
 and tracks, complete campaign, physics/audio equivalence and physical Windows
 qualification remain open.
+
+The default Party Crash Solo route also completes two shared-controller turns
+in one round at Trailer Trash: both score $84,633, then original Final Standings,
+Continue/Retry and main-menu return work. Its profile files remain unchanged;
+no Party Crash autosave or saved-score reload is claimed.
+
 The Double Impact route independently retains its 0–1 win count on return to
 mode selection. Linux library Play at app commit `85297c3` additionally verifies
 the remembered in-place ISO, earned profile, separate game window, normal

@@ -1484,3 +1484,46 @@ normal window-close qualification or stable release is part of this check.
 Other tracks/rival counts, remaining modes and campaign events, exact
 physics/audio equivalence, original online functionality and physical Windows
 qualification remain open.
+
+
+### v16 default Party Crash Solo turns and final standings
+
+The unchanged native v16 executable completes the original Party Crash defaults:
+Solo, two players sharing the same controller, one round, locked car type and
+random junctions. The selected junction is Trailer Trash. Normal Xbox A starts
+each turn, followed immediately by a held right trigger for 30,000 ms. Each turn
+reaches its original finished phase and shows its own **Round 1 of 1 Results**
+plate: **$84,633 vehicle damage**, $0 cash bonuses, no multiplier, and **$84,633
+Crash $**. The original Player 2 Get Ready screen verifies the turn handoff.
+No score, car, traffic, player-state or outcome is injected.
+
+Fresh normal A presses traverse the second result plate, **Final Standings**,
+the original Continue/Retry choice and the main Select Option menu. Final
+Standings lists Player 1 first and Player 2 second, both at $84,633; no Draw label
+or inferred tie-break rule is invented. Result text is used only to recognize
+when a table is visible. Both numerical score values and player labels are
+separately visually checked because raw OCR sometimes misreads individual digits.
+
+All 30 actual 640×480 captures fully decode and match their hashes, including
+retained loading/animation observations. Strict executed-path and actual-Vulkan
+checks pass on the RTX 3090, Vulkan 1.4.312, headless, with dummy audio and the
+owned ISO read-only in place. The executable and all five reference/private
+UDATA/TDATA profile files remain unchanged. No autosave prompt or new profile
+write is observed, and saved Party Crash score persistence is not claimed.
+The owned observer, driver, engine timeout and native engine are confirmed
+absent after the normal owned scene stop; the driver exits 0. This is not another
+window-manager-close, app-history or physical Windows qualification.
+
+The first bounded observation remains incomplete: its operator-delayed first
+turn produced a $0 result and reached the Player 2 handoff, but a later snapshot
+landed in a replay loading fade and final standings were not captured before
+its interaction window ended. The qualified probe starts turns promptly with
+normal inputs and waits for visible vehicle-damage/cash-bonus/result text,
+retaining all intermediate captures. The original 600-second outer and 450-second
+interaction bounds are unchanged; no runtime guard or game source is changed.
+
+This qualifies the selected default Solo/two-player/one-round route. Other
+party types, player/round counts, junctions, cash/multiplier/Crashbreaker branches,
+exact original-hardware physics/audio, campaign and physical platform scope
+remain open. No native game rebuild, package/source-kit update, immutable
+Windows preview replacement, stable merge or release is part of this check.
