@@ -1527,3 +1527,43 @@ party types, player/round counts, junctions, cash/multiplier/Crashbreaker branch
 exact original-hardware physics/audio, campaign and physical platform scope
 remain open. No native game rebuild, package/source-kit update, immutable
 Windows preview replacement, stable merge or release is part of this check.
+
+
+### v16 two-round Party Crash cumulative standings
+
+A further normal-input check selects Solo, two players and **two rounds** in the
+original Party Crash options. Locked car type and random junctions remain Yes;
+the game selects Trailer Trash in both rounds. The four Get Ready screens show
+Player 1, Player 2, Player 1 and Player 2 in that order. Original A and a held
+right trigger drive each turn; no score, traffic, AI or player-state is written.
+
+The visually checked Round 1 of 2 result plates show Player 1 at **$17,366** and
+Player 2 at **$15,019**. The original intermediate Round 1 of 2 Standings repeats
+those values, and normal A advances to the next round. The Round 2 of 2 result
+plates show Player 1 at **$15,019** and Player 2 at **$11,150**. Each plate shows
+$0 cash bonuses and no multiplier. Final Standings correctly accumulates both
+rounds: **Player 1 $32,385**, **Player 2 $26,169**. Fresh normal A presses then
+traverse the original Continue/Retry choice and return to Select Option with
+Multiplayer selected. OCR recognizes screen readiness; the numbers, round labels
+and player names are checked from the actual images independently of OCR.
+
+All 47 actual 640×480 captures decode and match their hashes. The same unchanged
+v16 executable runs through the actual RTX 3090 Vulkan 1.4.312 backend, headless
+with dummy audio, reading the owned ISO read-only in place. Strict executed-path
+checks pass. All five reference and private UDATA/TDATA files remain identical;
+no new Party Crash persistence or autosave is claimed.
+
+The input controller exits 0 after capturing Final Standings. The separate
+observer exits 143 after the main-menu capture without completing its cleanup;
+the cause of that observer exit is untraced. The exact original still-live driver
+is verified and given its normal stop-file signal, without restarting the game.
+Its log records the normal scene stop at flip 23,446, 490 seconds. The original
+driver, shell, engine timeout and native executor are then confirmed absent; an
+independent driver exit code is not captured after orphaning. This does not
+qualify observer cleanup, window-manager close or app-history handling.
+
+This adds the selected two-round handoff and cumulative-score route. It does not
+qualify random-junction selection correctness, other party types/counts,
+Crashbreaker/cash/multiplier branches, campaign, exact original-hardware
+physics/audio, or physical Windows/Android gameplay. No game rebuild, package
+change, immutable Windows preview replacement, stable merge or release occurs.
