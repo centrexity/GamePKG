@@ -547,7 +547,7 @@ pub fn game_tick(input:u32,state:u64)->u64 {
         subprocess.run(['xdotool','key','--window',window,'i'],env=env,check=True)
         choose_native_file(env,picker_title,None);subprocess.run(['xdotool','windowfocus',window],env=env,check=True);time.sleep(.2)
         incoming=root/'native-import.txt';incoming.write_text('# Original ASCII pattern\n50******************\n')
-        subprocess.run(['xdotool','key','--window',window,'i'],env=env,check=True);choose_native_file(env,picker_title,incoming)
+        subprocess.run(['xdotool','key','--window',window,'i'],env=env,check=True);choose_native_file(env,picker_title,incoming,from_list=True)
         subprocess.run(['xdotool','windowfocus',window],env=env,check=True);deadline=time.monotonic()+5
         while True:
             imported=capture(window,'native-pattern-import.png')
