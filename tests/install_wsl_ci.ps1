@@ -11,10 +11,40 @@ function Invoke-WebRequest {
     [IO.File]::WriteAllBytes($OutFile, [byte[]]@(1, 2, 3, 4))
 }
 function Assert-Throws {
-    param([scriptblock]$Operation)
+    param([scriptblock]$Operation, [string]$ExpectedMessage = '')
     $caught = $false
-    try { & $Operation } catch { $caught = $true }
+    try { & $Operation } catch {
+        if ($ExpectedMessage -and $_.Exception.Message -ne $ExpectedMessage) { throw }
+        $caught = $true
+    }
     if (-not $caught) { throw 'Expected rejection did not occur.' }
+}
+$script:WslExists = $false
+$script:WslImportFailure = $false
+$script:WslKernelFailure = $false
+$script:WslImports = 0
+function Invoke-TestWsl {
+    $global:LASTEXITCODE = 0
+    if ($args[0] -eq '--import') {
+        if ($args.Count -ne 6 -or $args[4] -ne '--version' -or $args[5] -ne '2') {
+            throw 'Import did not explicitly request WSL 2.'
+        }
+        $script:WslImports++
+        if ($script:WslImportFailure) { $global:LASTEXITCODE = 1 }
+        else { $script:WslExists = $true }
+    }
+    elseif ($args[0] -eq '--set-version') {
+        # Actual Windows 2022 WSL 3.0.3 reports an error for this no-op.
+        $global:LASTEXITCODE = 1
+        Write-Output 'The distribution is already the requested version.'
+    }
+    elseif ($args -contains '/bin/true') {
+        if (-not $script:WslExists) { $global:LASTEXITCODE = 1 }
+    }
+    elseif ($args -contains '/bin/sh') {
+        if ($script:WslKernelFailure) { $global:LASTEXITCODE = 1 }
+    }
+    else { throw "Unexpected WSL invocation: $args" }
 }
 try {
     $sample = Join-Path $work 'sample'
@@ -37,6 +67,26 @@ try {
         Assert-Throws { Install-GamePkgCiWsl }
     }
     finally { $env:RUNNER_ENVIRONMENT = $oldRunnerEnvironment }
-    Write-Output 'Verified download, cache reuse, corrupt download/cache rejection and disposable-runner guard passed.'
+    foreach ($existing in @($false, $true)) {
+        $script:WslExists = $existing
+        $script:WslImports = 0
+        $directory = Join-Path $work ("test distribution " + $existing)
+        New-Item -ItemType Directory -Path $directory | Out-Null
+        Initialize-GamePkgCiWslDistribution 'Invoke-TestWsl' $directory (Join-Path $work 'root fs.wsl')
+        $expectedImports = if ($existing) { 0 } else { 1 }
+        if ($script:WslImports -ne $expectedImports) { throw 'Unexpected import of an existing distribution.' }
+    }
+    $script:WslExists = $false
+    $script:WslImportFailure = $true
+    $directory = Join-Path $work 'failed import'
+    New-Item -ItemType Directory -Path $directory | Out-Null
+    Assert-Throws { Initialize-GamePkgCiWslDistribution 'Invoke-TestWsl' $directory 'rootfs' } 'Verified Ubuntu WSL 2 import failed.'
+    $script:WslImportFailure = $false
+    $script:WslExists = $true
+    $script:WslKernelFailure = $true
+    Assert-Throws { Initialize-GamePkgCiWslDistribution 'Invoke-TestWsl' $directory 'rootfs' } 'Ubuntu 24.04 did not start on the WSL 2 kernel.'
+    $global:LASTEXITCODE = 0
+    Write-Output 'Verified download/cache admission, runner guard, fresh/existing WSL 2 and import/kernel failures passed.'
+
 }
 finally { Remove-Item -LiteralPath $work -Recurse -Force }
