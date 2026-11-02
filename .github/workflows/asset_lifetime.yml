@@ -11,6 +11,7 @@ on:
       - 'tools/check_browser_audio_decoder.py'
       - 'tests/browser_audio_decoder.rs'
       - 'tests/browser_compressed_assets.py'
+      - 'tests/web_recorded_output.mjs'
       - 'tools/ci_ubuntu_apt.sh'
       - '.github/workflows/ci.yml'
       - '.github/workflows/asset_lifetime.yml'
@@ -25,6 +26,7 @@ on:
       - 'tools/check_browser_audio_decoder.py'
       - 'tests/browser_audio_decoder.rs'
       - 'tests/browser_compressed_assets.py'
+      - 'tests/web_recorded_output.mjs'
       - 'tools/ci_ubuntu_apt.sh'
       - '.github/workflows/ci.yml'
       - '.github/workflows/asset_lifetime.yml'
@@ -72,6 +74,16 @@ jobs:
           # The historical command dropped both build inputs through sudo.
           sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-assets-rustup CARGO_HOME="$HOME/.cargo" cargo test --locked --release --test browser_audio_decoder --no-run
           target/release/gamepkg check-bundled-audio
+      - name: Verify audio startup, steady deadlines and cancellation
+        run: node tests/web_recorded_output.mjs
       - name: Verify signed compressed reads, playback and pending-loan release
         run: |
           sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-assets-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT=/tmp/gamepkg-assets-slang CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tests/browser_compressed_assets.py
+      - name: Preserve bounded audio startup diagnostics after failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: maintenance-browser-audio-startup-failure
+          path: target/browser-compressed-assets-failure.json
+          retention-days: 7
+          if-no-files-found: ignore
