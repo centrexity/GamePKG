@@ -70,9 +70,13 @@ The private profile changes while the original reference saves and executable
 remain unchanged. A fresh process loads that earned profile and displays the
 Downtown Southbound lap records P2 2:25.15 and P1 2:38.53, matching the completed
 race; all five UDATA/TDATA profile files remain byte-identical after reload.
-This is Linux headless Vulkan coverage with dummy audio. Other rival
-configurations, complete campaign, physics/audio equivalence and physical
-Windows qualification remain open.
+A further original three-lap race on the same track also completes with the
+default four CPU rivals: P2 fifth in 11:57.71, P1 sixth in 15:47.01, followed by
+Score 0–1, successful autosave and mode return retaining 0–1. Normal controller
+recovery and boost free cars after collisions; no game-state edits are used.
+This is Linux headless Vulkan coverage with dummy audio. Other rival counts
+and tracks, complete campaign, physics/audio equivalence and physical Windows
+qualification remain open.
 The Double Impact route independently retains its 0–1 win count on return to
 mode selection. Linux library Play at app commit `85297c3` additionally verifies
 the remembered in-place ISO, earned profile, separate game window, normal

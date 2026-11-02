@@ -1445,3 +1445,42 @@ This closes fresh-process reload for the selected earned Race lap records.
 Default/nonzero rivals, further tracks and campaign events, exact physics/audio
 fidelity, original online behavior and physical Windows qualification remain
 open. The immutable Windows source preview and native game package are unchanged.
+
+
+### v16 original Race with the default four CPU rivals
+
+The same unchanged native v16 executable completes another original three-lap
+Downtown Southbound split-screen Race with the default **four CPU rivals**.
+The original HUD displays positions out of six and lap 3/3. P2 naturally enters
+the finished phase at flip 25,078; P1 follows at flip 31,957. Before its finish,
+P1 is visibly driving the final lap at 119 mph at flip 31,622. The original Race
+Results show **P2 fifth, 11:57.71**, best lap **3:22.23**, and **P1 sixth,
+15:47.01**, best lap **2:31.18**. Both results precede the original 30-minute
+race timeout; this is not another timeout/Draw observation.
+
+Both right triggers are held through the existing static input interface.
+Logged ordinary steering, brake/reverse maneuvers and boost free the cars from
+mutual collisions, curb contact and traffic pileups. Original crash replays and
+recovery remain active. In particular, after a prolonged final-lap blockage,
+P1's normal boost and subsequent original crash/recovery lead back to visible
+forward driving and its finish. Both player cars receive normal pad input and opponent AI is unchanged. No
+debug autopilot, position/lap/result injection or physics change is used. This control-driven run is not a pacing/physics parity
+measurement against original hardware.
+
+Normal A traverses Race Results → Score (P1 wins 0/P2 wins 1) → **Autosave
+successful** → Multiplayer mode selection retaining 0–1. All 70 recorded 640×480
+captures fully decode and match their SHA-256 hashes. Strict executed-path and
+actual-Vulkan checks pass on the RTX 3090 (Vulkan 1.4.312, headless), with dummy
+audio and the owned ISO read-only in place. The original five-file reference
+profile and executable remain unchanged; only the private copied Profile 1
+changes after saving, and a separate earned-profile snapshot is preserved.
+Fresh reload of this specific later snapshot is not claimed; the earlier
+zero-rival earned-record reload retains its separate proof.
+
+The owned observer, driver and engine timeout are confirmed absent after the
+normal owned headless scene-stop command; the driver exits 0. No native game
+rebuild, source-kit/package update, immutable Windows preview replacement,
+normal window-close qualification or stable release is part of this check.
+Other tracks/rival counts, remaining modes and campaign events, exact
+physics/audio equivalence, original online functionality and physical Windows
+qualification remain open.
