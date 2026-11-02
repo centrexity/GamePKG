@@ -158,6 +158,9 @@ def choose_native_file(env, title, path=None, windows=False):
         if time.monotonic() >= deadline:
             from pathlib import Path
             proof=Path(__file__).resolve().parents[1]/'target/native-rom-picker-failed.png'
+            # Earlier sudo-run fixtures may own this disposable artifact.
+            # Replace it through the writable target directory, without chmod/sudo.
+            proof.unlink(missing_ok=True)
             subprocess.run(['import','-display',env['DISPLAY'],'-window','root',str(proof)],env=env,check=True)
             names=subprocess.run(['xdotool','search','--onlyvisible','--name','.','getwindowname','%@'],env=env,capture_output=True,text=True)
             raise AssertionError(f'Native picker {title!r} did not open: {names.stdout}')
@@ -172,6 +175,9 @@ def choose_native_file(env, title, path=None, windows=False):
     subprocess.run(['xdotool','mousemove','--window',dialog,'400','150'],env=env,check=True)
     from pathlib import Path
     proof=Path(__file__).resolve().parents[1]/'target/native-rom-picker.png'
+    # Earlier sudo-run fixtures may own this disposable artifact.
+    # Replace it through the writable target directory, without chmod/sudo.
+    proof.unlink(missing_ok=True)
     # GTK4 maps its chooser before the controls are drawn. Sending Ctrl+L at
     # that point can lose the shortcut and type into the wrong widget.
     ready_deadline=time.monotonic()+20
