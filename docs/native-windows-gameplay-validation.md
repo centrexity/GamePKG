@@ -1604,3 +1604,29 @@ selected four-player turn/standings route, not saved Party Crash scores,
 random-junction correctness, other counts/types, Crashbreaker/cash/multiplier,
 campaign, exact hardware physics/audio, app history, window-manager close or
 physical Windows/Android gameplay. No game rebuild or package change occurs.
+
+### v16 normal-input Crashbreaker activation
+
+A separate private Linux v16 run now visibly activates Crashbreaker in the
+original Trailer Trash Party Crash event. It uses the same native executable,
+the owner's ISO read in place, private cloned saves, actual RTX 3090 Vulkan and
+dummy audio. Normal Xbox input starts the event and drives to impact. After
+the original impact state at flip 5243, A plus left aftertouch and subsequent
+B presses reach the title unchanged. The B press at flip 5396 accompanies the
+original state transition from `0x400` to `0x8400`; the captured frame at 5404
+shows the original **CRASHBREAKER!** banner and explosion. This is actual
+activation, beyond the older driving-gate and B-mapping assertions.
+
+All 65 retained frames decode and match their recorded hashes. The driver
+exits normally after the owned stop at flip 7340; the executable and all five
+private/reference save files remain unchanged. No autopilot or game-state
+writes are used. The earlier probe, whose B presses preceded impact, remains
+an incomplete attempt rather than an activation pass.
+
+The new probe's long mixed A/B sequence also continues into the original
+replay/tally screens. Its later Player 1 results show $108,327 vehicle damage
+and $5,000 cash, totaling $113,327, but this is not counted as a clean extra
+turn or results-navigation qualification. A repeatable end-to-end gate still
+needs a shorter activation sequence and explicit phase-aware results input.
+This observation qualifies native activation on this route, not complete
+Crashbreaker physics, every junction, other platforms or the full campaign.
