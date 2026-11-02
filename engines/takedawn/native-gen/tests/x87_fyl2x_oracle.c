@@ -37,6 +37,7 @@ extern void gamepkg_test_fyl2x_reference(uint64_t, uint32_t, uint64_t, uint32_t,
                                          uint32_t *);
 #include "fyl2x_reference/accuracy.h"
 static _Thread_local unsigned profile_differences;
+static _Thread_local unsigned exact_power_cases;
 static _Thread_local unsigned cases, queued, cs = 0x1b;
 static FILE *corpus;
 static void word(uint32_t v) {
@@ -140,17 +141,19 @@ static void one(GamePkgExt80 a, GamePkgExt80 b, unsigned cw, unsigned top,
   assert(!gamepkg_x86_run(generated, &f));
   GamePkgX87State *z = gamepkg_x86_x87_state();
   unsigned sw = rd(after.b + 2), valid = 0;
-  /* The fixed P5/P6 numerical profile is checked bit-for-bit against the
-   * independently built pinned reference. Hardware approximation last bits may
-   * differ: all other registers, exception/status bits and commit responses
-   * continue to use the physical oracle unchanged. */
+  /* Ordinary logarithms use the fixed P5/P6 approximation; powers of two
+   * use independently formed exact integer-logarithm products. Host CPUs can
+   * report a different approximation/C1 even for an exactly representable
+   * logarithm. Compare every result bit and C1 with the independent reference;
+   * all other registers, exception/status bits and commit responses continue
+   * to use the physical oracle unchanged. */
   unsigned exponent = a.sign_exponent & 0x7fff;
   if (!empty && !(a.sign_exponent & 0x8000) && exponent < 0x7fff &&
       a.significand && (!exponent || (a.significand >> 63)) &&
       (b.sign_exponent & 0x7fff) < 0x7fff && b.significand &&
       (!(b.sign_exponent & 0x7fff) || (b.significand >> 63)) &&
-      (a.significand & (a.significand - 1u)) &&
       ((sw >> 11) & 7) == ((top + 1) & 7)) {
+    exact_power_cases += !(a.significand & (a.significand - 1u));
     uint64_t sig;
     uint32_t se, c1;
     gamepkg_test_fyl2x_reference(a.significand, a.sign_exponent, b.significand,
@@ -170,7 +173,7 @@ static void one(GamePkgExt80 a, GamePkgExt80 b, unsigned cw, unsigned top,
             cases, cw, top, empty, a.sign_exponent,
             (unsigned long long)a.significand, b.sign_exponent,
             (unsigned long long)b.significand, z->status, sw);
-    unsigned pp = (s.status >> 11) & 7;
+    unsigned pp = (z->status >> 11) & 7;
     fprintf(stderr, "value got%04x:%016llx expected%04x:%016llx\n",
             z->sign_exponent[pp], (unsigned long long)z->significand[pp],
             rd(after.b + 40), (unsigned long long)get64(after.b + 32));
@@ -363,7 +366,35 @@ static void monotonicity(void) {
     }
   printf("FYL2X %u adjacent monotonic pairs passed\n", monotonic_pairs);
 }
+static void exact_power_reference_regressions(void) {
+  for (unsigned pc = 0; pc < 4; ++pc)
+    for (unsigned rc = 0; rc < 4; ++rc)
+      for (unsigned masks = 0; masks < 64; ++masks)
+        for (unsigned sign = 0; sign < 2; ++sign) {
+          unsigned cw = 0x40 | masks | (pc << 8) | (rc << 10);
+          uint64_t sig;
+          uint32_t se, c1;
+          /* log2(2^-16382) * (+/-1) = -/+16382, exactly. The
+           * approximation reference reports C1=1 for some of these modes. */
+          gamepkg_test_fyl2x_reference(
+              UINT64_C(0x8000000000000000), 1,
+              UINT64_C(0x8000000000000000), 0x3fff | (sign << 15),
+              cw, &sig, &se, &c1);
+          assert(sig == UINT64_C(0xfff8000000000000) &&
+                 se == (0xc00cu ^ (sign << 15)) && c1 == 0);
+          /* log2(1/2) * (+/-minimum-normal) is the opposite signed
+           * minimum-normal, not an approximated subnormal/wrapped result. */
+          gamepkg_test_fyl2x_reference(
+              UINT64_C(0x8000000000000000), 0x3ffe,
+              UINT64_C(0x8000000000000000), 1 | (sign << 15),
+              cw, &sig, &se, &c1);
+          assert(sig == UINT64_C(0x8000000000000000) &&
+                 se == (0x8001u ^ (sign << 15)) && c1 == 0);
+        }
+}
+
 int main(void) {
+  exact_power_reference_regressions();
   const char *path = getenv("GAMEPKG_TAKEDAWN_X87_FYL2X_CORPUS");
   if (path) {
     corpus = fopen(path, "wb");
@@ -452,6 +483,7 @@ int main(void) {
   }
 
   accuracy_clear();
+  assert(exact_power_cases);
   monotonicity();
   threads();
   GamePkgX87State before = *gamepkg_x86_x87_state();
@@ -462,7 +494,7 @@ int main(void) {
   assert(gamepkg_x86_run(generated, &f) == 1 && f.vector == 16 &&
          !memcmp(&before, gamepkg_x86_x87_state(), sizeof(before)));
   printf("FYL2X: %u state cases, %u queued faults, %u hardware approximation "
-         "differences and 8000 workers passed\n",
-         cases, queued, profile_differences);
+         "differences, %u independent exact-power cases and 8000 workers passed\n",
+         cases, queued, profile_differences, exact_power_cases);
   return 0;
 }
