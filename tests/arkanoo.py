@@ -5,7 +5,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import os, shutil, subprocess, tempfile, threading, time, tomllib, json
 from PIL import Image
-from gui_test_support import start_display,choose_native_file
+from gui_test_support import start_display,choose_native_file,capture_native_failure
 import argparse, math, zlib
 from contextlib import nullcontext
 from collections import Counter
@@ -577,6 +577,11 @@ pub fn game_tick(input:u32,state:u64)->u64 {
         subprocess.run(['xdotool','key','--window',window,'q'],env=env,check=True)
         assert app.wait(timeout=10)==0,'Original Q-to-quit did not close cleanly'
         print('Native Arkanoo: gameplay/editor plus real file-picker import, cancellation and Save-dialog export passed.')
+
+    except BaseException:
+        try:capture_native_failure(env,PROOF,app)
+        except Exception as diagnostic_error:print('Native failure diagnostics:',repr(diagnostic_error),flush=True)
+        raise
 
     finally:
         if app is not None:
