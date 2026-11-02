@@ -894,6 +894,7 @@ jobs:
           path: |
             target/*.png
             target/roms-picker-output.jsonl
+            target/remembered-roms-picker-output.jsonl
             target/zelda-display-failure.json
             target/portal-proof
             target/portal-tight-proof
