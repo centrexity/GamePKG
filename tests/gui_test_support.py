@@ -343,3 +343,38 @@ def cube2_choose_test_map(window, env):
             if '100' in ''.join(text.split()):break
             assert time.monotonic()<deadline,'Original console did not enter the requested gameplay map: '+text
             time.sleep(.3)
+
+
+def capture_native_failure(env, directory, app=None):
+    """Capture only the fixture's private display after its assertion fails."""
+    from pathlib import Path
+    directory=Path(directory);directory.mkdir(parents=True,exist_ok=True)
+    if not env.get('DISPLAY'):
+        raise ValueError('A private test display is required')
+    notes=[]
+    def run(arguments):
+        result=subprocess.run(arguments,env=env,capture_output=True,text=True,timeout=10)
+        notes.append(repr(arguments)+': '+result.stdout[:4096]+result.stderr[:4096])
+        return result
+    try:
+        run(['import','-display',env['DISPLAY'],'-window','root',str(directory/'native-failure-desktop.png')])
+        windows=run(['xdotool','search','--onlyvisible','--name','.'])
+        for window in windows.stdout.splitlines()[:32]:
+            title=run(['xdotool','getwindowname',window]).stdout.strip()
+            if title=='Unable to play game':
+                run(['xdotool','windowraise',window])
+                run(['import','-display',env['DISPLAY'],'-window',window,str(directory/'native-failure-error-dialog.png')])
+    finally:
+        (directory/'native-failure-diagnostics.txt').write_text(chr(10).join(notes))
+        if app is not None:
+            for name in ['stdout','stderr']:
+                stream=getattr(app,name,None)
+                if stream is None:continue
+                os.set_blocking(stream.fileno(),False)
+                parts=[]
+                for _ in range(16):
+                    try:block=os.read(stream.fileno(),4096)
+                    except BlockingIOError:break
+                    if not block:break
+                    parts.append(block)
+                (directory/('native-failure-'+name+'.log')).write_bytes(b''.join(parts))

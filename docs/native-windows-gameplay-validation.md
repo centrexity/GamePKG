@@ -6,6 +6,60 @@ C/C++. Players do not need Python, C2Rust or WSL. The owned supported ISO is rea
 in place. Maintainer tools and private test saves are separate from player
 requirements and the user's library.
 
+## Current v16 unresolved-reference audit
+
+The prepared v16 source still retains 13 unresolved-function guards. An
+ISO-in-place static audit now explains three apparent references without adding
+replacement game behavior:
+
+| Apparent unresolved target | Original data mistaken for a branch |
+| --- | --- |
+| `000817D9` | Generated parent `000817BC` starts inside the five-entry jump table at `000817B0`. The apparent branch at `000817C0` decodes the fifth table pointer. |
+| `00184C19` | Generated parent `00184BCA` extends into the two-entry jump table at `00184BCC`. The apparent branch at that address decodes its first pointer. Six selector bytes at `00184BD4` select only those two entries. |
+| `00320C2A` | The apparent branch at `00320C1D` decodes the last pointer in the eight-entry table at `00320C01`, after the original code in `003205A8`. Its apparent destination is an existing instruction within `00320C21`. |
+
+The original functions at `000816D0`, `00184AD0` and `003205A8` have unsigned bounds checks
+that dominate their dispatches. All table destinations are decoded instruction
+boundaries within their respective code spans. The audit follows 52, 70 and 441
+reachable instructions in those function-local control-flow graphs, including
+their original returns. None of the apparent branches belongs to those code spans.
+The first two apparent destinations fall one byte inside existing six-byte `mov`
+instructions in neighboring real functions. The third is a local instruction
+within its neighboring function, rather than that function's entry.
+
+The owned image is checked against the supported SHA-256 before reading these
+spans. The private receipt retains code/table hashes and the current prepared
+source hashes. Mutation controls reject a table target into data, an out-of-range
+selector, substitution of a signed guard and changing the third dispatch bound.
+No media is extracted to disk.
+
+This classifies the three table-derived references; it does not establish every
+possible dynamic entry. All 13 guards, prepared functions and shipping build
+objects remain unchanged. The other targets, broader reachability, full gameplay and physical platforms
+still require qualification; the string review below adds a separate scope.
+
+### String-derived references
+
+Four further guarded targets (`0036B7E2`, `0036B7F2`, `00772C57` and
+`00772C5E`) have five recorded branch instructions decoded from original
+strings: `\Device\MU_0`, `\Device\MU_%x` and `update.xbe`. All five
+instruction byte spans fall within those exact ASCII literals. Original
+instructions in three known functions also push the string addresses as
+arguments; those references agree with the current prepared Rust source.
+
+The earlier private audit's `non_code_section` conclusion for the first two
+targets is insufficient. Their original `.rdata` section has flags `6`, which
+include executable permission. The section label does not establish that the
+bytes cannot execute. The new classification concerns the actual string-derived
+branch bytes, with original source hashes and section flags retained.
+
+Two changed-string controls fail, as do cross-section and truncated-byte reads.
+All reads stay in memory. Together with the three table cases above, this
+explains recorded data-derived references to seven guarded targets. All 13
+guards remain; the other six targets, possible dynamic entries and full gameplay
+and platform fidelity remain open. No native game rebuild or player-library
+change is involved.
+
 ## Prepared v15 multiplayer input follow-up
 
 The unreleased 0.1.4 recipe selects the v15 kit, SHA-256
