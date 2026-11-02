@@ -43,8 +43,13 @@ static void accuracy(GamePkgExt80 input, GamePkgExt80 multiplier,
   if (mpfr_cmp_d(ae, ((cw >> 10) & 3) ? 1.5 : 1.0) >= 0) {
     mpfr_fprintf(
         stderr,
-        "FYL2X accuracy failure input%04x:%016llx CW%x error%.20Rg ulp\n",
-        input.sign_exponent, (unsigned long long)input.significand, cw, ae);
+        "FYL2X accuracy failure input%04x:%016llx "
+        "multiplier%04x:%016llx output%04x:%016llx CW%x SW%04x "
+        "wrapped%x error%.20Rg ulp ideal%.40Re actual%.40Re\n",
+        input.sign_exponent, (unsigned long long)input.significand,
+        multiplier.sign_exponent, (unsigned long long)multiplier.significand,
+        output.sign_exponent, (unsigned long long)output.significand,
+        cw, sw, wrapped, ae, ay, az);
     abort();
   }
 }
