@@ -159,6 +159,29 @@ qualify every interprocedural state, the bitstream callback, decoded-audio
 equivalence, possible dynamic code entries or complete gameplay/platform
 behavior.
 
+### Converted WMA lookup function behavior
+
+A private native fixture compiles the unchanged generated Rust body of
+`sub_0030C891` against register-storage, callback and function-lookup test
+adapters. The original table is read from the supported ISO and supplied only
+through memory/stdin. An independent prefix-code reference constructs a full
+20-bit lookup map and rejects conflicting codes or incomplete coverage.
+
+Both native Linux ELF64 and ELF32 runs compare all 8,388,608 requested 23-bit
+patterns. Each also checks 4,096 full-width cases with optional remainder
+outputs and successful callback statuses, plus nine negative-callback cases.
+The symbol, consumed-bit count, remainder, callback arguments, stack cleanup
+and saved EBX/ESI/EDI values match. Failed callbacks preserve the output
+sentinels. The original table remains unchanged, and both widths produce the
+same result fingerprint.
+
+The fixture uses the exact manifest-verified generated function body, without
+rebuilding the 487 game units or changing the game executable. Its test ABI
+adapters are separate from the shipping runtime. This qualifies the converted
+lookup body for the reviewed table; actual stream callbacks, runtime TLS,
+complete WMA decoding, PCM/audio equivalence and physical platforms remain
+separate checks. No original table bytes are written to disk.
+
 ## Prepared v15 multiplayer input follow-up
 
 The unreleased 0.1.4 recipe selects the v15 kit, SHA-256
