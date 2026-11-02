@@ -109,7 +109,7 @@ def click_text(window, env, text, directory, timeout=60, max_y=None, *, click=Tr
             enlarged = directory / f'control-{name}.png'
             crop = ['-crop', f'0x{max_y}+0+0', '+repage'] if max_y is not None else []
             subprocess.run(['convert', str(screenshot), *crop, *filters, '-resize', '300%', str(enlarged)], env=env, check=True)
-            tsv = subprocess.check_output(['tesseract', str(enlarged), 'stdout', '--psm', '6' if max_y is not None else '11', 'tsv'], stderr=subprocess.DEVNULL, text=True)
+            tsv = subprocess.check_output(['tesseract', str(enlarged), 'stdout', '--psm', '6' if max_y is not None else '11', 'tsv'], env=env, stderr=subprocess.DEVNULL, text=True)
             words = [w for w in csv.DictReader(io.StringIO(tsv), delimiter='\t',quoting=csv.QUOTE_NONE) if w['text'].strip() and (min_y is None or int(w['top'])//3 >= min_y) and (max_y is None or int(w['top'])//3 < max_y)]
             last = ' '.join(w['text'] for w in words)
             # OCR may merge adjacent words in a compact button label.

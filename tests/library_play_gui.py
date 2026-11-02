@@ -130,6 +130,10 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-library-play-') as directory:
         history=json.loads(records[0].read_text())
         assert history['played_ms'] >= 1000
         assert set(history['unlocked']) == {'first_star'}, history
+        # Achievement checks scroll this same page. Reveal the action row
+        # before asking OCR to locate the complete Rebuild label.
+        subprocess.run(['xdotool','mousemove','--window',window,'400','800','click','--repeat','20','--delay','30','4'],env=env,check=True)
+        time.sleep(.2)
         click_text(window,env,'Rebuild',root)
         wait_screen(lambda text:'Native build complete. Ready to play.' in text,'library-rebuilt.png')
         assert len(list((library/'builds').glob('*/native-v1-*/game')))==1
