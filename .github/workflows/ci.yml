@@ -178,7 +178,20 @@ jobs:
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tools/check_music_sdk.py
       - name: Install virtual display tools
         if: matrix.features == '--all-features'
-        run: sudo apt-get install -y xvfb xdotool imagemagick optipng tesseract-ocr python3-pil python3-xlib python3-selenium zenity libsdl2-dev libsdl2-ttf-dev libsdl2-image-dev pkg-config libxkbcommon-x11-0 libgl1-mesa-dri libvulkan1 mesa-vulkan-drivers
+        run: |
+          # Ubuntu's Selenium recommendations install a Snap ChromeDriver,
+          # which cannot see the runner's regular Chrome installation.
+          sudo apt-get install -y --no-install-recommends xvfb xdotool imagemagick optipng tesseract-ocr python3-pil python3-xlib python3-selenium zenity libsdl2-dev libsdl2-ttf-dev libsdl2-image-dev pkg-config libxkbcommon-x11-0 libgl1-mesa-dri libvulkan1 mesa-vulkan-drivers
+          chrome_browser=$(readlink -f "$(command -v google-chrome)")
+          chrome_driver="${CHROMEWEBDRIVER:-/nonexistent}/chromedriver"
+          if [[ ! -x "$chrome_driver" ]]; then chrome_driver=$(command -v chromedriver); fi
+          chrome_driver=$(readlink -f "$chrome_driver")
+          test -x "$chrome_browser" && test -x "$chrome_driver"
+          sudo ln -sf "$chrome_browser" /usr/local/bin/chromium
+          sudo ln -sf "$chrome_driver" /usr/local/bin/chromedriver
+          chromium --version
+          chromedriver --version
+          timeout 30s /usr/bin/python3 tests/browser_driver_smoke.py
       - name: Muted music clocks and unavailable audio devices in real game windows
         if: matrix.features == '--all-features'
         run: sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/muted_music_gui.py
