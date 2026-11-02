@@ -22,6 +22,8 @@ function Assert-Throws {
 $script:WslExists = $false
 $script:WslImportFailure = $false
 $script:WslKernelFailure = $false
+$script:WslWrongRelease = $false
+$script:WslKernelText = '6.18.54.1-microsoft-standard-WSL2'
 $script:WslImports = 0
 function Invoke-TestWsl {
     $global:LASTEXITCODE = 0
@@ -41,7 +43,14 @@ function Invoke-TestWsl {
     elseif ($args -contains '/bin/true') {
         if (-not $script:WslExists) { $global:LASTEXITCODE = 1 }
     }
-    elseif ($args -contains '/bin/sh') {
+    elseif ($args -contains '/usr/bin/cat') {
+        if ($args -notcontains '--exec') { throw 'OS query passed through a shell.' }
+        if ($script:WslWrongRelease) { Write-Output 'VERSION_ID="22.04"' }
+        else { Write-Output 'VERSION_ID="24.04"' }
+    }
+    elseif ($args -contains '/usr/bin/uname') {
+        if ($args -notcontains '--exec') { throw 'Kernel query passed through a shell.' }
+        Write-Output $script:WslKernelText
         if ($script:WslKernelFailure) { $global:LASTEXITCODE = 1 }
     }
     else { throw "Unexpected WSL invocation: $args" }
@@ -85,6 +94,12 @@ try {
     $script:WslExists = $true
     $script:WslKernelFailure = $true
     Assert-Throws { Initialize-GamePkgCiWslDistribution 'Invoke-TestWsl' $directory 'rootfs' } 'Ubuntu 24.04 did not start on the WSL 2 kernel.'
+    $script:WslKernelFailure = $false
+    $script:WslKernelText = '4.4.0-Microsoft'
+    Assert-Throws { Initialize-GamePkgCiWslDistribution 'Invoke-TestWsl' $directory 'rootfs' } 'Ubuntu 24.04 did not start on the WSL 2 kernel.'
+    $script:WslKernelText = '6.18.54.1-microsoft-standard-WSL2'
+    $script:WslWrongRelease = $true
+    Assert-Throws { Initialize-GamePkgCiWslDistribution 'Invoke-TestWsl' $directory 'rootfs' } 'Ubuntu did not report the required 24.04 OS identity.'
     $global:LASTEXITCODE = 0
     Write-Output 'Verified download/cache admission, runner guard, fresh/existing WSL 2 and import/kernel failures passed.'
 

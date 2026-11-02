@@ -37,8 +37,22 @@ function Initialize-GamePkgCiWslDistribution {
     }
     # Import already selects version 2. Validate the running kernel instead
     # of converting an already-v2 distro, which WSL reports as an error.
-    & $wsl --distribution Ubuntu-24.04 --user root -- /bin/sh -eu -c '. /etc/os-release; test "$VERSION_ID" = 24.04; uname -r | grep -i microsoft-standard-WSL2'
-    if ($LASTEXITCODE -ne 0) { throw 'Ubuntu 24.04 did not start on the WSL 2 kernel.' }
+    # Query directly: an extra default Linux shell can expand variables in a
+    # nested sh -c command before that command sources /etc/os-release.
+    $osRelease = @(& $Wsl --distribution Ubuntu-24.04 --user root --exec /usr/bin/cat /etc/os-release) -join "`n"
+    $osExit = $LASTEXITCODE
+    $osRelease = $osRelease -replace '\x00', ''
+    Write-Output "WSL OS release: $osRelease"
+    if ($osExit -ne 0 -or $osRelease -notmatch '(?m)^VERSION_ID="?24[.]04"?\s*$') {
+        throw 'Ubuntu did not report the required 24.04 OS identity.'
+    }
+    $kernelRelease = @(& $Wsl --distribution Ubuntu-24.04 --user root --exec /usr/bin/uname -r) -join "`n"
+    $kernelExit = $LASTEXITCODE
+    $kernelRelease = $kernelRelease -replace '\x00', ''
+    Write-Output "WSL kernel: $kernelRelease"
+    if ($kernelExit -ne 0 -or $kernelRelease -notmatch 'microsoft-standard-WSL2') {
+        throw 'Ubuntu 24.04 did not start on the WSL 2 kernel.'
+    }
 }
 
 function Install-GamePkgCiWsl {
