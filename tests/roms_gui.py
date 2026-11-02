@@ -5,7 +5,7 @@ from PIL import Image
 from gui_test_support import start_display,game_window,click_text,choose_native_file,close_game,wait_game_frame,click_primary_play
 os.environ.setdefault('OMP_THREAD_LIMIT','1')
 PROJECT=Path(__file__).resolve().parents[1]
-for proof_name in ['roms-final.png','roms-first-game.png','roms-restarted-game.png','roms-picker-output.jsonl']:
+for proof_name in ['roms-final.png','roms-first-game.png','roms-restarted-game.png','roms-picker-output.jsonl','roms-picker-starts.jsonl','native-rom-picker-targets.jsonl']:
     (PROJECT/'target'/proof_name).unlink(missing_ok=True)
 with tempfile.TemporaryDirectory(prefix='gamepkg-roms-gui-') as directory:
     root=Path(directory);source=root/'source';shutil.copytree(PROJECT/'examples/minimal',source)
@@ -29,10 +29,11 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-roms-gui-') as directory:
     # This diagnoses GTK selection failures without replacing the system dialog.
     picker_binary=shutil.which('zenity',path=env['PATH'])
     assert picker_binary,'The native Linux file picker must be installed'
-    picker_log=root/'picker-output.jsonl';picker_bin=root/'picker-bin';picker_bin.mkdir()
+    picker_log=root/'picker-output.jsonl';picker_start_log=root/'picker-starts.jsonl';picker_bin=root/'picker-bin';picker_bin.mkdir()
     recorder=picker_bin/'zenity'
     recorder.write_text('#!/usr/bin/env python3\n'
         'import json,subprocess,sys\n'
+        f'with open({str(picker_start_log)!r},"a",encoding="utf-8") as log: log.write(json.dumps(dict(args=sys.argv[1:]))+"\\n")\n'
         f'result=subprocess.run([{picker_binary!r},*sys.argv[1:]],capture_output=True)\n'
         f'with open({str(picker_log)!r},"a",encoding="utf-8") as log:\n'
         ' log.write(json.dumps(dict(args=sys.argv[1:],exit=result.returncode,stdout=result.stdout.hex(),stderr=result.stderr.hex()))+"\\n")\n'
@@ -74,7 +75,11 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-roms-gui-') as directory:
                 if matches:return min(matches,key=lambda w:int(w['top']))
                 assert time.monotonic()<end,text
                 time.sleep(.2)
-        def click(w):subprocess.run(['xdotool','mousemove','--window',window,str(int(w['left'])+int(w['width'])//2),str(int(w['top'])+int(w['height'])//2),'click','1'],env=env,check=True);time.sleep(.2)
+        def click(w):
+            subprocess.run(['xdotool','windowfocus','--sync',window],env=env,check=True)
+            subprocess.run(['xdotool','mousemove','--sync','--window',window,str(int(w['left'])+int(w['width'])//2),str(int(w['top'])+int(w['height'])//2)],env=env,check=True)
+            time.sleep(.15)
+            subprocess.run(['xdotool','click','1'],env=env,check=True);time.sleep(.2)
         click_text(window,env,'com.gamepkg.minimal',root)
         def wait_for_selection(index,path):
             deadline=time.monotonic()+10
@@ -86,12 +91,17 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-roms-gui-') as directory:
                     selection_file=root/'library/rom-selections.json'
                     stored=json.loads(selection_file.read_text()) if selection_file.exists() else {}
                     expected=[str(a),str(b) if index else '']
-                    if list(stored.values())==[expected]:return
+                    if list(stored.values())==[expected]:
+                        # Saving precedes rendering the idle UI. The missing-slot
+                        # Play check must not pass just because the picker work
+                        # is still pending, and its click must reach the app.
+                        visible,_=screen()
+                        if 'Working' not in visible:return
                 assert time.monotonic()<deadline,f'Named ROM selection was not persisted: slot={index}, path={str(path)!r}, receipts={receipts!r}'
                 time.sleep(.1)
         for index,(label,path) in enumerate([('Program',a),('Data',b)]):
             click_text(window,env,'Choose ROM',root)
-            choose_native_file(env,'Choose '+label+' ROM',path)
+            choose_native_file(env,'Choose '+label+' ROM',path,from_list=True)
             wait_for_selection(index,path)
             if label=='Program':
                 click(word('Play'));time.sleep(.3)
@@ -113,6 +123,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-roms-gui-') as directory:
         print('Desktop named multi-ROM selection, missing-file gating and actual guest reads passed.')
         print('Fresh --play launch remembered both ROMs without selecting them again.')
     finally:
+        if picker_start_log.exists():shutil.copy2(picker_start_log,PROJECT/'target/roms-picker-starts.jsonl')
         if picker_log.exists():
             shutil.copy2(picker_log,PROJECT/'target/roms-picker-output.jsonl')
             for receipt in picker_receipts():

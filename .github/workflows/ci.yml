@@ -896,6 +896,8 @@ jobs:
             target/*.png
             target/homepage-failed-*.json
             target/roms-picker-output.jsonl
+            target/roms-picker-starts.jsonl
+            target/native-rom-picker-targets.jsonl
             target/remembered-roms-picker-output.jsonl
             target/zelda-display-failure.json
             target/portal-proof
