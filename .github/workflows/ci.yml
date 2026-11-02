@@ -183,7 +183,10 @@ jobs:
         run: |
           # Ubuntu's Selenium recommendations install a Snap ChromeDriver,
           # which cannot see the runner's regular Chrome installation.
-          sudo apt-get install -y --no-install-recommends xvfb xdotool imagemagick optipng tesseract-ocr python3-pil python3-xlib python3-selenium zenity libsdl2-dev libsdl2-ttf-dev libsdl2-image-dev pkg-config libxkbcommon-x11-0 libgl1-mesa-dri libvulkan1 mesa-vulkan-drivers
+          sudo apt-get install -y --no-install-recommends xvfb xdotool metacity x11-utils imagemagick optipng tesseract-ocr python3-pil python3-xlib python3-selenium zenity libsdl2-dev libsdl2-ttf-dev libsdl2-image-dev pkg-config libxkbcommon-x11-0 libgl1-mesa-dri libvulkan1 mesa-vulkan-drivers
+          for gamepkg_gui_tool in Xvfb xdotool xprop import convert metacity zenity tesseract; do
+            command -v "$gamepkg_gui_tool"
+          done
           chrome_browser=$(readlink -f "$(command -v google-chrome)")
           chrome_driver="${CHROMEWEBDRIVER:-/nonexistent}/chromedriver"
           if [[ ! -x "$chrome_driver" ]]; then chrome_driver=$(command -v chromedriver); fi
