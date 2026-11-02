@@ -61,8 +61,25 @@ and artifact integrity also pass at both widths without original media. Matching
 installs them and runs both native fixtures. These build checks do not establish
 32-bit original-game graphics/audio/controllers or gameplay.
 
-The current development recipe is v15/0.1.4 and requires the 0.1.18 development app.
-Its multiplayer PS2 input fix has sanitized 32/64-bit input checks. The normal
+The current development recipe is v16/0.1.5 and requires the 0.1.18 development
+app. Its original shared-results input correction is qualified with native
+Team Crush and Double Impact results. The Double Impact route uses normal
+controller input, reaches the original results and separate score menu, then
+returns to Multiplayer mode selection with the 0–1 win count intact. This is
+headless Vulkan coverage with dummy audio, not a completed Race/campaign or
+physical Windows qualification. Current Linux library Play additionally verifies
+the remembered in-place ISO, earned profile, separate game window, normal
+window-manager close, reaping and automatic play-history/readiness refresh.
+
+Windows-under-Wine normal signed v16 Build and integrity repair pass using all
+487 retained game objects and a Windows-side Z: temporary directory. These are
+warm Build/repair checks, not default C: temporary-directory, cold-build or
+protected original-game playback qualification. The immutable Windows source
+preview pins app commit `85297c3` and the signed v16 package; subsequent app
+changes do not relabel that bundle. See the
+[matching preview and evidence](native-windows-gameplay-validation.md).
+
+The earlier v15/0.1.4 multiplayer PS2 input fix has sanitized 32/64-bit input checks. The normal
 signed Linux v15 package passes cold optimized Build, in-place/remembered ISO
 launches, play history and integrity repair with all 487 object hashes/timestamps
 and player data preserved. The exact repaired executable passes original Race
@@ -91,7 +108,7 @@ Windows qualification. A separate unpaused headless run also earns Bronze and
 verifies original rewards/autosave plus an unchanged fresh-process medal and
 progress reload, with actual controller-read and strict native-path checks.
 This does not qualify exact wall-clock pacing or physical controllers.
-The earlier v14 preview uses app `f87f383`. The current immutable v15b hardware
+The earlier v14 preview uses app `f87f383`. The earlier immutable v15b hardware
 bundle uses verified app `081a5b1`, the admitted v15 recipe and separate preview
 library/settings. Its actual Windows CLI signature import and CMD launcher pass
 under private Wine. It deliberately excludes newer generic-compiler changes;
