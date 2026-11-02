@@ -6219,3 +6219,32 @@ Private wide-format startup SHA256 `42d6ca891715b795a853d8b8ddcbf1b76aac88a3f2ce
 glue `0ba13e3e32dab37cad5d5a82969e1a2743239e6ce1d2079c3559cc62ee0a3404`;
 map `991d7e34df08832852bc255be29fd01224eeabdcdce63596a36dc7c3edee04f2`;
 controlled body `cf8f56b511f4b4fe2d49fe70ca948e2fccea23882db770278229dec690c76c37`.
+
+### Exact-power FYL2X reference qualification
+
+The existing runtime evaluates `log2(2^n)` as the exact integer `n` before
+multiplying by y. The test now checks this path against an independent exact
+product, including C1, instead of the host CPU's logarithm approximation. The
+adapter uses the separately built upstream integer-to-binary128 conversion,
+multiply and final extended conversion; the product needs at most 79 bits, so
+its 113-bit intermediate is exact. The exponent is carried separately through
+the final conversion. Ordinary logarithms retain the pinned approximation.
+Physical exception flags, stack/pop behavior, tags, registers, metadata and
+deferred fault checks are unchanged. No result or C1 comparison is disabled.
+
+This addresses hosted case8601, where the host reported C1=1 for the exact
+result -16382 while the runtime's exact calculation reports C1=0. Two explicit
+reference regressions cover this integer result and the minimum-normal product
+`log2(1/2) * minimum-normal`, across every precision, rounding, mask and sign
+combination. The latter also catches using the approximation at a range
+boundary. These are deterministic numerical contracts, not a claim of matching
+an original Xbox CPU's approximation bit for bit.
+
+The full local fixture passes 1,593,452 states, including 184,224 independent
+exact-power cases, 654,288 deferred faults, 133,116 monotonic pairs and 8,000
+worker operations, with MPFR accuracy and undefined-behavior checks enabled.
+The unchanged and revised fixtures produce byte-identical 407,923,724-byte
+state corpora on the same AMD host. Negative controls reject both the old
+approximation-only reference and replacing the production exact-power path
+with the approximation table. Runtime sources and the current v16 native game
+package are unchanged. Hosted cross-CPU validation remains pending.
