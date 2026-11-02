@@ -34,10 +34,11 @@ _Thread_local uint_fast8_t gamepkg_softfloat_unbounded_inexact;
 static void generated(void);
 extern void gamepkg_test_fyl2x_reference(uint64_t, uint32_t, uint64_t, uint32_t,
                                          uint32_t, uint64_t *, uint32_t *,
-                                         uint32_t *);
+                                         uint32_t *, uint32_t *);
 #include "fyl2x_reference/accuracy.h"
 static _Thread_local unsigned profile_differences;
 static _Thread_local unsigned exact_power_cases;
+static _Thread_local unsigned range_profile_differences;
 static _Thread_local unsigned cases, queued, cs = 0x1b;
 static FILE *corpus;
 static void word(uint32_t v) {
@@ -145,8 +146,11 @@ static void one(GamePkgExt80 a, GamePkgExt80 b, unsigned cw, unsigned top,
    * use independently formed exact integer-logarithm products. Host CPUs can
    * report a different approximation/C1 even for an exactly representable
    * logarithm. Compare every result bit and C1 with the independent reference;
-   * all other registers, exception/status bits and commit responses continue
-   * to use the physical oracle unchanged. */
+   * physical arithmetic is checked with its own flags. At an independently
+   * proved exact minimum-normal boundary, use the profile's no-new-underflow
+   * response rather than a host approximation's underflow. All other bits and
+   * registers retain the physical oracle, and full profile state/fault checks
+   * remain exact below. */
   unsigned exponent = a.sign_exponent & 0x7fff;
   if (!empty && !(a.sign_exponent & 0x8000) && exponent < 0x7fff &&
       a.significand && (!exponent || (a.significand >> 63)) &&
@@ -155,15 +159,27 @@ static void one(GamePkgExt80 a, GamePkgExt80 b, unsigned cw, unsigned top,
       ((sw >> 11) & 7) == ((top + 1) & 7)) {
     exact_power_cases += !(a.significand & (a.significand - 1u));
     uint64_t sig;
-    uint32_t se, c1;
+    uint32_t se, c1, exact_min_normal;
     unsigned hardware_sw = sw;
     uint64_t hardware_sig = get64(after.b + 32);
     unsigned hardware_se = rd(after.b + 40);
     gamepkg_test_fyl2x_reference(a.significand, a.sign_exponent, b.significand,
-                                 b.sign_exponent, cw, &sig, &se, &c1);
+                                 b.sign_exponent, cw, &sig, &se, &c1,
+                                 &exact_min_normal);
     if (sig != get64(after.b + 32) || se != rd(after.b + 40) ||
         c1 != ((sw >> 9) & 1))
       ++profile_differences;
+    if (exact_min_normal) {
+      // Audit the unmodified host result before changing the expected view.
+      accuracy(a, b, (GamePkgExt80){hardware_sig, (uint16_t)hardware_se},
+               cw, hardware_sw);
+      unsigned physical_range_sw = sw;
+      // Retain pre-existing sticky underflow, and derive deferred #MF from
+      // the complete expected exception set; no exception bit is ignored.
+      sw = (sw & ~16u) | (s.status & 16u);
+      sw = (sw & ~0x8080u) | ((sw & ~cw & 63u) ? 0x8080u : 0u);
+      range_profile_differences += sw != physical_range_sw;
+    }
     put80(after.b + 32, (GamePkgExt80){sig, (uint16_t)se});
     sw = (sw & ~0x200u) | (c1 << 9);
     wr(after.b + 2, sw);
@@ -388,23 +404,25 @@ static void exact_power_reference_regressions(void) {
         for (unsigned sign = 0; sign < 2; ++sign) {
           unsigned cw = 0x40 | masks | (pc << 8) | (rc << 10);
           uint64_t sig;
-          uint32_t se, c1;
+          uint32_t se, c1, exact_min_normal;
           /* log2(2^-16382) * (+/-1) = -/+16382, exactly. The
            * approximation reference reports C1=1 for some of these modes. */
           gamepkg_test_fyl2x_reference(
               UINT64_C(0x8000000000000000), 1,
               UINT64_C(0x8000000000000000), 0x3fff | (sign << 15),
-              cw, &sig, &se, &c1);
+              cw, &sig, &se, &c1, &exact_min_normal);
           assert(sig == UINT64_C(0xfff8000000000000) &&
-                 se == (0xc00cu ^ (sign << 15)) && c1 == 0);
+                 se == (0xc00cu ^ (sign << 15)) && c1 == 0 &&
+                 exact_min_normal == 0);
           /* log2(1/2) * (+/-minimum-normal) is the opposite signed
            * minimum-normal, not an approximated subnormal/wrapped result. */
           gamepkg_test_fyl2x_reference(
               UINT64_C(0x8000000000000000), 0x3ffe,
               UINT64_C(0x8000000000000000), 1 | (sign << 15),
-              cw, &sig, &se, &c1);
+              cw, &sig, &se, &c1, &exact_min_normal);
           assert(sig == UINT64_C(0x8000000000000000) &&
-                 se == (0x8001u ^ (sign << 15)) && c1 == 0);
+                 se == (0x8001u ^ (sign << 15)) && c1 == 0 &&
+                 exact_min_normal == 1);
         }
 }
 
@@ -508,6 +526,8 @@ int main(void) {
   GamePkgX86Fault f;
   assert(gamepkg_x86_run(generated, &f) == 1 && f.vector == 16 &&
          !memcmp(&before, gamepkg_x86_x87_state(), sizeof(before)));
+  printf("FYL2X %u exact-boundary host/profile range differences\n",
+         range_profile_differences);
   printf("FYL2X: %u state cases, %u queued faults, %u hardware approximation "
          "differences, %u independent exact-power cases and 8000 workers passed\n",
          cases, queued, profile_differences, exact_power_cases);

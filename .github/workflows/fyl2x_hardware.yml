@@ -47,9 +47,13 @@ jobs:
       - name: Verify the complete FYL2X corpus without game media
         env:
           GAMEPKG_TAKEDAWN_X87_FYL2X_FIXTURE: ${{ runner.temp }}/fyl2x-fixture.c
+          GAMEPKG_TAKEDAWN_X87_FYL2X_CORPUS: ${{ runner.temp }}/fyl2x-corpus.bin
         run: |
           set -euo pipefail
           cargo test --locked --release --manifest-path engines/takedawn/native-gen/Cargo.toml --test x87_fyl2x -- --test-threads=1 --nocapture 2>&1 | tee "$RUNNER_TEMP/fyl2x-reference.log"
+          sha256sum "$RUNNER_TEMP/fyl2x-corpus.bin" | tee "$RUNNER_TEMP/fyl2x-corpus.sha256"
+          fyl2x_digest=$(cut -d " " -f 1 "$RUNNER_TEMP/fyl2x-corpus.sha256")
+          test "$fyl2x_digest" = a30f5543ed4148cd66465b20a300879e9ec209e4dd67e7f4513e240fcf8d2830
       - name: Preserve hardware and profile diagnostics
         if: always()
         uses: actions/upload-artifact@v4
@@ -59,5 +63,6 @@ jobs:
             ${{ runner.temp }}/fyl2x-host.txt
             ${{ runner.temp }}/fyl2x-reference.log
             ${{ runner.temp }}/fyl2x-fixture.c
+            ${{ runner.temp }}/fyl2x-corpus.sha256
           if-no-files-found: warn
           retention-days: 7
