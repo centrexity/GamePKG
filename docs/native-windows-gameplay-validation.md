@@ -105,6 +105,30 @@ complete crypto behavior, full gameplay and physical-platform qualification
 remain open. All guards and compiled objects are preserved; the ISO is read
 in place without writing media to disk.
 
+### HMAC-key-derived reference
+
+The apparent call at `00772C5A` to `80370B8D` lies within the original
+16-byte key at `00772C58..00772C68`. The known original function `0031C82D`
+passes that address and length to the HMAC thunk at call site `0031C8B8`,
+after its nonvolatile-settings query succeeds. The argument pushes and
+length initialization dominate the reviewed call. `Data1` is a separate
+16-byte span reached through the pointer stored at `0036B7CC`; no second
+data span is supplied.
+
+Both thunks resolve to the expected imports: nonvolatile-settings ordinal 24
+and HMAC ordinal 340. The length register's preservation is checked against
+the explicit stdcall contract and pinned bridge/runtime source. Current
+prepared Rust source hashes and the existing v16 executable identity match.
+Controls changing the key length, key pointer, HMAC ordinal or apparent-call
+opcode are rejected. No original key bytes are written to disk.
+
+This explains recorded data-derived references to ten guarded targets in
+combination with the preceding reviews. The three WMA targets remain open;
+the coefficient-pattern candidate is not yet classified because its decoder
+read path remains unverified. All 13 guards remain. These checks establish
+the reviewed key-use path, without claiming a crypto-result oracle, global
+dynamic-entry safety, full gameplay or physical-platform completion.
+
 ## Prepared v15 multiplayer input follow-up
 
 The unreleased 0.1.4 recipe selects the v15 kit, SHA-256
