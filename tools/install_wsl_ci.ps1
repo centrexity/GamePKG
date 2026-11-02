@@ -25,6 +25,22 @@ function Get-VerifiedCiDownload {
     }
 }
 
+function Initialize-GamePkgCiWslDistribution {
+    param([string]$Wsl, [string]$Work, [string]$Rootfs)
+    # This exact name is how the pinned setup action detects an existing distro.
+    & $wsl --distribution Ubuntu-24.04 --user root -- /bin/true
+    if ($LASTEXITCODE -ne 0) {
+        $distributionDirectory = Join-Path $work 'distribution'
+        New-Item -ItemType Directory -Path $distributionDirectory | Out-Null
+        & $wsl --import Ubuntu-24.04 $distributionDirectory $rootfs --version 2
+        if ($LASTEXITCODE -ne 0) { throw 'Verified Ubuntu WSL 2 import failed.' }
+    }
+    # Import already selects version 2. Validate the running kernel instead
+    # of converting an already-v2 distro, which WSL reports as an error.
+    & $wsl --distribution Ubuntu-24.04 --user root -- /bin/sh -eu -c '. /etc/os-release; test "$VERSION_ID" = 24.04; uname -r | grep -i microsoft-standard-WSL2'
+    if ($LASTEXITCODE -ne 0) { throw 'Ubuntu 24.04 did not start on the WSL 2 kernel.' }
+}
+
 function Install-GamePkgCiWsl {
     if (-not $IsWindows -or $env:GITHUB_ACTIONS -ne 'true' -or
         $env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or $env:RUNNER_ARCH -ne 'X64') {
@@ -52,18 +68,7 @@ function Install-GamePkgCiWsl {
     if (-not (Test-Path -LiteralPath $wsl)) { throw 'Verified WSL executable was not installed.' }
     & $wsl --version
     if ($LASTEXITCODE -ne 0) { throw 'Installed WSL runtime cannot report its version.' }
-    # This exact name is how the pinned setup action detects an existing distro.
-    & $wsl --distribution Ubuntu-24.04 --user root -- /bin/true
-    if ($LASTEXITCODE -ne 0) {
-        $distributionDirectory = Join-Path $work 'distribution'
-        New-Item -ItemType Directory -Path $distributionDirectory | Out-Null
-        & $wsl --import Ubuntu-24.04 $distributionDirectory $rootfs --version 2
-        if ($LASTEXITCODE -ne 0) { throw 'Verified Ubuntu WSL 2 import failed.' }
-    }
-    & $wsl --set-version Ubuntu-24.04 2
-    if ($LASTEXITCODE -ne 0) { throw 'Unable to select WSL 2 for the test distribution.' }
-    & $wsl --distribution Ubuntu-24.04 --user root -- /bin/sh -eu -c '. /etc/os-release; test "$VERSION_ID" = 24.04; uname -r | grep -i microsoft-standard-WSL2'
-    if ($LASTEXITCODE -ne 0) { throw 'Ubuntu 24.04 did not start on the WSL 2 kernel.' }
+    Initialize-GamePkgCiWslDistribution $wsl $work $rootfs
     Add-Content -LiteralPath $env:GITHUB_PATH -Value $runtimeDirectory -Encoding utf8
     & $wsl --list --verbose
     if ($LASTEXITCODE -ne 0) { throw 'Unable to list the installed WSL distribution.' }
