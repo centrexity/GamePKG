@@ -2541,8 +2541,10 @@ The isolated LGPL evaluator adapts the same pinned Bochs revision's FYL2X
 reduction tables and 67/64-bit intermediate operations. Normalization keeps
 both source mantissas in range; y's exponent is applied only at final raw80
 rounding. Exact powers of two use an exact signed integer log2 before the
-product. They compare bit-for-bit against physical FYL2X, rather than the
-approximate reduction model. A separate192-case power probe found44 original
+product. Their result and C1 use an independent binary128 integer-logarithm
+reference, rather than the approximate reduction model. A modern host can
+produce a different approximation at an exact exponent boundary; the matching
+value/range response is described below. A separate192-case power probe found44 original
 model numeric differences versus hardware; the primary full-state fixture
 also checks exact-power inputs at exponent boundaries. No host floating/compiler128 types or new
 player dependencies enter production.46 original files are hash-pinned.
@@ -2555,7 +2557,8 @@ and near-one polynomial boundaries are tested on both sides, including tiny
 and large source exponents.133,116 adjacent log2 pairs pass monotonicity.
 General finite non-power results match the independently compiled original
 numerical profile.32,287 corpus rows differ numerically/C1 from modern hardware;
-this does not relax defined status/exception/commit comparisons. MPFR512
+defined status/exception/commit comparisons remain exact for the fixed
+profile, including the independently proved boundary response below. MPFR512
 checks the strict <1ulp nearest/<1.5ulp directed bounds. Masked mathematical
 overflow clamps are checked by state/reference comparisons rather than an
 in-range approximation bound; wrapped exponent rescaling uses newly unmasked
@@ -2832,6 +2835,37 @@ engine/device/all-worker/discovery/repair/dispatch/sourcekit/build/signed
 playable integration remain open. Readiness false; original private prototype/
 media unchanged. No assets/derived C/private inventory published; no full
 playability or performance claim is made.
+
+### FYL2X exact minimum-normal boundary across host CPUs
+
+An Intel 8370C capture for `x=0.5`, positive minimum-normal `y`, and control
+word `0x840` produces the wrapped approximation `e000:ffffffffffffffff` with
+status `ecb0`. The independent exact integer-logarithm reference and unchanged
+runtime both produce `8001:8000000000000000`; the runtime status is `eca0`.
+The earlier test paired the exact value with Intel's underflow flag and then
+incorrectly treated that value as wrapped during its MPFR accuracy check.
+AMD's exact boundary result did not expose that inconsistent expected view.
+
+The independent binary128 reference now reports when its product and final
+conversion prove an exact minimum-normal result, with no rounding or range
+exception. Only for that proved boundary, the expected profile retains any
+pre-existing sticky underflow and does not introduce a new underflow from the
+host approximation. Exception-summary/busy and the deferred next-wait response
+are derived from the complete expected exception set. The original physical
+sample is separately checked with its own flags against the same MPFR bound.
+All register, tag, control, status, and fault comparisons remain in place;
+underflow is compared exactly, not masked out. Other inputs retain the existing
+physical status oracle.
+
+Replaying the captured Intel boundary through the full local fixture preserves
+all 1,593,452 states, 654,288 deferred faults, and the complete 407,923,724-byte
+corpus hash `a30f5543ed4148cd66465b20a300879e9ec209e4dd67e7f4513e240fcf8d2830`.
+An intentionally mixed flag/value pair still fails the MPFR check, and a
+synthetic faulty runtime underflow flag fails the exact status comparison.
+This changes maintainer reference assembly only: production numerical code,
+prepared game units, source kits, and the native game executable are unchanged.
+The focused hardware workflow keeps the complete corpus test and verifies the
+same hash on its hosted CPUs; it supplements the full semantic/portability gates.
 
 ### FYL2XP1 and retained closing-round direction
 
