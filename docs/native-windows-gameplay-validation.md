@@ -1376,3 +1376,39 @@ This qualifies the original results-to-score-to-mode-selection route. It does
 not establish player-two natural Race completion, all campaign events, complete
 physics/audio equivalence, physical Windows behavior, or normal window-manager
 close: the headless harness ends this owned process after the final capture.
+
+
+### v16 natural three-lap Race completion for both players
+
+The unchanged native v16 executable (SHA-256
+`329c48d0a3eba805d389043732eebc2a4a030881b180520dd3404c6db741367f`)
+completes an original three-lap two-player Race on Linux with zero CPU rivals.
+The original menu exposes region, track and rivals; no lap-count option is shown.
+The visible HUD confirms three laps and positions out of two. Both players reach
+their final lap and naturally enter the finished phase: P1 at flip 22,603 and P2
+at flip 24,599. The original results show P1 **1st, 10:20.03**, best lap **2:38.53**;
+P2 **2nd, 11:26.56**, best lap **2:25.15**. This is a distinct natural result,
+not the earlier 30-minute timeout/Draw observation.
+
+Inputs are ordinary Xbox pad reports through the existing static/live input
+interfaces: both right triggers stay held while live commands steer, brake and
+reverse. Three logged recovery sequences free cars from roadside obstacles.
+The private launcher forwards the existing static-input variable; the game
+executable, prepared functions and original physics are unchanged. Debug AI,
+car-position edits, lap/result writes and outcome injection are absent. Normal
+A traverses Race Results, Score with wins 1–0, **Autosave successful**, then the
+Multiplayer mode selector retaining that win count.
+
+All 69 recorded 640×480 captures fully decode and match their hashes. Strict
+native-path and actual Vulkan checks pass on an NVIDIA GeForce RTX 3090
+(Vulkan 1.4.312), with dummy audio and the supported ISO read-only in place.
+The original reference-save hashes and executable hash remain unchanged; only
+the private copied Profile 1 changes after saving. The owned engine and driver
+are confirmed absent after the bounded headless harness ends the session.
+
+This qualifies the selected three-lap zero-rival route and its normal
+results/score/autosave/menu flow. Fresh-process reload of the new Race records,
+default/nonzero rival configurations, other tracks/campaign events, complete
+physics/audio equivalence and physical Windows controls remain unverified.
+The harness stop does not qualify normal window-manager close; that separate
+app/window integration retains its previously recorded scope.
