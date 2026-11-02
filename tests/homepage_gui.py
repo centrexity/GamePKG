@@ -39,6 +39,8 @@ with open(os.environ['GAMEPKG_BROWSER_RECORD'],'a') as out:out.write(json.dumps(
         while not predicate():
             assert time.monotonic() < deadline, label
             time.sleep(.05)
+    # Fail before compiling games when a development app lacks its decoder.
+    run(CLI,'check-bundled-audio')
     for profile,suffix in [('core-v1','core'),('component-v1','component')]:
         source = root/suffix; shutil.copytree(PROJECT/'ports/arkanoo', source)
         manifest = source/'manifest.toml'
@@ -86,6 +88,16 @@ result
                 assert [json.loads(line) for line in receipt.read_text().splitlines()] == [[URL]]*count
             app.terminate(); app.communicate(timeout=10); app=None
             print(suffix,target,'actual menu click dispatches only the declared URL, once per click.',flush=True)
+    except BaseException as error:
+        proof=PROJECT/'target/homepage-failed-desktop'
+        if display is not None:
+            subprocess.run(['import','-display',env['DISPLAY'],'-window','root',str(proof)+'.png'],env=env,check=False)
+        stderr=''
+        if app is not None:
+            if app.poll() is None:app.terminate()
+            _,output=app.communicate(timeout=10);stderr=output.decode(errors='replace');app=None
+        Path(str(proof)+'.json').write_text(json.dumps(dict(error=repr(error),stderr=stderr,receipts=receipt.read_text() if receipt.exists() else ''),indent=2)+'\n')
+        raise
     finally:
         if app is not None: app.terminate(); app.communicate(timeout=10)
         if display is not None: display.terminate(); display.wait(timeout=10)
@@ -101,11 +113,12 @@ result
         threading.Thread(target=server.serve_forever,daemon=True).start()
         options=Options();options.binary_location=shutil.which('google-chrome') or shutil.which('google-chrome-stable') or shutil.which('chromium')
         assert options.binary_location
-        for option in ['--headless=new','--window-size=1100,1000','--no-sandbox','--disable-dev-shm-usage','--enable-unsafe-swiftshader','--host-resolver-rules=MAP homepage.invalid 127.0.0.1']:
+        for option in ['--headless=new','--mute-audio','--window-size=1100,1000','--no-sandbox','--disable-dev-shm-usage','--enable-unsafe-swiftshader','--host-resolver-rules=MAP homepage.invalid 127.0.0.1']:
             options.add_argument(option)
         driver=shutil.which('chromedriver') or str(Path(os.environ.get('CHROMEWEBDRIVER','/nonexistent'))/'chromedriver')
         browser=webdriver.Chrome(service=Service(driver),options=options)
         try:
+            browser.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument',dict(source=(PROJECT/'tests/homepage_commit_probe.js').read_text()))
             browser.get(f'http://127.0.0.1:{server.server_port}/')
             ready=WebDriverWait(browser,20)
             ready.until(lambda b:b.find_element('id','status').text=='Ready to play')
@@ -113,26 +126,51 @@ result
             ready.until(lambda b:b.find_element('id','game').get_attribute('data-state') is not None)
             original=browser.current_window_handle
             for click_index in range(5):
+                print(suffix,'homepage click',click_index,flush=True)
                 if click_index == 2:
+                    # Hold the next real progress load so stale pre-restart
+                    # frame readiness cannot race the browser's first poll.
+                    installed=browser.execute_async_script("""
+                        const done=arguments[0];
+                        import('./progress-store.js').then(({ProgressStore})=>{
+                            const load=ProgressStore.prototype.load;
+                            ProgressStore.prototype.load=async function(...args){
+                                ProgressStore.prototype.load=load;
+                                await new Promise(resolve=>setTimeout(resolve,1000));
+                                return load.apply(this,args);
+                            };
+                            done(true);
+                        },error=>done(String(error)));
+                    """)
+                    assert installed is True,installed
                     browser.find_element('id','restart').click()
+                    assert browser.find_element('id','game').get_attribute('data-state') is None, 'Restart retained stale frame readiness'
                     ready.until(lambda b:b.find_element('id','game').get_attribute('data-state') is not None)
                 if click_index == 3:
-                    browser.execute_script("window.originalHomepagePut=IDBObjectStore.prototype.put;IDBObjectStore.prototype.put=function(){throw new DOMException('fixture storage failure','QuotaExceededError')}")
+                    browser.execute_script("""
+                        const previous=homepageFrameCommits.findLast(frame=>frame.success);
+                        if(!previous)throw Error('No committed game frame before failure injection');
+                        window.expectedFailedHomepage={worker:previous.worker,epoch:previous.epoch,request:previous.request+1};
+                        window.originalHomepagePut=IDBObjectStore.prototype.put;
+                        IDBObjectStore.prototype.put=function(){throw new DOMException('fixture storage failure','QuotaExceededError')};
+                    """)
                 time.sleep(.2)
                 assert len(browser.window_handles)==1
                 canvas=browser.find_element('id','game')
                 rect=canvas.rect
                 ActionChains(browser).move_to_element_with_offset(canvas,int(rect['width']*(600/640-.5)),int(rect['height']*(405/480-.5))).click().perform()
                 if click_index == 3:
-                    time.sleep(.4)
+                    # Await this click's failed commit, not a background write
+                    # or a guessed delay, before restoring storage.
+                    ready.until(lambda b:b.execute_script("return homepageFrameCommits.some(frame=>frame.worker===expectedFailedHomepage.worker&&frame.epoch===expectedFailedHomepage.epoch&&frame.request===expectedFailedHomepage.request&&frame.success===false)"))
                     assert len(browser.window_handles)==1, 'Failed history persistence opened a homepage'
                     browser.execute_script('IDBObjectStore.prototype.put=window.originalHomepagePut')
                     continue
                 try:
                     ready.until(lambda b:len(b.window_handles)==2)
                 except Exception as error:
-                    state=browser.execute_script('return {requestedWindow,lastHomepageRequest,active:navigator.userActivation.isActive,focused:document.hasFocus(),canvasFocus:document.activeElement===canvas,rect:canvas.getBoundingClientRect().toJSON()}')
-                    raise AssertionError((suffix,state,browser.find_element('id','status').text)) from error
+                    state=browser.execute_script("const canvas=document.querySelector('#game');return {url:location.href,active:navigator.userActivation.isActive,focused:document.hasFocus(),canvasFocus:document.activeElement===canvas,gameState:canvas?.dataset.state,rect:canvas?.getBoundingClientRect().toJSON()}")
+                    raise AssertionError((suffix,click_index,state,browser.find_element('id','status').text)) from error
                 opened=next(handle for handle in browser.window_handles if handle!=original)
                 browser.switch_to.window(opened)
                 ready.until(lambda b:b.current_url==URL)
@@ -141,5 +179,13 @@ result
                 time.sleep(.2)
                 assert len(browser.window_handles)==1, 'One request opened multiple tabs'
             print(suffix,'browser original clicks/restart/storage failure/recovery preserve declared URL and opener isolation.',flush=True)
+        except BaseException as error:
+            # Player internals live in ES modules. Diagnose through the real DOM
+            # so a secondary ReferenceError cannot hide the original failure.
+            proof=PROJECT/'target'/('homepage-failed-'+suffix)
+            browser.save_screenshot(str(proof)+'.png')
+            state=browser.execute_script("const canvas=document.querySelector('#game');return {url:location.href,status:document.querySelector('#status')?.textContent,focused:document.hasFocus(),active:navigator.userActivation.isActive,gameState:canvas?.dataset.state,rect:canvas?.getBoundingClientRect().toJSON()}")
+            Path(str(proof)+'.json').write_text(json.dumps(dict(error=repr(error),state=state,windows=browser.window_handles,console=browser.get_log('browser')),indent=2)+'\n')
+            raise
         finally:
             browser.quit();server.shutdown();server.server_close()

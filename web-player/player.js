@@ -137,13 +137,13 @@ function playAudio(samples,channels=1){if(!audioContext||audioContext.state!=='r
 async function start(){
  if(!data)return;
  if(roms.some(value=>!value)){status.textContent='Select all required ROM files before playing.';return;}
- halt('Loading saved progress…');play.disabled=true;restart.disabled=true;stop.disabled=false;
+ halt('Loading saved progress…');delete canvas.dataset.state;play.disabled=true;restart.disabled=true;stop.disabled=false;
  const launch=startSerial,needsRecorded=data.manifest.limits.effects_memory_bytes!==undefined||data.manifest.limits.music_memory_bytes!==undefined;let audioReady=Promise.resolve();
  if(data.manifest.permissions.audio&&!needsRecorded){try{if(!audioContext){audioContext=new AudioContext({sampleRate:48000});audioGain=audioContext.createGain();audioGain.gain.value=muted?0:.5;audioGain.connect(audioContext.destination);}audioReady=Promise.race([audioContext.resume(),new Promise(resolve=>setTimeout(resolve,2000))]).catch(()=>{});}catch{}}
  let saved;try{const [record]=await Promise.all([progressStore.load(),audioReady,audioClosing,stagedRendering]);saved=record.save;}catch(error){if(launch===startSerial)halt(error instanceof ProgressDataError?'Game stopped: browser progress is invalid.':'Unable to load progress or finish the previous audio session.');return;}
  if(launch!==startSerial)return;
  try{recoverGraphics();}catch(error){if(launch===startSerial)halt(String(error));return;}
- delete canvas.dataset.state;running=true;
+ running=true;
  try{
   gameBudget=new RecordedBudget(data.manifest.limits.hard_memory_bytes);
   if(needsRecorded){

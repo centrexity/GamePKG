@@ -4980,3 +4980,41 @@ original PNG assets decode to exactly matching dimensions and complete pixel
 buffers in the before/after comparison. Known 8/16-bit color and alpha samples
 have independent expected-pixel assertions; existing archive-integrity, cache,
 resource and immutable-snapshot tests keep their original checks.
+
+
+## Hosted recorded-audio matrix and browser restart readiness
+
+At source `cb57596426f70aeb6463022f05a8cca823579861`, the hosted full-feature
+job completes **Verify complete original recorded-audio browser port within
+existing budgets** and **Verify signed recorded-audio browser exports and player
+lifecycle** successfully. This includes the original maximum-name/font/audio
+matrix and signed player lifecycle checks; their commands and limits remain
+intact. The [run](https://github.com/centrexity/GamePKG/actions/runs/41355274486)
+then fails its separate homepage browser check, so the whole job remains failed.
+
+That browser failure was masked by a diagnostic referring to private ES-module
+variables. Module-safe DOM/screenshot/console diagnostics reproduce a missed
+click after recorded-player restart. Startup retained the previous frame's
+`data-state` while awaiting progress loading and audio shutdown. The host now
+invalidates that readiness marker synchronously at startup, before those waits.
+Pixels, permissions, user-activation checks and execution limits are unchanged.
+
+The old startup fails a direct source-executing regression with a pending load;
+the corrected source passes ordinary/recorded startup with either progress or
+shutdown held pending. The real browser fixture delays the next progress load
+by one second, requires readiness to disappear immediately, then awaits a new
+committed frame before clicking. Its storage-failure case observes the exact
+clicked request's rejected acknowledgment before restoring writes. A read-only
+test worker observer delegates all production messages unchanged. All ten
+original Python assertions remain, with two additional readiness checks.
+
+The rebuilt fully bundled Linux CLI/GUI pass the complete fixture: actual
+core-Wasm, component-Wasm and native desktop menu dispatch, plus both browser
+profiles' clicks, restart, failed-write suppression, recovery and opener
+isolation. The final explicitly muted browser configuration also passes both
+profiles. Five related Node suites pass on both review branches. The Linux
+native SDK identity stays `c478bacfd3e61856`, preserving existing build-cache
+compatibility. Local development executables without an embedded decoder are
+rejected by an early preflight; the launch instructions use the complete
+release-built app pair. Broader hosted/platform/gameplay qualification remains
+separate from this startup and homepage coverage.
