@@ -1,0 +1,63 @@
+name: FYL2X hardware and profile boundary
+on:
+  push:
+    paths:
+      - 'engines/takedawn/native-gen/**'
+      - 'engines/takedawn/media-bridge/**'
+      - '.github/workflows/fyl2x_hardware.yml'
+  pull_request:
+    paths:
+      - 'engines/takedawn/native-gen/**'
+      - 'engines/takedawn/media-bridge/**'
+      - '.github/workflows/fyl2x_hardware.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: fyl2x-hardware-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  physical-reference:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        probe: [1, 2]
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+      CARGO_PROFILE_RELEASE_DEBUG: "0"
+      CARGO_BUILD_JOBS: "2"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: engines/takedawn/native-gen
+          key: fyl2x-hardware-${{ matrix.probe }}
+      - name: Prepare independent high-precision reference
+        run: |
+          bash tools/ci_ubuntu_apt.sh update
+          bash tools/ci_ubuntu_apt.sh install -y g++ libmpfr-dev
+          lscpu | tee "$RUNNER_TEMP/fyl2x-host.txt"
+          cc --version | tee -a "$RUNNER_TEMP/fyl2x-host.txt"
+          g++ --version | tee -a "$RUNNER_TEMP/fyl2x-host.txt"
+      - name: Verify the complete FYL2X corpus without game media
+        env:
+          GAMEPKG_TAKEDAWN_X87_FYL2X_FIXTURE: ${{ runner.temp }}/fyl2x-fixture.c
+        run: |
+          set -euo pipefail
+          cargo test --locked --release --manifest-path engines/takedawn/native-gen/Cargo.toml --test x87_fyl2x -- --test-threads=1 --nocapture 2>&1 | tee "$RUNNER_TEMP/fyl2x-reference.log"
+      - name: Preserve hardware and profile diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fyl2x-hardware-${{ matrix.probe }}
+          path: |
+            ${{ runner.temp }}/fyl2x-host.txt
+            ${{ runner.temp }}/fyl2x-reference.log
+            ${{ runner.temp }}/fyl2x-fixture.c
+          if-no-files-found: warn
+          retention-days: 7

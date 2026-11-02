@@ -156,6 +156,9 @@ static void one(GamePkgExt80 a, GamePkgExt80 b, unsigned cw, unsigned top,
     exact_power_cases += !(a.significand & (a.significand - 1u));
     uint64_t sig;
     uint32_t se, c1;
+    unsigned hardware_sw = sw;
+    uint64_t hardware_sig = get64(after.b + 32);
+    unsigned hardware_se = rd(after.b + 40);
     gamepkg_test_fyl2x_reference(a.significand, a.sign_exponent, b.significand,
                                  b.sign_exponent, cw, &sig, &se, &c1);
     if (sig != get64(after.b + 32) || se != rd(after.b + 40) ||
@@ -164,6 +167,18 @@ static void one(GamePkgExt80 a, GamePkgExt80 b, unsigned cw, unsigned top,
     put80(after.b + 32, (GamePkgExt80){sig, (uint16_t)se});
     sw = (sw & ~0x200u) | (c1 << 9);
     wr(after.b + 2, sw);
+    /* Preserve the physical and profile views when range flags differ. The
+     * accuracy check may abort before the unchanged state checks below run. */
+    if ((z->status & ~0x4500u) != (sw & ~0x4500u)) {
+      unsigned p = (z->status >> 11) & 7;
+      fprintf(stderr,
+              "FYL2X pre-accuracy status case%u CW%x physicalSW%04x "
+              "profileSW%04x runtimeSW%04x physical%04x:%016llx "
+              "profile%04x:%016llx runtime%04x:%016llx\n",
+              cases, cw, hardware_sw, sw, z->status, hardware_se,
+              (unsigned long long)hardware_sig, se, (unsigned long long)sig,
+              z->sign_exponent[p], (unsigned long long)z->significand[p]);
+    }
     accuracy(a, b, (GamePkgExt80){sig, (uint16_t)se}, cw, sw);
   }
   if ((z->status & ~0x4500u) != (sw & ~0x4500u)) {
