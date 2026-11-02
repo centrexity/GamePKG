@@ -56,9 +56,30 @@ branch bytes, with original source hashes and section flags retained.
 Two changed-string controls fail, as do cross-section and truncated-byte reads.
 All reads stay in memory. Together with the three table cases above, this
 explains recorded data-derived references to seven guarded targets. All 13
-guards remain; the other six targets, possible dynamic entries and full gameplay
-and platform fidelity remain open. No native game rebuild or player-library
-change is involved.
+guards remain; other targets and possible dynamic entries still require review.
+The crypto review below adds a separate scope. No native game rebuild or
+player-library change is involved.
+
+### Crypto-input-derived reference
+
+The apparent call at `00772C3A` to `E5A14D74` decodes five bytes within an
+original 16-byte crypto input at `00772C30..00772C40`. On the reviewed path
+where the second caller argument is zero, `0031B561` passes that span as
+`Data1` at two call sites. The original thunk `001D702A` reads import slot
+`0036B920`, whose encoded ordinal is 340; the pinned runtime binds that ordinal
+to `XcHMAC`. The shared second call site can receive a different input on the
+other caller path, so this is a path-specific data-use proof.
+
+The review checks the actual push arguments, input length, caller branch and
+nonvolatile register contract against the original instructions and pinned
+bridge. Current prepared source and runtime files match the kit inventory.
+Mutations of the input length, caller branch, import ordinal and apparent-call
+bytes are rejected. No original input bytes are written to disk.
+
+This explains recorded data-derived references to eight guarded targets when
+combined with the table/string reviews. All 13 guards remain. The other five
+targets, possible dynamic entries, complete crypto behavior and full gameplay
+and platform qualification remain open.
 
 ## Prepared v15 multiplayer input follow-up
 
