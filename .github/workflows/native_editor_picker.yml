@@ -43,7 +43,10 @@ jobs:
       - name: Install isolated native editor prerequisites
         run: |
           bash tools/ci_ubuntu_apt.sh update
-          bash tools/ci_ubuntu_apt.sh install -y --no-install-recommends bubblewrap xvfb xdotool imagemagick metacity zenity tesseract-ocr python3-pil python3-xlib libsdl2-dev libsdl2-ttf-dev libsdl2-image-dev libasound2-dev libudev-dev pkg-config libxkbcommon-x11-0 libgl1 libgl1-mesa-dri libvulkan1 mesa-vulkan-drivers
+          bash tools/ci_ubuntu_apt.sh install -y --no-install-recommends bubblewrap xvfb x11-utils xdotool imagemagick metacity zenity tesseract-ocr python3-pil python3-xlib libsdl2-dev libsdl2-ttf-dev libsdl2-image-dev libasound2-dev libudev-dev pkg-config libxkbcommon-x11-0 libgl1 libgl1-mesa-dri libvulkan1 mesa-vulkan-drivers
+          for gamepkg_picker_tool in Xvfb xdotool xprop import convert metacity zenity tesseract; do
+            command -v "$gamepkg_picker_tool"
+          done
           gamepkg_picker_icd=
           for gamepkg_icd_path in /usr/share/vulkan/icd.d/lvp_icd*.json; do
             if test -f "$gamepkg_icd_path"; then gamepkg_picker_icd="$gamepkg_icd_path"; break; fi
