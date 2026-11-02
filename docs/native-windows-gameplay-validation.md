@@ -1683,3 +1683,29 @@ No game-source kit, prepared Rust unit or native binary is rebuilt or changed.
 This adds the selected timed-lap/reward/save/reload route, not the remaining
 campaign events, exact controls/audio/physics fidelity or physical Windows
 gameplay qualification.
+
+### v16 Waterfront Face-Off loss and cold record persistence
+
+The same unchanged Linux x86-64 v16 native executable completes the original
+one-lap Waterfront Face-Off with one rival. The maintainer-only original-title AI
+drives the Compact car and finishes second of two in 137.017 seconds. The
+original loss screen displays 2:17.01, a 456-foot drift and 402-foot oncoming
+record. Normal Continue actions reach Face-Off Results (165 points, zero
+takedowns), successful Autosave, the points breakdown and the campaign map.
+No finish, reward, score, time or unlock is injected.
+
+A fresh process loads a copy of this earned profile with AI disabled. Driver
+Details retains 3/173 completed events and two takedowns, while points increase
+from 1,780 to 1,945, exactly the earned 165. The Waterfront Face-Off remains
+unmedalled and later Muscle Grand Prix / Preview Lap entries remain locked.
+The first Racing Records lookup, Waterfront Westbound, has no entry; a second
+fresh process checks Waterfront Eastbound and displays the saved 2:17.01 lap
+with the Compact car. The empty opposite-direction page is not a missing-save
+defect. All five active, snapshot and reference UDATA/TDATA files remain
+byte-identical through both cold loads; the original pre-event reference and
+executable remain unchanged.
+
+All three drivers exit normally and pass actual-Vulkan and strict executed-path
+checks, using dummy audio and the ISO read in place. All 33 retained captures
+decode and match their hashes. This qualifies the selected loss/save/record route, not a winning Face-Off, its car-unlock branch,
+manual-player physics equivalence, every campaign event or physical Windows.
