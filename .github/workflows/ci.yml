@@ -558,6 +558,7 @@ jobs:
             target/native-rom-picker-targets.jsonl
             target/remembered-roms-picker-output.jsonl
             target/remembered-roms-clicks.jsonl
+            target/menu-controls-proof
           retention-days: 7
           if-no-files-found: ignore
       - uses: actions/upload-artifact@v4

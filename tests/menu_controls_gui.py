@@ -29,7 +29,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-menu-controls-gui-') as temp:
  try:
   states=[(0,0,0,64,0,0),(0,1,3,64,0,0),(1,0,10,127,1,0),(1,0,7,1,0,1),(0,0,9,64,0,0)]
   for phase,state in enumerate(states):
-   raw=subprocess.check_output([reference,font,args.original/'assets/background1.png',*map(str,state)],env=env);REFERENCES[phase]=Image.frombytes('RGBA',(1280,720),raw).convert('RGB')
+   raw=subprocess.check_output([reference,font,args.original/'assets/background1.png',*map(str,state)],env=env);REFERENCES[phase]=Image.frombytes('RGBA',(1280,720),raw).convert('RGB');REFERENCES[phase].save(PROOF/('original-1280-'+str(phase)+'.png'))
   def delta(actual,expected):return max(p[1] for p in ImageChops.difference(actual,expected).getextrema())
   for profile,suffix in [('core-v1','core'),('component-v1','component')]:
    game_id='com.gamepkg.menu-'+suffix
@@ -56,7 +56,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-menu-controls-gui-') as temp:
          actual=im.crop((0,height//8,width,height*7//8))
          if width==640:
           marker=im.getpixel((8,8));wanted={0:(255,0,0),1:(0,255,0),2:(0,0,255),3:(255,255,0),4:(255,0,255)}[phase]
-          if marker==wanted:SMALL[phase]=actual.copy();break
+          if marker==wanted:SMALL[phase]=actual.copy();SMALL[phase].save(PROOF/('native-640-'+str(phase)+'.png'));break
          elif delta(actual,REFERENCES[phase])<=2:break
          if app.poll() is not None:raise RuntimeError(app.stderr.read().decode())
          assert time.monotonic()<deadline,(label,phase,delta(actual,REFERENCES[phase]) if width==1280 else marker);time.sleep(.05)
@@ -79,7 +79,15 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-menu-controls-gui-') as temp:
     for phase in PHASES:
      if held:ActionChains(browser).key_up(held).perform();held=False
      if phase:held={1:Keys.ARROW_RIGHT,2:Keys.ARROW_UP,3:Keys.ARROW_DOWN,4:Keys.ARROW_LEFT}[phase];ActionChains(browser).key_down(held).perform()
-     wait.until(lambda b:b.find_element('id','game').get_attribute('data-state')==str(phase));raw=browser.execute_script('return Array.from(document.querySelector("#game").getContext("2d").getImageData(0,60,640,360).data);');actual=Image.frombytes('RGBA',(640,360),bytes(raw)).convert('RGB');difference=delta(actual,SMALL[phase]);actual.save(PROOF/(profile+'-web-'+str(phase)+'.png'));print(profile,phase,'implemented menu browser/native maximum difference',difference,flush=True);assert difference<=2,difference
+     wait.until(lambda b:b.find_element('id','game').get_attribute('data-state')==str(phase));raw=browser.execute_script('return Array.from(document.querySelector("#game").getContext("2d").getImageData(0,60,640,360).data);');actual=Image.frombytes('RGBA',(640,360),bytes(raw)).convert('RGB');difference=delta(actual,SMALL[phase]);actual.save(PROOF/(profile+'-web-'+str(phase)+'.png'));print(profile,phase,'implemented menu browser/native maximum difference',difference,flush=True)
+     if difference>2:
+      pixels=[];channels=0
+      for y in range(360):
+       for x in range(640):
+        a=actual.getpixel((x,y));b=SMALL[phase].getpixel((x,y));bad=sum(abs(v-w)>2 for v,w in zip(a,b));channels+=bad
+        if bad and len(pixels)<64:pixels.append(dict(x=x,y=y,actual=a,expected=b))
+      (PROOF/(profile+'-web-'+str(phase)+'-difference.json')).write_text(json.dumps(dict(maximum_difference=difference,channels_over_limit=channels,first_differing_pixels=pixels),indent=2)+'\n')
+     assert difference<=2,difference
    finally:
     if held:ActionChains(browser).key_up(held).perform()
     browser.quit();server.shutdown();server.server_close()
