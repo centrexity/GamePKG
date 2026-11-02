@@ -40,6 +40,10 @@ print('200',end='')
 '''); curl.chmod(0o755)
     env=dict(os.environ,PATH=str(transport)+os.pathsep+os.environ['PATH'],GAMEPKG_HOME=str(library),GAMEPKG_CONFIG=str(config),GAMEPKG_UPDATE_FIXTURES=str(root),GAMEPKG_UPDATE_RECEIPT=str(marker),LIBGL_ALWAYS_SOFTWARE='1')
     env.pop('WAYLAND_DISPLAY',None); env['DBUS_SESSION_BUS_ADDRESS']='unix:path=/tmp/gamepkg-no-session-bus'
+    # Native picker preferences, recent files and caches stay in this test.
+    for variable,folder in [('XDG_CONFIG_HOME','desktop-config'),('XDG_DATA_HOME','desktop-data'),('XDG_CACHE_HOME','desktop-cache')]:
+        location=root/folder;location.mkdir();env[variable]=str(location)
+    env['GSETTINGS_BACKEND']='memory'
     display=start_display(env,1280,1000)
     app=subprocess.Popen([str(Path(os.environ.get('GAMEPKG_TEST_BINARY_DIR',project/'target/release'))/'gamepkg-gui')],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
     try:
