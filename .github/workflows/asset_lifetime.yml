@@ -11,6 +11,7 @@ on:
       - 'tools/check_browser_audio_decoder.py'
       - 'tests/browser_audio_decoder.rs'
       - 'tests/browser_compressed_assets.py'
+      - 'tools/ci_ubuntu_apt.sh'
       - '.github/workflows/ci.yml'
       - '.github/workflows/asset_lifetime.yml'
   pull_request:
@@ -24,6 +25,7 @@ on:
       - 'tools/check_browser_audio_decoder.py'
       - 'tests/browser_audio_decoder.rs'
       - 'tests/browser_compressed_assets.py'
+      - 'tools/ci_ubuntu_apt.sh'
       - '.github/workflows/ci.yml'
       - '.github/workflows/asset_lifetime.yml'
   workflow_dispatch:
