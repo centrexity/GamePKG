@@ -278,6 +278,14 @@ impl State {
         ) {
             gamepkg_input::sync_locks(self.viewport_id, window);
         }
+        if matches!(event, winit::event::WindowEvent::MouseInput { .. }) {
+            let scale = pixels_per_point(&self.egui_ctx, window) as f64;
+            gamepkg_input::button_position(
+                self.viewport_id,
+                self.pointer_pos_in_points
+                    .map(|pos| (pos.x as f64 * scale, pos.y as f64 * scale)),
+            );
+        }
         gamepkg_input::window_event(self.viewport_id, event);
 
         #[cfg(feature = "accesskit")]

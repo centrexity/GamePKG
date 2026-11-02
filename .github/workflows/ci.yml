@@ -895,6 +895,8 @@ jobs:
           path: |
             target/*.png
             target/homepage-failed-*.json
+            target/vsync-failure.json
+            target/vsync-presentation.log
             target/roms-picker-output.jsonl
             target/roms-picker-starts.jsonl
             target/native-rom-picker-targets.jsonl
