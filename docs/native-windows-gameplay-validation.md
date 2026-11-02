@@ -1652,3 +1652,34 @@ the original results flag, driving gate and absence of post-finish input,
 consistent with the runtime's documented results handling. This adds a
 repeatable bounded activation/results observation, not new multiplayer
 handoffs, exact physics fidelity or complete campaign/platform coverage.
+
+### v16 campaign Preview Lap Bronze and cold record reload
+
+The unchanged v16 native executable now completes the original World Tour
+USA Downtown Preview Lap 1, shown as Burning Lap in its results. Normal menus
+select the original Sports Type 3 car from a private copy of the earned v14
+Bronze profile. The maintainer-only original-title AI drives this timed lap:
+one lap in 81.000 seconds, matching the visible 1:21.00 record and original
+Bronze award. The result also shows a 665-foot drift and 347-foot oncoming
+record. This is debug AI takeover coverage, not manual-player physics parity;
+no finish, time, medal, score or unlock is injected.
+
+Normal Continue inputs traverse Burning Lap Results, successful Autosave,
+the 245-point breakdown (40 crash bonus plus 205 driving skills), and the
+original campaign map. The active profile changes while the executable and
+original reference remain unchanged. A fresh v16 process with AI disabled
+loads a copy of that exact earned profile. Driver Details shows 3/173 events,
+1,780 points and two takedowns; Downtown retains Bronze beside Preview Lap 1
+and the prior Road Rage 1. Racing Records / USA / Downtown Southbound displays
+the exact saved 1:21.00 lap with the Sports Type 3 car. All five active, snapshot
+and reference UDATA/TDATA files remain byte-identical through this cold load.
+
+Both processes exit normally with the actual-Vulkan and strict executed-path
+gates passing, dummy audio and the owner's ISO read in place. All 26 retained
+frames decode and match their hashes. The fresh-load observer completes its
+own bounded normal stop before a subsequent manual stop request; host-level
+process checks confirm that both sessions' drivers and observers are absent.
+No game-source kit, prepared Rust unit or native binary is rebuilt or changed.
+This adds the selected timed-lap/reward/save/reload route, not the remaining
+campaign events, exact controls/audio/physics fidelity or physical Windows
+gameplay qualification.
