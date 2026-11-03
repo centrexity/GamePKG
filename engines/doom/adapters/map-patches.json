@@ -1,0 +1,77 @@
+[
+  {
+    "before": "li->x = SHORT(ml->x)<<FRACBITS;",
+    "after": "li->x = SHORT(ml->x) * 65536;",
+    "count": 1
+  },
+  {
+    "before": "li->y = SHORT(ml->y)<<FRACBITS;",
+    "after": "li->y = SHORT(ml->y) * 65536;",
+    "count": 1
+  },
+  {
+    "before": "li->angle = (SHORT(ml->angle))<<16;",
+    "after": "li->angle = ((uint32_t)(int32_t)SHORT(ml->angle)) << 16;",
+    "count": 1
+  },
+  {
+    "before": "li->offset = (SHORT(ml->offset))<<16;",
+    "after": "li->offset = (SHORT(ml->offset)) * 65536;",
+    "count": 1
+  },
+  {
+    "before": "ss->floorheight = SHORT(ms->floorheight)<<FRACBITS;",
+    "after": "ss->floorheight = SHORT(ms->floorheight) * 65536;",
+    "count": 1
+  },
+  {
+    "before": "ss->ceilingheight = SHORT(ms->ceilingheight)<<FRACBITS;",
+    "after": "ss->ceilingheight = SHORT(ms->ceilingheight) * 65536;",
+    "count": 1
+  },
+  {
+    "before": "no->x = SHORT(mn->x)<<FRACBITS;",
+    "after": "no->x = SHORT(mn->x) * 65536;",
+    "count": 1
+  },
+  {
+    "before": "no->y = SHORT(mn->y)<<FRACBITS;",
+    "after": "no->y = SHORT(mn->y) * 65536;",
+    "count": 1
+  },
+  {
+    "before": "no->dx = SHORT(mn->dx)<<FRACBITS;",
+    "after": "no->dx = SHORT(mn->dx) * 65536;",
+    "count": 1
+  },
+  {
+    "before": "no->dy = SHORT(mn->dy)<<FRACBITS;",
+    "after": "no->dy = SHORT(mn->dy) * 65536;",
+    "count": 1
+  },
+  {
+    "before": "no->bbox[j][k] = SHORT(mn->bbox[j][k])<<FRACBITS;",
+    "after": "no->bbox[j][k] = SHORT(mn->bbox[j][k]) * 65536;",
+    "count": 1
+  },
+  {
+    "before": "sd->textureoffset = SHORT(msd->textureoffset)<<FRACBITS;",
+    "after": "sd->textureoffset = SHORT(msd->textureoffset) * 65536;",
+    "count": 1
+  },
+  {
+    "before": "sd->rowoffset = SHORT(msd->rowoffset)<<FRACBITS;",
+    "after": "sd->rowoffset = SHORT(msd->rowoffset) * 65536;",
+    "count": 1
+  },
+  {
+    "before": "bmaporgx = blockmaplump[0]<<FRACBITS;",
+    "after": "bmaporgx = blockmaplump[0] * 65536;",
+    "count": 1
+  },
+  {
+    "before": "bmaporgy = blockmaplump[1]<<FRACBITS;",
+    "after": "bmaporgy = blockmaplump[1] * 65536;",
+    "count": 1
+  }
+]

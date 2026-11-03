@@ -1,0 +1,87 @@
+{
+  "start": 2376352,
+  "end": 2377181,
+  "sha256": "9e73092be40a49e349380a434bece6412b40256644691910273c1dd1e72e86fc",
+  "tables": [
+    {
+      "branch": 2376405,
+      "first_index": 0,
+      "entries": 4
+    },
+    {
+      "branch": 2376429,
+      "first_index": 1,
+      "entries": 3
+    },
+    {
+      "branch": 2376436,
+      "first_index": 4294967292,
+      "entries": 4
+    },
+    {
+      "branch": 2376444,
+      "first_index": 0,
+      "entries": 8
+    },
+    {
+      "branch": 2376498,
+      "first_index": 0,
+      "entries": 4
+    },
+    {
+      "branch": 2376536,
+      "first_index": 0,
+      "entries": 4
+    },
+    {
+      "branch": 2376566,
+      "first_index": 0,
+      "entries": 4
+    },
+    {
+      "branch": 2376675,
+      "first_index": 0,
+      "entries": 4
+    },
+    {
+      "branch": 2376795,
+      "first_index": 0,
+      "entries": 4
+    },
+    {
+      "branch": 2376806,
+      "first_index": 4294967289,
+      "entries": 8
+    },
+    {
+      "branch": 2376833,
+      "first_index": 1,
+      "entries": 3
+    },
+    {
+      "branch": 2376840,
+      "first_index": 0,
+      "entries": 4
+    },
+    {
+      "branch": 2376886,
+      "first_index": 0,
+      "entries": 4
+    },
+    {
+      "branch": 2376928,
+      "first_index": 0,
+      "entries": 4
+    },
+    {
+      "branch": 2376978,
+      "first_index": 0,
+      "entries": 4
+    },
+    {
+      "branch": 2377087,
+      "first_index": 0,
+      "entries": 4
+    }
+  ]
+}

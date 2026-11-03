@@ -1,0 +1,155 @@
+name: Browser asset lifetime and build companions
+on:
+  push:
+    paths:
+      - 'build.rs'
+      - 'src/web_export.rs'
+      - 'src/audio_decode.rs'
+      - 'web-player/**'
+      - 'tools/audio-decoder/**'
+      - 'tools/audio-converter/**'
+      - 'tools/check_browser_audio_decoder.py'
+      - 'tests/browser_audio_decoder.rs'
+      - 'tests/browser_compressed_assets.py'
+      - 'tests/window_commit_browser.py'
+      - 'tests/browser_storage_support.py'
+      - 'tests/browser_download_support.py'
+      - 'tests/browser_download_support_test.py'
+      - 'tests/browser_png_exact.py'
+      - 'tests/web_png_exact.mjs'
+      - 'tests/web_image_cache.mjs'
+      - 'tests/web_render_resources.mjs'
+      - 'tests/web_recorded_output.mjs'
+      - 'tests/browser_image_cache.py'
+      - 'tools/check_browser_png.py'
+      - '.github/workflows/ci.yml'
+      - '.github/workflows/asset_lifetime.yml'
+  pull_request:
+    paths:
+      - 'build.rs'
+      - 'src/web_export.rs'
+      - 'src/audio_decode.rs'
+      - 'web-player/**'
+      - 'tools/audio-decoder/**'
+      - 'tools/audio-converter/**'
+      - 'tools/check_browser_audio_decoder.py'
+      - 'tests/browser_audio_decoder.rs'
+      - 'tests/browser_compressed_assets.py'
+      - 'tests/window_commit_browser.py'
+      - 'tests/browser_storage_support.py'
+      - 'tests/browser_download_support.py'
+      - 'tests/browser_download_support_test.py'
+      - 'tests/browser_png_exact.py'
+      - 'tests/web_png_exact.mjs'
+      - 'tests/web_image_cache.mjs'
+      - 'tests/web_render_resources.mjs'
+      - 'tests/web_recorded_output.mjs'
+      - 'tests/browser_image_cache.py'
+      - 'tools/check_browser_png.py'
+      - '.github/workflows/ci.yml'
+      - '.github/workflows/asset_lifetime.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: asset-lifetime-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  asset-lifetime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: browser-asset-lifetime
+      - name: Install isolated-compiler and headless browser prerequisites
+        run: |
+          bash tools/ci_ubuntu_apt.sh update
+          bash tools/ci_ubuntu_apt.sh install -y --no-install-recommends bubblewrap python3-selenium python3-websocket python3-pil optipng
+          test -x "$CHROMEWEBDRIVER/chromedriver"
+          sudo ln -sf "$CHROMEWEBDRIVER/chromedriver" /usr/local/bin/chromedriver
+          google-chrome --version
+          chromedriver --version
+      - name: Verify export completion waits and cancellation failures
+        run: /usr/bin/python3 tests/browser_download_support_test.py
+      - name: Build both embedded audio companions and the actual CLI
+        run: |
+          python3 tools/build_audio_companion.py --github-env
+      - run: cargo build --locked --release --bin gamepkg
+      - name: Stage the isolated compiler and pinned shader compiler
+        run: |
+          python3 tools/install_slang.py /tmp/gamepkg-assets-slang
+          sudo cp -a "$(rustc --print sysroot)" /tmp/gamepkg-assets-toolchain
+          sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-assets-rustup rustup toolchain link gamepkg-assets /tmp/gamepkg-assets-toolchain
+          sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-assets-rustup rustup default gamepkg-assets
+      - name: Reproduce the privileged maintainer build without stripping companions
+        run: |
+          # Cargo also rebuilds the CLI for this integration-test target.
+          # The historical command dropped both build inputs through sudo.
+          sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-assets-rustup CARGO_HOME="$HOME/.cargo" cargo test --locked --release --test browser_audio_decoder --no-run
+          target/release/gamepkg check-bundled-audio
+      - name: Verify audio startup, steady deadlines and cancellation
+        run: node tests/web_recorded_output.mjs
+      - name: Verify signed compressed reads, playback and pending-loan release
+        run: |
+          sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-assets-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT=/tmp/gamepkg-assets-slang CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tests/browser_compressed_assets.py
+      - name: Verify browser window commits after asynchronous persistence recovery
+        run: |
+          sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-assets-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT=/tmp/gamepkg-assets-slang CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tests/window_commit_browser.py
+      - name: Verify bounded image startup, eviction and reload
+        run: |
+          node tests/web_image_cache.mjs
+          node tests/web_render_resources.mjs
+      - name: Verify signed core and component image-cache pressure
+        run: |
+          sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-assets-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT=/tmp/gamepkg-assets-slang CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tests/browser_image_cache.py
+      - name: Preserve bounded compressed-asset timing after failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-compressed-assets-failure
+          path: |
+            target/browser-compressed-assets-failure.json
+            target/window-commit-browser-failure.json
+          retention-days: 7
+          if-no-files-found: ignore
+  png-startup:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install exact-image browser prerequisites
+        run: |
+          bash tools/ci_ubuntu_apt.sh update
+          bash tools/ci_ubuntu_apt.sh install -y --no-install-recommends python3-selenium python3-pil optipng
+          test -x "$CHROMEWEBDRIVER/chromedriver"
+          sudo ln -sf "$CHROMEWEBDRIVER/chromedriver" /usr/local/bin/chromedriver
+          google-chrome --version
+          chromedriver --version
+      - name: Verify consecutive original PNG startup and exact pixels
+        run: /usr/bin/python3 tools/check_browser_png.py --browser
+      - name: Verify consecutive optimized PNG startup and exact original pixels
+        run: /usr/bin/python3 tools/check_browser_png.py --browser --optimize-assets
+      - name: Verify the Chrome 155 decoder-construction regression
+        run: |
+          browser_root="$RUNNER_TEMP/gamepkg-png-chrome155"
+          mkdir -p "$browser_root/bin"
+          curl --fail --location --retry 3 https://storage.googleapis.com/chrome-for-testing-public/155.0.8059.39/linux64/chrome-linux64.zip -o "$browser_root/chrome.zip"
+          curl --fail --location --retry 3 https://storage.googleapis.com/chrome-for-testing-public/155.0.8059.39/linux64/chromedriver-linux64.zip -o "$browser_root/driver.zip"
+          printf '%s  %s\n' 55672d1f392fd3e7b7a08621b6e804e6bcb39d40cf155504abb74b3a021ea8ea "$browser_root/chrome.zip" a65f025c692e686ec2a21fa6b9639c69fa9813683a47af9cabf1ba0b1f453e42 "$browser_root/driver.zip" | sha256sum --check
+          unzip -q "$browser_root/chrome.zip" -d "$browser_root"
+          unzip -q "$browser_root/driver.zip" -d "$browser_root"
+          ln -s "$browser_root/chrome-linux64/chrome" "$browser_root/bin/google-chrome"
+          ln -s "$browser_root/chromedriver-linux64/chromedriver" "$browser_root/bin/chromedriver"
+          export PATH="$browser_root/bin:$PATH"
+          google-chrome --version
+          chromedriver --version
+          /usr/bin/python3 tools/check_browser_png.py --browser --optimize-assets

@@ -21,7 +21,7 @@ impl Event {
             Self::Release => [3, 0, 0],
         })
     }
-    #[cfg(any(target_os = "linux", test))]
+    #[cfg(any(target_os = "linux", windows, test))]
     pub(crate) fn encode(self, output: &mut Vec<u8>) -> Result<()> {
         for word in self.words()? {
             output.extend(word.to_le_bytes());

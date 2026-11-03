@@ -52,6 +52,14 @@ Sound settings now persist through the original configuration files and survive
 relaunch. Optional music-backend/enhancement selection and the remaining port
 gaps stay tracked in [port-parity.toml](../../../docs/port-parity.toml).
 
+The current backend advertises original music-device IDs 2 (ADLIB) and 3
+(Sound Blaster). Saved `snd_musicdevice = 0` disables music. Other device IDs
+remain saved but are unavailable in this build; they no longer silently select
+OPL. Native MIDI, GUS and other backends are still separate work. The output
+adapter returns silence before initialization and after shutdown, retaining
+the existing 800-frame bound. Original config/device selection is distinct from
+the original in-game music-volume control.
+
 The same pinned source kit also carries `textscreen/fonts/small.h` and its
 `fonts/README` as `upstream/small_font.h` and `upstream/fonts_README`. The original
 font notices are retained there. The host adapter renders the player's ENDOOM

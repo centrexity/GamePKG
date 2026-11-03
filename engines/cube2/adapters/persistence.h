@@ -25,13 +25,14 @@ static bool gamepkg_save_path(const std::string &name)
         else if(!((name[i]>='a' && name[i]<='z') || (name[i]>='A' && name[i]<='Z') ||
                   (name[i]>='0' && name[i]<='9') || name[i]=='.' || name[i]=='_' || name[i]=='-')) return false;
     }
-    if(name=="config.cfg" || name=="init.cfg" || name=="servers.cfg" || name=="auth.cfg") return true;
-    const char *extensions[] = { ".ogz", ".cfg", ".BAK", ".jpg", ".png", ".dmo" };
-    for(unsigned i=0;i<6;i++)
+    if(name=="config.cfg" || name=="init.cfg" || name=="servers.cfg" || name=="auth.cfg" || name=="autoexec.cfg") return true;
+    const char *extensions[] = { ".ogz", ".cfg", ".BAK", ".jpg", ".png", ".dmo", ".avi" };
+    for(unsigned i=0;i<7;i++)
     {
         size_t length = strlen(extensions[i]);
-        if(name.size() < length || name.compare(name.size()-length, length, extensions[i])) continue;
-        return i==5 ? (name.compare(0, 6, "demos/")==0 || name.compare(0, 5, "demo/")==0) :
+        if(name.size() < length || (i>=5 ? strcasecmp(name.c_str()+name.size()-length, extensions[i]) :
+            name.compare(name.size()-length, length, extensions[i]))) continue;
+        return i>=5 ? true :
             name.compare(0, 9, "packages/")==0 && name.find('/', 9)!=std::string::npos;
     }
     return false;
@@ -61,7 +62,6 @@ static void gamepkg_collect(int fd, const std::string &prefix, unsigned depth,
         if(fstatat(fd, entry->d_name, &st, AT_SYMLINK_NOFOLLOW)) gamepkg_save_failure();
         if(S_ISDIR(st.st_mode))
         {
-            if(prefix.empty() && name!="packages" && name!="demos" && name!="demo") continue;
             if(depth>=6 || name.size()>240) gamepkg_save_failure();
             int child = openat(fd, entry->d_name, O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);
             if(child<0) gamepkg_save_failure();

@@ -1,7 +1,7 @@
 """Actual library data picker, separate Cube 2 window, input and native close."""
 from gui_test_support import cube2_choose_test_map
 from pathlib import Path
-import json,os,signal,subprocess,tempfile,time
+import json,os,re,signal,subprocess,tempfile,time
 from PIL import Image,ImageChops
 from collections import Counter
 from gui_test_support import start_display,click_text,game_window,choose_native_file
@@ -61,38 +61,43 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-cube2-gui-') as temporary:
    names=subprocess.run(['xdotool','search','--onlyvisible','--name','.','getwindowname','%@'],env=env,capture_output=True,text=True).stdout
    command('import','-display',env['DISPLAY'],'-window','root',proof/'picker-failure-root.png')
    raise AssertionError('Data folder was not remembered. Windows: '+names)
-  # Exercise the actual server form without starting a connection. A private
-  # address must be rejected until its separate local-network opt-in is checked.
+  # Addresses are saved launch preferences; local destinations need no opt-in.
+  # Malformed addresses must still leave the remembered choices unchanged.
   network=LIBRARY/'network-selections.json'
   click_text(library_window,env,'Save multiplayer settings',root);time.sleep(.3)
   assert network.exists() and not json.loads(network.read_text())
   command('xdotool','windowfocus',library_window)
-  # Saving leaves the nested form scrolled to its bottom; reveal its first field.
   command('xdotool','mousemove','--window',library_window,'400','800','click','--repeat','20','--delay','20','4')
   time.sleep(.3)
-  # Target the visible label; placeholder punctuation is unreliable under OCR.
   click_text(library_window,env,'server.example:28785',root)
+  command('xdotool','key','--clearmodifiers','ctrl+a')
+  command('xdotool','type','--clearmodifiers','invalid address')
+  before_network=network.read_bytes()
+  click_text(library_window,env,'Save multiplayer settings',root);time.sleep(.3)
+  assert network.read_bytes()==before_network,'Invalid address changed saved launch choices'
+  command('xdotool','mousemove','--window',library_window,'400','400','click','--repeat','30','--delay','20','4')
+  time.sleep(.3)
+  command('import','-display',env['DISPLAY'],'-window',library_window,proof/'multiplayer-invalid.png')
+  invalid_text=subprocess.check_output(['tesseract',str(proof/'multiplayer-invalid.png'),'stdout'],stderr=subprocess.DEVNULL,text=True)
+  assert 'failed:' in invalid_text.lower(),invalid_text
+  click_text(library_window,env,'invalid address',root)
   command('xdotool','key','--clearmodifiers','ctrl+a')
   command('xdotool','type','--clearmodifiers','127.0.0.1:28785')
   click_text(library_window,env,'Save multiplayer settings',root);time.sleep(.3)
-  assert not json.loads(network.read_text()),'Local server was authorized without opting in'
-  command('import','-display',env['DISPLAY'],'-window',library_window,proof/'multiplayer-denied.png')
-  text=subprocess.check_output(['tesseract',str(proof/'multiplayer-denied.png'),'stdout'],stderr=subprocess.DEVNULL,text=True)
-  assert 'enable local/private' in text.lower(),text
-  click_text(library_window,env,'Allow local/private',root)
-  click_text(library_window,env,'Save multiplayer settings',root);time.sleep(.3)
   choices=list(json.loads(network.read_text()).values())
-  assert len(choices)==1 and choices[0]['server']=='127.0.0.1:28785' and choices[0]['allow_local']
+  assert len(choices)==1 and choices[0]['server']=='127.0.0.1:28785' and not choices[0]['allow_local']
   command('import','-display',env['DISPLAY'],'-window',library_window,proof/'multiplayer-settings.png')
-  click_text(library_window,env,'Use offline play',root);time.sleep(.3)
-  assert not json.loads(network.read_text()),'Offline play retained a network grant'
+  text=subprocess.check_output(['tesseract',str(proof/'multiplayer-settings.png'),'stdout'],stderr=subprocess.DEVNULL,text=True)
+  assert 'allow local/private' not in text.lower(),text
+  click_text(library_window,env,'Clear launch addresses',root);time.sleep(.3)
+  assert not json.loads(network.read_text()),'Clearing launch addresses retained a server'
   click_text(library_window,env,'master.example:28787',root)
   command('xdotool','type','--clearmodifiers','master.example:28787')
   click_text(library_window,env,'Save multiplayer settings',root);time.sleep(.3)
   choices=list(json.loads(network.read_text()).values())
   assert len(choices)==1 and choices[0]['master']=='master.example:28787' and not choices[0]['server']
-  click_text(library_window,env,'Use offline play',root);time.sleep(.3)
-  assert not json.loads(network.read_text()),'Offline play retained a master discovery grant'
+  click_text(library_window,env,'Clear launch addresses',root);time.sleep(.3)
+  assert not json.loads(network.read_text()),'Clearing launch addresses retained a master'
 
   command('xdotool','mousemove','--window',library_window,'1400','400','click','--repeat','15','--delay','20','4');time.sleep(.3)
   command('import','-display',env['DISPLAY'],'-window',library_window,proof/'ready.png')
@@ -149,12 +154,31 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-cube2-gui-') as temporary:
   while before_ammo is None:
    assert time.monotonic()<deadline,('Could not read baseline ammunition',ammo.last_readings)
    time.sleep(.1);before_ammo=ammo(capture('before-fire.png'),'before')
+  # Keep the original attack command while recording both binding callbacks.
+  # The saved trace distinguishes delivery loss from same-update attack state.
+  command('xdotool','key','t');time.sleep(.3)
+  command('xdotool','type','--clearmodifiers','--delay','25','/defsvarp clicktrace "" ""; bind MOUSE1 [clicktrace = (concatword $clicktrace D (getmillis)); attack; onrelease [clicktrace = (concatword $clicktrace U (getmillis))]]')
+  command('xdotool','key','Return');time.sleep(.3)
   command('xdotool','click','1')
   deadline=time.monotonic()+3
+  short_fired=False
   while True:
    time.sleep(.1);fired=capture('fired.png')
-   if ammo(fired,'fired')==before_ammo-1:break
-   assert time.monotonic()<deadline,('A short mouse click did not fire the weapon',before_ammo,ammo.last_readings)
+   if ammo(fired,'fired')==before_ammo-1:
+    short_fired=True;break
+   if time.monotonic()>=deadline:break
+  # Original attack state is sampled by gameplay, so a down/up within one
+  # update can legitimately produce no shot. Verify its clocks after close.
+  held_before=ammo(capture('before-held-fire.png'),'held-before')
+  assert held_before is not None,('Could not read held-click baseline',ammo.last_readings)
+  command('xdotool','mousedown','1')
+  try:time.sleep(.1)
+  finally:command('xdotool','mouseup','1')
+  deadline=time.monotonic()+3
+  while True:
+   time.sleep(.1)
+   if ammo(capture('held-fired.png'),'held-fired')==held_before-1:break
+   assert time.monotonic()<deadline,('An update-spanning click did not fire exactly once',held_before,ammo.last_readings)
   command('xdotool','key','t');time.sleep(.3)
   command('xdotool','type','--clearmodifiers','--delay','25','/name GamePKGDesktop')
   command('xdotool','key','Return');time.sleep(.3)
@@ -174,6 +198,12 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-cube2-gui-') as temporary:
    raise AssertionError('Game window did not close normally')
   saves=list((LIBRARY/'saves').glob('*.cube2'));assert saves and saves[0].read_bytes().startswith(b'GPS2') and saves[0].stat().st_mtime_ns>saved_before
   assert b'GamePKGDesktop' in saves[0].read_bytes(),'Desktop console text was not saved'
+  trace=re.search(rb'\nclicktrace "D(\d+)U(\d+)D(\d+)U(\d+)"\n',saves[0].read_bytes())
+  assert trace,'Both physical clicks must reach the original press/release bindings exactly once'
+  down,up,held_down,held_up=map(int,trace.groups())
+  assert held_up>held_down,('Held click did not span an engine update',trace.group())
+  if not short_fired:
+   assert down==up,('A click spanning engine updates failed to fire',trace.group())
   records=list((LIBRARY/'progress').glob('*.json'));assert json.loads(records[0].read_text())['played_ms']>played_before+1000
   assert app.poll() is None,'Closing the game closed the library'
   saved_before=saves[0].stat().st_mtime_ns
@@ -220,7 +250,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-cube2-gui-') as temporary:
   assert json.loads(records[0].read_text())['played_ms']>played_before+1000,'In-game Quit did not save time'
   assert app.poll() is None,'In-game Quit closed the library'
   player_pid=None
-  print('Cube 2 desktop passed: real folder picker, server-choice form/local opt-in/offline clearing, separate Vulkan game-only player, movement/fire, console text, native close, real minimize/restore with background play-time checkpoint, in-game Quit and saved preferences.')
+  print('Cube 2 desktop passed: real folder picker, server-choice form/local addresses without opt-in/invalid-address atomicity/launch-address clearing, separate Vulkan game-only player, movement/fire, console text, native close, real minimize/restore with background play-time checkpoint, in-game Quit and saved preferences.')
  finally:
   if app and app.poll() is None:
    subprocess.run(['import','-display',env['DISPLAY'],'-window','root',str(proof/'final-root.png')],env=env,capture_output=True)

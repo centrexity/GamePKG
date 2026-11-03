@@ -1,0 +1,9 @@
+{
+  "version": "2026.19",
+  "windows_x86_64": {
+    "url": "https://github.com/shader-slang/slang/releases/download/v2026.19/slang-2026.19-windows-x86_64.zip",
+    "sha256": "fc922f214b5d115f663932e59e80e0f6b6cc6fae140979cf307da6459b6f8f33"
+  },
+  "payload_inventory_sha256": "f61ac971cabe31e3276ad7bcb0965e191248786fad8d4caf5013130662cae1f2",
+  "directory_inventory_sha256": "c2539521d2c454316139f60466af492cff13a77d5436ba6ebab72b69777632ba"
+}

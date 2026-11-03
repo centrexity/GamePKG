@@ -3,14 +3,22 @@ pub const MAX_DIMENSION: u32 = 512;
 pub const MAX_BYTES: usize = 512 * 512 * 4;
 pub const MAX_PNG_BYTES: usize = 2 * 1024 * 1024;
 /// Session-scoped immutable assets: retain at most one image's maximum pixel
-/// budget across up to 32 bounded paths. Frames own separate Arc references and
+/// budget across up to 32 bounded paths by default; the signed large-image
+/// profile permits 128 MiB across 256 paths. Frames own separate Arc references and
 /// still charge every draw against their normal transfer/command budgets.
 #[derive(Default)]
 pub(crate) struct Cache {
     entries: std::collections::VecDeque<(String, std::sync::Arc<Image>)>,
     bytes: usize,
+    profile: Option<crate::manifest::RenderProfile>,
 }
 impl Cache {
+    pub(crate) fn for_profile(profile: Option<crate::manifest::RenderProfile>) -> Self {
+        Self {
+            profile,
+            ..Self::default()
+        }
+    }
     pub(crate) fn get(&mut self, path: &str) -> Option<std::sync::Arc<Image>> {
         let index = self.entries.iter().position(|(name, _)| name == path)?;
         let entry = self.entries.remove(index)?;
@@ -27,7 +35,13 @@ impl Cache {
             let (_, old) = self.entries.remove(index).unwrap();
             self.bytes -= old.pixels().len();
         }
-        while self.entries.len() >= 32 || self.bytes + bytes > MAX_BYTES {
+        let limit = self
+            .profile
+            .map_or(MAX_BYTES, crate::manifest::RenderProfile::cache_bytes);
+        let paths = self
+            .profile
+            .map_or(32, crate::manifest::RenderProfile::cache_paths);
+        while self.entries.len() >= paths || self.bytes + bytes > limit {
             let (_, old) = self.entries.pop_front().unwrap();
             self.bytes -= old.pixels().len();
         }
@@ -80,8 +94,21 @@ impl Image {
         limits.max_image_height = Some(MAX_DIMENSION);
         limits.max_alloc = Some(8 * 1024 * 1024);
         reader.limits(limits);
-        let decoded = reader.decode().ok()?.to_rgba8();
-        Self::new(decoded.width(), decoded.height(), decoded.as_raw())
+        let decoded = reader.decode().ok()?.into_rgba8();
+        let (width, height) = decoded.dimensions();
+        let length = Self::byte_length(width, height)?;
+        // The decoder already owns an immutable snapshot. Keep its RGBA buffer
+        // instead of cloning it during conversion and again in `Self::new`.
+        // Discard any spare capacity so retained memory matches cache accounting.
+        let pixels = decoded.into_raw().into_boxed_slice().into_vec();
+        if pixels.len() != length {
+            return None;
+        }
+        Some(Self {
+            width,
+            height,
+            pixels,
+        })
     }
     pub fn byte_length(width: u32, height: u32) -> Option<usize> {
         if width == 0 || height == 0 || width > MAX_DIMENSION || height > MAX_DIMENSION {
@@ -125,6 +152,70 @@ mod tests {
             .unwrap();
         assert!(Image::from_png(&oversized).is_none());
     }
+    #[test]
+    fn png_color_conversion_preserves_known_pixels_and_alpha() {
+        use ::image::{ExtendedColorType, ImageEncoder};
+        fn words(samples: &[u16]) -> Vec<u8> {
+            samples
+                .iter()
+                .flat_map(|sample| sample.to_ne_bytes())
+                .collect()
+        }
+        let cases = [
+            (
+                ExtendedColorType::Rgba8,
+                vec![0, 128, 255, 1, 255, 1, 0, 128],
+                vec![0, 128, 255, 1, 255, 1, 0, 128],
+            ),
+            (
+                ExtendedColorType::Rgb8,
+                vec![0, 128, 255, 255, 1, 0],
+                vec![0, 128, 255, 255, 255, 1, 0, 255],
+            ),
+            (
+                ExtendedColorType::L8,
+                vec![0, 128],
+                vec![0, 0, 0, 255, 128, 128, 128, 255],
+            ),
+            (
+                ExtendedColorType::La8,
+                vec![0, 1, 128, 255],
+                vec![0, 0, 0, 1, 128, 128, 128, 255],
+            ),
+            (
+                ExtendedColorType::Rgba16,
+                words(&[0, 32896, 65535, 257, 65535, 257, 0, 32896]),
+                vec![0, 128, 255, 1, 255, 1, 0, 128],
+            ),
+            (
+                ExtendedColorType::Rgb16,
+                words(&[0, 32896, 65535, 65535, 257, 0]),
+                vec![0, 128, 255, 255, 255, 1, 0, 255],
+            ),
+            (
+                ExtendedColorType::L16,
+                words(&[0, 32896]),
+                vec![0, 0, 0, 255, 128, 128, 128, 255],
+            ),
+            (
+                ExtendedColorType::La16,
+                words(&[0, 257, 32896, 65535]),
+                vec![0, 0, 0, 1, 128, 128, 128, 255],
+            ),
+        ];
+        for (color, pixels, expected) in cases {
+            let mut png = Vec::new();
+            ::image::codecs::png::PngEncoder::new(&mut png)
+                .write_image(&pixels, 2, 1, color)
+                .unwrap();
+            let image = Image::from_png(&png).unwrap();
+            png.fill(0);
+            assert_eq!(image.size(), [2, 1], "{color:?}");
+            assert_eq!(image.pixels(), expected, "{color:?}");
+            assert_eq!(image.pixels.capacity(), expected.len(), "{color:?}");
+        }
+    }
+
     #[test]
     fn image_is_a_private_exact_size_snapshot() {
         let mut bytes = vec![255, 0, 0, 255, 0, 255, 0, 128];
@@ -202,6 +293,26 @@ mod cache_tests {
         assert_eq!(Arc::strong_count(&retained), 1);
     }
     #[test]
+    fn large_profile_evicts_at_pixel_and_path_bounds_and_preserves_live_frames() {
+        let mut cache = Cache::for_profile(Some(crate::manifest::RenderProfile::LargeImagesV1));
+        let first = image(512, 512);
+        cache.insert("first", first.clone());
+        for index in 1..=128 {
+            cache.insert(&index.to_string(), image(512, 512));
+        }
+        assert_eq!(cache.bytes, 128 * 1048576);
+        assert!(cache.get("first").is_none());
+        assert_eq!(first.pixels()[0], 37);
+        assert_eq!(Arc::strong_count(&first), 1);
+        let mut tiny = Cache::for_profile(Some(crate::manifest::RenderProfile::LargeImagesV1));
+        for index in 0..=256 {
+            tiny.insert(&index.to_string(), image(1, 1));
+        }
+        assert_eq!((tiny.entries.len(), tiny.bytes), (256, 1024));
+        assert!(tiny.get("0").is_none());
+        assert!(tiny.get("256").is_some());
+    }
+    #[test]
     fn replacement_accounting_maximum_images_and_path_bounds_are_bounded() {
         let mut cache = Cache::default();
         cache.insert("same", image(2, 2));
@@ -235,26 +346,27 @@ pub(crate) fn asset(
             .can_image(x, y, w, h, image.pixels().len())
             .then_some(image);
     }
-    let Ok(size) = package.asset_size(path) else {
-        return None;
-    };
-    if !(33..=MAX_PNG_BYTES as u64).contains(&size) {
-        return None;
-    }
-    let Ok(header) = package.asset_chunk(path, 0, 33) else {
-        return None;
-    };
-    let pixel_bytes = Image::png_byte_length(&header)?;
-    if !frame.can_image(x, y, w, h, pixel_bytes) {
-        return None;
-    }
-    let mut encoded = Vec::with_capacity(size as usize);
-    for offset in (0..size).step_by(65536) {
-        let Ok(chunk) = package.asset_chunk(path, offset, 65536) else {
-            return None;
-        };
-        encoded.extend(chunk);
-    }
+    // Keep one reader for the complete member: chunk reads restart compressed
+    // ZIP entries from the beginning. Validate the small header and frame
+    // allowance before allocating, and publish only after the final ZIP CRC.
+    let (encoded, pixel_bytes) = package
+        .with_asset_reader(path, MAX_PNG_BYTES as u64, |input, length| {
+            anyhow::ensure!(length >= 33, "incomplete PNG header");
+            let mut header = [0; 33];
+            input.read_exact(&mut header)?;
+            let Some(pixel_bytes) = Image::png_byte_length(&header) else {
+                anyhow::bail!("invalid or oversized PNG header");
+            };
+            anyhow::ensure!(
+                frame.can_image(x, y, w, h, pixel_bytes),
+                "image exceeds frame allowance"
+            );
+            let mut encoded = vec![0; length];
+            encoded[..33].copy_from_slice(&header);
+            input.read_exact(&mut encoded[33..])?;
+            Ok((encoded, pixel_bytes))
+        })
+        .ok()?;
     let image = Image::from_png(&encoded)?;
     if image.pixels().len() != pixel_bytes {
         return None;
@@ -262,4 +374,219 @@ pub(crate) fn asset(
     let image = std::sync::Arc::new(image);
     cache.insert(path, image.clone());
     Some(image)
+}
+
+#[cfg(test)]
+mod asset_reader_tests {
+    use super::*;
+    use crate::{archive::Package, drawing::Frame};
+    use ::image::ImageEncoder;
+    use std::{fs::File, io::Write, sync::Arc};
+
+    fn picture() -> (Vec<u8>, Vec<u8>) {
+        let mut value = 0x12345678u32;
+        let rgb: Vec<u8> = (0..512 * 512 * 3)
+            .map(|_| {
+                value ^= value << 13;
+                value ^= value >> 17;
+                value ^= value << 5;
+                value as u8
+            })
+            .collect();
+        let mut png = Vec::new();
+        ::image::codecs::png::PngEncoder::new(&mut png)
+            .write_image(&rgb, 512, 512, ::image::ExtendedColorType::Rgb8)
+            .unwrap();
+        assert!(png.len() > 65536 && png.len() < MAX_PNG_BYTES);
+        let rgba = rgb
+            .as_chunks::<3>()
+            .0
+            .iter()
+            .flat_map(|p| [p[0], p[1], p[2], 255])
+            .collect();
+        (png, rgba)
+    }
+
+    fn fixture(
+        png: &[u8],
+        method: zip::CompressionMethod,
+        corrupt_crc: bool,
+    ) -> (tempfile::TempDir, Package) {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("images.gamepkg");
+        let mut writer = zip::ZipWriter::new(File::create(&path).unwrap());
+        for name in ["picture.png", "next.png"] {
+            writer
+                .start_file(
+                    format!("assets/{name}"),
+                    zip::write::SimpleFileOptions::default().compression_method(method),
+                )
+                .unwrap();
+            writer.write_all(png).unwrap();
+        }
+        writer.finish().unwrap();
+        if corrupt_crc {
+            // The PNG remains complete and valid. Only its container checksum
+            // is wrong, so a decoder alone cannot detect this failure.
+            let mut bytes = std::fs::read(&path).unwrap();
+            let central = bytes.windows(4).position(|w| w == b"PK\x01\x02").unwrap();
+            bytes[central + 16] ^= 1;
+            std::fs::write(&path, bytes).unwrap();
+        }
+        let package = Package::open(&path).unwrap();
+        (temp, package)
+    }
+
+    #[test]
+    fn cold_assets_preserve_all_pixels_across_zip_codecs_and_cache_hits() {
+        let (png, rgba) = picture();
+        for method in [zip::CompressionMethod::Stored, zip::CompressionMethod::Zstd] {
+            let (_temp, mut package) = fixture(&png, method, false);
+            package.mark_verified();
+            let mut cache = Cache::default();
+            let frame = Frame::default();
+            let image = asset(
+                &mut package,
+                &mut cache,
+                &frame,
+                "picture.png",
+                [0., 0., 1., 1.],
+            )
+            .unwrap();
+            assert_eq!(image.pixels(), rgba, "{method:?}");
+            let cached = asset(
+                &mut package,
+                &mut cache,
+                &frame,
+                "picture.png",
+                [0., 0., 1., 1.],
+            )
+            .unwrap();
+            assert!(Arc::ptr_eq(&image, &cached));
+            assert_eq!(cache.bytes, MAX_BYTES);
+            assert!(frame.commands.is_empty());
+        }
+    }
+
+    #[test]
+    fn complete_png_with_invalid_zip_crc_is_never_published_or_cached() {
+        let (png, rgba) = picture();
+        for method in [zip::CompressionMethod::Stored, zip::CompressionMethod::Zstd] {
+            let (_temp, mut package) = fixture(&png, method, true);
+            package.mark_verified();
+            let mut cache = Cache::default();
+            let frame = Frame::default();
+            for _ in 0..2 {
+                assert!(
+                    asset(
+                        &mut package,
+                        &mut cache,
+                        &frame,
+                        "picture.png",
+                        [0., 0., 1., 1.]
+                    )
+                    .is_none(),
+                    "{method:?}"
+                );
+                assert_eq!((cache.bytes, cache.entries.len()), (0, 0));
+                assert!(frame.commands.is_empty());
+            }
+            let valid = asset(
+                &mut package,
+                &mut cache,
+                &frame,
+                "next.png",
+                [0., 0., 1., 1.],
+            )
+            .unwrap();
+            assert_eq!(
+                valid.pixels(),
+                rgba,
+                "a failed member must not poison the next read"
+            );
+        }
+    }
+
+    #[test]
+    fn image_reads_require_verified_paths_and_available_frame_budget() {
+        let (png, _) = picture();
+        let (_temp, mut package) = fixture(&png, zip::CompressionMethod::Zstd, false);
+        let mut cache = Cache::default();
+        let mut frame = Frame::default();
+        assert!(asset(
+            &mut package,
+            &mut cache,
+            &frame,
+            "picture.png",
+            [0., 0., 1., 1.]
+        )
+        .is_none());
+        package.mark_verified();
+        for path in [
+            "../picture.png",
+            "assets/picture.png",
+            "C:picture.png",
+            "picture.png/..",
+            "missing.png",
+        ] {
+            assert!(asset(&mut package, &mut cache, &frame, path, [0., 0., 1., 1.]).is_none());
+        }
+        let image = Arc::new(Image::new(512, 512, &vec![0; MAX_BYTES]).unwrap());
+        for _ in 0..crate::drawing::MAX_IMAGE_BYTES / MAX_BYTES {
+            assert!(frame.image_arc(0., 0., 1., 1., image.clone(), false));
+        }
+        assert!(asset(
+            &mut package,
+            &mut cache,
+            &frame,
+            "picture.png",
+            [0., 0., 1., 1.]
+        )
+        .is_none());
+        assert_eq!((cache.bytes, cache.entries.len()), (0, 0));
+        frame.reset();
+        assert!(asset(
+            &mut package,
+            &mut cache,
+            &frame,
+            "picture.png",
+            [0., 0., 1., 1.]
+        )
+        .is_some());
+    }
+
+    #[test]
+    #[ignore = "maintainer cold-image throughput measurement; no timing assertion"]
+    fn cold_compressed_image_read_measurement() {
+        let (png, rgba) = picture();
+        for method in [zip::CompressionMethod::Stored, zip::CompressionMethod::Zstd] {
+            let (_temp, mut package) = fixture(&png, method, false);
+            package.mark_verified();
+            let frame = Frame::default();
+            let mut samples = Vec::new();
+            for _ in 0..30 {
+                let mut cache = Cache::default();
+                let start = std::time::Instant::now();
+                let image = asset(
+                    &mut package,
+                    &mut cache,
+                    &frame,
+                    "picture.png",
+                    [0., 0., 1., 1.],
+                )
+                .unwrap();
+                samples.push(start.elapsed().as_micros());
+                assert_eq!(image.pixels(), rgba);
+            }
+            samples.sort_unstable();
+            println!(
+                "{method:?}: encoded={} samples={} min_us={} median_us={} max_us={}",
+                png.len(),
+                samples.len(),
+                samples[0],
+                samples[samples.len() / 2],
+                samples[samples.len() - 1]
+            );
+        }
+    }
 }

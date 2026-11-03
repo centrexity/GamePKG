@@ -1,0 +1,215 @@
+{
+  "repository": "https://github.com/bochs-emu/Bochs",
+  "commit": "b0c88410501f48bbe1a966cab1c0592fb504915a",
+  "license": "LGPL-2.1-or-later; original SoftFloat extension notice retained",
+  "files": [
+    {
+      "path": "upstream/f2xm1.cc",
+      "sha256": "df839112898597c36e1f4d5c881731e3bdb64ed7825bd5fb93f65852133b04e4"
+    },
+    {
+      "path": "upstream/f2xm1_constants.h",
+      "sha256": "180f02a31e490594ba0eda2fabebcd1fb2045cc0da6672c38d6d99b3fd1153cc"
+    },
+    {
+      "path": "upstream/f128_67.cc",
+      "sha256": "b150bae357f60f71185cd06bdee03d3e138d74701d3d00c63ff444ca44f05c4e"
+    },
+    {
+      "path": "upstream/COPYING",
+      "sha256": "1e71c5e18d5a0e3723bf07314404f07b27c38fcdeae2a4b1f3088477baf61efa"
+    },
+    {
+      "path": "reference/bochs/cpu/softfloat3e/s_packToExtF80.cc",
+      "sha256": "71d8422fcc49828ca62d48f6dc11f35a086abfb594a679ee8d610c57c47accb6"
+    },
+    {
+      "path": "reference/bochs/cpu/softfloat3e/f128_addsub.cc",
+      "sha256": "64b0009d89eaa3d2d25f88aba92c7860040dbe989a57d4d719627cf0087dcec9"
+    },
+    {
+      "path": "reference/bochs/cpu/softfloat3e/s_normSubnormalExtF80Sig.cc",
+      "sha256": "6554df8c51521b29b48308fecd8a6d35231c3c86bd71f8ecd436cd825ae041ea"
+    },
+    {
+      "path": "reference/bochs/cpu/softfloat3e/f128_mul_by_extF80.cc",
+      "sha256": "65fa77923c5d406bbba42f920c663d72b609c4a1910214ea46ec608a06758381"
+    },
+    {
+      "path": "reference/bochs/cpu/softfloat3e/extF80_to_f128.cc",
+      "sha256": "dab45d9ea52a15524eba694ee49eea859d2f715da37b7393ab9d225687b15161"
+    },
+    {
+      "path": "reference/bochs/cpu/softfloat3e/extF80_addsub.cc",
+      "sha256": "0589d3f7f1c7b3a6dd51b4f150506a6e0d242dfbda4bbd81d9055de419e15f58"
+    },
+    {
+      "path": "reference/bochs/cpu/softfloat3e/f128_to_extF80.cc",
+      "sha256": "9922b6d4be8b6f360e243ec3ed2694c0482731473bb5283202546a2c619b2b96"
+    },
+    {
+      "path": "reference/bochs/cpu/softfloat3e/8086-SSE/s_propagateNaNExtF80UI.cc",
+      "sha256": "1dac9bbd2b1afd73b2747bd0f181395c64a9f2be8555e3b59dc32dd9601ecb1d"
+    },
+    {
+      "path": "reference/bochs/cpu/softfloat3e/f128_mul.cc",
+      "sha256": "2360ea80335cef30e2d5bf144b3cc8ed6642c26beb0550d4be0e1f09d4b79dac"
+    },
+    {
+      "path": "reference/bochs/cpu/softfloat3e/f128_round.cc",
+      "sha256": "5d6afa60024ce8c7d1fc313b5ab588be3a2259766ff478e844ba62e74458a5e4"
+    },
+    {
+      "path": "reference/bochs/cpu/softfloat3e/f128_div.cc",
+      "sha256": "84bae4b97bb384fc35aaa0e4a08085209222eb70ee555723c3ba9c54d8c66879"
+    },
+    {
+      "path": "reference/bochs/cpu/softfloat3e/s_addMagsF128.cc",
+      "sha256": "f18069c60a2dc9fc4075c09392f6a2e1d7a2bd71537495ec71914ccbc406cc14"
+    },
+    {
+      "path": "reference/bochs/cpu/softfloat3e/s_subMagsF128.cc",
+      "sha256": "2574cda169b6ae9b6777435e94cbbddf6ac009d8fa1b97ebc34f1a56552ccbbf"
+    },
+    {
+      "path": "reference/bochs/cpu/softfloat3e/s_mul128To256M.cc",
+      "sha256": "7229f7f9ed40066953fff6a434735366f6e4a272a0459ea59113bcb90f964e15"
+    },
+    {
+      "path": "reference/bochs/cpu/softfloat3e/s_roundPackToF128.cc",
+      "sha256": "bc214d76a97ff74b912171be77112a19808783840ca1535bc0323bf527037706"
+    },
+    {
+      "path": "reference/bochs/cpu/softfloat3e/8086-SSE/s_propagateNaNF128UI.cc",
+      "sha256": "613cfca764f66a04dc14115a9b513e04b343a4de66a46aac6e57e23faad5b74a"
+    },
+    {
+      "path": "reference/bochs/cpu/softfloat3e/s_normSubnormalF128Sig.cc",
+      "sha256": "1db3247c1f90c436d507fd03394a197d057aba0c5a482c75113509cfc01f81da"
+    },
+    {
+      "path": "reference/bochs/cpu/softfloat3e/8086-SSE/s_commonNaNToExtF80UI.cc",
+      "sha256": "8e23067ec12e2ee6d2a245e5e92780134718ccc38bbd150a56a2727602eaf7e1"
+    },
+    {
+      "path": "reference/bochs/cpu/softfloat3e/8086-SSE/s_commonNaNToF128UI.cc",
+      "sha256": "e87c6d08b8d3cac0cd8fa11bc12692aed829ebc166834051600fa0a090a02dac"
+    },
+    {
+      "path": "reference/bochs/cpu/softfloat3e/s_addMagsExtF80.cc",
+      "sha256": "6ca2d8fe8c4af29ca61ee27a93d411e9cd04fa29eef32bf4898c9f0c4291f375"
+    },
+    {
+      "path": "reference/bochs/cpu/softfloat3e/s_subMagsExtF80.cc",
+      "sha256": "07bb28b37afa9a2e0b5f66a0bfd505a098a95bc3cce9c1dc591234127b82b4b5"
+    },
+    {
+      "path": "reference/bochs/cpu/softfloat3e/s_roundPackToExtF80.cc",
+      "sha256": "3e235be1c33369345378e571e8dd0ae1eae04560bfafa21c83e89cc4ffb4c254"
+    },
+    {
+      "path": "reference/bochs/cpu/softfloat3e/s_shiftRightJam128Extra.cc",
+      "sha256": "feda1c9983b7e0775e7c8f12e29a8474cbab24d0ebecf6cc138cfd5a3058e3c5"
+    },
+    {
+      "path": "reference/bochs/cpu/softfloat3e/s_shiftRightJam128.cc",
+      "sha256": "ddd0d6391c5d733ecb9a7ff20ad0c3262707e0d81e3bbf926763b34b97ff405f"
+    },
+    {
+      "path": "reference/bochs/cpu/softfloat3e/s_normRoundPackToF128.cc",
+      "sha256": "7fac55ff4cbef1a5631466bbe87497c35808338f4b27806b59501735404d55aa"
+    },
+    {
+      "path": "reference/bochs/cpu/softfloat3e/s_mul64To128.cc",
+      "sha256": "0e720cb4d1f55cf9611e21708717cb49bee8c55ce6c9622544400281750e8344"
+    },
+    {
+      "path": "reference/bochs/cpu/softfloat3e/s_normRoundPackToExtF80.cc",
+      "sha256": "3b4ee39fd74f342768f1aad336488d8c70614ef6cd5766b5d4676e55bd23e510"
+    },
+    {
+      "path": "reference/bochs/cpu/softfloat3e/include/internals.h",
+      "sha256": "61a7f029b32eec09e7eb866cec89f278adf7ac0b1c9b4ac8faecbcad01fb9a31"
+    },
+    {
+      "path": "reference/bochs/cpu/softfloat3e/include/opts-GCC.h",
+      "sha256": "524ae09ffa1bd4705a39e7c9fc12c811a59303eb30da1311375edcf62ae76d01"
+    },
+    {
+      "path": "reference/bochs/cpu/softfloat3e/include/primitiveTypes.h",
+      "sha256": "ab02677ae44438b2f95e020d0a831bcbc479c3b26771dfe84f442eddd11212de"
+    },
+    {
+      "path": "reference/bochs/cpu/softfloat3e/include/primitives.h",
+      "sha256": "202d9a26e279077074b957600edb617d0c58a1f60d37d6fbf3b03635b507c33f"
+    },
+    {
+      "path": "reference/bochs/cpu/softfloat3e/include/softfloat-compare.h",
+      "sha256": "69b461c1de2fc1e6a850447dd16d23d6191ae391c1a30f67988fce19af8a1c1b"
+    },
+    {
+      "path": "reference/bochs/cpu/softfloat3e/include/softfloat-extra.h",
+      "sha256": "33f37fa0818497fa53048e1bd0f90070602cf4530f8d02a542c831ce037bf764"
+    },
+    {
+      "path": "reference/bochs/cpu/softfloat3e/include/softfloat.h",
+      "sha256": "6ee47144b8297b85f19fd5f2875a3372069f0cead72c21af97877bcb13065caa"
+    },
+    {
+      "path": "reference/bochs/cpu/softfloat3e/include/softfloat_types.h",
+      "sha256": "9178533e79401cf1b5c93f37e3d433ea2fdd91eb85d163659b080acd29e63994"
+    },
+    {
+      "path": "reference/bochs/cpu/softfloat3e/include/specialize.h",
+      "sha256": "27a655c1ff0dad4a2cee1a64b5d1c9289574b2d46ff1e64000040b9f29bdaccd"
+    },
+    {
+      "path": "reference/bochs/cpu/fpu/softfloat-specialize.h",
+      "sha256": "4d6d1722e8854f0d338e185fc2a0addc44c3ca800fd8da8a3451b8b620c167b1"
+    },
+    {
+      "path": "upstream/fyl2x.cc",
+      "sha256": "aadfaffc61e1bb0b80ae86f5b676fdb82c25314a36621d950ee601a2bbead40b"
+    },
+    {
+      "path": "upstream/fyl2x_constants.h",
+      "sha256": "f62749aa91e317264d6368063fcb8104099ddee16c70e544aa72f5d6c9ac2cff"
+    },
+    {
+      "path": "upstream/fpu_trans.h",
+      "sha256": "2145050620e85a7073a0ac8ca67e00166359854ca0d07fc944e675542a3fb089"
+    },
+    {
+      "path": "upstream/softfloat-helpers.h",
+      "sha256": "6d9fdbb5212ad75e1fb6ae111009fe8335b7bdee75a8bee12fefb19c768208e6"
+    },
+    {
+      "path": "reference/bochs/cpu/softfloat3e/i32_to_f128.cc",
+      "sha256": "e79fedbb73ce7158f6a1682055c9c26720feb5e5739eeae10d305ba160adf4be"
+    },
+    {
+      "path": "upstream/fpatan.cc",
+      "sha256": "3467ac639f0555cf41fe562016e8e75fadce10b468ec1a4cea2efc6af4dfcb08"
+    },
+    {
+      "path": "upstream/fpatan_constants.h",
+      "sha256": "d8aaf00b2f3ce6c76ea805fc5af443430a05c070ada0978492036a1abc298c20"
+    },
+    {
+      "path": "upstream/fpu_constant.h",
+      "sha256": "0b6a981d635e980ea30633e0bdb21da174eae188b482cf39346feb149b12fbb3"
+    },
+    {
+      "path": "upstream/fprem.cc",
+      "sha256": "f405774ee4026e7be619eea13ddaeb33e14174a7f02a5b6a7a6d038cbbe09704"
+    },
+    {
+      "path": "upstream/fsincos.cc",
+      "sha256": "4544bf8d862188edff834fd88a3186ad00360426d068f0dcecae07ff072c99ff"
+    },
+    {
+      "path": "upstream/fsincos_constants.h",
+      "sha256": "4e260a21afcbd3346dec4688b39914349769fb33b3c3817a876726050b31169f"
+    }
+  ]
+}

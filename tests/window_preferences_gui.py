@@ -100,7 +100,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-window-preferences-', dir=PROJE
         assert len(records)==1,records
         record=records[0]
         saved=json.loads(record.read_text())
-        assert saved==dict(version=1,width=1100,height=650,fullscreen=True,maximized=False),saved
+        assert saved==dict(version=1,width=1100,height=650,fullscreen=True,maximized=False,vsync=True),saved
         window=launch()
         assert fullscreen(window),'Fullscreen was not restored on reopen'
         run('xdotool','key','--window',window,'F11')

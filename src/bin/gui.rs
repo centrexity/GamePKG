@@ -1,11 +1,16 @@
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 use clap::Parser;
 #[derive(Parser)]
 #[command(version, about = "GamePKG desktop library and game player")]
 struct Args {
     #[arg(long, hide = true)]
     check_bundled_audio: bool,
+    #[arg(long, hide = true)]
+    check_build_identity: bool,
     #[arg(long)]
     library: Option<std::path::PathBuf>,
+    #[arg(long, help = "Use a specific GamePKG settings file")]
+    config: Option<std::path::PathBuf>,
     #[arg(long)]
     play: Option<String>,
     #[arg(long, requires="play", value_parser=["native","wasm"])]
@@ -17,6 +22,10 @@ struct Args {
 }
 fn main() -> eframe::Result {
     let args = Args::parse();
+    if args.check_build_identity {
+        println!("{}", gamepkg::native::build_identity());
+        return Ok(());
+    }
     if args.check_bundled_audio {
         let factory = gamepkg::audio_decode::Factory::bundled().map_err(|error| {
             eframe::Error::AppCreation(Box::new(std::io::Error::other(error.to_string())))
@@ -30,6 +39,9 @@ fn main() -> eframe::Result {
         );
         return Ok(());
     }
+    if let Some(config) = args.config {
+        std::env::set_var("GAMEPKG_CONFIG", config);
+    }
     if let Some(root) = args.library {
         std::env::set_var("GAMEPKG_HOME", root);
     }
@@ -39,6 +51,27 @@ fn main() -> eframe::Result {
     let settings = gamepkg::settings::load().map_err(|error| {
         eframe::Error::AppCreation(Box::new(std::io::Error::other(error.to_string())))
     })?;
+    #[cfg(any(target_os = "linux", windows))]
+    if let Some(id) = &args.play {
+        let launch = || -> anyhow::Result<bool> {
+            let root = gamepkg::registry::default_root()?;
+            let manifest = gamepkg::registry::installed_manifest(&root, id)?;
+            if manifest.builtin_engine.as_deref() != Some(gamepkg::takedawn::PROFILE) {
+                return Ok(false);
+            }
+            anyhow::ensure!(
+                args.target.as_deref() != Some("wasm"),
+                "Takedawn requires native Play"
+            );
+            gamepkg::takedawn::play(&root, id, &[], &settings, None)?;
+            Ok(true)
+        };
+        if launch().map_err(|error| {
+            eframe::Error::AppCreation(Box::new(std::io::Error::other(format!("{error:#}"))))
+        })? {
+            return Ok(());
+        }
+    }
     let mut wgpu_options = eframe::egui_wgpu::WgpuSetupCreateNew::default();
     wgpu_options.instance_descriptor.backends = eframe::wgpu::Backends::VULKAN;
     let title = args.play.clone().unwrap_or_else(|| "GamePKG".into());
@@ -63,12 +96,21 @@ fn main() -> eframe::Result {
     eframe::run_native(
         &title,
         eframe::NativeOptions {
+            vsync: args.play.is_none() || preferences.vsync,
+            // UI dithering perturbs colors before blending. Game pixels use
+            // the encoded RGBA contract shared with SDL and the browser.
+            dithering: args.play.is_none(),
             renderer: if settings.renderer == "opengl" {
                 eframe::Renderer::Glow
             } else {
                 eframe::Renderer::Wgpu
             },
             wgpu_options: eframe::egui_wgpu::WgpuConfiguration {
+                present_mode: if args.play.is_none() || preferences.vsync {
+                    eframe::wgpu::PresentMode::Fifo
+                } else {
+                    eframe::wgpu::PresentMode::AutoNoVsync
+                },
                 wgpu_setup: wgpu_options.into(),
                 ..Default::default()
             },

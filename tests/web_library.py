@@ -31,6 +31,9 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-web-library-') as directory:
         rejected({});rejected({'Authorization':'Bearer wrong'});rejected({'Authorization':'Bearer '+token,'Origin':'https://other.invalid'});rejected({'Host':'other.invalid'});rejected({},method='POST',expected=405)
         request=urllib.request.Request(base+'api/library',headers={'Authorization':'Bearer '+token})
         snapshot=json.load(urllib.request.urlopen(request,timeout=5));assert json.loads((root/'library/database/library.json').read_text()) == snapshot;assert snapshot['games'][0]['manifest']['id']=='com.gamepkg.collect-stars';assert snapshot['catalog'][0]['id']=='com.example.waiting'
+        game=snapshot['games'][0]
+        assert game['on_disk_bytes'] is not None and snapshot['library_on_disk_bytes'] is not None
+        assert game['storage_label'].endswith('on disk') and 'file sizes:' in snapshot['library_storage_label']
         rejected({},path='api/icon/com.gamepkg.collect-stars')
         rejected({'Authorization':'Bearer '+token},path='api/icon/missing-game',expected=404)
         rejected({'Authorization':'Bearer '+token},path='api/icon/..',expected=404)
@@ -50,6 +53,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-web-library-') as directory:
             assert 'Not built' in rows,rows
             assert 'Locked — First star' in rows and 'Star collector' in rows and 'bytes expected' in rows,rows
             assert 'Library storage used:' in browser.find_element('id','library-space').text
+            assert 'on disk' in rows and 'on disk' in browser.find_element('id','library-space').text
             if args.play:
                 run('build','com.gamepkg.collect-stars');run('run','com.gamepkg.collect-stars','--frames','10000')
                 played=json.load(urllib.request.urlopen(request,timeout=5))['games'][0]
@@ -60,10 +64,15 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-web-library-') as directory:
                 browser.find_element('css selector','#games td:nth-child(6) details summary').click()
                 rows=browser.find_element('id','games').text
                 assert 'Unlocked — First star' in rows and 'Locked — Star collector' in rows,rows
+            # Existing browser caches predate allocation fields. Keep their file
+            # sizes useful while explicitly avoiding an on-disk claim.
+            assert browser.execute_async_script('''const done=arguments[0];import('/storage.js').then(async ({GamePKGLibraryStorage})=>{const storage=new GamePKGLibraryStorage(location.hash.slice(1).split(':')[1]);await storage.open();const snapshot=await storage.loadLibrary();delete snapshot.library_on_disk_bytes;delete snapshot.library_storage_label;for(const game of snapshot.games){delete game.on_disk_bytes;delete game.storage_label;}await storage.saveLibrary(snapshot);await storage.close();done(true);}).catch(error=>done(String(error)));''') is True
             browser.get(base+'#wrong:'+scope);browser.refresh()
             WebDriverWait(browser,20).until(lambda b:'showing cached metadata' in b.find_element('id','status').text)
             WebDriverWait(browser,20).until(lambda b:len(b.find_elements('css selector','#games canvas'))==1)
             rows=browser.find_element('id','games').text;assert 'Cached installed metadata' in rows and 'Cached catalog metadata' in rows,rows
+            assert 'bytes in files' in rows and 'on disk' not in rows
+            assert browser.find_element('id','library-space').text.startswith('Library file sizes:')
         if args.play:
             with webdriver.Chrome(service=Service(shutil.which('chromedriver')),options=options) as browser:
                 browser.get(base+'#wrong:'+scope)

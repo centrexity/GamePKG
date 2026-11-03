@@ -6,6 +6,19 @@ mod gamepkg {
         static NEXT: std::cell::Cell<u64> = const { std::cell::Cell::new(7) };
         static RECORDING_OVERRIDE: std::cell::RefCell<Option<Vec<u8>>> = const { std::cell::RefCell::new(None) };
         static RECORDING_READS: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+        static HOST_EFFECTS: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+        static HOST_ACCEPTS: std::cell::Cell<bool> = const { std::cell::Cell::new(true) };
+    }
+    pub fn effect_play(path: &str) -> bool {
+        HOST_EFFECTS.with(|events| events.borrow_mut().push(path.into()));
+        HOST_ACCEPTS.with(|value| value.get())
+    }
+    pub fn effect_volume(_: u32) -> bool {
+        true
+    }
+    pub fn host_effects(accepts: bool) -> Vec<String> {
+        HOST_ACCEPTS.with(|value| value.set(accepts));
+        HOST_EFFECTS.with(|events| std::mem::take(&mut *events.borrow_mut()))
     }
     pub fn recording_override(bytes: Option<Vec<u8>>) {
         RECORDING_OVERRIDE.with(|v| *v.borrow_mut() = bytes);
@@ -56,11 +69,11 @@ mod gamepkg {
 }
 fn original_effect_wav(kind: u32) -> &'static [u8] {
     match kind {
-        1 => include_bytes!("../ports/arkanoo/assets/audio/bounce.wav"),
-        2 => include_bytes!("../ports/arkanoo/assets/audio/glass.wav"),
-        3 => include_bytes!("../ports/arkanoo/assets/audio/launch.wav"),
-        4 => include_bytes!("../ports/arkanoo/assets/audio/explosion.wav"),
-        5 => include_bytes!("../ports/arkanoo/assets/audio/life-loss.wav"),
+        1 => include_bytes!("fixtures/arkanoo-legacy-effects/bounce.wav"),
+        2 => include_bytes!("fixtures/arkanoo-legacy-effects/glass.wav"),
+        3 => include_bytes!("fixtures/arkanoo-legacy-effects/launch.wav"),
+        4 => include_bytes!("fixtures/arkanoo-legacy-effects/explosion.wav"),
+        5 => include_bytes!("fixtures/arkanoo-legacy-effects/life-loss.wav"),
         _ => panic!("unknown test effect"),
     }
 }
@@ -71,6 +84,78 @@ fn original_effect_pcm(kind: u32) -> Vec<i16> {
         .iter()
         .map(|b| i16::from_le_bytes([b[0], b[1]]))
         .collect()
+}
+
+#[test]
+fn recorded_effect_profile_uses_only_host_requests_and_never_guest_pcm_fallback() {
+    gamepkg::recording_override(None);
+    gamepkg::host_effects(true);
+    let mut mixer = audio::Mixer::new_mode(true);
+    for kind in 1..=5 {
+        assert!(mixer.effect_request(kind, 0, false));
+    }
+    assert_eq!(
+        gamepkg::host_effects(false),
+        [
+            "audio/bounce.wav",
+            "audio/glass.wav",
+            "audio/launch.wav",
+            "audio/explosion.wav",
+            "audio/life-loss.wav"
+        ]
+    );
+    assert!(!mixer.effect_request(1, 0, false));
+    assert!(mixer.effect_render(128, false).is_none());
+    assert_eq!(gamepkg::recording_reads(), 0);
+    assert_eq!(gamepkg::host_effects(true), ["audio/bounce.wav"]);
+    assert!(!mixer.effect_request(1, 0, true));
+    assert!(!mixer.effect_request(0, 0, false));
+    assert!(gamepkg::host_effects(true).is_empty());
+}
+
+#[test]
+fn recorded_audio_selection_preserves_host_effect_routing_across_run_restart() {
+    gamepkg::recording_override(None);
+    gamepkg::host_effects(true);
+    let mut game = physics::Game::new_audio(true);
+    assert!(game.menu.music_available);
+    for restarting in [false, true] {
+        if restarting {
+            game.reset_run();
+        }
+        assert!(game.menu.music_available);
+        game.sound = 1;
+        game.capture_sound();
+        assert_eq!(gamepkg::host_effects(false), ["audio/bounce.wav"]);
+        game.sound = 2;
+        game.capture_sound();
+        assert_eq!(gamepkg::host_effects(true), ["audio/glass.wav"]);
+        assert!(game.effects.effect_render(64, false).is_none());
+        assert_eq!(gamepkg::recording_reads(), 0);
+    }
+    assert!(!physics::Game::new().menu.music_available);
+}
+
+#[test]
+fn recorded_music_controls_keep_original_geometry_and_survive_run_restart() {
+    let mut game = menu_game();
+    game.menu.settings = true;
+    assert_eq!(game.menu.hit(320.0, 180.0), 0);
+    game.menu.music_available = true;
+    assert_eq!(game.menu.hit(320.0, 180.0), 12);
+    game.source_input(2, 320.0, 180.0, 1);
+    assert!(game.menu.music_muted);
+    assert!(game.dirty);
+    game.source_input(2, 320.0, 200.0, 1);
+    game.source_input(1, 295.0, 200.0, 1);
+    assert_eq!(game.menu.music_volume, 32);
+    assert_eq!(game.menu.sfx_volume, 64);
+    game.source_input(3, 295.0, 200.0, 1);
+    assert!(!game.menu.dragging_music);
+    game.reset_run();
+    assert!(game.menu.music_available);
+    assert!(game.menu.music_muted);
+    assert_eq!(game.menu.music_volume, 32);
 }
 #[path = "../ports/arkanoo/source/src/audio.rs"]
 mod audio;
@@ -88,6 +173,46 @@ mod pattern_rng;
 // Guest source cannot use vec!; its bounded allocation uses capacity + resize.
 #[allow(clippy::slow_vector_initialization)]
 mod physics;
+#[path = "../ports/arkanoo/source/src/portable_math.rs"]
+mod portable_math;
+#[test]
+fn portable_trigonometry_matches_independent_mpfr_bits_across_binary32_range() {
+    let reference: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-trig-mpfr.json")).unwrap();
+    assert_eq!(reference["precision_bits"], 512);
+    assert_eq!(reference["rounding"], "MPFR_RNDN");
+    let cases = reference["cases"].as_array().unwrap();
+    assert!(cases.len() >= 2550);
+    for case in cases {
+        let bits = u32::try_from(case["bits"].as_u64().unwrap()).unwrap();
+        let expected = [
+            u32::try_from(case["sin"].as_u64().unwrap()).unwrap(),
+            u32::try_from(case["cos"].as_u64().unwrap()).unwrap(),
+        ];
+        let value = f32::from_bits(bits);
+        let actual = portable_math::sin_cos(value);
+        assert_eq!(
+            [actual[0].to_bits(), actual[1].to_bits()],
+            expected,
+            "input {bits:#010x}"
+        );
+        assert_eq!(
+            portable_math::sin(value).to_bits(),
+            expected[0],
+            "scalar sine {bits:#010x}"
+        );
+        assert_eq!(
+            portable_math::cos(value).to_bits(),
+            expected[1],
+            "scalar cosine {bits:#010x}"
+        );
+    }
+    for bits in [0x7f800000, 0xff800000, 0x7f800001, 0x7fc00000, 0xffc00000] {
+        let value = f32::from_bits(bits);
+        assert!(portable_math::sin(value).is_nan());
+        assert!(portable_math::cos(value).is_nan());
+    }
+}
 #[path = "../ports/arkanoo/source/src/procedural.rs"]
 mod procedural;
 fn menu_game() -> physics::Game {
@@ -207,11 +332,16 @@ fn original_penguin_rectangle_art_and_fallback_heart_points_are_preserved() {
     }
     assert_eq!(
         gamepkg_host_heart_hash(),
-        "86b8ef21b5544f39542c247518155f4a856aab70851bbd76cfb67df4bd0fbd71"
+        "c1985ddc24f5609726db96061fd3c3cd2ee39c2ee523ccda568597c6c236062e"
     );
 }
 fn gamepkg_host_heart_hash() -> String {
-    ::gamepkg::verify::digest(include_bytes!("../ports/arkanoo/assets/heart.png"))
+    // Hash the original decoded art, independent of lossless PNG encoding.
+    let image = image::load_from_memory(include_bytes!("../ports/arkanoo/assets/heart.png"))
+        .unwrap()
+        .into_rgba8();
+    assert_eq!(image.dimensions(), (512, 472));
+    ::gamepkg::verify::digest(image.as_raw())
 }
 #[test]
 fn penguin_pause_replacement_level_restart_and_editor_test_follow_original_boundaries() {
@@ -1813,7 +1943,7 @@ fn editor_actions_ascii_and_loaded_health_match_the_complete_unchanged_original_
             }
         }
     }
-    edit.name = "example".into();
+    edit.name = editor::Name::from_string(String::from("example"));
     assert!(edit.editor_store());
     assert_eq!(
         edit.patterns[0].ascii_write(),
@@ -1847,10 +1977,10 @@ fn editor_actions_ascii_and_loaded_health_match_the_complete_unchanged_original_
     edit.editor_clear();
     assert_eq!(edit.cells, [255; 200]);
     edit.naming = true;
-    edit.name = "café😀".into();
+    edit.name = editor::Name::from_string(String::from("café😀"));
     for text in reference["backspaces"].as_array().unwrap() {
         edit.editor_key(8);
-        assert_eq!(edit.name, text.as_str().unwrap());
+        assert_eq!(edit.name.name_text(), text.as_str().unwrap());
     }
     for (index, background) in reference["backgrounds"]
         .as_array()
@@ -1865,7 +1995,7 @@ fn editor_actions_ascii_and_loaded_health_match_the_complete_unchanged_original_
         let pattern = editor::Pattern::ascii_read("example", fixture["source"].as_str().unwrap());
         for index in 0..200 {
             assert_eq!(
-                pattern.cells[index],
+                pattern.pattern_get_cell(index),
                 fixture["cells"][index].as_u64().unwrap() as u8
             );
         }
@@ -1875,19 +2005,19 @@ fn editor_actions_ascii_and_loaded_health_match_the_complete_unchanged_original_
 #[test]
 fn editor_archive_migrates_legacy_and_rejects_damage_without_partial_replacement() {
     let mut edit = editor::Editor::new();
-    edit.name = "../../café😀".into();
+    edit.name = editor::Name::from_string(String::from("../../café😀"));
     edit.selected = 6;
     edit.editor_paint(20.0, 100.0, false);
     assert!(edit.editor_store());
-    edit.name = "other".into();
+    edit.name = editor::Name::from_string(String::from("other"));
     assert!(edit.editor_store());
     let bytes = edit.save_encode(u32::MAX, u32::MAX, true);
     assert_eq!(&bytes[..4], b"ARK2");
     let mut loaded = editor::Editor::new();
     assert_eq!(loaded.save_decode(&bytes), Some([u32::MAX, u32::MAX, 1]));
     assert_eq!(loaded.patterns.len(), 2);
-    assert_eq!(loaded.patterns[0].name, "../../café😀");
-    assert_eq!(loaded.patterns[0].cells[0], 6);
+    assert_eq!(loaded.patterns[0].name.name_text(), "../../café😀");
+    assert_eq!(loaded.patterns[0].pattern_get_cell(0), 6);
     for end in 0..bytes.len() {
         assert!(
             loaded.save_decode(&bytes[..end]).is_none(),
@@ -1962,20 +2092,20 @@ fn editor_focus_reset_clear_confirmation_save_bounds_and_test_return_preserve_th
     let mut edit = editor::Editor::new();
     assert!(!edit.editor_store());
     edit.cells[0] = 1;
-    edit.name = "x".repeat(editor::SAVE_BYTES - 224);
+    edit.name = editor::Name::from_string("x".repeat(editor::SAVE_BYTES - 224));
     assert!(edit.editor_store());
     assert_eq!(edit.save_encode(0, 1, false).len(), editor::SAVE_BYTES);
     edit.name.push('x');
     assert!(!edit.editor_store());
     assert_eq!(edit.patterns.len(), 1);
-    edit.name = "z".into();
+    edit.name = editor::Name::from_string(String::from("z"));
     assert!(!edit.editor_store());
     assert_eq!(edit.patterns.len(), 1);
     edit.naming = true;
     edit.editor_event(7, 0.0, 0.0, 0x1f600);
-    assert_eq!(edit.name, "z😀");
+    assert_eq!(edit.name.name_text(), "z😀");
     edit.editor_key(8);
-    assert_eq!(edit.name, "z");
+    assert_eq!(edit.name.name_text(), "z");
 }
 
 #[test]
@@ -1988,10 +2118,13 @@ fn custom_endless_pool_matches_unchanged_original_generator_and_pattern_converte
         for i in 0..200 {
             board[i] = cells[i].as_u64().unwrap() as u8;
         }
-        patterns.push(editor::Pattern {
-            name: format!("custom{index}"),
-            cells: board,
-        });
+        patterns.push(
+            editor::Pattern::pattern_from_cells(
+                editor::Name::from_string(format!("custom{index}")),
+                board,
+            )
+            .unwrap(),
+        );
     }
     let mut kinds = std::collections::BTreeSet::new();
     let mut game = menu_game();
@@ -2100,16 +2233,17 @@ fn failed_editor_saves_roll_back_the_browser_collection_without_losing_the_worki
     edit.editor_store();
     edit.editor_commit(true);
     assert_eq!(edit.patterns.len(), 1);
+    assert!(edit.name.shares_storage(&edit.patterns[0].name));
     edit.cells[0] = 8;
     edit.editor_store();
     edit.editor_commit(false);
-    assert_eq!(edit.patterns[0].cells[0], 6);
+    assert_eq!(edit.patterns[0].pattern_get_cell(0), 6);
     assert_eq!(edit.cells[0], 8);
-    edit.name = "other".into();
+    edit.name = editor::Name::from_string(String::from("other"));
     edit.editor_store();
     edit.editor_commit(false);
     assert_eq!(edit.patterns.len(), 1);
-    assert_eq!(edit.name, "other");
+    assert_eq!(edit.name.name_text(), "other");
 }
 
 #[test]
@@ -2125,7 +2259,7 @@ fn campaign_restart_keeps_saved_patterns_and_gravity_preferences() {
     game.update(4);
     assert_eq!(game.mode, 1);
     assert_eq!(game.editor.patterns.len(), 1);
-    assert_eq!(game.editor.patterns[0].cells[0], 7);
+    assert_eq!(game.editor.patterns[0].pattern_get_cell(0), 7);
     assert!(game.gravity);
     assert_eq!((game.best, game.unlocked), (500, 12));
 }
@@ -2187,12 +2321,106 @@ fn window_controls_follow_original_gameplay_pause_editor_and_quit_bindings() {
 }
 
 #[test]
+fn vsync_menu_stages_a_restart_preference_without_changing_the_current_window() {
+    let mut game = menu_game();
+    game.menu.settings = true;
+    assert_eq!(game.menu.hit(320.0, 295.0), 0);
+    game.menu.vsync = Some(true);
+    game.source_input(2, 320.0, 295.0, 1);
+    assert!(game.menu.vsync_requested);
+    assert_eq!(game.menu.vsync, Some(true));
+    assert!(!game.menu.vsync_failed);
+    assert_eq!(game.mode, 0);
+    assert_eq!(game.fullscreen_requests, 0);
+    game.menu.vsync_requested = false;
+    game.menu.resolution_pending = true;
+    game.source_input(2, 320.0, 295.0, 1);
+    assert!(!game.menu.vsync_requested);
+    game.menu.resolution_pending = false;
+    game.reset_run();
+    assert_eq!(game.menu.vsync, Some(true));
+}
+
+#[test]
+fn desktop_resolution_controls_follow_committed_host_state_and_keep_game_paused() {
+    let mut game = menu_game();
+    game.menu.settings = true;
+    game.menu
+        .observe_resolution(Some([1125, 800]), Some(false), false);
+    for action in 13..=17 {
+        let [x, y, w, h] = menu::Menu::bounds(action);
+        game.source_input(2, x + w / 2.0, y + h / 2.0, 1);
+        assert_eq!(game.menu.resolution_request, action);
+        assert!(menu::Menu::resolution(action).is_some());
+        assert_eq!(game.mode, 0);
+        game.menu.resolution_request = 0;
+    }
+    game.menu.resolution_result(13, true);
+    assert!(game.menu.resolution_pending);
+    assert_eq!(game.menu.resolution_ticks, 300);
+    assert_eq!(game.menu.window_size, Some([1125, 800])); // Never predict OS geometry.
+    game.menu
+        .observe_resolution(Some([1280, 720]), Some(false), true);
+    assert_eq!(game.menu.resolution_ticks, 299);
+    game.reset_run();
+    assert!(game.menu.resolution_pending);
+    assert_eq!(game.menu.resolution_ticks, 299);
+    game.mode = 0;
+    game.menu.settings = true;
+    assert_eq!(game.menu.hit(320.0, 450.0), 0); // Back cannot bypass confirmation.
+    assert_eq!(game.menu.hit(320.0, 270.0), 0); // Fullscreen button also blocked.
+    game.source_input(2, 265.0, 423.75, 1);
+    assert_eq!(game.menu.resolution_request, 18);
+    game.menu.resolution_result(18, false);
+    assert!(game.menu.resolution_pending);
+    assert!(game.menu.resolution_failed);
+    game.menu.resolution_result(18, true);
+    assert!(!game.menu.resolution_pending);
+    assert!(!game.menu.resolution_failed);
+    assert_eq!(game.menu.window_size, Some([1280, 720]));
+    game.menu.resolution_request = 0;
+    game.source_input(2, 320.0, 322.5, 1);
+    assert_eq!(game.menu.resolution_request, 0); // Original same-preset click is a no-op.
+    assert!(!game.menu.resolution_failed);
+    game.menu.resolution_result(14, true);
+    for _ in 0..300 {
+        game.menu
+            .observe_resolution(Some([1366, 768]), Some(false), true);
+    }
+    assert_eq!(game.menu.resolution_ticks, 0);
+    assert!(game.menu.resolution_pending); // Host owns expiry, not our counter.
+    game.menu
+        .observe_resolution(Some([1366, 768]), Some(true), false);
+    assert!(!game.menu.resolution_pending);
+    assert_eq!(game.menu.window_size, Some([1366, 768])); // Monitor dimensions excluded.
+    assert_eq!(game.menu.hit(320.0, 322.5), 0);
+    game.menu
+        .observe_resolution(Some([1280, 720]), Some(false), false);
+    assert_eq!(game.menu.window_size, Some([1280, 720]));
+    game.menu.resolution_result(14, true);
+    game.source_input(2, 325.0, 423.75, 1);
+    assert_eq!(game.menu.resolution_request, 19);
+    game.menu.resolution_result(19, true);
+    assert!(!game.menu.resolution_pending);
+    game.menu.observe_resolution(None, None, false);
+    assert_eq!(game.menu.hit(320.0, 322.5), 0);
+    assert!(game.menu.window_size.is_none());
+}
+
+#[test]
 fn main_menu_primary_actions_match_unchanged_original_mouse_rectangles() {
     let reference: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/arkanoo-menu.json")).unwrap();
     let mut controls = menu::Menu::new();
     for case in reference["cases"].as_array().unwrap() {
+        controls.music_available = true;
         controls.settings = case["settings"].as_bool().unwrap();
+        controls.window_size = case["windowed"]
+            .as_bool()
+            .unwrap_or(false)
+            .then_some([960, 720]);
+        controls.resolution_pending = case["pending"].as_bool().unwrap_or(false);
+        controls.vsync = case["vsync"].as_bool().unwrap_or(false).then_some(true);
         let x = case["point"][0].as_f64().unwrap() as f32;
         let y = case["point"][1].as_f64().unwrap() as f32;
         let expected = case["action"].as_u64().unwrap() as u32;
@@ -2327,6 +2555,30 @@ fn effects_slider_matches_original_motion_drag_quantization_and_release() {
     assert_eq!(game.menu.sfx_volume, 32);
     assert!(game.menu.sfx_muted);
 }
+
+#[test]
+fn music_slider_matches_unchanged_original_drag_quantization_and_release() {
+    let reference: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/arkanoo-menu.json")).unwrap();
+    let mut controls = menu::Menu::new();
+    controls.settings = true;
+    controls.music_available = true;
+    for case in reference["music_slider"].as_array().unwrap() {
+        let event = &case["event"];
+        controls.menu_event(
+            event[0].as_u64().unwrap() as u32,
+            event[1].as_f64().unwrap() as f32,
+            event[2].as_f64().unwrap() as f32,
+            event[3].as_u64().unwrap() as u32,
+        );
+        assert_eq!(
+            controls.music_volume,
+            case["volume"].as_u64().unwrap() as u32,
+            "{case}"
+        );
+        assert_eq!(controls.sfx_volume, 64, "music drag changed effects volume");
+    }
+}
 #[test]
 fn recorded_effect_gain_mute_and_onset_are_bounded_and_word_size_independent() {
     gamepkg::recording_override(None);
@@ -2364,10 +2616,53 @@ fn recorded_effect_gain_mute_and_onset_are_bounded_and_word_size_independent() {
 }
 
 #[test]
+fn legacy_gravity_flags_reject_corruption_without_changing_existing_patterns_or_audio() {
+    let mut edit = editor::Editor::new();
+    edit.cells[0] = 7;
+    edit.name = editor::Name::from_string(String::from("preserve café"));
+    assert!(edit.editor_store());
+    edit.sfx_volume = 17;
+    edit.sfx_muted = true;
+    edit.music_volume = 32;
+    edit.music_muted = true;
+    let before = edit.save_encode(42, 9, true);
+    for flags in (2..=255u32)
+        .chain((1..32).map(|bit| 1u32 << bit))
+        .chain([u32::MAX])
+    {
+        let mut legacy = b"ARK1".to_vec();
+        for word in [123u32, 999, flags] {
+            legacy.extend(word.to_le_bytes());
+        }
+        for owned in [false, true] {
+            let result = if owned {
+                edit.save_decode_owned(legacy.clone())
+            } else {
+                edit.save_decode(&legacy)
+            };
+            assert!(
+                result.is_none(),
+                "accepted invalid legacy gravity flags {flags:#x}, owned={owned}"
+            );
+            assert_eq!(edit.save_encode(42, 9, true), before);
+            assert_eq!(
+                (
+                    edit.sfx_volume,
+                    edit.sfx_muted,
+                    edit.music_volume,
+                    edit.music_muted
+                ),
+                (17, true, 32, true)
+            );
+        }
+    }
+}
+
+#[test]
 fn effects_archive_migrates_old_formats_preserves_capacity_and_rejects_bad_settings() {
     let mut edit = editor::Editor::new();
     edit.cells[0] = 7;
-    edit.name = "café".into();
+    edit.name = editor::Name::from_string(String::from("café"));
     assert!(edit.editor_store());
     let legacy = edit.save_encode(123, 999, true);
     let mut loaded = editor::Editor::new();
@@ -2378,7 +2673,7 @@ fn effects_archive_migrates_old_formats_preserves_capacity_and_rejects_bad_setti
             assert_eq!(bytes.len(), legacy.len());
             assert_eq!(loaded.save_decode(&bytes), Some([123, 999, 1]));
             assert_eq!((loaded.sfx_volume, loaded.sfx_muted), (volume, muted));
-            assert_eq!(loaded.patterns[0].cells[0], 7);
+            assert_eq!(loaded.patterns[0].pattern_get_cell(0), 7);
         }
     }
     assert_eq!(loaded.save_decode(&legacy), Some([123, 999, 1]));
@@ -2399,7 +2694,7 @@ fn effects_archive_migrates_old_formats_preserves_capacity_and_rejects_bad_setti
         bad[12..16].copy_from_slice(&invalid_flags.to_le_bytes());
         assert!(loaded.save_decode(&bad).is_none());
         assert_eq!((loaded.sfx_volume, loaded.sfx_muted), (17, true));
-        assert_eq!(loaded.patterns[0].cells[0], 7);
+        assert_eq!(loaded.patterns[0].pattern_get_cell(0), 7);
     }
     for end in 0..valid.len() {
         assert!(loaded.save_decode(&valid[..end]).is_none());
@@ -2409,7 +2704,7 @@ fn effects_archive_migrates_old_formats_preserves_capacity_and_rejects_bad_setti
     future[3] = b'5';
     assert!(loaded.save_decode(&future).is_none());
     let mut full = editor::Editor::new();
-    full.name = "x".repeat(editor::SAVE_BYTES - 224);
+    full.name = editor::Name::from_string("x".repeat(editor::SAVE_BYTES - 224));
     full.cells[0] = 6;
     assert!(full.editor_store());
     let old = full.save_encode(1, 2, false);
@@ -2424,6 +2719,10 @@ fn effects_archive_migrates_old_formats_preserves_capacity_and_rejects_bad_setti
     assert_eq!(audio.len(), editor::SAVE_BYTES);
     assert_eq!(loaded.save_decode(&audio), Some([1, 2, 0]));
     assert_eq!((loaded.music_volume, loaded.music_muted), (128, false));
+    let lent = full.save_take_encode_audio_settings(1, 2, false, [0, 128], [true, false]);
+    assert_eq!(lent, audio);
+    full.save_restore_encoded(lent);
+    assert_eq!(loaded.save_decode_owned(audio), Some([1, 2, 0]));
 }
 
 #[test]
@@ -2481,7 +2780,26 @@ fn original_portal_stages_preserve_every_ordered_point_color_and_frame_precision
         assert_eq!(dots.len(), case["point_count"].as_u64().unwrap() as usize);
         assert_eq!(trace, expected, "portal frame {frame} timer {timer}");
         assert_eq!(gamepkg_digest(&trace), case["trace_sha256"]);
-        if let Some(image) = physics::effect_image(&dots) {
+        let original_image = physics::effect_image(&dots);
+        let direct_image = physics::portal_image(frame, timer);
+        assert_eq!(
+            original_image.as_ref().map(|i| (
+                i.left,
+                i.top,
+                i.width,
+                i.height,
+                gamepkg_digest(&i.pixels)
+            )),
+            direct_image.as_ref().map(|i| (
+                i.left,
+                i.top,
+                i.width,
+                i.height,
+                gamepkg_digest(&i.pixels)
+            )),
+            "direct portal must preserve every original compositor byte at {frame}/{timer}"
+        );
+        if let Some(image) = direct_image {
             assert_eq!(
                 serde_json::json!([
                     image.left,
@@ -2521,6 +2839,22 @@ fn original_portal_stages_preserve_every_ordered_point_color_and_frame_precision
     println!("portal software SDL worst grouping delta {maximum}");
 }
 
+#[test]
+fn direct_portal_preserves_all_glow_rounding_boundaries_without_point_storage() {
+    for timer in 151..=271 {
+        let old = physics::effect_image(&physics::portal_points(0, timer));
+        let direct = physics::portal_image(0, timer);
+        assert_eq!(
+            old.as_ref()
+                .map(|i| (i.left, i.top, i.width, i.height, gamepkg_digest(&i.pixels))),
+            direct
+                .as_ref()
+                .map(|i| (i.left, i.top, i.width, i.height, gamepkg_digest(&i.pixels))),
+            "portal timer {timer}"
+        );
+    }
+}
+
 fn gamepkg_digest(bytes: &[u8]) -> String {
     use sha2::Digest;
     hex::encode(sha2::Sha256::digest(bytes))
@@ -2547,7 +2881,9 @@ fn original_campaign_background_points_colors_and_release_overflow_match() {
         flate2::read::ZlibDecoder::new(compressed.as_slice())
             .read_to_end(&mut original)
             .unwrap();
-        assert_eq!(actual, original, "level {level} frame {frame}");
+        assert!(actual == original,
+            "level {level} frame {frame}: {} actual bytes, {} original bytes, first differing byte {:?}",
+            actual.len(), original.len(), actual.iter().zip(&original).position(|(a,b)| a != b));
         assert_eq!(gamepkg_digest(&actual), case["trace_sha256"]);
         assert_eq!(
             scene.points.len(),
@@ -3423,10 +3759,51 @@ fn editor_static_labels_match_complete_original_sdl_ttf_rasters() {
         )
         .unwrap();
         assert_eq!(actual.pixels, expected, "{}", case["text"]);
+        let width = actual.width as usize;
+        assert_eq!(editor_font::editor_width(index as u32), width);
+        for column in (0..width).step_by(256) {
+            let left = column.saturating_sub(1);
+            let right = (column + 257).min(width);
+            let tile = editor_font::editor_raster_region(index as u32, left, right);
+            assert_eq!(tile.width as usize, right - left);
+            assert_eq!(tile.pixels.capacity(), (right - left) * 31 * 4);
+            for row in 0..31 {
+                assert_eq!(
+                    &tile.pixels[row * (right - left) * 4..(row + 1) * (right - left) * 4],
+                    &expected[(row * width + left) * 4..(row * width + right) * 4]
+                );
+            }
+        }
     }
     let invalid = editor_font::editor_raster(u32::MAX);
     assert_eq!(invalid.width, 0);
     assert!(invalid.pixels.is_empty());
+}
+
+#[test]
+fn ascii_viewport_layout_keeps_visible_kerning_ligatures_and_pixels_without_full_text_storage() {
+    for unit in ["x", "AVATAR ffi ffl office ", " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"] {
+        let content=unit.repeat(600);
+        let visible=dynamic_font::viewport_label_parts(&["Name: ",&content," (N to edit)"],1270);
+        assert!(visible.capacity()<16384,"font-derived visible prefix retained offscreen text");
+        let full=format!("Name: {content} (N to edit)");
+        let borrowed=dynamic_font::viewport_label_slice(&full,1270);
+        assert_eq!(borrowed.as_ptr(),full.as_ptr());
+        assert_eq!(borrowed,dynamic_font::viewport_label_parts(&[&full],1270));
+        let expected=dynamic_font::unicode_layout(&full).unwrap();
+        let actual=dynamic_font::unicode_layout(&visible).unwrap();
+        assert_eq!(actual.height,expected.height);
+        for left in [0,256,512,768,1024] {
+            assert_eq!(dynamic_font::unicode_raster_slice(&actual,[200,200,200],left,256),
+                dynamic_font::unicode_raster_slice(&expected,[200,200,200],left,256));
+        }
+    }
+    let unicode = "A\u{301}\u{fe0f}\u{327}".repeat(100);
+    assert_eq!(dynamic_font::viewport_label_slice(&unicode, 1270), unicode);
+    assert_eq!(
+        dynamic_font::viewport_label_parts(&["Name: ", &unicode, "!"], 1270),
+        format!("Name: {unicode}!")
+    );
 }
 #[test]
 fn editor_toolbar_hover_uses_original_integer_boxes_and_nonmotion_retention() {
@@ -3454,6 +3831,83 @@ fn editor_toolbar_hover_uses_original_integer_boxes_and_nonmotion_retention() {
 mod dynamic_font;
 #[path = "../ports/arkanoo/source/src/dynamic_font_data.rs"]
 mod dynamic_font_data;
+#[path = "fixtures/arkanoo_unicode_raster_eager.rs"]
+#[allow(clippy::slow_vector_initialization)]
+mod unicode_raster_eager_reference;
+
+#[test]
+fn indexed_unicode_tiles_preserve_eager_pixels_across_group_edges() {
+    for sample in [
+        "jAV fi ",
+        "A\u{301}j",
+        "S\u{315}\u{327}",
+        "A\u{327}\u{328}",
+        "\u{301}\u{327}A",
+        "A\u{fe0f}\u{327}",
+        "אבג ج ",
+        "\u{2000}\u{34f}fij",
+    ] {
+        for count in [1, 63, 64, 65, 129] {
+            let text = sample.repeat(count);
+            let actual = dynamic_font::unicode_layout(&text).unwrap();
+            let expected = unicode_raster_eager_reference::unicode_layout(&text).unwrap();
+            assert_eq!(
+                (actual.width, actual.height),
+                (expected.width, expected.height)
+            );
+            for left in [
+                -257,
+                0,
+                1,
+                255,
+                256,
+                actual.width / 2,
+                actual.width - 1,
+                actual.width,
+            ] {
+                for width in [0, 1, 31, 256, 1282] {
+                    assert_eq!(
+                        dynamic_font::unicode_raster_slice(&actual, [29, 87, 201], left, width),
+                        unicode_raster_eager_reference::unicode_raster_slice(
+                            &expected,
+                            [29, 87, 201],
+                            left,
+                            width
+                        ),
+                        "sample={sample:?} count={count} left={left} width={width}",
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn maximum_centered_unicode_name_preserves_full_layout_and_viewport_pixels() {
+    let text = format!("{}x", "A\u{301}".repeat((1048576 - 225) / 3));
+    let actual = dynamic_font::unicode_layout(&text).unwrap();
+    let expected = unicode_raster_eager_reference::unicode_layout(&text).unwrap();
+    assert_eq!(
+        (actual.width, actual.height),
+        (expected.width, expected.height)
+    );
+    for left in [
+        0,
+        actual.width / 2 - 640,
+        actual.width / 2,
+        actual.width - 256,
+    ] {
+        assert_eq!(
+            dynamic_font::unicode_raster_slice(&actual, [200, 200, 200], left, 256),
+            unicode_raster_eager_reference::unicode_raster_slice(
+                &expected,
+                [200, 200, 200],
+                left,
+                256
+            ),
+        );
+    }
+}
 #[test]
 fn dynamic_unicode_font_matches_every_recorded_original_sdl_text_surface() {
     let fixture: serde_json::Value =
@@ -3887,7 +4341,7 @@ fn recorded_effects_preserve_every_original_sdl_sample_and_full_stereo_duration(
 
 #[test]
 fn recording_headers_reject_truncation_wrong_formats_sizes_and_overflow() {
-    let original = include_bytes!("../ports/arkanoo/assets/audio/life-loss.wav");
+    let original = include_bytes!("fixtures/arkanoo-legacy-effects/life-loss.wav");
     for length in 0..44 {
         assert!(audio::recording_length(&original[..length]).is_none());
     }
@@ -3919,7 +4373,7 @@ fn recording_headers_reject_truncation_wrong_formats_sizes_and_overflow() {
 
 #[test]
 fn truncated_and_trailing_recordings_fail_atomically_and_cache_does_not_repeat_reads() {
-    let original = include_bytes!("../ports/arkanoo/assets/audio/life-loss.wav");
+    let original = include_bytes!("fixtures/arkanoo-legacy-effects/life-loss.wav");
     for length in [0usize, 20, 43, 44, 65580, original.len() - 1] {
         gamepkg::recording_override(Some(original[..length].to_vec()));
         let mut mixer = audio::Mixer::new();
@@ -3982,4 +4436,1016 @@ fn original_project_button_requests_the_declared_homepage_only_from_main_menu() 
     game.source_input(1, 600.0, 405.0, 0);
     assert_eq!(game.menu.hover, 9);
     assert!(!game.homepage_requested);
+}
+
+#[path = "fixtures/arkanoo_unicode_shape_eager.rs"]
+mod unicode_shape_eager_reference;
+
+#[test]
+fn unicode_cluster_lookahead_preserves_eager_normalization_and_variation_behavior() {
+    let marks = [
+        "",
+        "\u{301}",
+        "\u{327}\u{301}",
+        "\u{301}\u{327}",
+        "\u{fe0f}",
+        "\u{301}\u{fe0f}\u{327}",
+        "\u{34f}\u{327}\u{301}",
+        "\u{200c}",
+    ];
+    for base in ["A", "é", "Ω", "Ж", "漢", "😀", "fi", "\u{301}", " "] {
+        for first in marks {
+            for second in marks {
+                let content = format!("{base}{first}AVfi{base}{second}");
+                assert_eq!(
+                    dynamic_font::unicode_shape(&content),
+                    unicode_shape_eager_reference::unicode_shape(&content),
+                    "{content:?}"
+                );
+            }
+        }
+    }
+    for suffix in ["", "\u{fe0f}", "\u{e0100}"] {
+        let content = format!("A{}{suffix}Z", "\u{301}".repeat(32768));
+        assert_eq!(
+            dynamic_font::unicode_shape(&content),
+            unicode_shape_eager_reference::unicode_shape(&content)
+        );
+    }
+    for content in ["", "\0", "A\u{301}\0Z"] {
+        assert_eq!(
+            dynamic_font::unicode_shape(content),
+            unicode_shape_eager_reference::unicode_shape(content)
+        );
+    }
+}
+
+#[test]
+fn unicode_base_viewport_preserves_full_layout_pixels_and_utf8_segments() {
+    for unit in [
+        "Aé",
+        "café 🕹",
+        "ЖΩ漢😀",
+        "AVATAR ffi éß office ",
+        "ÀÇÉÖñøЖß",
+    ] {
+        let content = unit.repeat(1200);
+        let full = format!("Name: {content} (N to edit)");
+        let visible =
+            dynamic_font::viewport_label_parts(&["Name: ", &content, " (N to edit)"], 1270);
+        assert!(
+            visible.len() < full.len() / 2,
+            "not a bounded font-derived prefix: {unit}"
+        );
+        let actual = dynamic_font::unicode_layout(&visible).unwrap();
+        let expected = dynamic_font::unicode_layout(&full).unwrap();
+        assert_eq!(actual.height, expected.height, "{unit}");
+        for left in [0, 256, 512, 768, 1024] {
+            assert_eq!(
+                dynamic_font::unicode_raster_slice(&actual, [200, 200, 200], left, 256),
+                dynamic_font::unicode_raster_slice(&expected, [200, 200, 200], left, 256),
+                "{unit} at {left}"
+            );
+        }
+        let borrowed = dynamic_font::viewport_label_slice(&full, 1270);
+        assert_eq!(borrowed, visible);
+        assert_eq!(borrowed.as_ptr(), full.as_ptr());
+        for (boundary, _) in unit.char_indices() {
+            let parts = [&unit[..boundary], &unit[boundary..], &content];
+            let joined = parts.concat();
+            assert_eq!(
+                dynamic_font::viewport_label_parts(&parts, 1270),
+                dynamic_font::viewport_label_slice(&joined, 1270)
+            );
+        }
+    }
+    for content in ["A\u{200c}", "A\0Z"] {
+        let full = content.repeat(2000);
+        assert_eq!(dynamic_font::viewport_label_slice(&full, 1270), full);
+    }
+}
+
+#[test]
+fn unicode_viewport_matches_full_rasters_across_the_pinned_scalar_tables() {
+    let mut optimized = 0;
+    for (data, stride) in [
+        (dynamic_font_data::unicode_cmap(), 8),
+        (dynamic_font_data::unicode_decomp(), 12),
+    ] {
+        for entry in data.chunks_exact(stride) {
+            let cp = u32::from_le_bytes(entry[..4].try_into().unwrap());
+            let Some(character) = char::from_u32(cp) else {
+                continue;
+            };
+            let scalar = character.to_string();
+            assert_eq!(
+                dynamic_font::unicode_shape(&scalar),
+                unicode_shape_eager_reference::unicode_shape(&scalar),
+                "U+{cp:04X}"
+            );
+            let content = scalar.repeat(800);
+            let prefix = dynamic_font::viewport_label_slice(&content, 1270);
+            if prefix.len() == content.len() {
+                continue;
+            }
+            optimized += 1;
+            let actual = dynamic_font::unicode_layout(prefix).unwrap();
+            let expected = dynamic_font::unicode_layout(&content).unwrap();
+            assert_eq!(actual.height, expected.height, "U+{cp:04X}");
+            for left in [0, 256, 512, 768, 1024] {
+                assert_eq!(
+                    dynamic_font::unicode_raster_slice(&actual, [200, 200, 200], left, 256),
+                    dynamic_font::unicode_raster_slice(&expected, [200, 200, 200], left, 256),
+                    "U+{cp:04X} at {left}"
+                );
+            }
+        }
+    }
+    assert!(optimized > 500, "font-wide viewport path was not exercised");
+    println!("Exact viewport rasters: {optimized} scalar-table entries");
+}
+
+#[test]
+fn composed_cluster_viewport_keeps_pixels_and_split_mark_boundaries() {
+    for unit in [
+        "A\u{301}",
+        "e\u{301}",
+        "A\u{30a}",
+        "O\u{308}",
+        "ffi A\u{301} AV e\u{301}",
+    ] {
+        let content = unit.repeat(1800);
+        let full = format!("Name: {content} (N to edit)");
+        let visible =
+            dynamic_font::viewport_label_parts(&["Name: ", &content, " (N to edit)"], 1270);
+        assert!(
+            visible.len() < full.len() / 2,
+            "cluster prefix not bounded: {unit:?}"
+        );
+        let actual = dynamic_font::unicode_layout(&visible).unwrap();
+        let expected = dynamic_font::unicode_layout(&full).unwrap();
+        assert_eq!(actual.height, expected.height);
+        for left in [0, 256, 512, 768, 1024] {
+            assert_eq!(
+                dynamic_font::unicode_raster_slice(&actual, [200, 200, 200], left, 256),
+                dynamic_font::unicode_raster_slice(&expected, [200, 200, 200], left, 256),
+                "{unit:?} at {left}"
+            );
+        }
+        for (boundary, _) in unit.char_indices() {
+            let parts = [&unit[..boundary], &unit[boundary..], &content];
+            let joined = parts.concat();
+            assert_eq!(
+                dynamic_font::viewport_label_parts(&parts, 1270),
+                dynamic_font::viewport_label_slice(&joined, 1270),
+                "split {unit:?} at {boundary}"
+            );
+        }
+    }
+}
+
+#[test]
+fn viewport_compositions_match_full_font_rasters_for_pairs_and_chains() {
+    let rules = dynamic_font_data::unicode_compose();
+    let mut checked = 0;
+    for entry in rules.as_chunks::<12>().0 {
+        let first = u32::from_le_bytes(entry[..4].try_into().unwrap());
+        let second = u32::from_le_bytes(entry[4..8].try_into().unwrap());
+        let result = u32::from_le_bytes(entry[8..12].try_into().unwrap());
+        let Some(base_character) = char::from_u32(first) else {
+            continue;
+        };
+        let Some(mark_character) = char::from_u32(second) else {
+            continue;
+        };
+        let pair = format!("{base_character}{mark_character}");
+        let mut units = vec![(pair, result)];
+        let mut cursor = 0;
+        while cursor < units.len() {
+            let (prefix, current) = units[cursor].clone();
+            for following in rules.as_chunks::<12>().0 {
+                if u32::from_le_bytes(following[..4].try_into().unwrap()) == current {
+                    let next = u32::from_le_bytes(following[4..8].try_into().unwrap());
+                    let combined = u32::from_le_bytes(following[8..12].try_into().unwrap());
+                    if let Some(character) = char::from_u32(next) {
+                        units.push((format!("{prefix}{character}"), combined));
+                    }
+                }
+            }
+            cursor += 1;
+        }
+        for (unit, _) in units {
+            assert_eq!(
+                dynamic_font::unicode_shape(&unit),
+                unicode_shape_eager_reference::unicode_shape(&unit),
+                "{unit:?}"
+            );
+            let content = unit.repeat(800);
+            let visible = dynamic_font::viewport_label_slice(&content, 1270);
+            if visible.len() == content.len() {
+                continue;
+            }
+            checked += 1;
+            let actual = dynamic_font::unicode_layout(visible).unwrap();
+            let expected = dynamic_font::unicode_layout(&content).unwrap();
+            assert_eq!(actual.height, expected.height, "{unit:?}");
+            for left in [0, 256, 512, 768, 1024] {
+                assert_eq!(
+                    dynamic_font::unicode_raster_slice(&actual, [200, 200, 200], left, 256),
+                    dynamic_font::unicode_raster_slice(&expected, [200, 200, 200], left, 256),
+                    "{unit:?} at {left}"
+                );
+            }
+        }
+    }
+    assert!(checked > 100, "font composition paths were not exercised");
+    println!("Exact composition viewport rasters: {checked} pairs/chains");
+}
+
+#[test]
+fn selector_viewport_preserves_raw_normalization_ligatures_and_exact_pixels() {
+    let mut checked = 0;
+    for (start, end) in [
+        (0x180b, 0x180d),
+        (0x180f, 0x180f),
+        (0xfe00, 0xfe0f),
+        (0xe0100, 0xe01ef),
+    ] {
+        for cp in start..=end {
+            let selector = char::from_u32(cp).unwrap();
+            for unit in [
+                format!("A{selector}"),
+                format!("é{selector}"),
+                format!("f{selector}f{selector}i{selector}"),
+                format!("A\u{301}{selector}"),
+                format!("A{selector}{selector}V"),
+            ] {
+                assert_eq!(
+                    dynamic_font::unicode_shape(&unit),
+                    unicode_shape_eager_reference::unicode_shape(&unit),
+                    "U+{cp:04X} {unit:?}"
+                );
+                let full = unit.repeat(800);
+                let visible = dynamic_font::viewport_label_slice(&full, 1270);
+                if visible.len() == full.len() {
+                    continue;
+                }
+                checked += 1;
+                let actual = dynamic_font::unicode_layout(visible).unwrap();
+                let expected = dynamic_font::unicode_layout(&full).unwrap();
+                assert_eq!(actual.height, expected.height, "U+{cp:04X}");
+                for left in [0, 256, 512, 768, 1024] {
+                    assert_eq!(
+                        dynamic_font::unicode_raster_slice(&actual, [200, 200, 200], left, 256),
+                        dynamic_font::unicode_raster_slice(&expected, [200, 200, 200], left, 256),
+                        "U+{cp:04X} {unit:?} at {left}"
+                    );
+                }
+                for (boundary, _) in unit.char_indices() {
+                    let parts = [&unit[..boundary], &unit[boundary..], &full];
+                    let joined = parts.concat();
+                    let display = dynamic_font::compact_selector_runs(&[&joined])
+                        .unwrap_or_else(|| joined.clone());
+                    assert_eq!(
+                        dynamic_font::viewport_label_parts(&parts, 1270),
+                        dynamic_font::viewport_label_slice(&display, 1270)
+                    );
+                }
+            }
+        }
+    }
+    assert!(checked >= 1000, "selector font proofs were not exercised");
+    println!("Exact selector viewport cases: {checked}");
+    for unit in [
+        "\u{fe0f}A",
+        "A\u{fe0f}\u{301}",
+        "e\u{301}\u{fe0f}\u{327}",
+        "\u{2000}\u{fe0f}",
+    ] {
+        let full = unit.repeat(800);
+        assert_eq!(
+            dynamic_font::unicode_shape(&full),
+            unicode_shape_eager_reference::unicode_shape(&full)
+        );
+        let prefix = dynamic_font::viewport_label_slice(&full, 1270);
+        let expected = dynamic_font::unicode_layout(&full).unwrap();
+        let actual = dynamic_font::unicode_layout(prefix).unwrap();
+        assert_eq!(actual.height, expected.height, "selector context {unit:?}");
+        for left in [0, 256, 512, 768, 1024] {
+            assert_eq!(
+                dynamic_font::unicode_raster_slice(&actual, [200, 200, 200], left, 256),
+                dynamic_font::unicode_raster_slice(&expected, [200, 200, 200], left, 256),
+                "selector context {unit:?} at {left}"
+            );
+        }
+    }
+}
+
+#[test]
+fn selector_run_compaction_keeps_normalization_metrics_pixels_and_segment_boundaries() {
+    let zero = (dynamic_font_data::UNICODE_GLYPH_COUNT - 1) as u32;
+    let mut checked = 0;
+    for (start, end) in [
+        (0x180b, 0x180d),
+        (0x180f, 0x180f),
+        (0xfe00, 0xfe0f),
+        (0xe0100, 0xe01ef),
+    ] {
+        for cp in start..=end {
+            let selector = char::from_u32(cp).unwrap();
+            let run = selector.to_string().repeat(12);
+            for content in [
+                format!("A{run}V"),
+                format!("é{run}V"),
+                format!("A\u{301}{run}V"),
+                format!("A{run}\u{301}V"),
+                format!("e\u{301}{run}\u{327}V"),
+                format!("f{run}f{run}i"),
+                format!("{run}A"),
+                format!("A{run}\u{34f}\u{327}\u{301}V"),
+                format!("\u{2000}{run}V"),
+            ] {
+                let Some(compacted) = dynamic_font::compact_selector_runs(&[&content]) else {
+                    continue;
+                };
+                checked += 1;
+                let expected_points =
+                    unicode_shape_eager_reference::unicode_shape(&content).unwrap();
+                let actual_points = dynamic_font::unicode_shape(&compacted).unwrap();
+                assert_eq!(
+                    actual_points
+                        .into_iter()
+                        .filter(|point| *point != zero)
+                        .collect::<Vec<_>>(),
+                    expected_points
+                        .into_iter()
+                        .filter(|point| *point != zero)
+                        .collect::<Vec<_>>(),
+                    "U+{cp:04X} {content:?}"
+                );
+                let actual = dynamic_font::unicode_layout(&compacted).unwrap();
+                let expected = dynamic_font::unicode_layout(&content).unwrap();
+                assert_eq!(
+                    (actual.width, actual.height),
+                    (expected.width, expected.height),
+                    "U+{cp:04X}"
+                );
+                for left in [0, 256, 512, 768, 1024] {
+                    assert_eq!(
+                        dynamic_font::unicode_raster_slice(&actual, [200, 200, 200], left, 256),
+                        dynamic_font::unicode_raster_slice(&expected, [200, 200, 200], left, 256),
+                        "U+{cp:04X} at {left}"
+                    );
+                }
+                for (boundary, _) in content.char_indices() {
+                    assert_eq!(
+                        dynamic_font::compact_selector_runs(&[
+                            &content[..boundary],
+                            &content[boundary..]
+                        ]),
+                        Some(compacted.clone())
+                    );
+                }
+            }
+        }
+    }
+    assert!(checked >= 2000);
+    println!("Exact selector-run compaction contexts: {checked}");
+    assert!(dynamic_font::compact_selector_runs(&["plain text"]).is_none());
+    assert_eq!(
+        dynamic_font::compact_selector_runs(&["A\u{fe0e}\u{fe0f}\u{fe0e}"]).as_deref(),
+        Some("A\u{fe0e}")
+    );
+    let full = format!("A{}x", "\u{fe0f}".repeat(349450));
+    let compacted = dynamic_font::compact_selector_runs(&[&full]).unwrap();
+    assert_eq!(compacted, "A\u{fe0f}x");
+    assert_eq!(compacted.capacity(), 5);
+    assert_eq!(
+        dynamic_font::viewport_label_parts(&["Name: ", &full, " (N to edit)"], 1270),
+        "Name: A\u{fe0f}x (N to edit)"
+    );
+}
+
+#[test]
+fn mixed_selector_runs_preserve_original_shaping_and_pixels() {
+    let zero = (dynamic_font_data::UNICODE_GLYPH_COUNT - 1) as u32;
+    let mut checked = 0;
+    for first in ['\u{fe0e}', '\u{fe0f}', '\u{e0100}', '\u{e01ef}'] {
+        for last in ['\u{fe00}', '\u{fe0e}', '\u{fe0f}', '\u{e0101}'] {
+            let run = format!("{first}{last}").repeat(12);
+            for (prefix, suffix) in [
+                ("A", "V"),
+                ("e\u{301}", "\u{327}V"),
+                ("f", "fi"),
+                ("", "A"),
+                ("\u{2000}", "\u{34f}\u{327}\u{301}V"),
+            ] {
+                let content = format!("{prefix}{run}{suffix}");
+                let compacted = dynamic_font::compact_selector_runs(&[&content]).unwrap();
+                let expected = unicode_shape_eager_reference::unicode_shape(&content).unwrap();
+                let actual = dynamic_font::unicode_shape(&compacted).unwrap();
+                assert_eq!(
+                    actual
+                        .into_iter()
+                        .filter(|p| *p != zero)
+                        .collect::<Vec<_>>(),
+                    expected
+                        .into_iter()
+                        .filter(|p| *p != zero)
+                        .collect::<Vec<_>>(),
+                    "{content:?}"
+                );
+                let actual = dynamic_font::unicode_layout(&compacted).unwrap();
+                let expected = dynamic_font::unicode_layout(&content).unwrap();
+                assert_eq!(
+                    (actual.width, actual.height),
+                    (expected.width, expected.height)
+                );
+                for left in [0, 256, 512, 768, 1024] {
+                    assert_eq!(
+                        dynamic_font::unicode_raster_slice(&actual, [200, 200, 200], left, 256),
+                        dynamic_font::unicode_raster_slice(&expected, [200, 200, 200], left, 256)
+                    );
+                }
+                for (boundary, _) in content.char_indices() {
+                    assert_eq!(
+                        dynamic_font::compact_selector_runs(&[
+                            &content[..boundary],
+                            &content[boundary..]
+                        ]),
+                        Some(compacted.clone())
+                    );
+                }
+                checked += 1;
+            }
+        }
+    }
+    assert_eq!(checked, 80);
+}
+
+#[test]
+fn mixed_selector_compaction_keeps_exact_allocation_and_final_starter() {
+    let full = format!("A{}x", "\u{fe0e}\u{fe0f}".repeat(174725));
+    let compacted = dynamic_font::compact_selector_runs(&[&full]).unwrap();
+    assert_eq!(compacted, "A\u{fe0f}x");
+    assert_eq!(compacted.capacity(), 5);
+    assert_eq!(
+        dynamic_font::viewport_label_parts(&["Name: ", &full, " (N to edit)"], 1270),
+        "Name: A\u{fe0f}x (N to edit)"
+    );
+    // Removing intermediate selectors must not remove a composition starter
+    // capable of consuming its successor in the pinned normalization table.
+    for rule in dynamic_font_data::unicode_compose().as_chunks::<12>().0 {
+        for at in [0, 4] {
+            let cp = u32::from_le_bytes(rule[at..at + 4].try_into().unwrap());
+            assert!(
+                !((0x180b..=0x180d).contains(&cp)
+                    || cp == 0x180f
+                    || (0xfe00..=0xfe0f).contains(&cp)
+                    || (0xe0100..=0xe01ef).contains(&cp))
+            );
+        }
+    }
+}
+
+#[test]
+fn unconsumed_cluster_viewport_preserves_original_pixels() {
+    for unit in [
+        "A\u{327}",
+        "A\u{301}\u{327}",
+        "A\u{327}\u{301}",
+        "e\u{327}\u{301}",
+        "f\u{327}fi",
+        "A\u{327}V",
+        "A\u{327}\u{327}",
+        "A\u{301}\u{301}",
+    ] {
+        let content = unit.repeat(2000);
+        let visible =
+            dynamic_font::viewport_label_parts(&["Name: ", &content, " (N to edit)"], 1270);
+        assert!(
+            visible.len() < content.len(),
+            "{unit:?} still retained offscreen text"
+        );
+        let full = format!("Name: {content} (N to edit)");
+        let expected = dynamic_font::unicode_layout(&full).unwrap();
+        let actual = dynamic_font::unicode_layout(&visible).unwrap();
+        assert_eq!(actual.height, expected.height, "{unit:?}");
+        for left in [0, 256, 512, 768, 1024] {
+            assert_eq!(
+                dynamic_font::unicode_raster_slice(&actual, [200, 200, 200], left, 256),
+                dynamic_font::unicode_raster_slice(&expected, [200, 200, 200], left, 256),
+                "{unit:?} at {left}"
+            );
+        }
+    }
+}
+
+#[test]
+fn cluster_viewport_matches_every_pinned_combining_class_and_segment_boundary() {
+    let mut checked = 0;
+    let mut optimized = 0;
+    for entry in dynamic_font_data::unicode_classes().as_chunks::<8>().0 {
+        let cp = u32::from_le_bytes(entry[..4].try_into().unwrap());
+        let mark = char::from_u32(cp).unwrap();
+        for unit in [format!("A{mark}\u{301}V"), format!("f\u{301}{mark}fi")] {
+            let content = unit.repeat(2000);
+            assert_eq!(
+                dynamic_font::unicode_shape(&content),
+                unicode_shape_eager_reference::unicode_shape(&content),
+                "U+{cp:04X}"
+            );
+            let prefix = dynamic_font::viewport_label_slice(&content, 1270);
+            checked += 1;
+            if prefix.len() == content.len() {
+                continue;
+            }
+            optimized += 1;
+            let expected = dynamic_font::unicode_layout(&content).unwrap();
+            let actual = dynamic_font::unicode_layout(prefix).unwrap();
+            assert_eq!(actual.height, expected.height, "U+{cp:04X}");
+            for left in [0, 256, 512, 768, 1024] {
+                assert_eq!(
+                    dynamic_font::unicode_raster_slice(&actual, [200, 200, 200], left, 256),
+                    dynamic_font::unicode_raster_slice(&expected, [200, 200, 200], left, 256),
+                    "U+{cp:04X} {unit:?} at {left}"
+                );
+            }
+            for (boundary, _) in unit.char_indices() {
+                let parts = [&unit[..boundary], &unit[boundary..], &content];
+                let joined = parts.concat();
+                assert_eq!(
+                    dynamic_font::viewport_label_parts(&parts, 1270),
+                    dynamic_font::viewport_label_slice(&joined, 1270),
+                    "U+{cp:04X} split {boundary}"
+                );
+            }
+        }
+    }
+    assert_eq!(checked, 1844);
+    assert_eq!(optimized, 1840);
+    println!("Complete combining-class contexts: {checked}; exact optimized raster contexts: {optimized}");
+}
+
+#[test]
+fn selector_mark_cluster_viewport_retains_raw_mode_and_exact_pixels() {
+    let mut checked = 0;
+    for selector in ['\u{fe0e}', '\u{fe0f}', '\u{e0100}', '\u{e01ef}'] {
+        for unit in [
+            format!("A{selector}\u{301}"),
+            format!("A\u{301}{selector}\u{327}"),
+            format!("A\u{327}{selector}\u{301}"),
+            format!("f{selector}\u{301}fi"),
+            format!("é{selector}\u{327}V"),
+        ] {
+            let content = unit.repeat(4000);
+            assert_eq!(
+                dynamic_font::unicode_shape(&content),
+                unicode_shape_eager_reference::unicode_shape(&content)
+            );
+            let prefix = dynamic_font::viewport_label_slice(&content, 1270);
+            assert!(
+                prefix.len() < content.len(),
+                "{unit:?} retains full shaping"
+            );
+            let expected = dynamic_font::unicode_layout(&content).unwrap();
+            let actual = dynamic_font::unicode_layout(prefix).unwrap();
+            assert_eq!(actual.height, expected.height);
+            for left in [0, 256, 512, 768, 1024] {
+                assert_eq!(
+                    dynamic_font::unicode_raster_slice(&actual, [200, 200, 200], left, 256),
+                    dynamic_font::unicode_raster_slice(&expected, [200, 200, 200], left, 256),
+                    "{unit:?} at {left}"
+                );
+            }
+            for (boundary, _) in unit.char_indices() {
+                let parts = [&unit[..boundary], &unit[boundary..], &content];
+                let joined = parts.concat();
+                assert_eq!(
+                    dynamic_font::viewport_label_parts(&parts, 1270),
+                    dynamic_font::viewport_label_slice(&joined, 1270),
+                    "{unit:?} at {boundary}"
+                );
+            }
+            checked += 1;
+        }
+    }
+    assert_eq!(checked, 20);
+}
+
+#[test]
+fn giant_missing_mark_run_preserves_full_shaping_pixels_and_saved_source() {
+    for mark in ['\u{327}', '\u{315}', '\u{35c}'] {
+        for base in ['A', 'é', 'f'] {
+            let content = format!("{base}{}V", mark.to_string().repeat(20000));
+            let original = content.clone();
+            assert_eq!(
+                dynamic_font::unicode_shape(&content),
+                unicode_shape_eager_reference::unicode_shape(&content)
+            );
+            let prefix = dynamic_font::viewport_label_slice(&content, 1270);
+            assert!(prefix.len() < 16384, "{base} {mark:?} retains full cluster");
+            let expected = dynamic_font::unicode_layout(&content).unwrap();
+            let actual = dynamic_font::unicode_layout(prefix).unwrap();
+            assert_eq!(actual.height, expected.height);
+            for left in [0, 256, 512, 768, 1024] {
+                assert_eq!(
+                    dynamic_font::unicode_raster_slice(&actual, [200, 200, 200], left, 256),
+                    dynamic_font::unicode_raster_slice(&expected, [200, 200, 200], left, 256)
+                );
+            }
+            for boundary in [
+                0,
+                base.len_utf8(),
+                base.len_utf8() + mark.len_utf8(),
+                content.len() - 1,
+                content.len(),
+            ] {
+                assert_eq!(
+                    dynamic_font::viewport_label_parts(
+                        &[&content[..boundary], &content[boundary..]],
+                        1270
+                    ),
+                    prefix
+                );
+            }
+            assert_eq!(content, original);
+        }
+    }
+}
+
+#[test]
+fn mixed_giant_missing_mark_classes_preserve_original_rasters_and_boundaries() {
+    for (base, run) in [
+        ("A", "\u{327}\u{328}"),
+        ("A", "\u{315}\u{31a}"),
+        ("f", "\u{302}\u{304}"),
+        ("é", "\u{316}\u{317}\u{318}"),
+    ] {
+        let content = format!("{base}{}V", run.repeat(10000));
+        assert_eq!(
+            dynamic_font::unicode_shape(&content),
+            unicode_shape_eager_reference::unicode_shape(&content)
+        );
+        let prefix = dynamic_font::viewport_label_slice(&content, 1270);
+        assert!(prefix.len() < 16384, "{base} {run:?} retained full cluster");
+        let expected = dynamic_font::unicode_layout(&content).unwrap();
+        let actual = dynamic_font::unicode_layout(prefix).unwrap();
+        assert_eq!(actual.height, expected.height);
+        for left in [0, 256, 512, 768, 1024] {
+            assert_eq!(
+                dynamic_font::unicode_raster_slice(&actual, [200, 200, 200], left, 256),
+                dynamic_font::unicode_raster_slice(&expected, [200, 200, 200], left, 256)
+            );
+        }
+        for (split, _) in run.char_indices() {
+            let boundary = base.len() + split;
+            assert_eq!(
+                dynamic_font::viewport_label_parts(
+                    &[&content[..boundary], &content[boundary..]],
+                    1270
+                ),
+                prefix
+            );
+        }
+    }
+    for run in ["\u{327}\u{301}", "\u{327}\u{fe0f}"] {
+        let full = format!("A{}V", run.repeat(10000));
+        assert_eq!(
+            dynamic_font::viewport_label_slice(&full, 1270),
+            full,
+            "unproven mixed class must keep full shaping"
+        );
+    }
+}
+
+#[test]
+fn reordered_giant_missing_mark_runs_preserve_original_pixels_and_source() {
+    for (base, run) in [
+        ("A", "\u{327}\u{315}"),
+        ("A", "\u{327}\u{315}\u{328}"),
+        ("é", "\u{315}\u{327}"),
+        ("f", "\u{316}\u{315}\u{327}"),
+    ] {
+        let content = format!("{base}{}V", run.repeat(2500));
+        let original = content.clone();
+        assert_eq!(
+            dynamic_font::unicode_shape(&content),
+            unicode_shape_eager_reference::unicode_shape(&content)
+        );
+        let prefix = dynamic_font::viewport_label_slice(&content, 1270);
+        assert!(
+            prefix.len() < 16384 && prefix.len() < content.len(),
+            "mixed-class run retained full shaping: {base} {run:?}"
+        );
+        let expected = dynamic_font::unicode_layout(&content).unwrap();
+        let actual = dynamic_font::unicode_layout(prefix).unwrap();
+        assert_eq!(actual.height, expected.height);
+        for left in [0, 256, 512, 768, 1024] {
+            assert_eq!(
+                dynamic_font::unicode_raster_slice(&actual, [200, 200, 200], left, 256),
+                dynamic_font::unicode_raster_slice(&expected, [200, 200, 200], left, 256)
+            );
+        }
+        for (boundary, _) in content.char_indices() {
+            if boundary < 16 || boundary > content.len() - 16 {
+                assert_eq!(
+                    dynamic_font::viewport_label_parts(
+                        &[&content[..boundary], &content[boundary..]],
+                        1270
+                    ),
+                    prefix
+                );
+            }
+        }
+        assert_eq!(content, original);
+    }
+    let late_composition = format!("S{}\u{327}V", "\u{315}".repeat(10000));
+    assert_eq!(
+        dynamic_font::viewport_label_slice(&late_composition, 1270),
+        late_composition,
+        "a mark beyond the bounded key can still compose with the base"
+    );
+}
+
+#[test]
+fn mixed_class_fallback_runs_match_all_pinned_class_pairs() {
+    let mut checked = 0usize;
+    let mut optimized = 0usize;
+    for base in ["A", "S"] {
+        let base_points = unicode_shape_eager_reference::unicode_shape(base).unwrap();
+        let mut classes = std::collections::BTreeMap::new();
+        for entry in dynamic_font_data::unicode_classes().as_chunks::<8>().0 {
+            let cp = u32::from_le_bytes(entry[..4].try_into().unwrap());
+            let class = u32::from_le_bytes(entry[4..].try_into().unwrap());
+            if class == 0 || classes.contains_key(&class) {
+                continue;
+            }
+            let mark = char::from_u32(cp).unwrap();
+            let points =
+                unicode_shape_eager_reference::unicode_shape(&format!("{base}{mark}")).unwrap();
+            if points.len() == base_points.len() + 1
+                && points[..base_points.len()] == base_points
+                && points.last() == Some(&0)
+            {
+                classes.insert(class, mark);
+            }
+        }
+        assert!(classes.len() >= 16);
+        for (first_class, first) in &classes {
+            for (second_class, second) in &classes {
+                if first_class == second_class {
+                    continue;
+                }
+                let content = format!("{base}{}V", format!("{first}{second}").repeat(180));
+                assert_eq!(
+                    dynamic_font::unicode_shape(&content),
+                    unicode_shape_eager_reference::unicode_shape(&content)
+                );
+                let prefix = dynamic_font::viewport_label_slice(&content, 40);
+                optimized += usize::from(prefix.len() < content.len());
+                let actual = dynamic_font::unicode_layout(prefix).unwrap();
+                let expected = dynamic_font::unicode_layout(&content).unwrap();
+                assert_eq!(
+                    actual.height, expected.height,
+                    "{base} {first_class}/{second_class}"
+                );
+                for left in [0, 8, 16, 24, 32] {
+                    assert_eq!(
+                        dynamic_font::unicode_raster_slice(&actual, [200, 200, 200], left, 8),
+                        dynamic_font::unicode_raster_slice(&expected, [200, 200, 200], left, 8),
+                        "{base} {first_class}/{second_class} at {left}"
+                    );
+                }
+                checked += 1;
+            }
+        }
+    }
+    assert!(optimized > 0);
+    eprintln!("Pinned mixed-class pairs: {checked} checked, {optimized} optimized");
+}
+
+#[test]
+fn late_composing_mark_viewports_preserve_full_shaping_and_saved_source() {
+    for (base, mark) in [
+        ("S", '\u{327}'),
+        ("A", '\u{328}'),
+        ("s", '\u{327}'),
+        ("a", '\u{328}'),
+    ] {
+        let content = format!("{base}{}{mark}V", "\u{315}".repeat(2500));
+        let original = content.clone();
+        let full = format!("Name: {content} (N to edit)");
+        let rendered =
+            dynamic_font::viewport_label_parts(&["Name: ", &content, " (N to edit)"], 1270);
+        assert!(
+            rendered.len() < full.len(),
+            "late composition kept full name: {base}"
+        );
+        let expected = dynamic_font::unicode_layout(&full).unwrap();
+        let actual = dynamic_font::unicode_layout(&rendered).unwrap();
+        assert_eq!(actual.height, expected.height);
+        assert_eq!(
+            dynamic_font::unicode_shape(&full),
+            unicode_shape_eager_reference::unicode_shape(&full)
+        );
+        for left in [0, 256, 512, 768, 1024] {
+            assert_eq!(
+                dynamic_font::unicode_raster_slice(&actual, [200, 200, 200], left, 256),
+                dynamic_font::unicode_raster_slice(&expected, [200, 200, 200], left, 256)
+            );
+        }
+        for boundary in [0, 1, 3, content.len() - 3, content.len() - 1, content.len()] {
+            assert_eq!(
+                dynamic_font::viewport_label_parts(
+                    &[
+                        "Name: ",
+                        &content[..boundary],
+                        &content[boundary..],
+                        " (N to edit)"
+                    ],
+                    1270
+                ),
+                rendered
+            );
+        }
+        assert_eq!(content, original);
+    }
+}
+
+#[test]
+fn pinned_supported_composition_graph_is_acyclic_and_has_two_transitions() {
+    let cmap: std::collections::BTreeMap<_, _> = dynamic_font_data::unicode_cmap()
+        .as_chunks::<8>()
+        .0
+        .iter()
+        .map(|row| {
+            (
+                u32::from_le_bytes(row[..4].try_into().unwrap()),
+                u32::from_le_bytes(row[4..].try_into().unwrap()),
+            )
+        })
+        .collect();
+    let mut edges: std::collections::BTreeMap<u32, Vec<u32>> = std::collections::BTreeMap::new();
+    for row in dynamic_font_data::unicode_compose().as_chunks::<12>().0 {
+        let first = u32::from_le_bytes(row[..4].try_into().unwrap());
+        let result = u32::from_le_bytes(row[8..].try_into().unwrap());
+        if cmap.get(&result).copied().unwrap_or(0) != 0 {
+            edges.entry(first).or_default().push(result);
+        }
+    }
+    fn depth(
+        cp: u32,
+        edges: &std::collections::BTreeMap<u32, Vec<u32>>,
+        seen: &mut std::collections::BTreeSet<u32>,
+        memo: &mut std::collections::BTreeMap<u32, usize>,
+    ) -> usize {
+        if let Some(value) = memo.get(&cp) {
+            return *value;
+        }
+        assert!(seen.insert(cp), "composition cycle at U+{cp:04X}");
+        let mut maximum = 0;
+        if let Some(next) = edges.get(&cp) {
+            for result in next {
+                maximum = maximum.max(1 + depth(*result, edges, seen, memo));
+            }
+        }
+        seen.remove(&cp);
+        memo.insert(cp, maximum);
+        maximum
+    }
+    let mut memo = std::collections::BTreeMap::new();
+    let mut maximum = 0;
+    for cp in edges.keys() {
+        maximum = maximum.max(depth(
+            *cp,
+            &edges,
+            &mut std::collections::BTreeSet::new(),
+            &mut memo,
+        ));
+    }
+    assert_eq!(maximum, 2);
+    assert_eq!(
+        dynamic_font::unicode_shape("\u{ffff}\u{ffff}\u{ffff}").unwrap(),
+        [0, 0, 0]
+    );
+}
+
+#[test]
+fn every_missing_mark_ascii_composition_keeps_exact_viewport_pixels() {
+    let cmap: std::collections::BTreeMap<_, _> = dynamic_font_data::unicode_cmap()
+        .as_chunks::<8>()
+        .0
+        .iter()
+        .map(|row| {
+            (
+                u32::from_le_bytes(row[..4].try_into().unwrap()),
+                u32::from_le_bytes(row[4..].try_into().unwrap()),
+            )
+        })
+        .collect();
+    let mut checked = 0;
+    let mut rewritten = 0;
+    for row in dynamic_font_data::unicode_compose().as_chunks::<12>().0 {
+        let base = u32::from_le_bytes(row[..4].try_into().unwrap());
+        let mark = u32::from_le_bytes(row[4..8].try_into().unwrap());
+        let result = u32::from_le_bytes(row[8..].try_into().unwrap());
+        if !(32..=126).contains(&base)
+            || cmap.get(&mark).copied().unwrap_or(0) != 0
+            || cmap.get(&result).copied().unwrap_or(0) == 0
+        {
+            continue;
+        }
+        let base = char::from_u32(base).unwrap();
+        let mark = char::from_u32(mark).unwrap();
+        for before in [false, true] {
+            let run = "\u{315}".repeat(1500);
+            let content = if before {
+                format!("f{base}{mark}{run}V")
+            } else {
+                format!("f{base}{run}{mark}V")
+            };
+            let display =
+                dynamic_font::viewport_label_parts(&["Name: ", &content, " (N to edit)"], 1270);
+            let full = format!("Name: {content} (N to edit)");
+            assert!(
+                display.len() < full.len(),
+                "unbounded {base} {mark:?} before={before}, display={} full={}",
+                display.len(),
+                full.len()
+            );
+            rewritten += usize::from(display.contains('\u{ffff}'));
+            assert_eq!(
+                dynamic_font::unicode_shape(&full),
+                unicode_shape_eager_reference::unicode_shape(&full)
+            );
+            let actual = dynamic_font::unicode_layout(&display).unwrap();
+            let expected = dynamic_font::unicode_layout(&full).unwrap();
+            assert_eq!(actual.height, expected.height);
+            for left in [0, 256, 512, 768, 1024] {
+                assert_eq!(
+                    dynamic_font::unicode_raster_slice(&actual, [200, 200, 200], left, 256),
+                    dynamic_font::unicode_raster_slice(&expected, [200, 200, 200], left, 256),
+                    "{base} {mark:?} before={before} at {left}"
+                );
+            }
+            checked += 1;
+        }
+    }
+    assert!(rewritten > 0);
+    eprintln!("Missing-mark ASCII composition cases: {checked}; rewritten {rewritten}");
+}
+
+#[test]
+fn repeated_short_mark_clusters_keep_eager_shaping_and_exact_viewport_pixels() {
+    for pattern in [
+        "A\u{327}",
+        "S\u{327}",
+        "A\u{301}",
+        "A\u{327}\u{315}",
+        "é\u{327}",
+    ] {
+        let name = pattern.repeat(1500);
+        let full = format!("Name: {name} (N to edit)");
+        let original = name.clone();
+        assert_eq!(
+            dynamic_font::unicode_shape(&full),
+            unicode_shape_eager_reference::unicode_shape(&full)
+        );
+        let expected = dynamic_font::unicode_layout(&full).unwrap();
+        for boundary in name.char_indices().map(|(at, _)| at).take(12) {
+            let display = dynamic_font::viewport_label_parts(
+                &[
+                    "Name: ",
+                    &name[..boundary],
+                    &name[boundary..],
+                    " (N to edit)",
+                ],
+                1270,
+            );
+            assert!(display.len() < full.len(), "unbounded {pattern:?}");
+            let actual = dynamic_font::unicode_layout(&display).unwrap();
+            assert_eq!(actual.height, expected.height);
+            for left in [0, 256, 512, 768, 1024] {
+                assert_eq!(
+                    dynamic_font::unicode_raster_slice(&actual, [200, 200, 200], left, 256),
+                    dynamic_font::unicode_raster_slice(&expected, [200, 200, 200], left, 256),
+                    "{pattern:?} boundary={boundary} at {left}"
+                );
+            }
+        }
+        assert_eq!(name, original);
+    }
+}
+
+#[test]
+fn composed_fallback_display_rejects_unproven_raw_marks_and_lost_vertical_extents() {
+    for suffix in ["\u{301}", "\u{fe0f}", "\u{327}\u{122}"] {
+        let full = format!("S{}{suffix}", "\u{315}".repeat(2500));
+        assert_eq!(
+            dynamic_font::viewport_label_parts(&[&full], 1270),
+            full,
+            "must retain unproven complete shaping: {suffix:?}"
+        );
+    }
 }

@@ -102,3 +102,8 @@ exercise a bundle larger than 3 MiB through worker communication and disk
 commit. Both runtime targets reject a damaged header without rewriting it.
 
 For a separate WASI installation, use **Settings → C/WASI build tools folder**, check the tools and save settings. This persists across app restarts without requiring a launch-time environment variable. Engine-specific sysroot environment overrides take precedence.
+
+
+Additional PWADs use the original `-file` path. Declare them after the base IWAD in the signed recipe's `[[roms]]` list; both native and Wasm hosts preserve that order. Up to six patches fit alongside the IWAD while leaving one of the existing eight virtual file handles for saving/configuration. The adapter accepts registration before initialization only, with exact read-only `patch0.wad` through `patch5.wad` names and bounded PWAD directories. Combined input remains bounded to 64 MiB and the existing engine hard limit is unchanged. Original shareware restrictions still apply. See the reviewed DOOM recipe instructions in `docs/DEVELOPING_GAMES.md` for selection, save compatibility and private maintainer checks. This adds no native code extensions or multiplayer support.
+
+Signed top-level `doom_wad_modes` optionally selects an original loading mode per additional PWAD. The default is `file`; merge-family groups execute before ordinary files according to the unchanged upstream parser. See `docs/DEVELOPING_GAMES.md` for exact mode names and group ordering. The reviewed staging step enables `FEATURE_WAD_MERGE` in the pinned feature header without changing the original source files in place.

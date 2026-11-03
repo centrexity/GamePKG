@@ -7,16 +7,24 @@
 #include "src/audio.h"
 #include "src/util.h"
 #include "snes/dsp.h"
+#include "snes/dsp_regs.h"
 #include "snes/ppu.h"
 #include "snes/snes_regs.h"
+#include "gamepkg_snapshot.h"
+#include "gamepkg_spc_playback.h"
 Config g_config;
 const uint8 *g_asset_ptrs[kNumberOfAssets];
 uint32 g_asset_sizes[kNumberOfAssets];
 static uint8 ports[4];
 static uint8 framebuffer[512 * 224 * 4];
+_Static_assert((256 + 2 * kPpuExtraLeftRight) * 240 * 4 <= sizeof(framebuffer), "video options exceed existing framebuffer");
 static int16 samples[800 * 2];
 static bool initialized;
 static bool save_dirty;
+static uint32 video_width = 256, video_height = 224;
+static bool stepped;
+static uint8 snapshot_bytes[GAMEPKG_SNAPSHOT_SIZE];
+static uint32 video_flags = kPpuRenderFlags_NewRenderer;
 
 void ZeldaApuLock(void) {} // One Wasm instance, one tick thread.
 void ZeldaApuUnlock(void) {}
@@ -33,10 +41,20 @@ void ZeldaEnableMsu(uint8 enable) { (void)enable; }
 uint8 ZeldaGetEntranceMusicTrack(int i) { return kEntranceData_musicTrack[i]; }
 void LoadSongBank(const uint8 *data) { SpcPlayer_Upload(g_zenv.player, data); }
 void ZeldaRestoreMusicAfterLoad_Locked(bool reset) {
-  if (reset) SpcPlayer_Initialize(g_zenv.player);
-  else SpcPlayer_CopyVariablesFromRam(g_zenv.player);
+  SpcPlayer *player = g_zenv.player;
+  SpcPlayer_CopyVariablesFromRam(player);
+  // This cache is absent from the original RAM map. Recover the last actual
+  // EDL write from the restored DSP, rather than inherit a later song's cache.
+  if (!reset) player->last_written_edl = player->dsp->ram[EDL];
+  player->timer_cycles = 0;
+  memcpy(player->input_ports, &player->ram[0x410], 4);
+  memcpy(ports, player->input_ports, 4);
+  if (reset) SpcPlayer_Initialize(player);
 }
-void ZeldaSaveMusicStateToRam_Locked(void) { SpcPlayer_CopyVariablesToRam(g_zenv.player); }
+void ZeldaSaveMusicStateToRam_Locked(void) {
+  SpcPlayer_CopyVariablesToRam(g_zenv.player);
+  memcpy(&g_zenv.player->ram[0x410], ports, 4);
+}
 void ZeldaRenderAudio(int16 *buffer, int count, int channels) {
   SpcPlayer_GenerateSamples(g_zenv.player);
   dsp_getSamples(g_zenv.player->dsp, buffer, count, channels);
@@ -53,6 +71,9 @@ void __assert_fail(const char *expr, const char *file, int line, const char *fun
   (void)expr; (void)file; (void)line; (void)function; __builtin_trap();
 }
 static uint32 read32(const uint8 *p) { return p[0] | p[1]<<8 | p[2]<<16 | (uint32)p[3]<<24; }
+// Host cache gate for the unsigned mask and bounded horizontal mosaic fixes.
+__attribute__((export_name("renderer_revision")))
+int renderer_revision(void) { return 6; }
 __attribute__((export_name("allocate")))
 uint8 *allocate(uint32 size) { return size <= 8388608 ? malloc(size) : NULL; }
 __attribute__((export_name("initialize")))
@@ -68,33 +89,89 @@ int initialize(uint8 *data, uint32 length) {
     if (offset>length || size>length-offset) return -1;
     g_asset_ptrs[i]=data+offset;g_asset_sizes[i]=size;offset+=size;
   }
+  for (uint32 i=0;i<3;i++)
+    if (!gamepkg_spc_bank_valid(g_asset_ptrs[i],g_asset_sizes[i])) return -1;
   ZeldaInitialize(); g_zenv.ppu->extraLeftRight=0; ZeldaSetLanguage(NULL); initialized=true; return 0;
+}
+__attribute__((export_name("configure_video")))
+int configure_video(uint32 extra, uint32 tall) {
+  if (!initialized || stepped || extra > kPpuExtraLeftRight || tall > 0x1ffff) return -1;
+  const uint32 wide_features = kFeatures0_ExtendScreen64 | kFeatures0_WidescreenVisualFixes;
+  static const uint32 enhancement_flags[] = {
+    kFeatures0_SwitchLR,
+    kFeatures0_SwitchLRLimit,
+    kFeatures0_TurnWhileDashing,
+    kFeatures0_MirrorToDarkworld,
+    kFeatures0_CollectItemsWithSword,
+    kFeatures0_BreakPotsWithSword,
+    kFeatures0_DisableLowHealthBeep,
+    kFeatures0_ShowMaxItemsInYellow,
+    kFeatures0_MoreActiveBombs,
+    kFeatures0_CarryMoreRupees,
+    kFeatures0_MiscBugFixes,
+    kFeatures0_GameChangingBugFixes,
+    kFeatures0_CancelBirdTravel,
+  };
+  uint32 controlled = wide_features | kFeatures0_DimFlashes | kFeatures0_SkipIntroOnKeypress;
+  uint32 selected = (extra ? wide_features : 0) |
+    ((tall & 4) ? kFeatures0_DimFlashes : 0) |
+    ((tall & 8) ? kFeatures0_SkipIntroOnKeypress : 0);
+  for (unsigned i=0;i<sizeof(enhancement_flags)/sizeof(*enhancement_flags);i++) {
+    controlled |= enhancement_flags[i];
+    if (tall & (1u << (i+4))) selected |= enhancement_flags[i];
+  }
+  g_wanted_zelda_features = (g_wanted_zelda_features & ~controlled) | selected;
+  g_zenv.ppu->extraLeftRight = extra;
+  video_width = 256 + extra * 2;
+  video_height = (tall & 1) ? 240 : 224;
+  video_flags = kPpuRenderFlags_NewRenderer |
+    ((tall & 1) ? kPpuRenderFlags_Height240 : 0) |
+    ((tall & 2) ? kPpuRenderFlags_NoSpriteLimits : 0);
+  return 0;
 }
 __attribute__((export_name("step")))
 int step(uint32 buttons) {
   if (!initialized) return -1;
+  stepped = true;
+  // Match ZeldaRunFrame's opposing-direction filter before bypassing its recorder.
+  if ((buttons & 0x30) == 0x30) buttons ^= 0x30;
+  if ((buttons & 0xc0) == 0xc0) buttons ^= 0xc0;
   // Preserve the upstream scheduling without its unbounded desktop replay log.
   g_ram[kRam_APUI00]=ZeldaIsMusicPlaying();
   if (animated_tile_data_src != 0) {
-    g_ram[kRam_BugsFixed] = kBugFix_Latest;
+    if (g_ram[kRam_BugsFixed] < kBugFix_Latest)
+      g_ram[kRam_BugsFixed] = kBugFix_Latest;
     enhanced_features0 = g_wanted_zelda_features;
   }
   int run_what;
   if (g_ram[kRam_BugsFixed] < kBugFix_PolyRenderer) {
     run_what = (is_nmi_thread_active && thread_other_stack != 0x1f31) ? 2 : 1;
   } else {
-    int counter = g_ram[kRam_CrystalRotateCounter] + virq_trigger;
-    g_ram[kRam_CrystalRotateCounter] = counter;
-    run_what = (is_nmi_thread_active && (counter >> 8)) ? 3 : 1;
+    run_what = 1;
+    if (is_nmi_thread_active) {
+      int counter = g_ram[kRam_CrystalRotateCounter] + virq_trigger;
+      g_ram[kRam_CrystalRotateCounter] = counter;
+      if (counter >> 8) run_what = 3;
+    }
   }
   ZeldaRunFrameInternal((uint16)buttons,run_what);
-  ZeldaPushApuState(); ZeldaDrawPpuFrame(framebuffer,256*4,kPpuRenderFlags_NewRenderer);
+  ZeldaPushApuState(); ZeldaDrawPpuFrame(framebuffer,video_width*4,video_flags);
   ZeldaRenderAudio(samples,800,2); return 0;
 }
 __attribute__((export_name("pixels"))) uint8 *pixels(void) { return framebuffer; }
+__attribute__((export_name("pixel_format"))) uint32 pixel_format(void) { return 0; }
 __attribute__((export_name("audio"))) int16 *audio(void) { return samples; }
 __attribute__((export_name("audio_channels"))) uint32 audio_channels(void) { return 2; }
 __attribute__((export_name("sram"))) uint8 *sram(void) { return initialized ? g_zenv.sram : NULL; }
+__attribute__((export_name("snapshot_size"))) uint32 snapshot_size(void) { return initialized ? GAMEPKG_SNAPSHOT_SIZE : 0; }
+__attribute__((export_name("snapshot_data"))) uint8 *snapshot_data(void) { return initialized ? snapshot_bytes : NULL; }
+__attribute__((export_name("snapshot_capture"))) int snapshot_capture(void) {
+  return initialized ? gamepkg_snapshot_capture(snapshot_bytes,sizeof(snapshot_bytes)) : -1;
+}
+__attribute__((export_name("snapshot_restore"))) int snapshot_restore(uint32 length) {
+  if(!initialized || gamepkg_snapshot_restore(snapshot_bytes,length)!=0)return -1;
+  stepped=true;save_dirty=true;return 0;
+}
 __attribute__((export_name("save_dirty"))) int save_changed(void) { int result=save_dirty;save_dirty=false;return result; }
 // libc diagnostic paths cannot reach ambient WASI descriptors.
 #include <wasi/api.h>

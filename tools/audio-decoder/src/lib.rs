@@ -57,6 +57,12 @@ enum Converter {
     Mixer(MixerResampler),
 }
 impl Converter {
+    fn announce_put(&mut self, frames: usize, final_put: bool) -> Result<(), &'static str> {
+        match self {
+            Self::Mixer(r) => r.announce_put(frames, final_put),
+            Self::Global(_) => Err("not a mixer"),
+        }
+    }
     fn render(&mut self, out: &mut [[f32; 2]]) -> Result<usize, &'static str> {
         match self {
             Self::Global(r) => r.render(out),
@@ -100,6 +106,9 @@ struct Context {
     eof: bool,
     resampler: Option<Converter>,
     converted: [[f32; 2]; MAX_VALUES / 2],
+    mono_put: [i16; 2048],
+    mono_at: usize,
+    mono_len: usize,
 }
 impl Context {
     const fn new() -> Self {
@@ -121,6 +130,9 @@ impl Context {
             eof: false,
             resampler: None,
             converted: [[0.0; 2]; MAX_VALUES / 2],
+            mono_put: [0; 2048],
+            mono_at: 0,
+            mono_len: 0,
         }
     }
     fn fail(&mut self) -> i32 {
@@ -129,6 +141,7 @@ impl Context {
         self.pending_at = 0;
         self.pending_len = 0;
         self.output.fill(0);
+        self.mono_put.fill(0);
         -1
     }
     fn open(&mut self, bytes: Vec<u8>) -> i32 {
@@ -138,6 +151,8 @@ impl Context {
         self.pending_at = 0;
         self.pending_len = 0;
         self.failed = false;
+        self.mono_at = 0;
+        self.mono_len = 0;
         self.output_rate = 0;
         self.mixer_mode = false;
         self.started = false;
@@ -181,11 +196,12 @@ impl Context {
         if self.failed || self.reader.is_none() || self.started {
             return -1;
         }
-        if mixer && self.channels != 2 {
-            return -1;
-        }
         let resampler = if mixer {
-            match MixerResampler::new(self.rate, rate) {
+            match if self.channels == 1 {
+                MixerResampler::new_mono(self.rate, rate)
+            } else {
+                MixerResampler::new(self.rate, rate)
+            } {
                 Ok(r) => Converter::Mixer(r),
                 Err(_) => return -1,
             }
@@ -227,10 +243,52 @@ impl Context {
                 .render(&mut self.converted[written..count / 2])
                 .map_err(|_| ())?;
             written += n;
-            if written == count / 2 || (n == 0 && self.eof) {
+            if written == count / 2 || (n == 0 && self.eof && self.mono_at == self.mono_len) {
                 break;
             }
             if n > 0 {
+                continue;
+            }
+            if self.mixer_mode && self.channels == 1 {
+                if self.mono_at == self.mono_len {
+                    self.mono_at = 0;
+                    self.mono_len = 0;
+                    while self.mono_len < 2048 {
+                        let amount = self.read_decoded((2048 - self.mono_len).min(MAX_VALUES))?;
+                        if amount == 0 {
+                            self.eof = true;
+                            break;
+                        }
+                        for value in &self.decoded[..amount] {
+                            self.mono_put[self.mono_len] = quantize(*value);
+                            self.mono_len += 1;
+                        }
+                    }
+                    if self.mono_len == 0 {
+                        resampler.finish();
+                        continue;
+                    }
+                    resampler
+                        .announce_put(self.mono_len, self.eof)
+                        .map_err(|_| ())?;
+                }
+                let amount = resampler.input_capacity().min(self.mono_len - self.mono_at);
+                if amount == 0 {
+                    return Err(());
+                }
+                let mut stereo = [[0.0; 2]; MAX_VALUES / 2];
+                for (frame, value) in stereo[..amount]
+                    .iter_mut()
+                    .zip(&self.mono_put[self.mono_at..self.mono_at + amount])
+                {
+                    let sample = f32::from(*value) / 32768.0;
+                    *frame = [sample, sample];
+                }
+                resampler.append(&stereo[..amount]).map_err(|_| ())?;
+                self.mono_at += amount;
+                if self.eof && self.mono_at == self.mono_len {
+                    resampler.finish();
+                }
                 continue;
             }
             // A native mono buffer can contain 1,600 frames, while the shared

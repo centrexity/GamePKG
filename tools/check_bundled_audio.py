@@ -1,4 +1,4 @@
-"""Maintainer check: both relocated entry points contain the same decoder."""
+"""Maintainer check: relocated entry points share native recipes and decoder."""
 from pathlib import Path
 import argparse
 import json
@@ -6,10 +6,13 @@ import os
 import shutil
 import subprocess
 import tempfile
+from app_identity import verify_pair
 
 parser = argparse.ArgumentParser()
 parser.add_argument('binary_directory', type=Path)
 args = parser.parse_args()
+identity = verify_pair(args.binary_directory)
+print('Relocated CLI and GUI share the same native build recipe:', identity['identity']['native_sdk'])
 suffix = '.exe' if os.name == 'nt' else ''
 with tempfile.TemporaryDirectory(prefix='gamepkg-relocated-decoder-') as temporary:
     root = Path(temporary)

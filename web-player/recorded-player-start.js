@@ -13,7 +13,7 @@ export async function startRecordedPlayer(data,parent,signal){
  const controller=new AbortController(),abort=()=>controller.abort();if(signal?.aborted)abort();signal?.addEventListener('abort',abort,{once:true});const timer=setTimeout(abort,5000);
  try{
   const [converter,decoder]=await Promise.all([companion('audio-converter.wasm',info.converter_sha256,controller.signal),data.manifest.limits.music_memory_bytes?companion('audio-decoder.wasm',info.decoder_sha256,controller.signal):Promise.resolve(null)]);
-  const assets=new PackageAssets(data.assets);
+  const assets=new PackageAssets(data.assets,data.manifest);
   if(assets.scratchBytes!==(data.asset_scratch_bytes??0))throw Error('Invalid package asset scratch allowance');
   return await RecordedSession.open(data.manifest,assets,converter,decoder,parent,controller.signal);
  }catch(error){controller.abort();throw error;}finally{clearTimeout(timer);signal?.removeEventListener('abort',abort);}

@@ -66,12 +66,25 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-cube2-readiness-') as temporary
             time.sleep(.2)
         close_game(player,env);player=None
         subprocess.run(['xdotool','windowfocus',window,'mousemove','--window',window,'1100','100','click','1'],env=env,check=True);time.sleep(.3)
+        click('Check game data')
+        time.sleep(1)
+        # The report is ordinary page content; scroll the whole page to its status.
+        subprocess.run(['xdotool','mousemove','--window',window,'1000','400','click','--repeat','30','--delay','20','4'],env=env,check=True)
+        audited=screen('content-audit')
+        assert 'literal includes' in audited and 'missing or unreadable' in audited,audited
         # Losing required files must disable readiness on the next ordinary frame.
         selections=library/'game-data-selections.json';old=selections.read_text()
         import json
         selections.write_text(json.dumps({k:str(root/'missing-data') for k in json.loads(old)}))
         click('Recheck readiness',800)
         missing=screen('missing');assert 'unavailable' in missing or 'missing its' in missing,missing
+        incomplete=root/'incomplete-data'
+        (incomplete/'data').mkdir(parents=True)
+        (incomplete/'packages/textures').mkdir(parents=True)
+        selections.write_text(json.dumps({k:str(incomplete) for k in json.loads(old)}))
+        click('Recheck readiness',800)
+        incomplete_screen=screen('incomplete')
+        assert 'stdlib' in incomplete_screen and 'missing' in incomplete_screen,incomplete_screen
         print('Cube readiness passed: actual in-app build auto-refresh, explicit 512/2048 MiB blocker, no silent memory change, settings-save readiness update, real Play, and unavailable-data explanation.')
     finally:
         if player is not None:

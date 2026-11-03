@@ -39,7 +39,8 @@ pub struct Resampler {
     finished: bool,
 }
 
-/// SDL_mixer 2.8's 1,024-frame source puts into SDL 2.30 AudioStream.
+/// SDL_mixer 2.8's 4,096-byte S16 source puts into SDL 2.30 AudioStream
+/// (1,024 stereo frames or 2,048 mono frames).
 /// Phase restarts at the original internal boundaries, including its final
 /// staging/flush behavior. Consumer read sizes never move those boundaries.
 pub struct MixerResampler {
@@ -51,6 +52,9 @@ pub struct MixerResampler {
     block_start: u64,
     block_out: u64,
     block_at: u64,
+    put_frames: u64,
+    announced: Option<u64>,
+    announced_final: bool,
 }
 enum MixerStage {
     Puts,
@@ -69,7 +73,43 @@ impl MixerResampler {
             block_start: 0,
             block_out: 0,
             block_at: 0,
+            put_frames: 1024,
+            announced: None,
+            announced_final: false,
         })
+    }
+    /// Original 4,096-byte S16 mono puts contain 2,048 source frames.
+    /// A trusted producer stages each complete put before announcing it, then
+    /// feeds it with backpressure. The existing ring need not hold the whole
+    /// put plus retained padding at once.
+    pub fn new_mono(input_rate: u32, output_rate: u32) -> Result<Self, &'static str> {
+        let mut result = Self::new(input_rate, output_rate)?;
+        result.put_frames = 2048;
+        result.announced = Some(0);
+        Ok(result)
+    }
+    pub fn announce_put(&mut self, frames: usize, final_put: bool) -> Result<(), &'static str> {
+        let previous = self.announced.ok_or("explicit puts require mono mode")?;
+        if self.inner.finished
+            || self.announced_final
+            || previous != self.inner.received
+            || frames == 0
+            || frames > 2048
+            || (frames < 2048 && !final_put)
+        {
+            return Err("invalid mono source put");
+        }
+        let end = previous
+            .checked_add(frames as u64)
+            .ok_or("music put overflow")?;
+        if u128::from(end) * u128::from(self.inner.output_rate) / u128::from(self.inner.input_rate)
+            > u128::from(u64::MAX)
+        {
+            return Err("music put timeline overflow");
+        }
+        self.announced = Some(end);
+        self.announced_final = final_put;
+        Ok(())
     }
     pub fn input_capacity(&self) -> usize {
         if self.inner.finished {
@@ -108,11 +148,14 @@ impl MixerResampler {
             match self.stage {
                 MixerStage::Done => return Ok(false),
                 MixerStage::Puts => {
-                    let tail = self.inner.received - self.put;
-                    let amount = if tail >= 1024 {
-                        1024
+                    let tail = self
+                        .announced
+                        .unwrap_or(self.inner.received)
+                        .saturating_sub(self.put);
+                    let amount = if tail >= self.put_frames {
+                        self.put_frames
                     } else {
-                        if !self.inner.finished {
+                        if !self.inner.finished && !self.announced_final {
                             return Ok(false);
                         }
                         if tail == 0 {
@@ -166,6 +209,12 @@ impl MixerResampler {
             let numerator = self.block_at * u64::from(self.inner.input_rate);
             let relative = numerator / u64::from(self.inner.output_rate);
             let fraction = (numerator % u64::from(self.inner.output_rate)) as u32;
+            if self.announced.is_some()
+                && !self.inner.finished
+                && (self.block_start + relative).saturating_add(6) >= self.inner.received
+            {
+                break;
+            }
             *frame = self.inner.filtered(self.block_start + relative, fraction);
             self.block_at += 1;
             count += 1;
@@ -234,47 +283,67 @@ impl Resampler {
         ((u128::from(self.produced) * u128::from(self.input_rate)) / u128::from(self.output_rate))
             as u64
     }
-    fn sample(&self, index: Option<u64>, channel: usize) -> f32 {
+    fn sample_frame(&self, index: Option<u64>) -> [f32; 2] {
         match index {
             Some(index) if index >= self.first && index < self.received => {
-                self.frames[(index % CAPACITY as u64) as usize][channel]
+                self.frames[(index % CAPACITY as u64) as usize]
             }
-            _ => 0.0,
+            _ => [0.0; 2],
         }
     }
+    #[inline]
     fn filtered(&self, source: u64, fraction: u32) -> [f32; 2] {
         let left = fraction as f32 / self.output_rate as f32;
         let right = 1.0 - left;
         let left_index = (fraction * 512 / self.output_rate) as usize;
         let right_index = ((self.output_rate - fraction) * 512 / self.output_rate) as usize;
         let mut frame = [0.0; 2];
-        for (channel, value) in frame.iter_mut().enumerate() {
-            let mut sum = 0.0;
-            for (index, fraction, right_wing) in
-                [(left_index, left, false), (right_index, right, true)]
-            {
-                let mut j = 0usize;
-                while index + j * 512 < FILTER.len() {
-                    let filter = index + j * 512;
-                    let at = if right_wing {
-                        source.checked_add(1 + j as u64)
-                    } else {
-                        source.checked_sub(j as u64)
-                    };
-                    sum +=
-                        self.sample(at, channel) * (FILTER[filter] + fraction * DIFFERENCE[filter]);
-                    j += 1;
-                }
+        // Both channels share phase, coefficients and ring positions. Keep the
+        // original left-wing/right-wing addition order within each channel;
+        // do not reassociate sums or fuse multiply/adds to gain speed.
+        for (index, fraction, right_wing) in [(left_index, left, false), (right_index, right, true)]
+        {
+            let mut j = 0usize;
+            while index + j * 512 < FILTER.len() {
+                let filter = index + j * 512;
+                let at = if right_wing {
+                    source.checked_add(1 + j as u64)
+                } else {
+                    source.checked_sub(j as u64)
+                };
+                let samples = self.sample_frame(at);
+                let weight = FILTER[filter] + fraction * DIFFERENCE[filter];
+                frame[0] += samples[0] * weight;
+                frame[1] += samples[1] * weight;
+                j += 1;
             }
-            *value = sum;
         }
         frame
     }
     /// Zero means more input is needed, or the finished stream is drained.
     /// Phase is global integer time, independent of append/render chunk sizes.
+    #[inline]
     pub fn render(&mut self, output: &mut [[f32; 2]]) -> Result<usize, &'static str> {
         if output.is_empty() || output.len() > MAX_FRAMES {
             return Err("invalid music conversion output");
+        }
+        if self.input_rate == self.output_rate {
+            // Equal-rate output is the original PCM, including its exact bit
+            // patterns. Copy at most two contiguous ring spans instead of
+            // recomputing integer phase and bounds for every stereo frame.
+            let count = (self.received - self.produced).min(output.len() as u64) as usize;
+            if count == 0 {
+                return Ok(0);
+            }
+            let start = (self.produced % CAPACITY as u64) as usize;
+            let tail = count.min(CAPACITY - start);
+            output[..tail].copy_from_slice(&self.frames[start..start + tail]);
+            output[tail..count].copy_from_slice(&self.frames[..count - tail]);
+            self.produced += count as u64;
+            // Retain the original queue/backpressure contract, even though
+            // equal-rate output itself does not need this filter history.
+            self.first = self.produced.saturating_sub(5).min(self.received);
+            return Ok(count);
         }
         let available =
             u128::from(self.received) * u128::from(self.output_rate) / u128::from(self.input_rate);
@@ -284,18 +353,14 @@ impl Resampler {
                 break;
             }
             let source = self.source_index();
-            if self.input_rate == self.output_rate {
-                *frame = [self.sample(Some(source), 0), self.sample(Some(source), 1)];
-            } else {
-                // Five filter lobes on each side; defer until the right wing
-                // is present. End-of-stream uses SDL's zero edge padding.
-                if !self.finished && source.saturating_add(6) >= self.received {
-                    break;
-                }
-                let fraction = ((u128::from(self.produced) * u128::from(self.input_rate))
-                    % u128::from(self.output_rate)) as u32;
-                *frame = self.filtered(source, fraction);
+            // Five filter lobes on each side; defer until the right wing
+            // is present. End-of-stream uses SDL's zero edge padding.
+            if !self.finished && source.saturating_add(6) >= self.received {
+                break;
             }
+            let fraction = ((u128::from(self.produced) * u128::from(self.input_rate))
+                % u128::from(self.output_rate)) as u32;
+            *frame = self.filtered(source, fraction);
             self.produced += 1;
             count += 1;
             self.first = self.source_index().saturating_sub(5).min(self.received);

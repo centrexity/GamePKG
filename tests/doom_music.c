@@ -7,6 +7,12 @@
 #include "../engines/doom/music/music_compat.h"
 #include "i_sound.h"
 #include "../engines/doom/music/upstream/opl.h"
+#ifdef GAMEPKG_OPL_TEST
+unsigned gamepkg_opl_pending_callbacks(void);
+#endif
+#ifdef GAMEPKG_TEST_32
+_Static_assert(sizeof(void*) == 4, "actual 32-bit process required");
+#endif
 static unsigned char instruments[11908];
 static jmp_buf expected_failure;
 static int expect_failure;
@@ -35,6 +41,7 @@ static uint64_t render(unsigned ticks) {
 static unsigned callbacks;
 static void timer(void *data) { assert(data == &callbacks); callbacks++; }
 int main(void) {
+    assert(render(2)==0); // Disabled/uninitialized backend must be safe silence.
     memcpy(instruments, "#OPL_II#", 8);
     const unsigned char voice[16] = {1,0xf2,0x73,0,0,32,0,1,0xf2,0x73,0,0,0,0,0,0};
     for (unsigned i = 0; i < 175; i++) {
@@ -63,7 +70,46 @@ int main(void) {
     render(2); assert(callbacks == 1);
     DG_music_module.StopSong();
     assert(!DG_music_module.MusicIsPlaying());
+#ifdef GAMEPKG_OPL_TEST
+    assert(gamepkg_opl_pending_callbacks() == 0);
+    DG_music_module.PlaySong(song, false);
+    unsigned completed_ticks = 0;
+    uint64_t complete_energy = 0;
+    while (gamepkg_opl_pending_callbacks()) {
+        assert(completed_ticks++ < 180);
+        complete_energy += render(1);
+    }
+    assert(completed_ticks > 0 && complete_energy > 0);
+    DG_music_module.StopSong();
+    DG_music_module.PlaySong(song, true);
+    assert(render(completed_ticks + 180) > 0);
+    assert(gamepkg_opl_pending_callbacks() > 0);
+    DG_music_module.StopSong();
+    assert(gamepkg_opl_pending_callbacks() == 0);
+#endif
     DG_music_module.UnRegisterSong(song);
+#ifdef GAMEPKG_OPL_TEST
+    /* Match the game's stop/unregister/replace order, including paused tracks. */
+    for (unsigned replacement = 0; replacement < 32; replacement++) {
+        midi[27] = midi[31] = (unsigned char)(40 + replacement);
+        song = DG_music_module.RegisterSong(midi, sizeof(midi)); assert(song);
+        DG_music_module.PlaySong(song, true);
+        assert(render(4) > 0);
+        DG_music_module.PauseMusic();
+        render(2);
+        DG_music_module.StopSong();
+        assert(gamepkg_opl_pending_callbacks() == 0);
+        DG_music_module.UnRegisterSong(song);
+        if (replacement % 8 == 7) {
+            DG_music_module.Shutdown();
+            assert(gamepkg_opl_pending_callbacks() == 0);
+            assert(!DG_music_module.MusicIsPlaying());
+            assert(DG_music_module.Init());
+            DG_music_module.SetMusicVolume(127);
+        }
+    }
+    midi[27] = midi[31] = 60;
+#endif
     unsigned char mus[] = {
         'M','U','S',26,8,0,16,0,1,0,0,0,0,0,0,0,
         0x90,0xbc,100,70,0x80,60,1,0x60
@@ -105,5 +151,6 @@ int main(void) {
     }
     expect_failure = 0;
     OPL_Shutdown();
+    assert(render(2)==0); // Shutdown must not render stale chip state.
     return 0;
 }

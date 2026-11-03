@@ -1,0 +1,242 @@
+{
+  "scope": "Frozen 0.1.74 pre-scaled image/rendering fixture; not included in current game packages. Preserves independent default8MiB/legacy16MiB regressions when active artwork changes. Other current source/assets and the separate legacy audio fixture remain under test.",
+  "port_revision": "cde9f714194e5b70619ec271044ab6ceeee3f6fc",
+  "archive_sha256": "f5963784f3be7000e746e15d2ea2b19148214e165b9bee0cb2b20d949096fc82",
+  "files": [
+    {
+      "path": "source/src/render.rs",
+      "bytes": 52359,
+      "sha256": "8d93341bf0bd868559eef290229f0850eeb89c4544635bb308ca27e9576010d8"
+    },
+    {
+      "path": "assets/ASSET_PROVENANCE.json",
+      "bytes": 26633,
+      "sha256": "1e3e8c357167e918c74e7714e26aec35637e20d139a45c2c78d0914255e98df4"
+    },
+    {
+      "path": "CREDITS.md",
+      "bytes": 89403,
+      "sha256": "261bf1621519068fa20542c5299c6469c7bd11e9cc936771abea160fa8bf7897"
+    },
+    {
+      "path": "NOTICE",
+      "bytes": 23229,
+      "sha256": "f7a8191b4b10a44b1ee502790ea57059ec2f650a0790ba2a042ee497075f06e8"
+    },
+    {
+      "path": "LICENSE",
+      "bytes": 11383,
+      "sha256": "a7024436eec13d80985d276864aa5acc30eab2b3b8bd3cdf45fa9b455c18c251"
+    },
+    {
+      "path": "assets/background1-0.png",
+      "bytes": 459952,
+      "sha256": "bc9b5041b7ad73159ce50d0e2f8597e074a428c476bee26e013dc486b0d40956"
+    },
+    {
+      "path": "assets/background1-1.png",
+      "bytes": 481964,
+      "sha256": "3cab42f0fda3cd563af98cb4e92e13e7597200509adbc1b83373c4ca586d48ae"
+    },
+    {
+      "path": "assets/background1-2.png",
+      "bytes": 231466,
+      "sha256": "7cc3c02bd1ff0cac6ee6f47be3b9b1dbda873a9b05f6881ec17c8b7ce98179dd"
+    },
+    {
+      "path": "assets/background1-3.png",
+      "bytes": 185157,
+      "sha256": "489f0de3d9a8534935e638fd7f9cb210f417ad8eaba450f233f915fe733d532d"
+    },
+    {
+      "path": "assets/background1-4.png",
+      "bytes": 203252,
+      "sha256": "c144a8e3387c3391a969d57c4c095f328d7c57979d6e4c3fd4e5e01eaeb82b20"
+    },
+    {
+      "path": "assets/background1-5.png",
+      "bytes": 90736,
+      "sha256": "07d27c14c8e318adbcce8e44044fe61261e4a61abfd43005c8ce16e3c92471e7"
+    },
+    {
+      "path": "assets/background2-0.png",
+      "bytes": 486996,
+      "sha256": "bca6ba946430aa83b92eea9decf4011d60e686f2c13ecabbee0c05ad4206b6af"
+    },
+    {
+      "path": "assets/background2-1.png",
+      "bytes": 492924,
+      "sha256": "631e7ffff4a26acd8b3e59d6c2a9e4af8d7dd8e9c15f466e2ee40972bd4eef2b"
+    },
+    {
+      "path": "assets/background2-2.png",
+      "bytes": 258820,
+      "sha256": "c589f4a80de3153a6070b1cacbbd0924d3f9ca73519e663143bb9d68cde20ca4"
+    },
+    {
+      "path": "assets/background2-3.png",
+      "bytes": 207053,
+      "sha256": "c72f1a61485f1dc053dd70e695eec668170e5434caba8aaaa73cfa20dae23a18"
+    },
+    {
+      "path": "assets/background2-4.png",
+      "bytes": 212926,
+      "sha256": "fe6a83a2be93023c088a085da6bdd20bbdf5139f2e17df1d3351279c2759aa4f"
+    },
+    {
+      "path": "assets/background2-5.png",
+      "bytes": 109555,
+      "sha256": "9aa92ce63364e86793da2eafa2e97f84cc134b5243a4f4960d2c6d1ee4c26519"
+    },
+    {
+      "path": "assets/background3-0.png",
+      "bytes": 447425,
+      "sha256": "400ee1c988fd7b195e186ec9b5bee3d0fc56f521b3a202a3b17e2080aa2f9222"
+    },
+    {
+      "path": "assets/background3-1.png",
+      "bytes": 459274,
+      "sha256": "7db6042744486fc5d1e2eb36e3dc553aa483231b40d731fb3c11e9478dbdc63c"
+    },
+    {
+      "path": "assets/background3-2.png",
+      "bytes": 213488,
+      "sha256": "1d8fdd3143ae7256eb3fe230179a8cf2185c1edf113cf796a882b29ca6dbe779"
+    },
+    {
+      "path": "assets/background3-3.png",
+      "bytes": 183165,
+      "sha256": "ff6cbbe664f6e9c504b7d5335cecc57181d1a5431b5750e7dd3449a88927920d"
+    },
+    {
+      "path": "assets/background3-4.png",
+      "bytes": 180489,
+      "sha256": "833b2dac52f36ae3197a6a842b7a28b344d29a463087b1a09aa810b0e353ac3e"
+    },
+    {
+      "path": "assets/background3-5.png",
+      "bytes": 90931,
+      "sha256": "07d2d3a012013e76e3c598191df3265461eb612e4b8fd1849c6c22af4ad64b9e"
+    },
+    {
+      "path": "assets/background4-0.png",
+      "bytes": 356600,
+      "sha256": "20e16fcbb52d3b1ba4d705f4ff4ecb247be50dc4738f72a56be958e5a99979b5"
+    },
+    {
+      "path": "assets/background4-1.png",
+      "bytes": 333020,
+      "sha256": "1dda3755cc4bcbd1217ca779b65d00ddf063c9bf2747428ac202a6e112331abb"
+    },
+    {
+      "path": "assets/background4-2.png",
+      "bytes": 205012,
+      "sha256": "f0446514b3adeda0a349c38e8d31ef9e82bb1930dce7f8c522c33dcee19b5c2d"
+    },
+    {
+      "path": "assets/background4-3.png",
+      "bytes": 168442,
+      "sha256": "d51efe2733e780ccee8789c0f00c42a2ff1c3cf7cb0d36bcfc08825c264b220e"
+    },
+    {
+      "path": "assets/background4-4.png",
+      "bytes": 186190,
+      "sha256": "a530d0c3231b311caf1370dc5ef40c4efdffaf3920d8f4093a7abc2db0445623"
+    },
+    {
+      "path": "assets/background4-5.png",
+      "bytes": 90971,
+      "sha256": "d007d0ff0894b7f12fea28f36b94d53ea6ebcd2d7310e0dbc92fcfff34b68de4"
+    },
+    {
+      "path": "assets/background5-0.png",
+      "bytes": 332467,
+      "sha256": "d143f1c442fdf064f5e2992f69e8687f19b121d30bce6f2fdd8cd4fc70ff83ca"
+    },
+    {
+      "path": "assets/background5-1.png",
+      "bytes": 391093,
+      "sha256": "235891f9d499c2fa229837b74a8e83eb2c69e2ae13fdc51e70fee2f8d96b320d"
+    },
+    {
+      "path": "assets/background5-2.png",
+      "bytes": 190829,
+      "sha256": "09b73696162781cb7397b012a85eefc37f6d803c3c31fe96e1f88f744ee780cf"
+    },
+    {
+      "path": "assets/background5-3.png",
+      "bytes": 144252,
+      "sha256": "c96dce17f4d97c7c5174cde5849322f32841a69d86279174ffb889fdf73c335d"
+    },
+    {
+      "path": "assets/background5-4.png",
+      "bytes": 160033,
+      "sha256": "1ff74812716eb936fdd3a73771b44f99de6447f59067f5381e3198f57e830a54"
+    },
+    {
+      "path": "assets/background5-5.png",
+      "bytes": 70842,
+      "sha256": "9e375114e0734de077aed7aac0a480deeeb58bf81b67705ce6069d774c646b19"
+    },
+    {
+      "path": "assets/background6-0.png",
+      "bytes": 411785,
+      "sha256": "69f49568db5d0fb4615d2031e3b1f464413ad1d3a4207096f9e3dd2bed2435af"
+    },
+    {
+      "path": "assets/background6-1.png",
+      "bytes": 429264,
+      "sha256": "d7d9c08dacfde6d2ce1c407260a4a8ea9b774273492950a882f2e9f8bac4057a"
+    },
+    {
+      "path": "assets/background6-2.png",
+      "bytes": 209980,
+      "sha256": "262122fae87935f4e47057dcb2e8bc316f8c7900e9d6c204dd7a5b8b9ab4e9e6"
+    },
+    {
+      "path": "assets/background6-3.png",
+      "bytes": 176349,
+      "sha256": "c6f2033ae9014674d9a939bb9d34a0d56c3b6bbb9697251c2b9b915b6604f66b"
+    },
+    {
+      "path": "assets/background6-4.png",
+      "bytes": 185458,
+      "sha256": "133cdf58a6badecc8c74646499c29af3bdd5f4784378d58e613cac838f18f765"
+    },
+    {
+      "path": "assets/background6-5.png",
+      "bytes": 88163,
+      "sha256": "c5224bf6138e008b31f1f573ee003f7988c397a912402e49af4956132fce660a"
+    },
+    {
+      "path": "assets/menu-background1-0.png",
+      "bytes": 457980,
+      "sha256": "532c19307c19fb44945d5114ec2d0808b091cb24e0b314746a11215d72b42c29"
+    },
+    {
+      "path": "assets/menu-background1-1.png",
+      "bytes": 481274,
+      "sha256": "7c75d1b8e1f26aa18a0af102879d523602bc7e79b674cf31d55aa15942e40817"
+    },
+    {
+      "path": "assets/menu-background1-2.png",
+      "bytes": 235645,
+      "sha256": "9caf864ac2c27b1d2176a283e97cb126810cd13b5408cc1c1c06175fe645825c"
+    },
+    {
+      "path": "assets/menu-background1-3.png",
+      "bytes": 187431,
+      "sha256": "42b5e4332b67144a391fba6aaf7b6f9d6c49cfa43058d7cd7415b1ead2858bde"
+    },
+    {
+      "path": "assets/menu-background1-4.png",
+      "bytes": 206245,
+      "sha256": "371c4672535c4eedae59e2a1e210c53f1bc8004a5d420048cebbbbd99a9a0957"
+    },
+    {
+      "path": "assets/menu-background1-5.png",
+      "bytes": 94318,
+      "sha256": "8e0e6d80c6bf89c6e0703d9532c05bab29e0f40270f5830a5cda03a1cb322974"
+    }
+  ]
+}

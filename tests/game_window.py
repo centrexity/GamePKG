@@ -5,7 +5,7 @@ from gui_test_support import start_display, game_window
 from Xlib import display as xdisplay, protocol
 PROJECT=Path(__file__).resolve().parents[1]
 with tempfile.TemporaryDirectory(prefix='gamepkg-player-window-') as temporary:
- root=Path(temporary);config=root/'settings.toml';config.write_text('automatic_update_checks=false\n')
+ root=Path(temporary);config=root/'settings.toml';config.write_text('automatic_update_checks=false\ncheck_app_updates_on_startup=false\nmute_audio=true\n')
  env=dict(os.environ,GAMEPKG_HOME=str(root/'library'),GAMEPKG_CONFIG=str(config));env.pop('WAYLAND_DISPLAY',None)
  def run(*args):
   result=subprocess.run([str(PROJECT/'target/release/gamepkg'),*map(str,args)],env=env,text=True,capture_output=True,timeout=60)
@@ -14,7 +14,11 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-player-window-') as temporary:
  run('pack',PROJECT/'examples/minimal','-o',package,'--key',key);run('install',package,'--trust-creator');run('build','com.gamepkg.minimal')
  server=start_display(env);app=None
  try:
-  app=subprocess.Popen([str(PROJECT/'target/release/gamepkg-gui'),'--play','com.gamepkg.minimal','--target','native'],env=env,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
+  # Steam must retain both the selected library and settings, even if Steam's
+  # own inherited environment points somewhere else. Keep all paths private.
+  wrong=root/'invalid-inherited-settings.toml';wrong.write_text('not valid TOML\n')
+  launch_env=dict(env,GAMEPKG_HOME=str(root/'wrong-library'),GAMEPKG_CONFIG=str(wrong))
+  app=subprocess.Popen([str(PROJECT/'target/release/gamepkg-gui'),'--library',str(root/'library'),'--play','com.gamepkg.minimal','--target','native','--config',str(config)],env=launch_env,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
   window,pid=game_window(env,'com.gamepkg.minimal');assert pid==app.pid
   library=subprocess.run(['xdotool','search','--onlyvisible','--name','^GamePKG$'],env=env,capture_output=True)
   assert library.returncode!=0,'Player opened library UI'
@@ -39,7 +43,9 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-player-window-') as temporary:
   connection.flush();assert app.wait(timeout=15)==0,app.stderr.read().decode();connection.close()
   records=list((root/'library/progress').glob('*.json'));assert len(records)==1
   assert json.loads(records[0].read_text())['played_ms']>=1000
-  print('Separate player passed: game title/process, no library UI, normal window close and saved play time.')
+  assert wrong.read_text()=='not valid TOML\n'
+  assert not (root/'wrong-library').exists()
+  print('Separate player passed: Steam-style explicit library/settings override inherited paths, game title/process, no library UI, normal close and saved play time.')
  finally:
   if app and app.poll() is None:app.terminate();app.wait(timeout=10)
   server.terminate();server.wait(timeout=10)

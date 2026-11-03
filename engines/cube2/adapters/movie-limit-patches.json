@@ -1,0 +1,87 @@
+[
+  {
+    "file": "engine/movie.cpp",
+    "before": "#include \"engine.h\"",
+    "after": "#include \"engine.h\"\n#include \"gamepkg_movie_limit.h\"\n#include \"gamepkg_movie_io.h\""
+  },
+  {
+    "file": "engine/movie.cpp",
+    "before": "    vector<aviindexentry> index;",
+    "after": "    gamepkg_movie_budget gamepkg_budget;\n    vector<aviindexentry> index;"
+  },
+  {
+    "file": "engine/movie.cpp",
+    "before": "    bool writesound(uchar *data, uint framesize, uint frame)\n    {",
+    "after": "    bool writesound(uchar *data, uint framesize, uint frame)\n    {\n        if(!gamepkg_budget.allow(uint64_t(totalsize), framesize, uint64_t(index.length())+1u, true)) return false;"
+  },
+  {
+    "file": "engine/movie.cpp",
+    "before": "        if(frame < videoframes) return true;",
+    "after": "        if(frame < videoframes) return true;\n        uint64_t additions=uint64_t(frame)-uint64_t(videoframes)+1u;\n        if(!gamepkg_budget.allow(uint64_t(totalsize), (uint64_t(videow)*videoh*3u)/2u, uint64_t(index.length())+additions, false)) return false;"
+  },
+  {
+    "file": "engine/movie.cpp",
+    "before": "mesgs[state], file->videoframes);",
+    "after": "file->gamepkg_budget.reached ? \"storage limit reached\" : mesgs[state], file->videoframes);"
+  },
+  {
+    "file": "engine/movie.cpp",
+    "before": "    void writechunk(const char *fcc, const void *data, uint len) // simplify startchunk()/endchunk() to avoid f->seek()\n    {\n        f->write(fcc, 4);\n        f->putlil(len);\n        f->write(data, len);\n        totalsize += 4 + 4 + len;\n        if(len & 1) { f->putchar(0x00); totalsize++; }\n    }\n    \n",
+    "after": "    bool writechunk(const char *fcc, const void *data, uint len)\n    {\n        return gamepkg_movie_chunk(f, totalsize, fcc, data, len);\n    }\n\n"
+  },
+  {
+    "file": "engine/movie.cpp",
+    "before": "        writechunk(\"01wb\", data, framesize);\n\n        return true;",
+    "after": "        return writechunk(\"01wb\", data, framesize);"
+  },
+  {
+    "file": "engine/movie.cpp",
+    "before": "        writechunk(\"00dc\", format == VID_YUV420 ? pixels : yuv, framesize);\n\n        return true;",
+    "after": "        return writechunk(\"00dc\", format == VID_YUV420 ? pixels : yuv, framesize);"
+  },
+  {
+    "file": "engine/movie.cpp",
+    "before": "uint videoindexsize, soundindexsize, indexframes, videoframes, soundframes;",
+    "after": "uint videoindexsize, soundindexsize, indexframes, videoframes, soundframes, soundsamples;"
+  },
+  {
+    "file": "engine/movie.cpp",
+    "before": "indexframes(0), videoframes(0), soundframes(0) {}",
+    "after": "indexframes(0), videoframes(0), soundframes(0), soundsamples(0) {}"
+  },
+  {
+    "file": "engine/movie.cpp",
+    "before": "        seg.videoframes = videoframes;",
+    "after": "        seg.indexframes = indexframes;\n        seg.videoframes = videoframes;"
+  },
+  {
+    "file": "engine/movie.cpp",
+    "before": "f->putlil<uint>(segments[0].videoframes);",
+    "after": "f->putlil<uint>(segments[0].indexframes);"
+  },
+  {
+    "file": "engine/movie.cpp",
+    "before": "f->putlil<uint>(segments[0].soundframes);",
+    "after": "f->putlil<uint>(segments[0].soundsamples);"
+  },
+  {
+    "file": "engine/movie.cpp",
+    "before": "f->putlil<uint>(seg.soundframes);",
+    "after": "f->putlil<uint>(seg.soundsamples);"
+  },
+  {
+    "file": "engine/movie.cpp",
+    "before": "        uint indexframes = 0, videoframes = 0, soundframes = 0;",
+    "after": "        uint indexframes = 0, videoframes = 0, soundframes = 0, soundsamples = 0;"
+  },
+  {
+    "file": "engine/movie.cpp",
+    "before": "            if(e.type) soundframes++; ",
+    "after": "            if(e.type)\n            {\n                soundframes++;\n                const uint alignment=soundchannels*((soundformat==AUDIO_U8 || soundformat==AUDIO_S8) ? 1u : 2u);\n                if(alignment) soundsamples+=e.size/alignment;\n            }"
+  },
+  {
+    "file": "engine/movie.cpp",
+    "before": "            seg.soundframes = soundframes;",
+    "after": "            seg.soundframes = soundframes;\n            seg.soundsamples = soundsamples;"
+  }
+]

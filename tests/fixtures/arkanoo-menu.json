@@ -811,6 +811,2031 @@
       ],
       "button": 10,
       "action": 10
+    },
+    {
+      "settings": true,
+      "point": [
+        270.0,
+        170.0
+      ],
+      "button": 12,
+      "action": 12
+    },
+    {
+      "settings": true,
+      "point": [
+        269.5,
+        170.0
+      ],
+      "button": 12,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "point": [
+        369.5,
+        189.5
+      ],
+      "button": 12,
+      "action": 12
+    },
+    {
+      "settings": true,
+      "point": [
+        370.0,
+        170.0
+      ],
+      "button": 12,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "point": [
+        270.0,
+        190.0
+      ],
+      "button": 12,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "point": [
+        320.0,
+        180.0
+      ],
+      "button": 12,
+      "action": 12
+    },
+    {
+      "settings": true,
+      "point": [
+        269.875,
+        170.0
+      ],
+      "button": 12,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "point": [
+        270.0,
+        169.875
+      ],
+      "button": 12,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "point": [
+        369.875,
+        189.875
+      ],
+      "button": 12,
+      "action": 12
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        270.0,
+        315.0
+      ],
+      "button": 13,
+      "action": 13
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        269.5,
+        315.0
+      ],
+      "button": 13,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        369.5,
+        329.5
+      ],
+      "button": 13,
+      "action": 13
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        370.0,
+        315.0
+      ],
+      "button": 13,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        270.0,
+        330.0
+      ],
+      "button": 13,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        320.0,
+        322.5
+      ],
+      "button": 13,
+      "action": 13
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        269.875,
+        315.0
+      ],
+      "button": 13,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        270.0,
+        314.875
+      ],
+      "button": 13,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        369.875,
+        329.875
+      ],
+      "button": 13,
+      "action": 13
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        270.0,
+        332.5
+      ],
+      "button": 14,
+      "action": 14
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        269.5,
+        332.5
+      ],
+      "button": 14,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        369.5,
+        347.0
+      ],
+      "button": 14,
+      "action": 14
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        370.0,
+        332.5
+      ],
+      "button": 14,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        270.0,
+        347.5
+      ],
+      "button": 14,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        320.0,
+        340.0
+      ],
+      "button": 14,
+      "action": 14
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        269.875,
+        332.5
+      ],
+      "button": 14,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        270.0,
+        332.375
+      ],
+      "button": 14,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        369.875,
+        347.375
+      ],
+      "button": 14,
+      "action": 14
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        270.0,
+        350.0
+      ],
+      "button": 15,
+      "action": 15
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        269.5,
+        350.0
+      ],
+      "button": 15,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        369.5,
+        364.5
+      ],
+      "button": 15,
+      "action": 15
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        370.0,
+        350.0
+      ],
+      "button": 15,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        270.0,
+        365.0
+      ],
+      "button": 15,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        320.0,
+        357.5
+      ],
+      "button": 15,
+      "action": 15
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        269.875,
+        350.0
+      ],
+      "button": 15,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        270.0,
+        349.875
+      ],
+      "button": 15,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        369.875,
+        364.875
+      ],
+      "button": 15,
+      "action": 15
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        270.0,
+        367.5
+      ],
+      "button": 16,
+      "action": 16
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        269.5,
+        367.5
+      ],
+      "button": 16,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        369.5,
+        382.0
+      ],
+      "button": 16,
+      "action": 16
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        370.0,
+        367.5
+      ],
+      "button": 16,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        270.0,
+        382.5
+      ],
+      "button": 16,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        320.0,
+        375.0
+      ],
+      "button": 16,
+      "action": 16
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        269.875,
+        367.5
+      ],
+      "button": 16,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        270.0,
+        367.375
+      ],
+      "button": 16,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        369.875,
+        382.375
+      ],
+      "button": 16,
+      "action": 16
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        270.0,
+        385.0
+      ],
+      "button": 17,
+      "action": 17
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        269.5,
+        385.0
+      ],
+      "button": 17,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        369.5,
+        399.5
+      ],
+      "button": 17,
+      "action": 17
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        370.0,
+        385.0
+      ],
+      "button": 17,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        270.0,
+        400.0
+      ],
+      "button": 17,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        320.0,
+        392.5
+      ],
+      "button": 17,
+      "action": 17
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        269.875,
+        385.0
+      ],
+      "button": 17,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        270.0,
+        384.875
+      ],
+      "button": 17,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        369.875,
+        399.875
+      ],
+      "button": 17,
+      "action": 17
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        270.0,
+        285.0
+      ],
+      "button": 20,
+      "action": 20
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        269.5,
+        285.0
+      ],
+      "button": 20,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        369.5,
+        304.5
+      ],
+      "button": 20,
+      "action": 20
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        370.0,
+        285.0
+      ],
+      "button": 20,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        270.0,
+        305.0
+      ],
+      "button": 20,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        320.0,
+        295.0
+      ],
+      "button": 20,
+      "action": 20
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        269.875,
+        285.0
+      ],
+      "button": 20,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        270.0,
+        284.875
+      ],
+      "button": 20,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": false,
+      "point": [
+        369.875,
+        304.875
+      ],
+      "button": 20,
+      "action": 20
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        270.0,
+        315.0
+      ],
+      "button": 13,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        269.5,
+        315.0
+      ],
+      "button": 13,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        369.5,
+        329.5
+      ],
+      "button": 13,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        370.0,
+        315.0
+      ],
+      "button": 13,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        270.0,
+        330.0
+      ],
+      "button": 13,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        320.0,
+        322.5
+      ],
+      "button": 13,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        269.875,
+        315.0
+      ],
+      "button": 13,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        270.0,
+        314.875
+      ],
+      "button": 13,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        369.875,
+        329.875
+      ],
+      "button": 13,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        270.0,
+        332.5
+      ],
+      "button": 14,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        269.5,
+        332.5
+      ],
+      "button": 14,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        369.5,
+        347.0
+      ],
+      "button": 14,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        370.0,
+        332.5
+      ],
+      "button": 14,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        270.0,
+        347.5
+      ],
+      "button": 14,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        320.0,
+        340.0
+      ],
+      "button": 14,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        269.875,
+        332.5
+      ],
+      "button": 14,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        270.0,
+        332.375
+      ],
+      "button": 14,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        369.875,
+        347.375
+      ],
+      "button": 14,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        270.0,
+        350.0
+      ],
+      "button": 15,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        269.5,
+        350.0
+      ],
+      "button": 15,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        369.5,
+        364.5
+      ],
+      "button": 15,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        370.0,
+        350.0
+      ],
+      "button": 15,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        270.0,
+        365.0
+      ],
+      "button": 15,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        320.0,
+        357.5
+      ],
+      "button": 15,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        269.875,
+        350.0
+      ],
+      "button": 15,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        270.0,
+        349.875
+      ],
+      "button": 15,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        369.875,
+        364.875
+      ],
+      "button": 15,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        270.0,
+        367.5
+      ],
+      "button": 16,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        269.5,
+        367.5
+      ],
+      "button": 16,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        369.5,
+        382.0
+      ],
+      "button": 16,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        370.0,
+        367.5
+      ],
+      "button": 16,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        270.0,
+        382.5
+      ],
+      "button": 16,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        320.0,
+        375.0
+      ],
+      "button": 16,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        269.875,
+        367.5
+      ],
+      "button": 16,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        270.0,
+        367.375
+      ],
+      "button": 16,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        369.875,
+        382.375
+      ],
+      "button": 16,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        270.0,
+        385.0
+      ],
+      "button": 17,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        269.5,
+        385.0
+      ],
+      "button": 17,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        369.5,
+        399.5
+      ],
+      "button": 17,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        370.0,
+        385.0
+      ],
+      "button": 17,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        270.0,
+        400.0
+      ],
+      "button": 17,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        320.0,
+        392.5
+      ],
+      "button": 17,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        269.875,
+        385.0
+      ],
+      "button": 17,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        270.0,
+        384.875
+      ],
+      "button": 17,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        369.875,
+        399.875
+      ],
+      "button": 17,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        270.0,
+        285.0
+      ],
+      "button": 20,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        269.5,
+        285.0
+      ],
+      "button": 20,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        369.5,
+        304.5
+      ],
+      "button": 20,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        370.0,
+        285.0
+      ],
+      "button": 20,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        270.0,
+        305.0
+      ],
+      "button": 20,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        320.0,
+        295.0
+      ],
+      "button": 20,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        269.875,
+        285.0
+      ],
+      "button": 20,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        270.0,
+        284.875
+      ],
+      "button": 20,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        369.875,
+        304.875
+      ],
+      "button": 20,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        240.0,
+        415.0
+      ],
+      "button": 18,
+      "action": 18
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        239.5,
+        415.0
+      ],
+      "button": 18,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        289.5,
+        432.0
+      ],
+      "button": 18,
+      "action": 18
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        290.0,
+        415.0
+      ],
+      "button": 18,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        240.0,
+        432.5
+      ],
+      "button": 18,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        265.0,
+        423.75
+      ],
+      "button": 18,
+      "action": 18
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        239.875,
+        415.0
+      ],
+      "button": 18,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        240.0,
+        414.875
+      ],
+      "button": 18,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        289.875,
+        432.375
+      ],
+      "button": 18,
+      "action": 18
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        300.0,
+        415.0
+      ],
+      "button": 19,
+      "action": 19
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        299.5,
+        415.0
+      ],
+      "button": 19,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        349.5,
+        432.0
+      ],
+      "button": 19,
+      "action": 19
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        350.0,
+        415.0
+      ],
+      "button": 19,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        300.0,
+        432.5
+      ],
+      "button": 19,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        325.0,
+        423.75
+      ],
+      "button": 19,
+      "action": 19
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        299.875,
+        415.0
+      ],
+      "button": 19,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        300.0,
+        414.875
+      ],
+      "button": 19,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        349.875,
+        432.375
+      ],
+      "button": 19,
+      "action": 19
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        270.0,
+        260.0
+      ],
+      "button": 7,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        269.5,
+        260.0
+      ],
+      "button": 7,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        369.5,
+        279.5
+      ],
+      "button": 7,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        370.0,
+        260.0
+      ],
+      "button": 7,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        270.0,
+        280.0
+      ],
+      "button": 7,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        320.0,
+        270.0
+      ],
+      "button": 7,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        269.875,
+        260.0
+      ],
+      "button": 7,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        270.0,
+        259.875
+      ],
+      "button": 7,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        369.875,
+        279.875
+      ],
+      "button": 7,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        270.0,
+        440.0
+      ],
+      "button": 8,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        269.5,
+        440.0
+      ],
+      "button": 8,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        369.5,
+        459.5
+      ],
+      "button": 8,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        370.0,
+        440.0
+      ],
+      "button": 8,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        270.0,
+        460.0
+      ],
+      "button": 8,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        320.0,
+        450.0
+      ],
+      "button": 8,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        269.875,
+        440.0
+      ],
+      "button": 8,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        270.0,
+        439.875
+      ],
+      "button": 8,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        369.875,
+        459.875
+      ],
+      "button": 8,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        270.0,
+        215.0
+      ],
+      "button": 10,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        269.5,
+        215.0
+      ],
+      "button": 10,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        369.5,
+        234.5
+      ],
+      "button": 10,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        370.0,
+        215.0
+      ],
+      "button": 10,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        270.0,
+        235.0
+      ],
+      "button": 10,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        320.0,
+        225.0
+      ],
+      "button": 10,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        269.875,
+        215.0
+      ],
+      "button": 10,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        270.0,
+        214.875
+      ],
+      "button": 10,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        369.875,
+        234.875
+      ],
+      "button": 10,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        270.0,
+        170.0
+      ],
+      "button": 12,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        269.5,
+        170.0
+      ],
+      "button": 12,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        369.5,
+        189.5
+      ],
+      "button": 12,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        370.0,
+        170.0
+      ],
+      "button": 12,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        270.0,
+        190.0
+      ],
+      "button": 12,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        320.0,
+        180.0
+      ],
+      "button": 12,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        269.875,
+        170.0
+      ],
+      "button": 12,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        270.0,
+        169.875
+      ],
+      "button": 12,
+      "action": 0
+    },
+    {
+      "settings": true,
+      "windowed": true,
+      "vsync": true,
+      "pending": true,
+      "point": [
+        369.875,
+        189.875
+      ],
+      "button": 12,
+      "action": 0
     }
   ],
   "slider": [
@@ -1040,10 +3065,232 @@
       "volume": 128
     }
   ],
-  "remaining": [
-    "Original splash/menu transitions",
-    "Original music settings and recorded effects",
-    "Resolution/VSync controls and confirm/revert",
-    "Original fonts/background artwork"
-  ]
+  "music_slider": [
+    {
+      "event": [
+        1,
+        320,
+        200,
+        0
+      ],
+      "volume": 64
+    },
+    {
+      "event": [
+        2,
+        320,
+        200,
+        1
+      ],
+      "volume": 64
+    },
+    {
+      "event": [
+        1,
+        295,
+        200,
+        1
+      ],
+      "volume": 32
+    },
+    {
+      "event": [
+        1,
+        390,
+        200,
+        1
+      ],
+      "volume": 128
+    },
+    {
+      "event": [
+        1,
+        250,
+        200,
+        1
+      ],
+      "volume": 0
+    },
+    {
+      "event": [
+        3,
+        250,
+        200,
+        1
+      ],
+      "volume": 0
+    },
+    {
+      "event": [
+        1,
+        320,
+        200,
+        0
+      ],
+      "volume": 0
+    },
+    {
+      "event": [
+        2,
+        260,
+        200,
+        1
+      ],
+      "volume": 0
+    },
+    {
+      "event": [
+        1,
+        280,
+        200,
+        1
+      ],
+      "volume": 12
+    },
+    {
+      "event": [
+        1,
+        345.25,
+        200,
+        1
+      ],
+      "volume": 96
+    },
+    {
+      "event": [
+        3,
+        345.25,
+        200,
+        1
+      ],
+      "volume": 96
+    },
+    {
+      "event": [
+        1,
+        270,
+        200,
+        0
+      ],
+      "volume": 96
+    },
+    {
+      "event": [
+        2,
+        320,
+        200,
+        2
+      ],
+      "volume": 96
+    },
+    {
+      "event": [
+        1,
+        350,
+        200,
+        0
+      ],
+      "volume": 96
+    },
+    {
+      "event": [
+        2,
+        320,
+        200,
+        1
+      ],
+      "volume": 96
+    },
+    {
+      "event": [
+        3,
+        320,
+        200,
+        4
+      ],
+      "volume": 96
+    },
+    {
+      "event": [
+        1,
+        330,
+        200,
+        1
+      ],
+      "volume": 76
+    },
+    {
+      "event": [
+        3,
+        330,
+        200,
+        1
+      ],
+      "volume": 76
+    },
+    {
+      "event": [
+        1,
+        350,
+        200,
+        0
+      ],
+      "volume": 76
+    },
+    {
+      "event": [
+        2,
+        320,
+        200,
+        1
+      ],
+      "volume": 76
+    },
+    {
+      "event": [
+        1,
+        390,
+        200,
+        1
+      ],
+      "volume": 76
+    },
+    {
+      "event": [
+        1,
+        320,
+        200,
+        1
+      ],
+      "volume": 64
+    },
+    {
+      "event": [
+        1,
+        390,
+        200,
+        1
+      ],
+      "volume": 128
+    },
+    {
+      "event": [
+        3,
+        390,
+        200,
+        1
+      ],
+      "volume": 128
+    },
+    {
+      "event": [
+        1,
+        350,
+        200,
+        0
+      ],
+      "volume": 128
+    }
+  ],
+  "scope": "Original main/settings hit tests including music, VSync and resolution confirmation, and both volume sliders; rendering is a separate gate"
 }

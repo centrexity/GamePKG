@@ -8,6 +8,23 @@ PROJECT=Path(__file__).resolve().parents[1];BINS=Path(os.environ.get('GAMEPKG_TE
 with tempfile.TemporaryDirectory(prefix='gamepkg-remembered-roms-') as temp:
  root=Path(temp);home=root/'library';config=root/'settings.toml';config.write_text('automatic_update_checks=false\n')
  env=dict(os.environ,GAMEPKG_HOME=str(home),GAMEPKG_CONFIG=str(config),LIBGL_ALWAYS_SOFTWARE='1');env.pop('WAYLAND_DISPLAY',None);env['DBUS_SESSION_BUS_ADDRESS']='unix:path=/tmp/gamepkg-no-session-bus'
+ # Native picker preferences and recent-file history belong to this test.
+ for variable,folder in [('XDG_CONFIG_HOME','desktop-config'),('XDG_DATA_HOME','desktop-data'),('XDG_CACHE_HOME','desktop-cache')]:
+  location=root/folder;location.mkdir();env[variable]=str(location)
+ env['GSETTINGS_BACKEND']='memory'
+ picker_binary=shutil.which('zenity',path=env['PATH']);assert picker_binary
+ picker_log=root/'picker-output.jsonl';picker_bin=root/'picker-bin';picker_bin.mkdir()
+ recorder=picker_bin/'zenity'
+ recorder.write_text('#!/usr/bin/env python3\n'
+  'import json,subprocess,sys\n'
+  f'result=subprocess.run([{picker_binary!r},*sys.argv[1:]],capture_output=True)\n'
+  f'with open({str(picker_log)!r},"a",encoding="utf-8") as log:\n'
+  ' log.write(json.dumps(dict(args=sys.argv[1:],exit=result.returncode,stdout=result.stdout.hex(),stderr=result.stderr.hex()))+"\\n")\n'
+  'sys.stdout.buffer.write(result.stdout);sys.stderr.buffer.write(result.stderr);sys.exit(result.returncode)\n')
+ recorder.chmod(0o755);env['PATH']=str(picker_bin)+os.pathsep+env['PATH']
+ def receipts():
+  text=picker_log.read_text() if picker_log.exists() else ''
+  return [json.loads(line) for line in text.split('\n')[:-1] if line]
  key=root/'key';key.write_text('65'*32)
  def run(*args):
   r=subprocess.run([str(BINS/'gamepkg'),*map(str,args)],env=env,capture_output=True,text=True,timeout=180);assert r.returncode==0,r.stderr
@@ -36,14 +53,40 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-remembered-roms-') as temp:
   Image.open(path).resize((3400,2200)).save(root/'ocr.png')
   tsv=subprocess.check_output(['tesseract',str(root/'ocr.png'),'stdout','--psm','11','tsv'],stderr=subprocess.DEVNULL,text=True)
   return [dict(w,left=int(w['left'])//2,top=int(w['top'])//2,width=int(w['width'])//2,height=int(w['height'])//2) for w in csv.DictReader(io.StringIO(tsv),delimiter='\t',quoting=csv.QUOTE_NONE) if w['text'].strip()]
- def click_word(w):subprocess.run(['xdotool','mousemove','--window',window,str(w['left']+w['width']//2),str(w['top']+w['height']//2),'click','1'],env=env,check=True);time.sleep(.2)
- def click_rom_field(name):
-  ws=words();labels=[w for w in ws if w['text'].lower()==name and w['left']<200]
-  assert labels,ws
-  label=min(labels,key=lambda w:w['top'])
-  fields=[w for w in ws if label['top']+label['height']<w['top']<label['top']+110 and w['left']<650]
-  assert fields,ws
-  click_word(min(fields,key=lambda w:w['top']))
+ def click_word(w):
+  subprocess.run(['xdotool','mousemove','--sync','--window',window,str(w['left']+w['width']//2),str(w['top']+w['height']//2)],env=env,check=True)
+  time.sleep(.15)
+  subprocess.run(['xdotool','click','1'],env=env,check=True);time.sleep(.2)
+ def click_rom_field(name,selected_path=None):
+  # Bare Xvfb does not restore the parent focus after a native chooser closes.
+  subprocess.run(['xdotool','windowfocus','--sync',window],env=env,check=True)
+  deadline=time.monotonic()+10
+  while True:
+   ws=words();labels=[w for w in ws if w['text'].lower()==name and w['left']<200]
+   assert labels,ws
+   label=min(labels,key=lambda w:w['top'])
+   # OCR can read the rounded button border as '[' or '|'. Click its text,
+   # not the thin edge, when reopening an already selected file.
+   fields=[w for w in ws if label['top']+label['height']<w['top']<label['top']+110 and w['left']<650 and any(c.isalnum() for c in w['text'])]
+   if selected_path is not None:
+    # Match the known file name, not OCR of the random temporary directory:
+    # it can confuse letters and digits. Exclude the explanatory text below.
+    fields=[w for w in fields if w['text'].rstrip('[]()|').endswith(selected_path.name)]
+   # Persistence can complete before the UI receives the picker result.
+   # Observe the selected filename and idle UI before trying to reopen it.
+   if fields and not any(w['text'].startswith('Working') for w in ws):break
+   assert time.monotonic()<deadline,ws
+   time.sleep(.1)
+  target=min(fields,key=lambda w:w['top'])
+  print('ROM field target:',name,target,flush=True)
+  click_word(target)
+ def back_to_library():
+  # Playback controls can leave the game page scrolled below its Back button.
+  # Reveal the real navigation control before locating it by its visible label.
+  subprocess.run(['xdotool','mousemove','--window',window,'400','800','click','--repeat','20','--delay','30','4'],env=env,check=True)
+  time.sleep(.2)
+  click_text(window,env,'Back to library',root)
+
  def expect_rom(byte):
   wait_game_frame(window,env,root,(255,0,0) if byte==65 else (0,255,0))
 
@@ -59,19 +102,24 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-remembered-roms-') as temp:
     if any(str(path) in paths for paths in stored.values()):break
     assert time.monotonic()<deadline,'Selected ROM was not remembered'
     time.sleep(.1)
+   receipt=receipts()[-1];assert receipt['exit']==0 and bytes.fromhex(receipt['stdout']).decode().strip()==str(path),receipt
    if name=='alpha':
     before=(home/'rom-selections.json').read_bytes()
-    click_rom_field(name)
+    click_rom_field(name,path)
     choose_native_file(env,'Choose Alpha ROM')
     assert (home/'rom-selections.json').read_bytes()==before,'Cancel changed remembered ROMs'
-   time.sleep(.3);click_text(window,env,'Back to library',root)
+   time.sleep(.3);back_to_library()
   stored=json.loads((home/'rom-selections.json').read_text());assert sorted(stored.values())==sorted([[str(a)],[str(b)]])
   close();launch()
-  click_text(window,env,'com.example.alpha',root);click_primary_play(window,env,root);library_window=window;window,pid=game_window(env,'com.example.alpha');assert pid != app.pid;expect_rom(65);close_game(window,env);window=library_window;click_text(window,env,'Back to library',root)
-  click_text(window,env,'com.example.beta',root);click_primary_play(window,env,root);library_window=window;window,pid=game_window(env,'com.example.beta');assert pid != app.pid;expect_rom(66);close_game(window,env);window=library_window;click_text(window,env,'Back to library',root)
+  click_text(window,env,'com.example.alpha',root);click_primary_play(window,env,root);library_window=window;window,pid=game_window(env,'com.example.alpha');assert pid != app.pid;expect_rom(65);close_game(window,env);window=library_window;back_to_library()
+  click_text(window,env,'com.example.beta',root);click_primary_play(window,env,root);library_window=window;window,pid=game_window(env,'com.example.beta');assert pid != app.pid;expect_rom(66);close_game(window,env);window=library_window;back_to_library()
   proof=PROJECT/'target/remembered-roms-library.png';subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(proof)],env=env,check=True)
   close();launch('--play','com.example.alpha');expect_rom(65)
   print('Remembered ROMs passed: separate file paths, game switching, restart and direct --play without reselecting files.')
+ except BaseException:
+  subprocess.run(['import','-display',env['DISPLAY'],'-window','root',str(PROJECT/'target/remembered-roms-final.png')],env=env,check=False)
+  raise
  finally:
+  if picker_log.exists():shutil.copy2(picker_log,PROJECT/'target/remembered-roms-picker-output.jsonl')
   if app and app.poll() is None:close()
   server.terminate();server.wait(timeout=10)

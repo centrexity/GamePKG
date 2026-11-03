@@ -12,16 +12,19 @@ export class RecordedOutputClient {
   if(parent!==undefined&&!(parent instanceof RecordedBudget))throw Error('Invalid output memory allowance');
   if(signal!==undefined&&!(signal instanceof AbortSignal))throw Error('Invalid output cancellation signal');
   if(signal?.aborted)throw Error('Audio output startup cancelled');
+  const startupDeadline=performance.now()+STARTUP_MS;
   const reservation=parent?.reserve(budget+wasm.length*3);let client;
   try{client=new RecordedOutputClient(CREATE,new AudioContext({sampleRate:48000}),reservation,parent);}catch(error){reservation?.release();throw error;}
   let cancel;const cancelled=new Promise((_,reject)=>cancel=reject);const abort=()=>{cancel(Error('Audio output startup cancelled'));void client.close().catch(()=>{});};signal?.addEventListener('abort',abort,{once:true});let timer;
   try{
-   await Promise.race([cancelled,client.#context.audioWorklet.addModule(new URL('./recorded-worklet.js',import.meta.url)),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Audio output startup deadline exceeded')),STARTUP_MS);})]);
+   await Promise.race([cancelled,client.#context.audioWorklet.addModule(new URL('./recorded-worklet.js',import.meta.url)),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Audio output startup deadline exceeded')),Math.max(0,startupDeadline-performance.now()));})]);
    if(client.#closed)throw Error('Audio output startup cancelled');
    const bytes=wasm.slice();client.#node=new AudioWorkletNode(client.#context,'gamepkg-recorded-output',{numberOfInputs:0,numberOfOutputs:1,outputChannelCount:[2],processorOptions:{session:client.#session,wasm:bytes,budget}});
    client.#node.port.onmessage=({data})=>client.#reply(data);client.#node.port.onmessageerror=()=>client.#fail(Error('Invalid audio output message'));client.#node.onprocessorerror=()=>client.#fail(Error('Audio output processor failed'));
    client.#gain=client.#context.createGain();client.#node.connect(client.#gain);client.#gain.connect(client.#context.destination);
-   await client.request('snapshot');return client;
+   // The processor compiles its mixer before it can acknowledge readiness.
+   // Module loading and that first reply share one absolute startup deadline.
+   await client.#request('snapshot',{},[],startupDeadline);return client;
   }catch(error){await client.close();throw error;}finally{clearTimeout(timer);signal?.removeEventListener('abort',abort);}
  }
  async connectMusic(sender,port){if(this.#closed||this.#music||!(sender instanceof RecordedMusicSender))return false;try{const reply=await this.request('music-port',{port},[port]);if(!reply.ok||this.#closed){sender.close();return false;}this.#music=sender;return true;}catch(error){sender.close();throw error;}}
@@ -47,14 +50,15 @@ export class RecordedOutputClient {
   if(!Number.isSafeInteger(data.generation)||data.generation<0||!Number.isSafeInteger(data.playedFrames)||data.playedFrames<0||!Number.isInteger(data.queuedFrames)||data.queuedFrames<0||data.queuedFrames>4800||!Number.isInteger(data.activeEffects)||data.activeEffects<0||data.activeEffects>4||typeof data.failed!=='boolean'||!['loading','playing','paused','ended','failed','stopped'].includes(data.musicStatus)){this.#fail(Error('Invalid audio output state'));return;}
   clearTimeout(pending.timer);this.#pending=null;pending.resolve(data);
  }
- request(kind,fields={},transfer=[]){
+ request(kind,fields={},transfer=[]){return this.#request(kind,fields,transfer,performance.now()+REQUEST_MS);}
+ #request(kind,fields,transfer,deadline){
   if(this.#closed)return Promise.reject(Error('Audio output is closed'));
   if(this.#pending)return Promise.reject(Error('Audio output request already pending'));
   if(!['snapshot','load','unload','controls','music-port','prepare','finish','reserve-clip','admit-clip','cancel-clip'].includes(kind))return Promise.reject(Error('Invalid audio output operation'));
   if(this.#serial>=Number.MAX_SAFE_INTEGER){this.#fail(Error('Audio request counter exhausted'));return Promise.reject(Error('Audio request counter exhausted'));}
   const id=++this.#serial;
   return new Promise((resolve,reject)=>{
-   this.#pending={id,kind,resolve,reject,expires:performance.now()+REQUEST_MS,timer:setTimeout(()=>this.#fail(Error('Audio output deadline exceeded')),REQUEST_MS)};
+   this.#pending={id,kind,resolve,reject,expires:deadline,timer:setTimeout(()=>this.#fail(Error('Audio output deadline exceeded')),Math.max(0,deadline-performance.now()))};
    try{this.#node.port.postMessage({...fields,session:this.#session,id,kind},transfer);}catch(error){this.#fail(error);}
   });
  }

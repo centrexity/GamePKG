@@ -1,6 +1,31 @@
 #[path = "support/arkanoo_canonical.rs"]
 mod canonical;
 use gamepkg::{drawing::Command, runtime::Game};
+// Structural assertions accept solid rectangles independently of their previous
+// one-texel representation. Full SDL pixel comparisons exercise real rasterization.
+fn solid_rect(command: &Command) -> Option<([f32; 4], [u8; 4])> {
+    match command {
+        Command::Rect {
+            x,
+            y,
+            width,
+            height,
+            rgba,
+        } => Some(([*x, *y, *width, *height], rgba.to_be_bytes())),
+        Command::Image {
+            x,
+            y,
+            width,
+            height,
+            image,
+        } if image.size() == [1, 1] => Some((
+            [*x, *y, *width, *height],
+            image.pixels().try_into().unwrap(),
+        )),
+        _ => None,
+    }
+}
+
 fn original_gravity_caption(commands: &[Command]) -> bool {
     commands.iter().any(|command|matches!(command,Command::LinearImage{x,y,width,height,image} if (*x,*y,*width,*height)==(281.0,229.5,78.0,15.5) && image.size()==[156,31]))
 }
@@ -1026,7 +1051,11 @@ fn original_editor_workflow_persists_patterns_and_preserves_corrupt_saves_in_rea
     let mut game = load_menu(root.path(), "com.gamepkg.arkanoo").unwrap();
     game.step(0).unwrap();
     editor_key(&mut game, 101);
-    assert!(game.frame().commands.iter().any(|c|matches!(c,Command::Image{x,y,width,height,image} if *x==20.0 && *y==100.0 && *width==600.5 && *height==0.5 && image.size()==[1,1] && image.pixels()==[80,80,100,255])));
+    assert!(game
+        .frame()
+        .commands
+        .iter()
+        .any(|c| solid_rect(c) == Some(([20.0, 100.0, 600.5, 0.5], [80, 80, 100, 255]))));
     for (index, key) in [54, 55, 56, 53].iter().enumerate() {
         editor_key(&mut game, *key);
         editor_click(&mut game, 20.0 + index as f32 * 30.0, 100.0, 1);
@@ -1049,7 +1078,11 @@ fn original_editor_workflow_persists_patterns_and_preserves_corrupt_saves_in_rea
     editor_key(&mut game, 116); // Test the actual edited board, then clear through the original Q action.
     game.step(8).unwrap(); // Pause and return to editing without completing the test.
     editor_key(&mut game, 101);
-    assert!(game.frame().commands.iter().any(|c|matches!(c,Command::Image{x,y,width,height,image} if *x==20.0 && *y==100.0 && *width==600.5 && *height==0.5 && image.size()==[1,1] && image.pixels()==[80,80,100,255])));
+    assert!(game
+        .frame()
+        .commands
+        .iter()
+        .any(|c| solid_rect(c) == Some(([20.0, 100.0, 600.5, 0.5], [80, 80, 100, 255]))));
     editor_key(&mut game, 116);
     assert_eq!(
         game.frame()
@@ -1062,7 +1095,11 @@ fn original_editor_workflow_persists_patterns_and_preserves_corrupt_saves_in_rea
         3
     );
     editor_key(&mut game, 113);
-    assert!(game.frame().commands.iter().any(|c|matches!(c,Command::Image{x,y,width,height,image} if *x==20.0 && *y==100.0 && *width==600.5 && *height==0.5 && image.size()==[1,1] && image.pixels()==[80,80,100,255])));
+    assert!(game
+        .frame()
+        .commands
+        .iter()
+        .any(|c| solid_rect(c) == Some(([20.0, 100.0, 600.5, 0.5], [80, 80, 100, 255]))));
     drop(game);
     let mut game = load_menu(root.path(), "com.gamepkg.arkanoo").unwrap();
     game.step(0).unwrap();
@@ -1118,8 +1155,24 @@ fn denied_editor_saving_does_not_create_a_save_file() {
     editor_key(&mut game, 115);
     game.step(0).unwrap();
     editor_key(&mut game, 108);
-    assert!(game.frame().commands.iter().any(|c|matches!(c,Command::Image{x,y,width,height,image} if (*x,*y,*width,*height)==(170.0,115.0,300.0,250.0) && image.pixels()==[40,45,52,255])),"saved-pattern browser did not open");
-    assert!(!game.frame().commands.iter().any(|c|matches!(c,Command::Image{x,y,width,height,image} if *x==180.0 && (145.0..320.0).contains(y) && *width==280.0 && *height==15.0 && image.size()==[1,1])),"denied save appeared as a saved pattern row");
+    assert!(
+        game.frame()
+            .commands
+            .iter()
+            .any(|c| solid_rect(c) == Some(([170.0, 115.0, 300.0, 250.0], [40, 45, 52, 255]))),
+        "saved-pattern browser did not open"
+    );
+    assert!(
+        !game
+            .frame()
+            .commands
+            .iter()
+            .any(|c| solid_rect(c).is_some_and(|(rect, _)| rect[0] == 180.0
+                && (145.0..320.0).contains(&rect[1])
+                && rect[2] == 280.0
+                && rect[3] == 15.0)),
+        "denied save appeared as a saved pattern row"
+    );
     drop(game);
     assert!(
         !root.path().join("saves").exists()
@@ -1197,7 +1250,9 @@ fn ascii_file_import_and_export_use_only_player_selected_bytes_across_all_profil
             panic!("not an export");
         };
         assert_eq!(name, "Imported.txt");
-        let mut expected=String::from("# Pattern: Imported\n# * = empty, 0-5 = normal, 6 = Ice, 7 = Explosive, 8 = Undestroyable\n\n012345678678********\n");
+        let mut expected = String::from(
+            "# Pattern: Imported\n# * = empty, 0-5 = normal, 6 = Ice, 7 = Explosive, 8 = Undestroyable\n\n012345678678********\n",
+        );
         for _ in 0..9 {
             expected.push_str("********************\n");
         }
@@ -1530,7 +1585,12 @@ fn actual_menu_clicks_start_resume_restart_gravity_editor_settings_fullscreen_an
         })
         .unwrap();
         game.step(0).unwrap();
-        assert!(game.frame().commands.iter().any(|command|matches!(command,Command::Image{x,y,width,height,image} if *x==20.0 && *y==100.0 && *width==600.5 && *height==0.5 && image.size()==[1,1] && image.pixels()==[80,80,100,255])));
+        assert!(game
+            .frame()
+            .commands
+            .iter()
+            .any(|command| solid_rect(command)
+                == Some(([20.0, 100.0, 600.5, 0.5], [80, 80, 100, 255]))));
         game.input_event(Event {
             kind: 9,
             x: 0.0,
@@ -1605,11 +1665,11 @@ fn actual_menu_clicks_start_resume_restart_gravity_editor_settings_fullscreen_an
 
 fn original_effect_pcm(kind: u32) -> Vec<i16> {
     let bytes: &[u8] = match kind {
-        1 => include_bytes!("../ports/arkanoo/assets/audio/bounce.wav"),
-        2 => include_bytes!("../ports/arkanoo/assets/audio/glass.wav"),
-        3 => include_bytes!("../ports/arkanoo/assets/audio/launch.wav"),
-        4 => include_bytes!("../ports/arkanoo/assets/audio/explosion.wav"),
-        5 => include_bytes!("../ports/arkanoo/assets/audio/life-loss.wav"),
+        1 => include_bytes!("fixtures/arkanoo-legacy-effects/bounce.wav"),
+        2 => include_bytes!("fixtures/arkanoo-legacy-effects/glass.wav"),
+        3 => include_bytes!("fixtures/arkanoo-legacy-effects/launch.wav"),
+        4 => include_bytes!("fixtures/arkanoo-legacy-effects/explosion.wav"),
+        5 => include_bytes!("fixtures/arkanoo-legacy-effects/life-loss.wav"),
         _ => panic!("unknown test effect"),
     };
     bytes[44..]
@@ -1794,27 +1854,39 @@ fn legacy_audio_defaults_migrate_and_denied_or_damaged_settings_preserve_data() 
             assert_eq!(u32::from_le_bytes(bytes[4..8].try_into().unwrap()), 17);
             assert_eq!(u32::from_le_bytes(bytes[8..12].try_into().unwrap()), 7);
         }
-        let mut damaged = b"ARK3".to_vec();
-        for value in [17u32, 7, 2048, 0] {
-            damaged.extend(value.to_le_bytes());
+        for (magic, flags) in [
+            (b"ARK1", 2u32),
+            (b"ARK1", u32::MAX),
+            (b"ARK2", 2),
+            (b"ARK3", 2048),
+            (b"ARK4", 129 << 10),
+            (b"ARK4", 1 << 19),
+        ] {
+            let mut damaged = magic.to_vec();
+            for value in [17u32, 7, flags] {
+                damaged.extend(value.to_le_bytes());
+            }
+            if magic != b"ARK1" {
+                damaged.extend(0u32.to_le_bytes());
+            }
+            std::fs::write(&save, &damaged).unwrap();
+            let mut game = load_menu(root.path(), id).unwrap();
+            game.step(0).unwrap();
+            event(&mut game, 2, 320.0, 285.0, 1);
+            event(&mut game, 2, 320.0, 245.0, 1);
+            event(&mut game, 1, 295.0, 245.0, 1);
+            game.step(0).unwrap();
+            assert!(
+                game.frame()
+                    .commands
+                    .iter()
+                    .any(|command| matches!(command,Command::Image{y,..} if *y==330.0)),
+                "damaged-save warning is absent"
+            );
+            game.finish().unwrap();
+            drop(game);
+            assert_eq!(std::fs::read(&save).unwrap(), damaged);
         }
-        std::fs::write(&save, &damaged).unwrap();
-        let mut game = load_menu(root.path(), id).unwrap();
-        game.step(0).unwrap();
-        event(&mut game, 2, 320.0, 285.0, 1);
-        event(&mut game, 2, 320.0, 245.0, 1);
-        event(&mut game, 1, 295.0, 245.0, 1);
-        game.step(0).unwrap();
-        assert!(
-            game.frame()
-                .commands
-                .iter()
-                .any(|command| matches!(command,Command::Image{y,..} if *y==330.0)),
-            "damaged-save warning is absent"
-        );
-        game.finish().unwrap();
-        drop(game);
-        assert_eq!(std::fs::read(&save).unwrap(), damaged);
     }
     for id in [
         "com.gamepkg.arkanoo-nosave",
@@ -2319,9 +2391,12 @@ fn original_fire_glass_blob_and_clipped_shine_match_real_sdl_wrappers() {
                             + 127)
                             / 255
                     } as u8;
-                    assert!(actual.abs_diff(target[channel]) <= 3,
+                    assert!(
+                        actual.abs_diff(target[channel]) <= 3,
                         "Fire case {index}, background {}, pixel {pixel}, channel {channel}: {actual} vs {}",
-                        composite["background"], target[channel]);
+                        composite["background"],
+                        target[channel]
+                    );
                 }
             }
         }
@@ -2424,7 +2499,12 @@ fn original_glass_bonus_layers_preserve_types_symbols_order_and_full_drop_budget
                             + 127)
                             / 255
                     } as u8;
-                    assert!(actual.abs_diff(target[channel])<=3,"Bonus case {index}, background {}, pixel {pixel}, channel {channel}: {actual} versus {}",composite["background"],target[channel]);
+                    assert!(
+                        actual.abs_diff(target[channel]) <= 3,
+                        "Bonus case {index}, background {}, pixel {pixel}, channel {channel}: {actual} versus {}",
+                        composite["background"],
+                        target[channel]
+                    );
                 }
             }
         }
@@ -2464,7 +2544,7 @@ fn original_glass_bonus_layers_preserve_types_symbols_order_and_full_drop_budget
             matches!(
                 commands[score - 1],
                 Command::Clip {
-                    rect: Some([5.0, 65.0, _, 15.5])
+                    rect: Some([0.0, 65.0, _, 15.5])
                 }
             ),
             "score must use its world-scoped label clip"
@@ -3317,19 +3397,9 @@ fn original_editor_grid_and_backdrop_match_sdl_logical_pixels_and_endpoints() {
             .commands
             .iter()
             .filter_map(|command| {
-                if let Command::Image {
-                    x,
-                    y,
-                    width,
-                    height,
-                    image,
-                } = command
-                {
-                    if image.size() == [1, 1] && image.pixels() == [80, 80, 100, 255] {
-                        return Some((*x, *y, *width, *height));
-                    }
-                }
-                None
+                solid_rect(command).and_then(|(rect, rgba)| {
+                    (rgba == [80, 80, 100, 255]).then_some((rect[0], rect[1], rect[2], rect[3]))
+                })
             })
             .collect();
         let expected: Vec<_> = (0..11)
@@ -3392,8 +3462,18 @@ fn original_editor_palette_colors_borders_digits_and_order_match_sdl_pixels() {
                 *channel = ((u16::from(*channel) * 102 + 127) / 255) as u8;
             }
         }
-        let first=commands.iter().position(|command|matches!(command,Command::Image{x,image,..} if *x>=429.0 && *x<=430.0 && image.size()==[1,1])).expect("palette outer border");
-        let last_grid=commands.iter().rposition(|command|matches!(command,Command::Image{image,..} if image.size()==[1,1] && image.pixels()==[80,80,100,255])).unwrap();
+        let first = commands
+            .iter()
+            .position(|command| {
+                solid_rect(command).is_some_and(|(rect, _)| rect[0] >= 429.0 && rect[0] <= 430.0)
+            })
+            .expect("palette outer border");
+        let last_grid = commands
+            .iter()
+            .rposition(|command| {
+                solid_rect(command).is_some_and(|(_, rgba)| rgba == [80, 80, 100, 255])
+            })
+            .unwrap();
         assert!(first > last_grid, "palette follows grid and board");
         for (slot, command) in commands[first..first + 27].iter().enumerate() {
             let (x, y, width, height, image) = match command {
@@ -3403,14 +3483,29 @@ fn original_editor_palette_colors_borders_digits_and_order_match_sdl_pixels() {
                     width,
                     height,
                     image,
-                } if slot % 3 != 2 => (*x, *y, *width, *height, image),
+                } if slot % 3 != 2 => (*x, *y, *width, *height, image.clone()),
+                Command::Rect {
+                    x,
+                    y,
+                    width,
+                    height,
+                    rgba,
+                } if slot % 3 != 2 => (
+                    *x,
+                    *y,
+                    *width,
+                    *height,
+                    std::sync::Arc::new(
+                        gamepkg::drawing::image::Image::new(1, 1, &rgba.to_be_bytes()).unwrap(),
+                    ),
+                ),
                 Command::LinearImage {
                     x,
                     y,
                     width,
                     height,
                     image,
-                } if slot % 3 == 2 => (*x, *y, *width, *height, image),
+                } if slot % 3 == 2 => (*x, *y, *width, *height, image.clone()),
                 _ => panic!("palette command order changed at {slot}"),
             };
             let left = (x * 2.0) as usize;
@@ -3509,7 +3604,16 @@ fn editor_original_labels_bounded_overlap_and_toolbar_hover_reach_signed_profile
             } else {
                 [60, 60, 100, 180]
             };
-            assert!(commands.iter().any(|command|matches!(command,Command::Image{x,y,width,height,image} if (*x,*y,*width,*height)==(rect[0] as f32*0.5,60.0+rect[1] as f32*0.5,rect[2] as f32*0.5,rect[3] as f32*0.5) && image.size()==[1,1] && image.pixels()==fill)));
+            assert!(commands.iter().any(|command| solid_rect(command)
+                == Some((
+                    [
+                        rect[0] as f32 * 0.5,
+                        60.0 + rect[1] as f32 * 0.5,
+                        rect[2] as f32 * 0.5,
+                        rect[3] as f32 * 0.5
+                    ],
+                    fill
+                ))));
         }
         for (which, left, top) in labels {
             let case = &fixture["cases"][which as usize];
@@ -3528,12 +3632,28 @@ fn editor_original_labels_bounded_overlap_and_toolbar_hover_reach_signed_profile
                 let source_right = (right + 1).min(full_width);
                 let tile_width = source_right - source_left;
                 let rect = [
-                    (left as f32 + column as f32) * 0.5,
+                    if column == 0 {
+                        0.0
+                    } else {
+                        (left as f32 + column as f32) * 0.5
+                    },
                     60.0 + top as f32 * 0.5,
-                    (right - column) as f32 * 0.5,
+                    (if right == full_width {
+                        640.0
+                    } else {
+                        (left as f32 + right as f32) * 0.5
+                    }) - (if column == 0 {
+                        0.0
+                    } else {
+                        (left as f32 + column as f32) * 0.5
+                    }),
                     15.5,
                 ];
-                let at=commands.iter().position(|command|matches!(command,Command::Clip{rect:Some(actual)} if *actual==rect)).expect("label clip missing");
+                let at = commands.windows(2).position(|pair| {
+                    matches!(&pair[0], Command::Clip { rect: Some(actual) } if *actual == rect)
+                        && matches!(&pair[1], Command::LinearImage { x, y, width, height, .. }
+                            if (*x, *y, *width, *height) == ((left as f32 + source_left as f32) * 0.5, 60.0 + top as f32 * 0.5, tile_width as f32 * 0.5, 15.5))
+                }).expect("label clip and original image geometry missing");
                 let Command::LinearImage {
                     x,
                     y,
@@ -3644,9 +3764,21 @@ fn dynamic_unicode_editor_names_rows_messages_and_viewport_clips_match_original_
                 let source_right = (core_right + 1).min(full_width);
                 let tile_width = source_right - source_left;
                 let rect = [
-                    (left + column) as f32 * 0.5,
+                    if column == 0 {
+                        0.0
+                    } else {
+                        (left + column) as f32 * 0.5
+                    },
                     60.0 + top as f32 * 0.5,
-                    (core_right - column) as f32 * 0.5,
+                    (if core_right == full_width {
+                        640.0
+                    } else {
+                        (left + core_right) as f32 * 0.5
+                    }) - (if column == 0 {
+                        0.0
+                    } else {
+                        (left + column) as f32 * 0.5
+                    }),
                     h as f32 * 0.5,
                 ];
                 let at=commands.iter().position(|command|matches!(command,Command::Clip{rect:Some(actual)} if *actual==rect)).unwrap_or_else(||panic!("missing clip for {text:?} column {column}"));
@@ -3802,7 +3934,10 @@ fn original_pattern_browser_complete_pixels_and_dense_board_budget_match() {
     let isolated = game.frame().commands[1..].to_vec();
     assert_eq!(game.step(0xc0000043).unwrap(), 67);
     let full = &game.frame().commands;
-    let first=full.iter().position(|c|matches!(c,Command::Image{x,y,width,height,image} if (*x,*y,*width,*height)==(0.0,60.0,640.0,360.0) && image.pixels()==[0,0,0,200])).unwrap();
+    let first = full
+        .iter()
+        .position(|c| solid_rect(c) == Some(([0.0, 60.0, 640.0, 360.0], [0, 0, 0, 200])))
+        .unwrap();
     assert_eq!(
         &full[first..first + isolated.len()],
         isolated.as_slice(),
@@ -3822,12 +3957,25 @@ fn original_pattern_browser_complete_pixels_and_dense_board_budget_match() {
 }
 
 fn canonical_menu_pixels(frame: &gamepkg::drawing::Frame) -> Vec<u8> {
-    let mut output = vec![0u8; 1280 * 720 * 4];
-    for pixel in output.as_chunks_mut::<4>().0.iter_mut() {
-        pixel.copy_from_slice(&frame.background.unwrap_or(0x10171dff).to_be_bytes());
+    canonical_menu_overlay_pixels(frame, None, 0)
+}
+fn canonical_menu_overlay_pixels(
+    frame: &gamepkg::drawing::Frame,
+    backdrop: Option<&[u8]>,
+    skip: usize,
+) -> Vec<u8> {
+    let mut output = if let Some(pixels) = backdrop {
+        pixels.to_vec()
+    } else {
+        vec![0u8; 1280 * 720 * 4]
+    };
+    if backdrop.is_none() {
+        for pixel in output.as_chunks_mut::<4>().0.iter_mut() {
+            pixel.copy_from_slice(&frame.background.unwrap_or(0x10171dff).to_be_bytes());
+        }
     }
     let mut clip = [0, 0, 1280, 720];
-    for command in &frame.commands {
+    for command in frame.commands.iter().skip(skip) {
         if let Command::Clip { rect } = command {
             clip = rect
                 .map(|r| {
@@ -3964,9 +4112,49 @@ fn implemented_menu_controls_and_original_backdrop_match_captured_sdl_frames() {
         .unwrap();
     let root = isolated_library();
     let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
+    let mut backdrop_cache: Option<(Option<u32>, Vec<Command>, Vec<u8>)> = None;
     for (index, case) in reference["cases"].as_array().unwrap().iter().enumerate() {
         assert_eq!(game.step(0xc0000044 | ((index as u32) << 8)).unwrap(), 68);
-        let actual = canonical_menu_pixels(game.frame());
+        // Every frame must retain the exact full background commands and pixels.
+        // Rasterize this immutable prefix once to avoid the reference compositor
+        // competing with unrelated game deadlines during normal parallel tests.
+        let prefix = &game.frame().commands[..19];
+        assert!(matches!(prefix[17], Command::Clip { rect: None }));
+        assert!(matches!(
+            prefix[18],
+            Command::Rect {
+                x: 0.0,
+                y: 60.0,
+                width: 640.0,
+                height: 360.0,
+                rgba: 150
+            }
+        ));
+        if backdrop_cache.is_none() {
+            let mut background = gamepkg::drawing::Frame::default();
+            background.background = game.frame().background;
+            background.commands = prefix.to_vec();
+            backdrop_cache = Some((
+                background.background,
+                prefix.to_vec(),
+                canonical_menu_pixels(&background),
+            ));
+        }
+        let (color, commands, pixels) = backdrop_cache.as_ref().unwrap();
+        assert_eq!(*color, game.frame().background);
+        assert_eq!(
+            commands.as_slice(),
+            prefix,
+            "changed original backdrop at case {index}"
+        );
+        let actual = canonical_menu_overlay_pixels(game.frame(), Some(pixels), 19);
+        if index == 0 {
+            assert_eq!(
+                actual,
+                canonical_menu_pixels(game.frame()),
+                "cached compositor differs"
+            );
+        }
         let compressed = hex::decode(case["xor_zlib_hex"].as_str().unwrap()).unwrap();
         let mut difference = Vec::new();
         flate2::read::ZlibDecoder::new(compressed.as_slice())
@@ -4150,9 +4338,16 @@ fn original_full_hud_matches_sdl_frames_and_survives_full_scene_budgets() {
             .position(|c| matches!(c,Command::LinearImage{x,y,..} if (*x,*y)==(5.0,65.0)))
             .unwrap()
             - 1;
-        assert!(full[first..] == isolated,
+        assert!(
+            full[first..] == isolated,
             "dense full scene lost HUD commands for phase {phase}: {} versus {} commands; first mismatch {:?}",
-            full.len()-first, isolated.len(), full[first..].iter().zip(&isolated).position(|(a,b)| a!=b));
+            full.len() - first,
+            isolated.len(),
+            full[first..]
+                .iter()
+                .zip(&isolated)
+                .position(|(a, b)| a != b)
+        );
         assert!(full.len() < 1024);
         let bytes: usize = full
             .iter()
@@ -4443,8 +4638,8 @@ fn both_recordings_and_four_shared_voices_fit_the_unchanged_memory_limit() {
     let root = isolated_library();
     let mut game = Game::load(root.path(), "com.gamepkg.arkanoo-modes").unwrap();
     let clips: Vec<Vec<i16>> = [
-        include_bytes!("../ports/arkanoo/assets/audio/explosion.wav").as_slice(),
-        include_bytes!("../ports/arkanoo/assets/audio/life-loss.wav").as_slice(),
+        include_bytes!("fixtures/arkanoo-legacy-effects/explosion.wav").as_slice(),
+        include_bytes!("fixtures/arkanoo-legacy-effects/life-loss.wav").as_slice(),
     ]
     .iter()
     .map(|bytes| {
@@ -4472,4 +4667,33 @@ fn both_recordings_and_four_shared_voices_fit_the_unchanged_memory_limit() {
         assert_eq!(game.audio_frame(), expected);
         assert_eq!(game.audio_channels(), 2);
     }
+}
+
+#[test]
+#[ignore = "requires signed editor fixtures prepared by tests/arkanoo.py"]
+fn effect_only_profile_preserves_saved_recorded_music_preferences() {
+    let root = isolated_library();
+    let mut game = load_menu(root.path(), "com.gamepkg.arkanoo").unwrap();
+    game.step(0).unwrap();
+    editor_key(&mut game, 101);
+    editor_click(&mut game, 20.0, 100.0, 1);
+    editor_key(&mut game, 115);
+    drop(game);
+    let path = editor_archive(root.path());
+    let mut bytes = std::fs::read(&path).unwrap();
+    bytes[..4].copy_from_slice(b"ARK4");
+    let flags = u32::from_le_bytes(bytes[12..16].try_into().unwrap()) | (32 << 10) | (1 << 18);
+    bytes[12..16].copy_from_slice(&flags.to_le_bytes());
+    std::fs::write(&path, &bytes).unwrap();
+    let mut game = load_menu(root.path(), "com.gamepkg.arkanoo").unwrap();
+    game.step(0).unwrap();
+    editor_click(&mut game, 320.0, 287.5, 1);
+    editor_click(&mut game, 320.0, 225.0, 1);
+    drop(game);
+    let saved = std::fs::read(&path).unwrap();
+    assert_eq!(&saved[..4], b"ARK4");
+    let flags = u32::from_le_bytes(saved[12..16].try_into().unwrap());
+    assert_eq!((flags >> 10) & 255, 32);
+    assert_ne!(flags & (1 << 18), 0);
+    assert_eq!(&saved[16..], &bytes[16..]);
 }
