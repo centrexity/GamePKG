@@ -18,6 +18,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-browser-store-') as temporary:
  for flag in ['--headless=new','--no-sandbox','--disable-dev-shm-usage']:options.add_argument(flag)
  driver=shutil.which('chromedriver') or str(Path(os.environ.get('CHROMEWEBDRIVER','/nonexistent'))/'chromedriver')
  browser=webdriver.Chrome(service=Service(driver),options=options)
+ browser.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument',{'source':(project/'tools/browser_storage_trace.js').read_text()})
  try:
   browser.get(f'http://127.0.0.1:{server.server_port}/');WebDriverWait(browser,20).until(lambda b:b.execute_script('return !!window.progressAPI'))
   browser.set_script_timeout(30)
@@ -70,6 +71,13 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-browser-store-') as temporary:
    assert(rejected&&JSON.stringify(await read(a,'history',historyKey))===JSON.stringify(badHistory)&&(await read(a,'saves',saveKey)).length===1048576,'corruption was silently replaced');
    await write(a,'history',historyKey,goodHistory);await a.load();await a.commit(null,1,['recovered']);
    for(const store of [a,b,other,broken])store.close();
+   assert(window.progressTrace.some(entry=>entry.operation==='success'),'storage observer missed successful opens');
+   let originalError;
+   try{indexedDB.open('gamepkg-trace-validation',0);}catch(error){originalError=error;}
+   assert(originalError instanceof TypeError&&window.progressTrace.at(-1).operation==='open-throw'&&window.progressTrace.at(-1).error===String(originalError),'storage observer changed synchronous open error');
+   await new Promise((resolve,reject)=>{const request=indexedDB.open('gamepkg-trace-validation',2);assert(request instanceof IDBOpenDBRequest,'observer replaced the native request');request.onsuccess=()=>{request.result.close();resolve();};request.onerror=()=>reject(request.error);});
+   const versionError=await new Promise((resolve,reject)=>{const request=indexedDB.open('gamepkg-trace-validation',1);request.onsuccess=()=>{request.result.close();reject(Error('invalid lower version opened'));};request.onerror=()=>resolve(request.error);});
+   assert(versionError.name==='VersionError'&&window.progressTrace.at(-1).operation==='error'&&window.progressTrace.at(-1).error===String(versionError),'storage observer changed asynchronous open failure');
    return {digest,cases:['early close','lazy legacy access','connection recovery','legacy migration','request-success abort','history quota rollback','early cancellation','maximum bytes','concurrent history','creator isolation','invalid JSON preservation','database corruption and recovery']};
   })().then(value=>done({value})).catch(error=>done({error:String(error),stack:error.stack}));''')
   assert 'error' not in result,result

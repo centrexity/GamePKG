@@ -7,6 +7,8 @@ on:
       - 'web-player/worker.js'
       - 'web-player/png-*'
       - 'tools/check_arkanoo_recorded*'
+      - 'tools/browser_storage_trace.js'
+      - 'tests/browser_progress_store.py'
       - 'tests/arkanoo*'
       - 'tests/game_arkanoo*'
       - 'tests/fixtures/arkanoo*'
@@ -32,6 +34,8 @@ on:
       - 'web-player/worker.js'
       - 'web-player/png-*'
       - 'tools/check_arkanoo_recorded*'
+      - 'tools/browser_storage_trace.js'
+      - 'tests/browser_progress_store.py'
       - 'tests/arkanoo*'
       - 'tests/game_arkanoo*'
       - 'tests/fixtures/arkanoo*'
@@ -92,6 +96,8 @@ jobs:
           sudo env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-recorded-rustup rustup default gamepkg-recorded
       - name: Verify original game and artwork references
         run: cargo test --locked --release --test game_arkanoo --test game_arkanoo_art
+      - name: Verify actual browser progress and unchanged storage errors
+        run: /usr/bin/python3 tests/browser_progress_store.py
       - name: Verify full-size decomposed Unicode editor saves in every runtime
         run: |
           export SDL_AUDIODRIVER=dummy
@@ -101,6 +107,7 @@ jobs:
           export SDL_AUDIODRIVER=dummy
           sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER,SDL_AUDIODRIVER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-recorded-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT=/tmp/gamepkg-recorded-slang /usr/bin/python3 tools/check_arkanoo_recorded_port.py ports/arkanoo
           sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-recorded-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT=/tmp/gamepkg-recorded-slang CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tools/check_arkanoo_recorded_web.py ports/arkanoo --optimized-images ports/arkanoo/assets --corrupt-saves
+          sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-recorded-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT=/tmp/gamepkg-recorded-slang CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tools/check_arkanoo_recorded_web.py ports/arkanoo --optimized-images ports/arkanoo/assets --missing-mark-run
           sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-recorded-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT=/tmp/gamepkg-recorded-slang /usr/bin/python3 tools/check_arkanoo_recorded_dense.py ports/arkanoo --original-art --full-save
           sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-recorded-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT=/tmp/gamepkg-recorded-slang CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tools/check_arkanoo_recorded_dense_web.py ports/arkanoo --optimized-images ports/arkanoo/assets
       - name: Verify signed legacy effect-only package compatibility
