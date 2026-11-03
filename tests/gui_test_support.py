@@ -4,6 +4,18 @@ import select
 import subprocess
 import time
 
+def stop_process(process, timeout=10):
+    """Reap an owned test process, draining pipes even during shutdown."""
+    if process.poll() is None:
+        process.terminate()
+    try:
+        return process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        # A private display can stall in teardown. Bound cleanup without
+        # replacing a gameplay assertion with an unreaped display process.
+        process.kill()
+        return process.communicate(timeout=timeout)
+
 def start_display(env, width=1024, height=900):
     reader, writer = os.pipe()
     try:
@@ -32,8 +44,7 @@ def start_display(env, width=1024, height=900):
             time.sleep(.1)
         raise RuntimeError('Xvfb did not accept a client connection')
     except BaseException:
-        process.terminate()
-        process.wait(timeout=10)
+        stop_process(process)
         raise
     finally:
         os.close(reader)
