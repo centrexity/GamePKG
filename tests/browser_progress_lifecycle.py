@@ -2,7 +2,7 @@
 from pathlib import Path
 from functools import partial
 from http.server import SimpleHTTPRequestHandler,ThreadingHTTPServer
-import os,shutil,subprocess,tempfile,threading
+import json,os,shutil,subprocess,tempfile,threading
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
@@ -24,7 +24,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-progress-lifecycle-') as tempor
   output=root/(suffix+'-web');run('web-export',id,'--output',output)
   server=ThreadingHTTPServer(('127.0.0.1',0),partial(Quiet,directory=str(output)));threading.Thread(target=server.serve_forever,daemon=True).start()
   options=Options();options.binary_location=shutil.which('google-chrome') or shutil.which('google-chrome-stable') or shutil.which('chromium');assert options.binary_location
-  for flag in ['--headless=new','--no-sandbox','--disable-dev-shm-usage','--autoplay-policy=no-user-gesture-required']:options.add_argument(flag)
+  for flag in ['--headless=new','--mute-audio','--no-sandbox','--disable-dev-shm-usage','--autoplay-policy=no-user-gesture-required']:options.add_argument(flag)
   driver=shutil.which('chromedriver') or str(Path(os.environ.get('CHROMEWEBDRIVER','/nonexistent'))/'chromedriver')
   browser=webdriver.Chrome(service=Service(driver),options=options)
   browser.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument',{'source':'''window.workerSerial=0;window.lifecycleFrames=[];window.lifecycleCommits=[];window.audioBufferCount=0;window.memoryEvents=[];
@@ -33,10 +33,21 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-progress-lifecycle-') as tempor
   try:
    browser.get(f'http://127.0.0.1:{server.server_port}/');wait=WebDriverWait(browser,20);wait.until(lambda b:b.find_element('id','status').text=='Ready to play')
    tracked=browser.execute_async_script('''const done=arguments[arguments.length-1];import('./recorded-budget.js').then(({RecordedBudget})=>{const reserve=RecordedBudget.prototype.reserve;window.memoryOutstanding=0;RecordedBudget.prototype.reserve=function(bytes){const lease=reserve.call(this,bytes);window.memoryOutstanding+=bytes;window.memoryEvents.push('reserve');let closed=false;return {bytes,release(){if(closed)return;closed=true;window.memoryEvents.push('release');window.memoryOutstanding-=bytes;lease.release();}};};done(true);}).catch(error=>done(String(error)));''');assert tracked is True,tracked
-   result=browser.execute_async_script('''const done=arguments[arguments.length-1];import('./progress-store.js').then(({ProgressStore})=>{window.storageClass=ProgressStore;window.originalLoad=ProgressStore.prototype.load;window.loadGate=new Promise(resolve=>window.releaseLoad=resolve);ProgressStore.prototype.load=function(...args){window.loadEntered=true;return window.loadGate.then(()=>window.originalLoad.apply(this,args)).finally(()=>window.loadFinished=true);};done(true);}).catch(error=>done(String(error)));''');assert result is True,result
+   # Fail the real startup database open once. A second Play must recover
+   # in the same page, without launching a guest or committing before load.
+   metadata=json.loads((output/'game.json').read_text())['manifest'];save_key=f"gamepkg:save:{metadata['id']}:{metadata['creator_key']}:{metadata['save_schema']}"
+   browser.execute_script('window.recoverySaveKey=arguments[0];localStorage.setItem(window.recoverySaveKey,"[17,23,42]")',save_key)
+   browser.execute_script('''window.originalIDBOpen=IDBFactory.prototype.open;IDBFactory.prototype.open=function(...args){window.storageOpenRejected=true;IDBFactory.prototype.open=window.originalIDBOpen;throw new DOMException('temporary backing-store failure','UnknownError');};''')
+   browser.find_element('id','play').click()
+   wait.until(lambda b:b.find_element('id','status').text=='Unable to load progress or finish the previous audio session.')
+   assert browser.execute_script('return window.storageOpenRejected&&window.workerSerial===0&&window.memoryOutstanding===0&&window.lifecycleCommits.length===0&&window.audioBufferCount===0'), 'Failed progress startup launched or committed the game'
+   assert browser.find_element('id','play').is_enabled(), 'Storage startup failure prevents retry'
+   assert browser.execute_script('return localStorage.getItem(window.recoverySaveKey)==="[17,23,42]"'), 'Failed startup replaced saved progress'
+   result=browser.execute_async_script('''const done=arguments[arguments.length-1];import('./progress-store.js').then(({ProgressStore})=>{window.storageClass=ProgressStore;window.originalLoad=ProgressStore.prototype.load;window.loadGate=new Promise(resolve=>window.releaseLoad=resolve);ProgressStore.prototype.load=function(...args){window.loadEntered=true;return window.loadGate.then(()=>window.originalLoad.apply(this,args)).then(value=>{window.recoveredSave=Array.from(value.save);return value;}).finally(()=>window.loadFinished=true);};done(true);}).catch(error=>done(String(error)));''');assert result is True,result
    browser.find_element('id','play').click();wait.until(lambda b:b.execute_script('return !!window.loadEntered'))
    browser.find_element('id','stop').click();browser.execute_script('window.releaseLoad()');wait.until(lambda b:b.execute_script('return !!window.loadFinished'))
    assert browser.execute_script('return window.workerSerial===0&&window.audioBufferCount===0')
+   assert browser.execute_script('return String(window.recoveredSave)==="17,23,42"&&localStorage.getItem(window.recoverySaveKey)==="[17,23,42]"'), 'Retry lost the existing saved bytes'
    assert browser.find_element('id','status').text=='Stopped'
    browser.execute_script('window.storageClass.prototype.load=window.originalLoad')
    def start():
@@ -70,5 +81,5 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-progress-lifecycle-') as tempor
    assert browser.execute_script('return window.memoryOutstanding===0'), 'Failed worker startup leaked memory reservation'
    browser.execute_script('window.Worker=window.savedWorker')
    start();assert browser.execute_script('return window.memoryOutstanding>0');browser.find_element('id','stop').click();assert browser.execute_script('return window.memoryOutstanding===0')
-   print(suffix,'delayed startup cannot revive Stop; delayed checkpoint cannot publish after Stop/Restart; fresh generations continue.',flush=True)
+   print(suffix,'storage-open failure starts no guest and retry recovers; delayed startup cannot revive Stop; delayed checkpoint cannot publish after Stop/Restart; fresh generations continue.',flush=True)
   finally:browser.quit();server.shutdown();server.server_close()

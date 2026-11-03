@@ -9,6 +9,7 @@ on:
       - 'tools/check_arkanoo_recorded*'
       - 'tools/browser_storage_trace.js'
       - 'tests/browser_progress_store.py'
+      - 'tests/browser_progress_lifecycle.py'
       - 'tests/arkanoo*'
       - 'tests/game_arkanoo*'
       - 'tests/fixtures/arkanoo*'
@@ -36,6 +37,7 @@ on:
       - 'tools/check_arkanoo_recorded*'
       - 'tools/browser_storage_trace.js'
       - 'tests/browser_progress_store.py'
+      - 'tests/browser_progress_lifecycle.py'
       - 'tests/arkanoo*'
       - 'tests/game_arkanoo*'
       - 'tests/fixtures/arkanoo*'
@@ -97,7 +99,9 @@ jobs:
       - name: Verify original game and artwork references
         run: cargo test --locked --release --test game_arkanoo --test game_arkanoo_art
       - name: Verify actual browser progress and unchanged storage errors
-        run: /usr/bin/python3 tests/browser_progress_store.py
+        run: |
+          /usr/bin/python3 tests/browser_progress_store.py
+          sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-recorded-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT=/tmp/gamepkg-recorded-slang SDL_AUDIODRIVER=dummy CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tests/browser_progress_lifecycle.py
       - name: Verify full-size decomposed Unicode editor saves in every runtime
         run: |
           export SDL_AUDIODRIVER=dummy
