@@ -41,6 +41,12 @@ if [[ "$task_event" == race-complete || "$task_event" == roadrage-complete || "$
     task_timeout=1200
     task_driver=race_drive.sh
 fi
+if [[ "$task_event" == roadrage-complete ]]; then
+    # Single Event Road Rage can reach the original 1800-second cap before
+    # the AI's car is totalled. Keep that full game timer and allow results
+    # to finish; the ordinary 900-second race test budget is too short.
+    task_timeout=2400
+fi
 # Fail on changed drivers rather than silently adapting a different upstream test.
 for task_spec in \
     '86ec5ad1eecea98ac3f090d995f7c64696210c9a1763e1c253209942e5709c1b controls_scene.sh' \
@@ -190,7 +196,7 @@ fi
 if [[ "$task_event" == roadrage-complete ]]; then
     # The unchanged upstream driver selects Road Rage from Single Event. Its
     # random choice uses only tracks already available in the supplied save.
-    export PICK=random EVENTS=roadrage
+    export PICK=random EVENTS=roadrage RACE_LIMIT=2100
 fi
 if [[ "$task_event" == timeattack-session ]]; then
     export BO3_CTL_LOG="$task_state/run/ctl.txt"
