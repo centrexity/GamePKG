@@ -63,6 +63,9 @@ fn main() -> eframe::Result {
     eframe::run_native(
         &title,
         eframe::NativeOptions {
+            // UI dithering perturbs colors before blending. Game pixels use
+            // the encoded RGBA contract shared with SDL and the browser.
+            dithering: args.play.is_none(),
             renderer: if settings.renderer == "opengl" {
                 eframe::Renderer::Glow
             } else {

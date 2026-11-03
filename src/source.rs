@@ -506,6 +506,8 @@ mod restricted_calls_tests {
             "use std::io::stdin;pub fn game_tick(_:u32,_:u64)->u64 {let _=stdin();0}",
             "pub fn game_tick(_:u32,_:u64)->u64 {let _=std::thread::current();0}",
             "pub fn game_tick(_:u32,_:u64)->u64 {gamepkg::__gamepkg_packet(b\"x\");0}",
+            "pub fn game_tick(_:u32,_:u64)->u64 {gamepkg::__gamepkg_begin_tick();0}",
+            "pub fn game_tick(_:u32,_:u64)->u64 {gamepkg::r#__gamepkg_begin_tick();0}",
         ] {
             assert!(rejected(text), "accepted: {text}");
         }

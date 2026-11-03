@@ -5,7 +5,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import os, shutil, subprocess, tempfile, threading, time, tomllib, json
 from PIL import Image
-from gui_test_support import start_display,choose_native_file
+from gui_test_support import start_display,choose_native_file,capture_native_failure
 import argparse, math, zlib
 from contextlib import nullcontext
 from collections import Counter
@@ -105,7 +105,7 @@ with (nullcontext(tempfile.mkdtemp(prefix='gamepkg-arkanoo-',dir=PROJECT/'target
     file=custom/'manifest.toml';file.write_text(file.read_text().replace('com.gamepkg.arkanoo','com.gamepkg.arkanoo-custom'))
     boards=json.loads((PROJECT/'tests/fixtures/arkanoo-custom-levels.json').read_text())['patterns']
     assert boards==[[i if i<9 else 255 for i in range(200)],[i//20%6 if i//20==i%20 else 255 for i in range(200)],[255]*200]
-    (custom/'source/src/lib.rs').write_text('mod procedural;mod background;mod audio;mod editor;mod levels;mod menu;mod pattern_rng;mod physics;mod render;mod speed_font;mod editor_font;mod dynamic_font;mod dynamic_font_data;pub fn game_tick(input:u32,_:u64)->u64 {let mut game=physics::Game::new();for which in 0..3 {let mut board=[255u8;200];if which==0 {for col in 0..9 {board[col]=col as u8;}}if which==1 {for row in 0..10 {board[row*20+row]=(row%6) as u8;}}game.editor.patterns.push(editor::Pattern{name:String::new(),cells:board});}game.level=input;game.populate();game.mode=1;render::draw(&game);let mut result=14695981039346656037u64;for index in 0..200 {let cell=if game.blocks[index]==0 {255} else if game.block_type[index]>0 {game.block_type[index]+5} else {game.block_color[index]};result=(result^u64::from(cell)).wrapping_mul(1099511628211);}result}')
+    (custom/'source/src/lib.rs').write_text('mod portable_math;mod procedural;mod background;mod audio;mod editor;mod levels;mod menu;mod pattern_rng;mod physics;mod render;mod speed_font;mod editor_font;mod dynamic_font;mod dynamic_font_data;pub fn game_tick(input:u32,_:u64)->u64 {let mut game=physics::Game::new();for which in 0..3 {let mut board=[255u8;200];if which==0 {for col in 0..9 {board[col]=col as u8;}}if which==1 {for row in 0..10 {board[row*20+row]=(row%6) as u8;}}game.editor.patterns.push(editor::Pattern{name:String::new(),cells:board});}game.level=input;game.populate();game.mode=1;render::draw(&game);let mut result=14695981039346656037u64;for index in 0..200 {let cell=if game.blocks[index]==0 {255} else if game.block_type[index]>0 {game.block_type[index]+5} else {game.block_color[index]};result=(result^u64::from(cell)).wrapping_mul(1099511628211);}result}')
     run('pack',custom,'-o',root/'custom.gamepkg','--key',key);run('install',root/'custom.gamepkg','--trust-creator');run('build','com.gamepkg.arkanoo-custom')
     # Trigger the production portal at its original speed threshold without
     # depending on a long random play session. Only fixture setup is replaced.
@@ -124,7 +124,7 @@ with (nullcontext(tempfile.mkdtemp(prefix='gamepkg-arkanoo-',dir=PROJECT/'target
                     x,y,vx,vy=case['ball'];branch+=f'g.balls.clear();g.balls.push(physics::Ball{{x:{x}f32*0.5+3.0,y:{y}f32*0.5+63.0,vx:{vx}f32*0.5,vy:{vy}f32*0.5,spin:0.0,attached:false,launch_timer:0,trail:Vec::new()}});g.collide_blocks(0);'
                 else:branch+='g.update_rockets();'
             sound_branches+=branch+'return u64::from(g.sound);}'
-    (modes/'source/src/lib.rs').write_text('''mod procedural;mod background;mod audio;mod editor;mod levels;mod menu;mod pattern_rng;mod physics;mod render;mod speed_font;mod editor_font;mod dynamic_font;mod dynamic_font_data;use std::sync::Mutex;
+    (modes/'source/src/lib.rs').write_text('''mod portable_math;mod procedural;mod background;mod audio;mod editor;mod levels;mod menu;mod pattern_rng;mod physics;mod render;mod speed_font;mod editor_font;mod dynamic_font;mod dynamic_font_data;use std::sync::Mutex;
 static GAME:Mutex<Option<physics::Game>>=Mutex::new(None);
 static RECORDINGS:Mutex<Option<audio::Mixer>>=Mutex::new(None);
 pub fn game_tick(input:u32,state:u64)->u64 {
@@ -340,7 +340,7 @@ fn penguin_probe(input:u32)->u64 {
     run('pack',modes,'-o',root/'modes.gamepkg','--key',key);run('install',root/'modes.gamepkg','--trust-creator');run('build','com.gamepkg.arkanoo-modes')
     layouts=root/'layouts';shutil.copytree(PROJECT/'ports/arkanoo',layouts)
     layout_manifest=layouts/'manifest.toml';layout_manifest.write_text(layout_manifest.read_text().replace('com.gamepkg.arkanoo','com.gamepkg.arkanoo-levels'))
-    (layouts/'source/src/lib.rs').write_text('''mod procedural;mod background;mod audio;mod editor;mod levels;mod menu;mod pattern_rng;mod physics;mod render;mod speed_font;mod editor_font;mod dynamic_font;mod dynamic_font_data;use std::sync::Mutex;
+    (layouts/'source/src/lib.rs').write_text('''mod portable_math;mod procedural;mod background;mod audio;mod editor;mod levels;mod menu;mod pattern_rng;mod physics;mod render;mod speed_font;mod editor_font;mod dynamic_font;mod dynamic_font_data;use std::sync::Mutex;
 static GAME:Mutex<Option<physics::Game>>=Mutex::new(None);
 pub fn game_tick(input:u32,state:u64)->u64 {
  if let Ok(mut slot)=GAME.lock(){
@@ -368,7 +368,11 @@ pub fn game_tick(input:u32,state:u64)->u64 {
             entry=fixture/'source/src/lib.rs';entry.write_text(entry.read_text().replace('pub fn game_tick(input: u32, state: u64) -> u64 {','pub fn game_tick(input: u32, state: u64) -> u64 {\n if input&0xc00000ff==0xc000004b {'+'game_tick((input>>8)&255,state);let now=gamepkg::frame_time_us();if let Ok(slot)=GAME.lock(){if let Some(game)=slot.as_ref(){return (now<<32)|u64::from(game.fps);}}return u64::MAX;'+'}'))
         manifest.write_text(text);run('pack',fixture,'-o',root/(suffix+'.gamepkg'),'--key',key);run('install',root/(suffix+'.gamepkg'),'--trust-creator');run('build','com.gamepkg.arkanoo-'+suffix)
     probe_env=dict(env,GAMEPKG_ARKANOO_TEST_ROOT=str(root/'library'))
-    subprocess.run([str(RUNTIME_TEST),'--ignored'],env=probe_env,check=True,timeout=120)
+    # These cases enforce real per-frame wall deadlines and start child games.
+    # Run one case at a time so reference rendering and library copies do not
+    # consume another game's deadline. Only the whole-suite allowance changes;
+    # each game keeps its original time and memory limits.
+    subprocess.run([str(RUNTIME_TEST),'--ignored','--test-threads=1'],env=probe_env,check=True,timeout=300)
     run('build','com.gamepkg.arkanoo','--target','native')
     run('build','com.gamepkg.arkanoo-nosave','--target','native')
     run('build','com.gamepkg.arkanoo-nofiles','--target','native')
@@ -378,7 +382,7 @@ pub fn game_tick(input:u32,state:u64)->u64 {
     run('build','com.gamepkg.arkanoo-events','--target','native')
     run('build','com.gamepkg.arkanoo-events-denied','--target','native')
     run('integrity-check','com.gamepkg.arkanoo')
-    subprocess.run([str(RUNTIME_TEST),'--ignored'],env=probe_env,check=True,timeout=120)
+    subprocess.run([str(RUNTIME_TEST),'--ignored','--test-threads=1'],env=probe_env,check=True,timeout=300)
     if args.runtime_only:
         print('Signed Arkanoo checks passed in Wasm and native execution; GUI workflows were not requested.')
         raise SystemExit(0)
@@ -547,7 +551,7 @@ pub fn game_tick(input:u32,state:u64)->u64 {
         subprocess.run(['xdotool','key','--window',window,'i'],env=env,check=True)
         choose_native_file(env,picker_title,None);subprocess.run(['xdotool','windowfocus',window],env=env,check=True);time.sleep(.2)
         incoming=root/'native-import.txt';incoming.write_text('# Original ASCII pattern\n50******************\n')
-        subprocess.run(['xdotool','key','--window',window,'i'],env=env,check=True);choose_native_file(env,picker_title,incoming)
+        subprocess.run(['xdotool','key','--window',window,'i'],env=env,check=True);choose_native_file(env,picker_title,incoming,from_list=True)
         subprocess.run(['xdotool','windowfocus',window],env=env,check=True);deadline=time.monotonic()+5
         while True:
             imported=capture(window,'native-pattern-import.png')
@@ -573,6 +577,11 @@ pub fn game_tick(input:u32,state:u64)->u64 {
         subprocess.run(['xdotool','key','--window',window,'q'],env=env,check=True)
         assert app.wait(timeout=10)==0,'Original Q-to-quit did not close cleanly'
         print('Native Arkanoo: gameplay/editor plus real file-picker import, cancellation and Save-dialog export passed.')
+
+    except BaseException:
+        try:capture_native_failure(env,PROOF,app)
+        except Exception as diagnostic_error:print('Native failure diagnostics:',repr(diagnostic_error),flush=True)
+        raise
 
     finally:
         if app is not None:

@@ -40,6 +40,10 @@ print('200',end='')
 '''); curl.chmod(0o755)
     env=dict(os.environ,PATH=str(transport)+os.pathsep+os.environ['PATH'],GAMEPKG_HOME=str(library),GAMEPKG_CONFIG=str(config),GAMEPKG_UPDATE_FIXTURES=str(root),GAMEPKG_UPDATE_RECEIPT=str(marker),LIBGL_ALWAYS_SOFTWARE='1')
     env.pop('WAYLAND_DISPLAY',None); env['DBUS_SESSION_BUS_ADDRESS']='unix:path=/tmp/gamepkg-no-session-bus'
+    # Native picker preferences, recent files and caches stay in this test.
+    for variable,folder in [('XDG_CONFIG_HOME','desktop-config'),('XDG_DATA_HOME','desktop-data'),('XDG_CACHE_HOME','desktop-cache')]:
+        location=root/folder;location.mkdir();env[variable]=str(location)
+    env['GSETTINGS_BACKEND']='memory'
     display=start_display(env,1280,1000)
     app=subprocess.Popen([str(Path(os.environ.get('GAMEPKG_TEST_BINARY_DIR',project/'target/release'))/'gamepkg-gui')],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
     try:
@@ -48,7 +52,18 @@ print('200',end='')
         click_text(window,env,'Review app update',root,max_y=800)
         time.sleep(.5)
         click_text(window,env,'Check for app updates when GamePKG opens',root,max_y=650)
-        click_text(window,env,'Save settings',root)
+        # Select the actual Save action, not its mention in the help copy.
+        _,save_y=click_text(window,env,'Cancel edits',root,click=False)
+        click_text(window,env,'Save settings',root,min_y=save_y-20,max_y=save_y+25)
+        # Await the queued mouse event's actual write before reading the file.
+        deadline=time.monotonic()+10
+        while True:
+            saved=tomllib.loads(config.read_text())
+            if saved.get('check_app_updates_on_startup') is False:break
+            if app.poll() is not None or time.monotonic()>=deadline:
+                subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(project/'target/app-updates-save-failed.png')],env=env)
+                raise AssertionError(f'Updater opt-out was not saved: {saved!r}')
+            time.sleep(.05)
         assert tomllib.loads(config.read_text())['check_app_updates_on_startup'] is False
         app.terminate(); app.wait(timeout=10)
         requests=(root/'requests').read_text()

@@ -3891,3 +3891,30 @@ This qualifies the private full-audio migration on the tested desktop/browser
 paths. Public active-port migration, complete original menu/pixel/gameplay parity,
 other platforms and whole-host memory accounting still require work. The active
 public recipe and released app binaries are not represented as already migrated.
+
+
+## Maintenance font metadata reuse for large saved names
+
+The maintenance port timed out in a hosted Wasm check while rendering a
+70,000-byte saved pattern name. The stack was in repeated immutable font
+mark/kerning lookups. Each layout or raster slice now has a fixed 16-slot
+cache for exact glyph advances and mark classifications, keyed by complete
+glyph identifiers and the next eligible glyph. The existing mark and zero-width
+boundary rules remain. The cache occupies 320 bytes on that call's stack;
+it does not persist, truncate the text, change its layout or omit pixels.
+
+Native ELF64 and ELF32 differential probes compare 7,044,688 advance cases,
+including repeated hits, collisions, mark flags and zero-width boundaries,
+and 857,088 complete RGBA output bytes against the unchanged font code.
+All comparisons match. For the full 70,000-character layout plus one raster
+slice, local median time falls from 7.87 to 4.09 ms on ELF64 and 9.04 to
+4.77 ms on ELF32. These measure font work, not complete frames or a Wasm
+speed guarantee.
+
+The full 102-case original game/font reference suite and strict release lint
+pass. Both signed runtime profiles pass all 142 checks, including the large
+archive's unchanged-byte reload, with the existing 100 ms tick deadline and
+256 MiB manifest limit. The complete native editor/import/cancel/export
+workflow also passes with software Vulkan and muted audio. A fresh hosted
+qualification remains required; no execution limit or original assertion
+was relaxed.

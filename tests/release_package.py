@@ -9,7 +9,7 @@ import tarfile
 import tempfile
 import time
 import tomllib
-from gui_test_support import start_display
+from gui_test_support import start_display, stop_process
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('archive', type=Path)
@@ -93,6 +93,8 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-release-test-') as directory:
         target.send_event(protocol.event.ClientMessage(window=target,client_type=connection.intern_atom('WM_PROTOCOLS'),data=(32,[connection.intern_atom('WM_DELETE_WINDOW'),0,0,0,0])),event_mask=0)
         connection.flush();assert app.wait(timeout=15)==0;connection.close()
     finally:
-        if app.poll() is None:app.terminate();app.wait(timeout=10)
-        display.terminate(); display.wait(timeout=10)
+        try:
+            stop_process(app)
+        finally:
+            stop_process(display)
 print('Distribution passed: checksums, dependency sources, extracted CLI, bundled dependency game build/play, and actual desktop gameplay.')
