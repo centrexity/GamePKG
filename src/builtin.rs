@@ -12,6 +12,9 @@ pub fn memory(profile: &str) -> Result<u64> {
         crate::zelda3::PROFILE => Ok(crate::zelda3::MEMORY),
         crate::doom::PROFILE => Ok(crate::doom::MEMORY),
         crate::cube2::PROFILE => Ok(crate::cube2::MEMORY),
+        profile if crate::external_engine::get(profile).is_some() => {
+            Ok(crate::external_engine::get(profile).unwrap().memory)
+        }
         _ => bail!("unsupported builtin engine"),
     }
 }

@@ -1,0 +1,207 @@
+--- a/tools/map_validate.c
++++ b/tools/map_validate.c
+@@ -44,8 +44,17 @@
+ #include <unistd.h>
+ 
+ #include "zlib_prefixed.h"
++#include "../port/linux/include/halo_layout.h"
+ #include "../port/linux/game/cache_file_formats.h"
+ 
++/* These copies overlay the game's in-memory tag records. The fields are
++   halo_s32 / halo_addr so the layout stays the Xbox size on LP64. A stored
++   address is turned back into a pointer with guest_ptr. */
++static void *guest_ptr(halo_addr addr)
++{
++	return halo_ref(addr);
++}
++
+ /* ---------- constants */
+ 
+ enum
+@@ -70,54 +79,54 @@
+ 
+ struct cache_file_header
+ {
+-	unsigned long header_signature;
+-	long version;
+-	long file_length;
+-	unsigned long reserved0C;
+-	long tag_data_offset;
+-	long tag_data_size;
++	halo_u32 header_signature;
++	halo_s32 version;
++	halo_s32 file_length;
++	halo_u32 reserved0C;
++	halo_s32 tag_data_offset;
++	halo_s32 tag_data_size;
+ 	unsigned char reserved18[8];
+ 	char name[0x20];
+ 	char build[0x20];
+ 	unsigned char reserved60[0x79C];
+-	unsigned long footer_signature;
++	halo_u32 footer_signature;
+ };
+ 
+ struct tag_instance
+ {
+-	unsigned long group_tag;
+-	unsigned long parent_group_tags[2];
+-	long tag_index;
+-	char *name;
+-	void *base_address;
+-	unsigned long unused[2];
++	halo_s32 group_tag;
++	halo_s32 parent_group_tags[2];
++	halo_s32 tag_index;
++	halo_addr name;
++	halo_addr base_address;
++	halo_u32 unused[2];
+ };
+ 
+ struct tag_header
+ {
+-	struct tag_instance *instances;
+-	long scenario_tag_index;
+-	unsigned long checksum;
+-	long tag_count;
++	halo_addr instances;
++	halo_s32 scenario_tag_index;
++	halo_u32 checksum;
++	halo_s32 tag_count;
+ };
+ 
+ struct tag_block
+ {
+-	long count;
+-	void *address;
+-	void *definition;
++	halo_s32 count;
++	halo_addr address;
++	halo_addr definition;
+ };
+ 
+ struct scenario_structure_bsp_reference
+ {
+-	long file_offset;
+-	long file_size;
+-	void *base_address;
++	halo_s32 file_offset;
++	halo_s32 file_size;
++	halo_addr base_address;
+ 	unsigned char unused[4];
+-	unsigned long group_tag;
+-	char *name;
+-	long name_length;
+-	long tag_index;
++	halo_u32 group_tag;
++	halo_addr name;
++	halo_s32 name_length;
++	halo_s32 tag_index;
+ };
+ 
+ typedef char verify_cache_file_header_size[sizeof(struct cache_file_header) == CACHE_FILE_HEADER_SIZE ? 1 : -1];
+@@ -274,26 +283,28 @@
+ 	cache_file_tag_header_verify checks) */
+ 	{
+ 		short scenario_index = (short)tags->scenario_tag_index;
++		struct tag_instance *instances = guest_ptr(tags->instances);
+ 		struct tag_instance *scenario;
+ 
+ 		if (scenario_index < 0 || scenario_index >= tags->tag_count ||
+-			tags->instances[scenario_index].tag_index != tags->scenario_tag_index ||
+-			tags->instances[scenario_index].group_tag != SCENARIO_GROUP_TAG)
++			instances[scenario_index].tag_index != tags->scenario_tag_index ||
++			instances[scenario_index].group_tag != SCENARIO_GROUP_TAG)
+ 		{
+ 			if (!quiet)
+ 				printf("%s: its tag header names no scenario\n", name);
+ 			return 1;
+ 		}
+-		scenario = &tags->instances[scenario_index];
++		scenario = &instances[scenario_index];
+ 
+-		bsps = (struct tag_block *)((unsigned char *)scenario->base_address + SCENARIO_STRUCTURE_BSPS_OFFSET);
++		bsps = (struct tag_block *)((unsigned char *)guest_ptr(scenario->base_address) + SCENARIO_STRUCTURE_BSPS_OFFSET);
+ 		bsp_count = bsps->count < MAXIMUM_STRUCTURE_BSPS_PER_SCENARIO ? bsps->count : MAXIMUM_STRUCTURE_BSPS_PER_SCENARIO;
+ 	}
+ 	for (index = 0; index < bsp_count && !refused; index++)
+ 	{
+ 		struct scenario_structure_bsp_reference *reference =
+-			(struct scenario_structure_bsp_reference *)bsps->address + index;
+-		unsigned long load = (unsigned long)reference->base_address - TAG_CACHE_BASE_ADDRESS;
++			(struct scenario_structure_bsp_reference *)guest_ptr(bsps->address) + index;
++		void *base_address = guest_ptr(reference->base_address);
++		unsigned long load = (unsigned long)base_address - TAG_CACHE_BASE_ADDRESS;
+ 		/* (the game reads whole sectors) */
+ 		unsigned long read_size = ((unsigned long)reference->file_size + CACHE_FILE_SECTOR_SIZE - 1) &
+ 			~(unsigned long)(CACHE_FILE_SECTOR_SIZE - 1);
+@@ -310,8 +321,8 @@
+ 			break;
+ 		}
+ 		memset(tag_cache + header->tag_data_size, 0xCD, TAG_CACHE_SIZE - header->tag_data_size);
+-		memcpy(reference->base_address, bytes + reference->file_offset, reference->file_size);
+-		if (!tag_validate_structure_bsp(reference->tag_index, reference->base_address, reference->file_size))
++		memcpy(base_address, bytes + reference->file_offset, reference->file_size);
++		if (!tag_validate_structure_bsp(reference->tag_index, base_address, reference->file_size))
+ 		{
+ 			refused = 1;
+ 		}
+@@ -320,7 +331,7 @@
+ 		{
+ 			long before = tag_validate_corrections();
+ 
+-			if (!tag_validate_structure_bsp(reference->tag_index, reference->base_address, reference->file_size) ||
++			if (!tag_validate_structure_bsp(reference->tag_index, base_address, reference->file_size) ||
+ 				tag_validate_corrections() != before)
+ 			{
+ 				printf("%s: fuzz seed %lu: structure bsp %ld as corrected is not clean when checked again\n", name,
+@@ -710,23 +721,25 @@
+ 	found them (custom_edition_structure_bsp_reference_valid) */
+ 	{
+ 		short scenario_index = (short)tags->scenario_tag_index;
++		struct tag_instance *instances = guest_ptr(tags->instances);
+ 
+ 		if (scenario_index < 0 || scenario_index >= tags->tag_count ||
+-			tags->instances[scenario_index].group_tag != SCENARIO_GROUP_TAG)
++			instances[scenario_index].group_tag != SCENARIO_GROUP_TAG)
+ 		{
+ 			if (!quiet)
+ 				printf("%s: its tag header names no scenario\n", name);
+ 			return 1;
+ 		}
+-		bsps = (struct tag_block *)((unsigned char *)tags->instances[scenario_index].base_address +
++		bsps = (struct tag_block *)((unsigned char *)guest_ptr(instances[scenario_index].base_address) +
+ 			SCENARIO_STRUCTURE_BSPS_OFFSET);
+ 		bsp_count = bsps->count < MAXIMUM_STRUCTURE_BSPS_PER_SCENARIO ? bsps->count : MAXIMUM_STRUCTURE_BSPS_PER_SCENARIO;
+ 	}
+ 	for (index = 0; index < bsp_count && !refused; index++)
+ 	{
+ 		struct scenario_structure_bsp_reference *reference =
+-			(struct scenario_structure_bsp_reference *)bsps->address + index;
+-		unsigned long address = (unsigned long)reference->base_address;
++			(struct scenario_structure_bsp_reference *)guest_ptr(bsps->address) + index;
++		void *base_address = guest_ptr(reference->base_address);
++		unsigned long address = (unsigned long)base_address;
+ 		unsigned long top = CUSTOM_EDITION_TAG_CACHE_ADDRESS + report.tag_cache_bytes;
+ 
+ 		if (reference->file_offset < CACHE_FILE_HEADER_SIZE || reference->file_size < 0x18 ||
+@@ -741,8 +754,8 @@
+ 			break;
+ 		}
+ 		memset(tag_cache + *loaded_bytes, 0xCD, report.tag_cache_bytes - *loaded_bytes);
+-		memcpy(reference->base_address, map->bytes + reference->file_offset, reference->file_size);
+-		if (!tag_validate_structure_bsp(reference->tag_index, reference->base_address, reference->file_size))
++		memcpy(base_address, map->bytes + reference->file_offset, reference->file_size);
++		if (!tag_validate_structure_bsp(reference->tag_index, base_address, reference->file_size))
+ 		{
+ 			refused = 1;
+ 		}
+@@ -750,7 +763,7 @@
+ 		{
+ 			long before = tag_validate_corrections();
+ 
+-			if (!tag_validate_structure_bsp(reference->tag_index, reference->base_address, reference->file_size) ||
++			if (!tag_validate_structure_bsp(reference->tag_index, base_address, reference->file_size) ||
+ 				tag_validate_corrections() != before)
+ 			{
+ 				printf("%s: fuzz seed %lu: structure bsp %ld as corrected is not clean when checked again\n", name,

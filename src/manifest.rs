@@ -53,6 +53,30 @@ pub struct GameDataRequirement {
     pub title: String,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub user_selected_servers: bool,
+    /// How a player folder can satisfy this game. Empty means the reviewed
+    /// Cube 2 directories. Any other engine compares these with its catalog entry.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub layouts: Vec<DataLayout>,
+}
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct DataLayout {
+    /// `link` exposes directories beside a private data root. `beside` places one archive next to the executable.
+    #[serde(default = "default_layout_placement")]
+    pub placement: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub directories: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub paths: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extensions: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_bytes: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_bytes: Option<u64>,
+}
+fn default_layout_placement() -> String {
+    "link".into()
 }
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -260,6 +284,10 @@ impl Manifest {
             }
         }
         let cube2 = m.builtin_engine.as_deref() == Some(crate::cube2::PROFILE);
+        let external = m
+            .builtin_engine
+            .as_deref()
+            .and_then(crate::external_engine::get);
         if cube2 {
             if !m.shaders.is_empty() || !m.shared_assets.is_empty() {
                 bail!("Cube 2 cannot substitute package shaders or media for original game data");
@@ -271,6 +299,7 @@ impl Manifest {
             if data.title.trim().is_empty()
                 || data.title.len() > 256
                 || data.title.chars().any(char::is_control)
+                || !data.layouts.is_empty()
                 || m.runtime_profile != "core-v1"
                 || m.entry_world != "game"
                 || m.required_rom_count() != 0
@@ -281,9 +310,38 @@ impl Manifest {
             {
                 bail!("Cube 2 requires a data folder, input/save/audio permissions and at least 2 GiB memory");
             }
+        } else if let Some(engine) = external {
+            if !m.shaders.is_empty() || !m.shared_assets.is_empty() {
+                bail!(
+                    "an external engine cannot substitute package shaders or media for game data"
+                );
+            }
+            let data = m
+                .game_data
+                .as_ref()
+                .context("this engine requires a folder containing its game data")?;
+            crate::game_data::validate_layouts(&data.layouts)?;
+            if data.title.trim().is_empty()
+                || data.title.len() > 256
+                || data.title.chars().any(char::is_control)
+                || data.layouts != engine.layouts()
+                || (data.user_selected_servers && !engine.network_allowed)
+                || m.runtime_profile != "core-v1"
+                || m.entry_world != "game"
+                || m.required_rom_count() != 0
+                || !m.permissions.save
+                || !m.permissions.audio
+                || !m.permissions.input
+                || (m.permissions.network && !engine.network_allowed)
+                || m.limits.hard_memory_bytes < engine.memory
+            {
+                bail!("this external engine requires its reviewed data layout, input/save/audio permissions, the catalog network setting, and at least {} bytes of memory", engine.memory);
+            }
         } else {
             if m.game_data.is_some() {
-                bail!("game-data folders are only supported by the pinned Cube 2 engine");
+                bail!(
+                    "game-data folders are only supported by the pinned Cube 2 engine and reviewed external engines"
+                );
             }
             if let Some(engine) = &m.builtin_engine {
                 let minimum = crate::builtin::memory(engine)? + 16 * 1048576;
@@ -339,6 +397,8 @@ impl Manifest {
             || m.limits.hard_memory_bytes
                 > if cube2 {
                     4 * 1024 * 1024 * 1024
+                } else if let Some(engine) = external {
+                    engine.hard_memory
                 } else {
                     512 * 1024 * 1024
                 }

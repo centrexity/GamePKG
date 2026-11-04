@@ -1,0 +1,258 @@
+diff --git a/configure.py b/configure.py
+index 1ea8989..3534b95 100644
+--- a/configure.py
++++ b/configure.py
+@@ -94,6 +94,14 @@ parser.add_argument(
+     type=str,
+     help="Emscripten's emcc for `ninja web` (default: emcc on the PATH, then EMSDK's or ~/emsdk's)",
+ )
++parser.add_argument(
++    "--arch",
++    choices=["i686", "x86_64"],
++    default="i686",
++    help="machine for the Linux and Windows x86 builds (default: i686). "
++    "x86_64 selects the 64-bit compiler triples. The prefix headers still reject that "
++    "ABI until persisted structures stop storing raw pointers.",
++)
+ 
+ # no need to spam those extra flags when running on Windows
+ if not is_windows():
+@@ -141,6 +149,7 @@ sln = SimpleNamespace(
+     port_profile=args.profile,
+     port_lto=args.lto,
+     port_portable=args.portable,
++    port_arch=args.arch,
+     port_pgo=args.pgo,
+     port_pgo_profile=args.pgo_profile,
+     android_ndk=args.android_ndk,
+diff --git a/tools/linux_build.py b/tools/linux_build.py
+index e987a54..06c5b6d 100644
+--- a/tools/linux_build.py
++++ b/tools/linux_build.py
+@@ -68,8 +68,6 @@ OPTIMISATION = "-O2"
+ #    as returning long),
+ #  - no optimisations that assume the absence of MSVC-tolerated UB.
+ LINUX_ABI_FLAGS = [
+-    "--target=i686-linux-gnu",
+-    "-m32",
+     "-fms-extensions",
+     "-fshort-wchar",
+     "-malign-double",
+@@ -194,8 +192,6 @@ PLATFORM_FLAGS = [
+ # host's native ABI (no -malign-double, no 16-bit wchar_t, no XDK headers) so
+ # glibc structures such as struct stat have their real layout.
+ POSIX_FLAGS = [
+-    "--target=i686-linux-gnu",
+-    "-m32",
+     "-std=gnu11",
+     "-D_GNU_SOURCE",
+     "-D_FILE_OFFSET_BITS=64",
+@@ -243,12 +239,32 @@ def musl_math_cflags(abi: str) -> str:
+                      f"-include {MUSL_MATH_DIR}/include/libm.h"])
+ 
+ 
+-def march_flag(sln: Any) -> str:
+-    """The instruction set of the native x86 builds: this machine's
+-    (-march=native, the default), or with configure.py --portable the
+-    baseline every x86-64 processor has (SSE2), for builds that run on other
+-    computers. The game stays 32-bit code either way."""
+-    return "-march=x86-64" if getattr(sln, "port_portable", False) else "-march=native"
++def linux_machine_flags(sln: Any) -> List[str]:
++    """Compiler triple. The default is the historical i686 Linux target, so
++    a configure without --arch emits the same flags as before."""
++    if getattr(sln, "port_arch", "i686") == "x86_64":
++        return ["--target=x86_64-linux-gnu"]
++    return ["--target=i686-linux-gnu", "-m32"]
++
++
++def march_flag(sln: Any, windows: bool = False) -> str:
++    """Instruction set for the native x86 builds.
++
++    The default is this machine (-march=native). configure.py --portable
++    asks for a build that runs on other computers. Linux i686 and every
++    x86_64 build use -march=x86-64, which enables SSE2. Clang's
++    i686-pc-windows-msvc target ignores -march=x86-64 and then leaves SSE2
++    off, so a portable 32-bit Windows build passes -msse2. It also passes
++    -maes and -mpclmul: mbedtls includes immintrin.h before the per-function
++    target pragma, and that target does not declare the AES-NI intrinsics
++    unless the command line enables them. Calls stay behind the CPU check.
++    """
++    if not getattr(sln, "port_portable", False):
++        return "-march=native"
++    arch = getattr(sln, "port_arch", "i686")
++    if windows and arch != "x86_64":
++        return "-msse2 -maes -mpclmul"
++    return "-march=x86-64"
+ 
+ 
+ # The portable build (configure.py --portable, as tools/ci_build.py builds)
+@@ -507,12 +523,13 @@ def generate_linux_build(n: Writer, sln: Any) -> None:
+         sdl_outputs = [build_dir / libsdl.name, sdl_license]
+     else:
+         sysroot_cflags, sysroot_ldflags, sysroot_inputs, libsdl, sdl_outputs = [], [], [], None, []
++    machine = linux_machine_flags(sln)
+     target = [march_flag(sln), *sysroot_cflags]
+ 
+     # (a debug build checks its stack frames, and stops at the first one
+     # overrun, as it stops at the first failed assertion; a release build
+     # does not, so that an overrun nobody has met cannot end a game)
+-    abi = " ".join(LINUX_ABI_FLAGS + target + configuration_defines(sln)
++    abi = " ".join(machine + LINUX_ABI_FLAGS + target + configuration_defines(sln)
+                    + ([] if getattr(sln, "port_release", False) else ["-fstack-protector-strong"]))
+     port_include = PORT_DIR / "include"
+     sdk_flags = f"-idirafter {XDK_INCLUDE}"
+@@ -583,7 +600,7 @@ def generate_linux_build(n: Writer, sln: Any) -> None:
+             "-Isource -Isource/cseries",
+             sdk_flags,
+         ])
+-        posix_cflags = " ".join(POSIX_FLAGS + target + [f"-I{platform_dir}"])
++        posix_cflags = " ".join(machine + POSIX_FLAGS + target + [f"-I{platform_dir}"])
+         # (with Mbed TLS's own locks, as built from its unchanged config by
+         # these defines: on Linux the self-updater's thread (posix_update.c)
+         # and internet play's (posix_dtls.c) both use it, and two threads
+@@ -609,13 +626,13 @@ def generate_linux_build(n: Writer, sln: Any) -> None:
+         # wcslen, which linux_link_check.py rejects: the game's wchar_t is
+         # 16-bit)
+         for source in sorted((MBEDTLS_DIR / "library").glob("*.c")):
+-            add_object(source, " ".join(POSIX_FLAGS + target + [mbedtls_include,
++            add_object(source, " ".join(machine + POSIX_FLAGS + target + [mbedtls_include,
+                                                                 f"-I{MBEDTLS_DIR / 'library'}", "-fno-builtin-wcslen",
+                                                                 "-w"]), posix=True)
+         # internet play's UPnP (port/third_party/miniupnpc), with the host's
+         # ABI as posix_upnp.c, which uses it
+         for source in miniupnpc_sources():
+-            add_object(source, " ".join(POSIX_FLAGS + target + [*MINIUPNPC_DEFINES,
++            add_object(source, " ".join(machine + POSIX_FLAGS + target + [*MINIUPNPC_DEFINES,
+                                                                 f"-I{MINIUPNPC_DIR / 'include'}",
+                                                                 f"-I{MINIUPNPC_DIR / 'src'}",
+                                                                 "-fno-builtin-wcslen", "-w"]), posix=True)
+@@ -647,7 +664,7 @@ def generate_linux_build(n: Writer, sln: Any) -> None:
+             rule="linux_link",
+             inputs=objects,
+             variables={
+-                "ldflags": " ".join(["--target=i686-linux-gnu", "-m32", "-no-pie", "-g", *sysroot_ldflags,
++                "ldflags": " ".join([*machine, "-no-pie", "-g", *sysroot_ldflags,
+                                      *extra_ldflags,
+                                      # (posix_trace_marker.c's, which the GPU driver's calls must reach)
+                                      *(f"-Wl,--export-dynamic-symbol={name}"
+@@ -683,7 +700,7 @@ def generate_linux_build(n: Writer, sln: Any) -> None:
+                 outputs=validator,
+                 rule="linux_tool_link",
+                 inputs=tool_objects,
+-                variables={"ldflags": " ".join(["--target=i686-linux-gnu", "-m32", "-no-pie", "-g", *sysroot_ldflags,
++                variables={"ldflags": " ".join([*machine, "-no-pie", "-g", *sysroot_ldflags,
+                                                 *extra_ldflags])},
+             )
+ 
+diff --git a/tools/test_linux_port.py b/tools/test_linux_port.py
+index e4eed53..f91d618 100644
+--- a/tools/test_linux_port.py
++++ b/tools/test_linux_port.py
+@@ -6,6 +6,7 @@ import shutil
+ import subprocess
+ import sys
+ from pathlib import Path
++from types import SimpleNamespace
+ 
+ import pytest
+ 
+@@ -91,7 +92,7 @@ def test_xdk_headers_compile_for_the_game(tmp_path):
+     source = write(tmp_path / "unit.c", "".join(
+         f"#include <{name}>\n" for name in ("xtl.h", "xbdm.h", "xkbd.h", "d3d8perf.h")
+     ))
+-    flags = [flag for flag in linux_build.LINUX_ABI_FLAGS + linux_build.GAME_FLAGS if flag != "-w"]
++    flags = [flag for flag in linux_build.linux_machine_flags(SimpleNamespace()) + linux_build.LINUX_ABI_FLAGS + linux_build.GAME_FLAGS if flag != "-w"]
+     for defines in ([], ["-DDEBUG_KEYBOARD"], ["-DNOD3D", "-DNODSOUND"]):
+         subprocess.run(
+             ["clang", *flags, *defines, "-Werror", "-fsyntax-only",
+diff --git a/tools/windows_build.py b/tools/windows_build.py
+index fe86dbf..31ddd13 100644
+--- a/tools/windows_build.py
++++ b/tools/windows_build.py
+@@ -83,7 +83,6 @@ def updater_defines(release: bool) -> str:
+     return f'-DHALO_BUILD_NUMBER={number} -DHALO_BUILD_FLAVOR=\\"{flavor}\\"'
+ 
+ WINDOWS_ABI_FLAGS = [
+-    "--target=i686-pc-windows-msvc",
+     "-fms-extensions",
+     "-fcommon",
+     "-fno-strict-aliasing",
+@@ -169,6 +168,18 @@ def _quote(path: Any) -> str:
+     return f'"{text}"' if " " in text else text
+ 
+ 
++def windows_machine_flags(sln: Any) -> List[str]:
++    """Compiler triple. The default is the historical i686 MSVC target."""
++    if getattr(sln, "port_arch", "i686") == "x86_64":
++        return ["--target=x86_64-pc-windows-msvc"]
++    return ["--target=i686-pc-windows-msvc"]
++
++
++def windows_sdl_arch(sln: Any) -> str:
++    """SDL's Visual C++ library directory for this machine."""
++    return "x64" if getattr(sln, "port_arch", "i686") == "x86_64" else "x86"
++
++
+ def fetch_sdl() -> None:
+     """Downloads SDL3's Visual C++ development package (headers, import
+     library and DLL) once."""
+@@ -351,22 +362,25 @@ def generate_windows_build(n: Writer, sln: Any) -> None:
+     # (a debug build checks its stack frames (/GS), and stops at the first
+     # one overrun, as at the first failed assertion; a release build does
+     # not, so that an overrun nobody has met cannot end a game)
+-    abi = " ".join(WINDOWS_ABI_FLAGS + [march_flag(sln)] + configuration_defines(sln)
++    machine = windows_machine_flags(sln)
++    sdl_arch = windows_sdl_arch(sln)
++    abi = " ".join(machine + WINDOWS_ABI_FLAGS + [march_flag(sln, windows=True)] + configuration_defines(sln)
+                    + ([] if getattr(sln, "port_release", False) else ["-fstack-protector-strong"]))
+     sdl_include = SDL_DIR / "include"
+     libs = " ".join(
+-        [_quote(SDL_DIR / "lib" / "x86" / "SDL3.lib")]
++        [_quote(SDL_DIR / "lib" / sdl_arch / "SDL3.lib")]
+         + [f"-l{lib}" for lib in config.get("libraries", [])]
+     )
+     base_ldflags = [
+-        "--target=i686-pc-windows-msvc",
++        *machine,
+         "-fuse-ld=lld",
+         "-g",
+-        # the Xbox memory window is at 0x80000000, in the upper half of the
+-        # 32-bit address space
+-        "-Wl,/LARGEADDRESSAWARE",
+-        "-Wl,/STACK:0x800000",
+     ]
++    # the Xbox memory window is at 0x80000000, in the upper half of the
++    # 32-bit address space. Win64 does not use that flag.
++    if sdl_arch == "x86":
++        base_ldflags.append("-Wl,/LARGEADDRESSAWARE")
++    base_ldflags.append("-Wl,/STACK:0x800000")
+     if getattr(sln, "port_release", False):
+         # no console window (the port's log goes to halo.log instead,
+         # win32_posix.c): under Wine (Proton, gamescope) the console window
+@@ -526,7 +540,7 @@ def generate_windows_build(n: Writer, sln: Any) -> None:
+             sys.exit(f"cannot tell the release of {cc}, whose profile runtime the instrumented build needs")
+         runtime = fetch_profile_runtime(release)
+         runtime_cflags = " ".join([
+-            "--target=i686-pc-windows-msvc", OPTIMISATION, "-g", "-gcodeview", "-w",
++            *machine, OPTIMISATION, "-g", "-gcodeview", "-w",
+             "-D_CRT_SECURE_NO_WARNINGS", "-DCOMPILER_RT_HAS_ATOMICS=1",
+             f"-I{_quote(runtime / 'include')}", f"-I{_quote(runtime / 'lib' / 'profile')}",
+         ])
+@@ -548,7 +562,7 @@ def generate_windows_build(n: Writer, sln: Any) -> None:
+         # these objects replace
+         emit(generate_dir / "obj", instrumented, ["-fprofile-generate"],
+              ["-Wl,/NODEFAULTLIB:clang_rt.profile.lib"], runtime_objects, [])
+-        n.build(outputs=instrumented_dll, rule="windows_copy", inputs=SDL_DIR / "lib" / "x86" / "SDL3.dll")
++        n.build(outputs=instrumented_dll, rule="windows_copy", inputs=SDL_DIR / "lib" / sdl_arch / "SDL3.dll")
+         n.rule(
+             name="windows_pgo_train",
+             command="$python tools/pgo_train.py --binary $binary --work $work --output $out",
+@@ -567,7 +581,7 @@ def generate_windows_build(n: Writer, sln: Any) -> None:
+     lto_cflags = [] if lto == "off" else ["-flto=thin" if lto == "thin" else "-flto=full"]
+     emit(obj_dir, output, lto_cflags + profile_use_flags(profile),
+          lto_cflags + [OPTIMISATION] if lto_cflags else [], [], [profile] if profile else [])
+-    n.build(outputs=sdl_dll, rule="windows_copy", inputs=SDL_DIR / "lib" / "x86" / "SDL3.dll")
++    n.build(outputs=sdl_dll, rule="windows_copy", inputs=SDL_DIR / "lib" / sdl_arch / "SDL3.dll")
+     # internet play's MQTT brokers, a file beside the game (network.brokers_file)
+     brokers = BUILD / "brokers.txt"
+     n.build(outputs=brokers, rule="windows_copy", inputs=Path("port/assets/network/brokers.txt"))

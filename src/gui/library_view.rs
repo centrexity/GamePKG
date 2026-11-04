@@ -128,14 +128,14 @@ impl App {
                 .is_some_and(|paths| crate::rom_selections::ready(paths, m.required_rom_count()))
     }
     pub(super) fn ready_to_play(&self, m: &crate::manifest::Manifest) -> bool {
-        cfg!(target_os = "linux")
+        crate::external_engine::runs_on_host(m.builtin_engine.as_deref())
             && self.built.contains(&m.id)
             && !self.needs_rom(m)
             && (m.game_data.is_none()
                 || (self
                     .data_paths
                     .get(&m.id)
-                    .is_some_and(|p| crate::game_data::available(std::path::Path::new(p)))
+                    .is_some_and(|p| crate::game_data::available_for(m, std::path::Path::new(p)))
                     && self
                         .applied_settings
                         .as_ref()
