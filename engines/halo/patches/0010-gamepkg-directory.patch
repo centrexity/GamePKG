@@ -1,0 +1,709 @@
+--- a/port/include/gamepkg_host.h
++++ b/port/include/gamepkg_host.h
+@@ -11,13 +11,16 @@
+  *   network: payload byte count, -2 busy, -3 failed, -1 rejected
+  * Frame time is the sample taken by gamepkg_host_begin_frame. It is not a
+  * free-running clock.
+- * gamepkg_host_log, the free-running clocks, and the thread calls are host
+- * additions. Guests had no log import, no free-running clock, and no thread
+- * import. The engine keeps its own mutexes and completion handles.
++ * gamepkg_host_log, the free-running clocks, the thread calls, and the
++ * directory calls are host additions. Guests had no log import, no
++ * free-running clock, no thread import, and no directory import.
++ * gamepkg_file_call stays the player-picked import and export. The directory
++ * calls read a host path the process already has. The engine keeps its own
++ * mutexes and completion handles.
+  */
+ #include <stdint.h>
+ 
+-#define GAMEPKG_HOST_ABI 2
++#define GAMEPKG_HOST_ABI 3
+ 
+ #define GAMEPKG_FILE_IMPORT 0u
+ #define GAMEPKG_FILE_EXPORT 1u
+@@ -81,6 +84,41 @@
+ void gamepkg_thread_sleep_ms(uint32_t milliseconds);
+ void gamepkg_thread_yield(void);
+ 
++/* Host-path metadata. Not gamepkg_file_call. kind is GAMEPKG_PATH_NONE when
++   the path does not exist. flags uses GAMEPKG_PATH_READ_ONLY. Times are Unix
++   seconds and nanoseconds; a clock the host cannot read stays zero. The
++   struct is 64 bytes on every ABI. Returns 0, or -1 when path or info is null. */
++#define GAMEPKG_PATH_NONE 0u
++#define GAMEPKG_PATH_FILE 1u
++#define GAMEPKG_PATH_DIRECTORY 2u
++#define GAMEPKG_PATH_READ_ONLY 1u
++typedef struct gamepkg_path_info {
++	uint32_t kind;
++	uint32_t flags;
++	uint64_t size;
++	uint64_t modification_seconds;
++	uint32_t modification_nanoseconds;
++	uint32_t reserved0;
++	uint64_t access_seconds;
++	uint32_t access_nanoseconds;
++	uint32_t reserved1;
++	uint64_t creation_seconds;
++	uint32_t creation_nanoseconds;
++	uint32_t reserved2;
++} gamepkg_path_info;
++int32_t gamepkg_path_stat(const char *path, gamepkg_path_info *info);
++/* Bytes from a host path at offset. Returns the count read, 0 at the end,
++   or -1 when the path cannot be read. length 0 returns 0. */
++int32_t gamepkg_path_read(const char *path, uint64_t offset, uint8_t *out, uint32_t length);
++/* Small integer handle, never a pointer. Returns 1, or 0 when the directory
++   cannot be opened or the table is full. "." and ".." are not returned.
++   A name that does not fit in capacity, including its trailing NUL, is skipped.
++   gamepkg_dir_read returns the length excluding that NUL, 0 at the end, or -1
++   for an unknown handle or a null buffer. */
++int32_t gamepkg_dir_open(const char *path, uint32_t *handle);
++int32_t gamepkg_dir_read(uint32_t handle, uint8_t *name, uint32_t capacity);
++void gamepkg_dir_close(uint32_t handle);
++
+ /* Bounded UTF-8 line, at most 1024 bytes, no NUL inside the length. */
+ int32_t gamepkg_host_log(const char *text, uint32_t length);
+ /* Host tick hook. Not for the engine. */
+--- a/port/linux/src/posix_files.c
++++ b/port/linux/src/posix_files.c
+@@ -7,6 +7,8 @@
+ 
+ #include <dirent.h>
+ #include <fcntl.h>
++#include <pthread.h>
++#include <stdint.h>
+ #include <string.h>
+ #include <strings.h>
+ #include <sys/stat.h>
+@@ -15,6 +17,25 @@
+ #include <unistd.h>
+ 
+ #include "posix.h"
++#include "../../include/gamepkg_host.h"
++
++#if defined(__GNUC__) && defined(__ELF__)
++#define GAMEPKG_WEAK __attribute__((weak))
++#else
++#define GAMEPKG_WEAK
++#endif
++
++static void write_u64(uint64_t *slot, time_t seconds)
++{
++	if (slot && seconds > 0)
++		*slot = (uint64_t)seconds;
++}
++
++static void write_u32(uint32_t *slot, long nanoseconds)
++{
++	if (slot && nanoseconds > 0)
++		*slot = (uint32_t)nanoseconds;
++}
+ 
+ static void split64(unsigned long long value, posix_ulong *low, posix_ulong *high)
+ {
+@@ -39,13 +60,69 @@
+ 	information->creation_nanoseconds = (posix_ulong)st->st_ctim.tv_nsec;
+ }
+ 
+-int posix_stat(const char *path, struct posix_file_information *information)
++GAMEPKG_WEAK
++int32_t gamepkg_path_stat(const char *path, gamepkg_path_info *info)
+ {
+ 	struct stat st;
+ 
++	if (!path || !info)
++		return -1;
++	memset(info, 0, sizeof(*info));
+ 	if (stat(path, &st) != 0)
++		return 0;
++	if (S_ISDIR(st.st_mode))
++		info->kind = GAMEPKG_PATH_DIRECTORY;
++	else if (S_ISREG(st.st_mode))
++		info->kind = GAMEPKG_PATH_FILE;
++	if (info->kind == GAMEPKG_PATH_FILE && st.st_size > 0)
++		info->size = (uint64_t)st.st_size;
++	if (!(st.st_mode & S_IWUSR))
++		info->flags |= GAMEPKG_PATH_READ_ONLY;
++	write_u64(&info->modification_seconds, st.st_mtim.tv_sec);
++	write_u32(&info->modification_nanoseconds, st.st_mtim.tv_nsec);
++	write_u64(&info->access_seconds, st.st_atim.tv_sec);
++	write_u32(&info->access_nanoseconds, st.st_atim.tv_nsec);
++	write_u64(&info->creation_seconds, st.st_ctim.tv_sec);
++	write_u32(&info->creation_nanoseconds, st.st_ctim.tv_nsec);
++	return 0;
++}
++
++GAMEPKG_WEAK
++int32_t gamepkg_path_read(const char *path, uint64_t offset, uint8_t *out, uint32_t length)
++{
++	int descriptor;
++	ssize_t count;
++
++	if (!path || (!out && length))
+ 		return -1;
+-	fill_information(&st, information);
++	if (!length)
++		return 0;
++	descriptor = open(path, O_RDONLY);
++	if (descriptor < 0)
++		return -1;
++	count = pread(descriptor, out, length, (off_t)offset);
++	close(descriptor);
++	return count < 0 ? -1 : (int32_t)count;
++}
++
++int posix_stat(const char *path, struct posix_file_information *information)
++{
++	gamepkg_path_info info;
++
++	if (!information || gamepkg_path_stat(path, &info) != 0 || info.kind == GAMEPKG_PATH_NONE)
++		return -1;
++	memset(information, 0, sizeof(*information));
++	if (info.kind == GAMEPKG_PATH_DIRECTORY)
++		information->flags |= _posix_file_is_directory;
++	if (info.flags & GAMEPKG_PATH_READ_ONLY)
++		information->flags |= _posix_file_is_read_only;
++	split64(info.size, &information->size_low, &information->size_high);
++	information->modification_seconds = (posix_ulong)info.modification_seconds;
++	information->modification_nanoseconds = info.modification_nanoseconds;
++	information->access_seconds = (posix_ulong)info.access_seconds;
++	information->access_nanoseconds = info.access_nanoseconds;
++	information->creation_seconds = (posix_ulong)info.creation_seconds;
++	information->creation_nanoseconds = info.creation_nanoseconds;
+ 	return 0;
+ }
+ 
+@@ -128,22 +205,20 @@
+ #endif
+ }
+ 
+-#ifdef __LP64__
+-/* The Android port calls this file from 32-bit guest code, which cannot
+-hold a 64-bit DIR pointer: directory streams are small handles there. */
+-#include <pthread.h>
+-
+-#define DIRECTORY_HANDLE_COUNT 64
++/* Handles are small integers on every ABI. A host that overrides the weak
++calls below must use the same numbering. A DIR pointer does not fit in the
++handle. */
++#define DIRECTORY_HANDLE_COUNT 256
+ 
+ static DIR *directory_handles[DIRECTORY_HANDLE_COUNT];
+ static pthread_mutex_t directory_handle_lock = PTHREAD_MUTEX_INITIALIZER;
+ 
+-static void *directory_handle_new(DIR *directory)
++static int directory_store(DIR *directory, uint32_t *handle)
+ {
+-	unsigned long index;
++	unsigned index;
+ 
+-	if (!directory)
+-		return NULL;
++	if (!directory || !handle)
++		return 0;
+ 	pthread_mutex_lock(&directory_handle_lock);
+ 	for (index = 0; index < DIRECTORY_HANDLE_COUNT; index++)
+ 	{
+@@ -151,83 +226,114 @@
+ 		{
+ 			directory_handles[index] = directory;
+ 			pthread_mutex_unlock(&directory_handle_lock);
+-			return (void *)(index + 1);
++			*handle = index + 1;
++			return 1;
+ 		}
+ 	}
+ 	pthread_mutex_unlock(&directory_handle_lock);
+ 	closedir(directory);
+-	return NULL;
++	return 0;
+ }
+ 
+-static DIR *directory_from_handle(void *handle, int release)
++static DIR *directory_from_handle(uint32_t handle, int release)
+ {
+-	unsigned long index = (unsigned long)handle - 1;
+ 	DIR *directory = NULL;
+ 
+-	if (index >= DIRECTORY_HANDLE_COUNT)
++	if (handle == 0 || handle > DIRECTORY_HANDLE_COUNT)
+ 		return NULL;
+ 	pthread_mutex_lock(&directory_handle_lock);
+-	directory = directory_handles[index];
++	directory = directory_handles[handle - 1];
+ 	if (release)
+-		directory_handles[index] = NULL;
++		directory_handles[handle - 1] = NULL;
+ 	pthread_mutex_unlock(&directory_handle_lock);
+ 	return directory;
+ }
+-#else
+-#define directory_handle_new(directory) ((void *)(directory))
+-#define directory_from_handle(handle, release) ((DIR *)(handle))
+-#endif
+ 
+-void *posix_directory_open(const char *path)
++GAMEPKG_WEAK
++int32_t gamepkg_dir_open(const char *path, uint32_t *handle)
+ {
+-	return directory_handle_new(opendir(path));
++	if (!path || !handle)
++		return 0;
++	return directory_store(opendir(path), handle);
+ }
+ 
+-int posix_directory_next(void *directory, char *name, posix_ulong name_size)
++GAMEPKG_WEAK
++int32_t gamepkg_dir_read(uint32_t handle, uint8_t *name, uint32_t capacity)
+ {
+-	DIR *stream = directory_from_handle(directory, 0);
++	DIR *stream = directory_from_handle(handle, 0);
+ 	struct dirent *entry;
+ 
+-	if (!stream)
+-		return 0;
++	if (!stream || !name || capacity == 0)
++		return -1;
+ 	while ((entry = readdir(stream)) != NULL)
+ 	{
++		size_t length = strlen(entry->d_name);
++
+ 		if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, ".."))
+ 			continue;
+-		if (strlen(entry->d_name) + 1 > name_size)
++		if (length + 1 > capacity)
+ 			continue;
+-		strcpy(name, entry->d_name);
+-		return 1;
++		memcpy(name, entry->d_name, length + 1);
++		return (int32_t)length;
+ 	}
+ 	return 0;
+ }
+ 
+-void posix_directory_close(void *directory)
++GAMEPKG_WEAK
++void gamepkg_dir_close(uint32_t handle)
+ {
+-	DIR *stream = directory_from_handle(directory, 1);
++	DIR *stream = directory_from_handle(handle, 1);
+ 
+ 	if (stream)
+ 		closedir(stream);
+ }
+ 
++void *posix_directory_open(const char *path)
++{
++	uint32_t handle = 0;
++
++	if (gamepkg_dir_open(path, &handle) != 1)
++		return NULL;
++	return (void *)(uintptr_t)handle;
++}
++
++int posix_directory_next(void *directory, char *name, posix_ulong name_size)
++{
++	int32_t length;
++
++	if (!directory || !name || name_size == 0)
++		return 0;
++	length = gamepkg_dir_read((uint32_t)(uintptr_t)directory, (uint8_t *)name, (uint32_t)name_size);
++	return length > 0;
++}
++
++void posix_directory_close(void *directory)
++{
++	if (directory)
++		gamepkg_dir_close((uint32_t)(uintptr_t)directory);
++}
++
+ int posix_find_entry_case_insensitive(const char *directory, const char *name,
+ 	char *result, posix_ulong result_size)
+ {
+-	DIR *handle = opendir(*directory ? directory : ".");
+-	struct dirent *entry;
+-	int found = 0;
++	uint32_t handle = 0;
++	uint8_t entry[256];
++	int32_t length;
++	const char *folder = directory && directory[0] ? directory : ".";
+ 
+-	if (!handle)
++	if (!name || !result || result_size == 0)
++		return 0;
++	if (gamepkg_dir_open(folder, &handle) != 1)
+ 		return 0;
+-	while ((entry = readdir(handle)) != NULL)
++	while ((length = gamepkg_dir_read(handle, entry, sizeof(entry))) > 0)
+ 	{
+-		if (!strcasecmp(entry->d_name, name) && strlen(entry->d_name) + 1 <= result_size)
++		if (!strcasecmp((char *)entry, name) && (posix_ulong)length + 1 <= result_size)
+ 		{
+-			strcpy(result, entry->d_name);
+-			found = 1;
+-			break;
++			memcpy(result, entry, (size_t)length + 1);
++			gamepkg_dir_close(handle);
++			return 1;
+ 		}
+ 	}
+-	closedir(handle);
+-	return found;
++	gamepkg_dir_close(handle);
++	return 0;
+ }
+--- a/port/linux/src/xbox_files.c
++++ b/port/linux/src/xbox_files.c
+@@ -19,6 +19,7 @@
+ #include "platform.h"
+ #include "posix.h"
+ #include "port_config.h"
++#include "../../include/gamepkg_host.h"
+ 
+ #include <ctype.h>
+ #include <errno.h>
+@@ -283,17 +284,14 @@
+ static long map_file_version(const char *path)
+ {
+ 	unsigned char header[8];
+-	FILE *file = fopen(path, "rb");
++	int32_t count = gamepkg_path_read(path, 0, header, sizeof(header));
+ 	long version = 0;
+ 
+-	if (!file)
+-		return 0;
+-	if (fread(header, 1, sizeof(header), file) == sizeof(header) &&
++	if (count == (int32_t)sizeof(header) &&
+ 		(header[0] | header[1] << 8 | header[2] << 16 | (unsigned long)header[3] << 24) == MAP_HEADER_SIGNATURE)
+ 	{
+ 		version = (long)(header[4] | header[5] << 8 | header[6] << 16 | (unsigned long)header[7] << 24);
+ 	}
+-	fclose(file);
+ 	return version;
+ }
+ 
+--- a/port/windows/src/win32_files.c
++++ b/port/windows/src/win32_files.c
+@@ -9,6 +9,7 @@
+ */
+ 
+ #include <windows.h>
++#include <stdint.h>
+ #include <errno.h>
+ #include <io.h>
+ #include <stdio.h>
+@@ -16,6 +17,27 @@
+ #include <string.h>
+ 
+ #include "posix.h"
++#include "../../include/gamepkg_host.h"
++
++#if defined(__GNUC__) && defined(__ELF__)
++#define GAMEPKG_WEAK __attribute__((weak))
++#else
++#define GAMEPKG_WEAK
++#endif
++
++static void split_time(const FILETIME *time, posix_ulong *seconds, posix_ulong *nanoseconds);
++
++static void stamp(const FILETIME *time, uint64_t *seconds, uint32_t *nanoseconds)
++{
++	posix_ulong whole = 0;
++	posix_ulong fraction = 0;
++
++	split_time(time, &whole, &fraction);
++	if (seconds)
++		*seconds = whole;
++	if (nanoseconds)
++		*nanoseconds = fraction;
++}
+ 
+ static int fail(void)
+ {
+@@ -105,14 +127,75 @@
+ 	split_time(creation, &information->creation_seconds, &information->creation_nanoseconds);
+ }
+ 
+-int posix_stat(const char *path, struct posix_file_information *information)
++GAMEPKG_WEAK
++int32_t gamepkg_path_stat(const char *path, gamepkg_path_info *info)
+ {
+ 	WIN32_FILE_ATTRIBUTE_DATA data;
++	unsigned long long size;
+ 
++	if (!path || !info)
++		return -1;
++	memset(info, 0, sizeof(*info));
+ 	if (!GetFileAttributesExA(path, GetFileExInfoStandard, &data))
+-		return fail();
+-	fill_information(data.dwFileAttributes, data.nFileSizeLow, data.nFileSizeHigh,
+-		&data.ftCreationTime, &data.ftLastAccessTime, &data.ftLastWriteTime, information);
++		return 0;
++	if (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
++		info->kind = GAMEPKG_PATH_DIRECTORY;
++	else
++		info->kind = GAMEPKG_PATH_FILE;
++	size = ((unsigned long long)data.nFileSizeHigh << 32) | data.nFileSizeLow;
++	if (info->kind == GAMEPKG_PATH_FILE)
++		info->size = size;
++	if (data.dwFileAttributes & FILE_ATTRIBUTE_READONLY)
++		info->flags |= GAMEPKG_PATH_READ_ONLY;
++	stamp(&data.ftLastWriteTime, &info->modification_seconds, &info->modification_nanoseconds);
++	stamp(&data.ftLastAccessTime, &info->access_seconds, &info->access_nanoseconds);
++	stamp(&data.ftCreationTime, &info->creation_seconds, &info->creation_nanoseconds);
++	return 0;
++}
++
++GAMEPKG_WEAK
++int32_t gamepkg_path_read(const char *path, uint64_t offset, uint8_t *out, uint32_t length)
++{
++	HANDLE file;
++	LARGE_INTEGER position;
++	DWORD count = 0;
++
++	if (!path || (!out && length))
++		return -1;
++	if (!length)
++		return 0;
++	file = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
++		NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
++	if (file == INVALID_HANDLE_VALUE)
++		return -1;
++	position.QuadPart = (LONGLONG)offset;
++	if (!SetFilePointerEx(file, position, NULL, FILE_BEGIN) || !ReadFile(file, out, length, &count, NULL))
++	{
++		CloseHandle(file);
++		return -1;
++	}
++	CloseHandle(file);
++	return (int32_t)count;
++}
++
++int posix_stat(const char *path, struct posix_file_information *information)
++{
++	gamepkg_path_info info;
++
++	if (!information || gamepkg_path_stat(path, &info) != 0 || info.kind == GAMEPKG_PATH_NONE)
++		return -1;
++	memset(information, 0, sizeof(*information));
++	if (info.kind == GAMEPKG_PATH_DIRECTORY)
++		information->flags |= _posix_file_is_directory;
++	if (info.flags & GAMEPKG_PATH_READ_ONLY)
++		information->flags |= _posix_file_is_read_only;
++	split64(info.size, &information->size_low, &information->size_high);
++	information->modification_seconds = (posix_ulong)info.modification_seconds;
++	information->modification_nanoseconds = info.modification_nanoseconds;
++	information->access_seconds = (posix_ulong)info.access_seconds;
++	information->access_nanoseconds = info.access_nanoseconds;
++	information->creation_seconds = (posix_ulong)info.creation_seconds;
++	information->creation_nanoseconds = info.creation_nanoseconds;
+ 	return 0;
+ }
+ 
+@@ -213,11 +296,32 @@
+ 	BOOL pending; /* data holds an entry not returned yet */
+ };
+ 
+-void *posix_directory_open(const char *path)
++#define DIRECTORY_HANDLE_COUNT 256
++
++static struct directory *directory_handles[DIRECTORY_HANDLE_COUNT];
++static CRITICAL_SECTION directory_handle_lock;
++static INIT_ONCE directory_handle_once = INIT_ONCE_STATIC_INIT;
++
++static BOOL CALLBACK directory_handle_init(PINIT_ONCE once, PVOID parameter, PVOID *context)
++{
++	(void)once;
++	(void)parameter;
++	(void)context;
++	InitializeCriticalSection(&directory_handle_lock);
++	return TRUE;
++}
++
++static void directory_enter(void)
++{
++	InitOnceExecuteOnce(&directory_handle_once, directory_handle_init, NULL, NULL);
++	EnterCriticalSection(&directory_handle_lock);
++}
++
++static struct directory *directory_create(const char *path)
+ {
+ 	struct directory *directory = malloc(sizeof(*directory));
+ 	char pattern[MAX_PATH + 3];
+-	size_t length = strlen(path);
++	size_t length = path ? strlen(path) : 0;
+ 
+ 	if (!directory || length + 3 > sizeof(pattern))
+ 	{
+@@ -238,7 +342,6 @@
+ 		free(directory);
+ 		if (error == ERROR_FILE_NOT_FOUND)
+ 		{
+-			/* an empty directory (drive roots have no . entry) */
+ 			directory = malloc(sizeof(*directory));
+ 			if (!directory)
+ 				return NULL;
+@@ -254,29 +357,84 @@
+ 	return directory;
+ }
+ 
+-int posix_directory_next(void *handle, char *name, posix_ulong name_size)
++static int directory_store(struct directory *directory, uint32_t *handle)
++{
++	unsigned index;
++
++	if (!directory || !handle)
++	{
++		free(directory);
++		return 0;
++	}
++	directory_enter();
++	for (index = 0; index < DIRECTORY_HANDLE_COUNT; index++)
++	{
++		if (!directory_handles[index])
++		{
++			directory_handles[index] = directory;
++			LeaveCriticalSection(&directory_handle_lock);
++			*handle = index + 1;
++			return 1;
++		}
++	}
++	LeaveCriticalSection(&directory_handle_lock);
++	if (directory->find != INVALID_HANDLE_VALUE)
++		FindClose(directory->find);
++	free(directory);
++	return 0;
++}
++
++static struct directory *directory_take(uint32_t handle, int release)
+ {
+-	struct directory *directory = handle;
++	struct directory *directory = NULL;
++
++	if (handle == 0 || handle > DIRECTORY_HANDLE_COUNT)
++		return NULL;
++	directory_enter();
++	directory = directory_handles[handle - 1];
++	if (release)
++		directory_handles[handle - 1] = NULL;
++	LeaveCriticalSection(&directory_handle_lock);
++	return directory;
++}
+ 
+-	if (!directory || directory->find == INVALID_HANDLE_VALUE)
++GAMEPKG_WEAK
++int32_t gamepkg_dir_open(const char *path, uint32_t *handle)
++{
++	if (!path || !handle)
++		return 0;
++	return directory_store(directory_create(path), handle);
++}
++
++GAMEPKG_WEAK
++int32_t gamepkg_dir_read(uint32_t handle, uint8_t *name, uint32_t capacity)
++{
++	struct directory *directory = directory_take(handle, 0);
++	size_t length;
++
++	if (!directory || !name || capacity == 0)
++		return -1;
++	if (directory->find == INVALID_HANDLE_VALUE)
+ 		return 0;
+ 	for (;;)
+ 	{
+ 		if (!directory->pending && !FindNextFileA(directory->find, &directory->data))
+ 			return 0;
+ 		directory->pending = FALSE;
++		length = strlen(directory->data.cFileName);
+ 		if (!strcmp(directory->data.cFileName, ".") || !strcmp(directory->data.cFileName, ".."))
+ 			continue;
+-		if (strlen(directory->data.cFileName) + 1 > name_size)
++		if (length + 1 > capacity)
+ 			continue;
+-		strcpy(name, directory->data.cFileName);
+-		return 1;
++		memcpy(name, directory->data.cFileName, length + 1);
++		return (int32_t)length;
+ 	}
+ }
+ 
+-void posix_directory_close(void *handle)
++GAMEPKG_WEAK
++void gamepkg_dir_close(uint32_t handle)
+ {
+-	struct directory *directory = handle;
++	struct directory *directory = directory_take(handle, 1);
+ 
+ 	if (!directory)
+ 		return;
+@@ -285,29 +443,52 @@
+ 	free(directory);
+ }
+ 
++void *posix_directory_open(const char *path)
++{
++	uint32_t handle = 0;
++
++	if (gamepkg_dir_open(path, &handle) != 1)
++		return NULL;
++	return (void *)(uintptr_t)handle;
++}
++
++int posix_directory_next(void *handle, char *name, posix_ulong name_size)
++{
++	int32_t length;
++
++	if (!handle || !name || name_size == 0)
++		return 0;
++	length = gamepkg_dir_read((uint32_t)(uintptr_t)handle, (uint8_t *)name, (uint32_t)name_size);
++	return length > 0;
++}
++
++void posix_directory_close(void *handle)
++{
++	if (handle)
++		gamepkg_dir_close((uint32_t)(uintptr_t)handle);
++}
++
+ int posix_find_entry_case_insensitive(const char *directory, const char *name,
+ 	char *result, posix_ulong result_size)
+ {
+-	/* Windows file systems already ignore case; looking the name up gives
+-	its on-disk spelling */
+-	char path[MAX_PATH];
+-	WIN32_FIND_DATAA data;
+-	HANDLE find;
+-	int written;
++	uint32_t handle = 0;
++	uint8_t entry[256];
++	int32_t length;
++	const char *folder = directory && directory[0] ? directory : ".";
+ 
+-	if (strpbrk(name, "*?"))
+-		return 0;
+-	written = *directory ?
+-		_snprintf(path, sizeof(path), "%s\\%s", directory, name) :
+-		_snprintf(path, sizeof(path), "%s", name);
+-	if (written < 0 || written >= (int)sizeof(path))
+-		return 0;
+-	find = FindFirstFileA(path, &data);
+-	if (find == INVALID_HANDLE_VALUE)
++	if (!name || !result || result_size == 0 || strpbrk(name, "*?"))
+ 		return 0;
+-	FindClose(find);
+-	if (strlen(data.cFileName) + 1 > result_size)
++	if (gamepkg_dir_open(folder, &handle) != 1)
+ 		return 0;
+-	strcpy(result, data.cFileName);
+-	return 1;
++	while ((length = gamepkg_dir_read(handle, entry, sizeof(entry))) > 0)
++	{
++		if (_stricmp((char *)entry, name) == 0 && (posix_ulong)length + 1 <= result_size)
++		{
++			memcpy(result, entry, (size_t)length + 1);
++			gamepkg_dir_close(handle);
++			return 1;
++		}
++	}
++	gamepkg_dir_close(handle);
++	return 0;
+ }

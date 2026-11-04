@@ -1,0 +1,112 @@
+--- a/port/include/gamepkg_host.h
++++ b/port/include/gamepkg_host.h
+@@ -9,9 +9,10 @@
+  *   window control: 1 accepted, 0 rejected or unbound
+  *   file, input, rom, asset, save read: byte count, or -1
+  *   network: payload byte count, -2 busy, -3 failed, -1 rejected
+- * Frame time is the sample taken by gamepkg_host_begin_frame. The engine
+- * does not sample the clock itself.
+- * gamepkg_host_log is the one addition. Guests had no log import.
++ * Frame time is the sample taken by gamepkg_host_begin_frame. It is not a
++ * free-running clock.
++ * gamepkg_host_log, gamepkg_monotonic_time_ns, and gamepkg_wall_time are
++ * host additions. Guests had no log import and no free-running clock import.
+  */
+ #include <stdint.h>
+ 
+@@ -32,6 +33,12 @@
+ 
+ int32_t gamepkg_effect_call(uint32_t operation, const char *path, uint32_t value);
+ uint64_t gamepkg_frame_time_us(void);
++/* Nanoseconds from a monotonic clock. Zero if the clock cannot be read.
++   Independent of gamepkg_frame_time_us. */
++uint64_t gamepkg_monotonic_time_ns(void);
++/* Unix time. Null pointers are ignored. Both outputs are zero if the clock
++   cannot be read. */
++void gamepkg_wall_time(uint64_t *seconds, uint32_t *nanoseconds);
+ uint32_t gamepkg_window_state(void);
+ int32_t gamepkg_window_control(uint32_t operation, uint32_t value);
+ int32_t gamepkg_file_call(uint32_t operation, const uint8_t *request, uint32_t request_len,
+--- a/port/linux/src/xbox_kernel.c
++++ b/port/linux/src/xbox_kernel.c
+@@ -671,6 +671,39 @@
+ for more than 24.8 days (2^31 ms since boot) overflows: a hosted game then
+ timed out its own clients. They start at 10 s, about where an Xbox's clock
+ is by the time the game runs. */
++#if defined(__GNUC__) && defined(__ELF__)
++__attribute__((weak))
++#endif
++uint64_t gamepkg_monotonic_time_ns(void)
++{
++	struct timespec now;
++
++	if (clock_gettime(CLOCK_MONOTONIC, &now) != 0 || now.tv_sec < 0 || now.tv_nsec < 0)
++		return 0;
++	return (uint64_t)now.tv_sec * 1000000000ULL + (uint64_t)now.tv_nsec;
++}
++
++#if defined(__GNUC__) && defined(__ELF__)
++__attribute__((weak))
++#endif
++void gamepkg_wall_time(uint64_t *seconds, uint32_t *nanoseconds)
++{
++	struct timespec now;
++
++	if (clock_gettime(CLOCK_REALTIME, &now) != 0 || now.tv_sec < 0 || now.tv_nsec < 0)
++	{
++		if (seconds)
++			*seconds = 0;
++		if (nanoseconds)
++			*nanoseconds = 0;
++		return;
++	}
++	if (seconds)
++		*seconds = (uint64_t)now.tv_sec;
++	if (nanoseconds)
++		*nanoseconds = (uint32_t)now.tv_nsec;
++}
++
+ static unsigned long long platform_clock_nanoseconds(void)
+ {
+ 	static unsigned long long start;
+@@ -680,10 +713,7 @@
+ 	without the 64-bit conversions of its way there) */
+ 	value = (unsigned long long)(emscripten_get_now() * 1000000.0);
+ #else
+-	struct timespec now;
+-
+-	clock_gettime(CLOCK_MONOTONIC, &now);
+-	value = (unsigned long long)now.tv_sec * 1000000000ULL + (unsigned long long)now.tv_nsec;
++	value = gamepkg_monotonic_time_ns();
+ #endif
+ 	__atomic_compare_exchange_n(&start, &expected, value - 10000000000ULL, 0, __ATOMIC_RELAXED, __ATOMIC_RELAXED);
+ 	return value - __atomic_load_n(&start, __ATOMIC_RELAXED);
+@@ -776,15 +806,16 @@
+ 
+ VOID WINAPI GetSystemTime(LPSYSTEMTIME system_time)
+ {
+-	struct timespec now;
++	uint64_t unix_seconds;
++	uint32_t nanos;
+ 	unsigned long long seconds;
+ 	unsigned long days;
+ 	int year = 1970;
+ 	int month = 0;
+ 	int leap;
+ 
+-	clock_gettime(CLOCK_REALTIME, &now);
+-	seconds = (unsigned long long)now.tv_sec;
++	gamepkg_wall_time(&unix_seconds, &nanos);
++	seconds = unix_seconds;
+ 	days = (unsigned long)(seconds / 86400);
+ 	system_time->wDayOfWeek = (WORD)((days + 4) % 7); /* 1970-01-01 was a Thursday */
+ 	for (;;)
+@@ -805,7 +836,7 @@
+ 	system_time->wHour = (WORD)((seconds / 3600) % 24);
+ 	system_time->wMinute = (WORD)((seconds / 60) % 60);
+ 	system_time->wSecond = (WORD)(seconds % 60);
+-	system_time->wMilliseconds = (WORD)(now.tv_nsec / 1000000L);
++	system_time->wMilliseconds = (WORD)(nanos / 1000000u);
+ }
+ 
+ /* ---------- heap memory (GlobalAlloc / LocalAlloc family) */
