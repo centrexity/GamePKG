@@ -324,3 +324,13 @@ both processes. It writes result.json and evidence paths, with no source/runtime
 or original disc changes. Full campaign/autosave/restore, device semantics,
 native no-Python generation, signed package/process integration, platforms and
 measured optimizations across every current port still remain.
+
+The pinned kernel bridge adapter resolves guest KTHREAD objects before calling
+host thread-priority APIs. Current objects resolve to the calling host thread;
+other registered live threads use a duplicated shadow handle, keeping it valid
+across concurrent closes. Events, retired objects and unknown addresses never
+become host thread handles. This preserves Windows AppContainer isolation and
+strict handle checking. `tools/check_takedawn_thread_priority.py` verifies the
+pinned transformation and exercises native handles on Windows (32 and 64 bit),
+including duplicate lifetime and leak checks. This is a maintainer test; players
+do not need Python. Full game qualification is separate from this fixture.

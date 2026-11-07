@@ -4,16 +4,20 @@ The standalone Windows pipeline compiles every prepared Rust game unit, builds
 the original C/C++ runtime and produces a native Windows executable. It invokes
 no WSL, translation tool, Python or game code during compilation. Python and Wine
 are maintainer diagnostics. The app's Windows Build action now dispatches this
-pipeline for the reviewed v16 kit and older admitted recipes. Windows CLI/GUI
+pipeline for the reviewed v17 kit and older admitted recipes. Windows CLI/GUI
 Play uses the owned confined session with remembered ISO selection and play
-history. The unreleased 0.1.5 recipe selects v16; older Linux v8 and universal
-v12/v13/v14/v15 kits remain admitted for continuity.
+history. The unreleased 0.1.6 recipe selects v17; older Linux v8 and universal
+v12/v13/v14/v15/v16 kits remain admitted for continuity.
 
-The complete actual Windows signed Build/repair evidence is for v15. The v16
-shared-results input fix has signed Linux Build/gameplay and sanitized 32/64-bit
-source checks; current Windows game/runtime qualification remains open. Existing
-preview archives retain their original identities and do not contain this fix.
-Physical Windows gameplay and stable release promotion remain unfinished.
+The v17 runtime resolves guest thread objects before host priority calls. Its
+32/64-bit strict-handle fixtures pass on physical Windows. The complete native
+game also finishes an original three-lap race, autosaves, returns to Select Car
+and closes normally through the production AppContainer process owner on real
+Intel Vulkan hardware. The selected ISO is read in place; test audio is silent.
+These private runtime checks do not qualify the ordinary Windows app's full
+Build/readiness/history/repair path for v17. That integration and stable release
+promotion remain pending. Existing preview archives retain their original
+identities and do not contain the v17 adapter.
 
 ## Managed SDK setup
 
