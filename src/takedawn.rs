@@ -15,8 +15,7 @@ pub const KIT_ASSET: &str = "assets/takedawn-source-kit.tar.gz";
 pub const CURRENT_KIT_SHA256: &str =
     "6fd3e9edc6356c0e60d10fd915974c1f8010b152eee9fea32a21d8a8c35e25ef";
 // Keep the previously qualified v18 recipe installable and verifiable.
-pub const V18_KIT_SHA256: &str =
-    "d94c9bdb3a5e49733ebbe78c573e56174b00ca7ffb83ffbfd9fd0fa091c0905b";
+pub const V18_KIT_SHA256: &str = "d94c9bdb3a5e49733ebbe78c573e56174b00ca7ffb83ffbfd9fd0fa091c0905b";
 // Keep the previously qualified v17 recipe installable and verifiable.
 pub const V17_KIT_SHA256: &str = "8ae26ce68862dffde427315fc335e2e6effa1d26ecd9ad02778499c4d478a7d0";
 pub const LEGACY_WINDOWS_V16_KIT_SHA256: &str =
