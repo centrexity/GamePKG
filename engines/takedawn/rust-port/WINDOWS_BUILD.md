@@ -325,3 +325,10 @@ always use the dummy driver. The confined native-window fixture exercises the
 default, dummy and unsupported-driver cases in separate test processes. When
 using the managed GNU SDK for that fixture, `GAMEPKG_TEST_WINDOWS_LINKER` selects
 its exact self-contained GCC executable; it is a test-only setting.
+
+The Windows player grants access using the canonical save directory, then passes
+the equivalent ordinary absolute DOS/UNC paths to the runtime for saves, shader
+cache and temporary files. The title joins paths with repeated or mixed
+separators, which Windows rejects under a verbatim `\\?\` prefix. The confined
+native-window fixture also creates a title directory using those joins through
+the actual Win32 API, and checks saves and history across a restart.
