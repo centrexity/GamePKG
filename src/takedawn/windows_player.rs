@@ -202,12 +202,18 @@ impl Session {
                 format!("{:.2}", f64::from(options.audio_volume) / 100.0).into(),
             ),
         ];
+        // Preserve the host's explicit silent test driver for windowed runs too.
+        // Default windowed playback still lets SDL select the user's real device.
+        if options.headless
+            || std::env::var_os("SDL_AUDIODRIVER").as_deref() == Some(std::ffi::OsStr::new("dummy"))
+        {
+            environment.push(("SDL_AUDIODRIVER".into(), "dummy".into()));
+        }
         let mut args = Vec::new();
         if options.headless {
             args.push("--headless".into());
             environment.extend([
                 ("RECOMP_HEADLESS".into(), "1".into()),
-                ("SDL_AUDIODRIVER".into(), "dummy".into()),
                 ("RECOMP_FLIP_MARK".into(), "1".into()),
             ]);
         }
@@ -379,6 +385,43 @@ mod tests {
         // This std-only host fixture tests ownership and real Win32 window
         // access under the production confinement. It does not test Vulkan
         // rendering or original game fidelity; those use the prepared kit.
+        // Test host environment selection in isolated test processes, avoiding
+        // global environment mutation while other unit tests run concurrently.
+        let expected_driver = match std::env::var("GAMEPKG_WINDOWS_AUDIO_FIXTURE_CASE").as_deref() {
+            Ok("dummy") => "Some(\"dummy\")",
+            Ok("default") => "None",
+            _ => {
+                let module = module_path!().split_once("::").unwrap().1;
+                let name = format!(
+                    "{module}::native_player_owns_saves_history_and_companions_across_restart"
+                );
+                for driver in [None, Some("dummy"), Some("disk")] {
+                    let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+                    command.args(["--exact", &name, "--nocapture"]);
+                    command.env_remove("SDL_AUDIODRIVER");
+                    if let Some(driver) = driver {
+                        command.env("SDL_AUDIODRIVER", driver);
+                    }
+                    command.env(
+                        "GAMEPKG_WINDOWS_AUDIO_FIXTURE_CASE",
+                        if driver == Some("dummy") {
+                            "dummy"
+                        } else {
+                            "default"
+                        },
+                    );
+                    let output = command.output().unwrap();
+                    assert!(
+                        output.status.success()
+                            && String::from_utf8_lossy(&output.stdout).contains("running 1 test"),
+                        "windowed audio driver {driver:?}: {} {}",
+                        String::from_utf8_lossy(&output.stdout),
+                        String::from_utf8_lossy(&output.stderr)
+                    );
+                }
+                return;
+            }
+        };
         let root = tempfile::tempdir().unwrap();
         let source = root.path().join("fixture.rs");
         fs::write(
@@ -440,6 +483,7 @@ fn pump_window(deadline: std::time::Instant) {
 fn main() {
     assert_eq!(std::env::args().nth(1).unwrap(), "/gamepkg-disc/default.xbe");
     assert_eq!(std::env::var("RECOMP_AUDIO_MUTE").unwrap(), "1");
+    assert_eq!(std::env::var("SDL_AUDIODRIVER").ok().as_deref(), __GAMEPKG_EXPECTED_SDL_DRIVER__);
     assert_eq!(std::env::var("RECOMP_AUDIO_VOLUME").unwrap(), "0.37");
     let watchdog = std::env::var("RECOMP_HANG_WATCHDOG").unwrap();
     assert!(watchdog == "0" || watchdog == "17");
@@ -506,18 +550,27 @@ fn main() {
         assert_eq!(fs::read(profile).unwrap(), b"original save fixture");
     }
 }
-"#,
+"#.replace("__GAMEPKG_EXPECTED_SDL_DRIVER__", expected_driver),
         )
         .unwrap();
         let executable = root.path().join("fixture.exe");
-        let compiled = std::process::Command::new("rustc")
+        let mut compiler = std::process::Command::new("rustc");
+        compiler
             .arg("--edition=2021")
             .arg("-Dwarnings")
             .arg(&source)
             .arg("-o")
-            .arg(&executable)
-            .output()
-            .unwrap();
+            .arg(&executable);
+        // Standalone managed-SDK tests use its exact self-contained GNU linker,
+        // rather than a different GCC-compatible driver found on the host PATH.
+        if let Some(linker) = std::env::var_os("GAMEPKG_TEST_WINDOWS_LINKER") {
+            let mut option = std::ffi::OsString::from("linker=");
+            option.push(linker);
+            compiler
+                .args(["-C", "link-self-contained=yes", "-C"])
+                .arg(option);
+        }
+        let compiled = compiler.output().unwrap();
         assert!(
             compiled.status.success(),
             "{}",
