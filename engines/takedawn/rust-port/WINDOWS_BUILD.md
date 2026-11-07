@@ -314,3 +314,11 @@ qualified executable passes the same control. A subsequent observed run of the
 unchanged new executable passes. These timing failures remain recorded and
 real-time audio consistency is not qualified by the successful run. Neither
 checker assertions nor deadlines were relaxed. No stable package is promoted.
+
+For silent maintainer window checks, set `SDL_AUDIODRIVER=dummy` in the host
+environment. The Windows player preserves that explicit override, while normal
+windowed playback leaves SDL's device selection unchanged. Headless checks
+always use the dummy driver. The confined native-window fixture exercises the
+default, dummy and unsupported-driver cases in separate test processes. When
+using the managed GNU SDK for that fixture, `GAMEPKG_TEST_WINDOWS_LINKER` selects
+its exact self-contained GCC executable; it is a test-only setting.
