@@ -7,7 +7,7 @@ use std::{
     io::{self, Read, Write},
     os::{
         fd::AsRawFd,
-        unix::fs::{DirBuilderExt, OpenOptionsExt},
+        unix::fs::{DirBuilderExt, FileTypeExt, OpenOptionsExt},
         unix::process::CommandExt,
     },
     path::{Path, PathBuf},
@@ -20,6 +20,33 @@ const MAX_BINARY: u64 = 128 * 1048576;
 const MAX_DISC: u64 = 16 * 1024 * 1024 * 1024;
 const LOG_BYTES: usize = 128 * 1024;
 const STARTUP_BYTES: usize = 16 * 1024;
+
+fn nvidia_device_name(name: &str) -> bool {
+    matches!(
+        name,
+        "nvidiactl" | "nvidia-modeset" | "nvidia-uvm" | "nvidia-uvm-tools"
+    ) || name.strip_prefix("nvidia").is_some_and(|suffix| {
+        !suffix.is_empty() && suffix.bytes().all(|byte| byte.is_ascii_digit())
+    })
+}
+
+// NVIDIA's proprietary driver also needs its own character devices, beyond
+// /dev/dri. Keep this list host-owned and narrow rather than exposing all /dev.
+fn nvidia_devices(directory: &Path) -> Result<Vec<PathBuf>> {
+    let mut devices = Vec::new();
+    for entry in fs::read_dir(directory).context("read host graphics devices")? {
+        let entry = entry?;
+        if entry.file_name().to_str().is_some_and(nvidia_device_name)
+            && fs::symlink_metadata(entry.path())?
+                .file_type()
+                .is_char_device()
+        {
+            devices.push(entry.path());
+        }
+    }
+    devices.sort();
+    Ok(devices)
+}
 
 #[derive(Default)]
 struct Diagnostics {
@@ -358,6 +385,9 @@ impl Session {
                 command.args(["--dev-bind", path, path]);
             }
         }
+        for path in nvidia_devices(Path::new("/dev"))? {
+            command.arg("--dev-bind").arg(&path).arg(&path);
+        }
         command
             .arg("--ro-bind")
             .arg(&binary)
@@ -581,6 +611,38 @@ impl Drop for Session {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nvidia_devices_accept_only_driver_character_nodes() {
+        for name in [
+            "nvidia0",
+            "nvidia12",
+            "nvidiactl",
+            "nvidia-modeset",
+            "nvidia-uvm",
+            "nvidia-uvm-tools",
+        ] {
+            assert!(nvidia_device_name(name), "{name}");
+        }
+        for name in [
+            "nvidia",
+            "nvidia-caps",
+            "nvidia0evil",
+            "nvidia-1",
+            "nvidia１２",
+            "/dev/nvidia0",
+            "../nvidia0",
+            "sda",
+        ] {
+            assert!(!nvidia_device_name(name), "{name}");
+        }
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("nvidia0"), b"ordinary file").unwrap();
+        fs::create_dir(root.path().join("nvidia1")).unwrap();
+        std::os::unix::fs::symlink("/dev/null", root.path().join("nvidia2")).unwrap();
+        std::os::unix::fs::symlink("missing", root.path().join("nvidia3")).unwrap();
+        assert!(nvidia_devices(root.path()).unwrap().is_empty());
+    }
     #[test]
     fn separate_output_streams_cannot_hide_a_split_path_failure() {
         struct Scripted<F>(F);
