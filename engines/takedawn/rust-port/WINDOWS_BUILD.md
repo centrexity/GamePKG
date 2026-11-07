@@ -18,8 +18,15 @@ prepared Rust game inputs and verified object-cache namespace. Its ordinary
 all 487 same-machine objects retain their hashes and modification times. Selected
 and remembered ISO launch, increasing history, GUI Ready, native Play child and
 normal close also pass. The new library window appears after 1.711 seconds in
-the scoped test. The completed full-race/reload checks below remain explicitly
-tied to v17.
+the scoped test. The v18 runtime also passes a separate physical Windows
+three-lap Downtown Southbound Race through the current production process owner:
+sixth of six in 302.667 seconds, best lap 99.967 seconds, normal autosave/Select
+Car and normal close. A fresh process on the same five saved files displays the
+new 1:39.96 lap beside retained earlier records. All five files stay unchanged
+during that reload. Intel UHD Vulkan, a read-only ISO handle, the restricted
+process token and 4 GiB job are verified; audio is silent. This private AI-driven
+race test supplements the separate ordinary app Build/CLI/GUI/history checks;
+it does not qualify hands-on controls, audible output or every game feature.
 
 The v17 runtime resolves guest thread objects before host priority calls. Its
 32/64-bit strict-handle fixtures pass on physical Windows. The complete native
