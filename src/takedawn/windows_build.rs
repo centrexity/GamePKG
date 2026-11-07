@@ -135,6 +135,20 @@ pub fn compile_package(root: &Path, id: &str) -> Result<()> {
     let kit_digest = super::reviewed_kit_digest(&archive_bytes)?;
     ensure!(kit_digest != super::KIT_SHA256,
         "this package contains the older Linux-only source kit; update the package for native Windows builds");
+    // These admitted archives all contain the pinned pre-v17 bridge that
+    // passes a guest KTHREAD address as a host HANDLE. Keep verification and
+    // Linux compatibility, but do not compile a known-broken Windows runtime.
+    ensure!(
+        ![
+            super::LEGACY_WINDOWS_KIT_SHA256,
+            super::LEGACY_WINDOWS_V13_KIT_SHA256,
+            super::LEGACY_WINDOWS_V14_KIT_SHA256,
+            super::LEGACY_WINDOWS_V15_KIT_SHA256,
+            super::LEGACY_WINDOWS_V16_KIT_SHA256,
+        ]
+        .contains(&kit_digest.as_str()),
+        "Update this game package before building on Windows: its older runtime needs the protected native player fixes."
+    );
     let mut archive = tempfile::NamedTempFile::new()?;
     archive.write_all(&archive_bytes)?;
     let kit = crate::takedawn_kit::SourceKit::open(archive.path(), &kit_digest)?;
