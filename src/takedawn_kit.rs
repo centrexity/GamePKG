@@ -6,7 +6,9 @@ use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use std::{collections::BTreeMap, fs, io::Read, path::Path};
 const MAX_ARCHIVE: u64 = 128 * 1048576;
-const MAX_UNPACKED: u64 = 1024 * 1048576;
+// Keeping original CFG arms expands reviewed prepared source. This disk
+// extraction bound is separate from the running game's memory ceiling.
+const MAX_UNPACKED: u64 = 1280 * 1048576;
 const MAX_MANIFEST: u64 = 2 * 1048576;
 const MAX_FILES: usize = 8192;
 #[derive(Deserialize)]
@@ -115,7 +117,11 @@ impl SourceKit {
             total = total
                 .checked_add(file.bytes)
                 .context("source-kit size overflow")?;
-            ensure!(total <= MAX_UNPACKED, "source kit exceeds 1 GiB");
+            ensure!(
+                total <= MAX_UNPACKED,
+                "source kit exceeds {} MiB",
+                MAX_UNPACKED / 1048576
+            );
         }
         let directory = tempfile::tempdir()?;
         let count = manifest.files.len();
@@ -221,6 +227,66 @@ mod tests {
         let mut file = tempfile::NamedTempFile::new()?;
         file.write_all(bytes)?;
         SourceKit::open(file.path(), &crate::verify::digest(bytes))
+    }
+    #[test]
+    fn unpacked_budget_is_checked_before_large_payload_extraction() {
+        let seed = fixture("seed", b"source", false, false);
+        let mut original = tar::Archive::new(flate2::read::GzDecoder::new(seed.as_slice()));
+        let mut metadata = Vec::new();
+        original
+            .entries()
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .read_to_end(&mut metadata)
+            .unwrap();
+        let template: serde_json::Value = serde_json::from_slice(&metadata).unwrap();
+        for over in [false, true] {
+            let mut manifest = template.clone();
+            let mut files = serde_json::Map::new();
+            for i in 0..MAX_UNPACKED / crate::archive::MAX_FILE {
+                files.insert(
+                    format!("prepared/src/part_{i}.rs"),
+                    serde_json::json!({
+                        "sha256":"0".repeat(64), "bytes":crate::archive::MAX_FILE, "mode":420
+                    }),
+                );
+            }
+            if over {
+                files.insert(
+                    "prepared/src/extra.rs".into(),
+                    serde_json::json!({
+                        "sha256":"0".repeat(64), "bytes":1, "mode":420
+                    }),
+                );
+            }
+            manifest["files"] = serde_json::Value::Object(files);
+            let data = serde_json::to_vec(&manifest).unwrap();
+            let gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+            let mut tar = tar::Builder::new(gz);
+            let mut header = tar::Header::new_gnu();
+            header.set_mode(0o644);
+            header.set_size(data.len() as u64);
+            header.set_cksum();
+            tar.append_data(&mut header, "kit.json", data.as_slice())
+                .unwrap();
+            let bytes = tar.into_inner().unwrap().finish().unwrap();
+            // No large payload is created: the exact budget reaches the missing
+            // inventory check, while one extra byte fails the metadata budget.
+            let error = open(&bytes)
+                .err()
+                .expect("missing payload was accepted")
+                .to_string();
+            if over {
+                assert_eq!(
+                    error,
+                    format!("source kit exceeds {} MiB", MAX_UNPACKED / 1048576)
+                );
+            } else {
+                assert_eq!(error, "source-kit inventory is incomplete");
+            }
+        }
     }
     #[test]
     fn valid_source_snapshot_and_archive_tampering() {

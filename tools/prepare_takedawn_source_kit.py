@@ -171,7 +171,9 @@ def main():
     data = json.dumps(manifest, sort_keys=True, indent=2).encode()
     (output / 'kit.json').write_bytes(data)
     archive = output / 'source-kit.tar.gz'
-    with archive.open('xb') as raw, gzip.GzipFile(filename='', mode='wb', fileobj=raw, mtime=0, compresslevel=6) as gz:
+    # Prepared CFG coalescing retains original arms; use maximum compression
+    # so the reviewed source archive fits the package's 64 MiB asset bound.
+    with archive.open('xb') as raw, gzip.GzipFile(filename='', mode='wb', fileobj=raw, mtime=0, compresslevel=9) as gz:
         with tarfile.open(fileobj=gz, mode='w|') as tar:
             # Manifest first permits bounded verification while streaming.
             for name in ['kit.json'] + sorted(files):
@@ -182,6 +184,8 @@ def main():
                 info.mtime = 0
                 with payload.open('rb') as content:
                     tar.addfile(info, content)
+    if archive.stat().st_size > 64 * 1048576:
+        raise RuntimeError('source-kit archive exceeds the package 64 MiB asset bound')
     receipt = {'sha256': sha(archive), 'archive_bytes': archive.stat().st_size,
                'unpacked_bytes': sum(f['bytes'] for f in files.values()), 'file_count': len(files)}
     (output / 'receipt.json').write_text(json.dumps(receipt, indent=2))
