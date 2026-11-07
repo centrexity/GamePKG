@@ -61,8 +61,26 @@ and artifact integrity also pass at both widths without original media. Matching
 installs them and runs both native fixtures. These build checks do not establish
 32-bit original-game graphics/audio/controllers or gameplay.
 
-The current development recipe is v16/0.1.5 and requires the 0.1.18 development
-app. Native Team Crush, Double Impact, Party Crash and a three-lap two-player
+The current development recipe is v17/0.1.6 and requires the 0.1.19 development
+app. Optimized native Linux and physical Windows builds, selected and remembered
+in-place ISO launch, history, integrity and the current desktop library pass
+their scoped checks. Physical Windows also has a protected native three-lap
+Race/save/reload check; manual controllers and audible output remain separate.
+The current Windows preview launcher opens the prepared library with Play
+enabled. An older app window does not automatically use that preview library.
+
+The current Linux native game additionally earns Waterfront Face-Off Gold and
+Compact Grand Prix Bronze through the original game's maintainer AI steering
+helper. All three Grand Prix races finish naturally, with cumulative standings,
+normal rewards, successful autosave and campaign return. A fresh process retains
+5/173 completed events, 7,140 points, nine takedowns, the new Downtown race and
+all three unlocked Muscle cars. All five earned profile files remain unchanged
+during that reload. These are selected campaign routes, not full campaign,
+manual physics/controller or audio-equivalence qualification. See the
+[current validation scope](native-windows-gameplay-validation.md#current-v17-campaign-and-preview-checks).
+
+The earlier v16/0.1.5 recipe requires the 0.1.18 development app. Native Team
+Crush, Double Impact, Party Crash and a three-lap two-player
 Race now have scoped completion evidence. In the Race with zero CPU rivals, both
 players finish naturally: P1 first in 10:20.03 and P2 second in 11:26.56. Normal Continue
 actions traverse results, Score (1–0), successful autosave and mode selection.
