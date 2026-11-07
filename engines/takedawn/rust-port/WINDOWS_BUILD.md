@@ -28,6 +28,16 @@ process token and 4 GiB job are verified; audio is silent. This private AI-drive
 race test supplements the separate ordinary app Build/CLI/GUI/history checks;
 it does not qualify hands-on controls, audible output or every game feature.
 
+A separate window-message test exercises the actual Windows SDL keyboard path
+without AI or the controller-script file: menus, W acceleration, D steering,
+Enter pause/resume and normal Quit/confirmation/Select Car. Its initial headless
+menu-row assumption opens the windowed port's added settings overlay and times
+out; that failure is retained. The same process recovers through F1 and the
+correct Quit row, then closes normally. This is automated input integration,
+not physical-controller or manual-feel qualification. Its instrumented driving
+segment provides a descriptive 1,209-frame timing baseline; see the detailed
+validation notes before interpreting it as performance evidence.
+
 The v17 runtime resolves guest thread objects before host priority calls. Its
 32/64-bit strict-handle fixtures pass on physical Windows. The complete native
 game also finishes an original three-lap race, autosaves, returns to Select Car
