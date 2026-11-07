@@ -151,6 +151,56 @@ Build. Ordinary CLI/GUI/history checks are separate retained evidence. These
 checks do not establish hands-on controls/audio, all campaign paths, exact
 graphics/physics/API fidelity or a performance speedup.
 
+### v18 Windows SDL keyboard path and frame baseline
+
+A separate native-window run sends Windows key messages only to the verified
+owned game window. No controller-script file or maintainer AI is used. Thirty-one
+actual SDL key-down traces confirm Return, Space, arrows, W and D reached the
+normal keyboard path. Original menus load the earned profile and start a Race;
+keyboard prompts appear in the game's own interface. Captures show the rolling
+start at 35 mph, 69 mph after W, a rightward steering response and barrier contact,
+then 63 mph after another W press. Enter pauses and resumes the original game.
+
+The first maintainer Quit sequence fails: four Down presses select the added
+TAKEDAWN SETTINGS row. Opening its overlay deliberately pauses guest flips, so
+waiting for more guest flips times out. This is retained as a failed test, not a
+game freeze or a passing full run. The pinned menu-entry implementation adds that
+row only when its overlay is available; a headless menu's row count cannot simply
+be reused for a windowed test. Without restarting the game, F1 closes the overlay,
+one more Down selects QUIT, and the original confirmation/Continue flow returns
+to Select Car. Normal WM_CLOSE exits zero. All thirteen captures are verified;
+the original earned five-file reference and both executable copies remain intact.
+This qualifies automated window-message-to-SDL-to-game input, not physical input
+latency, controller hardware, manual feel or audible output.
+
+The same run enables the existing `vk_frame` trace. The recorded driving stage
+contains 1,209 consecutive presents and guest flips (5547 through 6755), entirely
+before the later overlay detour. Every recorded submission has an available GPU
+timestamp pair; the maximum four submissions per frame is below the 24-pair cap.
+The cache was copied from the earlier private same-device shader cache. Vsync,
+dummy/muted audio, key/full-method/texture-state tracing and requested framebuffer
+captures remain enabled; this is one descriptive baseline, not a controlled A/B.
+
+| Driving measurement | Median | 95th percentile |
+| --- | ---: | ---: |
+| Interval between presents | 26.880 ms | 51.994 ms |
+| Recorded GPU execution | 2.554 ms | 2.720 ms |
+| CPU `on_flip` callback | 0.191 ms | 0.300 ms |
+
+Seven driving frames include requested readbacks. Excluding adjacent intervals
+that touch those frames leaves 1,194 intervals with a 26.857 ms median and
+51.994 ms 95th percentile; the unfiltered data remains retained. `on_flip` does
+not include all CPU game/draw work. These asynchronous measurements overlap and
+must not be summed into a complete frame budget. They direct the next profile
+toward CPU work, presentation and pacing outside that callback; they do not yet
+identify a unique bottleneck or establish a speedup or representative all-scene
+FPS.
+
+Forty complete full-method reports also have unique ranked entries, counts that
+sum to each report's total, and nondecreasing observed counts (up to 116 distinct
+methods in this run). Sampled texture addresses use repeat or clamp-to-edge;
+arbitrary border/clip/eye-vector semantics remain separate investigations.
+
 ### Interpreting the corrected GPU survey
 
 A source-backed review of fifteen entries observed in the Linux run's top-ten
