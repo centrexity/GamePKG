@@ -38,7 +38,9 @@ pub(crate) fn file(path: &Path, _metadata: &Metadata) -> Option<u64> {
     }
     // OPEN_REPARSE_POINT pins the entry itself if it changes after inventory.
     let file = std::fs::OpenOptions::new()
-        .read(true)
+        // Allocation is metadata: do not request file-data access. This also
+        // works while a writer denies data reads.
+        .access_mode(0x0080) // FILE_READ_ATTRIBUTES
         .custom_flags(0x0020_0000)
         .open(path)
         .ok()?;

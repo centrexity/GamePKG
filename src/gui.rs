@@ -18,6 +18,7 @@ mod rom_picker;
 mod snapshot_slots;
 mod source_input;
 mod sprites;
+mod storage;
 mod theme;
 mod user_files;
 mod window_control;
@@ -127,6 +128,7 @@ pub struct App {
     history: HashMap<String, crate::progress::Record>,
     usage: HashMap<String, crate::storage::Usage>,
     library_space: Option<crate::storage::Space>,
+    storage_scanner: storage::Scanner,
     preview: Option<(Vec<Vec<u8>>, std::time::Instant, egui::TextureHandle)>,
 }
 impl App {
@@ -304,6 +306,7 @@ impl App {
         }
     }
     fn refresh(&mut self, ctx: &egui::Context) {
+        self.storage_scanner.invalidate();
         self.recordings = None;
         match crate::registry::default_root().and_then(|root| crate::catalog::sources::lists(&root))
         {
@@ -343,7 +346,9 @@ impl App {
                     self.data_paths.clear();
                     self.history.clear();
                     self.usage.clear();
-                    self.library_space = crate::storage::space(&root).ok();
+                    self.library_space = None;
+                    self.storage_scanner
+                        .request(root.clone(), games.clone(), ctx.clone());
                     for m in &games {
                         if let Ok(scope) = crate::video_selections::identity(m) {
                             match crate::video_selections::load(&root, m) {
@@ -377,9 +382,6 @@ impl App {
                                 self.history.insert(m.id.clone(), record);
                             }
                             Err(e) => self.status = format!("Unable to read play history: {e}"),
-                        }
-                        if let Ok(usage) = crate::storage::usage(&root, m) {
-                            self.usage.insert(m.id.clone(), usage);
                         }
                         if let Ok(Some(path)) = crate::game_data::load(&root, m) {
                             self.data_paths
@@ -565,6 +567,10 @@ impl eframe::App for App {
         if self.game_window_closing {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             return;
+        }
+        if let Some(snapshot) = self.storage_scanner.poll() {
+            self.library_space = snapshot.space;
+            self.usage = snapshot.usage;
         }
         let mut stopped = processes::poll(&mut self.game_processes);
         if stopped.exited {
@@ -1727,7 +1733,7 @@ impl eframe::App for App {
                 self.begin_work(move || { let root=crate::registry::default_root()?; Ok(Work::Message(if fix {crate::integrity::fix_with_store(&root,&id,store.as_deref())?} else {crate::integrity::check(&root,&id)?})) });
             }
             if let Some(id)=inspect {self.open_game_page(&id);}
-            ui.label(format!("Library storage used: {} (shared assets, caches, saves and play history included)", self.library_space.map(|s| s.details()).unwrap_or_else(||"Unavailable".into())));
+            ui.label(format!("Library storage used: {} (shared assets, caches, saves and play history included)", self.library_space.map(|s| s.details()).unwrap_or_else(|| if self.storage_scanner.pending() { "Calculating…".into() } else { "Unavailable".into() })));
             ui.separator(); ui.label(concat!("GamePKG ", env!("CARGO_PKG_VERSION")));
             ui.hyperlink_to("GamePKG • Apache 2.0", "https://gamepkg.com");
             });
