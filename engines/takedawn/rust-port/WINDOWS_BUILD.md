@@ -17,10 +17,17 @@ The v17 runtime resolves guest thread objects before host priority calls. Its
 game also finishes an original three-lap race, autosaves, returns to Select Car
 and closes normally through the production AppContainer process owner on real
 Intel Vulkan hardware. The selected ISO is read in place; test audio is silent.
-These private runtime checks do not qualify the ordinary Windows app's full
-Build/readiness/history/repair path for v17. That integration and stable release
-promotion remain pending. Existing preview archives retain their original
-identities and do not contain the v17 adapter.
+The ordinary 0.1.19 Windows app also passes signed v17 Build, native CLI and GUI
+Play entry, remembered ISO selection, play-history updates, integrity checks and
+normal game-window closing. All 487 Rust units compiled on this Windows machine;
+the v17 runtime rebuild preserves their checksums and modification times. The
+complete SDK-filled library renders Ready and recorded play time, with a window
+observed after 1.7 seconds and a normal GUI close. Disk inventories run in the
+background and use metadata-only allocation queries. The original ISO checksum
+remains unchanged. These are private development checks, not a stable release or
+full campaign, physical-controller or hardware-audio qualification. Existing
+preview archives retain their original identities and do not contain the v17
+adapter.
 
 ## Managed SDK setup
 
@@ -53,8 +60,8 @@ archive conflicts, links and path aliases. The real installer also passes with
 all official archives and the pinned full inventory. The resulting SDK builds
 the complete native game/runtime under Wine. Actual Windows app CI separately
 checks the CLI installation, reuse, every payload hash and native tool startup
-before its legacy WSL fixtures. That managed SDK setup gate passes on actual
-Windows; it does not establish full original-game Build or playback.
+before its legacy WSL fixtures. That managed SDK setup gate is separate from
+the physical Windows end-to-end Build and playback checks summarized above.
 
 ## Build tools
 
