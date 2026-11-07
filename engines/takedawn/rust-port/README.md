@@ -121,6 +121,17 @@ The outputs must be new files. Changed source hashes, conversion metadata,
 source-kit identity and host admission must be updated before delivery; a
 successful isolated benchmark does not qualify a game build or prove 60 FPS.
 
+For completed native frame traces, maintainers can run
+`python3 tools/analyze_takedawn_frametimes.py frametime.csv --first-flip FIRST --last-flip LAST --context "platform, GPU, window mode, audio, competing workload" --output timing.json`.
+Choose both boundaries from observed driving events, excluding loading and menus.
+The report retains every frame in that range, reports elapsed-time throughput
+and nearest-rank percentiles, and separates the title's requested presentation
+intervals. Intentional half-rate scenes and missed full-rate deadlines must be
+assessed separately. These runtime timestamps do not measure physical input
+latency or when pixels reach the display. Compare equivalent scenes and record
+whether shader caches are cold or warm; also check real window presentation and
+audio. This analysis script is a maintainer tool, not a player requirement.
+
 `tools/check_takedawn_rust_cfg.py` compares compiled C and Rust results on a
 synthetic graph with 300 labels, repeated local names, initializer effects,
 callbacks into native code, TLS changes, and both kinds of return. It does not
