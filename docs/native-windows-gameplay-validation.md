@@ -59,6 +59,34 @@ path strings and a 16-byte HMAC input among apparent code entries. Their scoped
 reader/control-flow checks and corruption controls do not prove whole-program
 indirect-entry exclusion; no guard is removed or replaced with game behavior.
 
+## GPU report lookup correction awaiting source-kit packaging
+
+A warning-log review of the completed v17 Grand Prix found that the GPU
+executor's periodic report sorts the live unhandled-method table in place.
+The constant-time method-to-slot lookup then points at different entries, so
+later counts and last parameters can be assigned to the wrong method. This is
+a diagnostic defect; the rendering dispatch does not use that lookup table.
+The aggregate counter and a successful Vulkan route are not proof that every
+reported graphics method is implemented.
+
+The new pinned-source adapter ranks a snapshot instead. Both native host build
+attachments and the source-kit preparer include it; unknown upstream revisions
+and in-place edits are rejected. Its regression compiles the actual production
+counter and complete report block: the original returns the expected failing
+status after a report, while the adapted source passes repeated top-ten/all
+reports with aligned, unaligned and out-of-range methods. Linux address/undefined
+sanitizers and physical Windows 32-bit/64-bit fixtures pass. The pinned upstream
+source hash is independently checked against the CI commit. Native CI now runs
+the regression too; its hosted result is not yet claimed.
+
+Maintainers can run `tools/check_takedawn_gpu_report.py --source /path/to/pinned/xboxrecomp --sanitize`
+on Linux. Windows MSVC uses `--cc cl --compiler-kind msvc` without the sanitizer
+flag. These tools are not player dependencies. The qualified v17 archive and
+installed Windows preview remain unchanged: regenerate, pin, build and qualify
+a new source kit before claiming the correction is deployed. Further graphics
+method classification and the observed unsupported filesystem-control request
+remain separate fidelity work.
+
 ## Retained v16 unresolved-reference audit
 
 The prepared v16 source still retains 13 unresolved-function guards. An

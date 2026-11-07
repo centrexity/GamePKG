@@ -76,6 +76,16 @@ function(gamepkg_attach_disc_media)
         -P "${bridge}/adapt_threads.cmake" COMMAND_ERROR_IS_FATAL ANY)
     list(REMOVE_AT kernel_sources ${thread_index})
     list(APPEND kernel_sources "${adapted_threads}")
+    list(FIND kernel_sources "nv2a_pb_exec.c" gpu_report_index)
+    if(gpu_report_index LESS 0)
+        message(FATAL_ERROR "Pinned GPU executor source target is missing")
+    endif()
+    set(adapted_gpu_report "${CMAKE_BINARY_DIR}/gamepkg-media/nv2a_pb_exec.c")
+    execute_process(COMMAND "${CMAKE_COMMAND}"
+        "-DINPUT=${kernel_dir}/nv2a_pb_exec.c" "-DOUTPUT=${adapted_gpu_report}"
+        -P "${bridge}/adapt_gpu_report.cmake" COMMAND_ERROR_IS_FATAL ANY)
+    list(REMOVE_AT kernel_sources ${gpu_report_index})
+    list(APPEND kernel_sources "${adapted_gpu_report}")
     set_property(TARGET xbox_kernel PROPERTY SOURCES "${kernel_sources}")
     # Correct the smoke stream's explicit screen-space transform setup, then
     # demand real colors as well as CPU/GPU agreement. Runtime state is unchanged.
