@@ -13,11 +13,21 @@ This does not mean the whole Takedawn engine has been rewritten in Rust.
 
 ## Current delivery path
 
-The unreleased 0.1.6 recipe selects the host-admitted v17 kit, SHA-256
-`8ae26ce68862dffde427315fc335e2e6effa1d26ecd9ad02778499c4d478a7d0`.
+The unreleased 0.1.7 recipe requires app 0.1.20 and selects the host-admitted v18
+kit, SHA-256
+`d94c9bdb3a5e49733ebbe78c573e56174b00ca7ffb83ffbfd9fd0fa091c0905b`.
+The v18 candidate fixes GPU diagnostic ranking without changing rendering.
+Normal signed Linux Build, selected and remembered ISO launch, history and
+integrity pass. Its native Vulkan runtime also finishes an original three-lap
+Single Event Race, follows Continue/autosave back to Select Car and closes
+normally. Physical Windows native Build, selected and remembered ISO launches,
+history, integrity, GUI Ready and native Play child/normal close also pass their
+scoped checks. The complete physical Windows race/reload baseline remains v17;
+its prior signed packages remain admitted.
 It retains 24,003 prepared Rust game functions across 487 units and 24,035 native
 exports. Host runtime changes since v15 include the shared-results input guard and
-resolving guest thread objects to owned host handles for priority operations.
+resolving guest thread objects to owned host handles for priority operations,
+and keeping method-counter slots stable when reports rank their entries.
 Background replay car phases must not activate driving controls over the menu.
 All prepared Rust and ABI support files remain byte-identical.
 

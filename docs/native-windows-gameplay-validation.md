@@ -59,7 +59,7 @@ path strings and a 16-byte HMAC input among apparent code entries. Their scoped
 reader/control-flow checks and corruption controls do not prove whole-program
 indirect-entry exclusion; no guard is removed or replaced with game behavior.
 
-## GPU report lookup correction awaiting source-kit packaging
+## GPU report lookup correction in the v18 development kit
 
 A warning-log review of the completed v17 Grand Prix found that the GPU
 executor's periodic report sorts the live unhandled-method table in place.
@@ -81,11 +81,52 @@ the regression too; its hosted result is not yet claimed.
 
 Maintainers can run `tools/check_takedawn_gpu_report.py --source /path/to/pinned/xboxrecomp --sanitize`
 on Linux. Windows MSVC uses `--cc cl --compiler-kind msvc` without the sanitizer
-flag. These tools are not player dependencies. The qualified v17 archive and
-installed Windows preview remain unchanged: regenerate, pin, build and qualify
-a new source kit before claiming the correction is deployed. Further graphics
-method classification and the observed unsupported filesystem-control request
-remain separate fidelity work.
+flag. These tools are not player dependencies.
+
+The unreleased 0.1.7 recipe and app 0.1.20 now select v18, archive SHA-256
+`d94c9bdb3a5e49733ebbe78c573e56174b00ca7ffb83ffbfd9fd0fa091c0905b`.
+The complete archive inventory verifies: only the two host build attachments
+and the added report adapter differ from v17. All 494 prepared inputs and 487
+Rust units remain byte-identical. Normal signed Linux and physical Windows
+Build/integrity tests pass while preserving all 487 same-machine cached objects'
+hashes and timestamps. This is verified reuse, not a new cold Rust compilation.
+
+Both new native runtimes pass selected-ISO and remembered-ISO launches, increasing
+play history and post-play integrity. The new Linux Vulkan runtime also finishes
+an original three-lap Single Event Race, fifth of six in 394.183 seconds with a
+124.883-second best lap. Normal Continue/autosave returns to Select Car. The
+private profile changes; original reference saves and the built binary do not.
+Actual-Vulkan and executed-path gates pass. Fifty-three production reports have
+unique ranked entries and nondecreasing observed method counts; the native
+regression separately establishes slot stability. No rendering or speedup claim
+is inferred from that diagnostic check.
+
+The 0.1.20 Windows library renders Ready after a 1.711-second window observation.
+Its exact GUI native Play child opens a separate game window, closes normally
+and adds history. These are startup and lifecycle checks of the new Windows
+runtime; the complete physical Windows race/reload proof remains tied to v17.
+The user's v17 preview, saved ROM selection and launcher remain unchanged.
+Further graphics-method classification, manual controls/audio and broader game
+fidelity remain open.
+
+The 0.1.20 Linux library's actual Play button also opens the new native runtime
+in a separate SDL window on a private test display. Ordinary keyboard input
+loads an unchanged earned profile and its Team Crush / Trailer Trash $26,737
+record. Normal window close reaps the player, increases history and refreshes
+the game page's Ready/Play state and duration without a manual library refresh.
+The library closes normally, all five save files remain unchanged, and the
+actual-Vulkan/executed-path checks pass. A private null-only audio sink keeps
+this test silent; it does not qualify physical controls, audible output or GPU
+performance.
+
+An original-byte check also identifies the observed `NtFsControlFile(0x90020)`
+cleanup call in routine `001D3054`. The import resolves to ordinal 200 and the
+local Windows SDK identifies this control as `FSCTL_DISMOUNT_VOLUME`. The original
+caller ignores its return and I/O status, closes the same guest handle, then
+branches on an earlier saved status. Three corruption controls reject changed
+arguments, imports or result handling. The bridge still returns
+`STATUS_NOT_SUPPORTED`; this explains the scoped cleanup path without claiming
+virtual-volume semantics are implemented or forwarding controls to host volumes.
 
 ## Retained v16 unresolved-reference audit
 

@@ -61,8 +61,12 @@ and artifact integrity also pass at both widths without original media. Matching
 installs them and runs both native fixtures. These build checks do not establish
 32-bit original-game graphics/audio/controllers or gameplay.
 
-The current development recipe is v17/0.1.6 and requires the 0.1.19 development
-app. Optimized native Linux and physical Windows builds, selected and remembered
+The v18/0.1.7 development candidate requires app 0.1.20. It packages the GPU
+report-index correction with unchanged prepared game code. Its optimized native
+Linux and physical Windows Build, selected/remembered ISO, history and integrity
+checks pass. The new Linux runtime also completes a three-lap Race and normal
+autosave/menu return; the Windows GUI passes Ready and native Play child/normal
+close checks. The qualified v17/0.1.6 baseline uses app 0.1.19. Its selected and remembered
 in-place ISO launch, history, integrity and the current desktop library pass
 their scoped checks. Physical Windows also has a protected native three-lap
 Race/save/reload check; manual controllers and audible output remain separate.

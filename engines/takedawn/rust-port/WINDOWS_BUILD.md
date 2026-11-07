@@ -4,13 +4,22 @@ The standalone Windows pipeline compiles every prepared Rust game unit, builds
 the original C/C++ runtime and produces a native Windows executable. It invokes
 no WSL, translation tool, Python or game code during compilation. Python and Wine
 are maintainer diagnostics. The app's Windows Build action now dispatches this
-pipeline for the reviewed v17 kit. Known affected v12 through v16 kits must be
+pipeline for the reviewed v18 candidate and retained v17 kit. Known affected v12 through v16 kits must be
 updated before Windows compilation; rejection happens before SDK setup. Windows CLI/GUI
 Play uses the owned confined session with remembered ISO selection and play
-history. The unreleased 0.1.6 recipe selects v17; older Linux v8 and universal
+history. The unreleased 0.1.7 recipe requires app 0.1.20 and selects v18; older Linux v8 and universal
 v12/v13/v14/v15/v16 packages remain verifiable and installable for identity,
 metadata, updates and Linux continuity. Their older Windows runtimes do not
 include the thread-object fix and are rejected by Windows Build.
+
+The v18 candidate changes only the host GPU report ranking. It retains the
+prepared Rust game inputs and verified object-cache namespace. Its ordinary
+0.1.20 Windows Build and integrity checks pass on the physical test machine;
+all 487 same-machine objects retain their hashes and modification times. Selected
+and remembered ISO launch, increasing history, GUI Ready, native Play child and
+normal close also pass. The new library window appears after 1.711 seconds in
+the scoped test. The completed full-race/reload checks below remain explicitly
+tied to v17.
 
 The v17 runtime resolves guest thread objects before host priority calls. Its
 32/64-bit strict-handle fixtures pass on physical Windows. The complete native
