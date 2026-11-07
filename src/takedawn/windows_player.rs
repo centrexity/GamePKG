@@ -165,6 +165,11 @@ impl Session {
         let sandbox = Sandbox::open(&format!("GamePKG.{}", &identity[..56]))?;
         sandbox.grant_runtime(binary.path())?;
         sandbox.grant_saves(&data)?;
+        // The title joins save paths with repeated/mixed separators. Win32
+        // normalizes those in DOS/UNC paths, but rejects them under the verbatim
+        // prefix returned by canonicalize. Keep the canonical ACL/identity above
+        // and pass the equivalent ordinary absolute path to the runtime.
+        let runtime_data = crate::takedawn_windows_sdk::compiler_path(&data)?;
         let log = tempfile::NamedTempFile::new()?;
         let mut environment = vec![
             (
@@ -176,15 +181,15 @@ impl Session {
                 "SystemRoot".into(),
                 std::env::var_os("SystemRoot").context("missing Windows system root")?,
             ),
-            ("TEMP".into(), data.join("temp").into_os_string()),
-            ("TMP".into(), data.join("temp").into_os_string()),
+            ("TEMP".into(), runtime_data.join("temp").into_os_string()),
+            ("TMP".into(), runtime_data.join("temp").into_os_string()),
             (
                 "RECOMP_SAVE_DIR".into(),
-                data.join("saves").into_os_string(),
+                runtime_data.join("saves").into_os_string(),
             ),
             (
                 "RECOMP_RENDER_SHADER_CACHE".into(),
-                data.join("shader-cache").into_os_string(),
+                runtime_data.join("shader-cache").into_os_string(),
             ),
             ("RECOMP_PB_BACKEND".into(), "vulkan".into()),
             ("RECOMP_UNIMPL_TRAP".into(), "1".into()),
@@ -432,6 +437,7 @@ use std::{fs, os::windows::io::FromRawHandle};
 extern "system" {
     fn SetEvent(handle: *mut core::ffi::c_void) -> i32;
     fn GetModuleHandleW(name: *const u16) -> *mut core::ffi::c_void;
+    fn CreateDirectoryW(path: *const u16, security: *const core::ffi::c_void) -> i32;
 }
 #[repr(C)]
 struct Message {
@@ -490,6 +496,19 @@ fn main() {
     assert_eq!(std::env::var("RECOMP_UNIMPL_TRAP").unwrap(), "1");
     assert_eq!(std::env::var("RECOMP_STUB_LOG").unwrap(), "1");
     let saves = std::path::PathBuf::from(std::env::var_os("RECOMP_SAVE_DIR").unwrap());
+    // Reproduce the original title's path joins through Win32, rather than
+    // Rust's Path::join which silently handles verbatim paths differently.
+    assert!(!saves.to_str().unwrap().starts_with(r"\\?\"));
+    fs::create_dir_all(saves.join("TDATA")).unwrap();
+    let title = saves.join("TDATA").join("4541005b");
+    if !title.exists() {
+        use std::os::windows::ffi::OsStrExt;
+        let joined = format!("{}/TDATA\\\\4541005b", saves.display());
+        let wide: Vec<u16> = std::ffi::OsStr::new(&joined).encode_wide().chain(Some(0)).collect();
+        assert_ne!(unsafe { CreateDirectoryW(wide.as_ptr(), std::ptr::null()) }, 0,
+            "original title save-directory join: {}", std::io::Error::last_os_error());
+    }
+    assert!(title.is_dir());
     if let Ok(mode) = fs::read_to_string(saves.join("unsupported-mode")) {
         use std::io::Write;
         let mut out = std::io::stdout().lock();
