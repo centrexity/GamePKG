@@ -42,6 +42,11 @@ struct Uses {
     enum_states: BTreeMap<String, BTreeSet<String>>,
     type_names: BTreeMap<String, usize>,
     opaque: bool,
+    initializers: BTreeMap<String, Option<(String, String)>>,
+    uninitialized: BTreeSet<String>,
+    writes: BTreeMap<String, Vec<Option<(String, String)>>>,
+    dispatches: BTreeMap<String, usize>,
+    loop_escape: bool,
 }
 impl Uses {
     fn note_allowed(&mut self, expr: &Expr) {
@@ -62,6 +67,28 @@ impl Uses {
     }
 }
 impl VisitMut for Uses {
+    fn visit_local_mut(&mut self, node: &mut syn::Local) {
+        let pat = match &node.pat {
+            Pat::Type(p) => p.pat.as_ref(),
+            p => p,
+        };
+        if let Pat::Ident(p) = pat {
+            if node.init.is_none() && node.attrs.is_empty() {
+                self.uninitialized.insert(p.ident.to_string());
+            }
+            let value = node.init.as_ref().and_then(|i| {
+                if !node.attrs.is_empty() || i.diverge.is_some() {
+                    return None;
+                }
+                match i.expr.as_ref() {
+                    Expr::Path(p) if p.attrs.is_empty() => variant(p),
+                    _ => None,
+                }
+            });
+            self.initializers.insert(p.ident.to_string(), value);
+        }
+        syn::visit_mut::visit_local_mut(self, node);
+    }
     fn visit_item_mut(&mut self, item: &mut syn::Item) {
         let name = match item {
             syn::Item::Enum(i) => Some(&i.ident),
@@ -112,8 +139,33 @@ impl VisitMut for Uses {
     }
     fn visit_expr_mut(&mut self, expr: &mut Expr) {
         match expr {
-            Expr::Assign(a) => self.note_allowed(&a.left),
-            Expr::Match(m) => self.note_allowed(&m.expr),
+            Expr::Assign(a) => {
+                self.note_allowed(&a.left);
+                if let Expr::Path(left) = a.left.as_ref() {
+                    if let Some(name) = local(left) {
+                        let value = match a.right.as_ref() {
+                            Expr::Path(p)
+                                if a.attrs.is_empty()
+                                    && left.attrs.is_empty()
+                                    && p.attrs.is_empty() =>
+                            {
+                                variant(p)
+                            }
+                            _ => None,
+                        };
+                        self.writes.entry(name).or_default().push(value);
+                    }
+                }
+            }
+            Expr::Match(m) => {
+                self.note_allowed(&m.expr);
+                if let Expr::Path(p) = m.expr.as_ref() {
+                    if let Some(name) = local(p) {
+                        *self.dispatches.entry(name).or_default() += 1;
+                    }
+                }
+            }
+            Expr::Break(_) | Expr::Continue(_) => self.loop_escape = true,
             // A closure can capture the state without an explicit reference.
             Expr::Closure(_) | Expr::Async(_) | Expr::Await(_) | Expr::Yield(_) => {
                 self.opaque = true
@@ -143,6 +195,17 @@ impl VisitMut for Uses {
 pub struct Coalesce {
     pub chains: usize,
     pub joined_steps: usize,
+    pub compacted_arms: usize,
+    compact: bool,
+}
+impl Coalesce {
+    /// Additional, opt-in preparation experiment. No runtime decoding is added.
+    pub fn compact() -> Self {
+        Self {
+            compact: true,
+            ..Self::default()
+        }
+    }
 }
 struct Loops<'a> {
     uses: &'a Uses,
@@ -229,6 +292,30 @@ impl VisitMut for Loops<'_> {
             }
         }
         let targets: BTreeSet<_> = edges.values().cloned().collect();
+        // A target may be removed from the dispatch only when ALL values ever
+        // assigned to this state (including its initial value) are literal
+        // variants of this enum. Constructor counts alone cannot prove that:
+        // an arbitrary call/transmute could otherwise enter any original arm.
+        // Reject even nested break/continue conservatively: a continue inside
+        // a copied intermediate step could return to dispatch at that step.
+        let compact = self.total.compact
+            && !self.uses.loop_escape
+            && self.uses.dispatches.get(&state) == Some(&1)
+            // C2Rust commonly declares the local without an initializer and
+            // assigns the entry variant next. Rust's definite-initialization
+            // check still applies; every later assignment is checked below.
+            && (self.uses.uninitialized.contains(&state)
+                || self.uses.initializers.get(&state).is_some_and(|v| {
+                    v.as_ref()
+                        .is_some_and(|(e, s)| e == &name && indices.contains_key(s))
+                }))
+            && self.uses.writes.get(&state).is_some_and(|writes| {
+                writes.iter().all(|v| {
+                    v.as_ref()
+                        .is_some_and(|(e, s)| e == &name && indices.contains_key(s))
+                })
+            });
+        let mut removed = BTreeSet::new();
         let original = m.arms.clone();
         for (head, &i) in &indices {
             if targets.contains(head) {
@@ -256,8 +343,31 @@ impl VisitMut for Loops<'_> {
             }
             let replacement: Expr = parse_quote!({ #joined });
             m.arms[i].body = Box::new(replacement);
+            if compact {
+                removed.extend(chain.iter().skip(1).cloned());
+            }
             self.total.chains += 1;
             self.total.joined_steps += chain.len() - 1;
+        }
+        if !removed.is_empty() {
+            m.arms.retain(|arm| {
+                let Pat::Path(p) = &arm.pat else { return true };
+                !variant(p).is_some_and(|(_, label)| removed.contains(&label))
+            });
+            let enum_ident = quote::format_ident!("{}", name);
+            let paths: Vec<syn::Path> = removed
+                .iter()
+                .map(|label| {
+                    let label = quote::format_ident!("{}", label);
+                    parse_quote!(#enum_ident::#label)
+                })
+                .collect();
+            // Keep enum values and all intermediate assignments unchanged.
+            // A defensive abort, never unchecked UB, catches a broken proof.
+            m.arms.push(parse_quote!(#(#paths)|* => {
+                unreachable!("GamePKG compacted dispatch state reached")
+            }));
+            self.total.compacted_arms += removed.len();
         }
     }
 }
@@ -296,6 +406,82 @@ fn f(p: *mut u32) {
  C2Rust_Block_0::S_3 => return,
  } }
 }"#;
+    fn compact(body: &str) -> (String, Coalesce) {
+        let mut f: syn::File = syn::parse_str(body).unwrap();
+        let mut pass = Coalesce::compact();
+        pass.visit_file_mut(&mut f);
+        let out = prettyplease::unparse(&f);
+        syn::parse_file(&out).unwrap();
+        (out, pass)
+    }
+    #[test]
+    fn compacts_only_dispatch_targets_and_keeps_assignments_scopes_and_enum() {
+        let (out, pass) = compact(GRAPH);
+        assert_eq!(pass.compacted_arms, 2);
+        assert_eq!(out.matches("=>").count(), 3);
+        assert_eq!(out.matches("let same = 2;").count(), 1);
+        assert!(out.contains("unreachable!"));
+        assert!(out.contains("c2rust_current_block_0 = C2Rust_Block_0::S_1;"));
+        assert!(out.contains("c2rust_current_block_0 = C2Rust_Block_0::S_2;"));
+        assert!(out.contains("S_1 | C2Rust_Block_0::S_2"));
+        let (_, again) = compact(&out);
+        assert_eq!(again.compacted_arms, 0);
+    }
+    #[test]
+    fn compaction_refuses_arbitrary_state_values_even_without_literal_constructor() {
+        for value in ["make_state()", "unsafe { std::mem::zeroed() }", "other"] {
+            let source = GRAPH.replace("= C2Rust_Block_0::S_0;", &format!("= {value};"));
+            assert_eq!(compact(&source).1.compacted_arms, 0);
+            let source = GRAPH.replace(
+                "c2rust_current_block_0=C2Rust_Block_0::S_3;",
+                &format!("c2rust_current_block_0={value};"),
+            );
+            assert_eq!(compact(&source).1.compacted_arms, 0);
+        }
+    }
+    #[test]
+    fn compacts_c2rust_separate_declaration_and_entry_assignment() {
+        let source = GRAPH.replace(
+            "let mut c2rust_current_block_0 = C2Rust_Block_0::S_0;",
+            "let mut c2rust_current_block_0: C2Rust_Block_0; c2rust_current_block_0 = C2Rust_Block_0::S_0;",
+        );
+        assert_eq!(compact(&source).1.compacted_arms, 2);
+    }
+    #[test]
+    fn compaction_keeps_an_intermediate_state_used_as_an_entry() {
+        let source = GRAPH.replace(
+            "let mut c2rust_current_block_0 = C2Rust_Block_0::S_0;",
+            "let mut c2rust_current_block_0 = C2Rust_Block_0::S_1;",
+        );
+        let (out, pass) = compact(&source);
+        assert_eq!(pass.compacted_arms, 1); // S_2 only; S_1 is an entry.
+        assert!(out.contains("C2Rust_Block_0::S_1 =>"));
+    }
+    #[test]
+    fn compaction_refuses_continue_and_break_in_intermediate_steps() {
+        for exit in ["continue", "break", "continue 'outer", "break 'outer"] {
+            let source = GRAPH.replace(
+                "let same=2;",
+                &format!("if unsafe{{p.read_volatile()}}==0 {{ {exit}; }} let same=2;"),
+            );
+            let (_, pass) = compact(&source);
+            assert!(pass.joined_steps > 0); // Original retained-arm pass is safe.
+            assert_eq!(pass.compacted_arms, 0);
+        }
+    }
+    #[test]
+    fn compaction_refuses_a_second_state_observer_and_cfg_writes() {
+        let source = GRAPH.replace(
+            "let same=2;",
+            "match c2rust_current_block_0 {_=>{}}; let same=2;",
+        );
+        assert_eq!(compact(&source).1.compacted_arms, 0);
+        let source = GRAPH.replace(
+            "c2rust_current_block_0=C2Rust_Block_0::S_3;",
+            "#[cfg(unix)] c2rust_current_block_0=C2Rust_Block_0::S_3;",
+        );
+        assert_eq!(compact(&source).1.compacted_arms, 0);
+    }
     #[test]
     fn joins_steps_keeps_arms_side_effects_and_scopes() {
         let (out, pass) = run(GRAPH);
