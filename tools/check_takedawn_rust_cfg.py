@@ -13,6 +13,7 @@ import tempfile
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--c2rust', type=Path, required=True)
 parser.add_argument('--normalizer', type=Path, required=True)
+parser.add_argument('--compact', action='store_true', help='exercise optional proven dispatch compaction')
 parser.add_argument('--target', choices=['x86_64-unknown-linux-gnu', 'i686-unknown-linux-gnu'], default='x86_64-unknown-linux-gnu')
 args = parser.parse_args()
 cflags = ['-m32'] if args.target == 'i686-unknown-linux-gnu' else []
@@ -48,10 +49,12 @@ with (work / 'transpile.log').open('w') as log:
                     str(database)], env=environment, stdout=log, stderr=subprocess.STDOUT,
                    check=True, timeout=60)
 rust = work / 'fixture.rs'
-subprocess.run([str(args.normalizer.resolve()), str(work / 'raw/src/fixture.rs'), str(rust),
+subprocess.run([str(args.normalizer.resolve()), *(['--compact'] if args.compact else []), str(work / 'raw/src/fixture.rs'), str(rust),
                 str(work / 'normalized.json')], check=True)
 coalesced = json.loads((work / 'normalized.json').read_text())['coalesced_cfg']
 assert coalesced['chains'] > 0 and coalesced['joined_steps'] > 0, 'CFG comparison must exercise coalescing, not only the unchanged baseline'
+if args.compact:
+    assert coalesced['compacted_arms'] > 0, 'CFG comparison must exercise compacted dispatch arms'
 with (work / 'compile.log').open('w') as log:
     subprocess.run(['rustc', '--target', args.target, '--edition=2021', '--crate-type=staticlib', '-Awarnings',
                     '-C', 'opt-level=2', '-C', 'panic=abort', '-C', 'overflow-checks=off',

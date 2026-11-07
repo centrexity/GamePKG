@@ -121,6 +121,20 @@ The outputs must be new files. Changed source hashes, conversion metadata,
 source-kit identity and host admission must be updated before delivery; a
 successful isolated benchmark does not qualify a game build or prove 60 FPS.
 
+An additional **opt-in maintainer experiment**, `--compact` for raw conversion
+or `--compact-prepared` for prepared source, removes copied intermediate blocks
+from dispatch. It requires a single state observer, a literal enum value for
+every assignment, and either a literal initializer or Rust's checked separate
+declaration/initialization. It refuses break/continue anywhere in the function,
+in addition to the coalescer's guards. Unique incoming constructors then prove
+that an intermediate block executes only inside its copied chain. The enum,
+every original operation, intermediate assignment and lexical scope remain;
+removed dispatch arms share a defensive `unreachable!` abort instead of unchecked
+behavior. Reports count `compacted_arms`. This mode is not the default and needs
+fresh source-kit admission and complete game qualification before delivery.
+`tools/check_takedawn_rust_cfg.py --compact` requires nonzero compaction and
+compares native C/Rust behavior; its usual converter/normalizer arguments apply.
+
 For completed native frame traces, maintainers can run
 `python3 tools/analyze_takedawn_frametimes.py frametime.csv --first-flip FIRST --last-flip LAST --context "platform, GPU, window mode, audio, competing workload" --output timing.json`.
 Choose both boundaries from observed driving events, excluding loading and menus.

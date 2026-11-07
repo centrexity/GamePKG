@@ -174,6 +174,10 @@ impl VisitMut for Normalize {
 }
 
 fn normalize(source: &str) -> Result<(String, serde_json::Value)> {
+    normalize_mode(source, false)
+}
+
+fn normalize_mode(source: &str, compact: bool) -> Result<(String, serde_json::Value)> {
     ensure!(
         !source.contains("__gamepkg_tls_")
             && !source.contains("__gamepkg_atomic_")
@@ -364,7 +368,11 @@ fn normalize(source: &str) -> Result<(String, serde_json::Value)> {
         "unreviewed intrinsic calls: {:?}",
         change.unsupported_intrinsics
     );
-    let mut coalesced = coalesce_cfg::Coalesce::default();
+    let mut coalesced = if compact {
+        coalesce_cfg::Coalesce::compact()
+    } else {
+        coalesce_cfg::Coalesce::default()
+    };
     coalesced.visit_file_mut(&mut file);
     let result = prettyplease::unparse(&file);
     // Parsing the result again catches malformed transformations immediately.
@@ -375,32 +383,43 @@ fn normalize(source: &str) -> Result<(String, serde_json::Value)> {
             "atomic_calls": change.atomic_calls, "opaque_types": opaque_names,
             "stdio_streams": change.streams, "stdio_functions": change.stream_functions,
             "fixed_width_constants": change.fixed_constants,
-            "coalesced_cfg": {"chains": coalesced.chains, "joined_steps": coalesced.joined_steps}}),
+            "coalesced_cfg": {"chains": coalesced.chains, "joined_steps": coalesced.joined_steps,
+                              "compacted_arms":coalesced.compacted_arms}}),
     ))
 }
 
-fn coalesce_prepared(source: &str) -> Result<(String, serde_json::Value)> {
+fn coalesce_prepared(source: &str, compact: bool) -> Result<(String, serde_json::Value)> {
     let mut file = syn::parse_file(source)?;
-    let mut pass = coalesce_cfg::Coalesce::default();
+    let mut pass = if compact {
+        coalesce_cfg::Coalesce::compact()
+    } else {
+        coalesce_cfg::Coalesce::default()
+    };
     pass.visit_file_mut(&mut file);
     let output = prettyplease::unparse(&file);
     syn::parse_file(&output)?;
     Ok((
         output,
-        serde_json::json!({"mode":"coalesce-prepared",
-        "coalesced_cfg":{"chains":pass.chains,"joined_steps":pass.joined_steps}}),
+        serde_json::json!({"mode":if compact {"compact-prepared"} else {"coalesce-prepared"},
+        "coalesced_cfg":{"chains":pass.chains,"joined_steps":pass.joined_steps,
+                         "compacted_arms":pass.compacted_arms}}),
     ))
 }
 
 fn main() -> Result<()> {
     let mut args: Vec<_> = std::env::args_os().skip(1).collect();
-    let prepared = args.first().is_some_and(|a| a == "--coalesce-prepared");
-    if prepared {
+    let compact = args
+        .first()
+        .is_some_and(|a| a == "--compact-prepared" || a == "--compact");
+    let prepared = args
+        .first()
+        .is_some_and(|a| a == "--compact-prepared" || a == "--coalesce-prepared");
+    if prepared || compact {
         args.remove(0);
     }
     ensure!(
         args.len() == 3,
-        "usage: gamepkg-takedawn-rust-port [--coalesce-prepared] INPUT.rs OUTPUT.rs REPORT.json"
+        "usage: gamepkg-takedawn-rust-port [--compact|--coalesce-prepared|--compact-prepared] INPUT.rs OUTPUT.rs REPORT.json"
     );
     let input = Path::new(&args[0]);
     let output = Path::new(&args[1]);
@@ -415,7 +434,9 @@ fn main() -> Result<()> {
         "transpiled unit exceeds 64 MiB"
     );
     let (rust, metadata) = if prepared {
-        coalesce_prepared(&source)?
+        coalesce_prepared(&source, compact)?
+    } else if compact {
+        normalize_mode(&source, true)?
     } else {
         normalize(&source)?
     };
