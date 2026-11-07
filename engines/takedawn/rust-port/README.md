@@ -107,10 +107,26 @@ enables this path with `GAMEPKG_C2RUST_FLAT_CFG=1`, disables incremental
 restructuring, and bounds each converter process to 90 seconds. This changes
 compile-time control-flow translation; it adds no runtime instruction decoder.
 
+Preparation joins unique straight-line successor steps inside a closed typed
+C2Rust dispatch loop. Each copied step retains its lexical scope, original
+operations and state assignment, and every original match arm remains present.
+The pass skips iteration hooks, escaped or shadowed state, macros, closures,
+guards, conditionally compiled transitions and ambiguous enum names. TLS values remain
+live across native calls. This reduces generated dispatch overhead while
+preserving the title's timing and behavior.
+
+Maintainers can apply the same pass to reviewed prepared source with
+`gamepkg-takedawn-rust-port --coalesce-prepared INPUT.rs OUTPUT.rs REPORT.json`.
+The outputs must be new files. Changed source hashes, conversion metadata,
+source-kit identity and host admission must be updated before delivery; a
+successful isolated benchmark does not qualify a game build or prove 60 FPS.
+
 `tools/check_takedawn_rust_cfg.py` compares compiled C and Rust results on a
 synthetic graph with 300 labels, repeated local names, initializer effects,
 callbacks into native code, TLS changes, and both kinds of return. It does not
-require the game or its disc. The actual-game comparison and mixed C/Rust
+require the game or its disc. The comparison requires a nonzero coalescing
+report and supports `--target i686-unknown-linux-gnu` for the 32-bit gate.
+The actual-game comparison and mixed C/Rust
 save/reload checks are separate private integration gates.
 
 ## Validation

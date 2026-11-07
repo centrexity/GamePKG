@@ -13,7 +13,9 @@ import tempfile
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--c2rust', type=Path, required=True)
 parser.add_argument('--normalizer', type=Path, required=True)
+parser.add_argument('--target', choices=['x86_64-unknown-linux-gnu', 'i686-unknown-linux-gnu'], default='x86_64-unknown-linux-gnu')
 args = parser.parse_args()
+cflags = ['-m32'] if args.target == 'i686-unknown-linux-gnu' else []
 project = Path(__file__).resolve().parents[1]
 work = Path(tempfile.mkdtemp(prefix='gamepkg-takedawn-rust-cfg.'))
 print(f'Private evidence directory: {work}', flush=True)
@@ -37,7 +39,7 @@ c = work / 'fixture.c'
 c.write_text(source)
 database = work / 'compile_commands.json'
 database.write_text(json.dumps([{'directory': str(work), 'file': str(c), 'arguments': [
-    '/usr/bin/clang-18', '-std=gnu11', '-c', str(c)]}]))
+    '/usr/bin/clang-18', *cflags, '-std=gnu11', '-c', str(c)]}]))
 environment = dict(os.environ, GAMEPKG_C2RUST_FLAT_CFG='1')
 with (work / 'transpile.log').open('w') as log:
     subprocess.run([str(args.c2rust.resolve()), 'transpile', '--fail-on-error',
@@ -48,14 +50,16 @@ with (work / 'transpile.log').open('w') as log:
 rust = work / 'fixture.rs'
 subprocess.run([str(args.normalizer.resolve()), str(work / 'raw/src/fixture.rs'), str(rust),
                 str(work / 'normalized.json')], check=True)
+coalesced = json.loads((work / 'normalized.json').read_text())['coalesced_cfg']
+assert coalesced['chains'] > 0 and coalesced['joined_steps'] > 0, 'CFG comparison must exercise coalescing, not only the unchanged baseline'
 with (work / 'compile.log').open('w') as log:
-    subprocess.run(['rustc', '--edition=2021', '--crate-type=staticlib', '-Awarnings',
+    subprocess.run(['rustc', '--target', args.target, '--edition=2021', '--crate-type=staticlib', '-Awarnings',
                     '-C', 'opt-level=2', '-C', 'panic=abort', '-C', 'overflow-checks=off',
                     str(rust), '-o', str(work / 'libfixture.a')],
                    stdout=log, stderr=subprocess.STDOUT, check=True, timeout=60)
-subprocess.run(['clang-18', '-std=gnu11', '-O2', '-fwrapv', '-Dcfg_case=c_cfg_case',
+subprocess.run(['clang-18', *cflags, '-std=gnu11', '-O2', '-fwrapv', '-Dcfg_case=c_cfg_case',
                 '-Dcfg_void=c_cfg_void', '-c', str(c), '-o', str(work / 'fixture-c.o')], check=True)
-subprocess.run(['clang-18', '-std=gnu11', '-O2',
+subprocess.run(['clang-18', *cflags, '-std=gnu11', '-O2',
                 str(project / 'engines/takedawn/rust-port/tests/cfg_compare.c'),
                 str(work / 'fixture-c.o'), str(work / 'libfixture.a'), '-ldl', '-lpthread', '-lm',
                 '-o', str(work / 'compare')], check=True)

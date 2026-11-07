@@ -1,5 +1,7 @@
 //! Maintainer-only normalization of C2Rust output. No instruction translation
 //! or replacement game/runtime behavior is implemented here.
+mod coalesce_cfg;
+
 use anyhow::{ensure, Context, Result};
 use quote::{format_ident, ToTokens};
 use std::{
@@ -362,6 +364,8 @@ fn normalize(source: &str) -> Result<(String, serde_json::Value)> {
         "unreviewed intrinsic calls: {:?}",
         change.unsupported_intrinsics
     );
+    let mut coalesced = coalesce_cfg::Coalesce::default();
+    coalesced.visit_file_mut(&mut file);
     let result = prettyplease::unparse(&file);
     // Parsing the result again catches malformed transformations immediately.
     syn::parse_file(&result)?;
@@ -370,15 +374,33 @@ fn normalize(source: &str) -> Result<(String, serde_json::Value)> {
         serde_json::json!({"thread_locals": change.tls, "exports": exports,
             "atomic_calls": change.atomic_calls, "opaque_types": opaque_names,
             "stdio_streams": change.streams, "stdio_functions": change.stream_functions,
-            "fixed_width_constants": change.fixed_constants}),
+            "fixed_width_constants": change.fixed_constants,
+            "coalesced_cfg": {"chains": coalesced.chains, "joined_steps": coalesced.joined_steps}}),
+    ))
+}
+
+fn coalesce_prepared(source: &str) -> Result<(String, serde_json::Value)> {
+    let mut file = syn::parse_file(source)?;
+    let mut pass = coalesce_cfg::Coalesce::default();
+    pass.visit_file_mut(&mut file);
+    let output = prettyplease::unparse(&file);
+    syn::parse_file(&output)?;
+    Ok((
+        output,
+        serde_json::json!({"mode":"coalesce-prepared",
+        "coalesced_cfg":{"chains":pass.chains,"joined_steps":pass.joined_steps}}),
     ))
 }
 
 fn main() -> Result<()> {
-    let args: Vec<_> = std::env::args_os().skip(1).collect();
+    let mut args: Vec<_> = std::env::args_os().skip(1).collect();
+    let prepared = args.first().is_some_and(|a| a == "--coalesce-prepared");
+    if prepared {
+        args.remove(0);
+    }
     ensure!(
         args.len() == 3,
-        "usage: gamepkg-takedawn-rust-port INPUT.rs OUTPUT.rs REPORT.json"
+        "usage: gamepkg-takedawn-rust-port [--coalesce-prepared] INPUT.rs OUTPUT.rs REPORT.json"
     );
     let input = Path::new(&args[0]);
     let output = Path::new(&args[1]);
@@ -392,7 +414,11 @@ fn main() -> Result<()> {
         source.len() <= 64 * 1024 * 1024,
         "transpiled unit exceeds 64 MiB"
     );
-    let (rust, metadata) = normalize(&source)?;
+    let (rust, metadata) = if prepared {
+        coalesce_prepared(&source)?
+    } else {
+        normalize(&source)?
+    };
     fs::write(output, rust)?;
     fs::write(report, serde_json::to_vec_pretty(&metadata)?)?;
     Ok(())
