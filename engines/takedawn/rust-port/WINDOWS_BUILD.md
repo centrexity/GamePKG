@@ -332,3 +332,10 @@ cache and temporary files. The title joins paths with repeated or mixed
 separators, which Windows rejects under a verbatim `\\?\` prefix. The confined
 native-window fixture also creates a title directory using those joins through
 the actual Win32 API, and checks saves and history across a restart.
+
+Library storage inventories run on one background worker: the managed SDK can
+contain many thousands of files. Repeated refreshes coalesce, and a result from
+an older library cannot replace the current library's totals. Windows allocation
+queries request file attributes rather than file data, including while another
+handle denies data reads. Native tests cover that sharing case and sparse files
+larger than 4 GiB against an independent Windows allocation API.

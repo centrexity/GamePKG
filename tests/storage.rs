@@ -4,14 +4,7 @@ use std::fs;
 fn storage_counts_game_data_and_deduplicates_shared_references() {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path();
-    let mut m = Manifest::parse(
-        &fs::read(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/examples/minimal/manifest.toml"
-        ))
-        .unwrap(),
-    )
-    .unwrap();
+    let mut m = Manifest::parse(include_bytes!("../examples/minimal/manifest.toml")).unwrap();
     m.creator_key = hex::encode([4u8; 32]);
     fs::write(root.join(format!("{}.gamepkg", m.id)), b"package").unwrap();
     let hash = gamepkg::verify::digest(b"package");
@@ -220,6 +213,34 @@ fn unavailable_disk_allocation_is_not_presented_as_disk_usage() {
             .on_disk_bytes,
         Some(0)
     );
+}
+
+#[cfg(windows)]
+#[test]
+fn windows_allocation_remains_available_while_file_data_is_exclusively_open() {
+    use std::{io::Write, os::windows::fs::OpenOptionsExt};
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("exclusive-data.bin");
+    let mut writer = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .share_mode(0)
+        .open(&path)
+        .unwrap();
+    writer.write_all(&[7; 8192]).unwrap();
+    writer.sync_all().unwrap();
+    assert!(
+        std::fs::File::open(&path).is_err(),
+        "fixture must deny data reads"
+    );
+    let during = gamepkg::storage::space(&path).unwrap();
+    assert_eq!(during.file_bytes, 8192);
+    assert!(
+        during.on_disk_bytes.is_some(),
+        "metadata-only allocation query must still work"
+    );
+    drop(writer);
+    assert_eq!(gamepkg::storage::space(&path).unwrap(), during);
 }
 
 #[cfg(windows)]
