@@ -6,7 +6,60 @@ C/C++. Players do not need Python, C2Rust or WSL. The owned supported ISO is rea
 in place. Maintainer tools and private test saves are separate from player
 requirements and the user's library.
 
-## Current v16 unresolved-reference audit
+## Current v17 campaign and preview checks
+
+The signed v17/0.1.6 recipe uses app 0.1.19 and source kit
+`8ae26ce68862dffde427315fc335e2e6effa1d26ecd9ad02778499c4d478a7d0`.
+Its normal Linux native build retains the local CPU/O3 optimizations. The
+unchanged executable earns Gold in Waterfront Face-Off: one lap, first of two,
+136.100 seconds. Original rewards report 450 points, one takedown, a new car and
+two new events. Successful autosave and a fresh process retain 4/173 events,
+2,615 points and three takedowns. A subsequent fresh launch can select the earned
+Modified Compact for the newly available Compact Grand Prix.
+
+That Grand Prix completes all three original races with the same executable:
+
+| Route | Place | Laps | Time | Grand Prix points |
+| --- | --- | --- | --- | --- |
+| `US/C3_V2` | 3/6 | 2 | 243.650 s | 3 |
+| `US/P1_V1` | 5/6 | 1 | 211.333 s | 1 |
+| `US/C1_V1` | 2/6 | 2 | 285.883 s | 4 |
+
+The original final standings award Bronze with eight points. Normal Continue
+actions traverse the 4,525-point/six-takedown summary, successful autosave,
+Muscle Series film and three car presentations, achievement notifications and
+the campaign map. Driver Details then shows 5/173 events, 7,140 points and nine
+takedowns. An independent cold process retains those exact totals, the new
+Downtown race and unlocked Muscle Types 1, 2 and 3. All five earned UDATA/TDATA
+files remain byte-identical during the cold check; no partition images are
+copied. Both drivers exit zero and pass the actual-Vulkan and executed-path
+checks. The 39 championship and nine cold-load captures decode and match their
+recorded hashes. The private receipts are
+`v17-grandprix-progression-qualification.json` and
+`v17-faceoff-progression-qualification.json`.
+
+These runs use the existing maintainer helper to put player one's car under
+the original game's AI control. It changes control state, but does not inject
+finishes, times, scores, medals or unlocks. Audio stays on the dummy driver and
+the owned ISO stays read-only in place. This does not establish every campaign
+event, manual-player physics, physical controllers or audio equivalence, and
+does not relabel this Linux Grand Prix run as physical Windows coverage.
+
+The current physical Windows app preview has separate normal Build/Play/history,
+remembered-ISO, integrity and desktop checks. Its exact preview launcher also
+opens the prepared library and game page with the saved ISO and Play enabled.
+A reported Needs ROM screen had only the older 0.1.18 process open; the current
+0.1.19 preview was not running. Opening the current preview and its scoped
+library restores Ready without replacing the ISO selection. The current game
+page was left open for hands-on controls/audio testing, which remains unqualified.
+
+The prepared Rust game inputs retain all 13 unresolved-reference guards.
+Additional original-byte audits identify coefficient tables, device/update
+path strings and a 16-byte HMAC input among apparent code entries. Their scoped
+reader/control-flow checks and corruption controls do not prove whole-program
+indirect-entry exclusion; no guard is removed or replaced with game behavior.
+
+## Retained v16 unresolved-reference audit
 
 The prepared v16 source still retains 13 unresolved-function guards. An
 ISO-in-place static audit now explains three apparent references without adding
