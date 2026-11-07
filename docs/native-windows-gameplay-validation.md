@@ -104,7 +104,7 @@ is inferred from that diagnostic check.
 The 0.1.20 Windows library renders Ready after a 1.711-second window observation.
 Its exact GUI native Play child opens a separate game window, closes normally
 and adds history. These are startup and lifecycle checks of the new Windows
-runtime; the complete physical Windows race/reload proof remains tied to v17.
+runtime. A subsequent v18 full-race/reload check is detailed below.
 The user's v17 preview, saved ROM selection and launcher remain unchanged.
 Further graphics-method classification, manual controls/audio and broader game
 fidelity remain open.
@@ -118,6 +118,56 @@ The library closes normally, all five save files remain unchanged, and the
 actual-Vulkan/executed-path checks pass. A private null-only audio sink keeps
 this test silent; it does not qualify physical controls, audible output or GPU
 performance.
+
+### v18 physical Windows race and fresh record reload
+
+The exact v18 Windows executable built by app 0.1.20 finishes the original
+three-lap Single Event Race on Downtown Southbound (`US/C2_V1`). The original
+maintainer AI drives Compact Type 1, finishing sixth of six in 302.667 seconds
+with a 99.967-second best lap. The original result screen shows 1:39.96, a
+455-foot drift and a 527-foot oncoming record. Normal Continue actions autosave
+and return to Select Car. No result, time, score, medal or unlock is injected.
+
+A new process opens the same five UDATA/TDATA files in place, with AI disabled.
+Downtown Southbound retains 1:21.00, 1:32.23 and 1:35.43 and adds the new 1:39.96
+Compact lap. Driver Details shows 3/173 events, 4,430 points and four takedowns;
+this is not a claim of an additional campaign medal or unlock. All five files
+remain byte-identical during the fresh record inspection. Only Profile 1 differs
+between the original reference and earned profile; the original five reference
+files remain unchanged. A separate five-file earned snapshot is retained.
+
+Both windows close normally, all six owned test tasks exit zero, and process
+checks confirm the original test games are gone. Actual-Vulkan and executed-path
+checks pass on both logs. Thirteen native framebuffer captures are hash-checked
+and visually reviewed, with an additional mid-race capture. The device is Intel
+UHD Graphics with Vulkan 1.3.286 and a native zero-copy Vulkan window. The actual
+game token is an AppContainer with zero capabilities and membership in the
+4 GiB job; the owner's ISO is inherited read-only. Audio remains dummy/muted
+and the optional watchdog remains off.
+
+This private harness uses a byte-identical copy of the current production process
+owner library; the native executable is the one from the ordinary signed app
+Build. Ordinary CLI/GUI/history checks are separate retained evidence. These
+checks do not establish hands-on controls/audio, all campaign paths, exact
+graphics/physics/API fidelity or a performance speedup.
+
+### Interpreting the corrected GPU survey
+
+A source-backed review of fifteen entries observed in the Linux run's top-ten
+reports confirms that texture CONTROL0 and FILTER writes are recorded, decoded
+and consumed by Vulkan despite appearing in the survey. NO_OPERATION performs
+its pacing action before deliberately entering that survey. Corruption controls
+reject removed register storage, shifted filter decoding and a discarded Vulkan
+filter choice. Individual filter/texture variants remain separate checks.
+
+The pinned NV097 register definitions identify `0x181C..0x1824` as EYE_VECTOR
+components, `0x0394/0x0398` as CLIP_MIN/MAX, `0x02B4` as WINDOW_CLIP_TYPE and
+`0x0110` as WAIT_FOR_IDLE. Explicit executor implementations or equivalent
+semantics have not yet been established for these paths. Their actual shader,
+clip and ordering dependencies need investigation before claiming either visible
+failure or equivalence. The software rasterizer's zero batch/stage counters
+also cannot describe Vulkan shader usage. This is a scoped classification,
+not a complete inventory of all 124 surveyed methods or proof of full fidelity.
 
 An original-byte check also identifies the observed `NtFsControlFile(0x90020)`
 cleanup call in routine `001D3054`. The import resolves to ordinal 200 and the

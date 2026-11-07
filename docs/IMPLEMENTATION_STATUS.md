@@ -66,7 +66,10 @@ report-index correction with unchanged prepared game code. Its optimized native
 Linux and physical Windows Build, selected/remembered ISO, history and integrity
 checks pass. The new Linux runtime also completes a three-lap Race and normal
 autosave/menu return; the Windows GUI passes Ready and native Play child/normal
-close checks. The qualified v17/0.1.6 baseline uses app 0.1.19. Its selected and remembered
+close checks. The v18 Windows runtime also passes a protected three-lap
+Race/autosave/fresh-record-reload test on real Intel Vulkan hardware, with all
+five saved files unchanged during reload. The qualified v17/0.1.6 baseline uses
+app 0.1.19. Its selected and remembered
 in-place ISO launch, history, integrity and the current desktop library pass
 their scoped checks. Physical Windows also has a protected native three-lap
 Race/save/reload check; manual controllers and audible output remain separate.

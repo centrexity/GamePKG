@@ -22,8 +22,9 @@ integrity pass. Its native Vulkan runtime also finishes an original three-lap
 Single Event Race, follows Continue/autosave back to Select Car and closes
 normally. Physical Windows native Build, selected and remembered ISO launches,
 history, integrity, GUI Ready and native Play child/normal close also pass their
-scoped checks. The complete physical Windows race/reload baseline remains v17;
-its prior signed packages remain admitted.
+scoped checks. The v18 Windows runtime also finishes a three-lap Downtown
+Southbound Race, follows normal autosave back to Select Car, and retains its
+new 1:39.96 lap in a fresh process. The prior v17 signed packages remain admitted.
 It retains 24,003 prepared Rust game functions across 487 units and 24,035 native
 exports. Host runtime changes since v15 include the shared-results input guard and
 resolving guest thread objects to owned host handles for priority operations,
