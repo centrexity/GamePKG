@@ -13,11 +13,12 @@ This does not mean the whole Takedawn engine has been rewritten in Rust.
 
 ## Current delivery path
 
-The unreleased 0.1.5 recipe selects the host-admitted v16 kit, SHA-256
-`d11056c7b8e1306023b0229dd32f6afb60194fd786b73e3abf187210eeb0de5f`.
+The unreleased 0.1.6 recipe selects the host-admitted v17 kit, SHA-256
+`8ae26ce68862dffde427315fc335e2e6effa1d26ecd9ad02778499c4d478a7d0`.
 It retains 24,003 prepared Rust game functions across 487 units and 24,035 native
-exports. The sole change from v15 is the host C input guard for shared results:
-background replay car phases must not activate driving controls over the menu.
+exports. Host runtime changes since v15 include the shared-results input guard and
+resolving guest thread objects to owned host handles for priority operations.
+Background replay car phases must not activate driving controls over the menu.
 All prepared Rust and ABI support files remain byte-identical.
 
 Normal signed Linux Build and integrity checks pass. Verified prepared-unit cache
@@ -39,8 +40,10 @@ open. The v16 results check above covers Team Crush, not those missing routes.
 Actual Windows passes the complete signed v15 Build/repair gate, preserving all
 487 object hashes/timestamps during repair. The immutable private v15b preview
 contains recipe 0.1.4 and the default-off diagnostic watchdog; it is not a stable
-release and does not contain the v16 fix. Current Windows gameplay/hardware and
-broader campaign qualification remain open. No player needs Python, WSL or code
+release and does not contain the v16 fix. The v17 runtime also passes full original three-lap native races on Linux and
+physical Windows through the production protected runner, including normal
+autosave and close. Ordinary Windows app integration for v17 and broader
+campaign qualification remain open. No player needs Python, WSL or code
 generation. See the [Windows build guide](WINDOWS_BUILD.md).
 
 Preparation records below include older kits and must be read with their exact

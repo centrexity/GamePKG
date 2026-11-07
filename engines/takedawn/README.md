@@ -5,7 +5,7 @@ complete generated C game functions into prepared Rust before players receive
 them. Players compile that Rust locally; the selected supported ISO supplies
 assets in place. Python and C2Rust are maintainer preparation tools.
 
-The current unreleased recipe is 0.1.3/v14 and requires the 0.1.18 development
+The current unreleased recipe is 0.1.6/v17 and requires the 0.1.19 development
 app. It retains 24,003 prepared Rust game functions across 487 units and 24,035
 native exports. Linux x64 and standalone Windows x64 tools compile and link the
 native game; players need neither Python nor WSL. The normal signed Linux
@@ -13,6 +13,13 @@ package passes Build, remembered ISO-in-place Play, history and integrity repair
 The exact repaired executable also finishes an original World Tour race, saves
 its unlocks and reloads the earned profile in a fresh process. Race, Crash and
 Road Rage routes have scoped checks; this does not prove a complete campaign.
+
+The v17 thread-object adapter passes native Windows 32/64-bit handle fixtures,
+full original three-lap native races on Linux and physical Windows, and the
+normal results/autosave/Select Car flow. The physical Windows game uses the
+production AppContainer process owner, read-only selected ISO handle, native
+Intel Vulkan, silent test audio and a 4 GiB job. This is a private maintainer
+launch: qualification of v17 through the ordinary Windows app remains pending.
 
 Windows-under-Wine checks cover original Vulkan gameplay, saves, controls,
 window resize/close and a full three-lap race. Actual Windows host tests verify

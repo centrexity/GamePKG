@@ -22,7 +22,7 @@ jobs:
       - name: Verify the actual source-kit handoff before compiling the game
         env:
           GAMEPKG_TAKEDAWN_KIT: ${{ github.workspace }}/ports/takedawn/assets/takedawn-source-kit.tar.gz
-          GAMEPKG_TAKEDAWN_KIT_SHA256: d11056c7b8e1306023b0229dd32f6afb60194fd786b73e3abf187210eeb0de5f
+          GAMEPKG_TAKEDAWN_KIT_SHA256: 8ae26ce68862dffde427315fc335e2e6effa1d26ecd9ad02778499c4d478a7d0
         run: cargo test --locked --release --lib takedawn_kit::tests -- --include-ignored
       - name: Build and repair the signed native game with managed standalone tools
         shell: pwsh

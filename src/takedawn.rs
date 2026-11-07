@@ -13,11 +13,13 @@ pub const MEMORY: u64 = 4 * 1024 * 1024 * 1024;
 pub const KIT_SHA256: &str = "a40e9656476633125d2fd50cc6a71134a453f8942634e34ebef848a215b98a5a";
 pub const KIT_ASSET: &str = "assets/takedawn-source-kit.tar.gz";
 pub const CURRENT_KIT_SHA256: &str =
+    "8ae26ce68862dffde427315fc335e2e6effa1d26ecd9ad02778499c4d478a7d0";
+pub const LEGACY_WINDOWS_V16_KIT_SHA256: &str =
     "d11056c7b8e1306023b0229dd32f6afb60194fd786b73e3abf187210eeb0de5f";
 pub const LEGACY_WINDOWS_V15_KIT_SHA256: &str =
     "7f56741fa8f0a56d3e718af1f772bae9200514b6293c2d218e56cde700123c8b";
-// v16 changes only the C input gate. All prepared Rust sources, support files
-// and ABI remain byte-identical to v15. Retain their verified object namespace;
+// v16 and v17 change only host runtime adapters. All prepared Rust sources,
+// support files and ABI remain byte-identical to v15. Retain their verified object namespace;
 // artifact/kit admission and runtime builds still use CURRENT_KIT_SHA256.
 pub const RUST_UNIT_CACHE_KIT_SHA256: &str = LEGACY_WINDOWS_V15_KIT_SHA256;
 pub const LEGACY_WINDOWS_V14_KIT_SHA256: &str =
@@ -33,6 +35,7 @@ pub(crate) fn reviewed_kit_digest(bytes: &[u8]) -> Result<String> {
         [
             KIT_SHA256,
             CURRENT_KIT_SHA256,
+            LEGACY_WINDOWS_V16_KIT_SHA256,
             LEGACY_WINDOWS_V15_KIT_SHA256,
             LEGACY_WINDOWS_V14_KIT_SHA256,
             LEGACY_WINDOWS_V13_KIT_SHA256,

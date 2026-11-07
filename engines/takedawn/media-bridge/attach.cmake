@@ -66,6 +66,16 @@ function(gamepkg_attach_disc_media)
         -P "${bridge}/adapt_memory.cmake" COMMAND_ERROR_IS_FATAL ANY)
     list(REMOVE_AT kernel_sources ${memory_index})
     list(APPEND kernel_sources "${adapted_memory}")
+    list(FIND kernel_sources "kernel_bridge.c" thread_index)
+    if(thread_index LESS 0)
+        message(FATAL_ERROR "Pinned kernel bridge source target is missing")
+    endif()
+    set(adapted_threads "${CMAKE_BINARY_DIR}/gamepkg-media/kernel_bridge.c")
+    execute_process(COMMAND "${CMAKE_COMMAND}"
+        "-DINPUT=${kernel_dir}/kernel_bridge.c" "-DOUTPUT=${adapted_threads}"
+        -P "${bridge}/adapt_threads.cmake" COMMAND_ERROR_IS_FATAL ANY)
+    list(REMOVE_AT kernel_sources ${thread_index})
+    list(APPEND kernel_sources "${adapted_threads}")
     set_property(TARGET xbox_kernel PROPERTY SOURCES "${kernel_sources}")
     # Correct the smoke stream's explicit screen-space transform setup, then
     # demand real colors as well as CPU/GPU agreement. Runtime state is unchanged.
