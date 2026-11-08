@@ -569,6 +569,11 @@ play history and post-play integrity. Players use standalone Windows Rust and
 native build tools; Python, WSL and source conversion are maintainer tasks only.
 The original ISO is opened read-only in place.
 
+With build optimization enabled, Linux builds target the local CPU for both
+the prepared Rust game and the C/C++ runtime. Native cache identities include
+the CPU and host build recipe, so changing this policy requires a rebuild.
+The original simulation clock and floating-point rules remain unchanged.
+
 The Windows runtime selects a fast logical CPU for its graphics worker on hybrid
 processors, separate from the entire physical core used by the guest threads.
 It preserves the existing scheduling on homogeneous CPUs or when suitable CPU

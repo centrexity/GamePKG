@@ -324,6 +324,14 @@ fn compile_with_cache(
     .into_iter()
     .map(String::from)
     .collect::<Vec<_>>();
+    if optimize {
+        // Game units already target this CPU. Match that policy for both
+        // runtime languages, including the C++ renderer and shader compiler.
+        args.extend([
+            "-DCMAKE_C_FLAGS=-march=native".into(),
+            "-DCMAKE_CXX_FLAGS=-march=native".into(),
+        ]);
+    }
     args.push(format!(
         "-DGAMEPKG_TAKEDAWN_RUST_ARCHIVE=/sdk/prepared/target/{}/libgamepkg_takedawn_generated.a",
         if optimize { "release" } else { "debug" }
