@@ -3,8 +3,10 @@ import hashlib
 import importlib.util
 from pathlib import Path
 import unittest
+import sys
 from unittest.mock import patch
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 spec = importlib.util.spec_from_file_location('thread_check', Path(__file__).resolve().parents[1]
                                                / 'tools/check_takedawn_thread_priority.py')
 check = importlib.util.module_from_spec(spec)
@@ -26,6 +28,13 @@ class SourceTests(unittest.TestCase):
         with patch.object(check.subprocess, 'check_output', side_effect=[check.EXPECTED_REVISION+'\n', self.canonical]) as git:
             self.assertEqual(check.reference_bytes(Path('source'), self.canonical.replace(b'\n', b'\r\n')), self.canonical)
             self.assertEqual(git.call_count, 2)
+
+    def test_same_guard_reads_the_gpu_report_git_object(self):
+        with patch.object(check.subprocess, 'check_output', side_effect=[check.EXPECTED_REVISION+'\n', self.canonical]) as git:
+            self.assertEqual(check.canonical_reference_bytes(Path('source'),
+                'src/kernel/nv2a_pb_exec.c', self.canonical.replace(b'\n', b'\r\n'),
+                hashlib.sha256(self.canonical).hexdigest(), check.EXPECTED_REVISION), self.canonical)
+            self.assertEqual(git.call_args_list[1].args[0][-1], 'HEAD:src/kernel/nv2a_pb_exec.c')
 
     def test_modified_checkout_cannot_hide_behind_canonical_git_object(self):
         with patch.object(check.subprocess, 'check_output', side_effect=[check.EXPECTED_REVISION+'\n', self.canonical]):

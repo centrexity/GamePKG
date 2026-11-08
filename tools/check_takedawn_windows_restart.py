@@ -58,7 +58,7 @@ def main():
             )
 
     stage(original, staged, True)
-    text = staged.read_text()
+    text = staged.read_text(encoding='utf-8')
     include = (
         '#if defined(_WIN32)\n#include "'
         + (bridge / "windows_restart.h").as_posix()
@@ -88,6 +88,7 @@ def main():
         command = [
             "cl",
             "/nologo",
+            "/utf-8",
             "/std:c11",
             "/O2",
             "/W4",
@@ -161,7 +162,7 @@ def main():
             assert result.returncode == 0, (mode, result.returncode, result.stderr)
             assert (
                 folder / "marker.txt"
-            ).read_text() == "teardown complete\nfinal cleanup complete\n"
+            ).read_text(encoding='utf-8') == "teardown complete\nfinal cleanup complete\n"
             assert kernel.WaitForSingleObject(event, 0) == (
                 0 if mode == "request" else 258
             )

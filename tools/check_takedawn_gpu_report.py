@@ -4,12 +4,12 @@ No game assets; Python is a maintainer/CI requirement only, never a player one.
 GCC/Clang-style compilers are supported, including MinGW for Windows fixtures.
 """
 import argparse
-import hashlib
 import json
 import os
 from pathlib import Path
 import subprocess
 import tempfile
+from takedawn_pinned_source import canonical_reference_bytes
 
 FIXTURE = r"""
 static int check(uint32_t method,uint32_t count,uint32_t param) {
@@ -62,9 +62,11 @@ def main():
     project = Path(__file__).resolve().parents[1]
     adapter = project / 'engines/takedawn/media-bridge/adapt_gpu_report.cmake'
     upstream = args.source.resolve() / 'src/kernel/nv2a_pb_exec.c'
-    before = upstream.read_bytes()
+    checkout_before = upstream.read_bytes()
     expected_hash = 'efc81258a81c3a2add67b904e4815b53e2283243e000c768b97c8319e2c1d220'
-    assert hashlib.sha256(before).hexdigest() == expected_hash
+    before = canonical_reference_bytes(args.source.resolve(), 'src/kernel/nv2a_pb_exec.c',
+                                       checkout_before, expected_hash,
+                                       '5ae8ad90d984425e834dee759592c15592679880')
     work = args.output.resolve() if args.output else Path(tempfile.mkdtemp(prefix='gamepkg-gpu-report-'))
     work.mkdir(parents=True, exist_ok=True)
     original = work / 'original-source.c'
@@ -79,7 +81,7 @@ def main():
 
     stage(original, staged, True)
     old = before.decode()
-    new = staged.read_text()
+    new = staged.read_text(encoding='utf-8')
     _, _, _, old_report = parts(old)
     _, _, _, new_report = parts(new)
     assert 'memcpy(ranked, s_unhandled,' in new_report
@@ -87,7 +89,7 @@ def main():
     assert new.replace(new_report, old_report) == old, 'Non-reporting GPU code changed'
     first_mtime = staged.stat().st_mtime_ns
     stage(original, staged, True)
-    assert staged.read_text() == new and staged.stat().st_mtime_ns == first_mtime
+    assert staged.read_text(encoding='utf-8') == new and staged.stat().st_mtime_ns == first_mtime
     stage(original, original, False)
     altered = work / 'altered-source.c'
     altered.write_bytes(before + b'\n/* unreviewed revision */\n')
@@ -96,7 +98,7 @@ def main():
     assert not rejected.exists()
     stage(staged, rejected, False)
     assert not rejected.exists()
-    assert original.read_bytes() == upstream.read_bytes() == before
+    assert original.read_bytes() == before and upstream.read_bytes() == checkout_before
     results = []
     for label, source, expected in [('original', old, 17), ('adapted', new, 0)]:
         types, counter, _, report = parts(source)
@@ -107,13 +109,13 @@ def main():
                    'struct {uint32_t unhandled_total;}s_gpu;\n' + types + counter +
                    '\nstatic void report(int all){int i,j;\n' + report + '\n}\n' + FIXTURE)
         path = work / (label + '.c')
-        path.write_text(harness)
+        path.write_text(harness, encoding='utf-8', newline='\n')
         exe = work / (label + '.exe')
         flags = ['-std=c11', '-O2', '-Wall', '-Wextra', '-Werror']
         if args.sanitize:
             flags += ['-fsanitize=address,undefined']
         if args.compiler_kind == 'msvc':
-            command = [args.cc, '/nologo', '/std:c11', '/O2', '/W4', '/WX',
+            command = [args.cc, '/nologo', '/utf-8', '/std:c11', '/O2', '/W4', '/WX',
                        str(path), '/Fe:' + str(exe), '/Fo:' + str(work / (label + '.obj'))]
         else:
             command = [args.cc, *flags, str(path), '-o', str(exe)]
@@ -129,7 +131,7 @@ def main():
             result.update(execution='verified', exit=ran.returncode)
         results.append(result)
     record = {'result': 'compile-only-target-execution-pending' if args.compile_only else 'pass',
-              'source_sha256': expected_hash, 'original_source_unchanged': upstream.read_bytes() == before,
+              'source_sha256': expected_hash, 'original_source_unchanged': upstream.read_bytes() == checkout_before,
               'only_reporting_changed': True, 'unknown_and_in_place_sources_rejected': True,
               'sanitizers': args.sanitize, 'cases': results,
               'scope': 'Production method counters and report ranking; repeated top-ten/all reports, aligned/unaligned/out-of-range methods. No rendering-equivalence claim.'}
