@@ -2374,3 +2374,65 @@ The original-art native executable closes normally, Vulkan and reached-path
 audits pass, and all five protected reference files remain unchanged. The
 player preview is unchanged. No diagnostic colors or speculative depth offset
 are included in the source recipe.
+
+### Near-view-plane road-text clipping (recipe 0.1.15)
+
+The road-lettering draw is now positively identified by raw texture hash
+`3af6914e1ed4e4f1` (DXT5, 128x256). Its three submissions remain present during
+missing frames; vertex/index data are unchanged. Private depth-test, culling,
+mip and polygon-offset comparisons do not fix the disappearance. None of
+those diagnostic rendering changes is included in the recipe.
+
+Reference vertex execution instead shows the close-road draw crossing zero
+perspective W exactly before the missing frame pairs. The XDK screen-space
+shader epilogue uses RCC's finite reciprocal ceiling, `1.84467e19`. The Vulkan
+conversion previously substituted W=1 when reversing that epilogue at zero W,
+leaving screen coordinates around `2.48e22` for homogeneous clipping. The
+reviewed adapter reconstructs signed near-zero W using the inverse of that
+same ceiling, preserving negative zero's sign and leaving ordinary W unchanged.
+It applies to the existing screen-space conversion, without a texture-specific
+exception. The adapter rejects unknown or already adapted sources and refuses
+source overwrite, including aliases. The SPIR-V disk cache hashes the generated
+GLSL text and stage; the changed emitter therefore produces a new cache key.
+Prewarm lists retain original vertex programs and regenerate through the emitter.
+
+Private native Linux captures compare 135 countdown frames per run. The
+baseline's selected bottom-right road area loses the positively tinted lettering
+on four frames (zero detected magenta pixels). The corrected run loses none;
+counts remain 11,288–11,319. A separate untinted run retains the original white
+lettering throughout another 135 frames (7,300–7,368 detected white pixels).
+Actual Windows native final-frame captures also retain the positively tinted
+road throughout the first 60 countdown frames (44,706–44,992 pixels in its
+independently scaled region). Later frames follow normal acceleration and
+leave the road patch, so their disappearance is not a countdown regression.
+These are bounded reproductions, not an all-scenes visual guarantee.
+
+The corrected Linux prototype passes the complete Crash control assertions;
+the normal packaged build also passes the complete Race control assertions,
+with normal exits,
+actual Vulkan rendering and no reached unresolved game functions. The actual
+Windows native corrected executable passes the original full Crash assertions,
+including impact, aftertouch/crashbreaker, Results and Continue to the front end,
+and exits normally. All five protected reference save files remain unchanged.
+Normal artwork and the unchanged original prepared Rust game archive are used
+for these gameplay checks; original media is still read from the ISO in place.
+
+The real emitted expression also passes asset-free numeric regression with
+Clang and GCC: one million binary32 bit patterns, signed zeros, subnormals,
+threshold neighbors and infinities/NaNs. The test exercises the real GLSL
+emitter and verifies that the non-screen-space output is unaffected. Python
+and its test dependencies remain maintainer-only.
+
+The corrected Windows first Crash-camera timing sample covers 1,541 frames:
+58.89 Hz, 16.98 ms mean frame interval, 21.36 ms p99 interval; executor busy
+work averages 8.14 ms with 11.42 ms p99. No framebuffer readbacks or CPU sampler
+run inside that camera. This single unpaired sample does not establish a
+performance improvement, steady 60 Hz or under-10-ms p99 frame work. Those
+performance targets remain open. The separate private effective-O3 experiment
+is not included in this recipe. The installed player preview remains unchanged.
+
+Source-kit SHA256:
+`76594541d699d88e7d04279e669b799432b02776d8c7f11253fcf6daf595e693`.
+It adds one host adapter and updates the host CMake hook; all original prepared
+Rust, game, toolkit and media inputs remain byte-identical. Existing package
+admission and graphics-launch-argument compatibility are retained.
