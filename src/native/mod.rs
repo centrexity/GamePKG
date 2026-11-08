@@ -175,11 +175,16 @@ mod recipe_identity_tests {
     #[test]
     fn source_kit_changes_invalidate_the_app_native_recipe_identity() {
         let current = super::sdk_identity_for_takedawn_kit(crate::takedawn::CURRENT_KIT_SHA256);
-        let previous = super::sdk_identity_for_takedawn_kit(crate::takedawn::V23_KIT_SHA256);
-        assert_ne!(
-            current, previous,
-            "same-version CLI/GUI entries must distinguish Takedawn kits"
-        );
+        for kit in [
+            crate::takedawn::EVENT_WAKE_KIT_SHA256,
+            crate::takedawn::V23_KIT_SHA256,
+        ] {
+            let previous = super::sdk_identity_for_takedawn_kit(kit);
+            assert_ne!(
+                current, previous,
+                "same-version CLI/GUI entries must distinguish Takedawn kits"
+            );
+        }
         assert_eq!(super::sdk_identity(), current);
         assert_eq!(
             super::build_identity()["native_sdk"].as_str(),
