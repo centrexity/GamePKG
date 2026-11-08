@@ -168,7 +168,10 @@ impl Session {
         // The title joins save paths with repeated/mixed separators. Win32
         // normalizes those in DOS/UNC paths, but rejects them under the verbatim
         // prefix returned by canonicalize. Keep the canonical ACL/identity above
-        // and pass the equivalent ordinary absolute path to the runtime.
+        // and use the equivalent ordinary absolute path for runtime paths and
+        // its working directory. A verbatim working directory also makes the
+        // CRT's recursive cache-directory check fail for ordinary cache paths,
+        // even when the cache directory itself is writable.
         let runtime_data = crate::takedawn_windows_sdk::compiler_path(&data)?;
         let log = tempfile::NamedTempFile::new()?;
         let mut environment = vec![
@@ -228,7 +231,7 @@ impl Session {
             Launch {
                 executable: engine,
                 args,
-                cwd: data,
+                cwd: runtime_data,
                 environment,
                 disc,
                 output: log.reopen()?,
