@@ -2109,3 +2109,14 @@ All three drivers exit normally and pass actual-Vulkan and strict executed-path
 checks, using dummy audio and the ISO read in place. All 33 retained captures
 decode and match their hashes. This qualifies the selected loss/save/record route, not a winning Face-Off, its car-unlock branch,
 manual-player physics equivalence, every campaign event or physical Windows.
+
+
+## Local preview qualification, 2026-11-08
+
+GamePKG 0.1.24 adds signed launch defaults and saved per-game overrides for the reviewed native Takedawn engine. The agreed desktop defaults are windowed, 16:9, 2× internal resolution, SMAA, automatic texture LOD, 10% sharpening, widescreen HUD correction and 2× menu/HUD upscaling. CLI and GUI release builds pass for Linux x86-64 and Windows x64. Linux uses native ELF executables and Vulkan without Wine or Proton. The updated SDL game window supports Alt+Enter (either Alt key and either Enter key); repeats and key releases are consumed before game input. The fullscreen setting remains synchronized even when its starting value comes from launch metadata.
+
+The local GUI-enabled library regression reports 443 passed, 0 failed and 48 explicitly ignored. The actual settings reader reports 271 checks, 0 failed, plus three host launch-override configurations on sanitized Linux64 and native Linux32. The shortcut policy reports 983,047 passing event checks on sanitized Linux64, native Linux32 and physical Windows64. The complete native game runtime builds on Linux and the physical Windows test machine, preserving all 24,035 exports and the original prepared Rust/media archives. The actual source archive passes its full source-inventory gate; the local signed 0.1.12 package verifies against the existing preview creator. Physical-keyboard and visible fullscreen-transition checks remain separate from these component/build results.
+
+The source kit SHA-256 is `db2a7ddada4d04a7691501480a5a15f2c71be43fc31921f033f8ca292eb0913f`. Earlier admitted source recipes remain verifiable. No rejected SIMD or pending-PUT experiments are included.
+
+Steady 60 FPS across all events and under-10-ms frame work remain unqualified. The Crash countdown capture confirms that white road lettering disappears on individual frames before “1” while the HUD remains visible. The first texture-specific diagnostic did not identify the responsible texture; no road-lettering rendering fix is included. Captures perturb timing and are visual evidence, not performance qualification. These are local preview results; publishing this source does not publish new release binaries or promote the ports catalog.

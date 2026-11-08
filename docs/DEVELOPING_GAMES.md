@@ -711,3 +711,7 @@ verification. The original HUD layer retains its 256-pixel width. A renderer
 revision gate checks the current typed constant (including the compiler's
 initialization wrapper) before accepting a Wasm cache; it does not execute code
 during readiness checks.
+
+## Native launch options
+
+See [Launch options](LAUNCH_OPTIONS.md) for signed renderer defaults, supported choices and per-game player overrides.

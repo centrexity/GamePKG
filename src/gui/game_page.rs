@@ -388,7 +388,7 @@ impl App {
             if self.manifest.as_ref().is_some_and(|m|m.builtin_engine.as_deref()==Some(crate::zelda3::PROFILE) && m.permissions.save) {
                 ui.label("Snapshot shortcuts: Shift+F1–F10 saves; F1–F10 loads. Defaults use slots 1–10; Settings can assign any of the 20 slots or turn shortcuts off. Saving replaces that slot. Normal in-game saving still works separately.");
             }
-            if self.pending.is_none(){self.game_rom_editor(ui);self.game_data_editor(ui);self.game_network_editor(ui);self.game_display_editor(ui);self.game_recordings(ui);}
+            if self.pending.is_none(){self.game_rom_editor(ui);self.game_data_editor(ui);self.game_network_editor(ui);self.game_display_editor(ui);self.game_launch_editor(ui);self.game_recordings(ui);}
             self.game_details(ui,ctx);
             });
         });

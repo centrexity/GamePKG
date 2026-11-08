@@ -102,6 +102,7 @@ pub struct Options {
     pub audio_volume: u8,
     pub watchdog_seconds: u16,
     pub crash_60fps: bool,
+    pub launch: Option<crate::launch_options::LaunchOptions>,
 }
 impl Default for Options {
     fn default() -> Self {
@@ -111,6 +112,7 @@ impl Default for Options {
             audio_volume: 100,
             watchdog_seconds: 0,
             crash_60fps: false,
+            launch: None,
         }
     }
 }
@@ -303,6 +305,7 @@ impl Session {
                 && creator.len() <= 256,
             "invalid native game identity"
         );
+        if let Some(launch) = options.launch { launch.validate()?; }
         let bytes = crate::files::read_regular(executable, MAX_BINARY, false)
             .context("build the reviewed native game before playing")?;
         crate::integrity::verify_build(executable, &bytes)?;
@@ -437,6 +440,11 @@ impl Session {
                 "RECOMP_STUB_LOG",
                 "1",
             ]);
+        if !options.headless {
+            if let Some(launch) = options.launch {
+                for (key, value) in launch.environment() { command.args(["--setenv", key, &value]); }
+            }
+        }
         command.args([
             "--setenv",
             "RECOMP_GFX_CRASH_60FPS",

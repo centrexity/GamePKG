@@ -34,6 +34,8 @@ pub struct Manifest {
     pub zelda_video: Option<ZeldaVideo>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub game_data: Option<GameDataRequirement>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub launch_options: Option<crate::launch_options::LaunchOptions>,
     pub lockfile_sha256: String,
     pub limits: Limits,
     pub permissions: Permissions,
@@ -450,6 +452,10 @@ impl Manifest {
                 || m.doom_wad_modes.len() != m.required_rom_count().saturating_sub(1))
         {
             bail!("DOOM WAD modes require one mode per declared patch in the pinned DOOM recipe");
+        }
+        if let Some(options) = m.launch_options {
+            anyhow::ensure!(m.builtin_engine.as_deref() == Some(crate::takedawn::PROFILE), "launch options require the reviewed Takedawn engine");
+            options.validate()?;
         }
         if let Some(video) = m.zelda_video {
             if m.builtin_engine.as_deref() != Some(crate::zelda3::PROFILE) {

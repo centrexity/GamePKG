@@ -132,3 +132,99 @@ impl App {
         }
     }
 }
+
+
+fn launch_choice<T: Copy + PartialEq>(
+    ui: &mut egui::Ui,
+    label: &str,
+    value: &mut T,
+    choices: &[T],
+    name: impl Fn(T) -> &'static str,
+) {
+    egui::ComboBox::from_label(label)
+        .selected_text(name(*value))
+        .show_ui(ui, |ui| {
+            for &choice in choices {
+                ui.selectable_value(value, choice, name(choice));
+            }
+        });
+}
+impl App {
+    pub(super) fn game_launch_editor(&mut self, ui: &mut egui::Ui) {
+        use crate::launch_options::*;
+        let Some(manifest) = self
+            .installed
+            .iter()
+            .find(|m| {
+                Some(&m.id) == self.selected_game.as_ref()
+                    && m.builtin_engine.as_deref() == Some(crate::takedawn::PROFILE)
+            })
+            .cloned()
+        else {
+            return;
+        };
+        let result = (|| -> anyhow::Result<_> {
+            let root = std::fs::canonicalize(crate::registry::default_root()?)?;
+            let scope = identity(&manifest)?;
+            let saved = load(&root, &manifest)?;
+            Ok((root, scope, saved))
+        })();
+        let (root, scope, saved) = match result {
+            Ok(value) => value,
+            Err(error) => {
+                ui.label(format!("Unable to load launch options: {error:#}"));
+                return;
+            }
+        };
+        let draft_id = egui::Id::new(("launch-options", &scope, &manifest.version));
+        let mut draft = ui
+            .ctx()
+            .data_mut(|data| data.get_temp::<LaunchOptions>(draft_id))
+            .unwrap_or(saved.or(manifest.launch_options).unwrap_or_default());
+        let mut selection = None;
+        egui::CollapsingHeader::new("Launch options").default_open(true).show(ui, |ui| {
+            ui.add_enabled_ui(self.result.is_none(), |ui| {
+                launch_choice(ui, "Window", &mut draft.window_mode, WindowMode::ALL, WindowMode::label);
+                launch_choice(ui, "Aspect ratio", &mut draft.aspect_ratio, AspectRatio::ALL, AspectRatio::label);
+                egui::ComboBox::from_label("Internal resolution").selected_text(format!("{}×", draft.render_scale)).show_ui(ui, |ui| {
+                    for value in 1..=4 { ui.selectable_value(&mut draft.render_scale, value, format!("{value}×")); }
+                });
+                launch_choice(ui, "Antialiasing", &mut draft.antialiasing, Antialiasing::ALL, Antialiasing::label);
+                launch_choice(ui, "Texture sharpness / LOD", &mut draft.texture_lod, TextureLod::ALL, TextureLod::label);
+                ui.add(egui::Slider::new(&mut draft.sharpening_percent, 0..=100).text("Sharpening %"));
+                ui.checkbox(&mut draft.widescreen_hud, "Widescreen HUD correction");
+                egui::ComboBox::from_label("Menu and HUD upscaling").selected_text(format!("{}×", draft.menu_hud_scale)).show_ui(ui, |ui| {
+                    for value in [1, 2, 4] { ui.selectable_value(&mut draft.menu_hud_scale, value, if value == 1 { "Off".into() } else { format!("{value}×") }); }
+                });
+                ui.horizontal(|ui| {
+                    if ui.button("Save launch options").clicked() { selection = Some(Some(draft)); }
+                    if ui.button("Use package defaults").clicked() { selection = Some(None); }
+                });
+            });
+            ui.weak("Applies on the next launch using the game’s built-in renderer. These launch options take precedence over the game’s saved display settings.");
+        });
+        ui.ctx().data_mut(|data| data.insert_temp(draft_id, draft));
+        if let Some(selection) = selection {
+            let ctx = ui.ctx().clone();
+            self.begin_work(move || {
+                anyhow::ensure!(
+                    std::fs::canonicalize(crate::registry::default_root()?)? == root,
+                    "The library changed. Review launch options again."
+                );
+                let _change = crate::registry::LibraryChange::acquire(&root)?;
+                let current = crate::registry::installed_manifest(&root, &manifest.id)?;
+                anyhow::ensure!(
+                    identity(&current)? == scope
+                        && current.version == manifest.version
+                        && current.launch_options == manifest.launch_options,
+                    "The game changed. Review launch options again."
+                );
+                crate::launch_options::remember(&root, &current, selection)?;
+                ctx.data_mut(|data| data.remove::<LaunchOptions>(draft_id));
+                Ok(Work::Message(
+                    "Launch options saved. They apply next time you play.".into(),
+                ))
+            });
+        }
+    }
+}
