@@ -454,7 +454,10 @@ impl Manifest {
             bail!("DOOM WAD modes require one mode per declared patch in the pinned DOOM recipe");
         }
         if let Some(options) = m.launch_options {
-            anyhow::ensure!(m.builtin_engine.as_deref() == Some(crate::takedawn::PROFILE), "launch options require the reviewed Takedawn engine");
+            anyhow::ensure!(
+                m.builtin_engine.as_deref() == Some(crate::takedawn::PROFILE),
+                "launch options require the reviewed Takedawn engine"
+            );
             options.validate()?;
         }
         if let Some(video) = m.zelda_video {

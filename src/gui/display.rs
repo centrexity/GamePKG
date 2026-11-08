@@ -133,7 +133,6 @@ impl App {
     }
 }
 
-
 fn launch_choice<T: Copy + PartialEq>(
     ui: &mut egui::Ui,
     label: &str,

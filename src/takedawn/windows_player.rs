@@ -122,7 +122,9 @@ impl Session {
                 && creator.len() <= 256,
             "invalid native game identity"
         );
-        if let Some(launch) = options.launch { launch.validate()?; }
+        if let Some(launch) = options.launch {
+            launch.validate()?;
+        }
         let bytes = crate::files::read_regular(executable, 64 * 1048576, false)
             .context("build the reviewed native game before playing")?;
         crate::integrity::verify_build(executable, &bytes)?;
@@ -221,7 +223,12 @@ impl Session {
         ];
         if !options.headless {
             if let Some(launch) = options.launch {
-                environment.extend(launch.environment().into_iter().map(|(key, value)| (key.into(), value.into())));
+                environment.extend(
+                    launch
+                        .environment()
+                        .into_iter()
+                        .map(|(key, value)| (key.into(), value.into())),
+                );
             }
         }
         // Preserve the host's explicit silent test driver for windowed runs too.
