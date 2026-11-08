@@ -2209,3 +2209,27 @@ Cross builds pass at Windows32/64, and both fixtures execute on physical Windows
 with strict handles enabled, 1,024 duplicates without leaks and invalid/event/
 retired/missing-object checks. Four source-admission tests and three copied
 Crash-driver tests pass. These are checker corrections; no runtime policy changes.
+
+The same full Crash case subsequently passes on physical Windows with the
+current native runtime and 2× graphics arguments: all original Xbox input
+assertions pass, including results at flip 6894, A at 7665 and front-end return
+at 7759. Both the renderer and reached-path audits pass, the owned process
+exits normally with code 0, and all five protected reference-save files remain
+unchanged. The captured original Crash Results menu independently confirms
+Continue is selected. Audio uses the existing real WASAPI output at 35%.
+
+This run does not meet the performance target. Its first-camera diagnostic
+interval (flips 5388–7054, no framebuffer capture in that interval) measures
+about 57.55 simulation steps/frames per second, with executor work averaging
+8.45 ms and reaching 14.90 ms at p99. This is a single unpaired control run,
+not a claimed optimization gain; sustained 60 Hz and sub-10-ms work remain open.
+
+The next Windows CI attempt passes source admission but exposes Python's
+Windows-1252 default when reading UTF-8 C comments. Source readers now explicitly
+use UTF-8, and MSVC fixtures specify `/utf-8`. Thread and GPU-report checkers
+share the strict pinned-byte/CRLF admission rule; their restoration and negative
+controls remain intact. Five source-admission tests pass. The real thread
+staging/cross-build and sanitized GPU-report positive/negative fixtures also
+pass under a deliberately non-UTF-8 local locale. LeakSanitizer is disabled
+only for that restricted local GPU-fixture invocation; address/undefined checks
+remain enabled. Hosted Windows MSVC reruns remain required for current-head CI.

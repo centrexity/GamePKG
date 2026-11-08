@@ -43,8 +43,8 @@ def main():
             raise RuntimeError(output.stdout.decode(errors='replace') + output.stderr.decode(errors='replace'))
 
     stage(original, staged, True)
-    text = staged.read_text()
-    apis = re.findall(r'WINAPI gpw_([A-Za-z0-9_]+)\(', (adapter / 'windows_file.h').read_text())
+    text = staged.read_text(encoding='utf-8')
+    apis = re.findall(r'WINAPI gpw_([A-Za-z0-9_]+)\(', (adapter / 'windows_file.h').read_text(encoding='utf-8'))
     expected = 0
     for api in apis:
         count = len(re.findall(r'\b' + api + r'\(', before.decode()))
@@ -64,7 +64,7 @@ def main():
     assert not rejected.exists() and original.read_bytes() == before and upstream.read_bytes() == checkout_before
     obj = work / 'kernel_file.obj'
     if args.target.endswith('-msvc'):
-        command = ['cl', '/nologo', '/std:c11', '/O2', '/W3', '/c',
+        command = ['cl', '/nologo', '/utf-8', '/std:c11', '/O2', '/W3', '/c',
                    '/I' + str(source / 'src'), '/I' + str(source / 'src/kernel'),
                    str(staged), '/Fo' + str(obj)]
     else:

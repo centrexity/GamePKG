@@ -3,11 +3,11 @@
 No game assets; Python is used only by maintainers/CI, never by players.
 """
 import argparse
-import hashlib
 import os
 from pathlib import Path
 import subprocess
 import tempfile
+from takedawn_pinned_source import canonical_reference_bytes
 
 
 EXPECTED_SOURCE = 'bf62f8787a2e78a0abdb28e10ad8f79c5267dc655491353af231067747ce446e'
@@ -15,19 +15,8 @@ EXPECTED_REVISION = '5ae8ad90d984425e834dee759592c15592679880'
 
 
 def reference_bytes(source, checkout):
-    if hashlib.sha256(checkout).hexdigest() == EXPECTED_SOURCE:
-        return checkout  # Includes the canonical files in an extracted source kit.
-    # A Windows checkout can use CRLF. Stage the canonical pinned Git object,
-    # preserving both the source fingerprint and the checkout's exact bytes.
-    revision = subprocess.check_output(['git', '-C', str(source), 'rev-parse', 'HEAD'], text=True).strip()
-    if revision != EXPECTED_REVISION:
-        raise RuntimeError('Unreviewed original runtime revision')
-    canonical = subprocess.check_output(['git', '-C', str(source), 'show', 'HEAD:src/kernel/kernel_bridge.c'])
-    if hashlib.sha256(canonical).hexdigest() != EXPECTED_SOURCE:
-        raise RuntimeError('Unreviewed kernel bridge source')
-    if checkout != canonical.replace(b'\n', b'\r\n'):
-        raise RuntimeError('Checkout differs beyond Windows line endings')
-    return canonical
+    return canonical_reference_bytes(source, 'src/kernel/kernel_bridge.c', checkout,
+                                     EXPECTED_SOURCE, EXPECTED_REVISION)
 
 
 def main():
@@ -55,18 +44,18 @@ def main():
         assert (result.returncode == 0) == succeeds, result.stderr.decode(errors='replace')
 
     stage(original, staged, True)
-    text = staged.read_text()
+    text = staged.read_text(encoding='utf-8')
     prefix = '/* GamePKG: resolve guest thread objects before host priority calls. */\n'
     assert text.startswith(prefix)
     text = text[len(prefix):]
-    cpu = '#if defined(_WIN32)\n' + (bridge.parent / 'rust-port/native_windows_cpu.inc.h').read_text() + '\n#endif\n'
+    cpu = '#if defined(_WIN32)\n' + (bridge.parent / 'rust-port/native_windows_cpu.inc.h').read_text(encoding='utf-8') + '\n#endif\n'
     assert text.count(cpu) == 1, 'Missing or duplicated reviewed CPU policy'
     text = text.replace(cpu, '')
     role = 'void xbox_log_thread_role(const char *role, uint32_t routine)\n{\n'
     routed_role = role + '#if defined(_WIN32)\n    if (role && !strcmp(role, "nv2a-ack"))\n        gamepkg_windows_pin_executor();\n#endif\n'
     assert text.count(routed_role) == 1, 'Missing or duplicated executor CPU routing'
     text = text.replace(routed_role, role)
-    helper = (bridge / 'thread_priority.inc.h').read_text() + '\n'
+    helper = (bridge / 'thread_priority.inc.h').read_text(encoding='utf-8') + '\n'
     assert text.count(helper) == 1
     text = text.replace(helper, '')
     start = 'static void bridge_KeQueryBasePriorityThread(void)'
@@ -90,7 +79,7 @@ def main():
     exe = work / 'thread-priority.exe'
     fixture = bridge / 'check_thread_priority.c'
     if args.target.endswith('-msvc'):
-        command = ['cl', '/nologo', '/std:c11', '/O2', '/W4', '/WX',
+        command = ['cl', '/nologo', '/utf-8', '/std:c11', '/O2', '/W4', '/WX',
                    str(fixture), '/Fe:' + str(exe)]
     else:
         cc = args.target.replace('pc-windows-gnu', 'w64-mingw32') + '-gcc'
