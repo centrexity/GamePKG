@@ -562,12 +562,29 @@ passing controls, using only copied profile files and the ISO in place.
 
 ## Standalone Windows compiler path
 
-The host now has a [native Windows prepared-source build driver](WINDOWS_BUILD.md)
-and Windows checkpoint backend, with an asset-free end-to-end standalone SDK
-test passing on actual Windows. It compiles Rust and links native C/Rust without
-WSL or Python in the build commands. The Linux checkpoint algorithm is unchanged;
-the current unreleased recipe selects the reviewed v14 source kit. The complete
-prepared game archive also compiles with standalone Windows Rust under Wine.
-Normal Windows app Build/repair passes for v14 with all 487 unit checkpoints
-preserved through repair. Physical original-game Play remains a separate release
-gate.
+The host has a [native Windows prepared-source build driver](WINDOWS_BUILD.md)
+and Windows checkpoint backend. Normal signed-package Build and native CLI/GUI
+Play have been checked on physical Windows, including remembered ISO selection,
+play history and post-play integrity. Players use standalone Windows Rust and
+native build tools; Python, WSL and source conversion are maintainer tasks only.
+The original ISO is opened read-only in place.
+
+The Windows runtime selects a fast logical CPU for its graphics worker on hybrid
+processors, separate from the entire physical core used by the guest threads.
+It preserves the existing scheduling on homogeneous CPUs or when suitable CPU
+information is unavailable. This changes no guest operations, simulation clock,
+process priority or global power settings. The original kernel bridge still
+passes its pinned hash check before the host adapter adds the policy.
+
+Maintainers can check the portable selector on 32-bit and 64-bit hosts and the
+pinned CMake adaptation with:
+
+```sh
+python3 tools/check_takedawn_windows_cpu.py \
+  --kernel-bridge /path/to/xboxrecomp/src/kernel/kernel_bridge.c
+```
+
+These policy and corruption checks supplement full native runtime and gameplay
+qualification. A short driving average near 60 FPS does not prove stable frame
+timing throughout the game. Direct-runtime maintainer tests can leave Windows
+in charge with `GAMEPKG_WINDOWS_EXECUTOR_CPU=off`.
