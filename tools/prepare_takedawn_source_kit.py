@@ -119,6 +119,13 @@ def main():
         patched = output / name
         patched.write_text(patch_kernel(patched.read_text(), implementation.read_text()))
         files[name] = {'sha256': sha(patched), 'bytes': patched.stat().st_size, 'mode': 0o644}
+    from takedawn_windows_cpu import patch_kernel_bridge
+    implementation = project / 'engines/takedawn/rust-port/native_windows_cpu.inc.h'
+    copy(implementation, 'host/engines/takedawn/rust-port/native_windows_cpu.inc.h')
+    name = 'toolkit/src/kernel/kernel_bridge.c'
+    patched = output / name
+    patched.write_text(patch_kernel_bridge(patched.read_text(), implementation.read_text()))
+    files[name] = {'sha256': sha(patched), 'bytes': patched.stat().st_size, 'mode': 0o644}
     # Only generated declarations/stamp are needed by the original runtime.
     # No generated C game bodies are shipped or compiled.
     gen = args.source / 'src/game/recomp/gen'
