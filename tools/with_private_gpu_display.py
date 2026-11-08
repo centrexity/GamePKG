@@ -133,7 +133,10 @@ def main():
         # Keep the caller's systemd/audio environment: existing test commands
         # own their memory scopes and explicitly choose dummy/private audio.
         # These window tests use X11 or launch an explicitly configured child.
-        client_env = dict(os.environ, DISPLAY=":" + display, XAUTHORITY=str(authority))
+        client_env = dict(
+            os.environ, DISPLAY=":" + display, XAUTHORITY=str(authority),
+            GAMEPKG_PRIVATE_DISPLAY_EVIDENCE=str(work),
+        )
         client_env.pop("WAYLAND_DISPLAY", None)
         client_env.pop("WAYLAND_SOCKET", None)
         client_env.pop("SDL_VIDEODRIVER", None)
