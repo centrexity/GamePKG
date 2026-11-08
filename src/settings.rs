@@ -30,11 +30,11 @@ mod native_camera_settings_tests {
     use super::*;
 
     #[test]
-    fn existing_settings_preserve_camera_cadence_and_opt_in_survives_save() {
+    fn full_rate_camera_default_and_explicit_opt_out_survive_save() {
         let old = "format_version=1\naudio_volume=35\nnative_watchdog_seconds=0\n";
         let mut settings: Settings = toml::from_str(old).unwrap();
-        assert!(!settings.native_crash_60fps);
-        settings.native_crash_60fps = true;
+        assert!(settings.native_crash_60fps);
+        settings.native_crash_60fps = false;
         settings.validate().unwrap();
         let restored: Settings = toml::from_str(&toml::to_string(&settings).unwrap()).unwrap();
         assert_eq!(restored, settings);
@@ -93,7 +93,7 @@ impl Default for Settings {
             legacy_execution_ceiling: None,
             tick_deadline_ms: 100,
             native_watchdog_seconds: 0,
-            native_crash_60fps: false,
+            native_crash_60fps: true,
             render_limit_enabled: false,
             render_max_width: 1920,
             render_max_height: 1080,

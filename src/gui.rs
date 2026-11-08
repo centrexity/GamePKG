@@ -1574,7 +1574,7 @@ impl eframe::App for App {
                     ui.label("Off by default. Supported standalone native games write a hang report if frames stop; they keep running. Loading or minimizing can trigger a report. Startup allows at least 60 seconds. Changes apply next launch.");
                     ui.checkbox(&mut self.settings_draft.native_crash_60fps,"60 FPS crash cameras (supported native games)")
                         .on_hover_text("Uses the game's full-rate camera path. Requires sustained 60 FPS to keep normal game speed.");
-                    ui.label("Off by default. Changes apply next launch.");
+                    ui.label("On by default. Changes apply next launch.");
                     ui.checkbox(&mut self.settings_draft.render_limit_enabled,"Limit game render resolution");
                     ui.add_enabled_ui(self.settings_draft.render_limit_enabled,|ui| {
                         ui.horizontal(|ui| {
