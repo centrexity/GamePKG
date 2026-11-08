@@ -13,6 +13,9 @@ pub const MEMORY: u64 = 4 * 1024 * 1024 * 1024;
 pub const KIT_SHA256: &str = "a40e9656476633125d2fd50cc6a71134a453f8942634e34ebef848a215b98a5a";
 pub const KIT_ASSET: &str = "assets/takedawn-source-kit.tar.gz";
 pub const CURRENT_KIT_SHA256: &str =
+    "b9e4907440d62e14aa63133a19a1fcaba2bd97b9b08b9bfe4ffb50a4ad4c6813";
+// Existing event-wake packages remain verifiable without changing creators or saves.
+pub const EVENT_WAKE_KIT_SHA256: &str =
     "7699eb34f1fcfef6d3aa326d1b10a0dae70e33456e6ea3d92f56bdec857a511a";
 // Keep the qualified v23a host-CPU recipe installable and verifiable.
 pub const V23_KIT_SHA256: &str = "29ccc9ed058011d1a69f1326834b93a48e0a75ce01b77c4214f64c29cd705988";
@@ -47,6 +50,7 @@ pub(crate) fn reviewed_kit_digest(bytes: &[u8]) -> Result<String> {
         [
             KIT_SHA256,
             CURRENT_KIT_SHA256,
+            EVENT_WAKE_KIT_SHA256,
             V23_KIT_SHA256,
             V22_KIT_SHA256,
             V18_KIT_SHA256,
