@@ -103,62 +103,91 @@ pub fn build_identity() -> serde_json::Value {
 }
 fn sdk_identity() -> &'static str {
     static ID: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-    ID.get_or_init(|| {
-        use sha2::{Digest, Sha256};
-        let mut hash = Sha256::new();
-        hash.update(
-            concat!(
-                include_str!("build.rs"),
-                include_str!("engine_sources.rs"),
-                include_str!("doom_stdio.c.txt"),
-                include_str!("zelda_stdio.c.txt"),
-                include_str!("guest.rs.txt"),
-                include_str!("engine.rs.txt"),
-                include_str!("pixels.rs.txt"),
-                include_str!("seccomp.rs.txt"),
-                include_str!("../guest_helpers.rs.txt"),
-                include_str!("../network_guest.rs.txt"),
-                include_str!("../doom.rs"),
-                include_str!("../zelda3.rs")
-            )
-            .as_bytes(),
-        );
-        #[cfg(any(target_os = "linux", windows))]
-        {
-            // The generated SDK embeds this value in addition to its source.
-            hash.update(b"native-host-call-limit\0");
-            hash.update((MAX_CALLS_PER_TICK as u64).to_le_bytes());
-        }
-        // Adapter and engine fixes must invalidate native caches even when the
-        // package signature and host version have not changed.
-        #[cfg(windows)]
-        {
-            hash.update(include_str!("windows_build.rs").as_bytes());
-            hash.update(include_str!("../windows_compiler.rs").as_bytes());
-            hash.update(include_str!("../../engines/native/windows-rust.json").as_bytes());
-            hash.update(
-                include_str!("../../engines/takedawn/windows-dependencies.json").as_bytes(),
-            );
-            hash.update(include_str!("../takedawn/windows_build.rs").as_bytes());
-            hash.update(crate::takedawn::build::SDK.as_bytes());
-            for (name, source) in crate::takedawn::build::SOURCES {
-                hash.update(name.as_bytes());
-                hash.update(source.as_bytes());
-            }
-        }
-        #[cfg(any(target_os = "linux", windows))]
-        for (name, bytes) in crate::doom_sources::FILES
-            .iter()
-            .chain(crate::zelda3_sources::FILES.iter())
-        {
-            hash.update((name.len() as u64).to_le_bytes());
-            hash.update(name.as_bytes());
-            hash.update((bytes.len() as u64).to_le_bytes());
-            hash.update(bytes);
-        }
-        hex::encode(hash.finalize())[..16].to_owned()
-    })
+    ID.get_or_init(|| sdk_identity_for_takedawn_kit(crate::takedawn::CURRENT_KIT_SHA256))
 }
+fn sdk_identity_for_takedawn_kit(takedawn_kit: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hash = Sha256::new();
+    hash.update(
+        concat!(
+            include_str!("build.rs"),
+            include_str!("engine_sources.rs"),
+            include_str!("doom_stdio.c.txt"),
+            include_str!("zelda_stdio.c.txt"),
+            include_str!("guest.rs.txt"),
+            include_str!("engine.rs.txt"),
+            include_str!("pixels.rs.txt"),
+            include_str!("seccomp.rs.txt"),
+            include_str!("../guest_helpers.rs.txt"),
+            include_str!("../network_guest.rs.txt"),
+            include_str!("../doom.rs"),
+            include_str!("../zelda3.rs")
+        )
+        .as_bytes(),
+    );
+    #[cfg(any(target_os = "linux", windows))]
+    {
+        // The generated SDK embeds this value in addition to its source.
+        hash.update(b"native-host-call-limit\0");
+        hash.update((MAX_CALLS_PER_TICK as u64).to_le_bytes());
+    }
+    // Adapter and engine fixes must invalidate native caches even when the
+    // package signature and host version have not changed.
+    #[cfg(windows)]
+    {
+        hash.update(include_str!("windows_build.rs").as_bytes());
+        hash.update(include_str!("../windows_compiler.rs").as_bytes());
+        hash.update(include_str!("../../engines/native/windows-rust.json").as_bytes());
+        hash.update(include_str!("../../engines/takedawn/windows-dependencies.json").as_bytes());
+        hash.update(include_str!("../takedawn/windows_build.rs").as_bytes());
+        hash.update(crate::takedawn::build::SDK.as_bytes());
+        for (name, source) in crate::takedawn::build::SOURCES {
+            hash.update(name.as_bytes());
+            hash.update(source.as_bytes());
+        }
+    }
+    #[cfg(any(target_os = "linux", windows))]
+    for (name, bytes) in crate::doom_sources::FILES
+        .iter()
+        .chain(crate::zelda3_sources::FILES.iter())
+    {
+        hash.update((name.len() as u64).to_le_bytes());
+        hash.update(name.as_bytes());
+        hash.update((bytes.len() as u64).to_le_bytes());
+        hash.update(bytes);
+    }
+    // Builtin Takedawn cache filenames include its admitted source kit.
+    // Pair checks must cover that recipe even when the generic SDK and
+    // app version are unchanged, or CLI Build and GUI Ready can disagree.
+    hash.update(b"takedawn-runtime-kit\0");
+    hash.update(takedawn_kit.as_bytes());
+    #[cfg(target_os = "linux")]
+    {
+        hash.update(include_str!("../takedawn/build.rs").as_bytes());
+        hash.update(
+            include_str!("../../engines/takedawn/rust-port/rustc-cache-linux-v1.rs").as_bytes(),
+        );
+    }
+    hex::encode(hash.finalize())[..16].to_owned()
+}
+#[cfg(test)]
+mod recipe_identity_tests {
+    #[test]
+    fn source_kit_changes_invalidate_the_app_native_recipe_identity() {
+        let current = super::sdk_identity_for_takedawn_kit(crate::takedawn::CURRENT_KIT_SHA256);
+        let previous = super::sdk_identity_for_takedawn_kit(crate::takedawn::V23_KIT_SHA256);
+        assert_ne!(
+            current, previous,
+            "same-version CLI/GUI entries must distinguish Takedawn kits"
+        );
+        assert_eq!(super::sdk_identity(), current);
+        assert_eq!(
+            super::build_identity()["native_sdk"].as_str(),
+            Some(current.as_str())
+        );
+    }
+}
+
 pub fn path_for_digest(root: &Path, digest: &str) -> PathBuf {
     root.join("builds")
         .join(digest)

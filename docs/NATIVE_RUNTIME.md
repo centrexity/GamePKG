@@ -16,7 +16,7 @@ builder, relocated-entry check and release packager reject such pairs. The hidde
 the version, platform, architecture and native recipe without opening a window or
 loading player settings. `BUILD.json` records that matching identity and the
 packager verifies the copied executable hashes against the validated pair.
-This is a compatibility check, not a creator signature or source provenance proof.
+This is a compatibility check, not a creator signature or source provenance proof. The fingerprint includes the admitted Takedawn source-kit revision and the platform builder, so identical app versions cannot hide different builtin engine recipes.
 
 The ordinary checked-source native worker supports Linux and Windows x86/x64.
 Windows uses managed, checksum-verified Rust 1.89.0 and GNU Binutils 2.42; both
