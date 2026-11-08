@@ -13,6 +13,9 @@ pub const MEMORY: u64 = 4 * 1024 * 1024 * 1024;
 pub const KIT_SHA256: &str = "a40e9656476633125d2fd50cc6a71134a453f8942634e34ebef848a215b98a5a";
 pub const KIT_ASSET: &str = "assets/takedawn-source-kit.tar.gz";
 pub const CURRENT_KIT_SHA256: &str =
+    "4d84d90bf41f9d189782b3a49da4ce6f16300d3347bdefd42edfacf01d7bf2b0";
+// Keep the earlier 2x presentation recipe verifiable after the defaults update.
+pub const PRESENTATION_KIT_SHA256: &str =
     "cda3d6717f493cee98a2a32a0a39e054b9d6723ac8be690f6ed7aa0374c84e31";
 // Keep existing quiet-renderer packages verifiable across the presentation update.
 pub const QUIET_TRACE_KIT_SHA256: &str =
@@ -54,6 +57,7 @@ pub(crate) fn reviewed_kit_digest(bytes: &[u8]) -> Result<String> {
         [
             KIT_SHA256,
             CURRENT_KIT_SHA256,
+            PRESENTATION_KIT_SHA256,
             QUIET_TRACE_KIT_SHA256,
             EVENT_WAKE_KIT_SHA256,
             V23_KIT_SHA256,
