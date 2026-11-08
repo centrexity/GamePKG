@@ -89,6 +89,23 @@ use this setting. This path advances one simulation step per frame and needs
 sustained 60 FPS to preserve normal game speed. Leave it off if the hardware
 cannot keep that pace.
 
+Maintainers can check the Windows command-handoff overlays without game assets:
+`python3 tools/check_takedawn_kick_handoff.py --toolkit /path/to/pinned/xboxrecomp`.
+This stages the pinned sources, rejects corrupt inputs and source/output aliases,
+and compiles the actual acknowledgement blocks for sanitized 64-bit and native
+32-bit regression checks. The negative control reproduces a flush acknowledged
+before a newly published command segment was consumed; the staged block keeps
+the flush pending until that segment has been scanned. The Linux memory overlay
+retains its previous behavior.
+
+Add `--windows-output /path/to/fixtures` to cross-build the Win32 handoff fixture
+from the actual staged helpers. Run `takedawn-kick-wake-fixture.exe` on Windows
+to exercise 20,000 event handoffs and 2,000 timer-only handoffs. Run it again with
+arguments `1`, `2`, and `3` in separate processes to force timer creation,
+timer arming, and wait failures respectively. These media-free checks verify
+ordering, early/repeated notifications and fallback progress; native race,
+frame-time, save/reload and physical input/audio checks remain separate.
+
 The optional **Native frame-stall watchdog** in Settings is off by default,
 including for existing settings files. In the reviewed standalone Takedawn
 runtime it watches actual frame flips and writes a hang report under the game's

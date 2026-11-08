@@ -13,7 +13,9 @@ pub const MEMORY: u64 = 4 * 1024 * 1024 * 1024;
 pub const KIT_SHA256: &str = "a40e9656476633125d2fd50cc6a71134a453f8942634e34ebef848a215b98a5a";
 pub const KIT_ASSET: &str = "assets/takedawn-source-kit.tar.gz";
 pub const CURRENT_KIT_SHA256: &str =
-    "29ccc9ed058011d1a69f1326834b93a48e0a75ce01b77c4214f64c29cd705988";
+    "7699eb34f1fcfef6d3aa326d1b10a0dae70e33456e6ea3d92f56bdec857a511a";
+// Keep the qualified v23a host-CPU recipe installable and verifiable.
+pub const V23_KIT_SHA256: &str = "29ccc9ed058011d1a69f1326834b93a48e0a75ce01b77c4214f64c29cd705988";
 // Keep the compacted v22 recipe installable and verifiable.
 pub const V22_KIT_SHA256: &str = "6fd3e9edc6356c0e60d10fd915974c1f8010b152eee9fea32a21d8a8c35e25ef";
 // Keep the previously qualified v18 recipe installable and verifiable.
@@ -27,6 +29,7 @@ pub const LEGACY_WINDOWS_V15_KIT_SHA256: &str =
 // v16, v17 and v18 change only host runtime adapters. All prepared Rust sources,
 // support files and ABI remain byte-identical to v15. v22 compacts generated
 // control flow without changing the ABI; v23a changes only the host CPU adapter.
+// The current handoff update changes only host wake/timer overlays.
 // Object keys include the exact source
 // hash, so keep the verified namespace and reuse unchanged units; old objects
 // remain available. Artifact admission still uses CURRENT_KIT_SHA256.
@@ -44,6 +47,7 @@ pub(crate) fn reviewed_kit_digest(bytes: &[u8]) -> Result<String> {
         [
             KIT_SHA256,
             CURRENT_KIT_SHA256,
+            V23_KIT_SHA256,
             V22_KIT_SHA256,
             V18_KIT_SHA256,
             V17_KIT_SHA256,
