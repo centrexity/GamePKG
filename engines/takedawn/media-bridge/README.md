@@ -360,3 +360,5 @@ Each run compares 12,583,128 timestamp/frequency combinations, including negativ
 timestamps and unsigned wrap boundaries, and must catch a deliberately incorrect
 conversion. These checks establish exactness; actual gameplay and frame timing
 need separate qualification. Python is used only by this maintainer check.
+
+The native SDL window supports Alt+Enter (either Alt key, Return or keypad Enter) for borderless fullscreen. Events are consumed before game and overlay input; repeats and the matching key release cannot activate a menu item. Focus loss clears shortcut state. The shared settings adapter keeps the fullscreen state in sync with the overlay, including when the initial mode comes from signed launch options. Existing game builds require an updated package and rebuild for this runtime change.

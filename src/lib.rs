@@ -13,6 +13,7 @@ pub mod audio_voices;
 #[cfg(feature = "gui")]
 pub mod gui;
 pub mod manifest;
+pub mod launch_options;
 #[doc(hidden)]
 pub mod memory_budget;
 #[doc(hidden)]

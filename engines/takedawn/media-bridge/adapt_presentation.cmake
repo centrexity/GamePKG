@@ -44,6 +44,8 @@ elseif(KIND STREQUAL "settings")
     gamepkg_setting_default("graphics.sharpen" 0 0.10)
     gamepkg_setting_default("graphics.lod_bias" 0 1)
     gamepkg_setting_default("graphics.ui_scale" 0 1)
+    # A launch mode is the initial state, not a ban on the desktop shortcut.
+    string(APPEND source "\nvoid gamepkg_ToggleFullscreen(void)\n{\n    xs_setting *setting = &s_set[XS_DISPLAY_FULLSCREEN];\n    const int locked = setting->locked;\n    setting->locked = 0;\n    xbox_SettingSet(XS_DISPLAY_FULLSCREEN, setting->value == 0.0 ? 1.0 : 0.0);\n    setting->locked = locked;\n}\n")
 else()
     message(FATAL_ERROR "Unsupported presentation source kind")
 endif()
