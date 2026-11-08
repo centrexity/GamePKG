@@ -2275,3 +2275,37 @@ and B decoded keys, their scaled GPU uploads, and full local pixel checksums;
 all five protected reference files remain unchanged. The captured Results
 frame shows the original glossy red B and green A. These debug-traced checks
 verify artwork and controls, not sustained frame-time performance.
+
+### Original-art frame-work breakdown
+
+A subsequent analysis of the completed original-art Windows trace selects only
+the first Crash camera (flips 5489–7390, 1,902 frames), excluding the results
+replay. The native log records no framebuffer readbacks in this interval. It
+measures 57.91 simulation steps/frames per second: frame intervals average
+17.27 ms, with 23.18 ms p99 and 25.75 ms maximum. Executor work averages
+8.18 ms, with 12.83 ms p99; backend draw callbacks average 4.49 ms. Vulkan
+timestamp intervals average 5.70 ms, with 9.49 ms p99 and 11.05 ms maximum.
+There are about 1,228 draws and 16 render passes per frame. Submission, queue
+lock and polling costs are small in this selected interval, and no report or
+readback submissions are recorded. These overlapping stage measurements must
+not be added together as independent frame costs.
+
+This is an unpaired, debug-traced diagnostic on Intel UHD Graphics at the
+default 2× quality settings, not evidence of an improvement over another
+recipe. It confirms that reducing resolution alone would not establish the
+requested steady 60 Hz / sub-10-ms frame-work target. CPU command processing
+and title/executor scheduling need further profiling; GPU work also exceeds
+10 ms in the worst recorded frame. The target remains unmet.
+
+A fresh private CPU-bucket diagnostic also completes every original Xbox Crash
+control assertion, Continue/front-end return, Vulkan/reached-path audits and
+normal exit 0. It uses the same original-art native executable and real WASAPI
+35%, but enables a 2-ms thread sampler. Its timings are diagnostic only. In
+the first camera (flips 5371–7547), guest-main samples average 3.91 ms in game
+code, 0.83 ms in D3D code and 12.17 ms in the generic host bucket per frame.
+The Windows sampler cannot unwind callers and recognizes a blocked thread
+only when consecutive PC/cycle observations satisfy its heuristic; the host
+bucket includes native waits. It must not be treated as 12.17 ms of optimizable
+active CPU work. Caller-level host/wait attribution is the next profiling gap.
+An earlier user-interrupted attempt is retained separately and excluded from
+completed-run results.
