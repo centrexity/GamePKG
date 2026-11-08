@@ -99,6 +99,9 @@ awk '
     { print }
     END { if (n != 2) exit 1 }
 ' "$task_source/tools/headless/controls_scene.sh" > "$task_state/driver/tools/headless/controls_scene.sh"
+python3 "$(dirname -- "$0")/prepare_takedawn_pause_menu.py" \
+    "$task_state/driver/tools/headless/scene_lib.sh" \
+    "$task_state/driver/tools/headless/controls_scene.sh"
 if [[ "$task_driver" == race_drive.sh ]]; then
     # Keep the complete original AI/race/results flow, without changing game
     # state, unlocking tracks, shortening laps or replacing the finish check.
@@ -118,7 +121,8 @@ wait_count '\[AUTOPILOT\] engaged' 1
 engaged=$(anchor '\[AUTOPILOT\] engaged' 1)
 SCENE_TIMEOUT=360 wait_flip $(( engaged + 15000 ))
 press start:300 120
-for item in 1 2 3 4; do press down:150 45; done
+gamepkg_quit_steps=$(scene_pause_quit_downs)
+for (( item=0; item<gamepkg_quit_steps; item++ )); do press down:150 45; done
 press a:300 180
 press up:200 60
 press a:300 180
