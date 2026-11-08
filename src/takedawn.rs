@@ -13,6 +13,9 @@ pub const MEMORY: u64 = 4 * 1024 * 1024 * 1024;
 pub const KIT_SHA256: &str = "a40e9656476633125d2fd50cc6a71134a453f8942634e34ebef848a215b98a5a";
 pub const KIT_ASSET: &str = "assets/takedawn-source-kit.tar.gz";
 pub const CURRENT_KIT_SHA256: &str =
+    "76594541d699d88e7d04279e669b799432b02776d8c7f11253fcf6daf595e693";
+// Preserve packages using the original Xbox prompt defaults before the clipping fix.
+pub const ORIGINAL_PROMPT_KIT_SHA256: &str =
     "400f7cf7986b4f59658f4d8f78f54dc9065385a0a532c7d1e286ce7a624b0a12";
 // First native-argument recipe remains verifiable and launch-compatible.
 pub const LAUNCH_ARGS_KIT_SHA256: &str =
@@ -66,6 +69,7 @@ pub(crate) fn reviewed_kit_digest(bytes: &[u8]) -> Result<String> {
         [
             KIT_SHA256,
             CURRENT_KIT_SHA256,
+            ORIGINAL_PROMPT_KIT_SHA256,
             LAUNCH_ARGS_KIT_SHA256,
             FULLSCREEN_KIT_SHA256,
             ENHANCED_DEFAULTS_KIT_SHA256,
@@ -265,8 +269,12 @@ fn play_session(
     let launch = crate::launch_options::effective(root, &manifest)?;
     if frames.is_none() && (launch.is_some() || !launch_overrides.is_empty()) {
         ensure!(
-            [CURRENT_KIT_SHA256, LAUNCH_ARGS_KIT_SHA256]
-                .contains(&reviewed_kit_digest(&package.read(KIT_ASSET)?)?.as_str()),
+            [
+                CURRENT_KIT_SHA256,
+                ORIGINAL_PROMPT_KIT_SHA256,
+                LAUNCH_ARGS_KIT_SHA256,
+            ]
+            .contains(&reviewed_kit_digest(&package.read(KIT_ASSET)?)?.as_str()),
             "Update this game package and rebuild it to use graphics launch arguments."
         );
     }

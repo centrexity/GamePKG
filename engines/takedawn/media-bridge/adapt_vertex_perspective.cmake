@@ -1,0 +1,25 @@
+# XDK's screen-space epilogue uses RCC, which clamps its reciprocal at
+# 1.84467e19. Undoing that epilogue with W=1 for a zero-W vertex produces
+# enormous clip coordinates and unstable clipping. Use the signed reciprocal
+# of the same ceiling only inside that near-zero interval. Preserve all other W.
+if(NOT DEFINED INPUT OR NOT DEFINED OUTPUT)
+    message(FATAL_ERROR "Set INPUT and OUTPUT for vertex perspective adaptation")
+endif()
+get_filename_component(input_real "${INPUT}" REALPATH)
+get_filename_component(output_real "${OUTPUT}" REALPATH)
+if(input_real STREQUAL output_real)
+    message(FATAL_ERROR "Never overwrite pinned vertex shader source")
+endif()
+file(SHA256 "${INPUT}" hash)
+if(NOT hash STREQUAL "6d19b9a389f3889770005c90388eb1cb71857d8ed154e75f9f82fb8cb3aa29ce")
+    message(FATAL_ERROR "Unreviewed vertex shader source")
+endif()
+file(READ "${INPUT}" source)
+set(before "    float pw = (oPos.w == 0.0) ? 1.0 : oPos.w;")
+set(after "    float pw = (abs(oPos.w) < (1.0 / 1.84467e19)) ? uintBitsToFloat((floatBitsToUint(oPos.w) & 0x80000000u) | floatBitsToUint(1.0 / 1.84467e19)) : oPos.w;")
+string(FIND "${source}" "${before}" location)
+if(location LESS 0)
+    message(FATAL_ERROR "Pinned perspective reconstruction site is missing")
+endif()
+string(REPLACE "${before}" "${after}" adapted "${source}")
+file(CONFIGURE OUTPUT "${OUTPUT}" CONTENT "${adapted}" @ONLY NEWLINE_STYLE UNIX)
