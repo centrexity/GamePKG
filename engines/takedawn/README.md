@@ -5,6 +5,16 @@ complete generated C game functions into prepared Rust before players receive
 them. Players compile that Rust locally; the selected supported ISO supplies
 assets in place. Python and C2Rust are maintainer preparation tools.
 
+The desktop graphics policy uses the existing renderer and settings overlay:
+2× internal resolution, 16:9, widescreen HUD correction, SMAA, 10% sharpening,
+automatic texture LOD sharpening, and 2× menu/HUD texture upscaling. Explicit
+saved settings and environment overrides retain precedence. Reset uses these
+defaults; headless maintainer runs retain their original graphics policy.
+`tools/check_takedawn_presentation_defaults.py --toolkit <pinned-toolkit>`
+checks the actual settings reader/writer, precedence, reset and source guards.
+The performance target is under 10 ms of frame work while gameplay remains
+paced at 60 FPS (16.67 ms between frames); it is not a qualification claim.
+
 The current unreleased recipe is 0.1.6/v17 and requires the 0.1.19 development
 app. It retains 24,003 prepared Rust game functions across 487 units and 24,035
 native exports. Linux x64 and standalone Windows x64 tools compile and link the
