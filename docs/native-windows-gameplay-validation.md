@@ -2309,3 +2309,37 @@ bucket includes native waits. It must not be treated as 12.17 ms of optimizable
 active CPU work. Caller-level host/wait attribution is the next profiling gap.
 An earlier user-interrupted attempt is retained separately and excluded from
 completed-run results.
+
+### Current native wait callers and minimal-trace control
+
+The current original-art executable is subsequently traced with the previously
+known-chain-qualified saved-stack unwinder. It snapshots only the owned guest
+main/graphics threads, resumes them before unwinding, and reads a bounded saved
+stack plus loaded modules. The selected first camera has 852 main-thread and
+851 graphics-thread observations. Main-thread PCs land in the Windows
+condition-variable wait in 595 samples; unwound callers identify the original
+lowered graphics-completion poll through `xbox_SpinWait` and `sub_00351BD0`.
+On the graphics thread, 202 PCs are in the worker's event/timer idle nap and
+133 in vblank waiting; active observations include the Intel Vulkan driver
+(73), command scanning (72), texture hashing (60) and vertex gathering (55).
+These are sample counts, not exclusive elapsed costs or proof that a wait
+should be removed. Original completion ordering remains required.
+
+The diagnostic completes the original Crash assertions and menu return, and
+both game and sampler exit 0. Snapshot stops have a 90.75-us median, 1.61-ms
+p99 and 19.26-ms maximum, so its frame cadence cannot qualify performance.
+A separate fresh-profile run disables detailed frametime, GPU timestamp and
+stack sampling while retaining only control/flip markers and the pace log.
+Its first Crash camera (flips 5383–7284, 1,902 frames) still averages 57.06 Hz,
+with 30.55-ms p99 pace intervals and 64.94-ms maximum. No framebuffer captures
+occur inside that camera. This single unpaired run shows that removing the
+detailed instrumentation does not establish steady 60 Hz; it does not measure
+sub-10-ms frame work or prove instrumentation has no cost. Both runs pass
+Vulkan/reached-path checks, normal exit, and all original Crash controls; the
+five protected reference saves remain unchanged.
+
+An exact scalar fourfold-unrolling texture-hash experiment also passes 163,840
+local alignment/FP-mode cases and protected-page boundary checks. Its short
+local benchmark shows ratios close to parity across sizes, without a convincing
+gain. It is not integrated into the native recipe. No gameplay, rendering or
+completion behavior is removed in response to these diagnostic results.
