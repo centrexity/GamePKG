@@ -13,6 +13,9 @@ pub const MEMORY: u64 = 4 * 1024 * 1024 * 1024;
 pub const KIT_SHA256: &str = "a40e9656476633125d2fd50cc6a71134a453f8942634e34ebef848a215b98a5a";
 pub const KIT_ASSET: &str = "assets/takedawn-source-kit.tar.gz";
 pub const CURRENT_KIT_SHA256: &str =
+    "cda3d6717f493cee98a2a32a0a39e054b9d6723ac8be690f6ed7aa0374c84e31";
+// Keep existing quiet-renderer packages verifiable across the presentation update.
+pub const QUIET_TRACE_KIT_SHA256: &str =
     "b9e4907440d62e14aa63133a19a1fcaba2bd97b9b08b9bfe4ffb50a4ad4c6813";
 // Existing event-wake packages remain verifiable without changing creators or saves.
 pub const EVENT_WAKE_KIT_SHA256: &str =
@@ -32,7 +35,8 @@ pub const LEGACY_WINDOWS_V15_KIT_SHA256: &str =
 // v16, v17 and v18 change only host runtime adapters. All prepared Rust sources,
 // support files and ABI remain byte-identical to v15. v22 compacts generated
 // control flow without changing the ABI; v23a changes only the host CPU adapter.
-// The current handoff update changes only host wake/timer overlays.
+// The current update changes host presentation defaults/title and exact Windows
+// clock conversion. Prepared Rust game units and their ABI remain unchanged.
 // Object keys include the exact source
 // hash, so keep the verified namespace and reuse unchanged units; old objects
 // remain available. Artifact admission still uses CURRENT_KIT_SHA256.
@@ -50,6 +54,7 @@ pub(crate) fn reviewed_kit_digest(bytes: &[u8]) -> Result<String> {
         [
             KIT_SHA256,
             CURRENT_KIT_SHA256,
+            QUIET_TRACE_KIT_SHA256,
             EVENT_WAKE_KIT_SHA256,
             V23_KIT_SHA256,
             V22_KIT_SHA256,
