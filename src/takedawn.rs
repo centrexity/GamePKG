@@ -13,6 +13,9 @@ pub const MEMORY: u64 = 4 * 1024 * 1024 * 1024;
 pub const KIT_SHA256: &str = "a40e9656476633125d2fd50cc6a71134a453f8942634e34ebef848a215b98a5a";
 pub const KIT_ASSET: &str = "assets/takedawn-source-kit.tar.gz";
 pub const CURRENT_KIT_SHA256: &str =
+    "400f7cf7986b4f59658f4d8f78f54dc9065385a0a532c7d1e286ce7a624b0a12";
+// First native-argument recipe remains verifiable and launch-compatible.
+pub const LAUNCH_ARGS_KIT_SHA256: &str =
     "3157cadcbc5b7c397238821035d1b172cd4edebbcb4ce2bf2f6bca9b038e4516";
 // Keep the earlier fullscreen/launch-options source recipe verifiable.
 pub const FULLSCREEN_KIT_SHA256: &str =
@@ -63,6 +66,7 @@ pub(crate) fn reviewed_kit_digest(bytes: &[u8]) -> Result<String> {
         [
             KIT_SHA256,
             CURRENT_KIT_SHA256,
+            LAUNCH_ARGS_KIT_SHA256,
             FULLSCREEN_KIT_SHA256,
             ENHANCED_DEFAULTS_KIT_SHA256,
             PRESENTATION_KIT_SHA256,
@@ -261,7 +265,8 @@ fn play_session(
     let launch = crate::launch_options::effective(root, &manifest)?;
     if frames.is_none() && (launch.is_some() || !launch_overrides.is_empty()) {
         ensure!(
-            reviewed_kit_digest(&package.read(KIT_ASSET)?)? == CURRENT_KIT_SHA256,
+            [CURRENT_KIT_SHA256, LAUNCH_ARGS_KIT_SHA256]
+                .contains(&reviewed_kit_digest(&package.read(KIT_ASSET)?)?.as_str()),
             "Update this game package and rebuild it to use graphics launch arguments."
         );
     }

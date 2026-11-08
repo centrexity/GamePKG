@@ -46,6 +46,13 @@ class HudAuditTests(unittest.TestCase):
             with self.subTest(lines=lines), self.assertRaises(ValueError):
                 self.check(lines)
 
+    def test_warm_replaced_xbox_art_cannot_claim_original_pixels(self):
+        # The compressed guest texture keeps the same identity even when a
+        # replacement sheet is used. A scale number alone cannot identify it.
+        line = '[UISCALE] tex 9181d035e5fbb70e fmt 0x0f 128x64 levels 1 use 1 scale 2 flip 100'
+        with self.assertRaisesRegex(ValueError, 'decoded-key upload'):
+            audit.audit([line], self.cache, 'xbox-buttons', 2)
+
     def test_cache_corruption_and_truncation_are_rejected(self):
         for content in [self.header + self.payload[:-1], self.header + self.payload + b'X',
                         bytes([self.header[0] ^ 1]) + self.header[1:] + self.payload,

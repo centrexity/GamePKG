@@ -15,7 +15,7 @@ checks the actual settings reader/writer, precedence, reset and source guards.
 The performance target is under 10 ms of frame work while gameplay remains
 paced at 60 FPS (16.67 ms between frames); it is not a qualification claim.
 
-The current unreleased recipe is 0.1.13 and requires the 0.1.24 development
+The current unreleased recipe is 0.1.14 and requires the 0.1.24 development
 app. It retains 24,003 prepared Rust game functions across 487 units and 24,035
 native exports. Linux x64 and standalone Windows x64 tools compile and link the
 native game; players need neither Python nor WSL. The normal signed Linux
@@ -821,12 +821,19 @@ forwards the resolved choices as native argument/value pairs. Per-launch flags
 win over saved host choices and signed defaults without changing either file.
 Older source recipes need updating and rebuilding before using these flags.
 
-The reviewed source kit includes Kenney Input Prompts 1.5A (CC0), its original
-license, selected SVG files and provenance hashes. Maintainers render the art
-before packaging; players need no SVG renderer or Python. Original button
-positions, PS2 driving remapping, controller families and keyboard controls are
-preserved. PlayStation/DualSense retain the existing Takedawn artwork because
-this Kenney download does not include their symbols.
+Original Xbox prompts are the default. Their pixels come from the selected
+ISO and pass unchanged into the existing local menu/HUD scaler; neither the
+original nor the enlarged game artwork is packaged. **Input → Button prompts**
+in the native settings remains available for Auto, modern Xbox and other
+controller choices. Saved choices are retained. Modern Xbox keeps the original
+A/B/X/Y face images while adapting its shoulder labels.
+
+The reviewed source kit also includes Kenney Input Prompts 1.5A (CC0) for
+alternate controller/keyboard families, with its original license, selected
+vectors and provenance hashes. Xbox originals bypass that authored replacement
+path in the renderer and settings overlay. PlayStation/DualSense retain the
+existing Takedawn drawings. The PS2 driving remap and other input mappings are
+unchanged; players need no SVG renderer or Python.
 
 Both internal resolution and menu/HUD scaling support 3×; defaults remain 2×.
 Authored prompts have 1×/2×/3×/4× images. Other 3× menu/HUD artwork uses the

@@ -75,7 +75,23 @@ int main(int argc, char **argv)
     assert(argc == 2);
     input_render_agree();
     bo3_glyphs_init();
-    assert(registered_count == 4 && listener && atomic_load(&selected) == 30);
+    assert(registered_count == 4 && listener && atomic_load(&selected) == 0);
+    /* The default Xbox path must retain the title's unmodified pixels.
+     * Modern Xbox may only alter its original lower-row shoulder labels. */
+    for (unsigned tex = 0; tex < 4; tex++) {
+        same_variant(&registered[tex].variants[XBOX_GLYPH_SET_XBOX_MODERN - 1],
+                     &k_tex[tex].variants[XBOX_GLYPH_SET_XBOX_MODERN - 1]);
+        assert(!gp_art_pixels[29][tex][0]);
+        assert(!gp_art_pixels[XBOX_GLYPH_SET_XBOX_MODERN - 1][tex][0]);
+    }
+    assert(!registered[1].variants[XBOX_GLYPH_SET_XBOX_MODERN - 1].image);
+    assert(!registered[2].variants[XBOX_GLYPH_SET_XBOX_MODERN - 1].image);
+    for (unsigned r = 0; r < registered[0].variants[XBOX_GLYPH_SET_XBOX_MODERN - 1].n_rects; r++)
+        assert(registered[0].variants[XBOX_GLYPH_SET_XBOX_MODERN - 1].rects[r].y >= 29);
+    uint32_t original_sentinel = 0x12345678;
+    assert(!gamepkg_prompt_sheet(XBOX_GLYPH_SET_XBOX, &original_sentinel));
+    assert(!gamepkg_prompt_sheet(XBOX_GLYPH_SET_XBOX_MODERN, &original_sentinel));
+    assert(original_sentinel == 0x12345678);
     unsigned checks = 0;
     for (int set = 0; set < GP_GLYPH_SETS; set++) {
         gamepkg_glyphs_scene(0);
@@ -134,7 +150,7 @@ int main(int argc, char **argv)
             free(out); vector_images++;
         }
     }
-    assert(vector_images >= 252);
+    assert(vector_images == 222); /* Xbox originals and their unchanged d-pads use the local scaler. */
     uint32_t unrelated[128 * 64]; memset(unrelated, 0x77, sizeof unrelated);
     uint32_t untouched = 0x12345678;
     assert(!gamepkg_prompt_scale(unrelated, 128, 64, 2, &untouched));

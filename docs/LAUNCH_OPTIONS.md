@@ -14,7 +14,7 @@ widescreen_hud = true
 menu_hud_scale = 2
 ```
 
-These are the agreed Burnout defaults: windowed, 16:9, built-in 2× internal resolution, SMAA, automatic texture LOD, 10% sharpening, widescreen HUD correction, and 2× menu/HUD upscaling. Internal resolution uses the original renderer. Menu/HUD 3× extends its existing scaler; authored input prompts are rendered from vectors at each supported scale.
+These are the agreed Burnout defaults: windowed, 16:9, built-in 2× internal resolution, SMAA, automatic texture LOD, 10% sharpening, widescreen HUD correction, and 2× menu/HUD upscaling. Original Xbox button artwork is read from the ISO and upscaled locally by default. Input → Button prompts in the native settings selects other prompt layouts and retains saved choices. Internal resolution uses the original renderer. Menu/HUD 3× extends its existing scaler; authored input prompts are rendered from vectors at each supported scale.
 
 Supported values:
 

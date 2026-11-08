@@ -13,6 +13,10 @@ import struct
 
 # Original compressed texture hash, decoded scaler key, original dimensions.
 ICONS = {
+    'xbox-buttons': ('9181d035e5fbb70e', '8f2291db742eda48', 128, 64),
+    'xbox-a': ('efb4a0ec2d843383', '20583fd66d6ff497', 32, 32),
+    'xbox-b': ('c883b79bdaf9ba47', '0090496a0dae87e4', 32, 32),
+    'xbox-dpad': ('21d72a610f043563', 'd4dd6b05cb41e356', 32, 16),
     'crashbreaker': ('4f44eea46b9eec9e', '948b46bd016af9d0', 128, 128),
     'crash-boost': ('1997e9cd32ee01c4', '03ecefb7e803c360', 128, 128),
     'crash-x2': ('3efb72afd008d804', '68ac5e67c647f7c6', 128, 128),
@@ -47,6 +51,7 @@ def audit(lines, cache_dir, icon, factor):
                          + r': scaled texture in, [\d.]+ ms on the render thread, flip (\d+)\s*$')
     first_use = None
     uploaded_at = None
+    decoded_upload = False
     for line in lines:
         match = use_re.search(line)
         if match:
@@ -59,8 +64,11 @@ def audit(lines, cache_dir, icon, factor):
         match = swap_re.search(line)
         if match and first_use is not None and int(match[1]) >= first_use:
             uploaded_at = int(match[1])
+            decoded_upload = True
     if first_use is None or uploaded_at is None:
         raise ValueError(f'{icon}: no observed 2D bind and matching scaled GPU image')
+    if icon.startswith('xbox-') and not decoded_upload:
+        raise ValueError(f'{icon}: authentic Xbox artwork requires an observed decoded-key upload; use a fresh renderer trace')
     cache = cache_dir / f'{decoded}_{width}x{height}_x{factor}_sx2.tsc'
     expected_bytes = width * height * factor * factor * 4
     if cache.stat().st_size != HEADER.size + expected_bytes:
