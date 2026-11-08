@@ -2343,3 +2343,34 @@ local alignment/FP-mode cases and protected-page boundary checks. Its short
 local benchmark shows ratios close to parity across sizes, without a convincing
 gain. It is not integrated into the native recipe. No gameplay, rendering or
 completion behavior is removed in response to these diagnostic results.
+
+### Reference-frame visual auditing
+
+The depth investigation exposed a limitation in adjacent-frame comparisons:
+a missing patch persisting for two frames has an identical immediate neighbor,
+so requiring it to differ from both neighbors undercounts the change. The
+maintainer tool `tools/analyze_takedawn_frame_region.py` measures every selected
+RGB region against an explicitly selected reference instead. It reports pixel
+differences and white/magenta counts without attributing them to a texture or
+claiming a fix. Image dimensions and region boundaries must match; camera
+motion, reference validity and diagnostic effects require independent review.
+Pillow is a maintainer CLI dependency; players need neither Pillow nor Python.
+
+Four asset-free regression tests cover a two-frame disappearance/recovery,
+threshold/tint measurements, incomplete RGB data, and out-of-image regions.
+The actual retained Linux probe frame pair also registers against the selected
+reference. These intentionally perturbed frames are diagnostic evidence, not
+proof of an untreated Linux flicker or a production depth-offset correction.
+
+The next private Windows native final-frame capture tests the two nearby
+Linux probe candidates (`7b272f496b2f528f`, `3c0dd3d3a96d3f73`) with magenta
+texture colors. All 180 frames are analyzed. The positive control reaches
+196,414 detected magenta pixels in a frame, and visual review shows colored
+building walls and signs. The selected road region contains zero pixels
+matching the detector (R/B > 180, G < 100) across the burst. Shading/blending
+can affect this detector; the result does not establish per-draw identity or
+a root cause. It does not justify a road-specific offset for these hashes.
+The original-art native executable closes normally, Vulkan and reached-path
+audits pass, and all five protected reference files remain unchanged. The
+player preview is unchanged. No diagnostic colors or speculative depth offset
+are included in the source recipe.
