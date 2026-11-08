@@ -249,6 +249,7 @@ fn play_session(
             mute_audio: settings.mute_audio,
             audio_volume: settings.audio_volume,
             watchdog_seconds: settings.native_watchdog_seconds,
+            crash_60fps: settings.native_crash_60fps,
         },
     )?;
     drop(_guard);

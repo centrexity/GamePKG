@@ -80,6 +80,15 @@ reached unsupported path, including final output and managed-restart history.
 This does not fill in missing game behavior. Update an older game package if its
 runtime reaches such a path.
 
+The optional **60 FPS crash cameras** setting uses the reviewed Takedawn
+runtime's existing full-rate camera and simulation path. It is off by default,
+including when loading an older settings file. Enable it in Settings or set
+`native_crash_60fps = true` in the app settings file. It applies to the next
+launch and managed restarts without rebuilding the game. Other engines do not
+use this setting. This path advances one simulation step per frame and needs
+sustained 60 FPS to preserve normal game speed. Leave it off if the hardware
+cannot keep that pace.
+
 The optional **Native frame-stall watchdog** in Settings is off by default,
 including for existing settings files. In the reviewed standalone Takedawn
 runtime it watches actual frame flips and writes a hang report under the game's

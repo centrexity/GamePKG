@@ -25,6 +25,23 @@ mod snapshot_shortcut_tests {
         assert!(toml::from_str::<Settings>("snapshot_load_slots=[0]").is_err());
     }
 }
+#[cfg(test)]
+mod native_camera_settings_tests {
+    use super::*;
+
+    #[test]
+    fn existing_settings_preserve_camera_cadence_and_opt_in_survives_save() {
+        let old = "format_version=1\naudio_volume=35\nnative_watchdog_seconds=0\n";
+        let mut settings: Settings = toml::from_str(old).unwrap();
+        assert!(!settings.native_crash_60fps);
+        settings.native_crash_60fps = true;
+        settings.validate().unwrap();
+        let restored: Settings = toml::from_str(&toml::to_string(&settings).unwrap()).unwrap();
+        assert_eq!(restored, settings);
+        assert_eq!(restored.audio_volume, 35);
+        assert_eq!(restored.native_watchdog_seconds, 0);
+    }
+}
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Settings {
@@ -39,6 +56,8 @@ pub struct Settings {
     pub tick_deadline_ms: u64,
     /// Zero disables native frame-stall diagnostics; never terminates the game.
     pub native_watchdog_seconds: u16,
+    /// Use the supported native engine's full-rate crash-camera path.
+    pub native_crash_60fps: bool,
     pub render_limit_enabled: bool,
     pub render_max_width: u32,
     pub render_max_height: u32,
@@ -74,6 +93,7 @@ impl Default for Settings {
             legacy_execution_ceiling: None,
             tick_deadline_ms: 100,
             native_watchdog_seconds: 0,
+            native_crash_60fps: false,
             render_limit_enabled: false,
             render_max_width: 1920,
             render_max_height: 1080,

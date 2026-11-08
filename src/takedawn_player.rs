@@ -101,6 +101,7 @@ pub struct Options {
     pub mute_audio: bool,
     pub audio_volume: u8,
     pub watchdog_seconds: u16,
+    pub crash_60fps: bool,
 }
 impl Default for Options {
     fn default() -> Self {
@@ -109,6 +110,7 @@ impl Default for Options {
             mute_audio: false,
             audio_volume: 100,
             watchdog_seconds: 0,
+            crash_60fps: false,
         }
     }
 }
@@ -437,6 +439,11 @@ impl Session {
             ]);
         command.args([
             "--setenv",
+            "RECOMP_GFX_CRASH_60FPS",
+            if options.crash_60fps { "1" } else { "0" },
+        ]);
+        command.args([
+            "--setenv",
             "RECOMP_AUDIO_MUTE",
             if options.mute_audio { "1" } else { "0" },
         ]);
@@ -705,6 +712,7 @@ fn main() {
     assert_eq!(std::env::var("RECOMP_STUB_LOG").unwrap(), "1");
     let saves = std::path::PathBuf::from(std::env::var_os("RECOMP_SAVE_DIR").unwrap());
     let mode = fs::read_to_string(saves.join("mode")).unwrap();
+    assert_eq!(std::env::var("RECOMP_GFX_CRASH_60FPS").unwrap(), if mode == "late" { "1" } else { "0" });
     let mut out = io::stdout().lock();
     if mode == "running" {
         writeln!(out, "verified disc admitted in place\n[GPU] flip 1 0 ms").unwrap();
@@ -757,6 +765,7 @@ fn main() {
                 Options {
                     headless: true,
                     mute_audio: true,
+                    crash_60fps: mode == "late",
                     ..Default::default()
                 },
             )

@@ -20,6 +20,7 @@ pub struct Options {
     pub mute_audio: bool,
     pub audio_volume: u8,
     pub watchdog_seconds: u16,
+    pub crash_60fps: bool,
 }
 impl Default for Options {
     fn default() -> Self {
@@ -28,6 +29,7 @@ impl Default for Options {
             mute_audio: false,
             audio_volume: 100,
             watchdog_seconds: 0,
+            crash_60fps: false,
         }
     }
 }
@@ -197,6 +199,10 @@ impl Session {
             ("RECOMP_PB_BACKEND".into(), "vulkan".into()),
             ("RECOMP_UNIMPL_TRAP".into(), "1".into()),
             ("RECOMP_STUB_LOG".into(), "1".into()),
+            (
+                "RECOMP_GFX_CRASH_60FPS".into(),
+                if options.crash_60fps { "1" } else { "0" }.into(),
+            ),
             (
                 "RECOMP_HANG_WATCHDOG".into(),
                 options.watchdog_seconds.to_string().into(),
@@ -496,6 +502,7 @@ fn main() {
     assert_eq!(std::env::var("RECOMP_AUDIO_VOLUME").unwrap(), "0.37");
     let watchdog = std::env::var("RECOMP_HANG_WATCHDOG").unwrap();
     assert!(watchdog == "0" || watchdog == "17");
+    assert_eq!(std::env::var("RECOMP_GFX_CRASH_60FPS").unwrap(), if watchdog == "17" { "1" } else { "0" });
     assert_eq!(std::env::var("RECOMP_UNIMPL_TRAP").unwrap(), "1");
     assert_eq!(std::env::var("RECOMP_STUB_LOG").unwrap(), "1");
     let saves = std::path::PathBuf::from(std::env::var_os("RECOMP_SAVE_DIR").unwrap());
@@ -615,6 +622,7 @@ fn main() {
             mute_audio: true,
             audio_volume: 37,
             watchdog_seconds: 17,
+            crash_60fps: true,
             headless: false,
         };
         let mut session = Session::start_cached(
@@ -677,6 +685,7 @@ fn main() {
             &iso,
             Options {
                 watchdog_seconds: Options::default().watchdog_seconds,
+                crash_60fps: Options::default().crash_60fps,
                 ..options
             },
         )
