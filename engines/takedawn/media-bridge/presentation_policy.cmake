@@ -11,9 +11,9 @@ function(gamepkg_takedawn_main_presentation input_name output_name)
     string(REPLACE "xbox_HostWindowSetTitle(BO3_APP_NAME)"
         "xbox_HostWindowSetTitle(\"Burnout 3: Takedown (XBOX version)\")" source "${source}")
     # Saved settings have already loaded; environment and saved choices win.
-    # Keep headless maintainer runs at their original stock resolution.
+    # Keep headless maintainer runs at their original graphics defaults.
     string(REPLACE "    xbox_SettingsInit(BO3_USER_DIR);"
-        "    xbox_SettingsInit(BO3_USER_DIR);\n    if (!headless)\n        env_default(\"RECOMP_RENDER_SCALE\", \"2\");"
+        "    xbox_SettingsInit(BO3_USER_DIR);\n    if (!headless) {\n        env_default(\"RECOMP_RENDER_SCALE\", \"2\");\n        env_default(\"RECOMP_DISPLAY_WIDESCREEN\", \"1\");\n        env_default(\"RECOMP_GFX_HUD_FIX\", \"1\");\n        env_default(\"RECOMP_GFX_AA\", \"smaa\");\n        env_default(\"RECOMP_GFX_SHARPEN\", \"0.10\");\n        env_default(\"RECOMP_GFX_LOD_BIAS\", \"auto\");\n        env_default(\"RECOMP_GFX_UI_SCALE\", \"2x\");\n    }"
         source "${source}")
     set(${output_name} "${source}" PARENT_SCOPE)
 endfunction()
