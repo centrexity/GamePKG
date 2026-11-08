@@ -25,6 +25,28 @@ if(location LESS 0)
     message(FATAL_ERROR "Pinned tiled mapping failure branch is missing")
 endif()
 string(REPLACE "${before}" "${after}" adapted "${source}")
+# The executor is enabled during ordinary play. It must not implicitly enable
+# register dumps and the diagnostic framebuffer checksum on its worker thread.
+# Explicit register tracing and pushbuffer surveys retain their existing logs.
+set(trace_before [[        s_nv2a_trace = recomp_env(RENV_NV2A_TRACE) != NULL
+                    || recomp_env(RENV_PB_SCAN) != NULL
+                    || recomp_env(RENV_PB_EXEC) != NULL;]])
+set(trace_after [[        s_nv2a_trace = recomp_env(RENV_NV2A_TRACE) != NULL
+                    || recomp_env(RENV_PB_SCAN) != NULL;]])
+string(FIND "${adapted}" "${trace_before}" trace_location)
+if(trace_location LESS 0)
+    message(FATAL_ERROR "Pinned explicit NV2A trace policy site is missing")
+endif()
+string(REPLACE "${trace_before}" "${trace_after}" adapted "${adapted}")
+# The periodic executor report also carries renderer health diagnostics. Keep
+# its original enablement when execution is on, independently of verbose logs.
+set(report_before [[if (s_nv2a_trace && now_ms - last_report > (uint64_t)report_ms)]])
+set(report_after [[if ((s_nv2a_trace || s_pb_exec) && now_ms - last_report > (uint64_t)report_ms)]])
+string(FIND "${adapted}" "${report_before}" report_location)
+if(report_location LESS 0)
+    message(FATAL_ERROR "Pinned periodic renderer health report site is missing")
+endif()
+string(REPLACE "${report_before}" "${report_after}" adapted "${adapted}")
 if(WINDOWS_LAYOUT)
 set(wake_before_0 [[static void kick_nap_us(unsigned us)
 {
