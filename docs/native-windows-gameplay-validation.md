@@ -2158,3 +2158,27 @@ suite passed five tests, and the production native-player ownership fixture
 passed its restart/save/history/companion checks in all three isolated SDL
 selection cases. The fixture explicitly checks graphics argument/value pairs
 and confirms graphics controls were not supplied through the host environment.
+
+### Original HUD scaling audit and native stream CI follow-up
+
+A cold private Linux Vulkan run at default 2× render/menu scaling binds the
+original `HUD_crash_breaker` 128×128 texture at flip 5259. The native decoder
+maps its compressed texture hash `4f44eea46b9eec9e` to decoded scaler key
+`948b46bd016af9d0`; the renderer uploads the matching scaled image at flip 5260.
+The 256×256 local cache has a matching header, exact length and independently
+verified full pixel checksum. The ISO was read in place. No original or enlarged
+icon pixels were copied into the repository or package. Other Crash icon names
+were identified but were not drawn in this run, so their coverage is unproven.
+The full automated Crash gate timed out waiting for the front-end return;
+the event reset before that observation. The renderer audit found no reached
+untranslated functions and confirmed Vulkan execution. This is a positive HUD
+scaling check with a failed full-event gate, not a complete gameplay pass.
+
+Hosted native-stream tests stopped on a stale prepared-fixture provenance
+fingerprint after the normalizer source changed. Rebuilding the current
+normalizer and rerunning the original C conversion produces byte-identical
+prepared Rust; only its normalizer source/binary fingerprints change. The
+regenerated and subsequently reloaded prepared fixture both pass the local
+native C/Rust stream, variadic ABI, fixed-width minimum and flush comparison.
+All 22 normalizer tests pass. Physical Windows/Linux hosted comparisons must
+run again against that refreshed fixture before claiming hosted success.
