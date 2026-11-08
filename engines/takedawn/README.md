@@ -846,3 +846,25 @@ borders and determinism. The prompt gate checks all 15 existing families,
 original input mapping, authored scaling, allocation failure, output bounds and
 source mutation rejection. `--m32` exercises native 32-bit fixtures; the prompt
 check's `--glyphs-only` excludes the separate legacy gameplay-hook fixture.
+
+### Original HUD artwork stays local
+
+The menu/HUD scaler also operates on original artwork read from the player's
+ISO; original pixels and enlarged cache files are not source-package assets.
+A private native Linux Crash trace confirms `HUD_crash_breaker` (128×128 DXT5)
+is classified as 2D, scaled to 256×256 at the default 2× setting, and uploaded
+on the next frame. Its local cache identity and full pixel checksum verify.
+This confirms this icon's path, not every icon or complete Crash-event flow.
+
+Maintainers can audit a `RECOMP_DEBUG=ui_scale_log` trace and its private cache:
+
+```sh
+python3 tools/check_takedawn_hud_scaling.py --log /private/run/log.txt --cache /private/shader-cache/ui_scale --icon crashbreaker --factor 2
+python3 tests/takedawn_hud_scaling_test.py
+```
+
+The auditor reads local trace/cache data and prints metadata only. It requires
+an actual 2D bind, matching scaled image and intact cache; queuing work alone
+does not pass. The asset-free tests reject missing uploads, wrong identities,
+wrong scales and corrupt cache contents. Other known icons must be observed
+in their own scene before claiming their scaling is verified.
