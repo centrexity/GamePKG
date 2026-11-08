@@ -148,7 +148,7 @@ def main():
                  'engine.c', 'attach.cmake', 'adapt_paths.cmake', 'adapt_smoke.cmake', 'adapt_memory.cmake', 'adapt_pacing.cmake', 'adapt_threads.cmake', 'thread_priority.inc.h', 'adapt_gpu_report.cmake',
                  'adapt_input_glyphs.cmake', 'input_glyphs_policy.h', 'input_gameplay_policy.h',
                  'windows_file.c', 'windows_file.h', 'windows_stream.c', 'windows_stream.h',
-                 'windows_entry.c', 'windows_attach.cmake', 'windows_restart.h', 'adapt_windows_restart.cmake', 'adapt_windows_file.cmake',
+                 'windows_entry.c', 'windows_attach.cmake', 'windows_restart.h', 'adapt_windows_restart.cmake', 'adapt_windows_clock.cmake', 'adapt_windows_file.cmake',
                  'adapt_windows_startup.cmake', 'DotNET-RUNTIME-LICENSE.txt']:
         copy(host / 'media-bridge' / name, 'host/engines/takedawn/media-bridge/' + name)
     for name in ['attach.cmake', 'C2Rust-LICENSE.txt', 'rustc-cache.rs', 'rustc-cache-linux-v1.rs', 'build-windows-units.rs', 'build-windows-runtime.rs']:

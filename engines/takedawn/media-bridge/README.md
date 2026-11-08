@@ -342,3 +342,21 @@ strict handle checking. `tools/check_takedawn_thread_priority.py` verifies the
 pinned transformation and exercises native handles on Windows (32 and 64 bit),
 including duplicate lifetime and leak checks. This is a maintainer test; players
 do not need Python. Full game qualification is separate from this fixture.
+
+The Windows clock adapter replaces division with an exact integer multiply when
+the performance counter runs at 10 MHz. It preserves the counter read, timestamps,
+clock rate and the original conversion for other frequencies or negative values.
+It stages a copy of the pinned source and rejects unknown or in-place inputs.
+Linux continues compiling its original clock source.
+
+Maintainers can check the complete original and adapted clock functions with:
+
+```sh
+python3 tools/check_takedawn_clock_conversion.py --toolkit /path/to/xboxrecomp --cc clang --sanitize
+python3 tools/check_takedawn_clock_conversion.py --toolkit /path/to/xboxrecomp --cc clang --m32
+```
+
+Each run compares 12,583,128 timestamp/frequency combinations, including negative
+timestamps and unsigned wrap boundaries, and must catch a deliberately incorrect
+conversion. These checks establish exactness; actual gameplay and frame timing
+need separate qualification. Python is used only by this maintainer check.

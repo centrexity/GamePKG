@@ -23,6 +23,17 @@ function(gamepkg_attach_windows_disc_media)
         "-DOUTPUT=${restart}" -P "${bridge}/adapt_windows_restart.cmake" COMMAND_ERROR_IS_FATAL ANY)
     list(REMOVE_AT restart_sources ${restart_index})
     list(APPEND restart_sources "${restart}")
+    # The clock's 10MHz fast path is integer-identical to the original split
+    # conversion. All other frequencies keep the pinned implementation.
+    list(FIND restart_sources host_time.c clock_index)
+    if(clock_index LESS 0)
+        message(FATAL_ERROR "Pinned host clock target entry is missing")
+    endif()
+    set(clock "${CMAKE_BINARY_DIR}/gamepkg-media/host_time.c")
+    execute_process(COMMAND "${CMAKE_COMMAND}" "-DINPUT=${restart_dir}/host_time.c"
+        "-DOUTPUT=${clock}" -P "${bridge}/adapt_windows_clock.cmake" COMMAND_ERROR_IS_FATAL ANY)
+    list(REMOVE_AT restart_sources ${clock_index})
+    list(APPEND restart_sources "${clock}")
     set_property(TARGET recomp_env PROPERTY SOURCES "${restart_sources}")
     get_target_property(kernel_dir xbox_kernel SOURCE_DIR)
     get_target_property(kernel_sources xbox_kernel SOURCES)
