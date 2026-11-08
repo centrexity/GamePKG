@@ -102,6 +102,9 @@ awk '
 python3 "$(dirname -- "$0")/prepare_takedawn_pause_menu.py" \
     "$task_state/driver/tools/headless/scene_lib.sh" \
     "$task_state/driver/tools/headless/controls_scene.sh"
+python3 "$(dirname -- "$0")/prepare_takedawn_crash_results.py" \
+    "$task_state/driver/tools/headless/scene_lib.sh" \
+    "$task_state/driver/tools/headless/controls_scene.sh"
 if [[ "$task_driver" == race_drive.sh ]]; then
     # Keep the complete original AI/race/results flow, without changing game
     # state, unlocking tracks, shortening laps or replacing the finish check.
