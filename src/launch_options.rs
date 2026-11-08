@@ -90,8 +90,8 @@ pub(crate) fn effective(root: &Path, manifest: &Manifest) -> Result<Option<Launc
 
 macro_rules! choices {
     ($name:ident { $($variant:ident => $text:literal),+ $(,)? }) => {
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-        pub enum $name { $(#[serde(rename = $text)] $variant),+ }
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, clap::ValueEnum)]
+        pub enum $name { $(#[serde(rename = $text)] #[value(name = $text)] $variant),+ }
         impl $name {
             pub const ALL: &'static [Self] = &[$(Self::$variant),+];
             pub fn label(self) -> &'static str { match self { $(Self::$variant => $text),+ } }
@@ -137,63 +137,14 @@ impl LaunchOptions {
             "render scale must be 1, 2, 3 or 4"
         );
         ensure!(
-            [1, 2, 4].contains(&self.menu_hud_scale),
-            "menu/HUD scale must be 1, 2 or 4"
+            (1..=4).contains(&self.menu_hud_scale),
+            "menu/HUD scale must be 1, 2, 3 or 4"
         );
         ensure!(
             self.sharpening_percent <= 100,
             "sharpening must be 0–100 percent"
         );
         Ok(())
-    }
-    pub(crate) fn environment(self) -> Vec<(&'static str, String)> {
-        vec![
-            (
-                "RECOMP_PRESENT_FULLSCREEN",
-                if self.window_mode == WindowMode::Fullscreen {
-                    "1"
-                } else {
-                    "0"
-                }
-                .into(),
-            ),
-            (
-                "RECOMP_DISPLAY_WIDESCREEN",
-                if self.aspect_ratio == AspectRatio::Wide {
-                    "1"
-                } else {
-                    "0"
-                }
-                .into(),
-            ),
-            ("RECOMP_RENDER_SCALE", self.render_scale.to_string()),
-            ("RECOMP_GFX_AA", self.antialiasing.label().into()),
-            (
-                "RECOMP_GFX_LOD_BIAS",
-                if self.texture_lod == TextureLod::Off {
-                    "0"
-                } else {
-                    self.texture_lod.label()
-                }
-                .into(),
-            ),
-            (
-                "RECOMP_GFX_SHARPEN",
-                format!("{:.2}", f64::from(self.sharpening_percent) / 100.0),
-            ),
-            (
-                "RECOMP_GFX_HUD_FIX",
-                if self.widescreen_hud { "1" } else { "0" }.into(),
-            ),
-            (
-                "RECOMP_GFX_UI_SCALE",
-                if self.menu_hud_scale == 1 {
-                    "off".into()
-                } else {
-                    format!("{}x", self.menu_hud_scale)
-                },
-            ),
-        ]
     }
 }
 
@@ -215,7 +166,7 @@ mod tests {
         for (from, to) in [
             ("render_scale = 2", "render_scale = 0"),
             ("render_scale = 2", "render_scale = 5"),
-            ("menu_hud_scale = 2", "menu_hud_scale = 3"),
+            ("menu_hud_scale = 2", "menu_hud_scale = 5"),
             ("sharpening_percent = 10", "sharpening_percent = 101"),
             ("aspect_ratio = \"16:9\"", "aspect_ratio = \"32:9\""),
             (
@@ -238,56 +189,108 @@ mod tests {
         other.launch_options = manifest.launch_options;
         assert!(Manifest::parse(toml::to_string(&other).unwrap().as_bytes()).is_err());
     }
+    #[derive(clap::Parser)]
+    struct Cli {
+        #[command(flatten)]
+        launch: LaunchArgs,
+    }
+    fn parse(args: &[&str]) -> LaunchArgs {
+        use clap::Parser;
+        Cli::try_parse_from(std::iter::once("test").chain(args.iter().copied()))
+            .unwrap()
+            .launch
+    }
     #[test]
-    fn defaults_and_original_settings_map_to_existing_runtime_controls() {
-        let default = LaunchOptions::default();
-        let env: BTreeMap<_, _> = default.environment().into_iter().collect();
-        for (key, value) in [
-            ("RECOMP_PRESENT_FULLSCREEN", "0"),
-            ("RECOMP_DISPLAY_WIDESCREEN", "1"),
-            ("RECOMP_RENDER_SCALE", "2"),
-            ("RECOMP_GFX_AA", "smaa"),
-            ("RECOMP_GFX_LOD_BIAS", "auto"),
-            ("RECOMP_GFX_SHARPEN", "0.10"),
-            ("RECOMP_GFX_HUD_FIX", "1"),
-            ("RECOMP_GFX_UI_SCALE", "2x"),
-        ] {
-            assert_eq!(env[key], value);
-        }
-        let original = LaunchOptions {
-            window_mode: WindowMode::Fullscreen,
-            aspect_ratio: AspectRatio::Standard,
-            render_scale: 1,
-            antialiasing: Antialiasing::Off,
-            texture_lod: TextureLod::Off,
-            sharpening_percent: 0,
-            widescreen_hud: false,
-            menu_hud_scale: 1,
-        };
-        original.validate().unwrap();
-        let env: BTreeMap<_, _> = original.environment().into_iter().collect();
-        assert_eq!(env["RECOMP_PRESENT_FULLSCREEN"], "1");
-        assert_eq!(env["RECOMP_DISPLAY_WIDESCREEN"], "0");
-        assert_eq!(env["RECOMP_GFX_LOD_BIAS"], "0");
-        assert_eq!(env["RECOMP_GFX_UI_SCALE"], "off");
-        // Every exposed combination uses a fixed key and a bounded value.
-        for &aa in Antialiasing::ALL {
-            for &lod in TextureLod::ALL {
-                for scale in 1..=4 {
-                    let value = LaunchOptions {
-                        antialiasing: aa,
-                        texture_lod: lod,
-                        render_scale: scale,
-                        ..default
-                    };
-                    value.validate().unwrap();
-                    assert!(value
-                        .environment()
-                        .iter()
-                        .all(|(_, v)| v.len() <= 10 && !v.contains(['\n', '\0', ';'])));
+    fn public_arguments_roundtrip_all_graphics_combinations() {
+        use clap::Parser;
+        for &window_mode in WindowMode::ALL {
+            for &aspect_ratio in AspectRatio::ALL {
+                for &antialiasing in Antialiasing::ALL {
+                    for &texture_lod in TextureLod::ALL {
+                        for render_scale in 1..=4 {
+                            for menu_hud_scale in 1..=4 {
+                                for sharpening_percent in [0, 10, 100] {
+                                    for widescreen_hud in [false, true] {
+                                        let value = LaunchOptions {
+                                            window_mode,
+                                            aspect_ratio,
+                                            antialiasing,
+                                            texture_lod,
+                                            render_scale,
+                                            menu_hud_scale,
+                                            sharpening_percent,
+                                            widescreen_hud,
+                                        };
+                                        let args = LaunchArgs::from(value).arguments();
+                                        assert_eq!(args.len(), 16);
+                                        let parsed = Cli::try_parse_from(
+                                            std::iter::once("test".to_owned()).chain(args.clone()),
+                                        )
+                                        .unwrap()
+                                        .launch;
+                                        assert_eq!(parsed.arguments(), args);
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
+    }
+    #[test]
+    fn per_launch_overrides_preserve_unspecified_and_saved_choices() {
+        let saved = LaunchOptions {
+            render_scale: 4,
+            ..LaunchOptions::default()
+        };
+        let args = parse(&[
+            "--fullscreen",
+            "--render-scale",
+            "3",
+            "--texture-lod=-1",
+            "--widescreen-hud",
+            "false",
+        ]);
+        let resolved = args.resolved(Some(saved)).unwrap();
+        assert_eq!(resolved.window_mode, Some(WindowMode::Fullscreen));
+        assert_eq!(resolved.render_scale, Some(3));
+        assert_eq!(resolved.texture_lod, Some(TextureLod::One));
+        assert_eq!(resolved.widescreen_hud, Some(false));
+        assert_eq!(resolved.antialiasing, Some(saved.antialiasing));
+        assert_eq!(saved.render_scale, 4);
+        assert!(LaunchArgs::default().resolved(None).unwrap().is_empty());
+        assert_eq!(
+            parse(&["--windowed"]).resolved(None).unwrap().arguments(),
+            ["--window-mode", "windowed"]
+        );
+        assert_eq!(parse(&["--widescreen-hud"]).widescreen_hud, Some(true));
+    }
+    #[test]
+    fn rejects_invalid_or_conflicting_launch_arguments() {
+        use clap::Parser;
+        for args in [
+            vec!["--fullscreen", "--windowed"],
+            vec!["--fullscreen", "--window-mode", "windowed"],
+            vec!["--render-scale", "0"],
+            vec!["--render-scale", "5"],
+            vec!["--menu-hud-scale", "5"],
+            vec!["--sharpening-percent", "101"],
+            vec!["--aspect-ratio", "32:9"],
+            vec!["--texture-lod", "-100"],
+            vec!["--antialiasing", "smaa; touch /tmp/file"],
+            vec!["--widescreen-hud", "yes"],
+            vec!["--render-scale"],
+            vec!["--command", "anything"],
+        ] {
+            assert!(Cli::try_parse_from(std::iter::once("test").chain(args)).is_err());
+        }
+        assert!(LaunchArgs {
+            render_scale: Some(0),
+            ..Default::default()
+        }
+        .resolved(None)
+        .is_err());
     }
     #[test]
     fn overrides_follow_creator_game_engine_and_reset_to_updated_defaults() {
@@ -327,5 +330,140 @@ mod tests {
         assert!(load(root.path(), &game()).is_err());
         assert!(remember(root.path(), &game(), None).is_err());
         assert_eq!(std::fs::read(outside.path()).unwrap(), b"{}");
+    }
+}
+
+/// Public, per-launch graphics overrides. These are data, never a shell command.
+#[derive(Debug, Clone, Copy, Default, clap::Args)]
+#[group(multiple = true)]
+pub struct LaunchArgs {
+    #[arg(long, conflicts_with_all = ["windowed", "window_mode"])]
+    pub fullscreen: bool,
+    #[arg(long, conflicts_with_all = ["fullscreen", "window_mode"])]
+    pub windowed: bool,
+    #[arg(long, value_enum)]
+    pub window_mode: Option<WindowMode>,
+    #[arg(long, value_enum)]
+    pub aspect_ratio: Option<AspectRatio>,
+    #[arg(long, value_parser = clap::value_parser!(u8).range(1..=4))]
+    pub render_scale: Option<u8>,
+    #[arg(long, value_enum)]
+    pub antialiasing: Option<Antialiasing>,
+    #[arg(long, value_enum, allow_hyphen_values = true)]
+    pub texture_lod: Option<TextureLod>,
+    #[arg(long, value_parser = clap::value_parser!(u8).range(0..=100))]
+    pub sharpening_percent: Option<u8>,
+    #[arg(long, num_args = 0..=1, default_missing_value = "true")]
+    pub widescreen_hud: Option<bool>,
+    #[arg(long, value_parser = clap::value_parser!(u8).range(1..=4), help = "Menu/HUD scaling: 1 (off), 2, 3 or 4")]
+    pub menu_hud_scale: Option<u8>,
+}
+impl From<LaunchOptions> for LaunchArgs {
+    fn from(v: LaunchOptions) -> Self {
+        Self {
+            window_mode: Some(v.window_mode),
+            aspect_ratio: Some(v.aspect_ratio),
+            render_scale: Some(v.render_scale),
+            antialiasing: Some(v.antialiasing),
+            texture_lod: Some(v.texture_lod),
+            sharpening_percent: Some(v.sharpening_percent),
+            widescreen_hud: Some(v.widescreen_hud),
+            menu_hud_scale: Some(v.menu_hud_scale),
+            ..Self::default()
+        }
+    }
+}
+impl LaunchArgs {
+    pub fn is_empty(self) -> bool {
+        self.arguments().is_empty()
+    }
+    pub fn validate(self) -> Result<()> {
+        ensure!(
+            !(self.fullscreen && self.windowed)
+                && !(self.window_mode.is_some() && (self.fullscreen || self.windowed)),
+            "choose one window mode"
+        );
+        ensure!(
+            self.render_scale.is_none_or(|x| (1..=4).contains(&x)),
+            "render scale must be 1–4"
+        );
+        ensure!(
+            self.menu_hud_scale.is_none_or(|x| (1..=4).contains(&x)),
+            "menu/HUD scale must be 1–4"
+        );
+        ensure!(
+            self.sharpening_percent.is_none_or(|x| x <= 100),
+            "sharpening must be 0–100 percent"
+        );
+        Ok(())
+    }
+    /// Preserve unspecified values, including legacy in-game preferences when
+    /// neither the signed manifest nor the host supplies a default for them.
+    pub fn resolved(self, base: Option<LaunchOptions>) -> Result<Self> {
+        self.validate()?;
+        if let Some(base) = base {
+            base.validate()?;
+        }
+        let mut out = base.map(Self::from).unwrap_or_default();
+        out.window_mode = self
+            .window_mode
+            .or(if self.fullscreen {
+                Some(WindowMode::Fullscreen)
+            } else if self.windowed {
+                Some(WindowMode::Windowed)
+            } else {
+                None
+            })
+            .or(out.window_mode);
+        macro_rules! merge { ($($field:ident),+) => { $(out.$field = self.$field.or(out.$field);)+ }; }
+        merge!(
+            aspect_ratio,
+            render_scale,
+            antialiasing,
+            texture_lod,
+            sharpening_percent,
+            widescreen_hud,
+            menu_hud_scale
+        );
+        Ok(out)
+    }
+    pub fn arguments(self) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut push = |name: &str, value: String| {
+            out.push(name.into());
+            out.push(value);
+        };
+        let mode = self.window_mode.or(if self.fullscreen {
+            Some(WindowMode::Fullscreen)
+        } else if self.windowed {
+            Some(WindowMode::Windowed)
+        } else {
+            None
+        });
+        if let Some(x) = mode {
+            push("--window-mode", x.label().into());
+        }
+        if let Some(x) = self.aspect_ratio {
+            push("--aspect-ratio", x.label().into());
+        }
+        if let Some(x) = self.render_scale {
+            push("--render-scale", x.to_string());
+        }
+        if let Some(x) = self.antialiasing {
+            push("--antialiasing", x.label().into());
+        }
+        if let Some(x) = self.texture_lod {
+            push("--texture-lod", x.label().into());
+        }
+        if let Some(x) = self.sharpening_percent {
+            push("--sharpening-percent", x.to_string());
+        }
+        if let Some(x) = self.widescreen_hud {
+            push("--widescreen-hud", x.to_string());
+        }
+        if let Some(x) = self.menu_hud_scale {
+            push("--menu-hud-scale", x.to_string());
+        }
+        out
     }
 }

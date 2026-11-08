@@ -103,6 +103,7 @@ pub struct Options {
     pub watchdog_seconds: u16,
     pub crash_60fps: bool,
     pub launch: Option<crate::launch_options::LaunchOptions>,
+    pub launch_overrides: crate::launch_options::LaunchArgs,
 }
 impl Default for Options {
     fn default() -> Self {
@@ -113,6 +114,7 @@ impl Default for Options {
             watchdog_seconds: 0,
             crash_60fps: false,
             launch: None,
+            launch_overrides: Default::default(),
         }
     }
 }
@@ -305,9 +307,7 @@ impl Session {
                 && creator.len() <= 256,
             "invalid native game identity"
         );
-        if let Some(launch) = options.launch {
-            launch.validate()?;
-        }
+        let launch = options.launch_overrides.resolved(options.launch)?;
         let bytes = crate::files::read_regular(executable, MAX_BINARY, false)
             .context("build the reviewed native game before playing")?;
         crate::integrity::verify_build(executable, &bytes)?;
@@ -442,13 +442,6 @@ impl Session {
                 "RECOMP_STUB_LOG",
                 "1",
             ]);
-        if !options.headless {
-            if let Some(launch) = options.launch {
-                for (key, value) in launch.environment() {
-                    command.args(["--setenv", key, &value]);
-                }
-            }
-        }
         command.args([
             "--setenv",
             "RECOMP_GFX_CRASH_60FPS",
@@ -485,6 +478,9 @@ impl Session {
             desktop(&mut command)?;
         }
         command.args(["--remount-ro", "/", "--", "/engine"]);
+        if !options.headless {
+            command.args(launch.arguments());
+        }
         if options.headless {
             command.arg("--headless");
         }

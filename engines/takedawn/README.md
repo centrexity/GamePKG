@@ -8,14 +8,14 @@ assets in place. Python and C2Rust are maintainer preparation tools.
 The desktop graphics policy uses the existing renderer and settings overlay:
 2× internal resolution, 16:9, widescreen HUD correction, SMAA, 10% sharpening,
 automatic texture LOD sharpening, and 2× menu/HUD texture upscaling. Explicit
-saved settings and environment overrides retain precedence. Reset uses these
+command-line launch flags take precedence over saved GamePKG choices, signed manifest defaults and in-game settings. See [launch options](../../docs/LAUNCH_OPTIONS.md). Reset uses these
 defaults; headless maintainer runs retain their original graphics policy.
 `tools/check_takedawn_presentation_defaults.py --toolkit <pinned-toolkit>`
 checks the actual settings reader/writer, precedence, reset and source guards.
 The performance target is under 10 ms of frame work while gameplay remains
 paced at 60 FPS (16.67 ms between frames); it is not a qualification claim.
 
-The current unreleased recipe is 0.1.6/v17 and requires the 0.1.19 development
+The current unreleased recipe is 0.1.13 and requires the 0.1.24 development
 app. It retains 24,003 prepared Rust game functions across 487 units and 24,035
 native exports. Linux x64 and standalone Windows x64 tools compile and link the
 native game; players need neither Python nor WSL. The normal signed Linux
@@ -812,3 +812,37 @@ checks. The game has no FYL2XP1 sites, so the verified17,233-function body is
 unchanged; current runtime services relink on three targets. Full CPU/context/
 ABI/engine integration and signed playable launch remain required. Exact scope
 is recorded in the native-generator README.
+
+## Native launch arguments and input prompts
+
+The current preview accepts the fixed graphics flags documented in
+[Launch options](../../docs/LAUNCH_OPTIONS.md) through both app entries and
+forwards the resolved choices as native argument/value pairs. Per-launch flags
+win over saved host choices and signed defaults without changing either file.
+Older source recipes need updating and rebuilding before using these flags.
+
+The reviewed source kit includes Kenney Input Prompts 1.5A (CC0), its original
+license, selected SVG files and provenance hashes. Maintainers render the art
+before packaging; players need no SVG renderer or Python. Original button
+positions, PS2 driving remapping, controller families and keyboard controls are
+preserved. PlayStation/DualSense retain the existing Takedawn artwork because
+this Kenney download does not include their symbols.
+
+Both internal resolution and menu/HUD scaling support 3×; defaults remain 2×.
+Authored prompts have 1×/2×/3×/4× images. Other 3× menu/HUD artwork uses the
+existing Super-xBR path with linear premultiplied area resampling, or the
+existing bicubic comparison path. This does not change world-rendering logic.
+
+Maintainer checks (no ROM or graphics device required):
+
+```sh
+python3 tools/check_takedawn_presentation_defaults.py --toolkit /path/to/toolkit --sanitize
+python3 tools/check_takedawn_ui_scaling.py --toolkit /path/to/toolkit
+python3 tools/check_takedawn_input_glyphs.py
+```
+
+The scaler gate retains upstream 2×/4× golden hashes and tests 3× alpha edges,
+borders and determinism. The prompt gate checks all 15 existing families,
+original input mapping, authored scaling, allocation failure, output bounds and
+source mutation rejection. `--m32` exercises native 32-bit fixtures; the prompt
+check's `--glyphs-only` excludes the separate legacy gameplay-hook fixture.

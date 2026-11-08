@@ -22,6 +22,7 @@ pub struct Options {
     pub watchdog_seconds: u16,
     pub crash_60fps: bool,
     pub launch: Option<crate::launch_options::LaunchOptions>,
+    pub launch_overrides: crate::launch_options::LaunchArgs,
 }
 impl Default for Options {
     fn default() -> Self {
@@ -32,6 +33,7 @@ impl Default for Options {
             watchdog_seconds: 0,
             crash_60fps: false,
             launch: None,
+            launch_overrides: Default::default(),
         }
     }
 }
@@ -122,9 +124,7 @@ impl Session {
                 && creator.len() <= 256,
             "invalid native game identity"
         );
-        if let Some(launch) = options.launch {
-            launch.validate()?;
-        }
+        let launch = options.launch_overrides.resolved(options.launch)?;
         let bytes = crate::files::read_regular(executable, 64 * 1048576, false)
             .context("build the reviewed native game before playing")?;
         crate::integrity::verify_build(executable, &bytes)?;
@@ -221,16 +221,6 @@ impl Session {
                 format!("{:.2}", f64::from(options.audio_volume) / 100.0).into(),
             ),
         ];
-        if !options.headless {
-            if let Some(launch) = options.launch {
-                environment.extend(
-                    launch
-                        .environment()
-                        .into_iter()
-                        .map(|(key, value)| (key.into(), value.into())),
-                );
-            }
-        }
         // Preserve the host's explicit silent test driver for windowed runs too.
         // Default windowed playback still lets SDL select the user's real device.
         if options.headless
@@ -238,7 +228,11 @@ impl Session {
         {
             environment.push(("SDL_AUDIODRIVER".into(), "dummy".into()));
         }
-        let mut args = Vec::new();
+        let mut args: Vec<std::ffi::OsString> = if options.headless {
+            Vec::new()
+        } else {
+            launch.arguments().into_iter().map(Into::into).collect()
+        };
         if options.headless {
             args.push("--headless".into());
             environment.extend([
@@ -511,16 +505,19 @@ fn pump_window(deadline: std::time::Instant) {
     }
 }
 fn main() {
-    assert_eq!(std::env::args().nth(1).unwrap(), "/gamepkg-disc/default.xbe");
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    assert_eq!(args, ["--window-mode", "windowed", "--aspect-ratio", "16:9",
+        "--render-scale", "2", "--antialiasing", "smaa", "--texture-lod", "auto",
+        "--sharpening-percent", "10", "--widescreen-hud", "true", "--menu-hud-scale", "2",
+        "/gamepkg-disc/default.xbe"]);
     assert_eq!(std::env::var("RECOMP_AUDIO_MUTE").unwrap(), "1");
     assert_eq!(std::env::var("SDL_AUDIODRIVER").ok().as_deref(), __GAMEPKG_EXPECTED_SDL_DRIVER__);
     assert_eq!(std::env::var("RECOMP_AUDIO_VOLUME").unwrap(), "0.37");
-    for (key, expected) in [
-        ("RECOMP_PRESENT_FULLSCREEN", "0"), ("RECOMP_DISPLAY_WIDESCREEN", "1"),
-        ("RECOMP_RENDER_SCALE", "2"), ("RECOMP_GFX_AA", "smaa"),
-        ("RECOMP_GFX_LOD_BIAS", "auto"), ("RECOMP_GFX_SHARPEN", "0.10"),
-        ("RECOMP_GFX_HUD_FIX", "1"), ("RECOMP_GFX_UI_SCALE", "2x")
-    ] { assert_eq!(std::env::var(key).unwrap(), expected, "{key}"); }
+    for key in ["RECOMP_PRESENT_FULLSCREEN", "RECOMP_DISPLAY_WIDESCREEN",
+        "RECOMP_RENDER_SCALE", "RECOMP_GFX_AA", "RECOMP_GFX_LOD_BIAS", "RECOMP_GFX_SHARPEN",
+        "RECOMP_GFX_HUD_FIX", "RECOMP_GFX_UI_SCALE"] {
+        assert!(std::env::var_os(key).is_none(), "graphics must arrive through argv: {key}");
+    }
 
     let watchdog = std::env::var("RECOMP_HANG_WATCHDOG").unwrap();
     assert!(watchdog == "0" || watchdog == "17");
@@ -647,6 +644,7 @@ fn main() {
             crash_60fps: true,
             headless: false,
             launch: Some(crate::launch_options::LaunchOptions::default()),
+            launch_overrides: Default::default(),
         };
         let mut session = Session::start_cached(
             root.path(),

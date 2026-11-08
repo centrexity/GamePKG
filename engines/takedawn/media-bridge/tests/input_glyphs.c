@@ -75,17 +75,17 @@ int main(int argc, char **argv)
     assert(argc == 2);
     input_render_agree();
     bo3_glyphs_init();
-    assert(registered_count == 4 && listener && atomic_load(&selected) == 0);
+    assert(registered_count == 4 && listener && atomic_load(&selected) == 30);
     unsigned checks = 0;
     for (int set = 0; set < GP_GLYPH_SETS; set++) {
         gamepkg_glyphs_scene(0);
         listener(set);
-        assert(atomic_load(&selected) == set);
+        assert(atomic_load(&selected) == gp_normal_variant(set));
         for (unsigned texture = 0; texture < 4; texture++) {
             assert(registered[texture].hash == k_tex[texture].hash);
             assert(registered[texture].width == k_tex[texture].width);
             assert(registered[texture].height == k_tex[texture].height);
-            if (set) same_variant(&registered[texture].variants[set - 1], &k_tex[texture].variants[set - 1]);
+            if (set && !gp_art_pixels[set - 1][texture][0]) same_variant(&registered[texture].variants[set - 1], &k_tex[texture].variants[set - 1]);
         }
         gamepkg_glyphs_scene(1);
         gamepkg_glyphs_port(2, 1);
@@ -98,20 +98,60 @@ int main(int argc, char **argv)
             assert(colored(a->image, 32 * 32) > 30);
             assert(colored(b->image, 32 * 32) > 30);
         }
-        /* Disconnect and pause/results restore the exact original selection.
+        /* Disconnect and pause/results restore the configured base selection.
          * Another mapped controller keeps the shared glyph layer active. */
         gamepkg_glyphs_port(3, 1);
         gamepkg_glyphs_port(2, 0);
         assert(atomic_load(&selected) == expected);
         gamepkg_glyphs_port(3, 0);
-        assert(atomic_load(&selected) == set);
+        assert(atomic_load(&selected) == gp_normal_variant(set));
         gamepkg_glyphs_port(2, 1);
         gamepkg_glyphs_scene(0);
-        assert(atomic_load(&selected) == set);
+        assert(atomic_load(&selected) == gp_normal_variant(set));
         gamepkg_glyphs_port(99, 1);
-        assert(atomic_load(&selected) == set);
+        assert(atomic_load(&selected) == gp_normal_variant(set));
         checks++;
     }
+    /* High-resolution pictures must use vector detail, touch only exact
+     * prompt inputs and stay within the caller's output allocation. */
+    unsigned vector_images = 0;
+    for (unsigned v = 0; v < GP_GLYPH_VARIANTS; v++) for (unsigned t = 0; t < 4; t++) {
+        const struct nv2a_texrep_variant *variant = &registered[t].variants[v];
+        for (unsigned f = 1; f < 4; f++) {
+            const uint32_t *high = gp_art_pixels[v][t][f];
+            if (!high || !variant->image) continue;
+            unsigned factor = f + 1u, w = registered[t].width, h = registered[t].height;
+            size_t n = (size_t)w * h * factor * factor;
+            uint32_t *out = malloc((n + 2) * sizeof *out); assert(out);
+            out[0] = 0x12345678; out[n + 1] = 0x87654321;
+            assert(gamepkg_prompt_scale(variant->image, w, h, factor, out + 1));
+            assert(!memcmp(out + 1, high, n * sizeof *out));
+            assert(out[0] == 0x12345678 && out[n + 1] == 0x87654321);
+            unsigned differs = 0;
+            for (unsigned y = 0; y < h * factor; y++) for (unsigned x = 0; x < w * factor; x++)
+                differs += out[1 + y * w * factor + x] != variant->image[(y / factor) * w + x / factor];
+            assert(differs > 10); /* actual vector detail, not enlarged low-res pixels */
+            free(out); vector_images++;
+        }
+    }
+    assert(vector_images >= 252);
+    uint32_t unrelated[128 * 64]; memset(unrelated, 0x77, sizeof unrelated);
+    uint32_t untouched = 0x12345678;
+    assert(!gamepkg_prompt_scale(unrelated, 128, 64, 2, &untouched));
+    assert(!gamepkg_prompt_scale(NULL, 128, 64, 2, &untouched));
+    assert(!gamepkg_prompt_scale(unrelated, UINT32_MAX, 64, 2, &untouched));
+    assert(!gamepkg_prompt_scale(unrelated, 128, 64, 8, &untouched));
+    assert(untouched == 0x12345678);
+    gp_art_loaded = 0; /* unavailable/OOM art must preserve the original overlay */
+    assert(!gamepkg_prompt_sheet(XBOX_GLYPH_SET_XBOX_MODERN, &untouched));
+    assert(untouched == 0x12345678);
+    gp_art_loaded = 1;
+    const uint32_t malformed_runs[] = { 5, 0xffabcdef };
+    struct gamepkg_prompt_rle bad = { 2, 2, 1, malformed_runs };
+    uint32_t small[6] = {1,2,3,4,5,6};
+    assert(!gp_rle_decode(&bad, small + 1, 4));
+    assert(small[0] == 1 && small[5] == 6);
+    printf("%u high-resolution prompt variants verified with output guards and unrelated-image rejection\n", vector_images);
     /* Export the actual owned PS2 glyphs for visual inspection before a game
      * build. PPM is merely the fixture's output format, never a player tool. */
     listener(XBOX_GLYPH_SET_PLAYSTATION);
@@ -130,6 +170,6 @@ int main(int argc, char **argv)
         assert(fwrite(rgb, 1, 3, out) == 3);
     }
     assert(fclose(out) == 0);
-    printf("%u glyph families: original variants preserved; mapped controller, keyboard, disconnect, pause/results and shared-controller transitions passed\n", checks);
+    printf("%u glyph families: button mapping preserved; Kenney art and PlayStation fallback checked; mapped controller, keyboard, disconnect, pause/results and shared-controller transitions passed\n", checks);
     return 0;
 }
