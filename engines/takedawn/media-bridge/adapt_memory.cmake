@@ -25,6 +25,137 @@ if(location LESS 0)
     message(FATAL_ERROR "Pinned tiled mapping failure branch is missing")
 endif()
 string(REPLACE "${before}" "${after}" adapted "${source}")
+if(WINDOWS_LAYOUT)
+set(wake_before_0 [[static void kick_nap_us(unsigned us)
+{
+#if defined(_WIN32)
+    /* Sleep() is whole milliseconds; NtDelayExecution takes 100 ns units,
+     * which Wine honours (select with a timeval) and native Windows rounds
+     * to its timer resolution. */
+    typedef LONG (WINAPI *delay_fn)(BOOLEAN, PLARGE_INTEGER);
+    static delay_fn delay;
+    static int looked;
+    if (!looked) {
+        HMODULE nt = GetModuleHandleA("ntdll.dll");
+        looked = 1;
+        if (nt)
+            delay = (delay_fn)(void *)GetProcAddress(nt, "NtDelayExecution");
+    }
+    if (delay) {
+        LARGE_INTEGER t;
+        t.QuadPart = -(LONGLONG)us * 10;
+        delay(FALSE, &t);
+    } else {
+        Sleep(1);
+    }
+#else
+    struct timespec ts;
+    ts.tv_sec = 0;
+    ts.tv_nsec = (long)us * 1000L;
+    nanosleep(&ts, NULL);
+#endif
+}
+
+]])
+set(wake_after_0 [[/* Private candidate: an auto-reset event coalesces notifications from the
+ * title's existing lowered MMIO poll. The original scan/GET/flush ordering
+ * remains in nv2a_ack_thread; this event only interrupts its idle nap. */
+#if defined(_WIN32)
+static HANDLE g_gamepkg_kick_ready;
+static volatile LONG g_gamepkg_ack_tid;
+void xbox_Nv2aKickWake(void)
+{
+    if (g_gamepkg_kick_ready && g_nv2a_memory &&
+        (*(volatile uint32_t *)((char *)g_nv2a_memory + NV2A_KICK_REG) & NV2A_KICK_BIT))
+        SetEvent(g_gamepkg_kick_ready);
+}
+#endif
+static void kick_nap_us(unsigned us)
+{
+#if defined(_WIN32)
+    /* Only the command worker consumes the event. The optional statistics
+     * observer has its own existing per-thread sleep timer. */
+    if (g_gamepkg_kick_ready && GetCurrentThreadId() ==
+        (DWORD)InterlockedCompareExchange(&g_gamepkg_ack_tid, 0, 0)) {
+        static HANDLE timer;
+        static int looked;
+        if (!looked) {
+            looked = 1;
+            timer = CreateWaitableTimerExW(NULL, NULL, 0x00000002, TIMER_ALL_ACCESS);
+        }
+        if (timer) {
+            LARGE_INTEGER due;
+            HANDLE handles[2] = { g_gamepkg_kick_ready, timer };
+            due.QuadPart = -(LONGLONG)us * 10;
+            if (SetWaitableTimer(timer, &due, 0, NULL, NULL, FALSE)) {
+                DWORD r = WaitForMultipleObjects(2, handles, FALSE, INFINITE);
+                if (r == WAIT_OBJECT_0) {
+                    CancelWaitableTimer(timer);
+                    return;
+                }
+                if (r == WAIT_OBJECT_0 + 1)
+                    return;
+            }
+        }
+    }
+    /* Failed event/timer setup retains the qualified timer-only path. */
+    xbox_HostSleepNs((uint64_t)us * 1000u);
+#else
+    struct timespec ts;
+    ts.tv_sec = 0;
+    ts.tv_nsec = (long)us * 1000L;
+    nanosleep(&ts, NULL);
+#endif
+}
+
+]])
+string(FIND "${adapted}" "${wake_before_0}" wake_location)
+if(wake_location LESS 0)
+    message(FATAL_ERROR "Pinned kick-wake source site 0 missing")
+endif()
+string(REPLACE "${wake_before_0}" "${wake_after_0}" adapted "${adapted}")
+set(wake_before_1 [[    xbox_log_thread_role("nv2a-ack", 0);]])
+set(wake_after_1 [[    xbox_log_thread_role("nv2a-ack", 0);
+#if defined(_WIN32)
+    InterlockedExchange(&g_gamepkg_ack_tid, (LONG)GetCurrentThreadId());
+#endif]])
+string(FIND "${adapted}" "${wake_before_1}" wake_location)
+if(wake_location LESS 0)
+    message(FATAL_ERROR "Pinned kick-wake source site 1 missing")
+endif()
+string(REPLACE "${wake_before_1}" "${wake_after_1}" adapted "${adapted}")
+set(wake_before_2 [[    g_nv2a_ack_stop = 0;]])
+set(wake_after_2 [[    g_nv2a_ack_stop = 0;
+#if defined(_WIN32)
+    /* Process-lifetime object, created before the worker and game start.
+     * Auto-reset retains an early request and coalesces repeated polls. */
+    if (!g_gamepkg_kick_ready)
+        g_gamepkg_kick_ready = CreateEventW(NULL, FALSE, FALSE, NULL);
+#endif]])
+string(FIND "${adapted}" "${wake_before_2}" wake_location)
+if(wake_location LESS 0)
+    message(FATAL_ERROR "Pinned kick-wake source site 2 missing")
+endif()
+string(REPLACE "${wake_before_2}" "${wake_after_2}" adapted "${adapted}")
+set(wake_before_3 [[                if (*kr & NV2A_KICK_BIT) {
+                    *kr &= ~NV2A_KICK_BIT;]])
+set(wake_after_3 [[                if (*kr & NV2A_KICK_BIT) {
+                    /* PUT precedes this flush in the producer. Recheck after
+                     * observing the flush so a publication between the first
+                     * PUT read and this bit cannot be acknowledged early. */
+                    __atomic_thread_fence(__ATOMIC_ACQUIRE);
+                    if (*(volatile uint32_t *)((char *)regs + NV2A_USER_DMA_PUT)
+                            != g_scanned_put) {
+                        last_active = now;
+                        break;
+                    }
+                    *kr &= ~NV2A_KICK_BIT;]])
+string(FIND "${adapted}" "${wake_before_3}" wake_location)
+if(wake_location LESS 0)
+    message(FATAL_ERROR "Pinned kick-wake source site 3 missing")
+endif()
+string(REPLACE "${wake_before_3}" "${wake_after_3}" adapted "${adapted}")
+endif()
 file(WRITE "${OUTPUT}.tmp" "/* GamePKG: stop cleanly when the required tiled alias cannot map. */\n${adapted}")
 execute_process(COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${OUTPUT}.tmp" "${OUTPUT}" COMMAND_ERROR_IS_FATAL ANY)
 file(REMOVE "${OUTPUT}.tmp")

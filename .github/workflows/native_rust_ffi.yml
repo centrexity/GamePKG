@@ -1,9 +1,9 @@
 name: Native Rust engine stream ABI
 on:
   push:
-    paths: ['engines/takedawn/native-gen/tests/streaming*', 'vendor/winit/src/platform_impl/windows/definitions.rs', 'vendor/winit/src/platform_impl/windows/drop_handler.rs', 'tools/check_windows_drop_abi.py', 'tests/fixtures/windows-drop-abi/**', 'ports', 'tools/check_arkanoo_geometry.py', 'tools/generate_arkanoo_trig_reference.py', 'tests/fixtures/arkanoo-trig-f32.json', 'engines/takedawn/rust-port/**', 'engines/takedawn/media-bridge/**', 'engines/takedawn/windows-runner/**', 'tools/check_takedawn_input_glyphs.py', 'tools/check_takedawn_native_privileged.py', 'tools/takedawn_native_privileged.py', 'tools/check_takedawn_rust_stdio.py', 'tools/check_takedawn_rust_cache.py', 'tools/check_takedawn_windows_file.py', 'tools/check_takedawn_windows_kernel.py', 'tools/check_takedawn_thread_priority.py', 'tools/check_takedawn_gpu_report.py', 'tools/check_takedawn_windows_stream.py', 'tools/check_takedawn_windows_restart.py', 'tools/check_takedawn_windows_native_build.py', 'engines/takedawn/windows-dependencies.json', '.github/workflows/native_rust_ffi.yml']
+    paths: ['engines/takedawn/native-gen/tests/streaming*', 'vendor/winit/src/platform_impl/windows/definitions.rs', 'vendor/winit/src/platform_impl/windows/drop_handler.rs', 'tools/check_windows_drop_abi.py', 'tests/fixtures/windows-drop-abi/**', 'ports', 'tools/check_arkanoo_geometry.py', 'tools/generate_arkanoo_trig_reference.py', 'tests/fixtures/arkanoo-trig-f32.json', 'engines/takedawn/rust-port/**', 'engines/takedawn/media-bridge/**', 'engines/takedawn/windows-runner/**', 'tools/check_takedawn_input_glyphs.py', 'tools/check_takedawn_native_privileged.py', 'tools/takedawn_native_privileged.py', 'tools/check_takedawn_rust_stdio.py', 'tools/check_takedawn_rust_cache.py', 'tools/check_takedawn_windows_file.py', 'tools/check_takedawn_windows_kernel.py', 'tools/check_takedawn_thread_priority.py', 'tools/check_takedawn_kick_handoff.py', 'tools/fixtures/takedawn_kick_wake_win32.c', 'tools/check_takedawn_gpu_report.py', 'tools/check_takedawn_windows_stream.py', 'tools/check_takedawn_windows_restart.py', 'tools/check_takedawn_windows_native_build.py', 'engines/takedawn/windows-dependencies.json', '.github/workflows/native_rust_ffi.yml']
   pull_request:
-    paths: ['engines/takedawn/native-gen/tests/streaming*', 'vendor/winit/src/platform_impl/windows/definitions.rs', 'vendor/winit/src/platform_impl/windows/drop_handler.rs', 'tools/check_windows_drop_abi.py', 'tests/fixtures/windows-drop-abi/**', 'ports', 'tools/check_arkanoo_geometry.py', 'tools/generate_arkanoo_trig_reference.py', 'tests/fixtures/arkanoo-trig-f32.json', 'engines/takedawn/rust-port/**', 'engines/takedawn/media-bridge/**', 'engines/takedawn/windows-runner/**', 'tools/check_takedawn_input_glyphs.py', 'tools/check_takedawn_native_privileged.py', 'tools/takedawn_native_privileged.py', 'tools/check_takedawn_rust_stdio.py', 'tools/check_takedawn_rust_cache.py', 'tools/check_takedawn_windows_file.py', 'tools/check_takedawn_windows_kernel.py', 'tools/check_takedawn_thread_priority.py', 'tools/check_takedawn_gpu_report.py', 'tools/check_takedawn_windows_stream.py', 'tools/check_takedawn_windows_restart.py', 'tools/check_takedawn_windows_native_build.py', 'engines/takedawn/windows-dependencies.json', '.github/workflows/native_rust_ffi.yml']
+    paths: ['engines/takedawn/native-gen/tests/streaming*', 'vendor/winit/src/platform_impl/windows/definitions.rs', 'vendor/winit/src/platform_impl/windows/drop_handler.rs', 'tools/check_windows_drop_abi.py', 'tests/fixtures/windows-drop-abi/**', 'ports', 'tools/check_arkanoo_geometry.py', 'tools/generate_arkanoo_trig_reference.py', 'tests/fixtures/arkanoo-trig-f32.json', 'engines/takedawn/rust-port/**', 'engines/takedawn/media-bridge/**', 'engines/takedawn/windows-runner/**', 'tools/check_takedawn_input_glyphs.py', 'tools/check_takedawn_native_privileged.py', 'tools/takedawn_native_privileged.py', 'tools/check_takedawn_rust_stdio.py', 'tools/check_takedawn_rust_cache.py', 'tools/check_takedawn_windows_file.py', 'tools/check_takedawn_windows_kernel.py', 'tools/check_takedawn_thread_priority.py', 'tools/check_takedawn_kick_handoff.py', 'tools/fixtures/takedawn_kick_wake_win32.c', 'tools/check_takedawn_gpu_report.py', 'tools/check_takedawn_windows_stream.py', 'tools/check_takedawn_windows_restart.py', 'tools/check_takedawn_windows_native_build.py', 'engines/takedawn/windows-dependencies.json', '.github/workflows/native_rust_ffi.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -136,3 +136,45 @@ jobs:
             /tmp/gamepkg-native-privileged.*/*.log
             /tmp/gamepkg-native-privileged.*/*.json
           retention-days: 3
+
+  native-kick-handoffs:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: xenophobentx/xboxrecomp
+          ref: 5ae8ad90d984425e834dee759592c15592679880
+          path: target/kick-kernel-reference
+          persist-credentials: false
+      - name: Install 32-bit ordering and Windows fixture compilers
+        run: |
+          bash tools/ci_ubuntu_apt.sh update
+          bash tools/ci_ubuntu_apt.sh install -y cmake clang-18 gcc-multilib libc6-dev-i386 gcc-mingw-w64-x86-64
+      - name: Check pinned overlays, acknowledgement ordering and both pointer widths
+        run: |
+          mkdir -p target/kick-fixture
+          python3 tools/check_takedawn_kick_handoff.py --toolkit target/kick-kernel-reference --windows-output target/kick-fixture > target/kick-fixture/portable-checks.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-kick-handoff-fixture
+          path: |
+            target/kick-fixture/*.exe
+            target/kick-fixture/portable-checks.json
+          retention-days: 3
+
+  native-kick-handoffs-windows:
+    needs: native-kick-handoffs
+    runs-on: windows-2022
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-kick-handoff-fixture
+          path: target/kick-fixture
+      - name: Exercise native event ordering and timer failure fallbacks
+        shell: pwsh
+        run: |
+          foreach ($mode in @('0', '1', '2', '3')) {
+            & .\target\kick-fixture\takedawn-kick-wake-fixture.exe $mode
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
