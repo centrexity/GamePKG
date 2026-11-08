@@ -2182,3 +2182,30 @@ regenerated and subsequently reloaded prepared fixture both pass the local
 native C/Rust stream, variadic ABI, fixed-width minimum and flush comparison.
 All 22 normalizer tests pass. Physical Windows/Linux hosted comparisons must
 run again against that refreshed fixture before claiming hosted success.
+
+### Crash Results readiness and Windows checker correction
+
+The subsequent Linux run resolves the prior full-Crash test timeout. The old
+fixed 300-flip wait sent Continue during the loading/countdown for the replay
+behind Crash Results. The apparent event reset was that background replay.
+The copied maintainer driver now waits for a phase-2 transition after the
+results flag, while that flag remains set, before sending the original A
+press. Buttons, original gameplay assertions and game/runtime code are unchanged.
+The private cold 2× Vulkan run passed every original Xbox Crash assertion:
+results at flip 6875, replay ready at 7352, A received at 7442, front-end return
+at 7539 and normal game exit 0. A captured frame independently shows the
+original Crash Results menu with Continue selected. The old failed run remains
+preserved; this follow-up establishes this control case, not all Crash events.
+
+The refreshed stream fixture reaches and passes the Linux hosted native ABI
+job; both Windows jobs also get beyond that comparison, then encounter a stale
+thread-source checker. That checker hashed CRLF checkout bytes and omitted the
+already reviewed Windows executor CPU-policy insertion from its restoration
+comparison. It now accepts only exact canonical bytes or the exact CRLF form
+of the pinned Git object, and restores only the explicit priority helper,
+wrappers and Windows CPU-policy insertion before demanding complete source
+equality. Extra source edits, wrong Git revisions and altered Git objects reject.
+Cross builds pass at Windows32/64, and both fixtures execute on physical Windows
+with strict handles enabled, 1,024 duplicates without leaks and invalid/event/
+retired/missing-object checks. Four source-admission tests and three copied
+Crash-driver tests pass. These are checker corrections; no runtime policy changes.
