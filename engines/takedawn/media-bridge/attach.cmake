@@ -25,8 +25,27 @@ function(gamepkg_attach_input_glyphs)
     set_property(TARGET burnout3 PROPERTY SOURCES "${game_sources}")
 endfunction()
 
+function(gamepkg_attach_presentation_settings)
+    get_target_property(overlay_dir xbox_overlay SOURCE_DIR)
+    get_target_property(overlay_sources xbox_overlay SOURCES)
+    list(FIND overlay_sources xbox_settings.c settings_index)
+    if(settings_index LESS 0)
+        message(FATAL_ERROR "Pinned overlay settings target entry is missing")
+    endif()
+    file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/gamepkg-media")
+    set(settings "${CMAKE_BINARY_DIR}/gamepkg-media/xbox_settings.c")
+    execute_process(COMMAND "${CMAKE_COMMAND}" "-DINPUT=${overlay_dir}/xbox_settings.c"
+        "-DOUTPUT=${settings}" -DKIND=settings -P "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/adapt_presentation.cmake"
+        COMMAND_ERROR_IS_FATAL ANY)
+    list(REMOVE_AT overlay_sources ${settings_index})
+    list(APPEND overlay_sources "${settings}")
+    set_property(TARGET xbox_overlay PROPERTY SOURCES "${overlay_sources}")
+    target_include_directories(xbox_overlay PRIVATE "${overlay_dir}")
+endfunction()
+
 function(gamepkg_attach_disc_media)
     gamepkg_attach_input_glyphs()
+    gamepkg_attach_presentation_settings()
     if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
         include("${CMAKE_CURRENT_FUNCTION_LIST_DIR}/windows_attach.cmake")
         gamepkg_attach_windows_disc_media()
@@ -39,6 +58,20 @@ function(gamepkg_attach_disc_media)
         message(FATAL_ERROR "The pinned Takedawn burnout3 target is missing")
     endif()
     set(bridge "${CMAKE_CURRENT_FUNCTION_LIST_DIR}")
+    get_target_property(game_dir burnout3 SOURCE_DIR)
+    get_target_property(game_sources burnout3 SOURCES)
+    list(FIND game_sources main.c main_index)
+    if(main_index LESS 0)
+        message(FATAL_ERROR "Pinned game main target entry is missing")
+    endif()
+    set(main "${CMAKE_BINARY_DIR}/gamepkg-media/main.c")
+    execute_process(COMMAND "${CMAKE_COMMAND}" "-DINPUT=${game_dir}/main.c"
+        "-DOUTPUT=${main}" -DKIND=main -P "${bridge}/adapt_presentation.cmake" COMMAND_ERROR_IS_FATAL ANY)
+    list(REMOVE_AT game_sources ${main_index})
+    list(APPEND game_sources "${main}")
+    set_property(TARGET burnout3 PROPERTY SOURCES "${game_sources}")
+    target_include_directories(burnout3 PRIVATE "${game_dir}")
+
     # DVD files and Xbox HDD files are distinct devices. Upstream's general
     # Partition1 rule points at game_dir, a folder writable in its extracted
     # install. Our game_dir is a read-only image, so stage the pinned rule with
