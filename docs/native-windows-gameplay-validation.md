@@ -2233,3 +2233,45 @@ staging/cross-build and sanitized GPU-report positive/negative fixtures also
 pass under a deliberately non-UTF-8 local locale. LeakSanitizer is disabled
 only for that restricted local GPU-fixture invocation; address/undefined checks
 remain enabled. Hosted Windows MSVC reruns remain required for current-head CI.
+
+
+### Original Xbox prompt default (recipe 0.1.14)
+
+The reviewed source archive is now
+`400f7cf7986b4f59658f4d8f78f54dc9065385a0a532c7d1e286ce7a624b0a12`
+(4,339 files). The default native Button prompts setting is Xbox (original).
+Classic Xbox uses the title's own textures without host replacement; modern
+Xbox retains its original face images while adapting only shoulder labels.
+The settings overlay also composes from the ISO image for these sets. Existing
+saved prompt choices and all input mappings are preserved. Alternate controller/
+keyboard artwork remains available; its unused classic/modern images are not
+expanded into the runtime art pool. No original or enlarged retail pixels are
+included in the source recipe.
+
+Sanitized native Linux64/Linux32 prompt checks pass all 15 existing families
+and 222 remaining authored high-resolution variants; default-original and
+modern-Xbox face-preservation assertions pass. The full Linux64 fixture also
+passes all 261 original gameplay-input checks. The actual settings reader passes
+272 checks and the existing native argument precedence/rejection matrix at
+both widths. Local GUI library tests pass 445/445 (48 explicit ignored gates),
+strict Clippy and formatting pass, both app entries build for Linux/Windows,
+and the complete archive plus signed local 0.1.14 package verify. Previous
+native-argument recipe admission and launch compatibility are retained.
+
+The updated Linux native game passes the complete original Xbox Crash control
+case through Continue/front-end return and normal exit 0. An ISO-in-place native
+decoder check independently identifies the original Buttons, A_Button and
+B_Button image keys; each matches the actual scaled GPU upload and a verified
+local cache pixel checksum. A captured frame shows the original glossy Xbox B.
+This verifies original source artwork entering the existing local scaler; no
+retail images are written by the auditor or published in the repository.
+
+The same original-art build passes on physical Windows with real WASAPI audio
+at 35%: every original Xbox Crash control assertion passes, results appear at
+flip 7231, Continue is pressed at 8089, and the front end returns at 8182. The
+owned process exits normally with code 0. Vulkan execution and reached-path
+audits pass. The metadata-only cache audit confirms the original Buttons, A
+and B decoded keys, their scaled GPU uploads, and full local pixel checksums;
+all five protected reference files remain unchanged. The captured Results
+frame shows the original glossy red B and green A. These debug-traced checks
+verify artwork and controls, not sustained frame-time performance.

@@ -25,6 +25,7 @@ static int gp_art_load(void)
     size_t bytes = 0;
     static const unsigned widths[] = {128,32,32,32}, heights[] = {64,32,32,16};
     for (unsigned v = 0; v < 30; v++) for (unsigned t = 0; t < 4; t++) for (unsigned f = 0; f < 4; f++) {
+        if (!gp_authored_variant(v)) continue;
         const struct gamepkg_prompt_rle *source = gamepkg_kenney_art[v][t][f];
         if (!source) continue;
         if (source->width != widths[t] * (f + 1u) || source->height != heights[t] * (f + 1u)) goto fail;

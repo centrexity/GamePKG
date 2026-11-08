@@ -67,9 +67,12 @@ def main():
         test = test.replace('xbox_SettingSet(XS_GRAPHICS_UI_SCALE, 2);', 'xbox_SettingSet(XS_GRAPHICS_UI_SCALE, 3);')
         test = test.replace('st_ui_scale == 4 && xbox_SettingValue(XS_GRAPHICS_UI_SCALE) == 2',
                             'st_ui_scale == 4 && xbox_SettingValue(XS_GRAPHICS_UI_SCALE) == 3')
+        test = test.replace('CHECK(xbox_SettingValue(XS_INPUT_GLYPHS) == 0);',
+                            'CHECK(xbox_SettingValue(XS_INPUT_GLYPHS) == 1);')
+        test = test.replace('CHECK(st_glyphs == 0);', 'CHECK(st_glyphs == 1);')
         checks = '\n'.join(
             f'    CHECK(xbox_SettingGet({key})->builtin == {value});'
-            for key, value in [('XS_GRAPHICS_RENDER_SCALE', '2'),
+            for key, value in [('XS_INPUT_GLYPHS', '1'), ('XS_GRAPHICS_RENDER_SCALE', '2'),
                                ('XS_DISPLAY_ASPECT', '1'), ('XS_DISPLAY_HUD_FIX', '1'),
                                ('XS_GRAPHICS_AA', '2'), ('XS_GRAPHICS_SHARPEN', '0.10'),
                                ('XS_GRAPHICS_LOD_BIAS', '1'), ('XS_GRAPHICS_UI_SCALE', '1')])

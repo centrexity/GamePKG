@@ -176,6 +176,7 @@ mod recipe_identity_tests {
     fn source_kit_changes_invalidate_the_app_native_recipe_identity() {
         let current = super::sdk_identity_for_takedawn_kit(crate::takedawn::CURRENT_KIT_SHA256);
         for kit in [
+            crate::takedawn::LAUNCH_ARGS_KIT_SHA256,
             crate::takedawn::FULLSCREEN_KIT_SHA256,
             crate::takedawn::ENHANCED_DEFAULTS_KIT_SHA256,
             crate::takedawn::PRESENTATION_KIT_SHA256,
