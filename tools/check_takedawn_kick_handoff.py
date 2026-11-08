@@ -7,6 +7,8 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
+from check_takedawn_trace_policy import AFTER as TRACE_AFTER, BEFORE as TRACE_BEFORE
+from check_takedawn_trace_policy import REPORT_AFTER, REPORT_BEFORE
 
 
 def run(command, **kwargs):
@@ -118,7 +120,8 @@ def main():
                 linux = work / 'nonWindows.c'
                 result = stage(source, linux, False)
                 assert result.returncode == 0, result.stderr
-                # The Linux overlay performs only its existing mapping-failure adaptation.
+                # Linux keeps the mapping guard and explicit trace policy;
+                # the Windows-only wake helper must not enter this output.
                 expected = data.decode().replace(
                     '            XR_ERROR( "  WARNING: tiled aperture at 0x%08X failed"\n'
                     '                    " (error %lu); rendering writes will fault\\n",\n'
@@ -127,6 +130,10 @@ def main():
                     '                    " (error %lu); stopping before game startup.\\n",\n'
                     '                    XBOX_TILED_BASE, (unsigned long)GetLastError());\n'
                     '            return FALSE;')
+                assert expected.count(TRACE_BEFORE) == 1
+                expected = expected.replace(TRACE_BEFORE, TRACE_AFTER)
+                assert expected.count(REPORT_BEFORE) == 1
+                expected = expected.replace(REPORT_BEFORE, REPORT_AFTER)
                 prefix = '/* GamePKG: stop cleanly when the required tiled alias cannot map. */\n'
                 assert linux.read_text() == prefix + expected
             checks.append({'name': kind + '-pinned-staging-and-corruption-guards', 'result': 'pass'})

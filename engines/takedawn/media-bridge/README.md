@@ -6,6 +6,14 @@ generated game code, external executables or keys. Original disc files are read
 in place through the verified Rust reader. Generation/conversion tools are
 maintainer-only; players use the prepared source kit.
 
+Ordinary rendering leaves detailed NV2A register logs and diagnostic framebuffer
+checksums disabled. Maintainers can request them with `RECOMP_TRACE=nv2a`;
+explicit pushbuffer surveys also retain their diagnostics. Periodic renderer
+health reports remain enabled independently of verbose tracing. Error reporting,
+unimplemented-instruction traps, command execution and fence handling are
+unchanged. `tools/check_takedawn_trace_policy.py` checks this startup policy and
+preservation of the rest of the memory adapter on both pointer widths.
+
 ## Windows transport preparation
 
 `windows_file.c` provides read-only Windows file handles over the same verified
