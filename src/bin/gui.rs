@@ -74,7 +74,10 @@ fn main() -> eframe::Result {
     }
     let mut wgpu_options = eframe::egui_wgpu::WgpuSetupCreateNew::default();
     wgpu_options.instance_descriptor.backends = eframe::wgpu::Backends::VULKAN;
-    let title = args.play.clone().unwrap_or_else(|| "GamePKG".into());
+    let title = args
+        .play
+        .clone()
+        .unwrap_or_else(|| concat!("GamePKG ", env!("CARGO_PKG_VERSION")).into());
     let window_preferences = args.play.as_ref().and_then(|id| {
         let open = || -> anyhow::Result<gamepkg::window_preferences::Session> {
             let root = gamepkg::registry::default_root()?;
