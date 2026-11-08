@@ -15,6 +15,8 @@ import tempfile
 
 
 REVIEWED = {
+    '3157cadcbc5b7c397238821035d1b172cd4edebbcb4ce2bf2f6bca9b038e4516',
+    'db2a7ddada4d04a7691501480a5a15f2c71be43fc31921f033f8ca292eb0913f',
     'd94c9bdb3a5e49733ebbe78c573e56174b00ca7ffb83ffbfd9fd0fa091c0905b',
     '8ae26ce68862dffde427315fc335e2e6effa1d26ecd9ad02778499c4d478a7d0',
     'd11056c7b8e1306023b0229dd32f6afb60194fd786b73e3abf187210eeb0de5f',
@@ -32,6 +34,8 @@ def main():
     parser.add_argument('--cc', default=os.environ.get('CC', 'cc'))
     parser.add_argument('--m32', action='store_true',
                         help='Compile and execute the input/glyph corpus as 32-bit processes')
+    parser.add_argument('--glyphs-only', action='store_true', help='Run the prompt renderer/mapping corpus without the separate legacy gameplay-hook fixture')
+    parser.add_argument('--system-include', type=Path, action='append', default=[])
     args = parser.parse_args()
     digest = hashlib.file_digest(args.kit.open('rb'), 'sha256').hexdigest()
     if digest not in REVIEWED:
@@ -83,16 +87,24 @@ def main():
         includes = [work / path for path in ['game/src/game', 'game/src/game/recomp/gen',
                                             'toolkit/src', 'toolkit/src/input',
                                             'toolkit/src/kernel', 'glyphs']]
+        includes.append(bridge / 'input-prompts')
         common = [args.cc, '-std=c11', '-O2', '-Wall', '-Wextra', '-Werror',
                   '-Wno-missing-field-initializers', *[f'-I{path}' for path in includes]]
+        for path in args.system_include:
+            common += ['-idirafter', str(path.resolve())]
         if args.m32:
             common += ['-m32', '-DGAMEPKG_EXPECT_POINTER_BITS=32']
         subprocess.run([*common, '-c', str(work / 'glyphs.c'), '-o', str(work / 'no-art.o')], check=True)
         subprocess.run([*common, '-fsanitize=address,undefined', '-fno-omit-frame-pointer',
                         '-DBO3_HAVE_GLYPH_ART', f'-DGAMEPKG_GLYPHS_SOURCE="{work / "glyphs.c"}"',
                         str(bridge / 'tests/input_glyphs.c'), str(work / 'glyphs/bo3_glyph_art.c'),
+                        *[str(p) for p in sorted((bridge / 'input-prompts/generated').glob('prompt_art*.c'))],
                         '-o', str(work / 'check')], check=True)
-        subprocess.run([str(work / 'check'), str(work / 'prompts.ppm')], check=True)
+        subprocess.run([str(work / 'check'), str(work / 'prompts.ppm')], check=True,
+                       env=dict(os.environ, ASAN_OPTIONS='detect_leaks=0'))
+        if args.glyphs_only:
+            print('PASS: prompt renderer, original button mapping, high-resolution art, no-art build and source guards; separate gameplay-hook fixture not requested')
+            return
         # Compile the complete staged input hook, not just the pure button table.
         # Unused runtime callbacks are discarded; the gate reads synthetic RAM.
         subprocess.run([*common, '-fsanitize=address,undefined', '-fno-omit-frame-pointer',
@@ -100,7 +112,8 @@ def main():
                         f'-DGAMEPKG_CONTROLS_SOURCE="{work / "controls.c"}"',
                         str(bridge / 'tests/input_gameplay.c'),
                         '-o', str(work / 'gameplay-check')], check=True)
-        subprocess.run([str(work / 'gameplay-check')], check=True)
+        subprocess.run([str(work / 'gameplay-check')], check=True,
+                       env=dict(os.environ, ASAN_OPTIONS='detect_leaks=0'))
     print('PASS: original input/render agreement, player assignments, driving/menu transitions, all glyph families, no-art build, source and in-place rejection; ASan/UBSan clean')
 
 

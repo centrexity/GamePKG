@@ -1,9 +1,9 @@
 /* Included after the pinned glyphs.c tables. Host graphics adaptation only:
- * game bodies, input delivery and original artwork remain unchanged. */
+ * game bodies and input delivery remain unchanged. Kenney CC0 prompt art is host-owned. */
 #include <stdatomic.h>
 #include <string.h>
 
-enum { GP_GLYPH_SETS = 15, GP_GLYPH_VARIANTS = 29 };
+enum { GP_GLYPH_SETS = 15, GP_GLYPH_VARIANTS = 30 };
 _Static_assert((int)XBOX_GLYPH_SET_COUNT == GP_GLYPH_SETS, "review the glyph families");
 static uint32_t gp_sheets[GP_GLYPH_SETS][128 * 64];
 static uint32_t gp_a[GP_GLYPH_SETS][32 * 32];
@@ -12,6 +12,7 @@ static struct nv2a_texrep_variant gp_variants[4][GP_GLYPH_VARIANTS];
 static struct nv2a_texrep_tex gp_textures[4];
 static atomic_flag gp_glyph_lock = ATOMIC_FLAG_INIT;
 static unsigned gp_ps2_ports;
+#include "input-prompts/runtime.h"
 static int gp_base_set;
 
 static void gp_lock(void)
@@ -24,10 +25,11 @@ static void gp_unlock(void)
 }
 /* No input or renderer locks are acquired here. The upload-generation API is
  * atomic, and tables/images are immutable after registration. */
+static int gp_normal_variant(int set) { return set || !gp_art_loaded ? set : 30; }
 static void gp_publish(void)
 {
     int ps2 = gp_ps2_ports != 0 && gp_base_set != XBOX_GLYPH_SET_KEYBOARD;
-    nv2a_texrep_set_variant(ps2 ? GP_GLYPH_SETS + gp_base_set : gp_base_set);
+    nv2a_texrep_set_variant(ps2 ? GP_GLYPH_SETS + gp_base_set : gp_normal_variant(gp_base_set));
 }
 void gamepkg_glyphs_scene(int ps2_driving)
 {
@@ -119,7 +121,7 @@ static void gp_make_sheet(unsigned set)
      * four faces and shoulders; undo that face swap when selecting positions. */
     if (set == 0 || set == XBOX_GLYPH_SET_XBOX_MODERN || set == XBOX_GLYPH_SET_XBOX_SWAPPED)
         source_set = XBOX_GLYPH_SET_XBOX_MODERN_SWAPPED;
-    const uint32_t *physical = k_sheet[source_set - 1].image;
+    const uint32_t *physical = gp_variants[0][source_set - 1].image;
     int swapped = source_set == XBOX_GLYPH_SET_NINTENDO_LABEL
         || source_set == XBOX_GLYPH_SET_POSITIONAL_SWAPPED
         || source_set == XBOX_GLYPH_SET_XBOX_SWAPPED
@@ -135,6 +137,7 @@ static void gp_make_sheet(unsigned set)
 static void gamepkg_glyphs_register(void)
 {
     _Static_assert(sizeof k_tex / sizeof k_tex[0] == 4, "review prompt textures");
+    gp_art_loaded = gp_art_load();
     for (unsigned tex = 0; tex < 4; tex++) {
         gp_textures[tex] = k_tex[tex];
         memcpy(gp_variants[tex], k_tex[tex].variants,
@@ -144,12 +147,52 @@ static void gamepkg_glyphs_register(void)
         for (unsigned set = 0; set < GP_GLYPH_SETS; set++)
             if (set) gp_variants[tex][GP_GLYPH_SETS - 1 + set] = k_tex[tex].variants[set - 1];
     }
+    for (unsigned v = 0; v < 30; v++) {
+        if (v >= 14 && v < 29) continue;
+        for (unsigned tex = 0; tex < 4; tex++) if (gp_art_pixels[v][tex][0]) {
+            gp_variants[tex][v] = (struct nv2a_texrep_variant){gp_art_pixels[v][tex][0],
+                tex == 0 ? k_sheet_all : tex == 3 ? k_dpad_all : k_single, 1, 0, 0};
+        }
+    }
     for (unsigned set = 0; set < GP_GLYPH_SETS; set++) {
         gp_make_sheet(set);
         unsigned index = GP_GLYPH_SETS - 1 + set;
         gp_variants[0][index] = (struct nv2a_texrep_variant){gp_sheets[set], k_sheet_all, 1, 0, 0};
         gp_variants[1][index] = (struct nv2a_texrep_variant){gp_a[set], k_single, 1, 0, 0};
         gp_variants[2][index] = (struct nv2a_texrep_variant){gp_b[set], k_single, 1, 0, 0};
+        int normal = gp_normal_variant((int)set);
+        if (normal) gp_variants[3][index] = gp_variants[3][normal - 1];
     }
     nv2a_texrep_register(gp_textures, 4);
+    atomic_store_explicit(&gp_art_ready, 1, memory_order_release);
+}
+
+int gamepkg_prompt_sheet(int set, uint32_t *dst)
+{
+    if (!dst || set < 0 || set >= GP_GLYPH_SETS || !atomic_load_explicit(&gp_art_ready, memory_order_acquire) || !gp_art_loaded) return 0;
+    int variant = gp_normal_variant(set);
+    if (!variant || !gp_variants[0][variant - 1].image) return 0;
+    memcpy(dst, gp_variants[0][variant - 1].image, 128u * 64u * sizeof *dst);
+    return 1;
+}
+int gamepkg_prompt_scale(const uint32_t *src, uint32_t w, uint32_t h, unsigned factor, uint32_t *dst)
+{
+    if (!src || !dst || (factor < 2 || factor > 4) || !atomic_load_explicit(&gp_art_ready, memory_order_acquire)) return 0;
+    unsigned tex;
+    if (w == 128 && h == 64) tex = 0;
+    else if (w == 32 && h == 32) tex = 1;
+    else if (w == 32 && h == 16) tex = 3;
+    else return 0;
+    unsigned end = w == 32 && h == 32 ? 3u : tex + 1u;
+    for (; tex < end; tex++) {
+        for (unsigned v = 0; v < GP_GLYPH_VARIANTS; v++) {
+            const uint32_t *low = gp_variants[tex][v].image;
+            const uint32_t *high = gp_art_pixels[v][tex][factor - 1];
+            if (low && high && !memcmp(src, low, (size_t)w * h * sizeof *src)) {
+                memcpy(dst, high, (size_t)w * h * factor * factor * sizeof *dst);
+                return 1;
+            }
+        }
+    }
+    return 0;
 }

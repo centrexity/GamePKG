@@ -13,6 +13,9 @@ pub const MEMORY: u64 = 4 * 1024 * 1024 * 1024;
 pub const KIT_SHA256: &str = "a40e9656476633125d2fd50cc6a71134a453f8942634e34ebef848a215b98a5a";
 pub const KIT_ASSET: &str = "assets/takedawn-source-kit.tar.gz";
 pub const CURRENT_KIT_SHA256: &str =
+    "3157cadcbc5b7c397238821035d1b172cd4edebbcb4ce2bf2f6bca9b038e4516";
+// Keep the earlier fullscreen/launch-options source recipe verifiable.
+pub const FULLSCREEN_KIT_SHA256: &str =
     "db2a7ddada4d04a7691501480a5a15f2c71be43fc31921f033f8ca292eb0913f";
 // Keep the earlier enhanced-defaults source kit verifiable.
 pub const ENHANCED_DEFAULTS_KIT_SHA256: &str =
@@ -60,6 +63,7 @@ pub(crate) fn reviewed_kit_digest(bytes: &[u8]) -> Result<String> {
         [
             KIT_SHA256,
             CURRENT_KIT_SHA256,
+            FULLSCREEN_KIT_SHA256,
             ENHANCED_DEFAULTS_KIT_SHA256,
             PRESENTATION_KIT_SHA256,
             QUIET_TRACE_KIT_SHA256,
@@ -151,7 +155,23 @@ pub fn play(
     settings: &crate::settings::Settings,
     frames: Option<u32>,
 ) -> Result<()> {
-    let result = play_session(root, id, roms, settings, frames);
+    play_with_launch(root, id, roms, settings, frames, Default::default())
+}
+#[cfg(any(target_os = "linux", windows))]
+pub fn play_with_launch(
+    root: &Path,
+    id: &str,
+    roms: &[PathBuf],
+    settings: &crate::settings::Settings,
+    frames: Option<u32>,
+    launch_overrides: crate::launch_options::LaunchArgs,
+) -> Result<()> {
+    launch_overrides.validate()?;
+    ensure!(
+        frames.is_none() || launch_overrides.is_empty(),
+        "Graphics launch arguments require a game window"
+    );
+    let result = play_session(root, id, roms, settings, frames, launch_overrides);
     if let Ok(manifest) = crate::registry::installed_manifest(root, id) {
         if manifest.builtin_engine.as_deref() == Some(PROFILE) {
             let folder = root.join("launch-errors");
@@ -220,6 +240,7 @@ fn play_session(
     roms: &[PathBuf],
     settings: &crate::settings::Settings,
     frames: Option<u32>,
+    launch_overrides: crate::launch_options::LaunchArgs,
 ) -> Result<()> {
     use std::io::Write;
     let _guard = crate::build::BuildChange::read(root, id)?;
@@ -237,6 +258,13 @@ fn play_session(
         manifest.builtin_engine.as_deref() == Some(PROFILE),
         "not a Takedawn package"
     );
+    let launch = crate::launch_options::effective(root, &manifest)?;
+    if frames.is_none() && (launch.is_some() || !launch_overrides.is_empty()) {
+        ensure!(
+            reviewed_kit_digest(&package.read(KIT_ASSET)?)? == CURRENT_KIT_SHA256,
+            "Update this game package and rebuild it to use graphics launch arguments."
+        );
+    }
     settings.validate()?;
     ensure!(
         settings.memory_ceiling_mib >= 4096,
@@ -271,7 +299,8 @@ fn play_session(
             audio_volume: settings.audio_volume,
             watchdog_seconds: settings.native_watchdog_seconds,
             crash_60fps: settings.native_crash_60fps,
-            launch: crate::launch_options::effective(root, &manifest)?,
+            launch,
+            launch_overrides,
         },
     )?;
     drop(_guard);

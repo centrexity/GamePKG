@@ -13,6 +13,8 @@ struct Args {
     config: Option<std::path::PathBuf>,
     #[arg(long)]
     play: Option<String>,
+    #[command(flatten)]
+    launch: gamepkg::launch_options::LaunchArgs,
     #[arg(long, requires="play", value_parser=["native","wasm"])]
     target: Option<String>,
     #[arg(long,value_parser=["vulkan","opengl"],help="Choose the desktop renderer explicitly")]
@@ -22,6 +24,14 @@ struct Args {
 }
 fn main() -> eframe::Result {
     let args = Args::parse();
+    if !args.launch.is_empty() && args.play.is_none() {
+        use clap::error::ErrorKind;
+        clap::Error::raw(
+            ErrorKind::MissingRequiredArgument,
+            "graphics launch flags require --play <GAME_ID>",
+        )
+        .exit();
+    }
     if args.check_build_identity {
         println!("{}", gamepkg::native::build_identity());
         return Ok(());
@@ -57,13 +67,17 @@ fn main() -> eframe::Result {
             let root = gamepkg::registry::default_root()?;
             let manifest = gamepkg::registry::installed_manifest(&root, id)?;
             if manifest.builtin_engine.as_deref() != Some(gamepkg::takedawn::PROFILE) {
+                anyhow::ensure!(
+                    args.launch.is_empty(),
+                    "Graphics launch flags currently require the reviewed native Takedawn engine"
+                );
                 return Ok(false);
             }
             anyhow::ensure!(
                 args.target.as_deref() != Some("wasm"),
                 "Takedawn requires native Play"
             );
-            gamepkg::takedawn::play(&root, id, &[], &settings, None)?;
+            gamepkg::takedawn::play_with_launch(&root, id, &[], &settings, None, args.launch)?;
             Ok(true)
         };
         if launch().map_err(|error| {

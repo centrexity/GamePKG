@@ -164,6 +164,8 @@ enum Command {
     /// Play an installed game, or run N headless frames.
     Run {
         id: String,
+        #[command(flatten)]
+        launch: gamepkg::launch_options::LaunchArgs,
         /// Explicit runtime choice; otherwise use the installed native build.
         #[arg(long,value_parser=["native","wasm"])]
         target: Option<String>,
@@ -560,6 +562,7 @@ fn main() -> Result<()> {
         }
         Command::Run {
             id,
+            launch,
             target,
             load_slot,
             save_slot,
@@ -586,12 +589,23 @@ fn main() -> Result<()> {
                     load_slot.is_none() && save_slot.is_none(),
                     "Takedawn uses its original profile saves"
                 );
-                gamepkg::takedawn::play(&root, &id, &rom, &gamepkg::settings::load()?, frames)?;
+                gamepkg::takedawn::play_with_launch(
+                    &root,
+                    &id,
+                    &rom,
+                    &gamepkg::settings::load()?,
+                    frames,
+                    launch,
+                )?;
                 if let Some(count) = frames {
                     println!("Ran {count} native frames.");
                 }
                 return Ok(());
             }
+            anyhow::ensure!(
+                launch.is_empty(),
+                "Graphics launch flags currently require the reviewed native Takedawn engine"
+            );
             let mut game = gamepkg::runtime::Game::load_target(
                 &root,
                 &id,

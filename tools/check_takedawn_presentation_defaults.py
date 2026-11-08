@@ -64,6 +64,9 @@ def main():
                             'xbox_SettingReset(XS_GRAPHICS_UI_SCALE);\n    CHECK(st_ui_scale == 2);')
         test = test.replace('xbox_SettingSet(XS_GRAPHICS_RENDER_SCALE, 2);\n    CHECK(xbox_SettingsNeedRestart());\n    xbox_SettingSet(XS_GRAPHICS_RENDER_SCALE, 1);',
                             'xbox_SettingSet(XS_GRAPHICS_RENDER_SCALE, 1);\n    CHECK(xbox_SettingsNeedRestart());\n    xbox_SettingSet(XS_GRAPHICS_RENDER_SCALE, 2);')
+        test = test.replace('xbox_SettingSet(XS_GRAPHICS_UI_SCALE, 2);', 'xbox_SettingSet(XS_GRAPHICS_UI_SCALE, 3);')
+        test = test.replace('st_ui_scale == 4 && xbox_SettingValue(XS_GRAPHICS_UI_SCALE) == 2',
+                            'st_ui_scale == 4 && xbox_SettingValue(XS_GRAPHICS_UI_SCALE) == 3')
         checks = '\n'.join(
             f'    CHECK(xbox_SettingGet({key})->builtin == {value});'
             for key, value in [('XS_GRAPHICS_RENDER_SCALE', '2'),
@@ -74,7 +77,7 @@ def main():
                             '    xbox_SettingsInit("Test");\n' + checks)
         # Read host launch controls with the real settings parser, including a
         # conflicting saved settings file. No graphics device is needed here.
-        launch_check = r'''int main(void)
+        launch_check = r'''int main(int argc, char **argv)
 {
     if (getenv("GAMEPKG_CHECK_LAUNCH")) {
         static const int ids[] = { XS_DISPLAY_FULLSCREEN, XS_DISPLAY_ASPECT,
@@ -82,6 +85,11 @@ def main():
             XS_GRAPHICS_SHARPEN, XS_DISPLAY_HUD_FIX, XS_GRAPHICS_UI_SCALE };
         char expected[256];
         snprintf(expected, sizeof expected, "%s", getenv("GAMEPKG_EXPECT_LAUNCH"));
+        for (int i = 1; i < argc; i++) {
+            int handled = gamepkg_launch_option(argc, argv, &i);
+            if (handled <= 0) return 2;
+        }
+        recomp_env_reload();
         xbox_SettingsInit("Test");
         xbox_SettingsFinish();
         char *part = strtok(expected, ",");
@@ -112,9 +120,9 @@ def main():
         assert test.count('int main(void)\n{') == 1
         test = test.replace('int main(void)\n{', launch_check, 1)
         fixture = work / 'test_main.c'
-        fixture.write_text(test)
+        fixture.write_text('#include \"launch_args.h\"\n' + test)
         command = [args.cc, '-std=c11', '-D_POSIX_C_SOURCE=200809L',
-                   '-DRECOMP_ENV_HAVE_ENHANCE_KEYS', '-O2', '-Wall', '-Wextra']
+                   '-DRECOMP_ENV_HAVE_ENHANCE_KEYS', '-I', str(bridge), '-O2', '-Wall', '-Wextra']
         if args.m32:
             command.append('-m32')
         if args.sanitize:
@@ -137,21 +145,37 @@ def main():
         keys = ['RECOMP_PRESENT_FULLSCREEN', 'RECOMP_DISPLAY_WIDESCREEN',
                 'RECOMP_RENDER_SCALE', 'RECOMP_GFX_AA', 'RECOMP_GFX_LOD_BIAS',
                 'RECOMP_GFX_SHARPEN', 'RECOMP_GFX_HUD_FIX', 'RECOMP_GFX_UI_SCALE']
-        matrix = [(['0', '1', '2', 'smaa', 'auto', '0.10', '1', '2x'], '0,1,2,2,1,0.10,1,1'),
-                  (['1', '0', '1', 'off', '0', '0.00', '0', 'off'], '1,0,1,0,0,0,0,0'),
-                  (['1', '1', '4', 'fxaa', '-1.5', '1.00', '1', '4x'], '1,1,4,1,4,1,1,2')]
+        matrix = [(['windowed', '16:9', '2', 'smaa', 'auto', '10', 'true', '2'], '0,1,2,2,1,0.10,1,1'),
+                  (['fullscreen', '4:3', '1', 'off', 'off', '0', 'false', '1'], '1,0,1,0,0,0,0,0'),
+                  (['fullscreen', '16:9', '4', 'fxaa', '-1.5', '100', 'true', '4'], '1,1,4,1,4,1,1,3'),
+                  (['windowed', '16:9', '3', 'smaa', '-0.5', '10', 'true', '3'], '0,1,3,2,2,0.10,1,2')]
+        flags = ['--window-mode', '--aspect-ratio', '--render-scale', '--antialiasing',
+                 '--texture-lod', '--sharpening-percent', '--widescreen-hud', '--menu-hud-scale']
         for values, expected in matrix:
             saved.write_bytes(saved_bytes)
             environment = {k: v for k, v in os.environ.items() if not k.startswith('RECOMP_')}
-            environment.update(zip(keys, values))
+            # Deliberately conflict with argv: argv must win over inherited values.
+            environment.update(zip(keys, ['1', '0', '1', 'off', '0', '0', '0', 'off']))
             environment.update(RECOMP_SETTINGS=str(saved), GAMEPKG_CHECK_LAUNCH='1',
                                GAMEPKG_EXPECT_LAUNCH=expected, ASAN_OPTIONS='detect_leaks=0')
-            run([str(executable)], cwd=work, env=environment)
+            native_args = [part for pair in zip(flags, values) for part in pair]
+            run([str(executable), *native_args], cwd=work, env=environment)
             assert saved.read_bytes() == saved_bytes, 'Launch overrides changed saved in-game settings'
+        invalid = [('--render-scale', v) for v in ['0', '5', '-1', '3x', '3;touch', '']] + [
+            ('--menu-hud-scale', '0'), ('--sharpening-percent', '101'),
+            ('--sharpening-percent', '-1'), ('--sharpening-percent', 'nan'),
+            ('--antialiasing', 'anything'), ('--texture-lod', '-100'),
+            ('--widescreen-hud', 'yes'), ('--aspect-ratio', '32:9')]
+        for pair in invalid:
+            assert subprocess.run([str(executable), *pair], cwd=work, env=environment,
+                                  capture_output=True).returncode == 2, pair
+        for flag in flags:
+            assert subprocess.run([str(executable), flag], cwd=work, env=environment,
+                                  capture_output=True).returncode == 2, flag
         print(json.dumps({'result': 'pass-real-settings-precedence-and-graphics-defaults',
                           'native32': args.m32, 'sanitized': args.sanitize,
                           'source_mutation_guards': 'pass',
-                          'launch_override_configurations': len(matrix),
+                          'launch_override_configurations': len(matrix), 'invalid_cli_values_rejected': len(invalid) + len(flags),
                           'settings_suite': result.stderr.strip()}, indent=2))
 
 

@@ -2120,3 +2120,41 @@ The local GUI-enabled library regression reports 443 passed, 0 failed and 48 exp
 The source kit SHA-256 is `db2a7ddada4d04a7691501480a5a15f2c71be43fc31921f033f8ca292eb0913f`. Earlier admitted source recipes remain verifiable. No rejected SIMD or pending-PUT experiments are included.
 
 Steady 60 FPS across all events and under-10-ms frame work remain unqualified. The Crash countdown capture confirms that white road lettering disappears on individual frames before “1” while the HUD remains visible. The first texture-specific diagnostic did not identify the responsible texture; no road-lettering rendering fix is included. Captures perturb timing and are visual evidence, not performance qualification. These are local preview results; publishing this source does not publish new release binaries or promote the ports catalog.
+
+### Native graphics arguments and Kenney prompts (0.1.24 source preview)
+
+The current reviewed source archive is
+`3157cadcbc5b7c397238821035d1b172cd4edebbcb4ce2bf2f6bca9b038e4516`
+(4,339 files). Original prepared Rust game and media archives remain unchanged;
+both native runtime builds retain all 24,035 exports. The selected ISO remains
+read-only and is read in place. The app forwards resolved graphics settings as
+argument/value pairs on Linux and Windows. The real native reader validates
+them and applies the existing renderer settings before loading saved settings.
+
+Local validation: 445 GUI library tests passed, strict Clippy and formatting
+passed, Linux and Windows CLI/GUI builds passed, and the entire source archive
+and signed 0.1.13 package verified. Actual settings-reader checks passed 271
+upstream checks plus four conflicting-saved/environment argument configurations
+and 22 invalid/missing-value cases, on sanitized native Linux64 and Linux32.
+The 3× scaler passed 368 checks at each width, including unchanged upstream
+2×/4× golden images. The prompt fixture checked 252 authored high-resolution
+variants and all 15 controller families at both widths. The full Linux64
+fixture additionally passed all 261 original gameplay-input gate checks.
+The separate legacy gameplay-hook fixture is not qualified at 32 bits here.
+
+A private native Linux Vulkan window launched with explicit 3× rendering and
+3× menu/HUD arguments passed the original Xbox control sequence: acceleration,
+pause/resume, input gating and normal Quit/Yes back to the front end. Captured
+native frames show the new prompts. Audio was muted on the private Linux display.
+These visual/control checks are not a new sustained-60-FPS or under-10-ms claim;
+the previously recorded road-text flicker remains under investigation.
+
+The physical Windows check also passed with both scales explicitly set to 3×
+through native arguments. The owned native Vulkan window reached the original
+main menu, produced a successful owned-window capture, and closed normally
+with exit 0. It used a private profile and the existing real WASAPI output at
+35%; the user's installed preview was not replaced. The Windows launch-option
+suite passed five tests, and the production native-player ownership fixture
+passed its restart/save/history/companion checks in all three isolated SDL
+selection cases. The fixture explicitly checks graphics argument/value pairs
+and confirms graphics controls were not supplied through the host environment.

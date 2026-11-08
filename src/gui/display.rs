@@ -193,7 +193,7 @@ impl App {
                 ui.add(egui::Slider::new(&mut draft.sharpening_percent, 0..=100).text("Sharpening %"));
                 ui.checkbox(&mut draft.widescreen_hud, "Widescreen HUD correction");
                 egui::ComboBox::from_label("Menu and HUD upscaling").selected_text(format!("{}×", draft.menu_hud_scale)).show_ui(ui, |ui| {
-                    for value in [1, 2, 4] { ui.selectable_value(&mut draft.menu_hud_scale, value, if value == 1 { "Off".into() } else { format!("{value}×") }); }
+                    for value in [1, 2, 3, 4] { ui.selectable_value(&mut draft.menu_hud_scale, value, if value == 1 { "Off".into() } else { format!("{value}×") }); }
                 });
                 ui.horizontal(|ui| {
                     if ui.button("Save launch options").clicked() { selection = Some(Some(draft)); }
