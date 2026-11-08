@@ -842,9 +842,11 @@ python3 tools/with_private_gpu_display.py --vulkan-probe -- \
 The helper needs Weston, Xwayland, Metacity, D-Bus, xauth, xprop and xdotool;
 `--vulkan-probe` also needs vulkaninfo. These are maintainer tools, not Windows
 player dependencies. It creates its own short Wayland socket path, authenticated
-X11 display, window manager and compositor data directories. Rootful Xwayland
-allows real XTest key events and focus checks without a physical Wayland input
-seat. Child test commands retain their existing memory scopes and audio controls;
+X11 display, window manager and compositor data directories. Child commands receive
+`GAMEPKG_PRIVATE_DISPLAY_EVIDENCE` set to the resolved evidence directory, paired
+with that display's `XAUTHORITY`, so their ownership checks can verify the target.
+Rootful Xwayland allows real XTest key events and focus checks without a physical
+Wayland input seat. Child test commands retain their existing memory scopes and audio controls;
 the game probes explicitly use dummy audio. The helper cleans up only its own
 process groups and records display logs. A successful Vulkan probe or display
 startup does not replace the game's actual-executor, input, save, audio or
