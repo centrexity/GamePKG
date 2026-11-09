@@ -14,7 +14,33 @@ function Get-VerifiedCiDownload {
     }
     $partial = "$Destination.partial"
     try {
-        Invoke-WebRequest -Uri $Uri -OutFile $partial -MaximumRetryCount 3 -RetryIntervalSec 5
+        for ($attempt = 0; $attempt -lt 4; $attempt++) {
+            $requestUri = $Uri
+            $parsed = [uri]$Uri
+            if ($attempt -gt 0 -and $parsed.Scheme -eq 'https' -and
+                $parsed.Host -eq 'github.com' -and $parsed.AbsolutePath.Contains('/releases/download/') -and
+                -not $parsed.Query -and -not $parsed.Fragment) {
+                $fresh = [UriBuilder]$Uri
+                $fresh.Query = 'gamepkg_ci_retry=' + [guid]::NewGuid().ToString('N')
+                $requestUri = $fresh.Uri.AbsoluteUri
+            }
+            try {
+                if (Test-Path -LiteralPath $partial) { Remove-Item -LiteralPath $partial }
+                Invoke-WebRequest -Uri $requestUri -OutFile $partial -MaximumRetryCount 0 -RetryIntervalSec 5 `
+                    -Headers @{ 'Cache-Control' = 'no-cache' }
+                break
+            }
+            catch {
+                $status = 0
+                $responseProperty = $_.Exception.PSObject.Properties['Response']
+                if ($responseProperty -and $responseProperty.Value) {
+                    $statusProperty = $responseProperty.Value.PSObject.Properties['StatusCode']
+                    if ($statusProperty) { $status = [int]$statusProperty.Value }
+                }
+                if ($attempt -eq 3 -or $status -notin @(408, 429, 500, 502, 503, 504)) { throw }
+                Start-Sleep -Seconds (1 -shl $attempt)
+            }
+        }
         if ((Get-FileHash -LiteralPath $partial -Algorithm SHA256).Hash -ine $Sha256) {
             throw "CI download failed SHA-256 verification: $Uri"
         }
