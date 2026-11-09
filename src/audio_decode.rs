@@ -446,7 +446,19 @@ mod tests {
         let engine = Engine::new(&config).unwrap();
         let module = Module::new(
             &engine,
-            wat::parse_str("(module(func(export \"spin\")(loop br 0)))").unwrap(),
+            wat::parse_str(
+                "(module
+                    (import \"test\" \"delayed_epoch\" (func $delayed_epoch))
+                    (func (export \"spin\") (param $remaining i32)
+                        call $delayed_epoch
+                        (loop $again
+                            local.get $remaining
+                            i32.const 1
+                            i32.sub
+                            local.tee $remaining
+                            br_if $again)))",
+            )
+            .unwrap(),
         )
         .unwrap();
         let mut store = Store::new(
@@ -457,42 +469,28 @@ mod tests {
             },
         );
         configure(&mut store);
-        let ticks = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let seen = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let (send, receive) = std::sync::mpsc::channel();
         let checked = seen.clone();
-        let clock_ticks = ticks.clone();
         store.epoch_deadline_callback(move |context| {
-            let result = check_deadline(context.data());
-            if result.is_err() {
-                checked.store(clock_ticks.load(Ordering::SeqCst), Ordering::SeqCst);
-                let _ = send.send(());
-            }
-            result
+            checked.fetch_add(1, Ordering::SeqCst);
+            check_deadline(context.data())
         });
-        let spin = Instance::new(&mut store, &module, &[])
+        let delayed_epoch = wasmtime::Func::wrap(&mut store, move || {
+            // Deliver exactly one late epoch from the executing thread. An
+            // unrelated scheduler delay cannot advance a fallback clock before
+            // Wasm observes it, as happened with the old two-thread test.
+            std::thread::sleep(std::time::Duration::from_millis(125));
+            engine.increment_epoch();
+        });
+        let spin = Instance::new(&mut store, &module, &[delayed_epoch.into()])
             .unwrap()
-            .get_typed_func::<(), ()>(&mut store, "spin")
+            .get_typed_func::<i32, ()>(&mut store, "spin")
             .unwrap();
         arm(&mut store);
-        let clock = std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_millis(125));
-            ticks.store(1, Ordering::SeqCst);
-            engine.increment_epoch();
-            if receive
-                .recv_timeout(std::time::Duration::from_millis(500))
-                .is_err()
-            {
-                // Release a regressed nominal-tick implementation so the test
-                // fails instead of leaving an infinite Wasm call behind.
-                ticks.store(21, Ordering::SeqCst);
-                for _ in 0..20 {
-                    engine.increment_epoch();
-                }
-            }
-        });
-        assert!(spin.call(&mut store, ()).is_err());
-        clock.join().unwrap();
+        // A nominal-tick regression finishes this finite loop successfully,
+        // making the assertion fail without a watchdog or an infinite call.
+        let error = spin.call(&mut store, 32).unwrap_err();
+        assert!(format!("{error:#}").contains("time limit exceeded"));
         assert_eq!(seen.load(Ordering::SeqCst), 1);
     }
 }
