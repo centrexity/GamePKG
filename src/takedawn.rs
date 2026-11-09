@@ -13,6 +13,9 @@ pub const MEMORY: u64 = 4 * 1024 * 1024 * 1024;
 pub const KIT_SHA256: &str = "a40e9656476633125d2fd50cc6a71134a453f8942634e34ebef848a215b98a5a";
 pub const KIT_ASSET: &str = "assets/takedawn-source-kit.tar.gz";
 pub const CURRENT_KIT_SHA256: &str =
+    "6b37d24c0984c686c7ed6fd73cd3a5b252b5631ceefa2798e5b7a6e0adff8dc4";
+// Keep the earlier clipping-correction recipe verifiable and launch-compatible.
+pub const PERSPECTIVE_KIT_SHA256: &str =
     "76594541d699d88e7d04279e669b799432b02776d8c7f11253fcf6daf595e693";
 // Preserve packages using the original Xbox prompt defaults before the clipping fix.
 pub const ORIGINAL_PROMPT_KIT_SHA256: &str =
@@ -69,6 +72,7 @@ pub(crate) fn reviewed_kit_digest(bytes: &[u8]) -> Result<String> {
         [
             KIT_SHA256,
             CURRENT_KIT_SHA256,
+            PERSPECTIVE_KIT_SHA256,
             ORIGINAL_PROMPT_KIT_SHA256,
             LAUNCH_ARGS_KIT_SHA256,
             FULLSCREEN_KIT_SHA256,
@@ -271,6 +275,7 @@ fn play_session(
         ensure!(
             [
                 CURRENT_KIT_SHA256,
+                PERSPECTIVE_KIT_SHA256,
                 ORIGINAL_PROMPT_KIT_SHA256,
                 LAUNCH_ARGS_KIT_SHA256,
             ]

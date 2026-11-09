@@ -48,7 +48,7 @@ elseif(KIND STREQUAL "settings")
     string(REPLACE "\"off\", \"2x\", \"4x\", NULL" "\"off\", \"2x\", \"3x\", \"4x\", NULL" source "${source}")
     string(REPLACE "(int)v == 1 ? 2u : (int)v == 2 ? 4u : 0u" "(int)v >= 1 && (int)v <= 3 ? (unsigned)v + 1u : 0u" source "${source}")
     # A launch mode is the initial state, not a ban on the desktop shortcut.
-    string(APPEND source "\nvoid gamepkg_ToggleFullscreen(void)\n{\n    xs_setting *setting = &s_set[XS_DISPLAY_FULLSCREEN];\n    const int locked = setting->locked;\n    setting->locked = 0;\n    xbox_SettingSet(XS_DISPLAY_FULLSCREEN, setting->value == 0.0 ? 1.0 : 0.0);\n    setting->locked = locked;\n}\n")
+    string(APPEND source "\nvoid gamepkg_SetFullscreen(int fullscreen)\n{\n    xs_setting *setting = &s_set[XS_DISPLAY_FULLSCREEN];\n    const int locked = setting->locked;\n    setting->locked = 0;\n    xbox_SettingSet(XS_DISPLAY_FULLSCREEN, fullscreen ? 1.0 : 0.0);\n    setting->locked = locked;\n}\n\nvoid gamepkg_ToggleFullscreen(void)\n{\n    gamepkg_SetFullscreen(s_set[XS_DISPLAY_FULLSCREEN].value == 0.0);\n}\n")
 else()
     message(FATAL_ERROR "Unsupported presentation source kind")
 endif()

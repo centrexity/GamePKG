@@ -116,6 +116,15 @@ def main():
         CHECK(xbox_SettingValue(XS_DISPLAY_FULLSCREEN) == initial);
         CHECK(st_opts.fullscreen == initial);
         CHECK(xbox_SettingGet(XS_DISPLAY_FULLSCREEN)->locked);
+        extern void gamepkg_SetFullscreen(int fullscreen);
+        for (int fullscreen = 0; fullscreen != 2; fullscreen++) {
+            for (int repeat = 0; repeat != 2; repeat++) {
+                gamepkg_SetFullscreen(fullscreen);
+                CHECK(xbox_SettingValue(XS_DISPLAY_FULLSCREEN) == fullscreen);
+                CHECK(st_opts.fullscreen == fullscreen);
+                CHECK(xbox_SettingGet(XS_DISPLAY_FULLSCREEN)->locked);
+            }
+        }
         (fprintf)(stderr, "launch controls: %d checks, %d failed\n", s_checks, s_fail);
         return s_fail ? 1 : 0;
     }

@@ -3,6 +3,8 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
+static int setting = -1;
+void gamepkg_SetFullscreen(int fullscreen) { setting = fullscreen; }
 int main(void)
 {
     unsigned checks = 0;
@@ -43,6 +45,22 @@ int main(void)
     assert(gamepkg_fullscreen_hotkey(&held, &event) == 1 && held == 2);
     event.key.keysym.sym = SDLK_KP_ENTER;
     assert(gamepkg_fullscreen_hotkey(&held, &event) == 1 && held == 0);
+    /* A real SDL window must change even with no overlay initialized. */
+    assert(SDL_Init(SDL_INIT_VIDEO) == 0);
+    SDL_Window *window = SDL_CreateWindow("GamePKG fullscreen check",
+        SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 640, 480, 0);
+    assert(window);
+    for (int i = 0; i < 4; ++i) {
+        assert(gamepkg_apply_fullscreen_shortcut(window) == 0);
+        assert(setting == (i % 2 == 0));
+        assert(!!(SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN) == setting);
+    }
+    /* Failed changes cannot claim success in the settings/UI. */
+    setting = -1;
+    assert(gamepkg_apply_fullscreen_shortcut(NULL) == -1);
+    assert(setting == -1);
+    SDL_DestroyWindow(window);
+    SDL_Quit();
     printf("fullscreen shortcut: %u checks passed\n", checks + 4);
     return 0;
 }
