@@ -5,9 +5,27 @@ $ErrorActionPreference = 'Stop'
 $work = Join-Path ([IO.Path]::GetTempPath()) ("gamepkg-wsl-download-test-" + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $work | Out-Null
 $script:Requests = 0
+$script:Failures = @()
+$script:RequestUris = @()
+$script:Waits = @()
+class GamePkgTestHttpFailure : System.Exception {
+    [object]$Response
+    GamePkgTestHttpFailure([int]$status) : base('simulated HTTP failure') {
+        $this.Response = [pscustomobject]@{ StatusCode = $status }
+    }
+}
+function Start-Sleep { param([int]$Seconds) $script:Waits += $Seconds }
 function Invoke-WebRequest {
-    param($Uri, $OutFile, $MaximumRetryCount, $RetryIntervalSec)
+    param($Uri, $OutFile, $MaximumRetryCount, $RetryIntervalSec, $Headers)
     $script:Requests++
+    $script:RequestUris += [string]$Uri
+    if ($script:Failures.Count) {
+        $status = $script:Failures[0]
+        $script:Failures = @($script:Failures | Select-Object -Skip 1)
+        [IO.File]::WriteAllBytes($OutFile, [byte[]]@(9))
+        if ($status -eq 0) { throw [IO.IOException]::new('simulated permanent failure') }
+        throw [GamePkgTestHttpFailure]::new($status)
+    }
     [IO.File]::WriteAllBytes($OutFile, [byte[]]@(1, 2, 3, 4))
 }
 function Assert-Throws {
@@ -70,6 +88,41 @@ try {
     [IO.File]::WriteAllBytes($accepted, [byte[]]@(9))
     Assert-Throws { Get-VerifiedCiDownload 'https://example.invalid/runtime' $accepted $hash }
     if ($script:Requests -ne 2) { throw 'Corrupt cache was silently replaced.' }
+    $script:Failures = @(504, 503)
+    $script:RequestUris = @()
+    $script:Waits = @()
+    $retry = Join-Path $work 'retry'
+    $release = 'https://github.com/vendor/sdk/releases/download/v1/component.zip'
+    Get-VerifiedCiDownload $release $retry $hash
+    if ($script:RequestUris.Count -ne 3 -or $script:RequestUris[0] -cne $release -or
+        $script:RequestUris[1] -notlike ($release + '?gamepkg_ci_retry=*') -or
+        $script:RequestUris[1] -ceq $script:RequestUris[2] -or ($script:Waits -join ',') -cne '1,2') {
+        throw 'Transient download did not retry with bounded waits and fresh release URLs.'
+    }
+    foreach ($original in @('https://example.invalid/component', ($release + '?signature=keep'))) {
+        $script:Failures = @(504)
+        $script:RequestUris = @()
+        Get-VerifiedCiDownload $original (Join-Path $work ([guid]::NewGuid().ToString('N'))) $hash
+        if ($script:RequestUris.Count -ne 2 -or $script:RequestUris[0] -cne $original -or $script:RequestUris[1] -cne $original) {
+            throw 'Retry altered an unrelated host or signed query.'
+        }
+    }
+    foreach ($failure in @(403, 0)) {
+        $script:Failures = @($failure)
+        $before = $script:Requests
+        $output = Join-Path $work ([guid]::NewGuid().ToString('N'))
+        Assert-Throws { Get-VerifiedCiDownload $release $output $hash }
+        if ($script:Requests -ne ($before + 1) -or (Test-Path $output) -or (Test-Path "$output.partial")) {
+            throw 'Permanent failure retried or left unverified content.'
+        }
+    }
+    $script:Failures = @(504, 504, 504, 504)
+    $script:Waits = @()
+    $before = $script:Requests
+    $output = Join-Path $work 'exhausted'
+    Assert-Throws { Get-VerifiedCiDownload $release $output $hash }
+    if ($script:Requests -ne ($before + 4) -or ($script:Waits -join ',') -cne '1,2,4' -or
+        (Test-Path $output) -or (Test-Path "$output.partial")) { throw 'Retry budget or partial cleanup failed.' }
     $oldRunnerEnvironment = $env:RUNNER_ENVIRONMENT
     try {
         $env:RUNNER_ENVIRONMENT = 'self-hosted'
