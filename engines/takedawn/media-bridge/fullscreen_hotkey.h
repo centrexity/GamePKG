@@ -32,7 +32,19 @@ static int gamepkg_fullscreen_hotkey(unsigned *held, const SDL_Event *event)
     }
     return 0;
 }
-/* Implemented beside the pinned settings reader; updates the overlay as well
- * as the window, including when the launch mode is host-controlled. */
+/* Implemented beside the pinned settings reader. A launch option selects the
+ * initial mode; it must not lock out subsequent desktop shortcuts. */
+void gamepkg_SetFullscreen(int fullscreen);
 void gamepkg_ToggleFullscreen(void);
+/* Run on the window/event thread. Do not depend on OverlayPoll: the overlay
+ * may be disabled or unavailable. Commit settings only after SDL succeeds. */
+static int gamepkg_apply_fullscreen_shortcut(SDL_Window *window)
+{
+    const int fullscreen = !(SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN);
+    if (SDL_SetWindowFullscreen(window,
+            fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0) != 0)
+        return -1;
+    gamepkg_SetFullscreen(fullscreen);
+    return 0;
+}
 #endif

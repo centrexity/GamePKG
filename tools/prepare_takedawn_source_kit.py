@@ -146,11 +146,42 @@ def main():
     host = project / 'engines/takedawn'
     for name in ['Cargo.toml', 'Cargo.lock', 'src/lib.rs', 'src/windows_handle.rs', 'media.h', 'posix.c',
                  'engine.c', 'attach.cmake', 'adapt_presentation.cmake', 'presentation_policy.cmake', 'adapt_paths.cmake', 'adapt_smoke.cmake', 'adapt_memory.cmake', 'adapt_pacing.cmake', 'adapt_threads.cmake', 'thread_priority.inc.h', 'adapt_gpu_report.cmake',
+                 'adapt_fullscreen.cmake', 'fullscreen_hotkey.h', 'launch_args.h',
+                 'adapt_prompt_quality.cmake', 'upscale_three.h', 'adapt_vertex_perspective.cmake',
+                 'adapt_rt_zero_hash.cmake', 'rt_zero_hash.h',
                  'adapt_input_glyphs.cmake', 'input_glyphs_policy.h', 'input_gameplay_policy.h',
                  'windows_file.c', 'windows_file.h', 'windows_stream.c', 'windows_stream.h',
                  'windows_entry.c', 'windows_attach.cmake', 'windows_restart.h', 'adapt_windows_restart.cmake', 'adapt_windows_clock.cmake', 'adapt_windows_file.cmake',
                  'adapt_windows_startup.cmake', 'DotNET-RUNTIME-LICENSE.txt']:
         copy(host / 'media-bridge' / name, 'host/engines/takedawn/media-bridge/' + name)
+    prompts = host / 'media-bridge/input-prompts'
+    prefix = 'host/engines/takedawn/media-bridge/input-prompts/'
+    for name in ['LICENSE-KENNEY.txt', 'PROVENANCE.json', 'prompt_art.h', 'runtime.h',
+                 'generated/manifest.json', 'generated/preview.png']:
+        copy(prompts / name, prefix + name)
+    provenance = json.loads((prompts / 'PROVENANCE.json').read_text())
+    for item in provenance['files']:
+        name = item['path']
+        relative = Path(name)
+        if (not name.startswith('sources/') or relative.suffix != '.svg'
+                or any(part in ['', '.', '..'] for part in relative.parts)
+                or '\\' in name
+                or not (prompts / name).resolve().is_relative_to(prompts.resolve())):
+            raise RuntimeError('invalid prompt source path')
+        copy(prompts / name, prefix + name)
+        if files[prefix + name]['sha256'] != item['sha256']:
+            raise RuntimeError('prompt source hash differs: ' + name)
+    generated = json.loads((prompts / 'generated/manifest.json').read_text())['sources']
+    if set(generated) != {'prompt_art.c', 'prompt_art_1x.c', 'prompt_art_2x.c',
+                          'prompt_art_3x.c', 'prompt_art_4x.c'}:
+        raise RuntimeError('unexpected generated prompt sources')
+    for name, expected in generated.items():
+        key = prefix + 'generated/' + name
+        copy(prompts / 'generated' / name, key)
+        if (files[key]['sha256'] != expected['sha256']
+                or files[key]['bytes'] != expected['bytes']):
+            raise RuntimeError('generated prompt hash or size differs: ' + name)
+    copy(project / 'tools/build_kenney_prompts.py', 'host/tools/build_kenney_prompts.py')
     for name in ['attach.cmake', 'C2Rust-LICENSE.txt', 'rustc-cache.rs', 'rustc-cache-linux-v1.rs', 'build-windows-units.rs', 'build-windows-runtime.rs']:
         copy(host / 'rust-port' / name, 'host/engines/takedawn/rust-port/' + name)
     for name in ['ntsc-u-retail.manifest', 'upstream-lock.json', 'Takedawn-LICENSE.txt',

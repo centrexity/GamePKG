@@ -78,6 +78,27 @@ def main():
     if result.returncode:
         print(result.stderr.decode(errors='replace'), flush=True)
     result.check_returncode()
+
+    fullscreen = work / 'fullscreen.exe'
+    if msvc:
+        command = ['cl', '/nologo', '/std:c11', '/O2', '/UNDEBUG', '/W4', '/WX',
+                   '/I' + str(root), '/I' + str(sdl / 'include'),
+                   str(root / 'tests/fullscreen_hotkey.c'),
+                   str(sdl / 'lib' / arch / 'SDL2.lib'), '/Fe' + str(fullscreen)]
+    else:
+        command = [arch + '-gcc', '-std=c11', '-O2', '-UNDEBUG', '-Wall', '-Wextra', '-Werror',
+                   '-I', str(root), '-I', str(base / 'include/SDL2'),
+                   str(root / 'tests/fullscreen_hotkey.c'), '-L', str(base / 'lib'),
+                   '-lSDL2', '-o', str(fullscreen)]
+    subprocess.run(command, cwd=work, check=True)
+    result = subprocess.run([str(fullscreen)], cwd=work, capture_output=True, timeout=30,
+                            env={**os.environ, 'SDL_VIDEODRIVER': 'dummy'})
+    (work / 'fullscreen-stdout.log').write_bytes(result.stdout)
+    (work / 'fullscreen-stderr.log').write_bytes(result.stderr)
+    print(result.stdout.decode(errors='replace').strip(), flush=True)
+    if result.returncode:
+        print(result.stderr.decode(errors='replace'), flush=True)
+    result.check_returncode()
     entry = work / 'entry.exe'
     if msvc:
         command = ['cl', '/nologo', '/std:c11', '/O2', '/UNDEBUG', '/W4', '/WX',
