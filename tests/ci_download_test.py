@@ -30,6 +30,8 @@ class Downloads(unittest.TestCase):
                 io.BytesIO(self.payload)]) as fetch, patch('ci_download.time.sleep') as sleep:
             self.assertEqual(self.run_download(), self.output)
             self.assertEqual(fetch.call_count, 2)
+            self.assertEqual(fetch.call_args_list[0].args[0], self.url)
+            self.assertTrue(fetch.call_args_list[1].args[0].startswith(self.url + '?gamepkg_ci_retry='))
             sleep.assert_called_once_with(1)
         self.assertEqual(self.output.read_bytes(), self.payload)
         self.assertEqual(list(self.root.iterdir()), [self.output])
