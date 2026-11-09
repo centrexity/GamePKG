@@ -11,7 +11,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
-import urllib.request
+from ci_download import download
 import zipfile
 
 SDL_VERSION = '2.32.10'
@@ -34,8 +34,7 @@ def main():
     elif msvc:
         archive = work / 'SDL2-devel.zip'
         url = f'https://github.com/libsdl-org/SDL/releases/download/release-{SDL_VERSION}/SDL2-devel-{SDL_VERSION}-VC.zip'
-        with urllib.request.urlopen(url, timeout=60) as response:
-            archive.write_bytes(response.read(8 * 1024 * 1024))
+        download(url, archive, SDL_VC_SHA256, max_bytes=8 * 1024 * 1024)
         if hashlib.sha256(archive.read_bytes()).hexdigest() != SDL_VC_SHA256:
             raise RuntimeError('Official SDL development archive digest mismatch')
         with zipfile.ZipFile(archive) as package:

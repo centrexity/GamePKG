@@ -14,7 +14,7 @@ import stat
 import subprocess
 import tarfile
 import tempfile
-import urllib.request
+from ci_download import download
 import zipfile
 
 
@@ -44,11 +44,7 @@ def main():
 
     def fetch(record):
         path = work / record["url"].rsplit("/", 1)[-1]
-        with (
-            urllib.request.urlopen(record["url"], timeout=120) as response,
-            path.open("wb") as output,
-        ):
-            shutil.copyfileobj(response, output)
+        download(record["url"], path, record["sha256"], timeout=120)
         if digest(path) != record["sha256"]:
             raise RuntimeError("Official SDK component digest mismatch: " + path.name)
         return path
