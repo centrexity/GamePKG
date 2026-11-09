@@ -81,6 +81,7 @@ pub fn remember_for_game(root: &Path, id: &str, options: Option<LaunchOptions>) 
     let manifest = crate::registry::installed_manifest(root, id)?;
     remember(root, &manifest, options)
 }
+#[cfg(any(target_os = "linux", windows, test))]
 pub(crate) fn effective(root: &Path, manifest: &Manifest) -> Result<Option<LaunchOptions>> {
     if manifest.builtin_engine.as_deref() != Some(crate::takedawn::PROFILE) {
         return Ok(None);
