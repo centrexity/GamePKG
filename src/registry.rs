@@ -217,7 +217,65 @@ pub(crate) fn download_build_tool(value: &str, limit: u64) -> Result<tempfile::N
     // Official compiler archives can exceed 100 MiB. A healthy connection can
     // need longer than the ordinary package/metadata transfer deadline.
     // Keep the same protocol, redirect, size and integrity boundaries.
-    download_with_timeout(value, limit, 900)
+    download_build_tool_with(value, limit, download_with_timeout, std::thread::sleep)
+}
+
+#[derive(Debug)]
+struct TransientDownload(String);
+impl std::fmt::Display for TransientDownload {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+impl std::error::Error for TransientDownload {}
+
+fn transient_download_status(exit: Option<i32>, status: Option<u16>) -> bool {
+    exit == Some(22) && matches!(status, Some(408 | 429 | 500 | 502 | 503 | 504))
+}
+
+#[cfg(any(windows, test))]
+fn download_build_tool_with(
+    value: &str,
+    limit: u64,
+    mut fetch: impl FnMut(&str, u64, u16) -> Result<tempfile::NamedTempFile>,
+    mut pause: impl FnMut(std::time::Duration),
+) -> Result<tempfile::NamedTempFile> {
+    use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+    let original = parsed_url(value)?;
+    let started = Instant::now();
+    for attempt in 0..4 {
+        let mut url = original.clone();
+        // Only these host-pinned public SDK assets need a fresh release
+        // redirect. Never alter arbitrary package, signed, or Tor URLs.
+        if attempt > 0
+            && url.host_str() == Some("github.com")
+            && url.path().contains("/releases/download/")
+            && url.query().is_none()
+            && url.fragment().is_none()
+        {
+            let nonce = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos();
+            url.query_pairs_mut()
+                .append_pair("gamepkg_sdk_retry", &format!("{nonce:x}-{attempt}"));
+        }
+        let remaining = Duration::from_secs(900).saturating_sub(started.elapsed());
+        let seconds = remaining.as_secs().clamp(1, 900) as u16;
+        match fetch(url.as_str(), limit, seconds) {
+            Ok(file) => return Ok(file),
+            Err(error) => {
+                if attempt == 3
+                    || !error.is::<TransientDownload>()
+                    || started.elapsed() >= Duration::from_secs(900)
+                {
+                    return Err(error);
+                }
+                pause(Duration::from_secs(1 << attempt));
+            }
+        }
+    }
+    unreachable!("bounded SDK attempts return a file or an error")
 }
 
 fn download_with_timeout(
@@ -269,7 +327,7 @@ fn download_with_timeout(
             .output()
             .context("URL downloads require curl installed")?;
         if !output.status.success() {
-            bail!(
+            let message = format!(
                 "download failed{}: {}",
                 if onion {
                     " through Tor (start your local Tor SOCKS proxy)"
@@ -278,6 +336,13 @@ fn download_with_timeout(
                 },
                 String::from_utf8_lossy(&output.stderr)
             );
+            let status = std::str::from_utf8(&output.stdout)
+                .ok()
+                .and_then(|s| s.trim().parse().ok());
+            if transient_download_status(output.status.code(), status) {
+                return Err(TransientDownload(message).into());
+            }
+            bail!(message);
         }
         if file.as_file().metadata()?.len() > limit {
             bail!("download exceeds size limit");
@@ -489,6 +554,115 @@ pub fn check_update(root: &Path, id: &str) -> Result<Option<(Manifest, tempfile:
 #[cfg(test)]
 mod github_tests {
     use super::*;
+    #[test]
+    fn sdk_retries_transient_http_errors_with_fresh_release_redirects() {
+        let original = "https://github.com/vendor/sdk/releases/download/v1/compiler.zip";
+        let mut requests = Vec::new();
+        let mut waits = Vec::new();
+        let file = download_build_tool_with(
+            original,
+            123,
+            |url, limit, seconds| {
+                requests.push(url.to_owned());
+                assert_eq!(limit, 123);
+                assert!((1..=900).contains(&seconds));
+                if requests.len() < 3 {
+                    Err(TransientDownload("temporary gateway failure".into()).into())
+                } else {
+                    Ok(tempfile::NamedTempFile::new()?)
+                }
+            },
+            |delay| waits.push(delay.as_secs()),
+        )
+        .unwrap();
+        assert_eq!(requests[0], original);
+        assert_eq!(waits, [1, 2]);
+        for request in &requests[1..] {
+            let url = parsed_url(request).unwrap();
+            assert_eq!(url.host_str(), Some("github.com"));
+            assert_eq!(url.path(), "/vendor/sdk/releases/download/v1/compiler.zip");
+            assert_eq!(url.query_pairs().count(), 1);
+            assert_eq!(url.query_pairs().next().unwrap().0, "gamepkg_sdk_retry");
+        }
+        assert_ne!(requests[1], requests[2]);
+        assert_eq!(file.as_file().metadata().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn sdk_retry_budget_is_bounded_and_permanent_errors_stop_immediately() {
+        for transient in [false, true] {
+            let mut attempts = 0;
+            let result = download_build_tool_with(
+                "https://github.com/vendor/sdk/releases/download/v1/compiler.zip",
+                123,
+                |_, _, _| {
+                    attempts += 1;
+                    if transient {
+                        Err(TransientDownload("gateway failure".into()).into())
+                    } else {
+                        bail!("certificate, protocol, size or authorization failure")
+                    }
+                },
+                |_| {},
+            );
+            assert!(result.is_err());
+            assert_eq!(attempts, if transient { 4 } else { 1 });
+        }
+    }
+
+    #[test]
+    fn sdk_retries_do_not_change_signed_queries_other_hosts_or_tor_urls() {
+        for original in [
+            "https://static.rust-lang.org/dist/component.tar.xz",
+            "https://github.com/vendor/sdk/releases/download/v1/compiler.zip?signature=keep",
+            "http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.onion/compiler.zip?signature=keep",
+        ] {
+            let mut attempts = 0;
+            download_build_tool_with(
+                original,
+                123,
+                |url, _, _| {
+                    assert_eq!(url, original);
+                    attempts += 1;
+                    if attempts == 1 {
+                        Err(TransientDownload("gateway failure".into()).into())
+                    } else {
+                        Ok(tempfile::NamedTempFile::new()?)
+                    }
+                },
+                |_| {},
+            )
+            .unwrap();
+            assert_eq!(attempts, 2);
+        }
+    }
+
+    #[test]
+    fn sdk_retry_classification_preserves_integrity_and_transport_failures() {
+        for status in [408, 429, 500, 502, 503, 504] {
+            assert!(transient_download_status(Some(22), Some(status)));
+        }
+        for status in [0, 200, 301, 400, 401, 403, 404, 413] {
+            assert!(!transient_download_status(Some(22), Some(status)));
+        }
+        for code in [0, 1, 28, 35, 60, 63] {
+            assert!(!transient_download_status(Some(code), Some(504)));
+        }
+        assert!(!transient_download_status(None, None));
+        let mut called = false;
+        assert!(download_build_tool_with(
+            "http://ordinary.example/compiler.zip",
+            123,
+            |_, _, _| {
+                called = true;
+                unreachable!()
+            },
+            |_| {},
+        )
+        .is_err());
+        assert!(!called);
+    }
+
     #[test]
     fn repository_latest_tag_and_direct_asset_urls() {
         for (source, endpoint) in [
