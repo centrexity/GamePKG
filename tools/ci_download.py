@@ -1,10 +1,12 @@
 """Bounded, checksum-pinned downloads for maintainer CI fixtures only."""
 import hashlib
 from pathlib import Path
+import secrets
 import tempfile
 import time
 import urllib.error
 import urllib.request
+import urllib.parse
 
 
 def download(url, destination, expected_sha256, *, timeout=60,
@@ -22,7 +24,13 @@ def download(url, destination, expected_sha256, *, timeout=60,
             with tempfile.NamedTemporaryFile(dir=destination.parent, delete=False) as output:
                 temporary = Path(output.name)
                 digest, size = hashlib.sha256(), 0
-                with urllib.request.urlopen(url, timeout=timeout) as response:
+                request_url = url
+                if attempt:
+                    parts = urllib.parse.urlsplit(url)
+                    query = parts.query + ('&' if parts.query else '')
+                    query += 'gamepkg_ci_retry=' + secrets.token_hex(8)
+                    request_url = urllib.parse.urlunsplit(parts._replace(query=query))
+                with urllib.request.urlopen(request_url, timeout=timeout) as response:
                     while True:
                         part = response.read(min(1024 * 1024, max_bytes - size + 1))
                         if not part:
