@@ -36,7 +36,7 @@ A clean source/dependency build and live gameplay passed with Python commands de
 
 The host mute setting and zero audio volume select the reviewed silent audio driver while the engine continues decoding and advancing its audio. A native probe verified normal ALSA selection, muted playback and zero-volume playback without emitting sound.
 
-Linux requires Clang, LLVM tools, CMake, Ninja, pkg-config and xz, plus the host's 32-bit graphics and audio drivers. The reviewed compiler sysroot and SDL source are downloaded and verified by the native preparation driver.
+Linux requires Clang, LLVM tools, CMake, Ninja, pkg-config, xz and wayland-scanner, plus the host's 32-bit graphics and audio drivers. The reviewed compiler sysroot and SDL source are downloaded and verified by the native preparation driver.
 
 Optimization needs measured CPU/GPU frame times and unchanged graphics; no fixed frame-rate claim is made from these functional tests.
 
