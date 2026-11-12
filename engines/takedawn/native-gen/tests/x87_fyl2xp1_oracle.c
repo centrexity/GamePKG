@@ -92,19 +92,6 @@ static uint64_t random64(uint64_t *v) {
 }
 static void next_wait(void) { gamepkg_x86_x87_wait(0x20000, 0x9876); }
 
-/* Independent integer identity: x=2^n-1 or x=-(1-2^-n),1<=n<=64. */
-static unsigned exact_log_input(GamePkgExt80 x) {
-  unsigned e = x.sign_exponent & 0x7fff;
-  if (x.sign_exponent & 0x8000) {
-    uint64_t inverse = ~x.significand;
-    return e == 16382 && !(inverse & (inverse + 1));
-  }
-  if (e >= 16383 && e <= 16446) {
-    unsigned n = e - 16383 + 1;
-    return x.significand == (UINT64_MAX << (64 - n));
-  }
-  return 0;
-}
 static void one(GamePkgExt80 a, GamePkgExt80 b, unsigned cw, unsigned top,
                 unsigned empty, unsigned sticky) {
   Image old, input, after;
@@ -155,11 +142,13 @@ static void one(GamePkgExt80 a, GamePkgExt80 b, unsigned cw, unsigned top,
   GamePkgX87State *z = gamepkg_x86_x87_state();
   unsigned sw = rd(after.b + 2), valid = 0;
   /* The fixed P5/P6 numerical profile is checked bit-for-bit against the
-   * independently built pinned reference. Hardware approximation last bits may
-   * differ: all other registers, exception/status bits and commit responses
+   * independently built pinned reference, including exact log2(1+x)=integer
+   * identities formed with independent binary128 multiplication. Those inputs
+   * are outside Intel's guaranteed range; their host result/C1 is not an oracle.
+   * Hardware approximation last bits may differ: all other registers, exception/status bits and commit responses
    * continue to use the physical oracle unchanged. */
   unsigned exponent = a.sign_exponent & 0x7fff;
-  if (!empty && !exact_log_input(a) && exponent < 0x7fff && a.significand &&
+  if (!empty && exponent < 0x7fff && a.significand &&
       (!exponent || (a.significand >> 63)) &&
       (b.sign_exponent & 0x7fff) < 0x7fff && b.significand &&
       (!(b.sign_exponent & 0x7fff) || (b.significand >> 63)) &&
