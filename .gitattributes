@@ -13,3 +13,11 @@ engines/zelda3/upstream/** -text -whitespace
 engines/doom/upstream/** -text -whitespace
 engines/cube2/upstream/** -text -whitespace
 engines/cube2/upstream/readme_source.txt conflict-marker-size=32
+
+# New reviewed engine and vendored inputs also retain byte-level provenance.
+engines/** -text
+vendor/** -text -whitespace
+engines/**/upstream/** -text -whitespace
+engines/**/licenses/** -text -whitespace
+engines/takedawn/native-gen/runtime/softfloat/** -text -whitespace
+engines/takedawn/rust-port/*.patch -text -whitespace

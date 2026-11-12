@@ -17,8 +17,7 @@
 #define EXPORT(name) __attribute__((export_name(name)))
 static uint8_t *wad;
 static uint32_t wad_length;
-static char diagnostics[4096];
-static uint32_t diagnostic_length;
+#include "diagnostics.h"
 static uint32_t ticks = 1, previous, buttons, accumulator;
 static int quit_requested;
 static unsigned quit_countdown;
@@ -28,6 +27,7 @@ void gamepkg_request_quit(void) { if(!quit_requested) quit_requested=2; }
 #include "audio.h"
 #include "storage.h"
 #include "m_config.h"
+#include "i_video.h"
 #include "i_system.h"
 #include "d_event.h"
 #include "m_controls.h"
@@ -37,11 +37,7 @@ __wasi_errno_t __wrap___wasi_fd_write(__wasi_fd_t fd,
                                       __wasi_size_t *written) {
   size_t total = 0;
   for (size_t i = 0; i < n; i++) {
-    size_t count = iov[i].buf_len;
-    if (count > sizeof(diagnostics) - 1 - diagnostic_length)
-      count = sizeof(diagnostics) - 1 - diagnostic_length;
-    memcpy(diagnostics + diagnostic_length, iov[i].buf, count);
-    diagnostic_length += count;
+    gamepkg_diagnostics_append(iov[i].buf,iov[i].buf_len);
     total += iov[i].buf_len;
   }
   diagnostics[diagnostic_length] = 0;
@@ -74,17 +70,20 @@ void *__wrap_memset(void *a, int b, size_t n) {
   return a;
 }
 void DG_Init(void) {}
-void DG_DrawFrame(void) {}
+static void gamepkg_gameplay_pixels(void);
+void DG_DrawFrame(void) { gamepkg_gameplay_pixels(); }
 void DG_SetWindowTitle(const char *title) {}
 void DG_SleepMs(uint32_t ms) { ticks += ms ? ms : 1; }
 uint32_t DG_GetTicksMs(void) { return ticks; }
 #include "input.h"
 #include "endoom.h"
-static boolean snd_init(boolean prefix) { return true; }
+static int sound_use_prefix = 1;
+#include "sound_names.h"
+static boolean snd_init(boolean prefix) { sound_use_prefix = prefix; return true; }
 static void snd_shutdown(void) {}
 static int snd_lump(sfxinfo_t *s) {
   char name[9];
-  snprintf(name, sizeof(name), "ds%.6s", s->name);
+  gamepkg_sound_lump_name(s, sound_use_prefix, name);
   return W_GetNumForName(name);
 }
 static void snd_update(void) {}
@@ -98,14 +97,8 @@ static int snd_start(sfxinfo_t *s, int c, int vol, int sep) {
   int lump = snd_lump(s);
   int size = W_LumpLength(lump);
   const uint8_t *d = W_CacheLumpNum(lump, PU_STATIC);
-  if (size < 8 || d[0] != 3 || d[1] != 0)
+  if (size < 0 || !channel_start(&channels[c], d, (uint32_t)size, vol, sep))
     return -1;
-  uint32_t n = d[4] | d[5] << 8 | d[6] << 16 | (uint32_t)d[7] << 24;
-  if (n > (uint32_t)size - 8)
-    n = size - 8;
-  channels[c] = (Channel){.data = d + 8, .length = n,
-                          .rate = (uint32_t)(d[2] | d[3] << 8), .active = 1};
-  channel_params(&channels[c], vol, sep);
   return c;
 }
 static void snd_stop(int c) {
@@ -127,27 +120,41 @@ void I_InitTimidityConfig(void) {}
 EXPORT("allocate") void *allocate(uint32_t n) {
   return n <= 64 * 1024 * 1024 ? malloc(n) : NULL;
 }
+EXPORT("add_patch") int add_patch(uint8_t *data, uint32_t length) {
+  return register_patch(data,length);
+}
+EXPORT("set_patch_mode") int set_patch_mode(uint32_t index, uint32_t mode) {
+  return register_patch_mode(index,mode);
+}
 EXPORT("initialize")
 int initialize(uint8_t *data, uint32_t length, uint32_t saved) {
+  wad_files_sealed = 1;
   wad = data;
   wad_length = length;
   if (restore_save(saved) != 0) return -1;
   static char selected_slot[2];
   selected_slot[0]=(char)('0'+(last_slot<0?0:last_slot));
-  static char *args[] = {"gamepkg-doom",
-                         "-iwad",
-                         "doom.wad",
-                         "-config",
-                         "gamepkg.cfg",
-                         "-extraconfig",
-                         "gamepkg-extra.cfg",
-                         "-savedir",
-                         "gamepkg",
-                         "-mb",
-                         "16",
-                         "-loadgame",
-                         selected_slot};
-  doomgeneric_Create(last_slot >= 0 ? 13 : 11, args);
+  static char *args[26];
+  char *base[] = {"gamepkg-doom", "-iwad", "doom.wad", "-config", "gamepkg.cfg",
+    "-extraconfig", "gamepkg-extra.cfg", "-savedir", "gamepkg", "-mb", "16"};
+  int argc=11;
+  memcpy(args,base,sizeof(base));
+  static char *flags[]={"-file","-merge","-nwtmerge","-af","-as","-aa"};
+  /* The original parser processes merge groups first and ordinary files last. */
+  for(unsigned group=0;group<6;group++) {
+    unsigned mode=group==5?0:group+1;
+    int present=0;
+    for(unsigned i=0;i<patch_count;i++) if(patch_modes[i]==mode) {
+      if(!present) {args[argc++]=flags[mode];present=1;}
+      args[argc++]=(char *)patch_names[i];
+    }
+  }
+  if(last_slot>=0) {args[argc++]="-loadgame";args[argc++]=selected_slot;}
+  args[argc]=NULL;
+  /* doomgeneric's video binding hook is empty. Bind the original gamma
+   * variable before its config loader runs so F11 survives a relaunch. */
+  M_BindVariable("usegamma", &usegamma);
+  doomgeneric_Create(argc, args);
   /* Migrate only the old adapter's four unserializable proxy defaults. */
   if(!key_fire && !key_use && !key_strafeleft && !key_straferight) {
     key_fire=KEY_RCTRL; key_use=' '; key_strafeleft=','; key_straferight='.';
@@ -195,6 +202,7 @@ EXPORT("step") int step(uint32_t input) {
   return 0;
 }
 EXPORT("pixels") void *pixels(void) { return DG_ScreenBuffer; }
+EXPORT("pixel_format") uint32_t pixel_format(void) { return gamepkg_pixel_format(); }
 EXPORT("audio") void *audio(void) { return pcm; }
 EXPORT("audio_channels") uint32_t audio_channels(void) { return 2; }
 EXPORT("save") void *savedata(void) { return save_data; }

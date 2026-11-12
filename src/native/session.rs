@@ -1,9 +1,9 @@
+#[cfg(test)]
+use super::transport::append_engine_log;
+use super::transport::Worker;
 use anyhow::{bail, ensure, Context, Result};
 use std::{
-    io::{Read, Write},
-    os::fd::{AsRawFd, RawFd},
     path::Path,
-    process::{Child, ChildStdin, ChildStdout, Stdio},
     time::{Duration, Instant},
 };
 const PACKET: usize = 8 * 1048576 + 65536;
@@ -54,10 +54,7 @@ pub(crate) struct Session {
     pub(crate) window: crate::window_control::Service,
     pub(crate) user_files: crate::user_files::Service,
     input_events: crate::input_events::Queue,
-    child: Child,
-    _parent_thread: std::sync::mpsc::Sender<()>,
-    input: ChildStdin,
-    output: ChildStdout,
+    transport: Worker,
     _binary: tempfile::TempDir,
     package: crate::archive::Package,
     asset_image: crate::drawing::image::Cache,
@@ -65,6 +62,8 @@ pub(crate) struct Session {
     roms: Vec<Vec<u8>>,
     save: Option<crate::saves::Save>,
     engine_data: Option<Vec<u8>>,
+    video: Option<crate::manifest::ZeldaVideo>,
+    video_configured: bool,
     pub frame: crate::drawing::Frame,
     pub audio: Vec<i16>,
     pub audio_channels: u32,
@@ -77,49 +76,8 @@ pub(crate) struct Session {
 }
 impl Drop for Session {
     fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        self.transport.stop();
     }
-}
-fn ready(fd: RawFd, events: i16, deadline: Instant) -> Result<()> {
-    loop {
-        let left = deadline.saturating_duration_since(Instant::now());
-        ensure!(!left.is_zero(), "native game exceeded its time limit");
-        let mut p = libc::pollfd {
-            fd,
-            events,
-            revents: 0,
-        };
-        let n = unsafe {
-            libc::poll(
-                &mut p,
-                1,
-                left.as_millis().min(i32::MAX as u128).max(1) as i32,
-            )
-        };
-        if n < 0 {
-            let e = std::io::Error::last_os_error();
-            if e.kind() == std::io::ErrorKind::Interrupted {
-                continue;
-            }
-            return Err(e.into());
-        }
-        ensure!(n > 0, "native game exceeded its time limit");
-        ensure!(p.revents & libc::POLLNVAL == 0, "native worker pipe closed");
-        return Ok(());
-    }
-}
-fn transfer(pipe: &mut impl Read, fd: RawFd, mut out: &mut [u8], end: Instant) -> Result<()> {
-    while !out.is_empty() {
-        ready(fd, libc::POLLIN, end)?;
-        match pipe.read(out) {
-            Ok(0) => bail!("native game stopped"),
-            Ok(n) => out = &mut out[n..],
-            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
-            Err(e) => return Err(e.into()),
-        }
-    }
-    Ok(())
 }
 impl Session {
     pub fn new(
@@ -131,6 +89,7 @@ impl Session {
         settings: &crate::settings::Settings,
         shader_count: usize,
     ) -> Result<Self> {
+        let video = crate::video_selections::effective(root, &manifest)?;
         let window = crate::window_control::Service::with_homepage(
             manifest.permissions.input,
             manifest.homepage.as_deref(),
@@ -144,12 +103,14 @@ impl Session {
             .limits
             .hard_memory_bytes
             .min(settings.memory_ceiling_mib * 1048576);
+        manifest.limits.ensure_render_memory(memory)?;
         if let Some(profile) = manifest.builtin_engine.as_deref() {
             ensure!(
                 memory >= crate::builtin::memory(profile)?,
                 "memory ceiling is too low for this engine"
             );
         }
+        let memory = crate::zelda_snapshots::guest_memory(&manifest, memory)?;
         let (effects, memory) = crate::audio_effects::Runtime::new(
             Some(&package),
             manifest.limits.effects_memory_bytes,
@@ -163,83 +124,32 @@ impl Session {
             None
         };
         let binary = tempfile::tempdir()?;
-        std::fs::write(binary.path().join("game"), bytes)?;
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(
-            binary.path().join("game"),
-            std::fs::Permissions::from_mode(0o500),
-        )?;
-        let mut command = std::process::Command::new("prlimit");
-        command.arg(format!("--as={memory}")).args([
-            "--core=0",
-            "--fsize=0",
-            "--",
-            "bwrap",
-            "--unshare-all",
-            "--die-with-parent",
-            "--new-session",
-            "--clearenv",
-            "--ro-bind",
-            "/usr",
-            "/usr",
-        ]);
-        for p in ["/lib", "/lib64"] {
-            if Path::new(p).exists() {
-                command.args(["--ro-bind", p, p]);
-            }
+        #[cfg(windows)]
+        ensure!(
+            manifest.builtin_engine.as_deref().is_none_or(|profile| {
+                profile == crate::doom::PROFILE || profile == crate::zelda3::PROFILE
+            }),
+            "this engine uses its separate native player"
+        );
+        let name = if cfg!(windows) { "game.exe" } else { "game" };
+        std::fs::write(binary.path().join(name), bytes)?;
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(
+                binary.path().join("game"),
+                std::fs::Permissions::from_mode(0o500),
+            )?;
         }
-        command
-            .arg("--ro-bind")
-            .arg(binary.path())
-            .arg("/game")
-            .args([
-                "--proc",
-                "/proc",
-                "--dev",
-                "/dev",
-                "--tmpfs",
-                "/tmp",
-                "--chdir",
-                "/game",
-                "--",
-                "/game/game",
-            ])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null());
-        // Linux parent-death signals follow the spawning thread. Keep that thread
-        // alive when an asynchronous load hands the game to the UI thread.
-        let (spawn_send, spawn_receive) = std::sync::mpsc::sync_channel(1);
-        let (parent_thread, parent_lifetime) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
-            let _ = spawn_send.send(command.spawn());
-            let _ = parent_lifetime.recv();
-        });
-        let mut child = spawn_receive
-            .recv()
-            .context("native launcher thread stopped")?
-            .context("native playback requires bubblewrap and prlimit; isolation is mandatory")?;
-        let input = child.stdin.take().unwrap();
-        let output = child.stdout.take().unwrap();
-        for fd in [input.as_raw_fd(), output.as_raw_fd()] {
-            let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
-            if flags < 0 || unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0
-            {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err(std::io::Error::last_os_error().into());
-            }
-        }
+        let transport = Worker::spawn(binary.path(), memory, digest)?;
+        let render_profile = manifest.limits.render_profile;
         let mut session = Self {
             effects,
             clock: crate::frame_clock::Clock::default(),
-            child,
-            _parent_thread: parent_thread,
-            input,
-            output,
+            transport,
             _binary: binary,
             package,
-            asset_image: crate::drawing::image::Cache::default(),
+            asset_image: crate::drawing::image::Cache::for_profile(render_profile),
             network: crate::network::Service::new(manifest.permissions.clone()),
             input_events: crate::input_events::Queue::new(manifest.permissions.input),
             window,
@@ -248,7 +158,9 @@ impl Session {
             roms,
             save,
             engine_data: None,
-            frame: Default::default(),
+            video,
+            video_configured: false,
+            frame: crate::drawing::Frame::for_profile(render_profile),
             audio: Vec::new(),
             audio_channels: 1,
             achievements: Vec::new(),
@@ -258,47 +170,166 @@ impl Session {
             deadline: Duration::from_millis(settings.tick_deadline_ms),
         };
         let end = Instant::now() + Duration::from_secs(5);
-        loop {
-            let packet = session.receive(end)?;
-            if packet == [255] {
-                break;
+        let ready = (|| -> Result<()> {
+            loop {
+                let packet = session.receive(end)?;
+                if packet == [255] {
+                    crate::video_selections::require_engine_support(
+                        session.video,
+                        session.video_configured,
+                    )?;
+                    return Ok(());
+                }
+                session.service(&packet, end)?;
             }
-            session.service(&packet, end)?;
+        })();
+        if let Err(error) = ready {
+            return Err(session.stop_with_log(error));
         }
         Ok(session)
     }
+    fn stop_with_log(&mut self, error: anyhow::Error) -> anyhow::Error {
+        self.transport.stop();
+        let message = self.transport.message();
+        if message.is_empty() {
+            error
+        } else {
+            error.context(format!("Native game: {message}"))
+        }
+    }
     fn receive(&mut self, end: Instant) -> Result<Vec<u8>> {
-        let fd = self.output.as_raw_fd();
+        self.receive_bounded(end, PACKET)
+    }
+    fn receive_bounded(&mut self, end: Instant, maximum: usize) -> Result<Vec<u8>> {
         let mut len = [0; 4];
-        transfer(&mut self.output, fd, &mut len, end)?;
+        self.transport
+            .read_exact(&mut len, end)
+            .context("reading native packet length")?;
         let n = u32::from_le_bytes(len) as usize;
         ensure!(
-            (1..=PACKET).contains(&n),
+            (1..=maximum).contains(&n),
             "native worker sent an invalid packet size"
         );
         let mut b = vec![0; n];
-        transfer(&mut self.output, fd, &mut b, end)?;
+        self.transport
+            .read_exact(&mut b, end)
+            .with_context(|| format!("reading native packet body ({n} bytes)"))?;
         Ok(b)
     }
     fn send(&mut self, bytes: &[u8], end: Instant) -> Result<()> {
+        self.send_tagged(bytes, end, false)
+    }
+    fn send_tagged(&mut self, bytes: &[u8], end: Instant, control: bool) -> Result<()> {
         ensure!(bytes.len() <= PACKET, "native reply too large");
-        let mut data = (bytes.len() as u32).to_le_bytes().to_vec();
+        let prefix = bytes.len() as u32 | if control { 0x80000000 } else { 0 };
+        let mut data = prefix.to_le_bytes().to_vec();
         data.extend(bytes);
-        let mut rest = data.as_slice();
-        while !rest.is_empty() {
-            ready(self.input.as_raw_fd(), libc::POLLOUT, end)?;
-            match self.input.write(rest) {
-                Ok(0) => bail!("native worker stopped reading"),
-                Ok(n) => rest = &rest[n..],
-                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
-                Err(e) => return Err(e.into()),
+        self.transport.write_all(&data, end)
+    }
+
+    // Only the trusted Zelda bridge handles these messages, between ordinary ticks.
+    // A rejected state is recoverable; framing/transport errors terminate the worker.
+    fn snapshot_command(
+        &mut self,
+        bytes: &[u8],
+        expected: usize,
+        end: Instant,
+    ) -> Result<Option<Vec<u8>>> {
+        let result = (|| {
+            ensure!(
+                self.manifest.builtin_engine.as_deref() == Some(crate::zelda3::PROFILE)
+                    && self.manifest.permissions.save,
+                "Zelda snapshots require save permission"
+            );
+            self.send_tagged(bytes, end, true)?;
+            ensure!(
+                expected <= crate::zelda_snapshots::CHUNK,
+                "invalid snapshot response extent"
+            );
+            let mut response = self.receive_bounded(end, expected + 2)?;
+            ensure!(
+                response.len() >= 2 && response[0] == 0x82,
+                "invalid native snapshot response"
+            );
+            match response[1] {
+                0 => {
+                    ensure!(
+                        response.len() == expected + 2,
+                        "invalid native snapshot payload extent"
+                    );
+                    response.drain(..2);
+                    Ok(Some(response))
+                }
+                1 if response.len() == 2 => Ok(None),
+                _ => bail!("invalid native snapshot status"),
             }
+        })();
+        result.map_err(|error| self.stop_with_log(error))
+    }
+    pub(crate) fn capture_snapshot(&mut self, output: &mut [u8]) -> Result<()> {
+        use crate::zelda_snapshots::{CHUNK, SIZE};
+        ensure!(output.len() == SIZE, "invalid Zelda snapshot size");
+        let end = Instant::now() + self.deadline;
+        let size = self
+            .snapshot_command(&[0], 4, end)?
+            .context("Zelda snapshot capture failed")?;
+        ensure!(
+            size == (SIZE as u32).to_le_bytes(),
+            "invalid native snapshot size"
+        );
+        for (index, chunk) in output.chunks_mut(CHUNK).enumerate() {
+            let mut command = vec![1];
+            command.extend_from_slice(&((index * CHUNK) as u32).to_le_bytes());
+            command.extend_from_slice(&(chunk.len() as u32).to_le_bytes());
+            let bytes = self
+                .snapshot_command(&command, chunk.len(), end)?
+                .context("Zelda snapshot read failed")?;
+            ensure!(bytes.len() == chunk.len(), "invalid native snapshot chunk");
+            chunk.copy_from_slice(&bytes);
         }
         Ok(())
     }
+    pub(crate) fn restore_snapshot(&mut self, bytes: &[u8]) -> Result<()> {
+        use crate::zelda_snapshots::{CHUNK, SIZE};
+        ensure!(bytes.len() == SIZE, "invalid Zelda snapshot size");
+        let end = Instant::now() + self.deadline;
+        for (index, chunk) in bytes.chunks(CHUNK).enumerate() {
+            let mut command = Vec::with_capacity(chunk.len() + 5);
+            command.push(2);
+            command.extend_from_slice(&((index * CHUNK) as u32).to_le_bytes());
+            command.extend_from_slice(chunk);
+            let response = self
+                .snapshot_command(&command, 0, end)?
+                .context("Zelda snapshot write failed")?;
+            ensure!(
+                response.is_empty(),
+                "invalid native snapshot write response"
+            );
+        }
+        let mut command = vec![3];
+        command.extend_from_slice(&(SIZE as u32).to_le_bytes());
+        let response = self
+            .snapshot_command(&command, 12, end)?
+            .context("Zelda snapshot was rejected")?;
+        ensure!(response.len() == 12, "invalid native snapshot diagnostic");
+        let number = |offset| u32::from_le_bytes(response[offset..offset + 4].try_into().unwrap());
+        self.diagnostic = Some((number(0), number(4), number(8)));
+        self.frame.reset();
+        self.audio.clear();
+        Ok(())
+    }
     fn service(&mut self, packet: &[u8], end: Instant) -> Result<()> {
+        let began = Instant::now();
         let reply = self.request(packet).unwrap_or_else(|_| vec![1]);
-        self.send(&reply, end)
+        self.send(&reply, end).with_context(|| {
+            format!(
+                "replying to native host request {} ({} input bytes, {} reply bytes, {} ms servicing)",
+                packet.first().copied().unwrap_or(0),
+                packet.len(),
+                reply.len(),
+                began.elapsed().as_millis()
+            )
+        })
     }
     fn request(&mut self, p: &[u8]) -> Result<Vec<u8>> {
         let (&op, b) = p.split_first().context("empty native request")?;
@@ -325,6 +356,44 @@ impl Session {
             Ok(v)
         }
         let ok = match op {
+            43 => {
+                ensure!(b.is_empty(), "invalid random-block request");
+                let mut bytes = vec![0; 512];
+                crate::random::fill(&mut bytes)?;
+                return Ok(bytes);
+            }
+            41 => {
+                ensure!(
+                    b.is_empty()
+                        && self.manifest.builtin_engine.as_deref() == Some(crate::zelda3::PROFILE),
+                    "invalid Zelda video request"
+                );
+                let video = self.video.unwrap_or_default();
+                video.validate()?;
+                self.video_configured = true;
+                return Ok(number(Some(
+                    (video.extra_width | (video.configuration_bits() << 8)) as usize,
+                )));
+            }
+            40 => {
+                ensure!(
+                    b.len() == 4
+                        && self.manifest.builtin_engine.as_deref() == Some(crate::doom::PROFILE),
+                    "invalid DOOM mode request"
+                );
+                let index = n(b, 0)? as usize;
+                ensure!(
+                    index < self.roms.len().saturating_sub(1) && index < 6,
+                    "unknown patch mode index"
+                );
+                return Ok(number(Some(
+                    self.manifest
+                        .doom_wad_modes
+                        .get(index)
+                        .copied()
+                        .unwrap_or(crate::manifest::DoomWadMode::File) as usize,
+                )));
+            }
             38 => {
                 ensure!(
                     (8..=1032).contains(&b.len()),
@@ -332,6 +401,12 @@ impl Session {
                 );
                 let path = std::str::from_utf8(&b[8..])?;
                 self.effects.call(n(b, 0)?, path, n(b, 4)?)
+            }
+            42 => {
+                ensure!(b.is_empty(), "invalid window-size packet");
+                let mut reply = vec![0];
+                reply.extend(self.window.size_observation().to_le_bytes());
+                return Ok(reply);
             }
             36 => {
                 ensure!(b.is_empty(), "invalid window-state packet");
@@ -433,13 +508,29 @@ impl Session {
             24 => {
                 validate_engine_save(&self.manifest, b.len())?;
                 let save = self.save.as_mut().context("save access denied")?;
+                save.discard_pending();
                 save.bytes = b.to_vec();
                 save.dirty = true;
                 true
             }
+            39 => {
+                ensure!(b.len() >= 8, "invalid save chunk");
+                let offset = n(b, 0)? as usize;
+                let total = n(b, 4)? as usize;
+                return Ok(vec![if self
+                    .save
+                    .as_mut()
+                    .is_some_and(|save| save.chunk(offset, total, &b[8..]))
+                {
+                    0
+                } else {
+                    1
+                }]);
+            }
             7 => {
                 ensure!(b.len() <= crate::saves::MAX_SAVE, "save too large");
                 let save = self.save.as_mut().context("save access denied")?;
+                save.discard_pending();
                 save.bytes = b.to_vec();
                 save.dirty = true;
                 true
@@ -569,6 +660,7 @@ impl Session {
                     self.engine_data = Some(match self.manifest.builtin_engine.as_deref() {
                         Some(crate::doom::PROFILE) => {
                             crate::doom::validate_wad(data)?;
+                            crate::doom::validate_patch_set(data.len(), &self.roms[1..])?;
                             data.clone()
                         }
                         Some(crate::zelda3::PROFILE) => crate::zelda3_rom::decode(data)?,
@@ -614,6 +706,9 @@ impl Session {
                     && self.manifest.permissions.input),
             "desktop input access denied"
         );
+        if let Some(save) = self.save.as_mut() {
+            save.discard_pending();
+        }
         self.effects.begin()?;
         self.clock.begin();
         self.frame.reset();
@@ -621,6 +716,9 @@ impl Session {
         self.audio_channels = 1;
         self.achievements.clear();
         let previous = self.save.as_ref().map(|s| s.bytes.clone());
+        let began = Instant::now();
+        let mut calls = 0;
+        let mut last_request = None;
         let result = (|| {
             let end = Instant::now() + self.deadline;
             let mut request = input.to_le_bytes().to_vec();
@@ -629,7 +727,6 @@ impl Session {
                 event.encode(&mut request)?;
             }
             self.send(&request, end)?;
-            let mut calls = 0;
             loop {
                 let p = self.receive(end)?;
                 if p.first() == Some(&0) {
@@ -637,7 +734,11 @@ impl Session {
                     return Ok(u64::from_le_bytes(p[1..].try_into()?));
                 }
                 calls += 1;
-                ensure!(calls <= 8192, "native host call budget exceeded");
+                last_request = Some((p[0], p.len()));
+                ensure!(
+                    calls <= super::MAX_CALLS_PER_TICK,
+                    "native host call budget exceeded"
+                );
                 self.service(&p, end)?;
             }
         })();
@@ -659,6 +760,7 @@ impl Session {
                 Ok(v)
             }
             Err(e) => {
+                let elapsed = began.elapsed().as_micros();
                 let _ = self.effects.finish(false);
                 self.user_files.finish(false);
                 self.window.finish(false);
@@ -670,9 +772,9 @@ impl Session {
                     save.bytes = bytes;
                     save.dirty = false;
                 }
-                let _ = self.child.kill();
-                let _ = self.child.wait();
-                Err(e)
+                Err(self.stop_with_log(e.context(format!(
+                    "native tick stopped after {elapsed} us; {calls} host calls; last request {last_request:?}"
+                ))))
             }
         }
     }
@@ -681,6 +783,23 @@ impl Session {
 #[cfg(test)]
 mod stereo_tests {
     use super::*;
+    #[test]
+    fn engine_diagnostics_keep_only_the_bounded_newest_bytes() {
+        let mut log = Vec::new();
+        let mut all = Vec::new();
+        for i in 0..100u8 {
+            let chunk = vec![i; 173];
+            all.extend_from_slice(&chunk);
+            append_engine_log(&mut log, &chunk);
+            assert!(log.len() <= 4096);
+        }
+        assert_eq!(log, &all[all.len() - 4096..]);
+        let large = vec![42; 9000];
+        append_engine_log(&mut log, &large);
+        assert_eq!(log, &large[large.len() - 4096..]);
+        append_engine_log(&mut log, b"missing PKGFLAT");
+        assert!(log.ends_with(b"missing PKGFLAT") && log.len() == 4096);
+    }
     #[test]
     fn large_engine_saves_require_exact_profile_permission_and_limit() {
         let mut manifest: crate::manifest::Manifest =

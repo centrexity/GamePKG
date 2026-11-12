@@ -1,0 +1,14 @@
+[
+  {
+    "before": "#include \"dsp.h\"",
+    "after": "#include \"dsp.h\"\n#include \"gamepkg_dsp_state.h\"",
+    "count": 1
+  },
+  {
+    "before": "func(ctx, &dsp->ram, sizeof(Dsp) - offsetof(Dsp, ram));",
+    "after": "gamepkg_dsp_saveload(dsp, func, ctx);",
+    "count": 1
+  },
+  {"before":"s = (s << shift) >> 1;","after":"s = (s * (1 << shift)) >> 1;","count":1},
+  {"before":"s = (s >> 3) << 12;","after":"s = s < 0 ? -4096 : 0;","count":1}
+]

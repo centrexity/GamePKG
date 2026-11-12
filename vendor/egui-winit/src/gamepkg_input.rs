@@ -70,6 +70,21 @@ pub fn enable_surface(viewport: ViewportId, enabled: bool) {
         c.surface = enabled;
     }
 }
+/// Seed a source-game click from the backend's observed cursor position.
+/// Focus/enter motion may predate game loading and capture registration.
+/// Relative-input engines and other viewports must not receive this position.
+pub(crate) fn button_position(viewport: ViewportId, position: Option<(f64, f64)>) {
+    let Some((x, y)) = position.filter(|(x, y)| x.is_finite() && y.is_finite()) else {
+        return;
+    };
+    let mut guard = CAPTURE.lock().unwrap_or_else(|p| p.into_inner());
+    if let Some(c) = guard
+        .as_mut()
+        .filter(|c| c.viewport == viewport && c.focused && c.surface)
+    {
+        push(c, Event::Position(x, y));
+    }
+}
 pub fn take(viewport: ViewportId) -> Vec<Event> {
     let mut capture = CAPTURE.lock().unwrap_or_else(|p| p.into_inner());
     capture
@@ -245,6 +260,47 @@ mod tests {
         assert!(matches!(
             take(game).as_slice(),
             [Event::Position(12.0, 34.0)]
+        ));
+        // A new game can start under a stationary pointer. Its initial motion
+        // predates capture registration, but the backend still knows the point.
+        button_position(game, Some((25.0, 75.0)));
+        let click = WindowEvent::MouseInput {
+            device_id: winit::event::DeviceId::dummy(),
+            state: ElementState::Pressed,
+            button: MouseButton::Left,
+        };
+        window_event(game, &click);
+        assert!(matches!(
+            take(game).as_slice(),
+            [
+                Event::Position(25.0, 75.0),
+                Event::Button {
+                    button: MouseButton::Left,
+                    pressed: true
+                }
+            ]
+        ));
+        for value in [None, Some((f64::NAN, 1.0)), Some((1.0, f64::INFINITY))] {
+            button_position(game, value);
+        }
+        button_position(other, Some((25.0, 75.0)));
+        assert!(take(game).is_empty());
+        window_event(game, &WindowEvent::Focused(false));
+        take(game);
+        button_position(game, Some((25.0, 75.0)));
+        window_event(game, &click);
+        assert!(take(game).is_empty());
+        window_event(game, &WindowEvent::Focused(true));
+        take(game);
+        enable_surface(game, false);
+        button_position(game, Some((25.0, 75.0)));
+        window_event(game, &click);
+        assert!(matches!(
+            take(game).as_slice(),
+            [Event::Button {
+                button: MouseButton::Left,
+                pressed: true
+            }]
         ));
         enable_surface(game, false);
         window_event(game, &position);

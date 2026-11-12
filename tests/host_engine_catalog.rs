@@ -29,6 +29,7 @@ fn host_header_in_the_engine_patch_matches_the_canonical_abi() {
     )
     .unwrap();
     let status = std::process::Command::new("git")
+        .args(["-c", "core.autocrlf=false"])
         .arg("-C")
         .arg(dir.path())
         .args([
@@ -41,6 +42,7 @@ fn host_header_in_the_engine_patch_matches_the_canonical_abi() {
         .unwrap();
     assert!(status.success());
     let status = std::process::Command::new("git")
+        .args(["-c", "core.autocrlf=false"])
         .arg("-C")
         .arg(dir.path())
         .args([
@@ -53,6 +55,7 @@ fn host_header_in_the_engine_patch_matches_the_canonical_abi() {
         .unwrap();
     assert!(status.success());
     let status = std::process::Command::new("git")
+        .args(["-c", "core.autocrlf=false"])
         .arg("-C")
         .arg(dir.path())
         .args([

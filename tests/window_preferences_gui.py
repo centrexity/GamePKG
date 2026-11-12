@@ -45,7 +45,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-window-preferences-', dir=PROJE
         args=[str(BIN/'gamepkg-gui')]
         if not library:args+=['--play',GAME,'--target','wasm']
         app=subprocess.Popen(args,env=env,stdout=log,stderr=log)
-        name='^GamePKG$' if library else '^'+GAME.replace('.','\\.')+'$'
+        name='^GamePKG [0-9]+[.][0-9]+[.][0-9]+([-+][A-Za-z0-9.-]+)?$' if library else '^'+GAME.replace('.','\\.')+'$'
         def found():
             result=subprocess.run(['xdotool','search','--onlyvisible','--name',name],env=env,capture_output=True,text=True)
             return result.stdout.splitlines()[0] if result.returncode==0 else None
@@ -100,7 +100,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-window-preferences-', dir=PROJE
         assert len(records)==1,records
         record=records[0]
         saved=json.loads(record.read_text())
-        assert saved==dict(version=1,width=1100,height=650,fullscreen=True,maximized=False),saved
+        assert saved==dict(version=1,width=1100,height=650,fullscreen=True,maximized=False,vsync=True),saved
         window=launch()
         assert fullscreen(window),'Fullscreen was not restored on reopen'
         run('xdotool','key','--window',window,'F11')

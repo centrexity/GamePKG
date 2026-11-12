@@ -2,13 +2,21 @@ use crate::{
     archive::Package,
     verify::{digest, verify_embedded},
 };
-use anyhow::{bail, ensure, Context, Result};
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+#[cfg(target_os = "linux")]
+use anyhow::{bail, Context};
+use anyhow::{ensure, Result};
+#[cfg(target_os = "linux")]
+use std::path::PathBuf;
+use std::{fs, path::Path};
 pub(super) fn compile(root: &Path, id: &str) -> Result<()> {
     let settings = crate::settings::load()?;
+    compile_with_settings(root, id, &settings)
+}
+pub(super) fn compile_with_settings(
+    root: &Path,
+    id: &str,
+    settings: &crate::settings::Settings,
+) -> Result<()> {
     settings.validate()?;
     let _guard = crate::build::BuildChange::acquire(root, id)?;
     crate::registry::installed_manifest(root, id)?;
@@ -48,6 +56,7 @@ pub(super) fn compile(root: &Path, id: &str) -> Result<()> {
     let mut helpers = include_str!("../input_buttons.rs").replace("//!", "//");
     helpers.push_str(include_str!("../guest_helpers.rs.txt"));
     helpers.push_str(include_str!("../network_guest.rs.txt"));
+    helpers.push_str(include_str!("pixels.rs.txt"));
     let legacy = include_str!("../guest_api.rs.txt");
     helpers.push_str(
         &legacy[legacy.find("    pub const BUTTON_B").unwrap()
@@ -65,6 +74,10 @@ pub(super) fn compile(root: &Path, id: &str) -> Result<()> {
     }
     helpers.push_str("_=>None}}\n");
     bindings = bindings
+        .replace(
+            "/* GAMEPKG_CALL_LIMIT */",
+            &super::MAX_CALLS_PER_TICK.to_string(),
+        )
         .replace("// GAMEPKG_HELPERS", &helpers)
         .replace("// GAMEPKG_ENGINE", include_str!("engine.rs.txt"))
         .replace(
@@ -78,8 +91,56 @@ pub(super) fn compile(root: &Path, id: &str) -> Result<()> {
     let mut source = String::from_utf8(package.read("source/src/lib.rs")?)?;
     source.push_str(&bindings);
     fs::write(stage.path().join("src/lib.rs"), source)?;
-    fs::write(stage.path().join("src/main.rs"),"include!(\"lib.rs\");fn main(){gamepkg::__gamepkg_initialize_engine();gamepkg::__gamepkg_packet(&[255]);while let Some((input,state))=gamepkg::__gamepkg_next_tick(){let result:u64=game_tick(input,state);let mut b=vec![0];b.extend(result.to_le_bytes());gamepkg::__gamepkg_packet(&b);}}")?;
-    let main = stage.path().join("src/main.rs");
+    fs::write(stage.path().join("src/main.rs"),"include!(\"lib.rs\");fn main(){gamepkg::__gamepkg_initialize_engine();gamepkg::__gamepkg_packet(&[255]);while let Some((input,state))=gamepkg::__gamepkg_next_tick(){gamepkg::__gamepkg_begin_tick();let result:u64=game_tick(input,state);let mut b=vec![0];b.extend(result.to_le_bytes());gamepkg::__gamepkg_packet(&b);}}")?;
+    #[cfg(target_os = "linux")]
+    let binary = compile_linux(
+        root,
+        &original,
+        &mut package,
+        &m,
+        settings,
+        stage.path(),
+        needs_shaders,
+    )?;
+    #[cfg(windows)]
+    let binary = {
+        crate::source::parse_build_tree(stage.path())?;
+        if needs_shaders {
+            crate::shaders::compile(root, &original, &mut package, &m, settings)?;
+        }
+        super::windows_build::compile(root, stage.path(), &m, settings)?
+    };
+    let bytes = crate::files::read_regular(&binary, 64 * 1048576, false)?;
+    super::validate_executable(&bytes)?;
+    ensure!(
+        digest(&crate::files::read_regular(
+            &root.join(format!("{id}.gamepkg")),
+            crate::archive::MAX_TOTAL,
+            false
+        )?) == digest(&original),
+        "The installed package changed during the build"
+    );
+    let target = super::path_for_digest(root, &digest(&original));
+    fs::create_dir_all(target.parent().unwrap())?;
+    let mut saved = tempfile::NamedTempFile::new_in(target.parent().unwrap())?;
+    saved.write_all(&bytes)?;
+    saved.as_file().sync_all()?;
+    saved.persist(&target).map_err(|e| e.error)?;
+    crate::integrity::record_build(&target, &bytes)?;
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn compile_linux(
+    root: &Path,
+    original: &[u8],
+    package: &mut Package,
+    m: &crate::manifest::Manifest,
+    settings: &crate::settings::Settings,
+    stage: &Path,
+    needs_shaders: bool,
+) -> Result<PathBuf> {
+    let main = stage.join("src/main.rs");
     let mut text = fs::read_to_string(&main)?
         .replace("fn main(){", "fn main(){__gamepkg_security::lockdown();");
     let mut allowed = vec![
@@ -151,7 +212,7 @@ pub(super) fn compile(root: &Path, id: &str) -> Result<()> {
             .replace("/* GAMEPKG_ARCH */", &arch.to_string()),
     );
     fs::write(main, text)?;
-    crate::source::parse_build_tree(stage.path())?;
+    crate::source::parse_build_tree(stage)?;
     let rustup = std::env::var_os("CARGO_HOME")
         .map(PathBuf::from)
         .into_iter()
@@ -174,13 +235,13 @@ pub(super) fn compile(root: &Path, id: &str) -> Result<()> {
         .context("invalid Rust installation")?;
     let mut extra = Vec::new();
     if let Some(profile) = m.builtin_engine.as_deref() {
-        extra = engine(stage.path(), profile, settings.optimize_builds)?;
+        extra = engine(stage, profile, settings.optimize_builds)?;
     }
     if needs_shaders {
-        crate::shaders::compile(root, &original, &mut package, &m, &settings)?;
+        crate::shaders::compile(root, original, package, m, settings)?;
     }
     let mut cmd = crate::compiler::command(64 * 1048576);
-    sandbox(&mut cmd, stage.path());
+    sandbox(&mut cmd, stage);
     cmd.arg("--ro-bind")
         .arg(toolchain)
         .arg("/toolchain")
@@ -192,6 +253,8 @@ pub(super) fn compile(root: &Path, id: &str) -> Result<()> {
             "/toolchain/bin:/usr/bin",
             "--",
             "/toolchain/bin/rustc",
+            "--target",
+            env!("GAMEPKG_BUILD_TARGET"),
             "--edition=2021",
             "-Awarnings",
             "-C",
@@ -226,25 +289,10 @@ pub(super) fn compile(root: &Path, id: &str) -> Result<()> {
         "native build failed: {}",
         output.stderr
     );
-    let bytes = crate::files::read_regular(&stage.path().join("game"), 64 * 1048576, false)?;
-    super::validate_executable(&bytes)?;
-    ensure!(
-        digest(&crate::files::read_regular(
-            &root.join(format!("{id}.gamepkg")),
-            crate::archive::MAX_TOTAL,
-            false
-        )?) == digest(&original),
-        "The installed package changed during the build"
-    );
-    let target = super::path_for_digest(root, &digest(&original));
-    fs::create_dir_all(target.parent().unwrap())?;
-    let mut saved = tempfile::NamedTempFile::new_in(target.parent().unwrap())?;
-    saved.write_all(&bytes)?;
-    saved.as_file().sync_all()?;
-    saved.persist(&target).map_err(|e| e.error)?;
-    crate::integrity::record_build(&target, &bytes)?;
-    Ok(())
+    Ok(stage.join("game"))
 }
+
+#[cfg(target_os = "linux")]
 fn sandbox(cmd: &mut std::process::Command, stage: &Path) {
     cmd.args([
         "bwrap",
@@ -256,7 +304,7 @@ fn sandbox(cmd: &mut std::process::Command, stage: &Path) {
         "/usr",
         "/usr",
     ]);
-    for p in ["/lib", "/lib64"] {
+    for p in ["/lib", "/lib64", "/lib32"] {
         if Path::new(p).exists() {
             cmd.args(["--ro-bind", p, p]);
         }
@@ -266,154 +314,11 @@ fn sandbox(cmd: &mut std::process::Command, stage: &Path) {
         .arg("/work")
         .args(["--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp"]);
 }
+#[cfg(target_os = "linux")]
 fn engine(stage: &Path, profile: &str, optimize: bool) -> Result<Vec<String>> {
-    let doom = profile == crate::doom::PROFILE;
-    ensure!(
-        doom || profile == crate::zelda3::PROFILE,
-        "unsupported native engine"
-    );
     ensure!(Path::new("/usr/bin/clang-18").is_file(),"Native source ports need Clang 18 (install clang-18); WASI libraries are only needed for the separate Wasm build");
-    let (kit, label) = if doom {
-        (crate::doom_sources::FILES, "doom")
-    } else {
-        (crate::zelda3_sources::FILES, "zelda3")
-    };
-    for (name, bytes) in kit {
-        let p = stage.join(name);
-        fs::create_dir_all(p.parent().unwrap())?;
-        fs::write(p, bytes)?;
-    }
-    let lock: serde_json::Value = serde_json::from_slice(if doom {
-        include_bytes!("../../engines/doom/upstream-lock.json")
-    } else {
-        include_bytes!("../../engines/zelda3/upstream-lock.json")
-    })?;
-    for (name, hash) in lock["files"].as_object().context("invalid engine lock")? {
-        if name.ends_with(".py") {
-            continue;
-        }
-        ensure!(
-            digest(&fs::read(
-                stage.join(format!("engines/{label}/upstream/{name}"))
-            )?) == hash.as_str().unwrap_or(""),
-            "pinned engine source changed: {name}"
-        );
-    }
-    if doom {
-        crate::doom::stage_desktop_sources(stage)?;
-    }
-    if !doom {
-        let path = stage.join("engines/zelda3/upstream/src/zelda_rtl.c");
-        let mut source = fs::read_to_string(&path)?;
-        for name in ["ZeldaReadSram", "ZeldaWriteSram"] {
-            let begin = source
-                .find(&format!("void {name}() {{"))
-                .context("missing pinned SRAM function")?;
-            let brace = begin + source[begin..].find('{').unwrap();
-            let mut depth = 0;
-            let mut end = None;
-            for (offset, byte) in source.as_bytes()[brace..].iter().enumerate() {
-                match byte {
-                    b'{' => depth += 1,
-                    b'}' => depth -= 1,
-                    _ => {}
-                }
-                if depth == 0 {
-                    end = Some(brace + offset + 1);
-                    break;
-                }
-            }
-            source.replace_range(begin..end.context("invalid pinned SRAM function")?, "");
-        }
-        fs::write(path, source)?;
-    }
-    let adapter = stage.join(format!("engines/{label}/adapters/engine.c"));
-    let mut text = fs::read_to_string(&adapter)?;
-    if doom {
-        let a = text.find("__wasi_errno_t __wrap___wasi_fd_write").unwrap();
-        let b = text.find("void DG_Init").unwrap();
-        text.replace_range(a..b, "");
-        text = text.replace("#include <wasi/api.h>", "").replace(
-            "#define EXPORT(name) __attribute__((export_name(name)))",
-            "#define EXPORT(name)",
-        );
-    } else {
-        text = text.replace(
-            "const char *file, int line, const char *function",
-            "const char *file, unsigned int line, const char *function",
-        );
-        let a = text.find("#include <wasi/api.h>").unwrap();
-        let b = text[a..]
-            .find("__attribute__((export_name(\"reset\")))")
-            .unwrap()
-            + a;
-        text.replace_range(a..b, "");
-        for name in [
-            "allocate",
-            "initialize",
-            "step",
-            "pixels",
-            "audio",
-            "audio_channels",
-            "sram",
-            "save_dirty",
-            "reset",
-            "status",
-            "position",
-            "controller",
-        ] {
-            text = text.replace(&format!("__attribute__((export_name(\"{name}\")))"), "");
-        }
-    }
-    if doom {
-        text.push_str("\nint __wrap_printf(const char *format,...){return 0;} int __wrap_puts(const char *text){return 0;} int __wrap_putchar(int c){return c;}\n");
-    }
-    if !doom {
-        text.push_str(include_str!("zelda_stdio.c.txt"));
-    }
-    fs::write(adapter, text)?;
-    let mut sources: Vec<String> = if doom {
-        lock["sources"]
-            .as_array()
-            .context("missing sources")?
-            .iter()
-            .map(|n| format!("/work/engines/doom/upstream/{}", n.as_str().unwrap()))
-            .collect()
-    } else {
-        let mut v = Vec::new();
-        for (name, _) in kit {
-            if let Some(tail) = name.strip_prefix("engines/zelda3/upstream/src/") {
-                if tail.ends_with(".c")
-                    && !tail.contains('/')
-                    && ![
-                        "main.c",
-                        "audio.c",
-                        "config.c",
-                        "glsl_shader.c",
-                        "opengl.c",
-                        "zelda_cpu_infra.c",
-                    ]
-                    .contains(&tail)
-                {
-                    v.push(format!("/work/{name}"));
-                }
-            }
-        }
-        v.sort();
-        for n in ["ppu.c", "dma.c", "dsp.c", "snes_other.c"] {
-            v.push(format!("/work/engines/zelda3/upstream/snes/{n}"));
-        }
-        v
-    };
-    sources.push(format!("/work/engines/{label}/adapters/engine.c"));
-    if doom {
-        crate::doom::verify_music_sources(stage)?;
-        sources.extend(
-            crate::doom::MUSIC_SOURCES
-                .iter()
-                .map(|name| format!("/work/engines/doom/music/{name}")),
-        );
-    }
+    let plan = super::engine_sources::stage(stage, profile)?;
+    let label = plan.label;
     fs::create_dir(stage.join("objects"))?;
     let mut cmd = crate::compiler::command(64 * 1048576);
     sandbox(&mut cmd, stage);
@@ -422,6 +327,8 @@ fn engine(stage: &Path, profile: &str, optimize: bool) -> Result<Vec<String>> {
         "/work/objects",
         "--",
         "/usr/bin/clang-18",
+        "-target",
+        env!("GAMEPKG_BUILD_TARGET"),
         "-c",
         "-fPIC",
         "-fno-strict-aliasing",
@@ -433,33 +340,19 @@ fn engine(stage: &Path, profile: &str, optimize: bool) -> Result<Vec<String>> {
         "-mcpu=native"
     } else {
         "-march=native"
-    })
-    .arg(format!("-I/work/engines/{label}/upstream"))
-    .arg(format!("-I/work/engines/{label}/adapters/include"));
-    if doom {
-        cmd.args([
-            "-I/work/engines/doom/music",
-            "-I/work/engines/doom/music/upstream",
-            "-DDOOMGENERIC_RESX=320",
-            "-DDOOMGENERIC_RESY=200",
-            "-DFEATURE_SOUND",
-            "-DNORMALUNIX",
-            "-D_DEFAULT_SOURCE",
-        ]);
+    });
+    for include in &plan.includes {
+        cmd.arg(format!("-I/work/{include}"));
     }
-    cmd.args(sources);
+    for definition in plan.definitions {
+        cmd.arg(format!("-D{definition}"));
+    }
+    cmd.args(plan.sources.iter().map(|source| format!("/work/{source}")));
     let out = crate::compiler::run(&mut cmd)?;
     if !out.status.success() {
         bail!("native {label} engine compilation failed: {}", out.stderr);
     }
-    let mut args = vec![
-        "--cfg".into(),
-        if doom {
-            "gamepkg_doom".into()
-        } else {
-            "gamepkg_zelda".into()
-        },
-    ];
+    let mut args = vec!["--cfg".into(), plan.configuration.into()];
     for entry in fs::read_dir(stage.join("objects"))? {
         let entry = entry?;
         if entry.path().extension().is_some_and(|e| e == "o") {
@@ -473,41 +366,8 @@ fn engine(stage: &Path, profile: &str, optimize: bool) -> Result<Vec<String>> {
         }
     }
     args.extend(["-C".into(), "link-arg=-lm".into()]);
-    if doom {
-        for name in [
-            "fopen",
-            "fclose",
-            "fread",
-            "fwrite",
-            "fseek",
-            "ftell",
-            "feof",
-            "ferror",
-            "fflush",
-            "fgetc",
-            "fputc",
-            "fprintf",
-            "fgets",
-            "fscanf",
-            "__isoc99_fscanf",
-            "remove",
-            "rename",
-            "mkdir",
-            "getenv",
-            "access",
-            "printf",
-            "puts",
-            "putchar",
-        ] {
-            args.extend(["-C".into(), format!("link-arg=-Wl,--wrap={name}")]);
-        }
-    }
-    if !doom {
-        for name in [
-            "printf", "puts", "putchar", "fprintf", "fopen", "fread", "fwrite", "fclose", "getenv",
-        ] {
-            args.extend(["-C".into(), format!("link-arg=-Wl,--wrap={name}")]);
-        }
+    for name in plan.wraps {
+        args.extend(["-C".into(), format!("link-arg=-Wl,--wrap={name}")]);
     }
     Ok(args)
 }

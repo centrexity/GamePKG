@@ -77,7 +77,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-https-') as directory:
                 window=None
                 for _ in range(100):
                     if app.poll() is not None:raise RuntimeError(app.stderr.read().decode())
-                    state=subprocess.run(['xdotool','search','--onlyvisible','--name','^GamePKG$'],env=env,capture_output=True,text=True)
+                    state=subprocess.run(['xdotool','search','--onlyvisible','--name','^GamePKG [0-9]+[.][0-9]+[.][0-9]+([-+][A-Za-z0-9.-]+)?$'],env=env,capture_output=True,text=True)
                     if state.returncode==0:
                         window=state.stdout.strip().splitlines()[0];break
                     time.sleep(.1)

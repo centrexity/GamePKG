@@ -4,15 +4,60 @@ pub mod gamepkg {
     /// Relative microseconds sampled by the parent once per tick.
     pub fn frame_time_us()->u64{let d=rpc(34,&[]);assert!(d.len()==9&&d[0]==0,"invalid frame-time response");u64::from_le_bytes(d[1..].try_into().unwrap())}
     pub fn window_fullscreen()->Option<bool>{let d=rpc(36,&[]);if d.len()!=5||d[0]!=0{return None;}match u32::from_le_bytes(d[1..].try_into().unwrap()){1=>Some(false),3=>Some(true),_=>None}}
+    pub fn window_size()->Option<[u32;2]>{let d=rpc(42,&[]);if d.len()!=5||d[0]!=0{return None;}let value=u32::from_le_bytes(d[1..].try_into().unwrap());let width=value&65535;let height=value>>16;if width==0||height==0{None}else{Some([width,height])}}
+    /// True only while a committed, permitted host preview is outstanding.
+    pub fn window_preview_active()->bool{window_control(8,0)}
+    /// Saved desktop presentation preference; changes take effect after restart.
+    pub fn window_vsync_preference()->Option<bool>{if window_control(9,0){Some(window_control(9,1))}else{None}}
+    /// Save the next-launch preference; requires a fresh user action.
+    pub fn window_set_vsync(enabled:bool)->bool{window_control(10,u32::from(enabled))}
+    /// Preview a physical client size in this game's normal desktop window.
+    pub fn window_preview_size(width:u32,height:u32)->bool{if width>65535||height>65535{return false;}window_control(5,width|(height<<16))}
+    /// Keep the current preview; requires a fresh user action.
+    pub fn window_keep_size()->bool{window_control(7,0)}
+    /// Restore only the host-recorded pre-preview size; no new gesture required.
+    pub fn window_revert_size()->bool{window_control(6,0)}
     pub fn window_control(operation:u32,value:u32)->bool{accepted(29,&u32s(&[operation,value]))}
     fn __gamepkg_file_call(op:u32,input:&[u8],output:&mut[u8])->Option<u32>{if input.len()>1048840||output.len()>65536{return None;}let mut bytes=u32s(&[op,output.len() as u32]);bytes.extend(input);let data=rpc(28,&bytes);if data.first()!=Some(&0)||data.len()-1>output.len(){return None;}let n=data.len()-1;output[..n].copy_from_slice(&data[1..]);Some(n as u32)}
     fn __gamepkg_input_events(output:&mut[u8])->Option<u32>{let data=rpc(27,&(output.len() as u32).to_le_bytes());if data.first()!=Some(&0)||data.len()-1>output.len(){return None;}let n=data.len()-1;output[..n].copy_from_slice(&data[1..]);Some(n as u32)}
-    pub fn random_u64()->u64 {u64::from_le_bytes(rpc(26,&[]).try_into().expect("invalid random-value response"))}
+    // Fixed host entropy, not a guest PRNG. Cached draws still spend the same
+    // logical call budget as all other host operations. Only transport batches.
+    const __GAMEPKG_CALL_LIMIT:usize=/* GAMEPKG_CALL_LIMIT */;
+    static __GAMEPKG_CALLS:std::sync::atomic::AtomicUsize=std::sync::atomic::AtomicUsize::new(usize::MAX);
+    struct __GamepkgRandom {bytes:[u8;512],next:usize}
+    static __GAMEPKG_RANDOM:std::sync::Mutex<__GamepkgRandom>=std::sync::Mutex::new(__GamepkgRandom{bytes:[0;512],next:512});
+    pub(crate) fn __gamepkg_begin_tick(){__GAMEPKG_CALLS.store(0,std::sync::atomic::Ordering::Relaxed);}
+    fn __gamepkg_charge_call(){
+        use std::sync::atomic::Ordering;
+        // Engine initialization precedes the first tick and retains its own
+        // host startup deadline; only ticks have the per-tick call allowance.
+        if __GAMEPKG_CALLS.load(Ordering::Relaxed)!=usize::MAX {
+            assert!(__GAMEPKG_CALLS.fetch_add(1,Ordering::Relaxed)<__GAMEPKG_CALL_LIMIT,"native host call budget exceeded");
+        }
+    }
+    pub fn random_u64()->u64 {
+        __gamepkg_charge_call();
+        let mut random=__GAMEPKG_RANDOM.lock().expect("native random cache unavailable");
+        if random.next==random.bytes.len(){
+            let bytes=rpc_segments_uncharged(43,&[],&[]);
+            assert_eq!(bytes.len(),random.bytes.len(),"invalid random-block response");
+            random.bytes.copy_from_slice(&bytes);random.next=0;
+        }
+        let start=random.next;random.next+=8;
+        u64::from_le_bytes(random.bytes[start..start+8].try_into().unwrap())
+    }
     use std::io::{Read, Write};
     use std::convert::TryInto;
-    fn rpc(op:u8, data:&[u8])->Vec<u8> {
+    fn rpc(op:u8, data:&[u8])->Vec<u8> {rpc_segments(op,&[],data)}
+    fn rpc_segments(op:u8, prefix:&[u8], data:&[u8])->Vec<u8> {
+        __gamepkg_charge_call();
+        rpc_segments_uncharged(op,prefix,data)
+    }
+    fn rpc_segments_uncharged(op:u8, prefix:&[u8], data:&[u8])->Vec<u8> {
+        let length=prefix.len().checked_add(data.len()).and_then(|n|n.checked_add(1)).expect("invalid native request size");
+        assert!(length<=8*1024*1024+65536);
         let mut out=std::io::stdout().lock();
-        out.write_all(&((data.len()+1) as u32).to_le_bytes()).unwrap();out.write_all(&[op]).unwrap();out.write_all(data).unwrap();out.flush().unwrap();drop(out);
+        out.write_all(&(length as u32).to_le_bytes()).unwrap();out.write_all(&[op]).unwrap();out.write_all(prefix).unwrap();out.write_all(data).unwrap();out.flush().unwrap();drop(out);
         let mut input=std::io::stdin().lock();let mut len=[0;4];input.read_exact(&mut len).unwrap();let n=u32::from_le_bytes(len) as usize;assert!(n<=8*1024*1024+65536);let mut bytes=vec![0;n];input.read_exact(&mut bytes).unwrap();bytes
     }
     fn u32s(values:&[u32])->Vec<u8>{values.iter().flat_map(|v|v.to_le_bytes()).collect()}
@@ -28,6 +73,7 @@ pub mod gamepkg {
     pub fn save_size()->Option<u32>{number(rpc(5,&[]))}
     pub fn save_read(offset:u32,out:&mut[u8])->Option<u32>{read(6,&[offset,out.len() as u32],out)}
     fn __gamepkg_engine_save_write(bytes:&[u8])->bool{bytes.len()<=4*1048576&&accepted(24,bytes)}
+    pub fn save_chunk(offset:u32,total:u32,bytes:&[u8])->bool{if bytes.len()>65536{return false;}let mut data=u32s(&[offset,total]);data.extend_from_slice(bytes);accepted(39,&data)}
     pub fn save_write(bytes:&[u8])->bool{bytes.len()<=1048576&&accepted(7,bytes)}
     pub fn draw_clear(rgba:u32)->bool{accepted(8,&u32s(&[rgba]))}
     pub fn draw_clip(x:f32,y:f32,w:f32,h:f32)->bool{accepted(31,&u32s(&[x.to_bits(),y.to_bits(),w.to_bits(),h.to_bits()]))}
@@ -38,12 +84,12 @@ pub mod gamepkg {
     pub fn audio_submit_stereo(samples:&[i16])->bool{if samples.len()>1600||samples.len()%2!=0{return false;}let b:Vec<u8>=samples.iter().flat_map(|v|v.to_le_bytes()).collect();accepted(37,&b)}
     pub fn audio_submit(samples:&[i16])->bool{if samples.len()>1600{return false;}let b:Vec<u8>=samples.iter().flat_map(|v|v.to_le_bytes()).collect();accepted(12,&b)}
     fn __gamepkg_audio_submit_stereo(samples:&[i16])->bool{if samples.len()>3200||samples.len()%2!=0{return false;}let b:Vec<u8>=samples.iter().flat_map(|v|v.to_le_bytes()).collect();accepted(23,&b)}
-    pub fn draw_image(x:f32,y:f32,w:f32,h:f32,pw:u32,ph:u32,pixels:&[u8])->bool{if pw==0||ph==0||pw>512||ph>512||pixels.len()!=pw as usize*ph as usize*4{return false;}let mut b=u32s(&[x.to_bits(),y.to_bits(),w.to_bits(),h.to_bits(),pw,ph]);b.extend(pixels);accepted(13,&b)}
-    pub fn draw_image_linear(x:f32,y:f32,w:f32,h:f32,pw:u32,ph:u32,pixels:&[u8])->bool{if pw==0||ph==0||pw>512||ph>512||pixels.len()!=pw as usize*ph as usize*4{return false;}let mut b=u32s(&[x.to_bits(),y.to_bits(),w.to_bits(),h.to_bits(),pw,ph]);b.extend(pixels);accepted(33,&b)}
+    pub fn draw_image(x:f32,y:f32,w:f32,h:f32,pw:u32,ph:u32,pixels:&[u8])->bool{if pw==0||ph==0||pw>512||ph>512||pixels.len()!=pw as usize*ph as usize*4{return false;}let b=u32s(&[x.to_bits(),y.to_bits(),w.to_bits(),h.to_bits(),pw,ph]);rpc_segments(13,&b,pixels)==[0]}
+    pub fn draw_image_linear(x:f32,y:f32,w:f32,h:f32,pw:u32,ph:u32,pixels:&[u8])->bool{if pw==0||ph==0||pw>512||ph>512||pixels.len()!=pw as usize*ph as usize*4{return false;}let b=u32s(&[x.to_bits(),y.to_bits(),w.to_bits(),h.to_bits(),pw,ph]);rpc_segments(33,&b,pixels)==[0]}
     pub fn draw_asset_image(path:&str,x:f32,y:f32,w:f32,h:f32)->bool{if path.len()>1024{return false;}let mut b=u32s(&[path.len() as u32]);b.extend(path.as_bytes());b.extend(u32s(&[x.to_bits(),y.to_bits(),w.to_bits(),h.to_bits()]));accepted(14,&b)}
     pub fn draw_asset_image_linear(path:&str,x:f32,y:f32,w:f32,h:f32)->bool{if path.len()>1024{return false;}let mut b=u32s(&[path.len() as u32]);b.extend(path.as_bytes());b.extend(u32s(&[x.to_bits(),y.to_bits(),w.to_bits(),h.to_bits()]));accepted(30,&b)}
     pub fn draw_asset_image_linear_straight(path:&str,x:f32,y:f32,w:f32,h:f32)->bool{if path.len()>1024{return false;}let mut b=u32s(&[path.len() as u32]);b.extend(path.as_bytes());b.extend(u32s(&[x.to_bits(),y.to_bits(),w.to_bits(),h.to_bits()]));accepted(35,&b)}
-    pub fn draw_shader_image(index:u32,pw:u32,ph:u32,pixels:&[u8])->bool{if pw==0||ph==0||pw>512||ph>512||pixels.len()!=pw as usize*ph as usize*4{return false;}let mut b=u32s(&[index,pw,ph]);b.extend(pixels);accepted(15,&b)}
+    pub fn draw_shader_image(index:u32,pw:u32,ph:u32,pixels:&[u8])->bool{if pw==0||ph==0||pw>512||ph>512||pixels.len()!=pw as usize*ph as usize*4{return false;}let b=u32s(&[index,pw,ph]);rpc_segments(15,&b,pixels)==[0]}
     pub fn draw_shader_asset_image(index:u32,path:&str)->bool{if path.len()>1024{return false;}let mut b=u32s(&[index]);b.extend(path.as_bytes());accepted(16,&b)}
     pub fn achievement_unlock(index:u32)->bool{accepted(17,&u32s(&[index]))}
     // Network requests are mediated by the parent; this worker has no network interface.
@@ -56,11 +102,21 @@ pub mod gamepkg {
     // GAMEPKG_ENGINE
     pub(super) fn __gamepkg_packet(data:&[u8]) {let mut out=std::io::stdout().lock();out.write_all(&(data.len() as u32).to_le_bytes()).unwrap();out.write_all(data).unwrap();out.flush().unwrap();}
     pub(super) fn __gamepkg_next_tick()->Option<(u32,u64)>{
+      loop {
         let mut input=std::io::stdin().lock();let mut len=[0;4];if input.read_exact(&mut len).is_err(){return None;}
-        let n=u32::from_le_bytes(len) as usize;assert!(n>=12&&n<=204&&(n-12)%12==0);
+        let encoded=u32::from_le_bytes(len);let control=encoded&0x80000000!=0;let n=(encoded&0x7fffffff) as usize;
+        if control {
+            #[cfg(gamepkg_zelda)] {
+                assert!((1..=65541).contains(&n));let mut b=vec![0;n];input.read_exact(&mut b).unwrap();drop(input);
+                __gamepkg_packet(&engine::snapshot_control(&b));continue;
+            }
+            #[cfg(not(gamepkg_zelda))] panic!("unsupported native control frame");
+        }
+        assert!(n>=12&&n<=204&&(n-12)%12==0);
         let mut b=vec![0;n];input.read_exact(&mut b).unwrap();drop(input);
         #[cfg(gamepkg_doom)] engine::input(&b[12..]);
         #[cfg(not(gamepkg_doom))] assert_eq!(n,12);
-        Some((u32::from_le_bytes(b[..4].try_into().unwrap()),u64::from_le_bytes(b[4..12].try_into().unwrap())))
+        return Some((u32::from_le_bytes(b[..4].try_into().unwrap()),u64::from_le_bytes(b[4..12].try_into().unwrap())));
+      }
     }
 }

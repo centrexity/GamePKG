@@ -1,22 +1,75 @@
     #[cfg(any(gamepkg_doom,gamepkg_zelda))]
     mod engine {
-        #[cfg(gamepkg_doom)] unsafe extern "C" {fn initialize(data:*mut u8,length:u32,save:u32)->i32;}
-        #[cfg(gamepkg_zelda)] unsafe extern "C" {fn initialize(data:*mut u8,length:u32)->i32;}
-        unsafe extern "C" {fn step(input:u32)->i32;fn pixels()->*mut u8;fn audio()->*mut i16;fn reset_engine();}
+        #[cfg(gamepkg_doom)]
+        #[no_mangle]
+        pub unsafe extern "C" fn gamepkg_native_doom_log(bytes:*const u8,length:u32) {
+            if !bytes.is_null() && length<=4096 {
+                let _=std::io::Write::write_all(&mut std::io::stderr().lock(),std::slice::from_raw_parts(bytes,length as usize));
+            }
+        }
+        #[cfg(gamepkg_doom)] unsafe extern "C" {fn initialize(data:*mut u8,length:u32,save:u32)->i32;fn add_patch(data:*mut u8,length:u32)->i32;fn set_patch_mode(index:u32,mode:u32)->i32;}
+        #[cfg(gamepkg_zelda)] unsafe extern "C" {fn initialize(data:*mut u8,length:u32)->i32;fn configure_video(extra:u32,tall:u32)->i32;}
+        unsafe extern "C" {fn step(input:u32)->i32;fn pixels()->*mut u8;fn pixel_format()->u32;fn audio()->*mut i16;fn reset_engine();}
         #[cfg(gamepkg_doom)] unsafe extern "C" {fn engine_input(kind:i32,a:i32,b:i32)->i32;fn quitrequested()->i32;fn savedata()->*mut u8;fn savedlength()->u32;fn savedirty()->i32;fn status()->u32;fn position()->u32;fn controller()->u32;}
         #[cfg(gamepkg_zelda)] unsafe extern "C" {fn sram()->*mut u8;fn save_changed()->i32;fn engine_status()->u32;fn engine_position()->u32;fn engine_controller()->u32;}
+        #[cfg(gamepkg_zelda)] unsafe extern "C" {fn snapshot_size()->u32;fn snapshot_data()->*mut u8;fn snapshot_capture()->i32;fn snapshot_restore(length:u32)->i32;}
+        #[cfg(gamepkg_zelda)] pub(super) fn snapshot_control(b:&[u8])->Vec<u8> {
+            const SIZE:usize=275497;
+            let failed=||vec![0x82,1];
+            unsafe {
+                if snapshot_size() as usize!=SIZE{return failed();}
+                let pointer=snapshot_data();if pointer.is_null(){return failed();}
+                let mut reply=vec![0x82,0];
+                match b {
+                    [0]=>{if snapshot_capture()!=0{return failed();}reply.extend_from_slice(&(SIZE as u32).to_le_bytes());}
+                    [1,rest @ ..] if rest.len()==8=>{
+                        let offset=u32::from_le_bytes(rest[..4].try_into().unwrap()) as usize;
+                        let count=u32::from_le_bytes(rest[4..].try_into().unwrap()) as usize;
+                        if count==0||count>65536||offset.checked_add(count).is_none_or(|end|end>SIZE){return failed();}
+                        reply.extend_from_slice(std::slice::from_raw_parts(pointer.add(offset),count));
+                    }
+                    [2,rest @ ..] if rest.len()>4&&rest.len()<=65540=>{
+                        let offset=u32::from_le_bytes(rest[..4].try_into().unwrap()) as usize;let data=&rest[4..];
+                        if offset.checked_add(data.len()).is_none_or(|end|end>SIZE){return failed();}
+                        std::ptr::copy_nonoverlapping(data.as_ptr(),pointer.add(offset),data.len());
+                    }
+                    [3,rest @ ..] if rest.len()==4=>{
+                        let size=u32::from_le_bytes(rest.try_into().unwrap());
+                        if size as usize!=SIZE||snapshot_restore(size)!=0{return failed();}
+                        reply.extend(super::u32s(&[engine_status(),engine_position(),engine_controller()]));
+                    }
+                    _=>return failed(),
+                }
+                reply
+            }
+        }
         static mut STARTED:bool=false;
+        #[cfg(gamepkg_zelda)] static mut VIDEO:u32=0;
         pub(super) fn init(){
             let len=super::number(super::rpc(19,&[])).expect("missing engine ROM");assert!(len<=64*1024*1024);
             let mut rom=vec![0;len as usize];let mut offset=0;
             while offset<rom.len(){let n=(rom.len()-offset).min(65536);let b=super::rpc(20,&super::u32s(&[offset as u32,n as u32]));assert_eq!(b.len(),n+1);assert_eq!(b[0],0);rom[offset..offset+n].copy_from_slice(&b[1..]);offset+=n;}
             let pointer=Box::leak(rom.into_boxed_slice()).as_mut_ptr();
+            #[cfg(gamepkg_doom)] {
+                let count=super::number(super::rpc(2,&[])).expect("missing ROM count").checked_sub(1).expect("missing IWAD");assert!(count<=6);
+                for index in 0..count {
+                    let length=super::number(super::rpc(3,&super::u32s(&[index+1]))).expect("missing patch WAD");
+                    assert!(length<=64*1024*1024);
+                    let mut patch=vec![0;length as usize];let mut offset=0;
+                    while offset<patch.len(){let n=(patch.len()-offset).min(65536);let b=super::rpc(4,&super::u32s(&[index+1,offset as u32,n as u32]));assert_eq!(b.len(),n+1);assert_eq!(b[0],0);patch[offset..offset+n].copy_from_slice(&b[1..]);offset+=n;}
+                    let data=Box::leak(patch.into_boxed_slice()).as_mut_ptr();
+                    assert_eq!(unsafe{add_patch(data,length)},0);
+                    let mode=super::number(super::rpc(40,&super::u32s(&[index]))).expect("missing signed WAD mode");assert!(mode<=5);
+                    assert_eq!(unsafe{set_patch_mode(index,mode)},0);
+                }
+            }
             let n=super::save_size().unwrap_or(0) as usize;let mut save=vec![0;n];let mut offset=0;
             while offset<n{let size=(n-offset).min(65536);super::save_read(offset as u32,&mut save[offset..offset+size]).unwrap();offset+=size;}
             unsafe {
                 #[cfg(gamepkg_doom)] {assert!(n<=4*1024*1024);if n>0{std::ptr::copy_nonoverlapping(save.as_ptr(),savedata(),n);}}
                 #[cfg(gamepkg_doom)] assert_eq!(initialize(pointer,len,n as u32),0);
                 #[cfg(gamepkg_zelda)] assert_eq!(initialize(pointer,len),0);
+                #[cfg(gamepkg_zelda)] {VIDEO=super::number(super::rpc(41,&[])).expect("missing signed video options");assert!(VIDEO&!0x1ffffff==0 && VIDEO&255<=96);assert_eq!(configure_video(VIDEO&255,(VIDEO>>8)&0x1ffff),0);}
                 #[cfg(gamepkg_zelda)] {if n>0{assert_eq!(n,8192);std::ptr::copy_nonoverlapping(save.as_ptr(),sram(),n);}}
             }
         }
@@ -31,18 +84,39 @@
         pub(super) fn tick(input:u32,state:u64)->u64{unsafe{
             #[cfg(gamepkg_doom)] if state==0&&STARTED{reset_engine();}
             #[cfg(gamepkg_zelda)] if state==0{reset_engine();}
+            let first_tick=!STARTED;
+            let tick_started=std::time::Instant::now();
             STARTED=true;
+            if first_tick{eprintln!("Native engine: beginning first tick");}
             #[cfg(gamepkg_doom)] let buttons=input;
             #[cfg(gamepkg_zelda)] let buttons={let mut buttons=0;for (mask,bit) in [(0x101,6),(0x202,7),(0x404,4),(0x808,5),(0x1010,0),(0x2020,1),(0x4040,3),(0x8080,2),(0x110000,8),(0x220000,9),(0x440000,10),(0x880000,11)]{if input&mask!=0{buttons|=1<<bit;}}buttons};
             assert_eq!(step(buttons),0);
+            if first_tick{eprintln!("Native engine: first C step complete at {} us",tick_started.elapsed().as_micros());}
             #[cfg(gamepkg_doom)] let (w,h)=(320,200);
-            #[cfg(gamepkg_zelda)] let (w,h)=(256,224);
-            let mut p=std::slice::from_raw_parts(pixels(),w*h*4).to_vec();for pixel in p.chunks_exact_mut(4){pixel.swap(0,2);pixel[3]=255;}
+            #[cfg(gamepkg_zelda)] let (w,h)=(256+2*(VIDEO as usize&255),if VIDEO&256!=0{240}else{224});
+            #[cfg(gamepkg_doom)] let ending=controller()&(1<<25)!=0;
+            // Query the last writer, including the final ENDOOM frame after quit.
+            let words_little_endian=super::__gamepkg_engine_little_endian(pixel_format(),cfg!(target_endian="little"));
+            let mut p=std::slice::from_raw_parts(pixels(),w*h*4).to_vec();
+            super::__gamepkg_engine_rgba(&mut p,words_little_endian);
+            if first_tick{eprintln!("Native engine: first pixel conversion complete at {} us",tick_started.elapsed().as_micros());}
             super::draw_clear(0x000000ff);
-            #[cfg(gamepkg_doom)] {let ending=controller()&(1<<25)!=0;super::draw_image(0.0,if ending{40.0}else{0.0},640.0,if ending{400.0}else{480.0},w as u32,h as u32,&p);}
-            #[cfg(gamepkg_zelda)] super::draw_image(64.0,16.0,512.0,448.0,w as u32,h as u32,&p);
+            #[cfg(gamepkg_doom)] {super::draw_image(0.0,if ending{40.0}else{0.0},640.0,if ending{400.0}else{480.0},w as u32,h as u32,&p);}
+            #[cfg(gamepkg_zelda)] {let scale=(640.0/w as f32).min(480.0/h as f32).min(2.0);let width=w as f32*scale;let height=h as f32*scale;super::draw_image((640.0-width)*0.5,(480.0-height)*0.5,width,height,w as u32,h as u32,&p);}
+            if first_tick{eprintln!("Native engine: first frame transferred at {} us",tick_started.elapsed().as_micros());}
             super::__gamepkg_audio_submit_stereo(std::slice::from_raw_parts(audio(),1600));
-            #[cfg(gamepkg_doom)] {if savedirty()!=0{let n=savedlength() as usize;assert!(n<=4*1024*1024);assert!(super::__gamepkg_engine_save_write(std::slice::from_raw_parts(savedata(),n)));}super::rpc(21,&super::u32s(&[status(),position(),controller()]));if quitrequested()!=0{super::rpc(25,&[]);}}
+            if first_tick{eprintln!("Native engine: first audio transferred at {} us",tick_started.elapsed().as_micros());}
+            #[cfg(gamepkg_doom)] {
+                let dirty=savedirty();
+                if first_tick{eprintln!("Native engine: first save state inspected at {} us",tick_started.elapsed().as_micros());}
+                if dirty!=0{let n=savedlength() as usize;assert!(n<=4*1024*1024);assert!(super::__gamepkg_engine_save_write(std::slice::from_raw_parts(savedata(),n)));}
+                if first_tick{eprintln!("Native engine: first save transferred at {} us",tick_started.elapsed().as_micros());}
+                let diagnostic=[status(),position(),controller()];
+                if first_tick{eprintln!("Native engine: first diagnostics inspected at {} us",tick_started.elapsed().as_micros());}
+                super::rpc(21,&super::u32s(&diagnostic));
+                if first_tick{eprintln!("Native engine: first diagnostics transferred at {} us",tick_started.elapsed().as_micros());}
+                if quitrequested()!=0{super::rpc(25,&[]);}
+            }
             #[cfg(gamepkg_zelda)] {if save_changed()!=0{super::save_write(std::slice::from_raw_parts(sram(),8192));}super::rpc(21,&super::u32s(&[engine_status(),engine_position(),engine_controller()]));}
             state.wrapping_add(1)
         }}

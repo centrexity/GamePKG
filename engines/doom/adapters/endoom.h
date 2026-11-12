@@ -6,6 +6,10 @@ typedef struct {const char *name;const uint8_t *data;unsigned w,h;} txt_font_t;
 static uint8_t ending_text[80*25*2];
 static uint32_t quit_frame[320*200];
 static uint32_t ending_frame, ending_mask;
+/* 0 = native color words; 1 = the original fixed little-endian gameplay stream. */
+static uint8_t ending_pixels;
+static uint32_t gamepkg_pixel_format(void) { return ending_pixels ? 0 : 1; }
+static void gamepkg_gameplay_pixels(void) { ending_pixels = 0; }
 static const uint32_t ending_colors[16]={0xff000000,0xff0000a8,0xff00a800,0xff00a8a8,0xffa80000,0xffa800a8,0xffa85400,0xffa8a8a8,0xff545454,0xff5454fe,0xff54fe54,0xff54fefe,0xfffe5454,0xfffe54fe,0xfffefe54,0xfffefefe};
 void gamepkg_begin_quit(void) {
   if(quit_requested||quit_countdown) return;
@@ -27,4 +31,5 @@ static void render_ending(void) {
     }
   }
   ending_frame++;
+  ending_pixels=1;
 }

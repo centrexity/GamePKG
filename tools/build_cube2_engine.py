@@ -35,6 +35,42 @@ def replace_once(text, before, after):
     return text.replace(before, after, 1)
 
 
+def adapt_movie_audio(stage):
+    for patch in json.loads((PROJECT / 'engines/cube2/adapters/movie-audio-patches.json').read_text()):
+        if patch['file'] != 'engine/movie.cpp':raise ValueError('Invalid movie audio adaptation path')
+        path=stage / patch['file']
+        path.write_text(replace_once(path.read_text(),patch['before'],patch['after']))
+
+
+def adapt_movie_limits(stage):
+    if 'gamepkg_movie_limit.h' in (stage / 'engine/movie.cpp').read_text():
+        raise ValueError('Movie limit adaptation already applied')
+    for patch in json.loads((PROJECT / 'engines/cube2/adapters/movie-limit-patches.json').read_text()):
+        if patch['file'] != 'engine/movie.cpp':raise ValueError('Invalid movie limit adaptation path')
+        path=stage / patch['file']
+        path.write_text(replace_once(path.read_text(),patch['before'],patch['after']))
+    shutil.copyfile(PROJECT / 'engines/cube2/adapters/movie_limit.h',stage / 'engine/gamepkg_movie_limit.h')
+    shutil.copyfile(PROJECT / 'engines/cube2/adapters/movie_io.h',stage / 'engine/gamepkg_movie_io.h')
+
+
+def adapt_zip_bounds(stage):
+    if 'gamepkg_zip_bounds.h' in (stage / 'shared/zip.cpp').read_text():
+        raise ValueError('ZIP bounds adaptation already applied')
+    for patch in json.loads((PROJECT / 'engines/cube2/adapters/zip-bounds-patches.json').read_text()):
+        if patch['file'] != 'shared/zip.cpp':raise ValueError('Invalid ZIP bounds adaptation path')
+        path=stage / patch['file']
+        path.write_text(replace_once(path.read_text(),patch['before'],patch['after']))
+    shutil.copyfile(PROJECT / 'engines/cube2/adapters/zip_bounds.h',stage / 'shared/gamepkg_zip_bounds.h')
+
+
+def adapt_socket_sets(stage):
+    for patch in json.loads((PROJECT / 'engines/cube2/adapters/socket-set-patches.json').read_text()):
+        if patch['file'] != 'enet/include/enet/unix.h':raise ValueError('Invalid socket-set adaptation path')
+        path=stage / patch['file']
+        path.write_text(replace_once(path.read_text(),patch['before'],patch['after']))
+    shutil.copyfile(PROJECT / 'engines/cube2/adapters/socket_set.h',stage / 'enet/include/enet/gamepkg_socket_set.h')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--verify-only', action='store_true')
@@ -54,6 +90,10 @@ def main():
         path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(SOURCE / name, path)
     (stage / 'enet/check_cflags.sh').chmod(0o700)
+    adapt_socket_sets(stage)
+    adapt_movie_audio(stage)
+    adapt_movie_limits(stage)
+    adapt_zip_bounds(stage)
     shutil.copyfile(PROJECT / 'engines/cube2/adapters/syscall_guard.h', stage / 'engine/syscall_guard.h')
     shutil.copyfile(PROJECT / 'engines/cube2/adapters/persistence.h', stage / 'engine/persistence.h')
     shutil.copyfile(PROJECT / 'engines/cube2/adapters/audio.h', stage / 'engine/audio.h')

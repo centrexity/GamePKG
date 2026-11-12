@@ -21,6 +21,12 @@ impl From<crate::server_selections::Selection> for Draft {
         }
     }
 }
+pub(super) fn scope(manifest: &crate::manifest::Manifest) -> Option<String> {
+    if !manifest.permissions.network {
+        return None;
+    }
+    crate::server_selections::identity(manifest).ok()
+}
 impl App {
     pub(super) fn game_network_editor(&mut self, ui: &mut egui::Ui) {
         let Some(manifest) = self
@@ -31,7 +37,12 @@ impl App {
         else {
             return;
         };
-        let Ok(scope) = crate::server_selections::identity(&manifest) else {
+        if !manifest.permissions.network {
+            ui.label("Networking is disabled by this package.");
+            ui.add_space(12.0);
+            return;
+        }
+        let Some(scope) = scope(&manifest) else {
             return;
         };
         let mut chosen = None;
@@ -85,6 +96,28 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn disabled_packages_render_disabled_networking_without_creating_launch_drafts() {
+        let mut manifest =
+            crate::manifest::Manifest::parse(include_bytes!("../../ports/cube2/manifest.toml"))
+                .unwrap();
+        manifest.permissions.network = false;
+        let mut app = App {
+            selected_game: Some(manifest.id.clone()),
+            installed: vec![manifest],
+            ..Default::default()
+        };
+        let context = egui::Context::default();
+        let output = context.run(Default::default(), |context| {
+            egui::CentralPanel::default().show(context, |ui| app.game_network_editor(ui));
+        });
+        assert!(
+            app.network_drafts.is_empty(),
+            "disabled game created an editable launch draft"
+        );
+        assert!(output.shapes.iter().any(|shape| matches!(&shape.shape,
+            egui::epaint::Shape::Text(text) if text.galley.text().contains("Networking is disabled by this package"))));
+    }
     #[test]
     fn refreshes_follow_saved_choices_without_overwriting_unsaved_edits() {
         let original = crate::server_selections::Selection {

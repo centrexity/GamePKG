@@ -124,22 +124,22 @@ impl Package {
         if archive.len() > 10000 {
             bail!("too many archive entries");
         }
+        archive.validate_header_consistency()?;
         let mut entries = BTreeMap::new();
         let mut portable_paths = BTreeMap::new();
         let mut total = 0u64;
         for i in 0..archive.len() {
             let f = archive.by_index(i)?;
-            if !valid_path(f.name()) || f.is_dir() || f.is_symlink() {
-                bail!("invalid archive path: {}", f.name());
+            let name = f.name()?.into_owned();
+            if !valid_path(&name) || f.is_dir() || f.is_symlink() {
+                bail!("invalid archive path: {name}");
             }
-            if (f.name().starts_with("source/") || f.name().starts_with("shaders/"))
-                && !f.name().is_ascii()
-            {
+            if (name.starts_with("source/") || name.starts_with("shaders/")) && !name.is_ascii() {
                 bail!(
                     "compiler source paths must be ASCII to avoid filesystem normalization aliases"
                 );
             }
-            register_path(&mut portable_paths, f.name())?;
+            register_path(&mut portable_paths, &name)?;
             if !matches!(
                 f.compression(),
                 zip::CompressionMethod::Stored | zip::CompressionMethod::Zstd
@@ -155,7 +155,7 @@ impl Package {
             if total > MAX_TOTAL {
                 bail!("archive too large");
             }
-            if entries.insert(f.name().to_owned(), f.size()).is_some() {
+            if entries.insert(name, f.size()).is_some() {
                 bail!("duplicate archive entry");
             }
         }
@@ -262,6 +262,7 @@ impl Package {
         if entry.compression() == zip::CompressionMethod::Stored {
             let start = entry
                 .data_start()
+                .context("stored asset has no physical data offset")?
                 .checked_add(offset)
                 .context("asset offset overflow")?;
             drop(entry);
@@ -505,7 +506,12 @@ mod tests {
         writer.finish().unwrap();
         let mut package = Package::open(&path).unwrap();
         package.mark_verified();
-        let start = package.archive.by_name("assets/data").unwrap().data_start();
+        let start = package
+            .archive
+            .by_name("assets/data")
+            .unwrap()
+            .data_start()
+            .unwrap();
         let mut changed = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
         changed.seek(SeekFrom::Start(start)).unwrap();
         changed.write_all(b"X").unwrap();

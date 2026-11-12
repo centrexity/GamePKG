@@ -30,7 +30,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-mixer-browser-') as temporary:
    browser.get(f'http://127.0.0.1:{server.server_port}/');wait=WebDriverWait(browser,20);wait.until(lambda b:b.find_element('id','status').text=='Ready to play')
    browser.execute_script("window.mixerCase=0;window.mixerBuffers=[];const post=Worker.prototype.postMessage;Worker.prototype.postMessage=function(data,...rest){if(data.type==='tick')data={...data,input:0xfb0000|window.mixerCase};return post.call(this,data,...rest);};const p=AudioContext.prototype,old=p.createBuffer;p.createBuffer=function(...args){const b=old.apply(this,args);window.mixerBuffers.push(b);if(window.mixerBuffers.length>60)window.mixerBuffers.shift();return b;};")
    browser.find_element('id','play').click()
-   launch=struct.unpack('<4h',(PROJECT/'ports/arkanoo/assets/audio/launch.wav').read_bytes()[9644:9652]);bounce=struct.unpack('<4h',(PROJECT/'ports/arkanoo/assets/audio/bounce.wav').read_bytes()[9644:9652]);overlap=[max(-32768,min(32767,int(a/2)+int(b/2))) for a,b in zip(launch,bounce)]
+   launch=struct.unpack('<4h',(PROJECT/'tests/fixtures/arkanoo-legacy-effects/launch.wav').read_bytes()[9644:9652]);bounce=struct.unpack('<4h',(PROJECT/'tests/fixtures/arkanoo-legacy-effects/bounce.wav').read_bytes()[9644:9652]);overlap=[max(-32768,min(32767,int(a/2)+int(b/2))) for a,b in zip(launch,bounce)]
    for case,wanted in [(0,[4600,-2600,4600,-2600]),(1,[11800,-11050,1800,-1050]),(3,[1800,-1050,1800,-1050]),(4,overlap),(5,overlap)]:
     browser.execute_script('window.mixerCase=arguments[0];window.mixerBuffers=[];',case)
     wait.until(lambda b:b.find_element('id','game').get_attribute('data-state')==str(case+1))

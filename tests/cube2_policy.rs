@@ -82,7 +82,13 @@ fn data_folder_locations_are_scoped_and_failed_changes_preserve_records() {
     let library = tempfile::tempdir().unwrap();
     let data = tempfile::tempdir().unwrap();
     std::fs::create_dir(data.path().join("data")).unwrap();
-    std::fs::create_dir(data.path().join("packages")).unwrap();
+    std::fs::create_dir_all(data.path().join("packages/textures")).unwrap();
+    std::fs::write(data.path().join("data/stdlib.cfg"), b"original").unwrap();
+    std::fs::write(
+        data.path().join("packages/textures/notexture.png"),
+        b"texture",
+    )
+    .unwrap();
     let mut manifest = Manifest::parse(include_bytes!("../ports/cube2/manifest.toml")).unwrap();
     gamepkg::game_data::remember(library.path(), &manifest, data.path()).unwrap();
     assert_eq!(

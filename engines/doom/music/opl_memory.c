@@ -14,15 +14,17 @@ static unsigned count;
 static uint64_t time_us;
 static unsigned fraction;
 static int paused;
+static int initialized;
 static unsigned sample_rate = 48000;
 opl_init_result_t OPL_Init(unsigned port) {
     (void)port;
     if (sample_rate != 48000) return OPL_INIT_NONE;
     OPL3_Reset(&chip, sample_rate);
     count = 0; time_us = 0; fraction = 0; paused = 0;
+    initialized = 1;
     return OPL_INIT_OPL3;
 }
-void OPL_Shutdown(void) { count = 0; }
+void OPL_Shutdown(void) { count = 0; initialized = 0; }
 void OPL_SetSampleRate(unsigned rate) { sample_rate = rate; }
 void OPL_WriteRegister(int reg, int value) {
     if (reg >= 0 && reg < 512) OPL3_WriteRegBuffered(&chip, reg, value);
@@ -68,6 +70,10 @@ void OPL_Unlock(void) {}
 void OPL_SetPaused(int value) { paused = !!value; }
 void gamepkg_music_render(int16_t *samples, unsigned frames) {
     if (frames > 800) I_Error("OPL frame budget exceeded");
+    if (!initialized) {
+        memset(samples, 0, frames * 2 * sizeof(*samples));
+        return;
+    }
     for (unsigned frame = 0; frame < frames; frame++) {
         if (!paused) {
             unsigned dispatched = 0;
@@ -84,3 +90,8 @@ void gamepkg_music_render(int16_t *samples, unsigned frames) {
         OPL3_GenerateResampled(&chip, samples + frame * 2);
     }
 }
+
+#ifdef GAMEPKG_OPL_TEST
+/* Maintainer-only visibility; absent from game engine builds. */
+unsigned gamepkg_opl_pending_callbacks(void) { return count; }
+#endif

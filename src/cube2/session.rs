@@ -1280,9 +1280,13 @@ mod tests {
                 .unwrap();
         save.commit(&snapshot).unwrap();
         assert_eq!(
-            super::super::save::Store::open(library.path(), "com.gamepkg.cube2", "test-creator", 1)
-                .unwrap()
-                .seed,
+            super::super::save::Store::read_snapshot(
+                library.path(),
+                "com.gamepkg.cube2",
+                "test-creator",
+                1
+            )
+            .unwrap(),
             snapshot
         );
         assert!(super::super::save::Store::open(
@@ -1451,3 +1455,27 @@ mod modifiers;
 
 #[cfg(test)]
 mod keyboard;
+
+#[cfg(test)]
+#[path = "session/retry.rs"]
+mod retry;
+
+#[cfg(test)]
+#[path = "session/demos.rs"]
+mod demos;
+
+#[cfg(test)]
+#[path = "session/movies.rs"]
+mod movies;
+
+#[cfg(test)]
+#[path = "session/texture_browser.rs"]
+mod texture_browser;
+
+#[cfg(test)]
+#[path = "session/autoexec.rs"]
+mod autoexec;
+
+#[cfg(test)]
+#[path = "session/zip_mods.rs"]
+mod zip_mods;

@@ -1,0 +1,83 @@
+name: Native editor file-picker workflow
+on:
+  push:
+    paths:
+      - 'tests/arkanoo.py'
+      - 'tests/gui_test_support.py'
+      - 'tests/gui_test_support_env_test.py'
+      - 'tests/arkanoo_legacy_support.py'
+      - 'tools/ci_ubuntu_apt.sh'
+      - '.github/workflows/native_editor_picker.yml'
+  pull_request:
+    paths:
+      - 'tests/arkanoo.py'
+      - 'tests/gui_test_support.py'
+      - 'tests/gui_test_support_env_test.py'
+      - 'tests/arkanoo_legacy_support.py'
+      - 'tools/ci_ubuntu_apt.sh'
+      - '.github/workflows/native_editor_picker.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: native-editor-picker-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  native-editor:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+      CARGO_PROFILE_RELEASE_DEBUG: '0'
+      CARGO_BUILD_JOBS: '2'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Verify private GUI tool environment
+        run: python3 tests/gui_test_support_env_test.py
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: native-editor-picker
+      - name: Install isolated native editor prerequisites
+        run: |
+          bash tools/ci_ubuntu_apt.sh update
+          bash tools/ci_ubuntu_apt.sh install -y --no-install-recommends bubblewrap xvfb x11-utils xdotool imagemagick metacity zenity tesseract-ocr python3-pil python3-xlib libsdl2-dev libsdl2-ttf-dev libsdl2-image-dev libasound2-dev libudev-dev pkg-config libxkbcommon-x11-0 libgl1 libgl1-mesa-dri libvulkan1 mesa-vulkan-drivers
+          for gamepkg_picker_tool in Xvfb xdotool xprop import convert metacity zenity tesseract; do
+            command -v "$gamepkg_picker_tool"
+          done
+          gamepkg_picker_icd=
+          for gamepkg_icd_path in /usr/share/vulkan/icd.d/lvp_icd*.json; do
+            if test -f "$gamepkg_icd_path"; then gamepkg_picker_icd="$gamepkg_icd_path"; break; fi
+          done
+          test -n "$gamepkg_picker_icd"
+          echo "VK_ICD_FILENAMES=$gamepkg_picker_icd" >> "$GITHUB_ENV"
+          printf 'pcm.!default { type null }\n' > /tmp/gamepkg-picker-null-alsa.conf
+      - name: Build embedded audio and actual CLI and GUI entries
+        run: python3 tools/build_audio_companion.py --github-env
+      - run: cargo build --locked --release --features gui --bins
+      - run: python3 tools/check_bundled_audio.py target/release
+      - name: Stage the isolated Rust and shader compilers
+        run: |
+          python3 tools/install_slang.py /tmp/gamepkg-picker-slang
+          sudo cp -a "$(rustc --print sysroot)" /tmp/gamepkg-picker-toolchain
+          sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-picker-rustup rustup toolchain link gamepkg-picker /tmp/gamepkg-picker-toolchain
+          sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-picker-rustup rustup default gamepkg-picker
+      - name: Verify both signed runtime profiles and native import cancel and export
+        run: sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" VK_ICD_FILENAMES="$VK_ICD_FILENAMES" RUSTUP_HOME=/tmp/gamepkg-picker-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT=/tmp/gamepkg-picker-slang ALSA_CONFIG_PATH=/tmp/gamepkg-picker-null-alsa.conf SDL_AUDIODRIVER=dummy /usr/bin/python3 tests/arkanoo.py --skip-browser --keep-fixtures
+      - name: Preserve native editor and actual picker evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-editor-picker-evidence
+          path: |
+            target/arkanoo-proof
+            target/native-rom-picker*.png
+            target/native-rom-picker-targets.jsonl
+          retention-days: 7
+          if-no-files-found: warn

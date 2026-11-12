@@ -100,19 +100,67 @@ pub(crate) fn save(root: &Path, manifest: &Manifest, paths: &[String]) -> Result
         .context("unable to remember ROM paths")?;
     Ok(())
 }
+pub(crate) fn check_path(path: &str) -> Result<()> {
+    if path.trim().is_empty() {
+        bail!("Choose a file");
+    }
+    let metadata = std::fs::metadata(path.trim()).context("File is missing or unavailable")?;
+    if !metadata.is_file() {
+        bail!("Choose a regular file");
+    }
+    if metadata.len() > 64 * 1024 * 1024 {
+        bail!("File exceeds the 64 MiB ROM limit");
+    }
+    Ok(())
+}
 pub(crate) fn ready(paths: &[String], count: usize) -> bool {
-    paths.len() == count
-        && paths.iter().all(|p| {
-            !p.trim().is_empty()
-                && std::fs::metadata(p.trim())
-                    .is_ok_and(|m| m.is_file() && m.len() <= 64 * 1024 * 1024)
-        })
+    paths.len() == count && paths.iter().all(|path| check_path(path).is_ok())
+}
+pub(crate) fn check_for(manifest: &Manifest, path: &str) -> Result<()> {
+    if manifest.builtin_engine.as_deref() != Some(crate::takedawn::PROFILE) {
+        return check_path(path);
+    }
+    if path.trim().is_empty() {
+        bail!("Choose the original Xbox ISO");
+    }
+    // Readiness is cheap; the native adapter verifies every supported disc file
+    // before starting. The selected image remains outside the library.
+    let file = crate::files::open_regular(Path::new(path.trim()), 16 * 1024 * 1024 * 1024, true)?;
+    if file.metadata()?.len() < 33 * 2048 {
+        bail!("Choose a supported Xbox ISO");
+    }
+    Ok(())
+}
+pub(crate) fn ready_for(manifest: &Manifest, paths: &[String]) -> bool {
+    if manifest.builtin_engine.as_deref() != Some(crate::takedawn::PROFILE) {
+        return ready(paths, manifest.required_rom_count());
+    }
+    paths.len() == manifest.required_rom_count()
+        && paths.iter().all(|path| check_for(manifest, path).is_ok())
 }
 #[cfg(test)]
 mod tests {
     use super::*;
     fn manifest() -> Manifest {
         toml::from_str(include_str!("../ports/doom/manifest.toml")).unwrap()
+    }
+    #[test]
+    fn large_disc_readiness_is_specific_to_the_reviewed_native_profile() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("selected.iso");
+        std::fs::File::create(&path)
+            .unwrap()
+            .set_len(128 * 1048576)
+            .unwrap();
+        let disc = Manifest::parse(include_bytes!("../ports/takedawn/manifest.toml")).unwrap();
+        let text = path.to_str().unwrap();
+        assert!(check_for(&disc, text).is_ok());
+        assert!(check_for(&manifest(), text).is_err());
+        assert!(ready_for(&disc, &[text.into()]));
+        std::fs::File::create(&path).unwrap().set_len(12).unwrap();
+        assert!(!ready_for(&disc, &[text.into()]));
+        assert!(!ready_for(&disc, &[]));
+        assert!(check_for(&disc, root.path().to_str().unwrap()).is_err());
     }
     #[test]
     fn selections_persist_per_game_creator_requirement_and_library() {

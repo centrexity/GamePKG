@@ -1,0 +1,17 @@
+[
+  {
+    "before": "if (sfx_id < 1 || sfx_id > NUMSFX)",
+    "after": "if (sfx_id < 1 || sfx_id >= NUMSFX)",
+    "count": 1
+  },
+  {
+    "before": "fixed_t        approx_dist;\n    fixed_t        adx;\n    fixed_t        ady;",
+    "after": "int64_t        approx_dist;\n    int64_t        adx;\n    int64_t        ady;",
+    "count": 1
+  },
+  {
+    "before": "adx = abs(listener->x - source->x);\n    ady = abs(listener->y - source->y);",
+    "after": "adx = llabs((int64_t)listener->x - (int64_t)source->x);\n    ady = llabs((int64_t)listener->y - (int64_t)source->y);",
+    "count": 1
+  }
+]

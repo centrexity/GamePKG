@@ -133,7 +133,7 @@ print('200', end='')
                                env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         try:
             for _ in range(100):
-                result = subprocess.run(['xdotool', 'search', '--onlyvisible', '--name', '^GamePKG$'],
+                result = subprocess.run(['xdotool', 'search', '--onlyvisible', '--name', '^GamePKG [0-9]+[.][0-9]+[.][0-9]+([-+][A-Za-z0-9.-]+)?$'],
                                         env=env, capture_output=True, text=True)
                 if result.returncode == 0:
                     window = result.stdout.splitlines()[0]

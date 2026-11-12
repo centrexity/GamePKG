@@ -219,3 +219,23 @@ challenge and independently checked response. These are public regression inputs
 not a real account. The original-engine TCP test uses the challenge/response to
 verify actual authentication, granted privilege and saved-key reload; it does
 not contact a public master or publish player credentials.
+
+The bonus/rocket player check uses `sdl_bonus_scene.c` and
+`../bonus_scene_reference.py` to render the original full-resolution photo at
+its actual destination size. Resizing a previously composed 1280-pixel scene
+changes translucent sprite colors and is not a valid oracle at another size.
+The photo is reconstructed losslessly from the 24 reviewed haloed tiles, with
+independent original-pixel and tile SHA-256 guards. Expected bonus colors replay
+the original ordered SDL primitives over that destination's background sample;
+production sprite textures never supply the expected colors. Opaque rocket
+pixels retain the original rocket fixture.
+
+`arkanoo-bonus-commands.json` stores the four position-zero command streams from
+`arkanoo_bonus.py --commands-only` (with the same pinned upstream directory and
+checksum-pinned SDL crate arguments). Each stream is newline-terminated UTF-8,
+zlib-compressed and hex encoded. Command counts/hashes, source revision and source
+fragment hashes remain tied to `arkanoo-bonus.json`. The player check additionally
+compares the destination-aware oracle with the unchanged original composite at
+1280×960. It checks 960×720 and 1280×960 desktop windows plus the 640×480 browser,
+including movement and cleared pixels. Existing sprite tolerance 3 and cleared
+background tolerance 1 remain unchanged. All automated audio is muted.

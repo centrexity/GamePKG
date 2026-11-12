@@ -1,0 +1,20 @@
+{
+  "game": {
+    "repository": "https://github.com/xenophobentx/takedawn",
+    "commit": "5a00fc10f9548a189e9043c5a55975863ad49175",
+    "version": "0.2.0"
+  },
+  "toolkit": {
+    "repository": "https://github.com/xenophobentx/xboxrecomp",
+    "commit": "5ae8ad90d984425e834dee759592c15592679880",
+    "tag": "takedawn-0.2.0"
+  },
+  "disc_manifest": {
+    "file": "ntsc-u-retail.manifest",
+    "sha256": "ae52035d05b16e4ed3483bea934f5cdf4e51a46019e3571ffbf4de894cf65254",
+    "id": "81dc20fd647fb0b1",
+    "files": 716,
+    "bytes": 2476107072,
+    "executable_sha256": "9f497acd82adb8edfb72cc31aeeb35010b45d32b13a3f1fc6540717ff24d13f9"
+  }
+}
