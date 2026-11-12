@@ -72,6 +72,11 @@ fn main() -> eframe::Result {
                         "this external engine has no Wasm build. Play it with the native target.",
                     ))));
                 }
+                if !args.launch.is_empty() {
+                    return Err(eframe::Error::AppCreation(Box::new(std::io::Error::other(
+                        "Graphics launch flags currently require the reviewed native Takedawn engine",
+                    ))));
+                }
                 gamepkg::external_engine::launch(&root, id).map_err(|error| {
                     eframe::Error::AppCreation(Box::new(std::io::Error::other(error.to_string())))
                 })?;

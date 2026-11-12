@@ -428,7 +428,7 @@ impl App {
             .unwrap_or_default();
         #[cfg(target_os = "linux")]
         let audit_path = current.clone();
-        ui.strong(title.clone());
+        ui.strong(&title);
         let label = if current.is_empty() {
             "Choose game-data folder…"
         } else {
@@ -445,7 +445,11 @@ impl App {
         {
             self.begin_work(move || {
                 let root = std::fs::canonicalize(crate::registry::default_root()?)?;
-                let mut dialog = rfd::FileDialog::new().set_title(title);
+                let mut dialog = rfd::FileDialog::new().set_title(if external {
+                    title
+                } else {
+                    "Choose original Sauerbraten installation".into()
+                });
                 if !current.is_empty() {
                     dialog = dialog.set_directory(current);
                 }
