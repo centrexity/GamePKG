@@ -128,12 +128,14 @@ fn original_zip_mount_script_unmount_and_autoexec_restart() {
         overlay
             .write_all(format!("name Ovr{label}\n").as_bytes())
             .unwrap();
-        overlay.set_comment(format!(
-            "{}PK\u{5}\u{6}{}{}",
-            "q".repeat(700),
-            "\0".repeat(18),
-            "q".repeat(301)
-        ));
+        overlay
+            .set_comment(format!(
+                "{}PK\u{5}\u{6}{}{}",
+                "q".repeat(700),
+                "\0".repeat(18),
+                "q".repeat(301)
+            ))
+            .unwrap();
         overlay.finish().unwrap();
         let complete = fs::read(mods.join("overlay.zip")).unwrap();
         let mut bad_signature = complete.clone();

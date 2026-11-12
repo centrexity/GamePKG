@@ -57,7 +57,7 @@ fn post_verification_corruption_cannot_publish_a_clip_or_leak_its_memory() {
     let archive = package_root.path().join("private-music-fixture.gamepkg");
     let mut zip = zip::ZipArchive::new(std::fs::File::open(&archive).unwrap()).unwrap();
     let entry = zip.by_name("assets/music/effect.wav").unwrap();
-    let offset = entry.data_start() + 44;
+    let offset = entry.data_start().unwrap() + 44;
     drop(entry);
     drop(zip);
     let mut changed = std::fs::OpenOptions::new()
@@ -93,14 +93,14 @@ fn verified_compressed_effect_fails_before_allocating_unaccounted_workspace() {
     let mut output = zip::ZipWriter::new(std::fs::File::create(&compressed).unwrap());
     for index in 0..input.len() {
         let mut entry = input.by_index(index).unwrap();
-        let method = if entry.name() == "assets/music/effect.wav" {
+        let method = if entry.name().unwrap() == "assets/music/effect.wav" {
             zip::CompressionMethod::Zstd
         } else {
             zip::CompressionMethod::Stored
         };
         output
             .start_file(
-                entry.name(),
+                entry.name().unwrap(),
                 zip::write::SimpleFileOptions::default().compression_method(method),
             )
             .unwrap();

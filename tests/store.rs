@@ -137,7 +137,7 @@ fn malformed_bundle_contents_are_rejected_before_installation() {
         let mut writer = zip::ZipWriter::new(fs::File::create(&bad).unwrap());
         for index in 0..original.len() {
             let mut entry = original.by_index(index).unwrap();
-            let name = entry.name().to_owned();
+            let name = entry.name().unwrap().into_owned();
             if case == "missing" && name.starts_with("blobs/") {
                 continue;
             }

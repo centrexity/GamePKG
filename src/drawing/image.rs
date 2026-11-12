@@ -431,6 +431,10 @@ mod asset_reader_tests {
             let mut bytes = std::fs::read(&path).unwrap();
             let central = bytes.windows(4).position(|w| w == b"PK\x01\x02").unwrap();
             bytes[central + 16] ^= 1;
+            // Keep both headers consistent so this fixture reaches the asset
+            // reader's CRC check rather than failing archive-header validation.
+            let local = bytes.windows(4).position(|w| w == b"PK\x03\x04").unwrap();
+            bytes[local + 14] ^= 1;
             std::fs::write(&path, bytes).unwrap();
         }
         let package = Package::open(&path).unwrap();
