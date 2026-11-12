@@ -47,17 +47,21 @@ jobs:
           python3 engines/halo/tests/check_hud_upscale.py --source "$RUNNER_TEMP/opence-native-fixture" --cc clang-18 --cflag=-m32 --cflag=-msse2 --cflag=-mfpmath=sse
           python3 engines/halo/tests/check_hud_upscale.py --source "$RUNNER_TEMP/opence-native-fixture" --cc clang-18 --scalar
           python3 engines/halo/tests/check_video_failure.py
+      - name: Verify scripted co-op suspension and bounded snapshot parsing
+        run: |
+          python3 engines/halo/tests/check_scripted_suspension.py --source "$RUNNER_TEMP/opence-native-fixture" --output "$RUNNER_TEMP/suspension-native32" --profile native32
+          python3 engines/halo/tests/check_scripted_suspension.py --source "$RUNNER_TEMP/opence-native-fixture" --output "$RUNNER_TEMP/suspension-sanitized64" --profile sanitized64
       - name: Verify generated movies and silent audio on native 32-bit code
         run: |
           python3 tools/check_opence_movie_codecs.py --source "$RUNNER_TEMP/opence-native-fixture" --work "$RUNNER_TEMP/movie-native32" --profile native32
       - name: Check movie codecs with address and undefined-behavior sanitizers
         run: |
           python3 tools/check_opence_movie_codecs.py --source "$RUNNER_TEMP/opence-native-fixture" --work "$RUNNER_TEMP/movie-sanitized64" --profile sanitized64
-      - name: Preserve asset-free movie diagnostics
+      - name: Preserve asset-free native diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: halo-generated-movie-fixtures
+          name: halo-generated-native-fixtures
           path: |
             ${{ runner.temp }}/movie-native32/*.log
             ${{ runner.temp }}/movie-native32/results/*.log
@@ -65,3 +69,7 @@ jobs:
             ${{ runner.temp }}/movie-sanitized64/*.log
             ${{ runner.temp }}/movie-sanitized64/results/*.log
             ${{ runner.temp }}/movie-sanitized64/results/result.json
+            ${{ runner.temp }}/suspension-native32/*.log
+            ${{ runner.temp }}/suspension-native32/result.json
+            ${{ runner.temp }}/suspension-sanitized64/*.log
+            ${{ runner.temp }}/suspension-sanitized64/result.json

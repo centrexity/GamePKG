@@ -29,6 +29,7 @@ patches = [
     "0012-gamepkg-hud-upscale-simd.patch",
     "0013-gamepkg-require-game-window.patch",
     "0014-gamepkg-native-original-movies.patch",
+    "0015-gamepkg-coop-scripted-suspension.patch",
 ]
 
 [[layouts]]

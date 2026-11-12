@@ -35,3 +35,12 @@ python3 tools/check_opence_movie_codecs.py --source /path/to/patched/engine --wo
 ```
 
 An existing reviewed player build can also supply its actual SDL library and prepared FFmpeg archives to `check_movie_playback.py`; see `--help`. These are decoder/buffer checks. GPU rendering, controller behavior and multiplayer require separate runtime checks.
+
+The scripted-suspension fixture compiles the actual snapshot writer/reader, transition handler, and original engine setter from the patched source. It checks 2,560 flag/shape/ownership round-trips and 65,016 truncated allocations per profile, including suspended units with camouflage, riding, damage and powerup fields. It also checks that repeated snapshots do not repeatedly clear velocity or airborne state, that unrelated flags survive, and that non-cooperative games never apply this state.
+
+```sh
+python3 engines/halo/tests/check_scripted_suspension.py --source /path/to/patched/engine --output /tmp/suspension32 --profile native32
+python3 engines/halo/tests/check_scripted_suspension.py --source /path/to/patched/engine --output /tmp/suspension64 --profile sanitized64
+```
+
+The 64-bit fixture uses AddressSanitizer and UndefinedBehaviorSanitizer; it does not establish 64-bit gameplay support. Both fixtures use generated protocol values without game media. Network version 33 distinguishes the new scripted-state behavior from older peers.
