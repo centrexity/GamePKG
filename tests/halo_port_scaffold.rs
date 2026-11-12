@@ -9,6 +9,7 @@ fn engine() -> &'static gamepkg::external_engine::Engine {
     gamepkg::external_engine::get("opence-ce95f7de").unwrap()
 }
 
+#[cfg(target_os = "linux")]
 fn env_lock() -> std::sync::MutexGuard<'static, ()> {
     static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
     LOCK.lock().unwrap()
