@@ -21,3 +21,7 @@ engines/**/upstream/** -text -whitespace
 engines/**/licenses/** -text -whitespace
 engines/takedawn/native-gen/runtime/softfloat/** -text -whitespace
 engines/takedawn/rust-port/*.patch -text -whitespace
+
+# Unified patch context and exported upstream Ninja retain their reviewed bytes.
+engines/halo/patches/*.patch -text -whitespace
+engines/halo/prepared/linux-i686/build.ninja -text -whitespace

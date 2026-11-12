@@ -6,11 +6,11 @@ clone_url = "https://github.com/OpenCommunityEdition/OpenCE.git"
 commit = "ce95f7deed5bbf726e50a9d5fe5227437194cf3b"
 license_sha256 = "0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0"
 license_marker = "GNU AFFERO GENERAL PUBLIC LICENSE"
-memory = 2147483648
-hard_memory = 3221225472
-network_allowed = false
+memory = 3221225472
+hard_memory = 4294967296
+network_allowed = true
 launcher = "pub fn game_tick(input: u32, state: u64) -> u64 { gamepkg::external_tick(input, state) }\n"
-required_paths = ["configure.py", "source", "port/linux"]
+required_paths = ["configure.py", "source", "port/linux", "port/linux/src/gamepkg_hud_upscale.inc", "port/linux/src/gamepkg_video_failure.inc"]
 forbidden_directories = ["maps", "custom_maps"]
 forbidden_suffixes = [".iso", ".xiso", ".map", ".wad", ".sfc", ".smc", ".rom"]
 cleanup = ["maps", "custom_maps", "content"]
@@ -25,6 +25,9 @@ patches = [
     "0008-map-validate-layout.patch",
     "0009-gamepkg-threads.patch",
     "0010-gamepkg-directory.patch",
+    "0011-gamepkg-read-only-disc-view.patch",
+    "0012-gamepkg-hud-upscale-simd.patch",
+    "0013-gamepkg-require-game-window.patch",
 ]
 
 [[layouts]]
@@ -42,6 +45,7 @@ max_bytes = 8589934592
 
 [[targets]]
 id = "linux-x86_64"
+blocker = "Native 64-bit gameplay uncovered XDK pointer and graphics layout mismatches. Use linux-i686 for the tested native Linux path."
 os = "linux"
 arch = "x86_64"
 tools = ["python3", "ninja", "clang", "cmake", "pkg-config"]
@@ -50,7 +54,7 @@ build_program = "ninja"
 build_args = ["linux"]
 binary = "build/linux/halo"
 image = { kind = "elf", class = 2, machine = 62 }
-note = "Ready. Portable x86_64 builds SDL3 with the host compiler; the Debian 11 i386 sysroot stays on linux-i686. A stand-in ui.map exits with ui.map version 0. On x86_64 Linux this is the default target."
+note = "The executable links, but real ISO gameplay exposed remaining LP64 host ABI problems. Compile success does not qualify this target for play."
 
 [[targets.companions]]
 relative = "build/linux/libSDL3.so.0"
@@ -66,10 +70,11 @@ warning = "ALSA was not found. The engine will start without sound."
 id = "linux-i686"
 os = "linux"
 arch = "i686"
-tools = ["python3", "ninja", "clang", "cmake", "pkg-config"]
-configure = ["python3", "configure.py", "--release", "--portable", "--pgo=off", "--lto=off"]
+tools = ["ninja", "clang", "cmake", "pkg-config", "xz", "llvm-nm"]
+prepare = "linux-i686/plan.json"
+configure = []
 build_program = "ninja"
-build_args = ["linux"]
+build_args = ["-d", "keeprsp", "-f", "build/gamepkg-linux.ninja", "linux"]
 binary = "build/linux/halo"
 image = { kind = "elf", class = 1, machine = 3 }
 
@@ -117,6 +122,8 @@ limit = 33554432
 
 [launch]
 data_root = "HALO_DATA_ROOT"
+data_file = "GAMEPKG_DISC_IMAGE"
+scratch = [{ path = "saves/z", bytes = 1073741824 }]
 save_root = "HALO_SAVE_ROOT"
-fixed = [["HALO_UPDATE_AUTO", "false"]]
+fixed = [["HALO_UPDATE_AUTO", "false"], ["GAMEPKG_REQUIRE_WINDOW", "1"]]
 passthrough = ["SDL_VIDEODRIVER", "DISPLAY", "WAYLAND_DISPLAY", "XAUTHORITY", "XDG_RUNTIME_DIR", "LANG", "LC_ALL", "HALO_HIDDEN_WINDOW", "HALO_NULL_RENDERER", "HALO_EXIT_AFTER"]

@@ -10,6 +10,7 @@ use std::sync::OnceLock;
 
 pub mod build;
 mod catalog;
+mod prepared;
 
 const BINARY_LIMIT: u64 = 64 * 1024 * 1024;
 
@@ -48,6 +49,7 @@ pub struct Target {
     pub note: Option<String>,
     pub tools: Vec<String>,
     pub configure: Vec<String>,
+    pub prepare: Option<String>,
     pub build_program: String,
     pub build_args: Vec<String>,
     pub binary: String,
@@ -57,9 +59,19 @@ pub struct Target {
 }
 
 /// Environment the engine reads. Names come from the engine record.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Scratch {
+    pub path: String,
+    pub bytes: u64,
+}
+
 pub struct LaunchSpec {
     /// Set only when the matched layout links directories into a private data root.
     pub data_root: Option<String>,
+    /// Original archive selected by the player, opened read-only by the engine.
+    pub data_file: Option<String>,
+    pub scratch: Vec<Scratch>,
     pub save_root: Option<String>,
     pub fixed: Vec<(String, String)>,
     pub passthrough: Vec<String>,
@@ -67,6 +79,9 @@ pub struct LaunchSpec {
 
 pub struct Engine {
     pub id: String,
+    /// Reviewed source and preparation inputs, bound to this CPU for prepared builds.
+    pub revision: String,
+    pub prepared: &'static [(&'static str, &'static [u8])],
     pub clone_url: String,
     pub commit: String,
     pub license_sha256: String,
@@ -258,12 +273,20 @@ pub fn cached_binary(root: &Path, digest: &str, engine: &Engine) -> std::path::P
         let name = Path::new(&target.binary)
             .file_name()
             .unwrap_or(std::ffi::OsStr::new("engine"));
-        return base.join(&target.id).join(name);
+        return base.join(&engine.revision).join(&target.id).join(name);
     }
     base.join("not-built")
 }
 
 pub fn cache_ready(binary: &Path, engine: &Engine) -> Result<bool> {
+    if binary
+        .parent()
+        .and_then(Path::parent)
+        .and_then(Path::file_name)
+        != Some(std::ffi::OsStr::new(&engine.revision))
+    {
+        return Ok(false);
+    }
     let Some(target_id) = binary
         .parent()
         .and_then(|path| path.file_name())
@@ -328,11 +351,52 @@ mod tests {
                     None => {
                         let selected = select(engine, Some(&target.id)).unwrap();
                         assert!(selected.blocker.is_none());
-                        assert!(!selected.configure.is_empty());
+                        assert!(!selected.configure.is_empty() || selected.prepare.is_some());
                     }
                 }
             }
         }
+    }
+
+    #[test]
+    fn reviewed_source_changes_invalidate_otherwise_intact_cached_images() {
+        let mut engines = catalog::load(RECORDS).unwrap();
+        let engine = &mut engines[0];
+        let target = engine
+            .targets
+            .iter()
+            .find(|t| t.blocker.is_none() && matches!(t.image, Image::Elf { .. }))
+            .unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let base = root.path().join("builds").join("package").join(&engine.id);
+        std::fs::create_dir_all(&base).unwrap();
+        std::fs::write(base.join("current"), &target.id).unwrap();
+        let binary = cached_binary(root.path(), "package", engine);
+        std::fs::create_dir_all(binary.parent().unwrap()).unwrap();
+        let mut bytes = vec![0; 128];
+        bytes[..4].copy_from_slice(b"\x7fELF");
+        let Image::Elf { class, machine } = target.image else {
+            unreachable!()
+        };
+        bytes[4] = class;
+        bytes[5] = 1;
+        bytes[18..20].copy_from_slice(&machine.to_le_bytes());
+        std::fs::write(&binary, &bytes).unwrap();
+        crate::integrity::record_build(&binary, &bytes).unwrap();
+        for companion in &target.companions {
+            let name = Path::new(&companion.relative).file_name().unwrap();
+            std::fs::write(binary.with_file_name(name), b"companion").unwrap();
+            std::fs::write(
+                binary.with_file_name(format!("{}.sha256", name.to_string_lossy())),
+                crate::verify::digest(b"companion"),
+            )
+            .unwrap();
+        }
+        assert!(cache_ready(&binary, engine).unwrap());
+        engine.revision = crate::verify::digest(b"updated reviewed source");
+        assert!(!cache_ready(&binary, engine).unwrap());
+        assert_ne!(cached_binary(root.path(), "package", engine), binary);
+        assert!(!cached_binary(root.path(), "package", engine).exists());
     }
 
     #[test]

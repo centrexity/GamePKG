@@ -16,6 +16,30 @@ fn env_lock() -> std::sync::MutexGuard<'static, ()> {
 }
 
 #[test]
+#[cfg(target_os = "linux")]
+fn reviewed_hud_scaler_preserves_original_pixels_and_float_flags() {
+    let _guard = env_lock();
+    let script =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("engines/halo/tests/check_hud_upscale.py");
+    for scalar in [false, true] {
+        let mut command = std::process::Command::new("python3");
+        command.arg(&script);
+        if scalar {
+            command.arg("--scalar");
+        }
+        #[cfg(target_arch = "x86")]
+        command.args(["--cflag=-m32", "--cflag=-msse2", "--cflag=-mfpmath=sse"]);
+        let result = command.output().unwrap();
+        assert!(
+            result.status.success(),
+            "scalar={scalar}: {}\n{}",
+            String::from_utf8_lossy(&result.stdout),
+            String::from_utf8_lossy(&result.stderr)
+        );
+    }
+}
+
+#[test]
 fn external_engine_recipe_parses_and_rejects_layout_and_network_changes() {
     let manifest = gamepkg::manifest::Manifest::parse(manifest_text().as_bytes()).unwrap();
     assert_eq!(
@@ -26,7 +50,14 @@ fn external_engine_recipe_parses_and_rejects_layout_and_network_changes() {
         manifest.game_data.as_ref().unwrap().layouts,
         engine().layouts()
     );
-    assert!(!manifest.permissions.network);
+    assert!(manifest.permissions.network);
+    let offline = gamepkg::manifest::Manifest::parse(
+        manifest_text()
+            .replace("network = true", "network = false")
+            .as_bytes(),
+    )
+    .unwrap();
+    assert!(!offline.permissions.network);
     let catalog = std::fs::read_to_string(
         Path::new(env!("CARGO_MANIFEST_DIR")).join("ports/ports.gamepkglist"),
     )
@@ -150,9 +181,8 @@ fn external_engine_recipe_parses_and_rejects_layout_and_network_changes() {
     );
     assert_eq!(pin["vendored"], false);
     for (needle, message) in [
-        ("network = false", "network = true"),
         (
-            "hard_memory_bytes = 3221225472",
+            "hard_memory_bytes = 4294967296",
             "hard_memory_bytes = 536870912",
         ),
         ("directories = [\"maps\"]", "directories = [\"other\"]"),
@@ -207,11 +237,8 @@ fn external_engine_package_contains_no_disc_or_map_and_only_the_launcher() {
 
 #[test]
 fn data_layouts_accept_maps_or_one_archive() {
-    let layouts = &gamepkg::manifest::Manifest::parse(manifest_text().as_bytes())
-        .unwrap()
-        .game_data
-        .unwrap()
-        .layouts;
+    let manifest = gamepkg::manifest::Manifest::parse(manifest_text().as_bytes()).unwrap();
+    let layouts = &manifest.game_data.as_ref().unwrap().layouts;
     let root = tempfile::tempdir().unwrap();
     let missing = root.path().join("empty");
     std::fs::create_dir(&missing).unwrap();
@@ -227,6 +254,39 @@ fn data_layouts_accept_maps_or_one_archive() {
     }
     std::fs::write(disc.join("second.xiso"), vec![0; 2048]).unwrap();
     assert!(gamepkg::game_data::matches(&disc, layouts).is_err());
+    // An explicit image remains unambiguous even in a Downloads folder
+    // containing disc images for several different games.
+    let selected = disc.join("halo.iso");
+    assert!(matches!(
+        gamepkg::game_data::matches(&selected, layouts).unwrap(),
+        gamepkg::game_data::DataMatch::Beside { file } if file == selected.canonicalize().unwrap()
+    ));
+    let wrong_extension = disc.join("notes.txt");
+    std::fs::write(&wrong_extension, vec![0; 2048]).unwrap();
+    assert!(gamepkg::game_data::matches(&wrong_extension, layouts).is_err());
+    let short = disc.join("short.iso");
+    std::fs::write(&short, b"short").unwrap();
+    assert!(gamepkg::game_data::matches(&short, layouts).is_err());
+    let uppercase = disc.join("Chosen (Rev 2).ISO");
+    std::fs::write(&uppercase, vec![0; 8192]).unwrap();
+    assert!(gamepkg::game_data::matches(&uppercase, layouts).is_ok());
+    let mut bounded = layouts.clone();
+    for layout in &mut bounded {
+        layout.max_bytes = Some(4096);
+    }
+    assert!(gamepkg::game_data::matches(&uppercase, &bounded).is_err());
+    let library = root.path().join("library");
+    std::fs::create_dir(&library).unwrap();
+    gamepkg::game_data::remember(&library, &manifest, &selected).unwrap();
+    assert_eq!(
+        gamepkg::game_data::load(&library, &manifest).unwrap(),
+        Some(selected.canonicalize().unwrap())
+    );
+    assert!(gamepkg::game_data::remember(&library, &manifest, &wrong_extension).is_err());
+    assert_eq!(
+        gamepkg::game_data::load(&library, &manifest).unwrap(),
+        Some(selected.canonicalize().unwrap())
+    );
     let maps = root.path().join("maps-root");
     std::fs::create_dir_all(maps.join("maps")).unwrap();
     std::fs::write(maps.join("maps/ui.map"), b"not-a-real-map").unwrap();
@@ -271,6 +331,9 @@ fn data_layouts_accept_maps_or_one_archive() {
         std::fs::write(linked_disc.join("real.iso"), vec![0; 2048]).unwrap();
         std::os::unix::fs::symlink("real.iso", linked_disc.join("halo.iso")).unwrap();
         assert!(gamepkg::game_data::matches(&linked_disc, layouts).is_err());
+        assert!(gamepkg::game_data::matches(&linked_disc.join("halo.iso"), layouts).is_ok(),
+            "an explicit player-selected link resolves to its canonical image; directory scanning still rejects links");
+        assert!(gamepkg::game_data::matches(Path::new("/dev/null"), layouts).is_err());
         let inside = root.path().join("inside-link");
         std::fs::create_dir_all(inside.join("maps")).unwrap();
         std::fs::write(inside.join("maps/ui.map"), b"not-a-real-map").unwrap();
@@ -312,20 +375,17 @@ fn data_layouts_accept_maps_or_one_archive() {
 }
 
 #[test]
-fn sixty_four_bit_targets_have_no_blocker() {
-    for id in ["linux-x86_64", "windows-x64"] {
-        let target = engine()
-            .targets
-            .iter()
-            .find(|target| target.id == id)
-            .unwrap_or_else(|| panic!("missing {id}"));
-        assert!(
-            target.blocker.is_none(),
-            "{id} stays blocked: {:?}",
-            target.blocker
-        );
-        assert!(!target.configure.is_empty(), "{id}");
-    }
+fn native_linux_defaults_to_the_gameplay_validated_target() {
+    let failure = gamepkg::external_engine::select(engine(), Some("linux-x86_64"))
+        .unwrap_err()
+        .to_string();
+    assert!(failure.contains("gameplay") && failure.contains("linux-i686"));
+    assert!(gamepkg::external_engine::select(engine(), Some("linux-i686")).is_ok());
+    #[cfg(target_os = "linux")]
+    assert_eq!(
+        gamepkg::external_engine::select(engine(), None).unwrap().id,
+        "linux-i686"
+    );
 }
 
 #[cfg(target_os = "linux")]
@@ -438,4 +498,20 @@ fn pinned_checkout_caches_the_i686_engine_without_copying_game_data() {
             "placeholder map must not be treated as installed game data"
         );
     }
+}
+
+#[test]
+#[cfg(target_os = "linux")]
+fn normal_native_launch_requires_a_window() {
+    let _guard = env_lock();
+    let output = std::process::Command::new("python3")
+        .arg("engines/halo/tests/check_video_failure.py")
+        .output()
+        .expect("run maintainer native-window policy fixture");
+    assert!(
+        output.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
