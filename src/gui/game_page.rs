@@ -63,7 +63,7 @@ impl App {
         {
             blockers.push("This game uses 4096 MiB. Set Memory ceiling to 4096 MiB in Settings before playing.".into());
         }
-        if m.game_data.is_some() {
+        if let Some(data) = &m.game_data {
             if self
                 .applied_settings
                 .as_ref()
@@ -79,16 +79,9 @@ impl App {
             match self.data_paths.get(&m.id).filter(|p| !p.is_empty()) {
                 None => blockers.push("Choose the original game-data folder below.".into()),
                 Some(path) => {
-                    let result = if m
-                        .game_data
-                        .as_ref()
-                        .is_some_and(|data| !data.layouts.is_empty())
-                    {
-                        crate::game_data::matches(
-                            std::path::Path::new(path),
-                            &m.game_data.as_ref().unwrap().layouts,
-                        )
-                        .map(|_| ())
+                    let result = if !data.layouts.is_empty() {
+                        crate::game_data::matches(std::path::Path::new(path), &data.layouts)
+                            .map(|_| ())
                     } else {
                         crate::game_data::validate(std::path::Path::new(path))
                     };
