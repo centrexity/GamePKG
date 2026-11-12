@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import subprocess
 import zlib
+import tomllib
 from PIL import Image
 
 parser = argparse.ArgumentParser(description=__doc__)
@@ -22,12 +23,12 @@ output.mkdir(parents=True)
 rows = []
 original = optimized = precise = legacy_precise = 0
 def exact_png(encoded):
-    if encoded[25] not in [2,3,6] or encoded[28] or (encoded[24] not in ([1,2,4,8] if encoded[25]==3 else [8])):
+    if encoded[25] not in [0,2,3,4,6] or encoded[28] or (encoded[24] not in ([1,2,4,8] if encoded[25] in [0,3] else [8])):
         return False
     at=8
     while at+12<=len(encoded):
         length=int.from_bytes(encoded[at:at+4],"big");kind=encoded[at+4:at+8];end=at+12+length
-        if end>len(encoded) or kind==b"acTL" or kind==b"tRNS" and encoded[25]!=3:return False
+        if end>len(encoded) or kind==b"acTL" or kind==b"tRNS" and encoded[25] not in [0,2,3]:return False
         if kind==b"IEND":return end==len(encoded)
         at=end
     return False
@@ -37,6 +38,10 @@ for path in sorted(source.rglob('*')):
     assert not path.is_symlink(), 'Symlink asset refused'
     name = path.relative_to(source).as_posix()
     original += path.stat().st_size
+    # Account playlist/music from the verified migration set below, whether
+    # canonical assets already include them or still use the legacy profile.
+    if name.startswith('music/') or name == 'audio/music-list.txt':
+        continue
     size = path.stat().st_size
     if path.suffix.lower() == '.png':
         destination = output/name
@@ -52,8 +57,8 @@ for path in sorted(source.rglob('*')):
                 rgba = image.convert('RGBA').tobytes()
                 if any(value != 255 for value in rgba[3::4]):
                     legacy_precise += len(rgba)
-                    if not exact_png(destination.read_bytes()):
-                        precise += len(rgba)
+                if not exact_png(destination.read_bytes()):
+                    precise += len(rgba)
                 rows.append({'asset': name, 'source_sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
                              'rgba_sha256': hashlib.sha256(rgba).hexdigest(),
                              'optimized_sha256': hashlib.sha256(destination.read_bytes()).hexdigest(),
@@ -84,7 +89,7 @@ report = {'private_verification_inputs': True, 'original_assets_bytes': original
           'python_encoded_export_estimate_bytes': optimized+music+playlist+precise-effect_raw+effect_packed,
           'asset_scratch_bytes_per_owner': effect_max+263168,
           'estimate_note': 'Exact host encoder sizes and memory compatibility are verified by check_arkanoo_recorded_web.py',
-          'web_export_limit_bytes': 32*1024*1024, 'images': rows}
+          'web_export_limit_bytes': (128 if tomllib.loads((project/'ports/arkanoo/manifest.toml').read_text())['limits'].get('render_profile')=='large-images-v1' else 32)*1024*1024, 'images': rows}
 (output/'residency.json').write_text(json.dumps(report, indent=2)+'\n')
 print(json.dumps({key: value for key, value in report.items() if key != 'images'}, indent=2))
 print('All', len(rows), 'PNG dimensions and decoded RGBA bytes match exactly; published assets unchanged.')

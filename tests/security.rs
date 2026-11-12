@@ -150,6 +150,35 @@ fn rejects_traversal_duplicates_and_symlinks() {
     }
 }
 #[test]
+fn rejects_disagreement_between_local_and_central_zip_headers() {
+    let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    writer
+        .start_file(
+            "assets/a",
+            zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Stored),
+        )
+        .unwrap();
+    writer.write_all(b"payload").unwrap();
+    let original = writer.finish().unwrap().into_inner();
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("headers.gamepkg");
+    fs::write(&path, &original).unwrap();
+    assert!(Package::open(&path).is_ok());
+    // Mutate only the local header: the central name remains allowed, while
+    // a streaming reader would see a different path, method, CRC or length.
+    for offset in [30 + "assets/".len(), 8, 14, 18, 22] {
+        let mut bytes = original.clone();
+        bytes[offset] ^= 1;
+        fs::write(&path, bytes).unwrap();
+        assert!(
+            Package::open(&path).is_err(),
+            "accepted local field at {offset}"
+        );
+    }
+}
+
+#[test]
 fn detects_tampering() {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path().join("game");

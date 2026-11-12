@@ -1,0 +1,12 @@
+[
+  {
+    "before": "#include \"i_video.h\"",
+    "after": "#include \"i_video.h\"\n#include \"i_swap.h\"",
+    "count": 1
+  },
+  {
+    "before": "swapeLE16(p)",
+    "after": "swapLE16(p)",
+    "count": 1
+  }
+]

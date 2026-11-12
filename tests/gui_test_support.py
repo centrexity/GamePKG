@@ -3,43 +3,90 @@ import os
 import select
 import subprocess
 import time
+import threading
 
-def start_display(env, width=1024, height=900):
+def start_display(env, width=1024, height=900, *, local_only=False, startup_timeout=30):
     reader, writer = os.pipe()
+    process = None
+    collector = None
+    diagnostics = bytearray()
     try:
-        process = subprocess.Popen(
-            ['Xvfb', '-displayfd', str(writer), '-screen', '0',
-             f'{width}x{height}x24', '-ac', '-noreset'], pass_fds=(writer,),
-            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-    finally:
-        os.close(writer)
-    try:
-        ready, _, _ = select.select([reader], [], [], 10)
-        if not ready:
-            raise RuntimeError('Xvfb did not report a ready display within 10 seconds')
-        display = os.read(reader, 32).decode().strip()
-        if not display.isdigit():
-            raise RuntimeError('Xvfb did not provide a valid display number')
-        if process.poll() is not None:
-            raise RuntimeError('Xvfb startup failed: ' + process.stderr.read().decode())
-        env['DISPLAY'] = ':' + display
-        for _ in range(100):
+        try:
+            arguments=['Xvfb', '-displayfd', str(writer), '-screen', '0',
+                 f'{width}x{height}x24', '-ac', '-noreset']
+            if local_only:
+                arguments+=['-nolisten','tcp']
+            process = subprocess.Popen(arguments, pass_fds=(writer,), env=env,
+                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        finally:
+            os.close(writer)
+        # Xvfb can fill its stderr pipe before it writes the display number.
+        # Drain continuously, retaining only a bounded tail for failure reports.
+        def collect():
+            try:
+                while True:
+                    try:
+                        block = os.read(process.stderr.fileno(), 4096)
+                    except (OSError,ValueError):
+                        return
+                    if not block:
+                        return
+                    diagnostics.extend(block)
+                    if len(diagnostics)>65536:
+                        del diagnostics[:-65536]
+            finally:
+                process.stderr.close()
+        collector = threading.Thread(target=collect, daemon=True)
+        collector.start()
+        process._gamepkg_display_diagnostics = diagnostics
+        process._gamepkg_display_collector = collector
+        deadline = time.monotonic()+startup_timeout
+        while True:
+            if process.poll() is not None:
+                raise RuntimeError('Xvfb exited before reporting a ready display')
+            remaining = deadline-time.monotonic()
+            if remaining<=0:
+                raise RuntimeError(f'Xvfb did not report a ready display within {startup_timeout} seconds')
+            ready, _, _ = select.select([reader], [], [], min(.25,remaining))
+            if ready:
+                display = os.read(reader, 32).decode().strip()
+                if not display.isdigit():
+                    raise RuntimeError('Xvfb did not provide a valid display number')
+                break
+        env['DISPLAY'] = ':'+display
+        while time.monotonic()<deadline:
             if process.poll() is not None:
                 raise RuntimeError('Xvfb exited before accepting clients')
-            connection = subprocess.run(['xdotool', 'getdisplaygeometry'], env=env, capture_output=True, timeout=2)
-            if connection.returncode == 0:
-                return process
+            try:
+                connection = subprocess.run(['xdotool','getdisplaygeometry'], env=env,
+                    capture_output=True, timeout=max(.001,min(2,deadline-time.monotonic())))
+                if connection.returncode==0:
+                    return process
+            except subprocess.TimeoutExpired:
+                pass
             time.sleep(.1)
-        raise RuntimeError('Xvfb did not accept a client connection')
-    except BaseException:
-        process.terminate()
-        process.wait(timeout=10)
-        raise
+        raise RuntimeError('Xvfb did not accept a client connection before its startup deadline')
+    except BaseException as error:
+        if process is not None:
+            if process.poll() is None:
+                process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=5)
+        if collector is not None:
+            collector.join(timeout=1)
+        if isinstance(error,(KeyboardInterrupt,SystemExit)):
+            raise
+        detail = diagnostics.decode(errors='replace').strip() or '(no stderr)'
+        code = process.returncode if process is not None else 'not started'
+        raise RuntimeError(f'{error}; Xvfb exit={code}; stderr: {detail}') from error
     finally:
         os.close(reader)
 
 
-def click_text(window, env, text, directory, timeout=15, max_y=None, *, click=True):
+def click_text(window, env, text, directory, timeout=60, max_y=None, *, click=True, min_y=None):
     """Locate actual visible control text; never depend on a historical layout."""
     import csv
     import io
@@ -47,10 +94,14 @@ def click_text(window, env, text, directory, timeout=15, max_y=None, *, click=Tr
     directory = Path(directory)
     # Bare Xvfb has no window manager to restore focus after a player/picker closes.
     subprocess.run(['xdotool','windowfocus',window],env=env,check=True)
+    # Each visible page can require three enlarged OCR passes. Budget for
+    # several pages at larger UI scales; never change the control assertion.
     deadline = time.monotonic() + timeout
     wanted = text.split()
     last = ''
-    scroll_attempt = 0
+    scroll_button = "5"
+    previous_scroll_text = None
+    unchanged_scrolls = 0
     while True:
         screenshot = directory / 'control-screen.png'
         subprocess.run(['import', '-display', env['DISPLAY'], '-window', window, str(screenshot)], env=env, check=True)
@@ -58,8 +109,8 @@ def click_text(window, env, text, directory, timeout=15, max_y=None, *, click=Tr
             enlarged = directory / f'control-{name}.png'
             crop = ['-crop', f'0x{max_y}+0+0', '+repage'] if max_y is not None else []
             subprocess.run(['convert', str(screenshot), *crop, *filters, '-resize', '300%', str(enlarged)], env=env, check=True)
-            tsv = subprocess.check_output(['tesseract', str(enlarged), 'stdout', '--psm', '6' if max_y is not None else '11', 'tsv'], stderr=subprocess.DEVNULL, text=True)
-            words = [w for w in csv.DictReader(io.StringIO(tsv), delimiter='\t',quoting=csv.QUOTE_NONE) if w['text'].strip() and (max_y is None or int(w['top'])//3 < max_y)]
+            tsv = subprocess.check_output(['tesseract', str(enlarged), 'stdout', '--psm', '6' if max_y is not None else '11', 'tsv'], env=env, stderr=subprocess.DEVNULL, text=True)
+            words = [w for w in csv.DictReader(io.StringIO(tsv), delimiter='\t',quoting=csv.QUOTE_NONE) if w['text'].strip() and (min_y is None or int(w['top'])//3 >= min_y) and (max_y is None or int(w['top'])//3 < max_y)]
             last = ' '.join(w['text'] for w in words)
             # OCR may merge adjacent words in a compact button label.
             for count in range(1, len(wanted)+1):
@@ -83,12 +134,20 @@ def click_text(window, env, text, directory, timeout=15, max_y=None, *, click=Tr
         if max_y is None:
             geometry=subprocess.check_output(['xdotool','getwindowgeometry','--shell',window],env=env,text=True)
             size=dict(line.split('=',1) for line in geometry.splitlines() if '=' in line)
-            subprocess.run(['xdotool','mousemove','--window',window,str(min(400,int(size['WIDTH'])//2)),str(max(120,int(size['HEIGHT'])-180)),'click','--repeat','3','--delay','35','5' if scroll_attempt%8<4 else '4'],env=env,check=True)
-            scroll_attempt+=1
+            # Continue through tall pages instead of oscillating within the
+            # first twelve wheel ticks. Reverse only after the visible text
+            # stops changing at an edge. Use the right gutter so text fields
+            # and other controls cannot consume the scrolling gesture.
+            unchanged_scrolls = unchanged_scrolls + 1 if last == previous_scroll_text else 0
+            if unchanged_scrolls >= 2:
+                scroll_button = '4' if scroll_button == '5' else '5'
+                unchanged_scrolls = 0
+            previous_scroll_text = last
+            subprocess.run(['xdotool','mousemove','--window',window,str(max(20,int(size['WIDTH'])-40)),str(max(120,int(size['HEIGHT'])-180)),'click','--repeat','6','--delay','35',scroll_button],env=env,check=True)
         time.sleep(.1)
 
 
-def choose_native_file(env, title, path=None, windows=False):
+def choose_native_file(env, title, path=None, windows=False, *, from_list=False):
     """Operate the real Linux picker, including cancelling without selecting."""
     import re
     deadline = time.monotonic() + 20
@@ -99,6 +158,9 @@ def choose_native_file(env, title, path=None, windows=False):
         if time.monotonic() >= deadline:
             from pathlib import Path
             proof=Path(__file__).resolve().parents[1]/'target/native-rom-picker-failed.png'
+            # Earlier sudo-run fixtures may own this disposable artifact.
+            # Replace it through the writable target directory, without chmod/sudo.
+            proof.unlink(missing_ok=True)
             subprocess.run(['import','-display',env['DISPLAY'],'-window','root',str(proof)],env=env,check=True)
             names=subprocess.run(['xdotool','search','--onlyvisible','--name','.','getwindowname','%@'],env=env,capture_output=True,text=True)
             raise AssertionError(f'Native picker {title!r} did not open: {names.stdout}')
@@ -113,13 +175,16 @@ def choose_native_file(env, title, path=None, windows=False):
     subprocess.run(['xdotool','mousemove','--window',dialog,'400','150'],env=env,check=True)
     from pathlib import Path
     proof=Path(__file__).resolve().parents[1]/'target/native-rom-picker.png'
-    # GTK4 maps its chooser before the controls are drawn. Sending Ctrl+L at
+    # Earlier sudo-run fixtures may own this disposable artifact.
+    # Replace it through the writable target directory, without chmod/sudo.
+    proof.unlink(missing_ok=True)
+    # The native chooser can map before its controls are drawn. Sending Ctrl+L at
     # that point can lose the shortcut and type into the wrong widget.
     ready_deadline=time.monotonic()+20
     while True:
         subprocess.run(['import','-display',env['DISPLAY'],'-window',dialog,str(proof)],env=env,check=True)
         text=subprocess.check_output(['tesseract',str(proof),'stdout','--psm','11'],env=env,stderr=subprocess.DEVNULL,text=True).casefold()
-        if re.search(r'\bcancel\b',text) and re.search(r'\b(open|select|ok)\b',text):
+        if re.search(r'\bcancel\b',text) and re.search(r'\b(open|select|ok|save)\b',text):
             break
         assert time.monotonic()<ready_deadline, f'Native picker controls were not ready: {text}'
         time.sleep(.1)
@@ -134,11 +199,38 @@ def choose_native_file(env, title, path=None, windows=False):
         folder=Path(path).is_dir()
         if folder and not windows:
             location=location.rstrip('/')+'/'
-        # Send the path as one burst: GTK4's asynchronous completion can
+        if from_list:
+            assert not windows and Path(path).is_file(), 'List selection requires an existing Linux file'
+            # Entering a complete filename can only navigate to its parent on
+            # some GTK/completion states. Navigate explicitly, then select the
+            # actual visible file row instead of depending on entry activation.
+            location=str(Path(path).parent).rstrip('/')+'/'
+        # Send the path as one burst: asynchronous completion can
         # otherwise rewrite the entry between synthetic character events.
         subprocess.run(['xdotool','type','--clearmodifiers','--delay','0',location],env=env,check=True)
         time.sleep(.3)
         subprocess.run(['xdotool','key','--clearmodifiers','Return'],env=env,check=True)
+        if from_list:
+            import json
+            import shutil
+            import tempfile
+            list_proof=proof.parent/'native-rom-picker-list.png'
+            list_proof.unlink(missing_ok=True)
+            with tempfile.TemporaryDirectory(prefix='native-picker-list-',dir=proof.parent) as directory:
+                x,y=click_text(dialog,env,Path(path).name,directory,click=False)
+                shutil.copy2(Path(directory)/'control-screen.png',list_proof)
+            with (proof.parent/'native-rom-picker-targets.jsonl').open('a') as log:
+                log.write(json.dumps(dict(file=str(path),x=x,y=y))+"\n")
+            # Settle the pointer and row selection before activating the row.
+            # GTK can otherwise handle Return using the previous selection.
+            subprocess.run(['xdotool','mousemove','--sync','--window',dialog,str(x),str(y)],env=env,check=True)
+            time.sleep(.15)
+            subprocess.run(['xdotool','click','1'],env=env,check=True)
+            time.sleep(.2)
+            selected_proof=proof.parent/'native-rom-picker-list-selected.png'
+            selected_proof.unlink(missing_ok=True)
+            subprocess.run(['import','-display',env['DISPLAY'],'-window',dialog,str(selected_proof)],env=env,check=True)
+            subprocess.run(['xdotool','key','--clearmodifiers','Return'],env=env,check=True)
     close_deadline=time.monotonic()+15
     while True:
         visible=subprocess.run(['xdotool','search','--onlyvisible','--name','^('+re.escape(title)+'|Select a [Ff]ile|zenity)$'],env=env,capture_output=True,text=True)
@@ -151,12 +243,18 @@ def choose_native_file(env, title, path=None, windows=False):
     return dialog
 
 
+def window_title_pattern(title):
+    """Match the versioned library title or an exact game/dialog title."""
+    import re
+    return (r'^GamePKG [0-9]+\.[0-9]+\.[0-9]+([-+][A-Za-z0-9.-]+)?$'
+            if title == 'GamePKG' else '^'+re.escape(title)+'$')
+
+
 def game_window(env, game_id, timeout=20):
     """Wait for a separate game window and return its X11 window and process IDs."""
-    import re
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        found = subprocess.run(['xdotool', 'search', '--onlyvisible', '--name', '^'+re.escape(game_id)+'$'], env=env, capture_output=True, text=True)
+        found = subprocess.run(['xdotool', 'search', '--onlyvisible', '--name', window_title_pattern(game_id)], env=env, capture_output=True, text=True)
         if found.returncode == 0:
             window = found.stdout.splitlines()[0]
             pid = int(subprocess.check_output(['xdotool', 'getwindowpid', window], env=env, text=True))
@@ -251,3 +349,38 @@ def cube2_choose_test_map(window, env):
             if '100' in ''.join(text.split()):break
             assert time.monotonic()<deadline,'Original console did not enter the requested gameplay map: '+text
             time.sleep(.3)
+
+
+def capture_native_failure(env, directory, app=None):
+    """Capture only the fixture's private display after its assertion fails."""
+    from pathlib import Path
+    directory=Path(directory);directory.mkdir(parents=True,exist_ok=True)
+    if not env.get('DISPLAY'):
+        raise ValueError('A private test display is required')
+    notes=[]
+    def run(arguments):
+        result=subprocess.run(arguments,env=env,capture_output=True,text=True,timeout=10)
+        notes.append(repr(arguments)+': '+result.stdout[:4096]+result.stderr[:4096])
+        return result
+    try:
+        run(['import','-display',env['DISPLAY'],'-window','root',str(directory/'native-failure-desktop.png')])
+        windows=run(['xdotool','search','--onlyvisible','--name','.'])
+        for window in windows.stdout.splitlines()[:32]:
+            title=run(['xdotool','getwindowname',window]).stdout.strip()
+            if title=='Unable to play game':
+                run(['xdotool','windowraise',window])
+                run(['import','-display',env['DISPLAY'],'-window',window,str(directory/'native-failure-error-dialog.png')])
+    finally:
+        (directory/'native-failure-diagnostics.txt').write_text(chr(10).join(notes))
+        if app is not None:
+            for name in ['stdout','stderr']:
+                stream=getattr(app,name,None)
+                if stream is None:continue
+                os.set_blocking(stream.fileno(),False)
+                parts=[]
+                for _ in range(16):
+                    try:block=os.read(stream.fileno(),4096)
+                    except BlockingIOError:break
+                    if not block:break
+                    parts.append(block)
+                (directory/('native-failure-'+name+'.log')).write_bytes(b''.join(parts))

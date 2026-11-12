@@ -1,7 +1,8 @@
-/// Networking is asynchronous and restricted to signed manifest endpoints.
+/// Networking is asynchronous and controlled by the signed on/off permission.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NetworkError { PermissionDenied, Pending, Failed }
 fn __gamepkg_network_number(operation:u32,input:&[u8])->Result<u32,NetworkError>{let mut bytes=[0u8;4];let n=__gamepkg_network_call(operation,input,&mut bytes)?;if n!=4{return Err(NetworkError::Failed);}Ok(u32::from_le_bytes(bytes))}
+/// Starts or polls a cached HTTPS GET; a failed request can be retried later.
 pub fn network_request(url:&str,output:&mut[u8])->Result<u32,NetworkError>{__gamepkg_network_call(9,url.as_bytes(),output)}
 pub fn https_get(url:&str)->Result<u32,NetworkError>{__gamepkg_network_number(0,url.as_bytes())}
 pub fn network_poll(handle:u32,output:&mut[u8])->Result<u32,NetworkError>{__gamepkg_network_call(1,&handle.to_le_bytes(),output)}

@@ -48,12 +48,29 @@ pub fn game_tick(_: u32, _: u64) -> u64 {
     publish()
     run('run', 'com.gamepkg.save-counter', '--frames', '1', success=False)
     assert blobs[0].read_bytes() == before
+    (source / 'source/src/lib.rs').write_text(chr(10).join([
+        'pub fn game_tick(_:u32,_:u64)->u64 {',
+        'if !gamepkg::save_chunk(0,6,b"abc") {loop {}}',
+        'if !gamepkg::save_chunk(3,6,b"def") {loop {}}',
+        'loop {}', '}']))
+    publish()
+    run('run', 'com.gamepkg.save-counter', '--frames', '1', success=False)
+    assert blobs[0].read_bytes() == before
+    (source / 'source/src/lib.rs').write_text(chr(10).join([
+        'pub fn game_tick(_:u32,state:u64)->u64 {',
+        'if state==0 {if !gamepkg::save_chunk(0,6,b"abc") {loop {}}}',
+        'else {if gamepkg::save_chunk(3,6,b"def") {loop {}}}',
+        'state+1', '}']))
+    publish()
+    run('run', 'com.gamepkg.save-counter', '--frames', '2')
+    assert blobs[0].read_bytes() == before
     (source / 'manifest.toml').write_text((source / 'manifest.toml').read_text().replace('save = true', 'save = false'))
     (source / 'source/src/lib.rs').write_text('''
 pub fn game_tick(_: u32, _: u64) -> u64 {
     if !((gamepkg::save_size()) == (None)) { loop {} };
     if !((gamepkg::save_read(0, &mut [0; 8])) == (None)) { loop {} };
     if !(!gamepkg::save_write(b"forbidden")) { loop {} };
+    if gamepkg::save_chunk(0,4,b"nope") {loop {}}
     7u64 << 32
 }
 ''')

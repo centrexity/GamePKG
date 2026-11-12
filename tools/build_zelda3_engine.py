@@ -21,7 +21,41 @@ def remove_function(text,name):
     return text[:start]+text[i:]
 rtl=work/'src/zelda_rtl.c';text=rtl.read_text()
 for name in ['ZeldaReadSram','ZeldaWriteSram']:text=remove_function(text,name)
-rtl.write_text(text)
+for anchor in ['static void InternalSaveLoad(', 'static void SaveSnesState(', 'static void LoadSnesState(']:
+    assert text.count(anchor)==1,'Pinned snapshot helper changed'
+assert 'gamepkg_snapshot_bridge.h' not in text
+rtl.write_text(text+'\n#include "gamepkg_snapshot_bridge.h"\n')
+patch=json.loads((ENGINE/'adapters/ppu-patches.json').read_text())
+assert patch['file']=='snes/ppu.c' and patch['count']==3
+ppu=work/patch['file'];text=ppu.read_text()
+for item,count in [(patch,3),(patch['unsigned_masks'],1),(patch['mosaic_spans'][0],2),(patch['mosaic_spans'][1],1)]:
+    assert item['count']==count and text.count(item['before'])==count,'Pinned PPU adaptation anchor changed'
+    text=text.replace(item['before'],item['after'])
+ppu.write_text(text)
+for patch in json.loads((ENGINE/'adapters/ppu-state-patches.json').read_text()):
+    assert text.count(patch['before'])==patch['count']==1,'Pinned PPU state anchor changed'
+    text=text.replace(patch['before'],patch['after'])
+ppu.write_text(text)
+dma=work/'snes/dma.c';text=dma.read_text()
+for patch in json.loads((ENGINE/'adapters/dma-state-patches.json').read_text()):
+    assert text.count(patch['before'])==patch['count']==1,'Pinned DMA state anchor changed'
+    text=text.replace(patch['before'],patch['after'])
+dma.write_text(text)
+dsp=work/'snes/dsp.c';text=dsp.read_text()
+for patch in json.loads((ENGINE/'adapters/dsp-state-patches.json').read_text()):
+    assert text.count(patch['before'])==patch['count']==1,'Pinned DSP state anchor changed'
+    text=text.replace(patch['before'],patch['after'])
+dsp.write_text(text)
+spc=work/'src/spc_player.c';text=spc.read_text()
+for patch in json.loads((ENGINE/'adapters/spc-state-patches.json').read_text()):
+    assert text.count(patch['before'])==patch['count']==1,'Pinned SPC state anchor changed'
+    text=text.replace(patch['before'],patch['after'])
+spc.write_text(text)
+for patch in json.loads((ENGINE/'adapters/spc-playback-patches.json').read_text()):
+    assert text.count(patch['before'])==patch['count'],'Pinned SPC playback anchor changed'
+    text=text.replace(patch['before'],patch['after'])
+spc.write_text(text)
+
 
 skip={'main.c','audio.c','config.c','glsl_shader.c','opengl.c','zelda_cpu_infra.c'}
 sources=[path for path in sorted((work/'src').glob('*.c')) if path.name not in skip]

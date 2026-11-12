@@ -29,7 +29,7 @@ def read_tree(data):
  return files
 with tempfile.TemporaryDirectory(prefix='cube2-saved-files-') as temporary:
  root=Path(temporary)
- valid=[('auth.cfg',b'authkey public-test 123 ""'),('config.cfg',b'name test'),('demos/match.dmo',b'demo'),('packages/base/map.ogz',b'edited map'),('packages/custom/map.cfg',b'map settings')]
+ valid=[('PortMovie.AVI',b'root movie'),('PortRoot.DMO',b'root demo'),('auth.cfg',b'authkey public-test 123 ""'),('autoexec.cfg',b'name saved startup'),('config.cfg',b'name test'),('demos/match.dmo',b'demo'),('packages/base/map.ogz',b'edited map'),('packages/custom/map.cfg',b'map settings'),('recordings/PortCustom.dMo',b'custom demo'),('recordings/movie.aVi',b'custom movie')]
  folder=root/'roundtrip';folder.mkdir()
  assert read_tree(call(folder,'restore',archive(valid)))==dict(valid)
  assert read_tree(call(folder,'collect'))==dict(valid)
@@ -38,7 +38,7 @@ with tempfile.TemporaryDirectory(prefix='cube2-saved-files-') as temporary:
   bad=bytearray(archive([('config.cfg',b'x')]));struct.pack_into('<I',bad,offset,value)
   call(folder,'restore',bytes(bad),good=False)
   assert not list(folder.rglob('*'))
- for index,path in enumerate(['../outside.cfg','/config.cfg','packages/base/../map.ogz','packages//base/map.ogz','packages/base/.hidden.ogz','packages/base/%2e%2e.ogz','packages\\base\\map.ogz','C:/packages/base/map.ogz','packages/base/map.ogz\0','packages/base/map.cpp','data/autoexec.cfg','packages/a/b/c/d/e/f.ogz']):
+ for index,path in enumerate(['../movie.AVI','recordings/.private/movie.avi','recordings/movie.avi.exe','../outside.DMO','/root.DMO','recordings/.hidden/demo.DMO','recordings/../escape.DMO','recordings/a/b/c/d/e/demo.DMO','../outside.cfg','/config.cfg','packages/base/../map.ogz','packages//base/map.ogz','packages/base/.hidden.ogz','packages/base/%2e%2e.ogz','packages\\base\\map.ogz','C:/packages/base/map.ogz','packages/base/map.ogz\0','packages/base/map.cpp','data/autoexec.cfg','autoexec.cfg.exe','Autoexec.cfg','startup/autoexec.cfg','other.cfg','packages/a/b/c/d/e/f.ogz']):
   folder=root/('bad-'+str(index));folder.mkdir()
   call(folder,'restore',archive([(path,b'bad')]),good=False)
   assert not list(folder.rglob('*')),('Malformed archive wrote a file',path)
@@ -51,19 +51,35 @@ with tempfile.TemporaryDirectory(prefix='cube2-saved-files-') as temporary:
  (folder/'packages').symlink_to('private',target_is_directory=True)
  call(folder,'restore',archive([('packages/base/map.ogz',b'overwrite')]),good=False)
  assert (folder/'private/base/map.ogz').read_bytes()==b'private'
+ for scope_index,relative in enumerate(['packages/base/map.ogz','recordings/match.DMO','Root.dMo','recordings/movie.AVI','Movie.aVi']):
+  for kind in ['symlink','hardlink','fifo','oversize','count','total']:
+   folder=root/(str(scope_index)+'-'+kind);path=folder/relative;path.parent.mkdir(parents=True)
+   if kind=='symlink':path.symlink_to(outside)
+   elif kind=='hardlink':os.link(outside,path)
+   elif kind=='fifo':os.mkfifo(path)
+   elif kind=='oversize':
+    with path.open('wb') as f:f.truncate(16*1048576+1)
+   elif kind=='count':
+    for i in range(257):(path.parent/f'{i}{path.suffix}').write_bytes(b'')
+   else:
+    for i in range(3):
+     with (path.parent/f'{i}{path.suffix}').open('wb') as f:f.truncate(11*1048576)
+   call(folder,'collect',good=False)
+   assert outside.read_bytes()==b'private'
+ # The newly preserved startup file retains every link/type/size boundary.
  for kind in ['symlink','hardlink','fifo','oversize','count','total']:
-  folder=root/kind;(folder/'packages/base').mkdir(parents=True)
-  path=folder/'packages/base/map.ogz'
+  folder=root/('autoexec-'+kind);folder.mkdir();path=folder/'autoexec.cfg'
   if kind=='symlink':path.symlink_to(outside)
   elif kind=='hardlink':os.link(outside,path)
   elif kind=='fifo':os.mkfifo(path)
   elif kind=='oversize':
    with path.open('wb') as f:f.truncate(16*1048576+1)
   elif kind=='count':
-   for i in range(257):(path.parent/f'{i}.ogz').write_bytes(b'')
+   path.write_bytes(b'startup')
+   for i in range(256):(folder/f'{i}.dmo').write_bytes(b'')
   else:
-   for i in range(3):
-    with (path.parent/f'{i}.ogz').open('wb') as f:f.truncate(11*1048576)
+   for name in ['autoexec.cfg','config.cfg','init.cfg']:
+    with (folder/name).open('wb') as f:f.truncate(11*1048576)
   call(folder,'collect',good=False)
   assert outside.read_bytes()==b'private'
 print('Cube 2 saved-file adapter passed: round trip, traversal/encoding/type/collision attacks, links, FIFO, file/count/total quotas.')

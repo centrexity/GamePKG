@@ -198,7 +198,9 @@ impl Desktop {
                         MouseButton::Middle => 2,
                         MouseButton::Back => 5,
                         MouseButton::Forward => 6,
-                        MouseButton::Other(7) => 7,
+                        // X11 buttons 4..7 are wheel axes; 8/9 become
+                        // Back/Forward and button 10 is SDL's sixth button.
+                        MouseButton::Other(10) => 7,
                         _ => continue,
                     };
                     if pressed {
@@ -352,6 +354,107 @@ mod tests {
         );
         assert!(desktop.keys.is_empty());
         assert!(desktop.translate(&[], false, false).unwrap().is_empty());
+    }
+    #[test]
+    fn x11_sixth_mouse_button_keeps_its_original_bit_through_motion_wheel_and_release() {
+        let mut desktop = Desktop::default();
+        let button = Native::Button {
+            button: MouseButton::Other(10),
+            pressed: true,
+        };
+        assert_eq!(
+            desktop.translate(&[button], true, false).unwrap(),
+            [Event::Mouse {
+                buttons: 128,
+                dx: 0,
+                dy: 0
+            }]
+        );
+        assert_eq!(
+            desktop
+                .translate(
+                    &[
+                        Native::Motion(2.0, 3.0),
+                        Native::Wheel(MouseScrollDelta::LineDelta(0.0, 1.0))
+                    ],
+                    true,
+                    false
+                )
+                .unwrap(),
+            [
+                Event::Mouse {
+                    buttons: 128,
+                    dx: 2,
+                    dy: 3
+                },
+                Event::Mouse {
+                    buttons: 136,
+                    dx: 0,
+                    dy: 0
+                },
+                Event::Mouse {
+                    buttons: 128,
+                    dx: 0,
+                    dy: 0
+                }
+            ]
+        );
+        assert_eq!(
+            desktop
+                .translate(
+                    &[Native::Button {
+                        button: MouseButton::Other(10),
+                        pressed: false
+                    }],
+                    true,
+                    false
+                )
+                .unwrap(),
+            [Event::Mouse {
+                buttons: 0,
+                dx: 0,
+                dy: 0
+            }]
+        );
+        assert!(desktop
+            .translate(
+                &[Native::Button {
+                    button: MouseButton::Other(7),
+                    pressed: true
+                }],
+                true,
+                false
+            )
+            .unwrap()
+            .is_empty());
+        assert!(Desktop::default()
+            .translate(
+                &[Native::Button {
+                    button: MouseButton::Other(10),
+                    pressed: true
+                }],
+                true,
+                true
+            )
+            .unwrap()
+            .is_empty());
+        desktop
+            .translate(
+                &[Native::Button {
+                    button: MouseButton::Other(10),
+                    pressed: true,
+                }],
+                true,
+                false,
+            )
+            .unwrap();
+        assert_eq!(
+            desktop
+                .translate(&[Native::Focus(false)], true, false)
+                .unwrap(),
+            [Event::Release]
+        );
+        assert_eq!(desktop.buttons, 0);
     }
     #[test]
     fn pointer_buttons_fractional_motion_wheel_and_recapture_are_ordered() {

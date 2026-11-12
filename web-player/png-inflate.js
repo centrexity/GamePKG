@@ -21,7 +21,9 @@ export function inflatePNG(parts,expected){
  let length=0;for(const part of parts){if(!(part instanceof Uint8Array)||!(part.buffer instanceof ArrayBuffer)||(length+=part.length)>2097152)throw Error('Invalid PNG compressed input');}
  if(length<6)throw Error('Truncated PNG zlib input');
  const input=new Uint8Array(length);let copied=0;for(const part of parts){input.set(part,copied);copied+=part.length;}
- return new AssetInflater(expected).decode(input,expected);
+ // Keep bounded workspace construction behind a runtime call. Chrome 155 can
+ // stall when it inlines new AssetInflater during consecutive image startup.
+ return Reflect.construct(AssetInflater,[expected]).decode(input,expected);
 }
 function inflate(input,expected,workspace){
  if((input[0]&15)!==8||(input[0]>>>4)>7||((input[0]<<8)|input[1])%31||input[1]&32)throw Error('Unsupported compressed asset zlib header');

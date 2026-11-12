@@ -55,6 +55,15 @@ version = &quot;0.1.0&quot;
 <p>Keep the name and version identical in both Cargo files. Hash the exact lockfile bytes for the manifest's <code>lockfile_sha256</code>. Do not add dependencies or <code>extern crate</code> declarations. Call <code>gamepkg::</code> directly: it is a host-injected module, not a crate to install, download or list in Cargo.toml. Rust's built-in standard library remains subject to the source restrictions below; it does not grant filesystem or network access.</p>
 <h2>Scoped host functions</h2>
 <p>Use <code>gamepkg::asset_read</code> for package-relative assets, <code>rom_count</code>, <code>rom_size_at</code> and <code>rom_read_at</code> for player-selected ROMs, and <code>save_size</code>, <code>save_read</code> and <code>save_write</code> for the game's save blob. They never open arbitrary host files.</p>
+<p>For large saves, current source-built hosts also provide
+<code>gamepkg::save_chunk(offset, total, bytes)</code>. Start at offset zero, send consecutive
+chunks of at most 65,536 bytes and finish the declared total within the same
+tick. The total cannot exceed 1,048,576 bytes. The host keeps the old save until
+the complete replacement arrives; partial sequences expire before the next
+tick. Completed writes retain normal successful-tick persistence and rollback.
+This lets a game serialize through a small reusable buffer. Browser chunked and
+whole-blob writes share the existing 1 MiB per-tick transfer budget. This API
+requires rebuilding the host from current source.</p>
 <p>Use <code>gamepkg::random_u64()</code> for a fresh 64-bit random value supplied by the host.
 It needs no additional permission and exposes no device, clock, filesystem or
 host identity. Native, core-Wasm and component-Wasm hosts use OS randomness;
@@ -68,6 +77,72 @@ text events. It returns <code>None</code> when the signed <code>input</code> per
 <code>Some(Vec&lt;InputEvent&gt;)</code> otherwise. The simple <code>game_tick</code> action-button mask
 continues to work for keyboard, controller and touch actions. This API requires
 the updated source host.</p>
+<p><code>gamepkg::window_size()</code> returns <code>Option&lt;[u32; 2]&gt;</code> containing the actual physical
+client-area width and height of the game's own desktop window. It requires signed
+<code>input</code> permission and remains stable between host observations. Unavailable,
+minimized, headless, embedded-library and browser contexts return <code>None</code>; denied
+input and closed games also return <code>None</code>. This is measured state, including
+external resizing and fullscreen changes, rather than a predicted preset. It
+does not resize the window. Dimensions outside the 16-bit wire representation
+are unavailable, not clamped. Generated native/core/component bindings require
+the updated source-built host; released 0.1.17 hosts lack this call.</p>
+<p>Current source-built desktop hosts also provide:</p>
+<ul>
+<li><code>window_vsync_preference()</code> reads the committed <code>Option&lt;bool&gt;</code> presentation
+  preference for the next game-window launch. It requires signed input and a
+  desktop host with readable persistent game-window settings. Other contexts
+  return <code>None</code>. Reads have no side effects or fresh-action requirement and do
+  not predict a change staged during the current tick.</li>
+<li><code>window_set_vsync(enabled)</code> requests the next-launch preference with a fresh
+  user action. A successful tick commits the request; a failed tick discards it.
+  Restart the game to apply it. Preferences are scoped by game, creator and
+  library, and default to enabled for older window records. OpenGL configures its
+  swap interval; Vulkan selects strict FIFO when enabled and automatic non-VSync
+  presentation when disabled.
+  Drivers and compositors control final presentation; Vulkan can fall back to a
+  supported mode. Browser and headless hosts offer no desktop VSync preference.</li>
+<li><code>window_preview_active()</code> reads whether a permitted, committed host preview is
+  outstanding. It does not predict a start, Keep, Revert or close staged during
+  the current tick. The host's expiry is visible on the tick it occurs. Reads
+  have no side effects, require no fresh action, and still obey execution
+  deadlines. Browser/default headless runs have no active preview.</li>
+<li><code>window_preview_size(width, height)</code> starts one pending physical-size preview.
+  It requires signed input permission, a fresh action, an actual size observation
+  and a known windowed state. Requests accept widths 320–10,000 and heights
+  240–10,000 pixels; these request bounds do not change the renderer-limit setting.
+  A request matching the observed size, or a second outstanding preview, returns
+  <code>false</code>. The operating system may constrain the applied size; read
+  <code>window_size()</code> for the actual result.</li>
+<li><code>window_keep_size()</code> confirms a pending preview with a fresh user action.</li>
+<li><code>window_revert_size()</code> restores only the size recorded by the host before that
+  preview. It needs no fresh action, so a game's confirmation timer can cancel
+  safely. It cannot supply a new arbitrary size.</li>
+</ul>
+<p>These correspond to operations 5 (packed low/high-16-bit width/height), 7 (Keep,
+value 0) and 6 (Revert, value 0) on <code>window_control</code>. Operation 8 with value 0 is
+its read-only committed-preview query. Guest-requested changes still
+require successful tick/checkpoint commit. The host additionally counts 300
+subsequent attempted ticks and reverts on the following tick if the preview
+remains unconfirmed; failed later ticks do not reset this host fallback. Closing
+also cancels an outstanding preview. Unconfirmed geometry is excluded from saved
+window preferences, and restored geometry waits for physical acknowledgement.
+Browser, headless and embedded-library hosts reject previews. Normal and
+maximized desktop preview flows are verified on Linux: cancel/timeout restores
+maximization and the prior normal bounds, while Keep records the confirmed normal
+geometry. Restoration waits for normal-size acknowledgement before maximizing.
+For normal-origin previews, entering fullscreen preserves the actual fullscreen
+flag across expiry/close/reopen. Keep in fullscreen saves the last windowed
+geometry and mode, rather than monitor dimensions. An expired/reverted normal
+size waits for fullscreen exit before being applied. Fullscreen pixels cannot
+acknowledge a normal-size restore. A fullscreen entry queued with a preview waits
+for its geometry; fullscreen exit remains available during deferred restoration.
+Linux native/core/component checks cover these flows at 100%/150% UI scaling.
+More complex maximized/fullscreen combinations, monitor-clamp/hotplug edges,
+native-DPI and other-platform behavior remain under qualification. The original
+Desktop game Settings menus can use these APIs for resolution choices and
+Keep/Revert confirmation. The host remains authoritative
+for expiry and actual geometry. Browser/headless hosts offer no desktop size
+selection; fullscreen users return to windowed mode before choosing a size.</p>
 <p><code>gamepkg::window_control(operation, value)</code> requests changes to the game's own
 window and requires signed <code>input</code> permission. Operations 0 and 1 accept 0/1 to
 set cursor visibility and absolute cursor confinement respectively. Operation 2
@@ -81,6 +156,10 @@ Browser tabs use <code>noopener,noreferrer</code> and require active browser use
 unfocused or file-dialog-blocked requests are discarded. Headless runs do not
 open a browser. Older released hosts reject this new operation; rebuild from
 current source to use it.
+Operation 9 reads the committed desktop VSync preference: value 0 tests
+availability and value 1 reads enabled. Operation 10 requests disabled/enabled
+with value 0/1 and a fresh user action. These operations back the typed VSync
+helpers above and are unavailable to browser/headless hosts.
 Fullscreen, close and homepage requests require a fresh key, pointer, controller or touch action;
 held buttons and repeated keys do not qualify. The return value means the host
 accepted the request, not that the operating system fulfilled it. Requests commit
@@ -380,5 +459,19 @@ added. The guest is responsible for validating its actual file format.</p>
 <p>These operations do not yet provide a directory/resource browser, remembered
 mod folders, streaming media resources or large recording exports. Those remain
 separate requirements for the engine ports.</p>
+<p>Browser export may store larger canonical effect WAVs losslessly compressed.
+Game source continues to read the original WAV bytes and call the same effect
+functions. The exported player uses bounded reusable decoding buffers, reserved
+inside the existing hard memory allowance; the exported guest memory maximum
+is reduced to leave room for both owners. The exporter keeps raw storage when
+compression would not save space or would leave too little guest memory. The
+32 MiB encoded asset limit, effect cache limits and execution deadlines still
+apply. Players need no external decoder, Python or other preparation tools.</p>
+<h2>Engine-specific recipe reference</h2>
+<p>Reviewed engines may provide signed options for original data files, resource loading,
+presentation and gameplay preferences. Their formats and supported behavior depend on
+the pinned engine. See the <a href="https://github.com/centrexity/GamePKG/blob/main/docs/DEVELOPING_GAMES.md">repository developer reference</a>
+for the detailed recipe fields, configuration examples and verification tools.
+Games continue to use the permissions and source policy described above.</p>
 <footer><a href="../support/index.html">Support GamePKG</a> · <a href="../guide/allowlist.html">Game source policy</a> · <a href="https://github.com/centrexity/GamePKG/blob/main/docs/DEVELOPING_GAMES.md">Documentation source</a> · GamePKG · Apache 2.0</footer>
 </main></body></html>

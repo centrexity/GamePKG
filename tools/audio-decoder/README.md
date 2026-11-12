@@ -1,8 +1,17 @@
-# Host audio decoder prototype
+# Host audio decoder
 
 This trusted companion decodes compressed music in an import-free Wasm instance.
-It is not yet connected to game playback or exposed through the game SDK. Games
-still cannot use Cargo dependencies. No decoder binary or music is checked in.
+Current source-built hosts connect it to desktop native/core/component playback
+and core/component browser exports. Games use the injected music and recorded
+effect functions; they cannot use Cargo dependencies. Maintainer builds embed
+the companions, so players need no decoder files, Python or WSL. No decoder
+binary or music is checked in.
+
+See [recorded effects and music](../../docs/DEVELOPING_GAMES.md#recorded-effects-on-desktop)
+for signed permissions, asset formats, memory shares and game calls. The canonical
+Arkanoo recipe uses original recordings. Published app 0.1.17 predates these
+source changes. Exact original MP3 codec parity, physical audio output and full
+game/platform fidelity remain separate qualification work.
 
 The native host and browser exercise the same scalar decoder. The companion
 pins nanomp3 and nanomp3-core 0.2.0 (MIT OR Apache-2.0); SIMD and Layer I/II support
@@ -16,9 +25,10 @@ Output is signed 16-bit PCM at the recording's original sample rate and channel
 count. Final float-to-integer conversion uses nearest-even rounding. The host
 can also request stereo output at 44.1 or 48 kHz before reading. This uses the
 shared fixed-memory SDL-filter converter, and rejects rate changes after reading
-starts. Rewind preserves the selected output rate. It does not yet provide a
-playlist, music controls, or asynchronous playback.
-Integration must account for decoder memory alongside game memory.
+starts. Rewind preserves the selected output rate. The companion handles decoding;
+the host service supplies asynchronous playback and controls, and game code
+chooses its playlist. Declared audio shares reserve decoder, staging and converter
+memory inside the existing game ceiling before playback starts.
 
 ## Maintainer verification
 
@@ -84,7 +94,7 @@ and enforces its complete output length. It is deliberately distinct from
 `SDL_AudioStream`, whose per-buffer phase restart/truncation changes full-track
 duration. For example, the ambient track at 48 kHz has 17,763,784 sample values
 with global phase versus 17,753,782 from SDL_mixer's chunked path. Matching the
-original 44.1 kHz playback pipeline and its asynchronous scheduling remains open.
+original 44.1 kHz playback pipeline requires the separate compatibility mode below.
 The float kernel matches SDL exactly; decoder integer differences can propagate
 to two-unit differences after filtering. Those are reported, not accepted as
 bit-exact parity.
@@ -106,7 +116,9 @@ capture. It records bounded metadata only, never PCM, and is not part of the app
 
 An independent actual `SDL_AudioStream` oracle matches every float sample bit
 and complete length across 306 cases: 17 lengths around staging/put boundaries,
-nine input rates and both output rates. This includes the surprising behavior
+nine input rates and both output rates. The corresponding mono matrix adds
+414 cases, retaining those lengths and adding 2,048-frame boundary edges.
+This includes the surprising behavior
 that a final non-staged put does not flush retained padding. Tests preserve that
 behavior explicitly. `Mix_PlayMusic(1)` is one traversal, as checked by the
 original-API capture and its complete reference length.
@@ -118,17 +130,42 @@ python3 tools/check_audio_decoder.py /path/to/original/music --sdl-reference --o
 In this mode the corpus reference uses SDL_mixer's actual chunked conversion,
 previously verified against `Mix_LoadMUS`/postmix capture. Full native and browser
 passes check chunk invariance, retained output rate on rewind, rejected rate
-changes and full-track length. The original mode currently requires stereo
-source recordings, as used by all nine tracks. Mono source is rejected because
-the original decoder's byte-sized puts imply different frame boundaries; no
-claim is made for that unimplemented path. New decoder PCM differences remain
-observable. Game playback, controls, scheduling and combined memory accounting
-still require integration.
+changes and full-track length. All nine original source recordings are stereo.
+The original mono Music API also uses 4,096-byte puts: 2,048 S16 mono frames.
+Mono input is now supported using a fixed 4 KiB source-put staging buffer and
+announced complete puts. The unchanged 2,048-frame conversion ring consumes each
+put incrementally with backpressure and waits for its filter lookahead. The
+existing hard decoder memory ceiling covers the staging buffer; it is not raised.
+New decoder PCM differences remain observable; exact conversion of the same
+quantized PCM does not establish bit-identical MP3 codec output. Complete game
+playback/campaign and wider platform qualification remain separate work.
 
-Pass `--mono-input /path/to/mono.mp3` to check the explicit original-mode
-rejection alongside complete audible ordinary stereo conversion in native and
-Chromium execution. The channel check includes nonzero PCM and the ending, so
-it cannot pass solely on the recording's initial silence.
+Pass `--mono-input /path/to/mono.mp3` to check both original and global conversion
+at both output rates in native and Chromium execution. Complete mono PCM hashes,
+channel equality, nonzero audio, endings and rewind with varied reads must match.
+These checks cannot pass solely on initial silence.
+
+`python3 tools/check_mono_music_schedule.py` verifies the actual Music API's mono
+put format/sizes at both output rates using private generated audio.
+`python3 tools/check_mono_decoder.py` generates mono MP3 fixtures at all nine
+supported source rates and checks both output rates against actual SDL S16
+conversion of the same decoded PCM, with varied reads, rewind and the unchanged
+6 MiB bound. Add `--worker` to also load each generated mono fixture from a
+verified signed package through the asynchronous output-clock worker at 44.1 and
+48 kHz. This checks exact SDL-converted output, audio-permission denial, discarded
+control transactions, pause/resume, mute with an advancing clock, replay, stop,
+and complete shared-reservation cleanup. It preserves the separate complete
+nine-track reference corpus and its fixed hashes. On Linux,
+`--worker --null-device` also uses private generated three-second mono fixtures
+and a private ALSA null configuration to exercise actual CPAL callbacks at both
+worker rates. Master mute must still advance playback, unmuted callbacks must
+receive nonzero output, midstream pause/resume and stop must work without game
+ticks, and all reservations must release. Wrong-rate direct attachment of the
+original-rate source is rejected. CI runs this generated suite without original
+recordings or a physical sound device. Build the companion at that
+ceiling first. The float conversion
+matrix and actual Music API put-size trace also run in CI. These tools and
+FFmpeg/SDL/Chromium are maintainer dependencies, never player requirements.
 
 ## Loading and shared memory reservations
 
@@ -162,8 +199,8 @@ key, verifies it, then loads every track directly through the asset reader. It
 also checks that an existing asset is unavailable before verification. Fixture
 creation is maintainer work; the archive and copied inputs stay temporary and
 are deleted when the test finishes. No user/release key or installed library is
-accessed. This exercises loading through a real signed package without enabling
-the unfinished game music API.
+accessed. This exercises loading through a real signed package independently of
+the game music API.
 
 `Factory::open_budgeted` reserves the complete chosen ceiling from a shared
 `memory_budget::Budget` before loading. The non-cloneable reservation stays with
@@ -172,15 +209,16 @@ concurrent reservations cannot overcommit. Tests combine a 10 MiB guest and
 6 MiB decoder reservation under one 16 MiB ceiling and reject another decoder
 before reading input.
 
-This provides the loading/reservation mechanism, not completed runtime
-accounting. The runtime must reserve guest, decoder and host queues together
-before exposing music calls. Archive decompressor workspace and playback buffers
-also require accounting; the decoder ceiling describes linear memory, not total
-host-process memory or shared JIT code. Asynchronous playback, signed audio
-permission integration and browser/desktop SDK calls remain unfinished. Existing
-game limits are not increased.
-The browser harness still fetches encoded ArrayBuffers; streaming browser input
-and its separate buffer accounting remain required before exposing playback.
+The runtime partitions declared audio shares from the selected game ceiling and
+reserves guest memory, decoder and host queues before exposing playback. Stored
+entries and resolved shared snapshots are supported; compressed embedded music
+is rejected because its decompressor workspace is not accounted. The decoder
+ceiling describes linear memory, not total host-process memory or shared JIT
+code. Existing game limits are not increased. Browser playback accounts for
+decoder input, cache, transfer and converter reservations; browser JIT/GC and
+caller-owned asset storage are separate from those reservations. Sequential
+browser decoder uploads use at most 64 KiB per transfer, a fixed five-second
+aggregate allowance and 100 ms acknowledgement/codec-operation deadlines.
 
 ## Native background playback service
 
@@ -234,17 +272,19 @@ speaker or other-platform verification. Users need none of these maintainer tool
 The service currently supports stored embedded assets and resolved raw shared
 snapshots. It explicitly rejects compressed embedded music until decompressor
 workspace can be reserved. The generic archive reader still supports Zstd.
-Game runtime/SDK wiring, helper bundling, playlist/menu controls, browser playback
-and streaming input remain unfinished. Existing PCM device-rate conversion also
-needs broader fidelity verification.
+The game runtime wires this service through signed audio permission and declared
+memory shares. Helpers are bundled in maintainer app builds, and the canonical
+port supplies playlist/menu controls. Desktop and browser paths have separate
+integration checks; physical device/platform fidelity needs broader verification.
 
-Combined original music/effect mixing remains open. The generic callback adds
+Combined recorded playback uses original-rate music-first mixing. The legacy
+generic callback adds
 music to already mixed guest PCM, whereas [SDL_mixer mixes music before individual
 effect channels](https://github.com/libsdl-org/SDL_mixer/blob/release-2.8.0/src/mixer.c).
 Intermediate saturation makes these different: music 30,000 followed by effects
 +30,000 and -30,000 yields 2,767 in that order, versus 30,000 if effects are
-premixed first. Faithful combined playback needs the original per-voice mixing
-and independent effect timing; the current ports are not migrated to this service.
+premixed first. The recorded path therefore mixes individual effect voices after
+music before one shared conversion. It rejects premixed guest PCM submission.
 
 The host-only `audio_voices` module implements four first-free effect slots with
 shared, immutable, budget-reserved stereo recordings and sequential S16 clipping
@@ -254,10 +294,10 @@ zero-volume advancement, slot exhaustion/reuse and ownership cleanup are tested.
 oracle (all 65,536 S16 sources, all 129 volumes, seven destination values). The
 normal Rust test checks all 59,179,008 results through per-volume full hashes.
 The oracle needs only maintainer SDL headers/library and a C compiler; players
-need neither. The module is still host-only: effect-command SDK integration,
-original-rate combined mixing before resampling, browser playback and actual
-port migration remain unfinished. The current premixed guest PCM path cannot
-recover individual-channel clipping order.
+need neither. Guest controls reach this trusted host module through the runtime,
+and browser exports implement the same recorded-audio contract. The canonical
+port uses recorded playback. The separate premixed guest PCM path cannot recover
+individual-channel clipping order.
 
 `music::Service::new_original_rate` now supplies rate-tagged 44.1 kHz PCM for
 `audio_mix_stream::Playback`. It mixes music followed by the four effect voices
@@ -265,15 +305,17 @@ before one shared 48 kHz conversion, driven by the CPAL clock through
 `audio::Player::original_source`. The regular music attachment accepts only
 48 kHz sources. Combined mode rejects legacy PCM submissions. The converter and
 adapter reserve their storage from the caller's shared game budget; clips retain
-separate shared recording leases. Game SDKs still expose neither path.
+separate shared recording leases. Injected game helpers select recorded playback
+through the declared audio shares; games do not access host objects directly.
 
 The SDL mix oracle also checks complete combined conversion at six volumes with
 four unequal stereo clips. Rust requires exact whole-output hashes at three
 input/output chunk schedules. `check_music_worker.py --null-device` additionally
 requires the actual original-rate callback test: music reaches output, effects
 pause/mute and continue with music stopped, and all reservations release without
-a game tick. It retains the full nine-track 48 kHz regression. Physical output,
-browser integration and original block/event/stop timing remain open.
+a game tick. It retains the full nine-track 48 kHz regression. Browser playback
+has separate exported-player checks. Physical output and complete original-game
+event/stop timing still require qualification.
 
 
 CPAL playback state is now callback-owned. A fixed atomic 4,800-frame PCM ring
@@ -289,22 +331,25 @@ cannot wait for a budget mutex. The null-device maintainer check explicitly runs
 `audio::tests::audio_output_null_device`, which requires all 1,600 queued PCM
 frames to reach the actual callback while the producer/control lock stays held.
 This is a host-lock regression, not proof of hard real-time allocator/OS behavior
-or physical-speaker/platform fidelity. SDK/browser/event-timing work remains.
+or physical-speaker/platform fidelity. Game event timing requires game-level
+checks in addition to this host callback regression.
 
-Before introducing game-facing playback commands, transient-output rejection now
-also covers host persistence errors. Core/component and native ticks discard PCM
+Transient-output rejection covers host persistence errors. Core/component and
+native ticks discard PCM
 and drawing when a save/history write fails. The focused core/component regression
 first reproduces the old stale PCM and then verifies both failure types after a
 successful emitting tick. `python3 tools/check_tick_output_rollback.py` creates a
 private synthetic signed package, builds native code, and verifies the same
 behavior in the actual native sandbox. This does not establish atomic persistent
-saves/history or rollback of already emitted background-engine audio. New music
-commands still require signed SDK wiring and commit only after a successful tick.
+saves/history or rollback of already emitted background-engine audio. Recorded
+effect/music commands are staged through the signed SDK and published only after
+a successful tick and persistence checkpoint; failed ticks discard new controls.
 
 ### Embedding in the app
 
-Maintainer app builds can set `GAMEPKG_BUNDLED_AUDIO_DECODER` to the compiled
-companion before building the root crate. The root build script copies at most
+Maintainer app builds set `GAMEPKG_BUNDLED_AUDIO_DECODER` to the compiled decoder
+and `GAMEPKG_BUNDLED_AUDIO_CONVERTER` to the converter before building the root
+crate. Both are required for recorded-audio browser exports. The root build script copies at most
 4 MiB of core Wasm into Cargo's output and embeds those bytes in the executables.
 No decoder file, Python interpreter, URL or runtime environment variable is
 consulted by `Factory::bundled`. Removing the optional build input writes an
@@ -318,7 +363,10 @@ For a Rust-only source build on a Unix shell:
 ```sh
 rustup target add wasm32-unknown-unknown
 GAMEPKG_AUDIO_MAX_MEMORY_BYTES=6291456 cargo build --locked --release --manifest-path tools/audio-decoder/Cargo.toml --target wasm32-unknown-unknown
-GAMEPKG_BUNDLED_AUDIO_DECODER="$PWD/tools/audio-decoder/target/wasm32-unknown-unknown/release/gamepkg_host_audio_decoder.wasm" cargo build --locked --release --features gui --bins
+cargo build --locked --release --manifest-path tools/audio-converter/Cargo.toml --target wasm32-unknown-unknown
+GAMEPKG_BUNDLED_AUDIO_DECODER="$PWD/tools/audio-decoder/target/wasm32-unknown-unknown/release/gamepkg_host_audio_decoder.wasm" \
+GAMEPKG_BUNDLED_AUDIO_CONVERTER="$PWD/tools/audio-converter/target/wasm32-unknown-unknown/release/gamepkg_host_audio_converter.wasm" \
+cargo build --locked --release --features gui --bins
 ```
 
 On Windows PowerShell, using native Rust without WSL:
@@ -327,7 +375,9 @@ On Windows PowerShell, using native Rust without WSL:
 rustup target add wasm32-unknown-unknown
 $env:GAMEPKG_AUDIO_MAX_MEMORY_BYTES = "6291456"
 cargo build --locked --release --manifest-path tools/audio-decoder/Cargo.toml --target wasm32-unknown-unknown
+cargo build --locked --release --manifest-path tools/audio-converter/Cargo.toml --target wasm32-unknown-unknown
 $env:GAMEPKG_BUNDLED_AUDIO_DECODER = (Resolve-Path "tools/audio-decoder/target/wasm32-unknown-unknown/release/gamepkg_host_audio_decoder.wasm").Path
+$env:GAMEPKG_BUNDLED_AUDIO_CONVERTER = (Resolve-Path "tools/audio-converter/target/wasm32-unknown-unknown/release/gamepkg_host_audio_converter.wasm").Path
 cargo build --locked --release --features gui --bins
 ```
 
@@ -347,9 +397,10 @@ paths and no display. `tools/check_music_worker.py <original-music-directory>
 --null-device --bundled` runs the nine complete track hashes and actual callback
 gates using only embedded bytes, removing decoder path variables before playback.
 The standalone build-script test covers malformed/missing/oversized inputs and
-resetting an optional input. Game-facing SDK commands, automatic per-game service
-creation/memory reservations, browser bundle integration and actual port migration
-remain unfinished; embedding alone does not expose music to games.
+resetting an optional input. Embedding supplies the decoder; signed permissions,
+per-game service creation, reserved shares and transactional SDK commands govern
+its use. Browser exports include the integrity-checked companions and the
+canonical port declares recorded effects/music shares.
 
 The shared budget can now partition a fixed child capacity inside the existing
 game limit. A child is not another independent allowance. Every child lease
@@ -360,9 +411,11 @@ regressions. Releases remain atomic, with no reservation mutex on the callback.
 The combined real-callback test now plays an effect from a child cache after the
 cache object is dropped, and verifies final parent cleanup. Actual 32-bit Linux
 checks also exercise full-width counters and cross-thread final ownership.
-The same public checks are added to Windows32/Android32 qualification; new hosted
-results for those additions remain required. Per-game guest/store limit carving
-and signed SDK activation are still unfinished.
+The same public suites execute in Windows32 and Android32 qualification. See
+[platform evidence](../../docs/native-windows-gameplay-validation.md) for their
+scope and run identities. Per-game limit carving and signed SDK activation use
+these child budgets; executable/userspace checks do not qualify a physical
+32-bit OS or Android game-window/audio integration.
 
 ### Original-rate effect asset loading
 
@@ -391,9 +444,10 @@ voices retain its parent charge after the cache owner drops. Ordinary tests use
 synthetic signed WAVs and require no original assets or SDL decoder. The helper
 and native SDL libraries are maintainer dependencies only.
 
-This loader is not a guest API or a migrated port. Guest commands, transactional
-tick commit, per-game memory carving, browser playback, original event timing
-and original-rate package-asset migration still need integration.
+This loader remains trusted host code. Injected guest effect commands reach it
+through transactional tick commit and per-game memory shares. Browser playback
+implements the same asset/command contract, and the canonical port uses original
+recordings. Exact original event timing needs the separate game-level tests.
 
 ### Whole-tick effect handoff
 
@@ -414,6 +468,48 @@ private null-device check now batches muted/paused effect startup and resume;
 an invalid Stop/volume batch cannot kill the retained voice, which subsequently
 produces real callback output after resume. No game ticks advance that playback.
 
-Guest runtime staging and save/history commit wiring must use this handoff only
-after a successful tick. This host operation alone does not expose guest controls
-or establish original event/stop timing.
+Guest runtime staging publishes through this handoff only after a successful tick
+and save/history checkpoint. The matching browser transaction prepares controls
+before its checkpoint and applies them after success. These commit rules do not
+by themselves establish original game event/stop timing.
+
+
+## Codec precision provenance
+
+`python3 tools/check_music_codec_precision.py --float-check` uses a private
+generated stereo fixture to identify the actual original Music API backend and
+compare native/generic MPG123 S16 output, float output quantized with explicit
+ties-to-even rounding, and the sandboxed decoder. Pass the original music folder
+to run the same checks on the complete local corpus. Only native 44.1/48 kHz
+stereo inputs are used so no sample-rate conversion obscures codec arithmetic.
+Captured PCM is temporary, and the tool emits metadata only. It requires
+maintainer MPG123 development headers, SDL_mixer, FFmpeg and the built companion;
+none becomes a player dependency.
+
+On the tested SDL 2.30.0 / SDL_mixer 2.8.0 / MPG123 1.32.5 system, the actual Music
+API selects MPG123's AVX path. Direct MPG123 S16 matches its complete PCM exactly,
+excluding only confirmed silent callback padding. Across all nine original
+tracks (121,627,854 native-rate samples), MPG123 generic versus AVX differs at
+89,767 samples by one integer unit. Each path's float output quantizes back to
+its own S16 output exactly. The sandboxed minimp3-family decoder differs from
+both paths. These observations locate the remaining difference in codec
+arithmetic, rather than a missing rounding switch. They do not close exact codec
+parity or justify altering existing tolerances, corpus coverage or golden hashes.
+The generated provenance probe runs in CI; the original corpus remains private.
+## Measured conversion optimization
+
+The shared native/browser resampler now reuses phase weights and input lookups
+between stereo channels, preserving each channel's original addition order.
+Equal-rate playback copies bounded ring spans without changing queued-history
+or backpressure behavior. The filter and memory-state sizes are unchanged.
+The updated decoder and output converter use that same source.
+
+The [preserved-baseline benchmark](../audio-resample-bench/README.md) records
+2592 exact-output comparisons/5963184 stereo frames on native64, actual ELF32,
+actual PE32 under Wine and WebAssembly. Original SDL mono/stereo/flush gates
+also pass. On the measured Ryzen5 9600X host, O3/native/thin-LTO conversion
+medians improve1.122–1.282x and equal-rate medians1.232–4.536x, with separate
+generic-target results and raw min/median/max rows retained. These are component
+measurements, not whole-game frame-rate or browser-speed claims. Heavy measured
+optimization across every current port and full port/platform fidelity remain
+part of the larger project goal.

@@ -1,0 +1,21 @@
+name: Production touch input
+on:
+  push:
+    paths: ['src/gui/input.rs', 'vendor/egui/**', 'tests/desktop_touch_cancellation.rs', 'tools/check_touch_look.py', '.github/workflows/touch.yml']
+  pull_request:
+    paths: ['src/gui/input.rs', 'vendor/egui/**', 'tests/desktop_touch_cancellation.rs', 'tools/check_touch_look.py', '.github/workflows/touch.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  real-egui:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Fetch the locked native dependencies
+        run: cargo fetch --locked --target x86_64-unknown-linux-gnu
+      - name: Check production touch movement and cancellation with strict warnings
+        run: |
+          python3 tools/check_touch_look.py
+          python3 tools/check_touch_look.py --cancellation

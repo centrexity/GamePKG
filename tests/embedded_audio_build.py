@@ -9,17 +9,28 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-embed-check-') as temporary:
     root = Path(temporary)
     executable = root/('embed.exe' if os.name == 'nt' else 'embed')
     subprocess.run(['rustc', '--edition=2021', str(project/'build.rs'), '-o', str(executable)], check=True, timeout=60)
-    environment = dict(os.environ, OUT_DIR=str(root))
+    environment = dict(os.environ, OUT_DIR=str(root), TARGET="i686-unknown-linux-gnu")
     environment.pop('GAMEPKG_BUNDLED_AUDIO_DECODER', None)
     environment.pop('GAMEPKG_BUNDLED_AUDIO_CONVERTER', None)
-    def run(path=None, good=True):
+    def run(path=None, good=True, target="i686-unknown-linux-gnu"):
         env = dict(environment)
+        if target is None:
+            env.pop('TARGET', None)
+        else:
+            env['TARGET'] = target
         if path is not None:
             env['GAMEPKG_BUNDLED_AUDIO_DECODER'] = str(path)
         result = subprocess.run([str(executable)], env=env, capture_output=True, text=True, timeout=10)
         assert (result.returncode == 0) == good, result.stdout + result.stderr
+        if good:
+            assert f'cargo:rustc-env=GAMEPKG_BUILD_TARGET={target}\n' in result.stdout
+        return result
     output = root/'audio-decoder.wasm'
-    run()
+    missing = run(good=False, target=None)
+    assert 'Cargo target' in missing.stderr
+    assert not output.exists(), 'missing target wrote embedding output'
+    for target in ['i686-unknown-linux-gnu', 'i686-pc-windows-gnu', 'x86_64-pc-windows-gnu']:
+        run(target=target)
     assert output.read_bytes() == b''
     source = root/'companion.wasm'
     for data in [b'', b'bad wasm', b'\0asm\x02\0\0\0', b'\0asm\x01\0\0\0' + bytes(4*1024*1024)]:
@@ -40,4 +51,4 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-embed-check-') as temporary:
         assert (result.returncode==0)==good,result.stderr
         if good:assert converter.read_bytes()==data
     run();assert converter.read_bytes()==b'', 'removed converter embedding retained old bytes'
-print('Embedding checks passed: optional reset, changed input, missing/bad/oversized modules and bounded core header.')
+print('Embedding checks passed: exact Cargo target propagation including 32-bit targets, missing target rejected, optional reset, changed input, missing/bad/oversized modules and bounded core header.')

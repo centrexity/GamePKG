@@ -66,7 +66,7 @@ int main(int argc,char**argv){if(argc!=5||SDL_Init(SDL_INIT_VIDEO)||TTF_Init())r
       deadline=time.monotonic()+20
       while True:
        if app.poll() is not None:raise RuntimeError(app.stderr.read().decode())
-       found=subprocess.run(['xdotool','search','--onlyvisible','--name',r'^(GamePKG|com\..*)$'],env=env,capture_output=True,text=True)
+       found=subprocess.run(['xdotool','search','--onlyvisible','--name',r'^(GamePKG [0-9]+[.][0-9]+[.][0-9]+([-+][A-Za-z0-9.-]+)?|com\..*)$'],env=env,capture_output=True,text=True)
        if found.returncode==0:window=found.stdout.splitlines()[0];break
        assert time.monotonic()<deadline;time.sleep(.05)
       subprocess.run(['xdotool','windowfocus',window],env=env,check=True)
@@ -91,7 +91,7 @@ int main(int argc,char**argv){if(argc!=5||SDL_Init(SDL_INIT_VIDEO)||TTF_Init())r
    from selenium.webdriver.common.keys import Keys
    from selenium.webdriver.support.ui import WebDriverWait
    output=root/(suffix+'-web');run('web-export',game_id,'--output',output);server=ThreadingHTTPServer(('127.0.0.1',0),partial(Quiet,directory=str(output)));threading.Thread(target=server.serve_forever,daemon=True).start();options=Options();options.binary_location=shutil.which('google-chrome') or shutil.which('google-chrome-stable') or shutil.which('chromium');assert options.binary_location
-   for value in ['--headless=new','--no-sandbox','--disable-dev-shm-usage','--enable-unsafe-swiftshader']:options.add_argument(value)
+   for value in ['--headless=new','--mute-audio','--no-sandbox','--disable-dev-shm-usage','--enable-unsafe-swiftshader']:options.add_argument(value)
    driver=shutil.which('chromedriver') or str(Path(os.environ.get('CHROMEWEBDRIVER','/nonexistent'))/'chromedriver');browser=webdriver.Chrome(service=Service(driver),options=options);held=False
    try:
     browser.get(f'http://127.0.0.1:{server.server_port}/');wait=WebDriverWait(browser,20);wait.until(lambda b:b.find_element('id','status').text=='Ready to play');browser.find_element('id','play').click();wait.until(lambda b:b.find_element('id','game').get_attribute('data-state'));browser.find_element('id','game').click()

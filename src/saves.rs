@@ -10,6 +10,7 @@ pub(crate) struct Save {
     pub dirty: bool,
     path: PathBuf,
     max_bytes: usize,
+    pending: Option<(usize, Vec<u8>)>,
 }
 impl Save {
     pub fn open_for_game(root: &Path, manifest: &crate::manifest::Manifest) -> Result<Self> {
@@ -83,7 +84,41 @@ impl Save {
             dirty: false,
             path,
             max_bytes,
+            pending: None,
         })
+    }
+    pub fn discard_pending(&mut self) {
+        self.pending = None;
+    }
+    /// Ordered chunks form one replacement blob, published only when complete.
+    pub fn chunk(&mut self, offset: usize, total: usize, bytes: &[u8]) -> bool {
+        if total > MAX_SAVE
+            || bytes.len() > 65536
+            || offset
+                .checked_add(bytes.len())
+                .is_none_or(|end| end > total)
+            || (bytes.is_empty() && total != 0)
+        {
+            self.pending = None;
+            return false;
+        }
+        if offset == 0 {
+            self.pending = Some((total, Vec::with_capacity(total)));
+        }
+        let Some((expected, pending)) = self.pending.as_mut() else {
+            return false;
+        };
+        if *expected != total || pending.len() != offset {
+            self.pending = None;
+            return false;
+        }
+        pending.extend_from_slice(bytes);
+        if pending.len() == total {
+            let (_, bytes) = self.pending.take().unwrap();
+            self.bytes = bytes;
+            self.dirty = true;
+        }
+        true
     }
     pub fn commit(&mut self) -> Result<()> {
         if !self.dirty {
@@ -104,6 +139,49 @@ impl Save {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn chunked_replacements_are_bounded_ordered_and_atomic() {
+        let root = tempfile::tempdir().unwrap();
+        let mut save = Save::open(root.path(), "chunked", "creator", 1).unwrap();
+        save.bytes = b"old".to_vec();
+        assert!(save.chunk(0, 6, b"abc"));
+        assert_eq!(save.bytes, b"old");
+        assert!(!save.dirty);
+        assert!(!save.chunk(4, 6, b"ef"));
+        assert!(!save.chunk(3, 6, b"def"));
+        assert!(save.chunk(0, 6, b"abc"));
+        save.discard_pending();
+        assert!(!save.chunk(3, 6, b"def"));
+        assert!(save.chunk(0, 6, b"abc"));
+        assert!(save.chunk(3, 6, b"def"));
+        assert_eq!(save.bytes, b"abcdef");
+        save.commit().unwrap();
+        for (offset, total, bytes) in [
+            (0, MAX_SAVE + 1, &b"x"[..]),
+            (usize::MAX, MAX_SAVE, &b"x"[..]),
+            (0, 1, &b""[..]),
+        ] {
+            assert!(!save.chunk(offset, total, bytes));
+            assert_eq!(save.bytes, b"abcdef");
+        }
+        let full = vec![7; 65536];
+        for offset in (0..MAX_SAVE).step_by(65536) {
+            assert!(save.chunk(offset, MAX_SAVE, &full));
+            if offset + 65536 < MAX_SAVE {
+                assert_eq!(save.bytes, b"abcdef");
+            }
+        }
+        assert_eq!(save.bytes, vec![7; MAX_SAVE]);
+        assert!(!save.chunk(0, MAX_SAVE, &vec![0; 65537]));
+        assert!(save.chunk(0, 0, b""));
+        assert!(save.bytes.is_empty());
+        assert_eq!(
+            Save::open(root.path(), "chunked", "creator", 1)
+                .unwrap()
+                .bytes,
+            b"abcdef"
+        );
+    }
     #[test]
     fn larger_doom_storage_does_not_expand_ordinary_save_limits() {
         let root = tempfile::tempdir().unwrap();

@@ -1,0 +1,117 @@
+[
+  {
+    "before": "#include \"spc_player.h\"",
+    "after": "#include \"spc_player.h\"\n#include \"gamepkg_spc_playback.h\"",
+    "count": 1
+  },
+  {
+    "before": "*(uint16 *)(data)",
+    "after": "gamepkg_spc_read_le16(data)",
+    "count": 1
+  },
+  {
+    "before": "*(uint16 *)(data + 2)",
+    "after": "gamepkg_spc_read_le16(data + 2)",
+    "count": 1
+  },
+  {
+    "before": "WORD(p->ram[p->music_ptr_toplevel])",
+    "after": "gamepkg_spc_read_ram(p->ram,p->music_ptr_toplevel)",
+    "count": 2
+  },
+  {
+    "before": "WORD(p->ram[t])",
+    "after": "gamepkg_spc_read_ram(p->ram,(uint32_t)t)",
+    "count": 1
+  },
+  {
+    "before": "WORD(p->ram[0xD000 + (a - 1) * 2])",
+    "after": "gamepkg_spc_read_ram(p->ram,0xD000 + (a - 1) * 2)",
+    "count": 1
+  },
+  {
+    "before": "WORD(p->ram[0x17C0 + (c->sfx_which_sound - 1) * 2])",
+    "after": "gamepkg_spc_read_ram(p->ram,0x17C0 + (c->sfx_which_sound - 1) * 2)",
+    "count": 2
+  },
+  {
+    "before": "WORD(p->ram[0x1820 + (c->sfx_which_sound - 1) * 2])",
+    "after": "gamepkg_spc_read_ram(p->ram,0x1820 + (c->sfx_which_sound - 1) * 2)",
+    "count": 1
+  },
+  {
+    "before": "WORD(p->ram[0x191C + (c->sfx_which_sound - 1) * 2])",
+    "after": "gamepkg_spc_read_ram(p->ram,0x191C + (c->sfx_which_sound - 1) * 2)",
+    "count": 1
+  },
+  {
+    "before": "HIBYTE(c->channel_volume) = 0xff;",
+    "after": "c->channel_volume = gamepkg_spc_with_high(c->channel_volume,0xff);",
+    "count": 1
+  },
+  {
+    "before": "HIBYTE(p->master_volume) = 0xc0;",
+    "after": "p->master_volume = gamepkg_spc_with_high(p->master_volume,0xc0);",
+    "count": 1
+  },
+  {
+    "before": "HIBYTE(p->tempo) = 0x20;",
+    "after": "p->tempo = gamepkg_spc_with_high(p->tempo,0x20);",
+    "count": 1
+  },
+  {
+    "before": "HIBYTE(p->master_volume) = 0x70;",
+    "after": "p->master_volume = gamepkg_spc_with_high(p->master_volume,0x70);",
+    "count": 1
+  },
+  {
+    "before": "HIBYTE(p->master_volume) = p->byte_3E1;",
+    "after": "p->master_volume = gamepkg_spc_with_high(p->master_volume,p->byte_3E1);",
+    "count": 1
+  },
+  {
+    "before": "HIBYTE(p->tempo) = 16;",
+    "after": "p->tempo = gamepkg_spc_with_high(p->tempo,16);",
+    "count": 1
+  },
+  {
+    "before": "HIBYTE(c->pattern_order_ptr_for_chan)",
+    "after": "gamepkg_spc_high(c->pattern_order_ptr_for_chan)",
+    "count": 4
+  },
+  {
+    "before": "HIBYTE(p->master_volume)",
+    "after": "gamepkg_spc_high(p->master_volume)",
+    "count": 1
+  },
+  {
+    "before": "HIBYTE(p->tempo)",
+    "after": "gamepkg_spc_high(p->tempo)",
+    "count": 1
+  },
+  {
+    "before": "p->reg_FLG = (p->reg_FLG & 0x20) | ip[0] & 0x1f;",
+    "after": "p->reg_FLG = (p->reg_FLG & 0x20) | (ip[0] & 0x1f);",
+    "count": 1
+  },
+  {
+    "before": "static void HandleTremolo(SpcPlayer *p, Channel *c) {\n  Not_Implemented();\n}",
+    "after": "void CalcFinalVolume(SpcPlayer *p, Channel *c, uint8 vol);\nstatic uint8 GamePkgTremoloVolume(uint8 phase, uint8 depth) {\n  unsigned triangle = (phase * 2u) & 255u;\n  if (phase & 128u) triangle ^= 255u;\n  return 255u - ((triangle * depth) >> 8);\n}\nstatic void HandleTremolo(SpcPlayer *p, Channel *c) {\n  p->did_affect_volumepitch_flag |= 0x80;\n  uint8 phase = c->tremolo_count + ((p->main_tempo_accum * c->tremolo_rate) >> 8);\n  CalcFinalVolume(p, c, GamePkgTremoloVolume(phase, c->tremolo_depth));\n}",
+    "count": 1
+  },
+  {
+    "before": "void CalcTremolo(SpcPlayer *p, Channel *c) {\n  Not_Implemented();\n}",
+    "after": "void CalcTremolo(SpcPlayer *p, Channel *c) {\n  CalcFinalVolume(p, c, GamePkgTremoloVolume(c->tremolo_count, c->tremolo_depth));\n}",
+    "count": 1
+  },
+  {
+    "before": "} while (c--, p->cur_chan_bit >>= 1);",
+    "after": "} while ((p->cur_chan_bit >>= 1) && (c--, true));",
+    "count": 1
+  },
+  {
+    "before": "if (c->tremolo_depth) {\n    c->tremolo_hold_count = c->tremolo_delay_ticks;\n    HandleTremolo(p, c);",
+    "after": "if (c->tremolo_depth && c->tremolo_hold_count == c->tremolo_delay_ticks) {\n    HandleTremolo(p, c);",
+    "count": 1
+  }
+]

@@ -1,0 +1,272 @@
+{
+  "name": "Kenney Input Prompts",
+  "version": "1.5A",
+  "author": "Kenney",
+  "license": "CC0-1.0",
+  "homepage": "https://kenney.nl/assets/input-prompts",
+  "download": "https://opengameart.org/sites/default/files/kenney_input-prompts_1.zip",
+  "archive_sha256": "9e192e9cd572b1bb87c18960074cae7f4ea40b68341423aacdd78506080ade0e",
+  "files": [
+    {
+      "path": "sources/Generic/Vector/generic_button_circle.svg",
+      "archive_path": "Generic/Vector/generic_button_circle.svg",
+      "sha256": "36ae42a07bdadbf5cc0b2b7152aebde40beae5f5cfe153aa9addccc449025d8e"
+    },
+    {
+      "path": "sources/Generic/Vector/generic_button_circle_fill.svg",
+      "archive_path": "Generic/Vector/generic_button_circle_fill.svg",
+      "sha256": "926d47cb41390c6fd2c01a735805482ab7287b9f3277ccd3cafb055d6b86afb7"
+    },
+    {
+      "path": "sources/Keyboard & Mouse/Vector/keyboard_arrow_down.svg",
+      "archive_path": "Keyboard & Mouse/Vector/keyboard_arrow_down.svg",
+      "sha256": "cc1e186f25a9ff4b82cf2d8d7fcd5bfc2764bb27229b0396eedbdcf16bad2209"
+    },
+    {
+      "path": "sources/Keyboard & Mouse/Vector/keyboard_arrow_right.svg",
+      "archive_path": "Keyboard & Mouse/Vector/keyboard_arrow_right.svg",
+      "sha256": "8c04a9866e43a48b789fae074ba0473619e1f89c65ff6da60b4fd09cf690ee0c"
+    },
+    {
+      "path": "sources/Keyboard & Mouse/Vector/keyboard_backspace_icon.svg",
+      "archive_path": "Keyboard & Mouse/Vector/keyboard_backspace_icon.svg",
+      "sha256": "372f61db1696e7aeb5ff7dc5c759a21c3fd09f69f2ff3235eb14e73701cb974e"
+    },
+    {
+      "path": "sources/Keyboard & Mouse/Vector/keyboard_ctrl.svg",
+      "archive_path": "Keyboard & Mouse/Vector/keyboard_ctrl.svg",
+      "sha256": "822abacef97c5bb74e5942e357c202fbec6abd9a6a3960f6be713f39ebc2a267"
+    },
+    {
+      "path": "sources/Keyboard & Mouse/Vector/keyboard_e.svg",
+      "archive_path": "Keyboard & Mouse/Vector/keyboard_e.svg",
+      "sha256": "58fc78c36761512b44fc92cb601de27776b228907a205002367da862049d7edb"
+    },
+    {
+      "path": "sources/Keyboard & Mouse/Vector/keyboard_enter.svg",
+      "archive_path": "Keyboard & Mouse/Vector/keyboard_enter.svg",
+      "sha256": "e592001ec1dd482e9f44ff9118e2e674a6d6cbce50f63ee2e42a15490a475880"
+    },
+    {
+      "path": "sources/Keyboard & Mouse/Vector/keyboard_q.svg",
+      "archive_path": "Keyboard & Mouse/Vector/keyboard_q.svg",
+      "sha256": "1b99f67c6d1f638569829490b3661bfdea91a8b0583e4dba2bff9e17be12565b"
+    },
+    {
+      "path": "sources/Keyboard & Mouse/Vector/keyboard_s.svg",
+      "archive_path": "Keyboard & Mouse/Vector/keyboard_s.svg",
+      "sha256": "56cbeb694c9bb9a5276ba4720ac6c8918ee41628588db6fb94cc5f7a11e4ca3a"
+    },
+    {
+      "path": "sources/Keyboard & Mouse/Vector/keyboard_shift.svg",
+      "archive_path": "Keyboard & Mouse/Vector/keyboard_shift.svg",
+      "sha256": "7143bd165a266ed950705cb45bb678a32a70bda73b5de221985c3fa1d3d527be"
+    },
+    {
+      "path": "sources/Keyboard & Mouse/Vector/keyboard_space.svg",
+      "archive_path": "Keyboard & Mouse/Vector/keyboard_space.svg",
+      "sha256": "e6c3941bfae3a1db04c69792cbd550d45ab0756ecd747375e1a4cf8bdab96027"
+    },
+    {
+      "path": "sources/Keyboard & Mouse/Vector/keyboard_w.svg",
+      "archive_path": "Keyboard & Mouse/Vector/keyboard_w.svg",
+      "sha256": "689d533faf0cf5310b39c075e39d2d8c05477cacb2947f33984533dbe2df11ba"
+    },
+    {
+      "path": "sources/Nintendo Switch/Vector/switch_button_a.svg",
+      "archive_path": "Nintendo Switch/Vector/switch_button_a.svg",
+      "sha256": "64c7e4560c68bbbdc824627aca50464eee2dab31323e06df5b4d8f8b33a7d453"
+    },
+    {
+      "path": "sources/Nintendo Switch/Vector/switch_button_b.svg",
+      "archive_path": "Nintendo Switch/Vector/switch_button_b.svg",
+      "sha256": "12061d33eb6596dc94ad551296502a9e15bd26c9199210db4728fa2a666f3ca0"
+    },
+    {
+      "path": "sources/Nintendo Switch/Vector/switch_button_l.svg",
+      "archive_path": "Nintendo Switch/Vector/switch_button_l.svg",
+      "sha256": "8f8a969fff8674dd10cf171f4dfb53843c1640ed4831a2bd23e613a0cd4c8677"
+    },
+    {
+      "path": "sources/Nintendo Switch/Vector/switch_button_plus.svg",
+      "archive_path": "Nintendo Switch/Vector/switch_button_plus.svg",
+      "sha256": "df8e08420f54b16fae955e30ee63198d0079ff99123893938bf859ce2955b18c"
+    },
+    {
+      "path": "sources/Nintendo Switch/Vector/switch_button_r.svg",
+      "archive_path": "Nintendo Switch/Vector/switch_button_r.svg",
+      "sha256": "7872b5892e5c33e2f379f5701b64de8a90c41b02bd32ea1f56b0d830a5f647dd"
+    },
+    {
+      "path": "sources/Nintendo Switch/Vector/switch_button_x.svg",
+      "archive_path": "Nintendo Switch/Vector/switch_button_x.svg",
+      "sha256": "505b595feca94a6dbb3b4bfb1f8213e108fab2d3419f265d7f42c7c1c1f3c711"
+    },
+    {
+      "path": "sources/Nintendo Switch/Vector/switch_button_y.svg",
+      "archive_path": "Nintendo Switch/Vector/switch_button_y.svg",
+      "sha256": "c509a5a985e6c6ba9bbe6caa593571488ea4307d4d134632564742cc4f98dc03"
+    },
+    {
+      "path": "sources/Nintendo Switch/Vector/switch_button_zl.svg",
+      "archive_path": "Nintendo Switch/Vector/switch_button_zl.svg",
+      "sha256": "d0d9fc2225ef961581d1e5ced39e90aad82c0916d70da4aa48ad235fd8fefd07"
+    },
+    {
+      "path": "sources/Nintendo Switch/Vector/switch_button_zr.svg",
+      "archive_path": "Nintendo Switch/Vector/switch_button_zr.svg",
+      "sha256": "2315db789115a620ac063f57361d22179ab00cb0fd7fd8a31657e7b8eed54364"
+    },
+    {
+      "path": "sources/Nintendo Switch/Vector/switch_buttons_down.svg",
+      "archive_path": "Nintendo Switch/Vector/switch_buttons_down.svg",
+      "sha256": "e949738cd6b91ca8b5981ae6f5236a156183fc78256a2adc3a804d29d597cf44"
+    },
+    {
+      "path": "sources/Nintendo Switch/Vector/switch_buttons_left.svg",
+      "archive_path": "Nintendo Switch/Vector/switch_buttons_left.svg",
+      "sha256": "038e2b32df4b97097151fd8c8e0b343c0d1e738ef0c1d0da1396986860ca6294"
+    },
+    {
+      "path": "sources/Nintendo Switch/Vector/switch_buttons_right.svg",
+      "archive_path": "Nintendo Switch/Vector/switch_buttons_right.svg",
+      "sha256": "99348843f92cbea6f32f69979c8d3603e3df6df34e6637a4bcf36faf9cef8b27"
+    },
+    {
+      "path": "sources/Nintendo Switch/Vector/switch_buttons_up.svg",
+      "archive_path": "Nintendo Switch/Vector/switch_buttons_up.svg",
+      "sha256": "c2e377b8a0a68750c07c6326039f355e7c6e551bbb698dd33c75c99c86ca830a"
+    },
+    {
+      "path": "sources/Nintendo Switch/Vector/switch_dpad_down.svg",
+      "archive_path": "Nintendo Switch/Vector/switch_dpad_down.svg",
+      "sha256": "5683310271f4c5b2077de319e8c073c0b3ae3ba4454487754aa618969a7c1fc4"
+    },
+    {
+      "path": "sources/Nintendo Switch/Vector/switch_dpad_right.svg",
+      "archive_path": "Nintendo Switch/Vector/switch_dpad_right.svg",
+      "sha256": "be8f23bc07389325db0731fe337bd6d710915b3625429f7559b242cd5dd1adda"
+    },
+    {
+      "path": "sources/Steam Deck/Vector/steamdeck_button_a.svg",
+      "archive_path": "Steam Deck/Vector/steamdeck_button_a.svg",
+      "sha256": "64c7e4560c68bbbdc824627aca50464eee2dab31323e06df5b4d8f8b33a7d453"
+    },
+    {
+      "path": "sources/Steam Deck/Vector/steamdeck_button_b.svg",
+      "archive_path": "Steam Deck/Vector/steamdeck_button_b.svg",
+      "sha256": "12061d33eb6596dc94ad551296502a9e15bd26c9199210db4728fa2a666f3ca0"
+    },
+    {
+      "path": "sources/Steam Deck/Vector/steamdeck_button_l1.svg",
+      "archive_path": "Steam Deck/Vector/steamdeck_button_l1.svg",
+      "sha256": "4ed141c97ff2e8e2faebfa6a44023a0ff03992ec9f86e73d5ab605b7fe5f9c76"
+    },
+    {
+      "path": "sources/Steam Deck/Vector/steamdeck_button_l2.svg",
+      "archive_path": "Steam Deck/Vector/steamdeck_button_l2.svg",
+      "sha256": "ddf29d5d73bca72866462c0fd524f2c571d33d49aad9c1a7d5e6e1bfa5ada75e"
+    },
+    {
+      "path": "sources/Steam Deck/Vector/steamdeck_button_options.svg",
+      "archive_path": "Steam Deck/Vector/steamdeck_button_options.svg",
+      "sha256": "e28902c7938c7d96fb783716a3e6a797134ad7bde925dff576c45f129bf12146"
+    },
+    {
+      "path": "sources/Steam Deck/Vector/steamdeck_button_r1.svg",
+      "archive_path": "Steam Deck/Vector/steamdeck_button_r1.svg",
+      "sha256": "cf6a3c9ab5f573f60e714cd7dbe4dc5b515923e315ad79b85d6213fd2c1e0533"
+    },
+    {
+      "path": "sources/Steam Deck/Vector/steamdeck_button_r2.svg",
+      "archive_path": "Steam Deck/Vector/steamdeck_button_r2.svg",
+      "sha256": "21e2c8cbbb42d13344229211264fb3bc48addf84dc5cd0621d9efd2b412bbff3"
+    },
+    {
+      "path": "sources/Steam Deck/Vector/steamdeck_button_x.svg",
+      "archive_path": "Steam Deck/Vector/steamdeck_button_x.svg",
+      "sha256": "505b595feca94a6dbb3b4bfb1f8213e108fab2d3419f265d7f42c7c1c1f3c711"
+    },
+    {
+      "path": "sources/Steam Deck/Vector/steamdeck_button_y.svg",
+      "archive_path": "Steam Deck/Vector/steamdeck_button_y.svg",
+      "sha256": "c509a5a985e6c6ba9bbe6caa593571488ea4307d4d134632564742cc4f98dc03"
+    },
+    {
+      "path": "sources/Steam Deck/Vector/steamdeck_dpad_down.svg",
+      "archive_path": "Steam Deck/Vector/steamdeck_dpad_down.svg",
+      "sha256": "d7a0d403e36c41120882f5713927e828794cdff93f88f8d3cbea3d8384b322c9"
+    },
+    {
+      "path": "sources/Steam Deck/Vector/steamdeck_dpad_right.svg",
+      "archive_path": "Steam Deck/Vector/steamdeck_dpad_right.svg",
+      "sha256": "5e3e358a70aaa5ea7236aef3504491051af91847466c349965cc345dd5b7dcb0"
+    },
+    {
+      "path": "sources/Xbox Series/Vector/xbox_button_color_a.svg",
+      "archive_path": "Xbox Series/Vector/xbox_button_color_a.svg",
+      "sha256": "63d1a6d0798c09c70f1bd25cf03dce39bd0c04e721240fda62facd5dafe08bdc"
+    },
+    {
+      "path": "sources/Xbox Series/Vector/xbox_button_color_b.svg",
+      "archive_path": "Xbox Series/Vector/xbox_button_color_b.svg",
+      "sha256": "1a50644b6cb5a59564a3fdb977b16abb33ebe356e65e1b610dc2f8fb21e49fe0"
+    },
+    {
+      "path": "sources/Xbox Series/Vector/xbox_button_color_x.svg",
+      "archive_path": "Xbox Series/Vector/xbox_button_color_x.svg",
+      "sha256": "49840e42f7aa78d107a3c496a15093b4bdf6a114b0141807f86facdbe0461154"
+    },
+    {
+      "path": "sources/Xbox Series/Vector/xbox_button_color_y.svg",
+      "archive_path": "Xbox Series/Vector/xbox_button_color_y.svg",
+      "sha256": "27436f37e982d0e2502a761d889b7502faa3fcfabf0a868dcf85bfe204dfeb38"
+    },
+    {
+      "path": "sources/Xbox Series/Vector/xbox_button_menu.svg",
+      "archive_path": "Xbox Series/Vector/xbox_button_menu.svg",
+      "sha256": "6e69a539c8a57ed461cf2690a5422abd94acad05b1c7f51b879bbad8c239c3f6"
+    },
+    {
+      "path": "sources/Xbox Series/Vector/xbox_button_start.svg",
+      "archive_path": "Xbox Series/Vector/xbox_button_start.svg",
+      "sha256": "6f482b0d6cc7aca1ac31d5846d7bd497e2cf228ff73da6e35eb781c87113596b"
+    },
+    {
+      "path": "sources/Xbox Series/Vector/xbox_button_start_icon.svg",
+      "archive_path": "Xbox Series/Vector/xbox_button_start_icon.svg",
+      "sha256": "056d71b452eb23402750237502bcb4c6c2911789da756b2b621cfe16bf48a38e"
+    },
+    {
+      "path": "sources/Xbox Series/Vector/xbox_dpad_down.svg",
+      "archive_path": "Xbox Series/Vector/xbox_dpad_down.svg",
+      "sha256": "d7a0d403e36c41120882f5713927e828794cdff93f88f8d3cbea3d8384b322c9"
+    },
+    {
+      "path": "sources/Xbox Series/Vector/xbox_dpad_right.svg",
+      "archive_path": "Xbox Series/Vector/xbox_dpad_right.svg",
+      "sha256": "5e3e358a70aaa5ea7236aef3504491051af91847466c349965cc345dd5b7dcb0"
+    },
+    {
+      "path": "sources/Xbox Series/Vector/xbox_lb.svg",
+      "archive_path": "Xbox Series/Vector/xbox_lb.svg",
+      "sha256": "6463d4c86715f1445838dd502e2060cc1719bcc66af705a15efb69fa9949c36c"
+    },
+    {
+      "path": "sources/Xbox Series/Vector/xbox_lt.svg",
+      "archive_path": "Xbox Series/Vector/xbox_lt.svg",
+      "sha256": "f86e4e5d11a0d7fe029362694cbf0c3b6db7daa19d43513075bd0f2ee666ef36"
+    },
+    {
+      "path": "sources/Xbox Series/Vector/xbox_rb.svg",
+      "archive_path": "Xbox Series/Vector/xbox_rb.svg",
+      "sha256": "066ac893d3baa92d4ba9e3b7e12b1829cce3cdf7d0676fbab4eb56d4cf17e63b"
+    },
+    {
+      "path": "sources/Xbox Series/Vector/xbox_rt.svg",
+      "archive_path": "Xbox Series/Vector/xbox_rt.svg",
+      "sha256": "a31df1a73f3d04cdebbd2c639d273b19d840e0736a7fcc2039ac521b76652b57"
+    }
+  ],
+  "fallback": "PlayStation and DualSense retain the existing Takedawn-owned symbols; the downloaded Kenney pack contains no PlayStation artwork."
+}

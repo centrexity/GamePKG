@@ -1,0 +1,210 @@
+name: Native Rust engine stream ABI
+on:
+  push:
+    paths: ['engines/takedawn/native-gen/tests/streaming*', 'vendor/winit/src/platform_impl/windows/definitions.rs', 'vendor/winit/src/platform_impl/windows/drop_handler.rs', 'tools/check_windows_drop_abi.py', 'tests/fixtures/windows-drop-abi/**', 'ports', 'tools/check_arkanoo_geometry.py', 'tools/generate_arkanoo_trig_reference.py', 'tests/fixtures/arkanoo-trig-f32.json', 'engines/takedawn/rust-port/**', 'engines/takedawn/media-bridge/**', 'engines/takedawn/windows-runner/**', 'tools/check_takedawn_input_glyphs.py', 'tools/check_takedawn_ui_scaling.py', 'tools/check_takedawn_hud_scaling.py', 'tests/takedawn_hud_scaling_test.py', 'tools/analyze_takedawn_frame_region.py', 'tests/takedawn_frame_region_test.py', 'tools/check_takedawn_presentation_defaults.py', 'tools/check_takedawn_rt_hash.py', 'tools/fixtures/takedawn_rt_hash.c', 'tools/fixtures/takedawn_rt_ownership.c', 'tools/check_takedawn_vertex_perspective.py', 'tools/check_takedawn_native_privileged.py', 'tools/takedawn_native_privileged.py', 'tools/check_takedawn_rust_stdio.py', 'tools/check_takedawn_rust_cache.py', 'tools/check_takedawn_windows_file.py', 'tools/check_takedawn_windows_kernel.py', 'tools/check_takedawn_thread_priority.py', 'tools/takedawn_pinned_source.py', 'tests/takedawn_thread_priority_source_test.py', 'tools/prepare_takedawn_crash_results.py', 'tests/takedawn_crash_results_driver_test.py', 'tools/check_takedawn_kick_handoff.py', 'tools/check_takedawn_trace_policy.py', 'tools/fixtures/takedawn_kick_wake_win32.c', 'tools/check_takedawn_gpu_report.py', 'tools/ci_download.py', 'tests/ci_download_test.py', 'tools/check_takedawn_windows_stream.py', 'tools/check_takedawn_windows_restart.py', 'tools/check_takedawn_windows_native_build.py', 'engines/takedawn/windows-dependencies.json', '.github/workflows/native_rust_ffi.yml']
+  pull_request:
+    paths: ['engines/takedawn/native-gen/tests/streaming*', 'vendor/winit/src/platform_impl/windows/definitions.rs', 'vendor/winit/src/platform_impl/windows/drop_handler.rs', 'tools/check_windows_drop_abi.py', 'tests/fixtures/windows-drop-abi/**', 'ports', 'tools/check_arkanoo_geometry.py', 'tools/generate_arkanoo_trig_reference.py', 'tests/fixtures/arkanoo-trig-f32.json', 'engines/takedawn/rust-port/**', 'engines/takedawn/media-bridge/**', 'engines/takedawn/windows-runner/**', 'tools/check_takedawn_input_glyphs.py', 'tools/check_takedawn_ui_scaling.py', 'tools/check_takedawn_hud_scaling.py', 'tests/takedawn_hud_scaling_test.py', 'tools/analyze_takedawn_frame_region.py', 'tests/takedawn_frame_region_test.py', 'tools/check_takedawn_presentation_defaults.py', 'tools/check_takedawn_rt_hash.py', 'tools/fixtures/takedawn_rt_hash.c', 'tools/fixtures/takedawn_rt_ownership.c', 'tools/check_takedawn_vertex_perspective.py', 'tools/check_takedawn_native_privileged.py', 'tools/takedawn_native_privileged.py', 'tools/check_takedawn_rust_stdio.py', 'tools/check_takedawn_rust_cache.py', 'tools/check_takedawn_windows_file.py', 'tools/check_takedawn_windows_kernel.py', 'tools/check_takedawn_thread_priority.py', 'tools/takedawn_pinned_source.py', 'tests/takedawn_thread_priority_source_test.py', 'tools/prepare_takedawn_crash_results.py', 'tests/takedawn_crash_results_driver_test.py', 'tools/check_takedawn_kick_handoff.py', 'tools/check_takedawn_trace_policy.py', 'tools/fixtures/takedawn_kick_wake_win32.c', 'tools/check_takedawn_gpu_report.py', 'tools/ci_download.py', 'tests/ci_download_test.py', 'tools/check_takedawn_windows_stream.py', 'tools/check_takedawn_windows_restart.py', 'tools/check_takedawn_windows_native_build.py', 'engines/takedawn/windows-dependencies.json', '.github/workflows/native_rust_ffi.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  streams:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - os: windows-2022
+            target: x86_64-pc-windows-msvc
+            arch: x64
+          - os: windows-2022
+            target: i686-pc-windows-msvc
+            arch: x86
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@1.89.0
+        with:
+          targets: ${{ matrix.target }}
+          components: rustfmt, clippy
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: runner.os == 'Windows'
+        with:
+          arch: ${{ matrix.arch }}
+      - name: Verify resumable compilation with native Rust objects
+        run: python tools/check_takedawn_rust_cache.py --target ${{ matrix.target }}
+      - name: Compare native port geometry with original captures
+        run: python tools/check_arkanoo_geometry.py --target ${{ matrix.target }}
+      - name: Compare converted Rust with the native platform C runtime
+        run: python tools/check_takedawn_rust_stdio.py --target ${{ matrix.target }}
+      - name: Test the actual Rust verified-disc reader and media bridge
+        run: cargo test --locked --manifest-path engines/takedawn/media-bridge/Cargo.toml --target ${{ matrix.target }}
+      - name: Verify native process ownership and inherited ISO handles
+        if: runner.os == 'Windows'
+        run: |
+          cargo test --locked --manifest-path engines/takedawn/windows-runner/Cargo.toml --target ${{ matrix.target }}
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo clippy --locked --manifest-path engines/takedawn/windows-runner/Cargo.toml --target ${{ matrix.target }} --all-targets -- -D warnings
+      - name: Verify production drop callbacks against native Windows SDK headers
+        if: runner.os == 'Windows'
+        run: python tools/check_windows_drop_abi.py --target ${{ matrix.target }}
+      - name: Compare the read-only disc adapter with native Windows file APIs
+        if: runner.os == 'Windows'
+        run: python tools/check_takedawn_windows_file.py --target ${{ matrix.target }}
+      - name: Verify native startup and SDL streams without extracted assets
+        if: runner.os == 'Windows'
+        run: python tools/check_takedawn_windows_stream.py --target ${{ matrix.target }}
+      - uses: actions/checkout@v4
+        with:
+          repository: xenophobentx/xboxrecomp
+          ref: 5ae8ad90d984425e834dee759592c15592679880
+          path: target/windows-kernel-reference
+          persist-credentials: false
+      - name: Compile the pinned original Windows file runtime through the adapter
+        if: runner.os == 'Windows'
+        run: |
+          python tools/check_takedawn_windows_kernel.py --source target/windows-kernel-reference --target ${{ matrix.target }}
+      - name: Verify native thread objects and strict handle lifetime
+        if: runner.os == 'Windows'
+        run: python tools/check_takedawn_thread_priority.py --source target/windows-kernel-reference --target ${{ matrix.target }}
+      - name: Verify GPU report lookup stability with the actual native compiler
+        if: runner.os == 'Windows'
+        run: python tools/check_takedawn_gpu_report.py --source target/windows-kernel-reference --cc cl --compiler-kind msvc
+      - name: Verify GPU report lookup stability with sanitizers
+        if: runner.os == 'Linux'
+        run: python3 tools/check_takedawn_gpu_report.py --source target/windows-kernel-reference --sanitize
+      - name: Verify original teardown and managed Windows restart
+        if: runner.os == 'Windows'
+        run: python tools/check_takedawn_windows_restart.py --source target/windows-kernel-reference --target ${{ matrix.target }}
+      - name: Build and run with the standalone native Windows SDK
+        if: runner.os == 'Windows' && matrix.arch == 'x64'
+        run: python tools/check_takedawn_windows_native_build.py
+      - name: Verify preparation transformations and rejected layouts
+        if: runner.os == 'Linux'
+        run: |
+          cargo test --locked --manifest-path engines/takedawn/rust-port/Cargo.toml
+          cargo fmt --manifest-path engines/takedawn/rust-port/Cargo.toml -- --check
+          cargo clippy --locked --manifest-path engines/takedawn/rust-port/Cargo.toml --all-targets -- -D warnings
+      - name: Check preserved streaming instruction oracle on the native runner
+        if: runner.os == 'Linux'
+        run: |
+          lscpu
+          cargo test --locked --release --manifest-path engines/takedawn/native-gen/Cargo.toml --test streaming
+      - name: Verify Windows CMake argument normalization
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p target
+          rustc --edition=2021 -Dwarnings --test engines/takedawn/rust-port/build-windows-runtime.rs -o target/takedawn-windows-paths
+          target/takedawn-windows-paths
+      - name: Verify driving input and prompts against original mapping
+        if: runner.os == 'Linux'
+        run: python3 tools/check_takedawn_input_glyphs.py
+      - name: Check pinned source and Crash Results driver guards
+        if: runner.os == 'Linux'
+        run: |
+          python3 tests/ci_download_test.py
+          python3 tests/takedawn_thread_priority_source_test.py
+          python3 tests/takedawn_crash_results_driver_test.py
+      - name: Check HUD and reference-frame auditor acceptance and rejection cases
+        if: runner.os == 'Linux'
+        run: |
+          python3 tests/takedawn_hud_scaling_test.py
+          python3 tests/takedawn_frame_region_test.py
+      - name: Check native argument precedence and 3x UI scaling
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          fixture_kit=$(mktemp -d)
+          tar -xzf ports/takedawn/assets/takedawn-source-kit.tar.gz -C "$fixture_kit" toolkit
+          python3 tools/check_takedawn_presentation_defaults.py --toolkit "$fixture_kit/toolkit" --cc cc --sanitize
+          python3 tools/check_takedawn_ui_scaling.py --toolkit "$fixture_kit/toolkit" --cc cc
+          python3 tools/check_takedawn_vertex_perspective.py --toolkit "$fixture_kit/toolkit" --cc cc
+          python3 tools/check_takedawn_rt_hash.py --toolkit "$fixture_kit/toolkit" --cc cc
+      - name: Verify fullscreen shortcut without an overlay
+        if: runner.os == 'Linux'
+        run: |
+          bash tools/ci_ubuntu_apt.sh update
+          bash tools/ci_ubuntu_apt.sh install -y libsdl2-dev
+          cc -Wall -Wextra -Werror -Iengines/takedawn/media-bridge engines/takedawn/media-bridge/tests/fullscreen_hotkey.c -o target/fullscreen-shortcut $(sdl2-config --cflags --libs)
+          SDL_VIDEODRIVER=dummy target/fullscreen-shortcut
+      - name: Install 32-bit input regression prerequisites
+        if: runner.os == 'Linux'
+        run: |
+          bash tools/ci_ubuntu_apt.sh update
+          bash tools/ci_ubuntu_apt.sh install -y gcc-multilib libc6-dev-i386
+      - name: Execute driving input and prompts as real ELF32
+        if: runner.os == 'Linux'
+        run: python3 tools/check_takedawn_input_glyphs.py --m32
+
+  native-critical-sections:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@1.89.0
+      - uses: actions/checkout@v4
+        with:
+          repository: xenophobentx/xboxrecomp
+          ref: 5ae8ad90d984425e834dee759592c15592679880
+          path: target/irq-kernel-reference
+          persist-credentials: false
+      - name: Install native IRQ fixture prerequisites
+        run: bash tools/ci_ubuntu_apt.sh update && bash tools/ci_ubuntu_apt.sh install -y cmake ninja-build libssl-dev libsdl2-dev libepoxy-dev
+      - name: Verify real kernel masking, native Rust bindings and rejected mutations
+        run: python3 tools/check_takedawn_native_privileged.py --toolkit target/irq-kernel-reference --without-vulkan
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-critical-section-evidence
+          path: |
+            /tmp/gamepkg-native-privileged.*/*.log
+            /tmp/gamepkg-native-privileged.*/*.json
+          retention-days: 3
+
+  native-kick-handoffs:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: xenophobentx/xboxrecomp
+          ref: 5ae8ad90d984425e834dee759592c15592679880
+          path: target/kick-kernel-reference
+          persist-credentials: false
+      - name: Install 32-bit ordering and Windows fixture compilers
+        run: |
+          bash tools/ci_ubuntu_apt.sh update
+          bash tools/ci_ubuntu_apt.sh install -y cmake clang-18 gcc-multilib libc6-dev-i386 gcc-mingw-w64-x86-64
+      - name: Check pinned overlays, acknowledgement ordering and both pointer widths
+        run: |
+          mkdir -p target/kick-fixture
+          python3 tools/check_takedawn_kick_handoff.py --toolkit target/kick-kernel-reference --windows-output target/kick-fixture > target/kick-fixture/portable-checks.json
+          python3 tools/check_takedawn_trace_policy.py --toolkit target/kick-kernel-reference --cc clang-18 > target/kick-fixture/trace-policy-checks.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-kick-handoff-fixture
+          path: |
+            target/kick-fixture/*.exe
+            target/kick-fixture/portable-checks.json
+            target/kick-fixture/trace-policy-checks.json
+          retention-days: 3
+
+  native-kick-handoffs-windows:
+    needs: native-kick-handoffs
+    runs-on: windows-2022
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-kick-handoff-fixture
+          path: target/kick-fixture
+      - name: Exercise native event ordering and timer failure fallbacks
+        shell: pwsh
+        run: |
+          foreach ($mode in @('0', '1', '2', '3')) {
+            & .\target\kick-fixture\takedawn-kick-wake-fixture.exe $mode
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }

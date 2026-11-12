@@ -1,0 +1,46 @@
+{
+  "generator": "tools/build_kenney_prompts.py",
+  "license": "CC0-1.0",
+  "families": [
+    0,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    9,
+    10,
+    13,
+    14
+  ],
+  "unique_images": 128,
+  "factors": [
+    1,
+    2,
+    3,
+    4
+  ],
+  "sources": {
+    "prompt_art.c": {
+      "sha256": "5a7c5274e92a09aec5614e094bda9b361be1253dab2221fa06375dd111ba5c5d",
+      "bytes": 8159
+    },
+    "prompt_art_1x.c": {
+      "sha256": "032c8f1926ed6fd2813a20a63e43d135ebf712985dc2a26a1625bcf7b6454ab3",
+      "bytes": 1190578
+    },
+    "prompt_art_2x.c": {
+      "sha256": "e6ebc8918adc964903fd59749ab4a9ec3d204ee8064ca6b0416e9b703a42ccef",
+      "bytes": 3206173
+    },
+    "prompt_art_3x.c": {
+      "sha256": "1f0a0987e89707dde0435854054788ae948770086008cb954d0ff30592324412",
+      "bytes": 5374520
+    },
+    "prompt_art_4x.c": {
+      "sha256": "7a2e45bdf7982159735cc1186adbc0aa2c2802d2a75bd191ef266deff3388c31",
+      "bytes": 7387578
+    }
+  }
+}

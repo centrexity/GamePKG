@@ -203,6 +203,7 @@ fn extract(file: &Path, destination: &Path, root: &str, zip: bool) -> Result<()>
     };
     if zip {
         let mut archive = zip::ZipArchive::new(fs::File::open(file)?)?;
+        archive.validate_header_consistency()?;
         for index in 0..archive.len() {
             let mut entry = archive.by_index(index)?;
             let kind = entry.unix_mode().unwrap_or(0) & 0o170000;
@@ -210,7 +211,7 @@ fn extract(file: &Path, destination: &Path, root: &str, zip: bool) -> Result<()>
                 matches!(kind, 0 | 0o100000 | 0o040000),
                 "Release archive contains a link or special file"
             );
-            let path = PathBuf::from(entry.name());
+            let path = PathBuf::from(entry.name()?.as_ref());
             copy(&path, entry.size(), entry.is_dir(), &mut entry)?;
         }
     } else {

@@ -138,3 +138,69 @@ fn homepage_requests_use_only_declared_urls_fresh_gestures_and_successful_ticks(
         assert!(game.take_homepage_url().is_none());
     }
 }
+
+#[test]
+fn resolution_commands_are_transactional_in_core_and_component_runtimes() {
+    for component in [false, true] {
+        let mut m = manifest(true);
+        let (namespace, operation, entry) = if component {
+            m.runtime_profile = "component-v1".into();
+            ("gamepkg:engine/host@0.1.0", "window-control", "tick")
+        } else {
+            ("gamepkg", "window_control", "gamepkg_tick")
+        };
+        let module=wat::parse_str(format!(r#"(module
+(import "{namespace}" "{operation}" (func $request(param i32 i32)(result i32)))
+(memory(export "memory")1)
+(func(export "{entry}")(param $input i32)(param i64)(result i64)
+(if(i32.eq(local.get $input)(i32.const 16))(then(drop(call $request(i32.const 5)(i32.const 47187200)))unreachable))
+(if(i32.eq(local.get $input)(i32.const 32))(then(return(i64.extend_i32_u(call $request(i32.const 8)(i32.const 0))))))
+(if(i32.eq(local.get $input)(i32.const 64))(then(loop $spin(drop(call $request(i32.const 8)(i32.const 0)))br $spin)))
+(if(i32.eq(local.get $input)(i32.const 4))(then(return(i64.extend_i32_u(call $request(i32.const 7)(i32.const 0))))))
+(if(i32.eq(local.get $input)(i32.const 8))(then(return(i64.extend_i32_u(call $request(i32.const 6)(i32.const 0))))))
+(i64.extend_i32_u(call $request(i32.const 5)(i32.const 47187200)))))"#)).unwrap();
+        let bytes = if component {
+            gamepkg::hostapi::componentize(module).unwrap()
+        } else {
+            module
+        };
+        let mut denied_manifest = m.clone();
+        denied_manifest.permissions.input = false;
+        let mut denied = Game::from_bytes(&bytes, &denied_manifest).unwrap();
+        denied.observe_window_size(Some([960, 720]));
+        denied.observe_fullscreen(Some(false));
+        assert_eq!(denied.step(1).unwrap(), 0);
+        assert_eq!(denied.window_state(), State::default());
+        let mut game = Game::from_bytes(&bytes, &m).unwrap();
+        game.observe_window_size(Some([960, 720]));
+        game.observe_fullscreen(Some(false));
+        assert_eq!(game.step(0).unwrap(), 0);
+        assert!(game.step(16).is_err());
+        assert_eq!(game.window_state(), State::default());
+        // A trapped component instance cannot be entered again; verify rollback
+        // on that instance and use a fresh one for the successful command flow.
+        let mut game = Game::from_bytes(&bytes, &m).unwrap();
+        game.observe_window_size(Some([960, 720]));
+        game.observe_fullscreen(Some(false));
+        assert_eq!(game.step(32).unwrap(), 0);
+        assert_eq!(game.step(1).unwrap(), 1);
+        assert_eq!(game.window_state().resize, Some([1280, 720]));
+        assert_eq!(game.step(32).unwrap(), 1);
+        assert_eq!(game.step(8).unwrap(), 1);
+        assert_eq!(game.window_state().resize, Some([960, 720]));
+        assert_eq!(game.step(32).unwrap(), 0);
+        assert_eq!(game.step(1).unwrap(), 1);
+        assert_eq!(game.step(4).unwrap(), 1);
+        assert!(game.window_state().resize_origin.is_none());
+        assert_eq!(game.step(32).unwrap(), 0);
+        for _ in 0..302 {
+            game.step(0).unwrap();
+        }
+        assert_eq!(game.window_state().resize, Some([1280, 720]));
+        let mut deadline = Game::from_bytes(&bytes, &m).unwrap();
+        assert!(
+            deadline.step(64).is_err(),
+            "preview queries bypassed the tick deadline"
+        );
+    }
+}

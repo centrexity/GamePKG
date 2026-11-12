@@ -245,7 +245,13 @@ fn ensure_source(root: &Path, engine: &Engine) -> Result<PathBuf> {
             fs::create_dir_all(parent)?;
         }
         let clone = Command::new("git")
-            .args(["clone", "--no-tags", engine.clone_url.as_str()])
+            .args([
+                "clone",
+                "--config",
+                "core.autocrlf=false",
+                "--no-tags",
+                engine.clone_url.as_str(),
+            ])
             .arg(&source)
             .status()
             .context("git clone external engine")?;
@@ -331,6 +337,7 @@ fn later_patch_is_applied(
 
 fn git_apply(source: &Path, patch: &Path, args: &[&str]) -> Result<bool> {
     Ok(Command::new("git")
+        .args(["-c", "core.autocrlf=false"])
         .arg("-C")
         .arg(source)
         .args(args)
@@ -778,7 +785,23 @@ mod tests {
             .status()
             .unwrap()
             .success());
+        // Keep this byte-sensitive patch fixture independent of the user's Git defaults.
+        assert!(Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args(["config", "core.autocrlf", "false"])
+            .status()
+            .unwrap()
+            .success());
         commit_file(root, "note.txt", "base\n");
+        // Applying reviewed patches must preserve LF even with Windows Git defaults.
+        assert!(Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args(["config", "core.autocrlf", "true"])
+            .status()
+            .unwrap()
+            .success());
         let first = "\
 diff --git a/note.txt b/note.txt
 --- a/note.txt
@@ -834,6 +857,7 @@ diff --git a/note.txt b/note.txt
 
     #[cfg(target_os = "linux")]
     #[test]
+    #[ignore = "requires Bubblewrap, prlimit and Linux network namespace privileges"]
     fn sandbox_caps_address_space_drops_network_and_keeps_the_root_read_only() {
         let runtime = tempfile::tempdir().unwrap();
         let probe = runtime.path().join("probe");

@@ -1,6 +1,8 @@
 """Exercise the extracted Windows host distribution on a Windows runner."""
-import argparse,hashlib,json,os,platform,subprocess,tempfile,zipfile
+import argparse,hashlib,json,os,platform,subprocess,sys,tempfile,zipfile
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
+from windows_pe_imports import require_standalone_crt
 p=argparse.ArgumentParser(description=__doc__);p.add_argument('archive',type=Path);args=p.parse_args()
 assert platform.system()=='Windows','Run this test on Windows'
 archive=args.archive.resolve();checksum=archive.with_suffix(archive.suffix+'.sha256').read_text().split()[0]
@@ -17,6 +19,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-windows-package-') as directory
   r=subprocess.run([str(distribution/'bin'/exe),*map(str,args)],env=env,capture_output=True,text=True,timeout=30);assert r.returncode==0,r.stderr;return r.stdout
  for exe,digest in metadata['executables_sha256'].items():
   assert hashlib.sha256((distribution/'bin'/exe).read_bytes()).hexdigest()==digest
+  require_standalone_crt(distribution/'bin'/exe)
   assert metadata['version'] in run(exe,'--version')
  key=root/'creator.key';package=root/'example.gamepkg'
  run('gamepkg.exe','keygen','-o',key);run('gamepkg.exe','pack',distribution/'examples/good/collect-stars','-o',package,'--key',key)

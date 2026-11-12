@@ -1,0 +1,56 @@
+name: Verified optional WSL compatibility setup
+on:
+  push:
+    paths:
+      - 'tools/install_wsl_ci.ps1'
+      - 'tools/setup_wsl_ci.sh'
+      - 'tests/install_wsl_ci.ps1'
+      - '.github/workflows/wsl_setup.yml'
+      - '.github/workflows/portable.yml'
+  pull_request:
+    paths:
+      - 'tools/install_wsl_ci.ps1'
+      - 'tools/setup_wsl_ci.sh'
+      - 'tests/install_wsl_ci.ps1'
+      - '.github/workflows/wsl_setup.yml'
+      - '.github/workflows/portable.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: wsl-setup-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  setup:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify download admission and rejection
+        shell: pwsh
+        run: ./tests/install_wsl_ci.ps1
+      - name: Install verified WSL runtime and Ubuntu image
+        shell: pwsh
+        run: ./tools/install_wsl_ci.ps1
+      - name: Configure the existing disposable WSL 2 distribution
+        uses: Vampire/setup-wsl@d1da7f2c0322a5ee4f24975344f67fc0f5baf364 # v7.0.0
+        with:
+          distribution: Ubuntu-24.04
+          wsl-version: '2'
+          additional-packages: bubblewrap curl ca-certificates python3
+          wsl-conf: |
+            [user]
+            default=root
+            [interop]
+            enabled=false
+            appendWindowsPath=false
+      - name: Verify actual WSL 2 namespace isolation and required tools
+        shell: wsl-bash_Ubuntu-24.04 {0}
+        run: |
+          test "$(id -u)" = 0
+          . /etc/os-release
+          test "$VERSION_ID" = 24.04
+          uname -r | grep -i microsoft-standard-WSL2
+          command -v curl
+          command -v python3
+          bwrap --unshare-net --ro-bind / / /bin/true

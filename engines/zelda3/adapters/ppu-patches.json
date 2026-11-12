@@ -1,0 +1,23 @@
+{
+  "file": "snes/ppu.c",
+  "before": "addr[0] | addr[8] << 16",
+  "after": "((uint32)addr[0] | ((uint32)addr[8] << 16))",
+  "count": 3,
+  "unsigned_masks": {
+    "before": "0x01010101 << i",
+    "after": "0x01010101u << i",
+    "count": 1
+  },
+  "mosaic_spans": [
+    {
+      "before": "ppu->mosaicSize - (sx - ppu->mosaicModulo[sx])",
+      "after": "ppu->mosaicSize - ((sx % ppu->mosaicSize + ppu->mosaicSize) % ppu->mosaicSize)",
+      "count": 2
+    },
+    {
+      "before": "ppu->mosaicSize - (x - ppu->mosaicModulo[x])",
+      "after": "ppu->mosaicSize - ((x % ppu->mosaicSize + ppu->mosaicSize) % ppu->mosaicSize)",
+      "count": 1
+    }
+  ]
+}

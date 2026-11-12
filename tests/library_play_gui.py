@@ -17,7 +17,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-library-play-') as directory:
     app=subprocess.Popen([str(project/'target/release/gamepkg-gui')],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
     try:
         for _ in range(100):
-            found=subprocess.run(['xdotool','search','--onlyvisible','--name','^GamePKG$'],env=env,capture_output=True,text=True)
+            found=subprocess.run(['xdotool','search','--onlyvisible','--name','^GamePKG [0-9]+[.][0-9]+[.][0-9]+([-+][A-Za-z0-9.-]+)?$'],env=env,capture_output=True,text=True)
             if found.returncode==0:break
             if app.poll() is not None:raise RuntimeError(app.stderr.read().decode())
             time.sleep(.1)
@@ -64,6 +64,13 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-library-play-') as directory:
         def click_word(words, label):
             word=next(word for word in words if word['text'].strip('[](){}|')==label or (label=='Back' and word['text'].strip('[](){}|').startswith('Back')))
             subprocess.run(['xdotool','mousemove','--window',window,str(int(word['left'])+int(word['width'])//2),str(int(word['top'])+int(word['height'])//2),'click','1'],env=env,check=True)
+        def back_to_library():
+            # The Back control is above the current game/Add-page scroll position.
+            # Reveal it before asking OCR to locate and click the actual button.
+            subprocess.run(['xdotool','mousemove','--window',window,'400','800','click','--repeat','20','--delay','30','4'],env=env,check=True)
+            time.sleep(.2)
+            click_text(window,env,'Back to library',root)
+            time.sleep(.2)
         def enter_source(words, source):
             click_text(window,env,'Add',root)
             time.sleep(.2)
@@ -109,15 +116,12 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-library-play-') as directory:
         window=library_window
         text,words=wait_screen(lambda text:'Rebuild' in text and 'Score:' not in text,'library-returned.png',20)
         assert 'Storage' in text and 'Played' in text, text
-        point=click_text(window,env,'First star',root,click=False)
-        subprocess.run(['xdotool','mousemove','--window',window,str(point[0]),str(point[1]),'click','4'],env=env,check=True)
-        time.sleep(.2)
+        click_text(window,env,'First star',root,click=False)
         text,words=read_screen('library-first-achievement.png')
         assert 'First star' in text and 'Unlocked' in text,text
-        # The achievement list is independently scrollable inside the game page.
-        # Hover its visible first row to reveal the second row without scrolling
-        # the outer page past the list.
-        subprocess.run(['xdotool','click','--repeat','3','--delay','100','5'],env=env,check=True)
+        # Achievements share the game page's single scroll area. Locate each
+        # row and then return to the actual top-level Rebuild control.
+        click_text(window,env,'Star collector',root,click=False)
         text,words=wait_screen(lambda text:'Star collector' in text,'library-achievements.png',20)
         assert 'Locked' in text,text
         import json
@@ -126,24 +130,28 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-library-play-') as directory:
         history=json.loads(records[0].read_text())
         assert history['played_ms'] >= 1000
         assert set(history['unlocked']) == {'first_star'}, history
-        click_word(words,'Rebuild')
-        wait_screen(lambda text:'Native build ready to play.' in text,'library-rebuilt.png')
+        # Achievement checks scroll this same page. Reveal the action row
+        # before asking OCR to locate the complete Rebuild label.
+        subprocess.run(['xdotool','mousemove','--window',window,'400','800','click','--repeat','20','--delay','30','4'],env=env,check=True)
+        time.sleep(.2)
+        click_text(window,env,'Rebuild',root)
+        wait_screen(lambda text:'Native build complete. Ready to play.' in text,'library-rebuilt.png')
         assert len(list((library/'builds').glob('*/native-v1-*/game')))==1
         text,words=read_screen('library-before-catalog.png')
-        click_word(words,'Back')
+        back_to_library()
         text,words=read_screen('library-catalog-source.png')
         catalog=root/'games.gamepkglist'
         catalog.write_text("format_version = 1\n[[games]]\nid = 'com.example.offline'\ntitle = 'Offline Catalog Game'\nversion = '2.0.0'\ndownload_url = 'https://unreachable.invalid/game.gamepkg'\nrequires_rom = true\n")
         words=enter_source(words,catalog)
-        click_word(words,'Import')
+        click_text(window,env,'Import .gamepkglist',root)
         wait_screen(lambda text:'No game packages downloaded' in text,'add-catalog-imported.png',20)
-        click_text(window,env,'Back to library',root)
-        text,words=wait_screen(lambda text:'Not downloaded' in text and 'No game packages downloaded' in text,'library-catalog-imported.png',20)
+        back_to_library()
+        text,words=wait_screen(lambda text:'Offline Catalog Game' in text and 'No game packages downloaded' in text,'library-catalog-imported.png',20)
         click_word(words,'Offline')
         text,words=wait_screen(lambda text:'Back to library' in text and 'Catalog information is unverified' in text,'game-catalog-page.png',20)
         assert 'Requires your own ROM' in text, text
         assert 'com.gamepkg.collect-stars' not in text and 'Import .gamepkglist' not in text, text
-        click_word(words,'Back')
+        back_to_library()
         text,words=wait_screen(lambda text:'Offline Catalog Game' in text and 'com.gamepkg.collect-stars' in text,'game-page-return-to-library.png',20)
         click_text(window,env,'Collect Stars',root)
         # Reopening a game preserves its detail scroll position. Return that
