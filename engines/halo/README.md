@@ -12,7 +12,7 @@ The reader validates directory links, names, duplicate entries and extent bounds
 
 Patch `0014` extends that read-only view to the original `bink` directory and restores prerecorded movies on the reviewed Linux target. A minimal, pinned FFmpeg decoder reads bounded ranges through the same disc descriptor. Video and decoded audio stay in memory. The original game renders the frames; SDL3 supplies timed audio through the selected device. Movie audio follows the app's mute/volume settings, and skipping or closing a movie releases its decoder and audio stream. Legacy targets keep their original backend. An existing maps-only folder can still play maps, but cannot supply disc movies that it does not contain.
 
-The bridge uses the native compiler/library ABI in its own translation unit. It preserves the game's floating-point environment, starts timing after the first frame is submitted, presents the final frame, and carries fractional audio samples across loops. All five Rev 2 movies matched independent decoded-video hashes locally; the complete intro also played through the normal GamePKG launch on the private RTX 3090 display. This does not establish a complete campaign playthrough or subjective audio quality. See [the decoder notices](FFMPEG-NOTICE.md).
+The bridge uses the native compiler/library ABI in its own translation unit. It preserves the game's floating-point environment, starts timing after the first frame is submitted, presents the final frame, and carries fractional audio samples across loops. All five Rev 2 movies matched separate reference decodes for video and trimmed, interleaved stereo PCM samples locally; the complete intro also played through the normal GamePKG launch on the private RTX 3090 display. This does not establish a complete campaign playthrough or subjective audio quality. See [the decoder notices](FFMPEG-NOTICE.md).
 
 ## Native targets
 
@@ -28,7 +28,7 @@ The signed selector requests networking. An offline selector can omit that permi
 
 Two native GPU-backed processes passed the upstream local-network comparison across all 13 original multiplayer maps in both hosting roles. A longer `a30` co-op comparison covered 184 jointly active seconds in each hosting role without relaxed thresholds. All ten campaign levels reached their active loop in loading checks. These checks do not qualify full campaign progression, internet traversal, or physical-controller behavior; the automated `a10` intro/cryopod bot scenario remained inconclusive.
 
-Co-op remains under investigation: one current cross-build role exceeded the position comparator while its movement-drift check passed; the reverse hosting role passed. This preview does not claim complete co-op qualification. The original comparison thresholds remain unchanged.
+The movie-enabled build passed a matched Clang 18/SDL comparison for 124 jointly active seconds in each co-op hosting role. An earlier comparison mixing Clang 21 and Clang 18 game/SDL builds exceeded the position comparator in one role while its movement-drift check passed; the reverse role passed. Holding SDL identical also passed both roles. Mixed-build interoperability remains under investigation, so this preview does not claim complete co-op qualification. The original comparison thresholds remain unchanged.
 
 ## Build integrity and remaining work
 
