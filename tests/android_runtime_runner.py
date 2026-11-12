@@ -30,6 +30,15 @@ class AndroidRunnerTests(unittest.TestCase):
         self.publication = self.root / "library-control"
         self.publication.write_text("#!/bin/sh\nexit 0\n")
         self.publication.chmod(0o755)
+        self.artifacts = self.root / "android-tests.json"
+        self.records = [dict(reason="compiler-artifact", profile=dict(test=True),
+                             target=dict(name=name, kind=["test"]),
+                             executable=str(binaries / (name + "-control")))
+                        for name in sorted(self.compiled)]
+        self.records.append(dict(reason="compiler-artifact", profile=dict(test=True),
+                                 target=dict(name="gamepkg", kind=["lib"]),
+                                 executable=str(self.publication)))
+        self.save_artifacts()
         self.log = self.root / "adb.jsonl"
         adb = self.root / "fake-adb"
         adb.write_text('''#!/usr/bin/python3
@@ -48,13 +57,16 @@ elif '--test-threads=1' in args[3] and os.environ.get('CONTROL_FAIL_SUITE'):
         self.environment = dict(os.environ, ADB=str(adb), CONTROL_ADB_LOG=str(self.log))
         self.environment.pop("CONTROL_FAIL_SUITE", None)
 
+    def save_artifacts(self):
+        self.artifacts.write_text("".join(json.dumps(record) + "\n" for record in self.records))
+
     def run_runner(self):
         result = subprocess.run(
             ["bash", str(PROJECT / "tools/test_android_runtime.sh"),
-             "owned-control-device", "i686-linux-android", str(self.publication)],
+             "owned-control-device", "i686-linux-android", str(self.artifacts)],
             cwd=self.root, env=self.environment, capture_output=True, text=True, timeout=10,
         )
-        calls = [json.loads(line) for line in self.log.read_text().splitlines()]
+        calls = [json.loads(line) for line in self.log.read_text().splitlines()] if self.log.exists() else []
         suites = []
         publication = []
         for args in calls:
@@ -71,6 +83,44 @@ elif '--test-threads=1' in args[3] and os.environ.get('CONTROL_FAIL_SUITE'):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertCountEqual(suites, self.compiled)
         self.assertEqual(len(publication), 1)
+
+    def test_compiler_paths_override_default_folder_and_host_permissions(self):
+        destination = self.root / "custom build output"
+        destination.mkdir()
+        for record in self.records:
+            original = Path(record["executable"])
+            moved = destination / original.name
+            original.rename(moved)
+            moved.chmod(0o644)
+            record["executable"] = str(moved)
+        self.save_artifacts()
+        result, suites, publication = self.run_runner()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertCountEqual(suites, self.compiled)
+        self.assertEqual(len(publication), 1)
+
+    def test_ambiguous_suite_cannot_run(self):
+        record = dict(self.records[0])
+        record["executable"] += "-other"
+        Path(record["executable"]).write_text("control")
+        self.records.append(record)
+        self.save_artifacts()
+        result, suites, publication = self.run_runner()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("expected exactly one", result.stderr)
+        self.assertEqual((suites, publication), ([], []))
+
+    def test_missing_library_cannot_run_partial_qualification(self):
+        self.publication.unlink()
+        result, suites, publication = self.run_runner()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual((suites, publication), ([], []))
+
+    def test_invalid_manifest_cannot_run(self):
+        self.artifacts.write_text("not JSON\n")
+        result, suites, publication = self.run_runner()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual((suites, publication), ([], []))
 
     def test_suite_failure_stops_before_publication(self):
         self.environment["CONTROL_FAIL_SUITE"] = "render_resources"
