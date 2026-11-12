@@ -778,6 +778,14 @@ mod tests {
             .status()
             .unwrap()
             .success());
+        // Keep this byte-sensitive patch fixture independent of the user's Git defaults.
+        assert!(Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args(["config", "core.autocrlf", "false"])
+            .status()
+            .unwrap()
+            .success());
         commit_file(root, "note.txt", "base\n");
         let first = "\
 diff --git a/note.txt b/note.txt
