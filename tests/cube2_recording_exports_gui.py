@@ -3,6 +3,7 @@ from pathlib import Path
 import argparse,gzip,hashlib,os,struct,subprocess,tempfile,time,tomllib,zipfile
 from gui_test_support import start_display,game_window,click_text,choose_native_file
 PROJECT=Path(__file__).resolve().parents[1]
+BIN=Path(os.environ.get('GAMEPKG_TEST_BINARY_DIR', PROJECT/'target/release'))
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--ui-scale',type=int,choices=[100,150],default=100)
 options=parser.parse_args()
@@ -12,7 +13,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-recording-gui-') as temporary:
     env=dict(os.environ,GAMEPKG_HOME=str(library),GAMEPKG_CONFIG=str(config),OMP_THREAD_LIMIT='1',LIBGL_ALWAYS_SOFTWARE='1',LP_NUM_THREADS='2',DBUS_SESSION_BUS_ADDRESS='unix:path=/tmp/gamepkg-no-session-bus')
     env.pop('WAYLAND_DISPLAY',None)
     def cli(*args):
-        result=subprocess.run([str(PROJECT/'target/release/gamepkg'),*map(str,args)],env=env,capture_output=True,text=True,timeout=30)
+        result=subprocess.run([str(BIN/'gamepkg'),*map(str,args)],env=env,capture_output=True,text=True,timeout=30)
         assert result.returncode==0,(args,result.stdout,result.stderr)
     package=root/'test.gamepkg';cli('pack',PROJECT/'ports/cube2','-o',package,'--key',key);cli('install',package,'--trust-creator')
     with zipfile.ZipFile(package) as archive:manifest=tomllib.loads(archive.read('manifest.toml').decode())
@@ -24,7 +25,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-recording-gui-') as temporary:
     original=b'GPS2'+struct.pack('<3I',2,len(payload),0)+payload;save.write_bytes(original)
     server=start_display(env,1600,1050);app=None
     try:
-        app=subprocess.Popen([str(PROJECT/'target/release/gamepkg-gui')],env=env,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
+        app=subprocess.Popen([str(BIN/'gamepkg-gui')],env=env,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
         window,_=game_window(env,'GamePKG')
         subprocess.run(['xdotool','windowsize',window,'1450','980','windowfocus',window],env=env,check=True)
         time.sleep(.5);click_text(window,env,'Cube',root)
