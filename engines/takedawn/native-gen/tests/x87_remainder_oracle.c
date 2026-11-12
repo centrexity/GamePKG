@@ -119,6 +119,19 @@ static void one(GamePkgExt80 a, GamePkgExt80 b, unsigned cw, unsigned top,
     s.tags |= (uint16_t)(tag << (2 * p));
     put80(input.b + 32 + 16 * i, v);
   }
+  /* A finite subnormal modulo infinity is the same exact remainder as
+   * modulo one: quotient zero, original dividend. Modern Intel's infinity
+   * shortcut skips the normalizing/wrapped-underflow response observed on
+   * the selected normalization profile. Use the equivalent finite divisor for this
+   * identity, then restore untouched ST1 in the reference image. This keeps
+   * full physical value/exception/fault checking without consulting runtime. */
+  unsigned infinity_identity =
+      !empty && !(a.sign_exponent & 0x7fff) && a.significand &&
+      !(a.significand >> 63) && (b.sign_exponent & 0x7fff) == 0x7fff &&
+      b.significand == UINT64_C(0x8000000000000000);
+  if (infinity_identity)
+    put80(input.b + 48,
+          (GamePkgExt80){UINT64_C(0x8000000000000000), 0x3fff});
   __asm__ volatile("fxrstor %0" ::"m"(input) : FX_CLOBBERS);
   if (nearest)
     __asm__ volatile("fprem1" ::: "memory");
@@ -126,6 +139,32 @@ static void one(GamePkgExt80 a, GamePkgExt80 b, unsigned cw, unsigned top,
     __asm__ volatile("fprem" ::: "memory");
   __asm__ volatile("fxsave %0" : "=m"(after)::"memory");
   __asm__ volatile("fxrstor %0" ::"m"(old) : FX_CLOBBERS);
+  if (infinity_identity) {
+    /* Independently verify the identity's complete arithmetic response, not
+     * only that two implementations agree on a changed divisor. */
+    GamePkgExt80 exact = a;
+    unsigned status = s.status & ~0x600u;
+    status |= 2u;
+    if (!(cw & 2u)) {
+      status |= 0x8080u;
+    } else {
+      status &= ~0x4700u;
+      if (!(cw & 16u)) {
+        int exponent = 1;
+        while (!(exact.significand >> 63)) {
+          exact.significand <<= 1;
+          --exponent;
+        }
+        exact.sign_exponent = (uint16_t)((a.sign_exponent & 0x8000u) |
+                                         (unsigned)(exponent + 24576));
+        status |= 0x8090u;
+      }
+    }
+    assert(rd(after.b + 2) == status);
+    assert(get64(after.b + 32) == exact.significand);
+    assert(rd(after.b + 40) == exact.sign_exponent);
+    put80(after.b + 48, b);
+  }
   *gamepkg_x86_x87_state() = s;
   softfloat_roundingMode = softfloat_round_odd;
   softfloat_detectTininess = softfloat_tininess_beforeRounding;
@@ -141,7 +180,7 @@ static void one(GamePkgExt80 a, GamePkgExt80 b, unsigned cw, unsigned top,
   unsigned sw = rd(after.b + 2), valid = 0;
   if (z->status != sw) {
     fprintf(stderr,
-            "scale case%u cw%x top%u empty%u a%04x:%016llx b%04x:%016llx sw "
+            "remainder case%u cw%x top%u empty%u a%04x:%016llx b%04x:%016llx sw "
             "got%04x expected%04x\n",
             cases, cw, top, empty, a.sign_exponent,
             (unsigned long long)a.significand, b.sign_exponent,
@@ -154,7 +193,7 @@ static void one(GamePkgExt80 a, GamePkgExt80 b, unsigned cw, unsigned top,
     unsigned se = rd(after.b + 40 + 16 * i);
     if (z->significand[p] != sig || z->sign_exponent[p] != se) {
       fprintf(stderr,
-              "scale case%u cw%x p%u a%04x:%016llx b%04x:%016llx value "
+              "remainder case%u cw%x p%u a%04x:%016llx b%04x:%016llx value "
               "got%04x:%016llx expected%04x:%016llx sw%x\n",
               cases, cw, p, a.sign_exponent, (unsigned long long)a.significand,
               b.sign_exponent, (unsigned long long)b.significand,

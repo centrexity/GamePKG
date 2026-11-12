@@ -6282,3 +6282,15 @@ state corpora on the same AMD host. Negative controls reject both the old
 approximation-only reference and replacing the production exact-power path
 with the approximation table. Runtime sources and the current v16 native game
 package are unchanged. Hosted cross-CPU validation remains pending.
+
+### Remainder reference across host CPUs
+
+A finite subnormal dividend modulo infinity has quotient zero and an exact
+remainder equal to the dividend. Modern Intel hardware shortcuts this case and
+can omit the wrapped unmasked underflow response of the selected normalization
+profile. The synthetic reference evaluates the equivalent dividend modulo one
+for this identity, restores the untouched infinite divisor, and independently
+checks the exact dividend/wrapped value and complete exception priority/status.
+All other cases retain the original hardware reference. The runtime is unchanged;
+value, tags, status, metadata, and deferred-fault comparisons remain exact. This
+is profile qualification, not a claim of physical original-Xbox CPU validation.
