@@ -303,11 +303,18 @@ fn normalized(path: &Path) -> Result<PathBuf> {
 }
 
 fn archive_link(parent: &Path, link: &Path) -> Result<PathBuf> {
-    if !link.is_absolute() {
+    // Dependency archives use POSIX paths even on a Windows host. In
+    // particular, Windows considers /lib rooted but not fully absolute.
+    let spelling = link.to_str().context("archive link is not UTF-8")?;
+    ensure!(
+        !spelling.is_empty() && spelling.len() <= 4096 && !spelling.contains(['\\', ':', '\0']),
+        "invalid archive link"
+    );
+    let Some(target) = spelling.strip_prefix('/') else {
         normalized(&parent.join(link))?;
         return Ok(link.to_owned());
-    }
-    let target = normalized(link.strip_prefix("/")?)?;
+    };
+    let target = normalized(Path::new(target))?;
     let a: Vec<_> = parent.components().collect();
     let b: Vec<_> = target.components().collect();
     let common = a.iter().zip(&b).take_while(|(a, b)| a == b).count();
@@ -844,7 +851,30 @@ mod tests {
             ["one.o", "saved games/two.o", "three four.o"]
         );
         assert!(response_words("'unclosed").is_err());
-        assert!(archive_link(Path::new("lib"), Path::new("../../outside")).is_err());
+        for link in [
+            "",
+            "../../outside",
+            "C:/outside",
+            "C:outside",
+            r"\outside",
+            r"\\server\share",
+            "//server/share",
+            "/../outside",
+            "bad\0name",
+        ] {
+            assert!(
+                archive_link(Path::new("lib"), Path::new(link)).is_err(),
+                "{link:?}"
+            );
+        }
+        assert_eq!(
+            archive_link(
+                Path::new("lib/abi"),
+                Path::new("../saved games/object.so.1")
+            )
+            .unwrap(),
+            Path::new("../saved games/object.so.1")
+        );
         assert_eq!(
             archive_link(Path::new("lib/abi"), Path::new("/lib/abi/object.so.1")).unwrap(),
             Path::new("object.so.1")
