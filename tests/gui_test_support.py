@@ -248,7 +248,7 @@ def game_window(env, game_id, timeout=20):
     import re
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        found = subprocess.run(['xdotool', 'search', '--onlyvisible', '--name', '^'+re.escape(game_id)+'$'], env=env, capture_output=True, text=True)
+        found = subprocess.run(['xdotool', 'search', '--onlyvisible', '--name', ('^GamePKG [0-9]+\\.[0-9]+\\.[0-9]+([-+][A-Za-z0-9.-]+)?$' if game_id == 'GamePKG' else '^'+re.escape(game_id)+'$')], env=env, capture_output=True, text=True)
         if found.returncode == 0:
             window = found.stdout.splitlines()[0]
             pid = int(subprocess.check_output(['xdotool', 'getwindowpid', window], env=env, text=True))

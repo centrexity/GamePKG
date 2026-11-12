@@ -95,7 +95,11 @@ impl Game {
             !matches!(
                 manifest.builtin_engine.as_deref(),
                 Some(crate::cube2::PROFILE) | Some(crate::takedawn::PROFILE)
-            ),
+            ) && manifest
+                .builtin_engine
+                .as_deref()
+                .and_then(crate::external_engine::get)
+                .is_none(),
             "this engine can only run from its verified native cache"
         );
         if !matches!(

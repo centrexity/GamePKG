@@ -79,7 +79,20 @@ impl App {
             match self.data_paths.get(&m.id).filter(|p| !p.is_empty()) {
                 None => blockers.push("Choose the original game-data folder below.".into()),
                 Some(path) => {
-                    if let Err(error) = crate::game_data::validate(std::path::Path::new(path)) {
+                    let result = if m
+                        .game_data
+                        .as_ref()
+                        .is_some_and(|data| !data.layouts.is_empty())
+                    {
+                        crate::game_data::matches(
+                            std::path::Path::new(path),
+                            &m.game_data.as_ref().unwrap().layouts,
+                        )
+                        .map(|_| ())
+                    } else {
+                        crate::game_data::validate(std::path::Path::new(path))
+                    };
+                    if let Err(error) = result {
                         blockers.push(format!("Selected game data: {error}. Choose a complete original installation below."));
                     }
                 }
@@ -297,7 +310,7 @@ impl App {
                     if ui.add_enabled(!reviewing&&ready&&self.result.is_none(),super::theme::primary("Play")).clicked(){self.launch_selected(id.clone(),true);}
                     if ui.add_enabled(crate::native::build_supported(&m)&&!reviewing&&self.result.is_none(),egui::Button::new(if built{"Rebuild"}else{"Build"}).min_size(egui::vec2(100.0,36.0))).clicked(){let id=id.clone();self.begin_work(move||{crate::native::compile(&crate::registry::default_root()?,&id)?;Ok(Work::NativeBuilt(id))});if m.builtin_engine.as_deref()==Some(crate::takedawn::PROFILE){self.status="Building this game for your computer. The first build can take an hour or more. Your ISO is not copied.".into();}}
                     if ui.add_enabled(!reviewing&&self.result.is_none()&&m.update_url.is_some(),egui::Button::new("Check for updates")).clicked(){let id=id.clone();self.begin_work(move||match crate::registry::check_update(&crate::registry::default_root()?,&id)?{Some((m,file))=>Ok(Work::Update(m,file)),None=>Ok(Work::Message("This game is up to date.".into()))});}
-                    if ui.add_enabled(!matches!(m.builtin_engine.as_deref(),Some(crate::cube2::PROFILE)|Some(crate::takedawn::PROFILE))&&!reviewing&&self.result.is_none(),egui::Button::new("Build Wasm")).clicked(){let id=id.clone();self.begin_work(move||{crate::build::compile(&crate::registry::default_root()?,&id)?;Ok(Work::Message("Wasm build complete. Native build kept separately.".into()))});}
+                    if ui.add_enabled(!matches!(m.builtin_engine.as_deref(),Some(crate::cube2::PROFILE)|Some(crate::takedawn::PROFILE))&&m.builtin_engine.as_deref().and_then(crate::external_engine::get).is_none()&&!reviewing&&self.result.is_none(),egui::Button::new("Build Wasm")).clicked(){let id=id.clone();self.begin_work(move||{crate::build::compile(&crate::registry::default_root()?,&id)?;Ok(Work::Message("Wasm build complete. Native build kept separately.".into()))});}
                     if ui.add_enabled(!reviewing&&wasm_ready&&self.result.is_none(),egui::Button::new("Play Wasm")).clicked(){self.launch_selected(id.clone(),false);}
                     ui.add_enabled_ui(!reviewing && self.result.is_none() && cfg!(any(target_os="linux", target_os="windows")), |ui| {
                         ui.menu_button("Add to Steam", |ui| {
@@ -358,7 +371,7 @@ impl App {
                             Err(error) => self.status=format!("Unable to load settings: {error:#}"),
                         }
                     }
-                    if m.game_data.is_some() && self.applied_settings.as_ref().is_none_or(|s|s.tick_deadline_ms<500) {
+                    if m.builtin_engine.as_deref()==Some(crate::cube2::PROFILE) && self.applied_settings.as_ref().is_none_or(|s|s.tick_deadline_ms<500) {
                         ui.label("Software rendering may need a 500 ms Tick deadline.");
                         if ui.add_enabled(self.result.is_none(), egui::Button::new("Open rendering settings")).clicked() {
                             match crate::settings::load() {
@@ -403,6 +416,10 @@ impl App {
         else {
             return;
         };
+        let external = selected
+            .game_data
+            .as_ref()
+            .is_some_and(|data| !data.layouts.is_empty());
         let title = selected.game_data.as_ref().unwrap().title.clone();
         let current = self
             .data_paths
@@ -411,7 +428,7 @@ impl App {
             .unwrap_or_default();
         #[cfg(target_os = "linux")]
         let audit_path = current.clone();
-        ui.strong(title);
+        ui.strong(title.clone());
         let label = if current.is_empty() {
             "Choose game-data folder…"
         } else {
@@ -428,19 +445,22 @@ impl App {
         {
             self.begin_work(move || {
                 let root = std::fs::canonicalize(crate::registry::default_root()?)?;
-                let mut dialog =
-                    rfd::FileDialog::new().set_title("Choose original Sauerbraten installation");
+                let mut dialog = rfd::FileDialog::new().set_title(title);
                 if !current.is_empty() {
                     dialog = dialog.set_directory(current);
                 }
                 Ok(Work::DataPicked(root, selected, dialog.pick_folder()))
             });
         }
-        ui.label("Choose the original installation containing data and packages folders. GamePKG reads these files in place and remembers this folder for this signed game.");
+        if external {
+            ui.label("Choose a folder that matches this game's data layout. The files stay on your disk and are not copied into the package. Saves stay in the library.");
+        } else {
+            ui.label("Choose the original installation containing data and packages folders. GamePKG reads these files in place and remembers this folder for this signed game.");
+        }
         #[cfg(target_os = "linux")]
         if ui
             .add_enabled(
-                self.result.is_none() && !audit_path.is_empty(),
+                self.result.is_none() && !external && !audit_path.is_empty(),
                 egui::Button::new("Check game data"),
             )
             .clicked()
@@ -451,7 +471,9 @@ impl App {
                 ))
             });
         }
-        ui.label("Edited maps, map settings and saved demos are remembered separately from the original files. Saved files can use up to 32 MiB.");
+        if !external {
+            ui.label("Edited maps, map settings and saved demos are remembered separately from the original files. Saved files can use up to 32 MiB.");
+        }
         if self
             .applied_settings
             .as_ref()
@@ -459,7 +481,9 @@ impl App {
         {
             ui.label("This engine needs a memory ceiling of at least 2048 MiB. Adjust it in Settings before playing.");
         }
-        ui.label("A 500 ms tick deadline is recommended for first-use software shader compilation. Adjust it in Settings.");
+        if !external {
+            ui.label("A 500 ms tick deadline is recommended for first-use software shader compilation. Adjust it in Settings.");
+        }
         ui.add_space(12.0);
     }
     fn game_rom_editor(&mut self, ui: &mut egui::Ui) {

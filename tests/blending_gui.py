@@ -60,7 +60,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-blending-',dir=PROJECT/'target'
       deadline=time.monotonic()+20;window=None;image=None
       while True:
        if app.poll() is not None:raise RuntimeError(app.stderr.read().decode())
-       found=subprocess.run(['xdotool','search','--onlyvisible','--name',r'^(GamePKG|com\..*)$'],env=env,capture_output=True,text=True)
+       found=subprocess.run(['xdotool','search','--onlyvisible','--name',r'^(GamePKG [0-9]+[.][0-9]+[.][0-9]+([-+][A-Za-z0-9.-]+)?|com\..*)$'],env=env,capture_output=True,text=True)
        if found.returncode==0:
         window=found.stdout.splitlines()[0];path=PROOF/(profile+'-'+target+'-'+renderer+'.png');subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(path)],env=env,check=True,timeout=10);image=Image.open(path).convert('RGB')
         scale=min(image.width/640,image.height/480);ox=(image.width-640*scale)/2;oy=(image.height-480*scale)/2

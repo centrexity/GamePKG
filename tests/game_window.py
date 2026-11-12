@@ -20,7 +20,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-player-window-') as temporary:
   launch_env=dict(env,GAMEPKG_HOME=str(root/'wrong-library'),GAMEPKG_CONFIG=str(wrong))
   app=subprocess.Popen([str(PROJECT/'target/release/gamepkg-gui'),'--library',str(root/'library'),'--play','com.gamepkg.minimal','--target','native','--config',str(config)],env=launch_env,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
   window,pid=game_window(env,'com.gamepkg.minimal');assert pid==app.pid
-  library=subprocess.run(['xdotool','search','--onlyvisible','--name','^GamePKG$'],env=env,capture_output=True)
+  library=subprocess.run(['xdotool','search','--onlyvisible','--name','^GamePKG [0-9]+[.][0-9]+[.][0-9]+([-+][A-Za-z0-9.-]+)?$'],env=env,capture_output=True)
   assert library.returncode!=0,'Player opened library UI'
   time.sleep(1.5)
   from PIL import Image

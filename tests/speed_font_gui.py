@@ -58,7 +58,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-speed-font-') as temporary:
       deadline=time.monotonic()+20
       while True:
        if app.poll() is not None:raise RuntimeError(app.stderr.read().decode())
-       found=subprocess.run(['xdotool','search','--onlyvisible','--name',r'^(GamePKG|com\..*)$'],env=env,capture_output=True,text=True)
+       found=subprocess.run(['xdotool','search','--onlyvisible','--name',r'^(GamePKG [0-9]+[.][0-9]+[.][0-9]+([-+][A-Za-z0-9.-]+)?|com\..*)$'],env=env,capture_output=True,text=True)
        if found.returncode==0:window=found.stdout.splitlines()[0];break
        assert time.monotonic()<deadline;time.sleep(.05)
       subprocess.run(['xdotool','windowfocus',window],env=env,check=True)
