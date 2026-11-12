@@ -834,6 +834,7 @@ diff --git a/note.txt b/note.txt
 
     #[cfg(target_os = "linux")]
     #[test]
+    #[ignore = "requires Bubblewrap, prlimit and Linux network namespace privileges"]
     fn sandbox_caps_address_space_drops_network_and_keeps_the_root_read_only() {
         let runtime = tempfile::tempdir().unwrap();
         let probe = runtime.path().join("probe");

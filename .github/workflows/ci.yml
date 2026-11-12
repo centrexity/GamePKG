@@ -442,6 +442,9 @@ jobs:
           sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup rustup default gamepkg-ci
       # Hosted runners restrict unprivileged network namespace setup. These
       # controlled fixture tests run as root while bwrap still isolates the build.
+      - name: External-engine filesystem, memory and network isolation
+        if: matrix.features == '--all-features'
+        run: sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" cargo test --locked --all-features --lib external_engine::build::tests::sandbox_caps_address_space_drops_network_and_keeps_the_root_read_only -- --ignored --exact --nocapture
       - name: Isolated compiler integration
         if: matrix.features == '--all-features'
         run: sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/isolated_build.py
