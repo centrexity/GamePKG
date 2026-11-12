@@ -451,6 +451,36 @@ fn deb_member(bytes: &[u8]) -> Result<(&str, &[u8])> {
     bail!("dependency has no data archive")
 }
 
+fn unpack_xz(
+    bytes: &[u8],
+    output: &Path,
+    strip: usize,
+    skip: &[String],
+    stage: &Path,
+) -> Result<()> {
+    let mut packed = tempfile::NamedTempFile::new_in(stage)?;
+    packed.write_all(bytes)?;
+    let mut child = Command::new("xz")
+        .args([
+            "--decompress",
+            "--stdout",
+            "--memlimit-decompress=256MiB",
+            "--",
+        ])
+        .arg(packed.path())
+        .stdout(Stdio::piped())
+        .spawn()
+        .context("start native xz decompressor")?;
+    let result = unpack(child.stdout.take().unwrap(), output, strip, skip);
+    if result.is_err() {
+        let _ = child.kill();
+    }
+    let status = child.wait()?;
+    result?;
+    ensure!(status.success(), "dependency decompression failed");
+    Ok(())
+}
+
 fn dependencies(root: &Path, plan: &Plan) -> Result<()> {
     if plan
         .dependency_trees
@@ -481,6 +511,13 @@ fn dependencies(root: &Path, plan: &Plan) -> Result<()> {
             verified.context("could not fetch the pinned dependency from its reviewed mirrors")?;
         let output = stage.join(relative(&download.output)?);
         match download.format.as_str() {
+            "tar-xz" => unpack_xz(
+                &bytes,
+                &output,
+                download.strip,
+                &plan.skip_archive_paths,
+                &stage,
+            )?,
             "tar-gz" => unpack(
                 flate2::read::GzDecoder::new(bytes.as_slice()),
                 &output,
@@ -497,26 +534,13 @@ fn dependencies(root: &Path, plan: &Plan) -> Result<()> {
                         &plan.skip_archive_paths,
                     )?;
                 } else if kind.ends_with(".xz") {
-                    let mut packed = tempfile::NamedTempFile::new_in(&stage)?;
-                    packed.write_all(payload)?;
-                    let mut child = Command::new("xz")
-                        .args(["--decompress", "--stdout", "--"])
-                        .arg(packed.path())
-                        .stdout(Stdio::piped())
-                        .spawn()
-                        .context("start native xz decompressor")?;
-                    let result = unpack(
-                        child.stdout.take().unwrap(),
+                    unpack_xz(
+                        payload,
                         &output,
                         download.strip,
                         &plan.skip_archive_paths,
-                    );
-                    if result.is_err() {
-                        let _ = child.kill();
-                    }
-                    let status = child.wait()?;
-                    result?;
-                    ensure!(status.success(), "dependency decompression failed");
+                        &stage,
+                    )?;
                 } else {
                     bail!("unsupported dependency compression");
                 }
@@ -929,6 +953,57 @@ mod tests {
             &[]
         )
         .is_err());
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn xz_dependency_stream_checks_payload_trailer_and_cleanup() {
+        let stage = tempfile::tempdir().unwrap();
+        let mut archive = Vec::new();
+        {
+            let mut tar = tar::Builder::new(&mut archive);
+            let mut header = tar::Header::new_gnu();
+            header.set_size(7);
+            header.set_mode(0o644);
+            header.set_cksum();
+            tar.append_data(&mut header, "release/input.txt", b"fixture".as_slice())
+                .unwrap();
+            tar.finish().unwrap();
+        }
+        let plain = stage.path().join("input.tar");
+        fs::write(&plain, archive).unwrap();
+        let compressed = Command::new("xz")
+            .args(["--compress", "--stdout", "--"])
+            .arg(&plain)
+            .output()
+            .unwrap();
+        assert!(compressed.status.success());
+        let destination = stage.path().join("valid");
+        unpack_xz(&compressed.stdout, &destination, 1, &[], stage.path()).unwrap();
+        assert_eq!(fs::read(destination.join("input.txt")).unwrap(), b"fixture");
+        let before = fs::read_dir(stage.path()).unwrap().count();
+        for (i, length) in [0, 8, compressed.stdout.len() - 1].into_iter().enumerate() {
+            assert!(unpack_xz(
+                &compressed.stdout[..length],
+                &stage.path().join(format!("truncated-{i}")),
+                1,
+                &[],
+                stage.path(),
+            )
+            .is_err());
+        }
+        let mut corrupt = compressed.stdout;
+        let last = corrupt.len() - 1;
+        corrupt[last] ^= 1;
+        assert!(unpack_xz(
+            &corrupt,
+            &stage.path().join("corrupt"),
+            1,
+            &[],
+            stage.path(),
+        )
+        .is_err());
+        assert_eq!(fs::read_dir(stage.path()).unwrap().count(), before + 4);
     }
 
     #[test]
