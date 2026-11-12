@@ -1,0 +1,660 @@
+--- a/port/linux/src/gamepkg_xiso_view.inc
++++ b/port/linux/src/gamepkg_xiso_view.inc
+@@ -14,8 +14,10 @@
+ {
+ 	int mounted;
+ 	struct xiso_image image;
+-	struct xiso_entry entries[XISO_MAXIMUM_ENTRIES + 1];
++	struct xiso_entry entries[2 * XISO_MAXIMUM_ENTRIES + 1];
+ 	int count;
++	int map_count;
++	int has_bink;
+ 	int picture_index;
+ 	unsigned char *picture;
+ 	char root[XISO_MAXIMUM_PATH];
+@@ -38,13 +40,14 @@
+ 	return 1;
+ }
+ 
+-/* 0: another namespace; 1: view root; 2: maps directory; 3: map filename;
+- * -1: an invalid path inside the protected maps namespace. */
++/* 0: another namespace; 1: root; 2/3: maps directory/file; 4/5: bink
++ * directory/file; -1: invalid or missing protected path. */
+ static int xiso_view_path(const char *path, char *name, size_t capacity)
+ {
+ 	char normalized[XISO_MAXIMUM_PATH];
+ 	const char *tail;
+ 	size_t root_size, i;
++	int directory;
+ 	if (!xiso_view.mounted || !xiso_view_normalize(path, normalized, sizeof(normalized)))
+ 		return 0;
+ 	root_size = strlen(xiso_view.root);
+@@ -57,25 +60,31 @@
+ 	if (*tail != '/') return 0;
+ 	while (*tail == '/') ++tail;
+ 	if (!*tail) return 1;
+-	if (strlen(tail) < 4 || !xiso_name_is(tail, 4, "maps") || (tail[4] && tail[4] != '/'))
++	if (strlen(tail) < 4 || (tail[4] && tail[4] != '/'))
+ 		return 0;
++	if (xiso_name_is(tail, 4, "maps")) directory = 2;
++	else if (xiso_name_is(tail, 4, "bink"))
++	{ if (!xiso_view.has_bink) return -1; directory = 4; }
++	else return 0;
+ 	tail += 4;
+ 	while (*tail == '/') ++tail;
+-	if (!*tail) return 2;
++	if (!*tail) return directory;
+ 	i = strlen(tail);
+ 	if (i + 1 > capacity || !xiso_plain_name((const unsigned char *)tail, (int)i))
+ 		return -1;
+ 	memcpy(name, tail, i + 1);
+-	return 3;
++	return directory + 1;
+ }
+ 
+ int xiso_view_lookup(const char *path)
+ {
+ 	char name[256];
+-	int i, kind = xiso_view_path(path, name, sizeof(name));
++	int i, end, kind = xiso_view_path(path, name, sizeof(name));
+ 	if (!kind) return -2;
+-	if (kind != 3) return -1;
+-	for (i = 0; i < xiso_view.count; ++i)
++	if (kind != 3 && kind != 5) return -1;
++	i = kind == 3 ? 0 : xiso_view.map_count;
++	end = kind == 3 ? xiso_view.map_count : xiso_view.count;
++	for (; i < end; ++i)
+ 		if (xiso_name_is(name, (int)strlen(name), xiso_view.entries[i].name))
+ 			return i;
+ 	return -1;
+@@ -89,7 +98,7 @@
+ 	if (!info) return -1;
+ 	memset(info, 0, sizeof(*info));
+ 	if (kind < 0) return -1;
+-	if (kind == 3)
++	if (kind == 3 || kind == 5)
+ 	{
+ 		index = xiso_view_lookup(path);
+ 		if (index < 0) return -1;
+@@ -104,7 +113,7 @@
+ 	info->access_nanoseconds = xiso_view.information.access_nanoseconds;
+ 	info->creation_seconds = xiso_view.information.creation_seconds;
+ 	info->creation_nanoseconds = xiso_view.information.creation_nanoseconds;
+-	return kind == 3 ? 1 : 2;
++	return kind == 3 || kind == 5 ? 1 : 2;
+ }
+ 
+ int xiso_view_source_fd(void)
+@@ -150,7 +159,7 @@
+ 	unsigned i;
+ 	int kind = xiso_view_path(path, name, sizeof(name));
+ 	if (!kind) return -2;
+-	if (!handle || (kind != 1 && kind != 2)) return 0;
++	if (!handle || (kind != 1 && kind != 2 && kind != 4)) return 0;
+ 	pthread_mutex_lock(&xiso_view_directory_lock);
+ 	for (i = 0; i < 256; ++i)
+ 		if (!xiso_view_directories[i].token && xiso_view_next_token != UINT32_MAX)
+@@ -179,9 +188,14 @@
+ 			uint32_t position = xiso_view_directories[i].position;
+ 			const char *entry = NULL;
+ 			if (xiso_view_directories[i].kind == 1)
+-			{ if (!position) entry = "maps"; }
+-			else if (position < (uint32_t)xiso_view.count)
++			{
++				if (!position) entry = "maps";
++				else if (position == 1 && xiso_view.has_bink) entry = "bink";
++			}
++			else if (xiso_view_directories[i].kind == 2 && position < (uint32_t)xiso_view.map_count)
+ 				entry = xiso_view.entries[position].name;
++			else if (xiso_view_directories[i].kind == 4 && position < (uint32_t)(xiso_view.count - xiso_view.map_count))
++				entry = xiso_view.entries[xiso_view.map_count + position].name;
+ 			if (!entry) result = 0;
+ 			else if (strlen(entry) + 1 <= capacity)
+ 			{
+@@ -214,8 +228,8 @@
+ 	unsigned char *table = NULL, *picture = NULL;
+ 	struct posix_file_information information;
+ 	posix_ulong low, high;
+-	unsigned long sector, size, maps_sector, maps_size;
+-	int count, i, chosen, oom, has_ui = 0, has_picture = 0;
++	unsigned long sector, size, maps_sector, maps_size, bink_sector = 0, bink_size = 0;
++	int count, i, chosen, oom, has_ui = 0, has_picture = 0, has_bink = 0, movies = 0;
+ 	char normalized[XISO_MAXIMUM_PATH];
+ 	if (xiso_view.mounted)
+ 	{ xiso_error(error, error_size, "The disc view is already mounted."); return 0; }
+@@ -229,7 +243,7 @@
+ 	image.size = (uint64_t)high << 32 | low;
+ 	if (image.size < XISO_DESCRIPTOR_OFFSET + XISO_SECTOR_SIZE || image.size > (UINT64_C(8) << 30))
+ 		goto damaged;
+-	entries = malloc(sizeof(*entries) * XISO_MAXIMUM_ENTRIES);
++	entries = malloc(sizeof(*entries) * 2 * XISO_MAXIMUM_ENTRIES);
+ 	if (!entries || !xiso_find_volume(&image, &sector, &size)) goto damaged;
+ 	table = xiso_read_table(&image, sector, size, &oom);
+ 	if (!table) goto damaged;
+@@ -241,6 +255,9 @@
+ 	free(table); table = NULL;
+ 	if (count < 0 || (chosen = xiso_maps_folder(entries, count)) >= count) goto damaged;
+ 	maps_sector = entries[chosen].sector; maps_size = entries[chosen].size;
++	for (i = 0; i < count; ++i)
++		if (xiso_name_is(entries[i].name, (int)strlen(entries[i].name), "bink"))
++		{ has_bink = 1; bink_sector = entries[i].sector; bink_size = entries[i].size; }
+ 	table = xiso_read_table(&image, maps_sector, maps_size, &oom);
+ 	if (!table) goto damaged;
+ 	count = xiso_walk_table_mode(table, maps_size, 0, entries, 1);
+@@ -254,6 +271,20 @@
+ 		has_picture |= xiso_name_is(entries[i].name, (int)strlen(entries[i].name), "loading.tga");
+ 	}
+ 	if (!has_ui) goto damaged;
++	if (has_bink)
++	{
++		table = xiso_read_table(&image, bink_sector, bink_size, &oom);
++		if (!table) goto damaged;
++		movies = xiso_walk_table_mode(table, bink_size, 0, entries + XISO_MAXIMUM_ENTRIES, 1);
++		free(table); table = NULL;
++		if (movies < 0) goto damaged;
++		for (i = 0; i < movies; ++i)
++		{
++			struct xiso_entry *movie = &entries[XISO_MAXIMUM_ENTRIES + i];
++			uint64_t start = xiso_sector_offset(&image, movie->sector);
++			if (movie->size && (start > image.size || movie->size > image.size - start)) goto damaged;
++		}
++	}
+ 	if (!has_picture) picture = xiso_loading_picture(&image, &xbe);
+ 	xiso_view.image = image;
+ 	memcpy(xiso_view.entries, entries, (size_t)count * sizeof(*entries));
+@@ -270,9 +301,13 @@
+ 		xiso_view.picture_index = count;
+ 		++xiso_view.count;
+ 	}
++	xiso_view.map_count = xiso_view.count;
++	xiso_view.has_bink = has_bink;
++	memcpy(xiso_view.entries + xiso_view.count, entries + XISO_MAXIMUM_ENTRIES, (size_t)movies * sizeof(*entries));
++	xiso_view.count += movies;
+ 	xiso_view.mounted = 1;
+ 	free(entries);
+-	platform_log("GamePKG: original disc mounted read-only; %d map files, no extraction.", count);
++	platform_log("GamePKG: original disc mounted read-only; %d map files, %d movie files, no extraction.", count, movies);
+ 	return 1;
+ damaged:
+ 	xiso_error(error, error_size, "Could not mount the selected Xbox disc: unreadable or invalid directory data.");
+--- a/source/bink/bink_playback.c
++++ b/source/bink/bink_playback.c
+@@ -265,6 +265,12 @@
+ 	halo_u32 FramesDataRate;
+ } BINKREALTIME;
+ 
++#ifdef GAMEPKG_BINK_FFMPEG
++long __stdcall BinkHasError(HBINK bink);
++void __stdcall BinkSetPlaybackError(HBINK bink);
++void __stdcall BinkPresented(HBINK bink);
++#endif
++
+ typedef HBINK halo_ty_bink_playback_globals__bink;
+ typedef D3DTexture * halo_ty_bink_playback_globals__texture;
+ typedef byte * halo_ty_bink_playback_globals__memory_pool_base;
+@@ -492,6 +498,23 @@
+ 	if (!bink_globals.initialized || !((halo_ty_bink_playback_globals__bink)halo_ref(bink_globals.bink)))
+ 		return;
+ 
++#ifdef GAMEPKG_BINK_FFMPEG
++	/* Pace before drawing. This presents the first and last decoded frames
++	   and starts audio only after the first draw has compiled its shaders. */
++	bink_playback_update__internal();
++	if (!bink_playback_active()) return;
++	if (bink_globals.needs_decode)
++	{
++		bink_decompress_video_frame();
++		bink_globals.needs_decode = FALSE;
++		if (BinkHasError(((halo_ty_bink_playback_globals__bink)halo_ref(bink_globals.bink))))
++		{ bink_playback_stop(); return; }
++	}
++	bink_draw_frame();
++	++bink_globals.rendered_frame_count;
++	BinkPresented(((halo_ty_bink_playback_globals__bink)halo_ref(bink_globals.bink)));
++	return;
++#else
+ 	if (global_frame_rate_throttle)
+ 		bink_globals.needs_decode = TRUE;
+ 	else if (!bink_globals.needs_decode)
+@@ -506,6 +529,7 @@
+ 
+ 	if (!global_frame_rate_throttle)
+ 		bink_playback_update__internal();
++#endif
+ 
+ 	return;
+ }
+@@ -630,7 +654,11 @@
+ 				bink_get_memory_available("end event_manager");
+ 			}
+ 
++#ifdef GAMEPKG_BINK_FFMPEG
++			bink_globals.needs_decode = TRUE;
++#else
+ 			bink_decompress_video_frame();
++#endif
+ 
+ 			bink_saved_frame_rate_throttle= global_frame_rate_throttle;
+ 			bink_globals.total_skipped_frames= 0;
+@@ -963,11 +991,20 @@
+ {
+ 	D3DLOCKED_RECT locked_rect;
+ 
++#ifdef GAMEPKG_BINK_FFMPEG
++	if (BinkDoFrame(((halo_ty_bink_playback_globals__bink)halo_ref(bink_globals.bink)))) return;
++#else
+ 	BinkDoFrame(((halo_ty_bink_playback_globals__bink)halo_ref(bink_globals.bink)));
++#endif
+ 	BinkNextFrame(((halo_ty_bink_playback_globals__bink)halo_ref(bink_globals.bink)));
+ 
+ 	rasterizer_globals.current_lock_operation= _rasterizer_lock_bink;
++#ifdef GAMEPKG_BINK_FFMPEG
++	if (IDirect3DTexture8_LockRect(((halo_ty_bink_playback_globals__texture)halo_ref(bink_globals.texture)), 0, &locked_rect, NULL, 0) < 0 || !locked_rect.pBits)
++	{ BinkSetPlaybackError(((halo_ty_bink_playback_globals__bink)halo_ref(bink_globals.bink))); rasterizer_globals.current_lock_operation = _rasterizer_lock_none; return; }
++#else
+ 	IDirect3DTexture8_LockRect(((halo_ty_bink_playback_globals__texture)halo_ref(bink_globals.texture)), 0, &locked_rect, NULL, 0);
++#endif
+ 	BinkCopyToBuffer(((halo_ty_bink_playback_globals__bink)halo_ref(bink_globals.bink)), locked_rect.pBits, locked_rect.Pitch, ((halo_ty_bink_playback_globals__bink)halo_ref(bink_globals.bink))->Height,
+ 		0, 0, bink_globals.surface_type|BINKCOPYALL);
+ 	IDirect3DTexture8_UnlockRect(((halo_ty_bink_playback_globals__texture)halo_ref(bink_globals.texture)), 0);
+@@ -1005,8 +1042,14 @@
+ 			}
+ 		}
+ 
++#ifdef GAMEPKG_BINK_FFMPEG
++		if (BinkHasError(((halo_ty_bink_playback_globals__bink)halo_ref(bink_globals.bink))) ||
++			(bink_globals.needs_decode && ((halo_ty_bink_playback_globals__bink)halo_ref(bink_globals.bink))->FrameNum > ((halo_ty_bink_playback_globals__bink)halo_ref(bink_globals.bink))->Frames &&
++			!TEST_FLAG(bink_globals.flags, _bink_playback_loop_bit)))
++#else
+ 		if ((!((halo_ty_bink_playback_globals__bink)halo_ref(bink_globals.bink)) || ((halo_ty_bink_playback_globals__bink)halo_ref(bink_globals.bink))->FrameNum==((halo_ty_bink_playback_globals__bink)halo_ref(bink_globals.bink))->Frames-1) &&
+ 			!TEST_FLAG(bink_globals.flags, _bink_playback_loop_bit))
++#endif
+ 		{
+ 			bink_playback_stop();
+ 		}
+--- /dev/null
++++ b/port/linux/src/gamepkg_bink_bridge.c
+@@ -0,0 +1,5 @@
++/* Native host-ABI movie bridge; legacy builds keep their original backend. */
++#ifdef GAMEPKG_BINK_FFMPEG
++void platform_log(const char *format, ...) __attribute__((format(printf, 1, 2)));
++#include "gamepkg_bink_ffmpeg.inc"
++#endif
+--- /dev/null
++++ b/port/linux/src/gamepkg_bink_ffmpeg.inc
+@@ -0,0 +1,375 @@
++/* SPDX-License-Identifier: AGPL-3.0-or-later
++ * Original-disc movie playback through LGPL FFmpeg; no proprietary SDK/media.
++ */
++#include <SDL3/SDL.h>
++#include <libavcodec/avcodec.h>
++#include <libavformat/avformat.h>
++#include <libavutil/channel_layout.h>
++#include <libavutil/mathematics.h>
++#include <libavutil/mem.h>
++#include <libavutil/pixdesc.h>
++#include <libswscale/swscale.h>
++#include <errno.h>
++#include <fenv.h>
++#include <math.h>
++#include <stdint.h>
++#include <stddef.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <strings.h>
++#ifdef __SSE__
++#include <xmmintrin.h>
++#endif
++#include "xiso.h"
++#include "port_config.h"
++/* This bridge uses the native library ABI, not XDK struct alignment. */
++SDL_AudioDeviceID platform_audio_device(int recording, const char *name);
++#if defined(__linux__) && defined(__i386__)
++_Static_assert(_Alignof(uint64_t) == 4, "codec bridge must use the native i686 library ABI");
++#endif
++
++typedef struct BINK {
++    uint32_t Width, Height, Frames, FrameNum, LastFrameNum;
++    int source, video, audio, failed, pending, channels, rate, started, minimum_video_packet;
++    uint64_t size, position, start_ns, opened_ns, decoded, audio_samples, presentations, total_audio_samples;
++    uint64_t video_ns, audio_ns, read_ns, copy_ns;
++    AVRational fps;
++    AVFormatContext *format;
++    AVIOContext *io;
++    AVCodecContext *video_codec, *audio_codec;
++    AVPacket *packet;
++    AVFrame *frame, *rgb;
++    SwsContext *scale;
++    SDL_AudioStream *output;
++    float *interleaved;
++    size_t interleaved_samples;
++} *HBINK;
++_Static_assert(offsetof(struct BINK, source) == 20, "original five-word Bink handle prefix");
++typedef void *(__stdcall *rad_memory_allocate_proc)(unsigned long);
++typedef void (__stdcall *rad_memory_free_proc)(void *);
++typedef void *(__stdcall *bink_sound_system_open_proc)(unsigned long);
++static int movie_sound_requested;
++
++static void movie_failure(HBINK m, const char *stage, int error) {
++    char message[128];
++    if (m->failed) return;
++    av_strerror(error, message, sizeof(message));
++    platform_log("movie playback: %s: %s", stage, message);
++    m->failed = 1;
++}
++struct movie_fp {
++    fenv_t environment;
++#ifdef __SSE__
++    unsigned mxcsr;
++#endif
++};
++static void movie_enter(struct movie_fp *state) {
++#ifdef __SSE__
++    state->mxcsr = _mm_getcsr();
++#endif
++    fegetenv(&state->environment); fesetenv(FE_DFL_ENV);
++}
++static void movie_leave(const struct movie_fp *state) {
++    fesetenv(&state->environment);
++#ifdef __SSE__
++    _mm_setcsr(state->mxcsr);
++#endif
++}
++static int movie_read(void *opaque, uint8_t *out, int requested) {
++    HBINK m = opaque;
++    if (requested <= 0) return AVERROR(EINVAL);
++    if (m->position >= m->size) return AVERROR_EOF;
++    uint32_t length = (uint64_t)requested < m->size - m->position ?
++        (uint32_t)requested : (uint32_t)(m->size - m->position);
++    uint64_t began = SDL_GetTicksNS();
++    int32_t read = xiso_view_read(m->source, m->position, out, length);
++    m->read_ns += SDL_GetTicksNS() - began;
++    if (read < 0) return AVERROR(EIO);
++    if (!read) return AVERROR_EOF;
++    m->position += (uint32_t)read;
++    return read;
++}
++static int64_t movie_seek(void *opaque, int64_t offset, int whence) {
++    HBINK m = opaque;
++    if (whence == AVSEEK_SIZE) return (int64_t)m->size;
++    whence &= ~AVSEEK_FORCE;
++    int64_t base = whence == SEEK_SET ? 0 : whence == SEEK_CUR ?
++        (int64_t)m->position : whence == SEEK_END ? (int64_t)m->size : -1;
++    if (base < 0 || offset < -base || offset > (int64_t)m->size - base) return AVERROR(EINVAL);
++    m->position = (uint64_t)(base + offset);
++    return (int64_t)m->position;
++}
++static void movie_dispose(HBINK m) {
++    if (!m) return;
++    if (m->output) SDL_DestroyAudioStream(m->output);
++    avcodec_free_context(&m->video_codec);
++    avcodec_free_context(&m->audio_codec);
++    av_frame_free(&m->frame); av_frame_free(&m->rgb); av_packet_free(&m->packet);
++    sws_free_context(&m->scale);
++    if (m->format) avformat_close_input(&m->format);
++    if (m->io) { av_freep(&m->io->buffer); avio_context_free(&m->io); }
++    av_free(m->interleaved);
++    free(m);
++}
++static AVCodecContext *movie_codec(HBINK m, int stream) {
++    AVCodecParameters *p = m->format->streams[stream]->codecpar;
++    const AVCodec *codec = avcodec_find_decoder(p->codec_id);
++    if (!codec) return NULL;
++    AVCodecContext *context = avcodec_alloc_context3(codec);
++    if (!context) return NULL;
++    context->thread_count = 1;
++    int error = avcodec_parameters_to_context(context, p);
++    if (error >= 0) error = avcodec_open2(context, codec, NULL);
++    if (error < 0) { movie_failure(m, "open decoder", error); avcodec_free_context(&context); }
++    return context;
++}
++void __stdcall RADSetMemory(rad_memory_allocate_proc allocate, rad_memory_free_proc release) {
++    /* FFmpeg owns bounded allocations; the original pool still owns the game's texture. */
++    (void)allocate; (void)release;
++}
++void *__stdcall BinkOpenDirectSound(unsigned long parameter) { return parameter ? (void *)1 : NULL; }
++long __stdcall BinkSetSoundSystem(bink_sound_system_open_proc open, unsigned long parameter) {
++    movie_sound_requested = open && parameter; return movie_sound_requested;
++}
++void __stdcall BinkSetIOSize(unsigned long size) { (void)size; }
++HBINK __stdcall BinkOpen(const char *name, unsigned long flags) {
++    (void)flags;
++    struct movie_fp state; movie_enter(&state);
++    HBINK m = calloc(1, sizeof(*m));
++    if (!m) { movie_leave(&state); return NULL; }
++    m->source = m->video = m->audio = -1; m->opened_ns = SDL_GetTicksNS();
++    char normalized[512], path[4096];
++    const char *root = getenv("HALO_DATA_ROOT");
++    if (!name || !root || strnlen(name, sizeof(normalized)) >= sizeof(normalized)) goto invalid;
++    for (size_t i = 0;; ++i) { normalized[i] = name[i] == '\\' ? '/' : name[i]; if (!name[i]) break; }
++    if (strncasecmp(normalized, "d:/bink/", 8)) goto invalid;
++    int length = snprintf(path, sizeof(path), "%s/bink/%s", root, normalized + 8);
++    if (length < 0 || (size_t)length >= sizeof(path)) goto invalid;
++    m->source = xiso_view_lookup(path); m->size = xiso_view_size(m->source);
++    if (m->source < 0 || !m->size || m->size > UINT64_C(512) * 1024 * 1024) goto invalid;
++    uint8_t header[8];
++    if (xiso_view_read(m->source, 0, header, sizeof(header)) != sizeof(header) || memcmp(header, "BIK", 3)) goto invalid;
++    uint64_t declared = (uint64_t)header[4] | (uint64_t)header[5] << 8 | (uint64_t)header[6] << 16 | (uint64_t)header[7] << 24;
++    if (declared + 8 != m->size) goto invalid;
++    av_max_alloc(128 * 1024 * 1024);
++    uint8_t *buffer = av_malloc(32768);
++    if (!buffer) goto invalid;
++    m->io = avio_alloc_context(buffer, 32768, 0, m, movie_read, NULL, movie_seek);
++    if (!m->io) { av_free(buffer); goto invalid; }
++    m->format = avformat_alloc_context();
++    if (!m->io || !m->format) goto invalid;
++    m->format->pb = m->io; m->format->flags |= AVFMT_FLAG_CUSTOM_IO;
++    int error = avformat_open_input(&m->format, NULL, av_find_input_format("bink"), NULL);
++    if (error < 0) { movie_failure(m, "open movie", error); goto invalid; }
++    if (m->format->nb_streams > 17) goto invalid;
++    unsigned video_streams = 0, audio_streams = 0;
++    for (unsigned i = 0; i < m->format->nb_streams; ++i) {
++        AVCodecParameters *p = m->format->streams[i]->codecpar;
++        if (p->codec_type == AVMEDIA_TYPE_VIDEO) ++video_streams;
++        else if (p->codec_type == AVMEDIA_TYPE_AUDIO) {
++            ++audio_streams;
++            /* av_find_best_stream may silently skip malformed audio. Validate
++               every declared track so damaged files cannot become silent video. */
++            if ((p->codec_id != AV_CODEC_ID_BINKAUDIO_RDFT && p->codec_id != AV_CODEC_ID_BINKAUDIO_DCT) ||
++                p->ch_layout.nb_channels < 1 || p->ch_layout.nb_channels > 6 ||
++                p->sample_rate < 8000 || p->sample_rate > 192000) goto invalid;
++        } else goto invalid;
++    }
++    if (video_streams != 1) goto invalid;
++    m->video = av_find_best_stream(m->format, AVMEDIA_TYPE_VIDEO, -1, -1, NULL, 0);
++    m->audio = av_find_best_stream(m->format, AVMEDIA_TYPE_AUDIO, -1, -1, NULL, 0);
++    if (m->video < 0 || (audio_streams && m->audio < 0)) goto invalid;
++    AVStream *video = m->format->streams[m->video];
++    if (video->codecpar->codec_id != AV_CODEC_ID_BINKVIDEO || video->codecpar->width < 1 ||
++        video->codecpar->height < 1 || video->codecpar->width > 2048 || video->codecpar->height > 2048 ||
++        video->duration < 1 || video->duration > 1000000) goto invalid;
++    m->fps = video->avg_frame_rate;
++    if (m->fps.num < 1 || m->fps.den < 1 || m->fps.num > 1000000 || m->fps.den > 1000000 ||
++        m->fps.num < m->fps.den || (int64_t)m->fps.num > (int64_t)240 * m->fps.den) goto invalid;
++    m->video_codec = movie_codec(m, m->video); if (!m->video_codec) goto invalid;
++    int planes = av_pix_fmt_count_planes(m->video_codec->pix_fmt);
++    if (planes < 1 || planes > 4) goto invalid;
++    m->minimum_video_packet = planes * 4 + (header[3] >= 'i' ? 4 : 0) + (planes == 4 && header[3] >= 'i' ? 4 : 0);
++    m->Width = (uint32_t)video->codecpar->width; m->Height = (uint32_t)video->codecpar->height;
++    /* The pinned Bink demuxer stores the header's frame count in duration,
++       with a time base of exactly one video frame. */
++    m->Frames = (uint32_t)video->duration; m->FrameNum = 1; m->pending = 1;
++    if (m->audio >= 0) {
++        AVCodecParameters *p = m->format->streams[m->audio]->codecpar;
++        if ((p->codec_id != AV_CODEC_ID_BINKAUDIO_RDFT && p->codec_id != AV_CODEC_ID_BINKAUDIO_DCT) ||
++            p->ch_layout.nb_channels < 1 || p->ch_layout.nb_channels > 6 || p->sample_rate < 8000 || p->sample_rate > 192000) goto invalid;
++        m->audio_codec = movie_codec(m, m->audio); if (!m->audio_codec) goto invalid;
++        m->channels = m->audio_codec->ch_layout.nb_channels; m->rate = m->audio_codec->sample_rate;
++        if (movie_sound_requested && SDL_WasInit(SDL_INIT_AUDIO) && config_boolean("audio.enabled")) {
++            SDL_AudioSpec spec = { .format = SDL_AUDIO_F32, .channels = m->channels, .freq = m->rate };
++            const char *device = config_string("audio.output_device");
++            SDL_AudioDeviceID id = platform_audio_device(0, device && *device ? device : "default");
++            m->output = SDL_OpenAudioDeviceStream(id, &spec, NULL, NULL);
++            if (!m->output && id != SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK)
++                m->output = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, NULL, NULL);
++            if (!m->output) platform_log("movie audio device: %s", SDL_GetError());
++        }
++    }
++    m->packet = av_packet_alloc(); m->frame = av_frame_alloc(); m->rgb = av_frame_alloc(); m->scale = sws_alloc_context();
++    if (!m->packet || !m->frame || !m->rgb || !m->scale) goto invalid;
++    platform_log("movie opened in place: %s (%ux%u, %u frames)", normalized + 8, m->Width, m->Height, m->Frames);
++    movie_leave(&state); return m;
++invalid:
++    if (!m->failed) platform_log("movie playback: missing or invalid bounded original-disc movie: %.511s", name ? name : "(null)");
++    movie_dispose(m); movie_leave(&state); return NULL;
++}
++static int movie_audio(HBINK m, AVFrame *frame) {
++    if ((frame->format != AV_SAMPLE_FMT_FLTP && frame->format != AV_SAMPLE_FMT_FLT) ||
++        frame->ch_layout.nb_channels != m->channels || frame->sample_rate != m->rate ||
++        frame->nb_samples < 0 || frame->nb_samples > 65536) return AVERROR_INVALIDDATA;
++    /* Carry fractional samples across loops instead of accumulating an A/V
++       offset for frame rates such as 2997/100. Only codec padding is trimmed. */
++    uint64_t cycle = m->decoded / m->Frames;
++    if (cycle >= (uint64_t)INT64_MAX / m->Frames) return AVERROR_INVALIDDATA;
++    int64_t begin = (int64_t)(cycle * m->Frames), end = begin + m->Frames;
++    int64_t first = av_rescale_rnd(begin, (int64_t)m->rate * m->fps.den, m->fps.num, AV_ROUND_DOWN);
++    int64_t last = av_rescale_rnd(end, (int64_t)m->rate * m->fps.den, m->fps.num, AV_ROUND_DOWN);
++    if (first < 0 || last < first) return AVERROR_INVALIDDATA;
++    uint64_t limit = (uint64_t)(last - first);
++    uint64_t remaining = limit > m->audio_samples ? limit - m->audio_samples : 0;
++    int count = (uint64_t)frame->nb_samples < remaining ? frame->nb_samples : (int)remaining;
++    size_t total = (size_t)count * (unsigned)m->channels;
++    if (total > m->interleaved_samples) {
++        float *samples = av_realloc_array(m->interleaved, total, sizeof(float));
++        if (!samples) return AVERROR(ENOMEM);
++        m->interleaved = samples; m->interleaved_samples = total;
++    }
++    for (int sample = 0; sample < count; ++sample) for (int channel = 0; channel < m->channels; ++channel) {
++        float value = frame->format == AV_SAMPLE_FMT_FLTP ? ((float *)frame->extended_data[channel])[sample] :
++            ((float *)frame->data[0])[(size_t)sample * (unsigned)m->channels + (unsigned)channel];
++        if (!isfinite(value)) return AVERROR_INVALIDDATA;
++        m->interleaved[(size_t)sample * (unsigned)m->channels + (unsigned)channel] = value;
++    }
++    if (m->output && total) {
++        int queued = SDL_GetAudioStreamQueued(m->output);
++        if (queued < 0 || (uint64_t)queued + total * sizeof(float) > (uint64_t)m->rate * (unsigned)m->channels * sizeof(float) * 2) return AVERROR_INVALIDDATA;
++        double gain = config_real("audio.volume");
++        if (!isfinite(gain)) gain = 0;
++        if (gain < 0) gain = 0;
++        if (gain > 1) gain = 1;
++        if (!SDL_SetAudioStreamGain(m->output, (float)gain) ||
++            !SDL_PutAudioStreamData(m->output, m->interleaved, (int)(total * sizeof(float)))) return AVERROR(EIO);
++    }
++    m->audio_samples += (unsigned)count;
++    m->total_audio_samples += (unsigned)count;
++    return 0;
++}
++long __stdcall BinkDoFrame(HBINK m) {
++    if (!m || m->failed) return 1;
++    if (!m->pending) return 0;
++    struct movie_fp state; movie_enter(&state);
++    if (m->FrameNum > m->Frames) {
++        int error = av_seek_frame(m->format, m->video, 0, AVSEEK_FLAG_BACKWARD);
++        if (error < 0) { movie_failure(m, "rewind movie", error); goto failed; }
++        avcodec_flush_buffers(m->video_codec); if (m->audio_codec) avcodec_flush_buffers(m->audio_codec);
++        m->FrameNum = 1; m->audio_samples = 0;
++    }
++    for (unsigned packets = 0; packets < 128; ++packets) {
++        int error = av_read_frame(m->format, m->packet);
++        if (error < 0) { movie_failure(m, "read complete movie frame", error); goto failed; }
++        if ((m->packet->flags & AV_PKT_FLAG_CORRUPT) ||
++            (m->packet->stream_index == m->video && m->packet->size < m->minimum_video_packet))
++        { movie_failure(m, "truncated or corrupt movie packet", AVERROR_INVALIDDATA); goto failed; }
++        AVCodecContext *codec = m->packet->stream_index == m->video ? m->video_codec :
++            m->packet->stream_index == m->audio ? m->audio_codec : NULL;
++        int video = m->packet->stream_index == m->video;
++        uint64_t began = SDL_GetTicksNS();
++        if (codec) {
++            error = avcodec_send_packet(codec, m->packet); av_packet_unref(m->packet);
++            if (error < 0) { movie_failure(m, "submit compressed frame", error); goto failed; }
++            while ((error = avcodec_receive_frame(codec, m->frame)) >= 0) {
++                if (video) {
++                    if (m->frame->width != (int)m->Width || m->frame->height != (int)m->Height) error = AVERROR_INVALIDDATA;
++                    else {
++                        av_frame_unref(m->rgb); m->rgb->format = AV_PIX_FMT_BGRA; m->rgb->width = (int)m->Width; m->rgb->height = (int)m->Height;
++                        error = sws_scale_frame(m->scale, m->rgb, m->frame);
++                    }
++                    av_frame_unref(m->frame);
++                    if (error < 0) { movie_failure(m, "decode original movie pixels", error); goto failed; }
++                    m->video_ns += SDL_GetTicksNS() - began; m->LastFrameNum = m->FrameNum;
++                    ++m->decoded; m->pending = 0; movie_leave(&state); return 0;
++                }
++                error = movie_audio(m, m->frame); av_frame_unref(m->frame);
++                if (error < 0) { movie_failure(m, "decode movie audio", error); goto failed; }
++            }
++            if (error != AVERROR(EAGAIN) && error != AVERROR_EOF) { movie_failure(m, "finish packet", error); goto failed; }
++        } else av_packet_unref(m->packet);
++        if (!video) m->audio_ns += SDL_GetTicksNS() - began;
++    }
++    movie_failure(m, "missing bounded video packet", AVERROR_INVALIDDATA);
++failed:
++    av_packet_unref(m->packet); movie_leave(&state); return 1;
++}
++void __stdcall BinkNextFrame(HBINK m) { if (m && !m->failed && !m->pending) { ++m->FrameNum; m->pending = 1; } }
++long __stdcall BinkHasError(HBINK m) { return !m || m->failed; }
++void __stdcall BinkSetPlaybackError(HBINK m) { if (m) movie_failure(m, "native movie texture", AVERROR(EIO)); }
++void __stdcall BinkPresented(HBINK m) {
++    if (!m || m->failed) return;
++    ++m->presentations;
++    if (m->started) return;
++    struct movie_fp state; movie_enter(&state);
++    m->start_ns = SDL_GetTicksNS();
++    m->started = 1;
++    platform_log("movie playback started: first frame submitted");
++    if (m->output && !SDL_ResumeAudioStreamDevice(m->output)) movie_failure(m, "start movie audio", AVERROR(EIO));
++    movie_leave(&state);
++}
++long __stdcall BinkWait(HBINK m) {
++    if (!m || m->failed || !m->started) return 0;
++    uint64_t offset = (uint64_t)av_rescale((int64_t)m->decoded, INT64_C(1000000000) * m->fps.den, m->fps.num);
++    uint64_t now = SDL_GetTicksNS();
++    if (now - m->start_ns >= offset) return 0;
++    uint64_t left = offset - (now - m->start_ns);
++    SDL_DelayPrecise(left < UINT64_C(1000000) ? left : UINT64_C(1000000)); return 1;
++}
++long __stdcall BinkCopyToBuffer(HBINK m, void *destination, long pitch, unsigned long height,
++    unsigned long x, unsigned long y, unsigned long flags) {
++    if (!m || m->failed || !m->rgb->data[0]) return 1;
++    if (!destination || (flags & 255) != 3 || pitch <= 0 ||
++        (unsigned long)pitch / 4 < m->Width || x > (unsigned long)pitch / 4 - m->Width ||
++        height < m->Height || y > height - m->Height ||
++        (unsigned long)pitch > SIZE_MAX / height) { movie_failure(m, "movie destination bounds", AVERROR(EINVAL)); return 1; }
++    uint64_t began = SDL_GetTicksNS();
++    for (uint32_t row = 0; row < m->Height; ++row)
++        memcpy((uint8_t *)destination + (size_t)(y + row) * (unsigned long)pitch + (size_t)x * 4,
++            m->rgb->data[0] + (size_t)row * (unsigned)m->rgb->linesize[0], (size_t)m->Width * 4);
++    m->copy_ns += SDL_GetTicksNS() - began; return 0;
++}
++static uint32_t movie_u32(uint64_t value) { return value > UINT32_MAX ? UINT32_MAX : (uint32_t)value; }
++void __stdcall BinkGetSummary(HBINK m, void *summary) {
++    if (!summary) return;
++    uint32_t words[31] = {0};
++    if (m) {
++        words[0]=m->Width; words[1]=m->Height; words[2]=movie_u32((SDL_GetTicksNS()-m->opened_ns)/1000000);
++        words[3]=(uint32_t)m->fps.num;words[4]=(uint32_t)m->fps.den;words[5]=words[3];words[6]=words[4];
++        words[8]=m->Frames;words[9]=movie_u32(m->decoded);words[13]=movie_u32(m->copy_ns/1000000);
++        words[14]=movie_u32(m->read_ns/1000000);words[15]=movie_u32(m->video_ns/1000000);words[16]=movie_u32(m->audio_ns/1000000);
++        words[24]=movie_u32((uint64_t)av_rescale((int64_t)m->size,m->fps.num,(int64_t)m->Frames*m->fps.den));
++        words[25]=(uint32_t)(m->size/m->Frames);words[27]=32768;words[28]=32768;
++    }
++    memcpy(summary,words,sizeof(words));
++}
++void __stdcall BinkGetRealtime(HBINK m, void *realtime, unsigned long frames) {
++    (void)frames;
++    if (!realtime) return;
++    uint32_t words[14]={0};
++    if(m) { words[0]=m->FrameNum;words[1]=(uint32_t)m->fps.num;words[2]=(uint32_t)m->fps.den;
++        words[3]=movie_u32(m->decoded);words[4]=movie_u32((SDL_GetTicksNS()-m->opened_ns)/1000000);
++        words[5]=movie_u32(m->video_ns/1000000);words[6]=movie_u32(m->audio_ns/1000000);words[7]=movie_u32(m->read_ns/1000000);
++        words[10]=movie_u32(m->copy_ns/1000000);words[11]=32768;words[12]=32768; }
++    memcpy(realtime,words,sizeof(words));
++}
++void __stdcall BinkClose(HBINK m) {
++    if (!m) return;
++    struct movie_fp state; movie_enter(&state);
++    platform_log("movie closed: %llu decoded frames, %llu draws, %llu queued audio samples, %llu ms%s", (unsigned long long)m->decoded,
++        (unsigned long long)m->presentations, (unsigned long long)m->total_audio_samples,
++        (unsigned long long)(m->started ? (SDL_GetTicksNS()-m->start_ns)/1000000 : 0), m->failed ? " (playback error)" : "");
++    movie_dispose(m); movie_leave(&state);
++}

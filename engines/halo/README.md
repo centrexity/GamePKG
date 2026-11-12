@@ -10,6 +10,10 @@ Patch `0011-gamepkg-read-only-disc-view.patch` mounts a bounded, immutable view 
 
 The reader validates directory links, names, duplicate entries and extent bounds before publishing the view. File positions belong to individual open handles. Reads, enumeration and metadata go through the existing host ABI; save files and logs stay in the private runtime folder. The cache partition is separate from persistent profiles and saves. The asset-free native fixtures are documented in [tests/README.md](tests/README.md).
 
+Patch `0014` extends that read-only view to the original `bink` directory and restores prerecorded movies on the reviewed Linux target. A minimal, pinned FFmpeg decoder reads bounded ranges through the same disc descriptor. Video and decoded audio stay in memory. The original game renders the frames; SDL3 supplies timed audio through the selected device. Movie audio follows the app's mute/volume settings, and skipping or closing a movie releases its decoder and audio stream. Legacy targets keep their original backend. An existing maps-only folder can still play maps, but cannot supply disc movies that it does not contain.
+
+The bridge uses the native compiler/library ABI in its own translation unit. It preserves the game's floating-point environment, starts timing after the first frame is submitted, presents the final frame, and carries fractional audio samples across loops. All five Rev 2 movies matched independent decoded-video hashes locally; the complete intro also played through the normal GamePKG launch on the private RTX 3090 display. This does not establish a complete campaign playthrough or subjective audio quality. See [the decoder notices](FFMPEG-NOTICE.md).
+
 ## Native targets
 
 Linux defaults to `linux-i686`, including on a 64-bit Linux host. This is an ordinary native 32-bit process using SDL3 and hardware OpenGL; it uses no Wine, WSL, Proton, or CPU emulation. The local Rev 2 test reached gameplay on an RTX 3090 through GamePKG Build and Play, with the ISO remembered across restarts and play time recorded.
@@ -22,7 +26,9 @@ The native engine owns input through SDL3. A virtual Xbox controller exercised t
 
 The signed selector requests networking. An offline selector can omit that permission. Linux retains its read-only filesystem view, bounded RAM cache and memory cap in both cases; offline processes additionally receive a separate network namespace. Missing isolation tools stop launch rather than silently dropping protection.
 
-Two native GPU-backed processes passed the upstream local-network comparison on Blood Gulch with movement, hits, deaths and synchronized state. Campaign loading was also exercised. This does not qualify every map, full campaign progression, co-op, internet traversal, or physical-controller behavior.
+Two native GPU-backed processes passed the upstream local-network comparison across all 13 original multiplayer maps in both hosting roles. A longer `a30` co-op comparison covered 184 jointly active seconds in each hosting role without relaxed thresholds. All ten campaign levels reached their active loop in loading checks. These checks do not qualify full campaign progression, internet traversal, or physical-controller behavior; the automated `a10` intro/cryopod bot scenario remained inconclusive.
+
+Co-op remains under investigation: one current cross-build role exceeded the position comparator while its movement-drift check passed; the reverse hosting role passed. This preview does not claim complete co-op qualification. The original comparison thresholds remain unchanged.
 
 ## Build integrity and remaining work
 
@@ -30,13 +36,36 @@ The catalog pins the source commit and license digest. Reviewed patches are appl
 
 The host implementation stays generic: commands, layouts, targets and launch environment come from `engine.toml`; host Rust does not name this game. The older source patches retain their existing pointer, layout, clock, thread, logging and directory ABI adaptations.
 
-The Linux player build uses the host's Rust preparation driver and native compiler tools; it does not run Python. Maintainers export the reviewed Ninja graph, generated-header templates, dependency inventory and resource identities with `tools/prepare_opence_native_plan.py`. Resource bytes still come from the pinned source, and the original maps still come from the player's image. The driver verifies downloads, extracted dependency files, reconstructed resources and final link symbols. It drains compressed dependency streams through their trailers, rejects escaping archive links, and keeps generated outputs inside the source tree.
+The Linux player build uses the host's Rust preparation driver and native compiler tools; it does not run Python. Maintainers export the base Ninja graph, generated-header templates, dependency inventory and resource identities with `tools/prepare_opence_native_plan.py`, then extend it with `tools/prepare_opence_movie_plan.py` using the verified FFmpeg archive, configured source and verbose build log. The latter checks all decoder compiler nodes and the separate bridge ABI through Ninja's parsed graph. Resource bytes still come from the pinned source, and the original maps and movies still come from the player's image. The driver verifies downloads, extracted dependency files, reconstructed resources and final link symbols. It drains gzip/XZ dependency streams through their trailers, rejects escaping archive links, and keeps generated outputs inside the source tree. Unused FFmpeg test-map metadata is excluded from extraction; the engine source tree still rejects game maps and movie files.
 
 A clean source/dependency build and live gameplay passed with Python commands deliberately blocked. A second unchanged Build reused the compiled files. The preparation receipt binds dependency outputs to the plan, compiler, CPU and build environment. Fresh configuration discards older CMake options; compiler changes invalidate every native translation unit, including wrapped Ninja rules. The exporter checks those dependencies through Ninja's parsed graph. The existing Windows build records have not received this replacement or local gameplay qualification.
 
 The host mute setting and zero audio volume select the reviewed silent audio driver while the engine continues decoding and advancing its audio. A native probe verified normal ALSA selection, muted playback and zero-volume playback without emitting sound.
 
 Linux requires Clang, LLVM tools, CMake, Ninja, pkg-config, xz and wayland-scanner, plus the host's 32-bit graphics and audio drivers. The reviewed compiler sysroot and SDL source are downloaded and verified by the native preparation driver.
+
+Maintainer recipe export uses a separate ordinary-i686 FFmpeg build, never the game's XDK alignment flags. Configure the verified FFmpeg 9.0.2 archive with the following options, replacing the sysroot path with the reviewed compiler sysroot:
+
+```sh
+./configure --prefix=../install32 --arch=x86_32 --target-os=linux \
+  --cc='/usr/bin/clang-18 --target=i686-linux-gnu -m32' --sysroot=/path/to/reviewed/sysroot \
+  --disable-autodetect --disable-everything --disable-programs --disable-doc --disable-debug \
+  --disable-network --disable-avdevice --disable-avfilter --disable-x86asm --disable-inline-asm \
+  --enable-static --disable-shared --enable-decoder=bink,binkaudio_rdft,binkaudio_dct \
+  --enable-demuxer=bink --disable-protocols
+make -j2 V=1 > /path/to/ffmpeg-build.log 2>&1
+```
+
+Export the base plan from the configured, patched OpenCE checkout, then extend that output before reviewing or committing it:
+
+```sh
+python3 tools/prepare_opence_native_plan.py --source /path/to/engine --output /tmp/native-plan
+python3 tools/prepare_opence_movie_plan.py --source /path/to/engine --output /tmp/native-plan \
+  --ffmpeg-source /path/to/ffmpeg-9.0.2 --ffmpeg-archive /path/to/ffmpeg-9.0.2.tar.xz \
+  --ffmpeg-build-log /path/to/ffmpeg-build.log
+```
+
+These commands are for maintainers. The player build consumes the resulting compiled-in data and invokes native compiler tools directly.
 
 Optimization needs measured CPU/GPU frame times and unchanged graphics; no fixed frame-rate claim is made from these functional tests.
 

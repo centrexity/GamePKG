@@ -12,7 +12,7 @@ network_allowed = true
 launcher = "pub fn game_tick(input: u32, state: u64) -> u64 { gamepkg::external_tick(input, state) }\n"
 required_paths = ["configure.py", "source", "port/linux", "port/linux/src/gamepkg_hud_upscale.inc", "port/linux/src/gamepkg_video_failure.inc"]
 forbidden_directories = ["maps", "custom_maps"]
-forbidden_suffixes = [".iso", ".xiso", ".map", ".wad", ".sfc", ".smc", ".rom"]
+forbidden_suffixes = [".iso", ".xiso", ".map", ".wad", ".sfc", ".smc", ".rom", ".bik"]
 cleanup = ["maps", "custom_maps", "content"]
 patches = [
     "0001-pointer-independent-refs.patch",
@@ -28,6 +28,7 @@ patches = [
     "0011-gamepkg-read-only-disc-view.patch",
     "0012-gamepkg-hud-upscale-simd.patch",
     "0013-gamepkg-require-game-window.patch",
+    "0014-gamepkg-native-original-movies.patch",
 ]
 
 [[layouts]]
@@ -70,7 +71,7 @@ warning = "ALSA was not found. The engine will start without sound."
 id = "linux-i686"
 os = "linux"
 arch = "i686"
-tools = ["ninja", "clang", "cmake", "pkg-config", "xz", "llvm-nm", "wayland-scanner"]
+tools = ["ninja", "clang", "cmake", "pkg-config", "xz", "llvm-nm", "llvm-ar", "wayland-scanner"]
 prepare = "linux-i686/plan.json"
 configure = []
 build_program = "ninja"

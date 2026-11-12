@@ -22,3 +22,16 @@ It compares every output byte and floating-point exception flag in 263,256 image
 `python3 engines/halo/tests/check_video_failure.py` checks normal, explicit headless, and standalone window-failure policies without game media.
 
 The `Native Halo source safeguards` CI job fetches the pinned public source and applies the reviewed patches, then runs these malformed-image, sparse-offset, concurrent-read, exact-HUD and window-policy fixtures on actual native 64-bit and 32-bit code. It uses no game media. Python is a maintainer/CI tool, not a player requirement.
+
+Movie fixtures generate an original three-frame black/white Bink clip and silent RDFT/DCT audio. They check every output pixel and padding byte, stride/offset bounds, frame timing, fractional audio samples across loops, mute/gain, cleanup/reopen, all four floating-point rounding modes, x87 precision and SSE state, bounded paths, malformed headers and truncated packets. A deliberately wrong i686 structure alignment must fail compilation. The 64-bit harness instruments both FFmpeg and the bridge with AddressSanitizer and UndefinedBehaviorSanitizer; the real game remains native i686.
+
+`check_movie_view.py --source /path/to/patched/engine` separately checks maps/movie namespace separation, read-only metadata, traversal/ADS/NUL names, duplicate and cyclic directories, invalid extents, end-of-file and huge offsets, plus 8,000 concurrent reads. Its generated-disc cases run on native 32-bit and 64-bit sanitizer builds.
+
+The following CI setup downloads only pinned open-source dependencies and builds dummy-audio SDL libraries for buffer tests. It opens no game window and needs no ROM:
+
+```sh
+python3 tools/check_opence_movie_codecs.py --source /path/to/patched/engine --work /tmp/new-movie32 --profile native32
+python3 tools/check_opence_movie_codecs.py --source /path/to/patched/engine --work /tmp/new-movie64 --profile sanitized64
+```
+
+An existing reviewed player build can also supply its actual SDL library and prepared FFmpeg archives to `check_movie_playback.py`; see `--help`. These are decoder/buffer checks. GPU rendering, controller behavior and multiplayer require separate runtime checks.
