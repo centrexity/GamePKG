@@ -35,6 +35,9 @@ static void generated(void);
 extern void gamepkg_test_fyl2xp1_reference(uint64_t, uint32_t, uint64_t,
                                            uint32_t, uint32_t, uint64_t *,
                                            uint32_t *, uint32_t *);
+extern int gamepkg_test_fyl2xp1_exact_reference(uint64_t, uint32_t, uint64_t,
+                                               uint32_t, uint32_t, uint64_t *,
+                                               uint32_t *, uint32_t *);
 #include "fyl2xp1_reference/accuracy.h"
 static _Thread_local unsigned profile_differences;
 static _Thread_local unsigned cases, queued, cs = 0x1b;
@@ -128,6 +131,13 @@ static void one(GamePkgExt80 a, GamePkgExt80 b, unsigned cw, unsigned top,
   __asm__ volatile("fyl2xp1" ::: "memory");
   __asm__ volatile("fxsave %0" : "=m"(after)::"memory");
   __asm__ volatile("fxrstor %0" ::"m"(old) : FX_CLOBBERS);
+#ifdef GAMEPKG_FYL2XP1_HOST_EXACT_UNDERFLOW_NOISE
+  /* Reproduce the observed host-only boundary flag on every test machine. */
+  if (!empty && a.sign_exponent == 0xbffe &&
+      a.significand == UINT64_C(0x8000000000000000) &&
+      b.sign_exponent == 1 && b.significand == UINT64_C(0x8000000000000000))
+    wr(after.b + 2, rd(after.b + 2) | 16u);
+#endif
   *gamepkg_x86_x87_state() = s;
   softfloat_roundingMode = softfloat_round_odd;
   softfloat_detectTininess = softfloat_tininess_beforeRounding;
@@ -141,12 +151,49 @@ static void one(GamePkgExt80 a, GamePkgExt80 b, unsigned cw, unsigned top,
   assert(!gamepkg_x86_run(generated, &f));
   GamePkgX87State *z = gamepkg_x86_x87_state();
   unsigned sw = rd(after.b + 2), valid = 0;
+  uint64_t exact_sig;
+  uint32_t exact_se, exact_flags;
+  if (!empty && gamepkg_test_fyl2xp1_exact_reference(
+                    a.significand, a.sign_exponent, b.significand,
+                    b.sign_exponent, cw, &exact_sig, &exact_se, &exact_flags)) {
+    /* These identities lie outside the architectural interval. An inexact
+     * host approximation can spuriously underflow at the normal boundary.
+     * Build their complete expected state from the independent exact product,
+     * including exception priority, wrapping, pop and deferred-fault state. */
+    Image physical = after;
+    after = input;
+    unsigned raised = exact_flags & 63u;
+    unsigned pre = raised & ~cw & 7u;
+    unsigned c1 = exact_flags & 0x200u;
+    if (pre) {
+      unsigned first = pre & (~pre + 1u);
+      raised &= (first << 1) - 1u;
+      c1 = 0;
+    } else {
+      for (unsigned i = 0; i < 7; ++i)
+        memcpy(after.b + 32 + 16 * i, input.b + 48 + 16 * i, 16);
+      memcpy(after.b + 144, input.b + 32, 16);
+      put80(after.b + 32, (GamePkgExt80){exact_sig, (uint16_t)exact_se});
+      after.b[4] &= (unsigned char)~(1u << top);
+    }
+    sw = (s.status & ~0x200u) | raised | c1;
+    if (!pre)
+      sw = (sw & ~0x3800u) | (((top + 1) & 7) << 11);
+    if (sw & ~cw & 63u)
+      sw |= 0x8080u;
+    wr(after.b + 2, sw);
+    if ((rd(physical.b + 2) & ~0x4500u) != (sw & ~0x4500u) ||
+        physical.b[4] != after.b[4] ||
+        memcmp(physical.b + 32, after.b + 32, 10))
+      ++profile_differences;
+  }
   /* The fixed P5/P6 numerical profile is checked bit-for-bit against the
    * independently built pinned reference, including exact log2(1+x)=integer
    * identities formed with independent binary128 multiplication. Those inputs
-   * are outside Intel's guaranteed range; their host result/C1 is not an oracle.
-   * Hardware approximation last bits may differ: all other registers, exception/status bits and commit responses
-   * continue to use the physical oracle unchanged. */
+   * are outside Intel's guaranteed range; their host result, range flags and
+   * C1 are not an oracle. Their complete state response is built above.
+   * Other inputs continue to check physical exception/status and commit state,
+   * with approximation last bits checked against the independent profile. */
   unsigned exponent = a.sign_exponent & 0x7fff;
   if (!empty && exponent < 0x7fff && a.significand &&
       (!exponent || (a.significand >> 63)) &&

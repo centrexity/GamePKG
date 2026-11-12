@@ -120,24 +120,26 @@ fn generated_fyl2xp1_matches_reference_accuracy_and_hardware_state() {
             cmd.arg(sf.join(s));
         }
     }
-    let out = cmd
-        .args(objects)
-        .args(["-Wl,-l:libmpfr.so.6", "-lgmp"])
-        .arg("-o")
-        .arg(&binary)
-        .output()
-        .unwrap();
-    assert!(
-        out.status.success(),
-        "{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    let out = std::process::Command::new(binary).output().unwrap();
-    assert!(
-        out.status.success(),
-        "{}\n{}",
-        String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr)
-    );
-    print!("{}", String::from_utf8_lossy(&out.stdout));
+    cmd.args(objects).args(["-Wl,-l:libmpfr.so.6", "-lgmp"]);
+    for host_noise in [false, true] {
+        let mut compile = std::process::Command::new(cmd.get_program());
+        compile.args(cmd.get_args()).arg("-o").arg(&binary);
+        if host_noise {
+            compile.arg("-DGAMEPKG_FYL2XP1_HOST_EXACT_UNDERFLOW_NOISE=1");
+        }
+        let out = compile.output().unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let out = std::process::Command::new(&binary).output().unwrap();
+        assert!(
+            out.status.success(),
+            "host noise={host_noise}: {}\n{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        print!("{}", String::from_utf8_lossy(&out.stdout));
+    }
 }
