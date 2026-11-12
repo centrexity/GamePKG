@@ -281,19 +281,21 @@ fn unpack_zip(
 ) -> Result<()> {
     let mut zip = zip::ZipArchive::new(reader)?;
     ensure!(zip.len() <= MAX_FILES, "SDK archive has too many members");
+    zip.validate_header_consistency()?;
     let windows = matches!(part.layout, Layout::WindowsZip);
     let mut unique = BTreeSet::new();
     for index in 0..zip.len() {
         let mut item = zip.by_index(index)?;
+        let archive_name = item.name()?.into_owned();
         let name = if windows {
-            let name = windows_zip_name(item.name())?;
+            let name = windows_zip_name(&archive_name)?;
             ensure!(
                 unique.insert(name.to_ascii_lowercase()),
                 "duplicate Windows SDK archive path"
             );
             name
         } else {
-            let Some(name) = relative(item.name(), strip)? else {
+            let Some(name) = relative(&archive_name, strip)? else {
                 continue;
             };
             name

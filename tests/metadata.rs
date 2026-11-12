@@ -140,7 +140,7 @@ fn signed_description_cannot_be_changed_without_the_creator_key() {
     let mut writer = zip::ZipWriter::new(std::fs::File::create(&changed).unwrap());
     for index in 0..reader.len() {
         let mut entry = reader.by_index(index).unwrap();
-        let name = entry.name().to_owned();
+        let name = entry.name().unwrap().into_owned();
         let mut bytes = Vec::new();
         entry.read_to_end(&mut bytes).unwrap();
         if name == "manifest.toml" {

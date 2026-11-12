@@ -268,7 +268,7 @@ fn unsigned_manifest_edits_cannot_grant_the_larger_profile() {
     let mut writer = zip::ZipWriter::new(std::fs::File::create(&changed).unwrap());
     for index in 0..reader.len() {
         let mut file = reader.by_index(index).unwrap();
-        let name = file.name().to_owned();
+        let name = file.name().unwrap().into_owned();
         let mut bytes = Vec::new();
         file.read_to_end(&mut bytes).unwrap();
         if name == "manifest.toml" {
