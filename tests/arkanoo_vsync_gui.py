@@ -6,7 +6,7 @@ The forwarding observer records actual backend API calls without replacing them.
 from pathlib import Path
 import json, os, re, shutil, subprocess, tempfile, time
 from PIL import Image
-from gui_test_support import start_display
+from gui_test_support import start_display, window_title_pattern
 
 PROJECT = Path(__file__).resolve().parents[1]
 CLI = PROJECT/'target/release/gamepkg'
@@ -129,7 +129,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-arkanoo-vsync-') as temporary:
         title = 'GamePKG' if library else game_id
         def find():
             global window
-            value = subprocess.run(['xdotool', 'search', '--onlyvisible', '--name', '^'+re.escape(title)+'$'], env=env, capture_output=True, text=True, timeout=5)
+            value = subprocess.run(['xdotool', 'search', '--onlyvisible', '--name', window_title_pattern(title)], env=env, capture_output=True, text=True, timeout=5)
             if value.returncode == 0:
                 window = value.stdout.splitlines()[0]
                 return True
