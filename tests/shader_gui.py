@@ -56,7 +56,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-shader-ui-') as directory:
     deadline=time.monotonic()+30
     while True:
      if process.poll() is not None:raise RuntimeError(process.stderr.read().decode())
-     state=subprocess.run(['xdotool','search','--onlyvisible','--name',r'^(GamePKG|com\..*)$'],env=env,capture_output=True,text=True)
+     state=subprocess.run(['xdotool','search','--onlyvisible','--name',r'^(GamePKG [0-9]+[.][0-9]+[.][0-9]+([-+][A-Za-z0-9.-]+)?|com\..*)$'],env=env,capture_output=True,text=True)
      if state.returncode==0:
       window=state.stdout.strip().splitlines()[0]
       owner=int(subprocess.check_output(['xdotool','getwindowpid',window],env=env,text=True))

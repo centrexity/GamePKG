@@ -30,7 +30,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-appearance-') as temporary:
    try:
     deadline=time.monotonic()+20
     while True:
-     found=subprocess.run(['xdotool','search','--onlyvisible','--pid',str(app.pid),'--name','^GamePKG$'],env=env,capture_output=True,text=True)
+     found=subprocess.run(['xdotool','search','--onlyvisible','--pid',str(app.pid),'--name','^GamePKG [0-9]+[.][0-9]+[.][0-9]+([-+][A-Za-z0-9.-]+)?$'],env=env,capture_output=True,text=True)
      if found.returncode==0:break
      assert app.poll() is None,app.stderr.read().decode();assert time.monotonic()<deadline;time.sleep(.1)
     window=found.stdout.splitlines()[0];subprocess.run(['xdotool','windowsize',window,str(width),str(height)],env=env,check=True);time.sleep(.7)

@@ -12,7 +12,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-settings-gui-') as directory:
     app=subprocess.Popen([str(Path(os.environ.get('GAMEPKG_TEST_BINARY_DIR', project/'target/release'))/'gamepkg-gui'),'--config',str(config)],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
     try:
         for _ in range(100):
-            found=subprocess.run(['xdotool','search','--onlyvisible','--name','^GamePKG$'],env=env,capture_output=True,text=True)
+            found=subprocess.run(['xdotool','search','--onlyvisible','--name','^GamePKG [0-9]+[.][0-9]+[.][0-9]+([-+][A-Za-z0-9.-]+)?$'],env=env,capture_output=True,text=True)
             if found.returncode==0:break
             if app.poll() is not None:raise RuntimeError(app.stderr.read().decode())
             time.sleep(.1)

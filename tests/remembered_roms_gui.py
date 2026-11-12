@@ -41,7 +41,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-remembered-roms-') as temp:
   end=time.monotonic()+20
   while time.monotonic()<end:
    if app.poll() is not None:raise RuntimeError(app.stderr.read().decode())
-   found=subprocess.run(['xdotool','search','--onlyvisible','--name',r'^(GamePKG|com\..*)$'],env=env,capture_output=True,text=True)
+   found=subprocess.run(['xdotool','search','--onlyvisible','--name',r'^(GamePKG [0-9]+[.][0-9]+[.][0-9]+([-+][A-Za-z0-9.-]+)?|com\..*)$'],env=env,capture_output=True,text=True)
    if found.returncode==0:break
    time.sleep(.1)
   assert found.returncode==0;window=found.stdout.splitlines()[0]

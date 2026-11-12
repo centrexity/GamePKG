@@ -18,7 +18,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-doom-gui-',dir=PROJECT/'target'
   deadline=time.monotonic()+20
   while time.monotonic()<deadline:
    if app.poll() is not None:raise RuntimeError(app.stderr.read().decode())
-   found=subprocess.run(['xdotool','search','--onlyvisible','--name','^GamePKG$'],env=env,text=True,capture_output=True,timeout=2)
+   found=subprocess.run(['xdotool','search','--onlyvisible','--name','^GamePKG [0-9]+[.][0-9]+[.][0-9]+([-+][A-Za-z0-9.-]+)?$'],env=env,text=True,capture_output=True,timeout=2)
    if found.returncode==0:break
    time.sleep(.1)
   assert found.returncode==0;window=found.stdout.splitlines()[0];library_window=window

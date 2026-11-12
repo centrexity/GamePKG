@@ -73,7 +73,12 @@ pub fn is_built(root: &Path, id: &str) -> Result<bool> {
     if matches!(
         manifest.builtin_engine.as_deref(),
         Some(crate::cube2::PROFILE) | Some(crate::takedawn::PROFILE)
-    ) {
+    ) || manifest
+        .builtin_engine
+        .as_deref()
+        .and_then(crate::external_engine::get)
+        .is_some()
+    {
         return Ok(false);
     }
     if let Some(profile) = manifest.builtin_engine.as_deref() {
@@ -176,6 +181,14 @@ pub fn compile(root: &Path, id: &str) -> Result<()> {
         == Some(crate::cube2::PROFILE)
     {
         bail!("Cube 2 requires the native Build action; Wasm compilation is unavailable");
+    }
+    if registry::installed_manifest(root, id)?
+        .builtin_engine
+        .as_deref()
+        .and_then(crate::external_engine::get)
+        .is_some()
+    {
+        bail!("this external engine requires the native Build action; Wasm compilation is unavailable");
     }
     #[cfg(windows)]
     {

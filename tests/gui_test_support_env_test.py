@@ -3,7 +3,9 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from gui_test_support import click_text
+from gui_test_support import click_text, game_window
+from types import SimpleNamespace
+import re
 
 
 class GuiToolEnvironmentTest(unittest.TestCase):
@@ -27,6 +29,20 @@ class GuiToolEnvironmentTest(unittest.TestCase):
                     click_text('123', env, 'Action', directory, click=click)
         self.assertEqual(len(ocr_calls), 2)
         self.assertTrue(all(call[0] == 'tesseract' for call in ocr_calls))
+
+    def test_versioned_app_title_and_exact_game_title(self):
+        for title, accepted, rejected in [
+            ('GamePKG', 'GamePKG 0.1.24', ['GamePKG', 'GamePKG settings', 'GamePKG 0x1x24']),
+            ('org.example.game', 'org.example.game', ['orgXexampleXgame', 'org.example.game settings']),
+        ]:
+            def run(arguments, **kwargs):
+                pattern = arguments[-1]
+                self.assertIsNotNone(re.fullmatch(pattern, accepted))
+                for wrong in rejected:
+                    self.assertIsNone(re.fullmatch(pattern, wrong))
+                return SimpleNamespace(returncode=0, stdout='123\n')
+            with self.subTest(title=title), patch('gui_test_support.subprocess.run', side_effect=run), patch('gui_test_support.subprocess.check_output', return_value='456'):
+                self.assertEqual(game_window({'DISPLAY': ':97'}, title), ('123', 456))
 
 
 if __name__ == '__main__':

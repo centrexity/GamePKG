@@ -45,7 +45,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-window-preferences-', dir=PROJE
         args=[str(BIN/'gamepkg-gui')]
         if not library:args+=['--play',GAME,'--target','wasm']
         app=subprocess.Popen(args,env=env,stdout=log,stderr=log)
-        name='^GamePKG$' if library else '^'+GAME.replace('.','\\.')+'$'
+        name='^GamePKG [0-9]+[.][0-9]+[.][0-9]+([-+][A-Za-z0-9.-]+)?$' if library else '^'+GAME.replace('.','\\.')+'$'
         def found():
             result=subprocess.run(['xdotool','search','--onlyvisible','--name',name],env=env,capture_output=True,text=True)
             return result.stdout.splitlines()[0] if result.returncode==0 else None
