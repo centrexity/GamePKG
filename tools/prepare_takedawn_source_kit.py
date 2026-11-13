@@ -144,12 +144,20 @@ def main():
     os.chmod(export_path, 0o644)
     files['prepared/exports.txt'] = {'sha256': sha(export_path), 'bytes': export_path.stat().st_size, 'mode': 0o644}
     host = project / 'engines/takedawn'
+    copy(project / 'engines/native-input/src/lib.rs', 'host/engines/native-input/src/lib.rs')
+    copy(project / 'engines/native-input/README.md', 'host/engines/native-input/README.md')
+    for name in ['gamepkg_input.h', 'gamepkg_input_backend.h']:
+        copy(project / 'include' / name, 'host/include/' + name)
     for name in ['Cargo.toml', 'Cargo.lock', 'src/lib.rs', 'src/windows_handle.rs', 'media.h', 'posix.c',
                  'engine.c', 'attach.cmake', 'adapt_presentation.cmake', 'presentation_policy.cmake', 'adapt_paths.cmake', 'adapt_smoke.cmake', 'adapt_memory.cmake', 'adapt_pacing.cmake', 'adapt_threads.cmake', 'thread_priority.inc.h', 'adapt_gpu_report.cmake',
                  'adapt_fullscreen.cmake', 'fullscreen_hotkey.h', 'launch_args.h',
                  'adapt_prompt_quality.cmake', 'upscale_three.h', 'adapt_vertex_perspective.cmake',
                  'adapt_rt_zero_hash.cmake', 'rt_zero_hash.h',
                  'adapt_input_glyphs.cmake', 'input_glyphs_policy.h', 'input_gameplay_policy.h',
+                 'adapt_native_input.cmake', 'native_input.cmake', 'native_xinput.h',
+                 'adapt_native_sdl2.cmake', 'native_sdl2.h',
+                 'adapt_native_sdl2_events.cmake', 'native_sdl2_events.c', 'native_sdl2_events.h',
+                 'adapt_keyboard_state.cmake',
                  'windows_file.c', 'windows_file.h', 'windows_stream.c', 'windows_stream.h',
                  'windows_entry.c', 'windows_attach.cmake', 'windows_restart.h', 'adapt_windows_restart.cmake', 'adapt_windows_clock.cmake', 'adapt_windows_file.cmake',
                  'adapt_windows_startup.cmake', 'DotNET-RUNTIME-LICENSE.txt']:

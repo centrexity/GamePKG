@@ -4,6 +4,8 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 #[path = "../../../../src/memory_budget.rs"]
 mod memory_budget;
+#[path = "../../../native-input/src/lib.rs"]
+pub mod native_input;
 #[cfg(windows)]
 mod windows_handle;
 #[path = "../../../../src/xbox_disc.rs"]
