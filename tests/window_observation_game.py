@@ -6,6 +6,7 @@ import json,os,re,shutil,subprocess,tempfile,threading,time
 from contextlib import contextmanager
 from PIL import Image
 from gui_test_support import start_display
+from cargo_artifacts import dependency_search_args
 PROJECT=Path(__file__).resolve().parents[1];CLI=PROJECT/'target/release/gamepkg';GUI=PROJECT/'target/release/gamepkg-gui'
 compiled=subprocess.run(['cargo','test','--release','--test','window_observation_runtime','--no-run','--message-format=json'],capture_output=True,text=True,timeout=300);assert compiled.returncode==0,compiled.stderr
 executables=[v['executable'] for line in compiled.stdout.splitlines() if(v:=json.loads(line)).get('reason')=='compiler-artifact' and v.get('target',{}).get('name')=='window_observation_runtime' and v.get('executable')];assert len(executables)==1
@@ -17,7 +18,7 @@ for line in vendor.stdout.splitlines():
   libraries[value['target']['name']]=next(Path(name) for name in value['filenames'] if name.endswith('.rlib'))
 assert len(libraries)==3,libraries
 vendor_test=PROJECT/'target/gamepkg-window-observation-test'
-command=['rustc','--edition=2021','--test',str(PROJECT/'vendor/egui-winit/src/gamepkg_window.rs'),'--cfg','feature="x11"','-L','dependency='+str(libraries['winit'].parent),'-o',str(vendor_test)]
+command=['rustc','--edition=2021','--test',str(PROJECT/'vendor/egui-winit/src/gamepkg_window.rs'),'--cfg','feature="x11"',*dependency_search_args(vendor.stdout),'-o',str(vendor_test)]
 for name,library in libraries.items():command+=['--extern',name+'='+str(library)]
 subprocess.run(command,check=True)
 class Quiet(SimpleHTTPRequestHandler):

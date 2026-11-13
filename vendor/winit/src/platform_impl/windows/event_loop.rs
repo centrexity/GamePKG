@@ -22,7 +22,7 @@ use windows_sys::Win32::Foundation::{
 };
 use windows_sys::Win32::Graphics::Gdi::{
     GetMonitorInfoW, MonitorFromRect, MonitorFromWindow, RedrawWindow, ScreenToClient,
-    ValidateRect, MONITORINFO, MONITOR_DEFAULTTONULL, RDW_INTERNALPAINT, SC_SCREENSAVE,
+    ValidateRect, MONITORINFO, MONITOR_DEFAULTTONULL, RDW_INTERNALPAINT, RDW_INVALIDATE, SC_SCREENSAVE,
 };
 use windows_sys::Win32::System::Ole::RevokeDragDrop;
 use windows_sys::Win32::System::Threading::{
@@ -44,20 +44,20 @@ use windows_sys::Win32::UI::Input::Touch::{
 use windows_sys::Win32::UI::Input::{RAWINPUT, RIM_TYPEKEYBOARD, RIM_TYPEMOUSE};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetClientRect, GetCursorPos,
-    GetMenu, LoadCursorW, MsgWaitForMultipleObjectsEx, PeekMessageW, PostMessageW,
+    GetMenu, IsIconic, LoadCursorW, MsgWaitForMultipleObjectsEx, PeekMessageW, PostMessageW,
     RegisterClassExW, RegisterWindowMessageA, SetCursor, SetWindowPos, TranslateMessage,
     CREATESTRUCTW, GIDC_ARRIVAL, GIDC_REMOVAL, GWL_STYLE, GWL_USERDATA, HTCAPTION, HTCLIENT,
     MINMAXINFO, MNC_CLOSE, MSG, MWMO_INPUTAVAILABLE, NCCALCSIZE_PARAMS, PM_REMOVE, PT_PEN,
     PT_TOUCH, QS_ALLINPUT, RI_MOUSE_HWHEEL, RI_MOUSE_WHEEL, SC_MINIMIZE, SC_RESTORE,
     SIZE_MAXIMIZED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WHEEL_DELTA, WINDOWPOS,
     WMSZ_BOTTOM, WMSZ_BOTTOMLEFT, WMSZ_BOTTOMRIGHT, WMSZ_LEFT, WMSZ_RIGHT, WMSZ_TOP, WMSZ_TOPLEFT,
-    WMSZ_TOPRIGHT, WM_CAPTURECHANGED, WM_CLOSE, WM_CREATE, WM_DESTROY, WM_DPICHANGED,
+    WMSZ_TOPRIGHT, WM_CAPTURECHANGED, WM_CLOSE, WM_CREATE, WM_DESTROY, WM_DISPLAYCHANGE, WM_DPICHANGED,
     WM_ENTERSIZEMOVE, WM_EXITSIZEMOVE, WM_GETMINMAXINFO, WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION,
     WM_IME_SETCONTEXT, WM_IME_STARTCOMPOSITION, WM_INPUT, WM_INPUT_DEVICE_CHANGE, WM_KEYDOWN,
     WM_KEYUP, WM_KILLFOCUS, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP,
     WM_MENUCHAR, WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCACTIVATE, WM_NCCALCSIZE,
     WM_NCCREATE, WM_NCDESTROY, WM_NCLBUTTONDOWN, WM_PAINT, WM_POINTERDOWN, WM_POINTERUP,
-    WM_POINTERUPDATE, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR, WM_SETFOCUS, WM_SETTINGCHANGE,
+    WM_POINTERUPDATE, WM_POWERBROADCAST, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR, WM_SETFOCUS, WM_SETTINGCHANGE,
     WM_SIZE, WM_SIZING, WM_SYSCOMMAND, WM_SYSKEYDOWN, WM_SYSKEYUP, WM_TOUCH, WM_WINDOWPOSCHANGED,
     WM_WINDOWPOSCHANGING, WM_XBUTTONDOWN, WM_XBUTTONUP, WNDCLASSEXW, WS_EX_LAYERED,
     WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT, WS_OVERLAPPED, WS_POPUP, WS_VISIBLE,
@@ -119,6 +119,7 @@ pub(crate) struct WindowData {
     pub window_state: Arc<Mutex<WindowState>>,
     pub event_loop_runner: EventLoopRunnerShared<UserEventPlaceholder>,
     pub key_event_builder: KeyEventBuilder,
+    pub(super) display_notifications: super::display_restore::DisplayNotifications,
     pub _file_drop_handler: Option<FileDropHandler>,
     pub userdata_removed: Cell<bool>,
     pub recurse_depth: Cell<u32>,
@@ -1086,6 +1087,7 @@ pub(super) unsafe extern "system" fn public_window_callback(
             let initdata = &mut *(initdata as *mut InitData<'_>);
 
             initdata.on_create();
+            (&*(userdata as *const WindowData)).display_notifications.register(window);
             return DefWindowProcW(window, msg, wparam, lparam);
         },
         (0, _) => return unsafe { DefWindowProcW(window, msg, wparam, lparam) },
@@ -1393,6 +1395,38 @@ unsafe fn public_window_callback_inner(
             // This is necessary for us to still get sent WM_SIZE.
             result = ProcResult::DefWindowProc(wparam);
         },
+
+        WM_POWERBROADCAST | WM_DISPLAYCHANGE => {
+            let restore = if msg == WM_POWERBROADCAST {
+                unsafe { userdata.display_notifications.power_message(wparam, lparam) }
+            } else {
+                userdata.display_notifications.available()
+            };
+            if restore && unsafe { IsIconic(window) } == 0 {
+                let mut rect: RECT = unsafe { mem::zeroed() };
+                if unsafe { GetClientRect(window, &mut rect) } != 0 {
+                    let size = rect
+                        .right
+                        .checked_sub(rect.left)
+                        .zip(rect.bottom.checked_sub(rect.top));
+                    if let Some((width, height)) = size.filter(|&(w, h)| w > 0 && h > 0) {
+                        // Deliver through the normal resize path even when the
+                        // dimensions did not change, so the renderer configures
+                        // a fresh presentation surface before its next frame.
+                        userdata.send_event(Event::WindowEvent {
+                            window_id: RootWindowId(WindowId(window)),
+                            event: WindowEvent::Resized(PhysicalSize::new(
+                                width as u32,
+                                height as u32,
+                            )),
+                        });
+                        unsafe {
+                            RedrawWindow(window, ptr::null(), 0, RDW_INVALIDATE | RDW_INTERNALPAINT)
+                        };
+                    }
+                }
+            }
+        }
 
         WM_SIZE => {
             use crate::event::WindowEvent::Resized;
