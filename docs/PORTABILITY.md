@@ -70,11 +70,13 @@ cargo test --locked --target i686-pc-windows-msvc --test portability --test runt
 ```
 
 Android builders need the matching Rust target and NDK compiler/linker configured.
-After building the four test executables, run them on a dedicated test device:
+Record Cargo's eight suite executables and library test executable, then run
+them on a dedicated test device. The runner uses the reported paths, including
+custom Cargo artifact directories, and ignores stale binaries from older builds:
 
 ```sh
-cargo test --locked --target i686-linux-android --test portability --test runtime --test components --test memory_budget --no-run
-bash tools/test_android_runtime.sh emulator-5554 i686-linux-android
+cargo test --locked --target i686-linux-android --lib --test portability --test runtime --test components --test render_resources --test memory_budget --test audio_effect_assets --test music_permissions --test game_arkanoo --no-run --message-format=json > android-tests.json
+bash tools/test_android_runtime.sh emulator-5554 i686-linux-android android-tests.json
 ```
 
 These are developer checks. Players do not need Python or signing keys.
