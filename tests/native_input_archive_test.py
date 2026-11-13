@@ -28,20 +28,30 @@ class MediaArchiveResolution(unittest.TestCase):
             lines = [f'set(CMAKE_SYSTEM_NAME {system})', f'include([=[{(bridge / "native_input.cmake").as_posix()}]=])']
             if override:
                 lines += [f'set(GAMEPKG_TAKEDAWN_MEDIA_ARCHIVE [=[{explicit.as_posix()}]=])']
+            output = root / 'resolved.txt'
             lines += ['gamepkg_resolve_media_archive(resolved)',
-                      f'if(NOT resolved STREQUAL [=[{archive.as_posix()}]=])',
-                      'message(FATAL_ERROR "Wrong archive selected")', 'endif()']
+                      f'file(WRITE [=[{output.as_posix()}]=] "${{resolved}}")']
             script.write_text('\n'.join(lines) + '\n')
-            return subprocess.run(['cmake', '-P', str(script)], capture_output=True, text=True, timeout=20)
+            result = subprocess.run(['cmake', '-P', str(script)], capture_output=True, text=True, timeout=20)
+            if result.returncode == 0:
+                resolved = Path(output.read_text())
+                # Windows may expand an 8.3 temporary-directory alias while
+                # evaluating CMAKE_CURRENT_FUNCTION_LIST_DIR. File identity,
+                # rather than path spelling, establishes the intended choice.
+                self.assertTrue(resolved.samefile(archive), f'{resolved} selected instead of {archive}')
+            return result
 
     def test_default_linux_player_path(self):
-        self.assertEqual(self.run_case('Linux').returncode, 0)
+        result = self.run_case('Linux')
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_explicit_linux_archive_overrides_default(self):
-        self.assertEqual(self.run_case('Linux', override=True).returncode, 0)
+        result = self.run_case('Linux', override=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_windows_uses_explicit_archive(self):
-        self.assertEqual(self.run_case('Windows', override=True).returncode, 0)
+        result = self.run_case('Windows', override=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_windows_does_not_silently_choose_linux_archive(self):
         result = self.run_case('Windows')

@@ -161,6 +161,9 @@ task_args=(--die-with-parent --unshare-net --clearenv
     --setenv XDG_DATA_HOME "$task_state/data" --setenv XDG_CACHE_HOME "$task_state/cache"
     --setenv GAMEPKG_TAKEDAWN_DISC "$task_disc_path" --setenv RECOMP_PB_BACKEND vulkan
     --setenv RECOMP_STUB_LOG 1 --setenv RECOMP_UNIMPL_TRAP 1
+    --setenv RECOMP_INPUT_RUMBLE 0
+    --setenv SDL_JOYSTICK_HIDAPI 0 --setenv SDL_JOYSTICK_LINUX_CLASSIC 0
+    --setenv SDL_JOYSTICK_RAWINPUT 0 --setenv SDL_JOYSTICK_MFI 0 --setenv SDL_JOYSTICK_IOKIT 0
     --setenv SDL_AUDIODRIVER dummy --setenv RECOMP_FB_DUMP "$task_state/run/frame-")
 if [[ "$GAMEPKG_GAMEPLAY_EVENT" == race-complete || "$GAMEPKG_GAMEPLAY_EVENT" == roadrage-complete || "$GAMEPKG_GAMEPLAY_EVENT" == timeattack-session ]]; then
     task_args+=(--setenv RECOMP_DEBUG autopilot=1)
