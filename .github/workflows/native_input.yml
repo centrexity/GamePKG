@@ -1,0 +1,56 @@
+name: Shared native input
+on:
+  push:
+    paths: ['engines/native-input/**', 'include/gamepkg_input*.h', 'tools/check_native_input.py', '.github/workflows/native_input.yml']
+  pull_request:
+    paths: ['engines/native-input/**', 'include/gamepkg_input*.h', 'tools/check_native_input.py', '.github/workflows/native_input.yml']
+permissions:
+  contents: read
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: ubuntu-24.04, target: x86_64-unknown-linux-gnu, arch: x64}
+          - {os: ubuntu-24.04, target: i686-unknown-linux-gnu, arch: x86}
+          - {os: windows-2022, target: x86_64-pc-windows-msvc, arch: x64}
+          - {os: windows-2022, target: i686-pc-windows-msvc, arch: x86}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+          components: rustfmt, clippy
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: runner.os == 'Windows'
+        with:
+          arch: ${{ matrix.arch }}
+      - name: Install native Linux 32-bit linker
+        if: runner.os == 'Linux' && matrix.arch == 'x86'
+        run: sudo apt-get update && sudo apt-get install -y gcc-multilib
+      - name: Check source
+        run: |
+          cargo fmt --manifest-path engines/native-input/Cargo.toml -- --check
+          cargo clippy --locked --manifest-path engines/native-input/Cargo.toml --all-targets -- -D warnings
+      - name: Run native state, concurrency and actual C ABI checks
+        run: python tools/check_native_input.py --target ${{ matrix.target }} --output native-input-results
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-input-${{ matrix.target }}
+          path: |
+            native-input-results/*.log
+            native-input-results/result.json
+  android-layout:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: armv7-linux-androideabi,i686-linux-android
+      - name: Compile the 32-bit Android library and ABI assertions
+        run: |
+          cargo build --locked --release --manifest-path engines/native-input/Cargo.toml --target armv7-linux-androideabi
+          cargo build --locked --release --manifest-path engines/native-input/Cargo.toml --target i686-linux-android
