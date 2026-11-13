@@ -38,6 +38,8 @@ jobs:
         run: bash tools/ci_ubuntu_apt.sh update && bash tools/ci_ubuntu_apt.sh install -y ffmpeg g++ libsdl2-dev openssl
       - name: Install Rust tools
         run: rustup update stable && rustup default stable && rustup component add rustfmt clippy
+      - name: Verify standalone fixture dependency lookup
+        run: python3 tests/test_cargo_artifacts.py
       - name: Install audio development headers
         if: matrix.features == '--all-features'
         run: bash tools/ci_ubuntu_apt.sh update && bash tools/ci_ubuntu_apt.sh install -y libasound2-dev libudev-dev libsdl2-mixer-dev libmpg123-dev libmpfr-dev

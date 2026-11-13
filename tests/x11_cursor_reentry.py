@@ -2,6 +2,7 @@
 from pathlib import Path
 import json, os, queue, subprocess, tempfile, threading, time
 from gui_test_support import start_display
+from cargo_artifacts import dependency_search_args
 project=Path(__file__).resolve().parents[1]
 build=subprocess.run(['cargo','build','--locked','--release','--all-features','--lib','--message-format=json'],cwd=project,stdout=subprocess.PIPE,text=True)
 if build.returncode:
@@ -17,7 +18,7 @@ for line in build.stdout.splitlines():
 assert artifact is not None
 with tempfile.TemporaryDirectory(prefix='gamepkg-cursor-reentry-') as temporary:
  root=Path(temporary);binary=root/'probe'
- subprocess.run(['rustc','--edition=2021',str(project/'tests/fixtures/x11-cursor-reentry.rs'),'--extern',f'winit={artifact}','-L',f'dependency={artifact.parent}','-o',str(binary)],check=True)
+ subprocess.run(['rustc','--edition=2021',str(project/'tests/fixtures/x11-cursor-reentry.rs'),'--extern',f'winit={artifact}',*dependency_search_args(build.stdout),'-o',str(binary)],check=True)
  env=dict(os.environ);env.pop('WAYLAND_DISPLAY',None)
  display=start_display(env,1000,700);app=None
  try:
