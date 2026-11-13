@@ -40,6 +40,9 @@ jobs:
       - name: Verify production Windows display notifications and DWORD layout
         if: runner.os == 'Windows'
         run: python tools/check_windows_display_restore.py --target ${{ matrix.target }}
+      - name: Compile production window integration and Vulkan recovery fixture
+        if: runner.os == 'Windows'
+        run: cargo clippy --locked --manifest-path tests/fixtures/windows-display-restore/Cargo.toml --target ${{ matrix.target }} --all-targets --features vulkan -- -D warnings
       - name: Verify resumable compilation with native Rust objects
         run: python tools/check_takedawn_rust_cache.py --target ${{ matrix.target }}
       - name: Compare native port geometry with original captures
