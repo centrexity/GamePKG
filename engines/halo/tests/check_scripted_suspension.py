@@ -22,7 +22,7 @@ def main():
     paths={key:source/path for key,path in {'network':'port/linux/game/network_distributed.c','header':'port/linux/game/network_distributed.h',
         'players':'source/game/players.h','units':'source/units/units.h','setter':'source/units/units.c','version':'port/linux/include/halo_port_limits.h'}.items()}
     texts={key:path.read_text() for key,path in paths.items()}
-    assert re.search(r'#define HALO_PORT_NETWORK_VERSION 33\b',texts['version'])
+    assert re.search(r'#define HALO_PORT_NETWORK_VERSION 34\b',texts['version'])
     pieces=[block(texts['players'],'enum\n{\n\t_player_powerup_active_camouflage',True),
         block(texts['units'],'enum\n{\n\t_unit_actively_controlled_bit',True),
         block(texts['header'],'struct distributed_vector\n',True)]

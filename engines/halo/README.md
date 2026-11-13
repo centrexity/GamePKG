@@ -76,3 +76,44 @@ Optimization needs measured CPU/GPU frame times and unchanged graphics; no fixed
 Patch `0012` parallelizes original HUD-pixel upscaling with SSE2 on supported CPUs and keeps a scalar path elsewhere. It preserves the Catmull-Rom tap order, original texel centers, channel order, clamping and rounding. The asset-free fixture compares the complete result and floating-point flags against the pinned original, including native 32-bit and sanitizer runs. It changes no artwork, layouts or rendering settings.
 
 Upstream is AGPL-3.0-or-later. That license does not license Halo assets or Microsoft's trademarks. The selector text is Apache-2.0.
+
+
+## Scripted camera and clock synchronization
+
+Patch `0017` carries the original seven scripted view vectors while cooperative
+player input is disabled. The local camera uses the inverse of the original
+player-specific aiming conversion, preserving vehicle-up and seat-camera rules;
+a full animated parent-node inverse uses a different coordinate basis. Ordinary
+active local camera input remains local.
+
+Scripted position handoffs remain authoritative until the client reaches the
+host's exit position. This prevents delayed pre-exit predictions from pulling
+the player back into a vehicle. The tolerance is 1/32 world unit, and dead,
+replaced, absent and non-cooperative players retain their original isolation.
+
+The client clock retains its host-projected ahead budget and can execute one
+extra complete simulation tick at most every 250 ms to recover time lost during
+loading. Catch-up requires a fresh host message, valid measured round trip, a
+positive tick request and a gap beyond the two-tick quantization allowance. It
+never rewinds time or skips simulation. Normal host, solo and menu timing is
+unchanged.
+
+Native Linux tests identified a persistent client lag of about eleven ticks;
+matching input records differed only by angle quantization. Bounded catch-up
+removed that persistent lag. The preceding camera/clock candidate passed 124
+paired seconds on the second campaign map in each hosting role under unchanged
+comparison thresholds. The corrected vehicle-basis candidate passed 182/184
+paired seconds in the first map with simulated receive delay and packet loss;
+both client roles completed a four-unit first walk without a death or deep
+fall. A preceding clock candidate also passed a bounded host-stall reproduction.
+These checks do not establish complete campaign play, Windows playback or a
+whole-game frame-time guarantee.
+A later maximum-stick looking run with the final camera candidate passed one
+hosting role and recorded a short remote-aim disagreement in the other despite
+aligned clocks. That stress case remains under investigation; its original
+failed comparison is retained.
+
+Network version 34 separates these extended snapshots from older peers. Native
+version 33/34 test peers explicitly refused each other in both hosting roles.
+The asset-free codec and runtime regression fixtures are described in
+[tests/README.md](tests/README.md).

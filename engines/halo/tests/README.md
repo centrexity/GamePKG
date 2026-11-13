@@ -36,11 +36,32 @@ python3 tools/check_opence_movie_codecs.py --source /path/to/patched/engine --wo
 
 An existing reviewed player build can also supply its actual SDL library and prepared FFmpeg archives to `check_movie_playback.py`; see `--help`. These are decoder/buffer checks. GPU rendering, controller behavior and multiplayer require separate runtime checks.
 
-The scripted-suspension fixture compiles the actual snapshot writer/reader, transition handler, and original engine setter from the patched source. It checks 2,560 flag/shape/ownership round-trips and 65,016 truncated allocations per profile, including suspended units with camouflage, riding, damage and powerup fields. It also checks that repeated snapshots do not repeatedly clear velocity or airborne state, that unrelated flags survive, and that non-cooperative games never apply this state.
+The scripted-suspension fixture compiles the actual snapshot writer/reader, transition handler, and original engine setter from the patched source. It checks 5,120 flag/shape/ownership/view round-trips and 194,544 truncated allocations per profile, including suspended units with camouflage, riding, damage and powerup fields. It also checks that repeated snapshots do not repeatedly clear velocity or airborne state, that unrelated flags survive, and that non-cooperative games never apply this state.
 
 ```sh
 python3 engines/halo/tests/check_scripted_suspension.py --source /path/to/patched/engine --output /tmp/suspension32 --profile native32
 python3 engines/halo/tests/check_scripted_suspension.py --source /path/to/patched/engine --output /tmp/suspension64 --profile sanitized64
 ```
 
-The 64-bit fixture uses AddressSanitizer and UndefinedBehaviorSanitizer; it does not establish 64-bit gameplay support. Both fixtures use generated protocol values without game media. Network version 33 distinguishes the new scripted-state behavior from older peers.
+The 64-bit fixture uses AddressSanitizer and UndefinedBehaviorSanitizer; it does not establish 64-bit gameplay support. Both fixtures use generated protocol values without game media. Network version 34 distinguishes the extended scripted-view snapshots from older peers.
+
+
+The co-op runtime fixture extracts the patched prediction loop, simulation clock,
+and vehicle-facing conversion. Each profile runs 26 clock cases (including the
+17 earlier regressions), 14 scripted handoff cases, and 11,900 aiming-basis
+round-trips using the original engine conversion and matrix functions. Six
+negative controls per profile must fail their assertions: removing catch-up,
+its rate guard, the ahead budget, fractional-frame preservation, scripted
+position authority, or using the wrong parent-node camera basis.
+
+```sh
+python3 engines/halo/tests/check_coop_runtime.py --source /path/to/patched/engine --output /tmp/coop32 --profile native32
+python3 engines/halo/tests/check_coop_runtime.py --source /path/to/patched/engine --output /tmp/coop64 --profile sanitized64
+```
+
+World, tag and device access are mocked in these asset-free fixtures. They prove
+specific function behavior, including stale clock/invalid RTT handling, time
+wrap, new game epochs, zero-tick render frames and original seat-basis rules.
+Actual GPU playback, controller delivery, campaign progress, stalls, network
+latency and frame times remain separate runtime checks. Python runs only in
+maintainer tests; the player build and runtime do not use these scripts.

@@ -51,6 +51,10 @@ jobs:
         run: |
           python3 engines/halo/tests/check_scripted_suspension.py --source "$RUNNER_TEMP/opence-native-fixture" --output "$RUNNER_TEMP/suspension-native32" --profile native32
           python3 engines/halo/tests/check_scripted_suspension.py --source "$RUNNER_TEMP/opence-native-fixture" --output "$RUNNER_TEMP/suspension-sanitized64" --profile sanitized64
+      - name: Verify co-op clock, handoff and original vehicle-facing rules
+        run: |
+          python3 engines/halo/tests/check_coop_runtime.py --source "$RUNNER_TEMP/opence-native-fixture" --output "$RUNNER_TEMP/coop-native32" --profile native32
+          python3 engines/halo/tests/check_coop_runtime.py --source "$RUNNER_TEMP/opence-native-fixture" --output "$RUNNER_TEMP/coop-sanitized64" --profile sanitized64
       - name: Verify generated movies and silent audio on native 32-bit code
         run: |
           python3 tools/check_opence_movie_codecs.py --source "$RUNNER_TEMP/opence-native-fixture" --work "$RUNNER_TEMP/movie-native32" --profile native32
@@ -73,3 +77,7 @@ jobs:
             ${{ runner.temp }}/suspension-native32/result.json
             ${{ runner.temp }}/suspension-sanitized64/*.log
             ${{ runner.temp }}/suspension-sanitized64/result.json
+            ${{ runner.temp }}/coop-native32/**/*.log
+            ${{ runner.temp }}/coop-native32/result.json
+            ${{ runner.temp }}/coop-sanitized64/**/*.log
+            ${{ runner.temp }}/coop-sanitized64/result.json

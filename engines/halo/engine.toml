@@ -31,6 +31,7 @@ patches = [
     "0014-gamepkg-native-original-movies.patch",
     "0015-gamepkg-coop-scripted-suspension.patch",
     "0016-gamepkg-network-coop-detection.patch",
+    "0017-gamepkg-scripted-view-and-clock.patch",
 ]
 
 [[layouts]]

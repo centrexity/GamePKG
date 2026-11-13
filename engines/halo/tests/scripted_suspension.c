@@ -69,7 +69,7 @@ static void transitions(void)
 static void snapshots(void)
 {
     unsigned cases=0,truncations=0;
-    for(unsigned flags=0;flags<256;flags++)for(unsigned own=0;own<2;own++)for(unsigned shape=0;shape<5;shape++) {
+    for(unsigned flags=0;flags<256;flags++)for(unsigned own=0;own<2;own++)for(unsigned shape=0;shape<5;shape++)for(unsigned view=0;view<2;view++) {
         struct distributed_unit_state state={0},decoded;
         struct { byte before[16],data[DISTRIBUTED_UNIT_STATE_MAXIMUM_SIZE],after[16]; } wire;
         memset(&wire,0xa5,sizeof(wire));
@@ -84,12 +84,18 @@ static void snapshots(void)
             if(shape==1){state.vehicle_index=0x23456789;state.seat_index=3;}
             if(shape==2){state.vehicle_index=0x23456789;state.seat_index=2;state.up.i=200;state.current_body_damage=23;state.recent_body_damage=42;state.current_shield_damage=9;state.recent_shield_damage=3;state.powerup_durations[0]=300;state.powerup_durations[1]=-1;state.active_camouflage=255;}
         } else if(shape==3){state.killing_player_index=5;state.flags=FLAG(_distributed_unit_friendly_fire_bit);}
+        state.scripted_view=view;
+        for(unsigned v=0;v<7;v++)state.scripted_vectors[v]=(struct distributed_vector){(short)(flags+v), (short)(32767-flags), (short)(-32768+flags)};
         word length=distributed_unit_state_write(&state,own,wire.data);
         assert(length>=DISTRIBUTED_UNIT_STATE_MINIMUM_SIZE&&length<=DISTRIBUTED_UNIT_STATE_MAXIMUM_SIZE);
         for(unsigned i=0;i<16;i++)assert(wire.before[i]==0xa5&&wire.after[i]==0xa5);
         for(unsigned i=length;i<sizeof(wire.data);i++)assert(wire.data[i]==0xa5);
         assert(distributed_unit_state_read(wire.data,wire.data+length,&decoded)==length);
-        if(shape<3)assert(decoded.unit_flags==flags);
+        if(shape<3) {
+            assert(decoded.unit_flags==flags);
+            assert(decoded.scripted_view==view);
+            if(view)assert(!memcmp(decoded.scripted_vectors,state.scripted_vectors,sizeof(state.scripted_vectors)));
+        }
         else assert(decoded.unit_flags==0);
         byte canonical[DISTRIBUTED_UNIT_STATE_MAXIMUM_SIZE];
         assert(distributed_unit_state_write(&decoded,TRUE,canonical)==length);
