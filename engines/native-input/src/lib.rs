@@ -498,6 +498,12 @@ impl Service {
 }
 
 static INPUT: LazyLock<Mutex<Service>> = LazyLock::new(|| Mutex::new(Service::new()));
+static EPOCH: LazyLock<std::time::Instant> = LazyLock::new(std::time::Instant::now);
+#[no_mangle]
+pub extern "C" fn gamepkg_input_time_ns() -> u64 {
+    // Zero remains the ABI's unknown-timestamp value. Saturate, never wrap.
+    (EPOCH.elapsed().as_nanos().min(u128::from(u64::MAX - 1)) as u64) + 1
+}
 fn lock() -> std::sync::MutexGuard<'static, Service> {
     INPUT.lock().unwrap_or_else(|p| p.into_inner())
 }
@@ -1018,6 +1024,8 @@ mod tests {
         assert_eq!(offset_of!(Event, x), 24);
         assert_eq!(offset_of!(Gamepad, left_x), 20);
         assert_eq!(offset_of!(Gamepad, right_trigger), 30);
+        let before = gamepkg_input_time_ns();
+        assert!(before > 0 && gamepkg_input_time_ns() >= before);
         gamepkg_input_focus(1);
         let id = gamepkg_input_connect(GAMEPAD, 0x7fff, 0);
         assert_ne!(id, 0);

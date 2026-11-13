@@ -4,7 +4,10 @@ This host library gives native engines the same device handles, player-slot rule
 held-state snapshots, ordered events and focus behavior. It does not pump OS
 events or remap a game's actions. SDL2, SDL3 and Windows XInput adapters must feed
 it from their existing pump/poll and preserve each game's original mappings.
-Engine adapters are still pending; the current ports do not use this service yet.
+The Windows XInput source-kit adapter now feeds this service and reads its player
+snapshots before the engine's original Duke mapping. SDL2/SDL3, keyboard, mouse
+and touch engine adapters are still pending. Existing installed packages need a
+new source kit and rebuild before they use the Windows adapter.
 
 The library has no external Rust dependencies. Consumers use
 [`gamepkg_input.h`](../../include/gamepkg_input.h); trusted window/device adapters
@@ -43,3 +46,16 @@ and runs an actual C caller against the Rust static library. CI also compiles
 ARMv7 and i686 Android libraries with layout assertions. These checks establish
 service and ABI behavior, not physical controller delivery, game integration,
 Android gameplay or frame-time qualification.
+
+The Windows adapter tests use fake OS callbacks and the real Rust library. They
+check every 16-bit axis value and trigger byte, first-button ownership, neutral
+unclaimed devices, reconnects, focus transitions, packet changes and rumble
+routing. The provider polls connected pads at the game's existing cadence and
+backs off empty physical slots; the engine's separate disconnected-player timer
+does not hide new host snapshots. Windows source kits link the built-in XInput
+1.4 library rather than requiring the optional legacy XInput 1.3 DLL.
+
+Pass `--pinned-xinput PATH --pinned-input-core PATH` to the Linux runner to also
+verify adaptation of the pinned SDK sources, rejection of altered source and
+in-place writes, the unchanged SDL backend, and negative controls for both
+logical-player and connection-mask probe policies.

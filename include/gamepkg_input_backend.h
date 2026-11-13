@@ -9,6 +9,8 @@ extern "C" {
    deadzone. Backend IDs namespace OS tokens. Repeated connect for the same
    kind/backend/token is idempotent until disconnect. Zero means failure. */
 uint64_t gamepkg_input_connect(uint32_t kind, uint32_t backend, uint64_t token);
+/* Process-local monotonic nanoseconds, nonzero and saturating. */
+uint64_t gamepkg_input_time_ns(void);
 int32_t gamepkg_input_disconnect(uint64_t device);
 /* Initially unfocused. Use focus from the game's own window. Losing focus
    discards queued input, resets held controls and cancels touch contacts. */

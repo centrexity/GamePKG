@@ -1,0 +1,46 @@
+function(gamepkg_attach_native_xinput)
+    if(NOT CMAKE_SYSTEM_NAME STREQUAL "Windows" OR XBOXRECOMP_WIN_VULKAN)
+        return()
+    endif()
+    if(NOT DEFINED GAMEPKG_TAKEDAWN_MEDIA_ARCHIVE OR NOT EXISTS "${GAMEPKG_TAKEDAWN_MEDIA_ARCHIVE}")
+        message(FATAL_ERROR "Set GAMEPKG_TAKEDAWN_MEDIA_ARCHIVE to the native Rust host library")
+    endif()
+    get_target_property(dir xbox_input SOURCE_DIR)
+    get_target_property(sources xbox_input SOURCES)
+    foreach(kind IN ITEMS backend core)
+        if(kind STREQUAL "backend")
+            set(name xinput_device.c)
+        else()
+            set(name input_core.c)
+        endif()
+        list(FIND sources "${name}" index)
+        if(index LESS 0)
+            message(FATAL_ERROR "Pinned native ${kind} target entry is missing")
+        endif()
+        set(staged "${CMAKE_BINARY_DIR}/gamepkg-media/${name}")
+        execute_process(COMMAND "${CMAKE_COMMAND}"
+            "-DINPUT=${dir}/${name}" "-DOUTPUT=${staged}" "-DKIND=${kind}"
+            -P "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/adapt_native_input.cmake"
+            COMMAND_ERROR_IS_FATAL ANY)
+        list(REMOVE_AT sources ${index})
+        list(APPEND sources "${staged}")
+    endforeach()
+    set_property(TARGET xbox_input PROPERTY SOURCES "${sources}")
+    target_include_directories(xbox_input PRIVATE "${dir}" "${CMAKE_CURRENT_FUNCTION_LIST_DIR}")
+    # GamePKG's supported Windows systems provide XInput 1.4. MinGW's
+    # unversioned xinput import can require the optional DirectX 9 DLL.
+    foreach(property IN ITEMS LINK_LIBRARIES INTERFACE_LINK_LIBRARIES)
+        get_target_property(libraries xbox_input ${property})
+        list(FIND libraries xinput index)
+        if(index LESS 0)
+            message(FATAL_ERROR "Pinned Windows input link dependency is missing")
+        endif()
+        list(REMOVE_ITEM libraries xinput)
+        list(APPEND libraries xinput1_4)
+        set_property(TARGET xbox_input PROPERTY ${property} "${libraries}")
+    endforeach()
+    # Every consumer of the adapted backend needs its host service, including
+    # standalone SDK input tests. Do not rely on burnout3's final link only.
+    target_link_libraries(xbox_input PUBLIC "${GAMEPKG_TAKEDAWN_MEDIA_ARCHIVE}"
+        ws2_32 userenv bcrypt ntdll dbghelp user32)
+endfunction()
