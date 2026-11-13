@@ -175,6 +175,16 @@ impl Service {
             ..Event::default()
         });
     }
+    pub fn reset_device(&mut self, id: u64) -> bool {
+        let Some(device) = self.devices.get_mut(&id) else {
+            return false;
+        };
+        device.suppress_held();
+        // Consumers resample after RESET. Other devices retain their state,
+        // player ownership and queued event order.
+        self.emit(Event::default());
+        true
+    }
     pub fn connect(&mut self, kind: u32, backend: u32, token: u64) -> Option<u64> {
         if !(KEYBOARD..=TOUCH).contains(&kind) || backend == 0 {
             return None;
@@ -516,6 +526,10 @@ pub extern "C" fn gamepkg_input_disconnect(device: u64) -> i32 {
     i32::from(lock().disconnect(device))
 }
 #[no_mangle]
+pub extern "C" fn gamepkg_input_reset_device(device: u64) -> i32 {
+    i32::from(lock().reset_device(device))
+}
+#[no_mangle]
 pub extern "C" fn gamepkg_input_focus(focused: u32) -> i32 {
     if focused > 1 {
         return -1;
@@ -647,6 +661,34 @@ mod tests {
         s.focus(true);
         s.drain(MAX_EVENTS);
         s
+    }
+    #[test]
+    fn device_reset_suppresses_only_its_held_controls_until_release() {
+        let mut s = active();
+        let keyboard = s.connect(KEYBOARD, 1, 0).unwrap();
+        let other = s.connect(KEYBOARD, 1, 1).unwrap();
+        let pad = s.connect(GAMEPAD, 1, 0).unwrap();
+        s.submit(event(keyboard, 1, 4));
+        s.submit(event(other, 1, 5));
+        s.update_gamepad(Gamepad {
+            device: pad,
+            buttons: 1,
+            left_x: 123,
+            ..Gamepad::default()
+        });
+        s.drain(MAX_EVENTS);
+        assert!(s.reset_device(keyboard));
+        assert!(!s.reset_device(u64::MAX));
+        assert_eq!(s.key(keyboard, 4), Some(false));
+        assert_eq!(s.key(other, 5), Some(true));
+        assert_eq!(s.gamepad(0).unwrap().buttons, 1);
+        assert_eq!(s.gamepad(0).unwrap().left_x, 123);
+        assert_eq!(s.drain(MAX_EVENTS), vec![Event::default()]);
+        s.submit(event(keyboard, 1, 4));
+        assert_eq!(s.key(keyboard, 4), Some(false));
+        s.submit(event(keyboard, 2, 4));
+        s.submit(event(keyboard, 1, 4));
+        assert_eq!(s.key(keyboard, 4), Some(true));
     }
     #[test]
     fn physical_order_does_not_choose_player_and_hotplug_never_reuses_handles() {

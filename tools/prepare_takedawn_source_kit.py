@@ -145,6 +145,7 @@ def main():
     files['prepared/exports.txt'] = {'sha256': sha(export_path), 'bytes': export_path.stat().st_size, 'mode': 0o644}
     host = project / 'engines/takedawn'
     copy(project / 'engines/native-input/src/lib.rs', 'host/engines/native-input/src/lib.rs')
+    copy(project / 'engines/native-input/README.md', 'host/engines/native-input/README.md')
     for name in ['gamepkg_input.h', 'gamepkg_input_backend.h']:
         copy(project / 'include' / name, 'host/include/' + name)
     for name in ['Cargo.toml', 'Cargo.lock', 'src/lib.rs', 'src/windows_handle.rs', 'media.h', 'posix.c',
@@ -155,6 +156,7 @@ def main():
                  'adapt_input_glyphs.cmake', 'input_glyphs_policy.h', 'input_gameplay_policy.h',
                  'adapt_native_input.cmake', 'native_input.cmake', 'native_xinput.h',
                  'adapt_native_sdl2.cmake', 'native_sdl2.h',
+                 'adapt_native_sdl2_events.cmake', 'native_sdl2_events.c', 'native_sdl2_events.h',
                  'windows_file.c', 'windows_file.h', 'windows_stream.c', 'windows_stream.h',
                  'windows_entry.c', 'windows_attach.cmake', 'windows_restart.h', 'adapt_windows_restart.cmake', 'adapt_windows_clock.cmake', 'adapt_windows_file.cmake',
                  'adapt_windows_startup.cmake', 'DotNET-RUNTIME-LICENSE.txt']:

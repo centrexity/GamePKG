@@ -1,6 +1,7 @@
 /* Real pinned SDL backend/core + Rust service. Virtual devices only. */
 #include "input_backend.h"
 #include "input_map.h"
+#include "pad_glyphs.h"
 #include <SDL.h>
 #include <assert.h>
 #include <stdio.h>
@@ -14,6 +15,8 @@
 extern void xbox_InputPadEvent(const SDL_Event *event);
 extern void xbox_InputSetMainPump(int on);
 static int window_pump;
+static unsigned glyph_callbacks;
+static void glyph_poll(int set){(void)set;XBOX_INPUT_STATE state;++glyph_callbacks;xbox_input_host_backend.get_state(0,&state);}
 static unsigned calls[2];static uint16_t left[2],right[2];
 static int SDLCALL rumble(void *user,Uint16 low,Uint16 high) {
  unsigned slot=(unsigned)(uintptr_t)user;assert(slot<2);++calls[slot];left[slot]=low;right[slot]=high;return 0;
@@ -79,6 +82,8 @@ int main(int argc,char **argv) {
  SDL_Joystick *a=SDL_JoystickOpen(index0),*b=SDL_JoystickOpen(index1);assert(a&&b);
  SDL_JoystickID aid=SDL_JoystickInstanceID(a),bid=SDL_JoystickInstanceID(b);
  xbox_InputSetMainPump(window_pump);xbox_InputInit();if(window_pump)focus(1);poll();
+ xbox_InputSetActivePad(XBOX_PAD_FAMILY_PLAYSTATION,0);xbox_InputSetGlyphListener(glyph_poll);
+ unsigned callbacks_before=glyph_callbacks;
  gamepkg_input_gamepad player0,player1;
  assert(gamepkg_input_gamepad_state(0,&player0)==0);
  /* Axis drift cannot claim a slot, and the second physical pad can own P1. */
@@ -86,6 +91,7 @@ int main(int argc,char **argv) {
  assert(gamepkg_input_gamepad_state(0,&player0)==0);
  assert(SDL_JoystickSetVirtualButton(b,SDL_CONTROLLER_BUTTON_A,1)==0);poll();
  assert(gamepkg_input_gamepad_state(0,&player0)==1&&player0.buttons==GAMEPKG_INPUT_PAD_SOUTH);
+ assert(glyph_callbacks>callbacks_before);
  uint64_t first=player0.device;
  XBOX_INPUT_STATE state;assert(xbox_input_host_backend.get_state(0,&state)==0&&state.Gamepad.bAnalogButtons[0]==255);
  assert(SDL_JoystickSetVirtualButton(a,SDL_CONTROLLER_BUTTON_B,1)==0);poll();
@@ -119,7 +125,7 @@ int main(int argc,char **argv) {
  assert(SDL_JoystickSetVirtualButton(a,SDL_CONTROLLER_BUTTON_X,1)==0);poll();
  assert(gamepkg_input_gamepad_state(1,&player1)==1&&player1.device!=second&&player1.buttons==GAMEPKG_INPUT_PAD_WEST);
  assert(SDL_JoystickInstanceID(b)==bid);
- xbox_InputShutdown();
+ xbox_InputSetGlyphListener(NULL);xbox_InputShutdown();
  assert(gamepkg_input_gamepad_state(0,&player0)==0&&gamepkg_input_gamepad_state(1,&player1)==0);
  assert(left[0]==0&&left[1]==0&&right[0]==0&&right[1]==0);
  SDL_JoystickClose(a);SDL_JoystickClose(b);SDL_Quit();

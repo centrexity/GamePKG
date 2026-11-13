@@ -1,0 +1,5 @@
+# Pinned SDK src/platform/recomp_env.c:31-32 documents keeping old strings
+# alive for readers across test-only reloads. Used ONLY for original-mapping.
+# Window-input/provider tests run with no leak suppression.
+leak:recomp_env_reload
+leak:recomp_env_set

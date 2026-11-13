@@ -12,6 +12,10 @@ uint64_t gamepkg_input_connect(uint32_t kind, uint32_t backend, uint64_t token);
 /* Process-local monotonic nanoseconds, nonzero and saturating. */
 uint64_t gamepkg_input_time_ns(void);
 int32_t gamepkg_input_disconnect(uint64_t device);
+/* Reset just this device, retain its handle/player, and emit RESET for
+   resampling. Held buttons/keys require release before another press.
+   Useful for a keyboard system shortcut without resetting a controller. */
+int32_t gamepkg_input_reset_device(uint64_t device);
 /* Initially unfocused. Use focus from the game's own window. Losing focus
    discards queued input, resets held controls and cancels touch contacts. */
 int32_t gamepkg_input_focus(uint32_t focused);

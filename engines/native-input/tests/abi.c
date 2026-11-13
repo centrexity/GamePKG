@@ -29,6 +29,12 @@ int main(void) {
  uint64_t keyboard=gamepkg_input_connect(GAMEPKG_INPUT_KEYBOARD,1,0);
  gamepkg_input_event e=event(keyboard,GAMEPKG_INPUT_KEY_DOWN,4);
  assert(gamepkg_input_submit(&e)==1);assert(gamepkg_input_key_state(keyboard,4)==1);
+ assert(gamepkg_input_reset_device(keyboard)==1&&gamepkg_input_key_state(keyboard,4)==0);
+ assert(gamepkg_input_gamepad_state(0,&state)==1&&state.buttons==GAMEPKG_INPUT_PAD_SOUTH);
+ assert(gamepkg_input_reset_device(UINT64_MAX)==0);
+ assert(gamepkg_input_submit(&e)==1&&gamepkg_input_key_state(keyboard,4)==0);
+ e.kind=GAMEPKG_INPUT_KEY_UP;assert(gamepkg_input_submit(&e)==1);
+ e.kind=GAMEPKG_INPUT_KEY_DOWN;assert(gamepkg_input_submit(&e)==1&&gamepkg_input_key_state(keyboard,4)==1);
  uint64_t touch=gamepkg_input_connect(GAMEPKG_INPUT_TOUCH,1,0);
  e=event(touch,GAMEPKG_INPUT_TOUCH_BEGIN,77);e.contact=(UINT64_C(1)<<40)|77;e.x=.25f;e.y=.75f;assert(gamepkg_input_submit(&e)==1);
  gamepkg_input_contact contact={0};assert(gamepkg_input_contacts(&contact,1)==1);

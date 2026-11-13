@@ -84,7 +84,7 @@ jobs:
         run: |
           sudo dpkg --add-architecture i386
           sudo apt-get update
-          sudo apt-get install -y gcc-multilib libsdl2-dev libsdl2-dev:i386 ninja-build
+          sudo apt-get install -y gcc-multilib libsdl2-dev libsdl2-dev:i386 ninja-build clang-18
       - name: Build the real Rust service
         run: cargo build --locked --release --manifest-path engines/native-input/Cargo.toml --target ${{ matrix.target }}
       - name: Run actual SDL2 engine integration and original input regressions
@@ -93,6 +93,13 @@ jobs:
           --library engines/native-input/target/${{ matrix.target }}/release/libgamepkg_native_input.a
           --output native-sdl2-results --cflags='${{ matrix.cflags }}'
           --sdl2-library /usr/lib/${{ matrix.arch }}/libSDL2.so
+      - name: Check C adapters with address, undefined-behavior and leak sanitizers
+        if: matrix.arch == 'x86_64-linux-gnu'
+        run: >-
+          python3 tools/check_native_sdl2.py --toolkit pinned-sdk
+          --library engines/native-input/target/${{ matrix.target }}/release/libgamepkg_native_input.a
+          --output native-sdl2-sanitized --cc clang-18 --sanitize
+          --sdl2-library /usr/lib/${{ matrix.arch }}/libSDL2.so
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -100,3 +107,5 @@ jobs:
           path: |
             native-sdl2-results/*.log
             native-sdl2-results/result.json
+            native-sdl2-sanitized/*.log
+            native-sdl2-sanitized/result.json

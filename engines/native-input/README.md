@@ -7,13 +7,17 @@ it from their existing pump/poll and preserve each game's original mappings.
 The Windows XInput and SDL2 source-kit adapters feed this service and read its
 player snapshots before the engine's original Duke mapping. SDL2 keeps its one
 existing event pump and its original rumble lifetime/exit handling. Both headed
-and headless SDL2 now use first-button ownership. SDL3, keyboard, mouse and touch
-engine adapters are still pending. Existing installed packages need a new source
-kit and rebuild before they use these adapters.
+and headless SDL2 now use first-button ownership. Its window dispatcher also
+feeds keyboard, text, mouse and touch events into the shared service, gating the
+legacy key/touch action view through accepted input. Windows window input and
+Halo's SDL3 adapter are still pending. Existing installed packages need a new
+source kit and rebuild before they use these adapters.
 
 The library has no external Rust dependencies. Consumers use
 [`gamepkg_input.h`](../../include/gamepkg_input.h); trusted window/device adapters
 use [`gamepkg_input_backend.h`](../../include/gamepkg_input_backend.h).
+This is a trusted host implementation. Game source still uses the supplied
+GamePKG functions and may not add Cargo dependencies.
 
 - Device handles are process-local generations, never reused after disconnect.
   A backend ID and full-width token identify the host device within an adapter.
@@ -27,6 +31,9 @@ use [`gamepkg_input_backend.h`](../../include/gamepkg_input_backend.h).
   touches. Held buttons, including the first controller sample after focus return,
   need release before another press. Relative mouse motion stays relative;
   text retains Unicode scalars; touch contacts retain full 64-bit identities.
+- A device-only reset suppresses its held keys/buttons until release without
+  resetting another device or moving a controller's player slot. SDL system
+  shortcuts use this for the keyboard while leaving a controller unchanged.
 - The event queue is bounded at 2,048 records. Overflow emits RESET and retains
   current held-state snapshots. Event consumers must resample state without
   synthesizing new press edges. Snapshot-only games can continue holding an
@@ -71,3 +78,29 @@ fixture supplies one virtual join press for the new ownership rule, retaining
 all original timing and shutdown assertions. Swapped-button and incorrect Y
 conversion negative controls must fail. SDK source remains unchanged, including
 the Windows backend. CI executes this integration as native Linux x86 and x64.
+
+The same runner exercises the actual window dispatcher against a hidden dummy
+SDL window: physical USB HID usages and layout-dependent key labels, duplicate
+and repeated key events, paired modifiers/Enter keys, layout changes while held,
+Unicode validation, absolute/relative mouse motion, five mouse buttons, precise
+wheel input, and independent contacts on multiple touch surfaces. The legacy
+touch layout receives non-reused proxy handles for the full surface/finger pair;
+neither ID is truncated. Background, hidden and minimized events clear both the
+canonical state and the legacy key/touch action view. Reopening an application
+does not grant input focus by itself. Synthetic finger-generated mouse events
+are omitted from the canonical mouse stream. SDL2 supplies one aggregate keyboard.
+The adapter does not start another pump or activate text input itself.
+
+Removing the legacy input rejection gate or collapsing touch identity must fail
+independent negative controls. `--sanitize` enables C AddressSanitizer,
+UndefinedBehaviorSanitizer and leak checks. Only the original SDK mapping test
+suppresses its documented retained environment strings across test reloads;
+the new adapter tests run without leak suppression. CI runs this sanitizer
+profile on native Linux x64.
+
+Hotplug tests reconnect 500 virtual controllers while a second thread polls the
+actual backend, then close it while polling continues. Controller lifetime,
+ownership metadata and packet counters share the pad lock; main-pump ownership
+uses an atomic flag. Glyph metadata is copied under that lock and listeners run
+after it is released, so a listener can safely poll input itself. Both headed
+and headless fixtures exercise such a reentrant listener.

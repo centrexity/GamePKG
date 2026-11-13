@@ -29,6 +29,14 @@
 #define GAMEPKG_INPUT_PAD_AXIS 16u
 #define GAMEPKG_INPUT_TEXT 17u
 #define GAMEPKG_INPUT_PLAYER 18u
+#define GAMEPKG_INPUT_MOUSE_LEFT 1u
+#define GAMEPKG_INPUT_MOUSE_RIGHT 2u
+#define GAMEPKG_INPUT_MOUSE_MIDDLE 3u
+#define GAMEPKG_INPUT_MOUSE_BACK 4u
+#define GAMEPKG_INPUT_MOUSE_FORWARD 5u
+/* Mouse button event codes are above; snapshot bits are 1 << (code-1).
+   Wheel magnitude keeps backend units, with +X right and +Y away from the
+   user; the SDL flipped-direction flag is normalized by its adapter. */
 /* Button bits: D-pad up/down/left/right, Start, Back, left/right stick,
    left/right shoulder, Guide, Misc, South, East, West, North, touchpad,
    paddles 1..4. Axis event codes 0..5: LX, LY, RX, RY, LT, RT. Sticks
