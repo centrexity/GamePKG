@@ -1201,6 +1201,7 @@ impl InitData<'_> {
             window_state: win.window_state.clone(),
             event_loop_runner: self.event_loop.runner_shared.clone(),
             key_event_builder: KeyEventBuilder::default(),
+            display_notifications: Default::default(),
             _file_drop_handler: file_drop_handler,
             userdata_removed: Cell::new(false),
             recurse_depth: Cell::new(0),
