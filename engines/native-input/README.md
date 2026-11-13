@@ -9,8 +9,9 @@ player snapshots before the engine's original Duke mapping. SDL2 keeps its one
 existing event pump and its original rumble lifetime/exit handling. Both headed
 and headless SDL2 now use first-button ownership. Its window dispatcher also
 feeds keyboard, text, mouse and touch events into the shared service, gating the
-legacy key/touch action view through accepted input. Windows window input and
-Halo's SDL3 adapter are still pending. Existing installed packages need a new
+legacy key/touch action view through accepted input. The default Windows Vulkan
+build uses this same SDL2 window path. The older Windows GDI/D3D11 window provider
+and Halo's SDL3 adapter are still pending. Existing installed packages need a new
 source kit and rebuild before they use these adapters.
 
 The library has no external Rust dependencies. Consumers use
@@ -104,3 +105,12 @@ ownership metadata and packet counters share the pad lock; main-pump ownership
 uses an atomic flag. Glyph metadata is copied under that lock and listeners run
 after it is released, so a listener can safely poll input itself. Both headed
 and headless fixtures exercise such a reentrant listener.
+
+The SDL fixture also supports the Windows LLVM-MinGW toolchain used by the
+native game. It selects the SDL/Vulkan input backend, keeps its console entry
+point and statically links the runtime's thread/unwind libraries. The POSIX-only
+upstream signal/rumble executable is included only where the SDK creates it.
+On actual Windows x64, the controller fixtures (both pump modes), window-event
+fixtures and concurrent hotplug fixture have passed on both test devices.
+Those tests use virtual controllers and dummy video/audio; physical Bluetooth
+delivery and game frame times require separate verification.

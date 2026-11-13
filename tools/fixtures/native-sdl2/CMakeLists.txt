@@ -6,11 +6,22 @@ if(GAMEPKG_TEST_SDL2_LIBRARY)
     list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}")
 endif()
 set(XR_SDL_HOST ON)
+if(WIN32)
+    # Exercise the same SDL backend used by the Windows Vulkan game. This
+    # fixture enters through a console main rather than SDL's window shim.
+    set(XBOXRECOMP_WIN_VULKAN ON)
+    add_compile_definitions(XBOXRECOMP_WIN_VULKAN=1 SDL_MAIN_HANDLED=1)
+endif()
 add_compile_options(-include "${SDK}/src/platform/xr_log.h")
 add_subdirectory("${SDK}/src/platform" platform)
 add_subdirectory("${SDK}/src/input" input)
 include("${BRIDGE}/native_input.cmake")
 gamepkg_attach_native_input()
+if(WIN32)
+    # The full game obtains this from its Vulkan runtime. Keep the fixture
+    # equally self-contained, without requiring a winpthread DLL on players.
+    target_link_libraries(xbox_input PUBLIC -Wl,-Bstatic winpthread unwind -Wl,-Bdynamic)
+endif()
 add_executable(gamepkg_native_sdl2 "${BRIDGE}/tests/native_sdl2.c")
 target_include_directories(gamepkg_native_sdl2 PRIVATE "${BRIDGE}")
 target_link_libraries(gamepkg_native_sdl2 PRIVATE xbox_input)
@@ -26,6 +37,7 @@ target_compile_options(gamepkg_native_sdl2_hotplug PRIVATE -Wall -Wextra -Werror
 # Upstream's headless rumble fixture assumed device-order ownership. Supply a
 # first button through its already-open virtual joystick. All original rumble,
 # timing, process-exit and stop/close assertions remain unchanged.
+if(TARGET input_rumble_sdl_test)
 file(READ "${SDK}/tests/input_rumble_sdl/test_main.c" rumble)
 set(join_point "    return 1;\n}\n\nenum { END_EXIT")
 string(FIND "${rumble}" "${join_point}" join_at)
@@ -47,6 +59,7 @@ enum { END_EXIT]=])
 string(REPLACE "${join_point}" "${join}" rumble "${rumble}")
 file(CONFIGURE OUTPUT "${CMAKE_BINARY_DIR}/rumble_join.c" CONTENT "${rumble}" @ONLY NEWLINE_STYLE UNIX)
 set_property(TARGET input_rumble_sdl_test PROPERTY SOURCES "${CMAKE_BINARY_DIR}/rumble_join.c")
+endif()
 foreach(mutation IN ITEMS buttons y)
     if(GAMEPKG_NEGATIVE_HEADERS)
         add_executable(negative_${mutation} "${BRIDGE}/tests/native_sdl2.c")
