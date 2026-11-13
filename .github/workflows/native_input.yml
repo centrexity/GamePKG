@@ -1,9 +1,9 @@
 name: Shared native input
 on:
   push:
-    paths: ['engines/native-input/**', 'engines/takedawn/media-bridge/**', 'tools/prepare_takedawn_source_kit.py', 'include/gamepkg_input*.h', 'tools/check_native_input.py', 'tools/check_native_sdl2.py', 'tools/fixtures/native-sdl2/**', '.github/workflows/native_input.yml']
+    paths: ['engines/native-input/**', 'engines/takedawn/media-bridge/**', 'tools/prepare_takedawn_source_kit.py', 'include/gamepkg_input*.h', 'tools/check_native_input.py', 'tools/check_native_sdl2.py', 'tests/native_input_archive_test.py', 'tools/fixtures/native-sdl2/**', '.github/workflows/native_input.yml']
   pull_request:
-    paths: ['engines/native-input/**', 'engines/takedawn/media-bridge/**', 'tools/prepare_takedawn_source_kit.py', 'include/gamepkg_input*.h', 'tools/check_native_input.py', 'tools/check_native_sdl2.py', 'tools/fixtures/native-sdl2/**', '.github/workflows/native_input.yml']
+    paths: ['engines/native-input/**', 'engines/takedawn/media-bridge/**', 'tools/prepare_takedawn_source_kit.py', 'include/gamepkg_input*.h', 'tools/check_native_input.py', 'tools/check_native_sdl2.py', 'tests/native_input_archive_test.py', 'tools/fixtures/native-sdl2/**', '.github/workflows/native_input.yml']
 permissions:
   contents: read
 jobs:
@@ -34,6 +34,7 @@ jobs:
         run: |
           cargo fmt --manifest-path engines/native-input/Cargo.toml -- --check
           cargo clippy --locked --manifest-path engines/native-input/Cargo.toml --all-targets -- -D warnings
+          python tests/native_input_archive_test.py
       - name: Run native state, concurrency and actual C ABI checks
         run: python tools/check_native_input.py --target ${{ matrix.target }} --output native-input-results
       - name: Verify pinned controller staging and source protection
