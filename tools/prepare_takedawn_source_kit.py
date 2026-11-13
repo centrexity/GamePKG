@@ -144,6 +144,9 @@ def main():
     os.chmod(export_path, 0o644)
     files['prepared/exports.txt'] = {'sha256': sha(export_path), 'bytes': export_path.stat().st_size, 'mode': 0o644}
     host = project / 'engines/takedawn'
+    copy(project / 'engines/native-input/src/lib.rs', 'host/engines/native-input/src/lib.rs')
+    for name in ['gamepkg_input.h', 'gamepkg_input_backend.h']:
+        copy(project / 'include' / name, 'host/include/' + name)
     for name in ['Cargo.toml', 'Cargo.lock', 'src/lib.rs', 'src/windows_handle.rs', 'media.h', 'posix.c',
                  'engine.c', 'attach.cmake', 'adapt_presentation.cmake', 'presentation_policy.cmake', 'adapt_paths.cmake', 'adapt_smoke.cmake', 'adapt_memory.cmake', 'adapt_pacing.cmake', 'adapt_threads.cmake', 'thread_priority.inc.h', 'adapt_gpu_report.cmake',
                  'adapt_fullscreen.cmake', 'fullscreen_hotkey.h', 'launch_args.h',
