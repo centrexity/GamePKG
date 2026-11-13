@@ -17,6 +17,8 @@ PINNED = {
     'src/input/input_core.c': '6ea3903d962aea341e91b7acf775e21db5f3e6d24177586e5169a1bc1eff9aa8',
     'src/input/input_map.c': 'ca12f7720091322e3f125bf38659f5f2877d1fb3f209fcca3c9f818231e0ba8b',
     'src/input/keyboard_sdl.c': 'eb30d37bc7578c82f60696ac82be22b4adfbb021851a06be3b1f9e0b50eaae86',
+    'src/input/keyboard.c': 'f0362a7875d70dabe826508c17e09719a37b4753bcc536688181e9e7178993a1',
+    'tests/input_keyboard/test_main.c': '9d80b2e9987c83f0261709b28e8b65d48ced641554307c743bfa45189bded68b',
     'src/input/touch_pad_sdl.c': '2b147de120136ef021c71b0934b313cb2d1157aa331eae43ab0aaef4e5c5789d',
     'tests/input_rumble_sdl/test_main.c': '7618a3287b9362de5aa96dc6ff76016d42e1c76afc0c7c7afae9a244f8602a2d',
 }
@@ -48,7 +50,7 @@ def main():
 
     def run(command, name, expected=None, cwd=ROOT):
         run_env = dict(env)
-        if args.sanitize and name == 'original-mapping':
+        if args.sanitize and name in ['original-mapping', 'original-keyboard']:
             # The pinned SDK documents retaining old environment strings for
             # lock-free readers during test-only reloads. Keep that exception
             # confined to this unchanged legacy test, not the new adapters.
@@ -81,8 +83,12 @@ def main():
         assert result.returncode != 0 and marker in result.stderr
     assert not rejected.exists()
     assert (out / 'inplace-input.c').read_bytes() == original_path.read_bytes()
-    dispatch_adapter = bridge / 'adapt_native_sdl2_events.cmake'
-    for kind, filename in [('keyboard', 'keyboard_sdl.c'), ('touch', 'touch_pad_sdl.c')]:
+    for kind, filename in [('keyboard', 'keyboard_sdl.c'), ('touch', 'touch_pad_sdl.c'),
+                           ('keyboard_state', 'keyboard.c')]:
+        dispatch_adapter = bridge / ('adapt_keyboard_state.cmake' if kind == 'keyboard_state'
+                                     else 'adapt_native_sdl2_events.cmake')
+        unreviewed = ('Unreviewed keyboard state source' if kind == 'keyboard_state'
+                      else 'Unreviewed SDL2 ' + kind + ' dispatcher')
         original_dispatch = sdk / 'src/input' / filename
         changed_dispatch = out / ('changed-' + kind + '.c')
         changed_dispatch.write_bytes(original_dispatch.read_bytes() + b'\n/* modified dispatcher */\n')
@@ -91,7 +97,7 @@ def main():
         same = out / ('inplace-' + kind + '.c')
         same.write_bytes(original_dispatch.read_bytes())
         for source, destination, marker, label in [
-            (changed_dispatch, reject_output, 'Unreviewed SDL2 ' + kind + ' dispatcher', 'modified'),
+            (changed_dispatch, reject_output, unreviewed, 'modified'),
             (same, same, 'Never overwrite pinned input source', 'inplace'),
         ]:
             result = subprocess.run(['cmake', '-DINPUT=' + str(source), '-DOUTPUT=' + str(destination),
@@ -124,7 +130,7 @@ def main():
         command += ['-DGAMEPKG_TEST_SDL2_LIBRARY=' + str(args.sdl2_library.resolve()),
                     '-DGAMEPKG_TEST_SDL2_INCLUDE=' + str(args.sdl2_include.resolve())]
     run(command, 'configure')
-    targets = ['gamepkg_native_sdl2', 'gamepkg_native_sdl2_events', 'gamepkg_native_sdl2_hotplug', 'input_map_test', 'input_rumble_sdl_test',
+    targets = ['gamepkg_native_sdl2', 'gamepkg_native_sdl2_events', 'gamepkg_native_sdl2_hotplug', 'gamepkg_native_keyboard_threads', 'input_keyboard_test', 'input_map_test', 'input_rumble_sdl_test',
                'negative_buttons', 'negative_y', 'negative_gate', 'negative_identity']
     run(['cmake', '--build', build, '--target', *targets, '--parallel', '4'], 'build')
     for mode in ['', '--window-pump']:
@@ -134,6 +140,10 @@ def main():
     assert 'PASS actual SDL2 window dispatcher/Rust' in result.stdout
     result = run([build / 'gamepkg_native_sdl2_hotplug'], 'concurrent-hotplug')
     assert 'PASS concurrent native SDL2 hotplug' in result.stdout
+    result = run([build / 'gamepkg_native_keyboard_threads'], 'concurrent-keyboard')
+    assert 'PASS concurrent keyboard' in result.stdout
+    result = run([build / 'input/input_keyboard/input_keyboard_test', sdk / 'src/input/README.md'], 'original-keyboard')
+    assert '3912 checks, 0 failed' in result.stdout
     result = run([build / 'gamepkg_native_sdl2_events', '--focus-control'], 'window-events-focus-control')
     assert 'PASS actual SDL2 window dispatcher/Rust' in result.stdout
     result = run([build / 'input/input_map/input_map_test', sdk / 'src/input/README.md'], 'original-mapping')
@@ -152,7 +162,7 @@ def main():
                for name, digest in PINNED.items()), 'pinned SDK modified'
     receipt = {'result': 'pass', 'library': str(library), 'sdk_inputs': PINNED,
                'c_adapter_sanitizers': args.sanitize,
-               'sanitizer_exception': 'Only original-mapping: documented retained SDK environment strings on reload/set; new adapter tests have no leak suppression.' if args.sanitize else None,
+               'sanitizer_exception': 'Only original-mapping/original-keyboard: documented retained SDK environment strings on reload/set; new adapter tests have no leak suppression.' if args.sanitize else None,
                'scope': 'Actual SDL2 backend/window dispatcher and Rust service, virtual input only; original mapping/rumble assertions with one explicit virtual join press; 4 required failing negative controls. No physical input, gameplay or FPS claim.'}
     (out / 'result.json').write_text(json.dumps(receipt, indent=2) + '\n')
     print(receipt['scope'])

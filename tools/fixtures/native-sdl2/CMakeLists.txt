@@ -34,6 +34,18 @@ add_executable(gamepkg_native_sdl2_hotplug "${BRIDGE}/tests/native_sdl2_hotplug.
 target_include_directories(gamepkg_native_sdl2_hotplug PRIVATE "${BRIDGE}")
 target_link_libraries(gamepkg_native_sdl2_hotplug PRIVATE xbox_input)
 target_compile_options(gamepkg_native_sdl2_hotplug PRIVATE -Wall -Wextra -Werror)
+add_executable(gamepkg_native_keyboard_threads "${BRIDGE}/tests/native_keyboard_threads.c")
+target_link_libraries(gamepkg_native_keyboard_threads PRIVATE xbox_input)
+target_compile_options(gamepkg_native_keyboard_threads PRIVATE -Wall -Wextra -Werror)
+# Run the original keyboard assertions against the adapted production file.
+get_target_property(keyboard_tests input_keyboard_test SOURCES)
+list(FIND keyboard_tests "${SDK}/tests/input_keyboard/../../src/input/keyboard.c" keyboard_source_index)
+if(keyboard_source_index LESS 0)
+    message(FATAL_ERROR "Pinned original keyboard test source entry is missing")
+endif()
+list(REMOVE_AT keyboard_tests ${keyboard_source_index})
+list(APPEND keyboard_tests "${CMAKE_BINARY_DIR}/gamepkg-media/keyboard.c")
+set_property(TARGET input_keyboard_test PROPERTY SOURCES "${keyboard_tests}")
 # Upstream's headless rumble fixture assumed device-order ownership. Supply a
 # first button through its already-open virtual joystick. All original rumble,
 # timing, process-exit and stop/close assertions remain unchanged.

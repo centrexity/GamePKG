@@ -94,8 +94,8 @@ The adapter does not start another pump or activate text input itself.
 
 Removing the legacy input rejection gate or collapsing touch identity must fail
 independent negative controls. `--sanitize` enables C AddressSanitizer,
-UndefinedBehaviorSanitizer and leak checks. Only the original SDK mapping test
-suppresses its documented retained environment strings across test reloads;
+UndefinedBehaviorSanitizer and leak checks. Only the original SDK mapping and
+keyboard tests suppress documented retained environment strings across reloads;
 the new adapter tests run without leak suppression. CI runs this sanitizer
 profile on native Linux x64.
 
@@ -114,3 +114,13 @@ On actual Windows x64, the controller fixtures (both pump modes), window-event
 fixtures and concurrent hotplug fixture have passed on both test devices.
 Those tests use virtual controllers and dummy video/audio; physical Bluetooth
 delivery and game frame times require separate verification.
+
+The SDK's legacy keyboard view uses atomic key bytes, a published activity-hook
+pointer and an atomic poll packet counter. A callback is captured once before
+calling it, so concurrent listener replacement cannot turn a checked pointer
+into a null call. This adds no input lock or callback restriction. Multi-device
+snapshot consistency remains the common service's responsibility. The original
+3,912 keyboard assertions run against the adapted production file, alongside
+four concurrent pollers (200,000 unique packets), key writes/clear and concurrent
+listener replacement with reentrant callbacks. The native Linux ThreadSanitizer
+check passes; the same fixture detects a data race in the unchanged SDK keyboard.
