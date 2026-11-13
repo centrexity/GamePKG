@@ -1,0 +1,44 @@
+diff --git a/port/linux/src/gamepkg_video_failure.inc b/port/linux/src/gamepkg_video_failure.inc
+new file mode 100644
+--- /dev/null
++++ b/port/linux/src/gamepkg_video_failure.inc
+@@ -0,0 +1,16 @@
++/* SPDX-License-Identifier: AGPL-3.0-or-later
++ * A normal GamePKG launch must display its own game window. Explicit
++ * maintainer headless runs retain the original renderer-free path.
++ */
++#include <stdlib.h>
++#include <string.h>
++static void gamepkg_video_failure(void)
++{
++    const char *required = getenv("GAMEPKG_REQUIRE_WINDOW");
++    if (required && !strcmp(required, "1") &&
++        !config_boolean("debug.null_renderer"))
++    {
++        platform_log("GamePKG: unable to create the game window. Check the 32-bit graphics drivers and display access; see the SDL error above.");
++        exit(EXIT_FAILURE);
++    }
++}
+diff --git a/port/linux/src/d3d8_gl.c b/port/linux/src/d3d8_gl.c
+--- a/port/linux/src/d3d8_gl.c
++++ b/port/linux/src/d3d8_gl.c
+@@ -1333,6 +1333,8 @@
+ 
+ /* ---------- GL helpers */
+ 
++#include "gamepkg_video_failure.inc"
++
+ GLuint xgpu_compile_shader(GLenum type, const char *source, const char *what)
+ {
+ 	GLuint shader = glCreateShader(type);
+@@ -2212,7 +2214,10 @@
+ 		if (!config_boolean("debug.null_renderer") && platform_video_initialize(width, height))
+ 			gl_initialize();
+ 		else
++		{
+ 			platform_log("Direct3D: running without a window (nothing is displayed)");
++			gamepkg_video_failure();
++		}
+ 		device.created = TRUE;
+ 	}
+ 	*returned_device = device_pointer();

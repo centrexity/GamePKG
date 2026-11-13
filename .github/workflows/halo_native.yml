@@ -1,0 +1,83 @@
+name: Native Halo source safeguards
+on:
+  push:
+    paths: ['engines/halo/**', 'src/external_engine/**', 'tools/*opence*', 'tests/halo_port_scaffold.rs', '.github/workflows/halo_native.yml']
+  pull_request:
+    paths: ['engines/halo/**', 'src/external_engine/**', 'tools/*opence*', 'tests/halo_port_scaffold.rs', '.github/workflows/halo_native.yml']
+permissions:
+  contents: read
+concurrency:
+  group: halo-source-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  asset-free-native:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install native fixture compilers
+        run: sudo apt-get update && sudo apt-get install -y clang-18 libclang-rt-18-dev gcc-multilib libc6-dev-i386 cmake ninja-build pkg-config xz-utils make
+      - name: Fetch and patch the exact reviewed source without game media
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, os, re, subprocess, tomllib
+          engine = Path('engines/halo')
+          metadata = tomllib.loads((engine/'engine.toml').read_text())
+          assert metadata['clone_url'] == 'https://github.com/OpenCommunityEdition/OpenCE.git'
+          assert re.fullmatch('[0-9a-f]{40}', metadata['commit'])
+          source = Path(os.environ['RUNNER_TEMP'])/'opence-native-fixture'
+          subprocess.run(['git', 'clone', '--filter=blob:none', '--no-checkout', metadata['clone_url'], str(source)], check=True)
+          subprocess.run(['git', '-C', str(source), 'checkout', '--detach', metadata['commit']], check=True)
+          assert hashlib.sha256((source/'LICENSE').read_bytes()).hexdigest() == metadata['license_sha256']
+          for name in metadata['patches']:
+              assert Path(name).name == name and name.endswith('.patch')
+              subprocess.run(['git', '-C', str(source), 'apply', '--check', str((engine/'patches'/name).resolve())], check=True)
+              subprocess.run(['git', '-C', str(source), 'apply', str((engine/'patches'/name).resolve())], check=True)
+          PY
+      - name: Check immutable disc reads and malformed images on native 64-bit and 32-bit
+        run: |
+          export PATH="/usr/lib/llvm-18/bin:$PATH"
+          python3 engines/halo/tests/check_disc_view.py --source "$RUNNER_TEMP/opence-native-fixture"
+          # Ubuntu stores shared x86 kernel UAPI headers in its multiarch folder.
+          python3 engines/halo/tests/check_disc_view.py --source "$RUNNER_TEMP/opence-native-fixture" --i686-sysroot / --cflag=-isystem --cflag=/usr/include/x86_64-linux-gnu
+          python3 engines/halo/tests/check_movie_view.py --source "$RUNNER_TEMP/opence-native-fixture"
+      - name: Preserve original HUD pixels and floating-point flags
+        run: |
+          python3 engines/halo/tests/check_hud_upscale.py --source "$RUNNER_TEMP/opence-native-fixture" --cc clang-18 --sanitize
+          python3 engines/halo/tests/check_hud_upscale.py --source "$RUNNER_TEMP/opence-native-fixture" --cc clang-18 --cflag=-m32 --cflag=-msse2 --cflag=-mfpmath=sse
+          python3 engines/halo/tests/check_hud_upscale.py --source "$RUNNER_TEMP/opence-native-fixture" --cc clang-18 --scalar
+          python3 engines/halo/tests/check_video_failure.py
+      - name: Verify co-op view ownership, suspension and bounded snapshot parsing
+        run: |
+          python3 engines/halo/tests/check_scripted_suspension.py --source "$RUNNER_TEMP/opence-native-fixture" --output "$RUNNER_TEMP/suspension-native32" --profile native32
+          python3 engines/halo/tests/check_scripted_suspension.py --source "$RUNNER_TEMP/opence-native-fixture" --output "$RUNNER_TEMP/suspension-sanitized64" --profile sanitized64
+      - name: Verify co-op clock, handoff and original vehicle-facing rules
+        run: |
+          python3 engines/halo/tests/check_coop_runtime.py --source "$RUNNER_TEMP/opence-native-fixture" --output "$RUNNER_TEMP/coop-native32" --profile native32
+          python3 engines/halo/tests/check_coop_runtime.py --source "$RUNNER_TEMP/opence-native-fixture" --output "$RUNNER_TEMP/coop-sanitized64" --profile sanitized64
+      - name: Verify generated movies and silent audio on native 32-bit code
+        run: |
+          python3 tools/check_opence_movie_codecs.py --source "$RUNNER_TEMP/opence-native-fixture" --work "$RUNNER_TEMP/movie-native32" --profile native32
+      - name: Check movie codecs with address and undefined-behavior sanitizers
+        run: |
+          python3 tools/check_opence_movie_codecs.py --source "$RUNNER_TEMP/opence-native-fixture" --work "$RUNNER_TEMP/movie-sanitized64" --profile sanitized64
+      - name: Preserve asset-free native diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: halo-generated-native-fixtures
+          path: |
+            ${{ runner.temp }}/movie-native32/*.log
+            ${{ runner.temp }}/movie-native32/results/*.log
+            ${{ runner.temp }}/movie-native32/results/result.json
+            ${{ runner.temp }}/movie-sanitized64/*.log
+            ${{ runner.temp }}/movie-sanitized64/results/*.log
+            ${{ runner.temp }}/movie-sanitized64/results/result.json
+            ${{ runner.temp }}/suspension-native32/**/*.log
+            ${{ runner.temp }}/suspension-native32/result.json
+            ${{ runner.temp }}/suspension-sanitized64/**/*.log
+            ${{ runner.temp }}/suspension-sanitized64/result.json
+            ${{ runner.temp }}/coop-native32/**/*.log
+            ${{ runner.temp }}/coop-native32/result.json
+            ${{ runner.temp }}/coop-sanitized64/**/*.log
+            ${{ runner.temp }}/coop-sanitized64/result.json

@@ -7,6 +7,7 @@ import os
 import sys
 from pathlib import Path
 import subprocess
+from cargo_artifacts import dependency_search_args
 
 project = Path(__file__).resolve().parents[1]
 build = subprocess.run(
@@ -30,7 +31,7 @@ subprocess.run([
     '--extern', f'raw_window_handle={libraries["raw_window_handle"]}',
     '--extern', f'x11_dl={libraries["x11_dl"]}',
     '--cfg', 'feature="x11"',
-    '-L', f'dependency={libraries["egui"].parent}', '-o', str(output),
+    *dependency_search_args(build.stdout), '-o', str(output),
 ], cwd=project, check=True)
 subprocess.run([str(output)], cwd=project, check=True)
 

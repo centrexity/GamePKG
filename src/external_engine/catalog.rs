@@ -9,6 +9,7 @@ use std::collections::HashSet;
 pub struct Record {
     pub manifest: &'static str,
     pub patches: &'static [(&'static str, &'static str)],
+    pub files: &'static [(&'static str, &'static [u8])],
 }
 
 #[derive(Deserialize)]
@@ -46,6 +47,8 @@ struct TargetFile {
     note: Option<String>,
     tools: Vec<String>,
     configure: Vec<String>,
+    #[serde(default)]
+    prepare: Option<String>,
     build_program: String,
     build_args: Vec<String>,
     binary: String,
@@ -85,6 +88,10 @@ struct LaunchFile {
     #[serde(default)]
     data_root: Option<String>,
     #[serde(default)]
+    data_file: Option<String>,
+    #[serde(default)]
+    scratch: Vec<super::Scratch>,
+    #[serde(default)]
     save_root: Option<String>,
     #[serde(default)]
     fixed: Vec<[String; 2]>,
@@ -108,6 +115,14 @@ pub fn load(records: &[Record]) -> Result<Vec<Engine>> {
 }
 
 fn convert(file: EngineFile, record: &Record) -> Result<Engine> {
+    ensure!(
+        record.files.len() <= 64
+            && record
+                .files
+                .iter()
+                .all(|(name, bytes)| relative_path(name) && bytes.len() <= 4 * 1024 * 1024),
+        "invalid prepared engine inputs"
+    );
     ensure!(
         valid_id(&file.id),
         "external engine id must be a short token"
@@ -227,9 +242,15 @@ fn convert(file: EngineFile, record: &Record) -> Result<Engine> {
             );
         }
         ensure!(
-            target.blocker.is_some() || !target.configure.is_empty(),
+            target.blocker.is_some() || !target.configure.is_empty() || target.prepare.is_some(),
             "a ready engine target needs a configure command"
         );
+        if let Some(path) = &target.prepare {
+            ensure!(
+                relative_path(path) && record.files.iter().any(|(name, _)| *name == path),
+                "engine preparation plan is not a compiled reviewed input"
+            );
+        }
         ensure!(
             valid_id(&target.build_program) && relative_path(&target.binary),
             "engine target build program or binary path is invalid"
@@ -293,6 +314,7 @@ fn convert(file: EngineFile, record: &Record) -> Result<Engine> {
             note: target.note,
             tools: target.tools,
             configure: target.configure,
+            prepare: target.prepare,
             build_program: target.build_program,
             build_args: target.build_args,
             binary: target.binary,
@@ -323,6 +345,7 @@ fn convert(file: EngineFile, record: &Record) -> Result<Engine> {
         .launch
         .data_root
         .iter()
+        .chain(&file.launch.data_file)
         .chain(&file.launch.save_root)
         .chain(&file.launch.passthrough)
     {
@@ -331,8 +354,44 @@ fn convert(file: EngineFile, record: &Record) -> Result<Engine> {
             "bad launch variable"
         );
     }
+    let mut scratch_total = 0u64;
+    let mut scratch_paths = Vec::<&str>::new();
+    for scratch in &file.launch.scratch {
+        ensure!(
+            relative_path(&scratch.path) && scratch.bytes >= 1024 * 1024,
+            "invalid private scratch directory"
+        );
+        ensure!(
+            !scratch_paths.iter().any(|other| scratch.path == *other
+                || scratch.path.starts_with(&format!("{other}/"))
+                || other.starts_with(&format!("{}/", scratch.path))),
+            "overlapping private scratch directories"
+        );
+        scratch_paths.push(&scratch.path);
+        scratch_total = scratch_total
+            .checked_add(scratch.bytes)
+            .context("scratch budget overflow")?;
+    }
+    ensure!(
+        file.launch.scratch.len() <= 8 && scratch_total < file.memory,
+        "private scratch exceeds the engine memory budget"
+    );
+    let source_revision = record_revision(record);
+    let revision = if targets.iter().any(|target| target.prepare.is_some()) {
+        crate::verify::digest(
+            format!(
+                "GamePKG native prepared v1\0{source_revision}\0{}",
+                crate::native::cpu_identity()
+            )
+            .as_bytes(),
+        )
+    } else {
+        source_revision
+    };
     Ok(Engine {
         id: file.id,
+        revision,
+        prepared: record.files,
         clone_url: file.clone_url,
         commit: file.commit,
         license_sha256: file.license_sha256,
@@ -350,11 +409,35 @@ fn convert(file: EngineFile, record: &Record) -> Result<Engine> {
         targets,
         launch: LaunchSpec {
             data_root: file.launch.data_root,
+            data_file: file.launch.data_file,
+            scratch: file.launch.scratch,
             save_root: file.launch.save_root,
             fixed,
             passthrough: file.launch.passthrough,
         },
     })
+}
+
+fn record_revision(record: &Record) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hash = Sha256::new();
+    hash.update(b"GamePKG reviewed engine v1\0");
+    for bytes in std::iter::once(record.manifest.as_bytes()).chain(
+        record
+            .patches
+            .iter()
+            .flat_map(|(name, body)| [name.as_bytes(), body.as_bytes()]),
+    ) {
+        hash.update((bytes.len() as u64).to_le_bytes());
+        hash.update(bytes);
+    }
+    for (name, bytes) in record.files {
+        hash.update((name.len() as u64).to_le_bytes());
+        hash.update(name.as_bytes());
+        hash.update((bytes.len() as u64).to_le_bytes());
+        hash.update(bytes);
+    }
+    hex::encode(hash.finalize())
 }
 
 fn valid_id(value: &str) -> bool {

@@ -1,0 +1,63 @@
+--- a/port/linux/game/network_distributed.c
++++ b/port/linux/game/network_distributed.c
+@@ -248,6 +248,8 @@
+ 	/* (alive) camouflaged, and doubly so */
+ 	_distributed_unit_camouflaged_bit = 0,
+ 	_distributed_unit_super_camouflaged_bit,
++	/* The campaign scripts freeze a unit independently of its player input. */
++	_distributed_unit_suspended_bit,
+ };
+ 
+ /* a unit state's parts on the wire: which of those that are not always
+@@ -1719,6 +1721,8 @@
+ 			TEST_FLAG(unit->unit.flags, _unit_super_camouflaged_bit));
+ 		camouflage = camouflage > 1.0f ? 1.0f : camouflage < 0.0f ? 0.0f : camouflage;
+ 		state->active_camouflage = (byte)(long)floor(camouflage * 255.0f + 0.5f);
++		SET_FLAG(state->unit_flags, _distributed_unit_suspended_bit,
++			network_coop_active() && TEST_FLAG(unit->unit.flags, _unit_suspended_bit));
+ 		/* (the host) a client's player where the client had them: at which of
+ 		its ticks (with the ticks run since) */
+ 		if (game_connection() == _game_connection_network_server && player_index < MAXIMUM_TRACKED_PLAYERS &&
+@@ -1995,6 +1999,22 @@
+ 		own->elevator_index = unit_index != NONE ? distributed_supported_elevator(unit_index) : NONE;
+ 		if (unit_index != NONE)
+ 			own->position = object_get(unit_index)->object.position;
++	}
++}
++
++/* The original setter also clears velocity and airborne state. Apply it on
++transitions only, so a repeated snapshot does not keep resetting a unit. */
++static void distributed_apply_scripted_suspension(
++	long unit_index,
++	struct distributed_unit_state const *state)
++{
++	if (network_coop_active())
++	{
++		struct unit_datum *unit = unit_get(unit_index);
++		boolean suspended = TEST_FLAG(state->unit_flags, _distributed_unit_suspended_bit);
++
++		if (TEST_FLAG(unit->unit.flags, _unit_suspended_bit) != suspended)
++			unit_scripting_suspended(unit_index, suspended);
+ 	}
+ }
+ 
+@@ -2686,6 +2706,7 @@
+ 			TEST_FLAG(state->unit_flags, _distributed_unit_super_camouflaged_bit));
+ 		unit->unit.active_camouflage = (real)state->active_camouflage / 255.0f;
+ 	}
++	distributed_apply_scripted_suspension(unit_index, state);
+ 	if (TEST_FLAG(state->flags, _distributed_unit_placed_bit) &&
+ 		object_get(unit_index)->object.parent_object_index == NONE)
+ 	{
+--- a/port/linux/include/halo_port_limits.h
++++ b/port/linux/include/halo_port_limits.h
+@@ -66,7 +66,8 @@
+ in its game's advertisement's reserved bytes (network_server_message_handler.c),
+ which hosts built before there was a version send as zeros: version 0.
+ Raise it with any change to what the machines send each other. */
+-#define HALO_PORT_NETWORK_VERSION 32
++/* GamePKG: version 33 carries scripted player suspension in unit snapshots. */
++#define HALO_PORT_NETWORK_VERSION 33
+ /* ... the advertisement's reserved bytes: the version (a little-endian word),
+ then flags */
+ #define HALO_PORT_ADVERTISED_VERSION_OFFSET 0

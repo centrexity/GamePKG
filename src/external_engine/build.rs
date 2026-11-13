@@ -27,7 +27,7 @@ pub fn compile_package(root: &Path, id: &str, requested: Option<&str>) -> Result
     super::validate_recipe(engine, &mut package)?;
     let target = select(engine, requested)?;
     let source = ensure_source(root, engine)?;
-    build_upstream(&source, target)?;
+    build_upstream(&source, target, engine.prepared)?;
     let built = source.join(&target.binary);
     let binary = crate::files::read_regular(&built, BINARY_LIMIT, false)?;
     validate_image(&target.image, &binary)?;
@@ -44,7 +44,7 @@ pub fn compile_package(root: &Path, id: &str, requested: Option<&str>) -> Result
     );
     let digest = crate::verify::digest(&original);
     let base = root.join("builds").join(&digest).join(&engine.id);
-    let directory = base.join(&target.id);
+    let directory = base.join(&engine.revision).join(&target.id);
     fs::create_dir_all(&directory)?;
     let filename = Path::new(&target.binary)
         .file_name()
@@ -69,6 +69,24 @@ pub fn compile_package(root: &Path, id: &str, requested: Option<&str>) -> Result
         cache_ready(&output, engine)?,
         "engine cache failed its own receipt check"
     );
+    Ok(())
+}
+
+// Drivers commonly create a child beneath XDG_CACHE_HOME, but do not
+// create that base directory. Keep it persistent and inside the private home.
+fn private_runtime_directory(runtime: &Path, components: &[&str]) -> Result<()> {
+    use cap_fs_ext::DirExt;
+    let mut directory = cap_std::fs::Dir::open_ambient_dir(runtime, cap_std::ambient_authority())?;
+    for component in components {
+        match directory.create_dir(component) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(error) => return Err(error).context("create engine private directory"),
+        }
+        directory = directory
+            .open_dir_nofollow(component)
+            .context("engine private directory must be a real directory")?;
+    }
     Ok(())
 }
 
@@ -110,7 +128,7 @@ pub fn launch(root: &Path, id: &str) -> Result<()> {
         std::env::consts::OS
     );
     let selected = crate::game_data::load(root, &manifest)?
-        .context("Choose the folder that matches this game's data layout")?;
+        .context("Choose the original game-data file or folder for this game")?;
     let data = crate::game_data::matches(
         &selected,
         &manifest
@@ -132,8 +150,9 @@ pub fn launch(root: &Path, id: &str) -> Result<()> {
             "engine runtime directory must be a real directory"
         );
     }
-    fs::create_dir_all(runtime.join("home"))?;
-    fs::create_dir_all(runtime.join("saves"))?;
+    fs::create_dir_all(&runtime)?;
+    private_runtime_directory(&runtime, &["home", "cache"])?;
+    private_runtime_directory(&runtime, &["saves"])?;
     install_runtime_file(
         &binary,
         &runtime.join(binary.file_name().unwrap()),
@@ -158,12 +177,28 @@ pub fn launch(root: &Path, id: &str) -> Result<()> {
         engine.memory,
         settings.memory_ceiling_mib,
     )?;
-    let mut child = command(&executable, &runtime, !manifest.permissions.network, memory);
+    let scratch_bytes: u64 = engine
+        .launch
+        .scratch
+        .iter()
+        .map(|scratch| scratch.bytes)
+        .sum();
+    let memory = memory
+        .checked_sub(scratch_bytes)
+        .context("private scratch exceeds memory ceiling")?;
+    let mut child = command(
+        &executable,
+        &runtime,
+        !manifest.permissions.network,
+        memory,
+        &engine.launch.scratch,
+    )?;
     if target.os == "windows" {
         child.env("USERPROFILE", runtime.join("home"));
     } else {
         child
             .env("HOME", runtime.join("home"))
+            .env("XDG_CACHE_HOME", runtime.join("home/cache"))
             .env("XDG_DATA_HOME", runtime.join("home"))
             .env("XDG_CONFIG_HOME", runtime.join("home"));
     }
@@ -176,8 +211,21 @@ pub fn launch(root: &Path, id: &str) -> Result<()> {
     if let (Some(key), Some(root)) = (engine.launch.data_root.as_deref(), data_root) {
         child.env(key, root);
     }
+    if let Some(key) = engine.launch.data_file.as_deref() {
+        child.env_remove(key);
+        if let DataMatch::Beside { file } = &data {
+            child.env(key, file);
+            if let Some(root_key) = engine.launch.data_root.as_deref() {
+                let view = runtime.join("disc-view");
+                fs::create_dir_all(&view)?;
+                child.env(root_key, view);
+            }
+        }
+    }
     if let Some(audio) = &target.audio {
-        if std::env::var_os(&audio.variable).is_none()
+        if settings.mute_audio || settings.audio_volume == 0 {
+            child.env(&audio.variable, &audio.value);
+        } else if std::env::var_os(&audio.variable).is_none()
             && !audio.libraries.iter().any(|path| Path::new(path).exists())
         {
             eprintln!("{}", audio.warning);
@@ -342,6 +390,11 @@ fn git_apply(source: &Path, patch: &Path, args: &[&str]) -> Result<bool> {
         .arg(source)
         .args(args)
         .arg(patch)
+        .stderr(if args.contains(&"--check") {
+            Stdio::null()
+        } else {
+            Stdio::inherit()
+        })
         .status()
         .context("git apply")?
         .success())
@@ -411,43 +464,47 @@ fn visit(root: &Path, dir: &Path, engine: &Engine, forbidden: &mut Vec<String>) 
     Ok(())
 }
 
-fn build_upstream(source: &Path, target: &Target) -> Result<()> {
+fn build_upstream(
+    source: &Path,
+    target: &Target,
+    inputs: &'static [(&'static str, &'static [u8])],
+) -> Result<()> {
     let binary = source.join(&target.binary);
-    if binary.is_file()
-        && target
-            .companions
-            .iter()
-            .all(|companion| source.join(&companion.relative).is_file())
-    {
-        if let Ok(bytes) = crate::files::read_regular(&binary, BINARY_LIMIT, false) {
-            if validate_image(&target.image, &bytes).is_ok() {
-                return Ok(());
-            }
-        }
-    }
+    // Reconfigure so a changed target or reviewed patch reaches the incremental builder.
+    // An existing executable alone does not prove it matches the requested build.
     for tool in &target.tools {
         ensure!(
             Command::new(tool).arg("--version").output().is_ok(),
             "this engine target needs {tool} on PATH"
         );
     }
+    let prepared = target
+        .prepare
+        .as_deref()
+        .map(|name| super::prepared::configure(source, name, inputs))
+        .transpose()?;
     let configure = expand(&target.configure)?;
-    ensure!(
-        !configure.is_empty(),
-        "this engine target has no configure command"
-    );
-    let mut command = Command::new(&configure[0]);
-    command.args(&configure[1..]).current_dir(source);
-    let status = command
-        .status()
-        .with_context(|| format!("configure {} with {}", target.id, configure[0]))?;
-    ensure!(status.success(), "configure for {} failed", target.id);
+    if prepared.is_none() {
+        ensure!(
+            !configure.is_empty(),
+            "this engine target has no configure command"
+        );
+        let mut command = Command::new(&configure[0]);
+        command.args(&configure[1..]).current_dir(source);
+        let status = command
+            .status()
+            .with_context(|| format!("configure {} with {}", target.id, configure[0]))?;
+        ensure!(status.success(), "configure for {} failed", target.id);
+    }
     let build = Command::new(&target.build_program)
         .args(&target.build_args)
         .current_dir(source)
         .status()
         .with_context(|| format!("build {}", target.id))?;
     ensure!(build.success(), "build for {} failed", target.id);
+    if let Some(check) = prepared {
+        check.finish(source)?;
+    }
     ensure!(
         binary.is_file(),
         "the build did not produce {}",
@@ -492,19 +549,27 @@ fn git(source: &Path, args: &[&str]) -> Result<String> {
     String::from_utf8(output.stdout).context("git output was not UTF-8")
 }
 
-fn command(binary: &Path, runtime: &Path, isolate_network: bool, memory_bytes: u64) -> Command {
-    let sandbox = isolate_network && cfg!(target_os = "linux") && tool_ready("bwrap");
-    let limited = cfg!(target_os = "linux") && memory_bytes > 0 && tool_ready("prlimit");
-    if isolate_network && cfg!(target_os = "linux") && !sandbox {
-        eprintln!(
-            "Network isolation needs bubblewrap; the engine process keeps this user's network."
-        );
-    }
-    if cfg!(target_os = "linux") && memory_bytes > 0 && !limited {
-        eprintln!(
-            "Memory cap needs prlimit; the engine process keeps this user's address-space limit."
-        );
-    }
+fn command(
+    binary: &Path,
+    runtime: &Path,
+    isolate_network: bool,
+    memory_bytes: u64,
+    scratch: &[super::Scratch],
+) -> Result<Command> {
+    let sandbox = cfg!(target_os = "linux");
+    ensure!(
+        sandbox || scratch.is_empty(),
+        "This platform does not support the engine's private memory-backed cache yet."
+    );
+    let limited = sandbox && memory_bytes > 0;
+    ensure!(
+        !sandbox || tool_ready("bwrap"),
+        "Install Bubblewrap before starting a native engine."
+    );
+    ensure!(
+        !limited || tool_ready("prlimit"),
+        "Install prlimit before starting a native engine with a memory cap."
+    );
     let mut command = if limited {
         let mut command = Command::new("prlimit");
         command
@@ -517,15 +582,17 @@ fn command(binary: &Path, runtime: &Path, isolate_network: bool, memory_bytes: u
     } else {
         let mut command = Command::new(binary);
         command.current_dir(runtime);
-        return command;
+        return Ok(command);
     };
     command.current_dir(runtime);
     if sandbox {
         if limited {
             command.arg("bwrap");
         }
+        if isolate_network {
+            command.arg("--unshare-net");
+        }
         command
-            .arg("--unshare-net")
             .arg("--die-with-parent")
             .arg("--ro-bind")
             .arg("/")
@@ -545,6 +612,31 @@ fn command(binary: &Path, runtime: &Path, isolate_network: bool, memory_bytes: u
         if Path::new("/dev/shm").is_dir() {
             command.arg("--bind").arg("/dev/shm").arg("/dev/shm");
         }
+        for scratch in scratch {
+            let mut path = runtime.to_owned();
+            for component in Path::new(&scratch.path).components() {
+                ensure!(
+                    matches!(component, std::path::Component::Normal(_)),
+                    "invalid private scratch path"
+                );
+                path.push(component);
+                match fs::symlink_metadata(&path) {
+                    Ok(meta) => ensure!(
+                        meta.is_dir() && !meta.file_type().is_symlink(),
+                        "private scratch path must contain real directories"
+                    ),
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                        fs::create_dir(&path)?
+                    }
+                    Err(error) => return Err(error.into()),
+                }
+            }
+            command
+                .arg("--size")
+                .arg(scratch.bytes.to_string())
+                .arg("--tmpfs")
+                .arg(path);
+        }
         if Path::new("/tmp/.X11-unix").is_dir() {
             command
                 .arg("--bind")
@@ -560,7 +652,7 @@ fn command(binary: &Path, runtime: &Path, isolate_network: bool, memory_bytes: u
     } else {
         command.arg(binary);
     }
-    command
+    Ok(command)
 }
 
 fn address_space_limit(hard_memory: u64, recommended: u64, ceiling_mib: u64) -> Result<u64> {
@@ -755,6 +847,63 @@ fn install_runtime_file(from: &Path, to: &Path, limit: u64) -> Result<()> {
 mod tests {
     use super::*;
 
+    #[cfg(unix)]
+    #[test]
+    fn driver_cache_rejects_redirected_private_directories() {
+        let runtime = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        std::os::unix::fs::symlink(outside.path(), runtime.path().join("home")).unwrap();
+        assert!(private_runtime_directory(runtime.path(), &["home", "cache"]).is_err());
+        assert!(!outside.path().join("cache").exists());
+        fs::remove_file(runtime.path().join("home")).unwrap();
+        fs::create_dir(runtime.path().join("home")).unwrap();
+        std::os::unix::fs::symlink(outside.path(), runtime.path().join("home/cache")).unwrap();
+        assert!(private_runtime_directory(runtime.path(), &["home", "cache"]).is_err());
+        assert!(outside.path().read_dir().unwrap().next().is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_existing_image_does_not_skip_source_or_configuration_changes() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut image = vec![0; 65];
+        image[..4].copy_from_slice(b"\x7fELF");
+        image[4] = 2;
+        image[5] = 1;
+        image[18] = 62;
+        std::fs::write(dir.path().join("engine"), &image).unwrap();
+        let target = Target {
+            id: "fixture".into(),
+            os: "linux".into(),
+            arch: "x86_64".into(),
+            blocker: None,
+            note: None,
+            tools: vec!["sh".into()],
+            configure: vec!["sh".into(), "-c".into(), "printf c >> configured".into()],
+            prepare: None,
+            build_program: "sh".into(),
+            build_args: vec![
+                "-c".into(),
+                "cp source.bin engine; printf b >> built".into(),
+            ],
+            binary: "engine".into(),
+            companions: vec![],
+            image: super::super::Image::Elf {
+                class: 2,
+                machine: 62,
+            },
+            audio: None,
+        };
+        for revision in [1, 2] {
+            image[64] = revision;
+            std::fs::write(dir.path().join("source.bin"), &image).unwrap();
+            build_upstream(dir.path(), &target, &[]).unwrap();
+            assert_eq!(std::fs::read(dir.path().join("engine")).unwrap(), image);
+        }
+        assert_eq!(std::fs::read(dir.path().join("configured")).unwrap(), b"cc");
+        assert_eq!(std::fs::read(dir.path().join("built")).unwrap(), b"bb");
+    }
+
     fn commit_file(dir: &Path, name: &str, body: &str) {
         std::fs::write(dir.join(name), body).unwrap();
         let git = |args: &[&str]| {
@@ -866,6 +1015,10 @@ diff --git a/note.txt b/note.txt
             r#"#!/usr/bin/python3
 import os, socket, resource
 soft, hard = resource.getrlimit(resource.RLIMIT_AS)
+cache = "scratch/cache"
+volume = os.statvfs(cache)
+open("scratch-size.txt", "w").write(str(volume.f_blocks * volume.f_frsize))
+open(cache + "/temporary-map.bin", "wb").write(b"decoded data stays in RAM")
 open("limits.txt", "w").write("%s %s\n" % (soft, hard))
 open("runtime-write.txt", "w").write("ok\n")
 try:
@@ -893,7 +1046,11 @@ except OSError as error:
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port().to_string();
         let memory = 3_221_225_472u64;
-        let mut sandboxed = command(&probe, runtime.path(), true, memory);
+        let scratch = [super::super::Scratch {
+            path: "scratch/cache".into(),
+            bytes: 8 * 1024 * 1024,
+        }];
+        let mut sandboxed = command(&probe, runtime.path(), true, memory, &scratch).unwrap();
         sandboxed.env("PROBE_PORT", &port);
         let sandboxed = sandboxed.output().unwrap();
         assert!(
@@ -920,10 +1077,21 @@ except OSError as error:
         );
         let net = std::fs::read_to_string(runtime.path().join("net.txt")).unwrap();
         assert!(net.starts_with("closed"), "{net}");
+        assert_eq!(
+            std::fs::read_to_string(runtime.path().join("scratch-size.txt")).unwrap(),
+            (8 * 1024 * 1024).to_string()
+        );
+        assert!(
+            !runtime
+                .path()
+                .join("scratch/cache/temporary-map.bin")
+                .exists(),
+            "cache bytes must disappear with the process's RAM mount"
+        );
         for name in ["limits.txt", "root.txt", "runtime-write.txt", "net.txt"] {
             std::fs::remove_file(runtime.path().join(name)).unwrap();
         }
-        let mut open = command(&probe, runtime.path(), false, memory);
+        let mut open = command(&probe, runtime.path(), false, memory, &scratch).unwrap();
         open.env("PROBE_PORT", &port);
         let open = open.output().unwrap();
         assert!(
@@ -939,5 +1107,22 @@ except OSError as error:
             std::fs::read_to_string(runtime.path().join("limits.txt")).unwrap(),
             format!("{memory} {memory}\n")
         );
+        assert_eq!(
+            std::fs::read_to_string(runtime.path().join("root.txt")).unwrap(),
+            "readonly\n",
+            "enabling networking must preserve filesystem protection"
+        );
+        assert!(!runtime
+            .path()
+            .join("scratch/cache/temporary-map.bin")
+            .exists());
+        let outside = tempfile::tempdir().unwrap();
+        std::os::unix::fs::symlink(outside.path(), runtime.path().join("redirect")).unwrap();
+        let redirect = [super::super::Scratch {
+            path: "redirect/cache".into(),
+            bytes: 8 * 1024 * 1024,
+        }];
+        assert!(command(&probe, runtime.path(), true, memory, &redirect).is_err());
+        assert!(!outside.path().join("cache").exists());
     }
 }

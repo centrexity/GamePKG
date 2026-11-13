@@ -151,7 +151,7 @@ pub fn validate_layouts(layouts: &[crate::manifest::DataLayout]) -> Result<()> {
     Ok(())
 }
 
-/// A player folder that satisfied one reviewed layout. The first match wins.
+/// Player-selected data satisfying one reviewed layout. The first match wins.
 #[derive(Debug)]
 pub enum DataMatch {
     Link {
@@ -164,8 +164,12 @@ pub enum DataMatch {
 }
 
 pub fn matches(path: &Path, layouts: &[crate::manifest::DataLayout]) -> Result<DataMatch> {
-    let path = std::fs::canonicalize(path).context("choose the game-data folder")?;
-    ensure!(path.is_dir(), "game data must be a folder");
+    let path = std::fs::canonicalize(path).context("choose the game-data file or folder")?;
+    let metadata = std::fs::metadata(&path)?;
+    ensure!(
+        metadata.is_dir() || metadata.is_file(),
+        "game data must be a regular file or folder"
+    );
     let mut notes = Vec::new();
     for layout in layouts {
         match try_layout(&path, layout) {
@@ -174,7 +178,7 @@ pub fn matches(path: &Path, layouts: &[crate::manifest::DataLayout]) -> Result<D
         }
     }
     bail!(
-        "the selected folder does not match this game's data layout{}",
+        "the selected file or folder does not match this game's data layout{}",
         if notes.is_empty() {
             String::new()
         } else {
@@ -188,6 +192,7 @@ fn try_layout(root: &Path, layout: &crate::manifest::DataLayout) -> Result<DataM
     let max = layout.max_bytes.unwrap_or(8 * 1024 * 1024 * 1024);
     match layout.placement.as_str() {
         "link" => {
+            ensure!(root.is_dir(), "this layout needs a game-data folder");
             for directory in &layout.directories {
                 let metadata = root
                     .join(directory)
@@ -221,6 +226,27 @@ fn try_layout(root: &Path, layout: &crate::manifest::DataLayout) -> Result<DataM
             })
         }
         "beside" => {
+            if root.is_file() {
+                let extension = root
+                    .extension()
+                    .and_then(|value| value.to_str())
+                    .unwrap_or("");
+                ensure!(
+                    layout
+                        .extensions
+                        .iter()
+                        .any(|expected| expected.eq_ignore_ascii_case(extension)),
+                    "the selected game-data file has an unsupported extension"
+                );
+                let metadata = std::fs::metadata(root)?;
+                ensure!(
+                    (min..=max).contains(&metadata.len()),
+                    "game data archive is outside the reviewed size range"
+                );
+                return Ok(DataMatch::Beside {
+                    file: root.to_path_buf(),
+                });
+            }
             let mut files = Vec::new();
             for entry in std::fs::read_dir(root).context("read the game-data folder")? {
                 let entry = entry?;
@@ -329,11 +355,11 @@ pub fn available(path: &Path) -> bool {
 }
 pub fn remember(root: &Path, manifest: &Manifest, path: &Path) -> Result<()> {
     let key = identity(manifest)?;
-    let path = std::fs::canonicalize(path).context("choose the original game-data folder")?;
-    ensure!(path.is_dir(), "game data must be a folder");
+    let path =
+        std::fs::canonicalize(path).context("choose the original game-data file or folder")?;
     let text = path
         .to_str()
-        .context("folder location must be representable as text")?;
+        .context("game-data location must be representable as text")?;
     ensure!(
         text.len() <= 4096 && !text.chars().any(char::is_control),
         "invalid game-data location"

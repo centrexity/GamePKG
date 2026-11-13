@@ -1,0 +1,338 @@
+--- a/port/linux/game/network_distributed.c
++++ b/port/linux/game/network_distributed.c
+@@ -268,6 +268,7 @@
+ 	_distributed_unit_part_camouflage_bit,
+ 	/* (dead) who killed it, when anyone */
+ 	_distributed_unit_part_killer_bit,
++	_distributed_unit_part_scripted_view_bit,
+ };
+ 
+ /* world units: how far apart the host's run of a client's player and the
+@@ -356,6 +357,8 @@
+ 	word recent_shield_damage;
+ 	/* the player's powerups: how long each has left */
+ 	short powerup_durations[NUMBER_OF_PLAYER_POWERUPS];
++	byte scripted_view;
++	struct distributed_vector scripted_vectors[7];
+ };
+ 
+ /* a client's player's input at one of its ticks, with the buttons of the
+@@ -413,7 +416,7 @@
+ 	most it has, and a relayed action's (past the update each message has
+ 	first) */
+ 	DISTRIBUTED_UNIT_STATE_MINIMUM_SIZE = 3,
+-	DISTRIBUTED_UNIT_STATE_MAXIMUM_SIZE = 3 + 4 + (4 + 2) + (12 + 3 * 6) + 2 + 2 * 2 + 4 * 2 +
++	DISTRIBUTED_UNIT_STATE_MAXIMUM_SIZE = 42 + 3 + 4 + (4 + 2) + (12 + 3 * 6) + 2 + 2 * 2 + 4 * 2 +
+ 		2 * NUMBER_OF_PLAYER_POWERUPS + 2 + 1,
+ 	DISTRIBUTED_RELAYED_ACTION_MINIMUM_SIZE = 14,
+ 	DISTRIBUTED_RELAYED_ACTION_MAXIMUM_SIZE = 14 + 2 * (DISTRIBUTED_INPUT_HISTORY - 1),
+@@ -1404,6 +1407,59 @@
+ 	for (player_index = 0; player_index < MAXIMUM_TRACKED_PLAYERS; player_index++)
+ 		distributed_seen[machine_index][player_index] = FALSE;
+ 	return TRUE;
++}
++
++/* Keep a client near fresh host timestamps without rewinding time.
++The latest host stamp is projected by its receive age and half the measured
++round trip; two ticks cover quantization. Pause excess client ticks after a
++host hitch instead of leaving its clock permanently ahead. */
++static boolean gamepkg_clock_slew_valid;
++static halo_u32 gamepkg_clock_slew_at;
++static long gamepkg_clock_slew_tick = NONE;
++
++long gamepkg_distributed_client_ticks(long requested)
++{
++    long long projected;
++    long current;
++    long transit = 0;
++    halo_u32 now, age;
++    boolean valid_ping;
++    if (requested <= 0) return 0;
++    if (game_connection() != _game_connection_network_client ||
++        distributed_host_time < 0 || distributed_host_time > 0x3FFFFFFF)
++    {
++        gamepkg_clock_slew_valid = FALSE;
++        gamepkg_clock_slew_tick = NONE;
++        return requested;
++    }
++    valid_ping = distributed_own_ping_valid && distributed_own_ping_milliseconds >= 0.0f &&
++        distributed_own_ping_milliseconds <= MAXIMUM_PING_MILLISECONDS;
++    if (valid_ping)
++        transit = (long)(distributed_own_ping_milliseconds * 0.5f);
++    now = (halo_u32)system_milliseconds();
++    age = (halo_u32)(now - distributed_host_time_received);
++    projected = (long long)distributed_host_time +
++        ((long long)age + transit) * TICKS_PER_SECOND / 1000 + 2;
++    current = game_time_get();
++    if (gamepkg_clock_slew_tick != NONE && current < gamepkg_clock_slew_tick)
++        gamepkg_clock_slew_valid = FALSE;
++    gamepkg_clock_slew_tick = current;
++    if (projected <= current) return 0;
++    if (projected - current < requested) return (long)(projected - current);
++    /* A loading stall may leave the client behind permanently. Execute
++       one extra complete simulation tick at most every 250 ms until the
++       measured host projection is within its two-tick quantization slack.
++       No zero-tick render frame, stale clock, invalid RTT, menu or host is
++       advanced. Never rewind time, skip simulation or replace local input. */
++    if (valid_ping && age <= 1000 && requested < TICKS_PER_SECOND &&
++        projected - current > requested + 2 &&
++        (!gamepkg_clock_slew_valid || (halo_u32)(now - gamepkg_clock_slew_at) >= 250))
++    {
++        gamepkg_clock_slew_valid = TRUE;
++        gamepkg_clock_slew_at = now;
++        return requested + 1;
++    }
++    return requested;
+ }
+ 
+ long distributed_latest_host_time(
+@@ -1721,6 +1777,16 @@
+ 			TEST_FLAG(unit->unit.flags, _unit_super_camouflaged_bit));
+ 		camouflage = camouflage > 1.0f ? 1.0f : camouflage < 0.0f ? 0.0f : camouflage;
+ 		state->active_camouflage = (byte)(long)floor(camouflage * 255.0f + 0.5f);
++        if (network_coop_active() && game_connection() == _game_connection_network_server && !player_input_enabled())
++        {
++            real_vector3d vectors[7];
++            short index;
++            _Static_assert(offsetof(struct _unit_datum, throttle) - offsetof(struct _unit_datum, desired_facing_vector) == sizeof(vectors), "view vector layout");
++            csmemcpy(vectors, &unit->unit.desired_facing_vector, sizeof(vectors));
++            state->scripted_view = TRUE;
++            for (index = 0; index < 7; index++)
++                distributed_vector_pack(&vectors[index], DISTRIBUTED_UNIT_SCALE, &state->scripted_vectors[index]);
++        }
+ 		SET_FLAG(state->unit_flags, _distributed_unit_suspended_bit,
+ 			network_coop_active() && TEST_FLAG(unit->unit.flags, _unit_suspended_bit));
+ 		/* (the host) a client's player where the client had them: at which of
+@@ -1811,6 +1877,11 @@
+ 				cursor = distributed_put(cursor, state->powerup_durations, sizeof(state->powerup_durations));
+ 			}
+ 		}
++        if (state->scripted_view)
++        {
++            SET_FLAG(parts, _distributed_unit_part_scripted_view_bit, TRUE);
++            cursor = distributed_put(cursor, state->scripted_vectors, sizeof(state->scripted_vectors));
++        }
+ 		if (state->unit_flags || state->active_camouflage)
+ 		{
+ 			SET_FLAG(parts, _distributed_unit_part_camouflage_bit, TRUE);
+@@ -1893,6 +1964,12 @@
+ 		{
+ 			return 0;
+ 		}
++        if (TEST_FLAG(parts, _distributed_unit_part_scripted_view_bit))
++        {
++            if (!distributed_take(&cursor, end, state->scripted_vectors, sizeof(state->scripted_vectors)))
++                return 0;
++            state->scripted_view = TRUE;
++        }
+ 		if (TEST_FLAG(parts, _distributed_unit_part_camouflage_bit) &&
+ 			(!distributed_take(&cursor, end, &state->unit_flags, sizeof(state->unit_flags)) ||
+ 				!distributed_take(&cursor, end, &state->active_camouflage, sizeof(state->active_camouflage))))
+@@ -2105,7 +2182,11 @@
+ 			}
+ 		}
+ 	}
+-	distributed_apply_state(unit_index, state, &position, LOCAL_CORRECTION_TOLERANCE, 0.0f, 0.0f, 0.0f);
++	/* port: without a prediction accepted by the host, a co-op script owns
++	this position. Reach it before resuming client movement acceptance. */
++	distributed_apply_state(unit_index, state, &position,
++		network_coop_active() && !TEST_FLAG(state->flags, _distributed_unit_predicted_bit) ?
++			0.0f : LOCAL_CORRECTION_TOLERANCE, 0.0f, 0.0f, 0.0f);
+ }
+ 
+ /* (a client) its own players' units, to the host */
+@@ -2542,6 +2623,14 @@
+ host's own unit too, further than it moves since the last taken: it is
+ measured from where the host has it only, a new anchor (as it is after a
+ new life, or a ride). */
++/* Preserve authoritative scripted positions through per-player handoffs. */
++#define GAMEPKG_SCRIPT_HANDOFF_TOLERANCE (1.0f / 32.0f)
++static struct
++{
++    long unit_index;
++    boolean waiting;
++} gamepkg_script_handoffs[MAXIMUM_TRACKED_PLAYERS];
++
+ static void distributed_apply_predictions(
+ 	void)
+ {
+@@ -2553,12 +2642,47 @@
+ 		struct distributed_on_foot_bound bound;
+ 		long unit_index;
+ 
++		unit_index = distributed_living_unit(distributed_player(player_index));
++		/* port: a script's seat exit can finish at a different time on a
++		client. Keep the host's exit until that client reaches it; a delayed
++		pre-exit prediction must not pull the host back inside the vehicle. */
++		if (unit_index == NONE || !network_coop_active())
++		{
++			gamepkg_script_handoffs[player_index].unit_index = NONE;
++			gamepkg_script_handoffs[player_index].waiting = FALSE;
++		}
++		else
++		{
++			struct unit_datum *unit = unit_get(unit_index);
++			if (gamepkg_script_handoffs[player_index].unit_index != unit_index)
++			{
++				gamepkg_script_handoffs[player_index].unit_index = unit_index;
++				gamepkg_script_handoffs[player_index].waiting = FALSE;
++			}
++			if (!player_input_enabled() || TEST_FLAG(unit->unit.flags, _unit_suspended_bit) ||
++				unit->object.parent_object_index != NONE)
++			{
++				gamepkg_script_handoffs[player_index].waiting = TRUE;
++				unit_index = NONE;
++			}
++			else if (gamepkg_script_handoffs[player_index].waiting)
++			{
++				real dx = state->position.x - unit->object.position.x;
++				real dy = state->position.y - unit->object.position.y;
++				real dz = state->position.z - unit->object.position.z;
++				if (distributed_predictions[player_index].valid &&
++					dx * dx + dy * dy + dz * dz <=
++					GAMEPKG_SCRIPT_HANDOFF_TOLERANCE * GAMEPKG_SCRIPT_HANDOFF_TOLERANCE)
++					gamepkg_script_handoffs[player_index].waiting = FALSE;
++				else
++					unit_index = NONE;
++			}
++		}
+ 		if (!distributed_predictions[player_index].valid && !distributed_accepted[player_index].valid &&
+ 			distributed_host_speeds[player_index].unit_index == NONE)
+ 		{
+ 			continue;
+ 		}
+-		unit_index = distributed_living_unit(distributed_player(player_index));
+ 		if (unit_index != NONE && object_get(unit_index)->object.parent_object_index != NONE)
+ 			unit_index = NONE;
+ 		if (distributed_accepted[player_index].valid && distributed_accepted[player_index].unit_index != unit_index)
+@@ -2597,6 +2721,58 @@
+ }
+ 
+ /* (a client) the host's word on a player's unit */
++/* Invert the original player's own aiming conversion. The engine's seat
++   basis depends on vehicle up and camera flags, not the full animated
++   parent node transform. Sampling its three canonical axes preserves
++   those original rules for tilted and third-person seats alike. */
++static void gamepkg_scripted_view_local_facing(long player_index,
++    real_vector3d const *world, real_vector3d *local)
++{
++    real_euler_angles2d angles = { 0.0f, 0.0f };
++    real_vector3d axes[3];
++    player_aiming_vector_from_facing(player_index, &axes[0], &angles);
++    angles.yaw = _pi * 0.5f;
++    player_aiming_vector_from_facing(player_index, &axes[1], &angles);
++    angles.yaw = 0.0f;
++    angles.pitch = _pi * 0.5f;
++    player_aiming_vector_from_facing(player_index, &axes[2], &angles);
++    local->i = dot_product3d(world, &axes[0]);
++    local->j = dot_product3d(world, &axes[1]);
++    local->k = dot_product3d(world, &axes[2]);
++}
++
++static void gamepkg_apply_scripted_view(long unit_index, struct player_datum *player, struct distributed_unit_state const *state)
++{
++    real_vector3d vectors[7];
++    struct unit_datum *unit;
++    short index;
++    if (!network_coop_active() || !state->scripted_view)
++        return;
++    for (index = 0; index < 7; index++)
++    {
++        real length2;
++        distributed_vector_unpack(&state->scripted_vectors[index], DISTRIBUTED_UNIT_SCALE, &vectors[index]);
++        if (index == 3 || index == 6)
++            continue;
++        length2 = dot_product3d(&vectors[index], &vectors[index]);
++        if (length2 < 0.5f || length2 > 1.5f)
++            return;
++        normalize3d(&vectors[index]);
++    }
++    unit = unit_get(unit_index);
++    csmemcpy(&unit->unit.desired_facing_vector, vectors, sizeof(vectors));
++    if (player->local_player_index != NONE)
++    {
++        real_vector3d forward = vectors[0];
++        if (unit->object.parent_object_index != NONE)
++        {
++            long player_index = DATUM_INDEX_NEW(state->player_index, player->identifier);
++            gamepkg_scripted_view_local_facing(player_index, &vectors[0], &forward);
++        }
++        player_control_set_facing(player->local_player_index, &forward);
++    }
++}
++
+ static void distributed_handle_unit_state(
+ 	struct distributed_unit_state const *state)
+ {
+@@ -2730,6 +2906,7 @@
+ 				_netgame_flag_teleporter_source, NONE);
+ 		}
+ 	}
++    gamepkg_apply_scripted_view(unit_index, player, state);
+ }
+ 
+ /* (a client) the host's word on every player's unit */
+@@ -3737,6 +3914,7 @@
+ 	csmemset(distributed_deaths, 0, sizeof(distributed_deaths));
+ 	csmemset(distributed_seat_disagreements, 0, sizeof(distributed_seat_disagreements));
+ 	csmemset(distributed_predictions, 0, sizeof(distributed_predictions));
++	csmemset(gamepkg_script_handoffs, 0, sizeof(gamepkg_script_handoffs));
+ 	csmemset(distributed_accepted, 0, sizeof(distributed_accepted));
+ 	csmemset(distributed_host_speeds, 0, sizeof(distributed_host_speeds));
+ 	csmemset(distributed_round_trips, 0, sizeof(distributed_round_trips));
+--- a/source/game/game_time.c
++++ b/source/game/game_time.c
+@@ -80,6 +80,8 @@
+ #include "profile_sections.h" /* port: port/linux/include/profile_sections.h */
+ /* port/linux/game/network_distributed.c's */
+ void network_distributed_tick(void);
++/* Host-projected tick budget with bounded forward-only catch-up. */
++long gamepkg_distributed_client_ticks(long requested);
+ 
+ /* port: the tick loop's steps, timed in the profiling build */
+ PROFILE_SECTION(game_time_network_distributed_tick_section, "network_distributed_tick")
+@@ -414,6 +416,7 @@
+ 		if (ticks_per_second > 0.f)
+ 		{
+ 			boolean discard_leftover_time;
++			boolean gamepkg_clock_held = FALSE;
+ 			real game_time;
+ 			real ticks_elapsed_real;
+ 
+@@ -451,6 +454,12 @@
+ 					game_time = ticks_elapsed_real/ticks_per_second;
+ 			}
+ 
++			if (game_connection() == _game_connection_network_client && !game_time_menu_scene())
++			{
++				long allowed = gamepkg_distributed_client_ticks(ticks_elapsed);
++				gamepkg_clock_held = allowed < ticks_elapsed;
++				ticks_elapsed = allowed;
++			}
+ 			game_time_globals->leftover_dt = game_time - ticks_elapsed_real/ticks_per_second;
+ 			if (game_time_globals->leftover_dt < 0.f)
+ 				game_time_globals->leftover_dt = 0.f;
+@@ -466,6 +475,10 @@
+ 			match_assert("c:\\halo\\SOURCE\\game\\game_time.c", 306,
+ 				game_time_globals->leftover_dt>=0.f && game_time_globals->leftover_dt<100.f);
+ 
++			/* port: while held behind the host's projected tick, don't cycle
++			the fractional render pose through the same old snapshots. */
++			if (gamepkg_clock_held && ticks_elapsed == 0)
++				game_time_globals->leftover_dt = 0.0f;
+ 			if (ticks_elapsed > 0)
+ 			{
+ 				long final_local_time;
+--- a/port/linux/include/halo_port_limits.h
++++ b/port/linux/include/halo_port_limits.h
+@@ -66,8 +66,8 @@
+ in its game's advertisement's reserved bytes (network_server_message_handler.c),
+ which hosts built before there was a version send as zeros: version 0.
+ Raise it with any change to what the machines send each other. */
+-/* GamePKG: version 33 carries scripted player suspension in unit snapshots. */
+-#define HALO_PORT_NETWORK_VERSION 33
++/* GamePKG: version 34 also carries authoritative scripted view vectors. */
++#define HALO_PORT_NETWORK_VERSION 34
+ /* ... the advertisement's reserved bytes: the version (a little-endian word),
+ then flags */
+ #define HALO_PORT_ADVERTISED_VERSION_OFFSET 0

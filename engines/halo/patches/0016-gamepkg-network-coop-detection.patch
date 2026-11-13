@@ -1,0 +1,12 @@
+--- a/source/game/game.c
++++ b/source/game/game.c
+@@ -608,7 +608,8 @@
+ boolean game_is_cooperative(
+ 	void)
+ {
+-	return player_spawn_count > 1;
++	/* A network peer can have one local player in a cooperative session. */
++	return player_spawn_count > 1 || network_coop_active();
+ }
+ 
+ boolean game_load(

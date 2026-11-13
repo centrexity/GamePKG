@@ -82,10 +82,43 @@ fn embed_external_engines() {
             text.push_str(&path.display().to_string());
             text.push_str("\"#)),\n");
         }
+        text.push_str("        ],\n        files: &[\n");
+        let prepared = dir.join("prepared");
+        if prepared.is_dir() {
+            let mut inputs = Vec::new();
+            prepared_files(&prepared, &mut inputs);
+            inputs.sort();
+            for path in inputs {
+                println!("cargo:rerun-if-changed={}", path.display());
+                let name = path
+                    .strip_prefix(&prepared)
+                    .expect("prepared input")
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                let absolute = path.canonicalize().expect("prepared input");
+                text.push_str(&format!(
+                    "            ({name:?}, include_bytes!({:?})),\n",
+                    absolute.to_string_lossy()
+                ));
+            }
+        }
         text.push_str("        ],\n    },\n");
     }
     text.push_str("];\n");
     let out = PathBuf::from(env::var_os("OUT_DIR").expect("Cargo output directory"))
         .join("external_engine_records.rs");
     fs::write(out, text).expect("write external engine records");
+}
+
+fn prepared_files(directory: &std::path::Path, files: &mut Vec<PathBuf>) {
+    for entry in fs::read_dir(directory).expect("prepared inputs") {
+        let entry = entry.expect("prepared input");
+        let kind = entry.file_type().expect("prepared input type");
+        assert!(!kind.is_symlink(), "prepared inputs cannot be symlinks");
+        if kind.is_dir() {
+            prepared_files(&entry.path(), files);
+        } else if kind.is_file() {
+            files.push(entry.path());
+        }
+    }
 }

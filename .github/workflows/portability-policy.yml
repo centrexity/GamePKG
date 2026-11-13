@@ -163,7 +163,7 @@ jobs:
           arch: x86
           # These are CLI tests. Avoid settings-service writes during boot.
           disable-animations: false
-          script: bash tools/test_android_runtime.sh emulator-5554 i686-linux-android "$(jq -er 'select(.reason == "compiler-artifact" and .profile.test == true and (.target.kind | index("lib")) != null) | .executable // empty' android-tests.json)"
+          script: bash tools/test_android_runtime.sh emulator-5554 i686-linux-android android-tests.json
       - uses: actions/upload-artifact@v4
         with:
           name: gamepkg-android-armv7-cli
