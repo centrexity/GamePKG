@@ -34,10 +34,27 @@
    paddles 1..4. Axis event codes 0..5: LX, LY, RX, RY, LT, RT. Sticks
    use signed 16-bit values (Y up); triggers use the full unsigned range.
    No deadzone, smoothing or acceleration is applied by the service. */
+#define GAMEPKG_INPUT_PAD_DPAD_UP (1u << 0)
+#define GAMEPKG_INPUT_PAD_DPAD_DOWN (1u << 1)
+#define GAMEPKG_INPUT_PAD_DPAD_LEFT (1u << 2)
+#define GAMEPKG_INPUT_PAD_DPAD_RIGHT (1u << 3)
+#define GAMEPKG_INPUT_PAD_START (1u << 4)
+#define GAMEPKG_INPUT_PAD_BACK (1u << 5)
+#define GAMEPKG_INPUT_PAD_LEFT_STICK (1u << 6)
+#define GAMEPKG_INPUT_PAD_RIGHT_STICK (1u << 7)
+#define GAMEPKG_INPUT_PAD_LEFT_SHOULDER (1u << 8)
+#define GAMEPKG_INPUT_PAD_RIGHT_SHOULDER (1u << 9)
+#define GAMEPKG_INPUT_PAD_GUIDE (1u << 10)
+#define GAMEPKG_INPUT_PAD_MISC (1u << 11)
 #define GAMEPKG_INPUT_PAD_SOUTH (1u << 12)
 #define GAMEPKG_INPUT_PAD_EAST (1u << 13)
 #define GAMEPKG_INPUT_PAD_WEST (1u << 14)
 #define GAMEPKG_INPUT_PAD_NORTH (1u << 15)
+#define GAMEPKG_INPUT_PAD_TOUCHPAD (1u << 16)
+#define GAMEPKG_INPUT_PAD_PADDLE_1 (1u << 17)
+#define GAMEPKG_INPUT_PAD_PADDLE_2 (1u << 18)
+#define GAMEPKG_INPUT_PAD_PADDLE_3 (1u << 19)
+#define GAMEPKG_INPUT_PAD_PADDLE_4 (1u << 20)
 typedef struct gamepkg_input_event {
     uint64_t device, timestamp_ns;
     uint32_t kind, code;

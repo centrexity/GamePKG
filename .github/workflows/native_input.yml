@@ -1,9 +1,9 @@
 name: Shared native input
 on:
   push:
-    paths: ['engines/native-input/**', 'engines/takedawn/media-bridge/**', 'tools/prepare_takedawn_source_kit.py', 'include/gamepkg_input*.h', 'tools/check_native_input.py', '.github/workflows/native_input.yml']
+    paths: ['engines/native-input/**', 'engines/takedawn/media-bridge/**', 'tools/prepare_takedawn_source_kit.py', 'include/gamepkg_input*.h', 'tools/check_native_input.py', 'tools/check_native_sdl2.py', 'tools/fixtures/native-sdl2/**', '.github/workflows/native_input.yml']
   pull_request:
-    paths: ['engines/native-input/**', 'engines/takedawn/media-bridge/**', 'tools/prepare_takedawn_source_kit.py', 'include/gamepkg_input*.h', 'tools/check_native_input.py', '.github/workflows/native_input.yml']
+    paths: ['engines/native-input/**', 'engines/takedawn/media-bridge/**', 'tools/prepare_takedawn_source_kit.py', 'include/gamepkg_input*.h', 'tools/check_native_input.py', 'tools/check_native_sdl2.py', 'tools/fixtures/native-sdl2/**', '.github/workflows/native_input.yml']
 permissions:
   contents: read
 jobs:
@@ -60,3 +60,43 @@ jobs:
         run: |
           cargo build --locked --release --manifest-path engines/native-input/Cargo.toml --target armv7-linux-androideabi
           cargo build --locked --release --manifest-path engines/native-input/Cargo.toml --target i686-linux-android
+
+  sdl2:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {target: x86_64-unknown-linux-gnu, arch: x86_64-linux-gnu, cflags: ''}
+          - {target: i686-unknown-linux-gnu, arch: i386-linux-gnu, cflags: '-m32'}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: xenophobentx/xboxrecomp
+          ref: 5ae8ad90d984425e834dee759592c15592679880
+          path: pinned-sdk
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Install SDL2 for both native widths
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y gcc-multilib libsdl2-dev libsdl2-dev:i386 ninja-build
+      - name: Build the real Rust service
+        run: cargo build --locked --release --manifest-path engines/native-input/Cargo.toml --target ${{ matrix.target }}
+      - name: Run actual SDL2 engine integration and original input regressions
+        run: >-
+          python3 tools/check_native_sdl2.py --toolkit pinned-sdk
+          --library engines/native-input/target/${{ matrix.target }}/release/libgamepkg_native_input.a
+          --output native-sdl2-results --cflags='${{ matrix.cflags }}'
+          --sdl2-library /usr/lib/${{ matrix.arch }}/libSDL2.so
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-sdl2-${{ matrix.target }}
+          path: |
+            native-sdl2-results/*.log
+            native-sdl2-results/result.json

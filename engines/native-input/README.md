@@ -4,10 +4,12 @@ This host library gives native engines the same device handles, player-slot rule
 held-state snapshots, ordered events and focus behavior. It does not pump OS
 events or remap a game's actions. SDL2, SDL3 and Windows XInput adapters must feed
 it from their existing pump/poll and preserve each game's original mappings.
-The Windows XInput source-kit adapter now feeds this service and reads its player
-snapshots before the engine's original Duke mapping. SDL2/SDL3, keyboard, mouse
-and touch engine adapters are still pending. Existing installed packages need a
-new source kit and rebuild before they use the Windows adapter.
+The Windows XInput and SDL2 source-kit adapters feed this service and read its
+player snapshots before the engine's original Duke mapping. SDL2 keeps its one
+existing event pump and its original rumble lifetime/exit handling. Both headed
+and headless SDL2 now use first-button ownership. SDL3, keyboard, mouse and touch
+engine adapters are still pending. Existing installed packages need a new source
+kit and rebuild before they use these adapters.
 
 The library has no external Rust dependencies. Consumers use
 [`gamepkg_input.h`](../../include/gamepkg_input.h); trusted window/device adapters
@@ -59,3 +61,13 @@ Pass `--pinned-xinput PATH --pinned-input-core PATH` to the Linux runner to also
 verify adaptation of the pinned SDK sources, rejection of altered source and
 in-place writes, the unchanged SDL backend, and negative controls for both
 logical-player and connection-mask probe policies.
+
+`tools/check_native_sdl2.py --toolkit PATH --library PATH --output PATH` builds
+the pinned actual SDK backend/core with the Rust archive and exercises virtual
+controllers in both main-pump and headless modes. It compares 65,536 raw states
+through the original Duke mapper and checks all 21 common physical buttons.
+The original 682 Linux mapping checks and 15 rumble checks also run; the rumble
+fixture supplies one virtual join press for the new ownership rule, retaining
+all original timing and shutdown assertions. Swapped-button and incorrect Y
+conversion negative controls must fail. SDK source remains unchanged, including
+the Windows backend. CI executes this integration as native Linux x86 and x64.

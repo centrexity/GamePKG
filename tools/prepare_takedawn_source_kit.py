@@ -154,6 +154,7 @@ def main():
                  'adapt_rt_zero_hash.cmake', 'rt_zero_hash.h',
                  'adapt_input_glyphs.cmake', 'input_glyphs_policy.h', 'input_gameplay_policy.h',
                  'adapt_native_input.cmake', 'native_input.cmake', 'native_xinput.h',
+                 'adapt_native_sdl2.cmake', 'native_sdl2.h',
                  'windows_file.c', 'windows_file.h', 'windows_stream.c', 'windows_stream.h',
                  'windows_entry.c', 'windows_attach.cmake', 'windows_restart.h', 'adapt_windows_restart.cmake', 'adapt_windows_clock.cmake', 'adapt_windows_file.cmake',
                  'adapt_windows_startup.cmake', 'DotNET-RUNTIME-LICENSE.txt']:
