@@ -110,8 +110,22 @@ These checks do not establish complete campaign play, Windows playback or a
 whole-game frame-time guarantee.
 A later maximum-stick looking run with the final camera candidate passed one
 hosting role and recorded a short remote-aim disagreement in the other despite
-aligned clocks. That stress case remains under investigation; its original
-failed comparison is retained.
+aligned clocks. Its original failed comparison is retained. Patch `0018`
+replicates the seven angular-state vectors to remote cooperative avatars during
+active play, preserving the host's aiming integrator state. The writer excludes
+the active local owner; scripted owner cameras still receive their correction.
+This uses the existing optional payload without adding wire fields. Multiplayer
+and solo behavior remain outside the cooperative correction path.
+
+With this patch, the same continuous-stick stress test passed 124 paired seconds
+in each hosting role under unchanged thresholds, with zero measured position
+drift. The reversed role retained two brief aim mismatches (largest 22 degrees)
+within the comparator's existing allowance. This is a scoped improvement, not a
+claim of perfect synchronization or complete campaign qualification.
+The same revision also passed 184 paired seconds of the first-map opening in
+each hosting role with 100 ms receive delay and 1% packet loss. Both clients
+completed a 4.023-unit first walk without a death or deep fall after movement
+began. Brief opening-state mismatches remain in the retained comparisons.
 
 Network version 34 separates these extended snapshots from older peers. Native
 version 33/34 test peers explicitly refused each other in both hosting roles.

@@ -1,0 +1,43 @@
+--- a/port/linux/game/network_distributed.c
++++ b/port/linux/game/network_distributed.c
+@@ -358,6 +358,7 @@
+ 	/* the player's powerups: how long each has left */
+ 	short powerup_durations[NUMBER_OF_PLAYER_POWERUPS];
+ 	byte scripted_view;
++	byte view_for_owner;
+ 	struct distributed_vector scripted_vectors[7];
+ };
+ 
+@@ -1777,13 +1778,14 @@
+ 			TEST_FLAG(unit->unit.flags, _unit_super_camouflaged_bit));
+ 		camouflage = camouflage > 1.0f ? 1.0f : camouflage < 0.0f ? 0.0f : camouflage;
+ 		state->active_camouflage = (byte)(long)floor(camouflage * 255.0f + 0.5f);
+-        if (network_coop_active() && game_connection() == _game_connection_network_server && !player_input_enabled())
++        if (network_coop_active() && game_connection() == _game_connection_network_server)
+         {
+             real_vector3d vectors[7];
+             short index;
+             _Static_assert(offsetof(struct _unit_datum, throttle) - offsetof(struct _unit_datum, desired_facing_vector) == sizeof(vectors), "view vector layout");
+             csmemcpy(vectors, &unit->unit.desired_facing_vector, sizeof(vectors));
+             state->scripted_view = TRUE;
++            state->view_for_owner = !player_input_enabled();
+             for (index = 0; index < 7; index++)
+                 distributed_vector_pack(&vectors[index], DISTRIBUTED_UNIT_SCALE, &state->scripted_vectors[index]);
+         }
+@@ -1877,7 +1879,7 @@
+ 				cursor = distributed_put(cursor, state->powerup_durations, sizeof(state->powerup_durations));
+ 			}
+ 		}
+-        if (state->scripted_view)
++        if (state->scripted_view && (!own || state->view_for_owner))
+         {
+             SET_FLAG(parts, _distributed_unit_part_scripted_view_bit, TRUE);
+             cursor = distributed_put(cursor, state->scripted_vectors, sizeof(state->scripted_vectors));
+@@ -1969,6 +1971,7 @@
+             if (!distributed_take(&cursor, end, state->scripted_vectors, sizeof(state->scripted_vectors)))
+                 return 0;
+             state->scripted_view = TRUE;
++            state->view_for_owner = TRUE;
+         }
+ 		if (TEST_FLAG(parts, _distributed_unit_part_camouflage_bit) &&
+ 			(!distributed_take(&cursor, end, &state->unit_flags, sizeof(state->unit_flags)) ||

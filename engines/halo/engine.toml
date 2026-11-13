@@ -32,6 +32,7 @@ patches = [
     "0015-gamepkg-coop-scripted-suspension.patch",
     "0016-gamepkg-network-coop-detection.patch",
     "0017-gamepkg-scripted-view-and-clock.patch",
+    "0018-gamepkg-remote-view-owner.patch",
 ]
 
 [[layouts]]

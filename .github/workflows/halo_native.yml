@@ -47,7 +47,7 @@ jobs:
           python3 engines/halo/tests/check_hud_upscale.py --source "$RUNNER_TEMP/opence-native-fixture" --cc clang-18 --cflag=-m32 --cflag=-msse2 --cflag=-mfpmath=sse
           python3 engines/halo/tests/check_hud_upscale.py --source "$RUNNER_TEMP/opence-native-fixture" --cc clang-18 --scalar
           python3 engines/halo/tests/check_video_failure.py
-      - name: Verify scripted co-op suspension and bounded snapshot parsing
+      - name: Verify co-op view ownership, suspension and bounded snapshot parsing
         run: |
           python3 engines/halo/tests/check_scripted_suspension.py --source "$RUNNER_TEMP/opence-native-fixture" --output "$RUNNER_TEMP/suspension-native32" --profile native32
           python3 engines/halo/tests/check_scripted_suspension.py --source "$RUNNER_TEMP/opence-native-fixture" --output "$RUNNER_TEMP/suspension-sanitized64" --profile sanitized64
@@ -73,9 +73,9 @@ jobs:
             ${{ runner.temp }}/movie-sanitized64/*.log
             ${{ runner.temp }}/movie-sanitized64/results/*.log
             ${{ runner.temp }}/movie-sanitized64/results/result.json
-            ${{ runner.temp }}/suspension-native32/*.log
+            ${{ runner.temp }}/suspension-native32/**/*.log
             ${{ runner.temp }}/suspension-native32/result.json
-            ${{ runner.temp }}/suspension-sanitized64/*.log
+            ${{ runner.temp }}/suspension-sanitized64/**/*.log
             ${{ runner.temp }}/suspension-sanitized64/result.json
             ${{ runner.temp }}/coop-native32/**/*.log
             ${{ runner.temp }}/coop-native32/result.json

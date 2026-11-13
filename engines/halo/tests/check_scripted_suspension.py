@@ -33,15 +33,33 @@ def main():
     pieces.append(size.split('\tDISTRIBUTED_RELAYED_ACTION_MINIMUM_SIZE',1)[0]+'};\n')
     pieces.append(block(texts['setter'],'void unit_scripting_suspended(\n'))
     for anchor in ['static byte *distributed_put(\n','static boolean distributed_take(\n','static word distributed_unit_state_write(\n',
-        'static word distributed_unit_state_read(\n','static void distributed_apply_scripted_suspension(\n']:
+        'static word distributed_unit_state_read(\n','static void distributed_apply_scripted_suspension(\n','static void gamepkg_apply_scripted_view(']:
         pieces.append(block(texts['network'],anchor))
     fragments=out/'reviewed_snapshot.inc';fragments.write_text('\n'.join(pieces))
     flags=['--target=i686-linux-gnu','-m32','-isystem','/usr/include/x86_64-linux-gnu'] if a.profile=='native32' else ['-fsanitize=address,undefined','-fno-omit-frame-pointer']
-    command=[a.cc,*flags,'-std=gnu17','-O2','-g','-ffp-contract=off','-Wall','-Wextra','-Werror','-I'+str(out),str(HERE/'scripted_suspension.c'),'-o',str(out/'check')]
+    command=[a.cc,*flags,'-std=gnu17','-O2','-g','-ffp-contract=off','-Wall','-Wextra','-Werror','-I'+str(out),str(HERE/'scripted_suspension.c'),'-o',str(out/'check'),'-lm']
     with (out/'build.log').open('w') as log:subprocess.run(command,stdout=log,stderr=subprocess.STDOUT,check=True)
     with (out/'run.log').open('w') as log:subprocess.run([str(out/'check')],stdout=log,stderr=subprocess.STDOUT,check=True,timeout=60,
         env=dict(os.environ,ASAN_OPTIONS='detect_leaks=1:halt_on_error=1',UBSAN_OPTIONS='halt_on_error=1:print_stacktrace=1'))
+    production=fragments.read_text()
+    negatives=[
+        ('owner_filter', 'if (state->scripted_view && (!own || state->view_for_owner))', 'if (state->scripted_view)', 'decoded.scripted_view==expected_view'),
+        ('noncoop_guard', 'if (!network_coop_active() || !state->scripted_view)', 'if (!state->scripted_view)', '(unit_queries!=0)==expected'),
+        ('remote_application', '    csmemcpy(&unit->unit.desired_facing_vector, vectors, sizeof(vectors));', '    if (player->local_player_index == NONE) return;\n    csmemcpy(&unit->unit.desired_facing_vector, vectors, sizeof(vectors));', 'fixture.unit.desired_facing_vector.i==1&&fixture.unit.desired_facing_vector.j==0'),
+    ]
+    rejected=[]
+    for name,old,new,assertion in negatives:
+        assert production.count(old)==1,(name,old)
+        work=out/('negative-'+name);work.mkdir(exist_ok=True)
+        (work/'reviewed_snapshot.inc').write_text(production.replace(old,new))
+        negative_command=[a.cc,*flags,'-std=gnu17','-O2','-g','-ffp-contract=off','-Wall','-Wextra','-Werror','-I'+str(work),str(HERE/'scripted_suspension.c'),'-o',str(work/'check'),'-lm']
+        with (work/'build.log').open('w') as log:subprocess.run(negative_command,stdout=log,stderr=subprocess.STDOUT,check=True)
+        run=subprocess.run([str(work/'check')],capture_output=True,text=True,timeout=60,
+            env=dict(os.environ,ASAN_OPTIONS='detect_leaks=1:halt_on_error=1',UBSAN_OPTIONS='halt_on_error=1:print_stacktrace=1'))
+        (work/'run.log').write_text(run.stdout+run.stderr)
+        assert run.returncode!=0 and 'Assertion' in run.stderr and assertion in run.stderr,(name,run.returncode,run.stderr)
+        rejected.append(dict(mutation=name,exit=run.returncode,assertion=assertion))
     record=dict(profile=a.profile,result='pass',sources={key:hashlib.sha256(path.read_bytes()).hexdigest() for key,path in paths.items()},
-        fragments_sha256=hashlib.sha256(fragments.read_bytes()).hexdigest())
+        fragments_sha256=hashlib.sha256(production.encode()).hexdigest(),negative_controls=rejected)
     (out/'result.json').write_text(json.dumps(record,indent=2)+'\n');print((out/'run.log').read_text(),end='')
 if __name__=='__main__':main()
