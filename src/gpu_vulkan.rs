@@ -8,6 +8,7 @@ pub struct Renderer {
     pipelines: Vec<wgpu::RenderPipeline>,
     layout: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
+    linear_sampler: wgpu::Sampler,
 }
 impl Renderer {
     pub fn new(state: &egui_wgpu::RenderState, sources: &[String]) -> Result<Self> {
@@ -85,12 +86,19 @@ impl Renderer {
             label: Some("GamePKG texture sampler"),
             ..Default::default()
         });
+        let linear_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("GamePKG linear texture sampler"),
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
+        });
         Ok(Self {
             device,
             queue,
             pipelines,
             layout,
             sampler,
+            linear_sampler,
         })
     }
     pub fn callback(
@@ -99,7 +107,6 @@ impl Renderer {
         index: usize,
         image: Option<&Arc<crate::drawing::image::Image>>,
     ) -> Option<egui::PaintCallback> {
-        let pipeline = self.pipelines.get(index)?.clone();
         let (w, h, pixels) = image
             .map(|i| {
                 let [w, h] = i.size();
@@ -108,6 +115,37 @@ impl Renderer {
             // Plain shader draws must not inherit a previous pass's pixels.
             // Keep the documented transparent-black fallback shared with OpenGL.
             .unwrap_or((1, 1, &[0, 0, 0, 0]));
+        self.callback_rgba(rect, index, w, h, pixels)
+    }
+    /// Host-owned port textures use the same verified Vulkan fragment path.
+    pub fn callback_rgba(
+        self: &Arc<Self>,
+        rect: egui::Rect,
+        index: usize,
+        w: u32,
+        h: u32,
+        pixels: &[u8],
+    ) -> Option<egui::PaintCallback> {
+        self.callback_rgba_filtered(rect, index, w, h, pixels, false)
+    }
+    pub fn callback_rgba_filtered(
+        self: &Arc<Self>,
+        rect: egui::Rect,
+        index: usize,
+        w: u32,
+        h: u32,
+        pixels: &[u8],
+        linear: bool,
+    ) -> Option<egui::PaintCallback> {
+        if w == 0
+            || h == 0
+            || w > 8192
+            || h > 8192
+            || u64::from(w) * u64::from(h) * 4 != pixels.len() as u64
+        {
+            return None;
+        }
+        let pipeline = self.pipelines.get(index)?.clone();
         let texture = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("GamePKG bounded texture"),
             size: wgpu::Extent3d {
@@ -152,7 +190,11 @@ impl Renderer {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                    resource: wgpu::BindingResource::Sampler(if linear {
+                        &self.linear_sampler
+                    } else {
+                        &self.sampler
+                    }),
                 },
             ],
         });

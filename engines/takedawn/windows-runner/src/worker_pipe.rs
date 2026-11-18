@@ -267,6 +267,36 @@ impl WorkerPipe {
 /// closes its writer. The request channel deliberately does not implement Read
 /// or Write, so it cannot accidentally bypass its cumulative deadline methods.
 pub struct WorkerLog(WorkerPipe);
+/// Dedicated service-worker I/O. The process/job owner must stop the child on
+/// teardown, which closes the peers and cancels idle reads. Never use on a GUI
+/// owner or compiler-deadline path; framing/queue sizes remain host-bounded.
+pub struct ServiceIo(WorkerPipe);
+impl WorkerPipe {
+    pub fn into_service_io(self) -> ServiceIo {
+        ServiceIo(self)
+    }
+}
+impl std::io::Read for ServiceIo {
+    fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
+        if bytes.is_empty() {
+            return Ok(0);
+        }
+        self.0
+            .operation(bytes.as_mut_ptr(), bytes.len(), false, None)
+    }
+}
+impl std::io::Write for ServiceIo {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        if bytes.is_empty() {
+            return Ok(0);
+        }
+        self.0
+            .operation(bytes.as_ptr().cast_mut(), bytes.len(), true, None)
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
 impl WorkerLog {
     pub(crate) fn new(pipe: WorkerPipe) -> Self {
         Self(pipe)

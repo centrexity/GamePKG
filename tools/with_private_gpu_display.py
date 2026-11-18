@@ -75,6 +75,7 @@ def main():
         PULSE_SERVER="unix:/no-audio-device",
     )
     compositor = server = manager = client = None
+    display_reader = None
     result = {"command_exit": None, "game_qualification": False, "physical_windows_qualification": False}
     previous = signal.signal(signal.SIGTERM, interrupted)
     try:
@@ -110,6 +111,7 @@ def main():
         # operation reads or changes the user's Xauthority file.
         authorize(":0")
         reader, writer = os.pipe()
+        display_reader = reader
         try:
             server_env = dict(compositor_env, WAYLAND_DISPLAY="gamepkg-gpu")
             with (work / "xwayland.log").open("wb") as log:
@@ -121,14 +123,14 @@ def main():
                 )
         finally:
             os.close(writer)
-        try:
-            if not select.select([reader], [], [], 20)[0]:
-                raise RuntimeError("Private Xwayland server did not become ready")
-            display = os.read(reader, 32).decode().strip()
-            if not display.isdigit() or server.poll() is not None:
-                raise RuntimeError("Private Xwayland server did not report a valid display")
-        finally:
-            os.close(reader)
+        if not select.select([reader], [], [], 20)[0]:
+            raise RuntimeError("Private Xwayland server did not become ready")
+        display = os.read(reader, 32).decode().strip()
+        if not display.isdigit() or server.poll() is not None:
+            raise RuntimeError("Private Xwayland server did not report a valid display")
+        # Xwayland can announce readiness again during initialization. Keep
+        # the pipe open until the server stops so a later write cannot fail
+        # with EPIPE and terminate an otherwise healthy private display.
         authorize(":" + display)
         # Keep the caller's systemd/audio environment: existing test commands
         # own their memory scopes and explicitly choose dummy/private audio.
@@ -187,6 +189,8 @@ def main():
         stop(client)
         stop(manager)
         stop(server)
+        if display_reader is not None:
+            os.close(display_reader)
         stop(compositor)
         runtime.cleanup()
         signal.signal(signal.SIGTERM, previous)

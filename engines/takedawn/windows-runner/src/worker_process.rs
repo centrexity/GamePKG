@@ -4,7 +4,7 @@ use super::*;
 use windows_sys::Win32::Storage::FileSystem::FILE_READ_ATTRIBUTES;
 use windows_sys::Win32::System::JobObjects::JOB_OBJECT_LIMIT_ACTIVE_PROCESS;
 
-fn require_profile_environment(values: &[(OsString, OsString)]) -> io::Result<()> {
+pub(super) fn require_profile_environment(values: &[(OsString, OsString)]) -> io::Result<()> {
     // AppContainer startup resolves its profile through LOCALAPPDATA. Keep the
     // required OS paths explicit instead of restoring the inherited environment.
     // https://learn.microsoft.com/windows/win32/secauthz/implementing-an-appcontainer

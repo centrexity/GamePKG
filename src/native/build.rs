@@ -30,6 +30,7 @@ pub(super) fn compile_with_settings(
     archive.write_all(&original)?;
     let mut package = Package::open(archive.path())?;
     let m = verify_embedded(&mut package)?;
+    crate::build_policy::require(m.builtin_engine.as_deref())?;
     ensure!(m.entry_world == "game", "unsupported runtime entry world");
     package.resolve_shared_assets(root)?;
     let cargo: toml::Value =

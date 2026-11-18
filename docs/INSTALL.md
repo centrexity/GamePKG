@@ -4,6 +4,16 @@ After installation, open **Settings → GamePKG updates** to check for a newer s
 
 This archive contains the GamePKG command-line program and desktop library. It does not include a compiler or Tor. Host binaries are provided for Linux x86-64; game packages still ship source and compile locally in an isolated process.
 
+Keep `share/gamepkg/native-service-sdk.tar.gz` alongside the `bin` directory.
+When an admitted game uses the shared native services, GamePKG verifies this
+bundle against the hash built into the app, then builds the compatibility
+layer from its included Rust sources and locked dependencies. This step works
+offline with Rust and Cargo installed, and uses no Python or repository checkout.
+The first build compiles the optimized compatibility layer. Later builds
+reuse its local source and compiler cache after checking the cached source.
+The Linux native build also needs the ALSA and udev development files
+(`pkg-config`, `libasound2-dev`, and `libudev-dev` on Ubuntu).
+
 These builds target Ubuntu 24.04 or a compatible system with glibc 2.39 or newer. The desktop requires a working X11 or Wayland display, Vulkan and ALSA. OpenGL is available explicitly with `--renderer opengl`. The exact builder libc version and executable hashes are recorded in BUILD.json. Dependency license expressions and original notices are included in DEPENDENCIES.json and third-party-licenses/. Original resolved dependency source archives are preserved as directories in third-party-sources/, including notices embedded in source and bundled fonts.
 
 1. Check the downloaded archive against its .sha256 file with `sha256sum -c gamepkg-0.1.17-linux-x86_64.tar.gz.sha256`.

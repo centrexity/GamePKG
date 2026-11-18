@@ -1,5 +1,4 @@
 //! Direct machine-code builds and separately isolated native game workers.
-#[cfg(any(windows, test))]
 use anyhow::Context;
 use anyhow::{bail, ensure, Result};
 use std::path::{Path, PathBuf};
@@ -93,13 +92,17 @@ pub(crate) fn cpu_identity() -> &'static str {
 /// Compare relocated app entries before packaging; this is cache compatibility,
 /// not a signature or proof of the publisher's identity.
 pub fn build_identity() -> serde_json::Value {
-    serde_json::json!({
+    let mut identity = serde_json::json!({
         "schema": 1,
         "version": env!("CARGO_PKG_VERSION"),
         "os": std::env::consts::OS,
         "architecture": std::env::consts::ARCH,
         "native_sdk": sdk_identity(),
-    })
+    });
+    if let Some(pin) = option_env!("GAMEPKG_NATIVE_SDK_PIN") {
+        identity["native_services_source"] = pin.into();
+    }
+    identity
 }
 fn sdk_identity() -> &'static str {
     static ID: std::sync::OnceLock<String> = std::sync::OnceLock::new();
@@ -108,9 +111,14 @@ fn sdk_identity() -> &'static str {
 fn sdk_identity_for_takedawn_kit(takedawn_kit: &str) -> String {
     use sha2::{Digest, Sha256};
     let mut hash = Sha256::new();
+    hash.update(b"shared-port-services\0");
+    hash.update(crate::port_host::build_identity().as_bytes());
     hash.update(
         concat!(
             include_str!("build.rs"),
+            include_str!("../build_policy.rs"),
+            include_str!("../source.rs"),
+            include_str!("../dependencies.rs"),
             include_str!("engine_sources.rs"),
             include_str!("doom_stdio.c.txt"),
             include_str!("zelda_stdio.c.txt"),
@@ -244,6 +252,14 @@ pub fn cache_path(root: &Path, id: &str) -> Result<PathBuf> {
     Ok(path_for_digest(root, &crate::verify::digest(&bytes)))
 }
 pub fn is_built(root: &Path, id: &str) -> Result<bool> {
+    if !crate::build_policy::supported(
+        crate::registry::installed_manifest(root, id)?
+            .builtin_engine
+            .as_deref(),
+    ) {
+        return Ok(false);
+    }
+
     let manifest = crate::registry::installed_manifest(root, id)?;
     if let Some(engine) = manifest
         .builtin_engine
@@ -276,6 +292,10 @@ pub fn is_built(root: &Path, id: &str) -> Result<bool> {
     )
 }
 pub fn build_supported(manifest: &crate::manifest::Manifest) -> bool {
+    if !crate::build_policy::supported(manifest.builtin_engine.as_deref()) {
+        return false;
+    }
+
     if manifest
         .builtin_engine
         .as_deref()
@@ -308,6 +328,12 @@ pub fn compile(root: &Path, id: &str) -> Result<()> {
 
 /// Select a reviewed external-engine build target; other engines use the host.
 pub fn compile_for(root: &Path, id: &str, engine_target: Option<&str>) -> Result<()> {
+    crate::build_policy::require(
+        crate::registry::installed_manifest(root, id)?
+            .builtin_engine
+            .as_deref(),
+    )?;
+
     let manifest = crate::registry::installed_manifest(root, id)?;
     if manifest
         .builtin_engine
@@ -398,8 +424,7 @@ pub(crate) fn validate_executable(bytes: &[u8]) -> Result<()> {
     }
 }
 
-#[cfg(any(windows, test))]
-fn validate_pe(bytes: &[u8], architecture: &str) -> Result<()> {
+pub(crate) fn validate_pe(bytes: &[u8], architecture: &str) -> Result<()> {
     ensure!(
         bytes.len() >= 64 && bytes.starts_with(b"MZ"),
         "compiler did not produce a Windows executable"
@@ -483,7 +508,7 @@ mod windows_artifact_tests {
         let qualified = cfg!(any(target_arch = "x86", target_arch = "x86_64"));
         for (profile, supported) in [
             (None, qualified),
-            (Some(crate::doom::PROFILE), qualified),
+            (Some(crate::doom::PROFILE), false),
             (Some(crate::zelda3::PROFILE), false),
             (Some(crate::cube2::PROFILE), false),
             (Some("unreviewed-engine"), false),

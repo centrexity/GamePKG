@@ -767,6 +767,7 @@ mod tests {
         crate::manifest::Permissions {
             files: Vec::new(),
             input: true,
+            microphone: false,
             audio: true,
             save: true,
             network: true,

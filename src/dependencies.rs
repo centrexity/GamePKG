@@ -8,6 +8,45 @@ pub fn validate(cargo: &toml::Value, lock: &[u8]) -> Result<()> {
     {
         bail!("guest crates and additional Cargo sections are not allowed");
     }
+    let package = table
+        .get("package")
+        .and_then(toml::Value::as_table)
+        .context("missing Cargo package")?;
+    if package
+        .keys()
+        .any(|k| !["name", "version", "edition", "build"].contains(&k.as_str()))
+        || package.get("build") != Some(&toml::Value::Boolean(false))
+    {
+        bail!("guest Cargo package must disable build scripts and cannot supply metadata, links or compiler configuration");
+    }
+    let name = package
+        .get("name")
+        .and_then(toml::Value::as_str)
+        .context("missing package name")?;
+    if name.is_empty()
+        || name.len() > 64
+        || !name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"_-".contains(&b))
+        || !(name.as_bytes()[0].is_ascii_alphabetic() || name.as_bytes()[0] == b'_')
+    {
+        bail!("invalid Cargo package name");
+    }
+    if package
+        .get("edition")
+        .is_some_and(|v| !matches!(v.as_str(), Some("2015" | "2018" | "2021" | "2024")))
+    {
+        bail!("unsupported Rust edition");
+    }
+    if let Some(lib) = table.get("lib") {
+        let lib = lib.as_table().context("invalid Cargo library")?;
+        if lib
+            .iter()
+            .any(|(k, v)| k != "path" || v.as_str() != Some("src/lib.rs"))
+        {
+            bail!("guest library cannot supply compiler/linker configuration");
+        }
+    }
     if let Some(dependencies) = table.get("dependencies") {
         if dependencies
             .as_table()

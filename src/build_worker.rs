@@ -22,6 +22,7 @@ pub(crate) fn prepare_with_guard(
     _library: &crate::registry::LibraryChange,
 ) -> Result<()> {
     let manifest = crate::registry::installed_manifest(root, id)?;
+    crate::build_policy::require(manifest.builtin_engine.as_deref())?;
     let bytes = crate::files::read_regular(
         &root.join(format!("{id}.gamepkg")),
         256 * 1024 * 1024,
@@ -51,6 +52,7 @@ pub fn compile(store: &Path, output: &Path, backend: &str, optimize: bool) -> Re
         bail!("compiler exchange requires exactly one verified game");
     }
     let manifest = &bundle.games()[0];
+    crate::build_policy::require(manifest.builtin_engine.as_deref())?;
     let work = tempfile::tempdir()?;
     bundle.install(work.path(), true)?;
     let mut settings = crate::settings::load()?;
@@ -227,6 +229,7 @@ pub(crate) fn accept_with_guard(
     _library: &crate::registry::LibraryChange,
 ) -> Result<()> {
     let manifest = crate::registry::installed_manifest(root, id)?;
+    crate::build_policy::require(manifest.builtin_engine.as_deref())?;
     let _build = crate::build::BuildChange::acquire(root, id)?;
     let installed = root.join(format!("{id}.gamepkg"));
     let archive = crate::files::read_regular(&installed, 256 * 1024 * 1024, false)?;

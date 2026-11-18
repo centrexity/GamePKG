@@ -39,11 +39,11 @@ jobs:
           PKG_CONFIG_ALLOW_CROSS: '1'
           PKG_CONFIG_LIBDIR: /usr/lib/i386-linux-gnu/pkgconfig
         run: sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER,PKG_CONFIG_ALLOW_CROSS,PKG_CONFIG_LIBDIR env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-native32-rustup CARGO_HOME="$HOME/.cargo" cargo test --locked --all-features --target i686-unknown-linux-gnu --lib native::signed_fixture::signed_native_sdk_assets_saves_and_integrity -- --ignored --exact --nocapture
-      - name: Compile signed 32-bit reviewed C engine ports
+      - name: Verify legacy C engine packages are blocked before compilation
         env:
           PKG_CONFIG_ALLOW_CROSS: '1'
           PKG_CONFIG_LIBDIR: /usr/lib/i386-linux-gnu/pkgconfig
-        run: sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER,PKG_CONFIG_ALLOW_CROSS,PKG_CONFIG_LIBDIR env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-native32-rustup CARGO_HOME="$HOME/.cargo" cargo test --locked --all-features --target i686-unknown-linux-gnu --lib native::signed_fixture::reviewed_c_engines_build_for_app_width -- --ignored --exact --nocapture
+        run: sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER,PKG_CONFIG_ALLOW_CROSS,PKG_CONFIG_LIBDIR env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-native32-rustup CARGO_HOME="$HOME/.cargo" cargo test --locked --all-features --target i686-unknown-linux-gnu --lib native::signed_fixture::legacy_c_engine_packages_install_but_cannot_build -- --exact --nocapture
       - name: Build 32-bit Linux CLI and GUI
         env:
           PKG_CONFIG_ALLOW_CROSS: '1'

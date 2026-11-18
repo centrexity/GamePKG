@@ -15,6 +15,14 @@ fn attacks() -> Vec<(String, toml::Value)> {
     let mut attacks = Vec::new();
     for name in [
         "serde",
+        "sdl2",
+        "sdl3",
+        "ash",
+        "wgpu",
+        "windows",
+        "winapi",
+        "libloading",
+        "gamepkg-native-input",
         "libc",
         "std",
         "tokio",
@@ -124,6 +132,57 @@ fn only_the_exact_root_package_may_appear_in_the_lockfile() {
         &b"version=4\npackage=false"[..],
     ] {
         assert!(validate(&cargo, bytes).is_err());
+    }
+}
+
+#[test]
+fn package_hooks_native_links_metadata_and_library_flags_cannot_hide_dependencies() {
+    let (base, lock) = base();
+    for field in [
+        "links",
+        "metadata",
+        "rust-version",
+        "default-run",
+        "autobins",
+        "autotests",
+        "exclude",
+        "include",
+    ] {
+        let mut cargo = base.clone();
+        cargo["package"]
+            .as_table_mut()
+            .unwrap()
+            .insert(field.into(), "SDL2".into());
+        assert!(validate(&cargo, &lock).is_err(), "{field}");
+    }
+    for build in [
+        toml::Value::Boolean(true),
+        "build.rs".into(),
+        "../host.rs".into(),
+        "false".into(),
+    ] {
+        let mut cargo = base.clone();
+        cargo["package"]["build"] = build;
+        assert!(validate(&cargo, &lock).is_err());
+    }
+    for field in [
+        "proc-macro",
+        "crate-type",
+        "required-features",
+        "name",
+        "test",
+        "bench",
+        "doctest",
+    ] {
+        let mut cargo = base.clone();
+        cargo.as_table_mut().unwrap().insert(
+            "lib".into(),
+            toml::Value::Table(toml::map::Map::from_iter([(
+                field.into(),
+                toml::Value::Boolean(true),
+            )])),
+        );
+        assert!(validate(&cargo, &lock).is_err(), "{field}");
     }
 }
 #[test]

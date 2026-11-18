@@ -4,6 +4,8 @@ use anyhow::{ensure, Result};
 use std::path::{Path, PathBuf};
 #[cfg(any(target_os = "linux", windows, test))]
 mod path_audit;
+#[cfg(any(windows, test))]
+pub(crate) mod windows_graphics;
 #[cfg(any(target_os = "linux", windows))]
 pub(crate) use path_audit::PathAudit;
 pub const PROFILE: &str = "takedawn-5a00fc10-rust-v1";
