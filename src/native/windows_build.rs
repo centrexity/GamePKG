@@ -73,6 +73,8 @@ pub(super) fn compile(
     manifest: &crate::manifest::Manifest,
     settings: &crate::settings::Settings,
 ) -> Result<PathBuf> {
+    crate::build_policy::require(manifest.builtin_engine.as_deref())?;
+
     ensure!(
         manifest.builtin_engine.as_deref().is_none_or(
             |profile| profile == crate::doom::PROFILE || profile == crate::zelda3::PROFILE

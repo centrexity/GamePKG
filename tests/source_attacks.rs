@@ -7,6 +7,28 @@ use std::fs;
 #[test]
 fn concealed_filesystem_calls_macros_aliases_and_callbacks_fail_even_when_signed() {
     let snippets = [
+        "pub fn x(){std::time::Instant::now();}",
+        "pub fn x(){#[cfg(any())] gamepkg::random_u64();}",
+        "pub fn x(){#[allow(unused)] gamepkg::random_u64();}",
+        "pub fn x(){::std::time::SystemTime::now();}",
+        "pub fn x(){std::backtrace::Backtrace::capture();}",
+        "pub fn x(){std::backtrace::Backtrace::force_capture();}",
+        "use std::{collections::BTreeMap,time::{Instant,SystemTime}};",
+        "use ::std::r#time::Instant;",
+        "use {std,core};",
+        "pub fn x(){std::panic::take_hook();}",
+        "pub fn x(){std::sync::mpsc::channel::<u32>();}",
+        "pub fn x(){std::sync::Condvar::new();}",
+        "pub fn x(){<std::time::Instant>::now();}",
+        "pub fn x(){core::arch::x86_64::_rdtsc();}",
+        "mod std {}",
+        "mod r#core {}",
+        "mod gamepkg {}",
+        "extern crate sdl2;",
+        "use sdl3 as input;",
+        "#[link(name=\"SDL2\")] extern \"C\" {fn SDL_PollEvent();}",
+        "pub fn x(){core::arch::asm!(\"syscall\");}",
+        "#[used] #[link_section=\".init_array\"] static INIT:fn()=escape; fn escape(){}",
         "pub fn x() { std /* disguise */ :: fs :: read(\"secret\"); }",
         "pub fn x() { ::std::r#fs::read(\"secret\"); }",
         "use std::{fs::{self, read}};",
@@ -75,8 +97,9 @@ fn concealed_filesystem_calls_macros_aliases_and_callbacks_fail_even_when_signed
         let output = temp.path().join("rejected.gamepkg");
         let error = gamepkg::pack::pack(&source, &output, &helper::SEED).unwrap_err();
         assert!(
-            error.to_string().contains("forbidden construct")
-                && error.to_string().contains("source/src/lib.rs"),
+            (error.to_string().contains("forbidden construct")
+                && error.to_string().contains("source/src/lib.rs"))
+                || error.to_string().contains("portable data policy"),
             "wrong rejection for {snippet}: {error:#}"
         );
         assert!(!output.exists() && !output.with_extension("gamepkg.partial").exists());
@@ -84,8 +107,9 @@ fn concealed_filesystem_calls_macros_aliases_and_callbacks_fail_even_when_signed
         let error =
             gamepkg::verify::verify_embedded(&mut Package::open(&signed).unwrap()).unwrap_err();
         assert!(
-            error.to_string().contains("forbidden construct")
-                && error.to_string().contains("source/src/lib.rs"),
+            (error.to_string().contains("forbidden construct")
+                && error.to_string().contains("source/src/lib.rs"))
+                || error.to_string().contains("portable data policy"),
             "signed source accepted or wrong rejection: {snippet}: {error:#}"
         );
     }

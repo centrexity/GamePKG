@@ -1651,6 +1651,7 @@ impl eframe::App for App {
                     ui.checkbox(&mut self.settings_draft.dark_mode,"Dark appearance");
                     ui.separator(); ui.heading("Sound");
                     ui.checkbox(&mut self.settings_draft.mute_audio,"Mute game audio");
+                    ui.checkbox(&mut self.settings_draft.allow_microphone,"Allow microphone for games that request it");
                     ui.add(egui::Slider::new(&mut self.settings_draft.audio_volume,0..=100).text("Volume"));
                     ui.label("Applies when you next play a game. Only games with audio permission can submit sound.");
                     ui.separator(); ui.heading("Updates");

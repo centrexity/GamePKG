@@ -1,5 +1,6 @@
 //! Per-game, signed on/off networking permission. Only the host owns sockets and HTTPS clients.
 use anyhow::{bail, ensure, Context, Result};
+mod interfaces;
 use std::{
     collections::BTreeMap,
     io::{Read, Write},
@@ -249,6 +250,7 @@ pub(crate) fn selected_multiplayer(
     let permissions = crate::manifest::Permissions {
         files: Vec::new(),
         input: false,
+        microphone: false,
         audio: false,
         save: false,
         network: enabled,
@@ -268,6 +270,7 @@ enum Resource {
     Https(Vec<u8>),
     Tcp(TcpStream),
     Udp(UdpSocket),
+    UdpBound(UdpSocket),
     Listener(TcpListener),
 }
 pub(crate) struct Service {
@@ -605,6 +608,91 @@ impl Service {
                 }
                 result
             }
+            10 => {
+                self.capable(false)?;
+                ensure!(capacity >= 4, "output buffer too small");
+                // Numeric bind addresses avoid blocking DNS on the window
+                // thread. Port zero lets the OS choose an available port.
+                let address: SocketAddr = std::str::from_utf8(b)?.parse()?;
+                self.check_reservation()?;
+                let socket = UdpSocket::bind(address)?;
+                socket.set_broadcast(true)?;
+                socket.set_nonblocking(true)?;
+                let handle = self.reserve()?;
+                self.handles
+                    .insert(handle, Handle::Ready(Resource::UdpBound(socket)));
+                Ok(number(handle))
+            }
+            11 => {
+                self.capable(false)?;
+                ensure!(b.len() == 4 && capacity >= 32, "invalid datagram receive");
+                self.reset_budget();
+                let available = MAX_TRANSFER_BYTES.saturating_sub(self.used);
+                // Peek the whole legal datagram before consuming it. Neither
+                // a small reply buffer nor backpressure may truncate/drop it.
+                let mut bytes = vec![0; MAX_BYTES];
+                let (n, peer) = match self.refresh(id(b)?)? {
+                    Resource::UdpBound(socket) => {
+                        let (n, _) = socket.peek_from(&mut bytes)?;
+                        ensure!(n <= capacity - 32, "output buffer too small");
+                        ensure!(n <= available, "pending");
+                        socket.recv_from(&mut bytes[..n])?
+                    }
+                    _ => bail!("handle is not a bound datagram socket"),
+                };
+                self.budget(n)?;
+                bytes.truncate(n);
+                let mut reply = vec![0];
+                reply.extend(encode_socket_address(peer));
+                reply.extend(bytes);
+                Ok(reply)
+            }
+            12 => {
+                self.capable(false)?;
+                ensure!(capacity >= 4 && b.len() >= 36, "invalid datagram send");
+                let peer = decode_socket_address(&b[4..36])?;
+                let payload = &b[36..];
+                self.reset_budget();
+                ensure!(
+                    payload.len() <= MAX_TRANSFER_BYTES.saturating_sub(self.used),
+                    "pending"
+                );
+                let n = match self.refresh(id(b)?)? {
+                    Resource::UdpBound(socket) => socket.send_to(payload, peer)?,
+                    _ => bail!("handle is not a bound datagram socket"),
+                };
+                self.budget(n)?;
+                Ok(number(n as u32))
+            }
+            13 => {
+                self.capable(false)?;
+                ensure!(capacity >= 32 && b.len() == 4, "invalid address query");
+                let address = match self.refresh(id(b)?)? {
+                    Resource::UdpBound(s) | Resource::Udp(s) => s.local_addr()?,
+                    Resource::Tcp(s) => s.local_addr()?,
+                    Resource::Listener(s) => s.local_addr()?,
+                    _ => bail!("handle is not a socket"),
+                };
+                let mut reply = vec![0];
+                reply.extend(encode_socket_address(address));
+                Ok(reply)
+            }
+            14 => {
+                self.capable(false)?;
+                ensure!(b.is_empty(), "interface discovery takes no arguments");
+                self.reset_budget();
+                ensure!(self.opens < 8, "network connections busy");
+                self.opens += 1;
+                let interfaces = interfaces::list()?;
+                ensure!(interfaces.len() * 40 <= capacity, "output buffer too small");
+                let mut reply = vec![0];
+                for interface in interfaces {
+                    reply.extend(interface.index.to_le_bytes());
+                    reply.extend(interface.flags.to_le_bytes());
+                    reply.extend(encode_socket_address(SocketAddr::from((interface.ip, 0))));
+                }
+                Ok(reply)
+            }
             _ => bail!("unknown network operation"),
         }
     }
@@ -633,9 +721,146 @@ impl Service {
     }
 }
 
+// Portable endpoint record, not an OS sockaddr: family/port/scope/flow as LE
+// u32, followed by 16 network-order address bytes. IPv4 uses the first four.
+fn encode_socket_address(address: SocketAddr) -> [u8; 32] {
+    let mut out = [0; 32];
+    let (family, port, scope, flow) = match address {
+        SocketAddr::V4(v) => {
+            out[16..20].copy_from_slice(&v.ip().octets());
+            (4u32, u32::from(v.port()), 0u32, 0u32)
+        }
+        SocketAddr::V6(v) => {
+            out[16..32].copy_from_slice(&v.ip().octets());
+            (6u32, u32::from(v.port()), v.scope_id(), v.flowinfo())
+        }
+    };
+    for (i, n) in [family, port, scope, flow].into_iter().enumerate() {
+        out[i * 4..i * 4 + 4].copy_from_slice(&n.to_le_bytes());
+    }
+    out
+}
+fn decode_socket_address(bytes: &[u8]) -> Result<SocketAddr> {
+    ensure!(bytes.len() == 32, "invalid endpoint record");
+    let field = |n| u32::from_le_bytes(bytes[n..n + 4].try_into().unwrap());
+    let port = field(4);
+    ensure!((1..=65535).contains(&port), "invalid endpoint port");
+    match field(0) {
+        4 => {
+            ensure!(
+                field(8) == 0 && field(12) == 0 && bytes[20..].iter().all(|b| *b == 0),
+                "invalid IPv4 endpoint"
+            );
+            Ok(SocketAddr::new(
+                std::net::Ipv4Addr::new(bytes[16], bytes[17], bytes[18], bytes[19]).into(),
+                port as u16,
+            ))
+        }
+        6 => Ok(SocketAddr::V6(std::net::SocketAddrV6::new(
+            std::net::Ipv6Addr::from(<[u8; 16]>::try_from(&bytes[16..32])?),
+            port as u16,
+            field(12),
+            field(8),
+        ))),
+        _ => bail!("invalid endpoint family"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn interface_discovery_is_permission_gated_bounded_and_rate_limited() {
+        let mut denied = Service::new(permissions());
+        assert_eq!(denied.call(14, &[], 10240), [1]);
+        assert_eq!(denied.opens, 0);
+        let mut p = permissions();
+        p.network = true;
+        let mut service = Service::new(p);
+        assert_eq!(service.call(14, &[1], 10240), [1]);
+        assert_eq!(service.opens, 0);
+        let response = service.call(14, &[], 10240);
+        assert_eq!(response[0], 0);
+        assert_eq!((response.len() - 1) % 40, 0);
+        assert!(response.len() <= 10241);
+        for row in response[1..].chunks_exact(40) {
+            // Discovery has no peer port. The outbound-endpoint decoder
+            // intentionally rejects port zero and must not be weakened here.
+            assert_eq!(&row[8..12], &4u32.to_le_bytes());
+            assert_eq!(&row[12..24], &[0; 12]);
+            assert_eq!(&row[28..40], &[0; 12]);
+        }
+        if response.len() > 1 {
+            assert_eq!(service.call(14, &[], response.len() - 2), [1]);
+        }
+        while service.opens < 8 {
+            assert_eq!(service.call(14, &[], 10240)[0], 0);
+        }
+        assert_eq!(service.call(14, &[], 10240), [2]);
+        assert!(service.handles.is_empty());
+    }
+    #[test]
+    fn bound_udp_preserves_datagrams_peers_and_budget_and_denies_ungranted_handles() {
+        let mut denied = Service::new(permissions());
+        assert_eq!(denied.call(10, b"127.0.0.1:0", 4), [1]);
+        assert!(denied.handles.is_empty());
+        let mut p = permissions();
+        p.network = true;
+        let mut service = Service::new(p.clone());
+        assert_eq!(service.call(10, b"127.0.0.1:0", 0), [1]);
+        assert!(service.handles.is_empty());
+        let id = handle(service.call(10, b"127.0.0.1:0", 4));
+        let reply = service.call(13, &id.to_le_bytes(), 32);
+        assert_eq!(reply[0], 0);
+        let address = decode_socket_address(&reply[1..]).unwrap();
+        assert_ne!(address.port(), 0);
+        let peer = UdpSocket::bind("127.0.0.1:0").unwrap();
+        peer.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        peer.send_to(b"ping", address).unwrap();
+        assert_eq!(until(|| service.call(11, &id.to_le_bytes(), 33)), [1]);
+        service.used = MAX_TRANSFER_BYTES;
+        service.window = Instant::now();
+        assert_eq!(service.call(11, &id.to_le_bytes(), 64), [2]);
+        service.used = 0;
+        let reply = service.call(11, &id.to_le_bytes(), 64);
+        assert_eq!(&reply[33..], b"ping");
+        let source = decode_socket_address(&reply[1..33]).unwrap();
+        assert_eq!(source, peer.local_addr().unwrap());
+        let request = [id.to_le_bytes().as_slice(), &reply[1..33], b"pong"].concat();
+        assert_eq!(handle(service.call(12, &request, 4)), 4);
+        let mut payload = [0; 4];
+        let (n, from) = peer.recv_from(&mut payload).unwrap();
+        assert_eq!(n, 4);
+        assert_eq!(&payload, b"pong");
+        assert_eq!(from, address);
+        assert_eq!(Service::new(p).call(12, &request, 4), [1]);
+        service.call(6, &id.to_le_bytes(), 0);
+        assert_eq!(service.call(11, &id.to_le_bytes(), 64), [1]);
+    }
+    #[test]
+    fn portable_peer_records_keep_ipv6_scope_and_reject_invalid_layouts() {
+        for address in [
+            "127.0.0.1:1234".parse().unwrap(),
+            SocketAddr::V6(std::net::SocketAddrV6::new(
+                std::net::Ipv6Addr::LOCALHOST,
+                2345,
+                31,
+                17,
+            )),
+        ] {
+            assert_eq!(
+                decode_socket_address(&encode_socket_address(address)).unwrap(),
+                address
+            );
+        }
+        let original = encode_socket_address("127.0.0.1:1234".parse().unwrap());
+        for (offset, value) in [(0, 3u32), (4, 0), (4, 65536), (8, 1), (12, 1), (20, 1)] {
+            let mut bad = original;
+            bad[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+            assert!(decode_socket_address(&bad).is_err());
+        }
+        assert!(decode_socket_address(&original[..31]).is_err());
+    }
     fn permissions() -> crate::manifest::Permissions {
         let m: crate::manifest::Manifest =
             toml::from_str(include_str!("../examples/minimal/manifest.toml")).unwrap();

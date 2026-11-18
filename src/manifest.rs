@@ -336,6 +336,8 @@ pub struct Permissions {
     pub files: Vec<UserFile>,
     pub input: bool,
     pub audio: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub microphone: bool,
     pub save: bool,
     #[serde(deserialize_with = "network_permission")]
     pub network: bool,

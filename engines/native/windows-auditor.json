@@ -1,0 +1,28 @@
+{
+  "version": "1.89.0",
+  "metadata_url": "https://static.rust-lang.org/dist/channel-rust-1.89.0.toml",
+  "targets": {
+    "x86_64-pc-windows-gnu": {
+      "tools": {
+        "url": "https://static.rust-lang.org/dist/2025-08-07/llvm-tools-1.89.0-x86_64-pc-windows-gnu.tar.gz",
+        "sha256": "bbf39d66f8d883bb0e249ff46aa8de7211a94139139d286b39d1709e93b3163a"
+      },
+      "runtime": {
+        "url": "https://static.rust-lang.org/dist/2025-08-07/rustc-1.89.0-x86_64-pc-windows-gnu.tar.gz",
+        "sha256": "5c10542dddeab3578e04e98aa4a99c03bdb6c000bae88bf1b251eecc95bb90b0"
+      },
+      "payload_inventory_sha256": "ee47008626567a8814742de2fd9c8191448cd5f0b156c45129aaf3f4edf50dec"
+    },
+    "i686-pc-windows-gnu": {
+      "tools": {
+        "url": "https://static.rust-lang.org/dist/2025-08-07/llvm-tools-1.89.0-i686-pc-windows-gnu.tar.gz",
+        "sha256": "4df2f8b8096650e0a9d4e4b748432818a24a5a43ee5ceef27cc362952cf746e2"
+      },
+      "runtime": {
+        "url": "https://static.rust-lang.org/dist/2025-08-07/rustc-1.89.0-i686-pc-windows-gnu.tar.gz",
+        "sha256": "5b3ba29bd8826dc8c5851e8aa2a97562d4a887eaa21c882d6299352a5b2091b1"
+      },
+      "payload_inventory_sha256": "cd8a8bc90d7cb8f8cbf6ac3529db734e6656a938a1fe84615b093cfc5e9f4e2d"
+    }
+  }
+}

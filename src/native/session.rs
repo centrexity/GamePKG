@@ -89,6 +89,8 @@ impl Session {
         settings: &crate::settings::Settings,
         shader_count: usize,
     ) -> Result<Self> {
+        crate::build_policy::require(manifest.builtin_engine.as_deref())?;
+
         let video = crate::video_selections::effective(root, &manifest)?;
         let window = crate::window_control::Service::with_homepage(
             manifest.permissions.input,

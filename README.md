@@ -4,11 +4,13 @@
 
 **Know what you run. Control what it can access.** GamePKG is building a safer way to share and play games: inspectable source, creator-signed packages, isolated compilation, and a host that is designed to grant only the capabilities a game needs.
 
-**Build and playback:** ordinary checked Rust games build directly for the local CPU on Linux and in the current Windows x86/x64 development source. Windows prepares verified native Rust/linker tools automatically, with no WSL or Python; native Slang shader builds need 64-bit Windows. Reviewed C-based engine profiles have their own platform support. Optional Wasm builds are separate actions and play under Wasmtime with scoped asset reads, memory limits and epoch deadlines. Vulkan is the default renderer, with OpenGL available explicitly. See [native builds and isolation](docs/NATIVE_RUNTIME.md).
+**Build and playback:** ordinary checked Rust games build directly for the local CPU on Linux and in the current Windows x86/x64 development source. Windows prepares verified native Rust/linker tools automatically, with no WSL or Python; native Slang shader builds need 64-bit Windows. Legacy engine profiles are gated while they migrate to the shared compatibility layer. Optional Wasm builds are separate actions and play under Wasmtime with scoped asset reads, memory limits and epoch deadlines. Vulkan is the default renderer, with OpenGL available explicitly. See [native builds and isolation](docs/NATIVE_RUNTIME.md).
 
 Download the [published 0.1.17 Linux and Windows CLI/desktop apps](https://github.com/centrexity/GamePKG/releases/tag/v0.1.17), including the checksum for your platform. The standalone Windows native pipelines require 0.1.19 or newer development source; the published 0.1.17 app does not contain them. Earlier 0.1.18 hardware previews target a specific reviewed engine and do not include the newer ordinary-source integration. See [Windows setup](docs/INSTALL_WINDOWS.md). Portable app bundles include CLI/GUI executables, setup tools, examples, original resolved dependency sources and notices, and integrity hashes. Players need no Python. Maintainers can build both app entry points with the [native Rust release builder](tools/build_release.rs); packaging helpers are maintainer tools. See [installation instructions](docs/INSTALL.md) and the [implementation and verification audit](docs/IMPLEMENTATION_STATUS.md) for profile support and remaining limits.
 
-Try the [signed demo catalog](https://github.com/centrexity/GamePKG/releases/download/v0.1.6/demos.gamepkglist) by choosing **Add** in the desktop library, then **Import .gamepkglist**. It adds Collect Stars, Shape Playground, PNG Sprite Playground and Zelda3 as **Not downloaded**. Choose a game to download, approve its creator on first installation, then **Build** and **Play**. The three original demos need no ROM; Zelda3 requires your supported USA ROM. Players need no signing key. The [portable demo store](https://github.com/centrexity/GamePKG/releases/download/v0.1.6/demos.gamepkgstore) includes all four signed games for offline import. Compare downloads against [demo checksums](https://github.com/centrexity/GamePKG/releases/download/v0.1.6/demo-packages.sha256).
+Try the [signed demo catalog](https://github.com/centrexity/GamePKG/releases/download/v0.1.6/demos.gamepkglist) from **Add** → **Import .gamepkglist**. Open Collect Stars, Shape Playground, or PNG Sprite Playground, download it, approve its creator, then choose **Build** and **Play**. The original demos need neither a ROM nor a signing key. The catalog also includes Zelda3, which requires a supported USA ROM and is currently gated while its engine migrates. The [portable demo store](https://github.com/centrexity/GamePKG/releases/download/v0.1.6/demos.gamepkgstore) is available for offline import.
+
+Native port authors can start with the [GamePKG compatibility layer](docs/PORT_SERVICES.md). Each game runs in its own process and owns its window through GamePKG-provided functions. Unmigrated engine profiles are blocked from build and play, including cached builds.
 
 For a built game, open its page and choose **Add to Steam**, then select a local Steam account. Close Steam before adding and reopen it afterward. The non-Steam shortcut starts the selected game through the GamePKG desktop app with the same library, settings file and build target, so GamePKG still records play time and achievements. Updating the shortcut keeps its Steam ID, including existing artwork and controller settings. If Steam is installed in a custom location, use **Choose Steam folder…**. Steam treats this as a [non-Steam shortcut](https://help.steampowered.com/en/faqs/view/4B8B-9697-2338-40EC); Steam does not provide package updates or ownership for it.
 
@@ -17,7 +19,7 @@ For a built game, open its page and choose **Add to Steam**, then select a local
 
 A conventional game executable can be difficult to inspect, and launching it without a sandbox may give it the permissions of your user account. That can include reading personal files, making network connections, or starting other programs. Signed binaries and separately sandboxed applications can also provide protections; the benefit of GamePKG is making source visibility, package verification, restricted builds, and declared capabilities part of one transparent workflow.
 
-A `.gamepkg` contains Rust source, Slang shader source, assets, and a signed manifest. You can inspect the code and declared permissions before choosing to install it. The host checks the package, builds its supported native or optional Wasm profile, and keeps packaged assets in the archive. Ordinary game source uses scoped host operations. Reviewed native-engine recipes select exact engine source admitted by the host and run in their own confined processes; packages cannot supply arbitrary native runtime code.
+A `.gamepkg` contains Rust source, Slang shader source, assets, and a signed manifest. You can inspect the code and declared permissions before choosing to install it. The host checks the package, builds its supported native or optional Wasm profile, and keeps packaged assets in the archive. Ordinary game source uses scoped host operations. Native ports use game objects audited before linking with the GamePKG compatibility layer. Their executables run in a separate confined process.
 
 | Protection | What it changes | Available today? |
 | --- | --- | --- |
@@ -25,7 +27,7 @@ A `.gamepkg` contains Rust source, Slang shader source, assets, and a signed man
 | Signed identity and updates | The manifest and package contents are signed. Updates must keep the installed creator key and package ID, with a higher version. | Yes; first creator approval is still required |
 | Restricted package contents | Rejects traversal paths, duplicate entries, symlinks, oversized archive contents, unsupported shaders, and source outside the initial policy. | Yes |
 | Isolated compilation | Linux uses bubblewrap; Windows ordinary-source builds use AppContainer/jobs, private work areas and no network capability. | Yes; checked source modules with no Cargo dependencies |
-| Limited game access | Ordinary source receives host-approved asset, input, ROM, drawing, audio, save and networking operations under the signed on/off permission. | Available in the Linux/Windows ordinary native worker and optional core/WIT Wasm profiles; reviewed native engines have their own documented process boundaries |
+| Limited game access | Ordinary source receives host-approved asset, input, ROM, drawing, audio, save and networking operations under the signed on/off permission. | Available in the Linux/Windows ordinary native worker and optional core/WIT Wasm profiles; each migrated native engine must pass source, object, and confinement checks |
 | Runtime resource limits | Memory caps and deadlines constrain running games. | Enforced for native workers and optional Wasmtime profiles; GPU work is outside CPU time limits |
 
 ## Build locally, improve over time
@@ -36,7 +38,7 @@ These are opportunities, not a promise that every local build will be faster. Ga
 
 ## What can a GamePKG do—and what can it access?
 
-Importing a `.gamepkglist` adds catalog entries without fetching games or trusting creators. Downloading fetches the package you select. Installation verifies and stores it; it runs no game code or package-provided install scripts. Update checks stage a signed candidate for review. Ordinary source builds compile checked Rust in isolation for the chosen native or Wasm target. Reviewed native-engine recipes use the host's fixed source kit and build pipeline. See [native profile boundaries](docs/NATIVE_RUNTIME.md).
+Importing a `.gamepkglist` adds catalog entries without fetching games or trusting creators. Downloading fetches the package you select. Installation verifies and stores it; it runs no game code or package-provided install scripts. Update checks stage a signed candidate for review. Ordinary source builds compile checked Rust in isolation for the chosen native or Wasm target. The port build pipeline audits game objects before it links the GamePKG compatibility layer. See [native profile boundaries](docs/NATIVE_RUNTIME.md).
 
 The package policy supports checked Rust source modules with no Cargo dependencies. Scoped functions are injected by the host. It rejects build scripts, proc-macro configuration, compile-time file includes, unsafe blocks, foreign declarations, and filesystem, network, process, or environment paths detected by the source scanner. Shader files must be Slang source. The scanner is a policy filter, not a substitute for compiler isolation or a runtime sandbox.
 
@@ -46,9 +48,9 @@ Game networking is off by default. A signed `network = true` enables supported H
 
 Port recipes for DOOM, Zelda3, Arkanoo, and 2048 live in [GamePKG_Ports](https://github.com/centrexity/GamePKG_Ports). This repository pins them under `ports` for integration tests and release bundles. Existing checkouts should run `git submodule update --init --recursive` before building or testing. Trusted engine integration remains part of the host.
 
-Halo: Combat Evolved is `com.gamepkg.halo` in the ports catalog. The host loads `engines/halo/engine.toml` the same way as any other external engine, fetches the pinned OpenCE commit, applies the patches in that record, and compiles a reviewed target. On x86_64 Linux the default is `linux-x86_64`. `linux-i686` remains available. `windows-i686` and `windows-x64` both cross-compile with an MSVC toolchain. A Linux host caches a Windows PE and does not launch it. You supply an Xbox disc image or extracted maps folder. The package contains neither those files nor the OpenCE source. See [engines/halo/README.md](engines/halo/README.md), [ports/HALO.md](ports/HALO.md), and [docs/external-engine-platform-gaps.md](docs/external-engine-platform-gaps.md).
+The ports catalog includes Halo: Combat Evolved. Its [engine notes](engines/halo/README.md) describe the earlier OpenCE integration and player-supplied media requirements. Halo awaits the shared-service migration.
 
-To import the published ports, choose **Add** in the library, then **Import official ports library**. The list URL is remembered for future refreshes. Or download [ports.gamepkglist](https://github.com/centrexity/GamePKG_Ports/releases/latest/download/ports.gamepkglist) and drag it into the app. Entries remain **Not downloaded** until you choose a game; packages still require creator review. The current DOOM port requires the updated main host.
+To import the published ports, choose **Add** in the library, then **Import official ports library**. The list URL is remembered for future refreshes. Or download [ports.gamepkglist](https://github.com/centrexity/GamePKG_Ports/releases/latest/download/ports.gamepkglist) and drag it into the app. Entries remain **Not downloaded** until you choose a game; packages still require creator review.
 
 
 ## Try it
@@ -875,6 +877,8 @@ The browser host atomically saves its authoritative metadata snapshot to
 the home-folder snapshot contains no session authentication token or ROM bytes.
 
 ## Zelda3 ROM-required port
+
+The following records the earlier Zelda3 integration. Building and playing this port requires the shared-service migration.
 
 `ports/zelda3` ports the complete pinned [Zelda3 engine](https://github.com/snesrev/zelda3)
 through a checked host API. It requires a player-selected **A Link to the Past

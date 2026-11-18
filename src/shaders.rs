@@ -1,4 +1,5 @@
 //! Pinned Slang compilation inside platform-specific confined build workers.
+pub mod nv2a;
 use crate::{
     archive::Package,
     manifest::{Manifest, Shader},
@@ -13,6 +14,409 @@ use std::{
     path::{Path, PathBuf},
 };
 pub const SLANG_VERSION: &str = "2026.19";
+/// Fixed native preparation policy, not a creator-selectable optimization flag.
+/// Later Naga/WGSL/driver numerical behavior still needs differential checks.
+pub const NATIVE_PREPARATION_POLICY: &str = "native-raster-v1:slang-fp-mode-precise:naga-wgsl";
+
+/// Include alongside the verified pipeline hashes in the native build receipt.
+/// Binds the signed archive, backend, pinned compiler executable/library and
+/// fixed numerical policy. Pipeline hashes separately bind entry/layout/state.
+pub fn native_preparation_identity(
+    root: &Path,
+    archive: &[u8],
+    settings: &Settings,
+) -> Result<String> {
+    settings.validate()?;
+    anyhow::ensure!(
+        matches!(settings.shader_backend.as_str(), "wgsl" | "spirv"),
+        "native raster shaders require WGSL/SPIR-V"
+    );
+    let (_, cache) = compiler_cache(root, archive, settings)?;
+    native_preparation_cache_identity(&cache)
+}
+
+fn native_preparation_cache_identity(cache: &Path) -> Result<String> {
+    Ok(digest(
+        format!(
+            "{NATIVE_PREPARATION_POLICY}:{}",
+            cache
+                .file_name()
+                .and_then(|n| n.to_str())
+                .context("invalid shader compiler identity")?
+        )
+        .as_bytes(),
+    ))
+}
+/// Verified native raster stage. Only host bootstrap supplies this to a GPU
+/// pipeline; games receive pipeline indices, never source compilation calls.
+pub struct NativeShader {
+    pub source: String,
+    pub entry: String,
+    pub stage: naga::ShaderStage,
+}
+
+/// Compile signed native vertex/fragment stages through the same pinned,
+/// confined Slang worker. The native recipe must record the returned sources'
+/// hashes and SDK/compiler identity. This does not relax ordinary 2D shaders.
+pub fn compile_native_sources(
+    root: &Path,
+    archive: &[u8],
+    package: &mut Package,
+    entries: &[Shader],
+    settings: &Settings,
+) -> Result<Vec<NativeShader>> {
+    compile_native_sources_with_identity(root, archive, package, entries, settings)
+        .map(|(stages, _)| stages)
+}
+
+pub(crate) fn compile_native_sources_with_identity(
+    root: &Path,
+    archive: &[u8],
+    package: &mut Package,
+    entries: &[Shader],
+    settings: &Settings,
+) -> Result<(Vec<NativeShader>, String)> {
+    settings.validate()?;
+    anyhow::ensure!(
+        matches!(settings.shader_backend.as_str(), "wgsl" | "spirv")
+            && !entries.is_empty()
+            && entries.len() <= 512,
+        "native raster shaders require WGSL/SPIR-V vertex/fragment entries"
+    );
+    for shader in entries {
+        shader.validate()?;
+        anyhow::ensure!(
+            matches!(shader.stage.as_str(), "vertex" | "fragment"),
+            "native raster shaders cannot use compute"
+        );
+    }
+    let (compiler, cache) = compiler_cache(root, archive, settings)?;
+    let preparation = native_preparation_cache_identity(&cache)?;
+    let dxc = dxc_root(root, settings)?;
+    let stage = tempfile::tempdir()?;
+    for name in package
+        .entries
+        .keys()
+        .filter(|n| n.starts_with("shaders/"))
+        .cloned()
+        .collect::<Vec<_>>()
+    {
+        anyhow::ensure!(
+            crate::archive::valid_path(&name),
+            "invalid native shader source path"
+        );
+        let path = stage.path().join(&name);
+        fs::create_dir_all(path.parent().unwrap())?;
+        let bytes = package.read(&name)?;
+        validate_source(&bytes)?;
+        fs::write(path, bytes)?;
+    }
+    let mut sources = Vec::new();
+    let mut source_bytes = 0u64;
+    for (index, shader) in entries.iter().enumerate() {
+        anyhow::ensure!(
+            package.entries.contains_key(&shader.source),
+            "native shader source missing"
+        );
+        let binary = format!("native-{index}.shader");
+        let reflection = format!("native-{index}.reflection.json");
+        let mut arguments = shader_args(shader, settings, &binary, &reflection);
+        arguments.extend(["-fp-mode", "precise"].map(Into::into));
+        run_shader(&compiler, dxc.as_deref(), stage.path(), &arguments)?;
+        let reflected: serde_json::Value =
+            serde_json::from_slice(&read_output(&stage.path().join(reflection))?)?;
+        let points = reflected["entryPoints"]
+            .as_array()
+            .context("native shader reflection has no entries")?;
+        anyhow::ensure!(
+            points.len() == 1
+                && points[0]["name"].as_str() == Some(shader.entry.as_str())
+                && points[0]["stage"].as_str() == Some(shader.stage.as_str()),
+            "native shader reflection does not match selected entry"
+        );
+        let source = native_source(
+            &read_output(&stage.path().join(binary))?,
+            &settings.shader_backend,
+            if shader.stage == "vertex" {
+                naga::ShaderStage::Vertex
+            } else {
+                naga::ShaderStage::Fragment
+            },
+        )?;
+        source_bytes = source_bytes
+            .checked_add(source.source.len() as u64)
+            .context("native shader output size overflow")?;
+        anyhow::ensure!(
+            source_bytes <= crate::archive::MAX_TOTAL,
+            "native shader output exceeds package source budget"
+        );
+        sources.push(source);
+    }
+    Ok((sources, preparation))
+}
+
+fn native_source(bytes: &[u8], backend: &str, stage: naga::ShaderStage) -> Result<NativeShader> {
+    let module = match backend {
+        "wgsl" => naga::front::wgsl::parse_str(std::str::from_utf8(bytes)?)?,
+        "spirv" => naga::front::spv::parse_u8_slice(
+            bytes,
+            &naga::front::spv::Options {
+                strict_capabilities: true,
+                ..Default::default()
+            },
+        )?,
+        _ => bail!("unsupported native shader backend"),
+    };
+    anyhow::ensure!(
+        matches!(
+            stage,
+            naga::ShaderStage::Vertex | naga::ShaderStage::Fragment
+        ) && module.entry_points.len() == 1
+            && module.entry_points[0].stage == stage,
+        "native shader must have exactly the selected raster stage"
+    );
+    let mut images = std::collections::BTreeSet::new();
+    let mut samplers = std::collections::BTreeSet::new();
+    for (_, variable) in module.global_variables.iter() {
+        if variable.binding.is_none()
+            && matches!(
+                variable.space,
+                naga::AddressSpace::Private | naga::AddressSpace::Function
+            )
+        {
+            continue;
+        }
+        let binding = variable
+            .binding
+            .as_ref()
+            .context("unbound native shader resource")?;
+        anyhow::ensure!(
+            binding.group == 0,
+            "native shader resources require group zero"
+        );
+        match (&variable.space, &module.types[variable.ty].inner) {
+            (naga::AddressSpace::Uniform, _) if binding.binding == 0 => {}
+            (
+                naga::AddressSpace::Handle,
+                naga::TypeInner::Image {
+                    dim: naga::ImageDimension::D2 | naga::ImageDimension::Cube,
+                    arrayed: false,
+                    class:
+                        naga::ImageClass::Sampled {
+                            kind: naga::ScalarKind::Float,
+                            multi: false,
+                        },
+                },
+            ) if (1..=15).contains(&binding.binding) && binding.binding % 2 == 1 => {
+                images.insert(binding.binding);
+            }
+            (naga::AddressSpace::Handle, naga::TypeInner::Sampler { comparison: false })
+                if (2..=16).contains(&binding.binding) && binding.binding % 2 == 0 =>
+            {
+                samplers.insert(binding.binding - 1);
+            }
+            _ => bail!("unsupported native shader resource"),
+        }
+    }
+    anyhow::ensure!(
+        images == samplers,
+        "native shader textures require paired samplers"
+    );
+    let info = naga::valid::Validator::new(
+        naga::valid::ValidationFlags::all(),
+        naga::valid::Capabilities::empty(),
+    )
+    .validate(&module)?;
+    let source =
+        naga::back::wgsl::write_string(&module, &info, naga::back::wgsl::WriterFlags::empty())?;
+    // Conversion is part of preparation, not a validation escape hatch.
+    let emitted = naga::front::wgsl::parse_str(&source)?;
+    naga::valid::Validator::new(
+        naga::valid::ValidationFlags::all(),
+        naga::valid::Capabilities::empty(),
+    )
+    .validate(&emitted)?;
+    Ok(NativeShader {
+        source,
+        entry: module.entry_points[0].name.clone(),
+        stage,
+    })
+}
+
+#[cfg(test)]
+mod native_raster_tests {
+    use super::*;
+    #[test]
+    #[ignore = "requires explicitly selected reviewed port templates, pinned Slang and confined compiler namespaces"]
+    fn takedawn_templates_confined_preparation() {
+        let templates = PathBuf::from(
+            std::env::var_os("GAMEPKG_TAKEDAWN_TEMPLATE_ROOT")
+                .expect("select the reviewed service-renderer/shaders directory"),
+        );
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("source");
+        for name in [
+            "manifest.toml",
+            "thumbnail.png",
+            "LICENSE",
+            "NOTICE",
+            "CREDITS.md",
+            "source/Cargo.toml",
+            "source/Cargo.lock",
+            "source/src/lib.rs",
+            "shaders/main.slang",
+        ] {
+            let path = source.join(name);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::copy(
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("examples/minimal")
+                    .join(name),
+                path,
+            )
+            .unwrap();
+        }
+        let mut entries = Vec::new();
+        for mask in 0..16 {
+            let name = format!("template_{mask:02}.slang");
+            let bytes =
+                crate::files::read_regular(&templates.join(&name), 1024 * 1024, false).unwrap();
+            fs::write(source.join("shaders").join(&name), bytes).unwrap();
+            for (entry, stage) in [("vertexMain", "vertex"), ("fragmentMain", "fragment")] {
+                entries.push(Shader {
+                    source: format!("shaders/{name}"),
+                    entry: entry.into(),
+                    stage: stage.into(),
+                });
+            }
+        }
+        let archive_path = root.path().join("templates.gamepkg");
+        crate::pack::pack(&source, &archive_path, &[129; 32]).unwrap();
+        let archive = fs::read(&archive_path).unwrap();
+        let mut package = Package::open(&archive_path).unwrap();
+        crate::verify::verify_embedded(&mut package).unwrap();
+        // Qualify the selected backend independently; never fall back after a
+        // failed conversion. The default matches normal native preparation.
+        let backend =
+            std::env::var("GAMEPKG_TAKEDAWN_SHADER_BACKEND").unwrap_or_else(|_| "wgsl".into());
+        let settings = Settings {
+            shader_backend: backend.clone(),
+            ..Default::default()
+        };
+        let identity = native_preparation_identity(root.path(), &archive, &settings).unwrap();
+        let stages =
+            compile_native_sources(root.path(), &archive, &mut package, &entries, &settings)
+                .unwrap();
+        assert_eq!(stages.len(), 32);
+        for (index, stage) in stages.iter().enumerate() {
+            assert_eq!(
+                stage.stage,
+                if index % 2 == 0 {
+                    naga::ShaderStage::Vertex
+                } else {
+                    naga::ShaderStage::Fragment
+                }
+            );
+        }
+        println!("32 signed, confined precise {backend} template stages passed host reflection/resource preparation ({identity}); no profile admission or gameplay qualification");
+    }
+
+    #[test]
+    fn native_shader_policy_allows_raster_uniforms_and_cube_pairs_but_no_storage_or_compute() {
+        let vertex =
+            b"@vertex fn main()->@builtin(position) vec4<f32>{return vec4<f32>(0.0,0.0,0.0,1.0);}";
+        native_source(vertex, "wgsl", naga::ShaderStage::Vertex).unwrap();
+        let fragment="@group(0) @binding(0) var<uniform> direction:vec4<f32>; @group(0) @binding(1) var image:texture_cube<f32>; @group(0) @binding(2) var sample:sampler; @fragment fn main()->@location(0) vec4<f32>{return textureSampleLevel(image,sample,direction.xyz,0.0);}";
+        native_source(fragment.as_bytes(), "wgsl", naga::ShaderStage::Fragment).unwrap();
+        for bad in [fragment.replace("@group(0)","@group(1)"),fragment.replace("@binding(1)","@binding(3)"),fragment.replace("@binding(0)","@binding(17)"),"@group(0) @binding(0) var<storage,read_write> data:array<u32>; @fragment fn main()->@location(0) vec4<f32>{return vec4<f32>(f32(data[0]));}".into(),"@compute @workgroup_size(1) fn main(){}".into()] {
+            assert!(native_source(bad.as_bytes(),"wgsl",naga::ShaderStage::Fragment).is_err());
+        }
+        assert!(native_source(vertex, "wgsl", naga::ShaderStage::Fragment).is_err());
+    }
+    #[test]
+    #[ignore = "requires pinned Slang and confined compiler namespaces; uses signed synthetic shader sources"]
+    fn native_slang_vertex_fragment_preparation_and_host_include_denial() {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("source");
+        for name in [
+            "manifest.toml",
+            "thumbnail.png",
+            "LICENSE",
+            "NOTICE",
+            "CREDITS.md",
+            "source/Cargo.toml",
+            "source/Cargo.lock",
+            "source/src/lib.rs",
+            "shaders/main.slang",
+        ] {
+            let path = source.join(name);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::copy(
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("examples/minimal")
+                    .join(name),
+                path,
+            )
+            .unwrap();
+        }
+        let native="[[vk::binding(0,0)]] ConstantBuffer<float4> tint; struct Input {float3 pos:POSITION;float4 color:COLOR;}; struct Output {float4 pos:SV_Position;float4 color:COLOR;}; [shader(\"vertex\")] Output vertexMain(Input i) {Output o;o.pos=float4(i.pos,1);o.color=i.color;return o;} [shader(\"fragment\")] float4 fragmentMain(Output i):SV_Target {return i.color*tint;}";
+        fs::write(source.join("shaders/native.slang"), native).unwrap();
+        let canary = root.path().join("private-host-include.slang");
+        fs::write(&canary, "float4 privateColor(){return float4(1,0,1,1);}").unwrap();
+        let denied_source=format!("#include \"{}\"\n[shader(\"fragment\")] float4 fragmentMain():SV_Target {{return privateColor();}}",canary.to_str().unwrap().replace('\\',"/"));
+        let archive_path = root.path().join("native.gamepkg");
+        crate::pack::pack(&source, &archive_path, &[127; 32]).unwrap();
+        let archive = fs::read(&archive_path).unwrap();
+        let mut package = Package::open(&archive_path).unwrap();
+        let entries = [
+            Shader {
+                source: "shaders/native.slang".into(),
+                entry: "vertexMain".into(),
+                stage: "vertex".into(),
+            },
+            Shader {
+                source: "shaders/native.slang".into(),
+                entry: "fragmentMain".into(),
+                stage: "fragment".into(),
+            },
+        ];
+        let mut preparation_identities = Vec::new();
+        for backend in ["wgsl", "spirv"] {
+            let settings = Settings {
+                shader_backend: backend.into(),
+                ..Default::default()
+            };
+            let stages =
+                compile_native_sources(root.path(), &archive, &mut package, &entries, &settings)
+                    .unwrap();
+            preparation_identities
+                .push(native_preparation_identity(root.path(), &archive, &settings).unwrap());
+            assert_eq!(stages.len(), 2);
+            assert_eq!(stages[0].stage, naga::ShaderStage::Vertex);
+            assert_eq!(stages[1].stage, naga::ShaderStage::Fragment);
+            let sandbox = tempfile::tempdir().unwrap();
+            fs::write(sandbox.path().join("denied.slang"), &denied_source).unwrap();
+            let denied = Shader {
+                source: "denied.slang".into(),
+                entry: "fragmentMain".into(),
+                stage: "fragment".into(),
+            };
+            let (compiler, _) = compiler_cache(root.path(), &archive, &settings).unwrap();
+            assert!(run_shader(
+                &compiler,
+                None,
+                sandbox.path(),
+                &shader_args(&denied, &settings, "out.shader", "out.json")
+            )
+            .is_err());
+        }
+        assert_ne!(preparation_identities[0], preparation_identities[1]);
+        fs::write(source.join("shaders/denied.slang"), denied_source).unwrap();
+        assert!(
+            crate::pack::pack(&source, &root.path().join("denied.gamepkg"), &[127; 32]).is_err()
+        );
+    }
+}
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct CacheReceipt {

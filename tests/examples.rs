@@ -80,7 +80,10 @@ fn bad_examples_fail_for_the_expected_reason() {
         ("network", "forbidden construct"),
         ("include-bytes", "forbidden construct"),
         ("build-script", "Rust source files"),
-        ("proc-macro", "library configuration"),
+        (
+            "proc-macro",
+            "library cannot supply compiler/linker configuration",
+        ),
         ("unknown-crate", "guest crates"),
         ("non-slang", "only Slang"),
     ] {

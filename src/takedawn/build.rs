@@ -201,6 +201,8 @@ pub fn compile(archive: &Path) -> Result<Vec<u8>> {
     compile_with_options(archive, true)
 }
 pub fn compile_with_options(archive: &Path, optimize: bool) -> Result<Vec<u8>> {
+    crate::build_policy::require(Some(crate::takedawn::PROFILE))?;
+
     compile_with_cache(archive, optimize, None)
 }
 fn compile_with_cache(
@@ -379,6 +381,8 @@ fn compile_with_cache(
 }
 
 pub fn compile_package(root: &Path, id: &str) -> Result<()> {
+    crate::build_policy::require(Some(crate::takedawn::PROFILE))?;
+
     let _guard = crate::build::BuildChange::acquire(root, id)?;
     crate::registry::installed_manifest(root, id)?;
     let original = crate::files::read_regular(

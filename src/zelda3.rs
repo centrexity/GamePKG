@@ -219,6 +219,8 @@ pub(crate) fn adapt_spc_playback(source: &str) -> Result<String> {
     Ok(staged)
 }
 pub fn build() -> Result<Vec<u8>> {
+    crate::build_policy::require(Some(crate::zelda3::PROFILE))?;
+
     #[cfg(not(target_os = "linux"))]
     {
         bail!("Zelda3 source compilation currently requires the Linux isolated compiler");

@@ -9,7 +9,21 @@ use std::{
 };
 
 const DIAGNOSTICS: usize = 1048576;
-fn capture(mut read: impl FnMut(&mut [u8]) -> io::Result<usize>) -> io::Result<Vec<u8>> {
+fn capture(
+    mut read: impl FnMut(&mut [u8]) -> io::Result<usize>,
+    diagnostic: bool,
+) -> io::Result<Vec<u8>> {
+    if diagnostic {
+        let (mut bytes, truncated) =
+            crate::compiler::drain_diagnostics(|bytes| match read(bytes) {
+                Err(error) if error.kind() == io::ErrorKind::BrokenPipe => Ok(0),
+                result => result,
+            })?;
+        if truncated {
+            bytes.extend_from_slice(b"\n[compiler diagnostics truncated at 1 MiB per stream; stderr beginning and end retained]\n");
+        }
+        return Ok(bytes);
+    }
     let mut output = Vec::new();
     let mut buffer = [0; 8192];
     let mut truncated = false;
@@ -40,27 +54,45 @@ pub(crate) fn run(
     sandbox: &Sandbox,
     end: Instant,
 ) -> Result<Vec<u8>> {
-    ensure!(
-        Instant::now() < end,
-        "isolated compiler exceeded its time limit"
-    );
-    let worker = WorkerProcess::spawn_tool(
+    run_with_memory(
         compiler,
         args,
         directory,
         values,
         sandbox,
+        end,
         crate::compiler::ADDRESS_SPACE,
     )
-    .context("compilation requires Windows AppContainer isolation")?;
+}
+
+pub(crate) fn run_with_memory(
+    compiler: &Path,
+    args: &[OsString],
+    directory: &Path,
+    values: &[(OsString, OsString)],
+    sandbox: &Sandbox,
+    end: Instant,
+    memory_bytes: u64,
+) -> Result<Vec<u8>> {
+    ensure!(
+        (256 * 1024 * 1024..=16 * 1024 * 1024 * 1024).contains(&memory_bytes),
+        "invalid compiler memory budget"
+    );
+    ensure!(
+        Instant::now() < end,
+        "isolated compiler exceeded its time limit"
+    );
+    let worker =
+        WorkerProcess::spawn_tool(compiler, args, directory, values, sandbox, memory_bytes)
+            .context("compilation requires Windows AppContainer isolation")?;
     let (process, mut pipe, mut errors) = worker.into_parts();
     let (send, receive) = std::sync::mpsc::channel();
     let output_send = send.clone();
     std::thread::spawn(move || {
-        let _ = output_send.send(capture(|bytes| pipe.read_some(bytes, end)));
+        let _ = output_send.send(capture(|bytes| pipe.read_some(bytes, end), false));
     });
     std::thread::spawn(move || {
-        let _ = send.send(capture(|bytes| errors.read(bytes)));
+        let _ = send.send(capture(|bytes| errors.read(bytes), true));
     });
     let status = loop {
         if let Some(code) = process.poll()? {

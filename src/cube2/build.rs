@@ -38,6 +38,8 @@ pub fn compile() -> Result<Vec<u8>> {
     compile_with_options(true)
 }
 pub fn compile_with_options(optimize: bool) -> Result<Vec<u8>> {
+    crate::build_policy::require(Some(crate::cube2::PROFILE))?;
+
     verify_sources()?;
     let stage = tempfile::tempdir()?;
     for &(name, bytes) in super::sources::FILES {
@@ -348,6 +350,8 @@ pub fn compile_with_options(optimize: bool) -> Result<Vec<u8>> {
 }
 /// Build an authenticated package once; playback verifies the cached receipt.
 pub fn compile_package(root: &Path, id: &str) -> Result<()> {
+    crate::build_policy::require(Some(crate::cube2::PROFILE))?;
+
     use std::io::Write;
     let _guard = crate::build::BuildChange::acquire(root, id)?;
     let original = crate::files::read_regular(

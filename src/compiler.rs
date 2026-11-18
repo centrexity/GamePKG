@@ -40,6 +40,40 @@ fn drain(mut pipe: impl Read) -> std::io::Result<(Vec<u8>, bool)> {
     }
     Ok((captured, truncated))
 }
+/// Error messages often follow large warning streams. Keep a bounded prefix
+/// and suffix for stderr; machine-readable stdout keeps its original prefix
+/// policy and truncation indicator so incomplete tool output cannot be accepted.
+pub(crate) fn drain_diagnostics(
+    mut read: impl FnMut(&mut [u8]) -> std::io::Result<usize>,
+) -> std::io::Result<(Vec<u8>, bool)> {
+    let half = DIAGNOSTICS / 2;
+    let mut head = Vec::with_capacity(half);
+    let mut tail = std::collections::VecDeque::<u8>::with_capacity(half);
+    let mut total = 0usize;
+    let mut buffer = [0u8; 8192];
+    loop {
+        let count = match read(&mut buffer) {
+            Ok(0) => break,
+            Ok(count) => count,
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(error) => return Err(error),
+        };
+        total = total.saturating_add(count);
+        let prefix = count.min(half - head.len());
+        head.extend_from_slice(&buffer[..prefix]);
+        let rest = &buffer[prefix..count];
+        if rest.len() >= half {
+            tail.clear();
+            tail.extend(&rest[rest.len() - half..]);
+        } else {
+            let discard = (tail.len() + rest.len()).saturating_sub(half);
+            tail.drain(..discard);
+            tail.extend(rest);
+        }
+    }
+    head.extend(tail);
+    Ok((head, total > DIAGNOSTICS))
+}
 pub fn run(command: &mut Command) -> Result<Output> {
     let mut child = command
         .stdout(Stdio::piped())
@@ -49,7 +83,10 @@ pub fn run(command: &mut Command) -> Result<Output> {
     let stdout = child.stdout.take().unwrap();
     let stderr = child.stderr.take().unwrap();
     let out = thread::spawn(move || drain(stdout));
-    let err = thread::spawn(move || drain(stderr));
+    let err = thread::spawn(move || {
+        let mut stderr = stderr;
+        drain_diagnostics(|bytes| stderr.read(bytes))
+    });
     let status = child.wait()?;
     let (stdout, out_truncated) = out
         .join()
@@ -59,7 +96,7 @@ pub fn run(command: &mut Command) -> Result<Output> {
         .map_err(|_| anyhow::anyhow!("compiler diagnostic reader stopped"))??;
     let mut stderr = String::from_utf8_lossy(&bytes).into_owned();
     if out_truncated || err_truncated {
-        stderr.push_str("\n[compiler diagnostics truncated at 1 MiB per stream]");
+        stderr.push_str("\n[compiler diagnostics truncated at 1 MiB per stream; stderr beginning and end retained]");
     }
     Ok(Output {
         status,
@@ -83,7 +120,8 @@ pub(crate) fn run_timed(command: &mut Command, limit: std::time::Duration) -> Re
         let _ = out_send.send((true, drain(stdout)));
     });
     thread::spawn(move || {
-        let _ = send.send((false, drain(stderr)));
+        let mut stderr = stderr;
+        let _ = send.send((false, drain_diagnostics(|bytes| stderr.read(bytes))));
     });
     let status = loop {
         if let Some(status) = child.try_wait()? {
@@ -113,7 +151,7 @@ pub(crate) fn run_timed(command: &mut Command, limit: std::time::Duration) -> Re
     }
     let mut stderr = String::from_utf8_lossy(&stderr).into_owned();
     if truncated {
-        stderr.push_str("\n[compiler diagnostics truncated at 1 MiB per stream]");
+        stderr.push_str("\n[compiler diagnostics truncated at 1 MiB per stream; stderr beginning and end retained]");
     }
     Ok(Output {
         status,
@@ -154,6 +192,51 @@ mod tests {
             drain(b"short".as_slice()).unwrap(),
             (b"short".to_vec(), false)
         );
+    }
+    #[test]
+    fn warning_floods_keep_final_errors_without_changing_machine_stdout() {
+        let mut input = vec![b'w'; DIAGNOSTICS * 3];
+        input[..5].copy_from_slice(b"START");
+        let end = input.len();
+        input[end - 11..].copy_from_slice(b"FINAL ERROR");
+        for chunk in [1, 17, 8192] {
+            let mut position = 0;
+            let (bytes, truncated) = drain_diagnostics(|out| {
+                let count = (input.len() - position).min(chunk).min(out.len());
+                out[..count].copy_from_slice(&input[position..position + count]);
+                position += count;
+                Ok(count)
+            })
+            .unwrap();
+            assert!(truncated);
+            assert_eq!(bytes.len(), DIAGNOSTICS);
+            assert!(bytes.starts_with(b"START"));
+            assert!(bytes.ends_with(b"FINAL ERROR"));
+        }
+        let (stdout, truncated) = drain(input.as_slice()).unwrap();
+        assert!(truncated);
+        assert!(!stdout.ends_with(b"FINAL ERROR"));
+        for length in [0, 1, DIAGNOSTICS / 2, DIAGNOSTICS - 1, DIAGNOSTICS] {
+            let mut slice = &input[..length];
+            assert_eq!(
+                drain_diagnostics(|bytes| slice.read(bytes)).unwrap(),
+                (input[..length].to_vec(), false)
+            );
+        }
+    }
+    #[cfg(unix)]
+    #[test]
+    fn failed_process_keeps_exit_status_and_final_diagnostic_after_warning_flood() {
+        let mut command = Command::new("sh");
+        command.args([
+            "-c",
+            "printf START >&2; head -c 2097152 /dev/zero >&2; printf FINAL_ERROR >&2; exit 7",
+        ]);
+        let output = run(&mut command).unwrap();
+        assert_eq!(output.status.code(), Some(7));
+        assert!(output.stderr.starts_with("START"));
+        assert!(output.stderr.contains("FINAL_ERROR"));
+        assert!(output.stderr.contains("truncated"));
     }
     #[cfg(target_os = "linux")]
     #[test]

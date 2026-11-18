@@ -1339,6 +1339,7 @@ dependencies = [
  "eframe",
  "egui-winit",
  "flate2",
+ "gamepkg-native-input",
  "gamepkg-takedawn-windows-runner",
  "getrandom 0.3.4",
  "gilrs",
@@ -1349,6 +1350,7 @@ dependencies = [
  "pollster",
  "proc-macro2",
  "rfd",
+ "rustc-demangle",
  "rustc_lexer",
  "semver",
  "serde",
@@ -1363,10 +1365,16 @@ dependencies = [
  "wasmparser 0.236.1",
  "wasmtime",
  "wat",
+ "wgpu-types",
+ "windows-sys 0.61.2",
  "wit-component",
  "wit-parser",
  "zip",
 ]
+
+[[package]]
+name = "gamepkg-native-input"
+version = "0.1.0"
 
 [[package]]
 name = "gamepkg-takedawn-windows-runner"
@@ -2177,8 +2185,6 @@ checksum = "743fb55ba31b18fb1ecef6bdc9aa2743314978ac084044301a7eee33fb99a20d"
 [[package]]
 name = "naga"
 version = "24.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e380993072e52eef724eddfcde0ed013b0c023c3f0417336ed041aa9f076994e"
 dependencies = [
  "arrayvec",
  "bit-set",
@@ -3018,6 +3024,12 @@ dependencies = [
  "web-sys",
  "windows-sys 0.61.2",
 ]
+
+[[package]]
+name = "rustc-demangle"
+version = "0.1.27"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b50b8869d9fc858ce7266cce0194bd74df58b9d0e3f6df3a9fc8eb470d95c09d"
 
 [[package]]
 name = "rustc-hash"
@@ -4375,8 +4387,6 @@ dependencies = [
 [[package]]
 name = "wgpu-hal"
 version = "24.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f112f464674ca69f3533248508ee30cb84c67cf06c25ff6800685f5e0294e259"
 dependencies = [
  "android_system_properties",
  "arrayvec",
@@ -4423,6 +4433,7 @@ dependencies = [
  "bitflags 2.13.2",
  "js-sys",
  "log",
+ "serde",
  "web-sys",
 ]
 

@@ -78,7 +78,7 @@ def dependency_metadata(target):
     return metadata
 
 
-def package(output_directory, binary_directory, *, system=None, target_triple=None):
+def package(output_directory, binary_directory, *, system=None, target_triple=None, native_sdk=None):
     system = system or platform.system()
     if system not in ('Linux', 'Windows'):
         raise ValueError('release packaging supports Linux or Windows')
@@ -99,11 +99,22 @@ def package(output_directory, binary_directory, *, system=None, target_triple=No
     if destination.exists() or destination.is_symlink():
         raise FileExistsError(destination)
     identity = verify_pair(binary_directory, version=version, system=system, architecture=architecture)
+    sdk_pin = identity['identity'].get('native_services_source')
+    if sdk_pin is not None or native_sdk is not None:
+        if (host != 'linux-x86_64' or native_sdk is None or native_sdk.is_symlink()
+                or not native_sdk.is_file() or sha256(native_sdk) != sdk_pin):
+            raise ValueError('Native SDK bundle does not match the Linux app build')
     metadata = dependency_metadata(target)
     resolved = {node['id'] for node in metadata['resolve']['nodes']}
     with tempfile.TemporaryDirectory(prefix='gamepkg-distribution-') as directory:
         root = Path(directory) / name
         (root / 'bin').mkdir(parents=True)
+        if native_sdk is not None:
+            sdk_destination = root / 'share/gamepkg/native-service-sdk.tar.gz'
+            sdk_destination.parent.mkdir(parents=True)
+            shutil.copyfile(native_sdk, sdk_destination)
+            if sha256(sdk_destination) != sdk_pin:
+                raise ValueError('Native SDK bundle changed during packaging')
         binaries = {}
         for base in ['gamepkg', 'gamepkg-gui']:
             executable = base + ('.exe' if windows else '')
@@ -184,5 +195,7 @@ if __name__ == '__main__':
     parser.add_argument('--binary-directory', type=Path, default=PROJECT / 'target' / 'release')
     parser.add_argument('--system', choices=['Linux', 'Windows'])
     parser.add_argument('--target', dest='target_triple')
+    parser.add_argument('--native-sdk', type=Path)
     args = parser.parse_args()
-    print(package(args.output_directory.resolve(), args.binary_directory.resolve(), system=args.system, target_triple=args.target_triple))
+    print(package(args.output_directory.resolve(), args.binary_directory.resolve(), system=args.system,
+                  target_triple=args.target_triple, native_sdk=args.native_sdk))

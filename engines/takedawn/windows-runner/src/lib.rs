@@ -5,7 +5,7 @@
 mod sandbox;
 mod worker_pipe;
 mod worker_process;
-pub use worker_pipe::{WorkerLog, WorkerPipe};
+pub use worker_pipe::{ServiceIo, WorkerLog, WorkerPipe};
 pub use worker_process::WorkerProcess;
 #[cfg(test)]
 mod window_fixture;
@@ -161,7 +161,8 @@ fn environment_block(
             .to_uppercase();
         if matches!(
             name.as_str(),
-            "GAMEPKG_TAKEDAWN_DISC_HANDLE"
+            "GAMEPKG_DISC_HANDLE"
+                | "GAMEPKG_TAKEDAWN_DISC_HANDLE"
                 | "GAMEPKG_TAKEDAWN_MANAGED_RESTART"
                 | "GAMEPKG_TAKEDAWN_RESTART_HANDLE"
         ) || entries.iter().any(|(k, _)| k == &name)
@@ -174,6 +175,13 @@ fn environment_block(
         entries.push((name, pair));
     }
     if let Some(disc) = disc {
+        entries.push((
+            "GAMEPKG_DISC_HANDLE".into(),
+            wide(OsStr::new(&format!(
+                "GAMEPKG_DISC_HANDLE={}",
+                disc as usize
+            )))?,
+        ));
         entries.push((
             "GAMEPKG_TAKEDAWN_DISC_HANDLE".into(),
             wide(OsStr::new(&format!(
@@ -314,6 +322,34 @@ impl Process {
     ) -> io::Result<Self> {
         Self::spawn_inner(
             executable, args, cwd, values, disc, output, false, None, None,
+        )
+    }
+    /// A single external engine, with an explicit AppContainer and job-wide
+    /// memory budget. It cannot execute before job assignment. The source is
+    /// inherited read-only under GAMEPKG_DISC_HANDLE, without granting its path.
+    /// No managed-restart handles are exposed through this entry point.
+    #[allow(clippy::too_many_arguments)]
+    pub fn spawn_confined(
+        executable: &Path,
+        args: &[OsString],
+        cwd: &Path,
+        values: &[(OsString, OsString)],
+        source: &File,
+        output: &File,
+        sandbox: &Sandbox,
+        memory_limit_bytes: u64,
+    ) -> io::Result<Self> {
+        worker_process::require_profile_environment(values)?;
+        Self::spawn_inner(
+            executable,
+            args,
+            cwd,
+            values,
+            source,
+            output,
+            false,
+            Some(sandbox),
+            Some(memory_limit_bytes),
         )
     }
     #[allow(clippy::too_many_arguments)]
@@ -488,9 +524,7 @@ impl Process {
         }
     }
     pub fn stop(&self) -> io::Result<()> {
-        if unsafe { TerminateJobObject(self.job.as_raw_handle(), 1) } == 0 {
-            return Err(io::Error::last_os_error());
-        }
+        self.request_stop()?;
         if unsafe { WaitForSingleObject(self.process.as_raw_handle(), 5000) } != WAIT_OBJECT_0 {
             return Err(io::Error::other("native game did not stop"));
         }
@@ -518,6 +552,14 @@ impl Process {
             }
             std::thread::sleep(Duration::from_millis(10));
         }
+    }
+    /// Nonblocking termination request for the service window owner. An owned
+    /// background reaper retains this process/job until stop() confirms exit.
+    pub fn request_stop(&self) -> io::Result<()> {
+        if unsafe { TerminateJobObject(self.job.as_raw_handle(), 1) } == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(())
     }
 }
 impl Drop for Process {
@@ -663,6 +705,10 @@ mod tests {
             .unwrap()
             .parse()
             .unwrap();
+        assert_eq!(
+            std::env::var("GAMEPKG_DISC_HANDLE").unwrap(),
+            raw.to_string()
+        );
         // This fixture owns the handle inherited into its own child process.
         let mut disc = unsafe { File::from_raw_handle(raw as HANDLE) };
         let mut flags = 0;
@@ -1207,6 +1253,8 @@ mod tests {
         for values in [
             vec![("Path".into(), "a".into()), ("PATH".into(), "b".into())],
             vec![("GAMEPKG_TAKEDAWN_DISC_HANDLE".into(), "12".into())],
+            vec![("GAMEPKG_DISC_HANDLE".into(), "12".into())],
+            vec![("gamepkg_disc_handle".into(), "12".into())],
             vec![("bad=name".into(), "x".into())],
             vec![("GAMEPKG_TAKEDAWN_MANAGED_RESTART".into(), "1".into())],
             vec![("GAMEPKG_TAKEDAWN_RESTART_HANDLE".into(), "123".into())],

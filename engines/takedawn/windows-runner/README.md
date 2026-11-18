@@ -1,6 +1,6 @@
 # Native Windows process and restart ownership
 
-This host Rust library owns native Windows Takedawn processes and restarts.
+This host Rust library owns native Windows processes and managed restarts.
 The app's Build action dispatches the native builder. Windows CLI/GUI Play now
 retains the selected ISO, original save paths, play history and this confined
 process owner. End-to-end app/game qualification and player-kit promotion remain
@@ -20,6 +20,24 @@ budget; the same value is applied on every managed restart. This uses Windows'
 [committed-memory job limit](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-jobobject_extended_limit_information),
 not a working-set or GPU-memory limit. Zero and values too large for the host
 architecture reject before game execution.
+
+`Process::spawn_confined` exposes the same suspended-start, process-tree and
+committed-memory boundary for a single external engine. It requires an explicit
+AppContainer, a positive representable budget, and absolute `SystemRoot` and
+`LOCALAPPDATA` values. It inherits no managed-restart event. The read-only source
+handle is available as `GAMEPKG_DISC_HANDLE`; the legacy name remains an alias
+of that same handle. Both names are reserved, case-insensitively. Consumers
+must not adopt the two aliases as separately owned handles.
+
+The asset-free `tests/fixtures/windows-external-process` executable checks the
+actual confined launcher with a parent-writable synthetic source: its inherited
+duplicate is read-only, the source path and private canary are denied, runtime
+writes are denied, and saves persist in the explicitly writable folder. A
+64 MiB process-local cache is followed by bounded allocation controls under
+128/256 MiB job limits. A deliberately double-counted 64 MiB total must fail at
+the cache allocation. Temporary test profiles are explicitly removed. These
+checks establish the launch mechanism, not complete external-engine app or GPU
+integration.
 
 Native Windows 32/64-bit tests compare an unrestricted allocation control with
 an enforced 128 MiB test budget, verify small allocations still work, and repeat

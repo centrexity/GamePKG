@@ -79,14 +79,7 @@ fn unsupported_reviewed_engine_rejects_before_building_or_preparing_tools() {
     assert!(!gamepkg::native::build_supported(&manifest));
     assert!(!gamepkg::native::play_supported(&manifest));
     let error = gamepkg::native::compile(root.path(), &manifest.id).unwrap_err();
-    #[cfg(windows)]
-    assert!(error
-        .to_string()
-        .contains("native build is not supported for this game on this platform"));
-    #[cfg(not(windows))]
-    assert!(error
-        .to_string()
-        .contains("Cube 2 currently requires Linux native process isolation"));
+    assert!(error.to_string().contains("requires migration"));
     for name in ["builds", "build-locks", "shader-builds", "native-sdk"] {
         assert!(!root.path().join(name).exists(), "unexpected {name}");
     }
@@ -106,11 +99,11 @@ fn ordinary_windows_rust_games_admit_native_build_and_play() {
 
 #[cfg(target_os = "linux")]
 #[test]
-fn reviewed_takedawn_admission_matches_the_prepared_builder_architecture() {
+fn unmigrated_takedawn_is_blocked_even_on_its_prepared_architecture() {
     let manifest =
         gamepkg::manifest::Manifest::parse(include_bytes!("../ports/takedawn/manifest.toml"))
             .unwrap();
-    let supported = cfg!(target_arch = "x86_64");
+    let supported = false;
     assert_eq!(gamepkg::native::build_supported(&manifest), supported);
     assert_eq!(gamepkg::native::play_supported(&manifest), supported);
     // The reviewed engine's architecture does not restrict ordinary Rust games.

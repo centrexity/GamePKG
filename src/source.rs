@@ -144,6 +144,47 @@ fn forbidden_tokens(tokens: proc_macro2::TokenStream, macro_context: bool) -> bo
     false
 }
 impl<'ast> Visit<'ast> for Scanner {
+    fn visit_use_name(&mut self, node: &'ast syn::UseName) {
+        if matches!(
+            node.ident.to_string().trim_start_matches("r#"),
+            "std" | "core" | "alloc"
+        ) {
+            self.rejected = true;
+        }
+        syn::visit::visit_use_name(self, node);
+    }
+    fn visit_use_path(&mut self, node: &'ast syn::UsePath) {
+        fn leaves(tree: &syn::UseTree, base: &mut Vec<String>, out: &mut Vec<Vec<String>>) {
+            match tree {
+                syn::UseTree::Path(p) => {
+                    base.push(p.ident.to_string().trim_start_matches("r#").to_owned());
+                    leaves(&p.tree, base, out);
+                    base.pop();
+                }
+                syn::UseTree::Name(n) => {
+                    let mut p = base.clone();
+                    p.push(n.ident.to_string().trim_start_matches("r#").to_owned());
+                    out.push(p);
+                }
+                syn::UseTree::Group(g) => {
+                    for t in &g.items {
+                        leaves(t, base, out);
+                    }
+                }
+                _ => out.push(Vec::new()),
+            }
+        }
+        let mut paths = Vec::new();
+        leaves(
+            &syn::UseTree::Path(node.clone()),
+            &mut Vec::new(),
+            &mut paths,
+        );
+        if paths.iter().any(|p| !standard_path_allowed(p)) {
+            self.rejected = true;
+        }
+        syn::visit::visit_use_path(self, node);
+    }
     fn visit_ident(&mut self, node: &'ast syn::Ident) {
         if reserved(&node.to_string()) {
             self.rejected = true;
@@ -186,8 +227,17 @@ impl<'ast> Visit<'ast> for Scanner {
         self.rejected = true;
     }
     fn visit_expr_call(&mut self, node: &'ast syn::ExprCall) {
+        for attribute in &node.attrs {
+            self.visit_attribute(attribute);
+        }
         // A call target must be a literal Rust path, never a computed value.
         if let syn::Expr::Path(path) = &*node.func {
+            for attribute in &path.attrs {
+                self.visit_attribute(attribute);
+            }
+            if let Some(qualified) = &path.qself {
+                self.visit_type(&qualified.ty);
+            }
             if path.path.segments.len() == 1
                 && self
                     .bindings
@@ -249,6 +299,12 @@ impl<'ast> Visit<'ast> for Scanner {
         syn::visit::visit_expr_path(self, node);
     }
     fn visit_item_mod(&mut self, node: &'ast syn::ItemMod) {
+        if matches!(
+            node.ident.to_string().trim_start_matches("r#"),
+            "std" | "core" | "alloc" | "gamepkg"
+        ) {
+            self.rejected = true;
+        }
         if !node.attrs.is_empty() {
             self.rejected = true;
         }
@@ -264,6 +320,14 @@ impl<'ast> Visit<'ast> for Scanner {
         self.rejected = true;
     }
     fn visit_path(&mut self, node: &'ast syn::Path) {
+        let path: Vec<_> = node
+            .segments
+            .iter()
+            .map(|s| s.ident.to_string().trim_start_matches("r#").to_owned())
+            .collect();
+        if !standard_path_allowed(&path) {
+            self.rejected = true;
+        }
         if node.segments.iter().any(|s| {
             matches!(
                 s.ident.to_string().as_str(),
@@ -274,6 +338,68 @@ impl<'ast> Visit<'ast> for Scanner {
         }
         syn::visit::visit_path(self, node);
     }
+}
+
+// Only value/collection facilities may be reached through the implicit std
+// crates. Denying just fs/net misses time, backtrace, dynamic loading, platform
+// extensions, reexports and newly added standard-library system services.
+fn standard_path_allowed(path: &[String]) -> bool {
+    let Some(root) = path.first().map(String::as_str) else {
+        return false;
+    };
+    if !matches!(root, "std" | "core" | "alloc") {
+        return true;
+    }
+    let p: Vec<_> = path.iter().map(String::as_str).collect();
+    matches!(
+        p.as_slice(),
+        [_, "f32" | "f64", "consts", ..]
+            | [
+                _,
+                "primitive",
+                "u8" | "u16"
+                    | "u32"
+                    | "u64"
+                    | "u128"
+                    | "i8"
+                    | "i16"
+                    | "i32"
+                    | "i64"
+                    | "i128"
+                    | "f32"
+                    | "f64"
+                    | "bool"
+                    | "char"
+                    | "str",
+                ..
+            ]
+            | [
+                _,
+                "mem",
+                "replace" | "take" | "swap" | "drop" | "forget" | "size_of" | "align_of"
+            ]
+            | [_, "cmp", "min" | "max" | "Ordering", ..]
+            | [
+                _,
+                "collections",
+                "BTreeMap" | "BTreeSet" | "HashMap" | "HashSet" | "VecDeque" | "BinaryHeap",
+                ..
+            ]
+            | [_, "vec", "Vec", ..]
+            | [_, "string", "String", ..]
+            | [_, "boxed", "Box", ..]
+            | [
+                _,
+                "sync",
+                "Arc" | "Weak" | "Mutex" | "MutexGuard" | "PoisonError",
+                ..
+            ]
+            | [_, "rc", "Rc" | "Weak", ..]
+            | [_, "cell", "Cell" | "RefCell" | "Ref" | "RefMut", ..]
+            | [_, "option", "Option", ..]
+            | [_, "result", "Result", ..]
+            | [_, "str", "from_utf8"]
+    )
 }
 #[derive(Default)]
 struct Names {
@@ -510,6 +636,48 @@ mod restricted_calls_tests {
             "pub fn game_tick(_:u32,_:u64)->u64 {gamepkg::r#__gamepkg_begin_tick();0}",
         ] {
             assert!(rejected(text), "accepted: {text}");
+        }
+    }
+
+    #[test]
+    fn standard_library_services_cannot_be_hidden_by_imports_generics_or_qualified_calls() {
+        for source in [
+            "fn x(){std::time::Instant::now();}",
+            "fn x(){::std::time::SystemTime::now();}",
+            "fn x(){std::backtrace::Backtrace::force_capture();}",
+            "fn x(){std::panic::take_hook();}",
+            "fn x(){std::sync::mpsc::channel::<u32>();}",
+            "fn x(){std::sync::Condvar::new();}",
+            "fn x(){std::thread::sleep(core::time::Duration::ZERO);}",
+            "use std::{time::{Instant,SystemTime}}; fn x(){Instant::now();}",
+            "use ::std::r#time::Instant; fn x(){Instant::now();}",
+            "use std::{collections::BTreeMap,backtrace::Backtrace};",
+            "use std;",
+            "use {std,core};",
+            "use alloc;",
+            "use std::prelude::v1::*;",
+            "use core::ffi::CStr;",
+            "fn x(){<std::time::Instant>::now();}",
+            "fn x(){<std::time::SystemTime as std::default::Default>::default();}",
+            "mod std {pub fn x(){}}",
+            "mod r#core {}",
+            "mod gamepkg {}",
+            "fn x(){core::arch::x86_64::_rdtsc();}",
+            "use std::os::raw::c_void;",
+            "fn x(){std::env::current_exe();}",
+            "fn x(){std::io::stdin();}",
+            "fn x(){std::net::TcpStream::connect(\"localhost:1\");}",
+        ] {
+            assert!(rejected(source), "accepted {source}");
+        }
+        for source in [
+            "fn x(){gamepkg::fullscreen(true);}",
+            "use std::collections::BTreeMap; fn x(){BTreeMap::<u32,u32>::new();}",
+            "fn x(){let a=core::f32::consts::PI;}",
+            "fn tick(){let mut value=1;core::mem::replace(&mut value,2);}",
+            "use std::sync::Arc;fn x(){Arc::new(1);}",
+        ] {
+            assert!(!rejected(source), "rejected pure code {source}");
         }
     }
     #[test]

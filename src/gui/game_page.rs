@@ -46,7 +46,9 @@ fn game_file_role(manifest: &crate::manifest::Manifest, index: usize) -> Option<
 impl App {
     pub(super) fn play_blockers(&self, m: &crate::manifest::Manifest) -> Vec<String> {
         let mut blockers = Vec::new();
-        if !crate::native::play_supported(m) {
+        if let Err(reason) = crate::build_policy::require(m.builtin_engine.as_deref()) {
+            blockers.push(reason.to_string());
+        } else if !crate::native::play_supported(m) {
             blockers.push(
                 "Native play requires Linux; use Play Wasm for supported games on this platform."
                     .into(),
@@ -77,7 +79,11 @@ impl App {
                 blockers.push(format!("Increase the memory ceiling to at least 2048 MiB in Settings (currently {current} MiB)."));
             }
             match self.data_paths.get(&m.id).filter(|p| !p.is_empty()) {
-                None => blockers.push("Choose the original game-data folder below.".into()),
+                None => blockers.push(if data.layouts.is_empty() {
+                    "Choose the original game-data folder below.".into()
+                } else {
+                    "Choose the original game-data file or folder below.".into()
+                }),
                 Some(path) => {
                     let result = if !data.layouts.is_empty() {
                         crate::game_data::matches(std::path::Path::new(path), &data.layouts)
@@ -291,19 +297,19 @@ impl App {
                 let built=self.built.contains(&id);let reviewing=self.pending.is_some();
                 let blockers = self.play_blockers(&m);
                 let ready = blockers.is_empty();
-                let wasm_ready = self.wasm_built.contains(&id)
+                let wasm_ready = crate::build_policy::supported(m.builtin_engine.as_deref()) && self.wasm_built.contains(&id)
                     && (!m.requires_rom || self.rom_paths.get(&id).is_some_and(|paths| crate::rom_selections::ready_for(&m, paths)))
                     && (m.game_data.is_none() || (
                         self.applied_settings.as_ref().is_some_and(|settings| settings.memory_ceiling_mib >= 2048)
                         && self.data_paths.get(&id).is_some_and(|path| crate::game_data::validate(std::path::Path::new(path)).is_ok())
                     ));
-                ui.label(if ready{"Ready to play"}else if built{"Native build verified — setup required"}else{"Native build: Not built or no longer valid"});
+                ui.label(if !crate::build_policy::supported(m.builtin_engine.as_deref()) {"Port requires migration to GamePKG services"} else if ready{"Ready to play"}else if built{"Native build verified — setup required"}else{"Native build: Not built or no longer valid"});
                 if let Some(usage)=self.usage.get(&id){ui.label(format!("Storage: {}",usage.space().label())).on_hover_text(usage.space().details());}
                 ui.horizontal_wrapped(|ui|{
                     if ui.add_enabled(!reviewing&&ready&&self.result.is_none(),super::theme::primary("Play")).clicked(){self.launch_selected(id.clone(),true);}
                     if ui.add_enabled(crate::native::build_supported(&m)&&!reviewing&&self.result.is_none(),egui::Button::new(if built{"Rebuild"}else{"Build"}).min_size(egui::vec2(100.0,36.0))).clicked(){let id=id.clone();self.begin_work(move||{crate::native::compile(&crate::registry::default_root()?,&id)?;Ok(Work::NativeBuilt(id))});if m.builtin_engine.as_deref()==Some(crate::takedawn::PROFILE){self.status="Building this game for your computer. The first build can take an hour or more. Your ISO is not copied.".into();}}
                     if ui.add_enabled(!reviewing&&self.result.is_none()&&m.update_url.is_some(),egui::Button::new("Check for updates")).clicked(){let id=id.clone();self.begin_work(move||match crate::registry::check_update(&crate::registry::default_root()?,&id)?{Some((m,file))=>Ok(Work::Update(m,file)),None=>Ok(Work::Message("This game is up to date.".into()))});}
-                    if ui.add_enabled(!matches!(m.builtin_engine.as_deref(),Some(crate::cube2::PROFILE)|Some(crate::takedawn::PROFILE))&&m.builtin_engine.as_deref().and_then(crate::external_engine::get).is_none()&&!reviewing&&self.result.is_none(),egui::Button::new("Build Wasm")).clicked(){let id=id.clone();self.begin_work(move||{crate::build::compile(&crate::registry::default_root()?,&id)?;Ok(Work::Message("Wasm build complete. Native build kept separately.".into()))});}
+                    if ui.add_enabled(crate::build_policy::supported(m.builtin_engine.as_deref()) && !matches!(m.builtin_engine.as_deref(),Some(crate::cube2::PROFILE)|Some(crate::takedawn::PROFILE))&&m.builtin_engine.as_deref().and_then(crate::external_engine::get).is_none()&&!reviewing&&self.result.is_none(),egui::Button::new("Build Wasm")).clicked(){let id=id.clone();self.begin_work(move||{crate::build::compile(&crate::registry::default_root()?,&id)?;Ok(Work::Message("Wasm build complete. Native build kept separately.".into()))});}
                     if ui.add_enabled(!reviewing&&wasm_ready&&self.result.is_none(),egui::Button::new("Play Wasm")).clicked(){self.launch_selected(id.clone(),false);}
                     ui.add_enabled_ui(!reviewing && self.result.is_none() && cfg!(any(target_os="linux", target_os="windows")), |ui| {
                         ui.menu_button("Add to Steam", |ui| {
@@ -400,6 +406,43 @@ impl App {
         });
     }
 
+    fn pick_game_data(
+        &mut self,
+        selected: crate::manifest::Manifest,
+        current: String,
+        title: String,
+        extensions: Vec<String>,
+        pick_file: bool,
+    ) {
+        let external = selected
+            .game_data
+            .as_ref()
+            .is_some_and(|data| !data.layouts.is_empty());
+        self.begin_work(move || {
+            let root = std::fs::canonicalize(crate::registry::default_root()?)?;
+            let mut dialog = rfd::FileDialog::new().set_title(if external {
+                title
+            } else {
+                "Choose original Sauerbraten installation".into()
+            });
+            if !current.is_empty() {
+                let path = std::path::Path::new(&current);
+                if path.is_dir() {
+                    dialog = dialog.set_directory(path);
+                } else if let Some(parent) = path.parent() {
+                    dialog = dialog.set_directory(parent);
+                }
+            }
+            let picked = if pick_file {
+                let refs = extensions.iter().map(String::as_str).collect::<Vec<_>>();
+                dialog.add_filter("Game data", &refs).pick_file()
+            } else {
+                dialog.pick_folder()
+            };
+            Ok(Work::DataPicked(root, selected, picked))
+        });
+    }
+
     fn game_data_editor(&mut self, ui: &mut egui::Ui) {
         let Some(selected) = self
             .installed
@@ -422,8 +465,23 @@ impl App {
         #[cfg(target_os = "linux")]
         let audit_path = current.clone();
         ui.strong(&title);
+        let extensions = selected
+            .game_data
+            .as_ref()
+            .into_iter()
+            .flat_map(|data| &data.layouts)
+            .filter(|layout| layout.placement == "beside")
+            .flat_map(|layout| &layout.extensions)
+            .flat_map(|extension| [extension.clone(), extension.to_ascii_uppercase()])
+            .collect::<Vec<_>>();
+        let prefer_file = !extensions.is_empty()
+            && (current.is_empty() || !std::path::Path::new(&current).is_dir());
         let label = if current.is_empty() {
-            "Choose game-data folder…"
+            if prefer_file {
+                "Choose game-data file…"
+            } else {
+                "Choose game-data folder…"
+            }
         } else {
             &current
         };
@@ -436,21 +494,30 @@ impl App {
             )
             .clicked()
         {
-            self.begin_work(move || {
-                let root = std::fs::canonicalize(crate::registry::default_root()?)?;
-                let mut dialog = rfd::FileDialog::new().set_title(if external {
-                    title
-                } else {
-                    "Choose original Sauerbraten installation".into()
-                });
-                if !current.is_empty() {
-                    dialog = dialog.set_directory(current);
-                }
-                Ok(Work::DataPicked(root, selected, dialog.pick_folder()))
-            });
+            self.pick_game_data(
+                selected.clone(),
+                current.clone(),
+                title.clone(),
+                extensions.clone(),
+                prefer_file,
+            );
+        }
+        if !extensions.is_empty()
+            && ui
+                .add_enabled(
+                    self.result.is_none(),
+                    egui::Button::new(if prefer_file {
+                        "Choose folder instead…"
+                    } else {
+                        "Choose file instead…"
+                    }),
+                )
+                .clicked()
+        {
+            self.pick_game_data(selected, current, title, extensions, !prefer_file);
         }
         if external {
-            ui.label("Choose a folder that matches this game's data layout. The files stay on your disk and are not copied into the package. Saves stay in the library.");
+            ui.label("Choose an original game-data file or a folder that matches this game's data layout. The files stay on your disk and are not copied into the package. Saves stay in the library.");
         } else {
             ui.label("Choose the original installation containing data and packages folders. GamePKG reads these files in place and remembers this folder for this signed game.");
         }
@@ -868,10 +935,11 @@ mod tests {
             b"core texture",
         )
         .unwrap();
-        assert_eq!(app.ready_to_play(&manifest), cfg!(target_os = "linux"));
-        if cfg!(target_os = "linux") {
-            assert!(app.play_blockers(&manifest).is_empty());
-        }
+        assert!(!app.ready_to_play(&manifest));
+        assert!(app
+            .play_blockers(&manifest)
+            .iter()
+            .any(|s| s.contains("requires migration")));
         std::fs::remove_dir_all(folder.path().join("packages")).unwrap();
         assert!(!app.ready_to_play(&manifest));
         assert!(app
@@ -905,13 +973,7 @@ mod tests {
             .iter()
             .any(|text| text.contains("64 MiB") && text.contains(&manifest.roms[0].title)));
         handle.set_len(64 * 1024 * 1024).unwrap();
-        assert_eq!(
-            app.ready_to_play(&manifest),
-            cfg!(any(
-                target_os = "linux",
-                all(windows, any(target_arch = "x86_64", target_arch = "x86"))
-            ))
-        );
+        assert!(!app.ready_to_play(&manifest));
         assert!(!app
             .play_blockers(&manifest)
             .iter()

@@ -1,5 +1,9 @@
 # Native builds and playback
 
+The [shared native port service contract](PORT_SERVICES.md) covers input, windows, Vulkan graphics, audio, capability-relative file access, networking, and timing. GamePKG supplies a versioned compatibility layer that is compiled into each native game executable. The game process owns its own window and runtime services. GamePKG verifies and builds the game, sets the process permissions and resource limits, launches it, and records play history. The in-process build and launch path has a Linux x64 maintainer fixture. Each port still needs to migrate its platform calls and pass admission before it can launch.
+
+Build and play now reject all unmigrated built-in/native port profiles, including cached executables, Wasm alternatives and compiler exchange imports. Ordinary checked Rust games remain available. Creator signatures and upstream source pins do not authorize direct system calls or game crates. Each port needs a complete shared-service migration and host-side admission tests before it is enabled.
+
 On Linux, and for ordinary checked Rust games in the current Windows x86/x64 development source, **Build** and **Rebuild** compile directly for the current operating system and CPU. They do not also build Wasm or a web player. **Build Wasm**, **Play Wasm**, and **Export for web** are separate actions. The CLI equivalents are `gamepkg build GAME_ID` and `gamepkg build GAME_ID --target wasm`.
 
 Native C-based ports need Clang 18 and lld-18; they do not need wasi-libc or a WASI sysroot. The optional Wasm build of a C-based port does need those libraries. The saved **C/WASI build tools folder** applies to that optional compiler. Games that do not call shader functions do not require Slang for their native build. Shader games require the pinned Slang compiler.
@@ -35,11 +39,12 @@ compiler for a genuinely 32-bit OS remains open.
 Current checks validate shader compilation, reflection/translation and runtime
 requests; they do not substitute for physical GPU/input/audio qualification.
 
-Reviewed C-based engines retain their own platform support. Takedawn below builds
-natively for Windows x64. Other reviewed engines can still use their documented
-optional Wasm build/play controls and configured Linux compiler exchange.
+The legacy C-based engines below retain direct platform support and remain
+blocked. Their historical optional build/play controls and compiler exchanges
+are not admission paths. The descriptions below document preserved migration
+inputs; they do not claim these engines can currently launch.
 
-## Reviewed native engine profiles
+## Legacy native engine profiles — currently blocked
 
 The Takedawn profile uses prepared Rust game functions and the pinned original
 C/C++ renderer, audio, input and system runtime. Its package can only select one

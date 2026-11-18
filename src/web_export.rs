@@ -234,6 +234,7 @@ pub fn export(root: &Path, id: &str, output: &Path) -> Result<()> {
     let _guard = crate::registry::LibraryChange::acquire(root)?;
     let mut package = crate::archive::Package::open(&root.join(format!("{id}.gamepkg")))?;
     let manifest = crate::verify::verify_embedded(&mut package)?;
+    crate::build_policy::require(manifest.builtin_engine.as_deref())?;
     let asset_limit = manifest.limits.web_asset_bytes();
     let effects = manifest.limits.effects_memory_bytes.unwrap_or(0);
     let music = manifest.limits.music_memory_bytes.unwrap_or(0);
