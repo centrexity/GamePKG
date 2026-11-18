@@ -197,9 +197,6 @@ enum Command {
         id: String,
         #[arg(long, value_parser = ["native", "wasm"], default_value="native")]
         target: String,
-        /// Reviewed external-engine target, such as `linux-i686` or `windows-i686`.
-        #[arg(long)]
-        engine_target: Option<String>,
         /// Build a source directory into a signed package after isolated compilation succeeds.
         #[arg(short, long, requires = "key")]
         output: Option<PathBuf>,
@@ -609,28 +606,6 @@ fn main() -> Result<()> {
                 launch.is_empty(),
                 "Graphics launch flags currently require the reviewed native Takedawn engine"
             );
-            if gamepkg::registry::installed_manifest(&root, &id)?
-                .builtin_engine
-                .as_deref()
-                .and_then(gamepkg::external_engine::get)
-                .is_some()
-            {
-                anyhow::ensure!(
-                    target.as_deref() != Some("wasm"),
-                    "this external engine has no Wasm build"
-                );
-                anyhow::ensure!(
-                    load_slot.is_none() && save_slot.is_none(),
-                    "this engine uses its own saves"
-                );
-                anyhow::ensure!(
-                    frames.is_none(),
-                    "this engine plays in its own window; run without --frames"
-                );
-                gamepkg::external_engine::launch(&root, &id)?;
-                println!("Engine closed");
-                return Ok(());
-            }
             let mut game = gamepkg::runtime::Game::load_target(
                 &root,
                 &id,
@@ -773,12 +748,8 @@ fn main() -> Result<()> {
             output,
             key,
             target,
-            engine_target,
         } => {
             if let (Some(output), Some(key)) = (output, key) {
-                if engine_target.is_some() {
-                    anyhow::bail!("--engine-target applies to an installed external engine, not a source package build");
-                }
                 gamepkg::build::package_target(
                     std::path::Path::new(&id),
                     &output,
@@ -788,17 +759,8 @@ fn main() -> Result<()> {
                 println!("Built and verified source package: {}", output.display());
             } else {
                 if target == "native" {
-                    gamepkg::native::compile_for(
-                        &gamepkg::registry::default_root()?,
-                        &id,
-                        engine_target.as_deref(),
-                    )?;
+                    gamepkg::native::compile(&gamepkg::registry::default_root()?, &id)?;
                 } else {
-                    if engine_target.is_some() {
-                        anyhow::bail!(
-                            "--engine-target applies to the native build of an external engine"
-                        );
-                    }
                     gamepkg::build::compile(&gamepkg::registry::default_root()?, &id)?;
                 }
                 println!("Built {id}");

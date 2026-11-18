@@ -99,13 +99,8 @@ fn signed_legacy_package_and_valid_cached_executable_cannot_reach_build_play_or_
     gamepkg::integrity::record_build(&path, &exe).unwrap();
     assert!(!gamepkg::native::is_built(&library, &manifest.id).unwrap());
     assert!(!gamepkg::build::is_built(&library, &manifest.id).unwrap());
-    for target in [None, Some("windows"), Some("linux"), Some("wasm")] {
-        let error = gamepkg::native::compile_for(&library, &manifest.id, target).unwrap_err();
-        assert!(
-            error.to_string().contains("requires migration"),
-            "{error:#}"
-        );
-    }
+    let error = gamepkg::native::compile(&library, &manifest.id).unwrap_err();
+    assert!(error.to_string().contains("requires migration"), "{error:#}");
     let error = gamepkg::build::compile(&library, &manifest.id).unwrap_err();
     assert!(error.to_string().contains("requires migration"));
     assert!(gamepkg::runtime::Game::load(&library, &manifest.id)

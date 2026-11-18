@@ -9,12 +9,6 @@ fn engine() -> &'static gamepkg::external_engine::Engine {
     gamepkg::external_engine::get("opence-ce95f7de").unwrap()
 }
 
-#[cfg(target_os = "linux")]
-fn env_lock() -> std::sync::MutexGuard<'static, ()> {
-    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    LOCK.lock().unwrap()
-}
-
 #[test]
 fn external_engine_recipe_parses_and_rejects_layout_and_network_changes() {
     let manifest = gamepkg::manifest::Manifest::parse(manifest_text().as_bytes()).unwrap();
@@ -312,36 +306,7 @@ fn data_layouts_accept_maps_or_one_archive() {
 }
 
 #[test]
-fn sixty_four_bit_targets_have_no_blocker() {
-    for id in ["linux-x86_64", "windows-x64"] {
-        let target = engine()
-            .targets
-            .iter()
-            .find(|target| target.id == id)
-            .unwrap_or_else(|| panic!("missing {id}"));
-        assert!(
-            target.blocker.is_none(),
-            "{id} stays blocked: {:?}",
-            target.blocker
-        );
-        assert!(!target.configure.is_empty(), "{id}");
-    }
-}
-
-#[cfg(target_os = "linux")]
-#[test]
-fn cross_built_windows_i686_engine_caches_and_refuses_to_launch() {
-    let _lock = env_lock();
-    let source = std::path::PathBuf::from("/tmp/OpenCE-win");
-    if !source.join("build/windows/halo.exe").is_file() {
-        eprintln!(
-            "skipping Windows cache test; no cross build at {}",
-            source.display()
-        );
-        return;
-    }
-    let previous = std::env::var_os("GAMEPKG_ENGINE_SOURCE");
-    std::env::set_var("GAMEPKG_ENGINE_SOURCE", &source);
+fn signed_legacy_engine_is_recognized_but_cannot_build_or_play() {
     let library = tempfile::tempdir().unwrap();
     let package = library.path().join("halo.gamepkg");
     gamepkg::pack::pack(
@@ -350,92 +315,14 @@ fn cross_built_windows_i686_engine_caches_and_refuses_to_launch() {
         &[9; 32],
     )
     .unwrap();
-    gamepkg::registry::install(library.path(), &package, true).unwrap();
-    gamepkg::native::compile_for(library.path(), "com.gamepkg.halo", Some("windows-i686")).unwrap();
-    assert!(gamepkg::native::is_built(library.path(), "com.gamepkg.halo").unwrap());
-    let error = gamepkg::external_engine::launch(library.path(), "com.gamepkg.halo")
-        .unwrap_err()
-        .to_string();
-    match previous {
-        Some(source) => std::env::set_var("GAMEPKG_ENGINE_SOURCE", source),
-        None => std::env::remove_var("GAMEPKG_ENGINE_SOURCE"),
-    }
-    assert!(
-        error.contains("windows") && error.contains("built for"),
-        "{error}"
-    );
-}
-
-#[cfg(target_os = "linux")]
-#[test]
-fn pinned_checkout_caches_the_i686_engine_without_copying_game_data() {
-    let _lock = env_lock();
-    let source = std::env::var_os("GAMEPKG_ENGINE_SOURCE")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| std::path::PathBuf::from("/tmp/OpenCE"));
-    if !source.join("build/linux/halo").is_file() {
-        eprintln!(
-            "skipping external engine cache test; no local build at {}",
-            source.display()
-        );
-        return;
-    }
-    let previous = std::env::var_os("GAMEPKG_ENGINE_SOURCE");
-    std::env::set_var("GAMEPKG_ENGINE_SOURCE", &source);
-    let library = tempfile::tempdir().unwrap();
-    let package = library.path().join("halo.gamepkg");
-    gamepkg::pack::pack(
-        &Path::new(env!("CARGO_MANIFEST_DIR")).join("ports/halo"),
-        &package,
-        &[9; 32],
-    )
-    .unwrap();
-    gamepkg::registry::install(library.path(), &package, true).unwrap();
-    gamepkg::native::compile_for(library.path(), "com.gamepkg.halo", Some("linux-i686")).unwrap();
-    assert!(gamepkg::native::is_built(library.path(), "com.gamepkg.halo").unwrap());
-    let report = gamepkg::integrity::check(library.path(), "com.gamepkg.halo").unwrap();
-    assert!(report.contains("compiled game verified"), "{report}");
-    let data = library.path().join("not-real");
-    std::fs::create_dir_all(data.join("maps")).unwrap();
-    std::fs::write(data.join("maps/ui.map"), b"placeholder").unwrap();
-    gamepkg::game_data::remember_for_game(library.path(), "com.gamepkg.halo", &data).unwrap();
-    let previous_home = std::env::var_os("GAMEPKG_HOME");
-    let previous_config = std::env::var_os("GAMEPKG_CONFIG");
-    let config = library.path().join("settings.toml");
-    std::fs::write(&config, "memory_ceiling_mib = 3072\n").unwrap();
-    std::env::set_var("GAMEPKG_HOME", library.path());
-    std::env::set_var("GAMEPKG_CONFIG", &config);
-    std::env::set_var("SDL_VIDEODRIVER", "offscreen");
-    std::env::set_var("SDL_AUDIODRIVER", "dummy");
-    std::env::set_var("HALO_HIDDEN_WINDOW", "1");
-    std::env::set_var("HALO_NULL_RENDERER", "1");
-    std::env::set_var("HALO_EXIT_AFTER", "1");
-    let error = gamepkg::external_engine::launch(library.path(), "com.gamepkg.halo")
-        .unwrap_err()
-        .to_string();
-    std::env::remove_var("HALO_EXIT_AFTER");
-    match previous_home {
-        Some(home) => std::env::set_var("GAMEPKG_HOME", home),
-        None => std::env::remove_var("GAMEPKG_HOME"),
-    }
-    match previous_config {
-        Some(config) => std::env::set_var("GAMEPKG_CONFIG", config),
-        None => std::env::remove_var("GAMEPKG_CONFIG"),
-    }
-    match previous {
-        Some(source) => std::env::set_var("GAMEPKG_ENGINE_SOURCE", source),
-        None => std::env::remove_var("GAMEPKG_ENGINE_SOURCE"),
-    }
-    assert!(
-        error.contains("ui.map") || error.contains("Xbox maps") || error.contains("not the Xbox"),
-        "{error}"
-    );
-    let runtime = std::fs::read_dir(library.path().join("runtime")).unwrap();
-    for entry in runtime {
-        let path = entry.unwrap().path();
-        assert!(
-            !path.join("maps").join("ui.map").exists(),
-            "placeholder map must not be treated as installed game data"
-        );
-    }
+    let manifest = gamepkg::registry::install(library.path(), &package, true).unwrap();
+    assert!(!gamepkg::native::build_supported(&manifest));
+    assert!(!gamepkg::native::play_supported(&manifest));
+    assert!(!gamepkg::native::is_built(library.path(), &manifest.id).unwrap());
+    let build = gamepkg::native::compile(library.path(), &manifest.id).unwrap_err();
+    assert!(build.to_string().contains("requires migration"), "{build:#}");
+    let play = gamepkg::runtime::Game::load(library.path(), &manifest.id)
+        .err()
+        .expect("legacy play must fail");
+    assert!(play.to_string().contains("requires migration"), "{play:#}");
 }

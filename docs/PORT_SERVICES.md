@@ -42,6 +42,13 @@ The launcher verifies and builds the package, establishes its permissions
 and resource scope, starts it, and tracks its lifecycle. Runtime service
 execution belongs in the game process for every native port.
 
+For a new port, use the compatibility layer above. When reusing an upstream
+game engine, include its game code and platform bridge in the audited source.
+The old external-engine catalog is read only and exists to verify previously
+published signed packages. Its build and launch paths and legacy C host bridge
+have been retired. A catalog entry or a copy of a header does not grant build
+or play access.
+
 The trusted bootstrap can bind the generated client to the local dispatcher
 with `connect_local`. Game bindings still expose the same checked functions.
 The native executable runs a trusted service thread for file and network
