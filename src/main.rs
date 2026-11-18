@@ -575,10 +575,25 @@ fn main() -> Result<()> {
                 gamepkg::game_data::remember_for_game(&root, &id, &path)?;
             }
             let root = gamepkg::registry::default_root()?;
+            let manifest = gamepkg::registry::installed_manifest(&root, &id)?;
+            if manifest.uses_service_runtime() {
+                anyhow::ensure!(
+                    target.as_deref() != Some("wasm")
+                        && load_slot.is_none()
+                        && save_slot.is_none()
+                        && frames.is_none(),
+                    "native service games use their own game window and save controls"
+                );
+                return gamepkg::native::play_services(
+                    &root,
+                    &id,
+                    &rom,
+                    &gamepkg::settings::load()?,
+                    launch,
+                );
+            }
             #[cfg(all(feature = "gui", target_os = "linux", target_arch = "x86_64"))]
-            if gamepkg::registry::installed_manifest(&root, &id)?.native_tick
-                && target.as_deref() != Some("wasm")
-            {
+            if manifest.native_tick && target.as_deref() != Some("wasm") {
                 anyhow::ensure!(
                     rom.is_empty() && load_slot.is_none() && save_slot.is_none(),
                     "native tick games use their normal private save"
@@ -591,11 +606,7 @@ fn main() -> Result<()> {
                 return Ok(());
             }
             #[cfg(any(target_os = "linux", windows))]
-            if gamepkg::registry::installed_manifest(&root, &id)?
-                .builtin_engine
-                .as_deref()
-                == Some(gamepkg::takedawn::PROFILE)
-            {
+            if manifest.builtin_engine.as_deref() == Some(gamepkg::takedawn::PROFILE) {
                 anyhow::ensure!(
                     target.as_deref() != Some("wasm"),
                     "Takedawn requires native Run"

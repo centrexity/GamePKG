@@ -80,7 +80,7 @@ next
         &digest,
         open(),
         manifest.clone(),
-        Vec::new(),
+        crate::files::RomSet::default(),
         settings,
         0,
     )
@@ -93,7 +93,7 @@ next
         &digest,
         open(),
         manifest.clone(),
-        Vec::new(),
+        crate::files::RomSet::default(),
         settings,
         0,
     )
@@ -135,7 +135,7 @@ next
         &digest,
         open(),
         manifest.clone(),
-        Vec::new(),
+        crate::files::RomSet::default(),
         settings,
         0
     )

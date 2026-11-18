@@ -20,7 +20,7 @@ pub(super) fn verify(root: &Path, settings: &crate::settings::Settings, wad: &Pa
             &digest,
             package,
             manifest,
-            vec![bytes.clone()],
+            crate::files::RomSet::Snapshots(vec![bytes.clone()]),
             settings,
             0,
         )
@@ -160,7 +160,7 @@ fn verify_missing_palette_error(root: &Path, settings: &crate::settings::Setting
         &digest,
         package,
         manifest,
-        vec![invalid],
+        crate::files::RomSet::Snapshots(vec![invalid]),
         settings,
         0,
     )

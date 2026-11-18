@@ -5,14 +5,21 @@ import shutil
 import subprocess
 import tempfile
 PROJECT = Path(__file__).resolve().parents[1]
-CLI = PROJECT / 'target/release/gamepkg'
+CLI = Path(os.environ.get('GAMEPKG_TEST_CLI', PROJECT / 'target/release/gamepkg'))
 with tempfile.TemporaryDirectory(prefix='gamepkg-rom-') as directory:
     root = Path(directory)
     source = root / 'source'
     shutil.copytree(PROJECT / 'examples/good/rom-required', source)
     (source / 'source/src/lib.rs').write_text('''
 pub fn game_tick(_: u32, _: u64) -> u64 {
-    if !((gamepkg::rom_size()) == (Some(3))) { loop {} };
+    let size = gamepkg::rom_size();
+    if size == Some(67_108_867) {
+        let mut buffer = [0; 8];
+        if gamepkg::rom_read(67_108_864, &mut buffer) != Some(3) { loop {} }
+        if &buffer[..3] != b"XYZ" { loop {} }
+        return 42u64 << 32;
+    }
+    if !(size == Some(3)) { loop {} };
     let mut buffer = [0; 8];
     if !((gamepkg::rom_read(1, &mut buffer)) == (Some(2))) { loop {} };
     if !((&buffer[..2]) == (b"BC")) { loop {} };
@@ -41,8 +48,13 @@ pub fn game_tick(_: u32, _: u64) -> u64 {
     assert '42' in run('run', 'com.gamepkg.rom-demo', '--rom', rom, '--frames', '2')
     assert rom.read_bytes() == before
     rom.write_bytes(b'')
-    assert '1 byte to 64 MiB' in run('run', 'com.gamepkg.rom-demo', '--rom', rom, '--frames', '1', success=False)
-    with rom.open('wb') as file: file.truncate(64 * 1024 * 1024 + 1)
-    assert '1 byte to 64 MiB' in run('run', 'com.gamepkg.rom-demo', '--rom', rom, '--frames', '1', success=False)
+    assert 'must contain' in run('run', 'com.gamepkg.rom-demo', '--rom', rom, '--frames', '1', success=False)
+    with rom.open('wb') as file:
+        file.seek(64 * 1024 * 1024)
+        file.write(b'XYZ')
+    assert '42' in run('run', 'com.gamepkg.rom-demo', '--rom', rom, '--frames', '1')
+    with rom.open('wb') as file:
+        file.truncate(2 * 1024 * 1024 * 1024)
+    assert 'limit 2147483647 bytes' in run('run', 'com.gamepkg.rom-demo', '--rom', rom, '--frames', '1', success=False)
     assert 'unable to open' in run('run', 'com.gamepkg.rom-demo', '--rom', root / 'missing', '--frames', '1', success=False)
     print('ROM delivery passed: explicit selection, bounded reads, EOF and invalid offsets, empty/oversized/missing rejection.')

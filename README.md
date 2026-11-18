@@ -81,7 +81,7 @@ Packing validates before publishing and refuses to overwrite files. The output m
 
 Game source also follows an enforced [portable data policy](docs/PORTABILITY.md): fixed-width byte conversions, explicit byte order, a fixed wasm32 ABI, and no native layout or pointer-dependent serialization. Dedicated 32-bit Linux, Windows, and Android checks exercise the same core and component runtime boundaries.
 
-- Format version 1; networking is denied unless explicitly enabled, with bounded host operations; positive memory limits (up to 512 MiB for ordinary games, with larger bounded limits for reviewed native-engine profiles).
+- Format version 1; networking is denied unless explicitly enabled, with bounded host operations; positive memory limits (up to 512 MiB for Wasm and up to 4 GiB for shared native service packages).
 - Required manifest, PNG-signature thumbnail, license, credits, Cargo manifest/lockfile, and `source/src/lib.rs`.
 - At most 10,000 entries, 64 MiB per file, 256 MiB uncompressed total; stored and zstd entries only.
 - No absolute paths, traversal, backslashes, duplicate paths, directory entries, or symlinks.
@@ -247,7 +247,7 @@ The legacy grid-v1 ABI uses core Wasm. The versioned WIT component profile is de
 
 Runtime modules can import only the scoped GamePKG asset, ROM and save APIs; WASI, filesystem and socket imports are rejected. Wasmtime enforces memory and epoch limits. A trap ends gameplay. Slang compilation is available; Resource-free GLSL fragment passes render in the desktop player.
 
-For a game declaring `requires_rom = true`, use `gamepkg run <id> --rom /path/to/file` or open the game’s page and click each ROM file field to choose it with the system file picker. ROM files must be regular files of 1 byte to 64 MiB and are read into a session snapshot. Guests use `gamepkg::rom_size()` and `gamepkg::rom_read(offset, &mut buffer)`, never a host path. Reads are capped at 64 KiB. No ROM is downloaded, installed or bundled automatically. `examples/good/rom-required` is a playable data-driven example; `python3 tests/runtime_rom.py` tests the signed build and runtime path.
+For a game declaring `requires_rom = true`, use `gamepkg run <id> --rom /path/to/file` or open the game’s page and click each ROM file field to choose it with the system file picker. The desktop opens regular ROM files read-only and reads them in place. The signed 32-bit size fields in the core Wasm and older native APIs support up to 2 GiB minus one byte per file. Desktop components support up to 4 GiB minus one byte. Shared native service packages can read a disc up to 1 TiB through a single read-only grant with 64-bit offsets. The older built-in adapters still use snapshots capped at 64 MiB per file and 128 MiB total. The core `gamepkg::rom_read(offset, &mut buffer)` API caps each read at 64 KiB. No ROM is downloaded, installed or bundled automatically. `examples/good/rom-required` is a playable data-driven example; `python3 tests/runtime_rom.py` tests the signed build and runtime path.
 
 Run `python3 tests/playable.py` after the release build to test the complete signed-package, isolated-build, movement and scoring path. Runtime tests separately exercise forbidden imports, missing exports, input permission denial, excessive memory, infinite loops and epoch interruption.
 
@@ -261,9 +261,9 @@ recommended_memory_bytes = 8388608 # 8 MiB, advisory
 hard_memory_bytes = 16777216       # 16 MiB, enforced
 ```
 
-Recommended memory describes the creator's suggested budget; it neither reserves memory nor stops a game from using more. Wasmtime enforces the hard limit on guest linear memory, including initial allocation and growth. It is not a cap on the entire host process, compiler, or JIT memory. The GUI displays both values during inspection and in the installed-state tooltip.
+Recommended memory describes the creator's suggested budget. Wasmtime applies the hard limit to guest linear memory, including initial allocation and growth. Linux applies the signed limit to the shared native game process, which includes the compatibility layer. The GUI displays both values during inspection and in the installed-state tooltip.
 
-Recommended memory is optional and defaults to the hard limit. When supplied, it must be positive and no greater than the hard limit. The hard limit for ordinary games must be positive and at most 512 MiB. Reviewed native-engine profiles can define a larger bounded limit; this does not increase arbitrary guest Wasm memory. Existing `memory_bytes` remains accepted as an alias for `hard_memory_bytes`; supplying both is rejected, and newly packed manifests use the canonical hard-limit field.
+Recommended memory is optional and defaults to the hard limit. When supplied, it must be positive and no greater than the hard limit. Wasm manifests allow up to 512 MiB for ordinary games. Shared native service manifests can declare 2 GiB (`2147483648`) or 4 GiB (`4294967296`). Set the maximum in Settings to at least the package limit before playing a shared native game. Existing `memory_bytes` remains accepted as an alias for `hard_memory_bytes`; supplying both is rejected, and newly packed manifests use the canonical hard-limit field.
 
 On each installed game’s page, unmet launch requirements appear directly beside the Play controls: a missing or invalid native build, required memory ceiling, unavailable game-data folder, or missing named ROM files. Build completion refreshes these checks automatically. Saving settings or choosing files updates readiness; **Recheck readiness** reloads externally changed build or file selections. Memory ceilings are never raised automatically.
 
@@ -282,7 +282,7 @@ The updater installs a new portable version folder and keeps the current copy fo
 
 - Library folder: choose an absolute path or leave empty for the default. Switching libraries does not move existing packages.
 - Tor proxy: local loopback IP and SOCKS port; Tor remains a separately running service.
-- Game ceilings: memory (1–4096 MiB, default 512 MiB), tick deadline (10–1000 ms, default 100 ms). Memory uses the lower of the saved ceiling and the signed game limit. New sessions use the settings; current games are unaffected.
+- Game ceilings: memory (1–4096 MiB, default 512 MiB), tick deadline (10–1000 ms, default 100 ms). Wasm uses the lower of the saved ceiling and the signed game limit. Shared native games require the saved ceiling to cover the signed process limit. New sessions use the settings; current games are unaffected.
 - Optimize builds: defaults to high native optimization for subsequent Build/Rebuild: Rust `opt-level=3`, thin LTO, one codegen unit, and `target-cpu=native`; native C/C++ engines use `-O3` and native CPU tuning. Disabling it uses level 0 for troubleshooting. Wasm export keeps its separate portable optimization profile. Rebuild existing games to apply the new settings.
 - Appearance: dark or light theme, applied after saving.
 
@@ -834,7 +834,7 @@ id = "data"
 title = "Data ROM"
 ```
 
-Supply each file with repeated `--rom` options, or use **Add ROM file** in the library. Games receive read-only snapshots, indexed in declaration order, without host paths. Each file is limited to 64 MiB and the combined files to 128 MiB. Legacy `requires_rom = true` still requests one file. Guest APIs include `rom_count`, `rom_size_at`, and `rom_read_at`; existing ROM APIs read the first file.
+Supply each file with repeated `--rom` options, or use **Add ROM file** in the library. Desktop guests receive read-only data indexed in declaration order. The shared native service entry currently accepts one file. Legacy `requires_rom = true` still requests one file. Guest APIs include `rom_count`, `rom_size_at`, and `rom_read_at`; existing ROM APIs read the first file.
 
 Use `gamepkg integrity-check GAME_ID` or **Check integrity** to verify the signed archive, shared blob hashes, play history format and compiled Wasm checksum. `gamepkg integrity-fix GAME_ID` or **Fix / rebuild** rebuilds from verified source under the existing compiler isolation. Older builds without checksums need a rebuild before playback. Checksums detect accidental changes; they do not authenticate the host against someone who can modify both a build and its receipt.
 
@@ -849,7 +849,7 @@ GamePKG's Rust host owns packages, catalogs, settings, ROM selections, play hist
 The loopback server requires a session token for metadata and icons and rejects foreign origins and host headers. Install, build, play and repair remain in the native desktop app or CLI. Run `python3 tests/browser_storage.py`, `python3 tests/web_library.py` and `python3 tests/home_database.py` for cache persistence, session access and native restart checks. No database server or external language runtime is required by players.
 
 
-Host file snapshots reject special files such as named pipes before reading, and recheck file type and size after opening. Selected ROMs remain bounded to 64 MiB each; links explicitly selected by the player may resolve to regular ROM files. Compiled games, integrity receipts and recovery copies reject final-path symlinks. The CLI library listing reports whether the compiled game is built. `tests/special_files.py` exercises actual pipes, oversized files and normal playback with short failure deadlines.
+Host file snapshots reject special files such as named pipes before reading, and recheck file type and size after opening. Links explicitly selected by the player may resolve to regular ROM files. Compiled games, integrity receipts and recovery copies reject final-path symlinks. The CLI library listing reports whether the compiled game is built. `tests/special_files.py` exercises actual pipes, oversized files and normal playback with short failure deadlines.
 
 For an end-to-end example check on Linux, configure the pinned Slang compiler and run `python3 tests/good_examples.py`. It signs, verifies, installs, builds and plays every advertised good example, then rejects every bad example for its declared reason without publishing package output. This complements the archive, runtime and bypass tests in the Rust suite.
 

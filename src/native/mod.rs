@@ -224,6 +224,22 @@ mod tick;
 #[cfg(all(feature = "gui", target_os = "linux", target_arch = "x86_64"))]
 pub use tick::play as play_tick;
 
+pub fn play_services(
+    root: &Path,
+    id: &str,
+    roms: &[PathBuf],
+    settings: &crate::settings::Settings,
+    graphics: crate::launch_options::LaunchArgs,
+) -> Result<()> {
+    #[cfg(all(feature = "gui", target_os = "linux", target_arch = "x86_64"))]
+    return tick::play_entry(root, id, roms, settings, graphics, false);
+    #[cfg(not(all(feature = "gui", target_os = "linux", target_arch = "x86_64")))]
+    {
+        let _ = (root, id, roms, settings, graphics);
+        bail!("native service play requires the Linux x64 desktop edition of GamePKG")
+    }
+}
+
 pub fn cache_path(root: &Path, id: &str) -> Result<PathBuf> {
     let manifest = crate::registry::installed_manifest(root, id)?;
     let bytes = crate::files::read_regular(
@@ -244,7 +260,7 @@ pub fn cache_path(root: &Path, id: &str) -> Result<PathBuf> {
         ));
     }
     let path = path_for_digest(root, &crate::verify::digest(&bytes));
-    Ok(if manifest.native_tick {
+    Ok(if manifest.native_tick || manifest.uses_service_runtime() {
         path.with_file_name("compatibility-game")
     } else {
         path
@@ -260,7 +276,7 @@ pub fn is_built(root: &Path, id: &str) -> Result<bool> {
     }
 
     let manifest = crate::registry::installed_manifest(root, id)?;
-    if manifest.native_tick {
+    if manifest.native_tick || manifest.uses_service_runtime() {
         #[cfg(all(feature = "gui", target_os = "linux", target_arch = "x86_64"))]
         return Ok(tick::ready(root, id));
         #[cfg(not(all(feature = "gui", target_os = "linux", target_arch = "x86_64")))]
@@ -294,7 +310,7 @@ pub fn build_supported(manifest: &crate::manifest::Manifest) -> bool {
         return false;
     }
 
-    if manifest.native_tick {
+    if manifest.native_tick || manifest.uses_service_runtime() {
         return cfg!(all(
             feature = "gui",
             target_os = "linux",
@@ -343,7 +359,7 @@ pub fn compile(root: &Path, id: &str) -> Result<()> {
             "native build is not supported for this game on this platform"
         );
         #[cfg(all(feature = "gui", target_arch = "x86_64"))]
-        if manifest.native_tick {
+        if manifest.native_tick || manifest.uses_service_runtime() {
             return tick::build(root, id);
         }
         if manifest.builtin_engine.as_deref() == Some(crate::takedawn::PROFILE) {

@@ -1,6 +1,8 @@
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 
+pub const SERVICE_ENTRY_WORLD: &str = "game-native-v1";
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Manifest {
@@ -44,6 +46,8 @@ pub struct Manifest {
     pub shader_profile: String,
     #[serde(default)]
     pub shaders: Vec<Shader>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_graphics: Option<NativeGraphics>,
     #[serde(default)]
     pub creator_key: String,
     #[serde(default)]
@@ -254,6 +258,12 @@ pub struct Achievement {
     pub title: String,
     pub description: String,
 }
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum NativeGraphics {
+    VertexColorV1,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Shader {
@@ -381,6 +391,10 @@ pub struct UserFile {
     pub write: bool,
 }
 impl Manifest {
+    pub fn uses_service_runtime(&self) -> bool {
+        self.entry_world == SERVICE_ENTRY_WORLD
+    }
+
     pub fn uses_selected_servers(&self) -> bool {
         self.builtin_engine.as_deref() == Some(crate::cube2::PROFILE)
             && self
@@ -620,6 +634,29 @@ impl Manifest {
         if !matches!(m.runtime_profile.as_str(), "core-v1" | "component-v1") {
             bail!("unsupported runtime profile");
         }
+        if m.uses_service_runtime() {
+            anyhow::ensure!(
+                m.builtin_engine.is_none()
+                    && !m.native_tick
+                    && m.runtime_profile == "core-v1"
+                    && m.required_rom_count() <= 1,
+                "the native service entry requires a source game with at most one ROM"
+            );
+        }
+        match m.native_graphics {
+            Some(NativeGraphics::VertexColorV1) => anyhow::ensure!(
+                m.uses_service_runtime()
+                    && m.shaders.len() == 2
+                    && m.shaders.iter().filter(|shader| shader.stage == "vertex").count() == 1
+                    && m.shaders.iter().filter(|shader| shader.stage == "fragment").count() == 1,
+                "vertex-color-v1 requires a native service package and one vertex and one fragment Slang entry"
+            ),
+            None if m.uses_service_runtime() => anyhow::ensure!(
+                m.shaders.is_empty(),
+                "native service Slang shaders require a supported native_graphics profile"
+            ),
+            None => {}
+        }
         if m.save_schema == 0 {
             bail!("save schema must be positive");
         }
@@ -637,7 +674,7 @@ impl Manifest {
         }
         if m.limits.hard_memory_bytes == 0
             || m.limits.hard_memory_bytes
-                > if cube2 || takedawn {
+                > if cube2 || takedawn || m.uses_service_runtime() {
                     4 * 1024 * 1024 * 1024
                 } else if let Some(engine) = external {
                     engine.hard_memory
@@ -785,4 +822,61 @@ pub(crate) fn validate_metadata_text(
         bail!("invalid metadata {label}");
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod native_services_tests {
+    use super::*;
+
+    #[test]
+    fn service_native_memory_ceilings_preserve_the_wasm_bound() {
+        let base = include_str!("../examples/minimal/manifest.toml");
+        let native = base.replace("entry_world = \"game\"", "entry_world = \"game-native-v1\"");
+        for bytes in [2u64 << 30, 4u64 << 30] {
+            let manifest = native.replace("16777216", &bytes.to_string());
+            assert_eq!(
+                Manifest::parse(manifest.as_bytes())
+                    .unwrap()
+                    .limits
+                    .hard_memory_bytes,
+                bytes
+            );
+            assert!(
+                Manifest::parse(base.replace("16777216", &bytes.to_string()).as_bytes()).is_err()
+            );
+        }
+        assert!(Manifest::parse(native.replace("16777216", "4294967297").as_bytes()).is_err());
+    }
+
+    #[test]
+    fn indexed_native_profile_requires_exactly_two_slang_raster_stages() {
+        let base = include_str!("../examples/minimal/manifest.toml").replace(
+            "entry_world = \"game\"",
+            "entry_world = \"game-native-v1\"\nnative_graphics = \"vertex-color-v1\"",
+        );
+        let shaders = r#"
+[[shaders]]
+source = "shaders/scene.slang"
+entry = "vertexMain"
+stage = "vertex"
+
+[[shaders]]
+source = "shaders/scene.slang"
+entry = "fragmentMain"
+stage = "fragment"
+"#;
+        let valid = format!("{base}{shaders}");
+        assert_eq!(
+            Manifest::parse(valid.as_bytes()).unwrap().native_graphics,
+            Some(NativeGraphics::VertexColorV1)
+        );
+        assert!(Manifest::parse(base.as_bytes()).is_err());
+        assert!(Manifest::parse(
+            valid
+                .replace("stage = \"fragment\"", "stage = \"compute\"")
+                .as_bytes()
+        )
+        .is_err());
+        assert!(Manifest::parse(valid.replace("game-native-v1", "game").as_bytes()).is_err());
+    }
 }

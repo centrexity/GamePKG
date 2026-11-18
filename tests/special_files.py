@@ -2,7 +2,7 @@
 import hashlib, os, shutil, subprocess, tempfile
 from pathlib import Path
 PROJECT=Path(__file__).resolve().parents[1]
-CLI=PROJECT/'target/release/gamepkg'
+CLI=Path(os.environ.get('GAMEPKG_TEST_CLI', PROJECT/'target/release/gamepkg'))
 with tempfile.TemporaryDirectory(prefix='gamepkg-special-files-') as directory:
  root=Path(directory);source=root/'source';shutil.copytree(PROJECT/'examples/minimal',source)
  manifest=source/'manifest.toml'
@@ -35,7 +35,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-special-files-') as directory:
  linked_rom=root/'linked-rom';linked_rom.symlink_to(rom)
  run('run',game,'--frames','1','--rom',linked_rom)
  oversized=root/'large-rom'
- with oversized.open('wb') as file:file.truncate(64*1024*1024+1)
+ with oversized.open('wb') as file:file.truncate(2*1024*1024*1024)
  run('run',game,'--frames','1','--rom',oversized,good=False)
  with cache.open('wb') as file:file.truncate(32*1024*1024+1)
  run('run',game,'--frames','1','--rom',rom,good=False);cache.write_bytes(original)

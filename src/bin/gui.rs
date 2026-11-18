@@ -66,6 +66,14 @@ fn main() -> eframe::Result {
         let launch = || -> anyhow::Result<bool> {
             let root = gamepkg::registry::default_root()?;
             let manifest = gamepkg::registry::installed_manifest(&root, id)?;
+            if manifest.uses_service_runtime() {
+                anyhow::ensure!(
+                    args.target.as_deref() != Some("wasm"),
+                    "native service games require native Play"
+                );
+                gamepkg::native::play_services(&root, id, &[], &settings, args.launch)?;
+                return Ok(true);
+            }
             #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
             if manifest.native_tick && args.target.as_deref() != Some("wasm") {
                 gamepkg::native::play_tick(&root, id, &settings, args.launch, false)?;

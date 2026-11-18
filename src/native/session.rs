@@ -59,7 +59,7 @@ pub(crate) struct Session {
     package: crate::archive::Package,
     asset_image: crate::drawing::image::Cache,
     manifest: crate::manifest::Manifest,
-    roms: Vec<Vec<u8>>,
+    roms: crate::files::RomSet,
     save: Option<crate::saves::Save>,
     engine_data: Option<Vec<u8>>,
     video: Option<crate::manifest::ZeldaVideo>,
@@ -85,7 +85,7 @@ impl Session {
         digest: &str,
         package: crate::archive::Package,
         manifest: crate::manifest::Manifest,
-        roms: Vec<Vec<u8>>,
+        roms: crate::files::RomSet,
         settings: &crate::settings::Settings,
         shader_count: usize,
     ) -> Result<Self> {
@@ -482,13 +482,22 @@ impl Session {
                 return Ok(v);
             }
             2 => return Ok(number(Some(self.roms.len()))),
-            3 => return Ok(number(self.roms.get(n(b, 0)? as usize).map(Vec::len))),
+            3 => {
+                return Ok(number(
+                    self.roms
+                        .size(n(b, 0)? as usize)
+                        .and_then(|size| usize::try_from(size).ok()),
+                ))
+            }
             4 => {
-                return bytes(
-                    self.roms.get(n(b, 0)? as usize).context("unknown ROM")?,
-                    n(b, 4)? as usize,
-                    n(b, 8)? as usize,
-                )
+                let data = self
+                    .roms
+                    .read(n(b, 0)? as usize, u64::from(n(b, 4)?), n(b, 8)? as usize)
+                    .context("invalid ROM chunk or failed read")?;
+                let mut response = Vec::with_capacity(1 + data.len());
+                response.push(0);
+                response.extend(data);
+                return Ok(response);
             }
             5 => return Ok(number(self.save.as_ref().map(|s| s.bytes.len()))),
             6 => {
@@ -658,11 +667,12 @@ impl Session {
             }
             19 => {
                 if self.engine_data.is_none() {
-                    let data = self.roms.first().context("engine ROM missing")?;
+                    let roms = self.roms.snapshots().context("engine ROM missing")?;
+                    let data = roms.first().context("engine ROM missing")?;
                     self.engine_data = Some(match self.manifest.builtin_engine.as_deref() {
                         Some(crate::doom::PROFILE) => {
                             crate::doom::validate_wad(data)?;
-                            crate::doom::validate_patch_set(data.len(), &self.roms[1..])?;
+                            crate::doom::validate_patch_set(data.len(), &roms[1..])?;
                             data.clone()
                         }
                         Some(crate::zelda3::PROFILE) => crate::zelda3_rom::decode(data)?,
