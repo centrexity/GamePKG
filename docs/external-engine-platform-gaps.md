@@ -1,5 +1,9 @@
 # External engine platform gaps
 
+> Historical OpenCE review. GamePKG has retired the external-engine build,
+> launch, and legacy C host paths described below. For new ports, use the
+> [game-owned compatibility layer and audited build](PORT_SERVICES.md#process-ownership-for-native-ports).
+
 Audit of the OpenCE profile (`engines/halo/engine.toml`, package `ports/halo`) against the host. The same host functions serve Linux and Windows on x86_64 and i686. Width-sensitive values in the C ABI are `uint32_t`, `int32_t`, and `uint64_t`. The header has no OS branch.
 
 The host does not name this engine in Rust. `build.rs` embeds every `engines/*/engine.toml` and its `patches/*.patch` files. `src/external_engine` checks out the pinned commit and applies those patches. A test walks `src/**/*.rs` and rejects engine-specific tokens. The catalog record and `ports/halo/manifest.toml` are data: the manifest repeats the layouts and the memory numbers, and it cannot supply a compiler command.
