@@ -1,14 +1,35 @@
 """Keep GUI tools on the caller's private display and worker limits."""
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
 
-from gui_test_support import click_text, game_window
+from gui_test_support import click_text, game_window, stop_process
 from types import SimpleNamespace
 import re
 
 
 class GuiToolEnvironmentTest(unittest.TestCase):
+    def test_shutdown_reaps_a_process_that_ignores_termination(self):
+        with patch('gui_test_support.subprocess') as tools:
+            tools.TimeoutExpired = subprocess.TimeoutExpired
+            process = tools.Popen.return_value
+            process.poll.return_value = None
+            process.wait.side_effect = [subprocess.TimeoutExpired('fixture', .1), -9]
+            stop_process(process, timeout=.1)
+            process.terminate.assert_called_once_with()
+            process.kill.assert_called_once_with()
+            self.assertEqual(process.wait.call_count, 2)
+
+    def test_shutdown_reaps_an_already_exited_process(self):
+        with patch('gui_test_support.subprocess') as tools:
+            process = tools.Popen.return_value
+            process.poll.return_value = 0
+            stop_process(process)
+            process.terminate.assert_not_called()
+            process.kill.assert_not_called()
+            process.wait.assert_called_once_with(timeout=10)
+
     def test_ocr_and_display_tools_receive_the_callers_environment(self):
         env = {'DISPLAY': ':97', 'OMP_THREAD_LIMIT': '1',
                'XDG_CACHE_HOME': '/private-test-cache'}

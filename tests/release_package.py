@@ -9,7 +9,7 @@ import tarfile
 import tempfile
 import time
 import tomllib
-from gui_test_support import start_display
+from gui_test_support import start_display, stop_process
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('archive', type=Path)
@@ -68,11 +68,17 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-release-test-') as directory:
         run('run',game_id,'--game-data',args.game_data.resolve(),'--frames','3')
         assert 'compiled game verified' in run('integrity-check',game_id)
     display = start_display(env)
-    app = subprocess.Popen([str(distribution / 'bin' / 'gamepkg-gui'), '--play', game_id], cwd=distribution, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    log_path = root / 'desktop.log'
+    app = None
     try:
+        with log_path.open('wb') as log:
+            app = subprocess.Popen(
+                [str(distribution / 'bin' / 'gamepkg-gui'), '--play', game_id],
+                cwd=distribution, env=env, stdout=log, stderr=subprocess.STDOUT,
+            )
         for _ in range(100):
             if app.poll() is not None:
-                raise RuntimeError(app.stderr.read().decode())
+                raise RuntimeError(log_path.read_text(errors='replace'))
             window = subprocess.run(['xdotool', 'search', '--onlyvisible', '--name', r'^(GamePKG [0-9]+[.][0-9]+[.][0-9]+([-+][A-Za-z0-9.-]+)?|com\..*)$'], env=env, capture_output=True, text=True)
             if window.returncode == 0:
                 break
@@ -96,6 +102,9 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-release-test-') as directory:
         target.send_event(protocol.event.ClientMessage(window=target,client_type=connection.intern_atom('WM_PROTOCOLS'),data=(32,[connection.intern_atom('WM_DELETE_WINDOW'),0,0,0,0])),event_mask=0)
         connection.flush();assert app.wait(timeout=15)==0;connection.close()
     finally:
-        if app.poll() is None:app.terminate();app.wait(timeout=10)
-        display.terminate(); display.wait(timeout=10)
+        try:
+            if app is not None:
+                stop_process(app)
+        finally:
+            stop_process(display)
 print('Distribution passed: checksums, dependency sources, extracted CLI, bundled dependency game build/play, and actual desktop gameplay.')

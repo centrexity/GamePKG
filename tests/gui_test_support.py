@@ -5,6 +5,17 @@ import subprocess
 import time
 import threading
 
+def stop_process(process, timeout=10):
+    """Reap an owned test process whose output is redirected or already drained."""
+    if process.poll() is None:
+        process.terminate()
+    try:
+        process.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=timeout)
+
+
 def start_display(env, width=1024, height=900, *, local_only=False, startup_timeout=30):
     reader, writer = os.pipe()
     process = None
@@ -68,13 +79,7 @@ def start_display(env, width=1024, height=900, *, local_only=False, startup_time
         raise RuntimeError('Xvfb did not accept a client connection before its startup deadline')
     except BaseException as error:
         if process is not None:
-            if process.poll() is None:
-                process.terminate()
-            try:
-                process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait(timeout=5)
+            stop_process(process, timeout=5)
         if collector is not None:
             collector.join(timeout=1)
         if isinstance(error,(KeyboardInterrupt,SystemExit)):
