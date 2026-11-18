@@ -134,8 +134,8 @@ pub(super) fn linker(engine: &Engine) -> Result<Linker<Data>> {
                 .data()
                 .rom
                 .as_ref()
-                .and_then(|v| v.get(index as usize))
-                .map(|v| v.len() as u32),))
+                .and_then(|v| v.size(index as usize))
+                .and_then(|size| u32::try_from(size).ok()),))
         },
     )?;
     host.func_wrap(
@@ -144,16 +144,11 @@ pub(super) fn linker(engine: &Engine) -> Result<Linker<Data>> {
             if length > 65536 {
                 return Ok((None::<Vec<u8>>,));
             }
-            Ok((chunk(
-                store
-                    .data()
-                    .rom
-                    .as_ref()
-                    .and_then(|v| v.get(index as usize))
-                    .map(Vec::as_slice),
-                offset,
-                length,
-            ),))
+            Ok((store
+                .data()
+                .rom
+                .as_ref()
+                .and_then(|rom| rom.read(index as usize, u64::from(offset), length as usize)),))
         },
     )?;
     host.func_wrap("rom-size", |store: StoreContextMut<'_, Data>, (): ()| {
@@ -161,8 +156,8 @@ pub(super) fn linker(engine: &Engine) -> Result<Linker<Data>> {
             .data()
             .rom
             .as_ref()
-            .and_then(|v| v.first())
-            .map(|v| v.len() as u32),))
+            .and_then(|v| v.size(0))
+            .and_then(|size| u32::try_from(size).ok()),))
     })?;
     host.func_wrap("save-size", |store: StoreContextMut<'_, Data>, (): ()| {
         Ok((store.data().save.as_ref().map(|v| v.bytes.len() as u32),))
@@ -173,16 +168,11 @@ pub(super) fn linker(engine: &Engine) -> Result<Linker<Data>> {
             if length > 65536 {
                 return Ok((None::<Vec<u8>>,));
             }
-            Ok((chunk(
-                store
-                    .data()
-                    .rom
-                    .as_ref()
-                    .and_then(|v| v.first())
-                    .map(Vec::as_slice),
-                offset,
-                length,
-            ),))
+            Ok((store
+                .data()
+                .rom
+                .as_ref()
+                .and_then(|rom| rom.read(0, u64::from(offset), length as usize)),))
         },
     )?;
     host.func_wrap(

@@ -57,6 +57,18 @@ impl App {
         if !self.built.contains(&m.id) {
             blockers.push("Build this game first. If you already built it, recheck readiness or rebuild if the cached build is missing or invalid.".into());
         }
+        if m.uses_service_runtime() {
+            let required = m.limits.hard_memory_bytes.div_ceil(1048576);
+            if self
+                .applied_settings
+                .as_ref()
+                .is_some_and(|settings| settings.memory_ceiling_mib < required)
+            {
+                blockers.push(format!(
+                    "Increase the memory ceiling to at least {required} MiB in Settings."
+                ));
+            }
+        }
         if m.builtin_engine.as_deref() == Some(crate::takedawn::PROFILE)
             && self
                 .applied_settings
@@ -309,7 +321,7 @@ impl App {
                     if ui.add_enabled(!reviewing&&ready&&self.result.is_none(),super::theme::primary("Play")).clicked(){self.launch_selected(id.clone(),true);}
                     if ui.add_enabled(crate::native::build_supported(&m)&&!reviewing&&self.result.is_none(),egui::Button::new(if built{"Rebuild"}else{"Build"}).min_size(egui::vec2(100.0,36.0))).clicked(){let id=id.clone();self.begin_work(move||{crate::native::compile(&crate::registry::default_root()?,&id)?;Ok(Work::NativeBuilt(id))});if m.builtin_engine.as_deref()==Some(crate::takedawn::PROFILE){self.status="Building this game for your computer. The first build can take an hour or more. Your ISO is not copied.".into();}}
                     if ui.add_enabled(!reviewing&&self.result.is_none()&&m.update_url.is_some(),egui::Button::new("Check for updates")).clicked(){let id=id.clone();self.begin_work(move||match crate::registry::check_update(&crate::registry::default_root()?,&id)?{Some((m,file))=>Ok(Work::Update(m,file)),None=>Ok(Work::Message("This game is up to date.".into()))});}
-                    if ui.add_enabled(crate::build_policy::supported(m.builtin_engine.as_deref()) && !matches!(m.builtin_engine.as_deref(),Some(crate::cube2::PROFILE)|Some(crate::takedawn::PROFILE))&&!reviewing&&self.result.is_none(),egui::Button::new("Build Wasm")).clicked(){let id=id.clone();self.begin_work(move||{crate::build::compile(&crate::registry::default_root()?,&id)?;Ok(Work::Message("Wasm build complete. Native build kept separately.".into()))});}
+                    if ui.add_enabled(!m.uses_service_runtime() && crate::build_policy::supported(m.builtin_engine.as_deref()) && !matches!(m.builtin_engine.as_deref(),Some(crate::cube2::PROFILE)|Some(crate::takedawn::PROFILE))&&!reviewing&&self.result.is_none(),egui::Button::new("Build Wasm")).clicked(){let id=id.clone();self.begin_work(move||{crate::build::compile(&crate::registry::default_root()?,&id)?;Ok(Work::Message("Wasm build complete. Native build kept separately.".into()))});}
                     if ui.add_enabled(!reviewing&&wasm_ready&&self.result.is_none(),egui::Button::new("Play Wasm")).clicked(){self.launch_selected(id.clone(),false);}
                     ui.add_enabled_ui(!reviewing && self.result.is_none() && cfg!(any(target_os="linux", target_os="windows")), |ui| {
                         ui.menu_button("Add to Steam", |ui| {

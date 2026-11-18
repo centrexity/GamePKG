@@ -784,6 +784,31 @@ pub fn cursor_visible(enabled: bool) -> std::result::Result<(), i32> {
 pub fn cursor_locked(enabled: bool) -> std::result::Result<(), i32> {
     window(2, u32::from(enabled))
 }
+/// Physical pixels and current flags for the game process's window.
+pub struct WindowState {
+    pub width: u32,
+    pub height: u32,
+    pub fullscreen: bool,
+    pub focused: bool,
+    pub closed: bool,
+}
+pub fn window_state() -> std::result::Result<WindowState, i32> {
+    let mut reply = [0; 12];
+    if call(11, &[], &mut reply)? != reply.len() {
+        return Err(-3);
+    }
+    let flags = u32_at(&reply, 8);
+    if flags & !7 != 0 {
+        return Err(-3);
+    }
+    Ok(WindowState {
+        width: u32_at(&reply, 0),
+        height: u32_at(&reply, 4),
+        fullscreen: flags & 1 != 0,
+        focused: flags & 2 != 0,
+        closed: flags & 4 != 0,
+    })
+}
 fn window(command: u32, value: u32) -> std::result::Result<(), i32> {
     call(
         10,

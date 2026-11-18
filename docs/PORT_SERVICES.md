@@ -661,6 +661,31 @@ are 1 (2D) or 6 (square cubemap), with faces +X/-X/+Y/-Y/+Z/-Z. Mips must fit th
 complete dimension chain. Cubemap face/mip uploads are independent and bounded.
 All resources require an explicit host-installed native pipeline service.
 
+A source package using `entry_world = "game-native-v1"` can select the
+signed `native_graphics = "vertex-color-v1"` profile. Declare one vertex
+and one fragment entry under `[[shaders]]`, with `.slang` sources.
+GamePKG compiles both stages with the confined Slang toolchain, validates
+the result and installs pipeline 0 with the shared compatibility layer.
+Game source calls `buffer_create` and `draw_indexed` or `target_pass`.
+The shader and compiler identities are included in the build receipt.
+
+Pipeline 0 accepts a 32-byte vertex with float4 position at location 0
+and float4 color at location 1, encoded little-endian. It uses a 64-byte
+uniform buffer at group 0 binding 0, u32 triangle indices, one sample,
+depth testing with LessEqual and depth writes enabled. The profile has no
+texture slots. The native worker issues draws using opaque resource IDs.
+
+The ordinary shared native builder and launcher currently run on the Linux
+x64 desktop. The Slang source and indexed draw protocol use no platform
+bindings. The Windows launcher for these general packages remains open.
+
+The ordinary shared native launcher passes one selected regular ROM as a
+read-only file in place, up to 1 TiB. Use the ROM grant ID and `file_read`
+with 64-bit offsets. Its signed `limits.hard_memory_bytes` can be up to
+4 GiB. The user's memory ceiling must cover that amount before launch,
+and Linux enforces the signed cap across the game process and compatibility
+layer.
+
 Each indexed draw is pipeline index u32, vertex/index/uniform IDs u64, first
 index/count u32, base vertex i32, scissor x/y/width/height u32, texture slot count
 u32, then texture ID u64 and sampler flags u32 for each slot. Count must describe

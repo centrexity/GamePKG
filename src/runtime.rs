@@ -29,7 +29,7 @@ struct Data {
     limits: StoreLimits,
     package: Option<crate::archive::Package>,
     asset_image: crate::drawing::image::Cache,
-    rom: Option<Vec<Vec<u8>>>,
+    rom: Option<crate::files::RomSet>,
     save: Option<crate::saves::Save>,
     frame: crate::drawing::Frame,
     audio: Vec<i16>,
@@ -87,7 +87,7 @@ impl Game {
         manifest: &Manifest,
         settings: &crate::settings::Settings,
         package: Option<crate::archive::Package>,
-        rom: Option<Vec<Vec<u8>>>,
+        rom: Option<crate::files::RomSet>,
         save: Option<crate::saves::Save>,
     ) -> Result<Self> {
         crate::build_policy::require(manifest.builtin_engine.as_deref())?;
@@ -107,7 +107,7 @@ impl Game {
             bail!("unsupported runtime profile");
         }
         manifest.ensure_engine_compatible()?;
-        if manifest.required_rom_count() != rom.as_ref().map_or(0, Vec::len) {
+        if manifest.required_rom_count() != rom.as_ref().map_or(0, crate::files::RomSet::len) {
             bail!("ROM delivery requires every declared file selected by you");
         }
         if !manifest.requires_rom && rom.is_some() {
@@ -679,8 +679,9 @@ impl Game {
                         .data()
                         .rom
                         .as_ref()
-                        .and_then(|r| r.get(index as usize))
-                        .map_or(-1, |r| r.len() as i32)
+                        .and_then(|r| r.size(index as usize))
+                        .and_then(|size| i32::try_from(size).ok())
+                        .unwrap_or(-1)
                 },
             )?;
 
@@ -805,8 +806,9 @@ impl Game {
                     .data()
                     .rom
                     .as_ref()
-                    .and_then(|r| r.first())
-                    .map_or(-1, |r| r.len() as i32)
+                    .and_then(|r| r.size(0))
+                    .and_then(|size| i32::try_from(size).ok())
+                    .unwrap_or(-1)
             })?;
             linker.func_wrap("gamepkg", "network_call", network_call)?;
             let instance = linker.instantiate(&mut store, module.as_ref().unwrap())?;
@@ -897,6 +899,10 @@ impl Game {
         let manifest = crate::verify::verify_embedded(&mut package)?;
         crate::build_policy::require(manifest.builtin_engine.as_deref())?;
         anyhow::ensure!(
+            !manifest.uses_service_runtime(),
+            "this game runs separately through the native Play action or gamepkg run"
+        );
+        anyhow::ensure!(
             manifest.builtin_engine.as_deref() != Some(crate::takedawn::PROFILE),
             "Takedawn runs in its own native window; use the desktop Play action or gamepkg run"
         );
@@ -963,26 +969,6 @@ impl Game {
                 rom_paths.len()
             );
         }
-        let mut snapshots = Vec::new();
-        let mut total = 0usize;
-        for (index, path) in rom_paths.iter().enumerate() {
-            let title = manifest
-                .roms
-                .get(index)
-                .map(|r| r.title.as_str())
-                .unwrap_or("Your ROM file");
-            let bytes = crate::files::read_regular(path, 64 * 1024 * 1024, true)
-                .with_context(||format!("unable to open selected ROM {} ({title}); ROM must be 1 byte to 64 MiB and a regular file",index+1))?;
-            if bytes.is_empty() || bytes.len() > 64 * 1024 * 1024 {
-                bail!("ROM {} ({title}) must be 1 byte to 64 MiB", index + 1);
-            }
-            total = total.saturating_add(bytes.len());
-            if total > 128 * 1024 * 1024 {
-                bail!("combined ROM snapshots exceed 128 MiB");
-            }
-            snapshots.push(bytes);
-        }
-        let rom = (!snapshots.is_empty()).then_some(snapshots);
         let settings = match configured {
             Some(settings) => settings.clone(),
             None => crate::settings::load()?,
@@ -992,6 +978,20 @@ impl Game {
                 .symlink_metadata()
                 .is_ok(),
         );
+        let capacity = if !native && manifest.runtime_profile == "component-v1" {
+            u64::from(u32::MAX)
+        } else {
+            i32::MAX as u64
+        };
+        let rom = if rom_paths.is_empty() {
+            None
+        } else {
+            Some(crate::files::RomSet::open(
+                rom_paths,
+                capacity,
+                manifest.builtin_engine.is_some(),
+            )?)
+        };
         if native {
             #[cfg(not(any(target_os = "linux", windows)))]
             bail!("native game isolation is not available on this platform");
@@ -1082,6 +1082,7 @@ impl Game {
             let rom = data
                 .rom
                 .as_ref()
+                .and_then(crate::files::RomSet::snapshots)
                 .and_then(|roms| roms.first())
                 .context("select your Zelda3 ROM")?;
             let save = data.save.as_ref().map(|s| s.bytes.as_slice());
@@ -1104,10 +1105,15 @@ impl Game {
             let wad = data
                 .rom
                 .as_ref()
+                .and_then(crate::files::RomSet::snapshots)
                 .and_then(|roms| roms.first())
                 .context("select your DOOM WAD")?;
             let save = data.save.as_ref().map(|s| s.bytes.as_slice());
-            let patches = &data.rom.as_ref().unwrap()[1..];
+            let patches = &data
+                .rom
+                .as_ref()
+                .and_then(crate::files::RomSet::snapshots)
+                .context("select your DOOM WAD")?[1..];
             let doom = crate::doom::Doom::new(
                 game.store.as_ref().unwrap().engine(),
                 &bytes,
@@ -1875,12 +1881,10 @@ fn rom_read_at(
         .data()
         .rom
         .as_ref()
-        .and_then(|r| r.get(index as usize))
-        .and_then(|r| r.get(offset as usize..))
+        .and_then(|r| r.read(index as usize, offset as u64, length as usize))
     else {
         return -1;
     };
-    let bytes = bytes[..bytes.len().min(length as usize)].to_vec();
     if memory.write(&mut caller, output as usize, &bytes).is_err() {
         return -1;
     }
@@ -2243,6 +2247,42 @@ mod adversarial_assets_tests {
             env!("CARGO_MANIFEST_DIR"),
             "/tests/support/path_cases.rs"
         ));
+    }
+
+    #[test]
+    fn core_guest_can_read_a_selected_disc_above_the_old_snapshot_limit() {
+        use std::io::{Seek, SeekFrom, Write};
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("disc.iso");
+        let offset = 96 * 1024 * 1024;
+        let mut disc = std::fs::File::create(&path).unwrap();
+        disc.seek(SeekFrom::Start(offset)).unwrap();
+        disc.write_all(b"ISO!").unwrap();
+        drop(disc);
+        let rom = crate::files::RomSet::open(&[path], i32::MAX as u64, false).unwrap();
+        let mut manifest =
+            Manifest::parse(include_bytes!("../examples/minimal/manifest.toml")).unwrap();
+        manifest.requires_rom = true;
+        let wasm = wat::parse_str(format!(
+            r#"(module
+            (import "gamepkg" "rom_size" (func $size (result i32)))
+            (import "gamepkg" "rom_read" (func $read (param i32 i32 i32) (result i32)))
+            (memory (export "memory") 1)
+            (func (export "gamepkg_tick") (param i32 i64) (result i64)
+              call $size i32.const {} i32.ne if unreachable end
+              i32.const {offset} i32.const 0 i32.const 8 call $read
+              i32.const 4 i32.ne if unreachable end
+              i32.const 0 i32.load i64.extend_i32_u))"#,
+            offset + 4
+        ))
+        .unwrap();
+        let mut game =
+            Game::with_package(&wasm, &manifest, &Default::default(), None, Some(rom), None)
+                .unwrap();
+        assert_eq!(
+            game.step(0).unwrap(),
+            u64::from(u32::from_le_bytes(*b"ISO!"))
+        );
     }
 
     #[test]

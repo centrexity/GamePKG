@@ -78,6 +78,9 @@ pub fn is_built(root: &Path, id: &str) -> Result<bool> {
         return Ok(false);
     };
     let manifest = registry::installed_manifest(root, id)?;
+    if manifest.uses_service_runtime() {
+        return Ok(false);
+    }
     if matches!(
         manifest.builtin_engine.as_deref(),
         Some(crate::cube2::PROFILE) | Some(crate::takedawn::PROFILE)
@@ -177,6 +180,9 @@ pub fn compile(root: &Path, id: &str) -> Result<()> {
             .as_deref(),
     )?;
 
+    if registry::installed_manifest(root, id)?.uses_service_runtime() {
+        bail!("native service games require the native Build action");
+    }
     if registry::installed_manifest(root, id)?
         .builtin_engine
         .as_deref()
@@ -235,6 +241,9 @@ pub(crate) fn compile_with_settings(
     snapshot.flush()?;
     let mut pkg = Package::open(snapshot.path())?;
     let manifest = verify_embedded(&mut pkg)?;
+    if manifest.uses_service_runtime() {
+        bail!("native service games require the native Build action");
+    }
     crate::build_policy::require(manifest.builtin_engine.as_deref())?;
     pkg.resolve_shared_assets(root)?;
     let cargo: toml::Value = toml::from_str(std::str::from_utf8(&pkg.read("source/Cargo.toml")?)?)?;
