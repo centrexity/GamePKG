@@ -64,8 +64,9 @@ fn reserved(symbol: &str) -> bool {
         )
 }
 
-// Closed compiler ABI vocabulary for already source-checked Rust collections
-// and implicit bounds/arithmetic traps. Never accept a crate/namespace prefix.
+// Closed compiler ABI vocabulary for already source-checked Rust collections,
+// Unicode, and implicit bounds/arithmetic traps. These helpers operate on
+// in-memory values only. Never accept a crate or namespace prefix.
 // The final builder pins panic=abort and the exact compiler/sysroot identity.
 fn rust_runtime(symbol: &str) -> bool {
     let symbol = symbol
@@ -85,6 +86,18 @@ fn rust_runtime(symbol: &str) -> bool {
             | "__rustc::__rust_alloc_error_handler"
             | "alloc::raw_vec::handle_error"
             | "alloc::alloc::handle_alloc_error"
+            | "alloc::vec::Vec<T,A>::insert::assert_failed"
+            | "alloc::vec::Vec<T,A>::remove::assert_failed"
+            | "alloc::sync::arcinner_layout_for_value_layout"
+            | "<alloc::string::String as core::clone::Clone>::clone"
+            | "core::char::methods::encode_utf8_raw::do_panic::runtime"
+            | "core::slice::<impl [T]>::copy_from_slice::len_mismatch_fail"
+            | "core::slice::sort::shared::smallsort::panic_on_ord_violation"
+            | "core::slice::sort::stable::drift::sqrt_approx"
+            | "core::slice::memchr::memchr_aligned"
+            | "core::slice::memchr::memrchr"
+            | "core::unicode::unicode_data::white_space::WHITESPACE_MAP"
+            | "core::unicode::unicode_data::cc::lookup"
             | "core::panicking::panic_bounds_check"
             | "core::slice::index::slice_end_index_len_fail"
             | "core::slice::index::slice_start_index_len_fail"
@@ -311,6 +324,8 @@ const RUNTIME: &[&str] = &[
     "sin",
     "cosf",
     "cos",
+    "sincos",
+    "sincosf",
     "tanf",
     "tan",
     "asinf",

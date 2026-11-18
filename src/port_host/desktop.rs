@@ -17,6 +17,9 @@ pub struct Desktop {
     pending: Option<Frame>,
     current: Option<Frame>,
     textures: BTreeMap<(usize, bool), (Weak<Image>, egui::TextureHandle)>,
+    straight_cache: crate::gui::linear_sprites::Cache,
+    straight_sources: BTreeMap<usize, (Weak<Image>, Arc<crate::drawing::image::Image>)>,
+    recorded: crate::audio_effects::Runtime,
     audio: Option<crate::audio::Player>,
     streams: Option<super::audio_streams::Mixer>,
     microphone_allowed: bool,
@@ -71,6 +74,9 @@ impl Desktop {
             pending: None,
             current: None,
             textures: BTreeMap::new(),
+            recorded: Default::default(),
+            straight_cache: Default::default(),
+            straight_sources: BTreeMap::new(),
             audio,
             streams,
             microphone_allowed: false,
@@ -146,6 +152,31 @@ impl Desktop {
             });
         Ok(())
     }
+    pub(super) fn install_recorded_audio(
+        &mut self,
+        package: &crate::archive::Package,
+        manifest: &crate::manifest::Manifest,
+    ) -> anyhow::Result<()> {
+        let Some(output) = self.audio.as_ref() else {
+            return Ok(());
+        };
+        let (mut recorded, _) = crate::audio_effects::Runtime::new(
+            Some(package),
+            manifest.limits.effects_memory_bytes,
+            manifest.limits.music_memory_bytes,
+            manifest.limits.hard_memory_bytes,
+            manifest.permissions.audio,
+        )?;
+        if recorded.enabled() {
+            anyhow::ensure!(
+                output.original_source(recorded.playback()?),
+                "recorded audio output is unavailable"
+            );
+            recorded.attach(output.effect_publisher());
+        }
+        self.recorded = recorded;
+        Ok(())
+    }
     pub fn window_state(&self) -> WindowState {
         self.context.input(|i| {
             let v = i.viewport();
@@ -161,6 +192,9 @@ impl Desktop {
                 closed: v.close_requested(),
             }
         })
+    }
+    pub(super) fn has_pending_frame(&self) -> bool {
+        self.pending.is_some() || self.pending_native.is_some()
     }
     /// Paint inside a margin-free game viewport. This adds no menus/controls.
     /// Returns whether a new game frame was consumed in this redraw.
@@ -206,14 +240,67 @@ impl Desktop {
         );
         self.textures
             .retain(|_, (image, _)| image.strong_count() > 0);
+        self.straight_sources
+            .retain(|_, (image, _)| image.strong_count() > 0);
+        let mut straight_count = 0;
         for draw in &frame.draws {
             let [x, y, w, h] = draw.rect;
             let rect = egui::Rect::from_min_size(
                 origin + egui::vec2(x, y) / scale,
                 egui::vec2(w, h) / scale,
             );
-            let image = &draw.image;
-            if let Some(shader) = draw.shader {
+            let painter = match draw.clip {
+                Some([x, y, w, h]) => ui.painter().with_clip_rect(egui::Rect::from_min_size(
+                    origin + egui::vec2(x, y) / scale,
+                    egui::vec2(w, h) / scale,
+                )),
+                None => ui.painter().clone(),
+            };
+            if let Some(color) = draw.solid {
+                let [r, g, b, a] = color.to_be_bytes();
+                let color = egui::Color32::from_rgba_unmultiplied(r, g, b, a);
+                if draw.circle {
+                    painter.circle_filled(rect.center(), rect.width() / 2.0, color);
+                } else {
+                    painter.rect_filled(rect, 0.0, color);
+                }
+                continue;
+            }
+            let Some(image) = &draw.image else {
+                continue;
+            };
+            if draw.circle {
+                let c = &image.rgba;
+                painter.circle_filled(
+                    rect.center(),
+                    rect.width() / 2.0,
+                    egui::Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3]),
+                );
+            } else if draw.straight {
+                let key = Arc::as_ptr(image) as usize;
+                if let std::collections::btree_map::Entry::Vacant(entry) =
+                    self.straight_sources.entry(key)
+                {
+                    if let Some(source) =
+                        crate::drawing::image::Image::new(image.width, image.height, &image.rgba)
+                    {
+                        entry.insert((Arc::downgrade(image), Arc::new(source)));
+                    }
+                }
+                if let Some((_, source)) = self.straight_sources.get(&key) {
+                    if let Ok(callback) = self.straight_cache.callback(
+                        straight_count,
+                        (source, true),
+                        [x, y, w, h],
+                        (ui.max_rect(), scale),
+                        Some(&self.state),
+                        None,
+                    ) {
+                        painter.add(egui::Shape::Callback(callback));
+                        straight_count += 1;
+                    }
+                }
+            } else if let Some(shader) = draw.shader {
                 if let Some(callback) = self.renderer.callback_rgba_filtered(
                     rect,
                     shader as usize,
@@ -222,7 +309,7 @@ impl Desktop {
                     &image.rgba,
                     draw.linear,
                 ) {
-                    ui.painter().add(egui::Shape::Callback(callback));
+                    painter.add(egui::Shape::Callback(callback));
                 }
             } else {
                 let key = (Arc::as_ptr(image) as usize, draw.linear);
@@ -244,7 +331,7 @@ impl Desktop {
                         ),
                     )
                 });
-                ui.painter().image(
+                painter.image(
                     texture.1.id(),
                     rect,
                     egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
@@ -252,6 +339,7 @@ impl Desktop {
                 );
             }
         }
+        self.straight_cache.finish(straight_count);
         fresh_frame
     }
     fn clear_native(&mut self) {
@@ -266,6 +354,18 @@ impl Drop for Desktop {
     }
 }
 impl Backend for Desktop {
+    fn tick_begin(&mut self) -> Result<()> {
+        self.recorded.begin().map_err(|_| Error::Failed)
+    }
+    fn tick_finish(&mut self) -> Result<()> {
+        self.recorded.finish(true).map_err(|_| Error::Failed)
+    }
+    fn tick_audio(&mut self, operation: u32, name: &str, value: u32) -> bool {
+        self.recorded.call(operation, name, value)
+    }
+    fn tick_homepage(&mut self, url: String) {
+        self.context.open_url(egui::OpenUrl::new_tab(url));
+    }
     fn revoke_capture(&mut self) {
         self.microphone_allowed = false;
         self.capture.take();

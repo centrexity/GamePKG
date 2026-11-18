@@ -6,6 +6,7 @@ mod editor;
 #[path = "../ports/arkanoo/source/src/save_io.rs"]
 mod save_io;
 mod gamepkg {
+    include!("support/port_text.rs");
     use std::cell::RefCell;
     #[derive(Default)]
     pub struct Host {

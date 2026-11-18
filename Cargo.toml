@@ -91,3 +91,8 @@ required-features = ["gui"]
 name = "native-service-runtime"
 path = "examples/maintainer/native_service_runtime.rs"
 required-features = ["gui"]
+
+[[example]]
+name = "native-tick-game"
+path = "examples/maintainer/native_tick_game.rs"
+required-features = ["gui"]

@@ -626,6 +626,7 @@ pub fn game_main() {
                 roms: vec![std::fs::File::open(&rom_path).unwrap()],
                 assets: None,
                 saves: Some(save),
+                ..Grants::default()
             },
             256 * 1024 * 1024,
             || {},

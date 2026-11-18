@@ -15,6 +15,30 @@ Record `port_host::build_identity()` in native build receipts alongside the host
 binary/compiler/target identities; it covers the service and generated binding
 sources so a changed SDK cannot reuse a stale source kit.
 
+## Native 2D tick games
+
+The Linux x64 maintainer runner links a dependency-free `game_tick(u32, u64)
+-> u64` into the same checked native compatibility runtime. The normal source
+scan runs before GamePKG supplies the 2D bindings and game-state helper. The
+separate game object audit runs before linking. For example:
+
+```sh
+cargo run --locked --features gui --example native-tick-game -- /path/to/2048 /path/to/local-test-library
+```
+
+Use a signed `.gamepkg` for a stable save identity. The runner signs a source
+directory with an ephemeral key for a local test. Add `--smoke` for a hidden
+first-frame check. This is a maintainer entry point. The app's standard Build
+and Play commands do not select this path yet.
+
+The adapter uses a 640 × 480 logical canvas scaled to fit the game window.
+It reads logical keyboard and controller input and uses the monotonic clock
+for frame pacing. Tick saves use a private capability and atomic replacement.
+The optional asset grant contains copies of the signed package's own assets.
+The launcher matches their source-kit identity to the executable receipt and
+mounts that snapshot read-only. PNG decoding stays in GamePKG and returns an
+opaque image handle.
+
 ## Process ownership for native ports
 
 Each native port runs as a separate process with its own game-only window.
@@ -2940,3 +2964,29 @@ retains 98. These are image/import diagnostics, not executed title gameplay.
 App SDK identity, installed binaries, pinned ports submodule and admission gates
 remain unchanged. The checked helper and image fixtures do not complete the
 full generated Rust, NV2A renderer/media or Linux/Windows launcher migration.
+
+### Native 2D tick games
+
+Signed engine-free core packages with `native_tick = true` use the normal
+native Build and Play actions on Linux x86-64. The package supplies a safe
+`game_tick(input: u32, state: u64) -> u64` and dependency-free game source.
+The game gets its own Vulkan window and process. The separately selected Wasm
+build remains available. This profile uses embedded assets and does not
+provide direct device access, networking, or ROMs.
+
+The generated SDK maps a 640×480 logical canvas into the game window. It
+provides solid shapes, clip/reset, nearest and linear image sampling, and
+encoded straight-alpha sampling. The runtime delivers focused input events
+in order, advances the monotonic tick clock, and stages window preferences
+and audio controls per tick. Fullscreen, resize previews, presentation mode,
+links and the file picker use trusted input when player authorization is
+required. The player can pick an import or export using a signed file policy.
+The launcher handles paths and transfers bounded contents over a private
+connection. Achievements refer to signed manifest indexes and are recorded
+in the library. Saves use an isolated quota and atomic replacement.
+
+Build verifies the signed kit, scans dependency-free source, injects the
+SDK, and audits game objects before the trusted link. The local cache
+authenticates the receipt and checks SDK, source kit, target and executable
+identities before Play. The game worker releases inherited descriptors and
+installs its syscall restrictions before entering game code.

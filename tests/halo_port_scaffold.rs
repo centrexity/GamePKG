@@ -320,7 +320,10 @@ fn signed_legacy_engine_is_recognized_but_cannot_build_or_play() {
     assert!(!gamepkg::native::play_supported(&manifest));
     assert!(!gamepkg::native::is_built(library.path(), &manifest.id).unwrap());
     let build = gamepkg::native::compile(library.path(), &manifest.id).unwrap_err();
-    assert!(build.to_string().contains("requires migration"), "{build:#}");
+    assert!(
+        build.to_string().contains("requires migration"),
+        "{build:#}"
+    );
     let play = gamepkg::runtime::Game::load(library.path(), &manifest.id)
         .err()
         .expect("legacy play must fail");

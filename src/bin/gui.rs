@@ -66,6 +66,11 @@ fn main() -> eframe::Result {
         let launch = || -> anyhow::Result<bool> {
             let root = gamepkg::registry::default_root()?;
             let manifest = gamepkg::registry::installed_manifest(&root, id)?;
+            #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+            if manifest.native_tick && args.target.as_deref() != Some("wasm") {
+                gamepkg::native::play_tick(&root, id, &settings, args.launch, false)?;
+                return Ok(true);
+            }
             if manifest.builtin_engine.as_deref() != Some(gamepkg::takedawn::PROFILE) {
                 anyhow::ensure!(
                     args.launch.is_empty(),

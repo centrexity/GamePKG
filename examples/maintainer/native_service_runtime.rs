@@ -68,6 +68,27 @@ fn main() -> anyhow::Result<()> {
         .map(|hash| (*hash).to_owned())
         .collect::<Vec<_>>();
     let mut grants = Grants::default();
+    if std::env::var("GAMEPKG_ASSET_GRANT").as_deref() == Ok("1") {
+        grants.assets = Some(cap_std::fs::Dir::open_ambient_dir(
+            "/run/gamepkg-assets",
+            cap_std::ambient_authority(),
+        )?);
+    }
+    if manifest.native_tick && std::path::Path::new("/run/gamepkg-audio").is_file() {
+        let mut package =
+            gamepkg::archive::Package::open(std::path::Path::new("/run/gamepkg-audio"))?;
+        gamepkg::verify::verify_embedded(&mut package)?;
+        ensure!(
+            hex::encode(gamepkg::verify::tree_hash(&mut package)?) == SOURCE_KIT,
+            "recorded audio differs from the audited source kit"
+        );
+        grants.recorded_audio = Some(package);
+    }
+    if manifest.native_tick && std::env::var("GAMEPKG_FILE_PICKER").as_deref() == Ok("1") {
+        grants.picker = Some(std::os::unix::net::UnixStream::from(
+            std::io::stdin().as_fd().try_clone_to_owned()?,
+        ));
+    }
     if let Some(quota) = std::env::var_os("GAMEPKG_SAVE_QUOTA") {
         let quota = quota
             .to_str()

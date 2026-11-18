@@ -108,6 +108,18 @@ impl Backend for WindowBackend {
         }
         Ok(())
     }
+    fn tick_begin(&mut self) -> ServiceResult<()> {
+        self.desktop.tick_begin()
+    }
+    fn tick_finish(&mut self) -> ServiceResult<()> {
+        self.desktop.tick_finish()
+    }
+    fn tick_audio(&mut self, operation: u32, name: &str, value: u32) -> bool {
+        self.desktop.tick_audio(operation, name, value)
+    }
+    fn tick_homepage(&mut self, url: String) {
+        self.desktop.tick_homepage(url);
+    }
     fn present(&mut self, frame: Frame) -> ServiceResult<()> {
         self.desktop.present(frame)
     }
@@ -237,6 +249,8 @@ struct Running {
     gui: egui_winit::State,
     input: super::winit_input::Provider,
     controllers: Option<Rc<RefCell<super::controllers::Provider>>>,
+    #[cfg(all(feature = "gui", target_os = "linux", target_arch = "x86_64"))]
+    picker: Option<super::tick_picker::Picker>,
 }
 #[derive(Debug, Default)]
 pub struct Report {
@@ -331,16 +345,19 @@ impl App {
             None,
             Some(state.device.limits().max_texture_dimension_2d as usize),
         );
-        let audio = if self.launch.manifest().permissions.audio {
-            Some(crate::audio::Player::new(if options.mute_audio {
-                0
-            } else {
-                options.volume
-            })?)
+        let audio = if self.launch.manifest().permissions.audio && !options.mute_audio {
+            Some(crate::audio::Player::new(options.volume)?)
         } else {
             None
         };
         let mut desktop = Desktop::new(context.clone(), &state, &[], audio)?;
+        if let Some(package) = self
+            .grants
+            .as_ref()
+            .and_then(|grants| grants.recorded_audio.as_ref())
+        {
+            desktop.install_recorded_audio(package, self.launch.manifest())?;
+        }
         desktop.configure_microphone(options.microphone_approved, 2 * 1024 * 1024);
         desktop.install_graphics(
             self.pipelines.take().unwrap(),
@@ -365,10 +382,16 @@ impl App {
         let wake = move || {
             let _ = proxy.send_event(());
         };
-        let grants = self
+        #[allow(unused_mut)]
+        let mut grants = self
             .grants
             .take()
             .context("window session already started")?;
+        #[cfg(all(feature = "gui", target_os = "linux", target_arch = "x86_64"))]
+        let picker = grants
+            .picker
+            .take()
+            .map(|socket| super::tick_picker::Picker::new(socket, self.launch.manifest()));
         let mut driver = match &mut self.launch {
             Launch::Pipe(artifact) => Driver::Pipe(Box::new(Owner::start(
                 artifact,
@@ -398,6 +421,12 @@ impl App {
         if let Driver::Pipe(owner) = &mut driver {
             connect_window(&mut owner.host)?;
         }
+        #[cfg(all(feature = "gui", target_os = "linux", target_arch = "x86_64"))]
+        if picker.is_some() {
+            if let Some(tick) = driver.host().tick.as_mut() {
+                tick.files.enable();
+            }
+        }
         Ok(Running {
             driver,
             window,
@@ -408,6 +437,8 @@ impl App {
             gui,
             input: Default::default(),
             controllers,
+            #[cfg(all(feature = "gui", target_os = "linux", target_arch = "x86_64"))]
+            picker,
         })
     }
     fn stop(&mut self, event_loop: &ActiveEventLoop, error: Option<anyhow::Error>) {
@@ -444,7 +475,34 @@ impl App {
             self.stop(event_loop, None);
             return;
         }
-        match running.driver.update() {
+        #[cfg(all(feature = "gui", target_os = "linux", target_arch = "x86_64"))]
+        if let Some(picker) = running.picker.as_mut() {
+            if let Some(tick) = running.driver.host().tick.as_mut() {
+                let proxy = self.proxy.clone();
+                if picker.tick(&mut tick.files, move || {
+                    let _ = proxy.send_event(());
+                }) {
+                    let _ = running
+                        .driver
+                        .host()
+                        .backend()
+                        .window(WindowCommand::CursorLocked(false));
+                    let _ = running
+                        .driver
+                        .host()
+                        .backend()
+                        .window(WindowCommand::CursorVisible(true));
+                }
+            }
+        }
+        let finished = running.driver.update();
+        if let Some(tick) = running.driver.host().tick.as_mut() {
+            for index in tick.take_achievements() {
+                // The isolated game worker has no descriptor for this stream.
+                println!("GamePKG achievement {index}");
+            }
+        }
+        match finished {
             Ok(false) => {}
             Ok(true) => self.stop(event_loop, None),
             Err(error) => self.stop(event_loop, Some(error)),
@@ -455,7 +513,15 @@ impl App {
         if size.width == 0 || size.height == 0 {
             return Ok(false);
         }
-        if running.config.width != size.width || running.config.height != size.height {
+        let mode = match running.driver.host().tick.as_ref().map(|tick| tick.vsync) {
+            Some(false) => wgpu::PresentMode::AutoNoVsync,
+            _ => wgpu::PresentMode::Fifo,
+        };
+        if running.config.width != size.width
+            || running.config.height != size.height
+            || running.config.present_mode != mode
+        {
+            running.config.present_mode = mode;
             running.config.width = size.width;
             running.config.height = size.height;
             running
@@ -558,8 +624,12 @@ impl ApplicationHandler<()> for App {
     }
     fn user_event(&mut self, event_loop: &ActiveEventLoop, _: ()) {
         self.service(event_loop);
-        if let Some(r) = &self.running {
-            r.window.request_redraw();
+        if let Some(running) = self.running.as_mut() {
+            if !self.launch.manifest().native_tick
+                || running.driver.host().backend().desktop.has_pending_frame()
+            {
+                running.window.request_redraw();
+            }
         }
     }
     fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {

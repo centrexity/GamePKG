@@ -4,6 +4,7 @@ mod ported {
 }
 thread_local! {static FAILED: std::cell::Cell<bool> = const {std::cell::Cell::new(false)};}
 mod gamepkg {
+    include!(env!("GAMEPKG_PORT_TEXT_RS"));
     pub fn asset_read(_: &str, _: u32, _: &mut [u8]) -> Option<u32> {
         None
     }

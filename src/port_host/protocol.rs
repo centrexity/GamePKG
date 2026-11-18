@@ -125,21 +125,7 @@ pub(super) fn dispatch<B: Backend>(
             if len != r.0.len() as u64 {
                 return Err(Error::Invalid);
             }
-            if host.images.len() >= MAX_IMAGES
-                || len as usize > MAX_IMAGE_BYTES.saturating_sub(host.image_bytes)
-            {
-                return Err(Error::Busy);
-            }
-            let id = identifier()?;
-            host.images.insert(
-                id,
-                Arc::new(Image {
-                    width,
-                    height,
-                    rgba: r.0.to_vec(),
-                }),
-            );
-            host.image_bytes += len as usize;
+            let id = retain_image(host, width, height, r.0)?;
             Ok(id.to_le_bytes().to_vec())
         }
         21 => {
@@ -149,18 +135,19 @@ pub(super) fn dispatch<B: Backend>(
             host.image_bytes -= image.rgba.len();
             Ok(Vec::new())
         }
-        22 => {
+        22 | 70 => {
             if host.window.closed {
                 return Err(Error::Denied);
             }
             let clear = r.u32()?;
             let count = r.u32()? as usize;
-            if count > 4096 || r.0.len() != count * 32 {
+            let stride = if op == 70 { 52 } else { 32 };
+            if count > 4096 || r.0.len() != count * stride {
                 return Err(Error::Invalid);
             }
             let mut draws = Vec::with_capacity(count);
             for _ in 0..count {
-                let image = host.images.get(&r.u64()?).ok_or(Error::Denied)?.clone();
+                let source = r.u64()?;
                 let rect = [r.float()?, r.float()?, r.float()?, r.float()?];
                 if rect.iter().any(|v| v.abs() > 65536.0) || rect[2] <= 0.0 || rect[3] <= 0.0 {
                     return Err(Error::Invalid);
@@ -170,17 +157,107 @@ pub(super) fn dispatch<B: Backend>(
                 if filter > 1 || (shader != u32::MAX && shader >= host.backend.shader_count()) {
                     return Err(Error::Invalid);
                 }
+                let (clip, flags) = if op == 70 {
+                    let flags = r.u32()?;
+                    let clip = [r.float()?, r.float()?, r.float()?, r.float()?];
+                    if flags & !15 != 0
+                        || clip.iter().any(|v| v.abs() > 65536.0)
+                        || clip[2] < 0.0
+                        || clip[3] < 0.0
+                        || (flags & 2 != 0 && rect[2] != rect[3])
+                        || (flags & 4 != 0 && (flags & 10 != 0 || filter != 1))
+                        || (flags & 14 != 0 && shader != u32::MAX)
+                    {
+                        return Err(Error::Invalid);
+                    }
+                    ((flags & 1 != 0).then_some(clip), flags)
+                } else {
+                    (None, 0)
+                };
+                let circle = flags & 2 != 0;
+                let straight = flags & 4 != 0;
+                let (image, solid) = if flags & 8 != 0 {
+                    if filter != 0 {
+                        return Err(Error::Invalid);
+                    }
+                    (
+                        None,
+                        Some(u32::try_from(source).map_err(|_| Error::Invalid)?),
+                    )
+                } else {
+                    let image = host.images.get(&source).ok_or(Error::Denied)?.clone();
+                    if circle && image.rgba.len() != 4 {
+                        return Err(Error::Invalid);
+                    }
+                    (Some(image), None)
+                };
                 draws.push(Draw {
                     image,
+                    solid,
                     rect,
                     linear: filter != 0,
+                    clip,
+                    circle,
+                    straight,
                     shader: (shader != u32::MAX).then_some(shader),
                 });
             }
             r.end()?;
             // Backend sees only a completely validated immutable frame.
             host.backend.present(Frame { clear, draws })?;
+            if op == 70 {
+                host.finish_tick()?;
+            }
             Ok(Vec::new())
+        }
+        71 => {
+            let operation = r.u32()?;
+            let value = r.u32()?;
+            r.end()?;
+            room(cap, 4)?;
+            let tick = host
+                .tick
+                .as_mut()
+                .filter(|tick| tick.active)
+                .ok_or(Error::Denied)?;
+            Ok(u32::from(tick.window.request(operation, value))
+                .to_le_bytes()
+                .to_vec())
+        }
+        72 => {
+            let operation = r.u32()?;
+            let value = r.u32()?;
+            room(cap, 4)?;
+            permitted(
+                host.permissions.audio && host.tick.as_ref().is_some_and(|tick| tick.active),
+            )?;
+            if r.0.len() > 1024 {
+                return Err(Error::Invalid);
+            }
+            let name = std::str::from_utf8(r.0).map_err(|_| Error::Invalid)?;
+            Ok(u32::from(host.backend.tick_audio(operation, name, value))
+                .to_le_bytes()
+                .to_vec())
+        }
+        73 => {
+            let index = r.u32()?;
+            r.end()?;
+            room(cap, 4)?;
+            let tick = host
+                .tick
+                .as_mut()
+                .filter(|tick| tick.active)
+                .ok_or(Error::Denied)?;
+            Ok(u32::from(tick.achievement(index)).to_le_bytes().to_vec())
+        }
+        74 => {
+            let operation = r.u32()?;
+            let tick = host
+                .tick
+                .as_mut()
+                .filter(|tick| tick.active)
+                .ok_or(Error::Denied)?;
+            tick.files.call(operation, r.0, cap).ok_or(Error::Denied)
         }
         30 => {
             permitted(host.permissions.audio)?;
@@ -206,10 +283,13 @@ pub(super) fn dispatch<B: Backend>(
                 return Err(Error::Invalid);
             }
             let mut out = Vec::new();
-            for e in host
+            let events = host
                 .input
-                .drain((cap / 40).min(gamepkg_native_input::MAX_EVENTS))
-            {
+                .drain((cap / 40).min(gamepkg_native_input::MAX_EVENTS));
+            if host.tick.as_ref().is_some_and(|tick| !tick.active) {
+                host.begin_tick(events.iter().any(|e| matches!(e.kind, 1 | 5 | 8)))?;
+            }
+            for e in events {
                 out.extend(e.device.to_le_bytes());
                 out.extend(e.timestamp_ns.to_le_bytes());
                 out.extend(e.kind.to_le_bytes());
@@ -356,6 +436,21 @@ pub(super) fn dispatch<B: Backend>(
             r.end()?;
             Ok(host.launch_options.ok_or(Error::Unsupported)?.to_vec())
         }
+        68 => {
+            r.end()?;
+            room(cap, 8)?;
+            let value = crate::random::value().map_err(|_| Error::Failed)?;
+            Ok(value.to_le_bytes().to_vec())
+        }
+        69 => {
+            room(cap, 8)?;
+            let grant = r.u64()?;
+            let encoded = read_png_asset(host, grant, r.0)?;
+            let image = crate::drawing::image::Image::from_png(&encoded).ok_or(Error::Invalid)?;
+            let [width, height] = image.size();
+            let id = retain_image(host, width as u32, height as u32, image.pixels())?;
+            Ok(id.to_le_bytes().to_vec())
+        }
         126 => {
             let mask = r.u32()?;
             if mask > 15 {
@@ -451,6 +546,57 @@ pub(super) fn serve_with(
 pub(super) fn file_operation(op: u32) -> bool {
     matches!(op,1..=9|12..=19|23..=26)
 }
+fn retain_image<B: Backend>(
+    host: &mut Session<B>,
+    width: u32,
+    height: u32,
+    rgba: &[u8],
+) -> Result<u64> {
+    let len = rgba.len();
+    if host.images.len() >= MAX_IMAGES || len > MAX_IMAGE_BYTES.saturating_sub(host.image_bytes) {
+        return Err(Error::Busy);
+    }
+    let id = identifier()?;
+    host.images.insert(
+        id,
+        Arc::new(Image {
+            width,
+            height,
+            rgba: rgba.to_vec(),
+        }),
+    );
+    host.image_bytes += len;
+    Ok(id)
+}
+
+fn read_png_asset<B: Backend>(host: &Session<B>, grant: u64, name: &[u8]) -> Result<Vec<u8>> {
+    let mut files = host.files.lock().map_err(|_| Error::Failed)?;
+    if !files.grants().contains(&(grant, 1)) {
+        return Err(Error::Denied);
+    }
+    let handle = files.open(grant, 0, name)?;
+    let result = (|| {
+        let size = files.size(handle)?;
+        if size == 0 || size > crate::drawing::image::MAX_PNG_BYTES as u64 {
+            return Err(Error::Invalid);
+        }
+        let mut contents = Vec::with_capacity(size as usize);
+        while contents.len() < size as usize {
+            let length = (size as usize - contents.len()).min(65_536);
+            let bytes = files.read(handle, contents.len() as u64, length)?;
+            if bytes.len() != length {
+                return Err(Error::Failed);
+            }
+            contents.extend(bytes);
+        }
+        Ok(contents)
+    })();
+    let closed = files.close(handle);
+    let contents = result?;
+    closed?;
+    Ok(contents)
+}
+
 pub(super) fn file_dispatch(
     files: &mut super::filesystem::Files,
     op: u32,

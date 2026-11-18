@@ -184,6 +184,17 @@ impl Process {
         save: Option<(&Path, u64)>,
         options: NativeLaunch,
     ) -> Result<Self> {
+        Self::start_in_process_with_assets(artifact, library, rom, save, None, options)
+    }
+
+    pub fn start_in_process_with_assets(
+        artifact: &Artifact,
+        library: &Path,
+        rom: Option<fs::File>,
+        save: Option<(&Path, u64)>,
+        assets: Option<&crate::port_host::owner::VerifiedAssets>,
+        options: NativeLaunch,
+    ) -> Result<Self> {
         ensure!(
             artifact.receipt().bootstrap == Bootstrap::InProcess
                 && artifact.receipt().plan.target() == Target::Linux64,
@@ -309,7 +320,7 @@ impl Process {
             read_only_system(&mut command, &["/run/udev/data", "/sys/class/input"]);
             devices(&mut command, "/dev/input", controller)?;
         }
-        if manifest.permissions.audio {
+        if manifest.permissions.audio && !options.mute_audio {
             read_only_system(
                 &mut command,
                 &["/etc/alsa", "/etc/asound.conf", "/sys/class/sound"],
@@ -320,7 +331,23 @@ impl Process {
                     || (name.starts_with("pcmC") && name.ends_with('p'))
             })?;
         }
-        desktop(&mut command, manifest.permissions.audio)?;
+        desktop(
+            &mut command,
+            manifest.permissions.audio && !options.mute_audio,
+        )?;
+        if let Some(assets) = assets {
+            command
+                .arg("--ro-bind")
+                .arg(assets.verified_directory(&artifact.receipt().game.source_kit)?)
+                .arg("/run/gamepkg-assets")
+                .args(["--setenv", "GAMEPKG_ASSET_GRANT", "1"]);
+            if let Some(audio) = assets.recorded_audio() {
+                command
+                    .args(["--ro-bind"])
+                    .arg(audio)
+                    .arg("/run/gamepkg-audio");
+            }
+        }
         let save_fd = save_mount.as_ref().map(|(scope, quota)| {
             let fd = scope.as_raw_fd();
             command
@@ -331,6 +358,16 @@ impl Process {
                 .arg(quota.to_string());
             fd
         });
+        let file_picker =
+            manifest.native_tick && options.visible && !manifest.permissions.files.is_empty();
+        let (game_input, parent_picker) = if file_picker {
+            use std::os::fd::OwnedFd;
+            let (parent, child) = std::os::unix::net::UnixStream::pair()?;
+            command.args(["--setenv", "GAMEPKG_FILE_PICKER", "1"]);
+            (Stdio::from(OwnedFd::from(child)), Some(parent))
+        } else {
+            (rom.map_or_else(Stdio::null, Stdio::from), None)
+        };
         command.arg("--ro-bind").arg(executable).arg("/game").args([
             "--remount-ro",
             "/",
@@ -341,7 +378,7 @@ impl Process {
         ]);
         command
             .args(arguments)
-            .stdin(rom.map_or_else(Stdio::null, Stdio::from))
+            .stdin(game_input)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         unsafe {
@@ -370,9 +407,14 @@ impl Process {
         let (send_child, receive_child) = mpsc::sync_channel(1);
         let (launcher, lifetime) = mpsc::channel();
         let (ready, readiness) = mpsc::sync_channel(1);
+        let achievements = manifest
+            .achievements
+            .iter()
+            .map(|achievement| achievement.id.clone())
+            .collect();
         let history = std::thread::Builder::new()
             .name("gamepkg-play-history".into())
-            .spawn(move || record_history(history, readiness))?;
+            .spawn(move || record_history(history, readiness, achievements))?;
         std::thread::Builder::new()
             .name("gamepkg-native-launch".into())
             .spawn(move || {
@@ -384,6 +426,18 @@ impl Process {
             .recv()
             .context("native launcher thread exited")??;
         drop(save_mount);
+        if let Some(socket) = parent_picker {
+            let manifest = manifest.clone();
+            std::thread::Builder::new()
+                .name("gamepkg-launcher-picker".into())
+                .spawn(move || {
+                    if let Err(error) = crate::port_host::tick_picker::serve(socket, manifest) {
+                        if error.kind() != io::ErrorKind::BrokenPipe {
+                            eprintln!("GamePKG file picker: {error}");
+                        }
+                    }
+                })?;
+        }
         let log = Arc::new(Mutex::new(VecDeque::new()));
         let stdout = child.stdout.take().context("missing native game output")?;
         let stderr = child
@@ -395,9 +449,11 @@ impl Process {
         let output_log = log.clone();
         std::thread::spawn(move || {
             let marker = format!("GamePKG presented {unit}");
-            read_game_output(stdout, &output_log, marker.as_bytes(), || {
-                presented.store(true, Ordering::Release);
-                let _ = ready.try_send(());
+            read_game_output(stdout, &output_log, marker.as_bytes(), |event| {
+                if event == HistoryEvent::Presented {
+                    presented.store(true, Ordering::Release);
+                }
+                let _ = ready.send(event);
             });
         });
         drain_local_log(stderr, log.clone());
@@ -421,17 +477,38 @@ impl Process {
     }
 }
 
-fn record_history(mut history: crate::progress::Session, ready: mpsc::Receiver<()>) -> Result<()> {
-    if ready.recv().is_err() {
-        return Ok(());
-    }
-    history.start();
-    // Preserve elapsed time across a launcher crash, with all disk I/O off
-    // both the library event loop and the game window thread.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HistoryEvent {
+    Presented,
+    Achievement(usize),
+}
+
+fn record_history(
+    mut history: crate::progress::Session,
+    events: mpsc::Receiver<HistoryEvent>,
+    signed_achievements: Vec<String>,
+) -> Result<()> {
+    let mut started = false;
+    let mut pending = std::collections::BTreeSet::new();
     loop {
-        match ready.recv_timeout(Duration::from_secs(10)) {
-            Ok(()) => {}
-            Err(mpsc::RecvTimeoutError::Timeout) => history.tick(&[])?,
+        match events.recv_timeout(Duration::from_secs(10)) {
+            Ok(HistoryEvent::Presented) if !started => {
+                history.start();
+                started = true;
+                history.tick(&std::mem::take(&mut pending).into_iter().collect::<Vec<_>>())?;
+            }
+            Ok(HistoryEvent::Presented) => {}
+            Ok(HistoryEvent::Achievement(index)) => {
+                if let Some(id) = signed_achievements.get(index) {
+                    if started {
+                        history.tick(std::slice::from_ref(id))?;
+                    } else {
+                        pending.insert(id.clone());
+                    }
+                }
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) if started => history.tick(&[])?,
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
             Err(mpsc::RecvTimeoutError::Disconnected) => return history.finish(),
         }
     }
@@ -441,11 +518,11 @@ fn read_game_output(
     mut pipe: impl Read,
     log: &Arc<Mutex<VecDeque<u8>>>,
     marker: &[u8],
-    notify: impl FnOnce(),
+    mut notify: impl FnMut(HistoryEvent),
 ) {
-    let mut notify = Some(notify);
-    let mut position = Some(0);
     let mut buffer = [0; 4096];
+    let mut line = Vec::with_capacity(96);
+    let mut overflow = false;
     loop {
         let count = match pipe.read(&mut buffer) {
             Ok(0) => break,
@@ -454,24 +531,30 @@ fn read_game_output(
             Err(_) => break,
         };
         tail(log, &buffer[..count]);
-        if notify.is_none() {
-            continue;
-        }
         for &byte in &buffer[..count] {
             if byte == b'\n' {
-                if position == Some(marker.len()) {
-                    notify.take().unwrap()();
-                    break;
+                if !overflow {
+                    if line == marker {
+                        notify(HistoryEvent::Presented);
+                    } else if let Some(index) = line
+                        .strip_prefix(b"GamePKG achievement ")
+                        .and_then(|text| std::str::from_utf8(text).ok())
+                        .and_then(|index| index.parse().ok())
+                    {
+                        notify(HistoryEvent::Achievement(index));
+                    }
                 }
-                position = Some(0);
+                overflow = false;
+                line.clear();
+            } else if line.len() < 96 {
+                line.push(byte);
             } else {
-                position = position
-                    .filter(|&index| marker.get(index) == Some(&byte))
-                    .map(|index| index + 1);
+                overflow = true;
             }
         }
     }
 }
+
 fn drain_local_log(mut pipe: impl Read + Send + 'static, log: Arc<Mutex<VecDeque<u8>>>) {
     std::thread::spawn(move || {
         let mut buffer = [0; 4096];
@@ -494,12 +577,14 @@ mod tests {
         let mut data = vec![b'x'; 8191];
         data.extend(b"GamePKG presented expected\nGamePKG presented another\n");
         let mut signaled = false;
-        read_game_output(&data[..], &log, b"GamePKG presented expected", || {
+        read_game_output(&data[..], &log, b"GamePKG presented expected", |event| {
+            assert_eq!(event, HistoryEvent::Presented);
             signaled = true
         });
         assert!(!signaled);
         data.extend(b"GamePKG presented expected\n");
-        read_game_output(&data[..], &log, b"GamePKG presented expected", || {
+        read_game_output(&data[..], &log, b"GamePKG presented expected", |event| {
+            assert_eq!(event, HistoryEvent::Presented);
             signaled = true
         });
         assert!(signaled);
@@ -514,6 +599,7 @@ mod tests {
         record_history(
             crate::progress::Session::open(root, "game", "creator").unwrap(),
             receiver,
+            vec![],
         )
         .unwrap();
         assert_eq!(
@@ -525,8 +611,8 @@ mod tests {
 
         let (sender, receiver) = mpsc::channel();
         let session = crate::progress::Session::open(root, "game", "creator").unwrap();
-        let worker = std::thread::spawn(move || record_history(session, receiver));
-        sender.send(()).unwrap();
+        let worker = std::thread::spawn(move || record_history(session, receiver, vec![]));
+        sender.send(HistoryEvent::Presented).unwrap();
         std::thread::sleep(Duration::from_millis(100));
         drop(sender);
         worker.join().unwrap().unwrap();

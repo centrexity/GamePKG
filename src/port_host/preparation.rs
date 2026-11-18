@@ -315,6 +315,22 @@ pub struct Artifact {
     receipt: ExecutableReceipt,
 }
 impl Artifact {
+    #[cfg(all(feature = "gui", target_os = "linux", target_arch = "x86_64"))]
+    pub(crate) fn from_verified_cache(
+        manifest: crate::manifest::Manifest,
+        receipt: ExecutableReceipt,
+        bytes: &[u8],
+    ) -> Result<Self> {
+        let directory = tempfile::tempdir()?;
+        fs::write(directory.path().join("game"), bytes)?;
+        let artifact = Self {
+            manifest,
+            directory,
+            receipt,
+        };
+        artifact.executable()?;
+        Ok(artifact)
+    }
     pub fn manifest(&self) -> &crate::manifest::Manifest {
         &self.manifest
     }
@@ -849,12 +865,63 @@ fn compile_and_audit(
         .find("#[cfg(all(test, unix))]")
         .context("SDK test marker missing")?;
     text.push_str("\n#[allow(dead_code)] mod gamepkg {const MAX:usize=16*1024*1024;unsafe extern \"C\" {fn gamepkg_port_call(operation:u32,request:*const u8,length:u32,reply:*mut u8,capacity:u32)->i32;}\n");
-    text.push_str(&client[start..end]);
+    let frontend = &client[start..end];
+    if plan.entry == "game_tick" {
+        text.push_str(
+            &frontend
+                .replace("struct InputEvent", "struct NativeInputEvent")
+                .replace("Vec<InputEvent>", "Vec<NativeInputEvent>")
+                .replace("map(|b| InputEvent", "map(|b| NativeInputEvent")
+                .replace("fn input_events(", "fn native_input_events(")
+                .replace("fn file_read(", "fn scoped_file_read(")
+                .replace("fn file_close(", "fn scoped_file_close("),
+        );
+    } else {
+        text.push_str(frontend);
+    }
+    text.push_str(include_str!("../../engines/native-services/game_state.rs"));
+    if plan.entry == "game_tick" {
+        text.push_str(include_str!("../../engines/native-services/tick2d.rs"));
+        let helpers = include_str!("../guest_helpers.rs.txt");
+        let audio = helpers
+            .find("/// A signed Slang")
+            .context("guest audio marker missing")?;
+        let files = helpers
+            .find("/// One player-selected file")
+            .context("guest file marker missing")?;
+        text.push_str(&helpers[..audio]);
+        text.push_str(&helpers[files..]);
+    }
     text.push_str("\n}\n");
-    text.push_str(&format!(
-        "#[export_name=\"game_service_entry\"] pub extern \"C\" fn __gamepkg_entry(){{{}();}}\n",
-        plan.entry
-    ));
+    if plan.entry == "game_tick" {
+        text.push_str(
+            r#"
+#[export_name="game_service_entry"]
+pub extern "C" fn __gamepkg_entry() {
+    let mut state = 0;
+    let mut previous_pad = 0;
+    loop {
+        match gamepkg::__gamepkg_tick_window() {
+            Ok(Some(_)) => {}
+            Ok(None) | Err(-4) => break,
+            Err(_) => panic!("GamePKG tick window request failed"),
+        }
+        state = game_tick(gamepkg::__gamepkg_tick_input(&mut previous_pad), state);
+        match gamepkg::__gamepkg_tick_present().and_then(|()| gamepkg::__gamepkg_tick_wait()) {
+            Ok(()) => {}
+            Err(-4) => break,
+            Err(_) => panic!("GamePKG tick presentation or pacing failed"),
+        }
+    }
+}
+"#,
+        );
+    } else {
+        text.push_str(&format!(
+            "#[export_name=\"game_service_entry\"] pub extern \"C\" fn __gamepkg_entry(){{{}();}}\n",
+            plan.entry
+        ));
+    }
     for (index, name) in plan.tasks.iter().enumerate() {
         text.push_str(&format!("#[export_name=\"game_task_{index:03}\"] pub extern \"C\" fn __gamepkg_task_{index}(arg:u64)->u64{{{name}(arg)}}\n"));
     }

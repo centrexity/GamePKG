@@ -28,6 +28,8 @@ pub struct Manifest {
     pub runtime_profile: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub builtin_engine: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub native_tick: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub doom_wad_modes: Vec<DoomWadMode>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -492,6 +494,16 @@ impl Manifest {
             }
             video.validate()?;
         }
+        anyhow::ensure!(
+            !m.native_tick
+                || (m.builtin_engine.is_none()
+                    && !m.requires_rom
+                    && m.game_data.is_none()
+                    && !m.permissions.network
+                    && m.shared_assets.is_empty()
+                    && m.runtime_profile == "core-v1"),
+            "native tick packages require dependency-free core game source and embedded assets"
+        );
         let cube2 = m.builtin_engine.as_deref() == Some(crate::cube2::PROFILE);
         let external = m
             .builtin_engine

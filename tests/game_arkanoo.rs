@@ -1,6 +1,8 @@
 #[path = "support/arkanoo_canonical.rs"]
 mod canonical;
 mod gamepkg {
+    include!("support/port_text.rs");
+    include!("../engines/native-services/game_state.rs");
     thread_local! {
         static WORDS: std::cell::RefCell<std::collections::VecDeque<u64>> = const { std::cell::RefCell::new(std::collections::VecDeque::new()) };
         static NEXT: std::cell::Cell<u64> = const { std::cell::Cell::new(7) };
