@@ -3,6 +3,9 @@
 #[path = "../ports/arkanoo/source/src/editor.rs"]
 mod editor;
 
+#[path = "support/port_text.rs"]
+mod gamepkg;
+
 #[test]
 fn recorded_music_settings_round_trip_and_legacy_defaults_are_atomic() {
     let mut edit = editor::Editor::new();

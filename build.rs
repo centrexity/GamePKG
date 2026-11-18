@@ -85,7 +85,10 @@ fn embed_external_engines() {
         let manifest = dir.join("engine.toml");
         println!("cargo:rerun-if-changed={}", manifest.display());
         let manifest = manifest.canonicalize().expect("engine record");
-        text.push_str(&format!("    include_str!({:?}),\n", manifest.to_string_lossy()));
+        text.push_str(&format!(
+            "    include_str!({:?}),\n",
+            manifest.to_string_lossy()
+        ));
     }
     text.push_str("];\n");
     let out = PathBuf::from(env::var_os("OUT_DIR").expect("Cargo output directory"))

@@ -186,6 +186,14 @@ impl Package {
     }
     /// Share verified descriptors and snapshots with a background reader.
     /// No archive path is reopened, and each reader has independent positions.
+    #[cfg(all(feature = "gui", target_os = "linux", target_arch = "x86_64"))]
+    pub(crate) fn copy_verified_archive(&self, mut output: impl std::io::Write) -> Result<()> {
+        let mut raw = self.try_clone_verified()?.raw;
+        raw.seek(SeekFrom::Start(0))?;
+        std::io::copy(&mut raw, &mut output)?;
+        Ok(())
+    }
+
     pub fn try_clone_verified(&self) -> Result<Self> {
         if !self.verified {
             bail!("package reader clone requires verification");

@@ -13,6 +13,7 @@ struct Trace {
 }
 thread_local! {static TRACE: RefCell<Trace> = RefCell::new(Trace { accepts: true, ..Trace::default() });}
 mod gamepkg {
+    include!("support/port_text.rs");
     pub fn asset_read(path: &str, offset: u32, output: &mut [u8]) -> Option<u32> {
         if path != "audio/music-list.txt" {
             return None;

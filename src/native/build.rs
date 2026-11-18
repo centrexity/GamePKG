@@ -56,6 +56,7 @@ pub(super) fn compile_with_settings(
     let mut bindings = include_str!("guest.rs.txt").to_owned();
     let mut helpers = include_str!("../input_buttons.rs").replace("//!", "//");
     helpers.push_str(include_str!("../guest_helpers.rs.txt"));
+    helpers.push_str(include_str!("../../engines/native-services/game_state.rs"));
     helpers.push_str(include_str!("../network_guest.rs.txt"));
     helpers.push_str(include_str!("pixels.rs.txt"));
     let legacy = include_str!("../guest_api.rs.txt");

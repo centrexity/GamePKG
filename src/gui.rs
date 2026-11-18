@@ -10,7 +10,7 @@ mod game_colors;
 mod game_page;
 mod input;
 mod library_view;
-mod linear_sprites;
+pub(crate) mod linear_sprites;
 mod multiplayer;
 mod processes;
 mod recordings;

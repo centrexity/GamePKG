@@ -793,7 +793,10 @@ fn media_validation_is_atomic_and_resource_handles_are_session_scoped() {
     assert_eq!(h.call(22, &frame, 0), Err(Error::Busy));
     h.call(21, &texture.to_le_bytes(), 0).unwrap();
     assert_eq!(h.call(22, &frame, 0), Err(Error::Denied));
-    assert_eq!(h.backend.frames[0].draws[0].image.rgba, [10, 20, 30, 255]);
+    assert_eq!(
+        h.backend.frames[0].draws[0].image.as_ref().unwrap().rgba,
+        [10, 20, 30, 255]
+    );
     for req in [vec![], vec![0; 8], vec![255; 8]] {
         assert!(h.call(20, &req, 8).is_err());
     }
@@ -1341,4 +1344,109 @@ fn byte_diagnostics_preserve_raw_data_escape_summaries_and_validate_before_mutat
     host.timing.close();
     assert_eq!(host.call(64, &valid, 8), Err(Error::Denied));
     assert!(host.take_diagnostics().0.is_empty());
+}
+
+#[test]
+fn native_png_asset_requires_read_only_asset_grant_and_returns_a_releasable_image() {
+    let dir = tempfile::tempdir().unwrap();
+    let png = include_bytes!("../../examples/minimal/thumbnail.png");
+    std::fs::write(dir.path().join("sample.png"), png).unwrap();
+    std::fs::write(dir.path().join("invalid.png"), b"not a PNG").unwrap();
+    let mut host = host();
+    let asset = grant(&mut host, dir.path(), Access::Assets);
+    let save = grant(&mut host, dir.path(), Access::Save);
+    let request = |root: u64, name: &[u8]| [root.to_le_bytes().as_slice(), name].concat();
+    let image = number(host.call(69, &request(asset, b"sample.png"), 8).unwrap());
+    assert!(!host.images[&image].rgba.is_empty());
+    assert_eq!(
+        host.call(69, &request(save, b"sample.png"), 8),
+        Err(Error::Denied)
+    );
+    assert!(host.call(69, &request(asset, b"../sample.png"), 8).is_err());
+    assert_eq!(
+        host.call(69, &request(asset, b"invalid.png"), 8),
+        Err(Error::Invalid)
+    );
+    host.call(21, &image.to_le_bytes(), 0).unwrap();
+    assert!(host.images.is_empty());
+}
+
+#[test]
+fn tick_window_controls_require_real_gesture_and_commit_on_accepted_frame() {
+    let mut host = host();
+    let manifest =
+        crate::manifest::Manifest::parse(include_bytes!("../../examples/minimal/manifest.toml"))
+            .unwrap();
+    host.tick = Some(tick_services::Services::new(&manifest).unwrap());
+    host.observe_window(WindowState {
+        width: 640,
+        height: 480,
+        focused: true,
+        ..Default::default()
+    });
+    let toggle = [2u32.to_le_bytes(), 0u32.to_le_bytes()].concat();
+    let frame = [0u32.to_le_bytes(), 0u32.to_le_bytes()].concat();
+    assert_eq!(host.call(71, &toggle, 4), Err(Error::Denied));
+    host.call(40, &[], 40).unwrap();
+    assert_eq!(host.call(71, &toggle, 4), Ok(vec![0; 4]));
+    host.call(70, &frame, 0).unwrap();
+
+    let keyboard = host.input_backend().connect(1, 1, 1).unwrap();
+    host.input_backend().submit(Event {
+        device: keyboard,
+        kind: 1,
+        code: 40,
+        ..Default::default()
+    });
+    host.call(40, &[], 40 * 8).unwrap();
+    assert_eq!(host.call(71, &toggle, 4), Ok(1u32.to_le_bytes().to_vec()));
+    host.backend().busy = true;
+    assert_eq!(host.call(70, &frame, 0), Err(Error::Busy));
+    assert!(host.backend().windows.is_empty());
+    host.backend().busy = false;
+    host.call(70, &frame, 0).unwrap();
+    assert_eq!(host.backend().windows, [WindowCommand::Fullscreen(true)]);
+    assert_eq!(host.call(71, &toggle, 4), Err(Error::Denied));
+}
+
+#[test]
+fn tick_compositor_validates_clip_and_primitive_records_atomically() {
+    let mut host = host();
+    let pixel = [1u32.to_le_bytes(), 1u32.to_le_bytes(), [255, 0, 0, 255]].concat();
+    let image = number(host.call(20, &pixel, 8).unwrap());
+    let frame = |flags: u32, width: f32| {
+        let mut request = [0u32.to_le_bytes(), 1u32.to_le_bytes()].concat();
+        request.extend(image.to_le_bytes());
+        for v in [2.0f32, 3.0, 10.0, 10.0] {
+            request.extend(v.to_le_bytes());
+        }
+        request.extend(0u32.to_le_bytes());
+        request.extend(u32::MAX.to_le_bytes());
+        request.extend(flags.to_le_bytes());
+        for v in [1.0f32, 2.0, width, 5.0] {
+            request.extend(v.to_le_bytes());
+        }
+        request
+    };
+    for invalid in [
+        frame(16, 5.0),
+        frame(7, 5.0),
+        frame(3, -1.0),
+        frame(3, f32::NAN),
+    ] {
+        assert_eq!(host.call(70, &invalid, 0), Err(Error::Invalid));
+    }
+    assert!(host.backend().frames.is_empty());
+    host.call(70, &frame(3, 5.0), 0).unwrap();
+    let draw = &host.backend().frames[0].draws[0];
+    assert!(draw.circle);
+    assert_eq!(draw.clip, Some([1.0, 2.0, 5.0, 5.0]));
+    let mut solid = frame(9, 5.0);
+    solid[8..16].copy_from_slice(&0x102030ffu64.to_le_bytes());
+    host.call(70, &solid, 0).unwrap();
+    let draw = &host.backend().frames[1].draws[0];
+    assert!(draw.image.is_none());
+    assert_eq!(draw.solid, Some(0x102030ff));
+    solid[8..16].copy_from_slice(&u64::MAX.to_le_bytes());
+    assert_eq!(host.call(70, &solid, 0), Err(Error::Invalid));
 }

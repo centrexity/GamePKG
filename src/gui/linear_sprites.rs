@@ -8,7 +8,7 @@ use eframe::{
 };
 use std::sync::Arc;
 #[derive(Default)]
-pub(super) struct Cache {
+pub(crate) struct Cache {
     backend: Option<Backend>,
     straight_backend: Option<Backend>,
     slots: Vec<Slot>,

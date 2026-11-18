@@ -65,9 +65,11 @@ pub fn build_in_process(
     let payload_hash = crate::verify::digest(&payload.encoded);
     let shader_hashes = &audited.receipt().shaders;
     let samples = payload.samples;
+    let source_kit = sources.identity();
     let generated = format!(
         r#"const MANIFEST: &str = {manifest:?};
 const SDK: &str = {sdk:?};
+const SOURCE_KIT: &str = {source_kit:?};
 const PIPELINES: &[u8] = include_bytes!("pipelines.json");
 const PIPELINE_PAYLOAD_HASH: &str = {payload_hash:?};
 const SHADER_HASHES: &[&str] = &{shader_hashes:?};
@@ -138,6 +140,17 @@ fn local_runtime(budget: u64) -> local::runtime::Result<local::runtime::Runtime>
             .env("CARGO_HOME", compatibility.private_cargo_home().unwrap())
             .env("CARGO_TARGET_DIR", target.canonicalize()?);
     }
+    let decoder_hash = if sources.manifest().native_tick
+        && sources.manifest().limits.music_memory_bytes.is_some()
+    {
+        let decoder = crate::audio_decode::bundled_bytes()?;
+        let decoder_path = config.path().join("recorded-audio.wasm");
+        fs::write(&decoder_path, decoder)?;
+        command.env("GAMEPKG_BUNDLED_AUDIO_DECODER", decoder_path);
+        crate::verify::digest(decoder)
+    } else {
+        String::new()
+    };
     for object in audited.objects()? {
         command
             .arg("-C")
@@ -155,7 +168,7 @@ fn local_runtime(budget: u64) -> local::runtime::Result<local::runtime::Runtime>
     );
     let source_identity = compatibility.pin().unwrap_or("development checkout");
     let runtime = crate::verify::digest(
-        format!("{sdk}\0{RUNTIME}\0{source_identity}\0{generated}").as_bytes(),
+        format!("{sdk}\0{RUNTIME}\0{source_identity}\0{decoder_hash}\0{generated}").as_bytes(),
     );
     let toolchain = crate::verify::digest(
         format!(

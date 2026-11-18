@@ -124,12 +124,90 @@ pub(super) fn save_scope(root: &Path, manifest: &crate::manifest::Manifest) -> R
     let parent = subdir(&root, "port-state")?;
     subdir(&parent, &identity(manifest))
 }
+#[cfg(all(feature = "gui", target_os = "linux", target_arch = "x86_64"))]
+/// Private copies of assets from a verified source package. The source identity
+/// must also match the executable's audited receipt before launch.
+pub struct VerifiedAssets {
+    directory: tempfile::TempDir,
+    identity: String,
+    recorded_audio: bool,
+}
+
+#[cfg(all(feature = "gui", target_os = "linux", target_arch = "x86_64"))]
+impl VerifiedAssets {
+    pub fn stage(
+        package: &mut crate::archive::Package,
+        source_identity: &str,
+    ) -> Result<Option<Self>> {
+        crate::verify::verify_embedded(package)?;
+        let identity = hex::encode(crate::verify::tree_hash(package)?);
+        ensure!(
+            identity == source_identity,
+            "assets differ from the audited source kit"
+        );
+        let entries: Vec<_> = package
+            .entries
+            .keys()
+            .filter_map(|path| path.strip_prefix("assets/").map(str::to_owned))
+            .collect();
+        let manifest = crate::manifest::Manifest::parse(&package.read("manifest.toml")?)?;
+        let recorded_audio = manifest.native_tick
+            && (manifest.limits.effects_memory_bytes.is_some()
+                || manifest.limits.music_memory_bytes.is_some());
+        if entries.is_empty() && !recorded_audio {
+            return Ok(None);
+        }
+        let directory = tempfile::tempdir()?;
+        let assets = directory.path().join("assets");
+        std::fs::create_dir(&assets)?;
+        if recorded_audio {
+            let archive_path = directory.path().join("audio.gamepkg");
+            package.copy_verified_archive(File::create(&archive_path)?)?;
+            let mut frozen = crate::archive::Package::open(&archive_path)?;
+            crate::verify::verify_embedded(&mut frozen)?;
+            ensure!(
+                hex::encode(crate::verify::tree_hash(&mut frozen)?) == identity,
+                "recorded audio differs from the audited source kit"
+            );
+        }
+        for name in entries {
+            ensure!(crate::archive::valid_path(&name), "invalid asset path");
+            let path = assets.join(&name);
+            std::fs::create_dir_all(path.parent().context("asset parent")?)?;
+            let bytes = package.read(&format!("assets/{name}"))?;
+            std::fs::write(path, bytes)?;
+        }
+        Ok(Some(Self {
+            directory,
+            identity,
+            recorded_audio,
+        }))
+    }
+
+    #[cfg(all(feature = "gui", target_os = "linux", target_arch = "x86_64"))]
+    pub(super) fn verified_directory(&self, source_identity: &str) -> Result<std::path::PathBuf> {
+        ensure!(
+            self.identity == source_identity,
+            "assets differ from the audited source kit"
+        );
+        Ok(self.directory.path().join("assets"))
+    }
+
+    pub(super) fn recorded_audio(&self) -> Option<std::path::PathBuf> {
+        self.recorded_audio
+            .then(|| self.directory.path().join("audio.gamepkg"))
+    }
+}
+
 #[derive(Default)]
 pub struct Grants {
     /// Linux external RAM cache. Windows keeps the cache inside its child cap.
     pub volatile_cache_bytes: Option<u64>,
     pub roms: Vec<File>,
     pub assets: Option<Dir>,
+    pub recorded_audio: Option<crate::archive::Package>,
+    #[cfg(all(feature = "gui", target_os = "linux", target_arch = "x86_64"))]
+    pub picker: Option<std::os::unix::net::UnixStream>,
     pub saves: Option<SaveGrant>,
 }
 pub struct Owner<B: Backend> {
@@ -150,6 +228,9 @@ pub(super) fn session<B: Backend>(
         "this game requires user-selected ROM data"
     );
     let mut host = Session::new(manifest.permissions.clone(), backend);
+    if manifest.native_tick {
+        host.tick = Some(super::tick_services::Services::new(manifest)?);
+    }
     if let Some(bytes) = grants.volatile_cache_bytes {
         host.grant_volatile_cache(bytes)
             .map_err(|e| anyhow::anyhow!("disposable RAM cache: {e:?}"))?;

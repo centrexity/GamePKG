@@ -24,9 +24,13 @@ pub struct Image {
     pub rgba: Vec<u8>,
 }
 pub struct Draw {
-    pub image: Arc<Image>,
+    pub image: Option<Arc<Image>>,
+    pub solid: Option<u32>,
     pub rect: [f32; 4],
     pub linear: bool,
+    pub clip: Option<[f32; 4]>,
+    pub circle: bool,
+    pub straight: bool,
     /// Index in the host's verified compiled shader set, not arbitrary source.
     pub shader: Option<u32>,
 }
@@ -50,6 +54,16 @@ pub trait Backend {
     fn graphics(&mut self, _operation: u32, _request: &[u8], _capacity: usize) -> Result<Vec<u8>> {
         Err(super::Error::Unsupported)
     }
+    fn tick_begin(&mut self) -> Result<()> {
+        Ok(())
+    }
+    fn tick_finish(&mut self) -> Result<()> {
+        Ok(())
+    }
+    fn tick_audio(&mut self, _operation: u32, _name: &str, _value: u32) -> bool {
+        false
+    }
+    fn tick_homepage(&mut self, _url: String) {}
     fn texture_limit(&self) -> u32 {
         8192
     }

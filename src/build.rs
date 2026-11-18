@@ -258,6 +258,7 @@ pub(crate) fn compile_with_settings(
     };
     let mut helpers = include_str!("input_buttons.rs").replace("//!", "//");
     helpers.push_str(include_str!("guest_helpers.rs.txt"));
+    helpers.push_str(include_str!("../engines/native-services/game_state.rs"));
     helpers.push_str(include_str!("network_guest.rs.txt"));
     helpers.push_str(
         "\nfn shader_index(source: &str, entry: &str) -> Option<u32> { match (source, entry) {\n",

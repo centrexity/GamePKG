@@ -43,7 +43,8 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-unicode32-') as temporary:
     root=Path(temporary)
     harness=root/'unicode32.rs'
     modules=[('dynamic_font','ports/arkanoo/source/src/dynamic_font.rs'),('dynamic_font_data','ports/arkanoo/source/src/dynamic_font_data.rs'),('unicode_shape_eager_reference','tests/fixtures/arkanoo_unicode_shape_eager.rs')]
-    harness.write_text('#[cfg(not(target_pointer_width="32"))]\ncompile_error!("This check requires a real 32-bit target");\n'+''.join(f'#[path="{project/path}"]\nmod {name};\n' for name,path in modules)+'\n'.join(sections[name] for name in names))
+    sdk = f'mod gamepkg {{ include!("{project}/engines/native-services/game_state.rs"); include!("{project}/tests/support/port_text.rs"); }}\n'
+    harness.write_text('#[cfg(not(target_pointer_width="32"))]\ncompile_error!("This check requires a real 32-bit target");\n'+sdk+''.join(f'#[path="{project/path}"]\nmod {name};\n' for name,path in modules)+'\n'.join(sections[name] for name in names))
     binary=root/'unicode32'
     subprocess.run([args.rustc,'--edition=2021','--test','-O','--target','i686-unknown-linux-gnu','-C','linker='+str(args.linker.resolve()),'-A','dead_code',str(harness),'-o',str(binary)],check=True,timeout=120)
     environment=dict(os.environ,LD_LIBRARY_PATH=str(args.runtime_libraries.resolve()))

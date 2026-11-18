@@ -42,6 +42,9 @@ pub mod winit_input;
 use crate::manifest::Permissions;
 pub use filesystem::Access;
 use gamepkg_native_input::Service as Input;
+#[cfg(all(feature = "gui", target_os = "linux", target_arch = "x86_64"))]
+mod tick_picker;
+mod tick_services;
 pub use media::{Backend, Draw, Frame, Image, WindowCommand, WindowState};
 pub use protocol::{serve, ABI, MAX_MESSAGE};
 /// The launcher stages these audited bindings after checking game source;
@@ -56,6 +59,8 @@ pub fn build_identity() -> String {
     for source in [
         C_HEADER,
         CLIENT_SOURCE,
+        include_str!("../../engines/native-services/game_state.rs"),
+        include_str!("../../engines/native-services/tick2d.rs"),
         include_str!("../../engines/native-services/local_runtime.rs"),
         include_str!("../../engines/native-services/local_memory.rs"),
         include_str!("../../engines/native-services/performance_clock.rs"),
@@ -72,6 +77,9 @@ pub fn build_identity() -> String {
         include_str!("diagnostics.rs"),
         include_str!("../audio/capture.rs"),
         include_str!("protocol.rs"),
+        include_str!("tick_services.rs"),
+        include_str!("tick_picker.rs"),
+        include_str!("../guest_helpers.rs.txt"),
         include_str!("broker.rs"),
         include_str!("timing.rs"),
         include_str!("timing/platform.rs"),
@@ -165,6 +173,7 @@ pub struct Session<B: Backend> {
     leases: Vec<Arc<std::fs::File>>,
     diagnostics: diagnostics::Diagnostics,
     launch_options: Option<[u8; 8]>,
+    tick: Option<tick_services::Services>,
 }
 impl<B: Backend> Session<B> {
     pub fn new(permissions: Permissions, backend: B) -> Self {
@@ -185,6 +194,7 @@ impl<B: Backend> Session<B> {
             leases: Vec::new(),
             diagnostics: diagnostics::Diagnostics::default(),
             launch_options: None,
+            tick: None,
         }
     }
     /// Host-only capability grant. Paths never cross the game-facing protocol.

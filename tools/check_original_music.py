@@ -18,7 +18,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-original-music-') as temporary:
 
     prefix=(project/'tests/fixtures/original-music-controls.rs').read_text().split('\nfn main() {',1)[0]
     paired=root/'paired.rs';paired.write_text(prefix+'\n'+(project/'tests/fixtures/paired-music-controller.rs').read_text())
-    paired_env=dict(environment,GAMEPKG_PORT_MUSIC_RS=str(project/'ports/arkanoo/source/src/music.rs'))
+    paired_env=dict(environment,GAMEPKG_PORT_MUSIC_RS=str(project/'ports/arkanoo/source/src/music.rs'), GAMEPKG_PORT_TEXT_RS=str(project/'tests/support/port_text.rs'))
     compiled=subprocess.run(['rustc','--edition=2021',str(paired),'-o',str(root/'paired')],env=paired_env,capture_output=True,text=True,timeout=60)
     assert compiled.returncode==0,compiled.stdout+'\n'+compiled.stderr
     subprocess.run([str(root/'paired')],cwd=root,env=paired_env,check=True,timeout=10)

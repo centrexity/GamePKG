@@ -24,6 +24,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-save32-') as temporary:
     root = Path(temporary)
     harness = root/'save32.rs'
     harness.write_text('#[cfg(not(target_pointer_width="32"))]\ncompile_error!("Requires a real 32-bit target");\n'
+        + f'#[path="{project}/tests/support/port_text.rs"]\nmod gamepkg;\n'
         + f'#[path="{project}/ports/arkanoo/source/src/editor.rs"]\nmod editor;\n'
         + '\n'.join(sections[name] for name in names))
     binary = root/'save32'
