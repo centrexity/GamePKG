@@ -65,6 +65,14 @@ pub fn cache_path(root: &Path, id: &str) -> Result<PathBuf> {
     Ok(root.join("builds").join(digest(&bytes)).join("game.wasm"))
 }
 pub fn is_built(root: &Path, id: &str) -> Result<bool> {
+    if !crate::build_policy::supported(
+        registry::installed_manifest(root, id)?
+            .builtin_engine
+            .as_deref(),
+    ) {
+        return Ok(false);
+    }
+
     let path = cache_path(root, id)?;
     let Ok(bytes) = crate::files::read_regular(&path, 32 * 1024 * 1024, false) else {
         return Ok(false);
@@ -168,6 +176,12 @@ pub(crate) fn artifact_has_tick(bytes: &[u8]) -> bool {
     found
 }
 pub fn compile(root: &Path, id: &str) -> Result<()> {
+    crate::build_policy::require(
+        registry::installed_manifest(root, id)?
+            .builtin_engine
+            .as_deref(),
+    )?;
+
     if registry::installed_manifest(root, id)?
         .builtin_engine
         .as_deref()
@@ -234,6 +248,7 @@ pub(crate) fn compile_with_settings(
     snapshot.flush()?;
     let mut pkg = Package::open(snapshot.path())?;
     let manifest = verify_embedded(&mut pkg)?;
+    crate::build_policy::require(manifest.builtin_engine.as_deref())?;
     pkg.resolve_shared_assets(root)?;
     let cargo: toml::Value = toml::from_str(std::str::from_utf8(&pkg.read("source/Cargo.toml")?)?)?;
     crate::dependencies::validate(&cargo, &pkg.read("source/Cargo.lock")?)?;

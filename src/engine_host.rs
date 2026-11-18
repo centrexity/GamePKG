@@ -56,6 +56,7 @@ pub fn bind_for_test(audio: bool, input: bool, save: bool) {
             files: Vec::new(),
             input,
             audio,
+            microphone: false,
             save,
             network: false,
             network_hosts: Vec::new(),

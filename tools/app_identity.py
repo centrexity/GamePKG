@@ -44,6 +44,11 @@ def verify_pair(binary_directory, *, version=None, system=None, architecture=Non
             except json.JSONDecodeError as error:
                 raise ValueError(f'{name} returned invalid build identity') from error
             fields = {'schema', 'version', 'os', 'architecture', 'native_sdk'}
+            if isinstance(record, dict) and 'native_services_source' in record:
+                pin = record['native_services_source']
+                if not isinstance(pin, str) or re.fullmatch('[0-9a-f]{64}', pin) is None:
+                    raise ValueError(f'{name} returned an invalid native services source hash')
+                fields.add('native_services_source')
             if not isinstance(record, dict) or set(record) != fields:
                 raise ValueError(f'{name} returned an unsupported build identity')
             if type(record['schema']) is not int or record['schema'] != 1:

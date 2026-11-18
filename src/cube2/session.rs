@@ -140,6 +140,8 @@ impl Session {
         deadline: Duration,
         saved: &[u8],
     ) -> Result<Self> {
+        crate::build_policy::require(Some(crate::cube2::PROFILE))?;
+
         Self::start(
             data,
             memory,
@@ -159,6 +161,8 @@ impl Session {
         permissions: &super::network::Config,
         commands: String,
     ) -> Result<Self> {
+        crate::build_policy::require(Some(crate::cube2::PROFILE))?;
+
         Self::start(
             data,
             memory,
@@ -199,6 +203,7 @@ impl Session {
             super::network::Config::from(crate::manifest::Permissions {
                 files: Vec::new(),
                 input: false,
+                microphone: false,
                 audio: false,
                 save: false,
                 network: false,
@@ -1143,6 +1148,7 @@ mod tests {
         let p = crate::manifest::Permissions {
             files: Vec::new(),
             input: true,
+            microphone: false,
             audio: false,
             save: true,
             network: true,

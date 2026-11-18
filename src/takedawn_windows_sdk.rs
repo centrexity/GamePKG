@@ -54,6 +54,7 @@ enum Layout {
     WindowsZip,
     Tar(usize),
     Rust(String),
+    RustAuditor(String, Vec<String>),
 }
 #[derive(Clone)]
 struct Part {
@@ -364,13 +365,21 @@ fn unpack_tar(
         }
         let name = match &part.layout {
             Layout::Tar(strip) => relative(&raw, *strip)?,
-            Layout::Rust(payload) => {
+            Layout::Rust(payload) | Layout::RustAuditor(payload, _) => {
                 let parts: Vec<_> = raw.split('/').collect();
                 if parts.len() >= 3 && parts[1] == payload {
                     if parts.last() == Some(&"manifest.in") {
                         continue;
                     }
-                    Some(parts[2..].join("/"))
+                    let name = parts[2..].join("/");
+                    if let Layout::RustAuditor(_, allowed) = &part.layout {
+                        if !allowed.contains(&name) {
+                            continue;
+                        }
+                        Some(format!("bin/{}", parts.last().unwrap()))
+                    } else {
+                        Some(name)
+                    }
                 } else if parts.len() == 2 {
                     Some(format!("gamepkg-notices/{payload}/{}", parts[1]))
                 } else {
@@ -636,6 +645,14 @@ pub(crate) fn prepare_source(root: &Path) -> Result<(PathBuf, &'static str)> {
         "x86" => "i686-pc-windows-gnu",
         _ => anyhow::bail!("standalone Windows Rust is unavailable for this CPU"),
     };
+    prepare_source_target(root, target)
+}
+/// Explicit reviewed i686/x64 tools, including 32-bit preparation on a 64-bit
+/// Windows host. No WSL, Python, user installer or unverified target URL.
+pub(crate) fn prepare_source_target(
+    root: &Path,
+    target: &'static str,
+) -> Result<(PathBuf, &'static str)> {
     let (parts, identity, expected) = source_plan(target)?;
     Ok((
         prepare_parts(root, &parts, &identity, &expected)?.join(format!("rust-1.89.0-{target}")),
@@ -644,6 +661,82 @@ pub(crate) fn prepare_source(root: &Path) -> Result<(PathBuf, &'static str)> {
 }
 
 const SLANG_PINS: &str = include_str!("../engines/native/windows-slang.json");
+const AUDITOR_PINS: &str = include_str!("../engines/native/windows-auditor.json");
+fn auditor_plan(target: &str) -> Result<(Vec<Part>, String, String)> {
+    ensure!(
+        matches!(target, "x86_64-pc-windows-gnu" | "i686-pc-windows-gnu"),
+        "unsupported Windows auditor host"
+    );
+    let pins: serde_json::Value = serde_json::from_str(AUDITOR_PINS)?;
+    ensure!(pins["version"] == "1.89.0", "unexpected auditor version");
+    let record = &pins["targets"][target];
+    let compiler_pins: serde_json::Value = serde_json::from_str(SOURCE_PINS)?;
+    let tools: Download = serde_json::from_value(record["tools"].clone())?;
+    let runtime: Download = serde_json::from_value(record["runtime"].clone())?;
+    ensure!(
+        tools.url
+            == format!(
+                "https://static.rust-lang.org/dist/2025-08-07/llvm-tools-1.89.0-{target}.tar.gz"
+            ),
+        "invalid auditor URL"
+    );
+    ensure!(
+        record["runtime"] == compiler_pins["targets"][target]["components"]["rustc"],
+        "auditor runtime must match the reviewed standalone compiler"
+    );
+    let expected = record["payload_inventory_sha256"]
+        .as_str()
+        .context("missing auditor inventory")?
+        .to_owned();
+    for value in [&tools.sha256, &runtime.sha256, &expected] {
+        ensure!(
+            value.len() == 64
+                && value
+                    .bytes()
+                    .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()),
+            "invalid auditor digest"
+        );
+    }
+    let destination = format!("rust-auditor-1.89.0-{target}");
+    let gcc = if target.starts_with("i686") {
+        "libgcc_s_dw2-1.dll"
+    } else {
+        "libgcc_s_seh-1.dll"
+    };
+    Ok((
+        vec![
+            Part {
+                download: tools,
+                destination: destination.clone(),
+                layout: Layout::RustAuditor(
+                    "llvm-tools-preview".into(),
+                    vec![format!("lib/rustlib/{target}/bin/llvm-nm.exe")],
+                ),
+            },
+            Part {
+                download: runtime,
+                destination,
+                layout: Layout::RustAuditor(
+                    "rustc".into(),
+                    vec![format!("bin/{gcc}"), "bin/libwinpthread-1.dll".into()],
+                ),
+            },
+        ],
+        crate::verify::digest(
+            format!("GamePKG Windows auditor v2\0{target}\0{AUDITOR_PINS}").as_bytes(),
+        ),
+        expected,
+    ))
+}
+pub(crate) fn prepare_auditor(root: &Path, target: &str) -> Result<(PathBuf, String)> {
+    let (parts, identity, expected) = auditor_plan(target)?;
+    let installed = prepare_parts(root, &parts, &identity, &expected)?;
+    Ok((
+        installed.join(format!("rust-auditor-1.89.0-{target}/bin/llvm-nm.exe")),
+        expected,
+    ))
+}
+
 fn slang_plan() -> Result<(Vec<Part>, String, String)> {
     let pins: serde_json::Value = serde_json::from_str(SLANG_PINS)?;
     ensure!(
@@ -969,6 +1062,125 @@ mod tests {
         })
         .collect();
         payload_digest(&files).unwrap()
+    }
+    #[test]
+    #[ignore = "requires the two official pinned LLVM archives in /tmp; executes no tools"]
+    fn official_auditor_archives_match_reviewed_inventories_and_pe_targets() {
+        let root = tempfile::tempdir().unwrap();
+        for (target, archive, arch) in [
+            (
+                "x86_64-pc-windows-gnu",
+                "/tmp/gamepkg-llvm-tools-x64.tar.gz",
+                "x86_64",
+            ),
+            (
+                "i686-pc-windows-gnu",
+                "/tmp/gamepkg-llvm-tools-i686.tar.gz",
+                "x86",
+            ),
+        ] {
+            let (parts, identity, expected) = auditor_plan(target).unwrap();
+            let installed = install(root.path(), &parts, &identity, &expected, |record| {
+                if record.url.contains("/llvm-tools-") {
+                    Ok(PathBuf::from(archive))
+                } else {
+                    Ok(PathBuf::from(if target.starts_with("i686") {
+                        "/tmp/gamepkg-rustc-i686.tar.gz"
+                    } else {
+                        "/tmp/gamepkg-rustc-x64.tar.gz"
+                    }))
+                }
+            })
+            .unwrap();
+            let binary = installed.join(format!("rust-auditor-1.89.0-{target}/bin/llvm-nm.exe"));
+            crate::native::validate_pe(&fs::read(&binary).unwrap(), arch).unwrap();
+            // Revalidate the cached payload, then reject an altered tool even
+            // when the inventory document itself remains unchanged.
+            verify(&installed, &identity, &expected).unwrap();
+            let mut permissions = fs::metadata(&binary).unwrap().permissions();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                permissions.set_mode(0o600);
+            }
+            #[cfg(not(unix))]
+            permissions.set_readonly(false);
+            fs::set_permissions(&binary, permissions).unwrap();
+            fs::write(&binary, b"tampered").unwrap();
+            assert!(verify(&installed, &identity, &expected).is_err());
+        }
+    }
+    #[test]
+    fn native_auditor_is_pinned_for_both_host_widths_and_installs_no_extra_tools() {
+        let mut identities = Vec::new();
+        for target in ["x86_64-pc-windows-gnu", "i686-pc-windows-gnu"] {
+            let (parts, identity, expected) = auditor_plan(target).unwrap();
+            assert_eq!(parts.len(), 2);
+            assert!(parts
+                .iter()
+                .all(|part| matches!(part.layout, Layout::RustAuditor(_, _))));
+            assert_eq!(expected.len(), 64);
+            identities.push(identity);
+        }
+        assert_ne!(identities[0], identities[1]);
+        assert!(auditor_plan("aarch64-pc-windows-msvc").is_err());
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("auditor.tar.gz");
+        archive(
+            &path,
+            &[
+                ("component/LICENSE.TXT", b"license"),
+                (
+                    "component/llvm-tools-preview/lib/rustlib/i686-pc-windows-gnu/bin/llvm-nm.exe",
+                    b"nm",
+                ),
+                (
+                    "component/llvm-tools-preview/lib/rustlib/i686-pc-windows-gnu/bin/runtime.dll",
+                    b"runtime",
+                ),
+                (
+                    "component/llvm-tools-preview/lib/rustlib/i686-pc-windows-gnu/bin/llvm-ar.exe",
+                    b"not needed",
+                ),
+            ],
+        );
+        let part = Part {
+            download: Download {
+                url: "https://example.invalid/auditor".into(),
+                sha256: digest_file(&path).unwrap().sha256,
+            },
+            destination: "auditor".into(),
+            layout: Layout::RustAuditor(
+                "llvm-tools-preview".into(),
+                vec![
+                    "lib/rustlib/i686-pc-windows-gnu/bin/llvm-nm.exe".into(),
+                    "lib/rustlib/i686-pc-windows-gnu/bin/runtime.dll".into(),
+                ],
+            ),
+        };
+        let stage = temp.path().join("stage");
+        fs::create_dir(&stage).unwrap();
+        let mut inventory = BTreeMap::new();
+        unpack(
+            &path,
+            &part,
+            &stage,
+            &mut inventory,
+            &mut 0,
+            &mut BTreeMap::new(),
+        )
+        .unwrap();
+        assert_eq!(inventory.len(), 3);
+        assert!(!inventory.keys().any(|s| s.ends_with("llvm-ar.exe")));
+        let expected = payload_digest(&inventory).unwrap();
+        let installed = install(temp.path(), &[part], "auditor-fixture", &expected, |_| {
+            Ok(path.clone())
+        })
+        .unwrap();
+        let mut actual = BTreeMap::new();
+        scan(&installed, &installed, &mut actual, &mut 0).unwrap();
+        actual.remove(INVENTORY);
+        assert_eq!(actual, inventory);
     }
     #[test]
     fn fixed_plan_has_only_pinned_standalone_archives() {

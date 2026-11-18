@@ -32,7 +32,7 @@ fn nvidia_device_name(name: &str) -> bool {
 
 // NVIDIA's proprietary driver also needs its own character devices, beyond
 // /dev/dri. Keep this list host-owned and narrow rather than exposing all /dev.
-fn nvidia_devices(directory: &Path) -> Result<Vec<PathBuf>> {
+pub(crate) fn nvidia_devices(directory: &Path) -> Result<Vec<PathBuf>> {
     let mut devices = Vec::new();
     for entry in fs::read_dir(directory).context("read host graphics devices")? {
         let entry = entry?;
@@ -294,6 +294,8 @@ impl Session {
         iso: &Path,
         options: Options,
     ) -> Result<Self> {
+        crate::build_policy::require(Some(crate::takedawn::PROFILE))?;
+
         ensure!(options.audio_volume <= 100, "invalid game audio volume");
         ensure!(
             !id.is_empty()

@@ -486,6 +486,8 @@ pub fn validate(bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 pub fn build() -> Result<Vec<u8>> {
+    crate::build_policy::require(Some(crate::doom::PROFILE))?;
+
     #[cfg(not(target_os = "linux"))]
     {
         bail!("DOOM compilation requires the Linux isolated compiler");

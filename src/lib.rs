@@ -43,6 +43,7 @@ mod zelda_snapshots;
 pub mod registry;
 
 pub mod build;
+pub mod build_policy;
 pub mod catalog;
 pub mod runtime;
 pub mod server_selections;
@@ -127,6 +128,7 @@ pub mod cube2;
 pub mod engine_host;
 pub mod external_engine;
 pub mod game_data;
+pub mod port_host;
 
 pub mod user_files;
 

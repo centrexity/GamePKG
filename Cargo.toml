@@ -10,8 +10,12 @@ default-run = "gamepkg"
 
 [features]
 default = []
-gui = ["dep:egui-winit", "dep:eframe", "dep:gilrs", "dep:rfd", "dep:pollster", "audio"]
+gui = ["dep:egui-winit", "dep:eframe", "dep:gilrs", "dep:rfd", "dep:pollster", "dep:wgpu-types", "audio"]
 audio = ["dep:cpal"]
+
+[profile.native-service]
+inherits = "release"
+lto = false
 
 [[bin]]
 name = "gamepkg"
@@ -23,6 +27,7 @@ path = "src/bin/gui.rs"
 required-features = ["gui"]
 
 [dependencies]
+gamepkg-native-input = { path = "engines/native-input" }
 cap-std = "=4.0.3"
 cap-fs-ext = "=4.0.3"
 egui-winit = { version = "=0.31.1", optional = true, default-features = false }
@@ -34,6 +39,7 @@ naga = { version = "=24.0.0", features = ["spv-in", "wgsl-in", "glsl-out", "wgsl
 wasmtime = { version = "36.0.20", default-features = false, features = ["cranelift", "runtime", "std", "component-model"] }
 image = { version = "0.25", default-features = false, features = ["png"] }
 eframe = { version = "0.31", optional = true, default-features = false, features = ["default_fonts", "glow", "wgpu", "x11", "wayland"] }
+wgpu-types = { version = "=24.0.0", optional = true, features = ["serde"] }
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
@@ -54,6 +60,7 @@ url = "2"
 semver = "1"
 tempfile = "3"
 rustc_lexer = "=0.1.0"
+rustc-demangle = "=0.1.27"
 pollster = { version = "=0.4.0", optional = true }
 rfd = { version = "=0.17.2", optional = true }
 
@@ -62,12 +69,25 @@ socket2 = "=0.6.3"
 wat = "1"
 
 [target.'cfg(windows)'.dependencies]
+windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_NetworkManagement_IpHelper", "Win32_NetworkManagement_Ndis", "Win32_Networking_WinSock", "Win32_Storage_FileSystem"] }
 gamepkg-takedawn-windows-runner = { path = "engines/takedawn/windows-runner" }
 
 [target.'cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))'.dependencies]
 gilrs = { version = "=0.10.10", optional = true, default-features = false, features = ["xinput"] }
 
 [patch.crates-io]
+naga = { path = "vendor/naga" }
 egui = { path = "vendor/egui" }
 winit = { path = "vendor/winit" }
 egui-winit = { path = "vendor/egui-winit" }
+wgpu-hal = { path = "vendor/wgpu-hal" }
+
+[[example]]
+name = "service-window"
+path = "examples/maintainer/service_window.rs"
+required-features = ["gui"]
+
+[[example]]
+name = "native-service-runtime"
+path = "examples/maintainer/native_service_runtime.rs"
+required-features = ["gui"]

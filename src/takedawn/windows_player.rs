@@ -90,6 +90,8 @@ pub struct Session {
     overlap: Vec<u8>,
     path_audit: crate::takedawn::PathAudit,
     admitted: bool,
+    backend: crate::takedawn::windows_graphics::Backend,
+    backend_ready: bool,
     window: bool,
     frames: u32,
     headless: bool,
@@ -107,6 +109,8 @@ impl Session {
         iso: &Path,
         options: Options,
     ) -> Result<Self> {
+        crate::build_policy::require(Some(crate::takedawn::PROFILE))?;
+
         ensure!(
             cfg!(target_arch = "x86_64"),
             "the native Takedawn player requires 64-bit Windows"
@@ -129,6 +133,7 @@ impl Session {
             .context("build the reviewed native game before playing")?;
         crate::integrity::verify_build(executable, &bytes)?;
         crate::native::validate_executable(&bytes)?;
+        let backend = crate::takedawn::windows_graphics::from_executable(&bytes)?;
         let companion = executable.with_file_name("SDL2.dll");
         let dll = crate::files::read_regular(&companion, 32 * 1048576, false)?;
         crate::integrity::verify_build(&companion, &dll)?;
@@ -201,7 +206,7 @@ impl Session {
                 "RECOMP_RENDER_SHADER_CACHE".into(),
                 runtime_data.join("shader-cache").into_os_string(),
             ),
-            ("RECOMP_PB_BACKEND".into(), "vulkan".into()),
+            ("RECOMP_PB_BACKEND".into(), backend.environment().into()),
             ("RECOMP_UNIMPL_TRAP".into(), "1".into()),
             ("RECOMP_STUB_LOG".into(), "1".into()),
             (
@@ -221,6 +226,10 @@ impl Session {
                 format!("{:.2}", f64::from(options.audio_volume) / 100.0).into(),
             ),
         ];
+        if backend == crate::takedawn::windows_graphics::Backend::D3d11 {
+            // This renderer owns its Win32 window; no second framebuffer window.
+            environment.push(("RECOMP_FB_WINDOW".into(), "0".into()));
+        }
         // Preserve the host's explicit silent test driver for windowed runs too.
         // Default windowed playback still lets SDL select the user's real device.
         if options.headless
@@ -266,6 +275,8 @@ impl Session {
             overlap: Vec::new(),
             path_audit: crate::takedawn::PathAudit::default(),
             admitted: false,
+            backend,
+            backend_ready: false,
             window: false,
             frames: 0,
             headless: options.headless,
@@ -287,6 +298,10 @@ impl Session {
             self.overlap.extend_from_slice(&bytes[..n]);
             let text = String::from_utf8_lossy(&self.overlap);
             self.admitted |= text.contains("verified disc admitted in place");
+            self.backend_ready |= self
+                .backend
+                .ready_marker()
+                .is_none_or(|marker| text.contains(marker));
             self.window |= text.contains("[PRESENT] window up:");
             for (_, rest) in text
                 .match_indices("[GPU] flip ")
@@ -313,6 +328,7 @@ impl Session {
     pub fn ready(&self) -> bool {
         self.path_audit.failure().is_none()
             && self.admitted
+            && self.backend_ready
             && if self.headless {
                 self.frames > 0
             } else {
@@ -341,6 +357,7 @@ impl Session {
             .poll()?;
         if matches!(event, Some(Event::Restarted { .. })) {
             self.admitted = false;
+            self.backend_ready = false;
             self.window = false;
             self.frames = 0;
             self.overlap.clear();

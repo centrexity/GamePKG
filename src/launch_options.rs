@@ -375,6 +375,40 @@ impl From<LaunchOptions> for LaunchArgs {
     }
 }
 impl LaunchArgs {
+    #[cfg(all(feature = "gui", any(target_os = "linux", windows)))]
+    pub(crate) fn service_bytes(self) -> Result<[u8; 8]> {
+        let args = self.resolved(None)?;
+        let absent = u8::MAX;
+        Ok([
+            args.window_mode
+                .map(|value| u8::from(value == WindowMode::Fullscreen))
+                .unwrap_or(absent),
+            args.aspect_ratio
+                .map(|value| u8::from(value == AspectRatio::Wide))
+                .unwrap_or(absent),
+            args.render_scale.unwrap_or(absent),
+            args.antialiasing
+                .map(|value| match value {
+                    Antialiasing::Off => 0,
+                    Antialiasing::Fxaa => 1,
+                    Antialiasing::Smaa => 2,
+                })
+                .unwrap_or(absent),
+            args.texture_lod
+                .map(|value| match value {
+                    TextureLod::Off => 0,
+                    TextureLod::Auto => 1,
+                    TextureLod::Half => 2,
+                    TextureLod::One => 3,
+                    TextureLod::OneHalf => 4,
+                })
+                .unwrap_or(absent),
+            args.sharpening_percent.unwrap_or(absent),
+            args.widescreen_hud.map(u8::from).unwrap_or(absent),
+            args.menu_hud_scale.unwrap_or(absent),
+        ])
+    }
+
     pub fn is_empty(self) -> bool {
         self.arguments().is_empty()
     }

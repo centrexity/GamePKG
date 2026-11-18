@@ -90,6 +90,8 @@ impl Game {
         rom: Option<Vec<Vec<u8>>>,
         save: Option<crate::saves::Save>,
     ) -> Result<Self> {
+        crate::build_policy::require(manifest.builtin_engine.as_deref())?;
+
         settings.validate()?;
         anyhow::ensure!(
             !matches!(
@@ -897,6 +899,7 @@ impl Game {
         snapshot.flush()?;
         let mut package = crate::archive::Package::open(snapshot.path())?;
         let manifest = crate::verify::verify_embedded(&mut package)?;
+        crate::build_policy::require(manifest.builtin_engine.as_deref())?;
         anyhow::ensure!(
             manifest.builtin_engine.as_deref() != Some(crate::takedawn::PROFILE),
             "Takedawn runs in its own native window; use the desktop Play action or gamepkg run"

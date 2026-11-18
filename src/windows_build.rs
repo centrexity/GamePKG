@@ -28,6 +28,12 @@ pub(crate) fn compile(
     id: &str,
     held: Option<&crate::registry::LibraryChange>,
 ) -> Result<()> {
+    crate::build_policy::require(
+        crate::registry::installed_manifest(root, id)?
+            .builtin_engine
+            .as_deref(),
+    )?;
+
     use std::{
         path::{Path, PathBuf},
         process::Command,

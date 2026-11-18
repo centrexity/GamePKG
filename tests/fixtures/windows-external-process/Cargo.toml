@@ -1,0 +1,13 @@
+[package]
+name = "gamepkg-windows-external-process-fixture"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.89"
+publish = false
+
+[dependencies]
+tempfile = "3"
+
+[target.'cfg(windows)'.dependencies]
+gamepkg-takedawn-windows-runner = { path = "../../../engines/takedawn/windows-runner" }
+windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Isolation", "Win32_System_Memory"] }

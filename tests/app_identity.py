@@ -35,6 +35,16 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-identity-test-') as temporary:
             return verify_pair(root, version=version, architecture=architecture)
     result = check(record)
     assert result['identity'] == record and len(result['executables_sha256']) == 2
+    pinned = dict(record, native_services_source='ab' * 32)
+    assert check(pinned, cli_record=pinned)['identity'] == pinned
+    for bad in (record, dict(pinned, native_services_source='cd' * 32),
+                dict(pinned, native_services_source='invalid')):
+        try:
+            check(bad, cli_record=pinned)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f'Accepted mismatched SDK bundle pin: {bad}')
     rejected = 0
     for gui in [dict(record, native_sdk='abcdef1234567890'), dict(record, version='1.2.2'),
                 dict(record, architecture='x86_64'), dict(record, schema=True),

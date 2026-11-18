@@ -181,5 +181,47 @@ elif '--test-threads=1' in args[3] and os.environ.get('CONTROL_FAIL_SUITE'):
         self.assertFalse(self.log.exists())
 
 
+    def test_compiler_paths_override_default_folder_and_host_permissions(self):
+        destination = self.root / "custom build output"
+        destination.mkdir()
+        for record in self.records:
+            original = Path(record["executable"])
+            moved = destination / original.name
+            original.rename(moved)
+            moved.chmod(0o644)
+            record["executable"] = str(moved)
+        self.write_artifacts()
+        result, suites, publication = self.run_runner()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertCountEqual(suites, self.compiled)
+        self.assertEqual(len(publication), 1)
+
+
+    def test_ambiguous_suite_cannot_run(self):
+        record = dict(self.records[0])
+        record["executable"] += "-other"
+        Path(record["executable"]).write_text("control")
+        self.records.append(record)
+        self.write_artifacts()
+        result, suites, publication = self.run_runner()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Expected one Cargo-reported", result.stderr)
+        self.assertEqual((suites, publication), ([], []))
+
+
+    def test_missing_library_cannot_run_partial_qualification(self):
+        self.publication.unlink()
+        result, suites, publication = self.run_runner()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual((suites, publication), ([], []))
+
+
+    def test_invalid_manifest_cannot_run(self):
+        self.artifacts.write_text("not JSON\n")
+        result, suites, publication = self.run_runner()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual((suites, publication), ([], []))
+
+
 if __name__ == "__main__":
     unittest.main()

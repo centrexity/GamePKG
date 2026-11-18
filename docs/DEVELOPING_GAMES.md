@@ -2,6 +2,8 @@
 
 Games use host-supplied `gamepkg::` functions and have no Cargo dependencies. The host injects these bindings after checking every packaged source file.
 
+Native port maintainers: use the [shared port services](PORT_SERVICES.md) for controllers, keyboard, mouse, touchscreen, windows, graphics, audio, files and networking. Game code must not call SDL or OS APIs directly. Unmigrated built-in/native profiles are blocked from build and play, including cached builds. Source inspection and package management remain available. Port migration and app-side admission tests are required before enabling a profile. The service contract documents the checked build, the game-owned process and window, and the task and memory APIs.
+
 Start with `examples/minimal` or `examples/good/input-game` in the source repository. GamePKG is the format and player: creators choose where to host their own packages. Players inspect your source and permissions before approving your key.
 
 ## Creator checklist
@@ -28,7 +30,7 @@ are rejected. Its prepared Rust game library has no third-party Cargo
 dependencies. The original native runtime and its vendored host dependencies
 belong to that reviewed kit. A game author cannot opt arbitrary code into this
 exception by copying the profile name or supplying a digest in the manifest.
-See [native engine profiles](NATIVE_RUNTIME.md#reviewed-native-engine-profiles)
+See [native engine profiles](NATIVE_RUNTIME.md#legacy-native-engine-profiles--currently-blocked)
 for the separate build/runtime requirements and platform qualification.
 
 ### Minimal Cargo files

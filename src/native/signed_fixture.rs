@@ -157,8 +157,7 @@ fn signed_native_sdk_assets_saves_and_integrity() {
 
 #[cfg(target_os = "linux")]
 #[test]
-#[ignore = "requires Clang 18, matching native system libraries and bubblewrap"]
-fn reviewed_c_engines_build_for_app_width() {
+fn legacy_c_engine_packages_install_but_cannot_build() {
     let root = tempfile::tempdir().unwrap();
     let settings = crate::settings::Settings::default();
     for name in ["doom", "zelda3"] {
@@ -172,13 +171,13 @@ fn reviewed_c_engines_build_for_app_width() {
         )
         .unwrap();
         let manifest = crate::registry::install(root.path(), &package, true).unwrap();
-        super::build::compile_with_settings(root.path(), &manifest.id, &settings).unwrap();
+        let error =
+            super::build::compile_with_settings(root.path(), &manifest.id, &settings).unwrap_err();
+        assert!(
+            error.to_string().contains("requires migration"),
+            "{error:#}"
+        );
         let digest = crate::verify::digest(&std::fs::read(&package).unwrap());
-        let built = super::path_for_digest(root.path(), &digest);
-        let bytes = std::fs::read(&built).unwrap();
-        super::validate_executable(&bytes).unwrap();
-        assert_eq!(bytes[4], if usize::BITS == 32 { 1 } else { 2 });
-        crate::integrity::verify_build(&built, &bytes).unwrap();
-        println!("Verified optimized signed native {name} ELF{} engine Build and integrity; no original ROM/media or gameplay used", usize::BITS);
+        assert!(!super::path_for_digest(root.path(), &digest).exists());
     }
 }

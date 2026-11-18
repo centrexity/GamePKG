@@ -8,6 +8,7 @@ use std::{
         Arc, Mutex,
     },
 };
+pub(crate) mod capture;
 mod pcm;
 const MAX_COMMANDS: usize = 32;
 struct Buffer {
@@ -72,12 +73,29 @@ impl Buffer {
     }
 }
 enum Command {
+    Port(crate::port_host::audio_streams::Mixer, Vec<usize>),
     Music(Option<crate::music::Output>),
     Original(Option<Box<crate::audio_mix_stream::Playback>>, u64),
     Play(Arc<crate::audio_voices::Clip>),
     Volume(u8),
     Pause(bool),
     Stop,
+}
+struct PortPlayback {
+    mixer: crate::port_host::audio_streams::Mixer,
+    map: Vec<usize>,
+    phase: f64,
+    current: [i16; 6],
+}
+impl PortPlayback {
+    fn frame(&mut self, rate: u32) -> [f32; 6] {
+        while self.phase >= 1.0 {
+            self.current = self.mixer.frame();
+            self.phase -= 1.0;
+        }
+        self.phase += 48000.0 / f64::from(rate);
+        self.current.map(|s| f32::from(s) / 32768.0)
+    }
 }
 /// Host-owned effect controls staged by one successful game tick. Acceptance
 /// means the whole batch was queued; voice exhaustion is reported by error().
@@ -95,6 +113,7 @@ struct Shared {
     failures: AtomicU32,
 }
 struct Device {
+    port: Option<PortPlayback>,
     buffer: Buffer,
     shared: Arc<Shared>,
     pending: VecDeque<Command>,
@@ -119,6 +138,7 @@ impl Device {
         };
         (
             Self {
+                port: None,
                 buffer,
                 shared,
                 pending: VecDeque::with_capacity(MAX_COMMANDS),
@@ -135,6 +155,15 @@ impl Device {
         }
         while let Some(command) = self.pending.pop_front() {
             let accepted = match command {
+                Command::Port(mixer, map) => {
+                    self.port = Some(PortPlayback {
+                        mixer,
+                        map,
+                        phase: 1.0,
+                        current: [0; 6],
+                    });
+                    true
+                }
                 Command::Music(source) => {
                     self.buffer.original = None;
                     self.buffer.music = source;
@@ -194,6 +223,7 @@ impl Drop for Device {
     }
 }
 pub struct Player {
+    channels: usize,
     _stream: cpal::Stream,
     sink: Sink,
     error: Arc<Mutex<Option<String>>>,
@@ -279,6 +309,35 @@ impl Sink {
     }
 }
 impl Player {
+    pub fn port_channels(&self) -> usize {
+        self.channels
+    }
+    /// Host-declared mapping from logical FL,FR,FC,LFE,BL,BR to actual device
+    /// channel indices. Do not infer 5.1 speaker order from a channel count.
+    pub fn install_port_mixer(
+        &self,
+        mixer: crate::port_host::audio_streams::Mixer,
+        map: &[usize],
+    ) -> bool {
+        if map.len() != mixer.layout().channels()
+            || map.iter().any(|c| *c >= self.channels)
+            || map.iter().enumerate().any(|(i, c)| map[..i].contains(c))
+        {
+            return false;
+        }
+        let Ok(mut controls) = self.sink.shared.controls.lock() else {
+            return false;
+        };
+        if self.sink.shared.closed.load(Ordering::Acquire)
+            || controls.commands.len() >= MAX_COMMANDS
+        {
+            return false;
+        }
+        controls
+            .commands
+            .push_back(Command::Port(mixer, map.to_vec()));
+        true
+    }
     /// Queues a host control; false means invalid input or bounded backpressure.
     /// The device applies accepted controls in order at a callback boundary.
     pub fn music_source(&self, output: Option<crate::music::Output>) -> bool {
@@ -364,6 +423,7 @@ impl Player {
         };
         stream.play()?;
         Ok(Self {
+            channels: config.channels as usize,
             _stream: stream,
             sink,
             error,
@@ -417,10 +477,20 @@ fn output<T: cpal::SizedSample + cpal::FromSample<f32>>(
             let mut audible = 0;
             for frame in data.chunks_mut(config.channels as usize) {
                 let sample = playback.next(config.sample_rate);
+                let port = playback.port.as_mut().map(|port| {
+                    let source = port.frame(config.sample_rate);
+                    let mut mapped = [0.0f32; 8];
+                    for (index, channel) in port.map.iter().enumerate() {
+                        mapped[*channel] = source[index] * playback.buffer.gain;
+                    }
+                    mapped
+                });
                 let channels = frame.len();
                 let mut frame_audible = false;
                 for (channel, output) in frame.iter_mut().enumerate() {
-                    let sample = device_sample(sample, channel, channels);
+                    let sample = (device_sample(sample, channel, channels)
+                        + port.as_ref().map_or(0.0, |p| p[channel]))
+                    .clamp(-1.0, 1.0);
                     frame_audible |= sample != 0.0;
                     *output = T::from_sample(sample);
                 }

@@ -1,5 +1,23 @@
 // Optional maintainer-built audio embedding. Runtime never opens these paths.
-use std::{env, fs, io::Read, path::PathBuf};
+use std::{
+    env, fs,
+    io::{Read, Write},
+    path::{Path, PathBuf},
+};
+fn generated(output: &Path, bytes: &[u8]) {
+    // A stopped build must not leave an empty include file behind while Cargo
+    // still has an earlier successful build-script fingerprint.
+    let temporary = output.with_extension(format!("tmp-{}", std::process::id()));
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temporary)
+        .expect("create generated build input");
+    file.write_all(bytes).expect("write generated build input");
+    file.sync_all().expect("flush generated build input");
+    drop(file);
+    fs::rename(&temporary, output).expect("publish generated build input");
+}
 fn embed(variable: &str, name: &str) {
     println!("cargo:rerun-if-env-changed={variable}");
     let output = PathBuf::from(env::var_os("OUT_DIR").expect("Cargo output directory")).join(name);
@@ -25,7 +43,7 @@ fn embed(variable: &str, name: &str) {
             bytes
         }
     };
-    fs::write(output, bytes).expect("write bundled audio companion");
+    generated(&output, &bytes);
 }
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
@@ -37,6 +55,17 @@ fn main() {
     );
     embed("GAMEPKG_BUNDLED_AUDIO_DECODER", "audio-decoder.wasm");
     embed("GAMEPKG_BUNDLED_AUDIO_CONVERTER", "audio-converter.wasm");
+    println!("cargo:rerun-if-env-changed=GAMEPKG_NATIVE_SDK_SHA256");
+    if let Ok(pin) = env::var("GAMEPKG_NATIVE_SDK_SHA256") {
+        assert!(
+            pin.len() == 64
+                && pin
+                    .bytes()
+                    .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()),
+            "invalid native compatibility source hash"
+        );
+        println!("cargo:rustc-env=GAMEPKG_NATIVE_SDK_PIN={pin}");
+    }
     embed_external_engines();
 }
 
@@ -82,10 +111,43 @@ fn embed_external_engines() {
             text.push_str(&path.display().to_string());
             text.push_str("\"#)),\n");
         }
+        text.push_str("        ],\n        files: &[\n");
+        let prepared = dir.join("prepared");
+        if prepared.is_dir() {
+            let mut inputs = Vec::new();
+            prepared_files(&prepared, &mut inputs);
+            inputs.sort();
+            for path in inputs {
+                println!("cargo:rerun-if-changed={}", path.display());
+                let name = path
+                    .strip_prefix(&prepared)
+                    .expect("prepared input")
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                let absolute = path.canonicalize().expect("prepared input");
+                text.push_str(&format!(
+                    "            ({name:?}, include_bytes!({:?})),\n",
+                    absolute.to_string_lossy()
+                ));
+            }
+        }
         text.push_str("        ],\n    },\n");
     }
     text.push_str("];\n");
     let out = PathBuf::from(env::var_os("OUT_DIR").expect("Cargo output directory"))
         .join("external_engine_records.rs");
-    fs::write(out, text).expect("write external engine records");
+    generated(&out, text.as_bytes());
+}
+
+fn prepared_files(directory: &std::path::Path, files: &mut Vec<PathBuf>) {
+    for entry in fs::read_dir(directory).expect("prepared inputs") {
+        let entry = entry.expect("prepared input");
+        let kind = entry.file_type().expect("prepared input type");
+        assert!(!kind.is_symlink(), "prepared inputs cannot be symlinks");
+        if kind.is_dir() {
+            prepared_files(&entry.path(), files);
+        } else if kind.is_file() {
+            files.push(entry.path());
+        }
+    }
 }
