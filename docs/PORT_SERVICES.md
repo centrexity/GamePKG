@@ -824,6 +824,15 @@ signed networking permission, connection limits, and deadline. The reply is
 the ordinary LE u32 connection handle. Sub-op 13 returns its local endpoint
 once connected, Busy while it is pending, and Failed if it does not connect.
 
+Native op 50 sub-op 16 accepts an ASCII hostname or numeric IPv4 address
+and starts a lookup on the bounded network worker pool. It returns a
+LE u32 lookup handle without opening a game socket. Sub-op 17 takes that
+handle and returns four network-order IPv4 bytes, Busy while waiting,
+or Failed if no IPv4 result is available. The answer remains readable
+until sub-op 6 closes the handle. Closing drops the result and revokes
+the handle even if the OS resolver is still finishing in its worker.
+Networking permission and the existing handle and work budgets apply.
+
 ## Migration gates and verification
 
 `admission::CheckedSources::verify` authenticates and scans the complete signed

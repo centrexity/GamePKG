@@ -778,10 +778,10 @@ pub(super) fn network_dispatch(
     let mut r = Request(bytes);
     permitted(allowed)?;
     let op = r.u32()?;
-    if op > 15 {
+    if op > 17 {
         return Err(Error::Invalid);
     }
-    if matches!(op, 0 | 2 | 3 | 4 | 7 | 8 | 10 | 12 | 15) {
+    if matches!(op, 0 | 2 | 3 | 4 | 7 | 8 | 10 | 12 | 15 | 16 | 17) {
         room(cap, 4)?;
     }
     if matches!(op, 11 | 13) {

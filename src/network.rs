@@ -284,6 +284,7 @@ enum Handle {
 }
 enum Resource {
     Https(Vec<u8>),
+    ResolvedIpv4(Ipv4Addr),
     Tcp(TcpStream),
     Udp(UdpSocket),
     UdpBound(UdpSocket),
@@ -737,6 +738,40 @@ impl Service {
                 }
                 Ok(reply)
             }
+            16 => {
+                self.capable(false)?;
+                ensure!(capacity >= 4, "output buffer too small");
+                let host = std::str::from_utf8(b)?;
+                ensure!(
+                    !host.is_empty()
+                        && host.len() <= 253
+                        && host.bytes().all(|byte| byte.is_ascii_alphanumeric()
+                            || matches!(byte, b'.' | b'-')),
+                    "invalid IPv4 lookup name"
+                );
+                let endpoint = self.endpoint(&format!("{host}:1"), false)?;
+                let handle = self.spawn(move || {
+                    endpoint
+                        .resolve_all(true)?
+                        .into_iter()
+                        .find_map(|address| match address {
+                            SocketAddr::V4(v4) => Some(Resource::ResolvedIpv4(*v4.ip())),
+                            SocketAddr::V6(_) => None,
+                        })
+                        .context("no IPv4 address")
+                })?;
+                Ok(number(handle))
+            }
+            17 => {
+                self.capable(false)?;
+                ensure!(capacity >= 4 && b.len() == 4, "invalid lookup poll");
+                let Resource::ResolvedIpv4(address) = self.refresh(id(b)?)? else {
+                    bail!("handle is not an IPv4 lookup");
+                };
+                let mut reply = vec![0];
+                reply.extend(address.octets());
+                Ok(reply)
+            }
             _ => bail!("unknown network operation"),
         }
     }
@@ -813,6 +848,25 @@ fn decode_socket_address(bytes: &[u8]) -> Result<SocketAddr> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn ipv4_lookup_requires_permission_and_releases_published_results() {
+        let mut service = Service::new(permissions());
+        assert_eq!(service.call(16, b"localhost", 4), [1]);
+        assert_eq!(service.opens, 0);
+
+        let mut allowed = permissions();
+        allowed.network = true;
+        let mut service = Service::new(allowed);
+        assert_eq!(service.call(16, b"localhost:443", 4), [1]);
+        assert_eq!(service.call(16, b"localhost", 3), [1]);
+        assert_eq!(service.opens, 0);
+        let id = handle(service.call(16, b"localhost", 4)).to_le_bytes();
+        assert_eq!(until(|| service.call(17, &id, 4)), [0, 127, 0, 0, 1]);
+        assert_eq!(service.call(17, &id, 4), [0, 127, 0, 0, 1]);
+        assert_eq!(service.call(6, &id, 0), [0]);
+        assert_eq!(service.call(17, &id, 4), [1]);
+    }
+
     #[test]
     fn interface_discovery_is_permission_gated_bounded_and_rate_limited() {
         let mut denied = Service::new(permissions());
