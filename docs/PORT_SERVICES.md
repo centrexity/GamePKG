@@ -268,7 +268,8 @@ device texture limit. Nearest/linear sampling is available for both ordinary
 images and compiled fragment passes. Host shader preparation continues to use
 the existing verified Slang compilation/cache; game requests cannot inject shader
 source or choose a GPU device. Large uploads are bounded by the 16 MiB message
-limit; the image table is bounded to 256 entries/128 MiB and frames to 4,096 draws.
+limit; the image table is bounded to 1,024 entries and 128 MiB, and frames to
+4,096 draws.
 
 The original operation 30 is output-only, interleaved PCM16 at 48 kHz, mono or stereo, up to 1,600
 frames per request. All sample bytes on the wire are little endian. The desktop
