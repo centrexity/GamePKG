@@ -4,7 +4,7 @@ mod interfaces;
 use std::{
     collections::BTreeMap,
     io::{Read, Write},
-    net::{IpAddr, SocketAddr, TcpListener, TcpStream, ToSocketAddrs, UdpSocket},
+    net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, TcpStream, ToSocketAddrs, UdpSocket},
     sync::{
         atomic::{AtomicUsize, Ordering},
         mpsc,
@@ -18,7 +18,7 @@ const UDP_RECEIVE_REPLY_MAX: usize = MAX_BYTES + UDP_PEER_BYTES;
 const MAX_TRANSFER_BYTES: usize = 256 * 1024;
 const MAX_JOBS: usize = 16;
 static JOBS: AtomicUsize = AtomicUsize::new(0);
-fn connect_tcp(addresses: &[SocketAddr]) -> Result<TcpStream> {
+fn connect_tcp(addresses: &[SocketAddr], source: Option<Ipv4Addr>) -> Result<TcpStream> {
     ensure!(
         !addresses.is_empty() && addresses.len() <= 64,
         "invalid DNS result"
@@ -37,7 +37,21 @@ fn connect_tcp(addresses: &[SocketAddr]) -> Result<TcpStream> {
         if allowance.is_zero() {
             break;
         }
-        match TcpStream::connect_timeout(address, allowance) {
+        let attempt = if let Some(source) = source {
+            (|| {
+                let socket = socket2::Socket::new(
+                    socket2::Domain::IPV4,
+                    socket2::Type::STREAM,
+                    Some(socket2::Protocol::TCP),
+                )?;
+                socket.bind(&SocketAddr::from((source, 0)).into())?;
+                socket.connect_timeout(&(*address).into(), allowance)?;
+                Ok(socket.into())
+            })()
+        } else {
+            TcpStream::connect_timeout(address, allowance)
+        };
+        match attempt {
             Ok(stream) => return Ok(stream),
             Err(error) => last_error = Some(error),
         }
@@ -457,16 +471,19 @@ impl Service {
             Ok(Resource::Https(output.stdout_bytes))
         })
     }
-    fn connect(&mut self, text: &str, udp: bool) -> Result<u32> {
+    fn connect(&mut self, text: &str, udp: bool, source: Option<Ipv4Addr>) -> Result<u32> {
         self.capable(false)?;
         let endpoint = self.endpoint(text, false)?;
         let local = true;
         self.spawn(move || {
-            let addresses = endpoint.resolve_all(local)?;
+            let mut addresses = endpoint.resolve_all(local)?;
+            if source.is_some() {
+                addresses.retain(SocketAddr::is_ipv4);
+            }
             if udp {
                 Ok(Resource::Udp(connect_udp(&addresses)?))
             } else {
-                let stream = connect_tcp(&addresses)?;
+                let stream = connect_tcp(&addresses, source)?;
                 stream.set_nonblocking(true)?;
                 stream.set_nodelay(true)?;
                 Ok(Resource::Tcp(stream))
@@ -504,7 +521,11 @@ impl Service {
                 }
                 _ => Ok(vec![0]),
             },
-            2 | 3 => Ok(number(self.connect(std::str::from_utf8(b)?, op == 3)?)),
+            2 | 3 => Ok(number(self.connect(
+                std::str::from_utf8(b)?,
+                op == 3,
+                None,
+            )?)),
             4 => {
                 let id = id(b)?;
                 let bytes = &b[4..];
@@ -686,6 +707,19 @@ impl Service {
                 let mut reply = vec![0];
                 reply.extend(encode_socket_address(address));
                 Ok(reply)
+            }
+            15 => {
+                let (source, endpoint) = b.split_at_checked(4).context("missing source address")?;
+                let source = Ipv4Addr::from(<[u8; 4]>::try_from(source)?);
+                ensure!(
+                    !source.is_multicast() && !source.is_broadcast(),
+                    "invalid source address"
+                );
+                Ok(number(self.connect(
+                    std::str::from_utf8(endpoint)?,
+                    false,
+                    Some(source),
+                )?))
             }
             14 => {
                 self.capable(false)?;
@@ -1463,6 +1497,33 @@ mod tests {
         assert_eq!(service.call(6, &listener.to_le_bytes(), 0), [0]);
     }
     #[test]
+    fn tcp_source_binding_is_permission_gated_and_visible_to_the_peer() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let endpoint = listener.local_addr().unwrap().to_string();
+        let mut request = [127, 0, 0, 1].to_vec();
+        request.extend_from_slice(endpoint.as_bytes());
+        let mut denied = Service::new(permissions());
+        assert_eq!(denied.call(15, &request, 4), [1]);
+        assert_eq!(denied.opens, 0);
+
+        let mut p = permissions();
+        p.network = true;
+        let mut service = Service::new(p);
+        let mut invalid = request.clone();
+        invalid[..4].copy_from_slice(&[255; 4]);
+        assert_eq!(service.call(15, &invalid, 4), [1]);
+        assert_eq!(service.opens, 0);
+        let handle = handle(service.call(15, &request, 4)).to_le_bytes();
+        let local = until(|| service.call(13, &handle, 32));
+        assert_eq!(local[0], 0);
+        let local = decode_socket_address(&local[1..]).unwrap();
+        let (_, peer) = listener.accept().unwrap();
+        assert_eq!(local, peer);
+        assert_eq!(peer.ip(), Ipv4Addr::LOCALHOST);
+        assert_eq!(service.call(6, &handle, 0), [0]);
+    }
+
+    #[test]
     fn tcp_falls_back_after_a_refused_or_timed_out_resolved_address() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let reachable = listener.local_addr().unwrap();
@@ -1479,20 +1540,20 @@ mod tests {
             .bind(&"127.0.0.1:0".parse::<SocketAddr>().unwrap().into())
             .unwrap();
         let refused = reservation.local_addr().unwrap().as_socket().unwrap();
-        let error = connect_tcp(&[refused]).unwrap_err();
+        let error = connect_tcp(&[refused], None).unwrap_err();
         assert!(matches!(
             error.downcast_ref::<std::io::Error>().unwrap().kind(),
             std::io::ErrorKind::ConnectionRefused | std::io::ErrorKind::TimedOut
         ));
-        let mut stream = connect_tcp(&[refused, reachable]).unwrap();
+        let mut stream = connect_tcp(&[refused, reachable], None).unwrap();
         stream.write_all(b"ping").unwrap();
         let (mut peer, _) = listener.accept().unwrap();
         peer.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
         let mut bytes = [0; 4];
         peer.read_exact(&mut bytes).unwrap();
         assert_eq!(&bytes, b"ping");
-        assert!(connect_tcp(&[]).is_err());
-        assert!(connect_tcp(&[reachable; 65]).is_err());
+        assert!(connect_tcp(&[], None).is_err());
+        assert!(connect_tcp(&[reachable; 65], None).is_err());
     }
     #[cfg(target_os = "linux")]
     #[test]
