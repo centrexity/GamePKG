@@ -71,6 +71,10 @@ impl NativeLaunch {
 ))]
 pub fn require_windows_compatibility(manifest: &crate::manifest::Manifest) -> Result<()> {
     ensure!(
+        manifest.game_data.is_none(),
+        "native game-data folders currently require Linux"
+    );
+    ensure!(
         manifest.uses_service_runtime()
             && !manifest.permissions.network
             && !manifest.permissions.microphone

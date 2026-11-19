@@ -814,8 +814,10 @@ impl eframe::App for App {
                                     "The game-data request changed. Choose the folder again."
                                 );
                                 crate::game_data::remember(&root, &current, &path)?;
+                                let remembered = crate::game_data::load(&root, &current)?
+                                    .ok_or_else(|| anyhow::anyhow!("the game-data selection was not saved"))?;
                                 self.data_paths
-                                    .insert(current.id, path.to_string_lossy().into_owned());
+                                    .insert(current.id, remembered.to_string_lossy().into_owned());
                                 Ok(
                                     "Game-data folder remembered. Original files stay read-only."
                                         .into(),

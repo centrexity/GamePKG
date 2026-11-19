@@ -99,6 +99,8 @@ pub fn build_identity() -> String {
         include_str!("../compiler.rs"),
         include_str!("../files.rs"),
         include_str!("../archive.rs"),
+        include_str!("../manifest.rs"),
+        include_str!("../game_data.rs"),
         include_str!("../../engines/takedawn/windows-runner/src/lib.rs"),
         include_str!("../../engines/takedawn/windows-runner/src/rom_grants.rs"),
         include_str!("../../engines/takedawn/windows-runner/src/sandbox.rs"),

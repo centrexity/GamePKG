@@ -50,9 +50,27 @@ files and special files are rejected. Revoking the directory also revokes its
 open file handles. Directory listing examines at most 16,384 entries and
 retains the existing bounded response and 4,096-entry limit.
 
-Trusted providers supply the opened directories in selection order through
-`Grants::game_data`. The normal launcher still needs to provision these
-directories from a signed declaration and the player's folder selection.
+On Linux, a checked native package can request one folder layout in its
+signed manifest.
+
+```toml
+[game_data]
+title = "Original installation"
+
+[[game_data.layouts]]
+directories = ["data", "packages"]
+paths = ["data/start.cfg"]
+min_bytes = 1
+```
+
+The player selects the parent folder in the desktop app or with
+`gamepkg run GAME_ID --game-data FOLDER`. Only the declared top-level
+directories are mounted read-only. Optional startup files must be inside
+those directories and pass the declared size checks. The launcher pins
+the directories before starting the confined process. The child runtime
+supplies them through `Grants::game_data` in manifest order. The game
+filters discovery for kind 6 and uses paths relative to each grant. The
+game worker receives opaque IDs and no original filesystem handles.
 
 ## Process ownership for native ports
 
