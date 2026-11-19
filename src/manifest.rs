@@ -1,8 +1,6 @@
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 
-pub const SERVICE_ENTRY_WORLD: &str = "game-native-v1";
-
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Manifest {
@@ -25,7 +23,10 @@ pub struct Manifest {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub genres: Vec<String>,
     pub version: String,
-    pub entry_world: String,
+    #[serde(default, rename = "entry_world", skip_serializing)]
+    legacy_entry_world: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub native_services: bool,
     #[serde(default = "default_runtime_profile")]
     pub runtime_profile: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -392,7 +393,7 @@ pub struct UserFile {
 }
 impl Manifest {
     pub fn uses_service_runtime(&self) -> bool {
-        self.entry_world == SERVICE_ENTRY_WORLD
+        self.native_services
     }
 
     pub fn uses_selected_servers(&self) -> bool {
@@ -429,6 +430,11 @@ impl Manifest {
     }
     pub fn parse(bytes: &[u8]) -> Result<Self> {
         let mut m: Self = toml::from_str(std::str::from_utf8(bytes)?)?;
+        match m.legacy_entry_world.take().as_deref() {
+            None | Some("game") => {}
+            Some("game-native-v1") => m.native_services = true,
+            Some(_) => bail!("invalid legacy entry_world"),
+        }
         for (label, value, max, multiline) in [
             ("title", m.title.as_deref(), 256, false),
             ("description", m.description.as_deref(), 4096, true),
@@ -526,7 +532,7 @@ impl Manifest {
         let takedawn = m.builtin_engine.as_deref() == Some(crate::takedawn::PROFILE);
         if takedawn {
             if m.runtime_profile != "core-v1"
-                || m.entry_world != "game"
+                || m.uses_service_runtime()
                 || m.required_rom_count() != 1
                 || m.game_data.is_some()
                 || !m.permissions.save
@@ -553,7 +559,7 @@ impl Manifest {
                 || data.title.chars().any(char::is_control)
                 || !data.layouts.is_empty()
                 || m.runtime_profile != "core-v1"
-                || m.entry_world != "game"
+                || m.uses_service_runtime()
                 || m.required_rom_count() != 0
                 || !m.permissions.save
                 || !m.permissions.audio
@@ -579,7 +585,7 @@ impl Manifest {
                 || data.layouts != engine.layouts()
                 || (data.user_selected_servers && !engine.network_allowed)
                 || m.runtime_profile != "core-v1"
-                || m.entry_world != "game"
+                || m.uses_service_runtime()
                 || m.required_rom_count() != 0
                 || !m.permissions.save
                 || !m.permissions.audio
@@ -626,8 +632,8 @@ impl Manifest {
         {
             bail!("invalid package id");
         }
-        if m.version.len() > 256 || m.entry_world.len() > 128 {
-            bail!("version or entry world is too long");
+        if m.version.len() > 256 {
+            bail!("version is too long");
         }
         semver::Version::parse(&m.version)?;
         m.ensure_engine_compatible()?;
@@ -668,9 +674,6 @@ impl Manifest {
         }
         if m.id == "." || m.id == ".." {
             bail!("invalid package id");
-        }
-        if m.version.is_empty() || m.entry_world.is_empty() {
-            bail!("version and entry world are required");
         }
         if m.limits.hard_memory_bytes == 0
             || m.limits.hard_memory_bytes
@@ -829,9 +832,29 @@ mod native_services_tests {
     use super::*;
 
     #[test]
+    fn entry_world_is_read_only_legacy_metadata() {
+        let current = include_str!("../examples/minimal/manifest.toml");
+        let old = format!("entry_world = \"game\"\n{current}");
+        for text in [current, &old] {
+            let parsed = Manifest::parse(text.as_bytes()).unwrap();
+            assert!(!parsed.uses_service_runtime());
+            assert!(!toml::to_string(&parsed).unwrap().contains("entry_world"));
+        }
+        let standalone = format!("entry_world = \"game-native-v1\"\n{current}");
+        let serialized = toml::to_string(&Manifest::parse(standalone.as_bytes()).unwrap()).unwrap();
+        assert!(serialized.contains("native_services = true"));
+        assert!(!serialized.contains("entry_world"));
+        assert!(Manifest::parse(serialized.as_bytes())
+            .unwrap()
+            .uses_service_runtime());
+        let invalid = format!("entry_world = \"unknown\"\n{current}");
+        assert!(Manifest::parse(invalid.as_bytes()).is_err());
+    }
+
+    #[test]
     fn service_native_memory_ceilings_preserve_the_wasm_bound() {
         let base = include_str!("../examples/minimal/manifest.toml");
-        let native = base.replace("entry_world = \"game\"", "entry_world = \"game-native-v1\"");
+        let native = format!("native_services = true\n{base}");
         for bytes in [2u64 << 30, 4u64 << 30] {
             let manifest = native.replace("16777216", &bytes.to_string());
             assert_eq!(
@@ -850,10 +873,9 @@ mod native_services_tests {
 
     #[test]
     fn indexed_native_profile_requires_exactly_two_slang_raster_stages() {
-        let base = include_str!("../examples/minimal/manifest.toml").replace(
-            "entry_world = \"game\"",
-            "entry_world = \"game-native-v1\"\nnative_graphics = \"vertex-color-v1\"",
-        );
+        let original = include_str!("../examples/minimal/manifest.toml");
+        let base =
+            format!("native_services = true\nnative_graphics = \"vertex-color-v1\"\n{original}");
         let shaders = r#"
 [[shaders]]
 source = "shaders/scene.slang"
@@ -877,6 +899,11 @@ stage = "fragment"
                 .as_bytes()
         )
         .is_err());
-        assert!(Manifest::parse(valid.replace("game-native-v1", "game").as_bytes()).is_err());
+        assert!(Manifest::parse(
+            valid
+                .replace("native_services = true", "native_services = false")
+                .as_bytes()
+        )
+        .is_err());
     }
 }

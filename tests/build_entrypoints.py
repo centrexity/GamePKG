@@ -22,8 +22,8 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-entry-') as directory:
     run('keygen','-o',key)
     for profile in ['core-v1','component-v1']:
         package_id=f'com.gamepkg.entry-{profile}'
-        def publish(version,text,world='game'):
-            (source/'manifest.toml').write_text(f'runtime_profile = "{profile}"\n'+original.replace('com.gamepkg.minimal',package_id).replace('version = "0.1.0"',f'version = "{version}"').replace('entry_world = "game"',f'entry_world = "{world}"'))
+        def publish(version,text):
+            (source/'manifest.toml').write_text(f'runtime_profile = "{profile}"\n'+original.replace('com.gamepkg.minimal',package_id).replace('version = "0.1.0"',f'version = "{version}"'))
             (source/'source/src/lib.rs').write_text(text)
             package=root/f'{profile}-{version}.gamepkg'
             run('pack',source,'-o',package,'--key',key)
@@ -42,8 +42,10 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-entry-') as directory:
         output=publish('0.5.0','mod engine; pub use engine::game_tick;')
         run('build',package_id)
         assert '42' in run('run',package_id,'--frames','2').stdout
-        output=publish('0.6.0',original_source,'unsupported-world')
-        run('build',package_id,success=False)
-        assert not output.exists()
+        manifest=source/'manifest.toml'
+        manifest.write_text('entry_world = "unsupported-world"\n'+manifest.read_text())
+        rejected=root/f'{profile}-unsupported.gamepkg'
+        run('pack',source,'-o',rejected,'--key',key,success=False)
+        assert not rejected.exists()
         module.unlink()
     print('Entry points passed: playable core/WIT ticks and reexports; missing/wrong ticks and unsupported worlds rejected without cache damage.')

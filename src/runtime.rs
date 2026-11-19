@@ -113,8 +113,8 @@ impl Game {
         if !manifest.requires_rom && rom.is_some() {
             bail!("this game does not request a user ROM");
         }
-        if manifest.entry_world != "game" {
-            bail!("unsupported runtime entry world");
+        if manifest.uses_service_runtime() {
+            bail!("this game requires the native service runtime");
         }
         let mut config = Config::new();
         config.wasm_component_model(true);

@@ -29,10 +29,10 @@
 <p>The signed message is a SHA-256 tree digest. Initialize SHA-256 with UTF-8 bytes <code>GamePKG tree v1</code> and one NUL byte. Sort every file except <code>signature.toml</code> lexicographically by its UTF-8 name. For each, hash: name byte length as a little-endian u64, name bytes, content byte length as a little-endian u64, then the raw 32-byte SHA-256 of its contents. Ed25519 signs the resulting 32-byte digest. This includes the manifest, shaders, source, assets, and license. ZIP timestamps, entry order and compression are not signed.</p>
 <h2>Runtime and compatibility</h2>
 <p><code>runtime_profile</code> is <code>core-v1</code> (the legacy default) or <code>component-v1</code>.
-<code>entry_world</code> must be <code>game</code> for compilation and play. Source must expose a
+Native Build and Play are the desktop defaults. Tick-based source must expose a
 callable <code>game_tick(input: u32, state: u64) -&gt; u64</code>; root re-exports from checked
 modules are supported. The host generates the export wrapper. Builds require
-a valid root tick export before publishing their cache.</p>
+a valid root tick export before publishing their cache. Standalone packages can set <code>native_services = true</code> and expose <code>game_main()</code>. Existing signed packages with the retired <code>entry_world</code> field still verify.</p>
 <p>Component games use the versioned <code>gamepkg:engine@0.1.0</code> world in
 <code>wit/game.wit</code>. Both profiles receive scoped assets, input, draw commands,
 audio, saves, explicitly selected ROM reads and declared file import/export. They receive no WASI or

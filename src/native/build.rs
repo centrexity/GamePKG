@@ -23,7 +23,10 @@ pub(super) fn compile_with_settings(
     let package_digest = package.archive_digest()?;
     let m = verify_embedded(&mut package)?;
     crate::build_policy::require(m.builtin_engine.as_deref())?;
-    ensure!(m.entry_world == "game", "unsupported runtime entry world");
+    ensure!(
+        !m.uses_service_runtime(),
+        "this game requires the native service builder"
+    );
     package.resolve_shared_assets(root)?;
     let cargo: toml::Value =
         toml::from_str(std::str::from_utf8(&package.read("source/Cargo.toml")?)?)?;

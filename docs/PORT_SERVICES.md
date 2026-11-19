@@ -661,7 +661,7 @@ are 1 (2D) or 6 (square cubemap), with faces +X/-X/+Y/-Y/+Z/-Z. Mips must fit th
 complete dimension chain. Cubemap face/mip uploads are independent and bounded.
 All resources require an explicit host-installed native pipeline service.
 
-A source package using `entry_world = "game-native-v1"` can select the
+A standalone source package using `native_services = true` can select the
 signed `native_graphics = "vertex-color-v1"` profile. Declare one vertex
 and one fragment entry under `[[shaders]]`, with `.slang` sources.
 GamePKG compiles both stages with the confined Slang toolchain, validates

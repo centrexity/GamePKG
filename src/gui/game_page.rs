@@ -692,10 +692,11 @@ impl App {
                     m.shared_assets.len()
                 ));
             }
-            ui.label(format!(
-                "Runtime: {} • Entry world: {}",
-                m.runtime_profile, m.entry_world
-            ));
+            ui.label(if m.uses_service_runtime() || m.native_tick {
+                "Runtime: Native GamePKG compatibility"
+            } else {
+                "Runtime: GamePKG"
+            });
             ui.label(format!(
                 "Engine requirement: {} • Save schema: {}",
                 m.engine_version, m.save_schema

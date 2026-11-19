@@ -249,9 +249,6 @@ pub(crate) fn compile_with_settings(
 
     let stage = tempfile::tempdir()?;
     let mut source = String::from_utf8(pkg.read("source/src/lib.rs")?)?;
-    if manifest.entry_world != "game" {
-        bail!("unsupported runtime entry world");
-    }
     let export = if manifest.runtime_profile == "component-v1" {
         "tick"
     } else {

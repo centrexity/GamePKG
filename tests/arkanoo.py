@@ -354,7 +354,7 @@ pub fn game_tick(input:u32,state:u64)->u64 {
     for suffix,profile,allowed in [('events','core-v1',True),('events-denied','core-v1',False),('events-component','component-v1',True),('events-component-denied','component-v1',False)]:
         fixture=root/suffix;copy_legacy_port(fixture)
         manifest=fixture/'manifest.toml';text=manifest.read_text().replace('com.gamepkg.arkanoo','com.gamepkg.arkanoo-'+suffix).replace('runtime_profile = "core-v1"','runtime_profile = "'+profile+'"')
-        if 'runtime_profile =' not in text:text=text.replace('entry_world = "game"','runtime_profile = "'+profile+'"\nentry_world = "game"')
+        if 'runtime_profile =' not in text:text='runtime_profile = "'+profile+'"\n'+text
         assert tomllib.loads(text)['runtime_profile']==profile
         if not allowed:text=text.split('[[permissions.files]]')[0].replace('input = true','input = false')
         manifest.write_text(text)

@@ -1,7 +1,6 @@
 format_version = 1
 id = "com.gamepkg.wrappers"
 version = "0.1.0"
-entry_world = "game"
 lockfile_sha256 = "807d3058e6c2fbb789584cdcfd71e4e549ea45020aa5f7936ba66823c37abb56"
 shader_profile = "slang"
 

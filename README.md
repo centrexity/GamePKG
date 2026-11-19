@@ -526,8 +526,8 @@ letter case cannot create different trust or save identities.
 
 ## Versioned WIT components
 
-Set `runtime_profile = "component-v1"` at the top level of the signed manifest
-with `entry_world = "game"`. Omission preserves the existing `core-v1` profile.
+Set `runtime_profile = "component-v1"` at the top level of the signed manifest.
+The default is the `core-v1` profile. Native builds are the default for desktop play, with a separate Wasm build for supported games.
 The authoritative contract is [`wit/game.wit`](wit/game.wit), package
 `gamepkg:engine@0.1.0`, world `game`. It exports a typed `tick(input: u32,
 state: u64) -> u64` and imports only `gamepkg:engine/host@0.1.0`.

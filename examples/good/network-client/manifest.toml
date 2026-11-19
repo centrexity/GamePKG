@@ -1,7 +1,6 @@
 format_version = 1
 id = "com.gamepkg.network-client"
 version = "0.1.1"
-entry_world = "game"
 engine_version = ">=0.1.10, <0.2.0"
 lockfile_sha256 = "fd15f338700661beff6c66ee930c8dbc9c226dfc8b20f56d6292e4771436d603"
 shader_profile = "slang"
