@@ -60,13 +60,6 @@ fn update_versions_and_world_labels_are_bounded() {
             .as_bytes()
     )
     .is_err());
-    assert!(Manifest::parse(
-        source()
-            .replace(
-                "entry_world = \"game\"",
-                &format!("entry_world = \"{}\"", "a".repeat(129))
-            )
-            .as_bytes()
-    )
-    .is_err());
+    let invalid = format!("entry_world = \"{}\"\n{}", "a".repeat(129), source());
+    assert!(Manifest::parse(invalid.as_bytes()).is_err());
 }

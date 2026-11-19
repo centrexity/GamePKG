@@ -5,7 +5,6 @@ update_url = "https://example.invalid/counter/latest.gamepkg"
 format_version = 1
 id = "com.gamepkg.counter"
 version = "0.1.0"
-entry_world = "game"
 lockfile_sha256 = "28385a27f421a8cc8b417127fdbd67aef322b4394d8d26ad6f8556da0552d843"
 shader_profile = "slang"
 

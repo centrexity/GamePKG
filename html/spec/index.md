@@ -21,10 +21,10 @@ The signed message is a SHA-256 tree digest. Initialize SHA-256 with UTF-8 bytes
 ## Runtime and compatibility
 
 `runtime_profile` is `core-v1` (the legacy default) or `component-v1`.
-`entry_world` must be `game` for compilation and play. Source must expose a
+Native Build and Play are the desktop defaults. Tick-based source must expose a
 callable `game_tick(input: u32, state: u64) -> u64`; root re-exports from checked
 modules are supported. The host generates the export wrapper. Builds require
-a valid root tick export before publishing their cache.
+a valid root tick export before publishing their cache. Standalone source can set `native_services = true` and expose `game_main()` for the shared compatibility runtime. Existing signed manifests with the retired `entry_world` field still verify.
 
 Component games use the versioned `gamepkg:engine@0.1.0` world in
 `wit/game.wit`. Both profiles receive scoped assets, input, draw commands,

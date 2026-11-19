@@ -1,7 +1,6 @@
 format_version = 1
 id = "com.gamepkg.input"
 version = "0.1.0"
-entry_world = "game"
 lockfile_sha256 = "9d88e728c200e2c3cc407e9b903d6500ccde41d24413df3fd5a0c351a8ed85c4"
 shader_profile = "slang"
 
