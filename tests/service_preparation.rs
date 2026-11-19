@@ -7,6 +7,18 @@ use gamepkg::port_host::preparation::{LocalLayout, Plan, Target};
 use gamepkg::port_host::{admission::CheckedSources, preparation};
 
 #[cfg(target_os = "linux")]
+fn assert_doom_object_receipts(receipt: &preparation::ExecutableReceipt) {
+    assert!(receipt.arguments.iter().any(|arg| arg == "codegen-units=8"));
+    let audited = &receipt.game.objects;
+    assert!((2..=8).contains(&audited.len()));
+    assert_eq!(audited.len(), receipt.raw_objects.len());
+    for (index, (object, raw)) in audited.iter().zip(&receipt.raw_objects).enumerate() {
+        assert_eq!(object.name, format!("game-{index:04}.o"));
+        assert_eq!(raw.name, object.name);
+    }
+}
+
+#[cfg(target_os = "linux")]
 #[test]
 #[ignore = "requires a signed Doom migration package and the reviewed Windows cross-toolchains"]
 fn signed_doom_native_objects_pass_windows_admission() {
@@ -28,8 +40,7 @@ fn signed_doom_native_objects_pass_windows_admission() {
         let receipt = artifact.receipt();
         assert_eq!(receipt.game.source_kit, sources.identity());
         assert_eq!(receipt.game.sdk, gamepkg::port_host::build_identity());
-        assert_eq!(receipt.game.objects.len(), 1);
-        assert_eq!(receipt.game.objects.len(), receipt.raw_objects.len());
+        assert_doom_object_receipts(receipt);
         assert!(artifact.executable().unwrap().is_file());
     }
 }
@@ -57,8 +68,7 @@ fn signed_doom_links_the_windows_compatibility_runtime() {
         assert_eq!(receipt.plan, plan);
         assert_eq!(receipt.game.source_kit, sources.identity());
         assert_eq!(receipt.game.sdk, gamepkg::port_host::build_identity());
-        assert_eq!(receipt.game.objects.len(), 1);
-        assert_eq!(receipt.game.objects.len(), receipt.raw_objects.len());
+        assert_doom_object_receipts(receipt);
         let executable = artifact.executable().unwrap();
         assert!(executable.is_file());
         if let Some(output) = std::env::var_os("GAMEPKG_TEST_DOOM_WINDOWS_OUTPUT") {

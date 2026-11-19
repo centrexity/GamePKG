@@ -4,6 +4,8 @@
 use anyhow::{bail, ensure, Context, Result};
 use std::{collections::BTreeSet, path::Path, time::Duration};
 
+const I686_COFF_STACK_PROBE: &str = "__alloca";
+
 fn reserved(symbol: &str) -> bool {
     if symbol.starts_with("__imp_") || symbol.starts_with("__IMPORT_DESCRIPTOR_") {
         return true;
@@ -113,7 +115,8 @@ fn rust_runtime(symbol: &str) -> bool {
     )
 }
 
-fn object_header(path: &Path) -> Result<()> {
+// Return whether the validated object uses the i686 COFF ABI.
+fn object_header(path: &Path) -> Result<bool> {
     use std::io::{Read, Seek, SeekFrom};
     let mut header = [0u8; 64];
     let mut file =
@@ -311,7 +314,7 @@ fn object_header(path: &Path) -> Result<()> {
             );
         }
     }
-    Ok(())
+    Ok(coff && header[..2] == [0x4c, 0x01])
 }
 
 const RUNTIME: &[&str] = &[
@@ -408,6 +411,14 @@ pub fn check_symbols<'a>(
     undefined: impl IntoIterator<Item = &'a str>,
     definitions: impl IntoIterator<Item = &'a str>,
 ) -> Result<()> {
+    check_symbols_for_abi(undefined, definitions, false)
+}
+
+fn check_symbols_for_abi<'a>(
+    undefined: impl IntoIterator<Item = &'a str>,
+    definitions: impl IntoIterator<Item = &'a str>,
+    i686_coff: bool,
+) -> Result<()> {
     let definitions: BTreeSet<_> = definitions.into_iter().collect();
     for symbol in &definitions {
         ensure!(
@@ -418,6 +429,7 @@ pub fn check_symbols<'a>(
             !reserved(symbol)
                 && !rust_runtime(symbol)
                 && !RUNTIME.contains(symbol)
+                && *symbol != I686_COFF_STACK_PROBE
                 && !symbol
                     .strip_prefix('_')
                     .is_some_and(|s| RUNTIME.contains(&s)),
@@ -445,6 +457,8 @@ pub fn check_symbols<'a>(
             || symbol == "gamepkg_port_call"
             || symbol == "gamepkg_local_call"
             || symbol == "gamepkg_port_utf8_validate"
+            // The MinGW libgcc stack probe is an alias of its i686 chkstk.
+            || (i686_coff && symbol == I686_COFF_STACK_PROBE)
             || RUNTIME.contains(&symbol)
             || rust_runtime(symbol)
         {
@@ -476,8 +490,9 @@ pub fn objects(nm: &Path, objects: &[std::path::PathBuf]) -> Result<()> {
     );
     let mut undefined = Vec::new();
     let mut defined = Vec::new();
+    let mut i686_coff = true;
     for object in objects {
-        object_header(object)?;
+        i686_coff &= object_header(object)?;
         for (flag, output) in [
             ("--undefined-only", &mut undefined),
             ("--defined-only", &mut defined),
@@ -506,15 +521,28 @@ pub fn objects(nm: &Path, objects: &[std::path::PathBuf]) -> Result<()> {
             output.extend(text.lines().filter(|s| !s.is_empty()).map(str::to_owned));
         }
     }
-    check_symbols(
+    check_symbols_for_abi(
         undefined.iter().map(String::as_str),
         defined.iter().map(String::as_str),
+        i686_coff,
     )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn i686_coff_stack_probe_is_only_allowed_as_an_exact_import() {
+        check_symbols_for_abi([I686_COFF_STACK_PROBE], [], true).unwrap();
+        assert!(check_symbols([I686_COFF_STACK_PROBE], []).is_err());
+        for i686_coff in [false, true] {
+            assert!(check_symbols_for_abi([], [I686_COFF_STACK_PROBE], i686_coff).is_err());
+            for symbol in ["_alloca", "___alloca", "__imp___alloca", "__alloca@4"] {
+                assert!(check_symbols_for_abi([symbol], [], i686_coff).is_err());
+            }
+        }
+    }
+
     #[test]
     fn raw_directives_and_noninert_metadata_are_rejected() {
         let raw = super::super::coff_exclusions::fixture(
