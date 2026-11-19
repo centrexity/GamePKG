@@ -585,7 +585,20 @@ pub fn service_task(argument:u64)->u64 {
 }
 pub fn game_main() {
     let grants = match gamepkg::grants() { Ok(v) => v, Err(_) => return };
+    let mut read_game_data = false;
     for grant in grants {
+        if grant.kind == 6 {
+            if gamepkg::file_exists(grant.id,"data/fixture") != Ok(true) { return; }
+            if gamepkg::file_open(grant.id,true,"data/fixture") != Err(-4) { return; }
+            let file = match gamepkg::file_open(grant.id,false,"data/fixture") {
+                Ok(file) => file, Err(_) => return,
+            };
+            let mut data = [0u8;8];
+            if gamepkg::file_read(file,0,&mut data) != Ok(8) || data != *b"selected" { return; }
+            if gamepkg::file_write(file,0,b"changed") != Err(-4) { return; }
+            if gamepkg::file_close(file) != Ok(()) { return; }
+            read_game_data = true;
+        }
         if grant.kind == 3 {
             if gamepkg::save_volume(grant.id) != Err(-4) { return; }
             if gamepkg::save_file_info(grant.id).err() != Some(-4) { return; }
@@ -637,6 +650,7 @@ pub fn game_main() {
             if gamepkg::save_volume(grant.id) != Ok([1024,1016]) { return; }
         }
     }
+    if !read_game_data { return; }
     let mailbox=match gamepkg::local_mailbox_create(8,1){Ok(id)=>id,Err(_)=>return};
     if gamepkg::local_mailbox_send(mailbox,&u64::to_le_bytes(41))!=Ok(()){return;}
     let request=[u32::to_le_bytes(0).as_slice(),&u64::to_le_bytes(mailbox),&u32::to_le_bytes(0)].concat();
@@ -660,6 +674,9 @@ pub fn game_main() {
     let package = helper::sign(&files, root.path());
     let sources =
         CheckedSources::verify(&mut gamepkg::archive::Package::open(&package).unwrap()).unwrap();
+    let media = root.path().join("selected-media");
+    std::fs::create_dir_all(media.join("data")).unwrap();
+    std::fs::write(media.join("data/fixture"), b"selected").unwrap();
     let rom_path = root.path().join("disc.iso");
     let mut rom = std::fs::File::create(&rom_path).unwrap();
     use std::io::{Seek, SeekFrom, Write};
@@ -685,7 +702,11 @@ pub fn game_main() {
             Grants {
                 volatile_cache_bytes: Some(1024 * 1024),
                 roms: vec![std::fs::File::open(&rom_path).unwrap()],
-                assets: None,
+                game_data: vec![cap_std::fs::Dir::open_ambient_dir(
+                    &media,
+                    cap_std::ambient_authority(),
+                )
+                .unwrap()],
                 saves: Some(save),
                 ..Grants::default()
             },

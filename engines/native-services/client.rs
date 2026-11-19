@@ -888,7 +888,8 @@ pub struct Grant {
     pub kind: u32,
 }
 /// Only grants explicitly supplied to this session. Kinds: assets=1, saves=2,
-/// ROM=3, disposable fixed-capacity Linux RAM cache=4, previous save=5.
+/// ROM=3, disposable fixed-capacity Linux RAM cache=4, previous save=5,
+/// user-selected read-only game data directory=6.
 /// Never host paths.
 pub fn grants() -> std::result::Result<Vec<Grant>, i32> {
     let mut reply = vec![0; 48 * 16];
