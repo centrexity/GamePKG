@@ -259,6 +259,88 @@ fn file_grants_are_scoped_read_only_revocable_and_do_not_reuse_handles() {
     assert_eq!(h.call(5, &next.to_le_bytes(), 8), Err(Error::Denied));
 }
 
+#[cfg(unix)]
+#[test]
+fn user_game_data_is_pinned_read_only_and_distinct_from_package_assets() {
+    use std::fs;
+    use std::os::unix::fs::symlink;
+
+    let selected = tempfile::tempdir().unwrap();
+    let original = selected.path().join("packages");
+    fs::create_dir_all(original.join("textures/maps")).unwrap();
+    fs::write(original.join("textures/maps/face.png"), b"selected").unwrap();
+
+    let outside = tempfile::tempdir().unwrap();
+    fs::write(outside.path().join("private"), b"outside").unwrap();
+    symlink(&outside.path(), original.join("outside")).unwrap();
+    symlink("textures", original.join("within")).unwrap();
+    symlink("face.png", original.join("textures/maps/link.png")).unwrap();
+    fs::hard_link(
+        outside.path().join("private"),
+        original.join("textures/maps/alias.png"),
+    )
+    .unwrap();
+
+    let mut h = host();
+    let data = grant(&mut h, &original, Access::GameData);
+    let assets = grant(&mut h, outside.path(), Access::Assets);
+    let scopes = h.call(13, &[], 32).unwrap();
+    assert_eq!(&scopes[0..8], &data.to_le_bytes());
+    assert_eq!(&scopes[8..12], &6u32.to_le_bytes());
+    assert_eq!(&scopes[16..24], &assets.to_le_bytes());
+    assert_eq!(&scopes[24..28], &1u32.to_le_bytes());
+
+    fs::rename(&original, selected.path().join("moved")).unwrap();
+    symlink(outside.path(), &original).unwrap();
+
+    let name = "textures/maps/face.png";
+    let file = number(open(&mut h, data, 0, name).unwrap());
+    let read = [
+        file.to_le_bytes().as_slice(),
+        &0u64.to_le_bytes(),
+        &8u32.to_le_bytes(),
+    ]
+    .concat();
+    assert_eq!(h.call(2, &read, 8).unwrap(), b"selected");
+    for mode in [1, 2, 3] {
+        assert_eq!(open(&mut h, data, mode, name), Err(Error::Denied));
+    }
+    for name in [
+        "private",
+        "outside/private",
+        "within/maps/face.png",
+        "textures/maps/link.png",
+        "textures/maps/alias.png",
+        "../private",
+    ] {
+        assert!(open(&mut h, data, 0, name).is_err(), "{name}");
+    }
+
+    let list = |h: &mut Session<Recording>, name: &str| {
+        h.call(
+            6,
+            &[data.to_le_bytes().as_slice(), name.as_bytes()].concat(),
+            128,
+        )
+    };
+    let maps = list(&mut h, "textures/maps").unwrap();
+    assert_eq!(
+        maps,
+        [
+            1u32.to_le_bytes().as_slice(),
+            &8u32.to_le_bytes(),
+            b"face.png"
+        ]
+        .concat()
+    );
+    assert!(list(&mut h, "within/maps").is_err());
+    assert!(list(&mut h, "outside").is_err());
+
+    h.revoke(data).unwrap();
+    assert_eq!(h.call(2, &read, 8), Err(Error::Denied));
+    assert_eq!(h.call(13, &[], 16).unwrap().len(), 16);
+}
+
 #[test]
 fn file_presence_distinguishes_absence_from_invalid_denied_and_nonfile_targets() {
     let root = tempfile::tempdir().unwrap();

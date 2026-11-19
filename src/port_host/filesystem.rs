@@ -9,6 +9,7 @@ use std::{
 const MAX_HANDLES: usize = 256;
 const MAX_FILE: u64 = 256 * 1024 * 1024;
 const MAX_SAVE_ENTRIES: usize = 100_000;
+const MAX_GAME_DATA_LIST_SCAN: usize = 16_384;
 mod save_metadata;
 #[cfg(windows)]
 mod windows_replace;
@@ -17,11 +18,30 @@ pub enum Access {
     Assets,
     Save,
     PreviousSave,
+    GameData,
 }
 struct Mount {
     directory: Dir,
     access: Access,
     quota: Option<u64>,
+}
+impl Mount {
+    // The selected directory is already pinned by the caller. Refuse aliases
+    // inside user-supplied data even when a link would stay within the grant.
+    fn game_data_dir(&self, name: &str) -> std::io::Result<Dir> {
+        let mut directory = self.directory.try_clone()?;
+        if name != "." {
+            for component in name.split('/') {
+                directory = directory.open_dir_nofollow(component)?;
+            }
+        }
+        Ok(directory)
+    }
+
+    fn game_data_parent<'a>(&self, name: &'a str) -> std::io::Result<(Dir, &'a str)> {
+        let (parent, leaf) = name.rsplit_once('/').unwrap_or((".", name));
+        Ok((self.game_data_dir(parent)?, leaf))
+    }
 }
 struct File {
     file: std::fs::File,
@@ -101,6 +121,7 @@ impl Files {
                     Access::Assets => 1,
                     Access::Save => 2,
                     Access::PreviousSave => 5,
+                    Access::GameData => 6,
                 };
                 (id, kind)
             })
@@ -325,7 +346,16 @@ impl Files {
         }
         // Reserve the opaque identity before an operation can create a file.
         let id = identifier()?;
-        let file = io(mount.directory.open_with(name, &options))?;
+        let file = if mount.access == Access::GameData {
+            let (directory, leaf) = io(mount.game_data_parent(name))?;
+            let metadata = io(directory.symlink_metadata(leaf))?;
+            if !unaliased_regular_file(&metadata) {
+                return Err(Error::Denied);
+            }
+            io(directory.open_with(leaf, &options))?
+        } else {
+            io(mount.directory.open_with(name, &options))?
+        };
         let meta = io(file.metadata())?;
         // Refuse hardlink aliases before granting writes, as well as special
         // files and final symlinks. Capability resolution protects parents.
@@ -348,15 +378,19 @@ impl Files {
     pub fn exists(&self, grant: u64, name: &[u8]) -> Result<bool> {
         let name = path(name, false)?;
         let mount = self.mounts.get(&grant).ok_or(Error::Denied)?;
-        let metadata = match mount.directory.symlink_metadata(name) {
+        let metadata = if mount.access == Access::GameData {
+            mount
+                .game_data_parent(name)
+                .and_then(|(directory, leaf)| directory.symlink_metadata(leaf))
+        } else {
+            mount.directory.symlink_metadata(name)
+        };
+        let metadata = match metadata {
             Ok(metadata) => metadata,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
             Err(_) => return Err(Error::Failed),
         };
-        if !metadata.is_file()
-            || metadata.file_type().is_symlink()
-            || MetadataExt::nlink(&metadata) != 1
-        {
+        if !unaliased_regular_file(&metadata) {
             return Err(Error::Denied);
         }
         Ok(true)
@@ -522,10 +556,19 @@ impl Files {
     }
     pub fn list(&self, grant: u64, name: &[u8], capacity: usize) -> Result<Vec<u8>> {
         let mount = self.mounts.get(&grant).ok_or(Error::Denied)?;
-        let directory = io(mount.directory.open_dir_nofollow(path(name, true)?))?;
+        let name = path(name, true)?;
+        let game_data = mount.access == Access::GameData;
+        let directory = if game_data {
+            io(mount.game_data_dir(name))?
+        } else {
+            io(mount.directory.open_dir_nofollow(name))?
+        };
         let mut entries = Vec::new();
         let mut total = 0usize;
-        for item in io(directory.entries())? {
+        for (index, item) in io(directory.entries())?.enumerate() {
+            if game_data && index >= MAX_GAME_DATA_LIST_SCAN {
+                return Err(Error::Busy);
+            }
             let item = io(item)?;
             let name = item.file_name();
             let Some(name) = name.to_str() else {
@@ -536,6 +579,9 @@ impl Files {
             }
             let kind = io(item.file_type())?;
             if !kind.is_file() && !kind.is_dir() {
+                continue;
+            }
+            if game_data && kind.is_file() && !unaliased_regular_file(&io(item.metadata())?) {
                 continue;
             }
             total = total.checked_add(8 + name.len()).ok_or(Error::Invalid)?;
@@ -773,6 +819,9 @@ impl Files {
         }
         Ok(())
     }
+}
+fn unaliased_regular_file(metadata: &cap_std::fs::Metadata) -> bool {
+    metadata.is_file() && !metadata.file_type().is_symlink() && MetadataExt::nlink(metadata) == 1
 }
 
 fn read_at(file: &std::fs::File, bytes: &mut [u8], offset: u64) -> std::io::Result<usize> {

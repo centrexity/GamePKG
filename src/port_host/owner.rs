@@ -263,6 +263,8 @@ pub struct Grants {
     pub volatile_cache_bytes: Option<u64>,
     pub roms: Vec<File>,
     pub assets: Option<Dir>,
+    /// User-approved directories opened by the provisioner, in selection order.
+    pub game_data: Vec<Dir>,
     pub recorded_audio: Option<crate::archive::Package>,
     #[cfg(all(feature = "gui", target_os = "linux", target_arch = "x86_64"))]
     pub picker: Option<std::os::unix::net::UnixStream>,
@@ -309,6 +311,10 @@ pub(super) fn session<B: Backend>(
     if let Some(assets) = grants.assets {
         host.grant_directory(assets, Access::Assets)
             .map_err(|e| anyhow::anyhow!("asset grant: {e:?}"))?;
+    }
+    for directory in grants.game_data {
+        host.grant_directory(directory, Access::GameData)
+            .map_err(|e| anyhow::anyhow!("game-data grant: {e:?}"))?;
     }
     for rom in grants.roms {
         host.grant_rom(rom)

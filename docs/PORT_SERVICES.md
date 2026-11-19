@@ -39,6 +39,21 @@ The launcher matches their source-kit identity to the executable receipt and
 mounts that snapshot read-only. PNG decoding stays in GamePKG and returns an
 opaque image handle.
 
+## User-selected game-data directories
+
+The host can register an already opened directory with `Access::GameData`.
+Grant discovery reports kind 6, distinct from package assets (kind 1) and
+individual ROMs (kind 3). A path remains relative to that one grant. Open, read,
+size, metadata, existence and bounded listing are available. Save operations
+require a separate writable grant. Intermediate links, final links, hardlinked
+files and special files are rejected. Revoking the directory also revokes its
+open file handles. Directory listing examines at most 16,384 entries and
+retains the existing bounded response and 4,096-entry limit.
+
+Trusted providers supply the opened directories in selection order through
+`Grants::game_data`. The normal launcher still needs to provision these
+directories from a signed declaration and the player's folder selection.
+
 ## Process ownership for native ports
 
 Each native port runs as a separate process with its own game-only window.
@@ -636,7 +651,7 @@ the connection before allocation.
 | 10 window | command u32, arguments | empty |
 | 11 window observation | empty | physical width u32, height u32, flags u32 (fullscreen=1, focus=2, closed=4) |
 | 12 sync file | writable file ID u64 | empty |
-| 13 grants | empty | repeated ID u64, kind u32 (1 assets/2 saves/3 ROM), reserved zero u32 |
+| 13 grants | empty | repeated ID u64, kind u32 (1 assets/2 saves/3 ROM/4 RAM cache/5 previous save/6 user game data), reserved zero u32 |
 | 14 replace save | grant u64, durability u32 (0/1), source length u32, UTF-8 source then destination | empty; -6 means published without establishing the requested durability contract |
 | 15 opened-file metadata | handle u64 | length u64, modified seconds i64, modified nanoseconds u32, reserved zero u32 |
 | 16 duplicate opened file | handle u64 | new handle u64, same grant/rights, independent close lifetime |
