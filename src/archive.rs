@@ -1,7 +1,6 @@
 use anyhow::{bail, Context, Result};
 use std::{
     collections::BTreeMap,
-    fs::File,
     io::{Read, Seek, SeekFrom},
     path::Path,
 };
@@ -26,6 +25,7 @@ impl SharedSnapshot {
     }
 }
 
+// Budgets for consumers that buffer data, and for shared-asset stores.
 pub const MAX_FILE: u64 = 64 * 1024 * 1024;
 pub const MAX_TOTAL: u64 = 256 * 1024 * 1024;
 // Virtual names also become compiler staging paths. Apply portable component
@@ -93,7 +93,7 @@ pub struct Package {
 }
 impl Package {
     pub fn open(path: &Path) -> Result<Self> {
-        let raw_file = CursorFile::new(File::open(path)?);
+        let raw_file = CursorFile::new(crate::files::open_regular(path, u64::MAX, true)?);
         let mut archive = ZipArchive::new(raw_file.clone())?;
         // zip's name index collapses duplicates. Count raw central records before
         // using that index, so duplicate names cannot disappear during parsing.
@@ -146,15 +146,13 @@ impl Package {
             ) {
                 bail!("unsupported compression");
             }
-            if f.size() > MAX_FILE {
-                bail!("entry too large");
+            if f.compression() == zip::CompressionMethod::Stored && f.compressed_size() != f.size()
+            {
+                bail!("stored entry has inconsistent sizes");
             }
             total = total
                 .checked_add(f.size())
                 .context("archive size overflow")?;
-            if total > MAX_TOTAL {
-                bail!("archive too large");
-            }
             if entries.insert(name, f.size()).is_some() {
                 bail!("duplicate archive entry");
             }
@@ -169,28 +167,47 @@ impl Package {
         })
     }
     pub fn read(&mut self, path: &str) -> Result<Vec<u8>> {
-        if !valid_path(path) {
-            bail!("invalid virtual path");
+        let mut entry = self.entry(path)?;
+        if entry.size() > MAX_FILE {
+            bail!("entry exceeds the {MAX_FILE}-byte buffered read limit");
         }
-        let f = self
-            .archive
-            .by_name(path)
-            .with_context(|| format!("unable to read package file {path}"))?;
-        let expected = f.size();
         let mut data = Vec::new();
-        f.take(expected + 1).read_to_end(&mut data)?;
-        if data.len() as u64 != expected {
-            bail!("entry size does not match archive metadata");
-        }
+        Self::copy_payload(&mut entry, &mut data)?;
         Ok(data)
     }
-    /// Share verified descriptors and snapshots with a background reader.
-    /// No archive path is reopened, and each reader has independent positions.
-    #[cfg(all(feature = "gui", target_os = "linux", target_arch = "x86_64"))]
+
+    fn entry(&mut self, path: &str) -> Result<zip::read::ZipFile<'_, CursorFile>> {
+        self.archive
+            .by_name(path)
+            .with_context(|| format!("unable to read package file {path}"))
+    }
+
+    /// Stream the entire entry and confirm its declared length and ZIP checksum.
+    pub(crate) fn copy_entry(&mut self, path: &str, output: impl std::io::Write) -> Result<u64> {
+        Self::copy_payload(&mut self.entry(path)?, output)
+    }
+
+    fn copy_payload(
+        entry: &mut zip::read::ZipFile<'_, CursorFile>,
+        mut output: impl std::io::Write,
+    ) -> Result<u64> {
+        let expected = entry.size();
+        let copied = std::io::copy(&mut entry.by_ref().take(expected), &mut output)?;
+        if copied != expected || entry.read(&mut [0; 1])? != 0 {
+            bail!("entry size does not match archive metadata");
+        }
+        Ok(copied)
+    }
+
+    pub(crate) fn archive_digest(&self) -> Result<String> {
+        crate::verify::digest_reader(self.raw.clone())
+    }
+
     pub(crate) fn copy_verified_archive(&self, mut output: impl std::io::Write) -> Result<()> {
-        let mut raw = self.try_clone_verified()?.raw;
-        raw.seek(SeekFrom::Start(0))?;
-        std::io::copy(&mut raw, &mut output)?;
+        if !self.verified {
+            bail!("copying a package archive requires verification");
+        }
+        std::io::copy(&mut self.raw.clone(), &mut output)?;
         Ok(())
     }
 
@@ -265,7 +282,7 @@ impl Package {
         if offset > entry.size() {
             bail!("asset offset exceeds entry size");
         }
-        let length = length.min((entry.size() - offset) as usize);
+        let length = (length as u64).min(entry.size() - offset) as usize;
         let mut bytes = vec![0; length];
         if entry.compression() == zip::CompressionMethod::Stored {
             let start = entry
@@ -325,7 +342,7 @@ impl Package {
         read: impl FnOnce(&mut dyn Read, usize) -> Result<T>,
     ) -> Result<T> {
         let size = self.asset_size(path)?;
-        if maximum > MAX_FILE || size > maximum {
+        if size > maximum {
             bail!("asset exceeds reader limit");
         }
         let length = usize::try_from(size).context("asset length exceeds address space")?;
@@ -376,6 +393,7 @@ impl Package {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs::File;
     use std::io::Write;
     #[test]
     fn verified_clones_read_concurrently_without_reopening_or_sharing_positions() {
@@ -597,7 +615,7 @@ mod tests {
                 );
                 assert!(!called);
             }
-            for limit in [0, bytes.len() as u64 - 1, MAX_FILE + 1] {
+            for limit in [0, bytes.len() as u64 - 1] {
                 assert!(package
                     .with_asset_reader("data", limit, |_, _| {
                         called = true;
@@ -693,7 +711,9 @@ mod tests {
             writer
                 .start_file(
                     "assets/data",
-                    zip::write::SimpleFileOptions::default().compression_method(method),
+                    zip::write::SimpleFileOptions::default()
+                        .large_file(true)
+                        .compression_method(method),
                 )
                 .unwrap();
             writer.write_all(b"abcdefghij").unwrap();

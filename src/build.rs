@@ -61,8 +61,8 @@ fn installed(root: &Path, id: &str) -> Result<PathBuf> {
     Ok(root.join(format!("{id}.gamepkg")))
 }
 pub fn cache_path(root: &Path, id: &str) -> Result<PathBuf> {
-    let bytes = crate::files::read_regular(&installed(root, id)?, 256 * 1024 * 1024, false)?;
-    Ok(root.join("builds").join(digest(&bytes)).join("game.wasm"))
+    let package_digest = crate::files::hash_archive(&installed(root, id)?)?;
+    Ok(root.join("builds").join(package_digest).join("game.wasm"))
 }
 pub fn is_built(root: &Path, id: &str) -> Result<bool> {
     if !crate::build_policy::supported(
@@ -234,12 +234,10 @@ pub(crate) fn compile_with_settings(
     settings.validate()?;
     let archive = installed(root, id)?;
     let _build_lock = BuildChange::acquire(root, id)?;
-    let bytes = crate::files::read_regular(&archive, 256 * 1024 * 1024, false)?;
-    let cache = root.join("builds").join(digest(&bytes)).join("game.wasm");
-    let mut snapshot = tempfile::NamedTempFile::new()?;
-    snapshot.write_all(&bytes)?;
-    snapshot.flush()?;
+    let snapshot = crate::files::snapshot_archive(&archive)?;
     let mut pkg = Package::open(snapshot.path())?;
+    let package_digest = pkg.archive_digest()?;
+    let cache = root.join("builds").join(&package_digest).join("game.wasm");
     let manifest = verify_embedded(&mut pkg)?;
     if manifest.uses_service_runtime() {
         bail!("native service games require the native Build action");
@@ -362,7 +360,7 @@ pub(crate) fn compile_with_settings(
     {
         bail!("install the Wasm target with rustup target add wasm32-unknown-unknown");
     }
-    crate::shaders::compile(root, &bytes, &mut pkg, &manifest, settings)?;
+    crate::shaders::compile(root, &package_digest, &mut pkg, &manifest, settings)?;
     let mut cmd = crate::compiler::command(32 * 1024 * 1024);
     cmd.args([
         "bwrap",
@@ -417,9 +415,7 @@ pub(crate) fn compile_with_settings(
         32 * 1024 * 1024,
         false,
     )?;
-    let installed_now =
-        crate::files::read_regular(&installed(root, id)?, 256 * 1024 * 1024, false)?;
-    if digest(&installed_now) != digest(&bytes) {
+    if crate::files::hash_archive(&installed(root, id)?)? != package_digest {
         bail!("installed package changed during build; rebuild the new version");
     }
     if !artifact.starts_with(b"\0asm\x01\0\0\0") {

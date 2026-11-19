@@ -53,6 +53,16 @@ pub(crate) fn read_regular(path: &Path, limit: u64, follow_link: bool) -> Result
     Ok(bytes)
 }
 
+pub(crate) fn hash_archive(path: &Path) -> Result<String> {
+    crate::verify::digest_reader(open_regular(path, u64::MAX, false)?)
+}
+
+pub(crate) fn snapshot_archive(path: &Path) -> Result<tempfile::NamedTempFile> {
+    let mut snapshot = tempfile::NamedTempFile::new()?;
+    std::io::copy(&mut open_regular(path, u64::MAX, false)?, &mut snapshot)?;
+    Ok(snapshot)
+}
+
 #[cfg(test)]
 mod tests {
     #[test]

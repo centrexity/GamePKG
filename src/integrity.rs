@@ -1,10 +1,6 @@
 //! Host-side verification and rebuild repair. Never modify signed package contents.
 use anyhow::{bail, Context, Result};
-use std::{
-    fs,
-    io::{Read, Write},
-    path::Path,
-};
+use std::{fs, io::Write, path::Path};
 
 pub(crate) fn retain_package(
     root: &Path,
@@ -20,14 +16,10 @@ pub(crate) fn retain_package(
     }
     fs::create_dir_all(&folder)?;
     let mut copy = tempfile::NamedTempFile::new_in(&folder)?;
-    let size = std::io::copy(
-        &mut crate::files::open_regular(source, crate::archive::MAX_TOTAL, false)?
-            .take(crate::archive::MAX_TOTAL + 1),
+    std::io::copy(
+        &mut crate::files::open_regular(source, u64::MAX, false)?,
         &mut copy,
     )?;
-    if size > crate::archive::MAX_TOTAL {
-        bail!("recovery package exceeds size limit");
-    }
     copy.flush()?;
     let checked = crate::verify::verify_embedded(&mut crate::archive::Package::open(copy.path())?)?;
     if checked.id != manifest.id
@@ -164,14 +156,10 @@ pub fn fix_target(root: &Path, id: &str, store: Option<&Path>, native: bool) -> 
             bail!("recovery copy cannot be a symlink");
         }
         let mut file = tempfile::NamedTempFile::new_in(root)?;
-        let size = std::io::copy(
-            &mut crate::files::open_regular(&backup, crate::archive::MAX_TOTAL, false)?
-                .take(crate::archive::MAX_TOTAL + 1),
+        std::io::copy(
+            &mut crate::files::open_regular(&backup, u64::MAX, false)?,
             &mut file,
         )?;
-        if size > crate::archive::MAX_TOTAL {
-            bail!("recovery package exceeds size limit");
-        }
         file.flush()?;
         let mut package = crate::archive::Package::open(file.path())?;
         let manifest = crate::verify::verify_embedded(&mut package)?;

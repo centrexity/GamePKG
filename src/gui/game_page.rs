@@ -757,14 +757,13 @@ impl App {
                             let mut copy = tempfile::NamedTempFile::new()?;
                             let mut input = match snapshot {
                                 Some(file) => file,
-                                None => std::fs::File::open(
-                                    crate::registry::default_root()?.join(format!("{id}.gamepkg")),
+                                None => crate::files::open_regular(
+                                    &crate::registry::default_root()?.join(format!("{id}.gamepkg")),
+                                    u64::MAX,
+                                    false,
                                 )?,
                             };
-                            std::io::copy(
-                                &mut std::io::Read::take(&mut input, crate::archive::MAX_TOTAL + 1),
-                                &mut copy,
-                            )?;
+                            std::io::copy(&mut input, &mut copy)?;
                             let mut pkg = crate::archive::Package::open(copy.path())?;
                             crate::verify::verify_embedded(&mut pkg)?;
                             let name =

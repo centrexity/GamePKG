@@ -1,6 +1,6 @@
 # GamePKG format: foundation profile
 
-The ZIP contains `manifest.toml`, `signature.toml`, `thumbnail.png`, `LICENSE`, `CREDITS.md`, `source/Cargo.toml`, `source/Cargo.lock`, `source/src/lib.rs`, optional `shaders/*.slang`, and `assets/**`. All paths are relative UTF-8 paths with forward slashes. Directory entries are omitted. Compression methods are store and zstd; the packer currently writes store for every file.
+The ZIP contains `manifest.toml`, `signature.toml`, `thumbnail.png`, `LICENSE`, `CREDITS.md`, `source/Cargo.toml`, `source/Cargo.lock`, `source/src/lib.rs`, optional `shaders/*.slang`, and `assets/**`. All paths are relative UTF-8 paths with forward slashes. Directory entries are omitted. Compression methods are store and zstd; the packer currently writes store for every file. Standalone packages support ZIP64 and have no fixed byte limit per entry or for the archive. The entry count is limited to 10,000. Compilers, buffered reads, media decoders and shared stores apply separate budgets.
 
 The manifest example in `examples/minimal/manifest.toml` is authoritative for currently supported fields. Unknown fields fail validation. `lockfile_sha256` is the SHA-256 of raw Cargo.lock bytes; it is lockfile integrity, not a complete SBOM.
 
@@ -59,8 +59,8 @@ The `[limits]` table accepts `hard_memory_bytes` (required, positive, at most 51
 
 A signed manifest may contain `shared_assets`, mapping asset-relative paths to
 `sha256` (64 lowercase hexadecimal characters) and `size` (bytes, at most
-64 MiB). Referenced paths cannot also be embedded under `assets/`. Logical
-contents remain limited to 256 MiB. Reusing a digest requires the same size.
+64 MiB). Referenced paths cannot also be embedded under `assets/`. Shared references
+are limited to 256 MiB of logical asset data. Reusing a digest requires the same size.
 
 The host verifies signed references offline, then requires matching local pool
 blobs before installation, builds, or play. It does not download blobs

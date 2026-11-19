@@ -40,7 +40,7 @@ fn unavailable_native_and_shader_compilers_reject_before_creating_output() {
     .unwrap();
     let mut package = gamepkg::archive::Package::open(&package_path).unwrap();
     let manifest = gamepkg::verify::verify_embedded(&mut package).unwrap();
-    let bytes = std::fs::read(&package_path).unwrap();
+    let package_digest = gamepkg::verify::digest(&std::fs::read(&package_path).unwrap());
     gamepkg::registry::install(root.path(), &package_path, true).unwrap();
     assert!(!gamepkg::native::build_supported(&manifest));
     assert!(!gamepkg::native::play_supported(&manifest));
@@ -51,7 +51,7 @@ fn unavailable_native_and_shader_compilers_reject_before_creating_output() {
     assert!(!root.path().join("builds").exists());
     let error = gamepkg::shaders::compile(
         root.path(),
-        &bytes,
+        &package_digest,
         &mut package,
         &manifest,
         &Default::default(),

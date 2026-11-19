@@ -242,24 +242,14 @@ pub fn play_services(
 
 pub fn cache_path(root: &Path, id: &str) -> Result<PathBuf> {
     let manifest = crate::registry::installed_manifest(root, id)?;
-    let bytes = crate::files::read_regular(
-        &root.join(format!("{id}.gamepkg")),
-        crate::archive::MAX_TOTAL,
-        false,
-    )?;
+    let package_digest = crate::files::hash_archive(&root.join(format!("{id}.gamepkg")))?;
     if manifest.builtin_engine.as_deref() == Some(crate::cube2::PROFILE) {
-        return Ok(crate::cube2::cache_path(
-            root,
-            &crate::verify::digest(&bytes),
-        ));
+        return Ok(crate::cube2::cache_path(root, &package_digest));
     }
     if manifest.builtin_engine.as_deref() == Some(crate::takedawn::PROFILE) {
-        return Ok(crate::takedawn::cache_path(
-            root,
-            &crate::verify::digest(&bytes),
-        ));
+        return Ok(crate::takedawn::cache_path(root, &package_digest));
     }
-    let path = path_for_digest(root, &crate::verify::digest(&bytes));
+    let path = path_for_digest(root, &package_digest);
     Ok(if manifest.native_tick || manifest.uses_service_runtime() {
         path.with_file_name("compatibility-game")
     } else {

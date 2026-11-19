@@ -83,7 +83,7 @@ Game source also follows an enforced [portable data policy](docs/PORTABILITY.md)
 
 - Format version 1; networking is denied unless explicitly enabled, with bounded host operations; positive memory limits (up to 512 MiB for Wasm and up to 4 GiB for shared native service packages).
 - Required manifest, PNG-signature thumbnail, license, credits, Cargo manifest/lockfile, and `source/src/lib.rs`.
-- At most 10,000 entries, 64 MiB per file, 256 MiB uncompressed total; stored and zstd entries only.
+- At most 10,000 entries, stored and Zstandard entries only. GamePKG streams package entries and has no fixed per-entry or total archive size ceiling. Buffered readers, compilers, media decoders, and the shared asset pool have separate budgets.
 - No absolute paths, traversal, backslashes, duplicate paths, directory entries, or symlinks.
 - Only UTF-8 `.slang` files under `shaders/`. Inline SPIR-V, target-code injection and macro token pasting are rejected in every shader file, including unused sources. The conservative check also inspects comments and strings; it supplements the isolated compiler and does not prove GPU code is harmless.
 - Rust source files under `source/src/`, no Cargo dependencies, `package.build = false`, and restricted Cargo fields. Includes, attributes, unsafe blocks, foreign declarations, and filesystem/network/process/environment paths are rejected.
@@ -170,7 +170,7 @@ Without `--trust-creator`, a first CLI install reports the creator fingerprint a
 
 Creators may set `update_url = "https://creator.example/latest.gamepkg"` at the top level of their input manifest. It points directly to the newest signed `.gamepkg`, not a JSON feed. The host downloads it only when the user requests an update; the downloaded ID, signer, and version must pass continuity checks. Packing inserts `creator_key` automatically; if supplied, it must match the signing key. The private signing key never goes inside the archive.
 
-Downloads require the `curl` executable, enforce HTTPS for ordinary hosts, Tor-only routing for onion hosts, certificate verification for HTTPS, connection/transfer timeouts, and a 256 MiB transfer limit. No game code runs during installation. Host downloads are separate from guest network permissions, which are separately declared in the signed manifest.
+Downloads require the `curl` executable, enforce HTTPS for ordinary hosts, Tor-only routing for onion hosts, certificate verification for HTTPS, connection and transfer timeouts. Standalone packages stream to a temporary file, while catalogs and store bundles have separate transfer limits. No game code runs during installation. Host downloads are separate from guest network permissions, which are separately declared in the signed manifest.
 
 Installed archives reside under `GAMEPKG_HOME` when set, otherwise `$XDG_DATA_HOME/gamepkg`, `%LOCALAPPDATA%/gamepkg`, or `$HOME/.local/share/gamepkg`. Installation snapshots and verifies the bytes before replacement, uses an install lock, and leaves the old version intact on validation failure. An interrupted process may leave `.install-lock`; remove it only after confirming no install process is active.
 
@@ -656,8 +656,7 @@ Signature verification works offline without the pool. Installation, building,
 and playing additionally require every referenced blob to match its signed
 hash and size. Runtime reads use private session snapshots and the same 64 KiB
 range limit as stored archive assets. A changed or deleted
-pool blob cannot alter an active session. Logical package contents, including
-shared references, remain bounded to 256 MiB. Conflicting sizes for one hash,
+pool blob cannot alter an active session. Signed shared references are bounded to 256 MiB of logical asset data. Conflicting sizes for one hash,
 invalid paths, and assets declared both embedded and shared are rejected.
 
 Run `python3 tests/shared_assets_game.py` to verify both core and WIT source

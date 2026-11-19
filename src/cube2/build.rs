@@ -354,13 +354,9 @@ pub fn compile_package(root: &Path, id: &str) -> Result<()> {
 
     use std::io::Write;
     let _guard = crate::build::BuildChange::acquire(root, id)?;
-    let original = crate::files::read_regular(
-        &root.join(format!("{id}.gamepkg")),
-        crate::archive::MAX_TOTAL,
-        false,
-    )?;
-    let mut snapshot = tempfile::NamedTempFile::new()?;
-    snapshot.write_all(&original)?;
+    let installed = root.join(format!("{id}.gamepkg"));
+    let snapshot = crate::files::snapshot_archive(&installed)?;
+    let package_digest = crate::files::hash_archive(snapshot.path())?;
     let mut package = crate::archive::Package::open(snapshot.path())?;
     let manifest = crate::verify::verify_embedded(&mut package)?;
     ensure!(
@@ -372,14 +368,10 @@ pub fn compile_package(root: &Path, id: &str) -> Result<()> {
     let bytes = compile_with_options(settings.optimize_builds)?;
     crate::native::validate_executable(&bytes)?;
     ensure!(
-        crate::files::read_regular(
-            &root.join(format!("{id}.gamepkg")),
-            crate::archive::MAX_TOTAL,
-            false
-        )? == original,
+        crate::files::hash_archive(&installed)? == package_digest,
         "The installed package changed during the build"
     );
-    let target = super::cache_path(root, &crate::verify::digest(&original));
+    let target = super::cache_path(root, &package_digest);
     fs::create_dir_all(target.parent().context("invalid Cube 2 build path")?)?;
     let mut file = tempfile::NamedTempFile::new_in(target.parent().unwrap())?;
     file.write_all(&bytes)?;

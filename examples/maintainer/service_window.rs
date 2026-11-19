@@ -119,7 +119,7 @@ fn checked(
     root: &std::path::Path,
     raster: bool,
     templates: Option<&std::path::Path>,
-) -> anyhow::Result<(CheckedSources, Vec<u8>)> {
+) -> anyhow::Result<(CheckedSources, gamepkg::archive::Package)> {
     let mut files = fixture::fixture("examples/minimal");
     let mut manifest = gamepkg::manifest::Manifest::parse(&files["manifest.toml"])?;
     manifest.limits.hard_memory_bytes = 512 * 1024 * 1024;
@@ -163,8 +163,9 @@ fn checked(
     }
     files.insert("source/src/lib.rs".into(), source);
     let path = fixture::sign(&files, root);
-    let sources = CheckedSources::verify(&mut gamepkg::archive::Package::open(&path)?)?;
-    Ok((sources, std::fs::read(path)?))
+    let mut package = gamepkg::archive::Package::open(&path)?;
+    let sources = CheckedSources::verify(&mut package)?;
+    Ok((sources, package))
 }
 
 fn grants(root: &std::path::Path) -> anyhow::Result<Grants> {
@@ -204,13 +205,13 @@ fn main() -> anyhow::Result<()> {
             .ok_or_else(|| {
                 anyhow::anyhow!("select the reviewed service-renderer/shaders directory")
             })?;
-        let (sources, archive) = checked(root.path(), true, Some(&path))?;
-        return link_and_run(root.path(), &sources, &archive, true);
+        let (sources, package) = checked(root.path(), true, Some(&path))?;
+        return link_and_run(root.path(), &sources, &package, true);
     }
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     if std::env::args().any(|arg| arg == "--local") {
-        let (sources, archive) = checked(root.path(), true, None)?;
-        return link_and_run(root.path(), &sources, &archive, false);
+        let (sources, package) = checked(root.path(), true, None)?;
+        return link_and_run(root.path(), &sources, &package, false);
     }
     let (sources, _) = checked(root.path(), false, None)?;
     let target = if cfg!(windows) {
@@ -234,7 +235,7 @@ fn main() -> anyhow::Result<()> {
 fn link_and_run(
     root: &std::path::Path,
     sources: &CheckedSources,
-    archive: &[u8],
+    package: &gamepkg::archive::Package,
     takedawn: bool,
 ) -> anyhow::Result<()> {
     use anyhow::ensure;
@@ -310,7 +311,7 @@ fn link_and_run(
         }
     };
     let (different, _) = checked(tempfile::tempdir()?.path(), false, None)?;
-    let error = VerifiedPipelines::prepare(root, &different, archive, &settings, recipes(), 1)
+    let error = VerifiedPipelines::prepare(root, &different, package, &settings, recipes(), 1)
         .err()
         .expect("other signed source kit must be refused");
     ensure!(
@@ -322,7 +323,7 @@ fn link_and_run(
     if takedawn {
         let mut wrong_pin = takedawn_nvi1_recipes();
         wrong_pin[0].source_hashes = wrong_pin[1].source_hashes;
-        let error = VerifiedPipelines::prepare(root, sources, archive, &settings, wrong_pin, 1)
+        let error = VerifiedPipelines::prepare(root, sources, package, &settings, wrong_pin, 1)
             .err()
             .expect("signed source must match reviewed Slang pin");
         ensure!(
@@ -332,7 +333,7 @@ fn link_and_run(
             "unexpected template hash error: {error}"
         );
     }
-    let pipelines = VerifiedPipelines::prepare(root, sources, archive, &settings, recipes(), 1)?;
+    let pipelines = VerifiedPipelines::prepare(root, sources, package, &settings, recipes(), 1)?;
     let build_cache = std::env::var_os("GAMEPKG_FIXTURE_BUILD_CACHE").map(std::path::PathBuf::from);
     let artifact = preparation::build_in_process(
         build_cache.as_deref().unwrap_or(root),

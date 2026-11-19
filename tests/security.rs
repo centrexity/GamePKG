@@ -52,6 +52,64 @@ fn signed_roundtrip_and_asset_access() {
     assert!(!temp.path().join("assets").exists());
 }
 #[test]
+#[ignore = "writes several 257 MiB package copies and hashes them in debug mode"]
+fn streams_large_signed_packages_through_install_and_update() {
+    use std::io::{Seek, SeekFrom};
+
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("game");
+    fixture(&root);
+    let size = 257 * 1024 * 1024;
+    let mut asset = fs::File::create(root.join("assets/large")).unwrap();
+    asset.seek(SeekFrom::Start(size - 4)).unwrap();
+    asset.write_all(b"tail").unwrap();
+    drop(asset);
+
+    let out = temp.path().join("large.gamepkg");
+    pack(&root, &out, &SEED).unwrap();
+    assert!(fs::metadata(&out).unwrap().len() > size);
+    let library = temp.path().join("library");
+    let manifest = gamepkg::registry::install(&library, &out, true).unwrap();
+    let installed = library.join(format!("{}.gamepkg", manifest.id));
+    assert_eq!(
+        gamepkg::storage::usage(&library, &manifest)
+            .unwrap()
+            .package_bytes,
+        fs::metadata(&out).unwrap().len()
+    );
+    let mut package = Package::open(&installed).unwrap();
+    gamepkg::verify::verify_embedded(&mut package).unwrap();
+    assert_eq!(package.asset_chunk("large", size - 4, 64).unwrap(), b"tail");
+    assert!(package.asset("large").is_err());
+    assert_eq!(
+        package
+            .with_asset_reader("large", size, |_, len| Ok(len))
+            .unwrap() as u64,
+        size
+    );
+    assert!(gamepkg::build::cache_path(&library, &manifest.id).is_ok());
+    assert!(gamepkg::native::cache_path(&library, &manifest.id).is_ok());
+
+    fs::remove_file(&out).unwrap();
+    let path = root.join("manifest.toml");
+    let text = fs::read_to_string(&path).unwrap();
+    fs::write(
+        path,
+        text.replace(
+            &format!("version = \"{}\"", manifest.version),
+            "version = \"99.0.0\"",
+        ),
+    )
+    .unwrap();
+    pack(&root, &out, &SEED).unwrap();
+    let updated = gamepkg::registry::install(&library, &out, false).unwrap();
+    assert_eq!(updated.version.to_string(), "99.0.0");
+    assert!(gamepkg::integrity::check(&library, &manifest.id)
+        .unwrap()
+        .contains("verified"));
+}
+
+#[test]
 fn rejects_source_bypasses() {
     for source in [
         "pub fn x() { let _ = std::fs::read(\"x\"); }",
@@ -215,7 +273,7 @@ fn detects_tampering() {
 }
 
 #[test]
-fn rejects_duplicate_names_and_oversized_entries() {
+fn rejects_duplicate_names_and_inconsistent_stored_sizes() {
     let temp = tempfile::tempdir().unwrap();
     let out = temp.path().join("duplicate.zip");
     let mut z = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
@@ -228,7 +286,8 @@ fn rejects_duplicate_names_and_oversized_entries() {
         .unwrap();
         z.write_all(b"x").unwrap();
     }
-    let mut bytes = z.finish().unwrap().into_inner();
+    let original = z.finish().unwrap().into_inner();
+    let mut bytes = original.clone();
     // Change both local and central directory names to create duplicate paths.
     for i in 0..bytes.len() - 8 {
         if &bytes[i..i + 8] == b"assets/b" {
@@ -237,9 +296,11 @@ fn rejects_duplicate_names_and_oversized_entries() {
     }
     fs::write(&out, &bytes).unwrap();
     assert!(Package::open(&out).is_err());
-    // Forge the first central directory entry's uncompressed size above the cap.
+    // A stored entry must have the same physical and uncompressed size.
+    let mut bytes = original;
+    bytes[22..26].copy_from_slice(&2u32.to_le_bytes());
     let i = bytes.windows(4).position(|w| w == b"PK\x01\x02").unwrap();
-    bytes[i + 24..i + 28].copy_from_slice(&((gamepkg::archive::MAX_FILE + 1) as u32).to_le_bytes());
+    bytes[i + 24..i + 28].copy_from_slice(&2u32.to_le_bytes());
     fs::write(&out, bytes).unwrap();
     assert!(Package::open(&out).is_err());
 }
