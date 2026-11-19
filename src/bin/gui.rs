@@ -61,36 +61,17 @@ fn main() -> eframe::Result {
     let settings = gamepkg::settings::load().map_err(|error| {
         eframe::Error::AppCreation(Box::new(std::io::Error::other(error.to_string())))
     })?;
-    #[cfg(any(target_os = "linux", windows))]
     if let Some(id) = &args.play {
         let launch = || -> anyhow::Result<bool> {
-            let root = gamepkg::registry::default_root()?;
-            let manifest = gamepkg::registry::installed_manifest(&root, id)?;
-            if manifest.uses_service_runtime() {
-                anyhow::ensure!(
-                    args.target.as_deref() != Some("wasm"),
-                    "native service games require native Play"
-                );
-                gamepkg::native::play_services(&root, id, &[], &settings, args.launch)?;
-                return Ok(true);
-            }
-            #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-            if manifest.native_tick && args.target.as_deref() != Some("wasm") {
-                gamepkg::native::play_tick(&root, id, &settings, args.launch, false)?;
-                return Ok(true);
-            }
-            if manifest.builtin_engine.as_deref() != Some(gamepkg::takedawn::PROFILE) {
+            if args.target.as_deref() == Some("wasm") {
                 anyhow::ensure!(
                     args.launch.is_empty(),
-                    "Graphics launch flags currently require the reviewed native Takedawn engine"
+                    "Graphics launch flags require native Play"
                 );
                 return Ok(false);
             }
-            anyhow::ensure!(
-                args.target.as_deref() != Some("wasm"),
-                "Takedawn requires native Play"
-            );
-            gamepkg::takedawn::play_with_launch(&root, id, &[], &settings, None, args.launch)?;
+            let root = gamepkg::registry::default_root()?;
+            gamepkg::native::play_services(&root, id, &[], &settings, args.launch)?;
             Ok(true)
         };
         if launch().map_err(|error| {
@@ -163,11 +144,7 @@ fn main() -> eframe::Result {
             ..Default::default()
         },
         Box::new(move |cc| {
-            let mut app = gamepkg::gui::App::new_with_target(
-                args.play,
-                cc.gl.clone(),
-                args.target.as_deref().map(|t| t == "native"),
-            );
+            let mut app = gamepkg::gui::App::new_with_target(args.play, cc.gl.clone(), Some(false));
             app.set_native_display(cc);
             app.set_window_preferences(window_preferences);
             app.set_vulkan(cc.wgpu_render_state.clone());

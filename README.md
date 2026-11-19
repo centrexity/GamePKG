@@ -4,11 +4,11 @@
 
 **Know what you run. Control what it can access.** GamePKG is building a safer way to share and play games: inspectable source, creator-signed packages, isolated compilation, and a host that is designed to grant only the capabilities a game needs.
 
-**Build and playback:** ordinary checked Rust games build directly for the local CPU on Linux and in the current Windows x86/x64 development source. Windows prepares verified native Rust/linker tools automatically, with no WSL or Python; native Slang shader builds need 64-bit Windows. Legacy engine profiles are gated while they migrate to the shared compatibility layer. Optional Wasm builds are separate actions and play under Wasmtime with scoped asset reads, memory limits and epoch deadlines. Vulkan is the default renderer, with OpenGL available explicitly. See [native builds and isolation](docs/NATIVE_RUNTIME.md).
+**Build and playback:** migrated Rust games build for the local CPU through GamePKG’s shared compatibility layer on Linux x64. The game opens its own window. Windows native compatibility is still in development. Optional Wasm builds use Wasmtime with scoped assets, memory limits and deadlines. Vulkan is the default renderer. See [native builds and isolation](docs/NATIVE_RUNTIME.md).
 
-Download the [published 0.1.17 Linux and Windows CLI/desktop apps](https://github.com/centrexity/GamePKG/releases/tag/v0.1.17), including the checksum for your platform. The standalone Windows native pipelines require 0.1.19 or newer development source; the published 0.1.17 app does not contain them. Earlier 0.1.18 hardware previews target a specific reviewed engine and do not include the newer ordinary-source integration. See [Windows setup](docs/INSTALL_WINDOWS.md). Portable app bundles include CLI/GUI executables, setup tools, examples, original resolved dependency sources and notices, and integrity hashes. Players need no Python. Maintainers can build both app entry points with the [native Rust release builder](tools/build_release.rs); packaging helpers are maintainer tools. See [installation instructions](docs/INSTALL.md) and the [implementation and verification audit](docs/IMPLEMENTATION_STATUS.md) for profile support and remaining limits.
+Download the [published 0.1.17 Linux and Windows CLI/desktop apps](https://github.com/centrexity/GamePKG/releases/tag/v0.1.17), including the checksum for your platform. For the Windows app and the separate Wasm setup, see [Windows setup](docs/INSTALL_WINDOWS.md). Portable app bundles include CLI/GUI executables, setup tools, examples, original resolved dependency sources and notices, and integrity hashes. Players need no Python. Maintainers can build both app entry points with the [native Rust release builder](tools/build_release.rs); packaging helpers are maintainer tools. See [installation instructions](docs/INSTALL.md) and the [implementation and verification audit](docs/IMPLEMENTATION_STATUS.md) for profile support and remaining limits.
 
-Try the [signed demo catalog](https://github.com/centrexity/GamePKG/releases/download/v0.1.6/demos.gamepkglist) from **Add** → **Import .gamepkglist**. Open Collect Stars, Shape Playground, or PNG Sprite Playground, download it, approve its creator, then choose **Build** and **Play**. The original demos need neither a ROM nor a signing key. The catalog also includes Zelda3, which requires a supported USA ROM and is currently gated while its engine migrates. The [portable demo store](https://github.com/centrexity/GamePKG/releases/download/v0.1.6/demos.gamepkgstore) is available for offline import.
+Try the [signed demo catalog](https://github.com/centrexity/GamePKG/releases/download/v0.1.6/demos.gamepkglist) from **Add** → **Import .gamepkglist**. Open Collect Stars, Shape Playground, or PNG Sprite Playground, download it, approve its creator, then choose **Build Wasm** and **Play Wasm**. The original demos need neither a ROM nor a signing key. The catalog also includes Zelda3, which requires a supported USA ROM and is currently gated while its engine migrates. The [portable demo store](https://github.com/centrexity/GamePKG/releases/download/v0.1.6/demos.gamepkgstore) is available for offline import.
 
 Native port authors can start with the [GamePKG compatibility layer](docs/PORT_SERVICES.md). Each game runs in its own process and owns its window through GamePKG-provided functions. Keep any upstream engine code and platform bridge in the audited game source. The legacy external-engine builder and launcher have been retired. Unmigrated engine profiles are blocked from build and play, including cached builds.
 
@@ -27,7 +27,7 @@ A `.gamepkg` contains Rust source, Slang shader source, assets, and a signed man
 | Signed identity and updates | The manifest and package contents are signed. Updates must keep the installed creator key and package ID, with a higher version. | Yes; first creator approval is still required |
 | Restricted package contents | Rejects traversal paths, duplicate entries, symlinks, oversized archive contents, unsupported shaders, and source outside the initial policy. | Yes |
 | Isolated compilation | Linux uses bubblewrap; Windows ordinary-source builds use AppContainer/jobs, private work areas and no network capability. | Yes; checked source modules with no Cargo dependencies |
-| Limited game access | Ordinary source receives host-approved asset, input, ROM, drawing, audio, save and networking operations under the signed on/off permission. | Available in the Linux/Windows ordinary native worker and optional core/WIT Wasm profiles; each migrated native engine must pass source, object, and confinement checks |
+| Limited game access | Ordinary source receives host-approved asset, input, ROM, drawing, audio, save and networking operations under the signed on/off permission. | Available through the Linux x64 native compatibility layer and optional core/WIT Wasm profiles. Native games pass source, object, and confinement checks. |
 | Runtime resource limits | Memory caps and deadlines constrain running games. | Enforced for native workers and optional Wasmtime profiles; GPU work is outside CPU time limits |
 
 ## Build locally, improve over time
@@ -523,6 +523,17 @@ requirement and signed lockfile inventory hash. It does not stage a download
 or install anything. Creator keys normalize to their byte identity so hex
 letter case cannot create different trust or save identities.
 
+
+## Native game execution
+
+Desktop Build and Play use the shared GamePKG compatibility layer on Linux x64.
+A migrated source package declares `native_tick = true` for a `game_tick`
+entry or `native_services = true` for a standalone `game_main` entry.
+The app checks the source and audits the compiled game objects before linking
+the trusted runtime. Older signed recipes remain visible in the library so
+players can receive updates from the same creator. The separate Wasm action
+is available for supported tick packages. On the CLI, `--frames` without a
+target requests a headless Wasm run.
 
 ## Versioned WIT components
 

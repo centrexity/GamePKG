@@ -161,7 +161,7 @@ enum Command {
         #[arg(short, long)]
         output: PathBuf,
     },
-    /// Play an installed game, or run N headless frames.
+    /// Play an installed native game, or use --frames to run a Wasm build headlessly.
     Run {
         id: String,
         #[command(flatten)]
@@ -575,14 +575,12 @@ fn main() -> Result<()> {
                 gamepkg::game_data::remember_for_game(&root, &id, &path)?;
             }
             let root = gamepkg::registry::default_root()?;
-            let manifest = gamepkg::registry::installed_manifest(&root, &id)?;
-            if manifest.uses_service_runtime() {
+            let play_wasm =
+                target.as_deref() == Some("wasm") || (target.is_none() && frames.is_some());
+            if !play_wasm {
                 anyhow::ensure!(
-                    target.as_deref() != Some("wasm")
-                        && load_slot.is_none()
-                        && save_slot.is_none()
-                        && frames.is_none(),
-                    "native service games use their own game window and save controls"
+                    load_slot.is_none() && save_slot.is_none() && frames.is_none(),
+                    "Native compatibility games run in their own window and use their in-game save controls"
                 );
                 return gamepkg::native::play_services(
                     &root,
@@ -592,52 +590,11 @@ fn main() -> Result<()> {
                     launch,
                 );
             }
-            #[cfg(all(feature = "gui", target_os = "linux", target_arch = "x86_64"))]
-            if manifest.native_tick && target.as_deref() != Some("wasm") {
-                anyhow::ensure!(
-                    rom.is_empty() && load_slot.is_none() && save_slot.is_none(),
-                    "native tick games use their normal private save"
-                );
-                anyhow::ensure!(
-                    frames.is_none(),
-                    "native compatibility games require a game window"
-                );
-                gamepkg::native::play_tick(&root, &id, &gamepkg::settings::load()?, launch, false)?;
-                return Ok(());
-            }
-            #[cfg(any(target_os = "linux", windows))]
-            if manifest.builtin_engine.as_deref() == Some(gamepkg::takedawn::PROFILE) {
-                anyhow::ensure!(
-                    target.as_deref() != Some("wasm"),
-                    "Takedawn requires native Run"
-                );
-                anyhow::ensure!(
-                    load_slot.is_none() && save_slot.is_none(),
-                    "Takedawn uses its original profile saves"
-                );
-                gamepkg::takedawn::play_with_launch(
-                    &root,
-                    &id,
-                    &rom,
-                    &gamepkg::settings::load()?,
-                    frames,
-                    launch,
-                )?;
-                if let Some(count) = frames {
-                    println!("Ran {count} native frames.");
-                }
-                return Ok(());
-            }
             anyhow::ensure!(
                 launch.is_empty(),
-                "Graphics launch flags currently require the reviewed native Takedawn engine"
+                "Graphics launch flags require native Play"
             );
-            let mut game = gamepkg::runtime::Game::load_target(
-                &root,
-                &id,
-                &rom,
-                target.as_deref().map(|target| target == "native"),
-            )?;
+            let mut game = gamepkg::runtime::Game::load_target(&root, &id, &rom, Some(false))?;
             if load_slot.is_some() || save_slot.is_some() {
                 anyhow::ensure!(
                     game.supports_zelda_snapshot_slots(),

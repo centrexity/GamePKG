@@ -5,10 +5,6 @@ use anyhow::{ensure, Result};
 #[cfg(target_os = "linux")]
 use std::path::PathBuf;
 use std::{fs, io::Write, path::Path};
-pub(super) fn compile(root: &Path, id: &str) -> Result<()> {
-    let settings = crate::settings::load()?;
-    compile_with_settings(root, id, &settings)
-}
 pub(super) fn compile_with_settings(
     root: &Path,
     id: &str,
