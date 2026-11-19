@@ -86,12 +86,126 @@ pub(crate) fn validate_parts(data: &Path, packages: &Path) -> Result<()> {
     Ok(())
 }
 pub fn available_for(manifest: &Manifest, path: &Path) -> bool {
+    validate_for(manifest, path).is_ok()
+}
+
+pub fn validate_for(manifest: &Manifest, path: &Path) -> Result<()> {
     if let Some(data) = &manifest.game_data {
+        if manifest.uses_service_runtime() {
+            #[cfg(target_os = "linux")]
+            return open_native_directories(data, path).map(|_| ());
+            #[cfg(not(target_os = "linux"))]
+            bail!("native game-data folders currently require Linux");
+        }
         if !data.layouts.is_empty() {
-            return matches(path, &data.layouts).is_ok();
+            return matches(path, &data.layouts).map(|_| ());
         }
     }
-    available(path)
+    validate(path)
+}
+
+pub(crate) fn validate_native_layout(data: &crate::manifest::GameDataRequirement) -> Result<()> {
+    let [layout] = data.layouts.as_slice() else {
+        bail!("native game data requires exactly one folder layout");
+    };
+    validate_layouts(&data.layouts)?;
+    ensure!(
+        !data.title.trim().is_empty()
+            && data.title.len() <= 256
+            && !data.title.chars().any(char::is_control)
+            && !data.user_selected_servers
+            && layout.placement == "link"
+            && layout.extensions.is_empty()
+            && (1..=8).contains(&layout.directories.len()),
+        "native game data requires one to eight read-only folders in selection order"
+    );
+    let maximum = layout.max_bytes.unwrap_or(8 * 1024 * 1024 * 1024);
+    ensure!(
+        layout.min_bytes.unwrap_or(0) <= maximum && maximum <= 8 * 1024 * 1024 * 1024,
+        "native game-data file size bounds are invalid"
+    );
+    let mut names = HashSet::new();
+    for directory in &layout.directories {
+        ensure!(
+            !directory.contains('/')
+                && crate::archive::valid_path(directory)
+                && names.insert(directory.to_lowercase()),
+            "native game-data directory names must be distinct top-level paths"
+        );
+    }
+    for required in &layout.paths {
+        ensure!(
+            crate::archive::valid_path(required)
+                && required.split_once('/').is_some_and(|(top, _)| {
+                    layout.directories.iter().any(|directory| directory == top)
+                }),
+            "required game-data files must be inside a declared directory"
+        );
+    }
+    Ok(())
+}
+
+// Open the validated roots once. The launcher mounts the returned descriptors
+// directly so a later filesystem rename cannot substitute a different root.
+#[cfg(target_os = "linux")]
+pub(crate) fn open_native_directories(
+    data: &crate::manifest::GameDataRequirement,
+    root: &Path,
+) -> Result<Vec<cap_std::fs::Dir>> {
+    use cap_fs_ext::{DirExt, MetadataExt};
+    use cap_std::fs::Dir;
+
+    validate_native_layout(data)?;
+    ensure!(
+        root.is_absolute(),
+        "game-data selection needs an absolute path"
+    );
+    let mut selected = Dir::open_ambient_dir("/", cap_std::ambient_authority())?;
+    for part in root.components().skip(1) {
+        let Component::Normal(part) = part else {
+            bail!("invalid game-data selection path");
+        };
+        selected = selected
+            .open_dir_nofollow(part)
+            .context("open selected game-data directory")?;
+    }
+    let layout = &data.layouts[0];
+    let min = layout.min_bytes.unwrap_or(0);
+    let max = layout.max_bytes.unwrap_or(8 * 1024 * 1024 * 1024);
+    layout
+        .directories
+        .iter()
+        .map(|name| {
+            let directory = selected
+                .open_dir_nofollow(name)
+                .with_context(|| format!("the folder needs a real {name} directory"))?;
+            for required in &layout.paths {
+                let Some((top, relative)) = required.split_once('/') else {
+                    continue;
+                };
+                if top != name {
+                    continue;
+                }
+                let mut parent = directory.try_clone()?;
+                let (parents, leaf) = relative.rsplit_once('/').unwrap_or(("", relative));
+                for part in parents.split('/').filter(|part| !part.is_empty()) {
+                    parent = parent
+                        .open_dir_nofollow(part)
+                        .with_context(|| format!("open required game-data path {required}"))?;
+                }
+                let metadata = parent
+                    .symlink_metadata(leaf)
+                    .with_context(|| format!("the folder needs {required}"))?;
+                ensure!(
+                    metadata.is_file()
+                        && MetadataExt::nlink(&metadata) == 1
+                        && (min..=max).contains(&metadata.len()),
+                    "{required} must be an unaliased regular file within the declared size range"
+                );
+            }
+            Ok(directory)
+        })
+        .collect()
 }
 pub fn validate_layouts(layouts: &[crate::manifest::DataLayout]) -> Result<()> {
     ensure!(
@@ -364,13 +478,7 @@ pub fn remember(root: &Path, manifest: &Manifest, path: &Path) -> Result<()> {
         text.len() <= 4096 && !text.chars().any(char::is_control),
         "invalid game-data location"
     );
-    if let Some(data) = &manifest.game_data {
-        if !data.layouts.is_empty() {
-            matches(&path, &data.layouts)?;
-        } else {
-            validate(&path)?;
-        }
-    }
+    validate_for(manifest, &path)?;
     let mut entries = read(root)?;
     entries.insert(key, text.to_owned());
     ensure!(entries.len() <= 1024, "too many remembered games");
@@ -402,6 +510,90 @@ pub fn remember_for_game(root: &Path, id: &str, path: &Path) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    const NATIVE_LAYOUT: &str = r#"
+[game_data]
+title = "Original installation"
+[[game_data.layouts]]
+directories = ["packages", "data"]
+paths = ["packages/textures/default.png", "data/start.cfg"]
+min_bytes = 1
+max_bytes = 1024
+"#;
+
+    fn parse_native_layout(layout: &str) -> anyhow::Result<super::Manifest> {
+        let base = include_str!("../examples/minimal/manifest.toml");
+        super::Manifest::parse(format!("native_services = true\n{base}\n{layout}").as_bytes())
+    }
+
+    #[test]
+    fn signed_native_layout_has_ordered_distinct_top_level_directories() {
+        let manifest = parse_native_layout(NATIVE_LAYOUT).unwrap();
+        assert_eq!(manifest.required_game_data_directory_count(), 2);
+        for layout in [
+            NATIVE_LAYOUT.replace(r#""packages", "data""#, r#""packages", "packages""#),
+            NATIVE_LAYOUT.replace("packages/textures/default.png", "private/password.txt"),
+            NATIVE_LAYOUT.replace(r#""packages", "data""#, r#""../packages", "data""#),
+            NATIVE_LAYOUT.replace("max_bytes = 1024", "max_bytes = 8589934593"),
+            NATIVE_LAYOUT.replace("min_bytes = 1", "min_bytes = 2048"),
+            NATIVE_LAYOUT.replace(
+                "[[game_data.layouts]]",
+                "user_selected_servers = true\n[[game_data.layouts]]",
+            ),
+        ] {
+            assert!(parse_native_layout(&layout).is_err(), "{layout}");
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn native_selection_pins_only_the_declared_directories() {
+        use std::{fs, io::Read, os::unix::fs::symlink};
+
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir_all(root.path().join("packages/textures")).unwrap();
+        fs::create_dir(root.path().join("data")).unwrap();
+        fs::write(
+            root.path().join("packages/textures/default.png"),
+            b"original",
+        )
+        .unwrap();
+        fs::write(root.path().join("data/start.cfg"), b"config").unwrap();
+        fs::write(root.path().join("private"), b"excluded").unwrap();
+        let manifest = parse_native_layout(NATIVE_LAYOUT).unwrap();
+        let data = manifest.game_data.as_ref().unwrap();
+        let mounts = super::open_native_directories(data, root.path()).unwrap();
+        for (directory, name, expected) in [
+            (&mounts[0], "textures/default.png", b"original".as_slice()),
+            (&mounts[1], "start.cfg", b"config".as_slice()),
+        ] {
+            let mut contents = Vec::new();
+            directory
+                .open(name)
+                .unwrap()
+                .read_to_end(&mut contents)
+                .unwrap();
+            assert_eq!(contents, expected);
+            assert!(directory.open("private").is_err());
+        }
+        fs::rename(
+            root.path().join("packages/textures"),
+            root.path().join("moved"),
+        )
+        .unwrap();
+        symlink("../moved", root.path().join("packages/textures")).unwrap();
+        assert!(super::open_native_directories(data, root.path()).is_err());
+        fs::rename(root.path().join("data"), root.path().join("moved-data")).unwrap();
+        fs::create_dir(root.path().join("data")).unwrap();
+        fs::write(root.path().join("data/start.cfg"), b"replacement").unwrap();
+        let mut contents = String::new();
+        mounts[1]
+            .open("start.cfg")
+            .unwrap()
+            .read_to_string(&mut contents)
+            .unwrap();
+        assert_eq!(contents, "config");
+    }
+
     #[cfg(unix)]
     #[test]
     fn linked_core_files_and_texture_directory_are_not_ready() {

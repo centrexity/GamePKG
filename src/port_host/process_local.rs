@@ -175,6 +175,18 @@ impl Process {
         assets: Option<&crate::port_host::owner::VerifiedAssets>,
         options: NativeLaunch,
     ) -> Result<Self> {
+        Self::start_in_process_with_data(artifact, library, roms, save, assets, vec![], options)
+    }
+
+    pub(crate) fn start_in_process_with_data(
+        artifact: &Artifact,
+        library: &Path,
+        roms: Vec<fs::File>,
+        save: Option<(&Path, u64)>,
+        assets: Option<&crate::port_host::owner::VerifiedAssets>,
+        game_data: Vec<cap_std::fs::Dir>,
+        options: NativeLaunch,
+    ) -> Result<Self> {
         ensure!(
             artifact.receipt().bootstrap == Bootstrap::InProcess
                 && artifact.receipt().plan.target() == Target::Linux64,
@@ -185,6 +197,10 @@ impl Process {
         ensure!(
             manifest.required_rom_count() == roms.len(),
             "wrong number of selected ROMs"
+        );
+        ensure!(
+            manifest.required_game_data_directory_count() == game_data.len(),
+            "wrong number of selected game-data directories"
         );
         for rom in &roms {
             let flags = unsafe { libc::fcntl(rom.as_raw_fd(), libc::F_GETFL) };
@@ -354,6 +370,14 @@ impl Process {
                 .arg(format!("/run/gamepkg-rom/{index}"));
             inherited_mounts.push(fd);
         }
+        for (index, directory) in game_data.iter().enumerate() {
+            let fd = directory.as_raw_fd();
+            command
+                .arg("--ro-bind-fd")
+                .arg(fd.to_string())
+                .arg(format!("/run/gamepkg-data/{index}"));
+            inherited_mounts.push(fd);
+        }
         if let Some((scope, quota)) = &save_mount {
             let fd = scope.as_raw_fd();
             command
@@ -438,6 +462,7 @@ impl Process {
             .recv()
             .context("native launcher thread exited")??;
         drop(roms);
+        drop(game_data);
         drop(save_mount);
         if let Some(socket) = parent_picker {
             let manifest = manifest.clone();

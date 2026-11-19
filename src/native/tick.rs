@@ -266,7 +266,15 @@ pub(super) fn play_entry(
         } else {
             None
         };
-        Process::start_in_process_with_assets(
+        let game_data = if let Some(data) = &manifest.game_data {
+            let path = crate::game_data::load(root, manifest)?.context(
+                "select the required game-data folder in the library or use --game-data",
+            )?;
+            crate::game_data::open_native_directories(data, &path)?
+        } else {
+            Vec::new()
+        };
+        Process::start_in_process_with_data(
             &artifact,
             root,
             roms,
@@ -275,6 +283,7 @@ pub(super) fn play_entry(
                 .save
                 .then_some((root, manifest.native_save_quota())),
             assets.as_ref(),
+            game_data,
             options,
         )?
     };
@@ -336,6 +345,103 @@ fn selected_roms(root: &Path, manifest: &Manifest, supplied: &[PathBuf]) -> Resu
             Ok(file)
         })
         .collect()
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod linux_tests {
+    use super::*;
+
+    #[test]
+    #[ignore = "builds and runs a signed game via the confined Linux desktop launcher"]
+    fn signed_game_reads_only_the_declared_installation_directories() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = &temp.path().join("library");
+        let recipe = temp.path().join("recipe");
+        fs::create_dir_all(recipe.join("source/src")).unwrap();
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/minimal");
+        for file in [
+            "CREDITS.md",
+            "LICENSE",
+            "NOTICE",
+            "thumbnail.png",
+            "source/Cargo.toml",
+            "source/Cargo.lock",
+        ] {
+            fs::copy(fixture.join(file), recipe.join(file)).unwrap();
+        }
+        let original = include_str!("../../examples/minimal/manifest.toml")
+            .replace("com.gamepkg.minimal", "com.gamepkg.game-data-test")
+            .replace(
+                "hard_memory_bytes = 16777216",
+                "hard_memory_bytes = 536870912",
+            );
+        fs::write(
+            recipe.join("manifest.toml"),
+            format!(
+                r#"native_services = true
+{original}
+[game_data]
+title = "Fixture installation"
+[[game_data.layouts]]
+directories = ["packages", "data"]
+paths = ["data/start.cfg", "packages/picture"]
+min_bytes = 1
+"#
+            ),
+        )
+        .unwrap();
+        fs::write(
+            recipe.join("source/src/lib.rs"),
+            r#"pub fn game_main() {
+    let grants = match gamepkg::grants() { Ok(v) => v, Err(_) => return };
+    if grants.len() != 2 || grants[0].kind != 6 || grants[1].kind != 6 { return; }
+    for (index, name, expected) in [(0, "picture", b"package"), (1, "start.cfg", b"startup")] {
+        let root = grants[index].id;
+        if gamepkg::file_exists(root, "private") != Ok(false) { return; }
+        if gamepkg::file_open(root, true, name) != Err(-4) { return; }
+        let file = match gamepkg::file_open(root, false, name) { Ok(v) => v, Err(_) => return };
+        let mut bytes = [0u8;7];
+        if gamepkg::file_read(file, 0, &mut bytes) != Ok(7) || &bytes != expected { return; }
+        if gamepkg::file_close(file) != Ok(()) { return; }
+    }
+    if gamepkg::present(0x295277ff, &[]).is_err() { return; }
+    loop {
+        let (now, generation) = match gamepkg::monotonic() {
+            Ok(value) => value, Err(_) => return,
+        };
+        if gamepkg::wait_until(now.saturating_add(10000000), generation).is_err() { return; }
+    }
+}"#,
+        )
+        .unwrap();
+
+        let path = temp.path().join("fixture.gamepkg");
+        crate::pack::pack(&recipe, &path, &[97; 32]).unwrap();
+        let manifest = crate::registry::install(root, &path, true).unwrap();
+        crate::native::compile(root, &manifest.id).unwrap();
+        let settings = crate::settings::Settings {
+            memory_ceiling_mib: 512,
+            mute_audio: true,
+            ..Default::default()
+        };
+        let play = || play_entry(root, &manifest.id, &[], &settings, Default::default(), true);
+        assert!(play()
+            .unwrap_err()
+            .to_string()
+            .contains("select the required game-data folder"));
+        let installation = temp.path().join("installation");
+        fs::create_dir_all(installation.join("packages")).unwrap();
+        fs::create_dir(installation.join("data")).unwrap();
+        fs::write(installation.join("packages/picture"), b"package").unwrap();
+        fs::write(installation.join("data/start.cfg"), b"startup").unwrap();
+        fs::write(installation.join("private"), b"outside").unwrap();
+        crate::game_data::remember(root, &manifest, &installation).unwrap();
+        play().unwrap();
+        assert_eq!(
+            fs::read(installation.join("data/start.cfg")).unwrap(),
+            b"startup"
+        );
+    }
 }
 
 #[cfg(all(test, windows))]

@@ -72,10 +72,11 @@ impl App {
             blockers.push("This game uses 4096 MiB. Set Memory ceiling to 4096 MiB in Settings before playing.".into());
         }
         if let Some(data) = &m.game_data {
-            if self
-                .applied_settings
-                .as_ref()
-                .is_none_or(|s| s.memory_ceiling_mib < 2048)
+            if !m.uses_service_runtime()
+                && self
+                    .applied_settings
+                    .as_ref()
+                    .is_none_or(|s| s.memory_ceiling_mib < 2048)
             {
                 let current = self
                     .applied_settings
@@ -85,19 +86,15 @@ impl App {
                 blockers.push(format!("Increase the memory ceiling to at least 2048 MiB in Settings (currently {current} MiB)."));
             }
             match self.data_paths.get(&m.id).filter(|p| !p.is_empty()) {
-                None => blockers.push(if data.layouts.is_empty() {
+                None => blockers.push(if m.uses_service_runtime() || data.layouts.is_empty() {
                     "Choose the original game-data folder below.".into()
                 } else {
                     "Choose the original game-data file or folder below.".into()
                 }),
                 Some(path) => {
-                    let result = if !data.layouts.is_empty() {
-                        crate::game_data::matches(std::path::Path::new(path), &data.layouts)
-                            .map(|_| ())
-                    } else {
-                        crate::game_data::validate(std::path::Path::new(path))
-                    };
-                    if let Err(error) = result {
+                    if let Err(error) =
+                        crate::game_data::validate_for(m, std::path::Path::new(path))
+                    {
                         blockers.push(format!("Selected game data: {error}. Choose a complete original installation below."));
                     }
                 }
@@ -369,7 +366,7 @@ impl App {
                 if self.result.is_some() { ui.label("Waiting for the current operation to finish. Play is rechecked automatically when it completes."); }
                 for blocker in &blockers { ui.label(format!("Before playing: {blocker}")); }
                 ui.horizontal_wrapped(|ui| {
-                    if m.game_data.is_some() && self.applied_settings.as_ref().is_none_or(|s|s.memory_ceiling_mib<2048)
+                    if m.game_data.is_some() && !m.uses_service_runtime() && self.applied_settings.as_ref().is_none_or(|s|s.memory_ceiling_mib<2048)
                         && ui.add_enabled(self.result.is_none(), egui::Button::new("Open memory settings")).clicked() {
                         match crate::settings::load() {
                             Ok(settings) => { self.settings_draft=settings;self.show_settings=true;self.focus_memory_settings=true;self.show_add=false;self.show_support=false;self.preview=None; }
@@ -461,6 +458,7 @@ impl App {
             .game_data
             .as_ref()
             .is_some_and(|data| !data.layouts.is_empty());
+        let native_folder = selected.uses_service_runtime();
         let title = selected.game_data.as_ref().unwrap().title.clone();
         let current = self
             .data_paths
@@ -521,7 +519,9 @@ impl App {
         {
             self.pick_game_data(selected, current, title, extensions, !prefer_file);
         }
-        if external {
+        if native_folder {
+            ui.label("Choose the original game-data folder. GamePKG reads only the declared subfolders in place.");
+        } else if external {
             ui.label("Choose an original game-data file or a folder that matches this game's data layout. The files stay on your disk and are not copied into the package. Saves stay in the library.");
         } else {
             ui.label("Choose the original installation containing data and packages folders. GamePKG reads these files in place and remembers this folder for this signed game.");

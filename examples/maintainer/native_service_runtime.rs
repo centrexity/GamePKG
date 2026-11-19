@@ -48,7 +48,7 @@ fn main() -> anyhow::Result<()> {
         .map(|hash| (*hash).to_owned())
         .collect::<Vec<_>>();
     #[cfg(target_os = "linux")]
-    let rom_descriptors = platform::rom_descriptors(&grants);
+    let media_descriptors = platform::media_descriptors(&grants);
     let options = Options {
         title: manifest
             .title
@@ -85,7 +85,7 @@ fn main() -> anyhow::Result<()> {
         },
         move |connection| {
             #[cfg(target_os = "linux")]
-            platform::restrict_worker(rom_descriptors)?;
+            platform::restrict_worker(media_descriptors)?;
             client::connect_local(move |op, bytes, limit| {
                 connection
                     .call(op, bytes, limit)
@@ -166,6 +166,12 @@ mod platform {
                 .parse()?;
             grants.saves = Some(SaveGrant::open_native_mount(&manifest, quota)?);
         }
+        for index in 0..manifest.required_game_data_directory_count() {
+            grants.game_data.push(cap_std::fs::Dir::open_ambient_dir(
+                format!("/run/gamepkg-data/{index}"),
+                cap_std::ambient_authority(),
+            )?);
+        }
         for index in 0..manifest.required_rom_count() {
             let file = std::fs::File::open(format!("/run/gamepkg-rom/{index}"))?;
             ensure!(
@@ -177,17 +183,22 @@ mod platform {
         Ok(grants)
     }
 
-    pub fn rom_descriptors(grants: &Grants) -> Vec<RawFd> {
-        grants.roms.iter().map(AsRawFd::as_raw_fd).collect()
+    pub fn media_descriptors(grants: &Grants) -> Vec<RawFd> {
+        grants
+            .roms
+            .iter()
+            .map(AsRawFd::as_raw_fd)
+            .chain(grants.game_data.iter().map(AsRawFd::as_raw_fd))
+            .collect()
     }
 
-    pub fn restrict_worker(rom_descriptors: Vec<RawFd>) -> anyhow::Result<()> {
+    pub fn restrict_worker(media_descriptors: Vec<RawFd>) -> anyhow::Result<()> {
         lockdown::install_local_worker()?;
-        for fd in rom_descriptors {
+        for fd in media_descriptors {
             let status = unsafe { libc::fcntl(fd, libc::F_GETFD) };
             ensure!(
                 status == -1 && std::io::Error::last_os_error().raw_os_error() == Some(libc::EBADF),
-                "trusted ROM descriptor remained open on the game worker"
+                "trusted media descriptor remained open on the game worker"
             );
         }
         Ok(())

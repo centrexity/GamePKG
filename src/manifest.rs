@@ -221,8 +221,8 @@ pub struct GameDataRequirement {
     pub title: String,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub user_selected_servers: bool,
-    /// How a player folder can satisfy this game. Empty means the reviewed
-    /// Cube 2 directories. Any other engine compares these with its catalog entry.
+    /// Signed data layout. Native services allow one read-only folder layout.
+    /// For legacy packages, an empty list identifies the reviewed Cube 2 layout.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub layouts: Vec<DataLayout>,
 }
@@ -414,6 +414,17 @@ impl Manifest {
 
     pub fn uses_service_runtime(&self) -> bool {
         self.native_services
+    }
+
+    /// Number of ordered read-only directory grants requested by the native runtime.
+    pub fn required_game_data_directory_count(&self) -> usize {
+        if !self.uses_service_runtime() {
+            return 0;
+        }
+        self.game_data
+            .as_ref()
+            .and_then(|data| data.layouts.first())
+            .map_or(0, |layout| layout.directories.len())
     }
 
     pub fn uses_selected_servers(&self) -> bool {
@@ -616,10 +627,12 @@ impl Manifest {
                 bail!("this external engine requires its reviewed data layout, input/save/audio permissions, the catalog network setting, and at least {} bytes of memory", engine.memory);
             }
         } else {
-            if m.game_data.is_some() {
-                bail!(
-                    "game-data folders are only supported by the pinned Cube 2 engine and reviewed external engines"
+            if let Some(data) = &m.game_data {
+                anyhow::ensure!(
+                    m.uses_service_runtime() && m.builtin_engine.is_none(),
+                    "game-data folders require native services or a reviewed legacy engine"
                 );
+                crate::game_data::validate_native_layout(data)?;
             }
             if let Some(engine) = &m.builtin_engine {
                 let minimum = crate::builtin::memory(engine)? + 16 * 1048576;
