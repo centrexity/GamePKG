@@ -469,6 +469,14 @@ fn native_indexed_geometry_depth_msaa_cube_mips_and_invalid_resources() {
         4,
     )
     .unwrap();
+    // Logical handle capacity and byte admission are independent under MSAA.
+    let mut many_handles = Graphics::new(&state, Vec::new(), 64 * 1024, 4).unwrap();
+    let small_buffer = [1, 0, 0, 0, 0, 0, 0, 0];
+    for _ in 0..4096 {
+        assert_eq!(many_handles.call(100, &small_buffer, 8).unwrap().len(), 8);
+    }
+    assert_eq!(many_handles.call(100, &small_buffer, 8), Err(Error::Busy));
+    drop(many_handles);
     assert_eq!(gpu.pipeline_hashes().len(), 15);
     assert!(gpu.pipeline_hashes().iter().all(|hash| hash.len() == 64));
     // A held displayed snapshot consumes its own budget even after GPU work

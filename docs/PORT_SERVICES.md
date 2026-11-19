@@ -62,6 +62,10 @@ the game engine and its platform bridge inside the audited game code.
 Record the compatibility-layer version and source identity in the build
 receipt. Retain the existing permission, resource, and confinement rules.
 
+Admission allows up to 512 MiB of package source. Verified compiler tools and
+their pinned downloads can be up to 2 GiB per file. The finished game
+executable has a separate 256 MiB limit.
+
 The launcher verifies and builds the package, establishes its permissions
 and resource scope, starts it, and tracks its lifecycle. Runtime service
 execution belongs in the game process for every native port.
@@ -288,6 +292,9 @@ Unsupported formats/sample counts are refused, never silently downgraded.
 New depth is initialized to 1 and stencil to 0. Attaching does not clear it.
 Releasing its ID revokes further lookup but attached targets retain the resource
 and its memory charge until their references and GPU work are finished.
+Each graphics session can hold up to 4,096 GPU resources, including those
+awaiting retirement. The 2D image service allows up to 1,024 live image
+handles. Both enforce their byte budgets as well as the handle counts.
 Color and depth survive separate ordered pass requests. Clear mask bits 1/2
 select color/depth; mask zero loads both. Scissored partial clears preserve all
 other pixels. A target can occupy a 2D texture slot in a later pass; sampling

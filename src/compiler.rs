@@ -6,6 +6,8 @@ use std::{
     thread,
 };
 pub const ADDRESS_SPACE: u64 = 2 * 1024 * 1024 * 1024;
+/// Maximum stored size of one compiler tool or its pinned download.
+pub(crate) const MAX_TOOL_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 pub const DIAGNOSTICS: usize = 1024 * 1024;
 pub struct Output {
     pub status: ExitStatus,
