@@ -935,6 +935,9 @@ local runtime and lockdown. Both stages use `lto=off`, `embed-bitcode=no`,
 opt-level 3 and the native CPU only for a matching host/target. Bounds traps and
 allocation imports use an exact closed compiler-runtime vocabulary, never a
 Rust namespace exemption. Their definitions remain reserved.
+The i686 COFF audit accepts the MinGW stack probe alias `__alloca` only as
+an exact compiler import in an all-i686 COFF object set. The definition
+belongs to the reviewed compiler runtime.
 
 `Plan::with_codegen_units(1..=64)` selects a host-reviewed game partition count
 (default eight), bound into the Plan identity and compiler arguments. Rustc may
