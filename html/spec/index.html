@@ -18,7 +18,7 @@
 <body><main>
 <nav aria-label="Main"><a href="../index.html">← GamePKG</a> · <a href="../guide/index.html">Start playing</a></nav>
 <h1>GamePKG format: foundation profile</h1>
-<p>The ZIP contains <code>manifest.toml</code>, <code>signature.toml</code>, <code>thumbnail.png</code>, <code>LICENSE</code>, <code>CREDITS.md</code>, <code>source/Cargo.toml</code>, <code>source/Cargo.lock</code>, <code>source/src/lib.rs</code>, optional <code>shaders/*.slang</code>, and <code>assets/**</code>. All paths are relative UTF-8 paths with forward slashes. Directory entries are omitted. Compression methods are store and zstd; the packer currently writes store for every file.</p>
+<p>The ZIP contains <code>manifest.toml</code>, <code>signature.toml</code>, <code>thumbnail.png</code>, <code>LICENSE</code>, <code>CREDITS.md</code>, <code>source/Cargo.toml</code>, <code>source/Cargo.lock</code>, <code>source/src/lib.rs</code>, optional <code>shaders/*.slang</code>, and <code>assets/**</code>. All paths are relative UTF-8 paths with forward slashes. Directory entries are omitted. Compression methods are store and zstd; the packer currently writes store for every file. Standalone packages support ZIP64 and have no fixed byte limit per entry or for the archive. The entry count is limited to 10,000. Compilers, buffered reads, media decoders and shared stores apply separate budgets.</p>
 <p>The manifest example in <code>examples/minimal/manifest.toml</code> is authoritative for currently supported fields. Unknown fields fail validation. <code>lockfile_sha256</code> is the SHA-256 of raw Cargo.lock bytes; it is lockfile integrity, not a complete SBOM.</p>
 <h2>Guest dependency policy</h2>
 <p>Game source must have <strong>no Cargo dependencies</strong>, including <code>gamepkg-*</code> crates. <code>[dependencies]</code> must be absent or empty. Build, development, target-specific, workspace, patch, replace and feature sections are rejected. Renamed, optional, Git and path dependencies receive no exception.</p>
@@ -54,8 +54,8 @@ on Windows. The desktop player presents through host-controlled Vulkan by defaul
 <h2>Shared store assets</h2>
 <p>A signed manifest may contain <code>shared_assets</code>, mapping asset-relative paths to
 <code>sha256</code> (64 lowercase hexadecimal characters) and <code>size</code> (bytes, at most
-64 MiB). Referenced paths cannot also be embedded under <code>assets/</code>. Logical
-contents remain limited to 256 MiB. Reusing a digest requires the same size.</p>
+64 MiB). Referenced paths cannot also be embedded under <code>assets/</code>. Shared references
+are limited to 256 MiB of logical asset data. Reusing a digest requires the same size.</p>
 <p>The host verifies signed references offline, then requires matching local pool
 blobs before installation, builds, or play. It does not download blobs
 automatically. Gameplay uses private verified snapshots through the existing

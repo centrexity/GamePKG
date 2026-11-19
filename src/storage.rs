@@ -146,31 +146,15 @@ fn scoped_total(root: &Path, path: &Path, allocation: &mut Option<u64>) -> Resul
 }
 pub fn usage(root: &Path, manifest: &crate::manifest::Manifest) -> Result<Usage> {
     let package = root.join(format!("{}.gamepkg", manifest.id));
-    let mut file = crate::files::open_regular(&package, crate::archive::MAX_TOTAL, false)?;
+    let file = crate::files::open_regular(&package, u64::MAX, false)?;
     let metadata = file.metadata()?;
     let package_bytes = metadata.len();
     let mut allocation = allocated::file(&package, &metadata);
-    use sha2::Digest;
-    use std::io::Read;
-
-    let mut hash = sha2::Sha256::new();
-    let mut buffer = [0u8; 65536];
-    let mut read_bytes = 0u64;
-    loop {
-        let length = file.read(&mut buffer)?;
-        if length == 0 {
-            break;
-        }
-        read_bytes = read_bytes.saturating_add(length as u64);
-        if read_bytes > crate::archive::MAX_TOTAL {
-            bail!("package exceeds storage inventory read limit");
-        }
-        hash.update(&buffer[..length]);
-    }
     let build = root
         .join("builds")
-        .join(hex::encode(hash.finalize()))
+        .join(crate::verify::digest_reader(file)?)
         .join("game.wasm");
+    use std::io::Read;
     let mut measure = |path: &Path| scoped_total(root, path, &mut allocation);
     let mut built_bytes = measure(build.parent().unwrap())?;
     if manifest.builtin_engine.as_deref() == Some(crate::takedawn::PROFILE) {

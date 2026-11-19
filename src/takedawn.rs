@@ -256,16 +256,11 @@ fn play_session(
     frames: Option<u32>,
     launch_overrides: crate::launch_options::LaunchArgs,
 ) -> Result<()> {
-    use std::io::Write;
     let _guard = crate::build::BuildChange::read(root, id)?;
     crate::registry::installed_manifest(root, id)?;
-    let original = crate::files::read_regular(
-        &root.join(format!("{id}.gamepkg")),
-        crate::archive::MAX_TOTAL,
-        false,
-    )?;
-    let mut snapshot = tempfile::NamedTempFile::new()?;
-    snapshot.write_all(&original)?;
+    let installed = root.join(format!("{id}.gamepkg"));
+    let snapshot = crate::files::snapshot_archive(&installed)?;
+    let package_digest = crate::files::hash_archive(snapshot.path())?;
     let mut package = crate::archive::Package::open(snapshot.path())?;
     let manifest = crate::verify::verify_embedded(&mut package)?;
     ensure!(
@@ -305,7 +300,7 @@ fn play_session(
         crate::rom_selections::ready_for(&manifest, &paths),
         "Choose the original supported Xbox ISO for this game"
     );
-    let cached = cache_path(root, &crate::verify::digest(&original));
+    let cached = cache_path(root, &package_digest);
     let mut session = crate::takedawn_player::Session::start_cached(
         root,
         &manifest.id,

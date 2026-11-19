@@ -23,14 +23,12 @@ pub(crate) fn prepare_with_guard(
 ) -> Result<()> {
     let manifest = crate::registry::installed_manifest(root, id)?;
     crate::build_policy::require(manifest.builtin_engine.as_deref())?;
-    let bytes = crate::files::read_regular(
-        &root.join(format!("{id}.gamepkg")),
-        256 * 1024 * 1024,
-        false,
-    )?;
     let snapshot = tempfile::tempdir()?;
     let package = snapshot.path().join("source.gamepkg");
-    fs::write(&package, &bytes)?;
+    std::io::copy(
+        &mut crate::files::open_regular(&root.join(format!("{id}.gamepkg")), u64::MAX, false)?,
+        &mut fs::File::create(&package)?,
+    )?;
     let verified = crate::verify::verify_embedded(&mut crate::archive::Package::open(&package)?)?;
     if toml::to_string(&verified)? != toml::to_string(&manifest)? {
         bail!("installed package changed while preparing the compiler request");
@@ -60,12 +58,8 @@ pub fn compile(store: &Path, output: &Path, backend: &str, optimize: bool) -> Re
     settings.optimize_builds = optimize;
     settings.validate()?;
     crate::build::compile_with_settings(work.path(), &manifest.id, &settings)?;
-    let archive = crate::files::read_regular(
-        &work.path().join(format!("{}.gamepkg", manifest.id)),
-        256 * 1024 * 1024,
-        false,
-    )?;
-    let identity = crate::verify::digest(&archive);
+    let identity =
+        crate::files::hash_archive(&work.path().join(format!("{}.gamepkg", manifest.id)))?;
     let parent = output
         .parent()
         .context("compiler output needs a parent folder")?;
@@ -232,7 +226,7 @@ pub(crate) fn accept_with_guard(
     crate::build_policy::require(manifest.builtin_engine.as_deref())?;
     let _build = crate::build::BuildChange::acquire(root, id)?;
     let installed = root.join(format!("{id}.gamepkg"));
-    let archive = crate::files::read_regular(&installed, 256 * 1024 * 1024, false)?;
+    let package_digest = crate::files::hash_archive(&installed)?;
     let settings = crate::settings::load()?;
     settings.validate()?;
     plain_directory(exchange)?;
@@ -243,7 +237,7 @@ pub(crate) fn accept_with_guard(
     )?)?;
     if info.format_version != 1
         || info.id != id
-        || info.package_digest != crate::verify::digest(&archive)
+        || info.package_digest != package_digest
         || info.backend != settings.shader_backend
         || info.compiler_host_version != env!("CARGO_PKG_VERSION")
     {
@@ -303,7 +297,7 @@ pub(crate) fn accept_with_guard(
     }
     let (source_cache, _) = crate::shaders::playback_cache(
         snapshot.path(),
-        &archive,
+        &package_digest,
         &settings,
         manifest.shaders.len().max(1),
     )?;
@@ -322,18 +316,13 @@ pub(crate) fn accept_with_guard(
         shader_names.push(format!("{index}.reflection.json"));
     }
     require_entries(&source_cache, &shader_names)?;
-    crate::shaders::load_fragment_sources(snapshot.path(), &archive, &manifest, &settings)?;
+    crate::shaders::load_fragment_sources(snapshot.path(), &package_digest, &manifest, &settings)?;
     let shader_manifest =
         crate::files::read_regular(&source_cache.join("manifest.toml"), 64 * 1024, false)?;
     if shader_manifest != toml::to_string(&manifest)?.as_bytes() {
         bail!("compiler exchange shader manifest differs from the installed signed manifest");
     }
-    if crate::verify::digest(&crate::files::read_regular(
-        &installed,
-        256 * 1024 * 1024,
-        false,
-    )?) != info.package_digest
-    {
+    if crate::files::hash_archive(&installed)? != info.package_digest {
         bail!("installed package changed during compiler exchange validation");
     }
     let builds = root.join("builds");

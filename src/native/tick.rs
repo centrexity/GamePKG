@@ -62,7 +62,7 @@ fn open(root: &Path, id: &str) -> Result<crate::archive::Package> {
 fn prepare_graphics(
     root: &Path,
     sources: &CheckedSources,
-    archive: &[u8],
+    package: &crate::archive::Package,
     settings: &crate::settings::Settings,
 ) -> Result<Option<VerifiedPipelines>> {
     let manifest = sources.manifest();
@@ -93,32 +93,34 @@ fn prepare_graphics(
         raster: Default::default(),
         uniform_policy: Default::default(),
     };
-    VerifiedPipelines::prepare(root, sources, archive, settings, vec![recipe], 1).map(Some)
+    VerifiedPipelines::prepare(root, sources, package, settings, vec![recipe], 1).map(Some)
 }
 
-fn source_snapshot(root: &Path, id: &str) -> Result<(CheckedSources, Vec<u8>)> {
-    let bytes = crate::files::read_regular(
-        &root.join(format!("{id}.gamepkg")),
-        crate::archive::MAX_TOTAL,
-        false,
-    )?;
-    let mut snapshot = tempfile::NamedTempFile::new()?;
-    snapshot.write_all(&bytes)?;
-    let sources = CheckedSources::verify(&mut crate::archive::Package::open(snapshot.path())?)?;
+fn source_snapshot(
+    root: &Path,
+    id: &str,
+) -> Result<(
+    CheckedSources,
+    crate::archive::Package,
+    tempfile::NamedTempFile,
+)> {
+    let snapshot = crate::files::snapshot_archive(&root.join(format!("{id}.gamepkg")))?;
+    let mut package = crate::archive::Package::open(snapshot.path())?;
+    let sources = CheckedSources::verify(&mut package)?;
     ensure!(
         sources.manifest().id == id,
         "installed native package ID changed"
     );
-    Ok((sources, bytes))
+    Ok((sources, package, snapshot))
 }
 
 pub(super) fn build(root: &Path, id: &str) -> Result<()> {
     let _lock = crate::build::BuildChange::acquire(root, id)?;
     let path = super::cache_path(root, id)?;
-    let (sources, bytes) = source_snapshot(root, id)?;
+    let (sources, package, _snapshot) = source_snapshot(root, id)?;
     let plan = plan(sources.manifest())?;
     let pipelines = if sources.manifest().native_graphics.is_some() {
-        prepare_graphics(root, &sources, &bytes, &crate::settings::load()?)?
+        prepare_graphics(root, &sources, &package, &crate::settings::load()?)?
     } else {
         None
     };
@@ -164,7 +166,7 @@ fn prepared(
         .verify(json, &Signature::from_slice(signature)?)?;
     let receipt: ExecutableReceipt = serde_json::from_slice(json)?;
 
-    let (sources, archive) = source_snapshot(root, id)?;
+    let (sources, package, _snapshot) = source_snapshot(root, id)?;
     let shader_preparation = if sources.manifest().native_graphics.is_some() {
         let loaded;
         let settings = match settings {
@@ -175,7 +177,9 @@ fn prepared(
             }
         };
         vec![crate::shaders::native_preparation_identity(
-            root, &archive, settings,
+            root,
+            &package.archive_digest()?,
+            settings,
         )?]
     } else {
         Vec::new()

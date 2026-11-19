@@ -23,7 +23,7 @@ pub const NATIVE_PREPARATION_POLICY: &str = "native-raster-v1:slang-fp-mode-prec
 /// fixed numerical policy. Pipeline hashes separately bind entry/layout/state.
 pub fn native_preparation_identity(
     root: &Path,
-    archive: &[u8],
+    package_digest: &str,
     settings: &Settings,
 ) -> Result<String> {
     settings.validate()?;
@@ -31,7 +31,7 @@ pub fn native_preparation_identity(
         matches!(settings.shader_backend.as_str(), "wgsl" | "spirv"),
         "native raster shaders require WGSL/SPIR-V"
     );
-    let (_, cache) = compiler_cache(root, archive, settings)?;
+    let (_, cache) = compiler_cache(root, package_digest, settings)?;
     native_preparation_cache_identity(&cache)
 }
 
@@ -60,18 +60,18 @@ pub struct NativeShader {
 /// hashes and SDK/compiler identity. This does not relax ordinary 2D shaders.
 pub fn compile_native_sources(
     root: &Path,
-    archive: &[u8],
+    package_digest: &str,
     package: &mut Package,
     entries: &[Shader],
     settings: &Settings,
 ) -> Result<Vec<NativeShader>> {
-    compile_native_sources_with_identity(root, archive, package, entries, settings)
+    compile_native_sources_with_identity(root, package_digest, package, entries, settings)
         .map(|(stages, _)| stages)
 }
 
 pub(crate) fn compile_native_sources_with_identity(
     root: &Path,
-    archive: &[u8],
+    package_digest: &str,
     package: &mut Package,
     entries: &[Shader],
     settings: &Settings,
@@ -90,7 +90,7 @@ pub(crate) fn compile_native_sources_with_identity(
             "native raster shaders cannot use compute"
         );
     }
-    let (compiler, cache) = compiler_cache(root, archive, settings)?;
+    let (compiler, cache) = compiler_cache(root, package_digest, settings)?;
     let preparation = native_preparation_cache_identity(&cache)?;
     let dxc = dxc_root(root, settings)?;
     let stage = tempfile::tempdir()?;
@@ -292,7 +292,7 @@ mod native_raster_tests {
         }
         let archive_path = root.path().join("templates.gamepkg");
         crate::pack::pack(&source, &archive_path, &[129; 32]).unwrap();
-        let archive = fs::read(&archive_path).unwrap();
+        let package_digest = crate::files::hash_archive(&archive_path).unwrap();
         let mut package = Package::open(&archive_path).unwrap();
         crate::verify::verify_embedded(&mut package).unwrap();
         // Qualify the selected backend independently; never fall back after a
@@ -303,10 +303,16 @@ mod native_raster_tests {
             shader_backend: backend.clone(),
             ..Default::default()
         };
-        let identity = native_preparation_identity(root.path(), &archive, &settings).unwrap();
-        let stages =
-            compile_native_sources(root.path(), &archive, &mut package, &entries, &settings)
-                .unwrap();
+        let identity =
+            native_preparation_identity(root.path(), &package_digest, &settings).unwrap();
+        let stages = compile_native_sources(
+            root.path(),
+            &package_digest,
+            &mut package,
+            &entries,
+            &settings,
+        )
+        .unwrap();
         assert_eq!(stages.len(), 32);
         for (index, stage) in stages.iter().enumerate() {
             assert_eq!(
@@ -366,7 +372,7 @@ mod native_raster_tests {
         let denied_source=format!("#include \"{}\"\n[shader(\"fragment\")] float4 fragmentMain():SV_Target {{return privateColor();}}",canary.to_str().unwrap().replace('\\',"/"));
         let archive_path = root.path().join("native.gamepkg");
         crate::pack::pack(&source, &archive_path, &[127; 32]).unwrap();
-        let archive = fs::read(&archive_path).unwrap();
+        let package_digest = crate::files::hash_archive(&archive_path).unwrap();
         let mut package = Package::open(&archive_path).unwrap();
         let entries = [
             Shader {
@@ -386,11 +392,17 @@ mod native_raster_tests {
                 shader_backend: backend.into(),
                 ..Default::default()
             };
-            let stages =
-                compile_native_sources(root.path(), &archive, &mut package, &entries, &settings)
-                    .unwrap();
-            preparation_identities
-                .push(native_preparation_identity(root.path(), &archive, &settings).unwrap());
+            let stages = compile_native_sources(
+                root.path(),
+                &package_digest,
+                &mut package,
+                &entries,
+                &settings,
+            )
+            .unwrap();
+            preparation_identities.push(
+                native_preparation_identity(root.path(), &package_digest, &settings).unwrap(),
+            );
             assert_eq!(stages.len(), 2);
             assert_eq!(stages[0].stage, naga::ShaderStage::Vertex);
             assert_eq!(stages[1].stage, naga::ShaderStage::Fragment);
@@ -401,7 +413,7 @@ mod native_raster_tests {
                 entry: "fragmentMain".into(),
                 stage: "fragment".into(),
             };
-            let (compiler, _) = compiler_cache(root.path(), &archive, &settings).unwrap();
+            let (compiler, _) = compiler_cache(root.path(), &package_digest, &settings).unwrap();
             assert!(run_shader(
                 &compiler,
                 None,
@@ -426,18 +438,23 @@ struct CacheReceipt {
     cache_digest: String,
     files: std::collections::BTreeMap<String, String>,
 }
-fn receipt_path(root: &Path, archive: &[u8], backend: &str) -> PathBuf {
-    root.join("builds")
-        .join(digest(archive))
-        .join(format!("shaders-{backend}.json"))
+fn receipt_path(root: &Path, package_digest: &str, backend: &str) -> Result<PathBuf> {
+    anyhow::ensure!(
+        package_digest.len() == 64 && package_digest.bytes().all(|c| c.is_ascii_hexdigit()),
+        "invalid shader package digest"
+    );
+    Ok(root
+        .join("builds")
+        .join(package_digest)
+        .join(format!("shaders-{backend}.json")))
 }
 fn publish_receipt(
     root: &Path,
-    archive: &[u8],
+    package_digest: &str,
     settings: &Settings,
     receipt: &CacheReceipt,
 ) -> Result<()> {
-    let path = receipt_path(root, archive, &settings.shader_backend);
+    let path = receipt_path(root, package_digest, &settings.shader_backend)?;
     fs::create_dir_all(path.parent().unwrap())?;
     let mut output = tempfile::NamedTempFile::new_in(path.parent().unwrap())?;
     output.write_all(&serde_json::to_vec(receipt)?)?;
@@ -447,23 +464,23 @@ fn publish_receipt(
 }
 pub(crate) fn playback_cache(
     root: &Path,
-    archive: &[u8],
+    package_digest: &str,
     settings: &Settings,
     count: usize,
 ) -> Result<(PathBuf, std::collections::BTreeMap<String, String>)> {
     settings.validate()?;
-    let path = receipt_path(root, archive, &settings.shader_backend);
+    let path = receipt_path(root, package_digest, &settings.shader_backend)?;
     if !path.try_exists()? {
         // Older builds require the installed compiler to locate their original cache.
         return Ok((
-            compiler_cache(root, archive, settings)?.1,
+            compiler_cache(root, package_digest, settings)?.1,
             Default::default(),
         ));
     }
     let receipt: CacheReceipt =
         serde_json::from_slice(&crate::files::read_regular(&path, 64 * 1024, false)?)?;
     if receipt.format_version != 1
-        || receipt.package_digest != digest(archive)
+        || receipt.package_digest != package_digest
         || receipt.backend != settings.shader_backend
         || receipt.files.len() != count * 2
         || receipt.cache_digest.len() != 64
@@ -477,7 +494,7 @@ pub(crate) fn playback_cache(
 
 pub fn compile(
     root: &Path,
-    archive: &[u8],
+    package_digest: &str,
     package: &mut Package,
     manifest: &Manifest,
     settings: &Settings,
@@ -486,7 +503,7 @@ pub fn compile(
         bail!("isolated shader builds require Linux or Windows");
     }
     settings.validate()?;
-    let (compiler, cache) = compiler_cache(root, archive, settings)?;
+    let (compiler, cache) = compiler_cache(root, package_digest, settings)?;
     let dxc = dxc_root(root, settings)?;
     let defaults = vec![Shader {
         source: "shaders/main.slang".into(),
@@ -550,7 +567,7 @@ pub fn compile(
     let destination = tempfile::tempdir_in(root.join("shader-builds"))?;
     let receipt = CacheReceipt {
         format_version: 1,
-        package_digest: digest(archive),
+        package_digest: package_digest.to_owned(),
         backend: settings.shader_backend.clone(),
         cache_digest: cache.file_name().unwrap().to_str().unwrap().to_owned(),
         files: artifacts
@@ -577,11 +594,11 @@ pub fn compile(
                 cache.display()
             );
         }
-        publish_receipt(root, archive, settings, &receipt)?;
+        publish_receipt(root, package_digest, settings, &receipt)?;
         return Ok(cache);
     }
     fs::rename(destination.path(), &cache)?;
-    publish_receipt(root, archive, settings, &receipt)?;
+    publish_receipt(root, package_digest, settings, &receipt)?;
     Ok(cache)
 }
 fn shader_args(
@@ -843,7 +860,11 @@ fn dxc_root(_root: &Path, settings: &Settings) -> Result<Option<PathBuf>> {
     }
 }
 
-fn compiler_cache(root: &Path, archive: &[u8], settings: &Settings) -> Result<(PathBuf, PathBuf)> {
+fn compiler_cache(
+    root: &Path,
+    package_digest: &str,
+    settings: &Settings,
+) -> Result<(PathBuf, PathBuf)> {
     let selected = std::env::var_os("GAMEPKG_SLANG_ROOT")
         .map(PathBuf::from)
         .or_else(|| {
@@ -901,7 +922,7 @@ fn compiler_cache(root: &Path, archive: &[u8], settings: &Settings) -> Result<(P
     let identity = digest(
         format!(
             "{}:{SLANG_VERSION}:{}:{}:{}{dxc_identity}{sampler_identity}",
-            digest(archive),
+            package_digest,
             settings.shader_backend,
             digest(&fs::read(&exe)?),
             digest(&fs::read(library)?)
@@ -913,19 +934,24 @@ fn compiler_cache(root: &Path, archive: &[u8], settings: &Settings) -> Result<(P
 
 pub fn load_desktop_sources(
     root: &Path,
-    archive: &[u8],
+    package_digest: &str,
     manifest: &Manifest,
     settings: &Settings,
 ) -> Result<Vec<String>> {
     if settings.renderer == "opengl" {
-        return load_fragment_sources(root, archive, manifest, settings);
+        return load_fragment_sources(root, package_digest, manifest, settings);
     }
     if !matches!(settings.shader_backend.as_str(), "wgsl" | "spirv") {
         bail!("Vulkan shaders need WGSL or SPIR-V. Select WGSL in Settings and rebuild this game.");
     }
     // Reuse all checksum, reflection and resource validation before creating a GPU module.
-    load_fragment_sources(root, archive, manifest, settings)?;
-    let (cache, _) = playback_cache(root, archive, settings, manifest.shaders.len().max(1))?;
+    load_fragment_sources(root, package_digest, manifest, settings)?;
+    let (cache, _) = playback_cache(
+        root,
+        package_digest,
+        settings,
+        manifest.shaders.len().max(1),
+    )?;
     (0..manifest.shaders.len().max(1))
         .map(|index| {
             let bytes = read_output(&cache.join(format!("{index}.shader")))?;
@@ -956,14 +982,19 @@ pub fn load_desktop_sources(
 
 pub fn load_fragment_sources(
     root: &Path,
-    archive: &[u8],
+    package_digest: &str,
     manifest: &Manifest,
     settings: &Settings,
 ) -> Result<Vec<String>> {
     if !matches!(settings.shader_backend.as_str(), "glsl" | "spirv" | "wgsl") {
         bail!("this desktop shader renderer requires GLSL, SPIR-V, or WGSL; select one in Settings and rebuild");
     }
-    let (cache, expected) = playback_cache(root, archive, settings, manifest.shaders.len().max(1))?;
+    let (cache, expected) = playback_cache(
+        root,
+        package_digest,
+        settings,
+        manifest.shaders.len().max(1),
+    )?;
     let stages: Vec<&str> = if manifest.shaders.is_empty() {
         vec!["fragment"]
     } else {
@@ -1369,7 +1400,7 @@ mod platform_tests {
         let path = root.path().join("shader.gamepkg");
         crate::pack::pack(&source, &path, &[113; 32]).unwrap();
         let manifest = crate::registry::install(root.path(), &path, true).unwrap();
-        let archive = fs::read(&path).unwrap();
+        let package_digest = crate::files::hash_archive(&path).unwrap();
         for backend in ["spirv", "wgsl", "glsl"] {
             let settings = Settings {
                 shader_backend: backend.into(),
@@ -1383,7 +1414,7 @@ mod platform_tests {
             };
             crate::native::compile_with_settings(root.path(), &manifest.id, &settings).unwrap();
             let sources =
-                load_desktop_sources(root.path(), &archive, &manifest, &settings).unwrap();
+                load_desktop_sources(root.path(), &package_digest, &manifest, &settings).unwrap();
             assert_eq!(sources.len(), 1);
             let mut game = crate::runtime::Game::load_target_configured(
                 root.path(),
@@ -1397,11 +1428,13 @@ mod platform_tests {
             assert_eq!(game.shader_sources.len(), 1);
             assert_eq!(game.step(1).unwrap(), 1);
             drop(game);
-            let cache = playback_cache(root.path(), &archive, &settings, 1)
+            let cache = playback_cache(root.path(), &package_digest, &settings, 1)
                 .unwrap()
                 .0;
             fs::write(cache.join("0.shader"), b"damaged shader").unwrap();
-            assert!(load_desktop_sources(root.path(), &archive, &manifest, &settings).is_err());
+            assert!(
+                load_desktop_sources(root.path(), &package_digest, &manifest, &settings).is_err()
+            );
             assert!(crate::runtime::Game::load_target_configured(
                 root.path(),
                 &manifest.id,
@@ -1420,24 +1453,35 @@ mod platform_tests {
             };
             let mut package = Package::open(&path).unwrap();
             crate::verify::verify_embedded(&mut package).unwrap();
-            compile(root.path(), &archive, &mut package, &manifest, &settings).unwrap();
-            let (cache, _) = playback_cache(root.path(), &archive, &settings, 1).unwrap();
+            compile(
+                root.path(),
+                &package_digest,
+                &mut package,
+                &manifest,
+                &settings,
+            )
+            .unwrap();
+            let (cache, _) = playback_cache(root.path(), &package_digest, &settings, 1).unwrap();
             assert!(fs::read(cache.join("0.shader"))
                 .unwrap()
                 .starts_with(b"DXBC"));
             assert!(
-                load_desktop_sources(root.path(), &archive, &manifest, &settings)
+                load_desktop_sources(root.path(), &package_digest, &manifest, &settings)
                     .unwrap_err()
                     .to_string()
                     .contains("Vulkan shaders need")
             );
             fs::write(cache.join("0.shader"), b"damaged DXIL").unwrap();
-            assert!(
-                compile(root.path(), &archive, &mut package, &manifest, &settings)
-                    .unwrap_err()
-                    .to_string()
-                    .contains("shader cache is damaged")
-            );
+            assert!(compile(
+                root.path(),
+                &package_digest,
+                &mut package,
+                &manifest,
+                &settings
+            )
+            .unwrap_err()
+            .to_string()
+            .contains("shader cache is damaged"));
             println!("Verified signed confined DXIL compilation, reflection/cache, corrupt-output rejection and explicit renderer limitation; no DXIL playback claim");
         }
         let backends = if cfg!(windows) {
@@ -1450,7 +1494,7 @@ mod platform_tests {
                 shader_backend: backend.into(),
                 ..Settings::default()
             };
-            let (compiler, _) = compiler_cache(root.path(), &archive, &settings).unwrap();
+            let (compiler, _) = compiler_cache(root.path(), &package_digest, &settings).unwrap();
             let dxc = dxc_root(root.path(), &settings).unwrap();
             let stage = root.path().join(format!("include-boundary-{backend}"));
             fs::create_dir_all(&stage).unwrap();

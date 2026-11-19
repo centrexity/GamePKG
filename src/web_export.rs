@@ -264,11 +264,7 @@ pub fn export(root: &Path, id: &str, output: &Path) -> Result<()> {
     if manifest.id != id {
         bail!("installed package ID differs");
     }
-    let source_package = crate::files::read_regular(
-        &root.join(format!("{id}.gamepkg")),
-        256 * 1024 * 1024,
-        false,
-    )?;
+    let package_digest = package.archive_digest()?;
     let license = package.read("LICENSE")?;
     let credits = package.read("CREDITS.md")?;
     let notice = if package.entries.contains_key("NOTICE") {
@@ -408,7 +404,7 @@ pub fn export(root: &Path, id: &str, output: &Path) -> Result<()> {
     let shaders = if uses_shaders {
         crate::shaders::load_fragment_sources(
             root,
-            &source_package,
+            &package_digest,
             &manifest,
             &crate::settings::load()?,
         )?
@@ -427,8 +423,13 @@ pub fn export(root: &Path, id: &str, output: &Path) -> Result<()> {
         .unwrap_or(Path::new("."));
     fs::create_dir_all(parent)?;
     fs::create_dir(output).context("web output must be a new directory")?;
+    let mut source_package = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(output.join("source.gamepkg"))?;
+    package.copy_verified_archive(&mut source_package)?;
+    source_package.sync_all()?;
     for (name, bytes) in [
-        ("source.gamepkg", source_package.as_slice()),
         ("GAME-LICENSE.txt", license.as_slice()),
         ("GAME-CREDITS.md", credits.as_slice()),
         ("GAME-NOTICE.txt", notice.as_slice()),

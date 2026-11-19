@@ -1,13 +1,10 @@
-use crate::{
-    archive::Package,
-    verify::{digest, verify_embedded},
-};
+use crate::{archive::Package, verify::verify_embedded};
 #[cfg(target_os = "linux")]
 use anyhow::{bail, Context};
 use anyhow::{ensure, Result};
 #[cfg(target_os = "linux")]
 use std::path::PathBuf;
-use std::{fs, path::Path};
+use std::{fs, io::Write, path::Path};
 pub(super) fn compile(root: &Path, id: &str) -> Result<()> {
     let settings = crate::settings::load()?;
     compile_with_settings(root, id, &settings)
@@ -20,15 +17,10 @@ pub(super) fn compile_with_settings(
     settings.validate()?;
     let _guard = crate::build::BuildChange::acquire(root, id)?;
     crate::registry::installed_manifest(root, id)?;
-    let original = crate::files::read_regular(
-        &root.join(format!("{id}.gamepkg")),
-        crate::archive::MAX_TOTAL,
-        false,
-    )?;
-    let mut archive = tempfile::NamedTempFile::new()?;
-    use std::io::Write;
-    archive.write_all(&original)?;
+    let installed = root.join(format!("{id}.gamepkg"));
+    let archive = crate::files::snapshot_archive(&installed)?;
     let mut package = Package::open(archive.path())?;
+    let package_digest = package.archive_digest()?;
     let m = verify_embedded(&mut package)?;
     crate::build_policy::require(m.builtin_engine.as_deref())?;
     ensure!(m.entry_world == "game", "unsupported runtime entry world");
@@ -97,7 +89,7 @@ pub(super) fn compile_with_settings(
     #[cfg(target_os = "linux")]
     let binary = compile_linux(
         root,
-        &original,
+        &package_digest,
         &mut package,
         &m,
         settings,
@@ -108,21 +100,17 @@ pub(super) fn compile_with_settings(
     let binary = {
         crate::source::parse_build_tree(stage.path())?;
         if needs_shaders {
-            crate::shaders::compile(root, &original, &mut package, &m, settings)?;
+            crate::shaders::compile(root, &package_digest, &mut package, &m, settings)?;
         }
         super::windows_build::compile(root, stage.path(), &m, settings)?
     };
     let bytes = crate::files::read_regular(&binary, 64 * 1048576, false)?;
     super::validate_executable(&bytes)?;
     ensure!(
-        digest(&crate::files::read_regular(
-            &root.join(format!("{id}.gamepkg")),
-            crate::archive::MAX_TOTAL,
-            false
-        )?) == digest(&original),
+        crate::files::hash_archive(&installed)? == package_digest,
         "The installed package changed during the build"
     );
-    let target = super::path_for_digest(root, &digest(&original));
+    let target = super::path_for_digest(root, &package_digest);
     fs::create_dir_all(target.parent().unwrap())?;
     let mut saved = tempfile::NamedTempFile::new_in(target.parent().unwrap())?;
     saved.write_all(&bytes)?;
@@ -135,7 +123,7 @@ pub(super) fn compile_with_settings(
 #[cfg(target_os = "linux")]
 fn compile_linux(
     root: &Path,
-    original: &[u8],
+    package_digest: &str,
     package: &mut Package,
     m: &crate::manifest::Manifest,
     settings: &crate::settings::Settings,
@@ -240,7 +228,7 @@ fn compile_linux(
         extra = engine(stage, profile, settings.optimize_builds)?;
     }
     if needs_shaders {
-        crate::shaders::compile(root, original, package, m, settings)?;
+        crate::shaders::compile(root, package_digest, package, m, settings)?;
     }
     let mut cmd = crate::compiler::command(64 * 1048576);
     sandbox(&mut cmd, stage);

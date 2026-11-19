@@ -769,7 +769,7 @@ impl Manifest {
                 .ok_or_else(|| anyhow::anyhow!("shared asset size overflow"))?;
         }
         if total > crate::archive::MAX_TOTAL {
-            bail!("shared assets exceed package size limit");
+            bail!("shared assets exceed the shared-pool budget");
         }
         Ok(m)
     }

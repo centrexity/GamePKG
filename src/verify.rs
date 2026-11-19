@@ -6,6 +6,12 @@ use sha2::{Digest, Sha256};
 pub fn digest(data: &[u8]) -> String {
     hex::encode(Sha256::digest(data))
 }
+pub(crate) fn digest_reader(mut input: impl std::io::Read) -> Result<String> {
+    let mut hash = Sha256::new();
+    std::io::copy(&mut input, &mut hash)?;
+    Ok(hex::encode(hash.finalize()))
+}
+
 pub fn tree_hash(pkg: &mut Package) -> Result<Vec<u8>> {
     let mut h = Sha256::new();
     h.update(b"GamePKG tree v1\0");
@@ -16,11 +22,12 @@ pub fn tree_hash(pkg: &mut Package) -> Result<Vec<u8>> {
         .cloned()
         .collect::<Vec<_>>()
     {
-        let data = pkg.read(&name)?;
+        let mut entry_hash = Sha256::new();
+        let size = pkg.copy_entry(&name, &mut entry_hash)?;
         h.update((name.len() as u64).to_le_bytes());
         h.update(name.as_bytes());
-        h.update((data.len() as u64).to_le_bytes());
-        h.update(Sha256::digest(&data));
+        h.update(size.to_le_bytes());
+        h.update(entry_hash.finalize());
     }
     Ok(h.finalize().to_vec())
 }
@@ -126,17 +133,10 @@ fn authenticate_contents(pkg: &mut Package, trusted: &[u8; 32]) -> Result<Manife
             crate::previews::validate(name, &pkg.read(name)?)?;
         }
     }
-    let mut logical = pkg.entries.values().sum::<u64>();
-    for (path, reference) in &m.shared_assets {
+    for path in m.shared_assets.keys() {
         if pkg.entries.contains_key(&format!("assets/{path}")) {
             bail!("shared asset also embedded in archive");
         }
-        logical = logical
-            .checked_add(reference.size)
-            .context("logical package size overflow")?;
-    }
-    if logical > crate::archive::MAX_TOTAL {
-        bail!("logical package size exceeds 256 MiB");
     }
     Ok(m)
 }

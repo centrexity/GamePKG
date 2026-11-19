@@ -102,7 +102,7 @@ fn tor_proxy() -> Result<String> {
     Ok(format!("socks5h://{address}"))
 }
 pub fn download(value: &str) -> Result<tempfile::NamedTempFile> {
-    download_kind(value, ".gamepkg", crate::archive::MAX_TOTAL)
+    download_kind(value, ".gamepkg", u64::MAX)
 }
 pub fn download_catalog(value: &str) -> Result<tempfile::NamedTempFile> {
     download_kind(value, ".gamepkglist", 4 * 1024 * 1024)
@@ -111,15 +111,22 @@ pub fn download_store(value: &str) -> Result<tempfile::NamedTempFile> {
     download_kind(value, ".gamepkgstore", crate::archive::MAX_TOTAL)
 }
 fn download_kind(value: &str, extension: &str, limit: u64) -> Result<tempfile::NamedTempFile> {
+    let fetch = |url: &str| {
+        if limit == u64::MAX {
+            download_with_timeout(url, limit, 900)
+        } else {
+            download_direct(url, limit)
+        }
+    };
     let url = parsed_url(value)?;
     if let Some(api) = github_release_api(&url)? {
         let metadata = download_direct(api.as_str(), 4 * 1024 * 1024)?;
         let release: serde_json::Value = serde_json::from_reader(metadata.as_file())
             .context("invalid GitHub release metadata")?;
         let asset = github_release_asset(&release, extension, limit)?;
-        return download_direct(&asset, limit);
+        return fetch(&asset);
     }
-    download_direct(value, limit)
+    fetch(value)
 }
 
 // Repository links select the latest published release; explicit tags stay pinned.
@@ -307,8 +314,6 @@ fn download_with_timeout(
                 "15",
                 "--max-time",
                 &transfer_seconds.to_string(),
-                "--max-filesize",
-                &limit.to_string(),
                 "--user-agent",
                 "GamePKG/0.1",
                 "--write-out",
@@ -318,6 +323,9 @@ fn download_with_timeout(
             .arg(headers.path())
             .arg("--output")
             .arg(file.path());
+        if limit != u64::MAX {
+            command.args(["--max-filesize", &limit.to_string()]);
+        }
         if onion {
             command.args(["--proxy", &tor_proxy()?, "--noproxy", ""]);
         }
@@ -482,13 +490,10 @@ pub fn install(root: &Path, path: &Path, approve_creator: bool) -> Result<Manife
     let _lock = LibraryChange::acquire(root)?;
     // Snapshot bytes so verification and publication operate on the same file.
     let mut snapshot = tempfile::NamedTempFile::new_in(root)?;
-    let copied = std::io::copy(
-        &mut fs::File::open(path)?.take(crate::archive::MAX_TOTAL + 1),
+    std::io::copy(
+        &mut crate::files::open_regular(path, u64::MAX, true)?,
         snapshot.as_file_mut(),
     )?;
-    if copied > crate::archive::MAX_TOTAL {
-        bail!("package exceeds installation size limit");
-    }
     snapshot.flush()?;
     let mut package = Package::open(snapshot.path())?;
     let m = verify_embedded(&mut package)?;
@@ -703,6 +708,7 @@ mod github_tests {
         assert!(github_release_asset(&release, ".gamepkg", crate::archive::MAX_TOTAL).is_ok());
         release["assets"][0]["size"] = serde_json::json!(crate::archive::MAX_TOTAL + 1);
         assert!(github_release_asset(&release, ".gamepkg", crate::archive::MAX_TOTAL).is_err());
+        assert!(github_release_asset(&release, ".gamepkg", u64::MAX).is_ok());
         release["assets"][0]["size"] = serde_json::json!(123);
         release["assets"][0]["browser_download_url"] =
             serde_json::json!("https://evil.test/game.gamepkg");

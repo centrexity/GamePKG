@@ -174,8 +174,7 @@ impl VerifiedAssets {
             ensure!(crate::archive::valid_path(&name), "invalid asset path");
             let path = assets.join(&name);
             std::fs::create_dir_all(path.parent().context("asset parent")?)?;
-            let bytes = package.read(&format!("assets/{name}"))?;
-            std::fs::write(path, bytes)?;
+            package.copy_entry(&format!("assets/{name}"), File::create(path)?)?;
         }
         Ok(Some(Self {
             directory,

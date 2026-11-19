@@ -489,17 +489,20 @@ impl App {
                 let path = stage.path().to_owned();
                 self.pending = Some(stage);
                 self.begin(move || {
-                    let bytes = if let Some(local) = local {
-                        crate::files::read_regular(&local, crate::archive::MAX_TOTAL, true)?
+                    let mut output = std::fs::OpenOptions::new()
+                        .write(true)
+                        .truncate(true)
+                        .open(&path)?;
+                    if let Some(local) = local {
+                        std::io::copy(
+                            &mut crate::files::open_regular(&local, u64::MAX, true)?,
+                            &mut output,
+                        )?;
                     } else {
                         let download = crate::registry::download(&source)?;
-                        crate::files::read_regular(
-                            download.path(),
-                            crate::archive::MAX_TOTAL,
-                            false,
-                        )?
-                    };
-                    std::fs::write(&path, bytes)?;
+                        std::io::copy(&mut download.reopen()?, &mut output)?;
+                    }
+                    drop(output);
                     crate::verify::verify_embedded(&mut crate::archive::Package::open(&path)?)
                 });
             }

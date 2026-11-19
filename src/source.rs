@@ -471,6 +471,16 @@ impl<'ast> Visit<'ast> for Modules<'_> {
     }
 }
 pub fn scan(pkg: &mut Package) -> Result<()> {
+    let source_bytes = pkg
+        .entries
+        .iter()
+        .filter(|(name, _)| name.starts_with("source/"))
+        .map(|(_, size)| *size)
+        .sum::<u64>();
+    if source_bytes > crate::archive::MAX_TOTAL {
+        bail!("source tree exceeds the compiler input budget");
+    }
+
     let cargo: toml::Value = toml::from_str(std::str::from_utf8(&pkg.read("source/Cargo.toml")?)?)?;
     let table = cargo
         .as_table()

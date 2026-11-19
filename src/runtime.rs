@@ -886,16 +886,9 @@ impl Game {
     ) -> Result<Self> {
         crate::registry::installed_manifest(root, id)?;
         let _build_read = crate::build::BuildChange::read(root, id)?;
-        let archive = crate::files::read_regular(
-            &root.join(format!("{id}.gamepkg")),
-            crate::archive::MAX_TOTAL,
-            false,
-        )?;
-        let mut snapshot = tempfile::NamedTempFile::new()?;
-        use std::io::Write;
-        snapshot.write_all(&archive)?;
-        snapshot.flush()?;
+        let snapshot = crate::files::snapshot_archive(&root.join(format!("{id}.gamepkg")))?;
         let mut package = crate::archive::Package::open(snapshot.path())?;
+        let package_digest = package.archive_digest()?;
         let manifest = crate::verify::verify_embedded(&mut package)?;
         crate::build_policy::require(manifest.builtin_engine.as_deref())?;
         anyhow::ensure!(
@@ -927,7 +920,7 @@ impl Game {
                 let player = crate::cube2::player::Player::load(
                     root,
                     &manifest,
-                    &crate::verify::digest(&archive),
+                    &package_digest,
                     &settings,
                 )?;
                 return Ok(Self {
@@ -958,10 +951,7 @@ impl Game {
             }
         }
 
-        let cache = root
-            .join("builds")
-            .join(crate::verify::digest(&archive))
-            .join("game.wasm");
+        let cache = root.join("builds").join(&package_digest).join("game.wasm");
         if rom_paths.len() != manifest.required_rom_count() {
             bail!(
                 "this game requires {} ROM files selected by you, but {} were supplied",
@@ -1016,13 +1006,18 @@ impl Game {
                     custom_renderer |= draw;
                 }
                 let shader_sources = if uses_shaders {
-                    crate::shaders::load_desktop_sources(root, &archive, &manifest, &settings)?
+                    crate::shaders::load_desktop_sources(
+                        root,
+                        &package_digest,
+                        &manifest,
+                        &settings,
+                    )?
                 } else {
                     Vec::new()
                 };
                 let session = crate::native::Session::new(
                     root,
-                    &crate::verify::digest(&archive),
+                    &package_digest,
                     package,
                     manifest.clone(),
                     rom.unwrap_or_default(),
@@ -1127,7 +1122,7 @@ impl Game {
         }
         if game.uses_shaders {
             game.shader_sources =
-                crate::shaders::load_desktop_sources(root, &archive, &manifest, &settings)?;
+                crate::shaders::load_desktop_sources(root, &package_digest, &manifest, &settings)?;
             game.store.as_mut().unwrap().data_mut().shader_count = game.shader_sources.len();
         }
         game.progress = Some(crate::progress::Session::open(

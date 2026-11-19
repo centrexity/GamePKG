@@ -121,9 +121,8 @@ pub fn compile_package(root: &Path, id: &str) -> Result<()> {
     let _guard = crate::build::BuildChange::acquire(root, id)?;
     crate::registry::installed_manifest(root, id)?;
     let installed = root.join(format!("{id}.gamepkg"));
-    let original = crate::files::read_regular(&installed, crate::archive::MAX_TOTAL, false)?;
-    let mut snapshot = tempfile::NamedTempFile::new()?;
-    snapshot.write_all(&original)?;
+    let snapshot = crate::files::snapshot_archive(&installed)?;
+    let package_digest = crate::files::hash_archive(snapshot.path())?;
     let mut package = crate::archive::Package::open(snapshot.path())?;
     let manifest = crate::verify::verify_embedded(&mut package)?;
     ensure!(
@@ -201,7 +200,7 @@ pub fn compile_package(root: &Path, id: &str) -> Result<()> {
                 .to_string(),
         ))?;
     ensure!(
-        crate::files::read_regular(&installed, crate::archive::MAX_TOTAL, false)? == original,
+        crate::files::hash_archive(&installed)? == package_digest,
         "installed package changed during compilation"
     );
     let exe = crate::files::read_regular(
@@ -221,7 +220,7 @@ pub fn compile_package(root: &Path, id: &str) -> Result<()> {
         dll == admitted,
         "native runtime SDL2 does not match the verified SDK"
     );
-    let target = super::cache_path(root, &crate::verify::digest(&original));
+    let target = super::cache_path(root, &package_digest);
     let parent = target.parent().context("invalid native build path")?;
     fs::create_dir_all(parent)?;
     publish(&parent.join("SDL2.dll"), &dll)?;

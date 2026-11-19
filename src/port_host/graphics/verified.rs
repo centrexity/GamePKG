@@ -3,7 +3,7 @@ use super::{Pipeline, RasterState, UniformPolicy};
 use crate::{archive::Package, manifest::Shader, port_host::admission::CheckedSources};
 use anyhow::{ensure, Context, Result};
 use eframe::wgpu;
-use std::{io::Write, path::Path};
+use std::path::Path;
 
 /// Reviewed host layout and exact stage selectors. A signed package only
 /// supplies the Slang files named by these selectors.
@@ -37,7 +37,7 @@ impl VerifiedPipelines {
     pub fn prepare(
         cache: &Path,
         sources: &CheckedSources,
-        archive: &[u8],
+        package: &Package,
         settings: &crate::settings::Settings,
         recipes: Vec<PipelineRecipe>,
         samples: u32,
@@ -52,16 +52,12 @@ impl VerifiedPipelines {
             ),
             "invalid reviewed native pipeline recipe"
         );
-        // Verify and compile from the same private bytes. A replaced archive
-        // path cannot change shader includes after signature verification.
-        ensure!(
-            archive.len() as u64 <= crate::archive::MAX_TOTAL + 32 * 1024 * 1024,
-            "native shader archive exceeds input budget"
-        );
+        // Verify and compile the same private bytes, including shader includes.
         let mut snapshot = tempfile::NamedTempFile::new()?;
-        snapshot.write_all(archive)?;
+        package.copy_verified_archive(&mut snapshot)?;
         let mut package = Package::open(snapshot.path())?;
         let checked = CheckedSources::verify(&mut package)?;
+        let package_digest = package.archive_digest()?;
         ensure!(
             checked.identity() == sources.identity() && checked.files().eq(sources.files()),
             "shader package differs from checked game source kit"
@@ -84,7 +80,7 @@ impl VerifiedPipelines {
             .collect::<Vec<_>>();
         let (stages, preparation) = crate::shaders::compile_native_sources_with_identity(
             cache,
-            archive,
+            &package_digest,
             &mut package,
             &selections,
             settings,

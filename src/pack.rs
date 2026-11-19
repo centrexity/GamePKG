@@ -4,11 +4,7 @@ use crate::{
 };
 use anyhow::{bail, Context, Result};
 use ed25519_dalek::{Signer, SigningKey};
-use std::{
-    fs,
-    io::{Read, Write},
-    path::Path,
-};
+use std::{fs, io::Write, path::Path};
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
 // Preserve policy-error messages while identifying filesystem failures on hosts
 // with narrower file/publication permissions (including Android).
@@ -73,43 +69,29 @@ pub fn pack(dir: &Path, out: &Path, seed: &[u8; 32]) -> Result<()> {
         .context("create staged package file")?;
     let result = (|| -> Result<()> {
         let mut zip = ZipWriter::new(file);
-        let mut total = 0u64;
         let key = SigningKey::from_bytes(seed);
         for name in files {
-            let input = fs::File::open(root.join(&name)).context("open package input file")?;
-            if input
-                .metadata()
-                .context("inspect package input file")?
-                .len()
-                > crate::archive::MAX_FILE
-            {
-                bail!("package file too large");
-            }
-            let mut data = Vec::new();
-            input
-                .take(crate::archive::MAX_FILE + 1)
-                .read_to_end(&mut data)
-                .context("read package input file")?;
+            let path = root.join(&name);
+            let options = SimpleFileOptions::default()
+                .compression_method(CompressionMethod::Stored)
+                .unix_permissions(0o644);
             if name == "manifest.toml" {
+                let data = crate::files::read_regular(&path, crate::archive::MAX_FILE, false)?;
                 let mut manifest = crate::manifest::Manifest::parse(&data)?;
                 let public = hex::encode(key.verifying_key().as_bytes());
                 if !manifest.creator_key.is_empty() && manifest.creator_key != public {
                     bail!("manifest creator key does not match signing key");
                 }
                 manifest.creator_key = public;
-                data = toml::to_string(&manifest)?.into_bytes();
+                zip.start_file(name, options)?;
+                zip.write_all(toml::to_string(&manifest)?.as_bytes())?;
+            } else {
+                let mut input = crate::files::open_regular(&path, u64::MAX, false)
+                    .context("open package input file")?;
+                let size = input.metadata()?.len();
+                zip.start_file(name, options.large_file(size >= u32::MAX as u64))?;
+                std::io::copy(&mut input, &mut zip).context("copy package input file")?;
             }
-            total += data.len() as u64;
-            if data.len() as u64 > crate::archive::MAX_FILE || total > crate::archive::MAX_TOTAL {
-                bail!("package too large");
-            }
-            zip.start_file(
-                name,
-                SimpleFileOptions::default()
-                    .compression_method(CompressionMethod::Stored)
-                    .unix_permissions(0o644),
-            )?;
-            zip.write_all(&data)?;
         }
         zip.finish().context("finish unsigned staged package")?;
         let mut pkg = io_stage(Package::open(&temp), "open staged package for signing")?;
@@ -199,13 +181,8 @@ pub fn pack_shared(dir: &Path, out: &Path, seed: &[u8; 32], library: &Path) -> R
         bail!("output must be new and outside the package directory");
     }
     let pool = crate::pool::Pool::open(library)?;
-    let mut manifest_bytes = Vec::new();
-    fs::File::open(root.join("manifest.toml"))?
-        .take(crate::archive::MAX_FILE + 1)
-        .read_to_end(&mut manifest_bytes)?;
-    if manifest_bytes.len() as u64 > crate::archive::MAX_FILE {
-        bail!("manifest too large");
-    }
+    let manifest_bytes =
+        crate::files::read_regular(&root.join("manifest.toml"), crate::archive::MAX_FILE, false)?;
     let mut manifest = crate::manifest::Manifest::parse(&manifest_bytes)?;
     for reference in manifest.shared_assets.values() {
         pool.read(reference)?;
@@ -213,17 +190,10 @@ pub fn pack_shared(dir: &Path, out: &Path, seed: &[u8; 32], library: &Path) -> R
     let mut files = Vec::new();
     collect(&root, &root, &mut files)?;
     let stage = tempfile::tempdir()?;
-    let mut total = 0u64;
     for name in files {
-        let file = fs::File::open(root.join(&name))?;
-        let mut bytes = Vec::new();
-        file.take(crate::archive::MAX_FILE + 1)
-            .read_to_end(&mut bytes)?;
-        total += bytes.len() as u64;
-        if bytes.len() as u64 > crate::archive::MAX_FILE || total > crate::archive::MAX_TOTAL {
-            bail!("package too large");
-        }
+        let input = root.join(&name);
         if let Some(asset) = name.strip_prefix("assets/") {
+            let bytes = crate::files::read_regular(&input, crate::archive::MAX_FILE, false)?;
             if manifest.shared_assets.contains_key(asset) {
                 bail!("shared asset also embedded in input");
             }
@@ -233,7 +203,10 @@ pub fn pack_shared(dir: &Path, out: &Path, seed: &[u8; 32], library: &Path) -> R
         } else if name != "manifest.toml" {
             let destination = stage.path().join(name);
             fs::create_dir_all(destination.parent().unwrap())?;
-            fs::write(destination, bytes)?;
+            std::io::copy(
+                &mut crate::files::open_regular(&input, u64::MAX, false)?,
+                &mut fs::File::create(destination)?,
+            )?;
         }
     }
     fs::write(
