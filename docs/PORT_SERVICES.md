@@ -816,6 +816,14 @@ all remaining/scope/flow fields must be zero. IPv6 retains scope/flow identity.
 Existing guest bindings keep their original operation range until migrated.
 See `src/network.rs` for transport-specific payload details.
 
+Native op 50 sub-op 15 starts an asynchronous TCP connection with an explicit
+IPv4 source address. The request has four network-order source address bytes
+followed by the destination UTF-8 `host:port`. The OS assigns an ephemeral
+source port. DNS and the socket remain GamePKG-owned. This uses the existing
+signed networking permission, connection limits, and deadline. The reply is
+the ordinary LE u32 connection handle. Sub-op 13 returns its local endpoint
+once connected, Busy while it is pending, and Failed if it does not connect.
+
 ## Migration gates and verification
 
 `admission::CheckedSources::verify` authenticates and scans the complete signed
