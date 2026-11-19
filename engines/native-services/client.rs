@@ -2083,6 +2083,25 @@ pub fn audio_stream_gain(id: u64, gain: u32) -> std::result::Result<(), i32> {
     let request = [id.to_le_bytes().as_slice(), &gain.to_le_bytes()].concat();
     call(136, &request, &mut []).map(|_| ())
 }
+pub fn audio_record_create(frames: u32) -> std::result::Result<u64, i32> {
+    let mut reply = [0; 8];
+    if call(137, &frames.to_le_bytes(), &mut reply)? != 8 {
+        return Err(-3);
+    }
+    Ok(u64::from_le_bytes(reply))
+}
+/// Read stereo 48 kHz PCM16 in little-endian order from this session's mix.
+pub fn audio_record_read(
+    id: u64,
+    frames: u32,
+    reply: &mut [u8],
+) -> std::result::Result<usize, i32> {
+    let request = [id.to_le_bytes().as_slice(), &frames.to_le_bytes()].concat();
+    call(138, &request, reply)
+}
+pub fn audio_record_release(id: u64) -> std::result::Result<(), i32> {
+    call(139, &id.to_le_bytes(), &mut []).map(|_| ())
+}
 pub fn capture_create(layout: u32, frames: u32) -> std::result::Result<u64, i32> {
     let bytes = [0u32, 48000, layout, frames]
         .into_iter()
