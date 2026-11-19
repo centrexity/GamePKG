@@ -466,8 +466,11 @@ pub(super) fn dispatch<B: Backend>(
                 })?;
             Ok(Vec::new())
         }
-        130..=134 | 136 => {
+        130..=134 | 136..=139 => {
             permitted(host.permissions.audio)?;
+            if (137..=139).contains(&op) && host.window.closed {
+                return Err(Error::Denied);
+            }
             host.streams
                 .as_ref()
                 .ok_or(Error::Unsupported)?

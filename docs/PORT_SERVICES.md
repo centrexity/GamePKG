@@ -1304,6 +1304,9 @@ consumed frames. IDs are per-session and never reused.
 | 133 stream control | ID u64, action u32 | 0 pause, 1 start/resume, 2 flush preserving running state, 3 cancel and pause |
 | 134 release | ID u64 | discard this stream and revoke its ID |
 | 136 gain | ID u64, gain u32 (0..128, default 128) | empty |
+| 137 record create | capacity-frames u32 (1..48000) | output recording ID u64 |
+| 138 record read | ID u64, max-frames u32 (1..1600) | interleaved stereo LE PCM16, Busy if empty |
+| 139 record release | ID u64 | revoke this output recording |
 | 140 capture create | format, rate, layout (0/1), capacity-frames u32 | pending capture ID u64 |
 | 141 capture read | ID u64, max-frames u32 (1..1600) | interleaved LE PCM16; Busy if pending/empty |
 | 142 capture status | ID u64 | captured/read/lost/queued u64, 32 bytes; Busy while starting |
@@ -1312,6 +1315,13 @@ consumed frames. IDs are per-session and never reused.
 Output consumed means dequeued into the host mixer, **not physically heard**.
 Gain applies when frames are dequeued, including frames already queued. It
 does not rewrite the samples or change stream accounting.
+
+Output recording taps this session's mixed 48 kHz output streams after
+stream gain and saturation and before device resampling. It captures
+silence through underflow and duplicates mono for stereo PCM. Surround
+recording is Unsupported. One tap per session shares the mixer budget.
+It grants no microphone, system audio, file, or device access. Overflow
+discards queued data and fails subsequent reads until the tap is released.
 Flush/cancel affects only that stream's queued frames; samples already mixed
 into a resampling frame or submitted to the device cannot be recalled. Teardown
 revokes all streams. Port-owned decoders must retry Busy in order and release

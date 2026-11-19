@@ -43,6 +43,14 @@ struct State {
     closed: bool,
     used: u64,
     streams: BTreeMap<u64, Stream>,
+    recording: Option<Recording>,
+}
+struct Recording {
+    id: u64,
+    capacity: usize,
+    charge: u64,
+    queue: VecDeque<[i16; 2]>,
+    overflowed: bool,
 }
 #[derive(Clone)]
 pub struct Mixer {
@@ -60,6 +68,7 @@ impl Mixer {
                 closed: false,
                 used: 0,
                 streams: BTreeMap::new(),
+                recording: None,
             })),
             layout,
             budget,
@@ -200,6 +209,68 @@ impl Mixer {
                 state.streams.get_mut(&id).ok_or(Error::Denied)?.gain = gain;
                 Ok(Vec::new())
             }
+            137 => {
+                let frames = r.u32()? as usize;
+                r.end()?;
+                if capacity < 8 || !(1..=48000).contains(&frames) {
+                    return Err(Error::Invalid);
+                }
+                if self.layout == Layout::Surround51 {
+                    return Err(Error::Unsupported);
+                }
+                let charge = frames as u64 * 4 + 256;
+                if state.recording.is_some() || charge > self.budget.saturating_sub(state.used) {
+                    return Err(Error::Busy);
+                }
+                let id = identifier()?;
+                state.recording = Some(Recording {
+                    id,
+                    capacity: frames,
+                    charge,
+                    queue: VecDeque::with_capacity(frames),
+                    overflowed: false,
+                });
+                state.used += charge;
+                Ok(id.to_le_bytes().to_vec())
+            }
+            138 => {
+                let id = r.u64()?;
+                let frames = r.u32()? as usize;
+                r.end()?;
+                if !(1..=1600).contains(&frames) || capacity < frames * 4 {
+                    return Err(Error::Invalid);
+                }
+                let recording = state
+                    .recording
+                    .as_mut()
+                    .filter(|tap| tap.id == id)
+                    .ok_or(Error::Denied)?;
+                if recording.overflowed {
+                    return Err(Error::Failed);
+                }
+                let count = frames.min(recording.queue.len());
+                if count == 0 {
+                    return Err(Error::Busy);
+                }
+                let mut result = Vec::with_capacity(count * 4);
+                for frame in recording.queue.drain(..count) {
+                    for sample in frame {
+                        result.extend(sample.to_le_bytes());
+                    }
+                }
+                Ok(result)
+            }
+            139 => {
+                let id = r.u64()?;
+                r.end()?;
+                if state.recording.as_ref().is_none_or(|tap| tap.id != id) {
+                    return Err(Error::Denied);
+                }
+                if let Some(tap) = state.recording.take() {
+                    state.used -= tap.charge;
+                }
+                Ok(Vec::new())
+            }
             _ => Err(Error::Unsupported),
         }
     }
@@ -224,12 +295,27 @@ impl Mixer {
                 }
             }
         }
-        mixed.map(|v| v.clamp(i16::MIN.into(), i16::MAX.into()) as i16)
+        let frame = mixed.map(|v| v.clamp(i16::MIN.into(), i16::MAX.into()) as i16);
+        if let Some(recording) = state.recording.as_mut().filter(|tap| !tap.overflowed) {
+            if recording.queue.len() == recording.capacity {
+                recording.queue.clear();
+                recording.overflowed = true;
+            } else {
+                let right = if self.layout == Layout::Mono {
+                    frame[0]
+                } else {
+                    frame[1]
+                };
+                recording.queue.push_back([frame[0], right]);
+            }
+        }
+        frame
     }
     pub fn close(&self) {
         if let Ok(mut state) = self.state.lock() {
             state.closed = true;
             state.streams.clear();
+            state.recording = None;
             state.used = 0;
         }
     }
@@ -278,6 +364,33 @@ mod tests {
         assert_eq!(mixer.frame()[..2], [50, -50]);
         set_gain(128).unwrap();
         assert_eq!(mixer.frame()[..2], [250, -250]);
+    }
+    #[test]
+    fn record_tap_copies_only_mixed_session_output_and_fails_on_overflow() {
+        let mixer = Mixer::new(Layout::Stereo, 4096);
+        let first = create(&mixer, 1, 2).unwrap();
+        let second = create(&mixer, 0, 2).unwrap();
+        push(&mixer, first, &[300, -400]).unwrap();
+        push(&mixer, second, &[50]).unwrap();
+        action(&mixer, first, 1);
+        action(&mixer, second, 1);
+        let create_tap = || mixer.call(137, &2u32.to_le_bytes(), 8);
+        let tap = create_tap().unwrap();
+        assert_eq!(create_tap(), Err(Error::Busy));
+        let request = [tap.as_slice(), &2u32.to_le_bytes()].concat();
+        assert_eq!(mixer.call(138, &request, 8), Err(Error::Busy));
+        assert_eq!(mixer.frame()[..2], [350, -350]);
+        assert_eq!(mixer.frame()[..2], [0, 0]);
+        assert_eq!(mixer.call(138, &request, 7), Err(Error::Invalid));
+        let expected = [350i16, -350, 0, 0].map(i16::to_le_bytes).concat();
+        assert_eq!(mixer.call(138, &request, 8).unwrap(), expected);
+        for _ in 0..3 {
+            mixer.frame();
+        }
+        assert_eq!(mixer.call(138, &request, 8), Err(Error::Failed));
+        mixer.call(139, &tap, 0).unwrap();
+        assert_eq!(mixer.call(138, &request, 8), Err(Error::Denied));
+        assert_ne!(create_tap().unwrap(), tap);
     }
     fn push(m: &Mixer, id: u64, samples: &[i16]) -> Result<Vec<u8>> {
         let mut bytes = id.to_le_bytes().to_vec();
