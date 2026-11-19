@@ -470,15 +470,17 @@ impl<'ast> Visit<'ast> for Modules<'_> {
         }
     }
 }
+const MAX_SOURCE_TREE_BYTES: u64 = 512 * 1024 * 1024;
+
 pub fn scan(pkg: &mut Package) -> Result<()> {
     let source_bytes = pkg
         .entries
         .iter()
         .filter(|(name, _)| name.starts_with("source/"))
         .map(|(_, size)| *size)
-        .sum::<u64>();
-    if source_bytes > crate::archive::MAX_TOTAL {
-        bail!("source tree exceeds the compiler input budget");
+        .fold(0u64, u64::saturating_add);
+    if source_bytes > MAX_SOURCE_TREE_BYTES {
+        bail!("source tree exceeds the 512 MiB compiler input budget");
     }
 
     let cargo: toml::Value = toml::from_str(std::str::from_utf8(&pkg.read("source/Cargo.toml")?)?)?;
@@ -734,7 +736,7 @@ pub(crate) fn parse_build_tree(root: &std::path::Path) -> Result<usize> {
                     false,
                 )?;
                 total_bytes += bytes.len() as u64;
-                if total_bytes > crate::archive::MAX_TOTAL + 1024 * 1024 {
+                if total_bytes > MAX_SOURCE_TREE_BYTES + 1024 * 1024 {
                     bail!("staged Rust sources exceed package and host-binding budgets");
                 }
                 let text = std::str::from_utf8(&bytes)?;

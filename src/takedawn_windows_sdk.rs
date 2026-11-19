@@ -12,8 +12,8 @@ use std::{
     path::{Path, PathBuf},
 };
 const PINS: &str = include_str!("../engines/takedawn/windows-dependencies.json");
-const MAX_ARCHIVE: u64 = 512 * 1048576;
-const MAX_FILE: u64 = 512 * 1048576;
+const MAX_ARCHIVE: u64 = crate::compiler::MAX_TOOL_BYTES;
+const MAX_FILE: u64 = crate::compiler::MAX_TOOL_BYTES;
 const MAX_TOTAL: u64 = 4 * 1024 * 1048576;
 const MAX_FILES: usize = 100_000;
 const INVENTORY: &str = "gamepkg-sdk.json";

@@ -31,6 +31,8 @@ pub enum UniformPolicy {
 }
 use state::{Depth, Readback};
 
+const MAX_GPU_HANDLES: usize = 4096;
+
 /// Host bootstrap input, never deserialized from a game request. Sources must
 /// be the verified WGSL output of the signed shader/Slang preparation path.
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -475,7 +477,7 @@ impl Graphics {
             + self.sampler_ids.len()
             + self.readbacks.len()
             + self.variants.len()
-            >= 1024
+            >= MAX_GPU_HANDLES
             || n > self.budget.saturating_sub(self.used).saturating_sub(
                 self.presentations
                     .load(std::sync::atomic::Ordering::Relaxed),

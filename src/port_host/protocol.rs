@@ -2,7 +2,7 @@ use super::*;
 use std::io::{Read, Write};
 pub const ABI: u32 = 1;
 pub const MAX_MESSAGE: usize = 16 * 1024 * 1024;
-const MAX_IMAGES: usize = 256;
+const MAX_IMAGES: usize = 1024;
 const MAX_IMAGE_BYTES: usize = 128 * 1024 * 1024;
 
 pub(super) struct Request<'a>(pub(super) &'a [u8]);

@@ -442,12 +442,13 @@ struct Tools {
     identity: String,
 }
 fn hash(path: &Path) -> Result<String> {
-    let path = path.canonicalize()?;
-    Ok(crate::verify::digest(&crate::files::read_regular(
-        &path,
-        512 * 1024 * 1024,
-        false,
-    )?))
+    use std::io::Read;
+    let limit = crate::compiler::MAX_TOOL_BYTES;
+    let file = crate::files::open_regular(&path.canonicalize()?, limit, false)?;
+    let mut bounded = file.take(limit + 1);
+    let digest = crate::verify::digest_reader(&mut bounded)?;
+    ensure!(bounded.limit() != 0, "compiler tool grew beyond 2 GiB");
+    Ok(digest)
 }
 fn tools(cache: &Path, target: Target) -> Result<Tools> {
     #[cfg(target_os = "linux")]
