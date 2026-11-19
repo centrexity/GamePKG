@@ -59,7 +59,7 @@ fn main() -> anyhow::Result<()> {
     let mut process = Process::start_in_process_with_assets(
         &artifact,
         &library,
-        None,
+        Vec::new(),
         source
             .manifest()
             .permissions

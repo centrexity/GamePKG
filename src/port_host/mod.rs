@@ -31,7 +31,10 @@ pub mod preparation;
 #[cfg(any(target_os = "linux", windows))]
 pub mod process;
 mod protocol;
-#[cfg(all(feature = "gui", target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    feature = "gui",
+    any(windows, all(target_os = "linux", target_arch = "x86_64"))
+))]
 mod sdk_source;
 #[cfg(test)]
 mod tests;
@@ -95,14 +98,20 @@ pub fn build_identity() -> String {
         include_str!("../windows_compiler.rs"),
         include_str!("../compiler.rs"),
         include_str!("../files.rs"),
+        include_str!("../archive.rs"),
         include_str!("../../engines/takedawn/windows-runner/src/lib.rs"),
+        include_str!("../../engines/takedawn/windows-runner/src/rom_grants.rs"),
         include_str!("../../engines/takedawn/windows-runner/src/sandbox.rs"),
         include_str!("../../engines/takedawn/windows-runner/src/worker_pipe.rs"),
         include_str!("../../engines/takedawn/windows-runner/src/worker_process.rs"),
         include_str!("../../engines/native/windows-rust.json"),
+        include_str!("../../engines/native/windows-compat-tools.json"),
         include_str!("../../engines/native/windows-auditor.json"),
         include_str!("process.rs"),
         include_str!("process_local.rs"),
+        include_str!("process_history.rs"),
+        include_str!("process_windows.rs"),
+        include_str!("../saves.rs"),
         include_str!("owner.rs"),
         include_str!("../../engines/native-services/lockdown.rs"),
         include_str!("desktop.rs"),
@@ -200,7 +209,7 @@ impl<B: Backend> Session<B> {
     /// Host-only capability grant. Paths never cross the game-facing protocol.
     /// Writable roots require the signed save permission.
     pub fn grant_directory(&mut self, directory: cap_std::fs::Dir, access: Access) -> Result<u64> {
-        if access == Access::Save && !self.permissions.save {
+        if matches!(access, Access::Save | Access::PreviousSave) && !self.permissions.save {
             return Err(Error::Denied);
         }
         self.files

@@ -2,13 +2,15 @@
 //! Confined sessions use a per-game Windows AppContainer. Callers must verify
 //! packages and grant only their private runtime/save directories before launch.
 #![cfg(windows)]
+mod rom_grants;
 mod sandbox;
 mod worker_pipe;
 mod worker_process;
 pub use worker_pipe::{ServiceIo, WorkerLog, WorkerPipe};
-pub use worker_process::WorkerProcess;
+pub use worker_process::{require_compatibility_process, WorkerProcess};
 #[cfg(test)]
 mod window_fixture;
+pub use rom_grants::open_inherited_roms;
 pub use sandbox::Sandbox;
 use std::{
     ffi::{OsStr, OsString},
@@ -142,12 +144,13 @@ fn environment(
     disc: HANDLE,
     restart: Option<HANDLE>,
 ) -> io::Result<Vec<u16>> {
-    environment_block(values, Some(disc), restart)
+    environment_block(values, Some(disc), restart, &[])
 }
 fn environment_block(
     values: &[(OsString, OsString)],
     disc: Option<HANDLE>,
     restart: Option<HANDLE>,
+    roms: &[OwnedHandle],
 ) -> io::Result<Vec<u16>> {
     let mut entries = Vec::new();
     for (key, value) in values {
@@ -165,7 +168,8 @@ fn environment_block(
                 | "GAMEPKG_TAKEDAWN_DISC_HANDLE"
                 | "GAMEPKG_TAKEDAWN_MANAGED_RESTART"
                 | "GAMEPKG_TAKEDAWN_RESTART_HANDLE"
-        ) || entries.iter().any(|(k, _)| k == &name)
+        ) || name == rom_grants::ENV
+            || entries.iter().any(|(k, _)| k == &name)
         {
             return Err(invalid("duplicate or reserved environment name"));
         }
@@ -199,6 +203,17 @@ fn environment_block(
             )))?,
         ));
     }
+    if !roms.is_empty() {
+        let handles = roms
+            .iter()
+            .map(|handle| (handle.as_raw_handle() as usize).to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        entries.push((
+            rom_grants::ENV.into(),
+            wide(OsStr::new(&format!("{}={handles}", rom_grants::ENV)))?,
+        ));
+    }
     entries.sort_by(|a, b| a.0.cmp(&b.0));
     let mut out: Vec<u16> = entries.into_iter().flat_map(|(_, pair)| pair).collect();
     if out.is_empty() {
@@ -208,6 +223,14 @@ fn environment_block(
     Ok(out)
 }
 fn duplicate(source: HANDLE, access: u32) -> io::Result<OwnedHandle> {
+    duplicate_with_inheritance(source, access, true)
+}
+
+fn duplicate_with_inheritance(
+    source: HANDLE,
+    access: u32,
+    inheritable: bool,
+) -> io::Result<OwnedHandle> {
     let mut copy = null_mut();
     // SAFETY: source is borrowed from a live File; Windows validates it and
     // creates a distinct handle. Only the successful result becomes owned.
@@ -218,7 +241,7 @@ fn duplicate(source: HANDLE, access: u32) -> io::Result<OwnedHandle> {
             GetCurrentProcess(),
             &mut copy,
             access,
-            1,
+            i32::from(inheritable),
             if access == 0 {
                 DUPLICATE_SAME_ACCESS
             } else {

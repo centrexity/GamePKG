@@ -102,8 +102,8 @@ the Slang preparation identity and ordered, sample-count-specific pipeline
 identities. The bootstrap checks those identities before opening the window.
 
 The fixture runs a registered game task, reads a four-byte ROM through an
-inherited read-only descriptor, and verifies a pixel from the signed shader on
-Vulkan before presentation. The Linux x64 builder supports one ROM descriptor.
+ordered, read-only grant, and verifies a pixel from the signed shader on
+Vulkan before presentation.
 A release build pins the hash of its compatibility source bundle at compile
 time. It reads that bundle from `share/gamepkg/native-service-sdk.tar.gz`,
 verifies a private snapshot, and builds offline with the bundled registry
@@ -117,21 +117,55 @@ checkout build without a bundle pin uses its own sources. Qualification on
 the actual desktop, the port's reviewed postprocessing and title integration
 remain required for production.
 
+A Windows compatibility build can also stage a pinned SDK archive into a
+fresh private directory. Its trusted Cargo build uses the verified GNU
+Windows Cargo and LLVM-MinGW components selected for the target width. Only
+GamePKG source and its locked dependencies enter that Cargo workspace. The
+game compiler remains separate, and only sealed game objects enter the link.
+The receipt binds the tool identities and the SDK archive pin. Windows preview
+packaging carries this matching bundle with the app.
+
 The Linux in-process launcher verifies the executable receipt, copies the
 verified binary into a private launch directory and enters a systemd memory
 scope using the signed hard limit and no swap. Bubblewrap mounts the required
 system libraries, selected local display socket and platform devices. It uses
 private user, PID, IPC and UTS namespaces and a private network namespace when
-the signed manifest disables networking. Pass a read-only ROM file descriptor
-and, with approval, a bound directory capability for the game/creator/save
-schema and its quota. The trusted runtime acquires the existing exclusive save
+the signed manifest disables networking. It mounts the open ROM descriptors
+read-only in declaration order and, with approval, binds the private directory
+for the game, creator, save schema and quota. The trusted runtime acquires the existing exclusive save
 lock and uses the same flush-and-replace service. The game worker detaches its
 file descriptor table before running audited game code. This launcher uses
 the selected X11 server's ordinary session authority on X11. The local
 maintainer checks use a private Xvfb server, and audible output, physical
 controllers, hotplug and Wayland still need desktop qualification.
 
-The Linux launcher records play history for the signed game ID and creator
+For a save-enabled package, the launcher also looks for the old scoped
+single-blob save using the exact game ID, creator key and save schema.
+When available, it supplies a bounded read-only snapshot in grant kind 5
+(`GAMEPKG_GRANT_PREVIOUS_SAVE`). The only file in that grant is
+`legacy-save.blob`. This grant is separate from the current writable save
+directory and the ROM grants. Open it read-only with the ordinary file
+API. The game decides whether and how to import its own format. GamePKG
+never edits the old blob. Missing, unsafe, or oversized inputs leave the
+previous-save grant absent. Both desktop launchers can supply this grant,
+and the game checks its availability at runtime.
+
+
+The Windows process runner can pass up to eight selected ROMs to a trusted
+compatibility bootstrap. It duplicates only the selected open files with
+read access and supplies their handles in manifest order. The ROMs join the
+explicit handle list for the suspended child, which is assigned to a
+single-process memory-limited job before it starts. The bootstrap checks the
+signed count, verifies that each inherited handle is a distinct disk file,
+and clears its inheritance flag. The game-facing ABI receives capability IDs.
+The linked Windows executable checks the AppContainer token and current job
+limits before accepting those ROMs or opening its window. Normal Windows
+Build and Play calls this launcher for offline standalone image-renderer
+packages. Synthetic x86 and x64 Wine tests check order, contents, read-only
+access and cleared inheritance. The native Windows Doom test also requires
+AppContainer, a desktop Vulkan driver and a player-selected WAD.
+
+The launchers record play history for the signed game ID and creator
 in the existing library. The trusted player signals readiness after it
 successfully presents its first new game frame. Empty startup redraws and
 repaints of an existing frame do not advance the frame count. The launcher
@@ -682,13 +716,14 @@ uniform buffer at group 0 binding 0, u32 triangle indices, one sample,
 depth testing with LessEqual and depth writes enabled. The profile has no
 texture slots. The native worker issues draws using opaque resource IDs.
 
-The ordinary shared native builder and launcher currently run on the Linux
-x64 desktop. The Slang source and indexed draw protocol use no platform
-bindings. The Windows launcher for these general packages remains open.
+The indexed Slang launcher currently runs on Linux x64. The Windows desktop
+compatibility path supports standalone image-renderer games. Indexed Slang
+still needs the matching Windows pipeline preparation path.
 
-The ordinary shared native launcher passes one selected regular ROM as a
-read-only file in place, up to 1 TiB. Use the ROM grant ID and `file_read`
-with 64-bit offsets. Its signed `limits.hard_memory_bytes` can be up to
+The ordinary shared native launcher passes up to eight selected regular ROM
+files read-only and in place, each up to 1 TiB. Kind-3 entries in `grants()`
+follow the manifest ROM order. Use those grant IDs and `file_read` with
+64-bit offsets. Its signed `limits.hard_memory_bytes` can be up to
 4 GiB. The user's memory ceiling must cover that amount before launch,
 and Linux enforces the signed cap across the game process and compatibility
 layer.
@@ -1284,9 +1319,17 @@ before mutation against the complete private tree plus unlinked/replaced open
 files, counting each inode once. The walk rejects links, hardlinks and special
 files, and is bounded to 100,000 entries. It runs on the I/O worker. This is
 logical file-length accounting, not physical block allocation measurement.
-Quota exhaustion returns Busy. Existing legacy save roots are not automatically
-moved into this namespace; a future port recipe must preserve/migrate them
-explicitly. Atomic flush-and-replace status -6 semantics remain unchanged.
+Quota exhaustion returns Busy. Legacy blobs remain in their original
+namespace and may be exposed as a separate read-only snapshot. Atomic
+flush-and-replace status -6 semantics remain unchanged.
+
+A save-enabled native compatibility manifest may set `hard_save_bytes` in
+`[limits]`. The Linux Build and Play path uses that aggregate logical byte
+allowance. Accepted values range from 1 byte through 64 MiB. The quota includes
+staged files during replacement. Manifests without the setting retain 1 MiB
+for native service games and 2 MiB for native tick games. Wasm save limits and
+the separately verified read-only previous-save snapshot retain their own
+bounds. `recommended_storage_bytes` remains an estimate of total storage.
 
 Disposable map caches must **not** be granted through persistent saves. Keep a
 Windows in-process cache inside the child memory budget; a Linux external RAM

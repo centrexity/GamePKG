@@ -1,0 +1,29 @@
+title = "DOOM"
+description = "Play the classic first-person shooter using your own compatible DOOM or DOOM II WAD. Select your game data once and return to the same files for later sessions."
+author = "id Software; doomgeneric and GamePKG contributors"
+homepage = "https://github.com/ozkl/doomgeneric"
+genres = ["Action", "First-person shooter"]
+engine_version = ">=0.1.18, <0.2.0"
+format_version = 1
+id = "com.gamepkg.doom"
+version = "0.1.5"
+entry_world = "game"
+update_url = "https://github.com/centrexity/GamePKG_Ports/releases/latest/download/doom.gamepkg"
+builtin_engine = "doom-e257a095"
+lockfile_sha256 = "28385a27f421a8cc8b417127fdbd67aef322b4394d8d26ad6f8556da0552d843"
+shader_profile = "slang"
+
+[[roms]]
+id = "doom_iwad"
+title = "Your DOOM.WAD or DOOM2.WAD (original PC IWAD)"
+
+[limits]
+recommended_storage_bytes = 8388608
+recommended_memory_bytes = 100663296
+hard_memory_bytes = 100663296
+
+[permissions]
+input = true
+audio = true
+save = true
+network = "none"

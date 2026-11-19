@@ -4,12 +4,19 @@ use super::{
     broker::Connection,
     preparation::{Artifact, Bootstrap, Target},
 };
+#[cfg(all(
+    feature = "gui",
+    any(windows, all(target_os = "linux", target_arch = "x86_64"))
+))]
+#[path = "process_history.rs"]
+mod history;
 #[cfg(all(feature = "gui", target_os = "linux", target_arch = "x86_64"))]
 #[path = "process_local.rs"]
 mod local;
+#[cfg(all(feature = "gui", windows))]
+#[path = "process_windows.rs"]
+mod windows;
 use anyhow::{ensure, Context, Result};
-#[cfg(all(feature = "gui", target_os = "linux", target_arch = "x86_64"))]
-pub use local::NativeLaunch;
 #[cfg(windows)]
 use std::io::Write;
 #[cfg(target_os = "linux")]
@@ -21,6 +28,60 @@ use std::{
     sync::{Arc, Mutex},
     thread::JoinHandle,
 };
+#[cfg(all(
+    feature = "gui",
+    any(windows, all(target_os = "linux", target_arch = "x86_64"))
+))]
+/// Trusted launch arguments shared by the launcher and linked executable.
+#[derive(Clone, Copy, Debug, clap::Parser)]
+pub struct NativeLaunch {
+    #[command(flatten)]
+    pub graphics: crate::launch_options::LaunchArgs,
+    #[arg(long)]
+    pub visible: bool,
+    #[arg(long)]
+    pub mute_audio: bool,
+    #[arg(long, default_value_t = 50, value_parser = clap::value_parser!(u8).range(0..=100))]
+    pub volume: u8,
+}
+
+#[cfg(all(
+    feature = "gui",
+    any(windows, all(target_os = "linux", target_arch = "x86_64"))
+))]
+impl NativeLaunch {
+    pub(super) fn arguments(self, manifest: &crate::manifest::Manifest) -> Result<Vec<String>> {
+        ensure!(self.volume <= 100, "audio volume must be 0–100");
+        let mut args = self.graphics.resolved(manifest.launch_options)?.arguments();
+        args.extend(["--volume".into(), self.volume.to_string()]);
+        if self.visible {
+            args.push("--visible".into());
+        }
+        if self.mute_audio {
+            args.push("--mute-audio".into());
+        }
+        Ok(args)
+    }
+}
+
+/// Windows desktop compatibility currently admits offline, image-based services.
+#[cfg(all(
+    feature = "gui",
+    any(windows, all(target_os = "linux", target_arch = "x86_64"))
+))]
+pub fn require_windows_compatibility(manifest: &crate::manifest::Manifest) -> Result<()> {
+    ensure!(
+        manifest.uses_service_runtime()
+            && !manifest.permissions.network
+            && !manifest.permissions.microphone
+            && manifest.permissions.files.is_empty()
+            && manifest.shared_assets.is_empty()
+            && manifest.native_graphics.is_none(),
+        "Windows desktop compatibility requires offline native services with the image renderer"
+    );
+    Ok(())
+}
+
 const LOG: usize = 128 * 1024;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
@@ -55,7 +116,10 @@ struct Reap {
     _permit: Permit,
     #[cfg(target_os = "linux")]
     _launcher: Option<mpsc::Sender<()>>,
-    #[cfg(all(feature = "gui", target_os = "linux", target_arch = "x86_64"))]
+    #[cfg(all(
+        feature = "gui",
+        any(windows, all(target_os = "linux", target_arch = "x86_64"))
+    ))]
     history: Option<JoinHandle<Result<()>>>,
 }
 fn reaper() -> Result<&'static mpsc::SyncSender<Reap>> {
@@ -69,13 +133,16 @@ fn reaper() -> Result<&'static mpsc::SyncSender<Reap>> {
                 .name("gamepkg-reaper".into())
                 .spawn(move || {
                     while let Ok(job) = receive.recv() {
-                        #[cfg(target_os = "linux")]
+                        #[cfg(any(target_os = "linux", all(windows, feature = "gui")))]
                         let mut job = job;
                         #[cfg(target_os = "linux")]
                         let _ = job.child.wait();
                         #[cfg(windows)]
                         let _ = job.child.stop();
-                        #[cfg(all(feature = "gui", target_os = "linux", target_arch = "x86_64"))]
+                        #[cfg(all(
+                            feature = "gui",
+                            any(windows, all(target_os = "linux", target_arch = "x86_64"))
+                        ))]
                         if let Some(history) = job.history.take() {
                             match history.join() {
                                 Ok(Ok(())) => {}
@@ -109,9 +176,15 @@ pub struct Process {
     clock: Option<super::timing::Clock>,
     #[cfg(target_os = "linux")]
     launcher: Option<mpsc::Sender<()>>,
-    #[cfg(all(feature = "gui", target_os = "linux", target_arch = "x86_64"))]
+    #[cfg(all(
+        feature = "gui",
+        any(windows, all(target_os = "linux", target_arch = "x86_64"))
+    ))]
     history: Option<JoinHandle<Result<()>>>,
-    #[cfg(all(feature = "gui", target_os = "linux", target_arch = "x86_64"))]
+    #[cfg(all(
+        feature = "gui",
+        any(windows, all(target_os = "linux", target_arch = "x86_64"))
+    ))]
     game_frame: Option<Arc<std::sync::atomic::AtomicBool>>,
     permit: Option<Permit>,
 }
@@ -326,6 +399,10 @@ impl Process {
             Ok(Self {
                 child: Some(child),
                 _sandbox: sandbox,
+                #[cfg(feature = "gui")]
+                history: None,
+                #[cfg(feature = "gui")]
+                game_frame: None,
                 directory: Some(directory),
                 clock: Some(clock),
                 permit: Some(permit),
@@ -357,34 +434,42 @@ impl Process {
             }
         }
         #[cfg(target_os = "linux")]
-        {
+        let status = {
             use std::os::unix::process::ExitStatusExt;
-            let status = self.child.as_mut().unwrap().try_wait()?.map(|s| {
+            self.child.as_mut().unwrap().try_wait()?.map(|s| {
                 s.code()
                     .map(|v| v as u32)
                     .unwrap_or(128 + s.signal().unwrap_or(0) as u32)
-            });
-            #[cfg(all(feature = "gui", target_arch = "x86_64"))]
-            if status.is_some() {
-                if let Some(history) = &self.history {
-                    if !history.is_finished() {
-                        return Ok(None);
-                    }
-                    self.history.take().unwrap().join().map_err(|_| {
-                        anyhow::anyhow!("native play history worker stopped unexpectedly")
-                    })??;
-                }
-            }
-            Ok(status)
-        }
+            })
+        };
         #[cfg(windows)]
-        {
-            Ok(self.child.as_ref().unwrap().poll()?)
-        }
+        let status = self.child.as_ref().unwrap().poll()?;
         #[cfg(not(any(windows, target_os = "linux")))]
-        {
-            Ok(None)
+        let status = None;
+        #[cfg(all(
+            feature = "gui",
+            any(windows, all(target_os = "linux", target_arch = "x86_64"))
+        ))]
+        if status.is_some() {
+            if let Some(history) = &self.history {
+                if !history.is_finished() {
+                    return Ok(None);
+                }
+                self.history.take().unwrap().join().map_err(|_| {
+                    anyhow::anyhow!("native play history worker stopped unexpectedly")
+                })??;
+            }
         }
+        Ok(status)
+    }
+    #[cfg(all(
+        feature = "gui",
+        any(windows, all(target_os = "linux", target_arch = "x86_64"))
+    ))]
+    pub fn first_frame_presented(&self) -> bool {
+        self.game_frame
+            .as_ref()
+            .is_some_and(|flag| flag.load(Ordering::Acquire))
     }
     pub fn diagnostics(&self) -> String {
         self.log
@@ -413,7 +498,10 @@ impl Process {
             _permit: self.permit.take().unwrap(),
             #[cfg(target_os = "linux")]
             _launcher: self.launcher.take(),
-            #[cfg(all(feature = "gui", target_os = "linux", target_arch = "x86_64"))]
+            #[cfg(all(
+                feature = "gui",
+                any(windows, all(target_os = "linux", target_arch = "x86_64"))
+            ))]
             history: self.history.take(),
         };
         reaper()?

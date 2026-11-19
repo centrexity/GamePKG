@@ -3,7 +3,7 @@
 use super::admission::{AuditedStage, CheckedSources, ObjectHash, Receipt};
 use anyhow::{ensure, Context, Result};
 use serde::{Deserialize, Serialize};
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", all(windows, feature = "gui")))]
 use std::process::Command;
 use std::{
     ffi::OsString,
@@ -11,11 +11,16 @@ use std::{
     path::{Path, PathBuf},
 };
 
-#[cfg(all(feature = "gui", target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    feature = "gui",
+    any(windows, all(target_os = "linux", target_arch = "x86_64"))
+))]
 #[path = "preparation_local.rs"]
 mod local;
 #[cfg(all(feature = "gui", target_os = "linux", target_arch = "x86_64"))]
 pub use local::build_in_process;
+#[cfg(all(feature = "gui", windows))]
+pub use local::build_windows_in_process;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Target {
@@ -315,14 +320,17 @@ pub struct Artifact {
     receipt: ExecutableReceipt,
 }
 impl Artifact {
-    #[cfg(all(feature = "gui", target_os = "linux", target_arch = "x86_64"))]
+    #[cfg(all(
+        feature = "gui",
+        any(windows, all(target_os = "linux", target_arch = "x86_64"))
+    ))]
     pub(crate) fn from_verified_cache(
         manifest: crate::manifest::Manifest,
         receipt: ExecutableReceipt,
         bytes: &[u8],
     ) -> Result<Self> {
         let directory = tempfile::tempdir()?;
-        fs::write(directory.path().join("game"), bytes)?;
+        fs::write(directory.path().join(filename(receipt.plan.target)), bytes)?;
         let artifact = Self {
             manifest,
             directory,

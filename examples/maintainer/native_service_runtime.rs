@@ -1,4 +1,4 @@
-//! Trusted Linux compatibility entry used by the checkout-backed builder.
+//! Trusted native compatibility entry used by the checkout-backed builder.
 #![allow(unexpected_cfgs)]
 #[cfg(not(gamepkg_linked_runtime))]
 fn main() -> anyhow::Result<()> {
@@ -13,7 +13,7 @@ mod client;
 #[allow(dead_code)]
 #[path = "../../engines/native-services/local_bindings.rs"]
 mod local;
-#[cfg(gamepkg_linked_runtime)]
+#[cfg(all(gamepkg_linked_runtime, target_os = "linux"))]
 #[path = "../../engines/native-services/lockdown.rs"]
 mod lockdown;
 #[cfg(gamepkg_linked_runtime)]
@@ -25,15 +25,10 @@ fn main() -> anyhow::Result<()> {
     use clap::Parser;
     use gamepkg::launch_options::{AspectRatio, WindowMode};
     use gamepkg::port_host::{
-        owner::{Grants, SaveGrant},
         player::{self, Options},
         process::NativeLaunch,
     };
     use std::io::Write;
-    use std::os::{
-        fd::{AsFd, AsRawFd},
-        unix::fs::MetadataExt,
-    };
 
     ensure!(
         gamepkg::port_host::build_identity() == SDK,
@@ -42,22 +37,7 @@ fn main() -> anyhow::Result<()> {
     let manifest = gamepkg::manifest::Manifest::parse(MANIFEST.as_bytes())?;
     let args = NativeLaunch::parse();
     let launch = args.graphics.resolved(manifest.launch_options)?;
-    let unit = std::env::var("GAMEPKG_MEMORY_SCOPE")?;
-    let cgroup = std::fs::read_to_string("/proc/self/cgroup")?;
-    ensure!(
-        unit.starts_with("gamepkg-native-")
-            && unit.ends_with(".scope")
-            && cgroup
-                .lines()
-                .any(|line| line.rsplit('/').next() == Some(unit.as_str())),
-        "native executable requires the GamePKG memory scope"
-    );
-    let parent_netns = std::env::var("GAMEPKG_PARENT_NETWORK_NS")?.parse::<u64>()?;
-    let own_netns = std::fs::metadata("/proc/self/ns/net")?.ino();
-    ensure!(
-        (parent_netns == own_netns) == manifest.permissions.network,
-        "native process network namespace differs from signed permissions"
-    );
+    let grants = platform::grants(&manifest)?;
     ensure!(
         gamepkg::verify::digest(PIPELINES) == PIPELINE_PAYLOAD_HASH,
         "embedded pipeline payload differs from the linked build"
@@ -67,49 +47,8 @@ fn main() -> anyhow::Result<()> {
         .iter()
         .map(|hash| (*hash).to_owned())
         .collect::<Vec<_>>();
-    let mut grants = Grants::default();
-    if std::env::var("GAMEPKG_ASSET_GRANT").as_deref() == Ok("1") {
-        grants.assets = Some(cap_std::fs::Dir::open_ambient_dir(
-            "/run/gamepkg-assets",
-            cap_std::ambient_authority(),
-        )?);
-    }
-    if manifest.native_tick && std::path::Path::new("/run/gamepkg-audio").is_file() {
-        let mut package =
-            gamepkg::archive::Package::open(std::path::Path::new("/run/gamepkg-audio"))?;
-        gamepkg::verify::verify_embedded(&mut package)?;
-        ensure!(
-            hex::encode(gamepkg::verify::tree_hash(&mut package)?) == SOURCE_KIT,
-            "recorded audio differs from the audited source kit"
-        );
-        grants.recorded_audio = Some(package);
-    }
-    if manifest.native_tick && std::env::var("GAMEPKG_FILE_PICKER").as_deref() == Ok("1") {
-        grants.picker = Some(std::os::unix::net::UnixStream::from(
-            std::io::stdin().as_fd().try_clone_to_owned()?,
-        ));
-    }
-    if let Some(quota) = std::env::var_os("GAMEPKG_SAVE_QUOTA") {
-        let quota = quota
-            .to_str()
-            .ok_or_else(|| anyhow::anyhow!("invalid save quota"))?
-            .parse()?;
-        grants.saves = Some(SaveGrant::open_native_mount(&manifest, quota)?);
-    }
-    match manifest.required_rom_count() {
-        0 => {}
-        1 => {
-            let file = std::fs::File::from(std::io::stdin().as_fd().try_clone_to_owned()?);
-            let flags = unsafe { libc::fcntl(file.as_raw_fd(), libc::F_GETFL) };
-            ensure!(
-                flags >= 0 && flags & (libc::O_ACCMODE | libc::O_PATH) == libc::O_RDONLY,
-                "ROM descriptor must be read-only"
-            );
-            grants.roms.push(file);
-        }
-        _ => anyhow::bail!("this bootstrap supports one inherited ROM descriptor"),
-    }
-    let rom_descriptor = grants.roms.first().map(AsRawFd::as_raw_fd);
+    #[cfg(target_os = "linux")]
+    let rom_descriptors = platform::rom_descriptors(&grants);
     let options = Options {
         title: manifest
             .title
@@ -140,20 +79,13 @@ fn main() -> anyhow::Result<()> {
         options,
         move || {
             let mut output = std::io::stdout().lock();
-            writeln!(output, "GamePKG presented {unit}")?;
+            writeln!(output, "GamePKG presented {}", platform::readiness_label()?)?;
             output.flush()?;
             Ok(())
         },
         move |connection| {
-            lockdown::install_local_worker()?;
-            if let Some(fd) = rom_descriptor {
-                let status = unsafe { libc::fcntl(fd, libc::F_GETFD) };
-                ensure!(
-                    status == -1
-                        && std::io::Error::last_os_error().raw_os_error() == Some(libc::EBADF),
-                    "trusted ROM descriptor remained open on the game worker"
-                );
-            }
+            #[cfg(target_os = "linux")]
+            platform::restrict_worker(rom_descriptors)?;
             client::connect_local(move |op, bytes, limit| {
                 connection
                     .call(op, bytes, limit)
@@ -171,4 +103,127 @@ fn main() -> anyhow::Result<()> {
     )?;
     println!("{report:?}");
     Ok(())
+}
+
+#[cfg(all(gamepkg_linked_runtime, target_os = "linux"))]
+mod platform {
+    use super::*;
+    use anyhow::ensure;
+    use gamepkg::manifest::Manifest;
+    use gamepkg::port_host::owner::{Grants, SaveGrant};
+    use std::os::{
+        fd::{AsFd, AsRawFd, RawFd},
+        unix::fs::MetadataExt,
+    };
+
+    pub fn readiness_label() -> anyhow::Result<String> {
+        Ok(std::env::var("GAMEPKG_MEMORY_SCOPE")?)
+    }
+
+    pub fn grants(manifest: &Manifest) -> anyhow::Result<Grants> {
+        let unit = readiness_label()?;
+        let cgroup = std::fs::read_to_string("/proc/self/cgroup")?;
+        ensure!(
+            unit.starts_with("gamepkg-native-")
+                && unit.ends_with(".scope")
+                && cgroup
+                    .lines()
+                    .any(|line| line.rsplit('/').next() == Some(unit.as_str())),
+            "native executable requires the GamePKG memory scope"
+        );
+        let parent_netns = std::env::var("GAMEPKG_PARENT_NETWORK_NS")?.parse::<u64>()?;
+        let own_netns = std::fs::metadata("/proc/self/ns/net")?.ino();
+        ensure!(
+            (parent_netns == own_netns) == manifest.permissions.network,
+            "native process network namespace differs from signed permissions"
+        );
+        let mut grants = Grants::default();
+        if std::env::var("GAMEPKG_ASSET_GRANT").as_deref() == Ok("1") {
+            grants.assets = Some(cap_std::fs::Dir::open_ambient_dir(
+                "/run/gamepkg-assets",
+                cap_std::ambient_authority(),
+            )?);
+        }
+        if manifest.native_tick && std::path::Path::new("/run/gamepkg-audio").is_file() {
+            let mut package =
+                gamepkg::archive::Package::open(std::path::Path::new("/run/gamepkg-audio"))?;
+            gamepkg::verify::verify_embedded(&mut package)?;
+            ensure!(
+                hex::encode(gamepkg::verify::tree_hash(&mut package)?) == SOURCE_KIT,
+                "recorded audio differs from the audited source kit"
+            );
+            grants.recorded_audio = Some(package);
+        }
+        if manifest.native_tick && std::env::var("GAMEPKG_FILE_PICKER").as_deref() == Ok("1") {
+            grants.picker = Some(std::os::unix::net::UnixStream::from(
+                std::io::stdin().as_fd().try_clone_to_owned()?,
+            ));
+        }
+        if let Some(quota) = std::env::var_os("GAMEPKG_SAVE_QUOTA") {
+            let quota = quota
+                .to_str()
+                .ok_or_else(|| anyhow::anyhow!("invalid save quota"))?
+                .parse()?;
+            grants.saves = Some(SaveGrant::open_native_mount(&manifest, quota)?);
+        }
+        for index in 0..manifest.required_rom_count() {
+            let file = std::fs::File::open(format!("/run/gamepkg-rom/{index}"))?;
+            ensure!(
+                file.metadata()?.is_file(),
+                "ROM mount must be a regular file"
+            );
+            grants.roms.push(file);
+        }
+        Ok(grants)
+    }
+
+    pub fn rom_descriptors(grants: &Grants) -> Vec<RawFd> {
+        grants.roms.iter().map(AsRawFd::as_raw_fd).collect()
+    }
+
+    pub fn restrict_worker(rom_descriptors: Vec<RawFd>) -> anyhow::Result<()> {
+        lockdown::install_local_worker()?;
+        for fd in rom_descriptors {
+            let status = unsafe { libc::fcntl(fd, libc::F_GETFD) };
+            ensure!(
+                status == -1 && std::io::Error::last_os_error().raw_os_error() == Some(libc::EBADF),
+                "trusted ROM descriptor remained open on the game worker"
+            );
+        }
+        Ok(())
+    }
+}
+
+#[cfg(all(gamepkg_linked_runtime, windows))]
+mod platform {
+    use anyhow::{ensure, Context};
+    use gamepkg::manifest::Manifest;
+    use gamepkg::port_host::owner::{Grants, SaveGrant};
+
+    pub fn readiness_label() -> anyhow::Result<&'static str> {
+        Ok("windows")
+    }
+
+    pub fn grants(manifest: &Manifest) -> anyhow::Result<Grants> {
+        gamepkg_takedawn_windows_runner::require_compatibility_process(
+            manifest.limits.hard_memory_bytes,
+        )
+        .context("Windows game containment check failed")?;
+        gamepkg::port_host::process::require_windows_compatibility(manifest)?;
+        let roms =
+            gamepkg_takedawn_windows_runner::open_inherited_roms(manifest.required_rom_count())?;
+        let scope = std::env::var_os("GAMEPKG_NATIVE_SAVE_SCOPE");
+        ensure!(
+            manifest.permissions.save == scope.is_some(),
+            "Windows native save grant differs from signed permissions"
+        );
+        let saves = scope
+            .map(|path| SaveGrant::open_native_windows(manifest, std::path::Path::new(&path)))
+            .transpose()?;
+        Ok(Grants {
+            roms,
+            saves,
+            ..Default::default()
+        })
+    }
 }

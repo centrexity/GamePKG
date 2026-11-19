@@ -101,9 +101,10 @@ def package(output_directory, binary_directory, *, system=None, target_triple=No
     identity = verify_pair(binary_directory, version=version, system=system, architecture=architecture)
     sdk_pin = identity['identity'].get('native_services_source')
     if sdk_pin is not None or native_sdk is not None:
-        if (host != 'linux-x86_64' or native_sdk is None or native_sdk.is_symlink()
+        if (host not in ('linux-x86_64', 'windows-x86_64', 'windows-i686')
+                or native_sdk is None or native_sdk.is_symlink()
                 or not native_sdk.is_file() or sha256(native_sdk) != sdk_pin):
-            raise ValueError('Native SDK bundle does not match the Linux app build')
+            raise ValueError('Native SDK bundle does not match the app build')
     metadata = dependency_metadata(target)
     resolved = {node['id'] for node in metadata['resolve']['nodes']}
     with tempfile.TemporaryDirectory(prefix='gamepkg-distribution-') as directory:

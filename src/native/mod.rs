@@ -219,7 +219,13 @@ pub fn path_for_digest(root: &Path, digest: &str) -> PathBuf {
         ))
         .join("game")
 }
-#[cfg(all(feature = "gui", target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    feature = "gui",
+    any(
+        all(windows, any(target_arch = "x86", target_arch = "x86_64")),
+        all(target_os = "linux", target_arch = "x86_64")
+    )
+))]
 mod tick;
 
 pub fn play_services(
@@ -231,12 +237,24 @@ pub fn play_services(
 ) -> Result<()> {
     let manifest = crate::registry::installed_manifest(root, id)?;
     require_compatibility(&manifest)?;
-    #[cfg(all(feature = "gui", target_os = "linux", target_arch = "x86_64"))]
+    #[cfg(all(
+        feature = "gui",
+        any(
+            all(windows, any(target_arch = "x86", target_arch = "x86_64")),
+            all(target_os = "linux", target_arch = "x86_64")
+        )
+    ))]
     return tick::play_entry(root, id, roms, settings, graphics, false);
-    #[cfg(not(all(feature = "gui", target_os = "linux", target_arch = "x86_64")))]
+    #[cfg(not(all(
+        feature = "gui",
+        any(
+            all(windows, any(target_arch = "x86", target_arch = "x86_64")),
+            all(target_os = "linux", target_arch = "x86_64")
+        )
+    )))]
     {
         let _ = (root, id, roms, settings, graphics);
-        bail!("native service play requires the Linux x64 desktop edition of GamePKG")
+        bail!("native service play requires the GamePKG desktop edition for a supported platform")
     }
 }
 
@@ -245,7 +263,11 @@ pub fn cache_path(root: &Path, id: &str) -> Result<PathBuf> {
     let package_digest = crate::files::hash_archive(&root.join(format!("{id}.gamepkg")))?;
     let path = path_for_digest(root, &package_digest);
     Ok(if manifest.native_tick || manifest.uses_service_runtime() {
-        path.with_file_name("compatibility-game")
+        path.with_file_name(if cfg!(windows) {
+            "compatibility-game.exe"
+        } else {
+            "compatibility-game"
+        })
     } else {
         path
     })
@@ -255,9 +277,21 @@ pub fn is_built(root: &Path, id: &str) -> Result<bool> {
     if !build_supported(&manifest) {
         return Ok(false);
     }
-    #[cfg(all(feature = "gui", target_os = "linux", target_arch = "x86_64"))]
+    #[cfg(all(
+        feature = "gui",
+        any(
+            all(windows, any(target_arch = "x86", target_arch = "x86_64")),
+            all(target_os = "linux", target_arch = "x86_64")
+        )
+    ))]
     return Ok(tick::ready(root, id));
-    #[cfg(not(all(feature = "gui", target_os = "linux", target_arch = "x86_64")))]
+    #[cfg(not(all(
+        feature = "gui",
+        any(
+            all(windows, any(target_arch = "x86", target_arch = "x86_64")),
+            all(target_os = "linux", target_arch = "x86_64")
+        )
+    )))]
     Ok(false)
 }
 pub fn build_supported(manifest: &crate::manifest::Manifest) -> bool {
@@ -275,19 +309,35 @@ pub(crate) fn require_compatibility(manifest: &crate::manifest::Manifest) -> Res
     ensure!(
         cfg!(all(
             feature = "gui",
-            target_os = "linux",
-            target_arch = "x86_64"
+            any(
+                all(windows, any(target_arch = "x86", target_arch = "x86_64")),
+                all(target_os = "linux", target_arch = "x86_64")
+            )
         )),
-        "Native compatibility requires the Linux x64 desktop edition of GamePKG."
+        "Native compatibility requires the GamePKG desktop edition for a supported platform."
     );
+    #[cfg(all(feature = "gui", windows))]
+    crate::port_host::process::require_windows_compatibility(manifest)?;
     Ok(())
 }
 pub fn compile(root: &Path, id: &str) -> Result<()> {
     let manifest = crate::registry::installed_manifest(root, id)?;
     require_compatibility(&manifest)?;
-    #[cfg(all(feature = "gui", target_os = "linux", target_arch = "x86_64"))]
+    #[cfg(all(
+        feature = "gui",
+        any(
+            all(windows, any(target_arch = "x86", target_arch = "x86_64")),
+            all(target_os = "linux", target_arch = "x86_64")
+        )
+    ))]
     return tick::build(root, id);
-    #[cfg(not(all(feature = "gui", target_os = "linux", target_arch = "x86_64")))]
+    #[cfg(not(all(
+        feature = "gui",
+        any(
+            all(windows, any(target_arch = "x86", target_arch = "x86_64")),
+            all(target_os = "linux", target_arch = "x86_64")
+        )
+    )))]
     unreachable!("require_compatibility rejects unsupported hosts")
 }
 pub(crate) fn validate_executable(bytes: &[u8]) -> Result<()> {

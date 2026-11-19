@@ -1,10 +1,16 @@
-use crate::manifest::{Manifest, NativeGraphics};
+use crate::manifest::Manifest;
 use crate::port_host::{
     admission::CheckedSources,
-    graphics::{PipelineRecipe, VerifiedPipelines},
-    owner::VerifiedAssets,
     preparation::{self, Artifact, Bootstrap, ExecutableReceipt, LocalLayout, Plan, Target},
     process::{NativeLaunch, Process},
+};
+#[cfg(target_os = "linux")]
+use crate::{
+    manifest::NativeGraphics,
+    port_host::{
+        graphics::{PipelineRecipe, VerifiedPipelines},
+        owner::VerifiedAssets,
+    },
 };
 use anyhow::{ensure, Context, Result};
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier};
@@ -31,7 +37,13 @@ fn plan(manifest: &Manifest) -> Result<Plan> {
         );
         "game_tick"
     };
-    Plan::new(Target::Linux64, entry, vec![], LocalLayout::None, true)
+    #[cfg(target_os = "linux")]
+    let target = Target::Linux64;
+    #[cfg(all(windows, target_arch = "x86_64"))]
+    let target = Target::Windows64;
+    #[cfg(all(windows, target_arch = "x86"))]
+    let target = Target::Windows32;
+    Plan::new(target, entry, vec![], LocalLayout::None, true)
 }
 
 fn key(root: &Path, create: bool) -> Result<SigningKey> {
@@ -54,11 +66,13 @@ fn key(root: &Path, create: bool) -> Result<SigningKey> {
     ))
 }
 
+#[cfg(target_os = "linux")]
 fn open(root: &Path, id: &str) -> Result<crate::archive::Package> {
     crate::registry::installed_manifest(root, id)?;
     crate::archive::Package::open(&root.join(format!("{id}.gamepkg")))
 }
 
+#[cfg(target_os = "linux")]
 fn prepare_graphics(
     root: &Path,
     sources: &CheckedSources,
@@ -119,12 +133,20 @@ pub(super) fn build(root: &Path, id: &str) -> Result<()> {
     let path = super::cache_path(root, id)?;
     let (sources, package, _snapshot) = source_snapshot(root, id)?;
     let plan = plan(sources.manifest())?;
-    let pipelines = if sources.manifest().native_graphics.is_some() {
-        prepare_graphics(root, &sources, &package, &crate::settings::load()?)?
-    } else {
-        None
+    #[cfg(target_os = "linux")]
+    let artifact = {
+        let pipelines = if sources.manifest().native_graphics.is_some() {
+            prepare_graphics(root, &sources, &package, &crate::settings::load()?)?
+        } else {
+            None
+        };
+        preparation::build_in_process(root, &sources, &plan, pipelines)?
     };
-    let artifact = preparation::build_in_process(root, &sources, &plan, pipelines)?;
+    #[cfg(windows)]
+    let artifact = {
+        drop(package);
+        preparation::build_windows_in_process(root, &sources, &plan)?
+    };
     ensure!(
         super::cache_path(root, id)? == path,
         "installed game changed during the build"
@@ -167,6 +189,12 @@ fn prepared(
     let receipt: ExecutableReceipt = serde_json::from_slice(json)?;
 
     let (sources, package, _snapshot) = source_snapshot(root, id)?;
+    #[cfg(windows)]
+    let shader_preparation: Vec<String> = {
+        let _ = (package, settings);
+        Vec::new()
+    };
+    #[cfg(target_os = "linux")]
     let shader_preparation = if sources.manifest().native_graphics.is_some() {
         let loaded;
         let settings = match settings {
@@ -223,31 +251,35 @@ pub(super) fn play_entry(
         "increase the memory ceiling in Settings to at least {} MiB for this game",
         manifest.limits.hard_memory_bytes.div_ceil(1048576)
     );
-    let rom = selected_rom(root, manifest, supplied)?;
-    let save_quota = if manifest.native_tick {
-        2 * 1048576
-    } else {
-        crate::saves::MAX_SAVE as u64
-    };
-    let assets = if manifest.native_tick {
-        VerifiedAssets::stage(&mut open(root, id)?, sources.identity())?
-    } else {
-        None
+    let roms = selected_roms(root, manifest, supplied)?;
+    let options = NativeLaunch {
+        graphics,
+        visible: !smoke,
+        mute_audio: settings.mute_audio || smoke,
+        volume: settings.audio_volume,
     };
     let artifact = Artifact::from_verified_cache(manifest.clone(), receipt, &bytes)?;
-    let mut process = Process::start_in_process_with_assets(
-        &artifact,
-        root,
-        rom,
-        manifest.permissions.save.then_some((root, save_quota)),
-        assets.as_ref(),
-        NativeLaunch {
-            graphics,
-            visible: !smoke,
-            mute_audio: settings.mute_audio || smoke,
-            volume: settings.audio_volume,
-        },
-    )?;
+    #[cfg(target_os = "linux")]
+    let mut process = {
+        let assets = if manifest.native_tick {
+            VerifiedAssets::stage(&mut open(root, id)?, sources.identity())?
+        } else {
+            None
+        };
+        Process::start_in_process_with_assets(
+            &artifact,
+            root,
+            roms,
+            manifest
+                .permissions
+                .save
+                .then_some((root, manifest.native_save_quota())),
+            assets.as_ref(),
+            options,
+        )?
+    };
+    #[cfg(windows)]
+    let mut process = Process::start_windows(&artifact, root, roms, options)?;
     drop(build_lock);
     let start = Instant::now();
     loop {
@@ -274,11 +306,7 @@ pub(super) fn play_entry(
     }
 }
 
-fn selected_rom(
-    root: &Path,
-    manifest: &Manifest,
-    supplied: &[PathBuf],
-) -> Result<Option<fs::File>> {
+fn selected_roms(root: &Path, manifest: &Manifest, supplied: &[PathBuf]) -> Result<Vec<fs::File>> {
     let remembered;
     let paths = if supplied.is_empty() {
         remembered = crate::rom_selections::load(root, manifest)?
@@ -294,11 +322,90 @@ fn selected_rom(
         paths.len() == manifest.required_rom_count(),
         "select the required ROM in the library or supply it with --rom"
     );
-    let Some(path) = paths.first() else {
-        return Ok(None);
-    };
-    let file = crate::files::open_regular(path, crate::files::MAX_NATIVE_ROM_BYTES, true)
-        .context("unable to open the selected ROM")?;
-    ensure!(file.metadata()?.len() != 0, "the selected ROM is empty");
-    Ok(Some(file))
+    paths
+        .iter()
+        .enumerate()
+        .map(|(index, path)| {
+            let file = crate::files::open_regular(path, crate::files::MAX_NATIVE_ROM_BYTES, true)
+                .with_context(|| format!("unable to open selected ROM {}", index + 1))?;
+            ensure!(
+                file.metadata()?.len() != 0,
+                "selected ROM {} is empty",
+                index + 1
+            );
+            Ok(file)
+        })
+        .collect()
+}
+
+#[cfg(all(test, windows))]
+mod windows_tests {
+    use super::*;
+
+    #[test]
+    #[ignore = "requires an already built isolated Doom preview library on native Windows"]
+    fn prebuilt_doom_presents_on_the_windows_desktop() {
+        let library = std::env::var_os("GAMEPKG_TEST_DOOM_NATIVE_LIBRARY").unwrap();
+        let selected = std::env::var_os("GAMEPKG_TEST_DOOM_ROMS").unwrap();
+        let paths = std::env::split_paths(&selected).collect::<Vec<_>>();
+        let original = paths
+            .iter()
+            .map(|path| crate::files::hash_archive(path).unwrap())
+            .collect::<Vec<_>>();
+        let root = Path::new(&library);
+        let id = "com.gamepkg.doom";
+        let manifest = crate::registry::installed_manifest(root, id).unwrap();
+        assert!(crate::native::is_built(root, id).unwrap());
+        assert_eq!(manifest.required_rom_count(), paths.len());
+        let settings = crate::settings::Settings {
+            mute_audio: true,
+            ..Default::default()
+        };
+        play_entry(root, id, &paths, &settings, Default::default(), true).unwrap();
+        for (path, hash) in paths.iter().zip(original) {
+            assert_eq!(crate::files::hash_archive(path).unwrap(), hash);
+        }
+    }
+
+    #[test]
+    #[ignore = "requires native Windows with AppContainer, Vulkan, signed Doom and selected WADs"]
+    fn signed_doom_uses_the_normal_windows_build_and_play_path() {
+        let package = std::env::var_os("GAMEPKG_TEST_DOOM_NATIVE_PACKAGE").unwrap();
+        let selected = std::env::var_os("GAMEPKG_TEST_DOOM_ROMS").unwrap();
+        let paths = std::env::split_paths(&selected).collect::<Vec<_>>();
+        let before = paths
+            .iter()
+            .map(|path| crate::files::hash_archive(path).unwrap())
+            .collect::<Vec<_>>();
+        let library = tempfile::tempdir().unwrap();
+        let root = library.path();
+        let manifest = crate::registry::install(root, Path::new(&package), true).unwrap();
+        assert_eq!(manifest.id, "com.gamepkg.doom");
+        assert!(crate::native::build_supported(&manifest));
+        assert_eq!(manifest.required_rom_count(), paths.len());
+        crate::native::compile(root, &manifest.id).unwrap();
+        assert!(crate::native::is_built(root, &manifest.id).unwrap());
+        let settings = crate::settings::Settings {
+            mute_audio: true,
+            ..Default::default()
+        };
+        play_entry(
+            root,
+            &manifest.id,
+            &paths,
+            &settings,
+            Default::default(),
+            true,
+        )
+        .unwrap();
+        for (path, hash) in paths.iter().zip(before) {
+            assert_eq!(crate::files::hash_archive(path).unwrap(), hash);
+        }
+        fs::write(
+            crate::native::cache_path(root, &manifest.id).unwrap(),
+            b"test",
+        )
+        .unwrap();
+        assert!(!crate::native::is_built(root, &manifest.id).unwrap());
+    }
 }

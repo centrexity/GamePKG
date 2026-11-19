@@ -1,0 +1,26 @@
+{
+  "version": "1.89.0",
+  "targets": {
+    "x86_64-pc-windows-gnu": {
+      "archive_sha256": "0db676abe6603aedbf890ca14e3c17b5310437204973fc60e2a77e8f73bc9789",
+      "payload_inventory_sha256": "1d4657ef8a6119afe0bdc3b879cdcd19412196838bdcbfa157772071b2b6ae8b"
+    },
+    "i686-pc-windows-gnu": {
+      "archive_sha256": "788db3d2727c47a0a8de30a4efdda0a7d196b0569c751e2c02049c98e137b9bf",
+      "payload_inventory_sha256": "4f7d27548ebae9425569e411cc960fc2e79d4bd393612de6f55e20268af89ab7"
+    }
+  },
+  "llvm_mingw": {
+    "version": "20260922",
+    "targets": {
+      "x86_64": {
+        "archive_sha256": "1e936a4a694fc27f9625e3311f5ec5d6d99abfeaa514fd41c52a4f8347145d1a",
+        "payload_inventory_sha256": "bbacacd2ff93cad9fb5f692715799be1e46dab69e33cafacb803d8d8f4f64fff"
+      },
+      "i686": {
+        "archive_sha256": "24202e2279833d13a175e9b1496cd7376ac2ddd850d88b5537cbb5e04c45d9b5",
+        "payload_inventory_sha256": "d16a15863227b1d9ff95d84442ad4a9093d3d3853dec836b9824b2db1cbb5289"
+      }
+    }
+  }
+}

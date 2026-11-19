@@ -67,6 +67,51 @@ fn launch_settings_are_read_only_and_report_unsupported_without_a_launch() {
 }
 
 #[test]
+fn previous_save_grant_is_read_only_and_requires_save_permission() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("legacy-save.blob");
+    std::fs::write(&path, b"previous bytes").unwrap();
+    let mut denied = Session::new(permissions(), Recording::default());
+    assert_eq!(
+        denied.grant_directory(
+            cap_std::fs::Dir::open_ambient_dir(directory.path(), cap_std::ambient_authority())
+                .unwrap(),
+            Access::PreviousSave,
+        ),
+        Err(Error::Denied)
+    );
+    let mut host = host();
+    let prior = grant(&mut host, directory.path(), Access::PreviousSave);
+    let grants = host.call(13, &[], 16).unwrap();
+    assert_eq!(&grants[..8], &prior.to_le_bytes());
+    assert_eq!(&grants[8..12], &5u32.to_le_bytes());
+    let open = |mode: u32| {
+        [
+            prior.to_le_bytes().as_slice(),
+            &mode.to_le_bytes(),
+            b"legacy-save.blob",
+        ]
+        .concat()
+    };
+    for mode in 1..=3 {
+        assert_eq!(host.call(1, &open(mode), 8), Err(Error::Denied));
+    }
+    let handle = number(host.call(1, &open(0), 8).unwrap());
+    let range = [
+        handle.to_le_bytes().as_slice(),
+        &0u64.to_le_bytes(),
+        &14u32.to_le_bytes(),
+    ]
+    .concat();
+    let modify = [handle.to_le_bytes().as_slice(), &0u64.to_le_bytes(), b"new"].concat();
+    assert_eq!(host.call(2, &range, 14).unwrap(), b"previous bytes");
+    assert_eq!(host.call(3, &modify, 0), Err(Error::Denied));
+    host.revoke(prior).unwrap();
+    assert_eq!(host.call(2, &range, 14), Err(Error::Denied));
+    assert_eq!(std::fs::read(path).unwrap(), b"previous bytes");
+}
+
+#[test]
 fn save_replace_is_capability_relative_flushed_atomic_and_nontruncating() {
     let dir = tempfile::tempdir().unwrap();
     let mut h = host();

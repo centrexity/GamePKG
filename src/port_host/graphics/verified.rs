@@ -1,5 +1,5 @@
 //! Signed shader preparation and the private native pipeline payload.
-use super::{Pipeline, RasterState, UniformPolicy};
+use super::{Pipeline, PipelinePayload, RasterState, UniformPolicy};
 use crate::{archive::Package, manifest::Shader, port_host::admission::CheckedSources};
 use anyhow::{ensure, Context, Result};
 use eframe::wgpu;
@@ -139,11 +139,4 @@ impl VerifiedPipelines {
             preparation: vec![self.preparation],
         })
     }
-}
-
-pub(crate) struct PipelinePayload {
-    pub encoded: Vec<u8>,
-    pub hashes: Vec<String>,
-    pub samples: u32,
-    pub preparation: Vec<String>,
 }

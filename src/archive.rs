@@ -63,7 +63,10 @@ pub fn valid_path(name: &str) -> bool {
         })
 }
 
-fn register_path(paths: &mut BTreeMap<String, (String, bool)>, name: &str) -> Result<()> {
+pub(crate) fn register_path(
+    paths: &mut BTreeMap<String, (String, bool)>,
+    name: &str,
+) -> Result<()> {
     let mut prefix = String::new();
     let mut parts = name.split('/').peekable();
     while let Some(part) = parts.next() {

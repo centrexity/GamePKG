@@ -16,8 +16,6 @@ pub use state::RasterState;
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 pub use takedawn::takedawn_nvi1_recipes;
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-pub(crate) use verified::PipelinePayload;
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 pub use verified::{PipelineRecipe, VerifiedPipelines};
 /// Structured data admitted for a particular signed, verified shader template.
 /// This validates representation, not NV2A execution/translation or fidelity.
@@ -1205,4 +1203,12 @@ impl Graphics {
             },
         })
     }
+}
+
+#[cfg(any(windows, all(target_os = "linux", target_arch = "x86_64")))]
+pub(crate) struct PipelinePayload {
+    pub encoded: Vec<u8>,
+    pub hashes: Vec<String>,
+    pub samples: u32,
+    pub preparation: Vec<String>,
 }
