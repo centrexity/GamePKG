@@ -79,9 +79,21 @@ needed for building or playing Zelda3. Build ports/zelda3 as a signed package
 and select your supported USA ROM in the library. No extracted assets are written.
 See engines/zelda3/README.md for the complete setup and verification details.
 
-## DOOM source engine
+## DOOM native compatibility package
 
-Version 0.1.14 includes the pinned DOOM Wasm engine. The Linux compiler needs the same Clang 18 and WASI tools described above. See [DOOM engine setup](../engines/doom/README.md) and the [port instructions](https://github.com/centrexity/GamePKG_Ports/blob/main/DOOM.md). Select your own DOOM.WAD/DOOM2.WAD; no WAD is included. Windows compilation uses the existing opt-in WSL 2 exchange; native Windows DOOM playback has not been tested locally.
+Use a GamePKG build with the native compatibility SDK and a signed native DOOM
+package. Open the game page, select your own `DOOM.WAD` or `DOOM2.WAD`, then
+choose **Build** and **Play**. The game opens in its own window and reads the
+selected WAD in place. Saves are scoped to the signed creator and game.
+
+On Linux, use the Rust and Cargo setup and the native compatibility SDK
+described above. On Windows, GamePKG prepares its pinned native compiler
+tools automatically. The native DOOM build requires neither the C/WASI
+toolchain nor WSL or Python.
+
+The migrated package requires both the updated app and an updated signed
+package from GamePKG Ports. See the
+[port instructions](https://github.com/centrexity/GamePKG_Ports/blob/main/DOOM.md).
 
 See [native runtime setup](NATIVE_RUNTIME.md) for target-specific caches and isolation, and [networking](NETWORKING.md) for separately declared HTTPS and multiplayer permissions.
 
