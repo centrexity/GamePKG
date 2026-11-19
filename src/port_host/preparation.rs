@@ -1,6 +1,6 @@
 //! Source-checked native service builds. No legacy engine, Cargo hook, game
 //! library or post-audit LTO enters this path. This does not enable a profile.
-use super::admission::{AuditedStage, CheckedSources, ObjectHash, Receipt};
+use super::admission::{AuditedStage, CheckedSources, ObjectHash, Receipt, MAX_WORKER_FILE_BYTES};
 use anyhow::{ensure, Context, Result};
 use serde::{Deserialize, Serialize};
 #[cfg(any(target_os = "linux", all(windows, feature = "gui")))]
@@ -135,6 +135,10 @@ impl LocalLayout {
     }
 }
 
+const DEFAULT_CODEGEN_UNITS: u32 = 8;
+const MAX_CODEGEN_UNITS: u32 = 64;
+const COMPILER_TIMEOUT_SECS: u64 = 1800;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(try_from = "RawPlan")]
 pub struct Plan {
@@ -163,7 +167,7 @@ fn compiler_memory_default() -> u64 {
     if cfg!(all(windows, target_pointer_width = "32")) {
         2 * 1024 * 1024 * 1024
     } else {
-        4 * 1024 * 1024 * 1024
+        8 * 1024 * 1024 * 1024
     }
 }
 fn one_codegen_unit() -> u32 {
@@ -213,7 +217,7 @@ impl Plan {
             tasks,
             layout,
             optimize,
-            codegen_units: 1,
+            codegen_units: DEFAULT_CODEGEN_UNITS,
             compiler_memory_bytes: compiler_memory_default(),
         })
     }
@@ -222,7 +226,7 @@ impl Plan {
     /// every resulting relocatable object enters the same sealed audit stage.
     pub fn with_codegen_units(mut self, units: u32) -> Result<Self> {
         ensure!(
-            (1..=32).contains(&units),
+            (1..=MAX_CODEGEN_UNITS).contains(&units),
             "invalid reviewed codegen-unit count"
         );
         self.codegen_units = units;
@@ -635,13 +639,14 @@ fn run(
                 Ok(())
             });
         }
-        command.arg(format!("--as={}", plan.compiler_memory_bytes));
+        command
+            .arg(format!("--as={}", plan.compiler_memory_bytes))
+            .arg(format!("--fsize={MAX_WORKER_FILE_BYTES}"));
         command.args([
-            "--fsize=1073741824",
             "--core=0",
             "--",
             "timeout",
-            "900",
+            &COMPILER_TIMEOUT_SECS.to_string(),
             "bwrap",
             "--unshare-all",
             "--die-with-parent",
@@ -741,7 +746,7 @@ fn run(
             source,
             &env,
             &sandbox,
-            std::time::Instant::now() + std::time::Duration::from_secs(900),
+            std::time::Instant::now() + std::time::Duration::from_secs(COMPILER_TIMEOUT_SECS),
             plan.compiler_memory_bytes,
         )?;
     }
@@ -756,9 +761,13 @@ fn compiler_path(host: &Path, inside: &str, name: &str) -> PathBuf {
 }
 
 fn compiler_objects(directory: &Path, units: u32) -> Result<Vec<PathBuf>> {
-    ensure!((1..=32).contains(&units), "invalid compiler unit bound");
+    ensure!(
+        (1..=MAX_CODEGEN_UNITS).contains(&units),
+        "invalid compiler unit bound"
+    );
     let mut objects = Vec::new();
     let mut aggregate = None;
+    let mut remaining = MAX_WORKER_FILE_BYTES;
     let mut indices = std::collections::BTreeSet::new();
     for entry in fs::read_dir(directory)? {
         let entry = entry?;
@@ -766,10 +775,22 @@ fn compiler_objects(directory: &Path, units: u32) -> Result<Vec<PathBuf>> {
             entry.file_type()?.is_file(),
             "compiler output is not an individual regular file"
         );
+        let size = entry.metadata()?.len();
+        ensure!(
+            size <= MAX_WORKER_FILE_BYTES,
+            "compiler output exceeds the per-file cap"
+        );
         let name = entry
             .file_name()
             .into_string()
             .map_err(|_| anyhow::anyhow!("non-UTF-8 compiler output"))?;
+        if name != "game_unit.o" {
+            ensure!(
+                size <= remaining,
+                "compiler object set exceeds the total cap"
+            );
+            remaining -= size;
+        }
         if units == 1 {
             ensure!(
                 name == "game.o",
@@ -814,16 +835,8 @@ fn compiler_objects(directory: &Path, units: u32) -> Result<Vec<PathBuf>> {
             objects.len() == 1,
             "unexpected aggregate with multiple compiler units"
         );
-        let first = crate::verify::digest(&crate::files::read_regular(
-            &objects[0],
-            512 * 1024 * 1024,
-            false,
-        )?);
-        let copied = crate::verify::digest(&crate::files::read_regular(
-            &aggregate,
-            512 * 1024 * 1024,
-            false,
-        )?);
+        let first = super::admission::hash_game_object(&objects[0])?;
+        let copied = super::admission::hash_game_object(&aggregate)?;
         ensure!(
             first == copied,
             "aggregate differs from the retained compiler unit"
@@ -961,17 +974,22 @@ pub extern "C" fn __gamepkg_entry() {
     let mut raw_objects = Vec::new();
     let mut object_normalization = ObjectNormalization::None;
     for (index, object) in game_objects.iter().enumerate() {
-        let bytes = crate::files::read_regular(object, 512 * 1024 * 1024, false)?;
-        raw_objects.push(ObjectHash {
-            name: format!("game-{index:04}.o"),
-            sha256: crate::verify::digest(&bytes),
-        });
-        if plan.target.windows() {
+        let sha256 = if plan.target.windows() {
+            let bytes =
+                crate::files::read_regular(object, super::admission::MAX_GAME_OBJECT_BYTES, false)?;
+            let hash = crate::verify::digest(&bytes);
             if let Some(normalized) = super::coff_exclusions::normalize(&bytes)? {
                 fs::write(object, normalized)?;
                 object_normalization = ObjectNormalization::RustMingwSymbolExclusionsV1;
             }
-        }
+            hash
+        } else {
+            super::admission::hash_game_object(object)?
+        };
+        raw_objects.push(ObjectHash {
+            name: format!("game-{index:04}.o"),
+            sha256,
+        });
     }
     // The game compiler has exited. Seal copies outside all writable compiler
     // mounts; only the exact audited copies are provided to the trusted linker.
@@ -1276,5 +1294,28 @@ mod compiler_inventory_tests {
         )
         .unwrap();
         assert!(compiler_objects(root.path(), 4).is_err());
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod compiler_output_tests {
+    use super::*;
+
+    #[test]
+    fn worker_output_inventory_checks_each_file_and_combined_size() {
+        let output = tempfile::tempdir().unwrap();
+        let first = output.path().join("game_unit.fixture-cgu.0.rcgu.o");
+        let first = fs::File::create(first).unwrap();
+        first.set_len(MAX_WORKER_FILE_BYTES + 1).unwrap();
+        let inventory = || compiler_objects(output.path(), DEFAULT_CODEGEN_UNITS);
+        assert!(inventory()
+            .unwrap_err()
+            .to_string()
+            .contains("per-file cap"));
+        first.set_len(MAX_WORKER_FILE_BYTES).unwrap();
+        assert_eq!(inventory().unwrap().len(), 1);
+
+        fs::write(output.path().join("game_unit.fixture-cgu.1.rcgu.o"), b"o").unwrap();
+        assert!(inventory().unwrap_err().to_string().contains("total cap"));
     }
 }

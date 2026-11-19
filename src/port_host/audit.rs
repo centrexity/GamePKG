@@ -116,7 +116,8 @@ fn rust_runtime(symbol: &str) -> bool {
 fn object_header(path: &Path) -> Result<()> {
     use std::io::{Read, Seek, SeekFrom};
     let mut header = [0u8; 64];
-    let mut file = crate::files::open_regular(path, 512 * 1024 * 1024, false)?;
+    let mut file =
+        crate::files::open_regular(path, super::admission::MAX_GAME_OBJECT_BYTES, false)?;
     let length = file.read(&mut header)?;
     let elf = length >= 52
         && &header[..4] == b"\x7fELF"

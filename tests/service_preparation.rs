@@ -419,7 +419,7 @@ fn reviewed_entry_metadata_cannot_inject_code_or_select_an_incompatible_layout()
         a.clone().with_codegen_units(4).unwrap().identity()
     );
     assert!(a.clone().with_codegen_units(0).is_err());
-    assert!(a.clone().with_codegen_units(33).is_err());
+    assert!(a.clone().with_codegen_units(65).is_err());
     assert_ne!(
         a.identity(),
         a.clone()
@@ -432,7 +432,18 @@ fn reviewed_entry_metadata_cannot_inject_code_or_select_an_incompatible_layout()
         .clone()
         .with_compiler_memory_bytes(16 * 1024 * 1024 * 1024 + 1)
         .is_err());
+    assert!(a.clone().with_codegen_units(64).is_ok());
     let record = serde_json::to_value(&a).unwrap();
+    assert_eq!(record["codegen_units"], 8);
+    let compiler_gib = if cfg!(all(windows, target_pointer_width = "32")) {
+        2
+    } else {
+        8
+    };
+    assert_eq!(
+        record["compiler_memory_bytes"],
+        compiler_gib * 1024 * 1024 * 1024u64
+    );
     for (field, value) in [
         ("entry", serde_json::json!("game_main();unsafe{bad()}")),
         ("tasks", serde_json::json!(["core::bad"])),
@@ -440,7 +451,7 @@ fn reviewed_entry_metadata_cannot_inject_code_or_select_an_incompatible_layout()
         ("tasks", serde_json::json!(vec!["task"; 257])),
         ("unreviewed_flag", serde_json::json!(true)),
         ("codegen_units", serde_json::json!(0)),
-        ("codegen_units", serde_json::json!(33)),
+        ("codegen_units", serde_json::json!(65)),
         ("codegen_units", serde_json::json!(-1)),
         ("codegen_units", serde_json::json!(1.5)),
         ("compiler_memory_bytes", serde_json::json!(0)),
@@ -477,7 +488,10 @@ fn separately_optimized_rust_objects_link_only_after_audit_and_bind_final_receip
         Target::Windows64,
         Target::Windows32,
     ] {
-        let plan = Plan::new(target, "game_main", vec![], LocalLayout::None, true).unwrap();
+        let plan = Plan::new(target, "game_main", vec![], LocalLayout::None, true)
+            .unwrap()
+            .with_codegen_units(1)
+            .unwrap();
         let artifact =
             preparation::build(root.path(), &sources, &plan, vec![], vec!["ab".repeat(32)])
                 .unwrap();
@@ -804,17 +818,14 @@ fn multiple_codegen_objects_are_all_audited_linked_and_bound_in_receipts() {
         Target::Windows64,
         Target::Windows32,
     ] {
-        let plan = Plan::new(target, "game_main", vec![], LocalLayout::None, true)
-            .unwrap()
-            .with_codegen_units(4)
-            .unwrap();
+        let plan = Plan::new(target, "game_main", vec![], LocalLayout::None, true).unwrap();
         let artifact = preparation::build(root.path(), &sources, &plan, vec![], vec![]).unwrap();
         let receipt = artifact.receipt();
         assert!(
-            (2..=4).contains(&receipt.game.objects.len()),
+            (2..=8).contains(&receipt.game.objects.len()),
             "{target:?}: no independently emitted units"
         );
-        assert!(receipt.arguments.iter().any(|arg| arg == "codegen-units=4"));
+        assert!(receipt.arguments.iter().any(|arg| arg == "codegen-units=8"));
         assert_eq!(receipt.game.source_kit, sources.identity());
         assert_eq!(receipt.game.sdk, gamepkg::port_host::build_identity());
         assert_eq!(receipt.plan, plan);

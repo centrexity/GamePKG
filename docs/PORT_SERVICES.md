@@ -936,8 +936,8 @@ opt-level 3 and the native CPU only for a matching host/target. Bounds traps and
 allocation imports use an exact closed compiler-runtime vocabulary, never a
 Rust namespace exemption. Their definitions remain reserved.
 
-`Plan::with_codegen_units(1..=32)` selects a host-reviewed game partition count
-(default one), bound into the Plan identity and compiler arguments. Rustc may
+`Plan::with_codegen_units(1..=64)` selects a host-reviewed game partition count
+(default eight), bound into the Plan identity and compiler arguments. Rustc may
 merge small partitions. The builder inventories every retained `.rcgu.o`,
 rejects unexpected outputs, links every sealed unit, and accepts an aggregate
 copy only when it is byte-identical to the sole retained unit. The trusted
@@ -945,7 +945,7 @@ runtime remains a separate compilation using the same reviewed partition count.
 
 `Plan::with_compiler_memory_bytes(bytes)` sets a reviewed **compiler** budget,
 separate from manifest/game execution memory. Accepted values are 256 MiB through
-16 GiB; defaults are 4 GiB, or 2 GiB on a 32-bit Windows compiler host. Windows
+16 GiB; defaults are 8 GiB, or 2 GiB on a 32-bit Windows compiler host. Windows
 also rejects values that cannot fit the compiler host's architecture. The Plan
 identity and executable receipt bind the exact choice. Packages and creators
 cannot select it through their manifest or source. Linux enforces an inherited
@@ -958,7 +958,12 @@ Compiler stderr retains a bounded beginning and end so a warning flood cannot
 hide a final failure; Linux errors also report the actual exit status. The
 1 MiB per-stream capture limit remains. Machine-readable stdout preserves its
 original prefix/truncation behavior; incomplete object-auditor output still
-fails. Deadline, output-file, process and confinement checks remain in force.
+fails. A native compiler invocation can run for up to 30 minutes. Linux
+enforces a 2 GiB per-file worker limit while writing, and both platforms check
+compiled output sizes before reading them. The sealed object set is capped at
+2 GiB in total. Audited objects can be up to 2 GiB each on 64-bit hosts and
+512 MiB on 32-bit hosts. These are intermediate compiler limits. The signed
+game memory limits and the final executable size checks still apply.
 
 Rust/MinGW may attach symbol-hiding `.drectve` metadata to separate units.
 Raw directive sections still fail object admission. The builder recognizes

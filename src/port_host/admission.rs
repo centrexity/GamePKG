@@ -1,11 +1,10 @@
 //! Host build primitives, not a new admission profile. No legacy engine is
 //! enabled by creating a receipt. Finish game-only optimization before sealing;
 //! link only these exact objects plus separately reviewed host runtime objects.
-use anyhow::{ensure, Context, Result};
+use anyhow::{ensure, Result};
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
-    io::Write,
     path::{Path, PathBuf},
 };
 
@@ -85,6 +84,25 @@ fn hash_file(path: &Path) -> Result<String> {
         false,
     )?))
 }
+// On 32-bit hosts COFF normalization may hold an input and a copy together.
+pub(super) const MAX_WORKER_FILE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+pub(super) const MAX_GAME_OBJECT_BYTES: u64 = if cfg!(target_pointer_width = "64") {
+    MAX_WORKER_FILE_BYTES
+} else {
+    512 * 1024 * 1024
+};
+pub(super) fn hash_game_object(path: &Path) -> Result<String> {
+    let file = crate::files::open_regular(path, MAX_GAME_OBJECT_BYTES, false)?;
+    let bytes = file.metadata()?.len();
+    let mut reader = std::io::Read::take(file, MAX_GAME_OBJECT_BYTES + 1);
+    let hash = crate::verify::digest_reader(&mut reader)?;
+    ensure!(
+        bytes <= MAX_GAME_OBJECT_BYTES && MAX_GAME_OBJECT_BYTES + 1 - reader.limit() == bytes,
+        "compiler object size changed during hashing"
+    );
+    Ok(hash)
+}
+
 impl AuditedStage {
     pub fn seal(
         sources: &CheckedSources,
@@ -116,27 +134,26 @@ impl AuditedStage {
         let directory = tempfile::tempdir()?;
         let mut hashes = Vec::new();
         let mut paths = Vec::new();
-        let mut total = 0u64;
+        let mut remaining = MAX_WORKER_FILE_BYTES;
         for (index, object) in objects.iter().enumerate() {
-            let bytes = crate::files::read_regular(object, 512 * 1024 * 1024, false)?;
-            total = total
-                .checked_add(bytes.len() as u64)
-                .context("object stage too large")?;
-            ensure!(total <= 1024 * 1024 * 1024, "object stage too large");
+            let limit = remaining.min(MAX_GAME_OBJECT_BYTES);
+            let input = crate::files::open_regular(object, limit, false)?;
             let name = format!("game-{index:04}.o");
             let path = directory.path().join(&name);
             let mut file = fs::OpenOptions::new()
                 .write(true)
                 .create_new(true)
                 .open(&path)?;
-            file.write_all(&bytes)?;
+            let size = std::io::copy(&mut std::io::Read::take(input, limit + 1), &mut file)?;
+            ensure!(size <= limit, "object stage too large");
+            remaining -= size;
             file.sync_all()?;
             let mut permissions = file.metadata()?.permissions();
             permissions.set_readonly(true);
             file.set_permissions(permissions)?;
             hashes.push(ObjectHash {
                 name,
-                sha256: crate::verify::digest(&bytes),
+                sha256: hash_game_object(&path)?,
             });
             paths.push(path);
         }
@@ -176,7 +193,7 @@ impl AuditedStage {
         );
         for object in &self.receipt.objects {
             ensure!(
-                hash_file(&self.directory.path().join(&object.name))? == object.sha256,
+                hash_game_object(&self.directory.path().join(&object.name))? == object.sha256,
                 "audited game object changed"
             );
         }
