@@ -66,7 +66,7 @@ fn check_locked(root: &Path, id: &str) -> Result<String> {
     crate::video_selections::effective(root, &manifest)
         .context("invalid saved display settings")?;
     let native = crate::native::cache_path(root, id)?;
-    let is_native = native.exists();
+    let is_native = crate::native::build_supported(&manifest) && native.exists();
     let path = if is_native {
         native
     } else {

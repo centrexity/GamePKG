@@ -4,9 +4,9 @@ use anyhow::{bail, ensure, Result};
 use std::path::{Path, PathBuf};
 #[cfg(any(target_os = "linux", windows))]
 const MAX_CALLS_PER_TICK: usize = 8192;
-#[cfg(any(target_os = "linux", windows))]
+#[cfg(all(test, any(target_os = "linux", windows)))]
 mod build;
-#[cfg(any(target_os = "linux", windows))]
+#[cfg(all(test, any(target_os = "linux", windows)))]
 mod engine_sources;
 #[cfg(all(test, any(target_os = "linux", windows)))]
 pub(crate) fn compile_with_settings(
@@ -18,15 +18,15 @@ pub(crate) fn compile_with_settings(
 }
 #[cfg(all(test, any(target_os = "linux", windows)))]
 mod doom_fixture;
-#[cfg(any(target_os = "linux", windows))]
+#[cfg(all(test, any(target_os = "linux", windows)))]
 mod session;
 #[cfg(all(test, any(target_os = "linux", windows)))]
 mod signed_fixture;
-#[cfg(any(target_os = "linux", windows))]
+#[cfg(all(test, any(target_os = "linux", windows)))]
 mod transport;
-#[cfg(windows)]
+#[cfg(all(test, windows))]
 mod windows_build;
-#[cfg(any(target_os = "linux", windows))]
+#[cfg(all(test, any(target_os = "linux", windows)))]
 pub(crate) use session::Session;
 pub(crate) fn cpu_identity() -> &'static str {
     static ID: std::sync::OnceLock<String> = std::sync::OnceLock::new();
@@ -221,8 +221,6 @@ pub fn path_for_digest(root: &Path, digest: &str) -> PathBuf {
 }
 #[cfg(all(feature = "gui", target_os = "linux", target_arch = "x86_64"))]
 mod tick;
-#[cfg(all(feature = "gui", target_os = "linux", target_arch = "x86_64"))]
-pub use tick::play as play_tick;
 
 pub fn play_services(
     root: &Path,
@@ -231,6 +229,8 @@ pub fn play_services(
     settings: &crate::settings::Settings,
     graphics: crate::launch_options::LaunchArgs,
 ) -> Result<()> {
+    let manifest = crate::registry::installed_manifest(root, id)?;
+    require_compatibility(&manifest)?;
     #[cfg(all(feature = "gui", target_os = "linux", target_arch = "x86_64"))]
     return tick::play_entry(root, id, roms, settings, graphics, false);
     #[cfg(not(all(feature = "gui", target_os = "linux", target_arch = "x86_64")))]
@@ -243,12 +243,6 @@ pub fn play_services(
 pub fn cache_path(root: &Path, id: &str) -> Result<PathBuf> {
     let manifest = crate::registry::installed_manifest(root, id)?;
     let package_digest = crate::files::hash_archive(&root.join(format!("{id}.gamepkg")))?;
-    if manifest.builtin_engine.as_deref() == Some(crate::cube2::PROFILE) {
-        return Ok(crate::cube2::cache_path(root, &package_digest));
-    }
-    if manifest.builtin_engine.as_deref() == Some(crate::takedawn::PROFILE) {
-        return Ok(crate::takedawn::cache_path(root, &package_digest));
-    }
     let path = path_for_digest(root, &package_digest);
     Ok(if manifest.native_tick || manifest.uses_service_runtime() {
         path.with_file_name("compatibility-game")
@@ -257,128 +251,44 @@ pub fn cache_path(root: &Path, id: &str) -> Result<PathBuf> {
     })
 }
 pub fn is_built(root: &Path, id: &str) -> Result<bool> {
-    if !crate::build_policy::supported(
-        crate::registry::installed_manifest(root, id)?
-            .builtin_engine
-            .as_deref(),
-    ) {
-        return Ok(false);
-    }
-
     let manifest = crate::registry::installed_manifest(root, id)?;
-    if manifest.native_tick || manifest.uses_service_runtime() {
-        #[cfg(all(feature = "gui", target_os = "linux", target_arch = "x86_64"))]
-        return Ok(tick::ready(root, id));
-        #[cfg(not(all(feature = "gui", target_os = "linux", target_arch = "x86_64")))]
+    if !build_supported(&manifest) {
         return Ok(false);
     }
-    let path = cache_path(root, id)?;
-    let Ok(bytes) = crate::files::read_regular(&path, 64 * 1048576, false) else {
-        return Ok(false);
-    };
-    #[cfg(windows)]
-    if crate::registry::installed_manifest(root, id)?
-        .builtin_engine
-        .as_deref()
-        == Some(crate::takedawn::PROFILE)
-    {
-        let companion = path.with_file_name("SDL2.dll");
-        let Ok(dll) = crate::files::read_regular(&companion, 32 * 1048576, false) else {
-            return Ok(false);
-        };
-        if crate::integrity::verify_build(&companion, &dll).is_err() {
-            return Ok(false);
-        }
-    }
-    Ok(
-        validate_executable(&bytes).is_ok()
-            && crate::integrity::verify_build(&path, &bytes).is_ok(),
-    )
+    #[cfg(all(feature = "gui", target_os = "linux", target_arch = "x86_64"))]
+    return Ok(tick::ready(root, id));
+    #[cfg(not(all(feature = "gui", target_os = "linux", target_arch = "x86_64")))]
+    Ok(false)
 }
 pub fn build_supported(manifest: &crate::manifest::Manifest) -> bool {
-    if !crate::build_policy::supported(manifest.builtin_engine.as_deref()) {
-        return false;
-    }
-
-    if manifest.native_tick || manifest.uses_service_runtime() {
-        return cfg!(all(
-            feature = "gui",
-            target_os = "linux",
-            target_arch = "x86_64"
-        ));
-    }
-    if manifest.builtin_engine.as_deref() == Some(crate::takedawn::PROFILE) {
-        return cfg!(all(
-            target_arch = "x86_64",
-            any(target_os = "linux", windows)
-        ));
-    }
-    cfg!(target_os = "linux")
-        || (cfg!(all(
-            windows,
-            any(target_arch = "x86_64", target_arch = "x86")
-        )) && matches!(
-            manifest.builtin_engine.as_deref(),
-            None | Some(crate::doom::PROFILE)
-        ))
+    require_compatibility(manifest).is_ok()
 }
 pub fn play_supported(manifest: &crate::manifest::Manifest) -> bool {
     build_supported(manifest)
 }
+pub(crate) fn require_compatibility(manifest: &crate::manifest::Manifest) -> Result<()> {
+    crate::build_policy::require(manifest.builtin_engine.as_deref())?;
+    ensure!(
+        manifest.native_tick || manifest.uses_service_runtime(),
+        "This package requires migration to GamePKG native compatibility before native Build or Play."
+    );
+    ensure!(
+        cfg!(all(
+            feature = "gui",
+            target_os = "linux",
+            target_arch = "x86_64"
+        )),
+        "Native compatibility requires the Linux x64 desktop edition of GamePKG."
+    );
+    Ok(())
+}
 pub fn compile(root: &Path, id: &str) -> Result<()> {
-    crate::build_policy::require(
-        crate::registry::installed_manifest(root, id)?
-            .builtin_engine
-            .as_deref(),
-    )?;
-
-    #[cfg(windows)]
-    {
-        let manifest = crate::registry::installed_manifest(root, id)?;
-        ensure!(build_supported(&manifest), "native build is not supported for this game on this platform; choose the separate Wasm build");
-        if manifest.builtin_engine.as_deref() == Some(crate::takedawn::PROFILE) {
-            return crate::takedawn::build::compile_package(root, id);
-        }
-        build::compile(root, id)
-    }
-    #[cfg(target_os = "linux")]
-    {
-        let manifest = crate::registry::installed_manifest(root, id)?;
-        ensure!(
-            build_supported(&manifest),
-            "native build is not supported for this game on this platform"
-        );
-        #[cfg(all(feature = "gui", target_arch = "x86_64"))]
-        if manifest.native_tick || manifest.uses_service_runtime() {
-            return tick::build(root, id);
-        }
-        if manifest.builtin_engine.as_deref() == Some(crate::takedawn::PROFILE) {
-            return crate::takedawn::build::compile_package(root, id);
-        }
-        if manifest.builtin_engine.as_deref() == Some(crate::cube2::PROFILE) {
-            return crate::cube2::build::compile_package(root, id);
-        }
-        build::compile(root, id)
-    }
-    #[cfg(not(any(target_os = "linux", windows)))]
-    {
-        if crate::registry::installed_manifest(root, id)?
-            .builtin_engine
-            .as_deref()
-            == Some(crate::takedawn::PROFILE)
-        {
-            bail!("Takedawn native process isolation currently requires Linux");
-        }
-        if crate::registry::installed_manifest(root, id)?
-            .builtin_engine
-            .as_deref()
-            == Some(crate::cube2::PROFILE)
-        {
-            bail!("Cube 2 currently requires Linux native process isolation");
-        }
-        let _ = (root, id);
-        bail!("native game isolation is not available on this platform; choose the separate Wasm build")
-    }
+    let manifest = crate::registry::installed_manifest(root, id)?;
+    require_compatibility(&manifest)?;
+    #[cfg(all(feature = "gui", target_os = "linux", target_arch = "x86_64"))]
+    return tick::build(root, id);
+    #[cfg(not(all(feature = "gui", target_os = "linux", target_arch = "x86_64")))]
+    unreachable!("require_compatibility rejects unsupported hosts")
 }
 pub(crate) fn validate_executable(bytes: &[u8]) -> Result<()> {
     #[cfg(windows)]
@@ -450,7 +360,7 @@ pub(crate) fn validate_pe(bytes: &[u8], architecture: &str) -> Result<()> {
     Ok(())
 }
 
-#[cfg(any(target_os = "linux", windows))]
+#[cfg(all(test, any(target_os = "linux", windows)))]
 pub(crate) fn source_flags(source: &str) -> Result<(bool, bool)> {
     use syn::visit::Visit;
     #[derive(Default)]
@@ -487,27 +397,6 @@ mod pixel_tests;
 #[cfg(test)]
 mod windows_artifact_tests {
     use super::validate_pe;
-    #[cfg(windows)]
-    #[test]
-    fn windows_native_profiles_admit_only_qualified_engines() {
-        let mut manifest = crate::manifest::Manifest::parse(include_bytes!(
-            "../../examples/minimal/manifest.toml"
-        ))
-        .unwrap();
-        let qualified = cfg!(any(target_arch = "x86", target_arch = "x86_64"));
-        for (profile, supported) in [
-            (None, qualified),
-            (Some(crate::doom::PROFILE), false),
-            (Some(crate::zelda3::PROFILE), false),
-            (Some(crate::cube2::PROFILE), false),
-            (Some("unreviewed-engine"), false),
-        ] {
-            manifest.builtin_engine = profile.map(str::to_owned);
-            assert_eq!(super::build_supported(&manifest), supported, "{profile:?}");
-            assert_eq!(super::play_supported(&manifest), supported, "{profile:?}");
-        }
-    }
-
     #[test]
     fn checks_windows_format_width_machine_and_dll_flag() {
         let mut bytes = vec![0u8; 512];

@@ -50,7 +50,7 @@ pub struct Game {
     progress: Option<crate::progress::Session>,
     store: Option<Store<Data>>,
     tick: Option<Tick>,
-    #[cfg(any(target_os = "linux", windows))]
+    #[cfg(all(test, any(target_os = "linux", windows)))]
     native: Option<crate::native::Session>,
     #[cfg(target_os = "linux")]
     cube2: Option<Box<crate::cube2::player::Player>>,
@@ -831,7 +831,7 @@ impl Game {
             progress: None,
             store: Some(store),
             tick: Some(tick),
-            #[cfg(any(target_os = "linux", windows))]
+            #[cfg(all(test, any(target_os = "linux", windows)))]
             native: None,
             #[cfg(target_os = "linux")]
             cube2: None,
@@ -934,6 +934,7 @@ impl Game {
                     )?),
                     store: None,
                     tick: None,
+                    #[cfg(test)]
                     native: None,
                     cube2: Some(Box::new(player)),
                     deadline_epochs: 0,
@@ -963,10 +964,11 @@ impl Game {
             Some(settings) => settings.clone(),
             None => crate::settings::load()?,
         };
-        let native = native.unwrap_or(
-            crate::native::cache_path(root, id)?
-                .symlink_metadata()
-                .is_ok(),
+        let native = native.unwrap_or(false);
+        #[cfg(not(all(test, any(target_os = "linux", windows))))]
+        anyhow::ensure!(
+            !native,
+            "Use the dedicated GamePKG native compatibility launcher"
         );
         let capacity = if !native && manifest.runtime_profile == "component-v1" {
             u64::from(u32::MAX)
@@ -982,15 +984,9 @@ impl Game {
                 manifest.builtin_engine.is_some(),
             )?)
         };
+        #[cfg(all(test, any(target_os = "linux", windows)))]
         if native {
-            #[cfg(not(any(target_os = "linux", windows)))]
-            bail!("native game isolation is not available on this platform");
-            #[cfg(any(target_os = "linux", windows))]
             {
-                #[cfg(windows)]
-                if !crate::native::play_supported(&manifest) {
-                    bail!("native game isolation is not available for this package on Windows");
-                }
                 let mut uses_shaders = false;
                 let mut custom_renderer = manifest.builtin_engine.is_some();
                 for name in package
@@ -1140,7 +1136,7 @@ impl Game {
             .context("this game does not support Zelda snapshots")?;
         let _scratch = context.scratch()?;
         let mut snapshot = context.allocate(self.state)?;
-        #[cfg(any(target_os = "linux", windows))]
+        #[cfg(all(test, any(target_os = "linux", windows)))]
         if let Some(native) = &mut self.native {
             native.capture_snapshot(&mut snapshot.bytes)?;
             return Ok(snapshot);
@@ -1181,7 +1177,7 @@ impl Game {
             .context("this game does not support Zelda snapshots")?;
         let _incoming = context.incoming(snapshot)?;
         let _scratch = context.scratch()?;
-        #[cfg(any(target_os = "linux", windows))]
+        #[cfg(all(test, any(target_os = "linux", windows)))]
         if let Some(native) = &mut self.native {
             native.restore_snapshot(&snapshot.bytes)?;
             self.state = snapshot.state;
@@ -1302,7 +1298,7 @@ impl Game {
         if let Some(cube) = &self.cube2 {
             return cube.exited;
         }
-        #[cfg(any(target_os = "linux", windows))]
+        #[cfg(all(test, any(target_os = "linux", windows)))]
         if let Some(native) = &self.native {
             return native.exited;
         }
@@ -1334,7 +1330,7 @@ impl Game {
         if self.is_cube2() {
             return Ok(None);
         }
-        #[cfg(any(target_os = "linux", windows))]
+        #[cfg(all(test, any(target_os = "linux", windows)))]
         if let Some(n) = &self.native {
             return Ok(n.diagnostic.map(|d| d.2));
         }
@@ -1354,7 +1350,7 @@ impl Game {
         if self.is_cube2() {
             return Ok(None);
         }
-        #[cfg(any(target_os = "linux", windows))]
+        #[cfg(all(test, any(target_os = "linux", windows)))]
         if let Some(n) = &self.native {
             return Ok(n.diagnostic.map(|d| (d.0, d.1 as u16, (d.1 >> 16) as u16)));
         }
@@ -1375,7 +1371,7 @@ impl Game {
         if let Some(cube) = &self.cube2 {
             return cube.audio_channels;
         }
-        #[cfg(any(target_os = "linux", windows))]
+        #[cfg(all(test, any(target_os = "linux", windows)))]
         if let Some(native) = &self.native {
             return native.audio_channels;
         }
@@ -1386,7 +1382,7 @@ impl Game {
         if let Some(cube) = &self.cube2 {
             return &cube.audio;
         }
-        #[cfg(any(target_os = "linux", windows))]
+        #[cfg(all(test, any(target_os = "linux", windows)))]
         if let Some(n) = &self.native {
             return &n.audio;
         }
@@ -1397,7 +1393,7 @@ impl Game {
         if let Some(cube) = &self.cube2 {
             return &cube.frame;
         }
-        #[cfg(any(target_os = "linux", windows))]
+        #[cfg(all(test, any(target_os = "linux", windows)))]
         if let Some(n) = &self.native {
             return &n.frame;
         }
@@ -1451,7 +1447,7 @@ impl Game {
         self.input_allowed && !self.builtin_engine
     }
     fn user_files_mut(&mut self) -> Option<&mut crate::user_files::Service> {
-        #[cfg(any(target_os = "linux", windows))]
+        #[cfg(all(test, any(target_os = "linux", windows)))]
         if let Some(native) = &mut self.native {
             return Some(&mut native.user_files);
         }
@@ -1460,7 +1456,7 @@ impl Game {
             .map(|store| &mut store.data_mut().user_files)
     }
     pub fn observe_fullscreen(&mut self, fullscreen: Option<bool>) {
-        #[cfg(any(target_os = "linux", windows))]
+        #[cfg(all(test, any(target_os = "linux", windows)))]
         if let Some(native) = &mut self.native {
             native.window.observe_fullscreen(fullscreen);
             return;
@@ -1470,7 +1466,7 @@ impl Game {
         }
     }
     pub fn observe_window_vsync(&mut self, vsync: Option<bool>) {
-        #[cfg(any(target_os = "linux", windows))]
+        #[cfg(all(test, any(target_os = "linux", windows)))]
         if let Some(native) = &mut self.native {
             native.window.observe_vsync(vsync);
             return;
@@ -1481,7 +1477,7 @@ impl Game {
     }
     /// Update actual client-area pixels; absent for headless/embedded hosts.
     pub fn observe_window_size(&mut self, size: Option<[u32; 2]>) {
-        #[cfg(any(target_os = "linux", windows))]
+        #[cfg(all(test, any(target_os = "linux", windows)))]
         if let Some(native) = &mut self.native {
             native.window.observe_size(size);
             return;
@@ -1491,7 +1487,7 @@ impl Game {
         }
     }
     pub fn window_state(&self) -> crate::window_control::State {
-        #[cfg(any(target_os = "linux", windows))]
+        #[cfg(all(test, any(target_os = "linux", windows)))]
         if let Some(native) = &self.native {
             return native.window.state();
         }
@@ -1502,14 +1498,14 @@ impl Game {
     }
     /// Consume one committed request for the signed manifest homepage.
     pub fn take_homepage_url(&mut self) -> Option<String> {
-        #[cfg(any(target_os = "linux", windows))]
+        #[cfg(all(test, any(target_os = "linux", windows)))]
         if let Some(native) = &mut self.native {
             return native.window.take_homepage();
         }
         self.store.as_mut()?.data_mut().window.take_homepage()
     }
     fn effects_mut(&mut self) -> Option<&mut crate::audio_effects::Runtime> {
-        #[cfg(any(target_os = "linux", windows))]
+        #[cfg(all(test, any(target_os = "linux", windows)))]
         if let Some(native) = &mut self.native {
             return Some(&mut native.effects);
         }
@@ -1577,7 +1573,7 @@ impl Game {
             }
             return Ok(self.state);
         }
-        #[cfg(any(target_os = "linux", windows))]
+        #[cfg(all(test, any(target_os = "linux", windows)))]
         if let Some(n) = &mut self.native {
             n.window.begin(file_gesture);
             n.set_input_events(input_events);

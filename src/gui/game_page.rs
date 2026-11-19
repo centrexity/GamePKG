@@ -46,15 +46,9 @@ fn game_file_role(manifest: &crate::manifest::Manifest, index: usize) -> Option<
 impl App {
     pub(super) fn play_blockers(&self, m: &crate::manifest::Manifest) -> Vec<String> {
         let mut blockers = Vec::new();
-        if let Err(reason) = crate::build_policy::require(m.builtin_engine.as_deref()) {
+        if let Err(reason) = crate::native::require_compatibility(m) {
             blockers.push(reason.to_string());
-        } else if !crate::native::play_supported(m) {
-            blockers.push(
-                "Native play requires Linux; use Play Wasm for supported games on this platform."
-                    .into(),
-            );
-        }
-        if !self.built.contains(&m.id) {
+        } else if !self.built.contains(&m.id) {
             blockers.push("Build this game first. If you already built it, recheck readiness or rebuild if the cached build is missing or invalid.".into());
         }
         if m.uses_service_runtime() {
@@ -319,7 +313,7 @@ impl App {
                 if let Some(usage)=self.usage.get(&id){ui.label(format!("Storage: {}",usage.space().label())).on_hover_text(usage.space().details());}
                 ui.horizontal_wrapped(|ui|{
                     if ui.add_enabled(!reviewing&&ready&&self.result.is_none(),super::theme::primary("Play")).clicked(){self.launch_selected(id.clone(),true);}
-                    if ui.add_enabled(crate::native::build_supported(&m)&&!reviewing&&self.result.is_none(),egui::Button::new(if built{"Rebuild"}else{"Build"}).min_size(egui::vec2(100.0,36.0))).clicked(){let id=id.clone();self.begin_work(move||{crate::native::compile(&crate::registry::default_root()?,&id)?;Ok(Work::NativeBuilt(id))});if m.builtin_engine.as_deref()==Some(crate::takedawn::PROFILE){self.status="Building this game for your computer. The first build can take an hour or more. Your ISO is not copied.".into();}}
+                    if ui.add_enabled(crate::native::build_supported(&m)&&!reviewing&&self.result.is_none(),egui::Button::new(if built{"Rebuild"}else{"Build"}).min_size(egui::vec2(100.0,36.0))).clicked(){let id=id.clone();self.begin_work(move||{crate::native::compile(&crate::registry::default_root()?,&id)?;Ok(Work::NativeBuilt(id))});}
                     if ui.add_enabled(!reviewing&&self.result.is_none()&&m.update_url.is_some(),egui::Button::new("Check for updates")).clicked(){let id=id.clone();self.begin_work(move||match crate::registry::check_update(&crate::registry::default_root()?,&id)?{Some((m,file))=>Ok(Work::Update(m,file)),None=>Ok(Work::Message("This game is up to date.".into()))});}
                     if ui.add_enabled(!m.uses_service_runtime() && crate::build_policy::supported(m.builtin_engine.as_deref()) && !matches!(m.builtin_engine.as_deref(),Some(crate::cube2::PROFILE)|Some(crate::takedawn::PROFILE))&&!reviewing&&self.result.is_none(),egui::Button::new("Build Wasm")).clicked(){let id=id.clone();self.begin_work(move||{crate::build::compile(&crate::registry::default_root()?,&id)?;Ok(Work::Message("Wasm build complete. Native build kept separately.".into()))});}
                     if ui.add_enabled(!reviewing&&wasm_ready&&self.result.is_none(),egui::Button::new("Play Wasm")).clicked(){self.launch_selected(id.clone(),false);}
@@ -395,7 +389,6 @@ impl App {
                         self.begin_work(|| Ok(Work::Message("Game readiness refreshed.".into())));
                     }
                 });
-                if !crate::native::play_supported(&m){ui.label(if m.game_data.is_some(){"This engine currently requires Linux native process isolation."}else{"Native play is not available for this game on this platform. Use Play Wasm if supported."});}
                 if m.requires_rom&&!self.rom_paths.get(&id).is_some_and(|p|crate::rom_selections::ready_for(&m,p)){ui.label("Choose the required ROM files below to enable Play.");}
             }else if self.pending.is_none(){
                 if let Some(entry)=self.catalog.iter().find(|e|e.id==id).cloned(){
@@ -1001,6 +994,7 @@ mod tests {
     fn missing_named_roms_and_missing_builds_have_separate_play_explanations() {
         let mut manifest: crate::manifest::Manifest =
             toml::from_str(include_str!("../../examples/minimal/manifest.toml")).unwrap();
+        manifest.native_services = true;
         manifest.requires_rom = true;
         manifest.roms = vec![
             crate::manifest::RomRequirement {
@@ -1028,14 +1022,16 @@ mod tests {
             .iter()
             .any(|text| text.contains("Second ROM")));
         app.rom_paths.get_mut(&manifest.id).unwrap()[1] = second.to_string_lossy().into_owned();
-        if cfg!(target_os = "linux") {
+        if crate::native::play_supported(&manifest) {
             assert!(app.play_blockers(&manifest).is_empty());
         }
         app.built.clear();
-        assert!(app
-            .play_blockers(&manifest)
-            .iter()
-            .any(|text| text.contains("Build this game")));
+        if crate::native::play_supported(&manifest) {
+            assert!(app
+                .play_blockers(&manifest)
+                .iter()
+                .any(|text| text.contains("Build this game")));
+        }
         std::fs::remove_file(&first).unwrap();
         assert!(app
             .play_blockers(&manifest)

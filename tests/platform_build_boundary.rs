@@ -45,9 +45,7 @@ fn unavailable_native_and_shader_compilers_reject_before_creating_output() {
     assert!(!gamepkg::native::build_supported(&manifest));
     assert!(!gamepkg::native::play_supported(&manifest));
     let error = gamepkg::native::compile(root.path(), &manifest.id).unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("native game isolation is not available on this platform"));
+    assert!(error.to_string().contains("requires migration"));
     assert!(!root.path().join("builds").exists());
     let error = gamepkg::shaders::compile(
         root.path(),
@@ -85,16 +83,50 @@ fn unsupported_reviewed_engine_rejects_before_building_or_preparing_tools() {
     }
 }
 
-#[cfg(all(windows, any(target_arch = "x86", target_arch = "x86_64")))]
 #[test]
-fn ordinary_windows_rust_games_admit_native_build_and_play() {
-    // Real compile/worker/shader execution is verified by the explicit native
-    // Windows fixtures; this fast check protects public admission policy.
-    let manifest =
-        gamepkg::manifest::Manifest::parse(include_bytes!("../examples/minimal/manifest.toml"))
-            .unwrap();
-    assert!(gamepkg::native::build_supported(&manifest));
-    assert!(gamepkg::native::play_supported(&manifest));
+fn desktop_native_build_and_play_require_the_compatibility_profiles() {
+    let old = include_str!("../examples/minimal/manifest.toml");
+    let ordinary = gamepkg::manifest::Manifest::parse(old.as_bytes()).unwrap();
+    assert!(!gamepkg::native::build_supported(&ordinary));
+    assert!(!gamepkg::native::play_supported(&ordinary));
+    for profile in ["native_tick", "native_services"] {
+        let text = format!("{profile} = true\n{old}");
+        let manifest = gamepkg::manifest::Manifest::parse(text.as_bytes()).unwrap();
+        let has_runtime = cfg!(all(
+            feature = "gui",
+            target_os = "linux",
+            target_arch = "x86_64"
+        ));
+        assert_eq!(gamepkg::native::build_supported(&manifest), has_runtime);
+        assert_eq!(gamepkg::native::play_supported(&manifest), has_runtime);
+    }
+}
+
+#[test]
+fn obsolete_native_cache_cannot_enable_an_unmigrated_package() {
+    let root = tempfile::tempdir().unwrap();
+    let library = root.path().join("library");
+    let archive = root.path().join("ordinary.gamepkg");
+    let source = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/minimal");
+    gamepkg::pack::pack(&source, &archive, &[15; 32]).unwrap();
+    let manifest = gamepkg::registry::install(&library, &archive, true).unwrap();
+    let cache = gamepkg::native::cache_path(&library, &manifest.id).unwrap();
+    std::fs::create_dir_all(cache.parent().unwrap()).unwrap();
+    std::fs::write(&cache, b"retired worker").unwrap();
+    assert!(!gamepkg::native::is_built(&library, &manifest.id).unwrap());
+    let result = gamepkg::native::compile(&library, &manifest.id);
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("requires migration"));
+    let settings = gamepkg::settings::Settings::default();
+    let result =
+        gamepkg::native::play_services(&library, &manifest.id, &[], &settings, Default::default());
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("requires migration"));
+    assert_eq!(std::fs::read(cache).unwrap(), b"retired worker");
 }
 
 #[cfg(target_os = "linux")]
@@ -103,13 +135,6 @@ fn unmigrated_takedawn_is_blocked_even_on_its_prepared_architecture() {
     let manifest =
         gamepkg::manifest::Manifest::parse(include_bytes!("../ports/takedawn/manifest.toml"))
             .unwrap();
-    let supported = false;
-    assert_eq!(gamepkg::native::build_supported(&manifest), supported);
-    assert_eq!(gamepkg::native::play_supported(&manifest), supported);
-    // The reviewed engine's architecture does not restrict ordinary Rust games.
-    let ordinary =
-        gamepkg::manifest::Manifest::parse(include_bytes!("../examples/minimal/manifest.toml"))
-            .unwrap();
-    assert!(gamepkg::native::build_supported(&ordinary));
-    assert!(gamepkg::native::play_supported(&ordinary));
+    assert!(!gamepkg::native::build_supported(&manifest));
+    assert!(!gamepkg::native::play_supported(&manifest));
 }

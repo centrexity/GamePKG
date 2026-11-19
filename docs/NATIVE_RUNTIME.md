@@ -2,15 +2,25 @@
 
 The [shared native port service contract](PORT_SERVICES.md) covers input, windows, Vulkan graphics, audio, capability-relative file access, networking, and timing. GamePKG supplies a versioned compatibility layer that is compiled into each native game executable. The game process owns its own window and runtime services. GamePKG verifies and builds the game, sets the process permissions and resource limits, launches it, and records play history. The in-process build and launch path has a Linux x64 maintainer fixture. Each port still needs to migrate its platform calls and pass admission before it can launch.
 
-Build and play now reject all unmigrated built-in/native port profiles, including cached executables, Wasm alternatives and compiler exchange imports. Ordinary checked Rust games remain available. Creator signatures and upstream source pins do not authorize direct system calls or game crates. Each port needs a complete shared-service migration and host-side admission tests before it is enabled.
+**Build**, **Rebuild**, and **Play** use the shared compatibility layer on
+Linux x64. Ordinary tick games declare `native_tick = true` and export
+`game_tick`. Standalone games declare `native_services = true` and export
+`game_main`. The creator signs the inputs, and GamePKG checks the source and
+audits the exact game objects before linking the compatibility layer.
 
-On Linux, and for ordinary checked Rust games in the current Windows x86/x64 development source, **Build** and **Rebuild** compile directly for the current operating system and CPU. They do not also build Wasm or a web player. **Build Wasm**, **Play Wasm**, and **Export for web** are separate actions. The CLI equivalents are `gamepkg build GAME_ID` and `gamepkg build GAME_ID --target wasm`.
+The app admits native builds and launches through this path only. Unmigrated
+packages can still be verified and updated using their existing creator
+identity. Prior native caches cannot grant admission. Native compatibility on
+Windows and 32-bit Linux still needs a platform launcher.
 
-Native C-based ports need Clang 18 and lld-18; they do not need wasi-libc or a WASI sysroot. The optional Wasm build of a C-based port does need those libraries. The saved **C/WASI build tools folder** applies to that optional compiler. Games that do not call shader functions do not require Slang for their native build. Shader games require the pinned Slang compiler.
+**Build Wasm**, **Play Wasm**, and **Export for web** remain separate actions
+for supported source packages. The CLI commands are `gamepkg build GAME_ID`
+for native and `gamepkg build GAME_ID --target wasm` for Wasm. Use
+`gamepkg run GAME_ID --frames 120` for a headless Wasm test.
 
-Linux native Rust and reviewed C-engine compilation explicitly targets the same architecture as the app. A 32-bit app on a 64-bit system builds an ELF32 game, using the matching Rust standard library and 32-bit C development libraries/headers; it does not inherit the installed compiler's default width. Standard `/lib32` is exposed read-only when present. Native loading rejects an incompatible artifact width. Signed Rust SDK/save/history and optimized DOOM/Zelda3 engine builds pass at both actual ELF32 and ELF64 widths; this does not qualify every game's 32-bit graphics or gameplay.
-
-Native executable caches are specific to the package contents, host version, host bindings, operating system, CPU architecture and detected CPU features. Moving source packages between machines remains supported; build them for the destination machine. A native build does not replace a separately built Wasm artifact. Optional DOOM Wasm engines also record the reviewed source-kit fingerprint. When that kit changes, readiness, launch and integrity checks require rebuilding the engine; Integrity fix rebuilds it while retaining the signed package and saves. This compatibility marker supplements the build receipt and runtime validation.
+Native cache entries bind the source package, host SDK and compiler inputs,
+target and CPU, audited objects, and linked runtime. Rebuild for the
+destination computer after moving a source package.
 
 Maintainers must build the CLI and GUI together. Two binaries can report the same
 app version and audio decoder while using different native build recipes, causing
@@ -21,12 +31,6 @@ the version, platform, architecture and native recipe without opening a window o
 loading player settings. `BUILD.json` records that matching identity and the
 packager verifies the copied executable hashes against the validated pair.
 This is a compatibility check, not a creator signature or source provenance proof. The fingerprint includes the admitted Takedawn source-kit revision and the platform builder, so identical app versions cannot hide different builtin engine recipes.
-
-The ordinary checked-source native worker supports Linux and Windows x86/x64.
-Windows uses managed, checksum-verified Rust 1.89.0 and GNU Binutils 2.42; both
-compiler stages run inside AppContainer/job boundaries. The game runs in a
-separate confined process with the same scoped protocol and signed permissions
-as Linux. Default loading selects its native build and retains saves/play history.
 
 Native shader compilation uses Slang 2026.19. Windows prepares its verified
 compiler automatically when the Slang folder is empty. Its compiler currently
@@ -138,26 +142,25 @@ Windows; physical original-game Vulkan, sound and controllers still need testing
 
 ## Protections
 
-For ordinary game source, verification applies the same source and dependency rules before either compiler runs. Games cannot declare Cargo dependencies, build scripts, macros, aliases, indirect calls, unsafe blocks, foreign declarations, or direct filesystem, socket, process, environment, standard I/O or thread APIs. Integer layout and byte-order checks still apply to portable game data. Only the host's pinned engines can supply native runtime code.
+GamePKG checks dependencies and source before injecting its bindings. Games
+use GamePKG functions for system services. Game source cannot declare
+dependencies, a build script, macros, aliases, indirect calls, unsafe code,
+or direct system declarations.
 
-Both compilers run in isolated work areas without network or home-directory access. Native compilation invokes the selected Rust toolchain directly, with fixed host-generated bindings and linker arguments. A source package cannot choose compiler flags or supply an executable.
+The native compiler runs with fixed GamePKG arguments in an isolated work
+area. It emits optimized objects. The host audits the exact objects for
+forbidden imports before linking them to the trusted compatibility runtime.
+Build receipts authenticate the resulting executable.
 
-Native gameplay runs in a separate worker; game code is not loaded into the desktop app. Linux namespaces isolate its filesystem, processes and network. The worker also installs a mandatory syscall allowlist before calling game code. It cannot open files, create sockets, execute programs, or create processes. Assets, explicitly selected ROM snapshots, saves, drawing, audio and permitted networking travel through bounded host messages. Internal worker entry points use reserved identifiers rejected in game source.
-
-The worker's address space is capped at the lower of the signed hard memory limit and the user's ceiling, including its native runtime and C engine. Startup has a five-second limit; each tick uses the configured deadline. Stalled or failed workers are terminated, and incomplete tick output and saves are discarded. Host rendering, ROM snapshots and network buffers have separate bounds; the worker limit is not a cap on the entire desktop application or GPU.
-
-The Linux source-game SDK receives host randomness in fixed 512-byte blocks
-and retains at most 64 values in its private worker cache. `random_u64` still
-returns host-supplied bits; it does not substitute a game PRNG. Every cached
-draw spends one call from the same 8,192-call tick allowance as other host
-operations. Trusted entry code resets that allowance each tick, and source
-verification rejects access to that entry point. The parent retains its
-separate message-count guard. Block sizes, packet bounds, time and memory
-limits remain fixed, and failed ticks cannot commit pending saves. The SDK
-cache identity binds both the source and its embedded call limit, so affected
-native builds require rebuilding after a binding change.
-
-Cached executables are checked against their integrity receipt and copied into a private, read-only execution snapshot before launch. Native and optional Wasm caches remain separate. Source checks, OS isolation and host validation work together; source inspection alone is not a security boundary.
+GamePKG copies the verified executable into a private execution directory.
+Its Linux namespace limits access to system resources, display and approved
+devices. Networking follows the signed permission. The game's worker
+detaches its descriptor table and installs the syscall filter before calling
+game code. The executable owns its window and presents, reads input and
+supplies audio through the linked compatibility layer. User-selected ROMs
+remain open read-only. Private saves and all guest calls use capability
+checks. The launcher enforces the signed process memory limit in a Linux
+memory scope and checks the user's configured ceiling before launch.
 
 ## Rendering
 

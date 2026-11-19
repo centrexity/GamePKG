@@ -22,6 +22,7 @@ impl Event {
         })
     }
     #[cfg(any(target_os = "linux", windows, test))]
+    #[cfg(test)]
     pub(crate) fn encode(self, output: &mut Vec<u8>) -> Result<()> {
         for word in self.words()? {
             output.extend(word.to_le_bytes());

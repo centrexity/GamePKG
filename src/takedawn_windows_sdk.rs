@@ -639,6 +639,7 @@ fn source_plan(target: &str) -> Result<(Vec<Part>, String, String)> {
 }
 /// Installs only the pinned compiler, standard library and self-contained linker.
 /// This is separate from the reviewed-engine SDK and executes no installer.
+#[cfg(test)]
 pub(crate) fn prepare_source(root: &Path) -> Result<(PathBuf, &'static str)> {
     let target = match std::env::consts::ARCH {
         "x86_64" => "x86_64-pc-windows-gnu",

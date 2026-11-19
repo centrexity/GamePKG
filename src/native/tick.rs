@@ -206,16 +206,6 @@ pub(super) fn ready(root: &Path, id: &str) -> bool {
     prepared(root, id, None).is_ok()
 }
 
-pub fn play(
-    root: &Path,
-    id: &str,
-    settings: &crate::settings::Settings,
-    graphics: crate::launch_options::LaunchArgs,
-    smoke: bool,
-) -> Result<()> {
-    play_entry(root, id, &[], settings, graphics, smoke)
-}
-
 pub(super) fn play_entry(
     root: &Path,
     id: &str,
