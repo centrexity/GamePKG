@@ -41,6 +41,7 @@ fn good_examples_are_signed_and_verified() {
         "../ports/2048",
         "../ports/arkanoo",
         "../ports/zelda3",
+        "../ports/doom",
         "good/byteorder-game",
         "good/modular-game",
         "good/asset-catalog",

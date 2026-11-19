@@ -16,6 +16,7 @@ mod windows_replace;
 pub enum Access {
     Assets,
     Save,
+    PreviousSave,
 }
 struct Mount {
     directory: Dir,
@@ -95,10 +96,19 @@ impl Files {
         let mut grants: Vec<_> = self
             .mounts
             .iter()
-            .map(|(&id, m)| (id, if m.access == Access::Save { 2 } else { 1 }))
+            .map(|(&id, m)| {
+                let kind = match m.access {
+                    Access::Assets => 1,
+                    Access::Save => 2,
+                    Access::PreviousSave => 5,
+                };
+                (id, kind)
+            })
             .chain(self.roms.keys().map(|&id| (id, 3)))
             .chain(self.volatile.keys().map(|&id| (id, 4)))
             .collect();
+        // IDs increase as ROMs are granted, so sorting retains their
+        // selection order while also ordering the other grant kinds.
         grants.sort_unstable();
         grants
     }

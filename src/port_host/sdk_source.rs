@@ -2,14 +2,18 @@
 use anyhow::{ensure, Context, Result};
 use sha2::{Digest, Sha256};
 use std::{
-    collections::BTreeSet,
+    collections::BTreeMap,
     fs::{self, File, OpenOptions},
     io::{self, Read, Seek, Write},
+    path::{Path, PathBuf},
+};
+#[cfg(target_os = "linux")]
+use std::{
+    collections::BTreeSet,
     os::{
         fd::AsRawFd,
         unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt},
     },
-    path::{Path, PathBuf},
 };
 
 const MAX_COMPRESSED: u64 = 512 * 1024 * 1024;
@@ -42,20 +46,7 @@ impl Source {
                 let installed = snapshot(&archive, pin).with_context(|| {
                     format!("verify installed native SDK {}", archive.display())
                 })?;
-                let base = cache.join("native-runtime-builds");
-                private_dir(&base)?;
-                let store = base.join(pin);
-                private_dir(&store)?;
-                let store = store.canonicalize()?;
-                let lock = lock(&store)?;
-                let root = store.join("source");
-                materialize(installed, &store, &root)?;
-                Ok(Self {
-                    root,
-                    pin: Some(pin),
-                    _private: Some(tempfile::tempdir()?),
-                    _lock: Some(lock),
-                })
+                staged_source(installed, cache, pin)
             }
         }
     }
@@ -75,6 +66,40 @@ impl Source {
     }
 }
 
+#[cfg(target_os = "linux")]
+fn staged_source(installed: File, cache: &Path, pin: &'static str) -> Result<Source> {
+    let base = cache.join("native-runtime-builds");
+    private_dir(&base)?;
+    let store = base.join(pin);
+    private_dir(&store)?;
+    let store = store.canonicalize()?;
+    let lock = lock(&store)?;
+    let root = store.join("source");
+    materialize(installed, &store, &root)?;
+    Ok(Source {
+        root,
+        pin: Some(pin),
+        _private: Some(tempfile::tempdir()?),
+        _lock: Some(lock),
+    })
+}
+
+#[cfg(windows)]
+fn staged_source(installed: File, _cache: &Path, pin: &'static str) -> Result<Source> {
+    // An empty private directory avoids loading a prior Windows cache through
+    // junctions, reparse points, aliases, or leftover build scripts.
+    let private = tempfile::tempdir()?;
+    let root = private.path().join("source");
+    extract(installed, &root)?;
+    Ok(Source {
+        root,
+        pin: Some(pin),
+        _private: Some(private),
+        _lock: None,
+    })
+}
+
+#[cfg(target_os = "linux")]
 fn private_dir(path: &Path) -> Result<()> {
     match fs::DirBuilder::new().mode(0o700).create(path) {
         Ok(()) => {}
@@ -91,6 +116,7 @@ fn private_dir(path: &Path) -> Result<()> {
     Ok(())
 }
 
+#[cfg(target_os = "linux")]
 fn lock(store: &Path) -> Result<File> {
     let file = OpenOptions::new()
         .read(true)
@@ -140,6 +166,7 @@ fn snapshot(path: &Path, pin: &str) -> Result<File> {
     Ok(snapshot)
 }
 
+#[cfg(target_os = "linux")]
 fn materialize(archive: impl Read, store: &Path, root: &Path) -> Result<()> {
     match fs::symlink_metadata(root) {
         Ok(metadata) => {
@@ -172,20 +199,7 @@ fn materialize(archive: impl Read, store: &Path, root: &Path) -> Result<()> {
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
             let stage = tempfile::tempdir_in(store)?;
             let staged = stage.path().join("source");
-            fs::create_dir(&staged)?;
-            walk_verified(archive, |relative, bytes, size| {
-                let destination = staged.join(relative);
-                fs::create_dir_all(destination.parent().context("invalid native SDK parent")?)?;
-                let mut file = OpenOptions::new()
-                    .write(true)
-                    .create_new(true)
-                    .open(destination)?;
-                ensure!(
-                    io::copy(bytes, &mut file)? == size,
-                    "truncated native SDK file"
-                );
-                Ok(())
-            })?;
+            extract(archive, &staged)?;
             fs::rename(staged, root)?;
         }
         Err(error) => return Err(error.into()),
@@ -193,6 +207,25 @@ fn materialize(archive: impl Read, store: &Path, root: &Path) -> Result<()> {
     Ok(())
 }
 
+fn extract(archive: impl Read, root: &Path) -> Result<()> {
+    fs::create_dir(root)?;
+    walk_verified(archive, |relative, bytes, size| {
+        let destination = root.join(relative);
+        fs::create_dir_all(destination.parent().context("invalid native SDK parent")?)?;
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(destination)?;
+        ensure!(
+            io::copy(bytes, &mut file)? == size,
+            "truncated native SDK file"
+        );
+        Ok(())
+    })?;
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
 fn inventory(root: &Path, files: &mut BTreeSet<PathBuf>) -> Result<()> {
     let mut dirs = vec![root.to_path_buf()];
     let mut entries = 0;
@@ -219,6 +252,7 @@ fn inventory(root: &Path, files: &mut BTreeSet<PathBuf>) -> Result<()> {
     Ok(())
 }
 
+#[cfg(target_os = "linux")]
 fn compare(left: &mut dyn Read, right: &mut dyn Read, mut remaining: u64) -> Result<()> {
     let mut expected = [0; 16 * 1024];
     let mut actual = [0; 16 * 1024];
@@ -243,6 +277,7 @@ fn walk_verified(
     // Include a bounded allowance for tar headers and long names.
     let mut archive = tar::Archive::new(compressed.take(MAX_PAYLOAD + 256 * 1024 * 1024));
     let mut total = 0u64;
+    let mut paths = BTreeMap::new();
     for (index, entry) in archive.entries()?.enumerate() {
         let mut entry = entry?;
         ensure!(index < MAX_ENTRIES, "too many native SDK files");
@@ -250,17 +285,14 @@ fn walk_verified(
             entry.header().entry_type().is_file(),
             "native SDK links and special files are forbidden"
         );
-        let path = entry.path()?.into_owned();
-        let name = path.to_str().context("invalid native SDK file name")?;
+        let bytes = entry.path_bytes();
+        let name = std::str::from_utf8(&bytes).context("invalid native SDK file name")?;
         ensure!(
-            name.len() <= 2048
-                && !name.contains('\\')
-                && name.split('/').all(|part| !part.is_empty()
-                    && part != "."
-                    && part != ".."
-                    && !part.chars().any(char::is_control)),
+            crate::archive::valid_path(name),
             "invalid native SDK member path"
         );
+        crate::archive::register_path(&mut paths, name)?;
+        let path = Path::new(name).to_path_buf();
         let size = entry.size();
         total = total
             .checked_add(size)
@@ -279,19 +311,56 @@ mod tests {
     use super::*;
 
     fn fixture() -> Vec<u8> {
+        fixture_files(&[".cargo/config.toml"])
+    }
+
+    fn fixture_files(names: &[&str]) -> Vec<u8> {
         let encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
         let mut archive = tar::Builder::new(encoder);
         let content = b"reviewed";
-        let mut header = tar::Header::new_gnu();
-        header.set_mode(0o644);
-        header.set_size(content.len() as u64);
-        header.set_cksum();
-        archive
-            .append_data(&mut header, ".cargo/config.toml", &content[..])
-            .unwrap();
+        for name in names {
+            let mut header = tar::Header::new_gnu();
+            header.set_mode(0o644);
+            header.set_size(content.len() as u64);
+            header.set_cksum();
+            archive
+                .append_data(&mut header, name, &content[..])
+                .unwrap();
+        }
         archive.into_inner().unwrap().finish().unwrap()
     }
 
+    #[test]
+    fn source_bundle_rejects_windows_device_names_and_case_aliases() {
+        for names in [
+            &["manifest/CON.txt"][..],
+            &["source/file", "SOURCE/other"][..],
+            &["source/lib.rs", "source/lib.rs"][..],
+            &["source/file:alternate"][..],
+        ] {
+            let archive = fixture_files(names);
+            assert!(walk_verified(&archive[..], |_, _, _| Ok(())).is_err());
+        }
+    }
+
+    #[test]
+    fn source_snapshot_verifies_and_extracts_into_a_new_directory() {
+        let private = tempfile::tempdir().unwrap();
+        let archive = private.path().join("sdk.tar.gz");
+        let bytes = fixture();
+        let digest = crate::verify::digest(&bytes);
+        fs::write(&archive, bytes).unwrap();
+        assert!(snapshot(&archive, &"0".repeat(64)).is_err());
+        let root = private.path().join("source");
+        extract(snapshot(&archive, &digest).unwrap(), &root).unwrap();
+        assert_eq!(
+            fs::read(root.join(".cargo/config.toml")).unwrap(),
+            b"reviewed"
+        );
+        assert!(extract(snapshot(&archive, &digest).unwrap(), &root).is_err());
+    }
+
+    #[cfg(target_os = "linux")]
     #[test]
     fn source_cache_reuses_exact_files_and_rejects_changed_or_extra_inputs() {
         let store = tempfile::tempdir().unwrap();

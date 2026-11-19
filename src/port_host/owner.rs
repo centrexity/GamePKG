@@ -13,11 +13,12 @@ use std::{fs::File, path::Path};
 
 pub struct SaveGrant {
     directory: Dir,
+    previous: Option<Dir>,
     _lock: File,
     identity: String,
     quota: u64,
 }
-fn identity(manifest: &crate::manifest::Manifest) -> String {
+pub(super) fn identity(manifest: &crate::manifest::Manifest) -> String {
     crate::verify::digest(
         format!(
             "{}\0{}\0{}",
@@ -66,7 +67,60 @@ impl SaveGrant {
         );
         let scope =
             Dir::open_ambient_dir(Path::new("/run/gamepkg-save"), cap_std::ambient_authority())?;
-        Self::in_scope(scope, manifest, quota)
+        let mut grant = Self::in_scope(scope, manifest, quota)?;
+        match Dir::open_ambient_dir(
+            Path::new("/run/gamepkg-previous-save"),
+            cap_std::ambient_authority(),
+        ) {
+            Ok(previous) => grant.previous = Some(previous),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
+        Ok(grant)
+    }
+
+    /// Trusted Windows bootstrap. The launcher grants only the scoped
+    /// directory for this signed game, creator and save schema.
+    #[cfg(all(windows, feature = "gui"))]
+    pub fn open_native_windows(manifest: &crate::manifest::Manifest, scope: &Path) -> Result<Self> {
+        ensure!(
+            scope.is_absolute()
+                && scope
+                    .file_name()
+                    .is_some_and(|name| name == identity(manifest).as_str()),
+            "invalid Windows native save scope"
+        );
+        use std::os::windows::fs::{MetadataExt as _, OpenOptionsExt};
+        use windows_sys::Win32::Storage::FileSystem::{
+            FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
+        };
+        // Open the granted directory itself; the AppContainer does not have
+        // list/read permission on the containing library.
+        let directory = std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
+            .open(scope)?;
+        let metadata = directory.metadata()?;
+        ensure!(
+            metadata.is_dir() && metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT == 0,
+            "Windows native save scope must be an ordinary directory"
+        );
+        let mut grant = Self::in_scope(
+            Dir::from_std_file(directory),
+            manifest,
+            manifest.native_save_quota(),
+        )?;
+        let exe = std::env::current_exe()?;
+        let runtime = Dir::open_ambient_dir(
+            exe.parent().context("missing Windows runtime directory")?,
+            cap_std::ambient_authority(),
+        )?;
+        match runtime.open_dir_nofollow("previous-save") {
+            Ok(previous) => grant.previous = Some(previous),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
+        Ok(grant)
     }
 
     fn in_scope(scope: Dir, manifest: &crate::manifest::Manifest, quota: u64) -> Result<Self> {
@@ -74,6 +128,10 @@ impl SaveGrant {
             manifest.permissions.save,
             "game did not request save access"
         );
+        let quota = manifest
+            .limits
+            .hard_save_bytes
+            .map_or(quota, |limit| quota.min(limit));
         let mut options = cap_std::fs::OpenOptions::new();
         options
             .read(true)
@@ -108,6 +166,7 @@ impl SaveGrant {
         let directory = subdir(&scope, "files")?;
         Ok(Self {
             directory,
+            previous: None,
             _lock: lock,
             identity: identity(manifest),
             quota,
@@ -241,6 +300,10 @@ pub(super) fn session<B: Backend>(
         );
         host.grant_save_quota(save.directory, save.quota)
             .map_err(|e| anyhow::anyhow!("save grant: {e:?}"))?;
+        if let Some(previous) = save.previous {
+            host.grant_directory(previous, Access::PreviousSave)
+                .map_err(|e| anyhow::anyhow!("previous save grant: {e:?}"))?;
+        }
         host.hold_lease(std::sync::Arc::new(save._lock));
     }
     if let Some(assets) = grants.assets {
@@ -307,5 +370,25 @@ impl<B: Backend> Owner<B> {
 impl<B: Backend> Drop for Owner<B> {
     fn drop(&mut self) {
         let _ = self.stop();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hard_save_quota_cannot_be_raised_by_the_bootstrap() {
+        let library = tempfile::tempdir().unwrap();
+        let base = include_str!("../../examples/minimal/manifest.toml");
+        let manifest_text = format!("native_services = true\n{base}")
+            .replace("save = false", "save = true")
+            .replace("[limits]", "[limits]\nhard_save_bytes = 8388608");
+        let manifest = crate::manifest::Manifest::parse(manifest_text.as_bytes()).unwrap();
+        let declared = SaveGrant::open(library.path(), &manifest, 32 * 1048576).unwrap();
+        assert_eq!(declared.quota, 8 * 1048576);
+        drop(declared);
+        let lower = SaveGrant::open(library.path(), &manifest, 4 * 1048576).unwrap();
+        assert_eq!(lower.quota, 4 * 1048576);
     }
 }

@@ -98,6 +98,19 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: native-windows-graphics-${{ matrix.target }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Prepare locked compatibility source bundle
+        shell: pwsh
+        run: |
+          cargo fetch --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $sdk = Join-Path $env:RUNNER_TEMP 'native-service-sdk.tar.gz'
+          $pin = python tools/native_service_sdk.py $sdk
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "GAMEPKG_NATIVE_SDK_SHA256=$pin" >> $env:GITHUB_ENV
+          "GAMEPKG_NATIVE_SDK_ARCHIVE=$sdk" >> $env:GITHUB_ENV
       - name: Build the native CLI and game window with embedded audio companions
         shell: pwsh
         run: |
@@ -110,9 +123,6 @@ jobs:
         run: |
           cargo test --locked --release --target ${{ matrix.target }} --test storage -- --nocapture
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
       - name: Prepare test-only software OpenGL and screenshot tools
         shell: pwsh
         run: |
@@ -175,7 +185,7 @@ jobs:
         run: |
           python tests/package_architecture.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python tools/package_release.py target/windows-app-preview --binary-directory target/release --target ${{ matrix.target }}
+          python tools/package_release.py target/windows-app-preview --binary-directory target/release --target ${{ matrix.target }} --native-sdk $env:GAMEPKG_NATIVE_SDK_ARCHIVE
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $preview = @{
             schema = 1

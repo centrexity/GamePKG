@@ -320,6 +320,8 @@ impl RenderProfile {
     }
 }
 
+const MAX_NATIVE_SAVE_BYTES: u64 = 64 * 1024 * 1024;
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Limits {
@@ -327,6 +329,9 @@ pub struct Limits {
     pub hard_memory_bytes: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recommended_storage_bytes: Option<u64>,
+    /// Aggregate logical bytes in the native compatibility save directory.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hard_save_bytes: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recommended_memory_bytes: Option<u64>,
     /// Host-owned recorded effects share, rather than extend, the hard limit.
@@ -392,6 +397,21 @@ pub struct UserFile {
     pub write: bool,
 }
 impl Manifest {
+    #[cfg(any(
+        test,
+        all(
+            feature = "gui",
+            any(windows, all(target_os = "linux", target_arch = "x86_64"))
+        )
+    ))]
+    pub(crate) fn native_save_quota(&self) -> u64 {
+        self.limits.hard_save_bytes.unwrap_or(if self.native_tick {
+            2 * 1024 * 1024
+        } else {
+            crate::saves::MAX_SAVE as u64
+        })
+    }
+
     pub fn uses_service_runtime(&self) -> bool {
         self.native_services
     }
@@ -642,11 +662,8 @@ impl Manifest {
         }
         if m.uses_service_runtime() {
             anyhow::ensure!(
-                m.builtin_engine.is_none()
-                    && !m.native_tick
-                    && m.runtime_profile == "core-v1"
-                    && m.required_rom_count() <= 1,
-                "the native service entry requires a source game with at most one ROM"
+                m.builtin_engine.is_none() && !m.native_tick && m.runtime_profile == "core-v1",
+                "the native service entry requires a core-v1 source game"
             );
         }
         match m.native_graphics {
@@ -699,6 +716,14 @@ impl Manifest {
         }
         if m.limits.recommended_storage_bytes == Some(0) {
             bail!("recommended storage must be positive");
+        }
+        if let Some(bytes) = m.limits.hard_save_bytes {
+            if !m.permissions.save
+                || !(m.native_tick || m.uses_service_runtime())
+                || !(1..=MAX_NATIVE_SAVE_BYTES).contains(&bytes)
+            {
+                bail!("hard save bytes requires native compatibility, save permission and a limit between 1 byte and 64 MiB");
+            }
         }
         if let Some(bytes) = m.limits.effects_memory_bytes {
             if !(65536..=4 * 1048576).contains(&bytes)
@@ -849,6 +874,81 @@ mod native_services_tests {
             .uses_service_runtime());
         let invalid = format!("entry_world = \"unknown\"\n{current}");
         assert!(Manifest::parse(invalid.as_bytes()).is_err());
+    }
+
+    #[test]
+    fn native_service_rom_requirements_preserve_manifest_order() {
+        use std::fmt::Write;
+
+        let base = include_str!("../examples/minimal/manifest.toml");
+        let mut native = format!("native_services = true\n{base}");
+        for i in 0..8 {
+            write!(native, "\n[[roms]]\nid = \"rom{i}\"\ntitle = \"ROM {i}\"\n").unwrap();
+        }
+        let manifest = Manifest::parse(native.as_bytes()).unwrap();
+        assert_eq!(manifest.required_rom_count(), 8);
+        assert_eq!(
+            manifest
+                .roms
+                .iter()
+                .map(|rom| rom.id.as_str())
+                .collect::<Vec<_>>(),
+            ["rom0", "rom1", "rom2", "rom3", "rom4", "rom5", "rom6", "rom7"]
+        );
+        native.push_str("\n[[roms]]\nid = \"rom8\"\ntitle = \"ROM 8\"\n");
+        assert!(Manifest::parse(native.as_bytes()).is_err());
+    }
+
+    #[test]
+    fn hard_save_quota_requires_native_save_permission_and_a_bounded_value() {
+        let base = include_str!("../examples/minimal/manifest.toml")
+            .replace("save = false", "save = true");
+        let native = format!("native_services = true\n{base}");
+        assert_eq!(
+            Manifest::parse(native.as_bytes())
+                .unwrap()
+                .native_save_quota(),
+            1 << 20
+        );
+        let tick = base.replace("[limits]", "native_tick = true\n\n[limits]");
+        assert_eq!(
+            Manifest::parse(tick.as_bytes())
+                .unwrap()
+                .native_save_quota(),
+            2 << 20
+        );
+        for limit in [1u64, 8 << 20, 64 << 20] {
+            let requested =
+                native.replace("[limits]", &format!("[limits]\nhard_save_bytes = {limit}"));
+            let manifest = Manifest::parse(requested.as_bytes()).unwrap();
+            assert_eq!(manifest.native_save_quota(), limit);
+            let serialized = toml::to_string(&manifest).unwrap();
+            assert_eq!(
+                Manifest::parse(serialized.as_bytes())
+                    .unwrap()
+                    .native_save_quota(),
+                limit
+            );
+            assert!(
+                Manifest::parse(requested.replace("save = true", "save = false").as_bytes())
+                    .is_err()
+            );
+            assert!(
+                Manifest::parse(requested.replace("native_services = true\n", "").as_bytes())
+                    .is_err()
+            );
+        }
+        for invalid in [0, 64 * 1024 * 1024 + 1] {
+            assert!(Manifest::parse(
+                native
+                    .replace(
+                        "[limits]",
+                        &format!("[limits]\nhard_save_bytes = {invalid}")
+                    )
+                    .as_bytes()
+            )
+            .is_err());
+        }
     }
 
     #[test]

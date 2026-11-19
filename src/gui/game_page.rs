@@ -844,7 +844,10 @@ mod tests {
     fn mixed_patch_display_uses_runtime_order_without_changing_selection_indices() {
         use crate::manifest::{DoomWadMode as Mode, RomRequirement};
         let mut manifest: crate::manifest::Manifest =
-            toml::from_str(include_str!("../../ports/doom/manifest.toml")).unwrap();
+            toml::from_str(include_str!(
+                "../../tests/fixtures/doom-legacy/manifest.toml"
+            ))
+            .unwrap();
         for index in 0..6 {
             manifest.roms.push(RomRequirement {
                 id: format!("patch{index}"),
@@ -959,9 +962,10 @@ mod tests {
     }
     #[test]
     fn selected_oversized_rom_explains_the_same_limit_that_disables_play() {
-        let manifest =
-            crate::manifest::Manifest::parse(include_bytes!("../../ports/doom/manifest.toml"))
-                .unwrap();
+        let manifest = crate::manifest::Manifest::parse(include_bytes!(
+            "../../tests/fixtures/doom-legacy/manifest.toml"
+        ))
+        .unwrap();
         let root = tempfile::tempdir().unwrap();
         let file = root.path().join("large.wad");
         let handle = std::fs::File::create(&file).unwrap();

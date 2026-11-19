@@ -1,5 +1,5 @@
-//! Confined stdio workers. No selected-disc, restart, parent-console or other
-//! handle is inherited. File access remains an explicit Sandbox grant.
+//! Confined stdio workers. A compatibility executable can also receive the
+//! explicitly selected ROM files as read-only handles.
 use super::*;
 use windows_sys::Win32::Storage::FileSystem::FILE_READ_ATTRIBUTES;
 use windows_sys::Win32::System::JobObjects::JOB_OBJECT_LIMIT_ACTIVE_PROCESS;
@@ -18,6 +18,82 @@ pub(super) fn require_profile_environment(values: &[(OsString, OsString)]) -> io
                 "confined workers require explicit absolute LOCALAPPDATA and SystemRoot paths",
             ));
         }
+    }
+    Ok(())
+}
+
+/// Verify the containment needed by the linked desktop compatibility entry.
+pub fn require_compatibility_process(memory_limit_bytes: u64) -> io::Result<()> {
+    use windows_sys::Win32::{
+        Security::{GetTokenInformation, TokenIsAppContainer, TOKEN_QUERY},
+        System::Threading::OpenProcessToken,
+    };
+    let mut token = null_mut();
+    // SAFETY: the pseudo-handle is current process; token is valid output.
+    if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) } == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let token = unsafe { OwnedHandle::from_raw_handle(token) };
+    let mut container = 0u32;
+    let mut length = 0;
+    // SAFETY: TokenIsAppContainer returns a DWORD.
+    if unsafe {
+        GetTokenInformation(
+            token.as_raw_handle(),
+            TokenIsAppContainer,
+            (&mut container as *mut u32).cast(),
+            size_of::<u32>() as u32,
+            &mut length,
+        )
+    } == 0
+    {
+        return Err(io::Error::last_os_error());
+    }
+    if container != 1 || length != size_of::<u32>() as u32 {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "native compatibility requires a Windows AppContainer",
+        ));
+    }
+    check_compatibility_job(memory_limit_bytes)
+}
+
+fn check_compatibility_job(memory_limit_bytes: u64) -> io::Result<()> {
+    // A null handle queries the immediate job of this process.
+    let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { zeroed() };
+    if unsafe {
+        QueryInformationJobObject(
+            null_mut(),
+            JobObjectExtendedLimitInformation,
+            (&mut limits as *mut JOBOBJECT_EXTENDED_LIMIT_INFORMATION).cast(),
+            size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+            null_mut(),
+        )
+    } == 0
+    {
+        return Err(io::Error::last_os_error());
+    }
+    check_job_limits(&limits, memory_limit_bytes)
+}
+
+const COMPATIBILITY_JOB_FLAGS: u32 = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+    | JOB_OBJECT_LIMIT_JOB_MEMORY
+    | JOB_OBJECT_LIMIT_ACTIVE_PROCESS;
+
+fn check_job_limits(
+    limits: &JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+    memory_limit_bytes: u64,
+) -> io::Result<()> {
+    let basic = limits.BasicLimitInformation;
+    if basic.LimitFlags & COMPATIBILITY_JOB_FLAGS != COMPATIBILITY_JOB_FLAGS
+        || basic.ActiveProcessLimit != 1
+        || memory_limit_bytes == 0
+        || limits.JobMemoryLimit as u64 != memory_limit_bytes
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "native compatibility requires the signed memory limit and a one-process job",
+        ));
     }
     Ok(())
 }
@@ -46,8 +122,34 @@ impl WorkerProcess {
             Some(sandbox),
             memory_limit_bytes,
             1,
+            &[],
         )
     }
+
+    /// Start a single confined compatibility executable with ROM handles in
+    /// manifest order. No ROM path or directory is granted to the child.
+    #[allow(clippy::too_many_arguments)]
+    pub fn spawn_compatibility(
+        executable: &Path,
+        args: &[OsString],
+        cwd: &Path,
+        values: &[(OsString, OsString)],
+        sandbox: &Sandbox,
+        memory_limit_bytes: u64,
+        roms: &[File],
+    ) -> io::Result<Self> {
+        Self::spawn_inner(
+            executable,
+            args,
+            cwd,
+            values,
+            Some(sandbox),
+            memory_limit_bytes,
+            1,
+            roms,
+        )
+    }
+
     /// Compiler tools may run their linker, within the same confined memory/job
     /// boundary. This never grants files or networking; the host grants only
     /// the selected toolchain and private source/output workspace beforehand.
@@ -67,6 +169,7 @@ impl WorkerProcess {
             Some(sandbox),
             memory_limit_bytes,
             16,
+            &[],
         )
     }
     #[allow(clippy::too_many_arguments)]
@@ -78,6 +181,7 @@ impl WorkerProcess {
         sandbox: Option<&Sandbox>,
         memory_limit_bytes: u64,
         process_limit: u32,
+        roms: &[File],
     ) -> io::Result<Self> {
         if !executable.is_absolute() || !cwd.is_absolute() {
             return Err(invalid("worker executable and directory must be absolute"));
@@ -125,14 +229,16 @@ impl WorkerProcess {
             error_peer.as_raw_handle(),
             FILE_GENERIC_WRITE | FILE_READ_ATTRIBUTES,
         )?;
-        let mut handles = [
+        let roms = rom_grants::prepare(roms)?;
+        let mut handles = vec![
             input.as_raw_handle(),
             output.as_raw_handle(),
             error.as_raw_handle(),
         ];
+        handles.extend(roms.iter().map(AsRawHandle::as_raw_handle));
         let mut capabilities = sandbox.map(Sandbox::capabilities);
         let attributes = Attributes::new(&mut handles, capabilities.as_mut())?;
-        let env = environment_block(values, None, None)?;
+        let env = environment_block(values, None, None, &roms)?;
         let raw = unsafe { CreateJobObjectW(null(), null()) };
         if raw.is_null() {
             return Err(io::Error::last_os_error());
@@ -163,8 +269,8 @@ impl WorkerProcess {
         startup.StartupInfo.hStdError = error.as_raw_handle();
         startup.lpAttributeList = attributes.ptr;
         let mut info: PROCESS_INFORMATION = unsafe { zeroed() };
-        // Only explicitly listed pipe endpoints are inherited. Suspend until
-        // job assignment so neither game nor linker can escape its boundary.
+        // Only the listed pipes and ROMs are inherited. Suspend until the
+        // job owns the process, before any child code runs.
         if unsafe {
             CreateProcessW(
                 exe.as_ptr(),
@@ -280,6 +386,7 @@ mod tests {
             None,
             128 * 1048576,
             1,
+            &[],
         )
         .unwrap();
         let (process, mut pipe, mut errors) = worker.into_parts();
@@ -309,6 +416,174 @@ mod tests {
             std::thread::sleep(Duration::from_millis(5));
         }
         assert_eq!(process.poll().unwrap(), Some(0));
+    }
+
+    #[test]
+    fn compatibility_requires_every_job_limit_and_the_signed_memory_value() {
+        let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { zeroed() };
+        limits.BasicLimitInformation.LimitFlags = COMPATIBILITY_JOB_FLAGS;
+        limits.BasicLimitInformation.ActiveProcessLimit = 1;
+        limits.JobMemoryLimit = 128 * 1048576;
+        assert!(check_job_limits(&limits, 128 * 1048576).is_ok());
+        assert!(check_job_limits(&limits, 129 * 1048576).is_err());
+        assert!(check_job_limits(&limits, 0).is_err());
+        limits.BasicLimitInformation.ActiveProcessLimit = 2;
+        assert!(check_job_limits(&limits, 128 * 1048576).is_err());
+        limits.BasicLimitInformation.ActiveProcessLimit = 1;
+        for flag in [
+            JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+            JOB_OBJECT_LIMIT_JOB_MEMORY,
+            JOB_OBJECT_LIMIT_ACTIVE_PROCESS,
+        ] {
+            limits.BasicLimitInformation.LimitFlags = COMPATIBILITY_JOB_FLAGS & !flag;
+            assert!(check_job_limits(&limits, 128 * 1048576).is_err());
+        }
+    }
+
+    #[test]
+    fn rom_handoff_child_fixture() {
+        if std::env::var_os("GP_ROM_HANDOFF_CHILD").is_none() {
+            return;
+        }
+        if std::env::var_os("GP_ROM_ORIGINAL_PATH").is_some() {
+            require_compatibility_process(128 * 1048576).unwrap();
+            assert!(require_compatibility_process(129 * 1048576).is_err());
+        }
+        // The fixture parent passes two distinct handles through spawn_inner.
+        let mut files = open_inherited_roms(2).unwrap();
+        let mut bytes = [0; 4];
+        files[0].read_exact(&mut bytes).unwrap();
+        assert_eq!(&bytes, b"IWAD");
+        files[1].read_exact(&mut bytes).unwrap();
+        assert_eq!(&bytes, b"PWAD");
+        for file in &mut files {
+            assert!(file.write_all(b"no").is_err());
+            let mut flags = 0;
+            assert_ne!(
+                unsafe {
+                    windows_sys::Win32::Foundation::GetHandleInformation(
+                        file.as_raw_handle(),
+                        &mut flags,
+                    )
+                },
+                0
+            );
+            assert_eq!(
+                flags & windows_sys::Win32::Foundation::HANDLE_FLAG_INHERIT,
+                0
+            );
+        }
+        if let Some(path) = std::env::var_os("GP_ROM_ORIGINAL_PATH") {
+            assert!(
+                File::open(path).is_err(),
+                "the ROM parent directory must remain outside the AppContainer grant"
+            );
+        }
+        println!("GP_ROM_HANDOFF_OK");
+        std::io::stdout().flush().unwrap();
+    }
+
+    fn check_rom_handoff(confined: bool) {
+        let root = tempfile::tempdir().unwrap();
+        let runtime = root.path().join("runtime");
+        std::fs::create_dir(&runtime).unwrap();
+        let exe = runtime.join("runtime.exe");
+        std::fs::copy(std::env::current_exe().unwrap(), &exe).unwrap();
+        let mut paths = Vec::new();
+        let mut files = Vec::new();
+        for (name, bytes) in [("base", b"IWAD"), ("patch", b"PWAD")] {
+            let path = root.path().join(name);
+            std::fs::write(&path, bytes).unwrap();
+            // Deliberately pass writable parent handles to prove the child
+            // receives reduced access independently of how the parent opened.
+            files.push(
+                std::fs::OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .open(&path)
+                    .unwrap(),
+            );
+            paths.push(path);
+        }
+
+        let args = [
+            "--exact".into(),
+            "worker_process::tests::rom_handoff_child_fixture".into(),
+            "--nocapture".into(),
+        ];
+        let mut values = vec![("GP_ROM_HANDOFF_CHILD".into(), "1".into())];
+        let sandbox;
+        let worker = if confined {
+            values.push((
+                "GP_ROM_ORIGINAL_PATH".into(),
+                paths[0].as_os_str().to_owned(),
+            ));
+            for key in ["SystemRoot", "LOCALAPPDATA"] {
+                values.push((key.into(), std::env::var_os(key).unwrap()));
+            }
+            let name = format!("GamePKG.RomGrantTest.p{}", std::process::id());
+            sandbox = Sandbox::open(&name).unwrap();
+            sandbox.grant_runtime(&runtime).unwrap();
+            WorkerProcess::spawn_compatibility(
+                &exe,
+                &args,
+                &runtime,
+                &values,
+                &sandbox,
+                128 * 1048576,
+                &files,
+            )
+        } else {
+            WorkerProcess::spawn_inner(
+                &exe,
+                &args,
+                &runtime,
+                &values,
+                None,
+                128 * 1048576,
+                1,
+                &files,
+            )
+        }
+        .unwrap();
+        let (process, mut pipe, mut errors) = worker.into_parts();
+        let end = Instant::now() + Duration::from_secs(10);
+        let mut line = Vec::new();
+        while !line.ends_with(b"GP_ROM_HANDOFF_OK\n") {
+            let mut byte = [0];
+            if let Err(error) = pipe.read_exact(&mut byte, end) {
+                let mut diagnostic = Vec::new();
+                // Reading the separate error channel is safe after the child exits.
+                if process.poll().unwrap().is_some() {
+                    let _ = errors.by_ref().take(8192).read_to_end(&mut diagnostic);
+                }
+                panic!(
+                    "ROM child failed: {error}, stdout: {} stderr: {}",
+                    String::from_utf8_lossy(&line),
+                    String::from_utf8_lossy(&diagnostic)
+                );
+            }
+            line.push(byte[0]);
+            assert!(line.len() < 4096);
+        }
+        while process.poll().unwrap().is_none() {
+            assert!(Instant::now() < end);
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(process.poll().unwrap(), Some(0));
+        assert_eq!(std::fs::read(&paths[0]).unwrap(), b"IWAD");
+        assert_eq!(std::fs::read(&paths[1]).unwrap(), b"PWAD");
+    }
+
+    #[test]
+    fn compatibility_process_keeps_rom_order_and_read_only_access() {
+        check_rom_handoff(false);
+    }
+
+    #[test]
+    #[ignore = "needs actual Windows AppContainer support"]
+    fn appcontainer_compatibility_process_keeps_rom_order_and_read_only_access() {
+        check_rom_handoff(true);
     }
 
     #[test]
@@ -360,6 +635,7 @@ mod tests {
                     None,
                     128 * 1048576,
                     16,
+                    &[],
                 ),
                 "worker" => {
                     WorkerProcess::spawn(&exe, &args, &runtime, &values, &sandbox, 128 * 1048576)
@@ -414,8 +690,8 @@ mod tests {
 
     #[test]
     fn plain_worker_environment_is_double_terminated_and_has_no_disc_capability() {
-        assert_eq!(environment_block(&[], None, None).unwrap(), [0, 0]);
-        let env = environment_block(&[("MODE".into(), "native".into())], None, None).unwrap();
+        assert_eq!(environment_block(&[], None, None, &[]).unwrap(), [0, 0]);
+        let env = environment_block(&[("MODE".into(), "native".into())], None, None, &[]).unwrap();
         assert_eq!(String::from_utf16(&env).unwrap(), "MODE=native\0\0");
     }
     #[test]

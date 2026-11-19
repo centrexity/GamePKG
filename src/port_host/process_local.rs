@@ -1,11 +1,12 @@
 //! Linux native executable launch. Runtime services stay in the executable.
-use super::{reaper, tail, Artifact, Bootstrap, Permit, Process, Target};
-use crate::launch_options::LaunchArgs;
+use super::{
+    history::{drain_local_log, read_game_output, record_history, HistoryEvent},
+    reaper, Artifact, Bootstrap, NativeLaunch, Permit, Process, Target,
+};
 use anyhow::{ensure, Context, Result};
 use std::{
     collections::VecDeque,
-    fs,
-    io::{self, Read},
+    fs, io,
     os::{
         fd::AsRawFd,
         unix::{
@@ -17,36 +18,7 @@ use std::{
     process::{Command, Stdio},
     sync::atomic::{AtomicBool, Ordering},
     sync::{mpsc, Arc, Mutex},
-    time::Duration,
 };
-
-/// Trusted launch arguments shared by the launcher and linked executable.
-#[derive(Clone, Copy, Debug, clap::Parser)]
-pub struct NativeLaunch {
-    #[command(flatten)]
-    pub graphics: LaunchArgs,
-    #[arg(long)]
-    pub visible: bool,
-    #[arg(long)]
-    pub mute_audio: bool,
-    #[arg(long, default_value_t = 50, value_parser = clap::value_parser!(u8).range(0..=100))]
-    pub volume: u8,
-}
-
-impl NativeLaunch {
-    fn arguments(self, manifest: &crate::manifest::Manifest) -> Result<Vec<String>> {
-        ensure!(self.volume <= 100, "audio volume must be 0–100");
-        let mut args = self.graphics.resolved(manifest.launch_options)?.arguments();
-        args.extend(["--volume".into(), self.volume.to_string()]);
-        if self.visible {
-            args.push("--visible".into());
-        }
-        if self.mute_audio {
-            args.push("--mute-audio".into());
-        }
-        Ok(args)
-    }
-}
 
 fn read_only_system(command: &mut Command, paths: &[&str]) {
     for &path in paths {
@@ -121,12 +93,13 @@ fn desktop(command: &mut Command, audio: bool) -> Result<()> {
         }
     }
     if audio {
-        if let Some(pulse) = runtime
-            .as_ref()
-            .map(|path| path.join("pulse/native"))
-            .filter(|p| p.exists())
-        {
-            socket(command, &pulse, &inside.join("pulse/native"))?;
+        if let Some(runtime) = runtime {
+            for endpoint in ["pipewire-0", "pulse/native"] {
+                let path = runtime.join(endpoint);
+                if path.exists() {
+                    socket(command, &path, &inside.join(endpoint))?;
+                }
+            }
         }
     }
     Ok(())
@@ -175,7 +148,7 @@ fn controller(name: &str, metadata: &fs::Metadata) -> bool {
 
 impl Process {
     /// Start a receipt-verified Linux game in its own memory scope and
-    /// namespace. The runtime receives an optional read-only ROM and a
+    /// namespace. The runtime receives read-only ROMs and a
     /// capability mount for an approved private save scope.
     pub fn start_in_process(
         artifact: &Artifact,
@@ -184,13 +157,20 @@ impl Process {
         save: Option<(&Path, u64)>,
         options: NativeLaunch,
     ) -> Result<Self> {
-        Self::start_in_process_with_assets(artifact, library, rom, save, None, options)
+        Self::start_in_process_with_assets(
+            artifact,
+            library,
+            rom.into_iter().collect(),
+            save,
+            None,
+            options,
+        )
     }
 
     pub fn start_in_process_with_assets(
         artifact: &Artifact,
         library: &Path,
-        rom: Option<fs::File>,
+        roms: Vec<fs::File>,
         save: Option<(&Path, u64)>,
         assets: Option<&crate::port_host::owner::VerifiedAssets>,
         options: NativeLaunch,
@@ -203,10 +183,10 @@ impl Process {
         let manifest = artifact.manifest();
         let arguments = options.arguments(manifest)?;
         ensure!(
-            manifest.required_rom_count() == usize::from(rom.is_some()),
+            manifest.required_rom_count() == roms.len(),
             "wrong number of selected ROMs"
         );
-        if let Some(rom) = &rom {
+        for rom in &roms {
             let flags = unsafe { libc::fcntl(rom.as_raw_fd(), libc::F_GETFL) };
             ensure!(
                 flags >= 0
@@ -230,6 +210,23 @@ impl Process {
             "service executable changed before launch"
         );
         let directory = tempfile::tempdir()?;
+        let previous_save = if let Some((root, _)) = save {
+            match crate::saves::previous_blob(root, manifest) {
+                Ok(Some(blob)) => {
+                    let snapshot = directory.path().join("previous-save");
+                    fs::create_dir(&snapshot)?;
+                    fs::write(snapshot.join("legacy-save.blob"), blob)?;
+                    Some(snapshot)
+                }
+                Ok(None) => None,
+                Err(error) => {
+                    eprintln!("GamePKG could not read the previous save: {error:#}");
+                    None
+                }
+            }
+        } else {
+            None
+        };
         let executable = directory.path().join("game");
         fs::write(&executable, bytes)?;
         fs::set_permissions(&executable, fs::Permissions::from_mode(0o500))?;
@@ -348,7 +345,16 @@ impl Process {
                     .arg("/run/gamepkg-audio");
             }
         }
-        let save_fd = save_mount.as_ref().map(|(scope, quota)| {
+        let mut inherited_mounts = Vec::new();
+        for (index, rom) in roms.iter().enumerate() {
+            let fd = rom.as_raw_fd();
+            command
+                .arg("--ro-bind-fd")
+                .arg(fd.to_string())
+                .arg(format!("/run/gamepkg-rom/{index}"));
+            inherited_mounts.push(fd);
+        }
+        if let Some((scope, quota)) = &save_mount {
             let fd = scope.as_raw_fd();
             command
                 .arg("--bind-fd")
@@ -356,8 +362,14 @@ impl Process {
                 .arg("/run/gamepkg-save")
                 .args(["--setenv", "GAMEPKG_SAVE_QUOTA"])
                 .arg(quota.to_string());
-            fd
-        });
+            inherited_mounts.push(fd);
+        }
+        if let Some(snapshot) = previous_save {
+            command
+                .arg("--ro-bind")
+                .arg(snapshot)
+                .arg("/run/gamepkg-previous-save");
+        }
         let file_picker =
             manifest.native_tick && options.visible && !manifest.permissions.files.is_empty();
         let (game_input, parent_picker) = if file_picker {
@@ -366,7 +378,7 @@ impl Process {
             command.args(["--setenv", "GAMEPKG_FILE_PICKER", "1"]);
             (Stdio::from(OwnedFd::from(child)), Some(parent))
         } else {
-            (rom.map_or_else(Stdio::null, Stdio::from), None)
+            (Stdio::null(), None)
         };
         command.arg("--ro-bind").arg(executable).arg("/game").args([
             "--remount-ro",
@@ -393,7 +405,7 @@ impl Process {
                 if libc::setrlimit(libc::RLIMIT_CORE, &limit) != 0 {
                     return Err(io::Error::last_os_error());
                 }
-                if let Some(fd) = save_fd {
+                for &fd in &inherited_mounts {
                     let flags = libc::fcntl(fd, libc::F_GETFD);
                     if flags < 0 || libc::fcntl(fd, libc::F_SETFD, flags & !libc::FD_CLOEXEC) < 0 {
                         return Err(io::Error::last_os_error());
@@ -425,6 +437,7 @@ impl Process {
         let mut child = receive_child
             .recv()
             .context("native launcher thread exited")??;
+        drop(roms);
         drop(save_mount);
         if let Some(socket) = parent_picker {
             let manifest = manifest.clone();
@@ -468,165 +481,5 @@ impl Process {
             game_frame: Some(game_frame),
             permit: Some(permit),
         })
-    }
-
-    pub fn first_frame_presented(&self) -> bool {
-        self.game_frame
-            .as_ref()
-            .is_some_and(|flag| flag.load(Ordering::Acquire))
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum HistoryEvent {
-    Presented,
-    Achievement(usize),
-}
-
-fn record_history(
-    mut history: crate::progress::Session,
-    events: mpsc::Receiver<HistoryEvent>,
-    signed_achievements: Vec<String>,
-) -> Result<()> {
-    let mut started = false;
-    let mut pending = std::collections::BTreeSet::new();
-    loop {
-        match events.recv_timeout(Duration::from_secs(10)) {
-            Ok(HistoryEvent::Presented) if !started => {
-                history.start();
-                started = true;
-                history.tick(&std::mem::take(&mut pending).into_iter().collect::<Vec<_>>())?;
-            }
-            Ok(HistoryEvent::Presented) => {}
-            Ok(HistoryEvent::Achievement(index)) => {
-                if let Some(id) = signed_achievements.get(index) {
-                    if started {
-                        history.tick(std::slice::from_ref(id))?;
-                    } else {
-                        pending.insert(id.clone());
-                    }
-                }
-            }
-            Err(mpsc::RecvTimeoutError::Timeout) if started => history.tick(&[])?,
-            Err(mpsc::RecvTimeoutError::Timeout) => {}
-            Err(mpsc::RecvTimeoutError::Disconnected) => return history.finish(),
-        }
-    }
-}
-
-fn read_game_output(
-    mut pipe: impl Read,
-    log: &Arc<Mutex<VecDeque<u8>>>,
-    marker: &[u8],
-    mut notify: impl FnMut(HistoryEvent),
-) {
-    let mut buffer = [0; 4096];
-    let mut line = Vec::with_capacity(96);
-    let mut overflow = false;
-    loop {
-        let count = match pipe.read(&mut buffer) {
-            Ok(0) => break,
-            Ok(count) => count,
-            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
-            Err(_) => break,
-        };
-        tail(log, &buffer[..count]);
-        for &byte in &buffer[..count] {
-            if byte == b'\n' {
-                if !overflow {
-                    if line == marker {
-                        notify(HistoryEvent::Presented);
-                    } else if let Some(index) = line
-                        .strip_prefix(b"GamePKG achievement ")
-                        .and_then(|text| std::str::from_utf8(text).ok())
-                        .and_then(|index| index.parse().ok())
-                    {
-                        notify(HistoryEvent::Achievement(index));
-                    }
-                }
-                overflow = false;
-                line.clear();
-            } else if line.len() < 96 {
-                line.push(byte);
-            } else {
-                overflow = true;
-            }
-        }
-    }
-}
-
-fn drain_local_log(mut pipe: impl Read + Send + 'static, log: Arc<Mutex<VecDeque<u8>>>) {
-    std::thread::spawn(move || {
-        let mut buffer = [0; 4096];
-        while let Ok(count) = pipe.read(&mut buffer) {
-            if count == 0 {
-                break;
-            }
-            tail(&log, &buffer[..count]);
-        }
-    });
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn game_frame_signal_requires_a_complete_exact_line() {
-        let log = Arc::new(Mutex::new(VecDeque::new()));
-        let mut data = vec![b'x'; 8191];
-        data.extend(b"GamePKG presented expected\nGamePKG presented another\n");
-        let mut signaled = false;
-        read_game_output(&data[..], &log, b"GamePKG presented expected", |event| {
-            assert_eq!(event, HistoryEvent::Presented);
-            signaled = true
-        });
-        assert!(!signaled);
-        data.extend(b"GamePKG presented expected\n");
-        read_game_output(&data[..], &log, b"GamePKG presented expected", |event| {
-            assert_eq!(event, HistoryEvent::Presented);
-            signaled = true
-        });
-        assert!(signaled);
-    }
-
-    #[test]
-    fn native_history_ignores_startup_exit_and_flushes_presented_play() {
-        let library = tempfile::tempdir().unwrap();
-        let root = library.path();
-        let (sender, receiver) = mpsc::channel();
-        drop(sender);
-        record_history(
-            crate::progress::Session::open(root, "game", "creator").unwrap(),
-            receiver,
-            vec![],
-        )
-        .unwrap();
-        assert_eq!(
-            crate::progress::load(root, "game", "creator")
-                .unwrap()
-                .played_ms,
-            0
-        );
-
-        let (sender, receiver) = mpsc::channel();
-        let session = crate::progress::Session::open(root, "game", "creator").unwrap();
-        let worker = std::thread::spawn(move || record_history(session, receiver, vec![]));
-        sender.send(HistoryEvent::Presented).unwrap();
-        std::thread::sleep(Duration::from_millis(100));
-        drop(sender);
-        worker.join().unwrap().unwrap();
-        assert!(
-            crate::progress::load(root, "game", "creator")
-                .unwrap()
-                .played_ms
-                > 0
-        );
-        assert_eq!(
-            crate::progress::load(root, "game", "another")
-                .unwrap()
-                .played_ms,
-            0
-        );
     }
 }

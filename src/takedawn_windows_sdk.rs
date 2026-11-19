@@ -54,7 +54,7 @@ enum Layout {
     WindowsZip,
     Tar(usize),
     Rust(String),
-    RustAuditor(String, Vec<String>),
+    RustSelected(String, Vec<String>),
 }
 #[derive(Clone)]
 struct Part {
@@ -365,14 +365,14 @@ fn unpack_tar(
         }
         let name = match &part.layout {
             Layout::Tar(strip) => relative(&raw, *strip)?,
-            Layout::Rust(payload) | Layout::RustAuditor(payload, _) => {
+            Layout::Rust(payload) | Layout::RustSelected(payload, _) => {
                 let parts: Vec<_> = raw.split('/').collect();
                 if parts.len() >= 3 && parts[1] == payload {
                     if parts.last() == Some(&"manifest.in") {
                         continue;
                     }
                     let name = parts[2..].join("/");
-                    if let Layout::RustAuditor(_, allowed) = &part.layout {
+                    if let Layout::RustSelected(_, allowed) = &part.layout {
                         if !allowed.contains(&name) {
                             continue;
                         }
@@ -661,6 +661,97 @@ pub(crate) fn prepare_source_target(
     ))
 }
 
+const COMPAT_TOOL_PINS: &str = include_str!("../engines/native/windows-compat-tools.json");
+fn compatibility_digest(record: &serde_json::Value, key: &str) -> Result<String> {
+    let value = record[key]
+        .as_str()
+        .context("missing compatibility tool digest")?;
+    ensure!(
+        value.len() == 64
+            && value
+                .bytes()
+                .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()),
+        "invalid compatibility tool digest"
+    );
+    Ok(value.to_owned())
+}
+
+fn compat_cargo_plan(target: &str) -> Result<(Part, String, String)> {
+    ensure!(
+        matches!(target, "x86_64-pc-windows-gnu" | "i686-pc-windows-gnu"),
+        "unsupported Windows compatibility builder host"
+    );
+    let pins: serde_json::Value = serde_json::from_str(COMPAT_TOOL_PINS)?;
+    ensure!(pins["version"] == "1.89.0", "unexpected Cargo version");
+    let record = &pins["targets"][target];
+    let destination = format!("cargo-1.89.0-{target}");
+    let part = Part {
+        download: Download {
+            url: format!("https://static.rust-lang.org/dist/2025-08-07/{destination}.tar.gz"),
+            sha256: compatibility_digest(record, "archive_sha256")?,
+        },
+        destination,
+        layout: Layout::RustSelected("cargo".into(), vec!["bin/cargo.exe".into()]),
+    };
+    let identity = crate::verify::digest(
+        format!("GamePKG Windows compatibility Cargo v1\0{target}\0{COMPAT_TOOL_PINS}").as_bytes(),
+    );
+    Ok((
+        part,
+        identity,
+        compatibility_digest(record, "payload_inventory_sha256")?,
+    ))
+}
+
+#[cfg(windows)]
+pub(crate) fn prepare_compat_cargo(root: &Path, target: &str) -> Result<PathBuf> {
+    let (part, identity, expected) = compat_cargo_plan(target)?;
+    let cargo = PathBuf::from(&part.destination).join("bin/cargo.exe");
+    let installed = prepare_parts(root, &[part], &identity, &expected)?;
+    Ok(installed.join(cargo))
+}
+
+fn compat_clang_plan(arch: &str) -> Result<(Part, String, String)> {
+    ensure!(
+        matches!(arch, "x86_64" | "i686"),
+        "unsupported Windows C compiler host"
+    );
+    let pins: serde_json::Value = serde_json::from_str(COMPAT_TOOL_PINS)?;
+    let llvm = &pins["llvm_mingw"];
+    let version = llvm["version"]
+        .as_str()
+        .context("missing LLVM-MinGW version")?;
+    ensure!(version == "20260922", "unexpected LLVM-MinGW version");
+    let record = &llvm["targets"][arch];
+    let part = Part {
+        download: Download {
+            url: format!(
+                "https://github.com/mstorsjo/llvm-mingw/releases/download/{version}/llvm-mingw-{version}-msvcrt-{arch}.zip"
+            ),
+            sha256: compatibility_digest(record, "archive_sha256")?,
+        },
+        destination: format!("llvm-mingw-compat-{arch}"),
+        layout: Layout::Zip(1),
+    };
+    let identity = crate::verify::digest(
+        format!("GamePKG Windows compatibility LLVM-MinGW v1\0{arch}\0{COMPAT_TOOL_PINS}")
+            .as_bytes(),
+    );
+    Ok((
+        part,
+        identity,
+        compatibility_digest(record, "payload_inventory_sha256")?,
+    ))
+}
+
+#[cfg(windows)]
+pub(crate) fn prepare_compat_clang(root: &Path, arch: &str) -> Result<(PathBuf, String)> {
+    let (part, identity, expected) = compat_clang_plan(arch)?;
+    let directory = PathBuf::from(&part.destination).join("bin");
+    let installed = prepare_parts(root, &[part], &identity, &expected)?;
+    Ok((installed.join(directory), expected))
+}
+
 const SLANG_PINS: &str = include_str!("../engines/native/windows-slang.json");
 const AUDITOR_PINS: &str = include_str!("../engines/native/windows-auditor.json");
 fn auditor_plan(target: &str) -> Result<(Vec<Part>, String, String)> {
@@ -709,7 +800,7 @@ fn auditor_plan(target: &str) -> Result<(Vec<Part>, String, String)> {
             Part {
                 download: tools,
                 destination: destination.clone(),
-                layout: Layout::RustAuditor(
+                layout: Layout::RustSelected(
                     "llvm-tools-preview".into(),
                     vec![format!("lib/rustlib/{target}/bin/llvm-nm.exe")],
                 ),
@@ -717,7 +808,7 @@ fn auditor_plan(target: &str) -> Result<(Vec<Part>, String, String)> {
             Part {
                 download: runtime,
                 destination,
-                layout: Layout::RustAuditor(
+                layout: Layout::RustSelected(
                     "rustc".into(),
                     vec![format!("bin/{gcc}"), "bin/libwinpthread-1.dll".into()],
                 ),
@@ -1119,7 +1210,7 @@ mod tests {
             assert_eq!(parts.len(), 2);
             assert!(parts
                 .iter()
-                .all(|part| matches!(part.layout, Layout::RustAuditor(_, _))));
+                .all(|part| matches!(part.layout, Layout::RustSelected(_, _))));
             assert_eq!(expected.len(), 64);
             identities.push(identity);
         }
@@ -1151,7 +1242,7 @@ mod tests {
                 sha256: digest_file(&path).unwrap().sha256,
             },
             destination: "auditor".into(),
-            layout: Layout::RustAuditor(
+            layout: Layout::RustSelected(
                 "llvm-tools-preview".into(),
                 vec![
                     "lib/rustlib/i686-pc-windows-gnu/bin/llvm-nm.exe".into(),
@@ -1183,6 +1274,60 @@ mod tests {
         actual.remove(INVENTORY);
         assert_eq!(actual, inventory);
     }
+    #[test]
+    fn compatibility_cargo_is_pinned_separately_for_each_host_width() {
+        let x64 = compat_cargo_plan("x86_64-pc-windows-gnu").unwrap();
+        let x86 = compat_cargo_plan("i686-pc-windows-gnu").unwrap();
+        assert_ne!(x64.1, x86.1);
+        assert_ne!(x64.2, x86.2);
+        for part in [x64.0, x86.0] {
+            let Layout::RustSelected(component, members) = part.layout else {
+                panic!("unexpected Cargo extraction");
+            };
+            assert_eq!(component, "cargo");
+            assert_eq!(members, ["bin/cargo.exe"]);
+        }
+        assert!(compat_cargo_plan("x86_64-pc-windows-msvc").is_err());
+    }
+
+    #[test]
+    #[ignore = "requires verified GNU Windows Cargo archives in GAMEPKG_TEST_WINDOWS_CARGO_ARCHIVES"]
+    fn official_compatibility_cargo_inventory_matches_pins() {
+        let archives = std::env::var_os("GAMEPKG_TEST_WINDOWS_CARGO_ARCHIVES").unwrap();
+        let root = tempfile::tempdir().unwrap();
+        for target in ["x86_64-pc-windows-gnu", "i686-pc-windows-gnu"] {
+            let archive = Path::new(&archives).join(format!("cargo-{target}.tar.gz"));
+            let (part, identity, expected) = compat_cargo_plan(target).unwrap();
+            let cargo = PathBuf::from(&part.destination).join("bin/cargo.exe");
+            let installed = install(root.path(), &[part], &identity, &expected, |_| {
+                Ok(archive.clone())
+            })
+            .unwrap();
+            assert!(installed.join(cargo).is_file());
+        }
+    }
+
+    #[test]
+    #[ignore = "requires verified LLVM-MinGW archives in GAMEPKG_TEST_WINDOWS_CARGO_ARCHIVES"]
+    fn official_compatibility_clang_inventory_matches_pins() {
+        let archives = std::env::var_os("GAMEPKG_TEST_WINDOWS_CARGO_ARCHIVES").unwrap();
+        let root = tempfile::tempdir().unwrap();
+        for arch in ["x86_64", "i686"] {
+            let archive = Path::new(&archives).join(format!("llvm-mingw-msvcrt-{arch}.zip"));
+            let (part, identity, expected) = compat_clang_plan(arch).unwrap();
+            let directory = PathBuf::from(&part.destination);
+            let installed = install(root.path(), &[part], &identity, &expected, |_| {
+                Ok(archive.clone())
+            })
+            .unwrap();
+            let tools = installed.join(directory);
+            assert!(tools.join("bin/clang.exe").is_file());
+            assert!(tools.join("bin/ld.lld.exe").is_file());
+            let imports = tools.join(format!("{arch}-w64-mingw32/lib"));
+            assert!(imports.join("libshlwapi.a").is_file());
+        }
+    }
+
     #[test]
     fn fixed_plan_has_only_pinned_standalone_archives() {
         let parts = plan().unwrap();

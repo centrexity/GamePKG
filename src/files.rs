@@ -95,7 +95,10 @@ mod tests {
 }
 
 /// A selected disc stays open read-only; reads are bounded independently of its size.
-#[cfg(all(feature = "gui", target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    feature = "gui",
+    any(windows, all(target_os = "linux", target_arch = "x86_64"))
+))]
 pub(crate) const MAX_NATIVE_ROM_BYTES: u64 = 1 << 40;
 const MAX_ROM_READ: usize = 65536;
 const LEGACY_ROM_BYTES: u64 = 64 * 1024 * 1024;

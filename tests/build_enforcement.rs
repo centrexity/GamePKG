@@ -90,7 +90,16 @@ fn game_definitions_cannot_launder_system_calls_or_replace_host_runtime_symbols(
 fn signed_legacy_package_and_valid_cached_executable_cannot_reach_build_play_or_export() {
     let temp = tempfile::tempdir().unwrap();
     let library = temp.path().join("library");
-    let signed = helper::sign(&helper::fixture("ports/doom"), temp.path());
+    let mut legacy = helper::fixture("examples/minimal");
+    legacy.insert(
+        "manifest.toml".into(),
+        include_bytes!("fixtures/doom-legacy/manifest.toml").to_vec(),
+    );
+    legacy.insert(
+        "source/src/lib.rs".into(),
+        include_bytes!("fixtures/doom-legacy/legacy_tick.rs").to_vec(),
+    );
+    let signed = helper::sign(&legacy, temp.path());
     let manifest = gamepkg::registry::install(&library, &signed, true).unwrap();
     let path = gamepkg::native::cache_path(&library, &manifest.id).unwrap();
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();

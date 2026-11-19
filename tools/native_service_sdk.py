@@ -1,4 +1,4 @@
-"""Create the Linux compatibility source bundle at maintainer build time."""
+"""Create the native compatibility source bundle at maintainer build time."""
 import argparse
 import gzip
 import hashlib

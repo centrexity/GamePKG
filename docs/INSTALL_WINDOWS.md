@@ -100,8 +100,13 @@ or separate runtime installation is needed. Install/build the Zelda3 package and
 library. The ROM is decoded only in RAM; only game SRAM is persisted.
 See engines/zelda3/README.md for controls and tests.
 
-## DOOM source engine
+## DOOM native compatibility package
 
-The host includes the pinned DOOM Wasm engine. The Linux compiler needs the same Clang 18 and WASI tools described above. See [DOOM engine setup](../engines/doom/README.md) and the [port instructions](https://github.com/centrexity/GamePKG_Ports/blob/main/DOOM.md). Select your own DOOM.WAD/DOOM2.WAD; no WAD is included. Windows compilation uses the existing opt-in WSL 2 exchange; native Windows DOOM playback has not been tested locally.
+In a preview that includes the compatibility SDK, import the signed migrated
+Doom package, choose your original DOOM.WAD or DOOM2.WAD, and use **Build** and
+**Play**. GamePKG prepares its pinned tools automatically. Its separate game
+executable reads the selected WAD in place and keeps new saves in the same
+creator and game scope. Native Windows gameplay still requires qualification
+on the physical desktop.
 
 The desktop renderer now defaults to Vulkan. Install the graphics driver’s Vulkan runtime, or launch `gamepkg-gui.exe --renderer opengl` to choose OpenGL explicitly. Other source engines on Windows use the separate **Build Wasm** and **Play Wasm** controls with the matching Linux compiler configured above. HTTPS and TCP/UDP APIs are host-mediated for Wasm gameplay as well.

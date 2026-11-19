@@ -8,6 +8,67 @@ use gamepkg::port_host::{admission::CheckedSources, preparation};
 
 #[cfg(target_os = "linux")]
 #[test]
+#[ignore = "requires a signed Doom migration package and the reviewed Windows cross-toolchains"]
+fn signed_doom_native_objects_pass_windows_admission() {
+    let package = std::env::var_os("GAMEPKG_TEST_DOOM_NATIVE_PACKAGE")
+        .expect("select the signed native Doom test package");
+    let mut package = gamepkg::archive::Package::open(std::path::Path::new(&package)).unwrap();
+    let sources = CheckedSources::verify(&mut package).unwrap();
+    let manifest = sources.manifest();
+    assert_eq!(manifest.id, "com.gamepkg.doom");
+    assert!(manifest.uses_service_runtime());
+    let cache = tempfile::tempdir().unwrap();
+    for target in [Target::Windows64, Target::Windows32] {
+        let plan = Plan::new(target, "game_main", vec![], LocalLayout::None, true).unwrap();
+        // This fixture exercises source admission, optimized COFF compilation,
+        // object auditing and PE linking. The fixture transport does not
+        // qualify the desktop compatibility bootstrap.
+        let artifact = preparation::build(cache.path(), &sources, &plan, vec![], vec![])
+            .unwrap_or_else(|error| panic!("{target:?}: {error:#}"));
+        let receipt = artifact.receipt();
+        assert_eq!(receipt.game.source_kit, sources.identity());
+        assert_eq!(receipt.game.sdk, gamepkg::port_host::build_identity());
+        assert_eq!(receipt.game.objects.len(), 1);
+        assert_eq!(receipt.game.objects.len(), receipt.raw_objects.len());
+        assert!(artifact.executable().unwrap().is_file());
+    }
+}
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64", feature = "gui"))]
+#[test]
+#[ignore = "requires a signed Doom migration package and the reviewed Windows cross-toolchains"]
+fn signed_doom_links_the_windows_compatibility_runtime() {
+    use gamepkg::port_host::preparation::Bootstrap;
+    let package = std::env::var_os("GAMEPKG_TEST_DOOM_NATIVE_PACKAGE")
+        .expect("select the signed native Doom test package");
+    let mut package = gamepkg::archive::Package::open(std::path::Path::new(&package)).unwrap();
+    let sources = CheckedSources::verify(&mut package).unwrap();
+    assert_eq!(sources.manifest().id, "com.gamepkg.doom");
+    let cache = tempfile::tempdir().unwrap();
+    for (target, filename) in [
+        (Target::Windows64, "doom-compatibility-x64.exe"),
+        (Target::Windows32, "doom-compatibility-x86.exe"),
+    ] {
+        let plan = Plan::new(target, "game_main", vec![], LocalLayout::None, true).unwrap();
+        let artifact = preparation::build_in_process(cache.path(), &sources, &plan, None)
+            .unwrap_or_else(|error| panic!("{target:?}: {error:#}"));
+        let receipt = artifact.receipt();
+        assert_eq!(receipt.bootstrap, Bootstrap::InProcess);
+        assert_eq!(receipt.plan, plan);
+        assert_eq!(receipt.game.source_kit, sources.identity());
+        assert_eq!(receipt.game.sdk, gamepkg::port_host::build_identity());
+        assert_eq!(receipt.game.objects.len(), 1);
+        assert_eq!(receipt.game.objects.len(), receipt.raw_objects.len());
+        let executable = artifact.executable().unwrap();
+        assert!(executable.is_file());
+        if let Some(output) = std::env::var_os("GAMEPKG_TEST_DOOM_WINDOWS_OUTPUT") {
+            std::fs::copy(executable, std::path::Path::new(&output).join(filename)).unwrap();
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
 #[ignore = "four-target source/object admission and actual confined Linux clock workers"]
 fn local_deadlines_execute_without_owner_dispatch_and_keep_every_object_audited() {
     use gamepkg::port_host::{

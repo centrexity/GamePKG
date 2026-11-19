@@ -1,10 +1,6 @@
 use gamepkg::{manifest::Manifest, runtime::Game};
-fn source() -> String {
-    std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/ports/doom/manifest.toml"
-    ))
-    .unwrap()
+fn source() -> &'static str {
+    include_str!("fixtures/doom-legacy/manifest.toml")
 }
 #[test]
 fn doom_requires_its_pinned_core_profile_wad_permissions_and_memory() {

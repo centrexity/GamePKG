@@ -609,6 +609,37 @@ impl App {
         }
         Ok(fresh_frame)
     }
+
+    fn present(&mut self, event_loop: &ActiveEventLoop) {
+        let Some(running) = self.running.as_mut() else {
+            return;
+        };
+        match Self::draw(running) {
+            Ok(true) => {
+                self.report.presented_frames += 1;
+                if let Some(notify) = self.first_frame.take() {
+                    if let Err(error) = notify() {
+                        self.stop(event_loop, Some(error));
+                    }
+                }
+            }
+            Ok(false) => {}
+            Err(error) => self.stop(event_loop, Some(error)),
+        }
+    }
+
+    fn present_hidden_frame(&mut self, event_loop: &ActiveEventLoop) {
+        // Windows does not deliver paint messages to hidden windows. Paint
+        // pending game frames on the same owner thread using service wakeups.
+        if !self.options.visible
+            && self
+                .running
+                .as_mut()
+                .is_some_and(|running| running.driver.host().backend().desktop.has_pending_frame())
+        {
+            self.present(event_loop);
+        }
+    }
 }
 impl ApplicationHandler<()> for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
@@ -624,6 +655,10 @@ impl ApplicationHandler<()> for App {
     }
     fn user_event(&mut self, event_loop: &ActiveEventLoop, _: ()) {
         self.service(event_loop);
+        if !self.options.visible {
+            self.present_hidden_frame(event_loop);
+            return;
+        }
         if let Some(running) = self.running.as_mut() {
             if !self.launch.manifest().native_tick
                 || running.driver.host().backend().desktop.has_pending_frame()
@@ -655,22 +690,7 @@ impl ApplicationHandler<()> for App {
                 self.stop(event_loop, None);
                 return;
             }
-            WindowEvent::RedrawRequested => match Self::draw(r) {
-                Ok(true) => {
-                    self.report.presented_frames += 1;
-                    if let Some(notify) = self.first_frame.take() {
-                        if let Err(error) = notify() {
-                            self.stop(event_loop, Some(error));
-                            return;
-                        }
-                    }
-                }
-                Ok(false) => {}
-                Err(e) => {
-                    self.stop(event_loop, Some(e));
-                    return;
-                }
-            },
+            WindowEvent::RedrawRequested => self.present(event_loop),
             WindowEvent::Resized(_)
             | WindowEvent::Focused(_)
             | WindowEvent::ScaleFactorChanged { .. } => r.window.request_redraw(),
@@ -690,6 +710,7 @@ impl ApplicationHandler<()> for App {
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         if Instant::now() >= self.next_input {
             self.service(event_loop);
+            self.present_hidden_frame(event_loop);
             self.next_input = Instant::now() + Duration::from_millis(4);
         }
         event_loop.set_control_flow(ControlFlow::WaitUntil(self.next_input));
