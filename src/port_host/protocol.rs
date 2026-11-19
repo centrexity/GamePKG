@@ -466,7 +466,7 @@ pub(super) fn dispatch<B: Backend>(
                 })?;
             Ok(Vec::new())
         }
-        130..=134 => {
+        130..=134 | 136 => {
             permitted(host.permissions.audio)?;
             host.streams
                 .as_ref()
