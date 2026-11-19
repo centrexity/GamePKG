@@ -837,7 +837,8 @@ pub fn network(
     request: &[u8],
     reply: &mut [u8],
 ) -> std::result::Result<usize, i32> {
-    if operation > 13 || request.len() > 65540 || reply.len() > 65536 {
+    let reply_limit = if operation == 11 { 65536 + 32 } else { 65536 };
+    if operation > 13 || request.len() > 65540 || reply.len() > reply_limit {
         return Err(-1);
     }
     call(

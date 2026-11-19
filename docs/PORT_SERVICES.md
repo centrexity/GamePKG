@@ -808,7 +808,8 @@ including port zero), 11 receive-from (handle), 12 send-to (handle, 32-byte peer
 payload), 13 local address (handle). Handle prefixes are LE u32; connect/listen take UTF-8 host:port;
 HTTPS takes a UTF-8 HTTPS URL. Start/connect/listen/accept and send need at least
 four reply bytes, including bind/send-to. Receive-from needs at least 32 bytes
-for its peer record, followed by payload; address queries return that record.
+for its peer record, followed by up to 65,536 payload bytes. The peer record
+does not count against the payload limit. Address queries return that record.
 A peer record is family/port/scope/flow as LE u32 followed by 16 network-order
 address bytes. Family is 4 or 6; IPv4 occupies the first four address bytes and
 all remaining/scope/flow fields must be zero. IPv6 retains scope/flow identity.

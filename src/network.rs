@@ -13,6 +13,8 @@ use std::{
 };
 const MAX_HANDLES: usize = 16;
 const MAX_BYTES: usize = 65536;
+const UDP_PEER_BYTES: usize = 32;
+const UDP_RECEIVE_REPLY_MAX: usize = MAX_BYTES + UDP_PEER_BYTES;
 const MAX_TRANSFER_BYTES: usize = 256 * 1024;
 const MAX_JOBS: usize = 16;
 static JOBS: AtomicUsize = AtomicUsize::new(0);
@@ -482,8 +484,13 @@ impl Service {
             b.extend(v.to_le_bytes());
             b
         }
+        let reply_limit = if op == 11 {
+            UDP_RECEIVE_REPLY_MAX
+        } else {
+            MAX_BYTES
+        };
         ensure!(
-            capacity <= MAX_BYTES && b.len() <= MAX_BYTES + 4,
+            capacity <= reply_limit && b.len() <= MAX_BYTES + 4,
             "network message too large"
         );
         match op {
@@ -625,7 +632,10 @@ impl Service {
             }
             11 => {
                 self.capable(false)?;
-                ensure!(b.len() == 4 && capacity >= 32, "invalid datagram receive");
+                ensure!(
+                    b.len() == 4 && capacity >= UDP_PEER_BYTES,
+                    "invalid datagram receive"
+                );
                 self.reset_budget();
                 let available = MAX_TRANSFER_BYTES.saturating_sub(self.used);
                 // Peek the whole legal datagram before consuming it. Neither
@@ -634,7 +644,7 @@ impl Service {
                 let (n, peer) = match self.refresh(id(b)?)? {
                     Resource::UdpBound(socket) => {
                         let (n, _) = socket.peek_from(&mut bytes)?;
-                        ensure!(n <= capacity - 32, "output buffer too small");
+                        ensure!(n <= capacity - UDP_PEER_BYTES, "output buffer too small");
                         ensure!(n <= available, "pending");
                         socket.recv_from(&mut bytes[..n])?
                     }
@@ -1251,6 +1261,29 @@ mod tests {
         assert_eq!(until(|| service.call(5, &1u32.to_le_bytes(), 8)), [0]);
         assert_eq!(service.used, 256 * 1024);
     }
+    #[test]
+    fn bound_udp_reply_fits_a_full_ipv4_datagram_and_its_peer() {
+        let receiver = UdpSocket::bind("127.0.0.1:0").unwrap();
+        receiver.set_nonblocking(true).unwrap();
+        let sender = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let payload = vec![0x5a; 65_507];
+        sender
+            .send_to(&payload, receiver.local_addr().unwrap())
+            .unwrap();
+        let mut service = ready_service(Resource::UdpBound(receiver));
+        let socket = 1u32.to_le_bytes();
+        assert_eq!(until(|| service.call(11, &socket, MAX_BYTES)), [1]);
+        assert_eq!(service.call(11, &socket, UDP_RECEIVE_REPLY_MAX + 1), [1]);
+        let reply = until(|| service.call(11, &socket, payload.len() + UDP_PEER_BYTES));
+        assert_eq!(reply[0], 0);
+        assert_eq!(
+            decode_socket_address(&reply[1..1 + UDP_PEER_BYTES]).unwrap(),
+            sender.local_addr().unwrap()
+        );
+        assert_eq!(&reply[1 + UDP_PEER_BYTES..], payload);
+        assert_eq!(service.used, payload.len());
+    }
+
     #[test]
     fn receive_quota_preserves_udp_datagrams_and_counts_actual_sizes() {
         let receiver = UdpSocket::bind("127.0.0.1:0").unwrap();
