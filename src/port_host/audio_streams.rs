@@ -34,6 +34,7 @@ struct Stream {
     capacity: usize,
     charge: u64,
     running: bool,
+    gain: u32,
     submitted: u64,
     consumed: u64,
     cancelled: u64,
@@ -108,6 +109,7 @@ impl Mixer {
                         capacity: frames,
                         charge,
                         running: false,
+                        gain: 128,
                         submitted: 0,
                         consumed: 0,
                         cancelled: 0,
@@ -188,6 +190,16 @@ impl Mixer {
                 state.used -= s.charge;
                 Ok(Vec::new())
             }
+            136 => {
+                let id = r.u64()?;
+                let gain = r.u32()?;
+                r.end()?;
+                if gain > 128 {
+                    return Err(Error::Invalid);
+                }
+                state.streams.get_mut(&id).ok_or(Error::Denied)?.gain = gain;
+                Ok(Vec::new())
+            }
             _ => Err(Error::Unsupported),
         }
     }
@@ -206,7 +218,7 @@ impl Mixer {
             if s.running {
                 if let Some(frame) = s.queue.pop_front() {
                     for (to, from) in mixed.iter_mut().zip(frame) {
-                        *to += i64::from(from);
+                        *to += i64::from(from) * i64::from(s.gain) / 128;
                     }
                     s.consumed += 1;
                 }
@@ -242,6 +254,30 @@ mod tests {
             0,
         )
         .unwrap();
+    }
+    #[test]
+    fn gain_changes_already_queued_frames_without_rewriting_them() {
+        let mixer = Mixer::new(Layout::Stereo, 4096);
+        let stream = create(&mixer, 1, 3).unwrap();
+        let other = create(&mixer, 1, 3).unwrap();
+        push(&mixer, stream, &[400, -400, 300, -300, 200, -200]).unwrap();
+        push(&mixer, other, &[50, -50, 50, -50, 50, -50]).unwrap();
+        action(&mixer, stream, 1);
+        action(&mixer, other, 1);
+        let set_gain = |gain: u32| {
+            mixer.call(
+                136,
+                &[stream.to_le_bytes().as_slice(), &gain.to_le_bytes()].concat(),
+                0,
+            )
+        };
+        set_gain(64).unwrap();
+        assert_eq!(mixer.frame()[..2], [250, -250]);
+        assert_eq!(set_gain(129), Err(Error::Invalid));
+        set_gain(0).unwrap();
+        assert_eq!(mixer.frame()[..2], [50, -50]);
+        set_gain(128).unwrap();
+        assert_eq!(mixer.frame()[..2], [250, -250]);
     }
     fn push(m: &Mixer, id: u64, samples: &[i16]) -> Result<Vec<u8>> {
         let mut bytes = id.to_le_bytes().to_vec();

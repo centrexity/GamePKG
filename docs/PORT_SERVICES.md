@@ -1303,12 +1303,15 @@ consumed frames. IDs are per-session and never reused.
 | 132 stream status | ID u64 | submitted/consumed/cancelled/queued u64, running bool/channels u32 (40 bytes) |
 | 133 stream control | ID u64, action u32 | 0 pause, 1 start/resume, 2 flush preserving running state, 3 cancel and pause |
 | 134 release | ID u64 | discard this stream and revoke its ID |
+| 136 gain | ID u64, gain u32 (0..128, default 128) | empty |
 | 140 capture create | format, rate, layout (0/1), capacity-frames u32 | pending capture ID u64 |
 | 141 capture read | ID u64, max-frames u32 (1..1600) | interleaved LE PCM16; Busy if pending/empty |
 | 142 capture status | ID u64 | captured/read/lost/queued u64, 32 bytes; Busy while starting |
 | 143 capture release | ID u64 | discard pending data, revoke even a pending/failed capture |
 
 Output consumed means dequeued into the host mixer, **not physically heard**.
+Gain applies when frames are dequeued, including frames already queued. It
+does not rewrite the samples or change stream accounting.
 Flush/cancel affects only that stream's queued frames; samples already mixed
 into a resampling frame or submitted to the device cannot be recalled. Teardown
 revokes all streams. Port-owned decoders must retry Busy in order and release

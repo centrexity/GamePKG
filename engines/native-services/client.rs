@@ -2075,6 +2075,14 @@ pub fn audio_stream_release(id: u64) -> std::result::Result<(), i32> {
     call(134, &id.to_le_bytes(), &mut [])?;
     Ok(())
 }
+/// Change the stream's mix gain, with 0 silent and 128 full gain.
+pub fn audio_stream_gain(id: u64, gain: u32) -> std::result::Result<(), i32> {
+    if gain > 128 {
+        return Err(-1);
+    }
+    let request = [id.to_le_bytes().as_slice(), &gain.to_le_bytes()].concat();
+    call(136, &request, &mut []).map(|_| ())
+}
 pub fn capture_create(layout: u32, frames: u32) -> std::result::Result<u64, i32> {
     let bytes = [0u32, 48000, layout, frames]
         .into_iter()
