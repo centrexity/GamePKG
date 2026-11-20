@@ -11,9 +11,9 @@ fn assert_doom_object_receipts(receipt: &preparation::ExecutableReceipt) {
     assert!(receipt
         .arguments
         .iter()
-        .any(|arg| arg == "codegen-units=32"));
+        .any(|arg| arg == "codegen-units=64"));
     let audited = &receipt.game.objects;
-    assert!((2..=32).contains(&audited.len()));
+    assert!((2..=64).contains(&audited.len()));
     assert_eq!(audited.len(), receipt.raw_objects.len());
     for (index, (object, raw)) in audited.iter().zip(&receipt.raw_objects).enumerate() {
         assert_eq!(object.name, format!("game-{index:04}.o"));
@@ -432,7 +432,7 @@ fn reviewed_entry_metadata_cannot_inject_code_or_select_an_incompatible_layout()
         a.clone().with_codegen_units(4).unwrap().identity()
     );
     assert!(a.clone().with_codegen_units(0).is_err());
-    assert!(a.clone().with_codegen_units(257).is_err());
+    assert!(a.clone().with_codegen_units(513).is_err());
     assert_ne!(
         a.identity(),
         a.clone()
@@ -443,21 +443,21 @@ fn reviewed_entry_metadata_cannot_inject_code_or_select_an_incompatible_layout()
     assert!(a.clone().with_compiler_memory_bytes(0).is_err());
     assert!(a
         .clone()
-        .with_compiler_memory_bytes(32 * 1024 * 1024 * 1024 + 1)
+        .with_compiler_memory_bytes(48 * 1024 * 1024 * 1024 + 1)
         .is_err());
-    assert!(a.clone().with_codegen_units(256).is_ok());
+    assert!(a.clone().with_codegen_units(512).is_ok());
     assert_eq!(
         a.clone()
-            .with_compiler_memory_bytes(32 * 1024 * 1024 * 1024)
+            .with_compiler_memory_bytes(48 * 1024 * 1024 * 1024)
             .is_ok(),
         !cfg!(all(windows, target_pointer_width = "32"))
     );
     let record = serde_json::to_value(&a).unwrap();
-    assert_eq!(record["codegen_units"], 32);
+    assert_eq!(record["codegen_units"], 64);
     let compiler_gib = if cfg!(all(windows, target_pointer_width = "32")) {
         2
     } else {
-        16
+        24
     };
     assert_eq!(
         record["compiler_memory_bytes"],
@@ -470,7 +470,7 @@ fn reviewed_entry_metadata_cannot_inject_code_or_select_an_incompatible_layout()
         ("tasks", serde_json::json!(vec!["task"; 257])),
         ("unreviewed_flag", serde_json::json!(true)),
         ("codegen_units", serde_json::json!(0)),
-        ("codegen_units", serde_json::json!(257)),
+        ("codegen_units", serde_json::json!(513)),
         ("codegen_units", serde_json::json!(-1)),
         ("codegen_units", serde_json::json!(1.5)),
         ("compiler_memory_bytes", serde_json::json!(0)),
@@ -480,7 +480,7 @@ fn reviewed_entry_metadata_cannot_inject_code_or_select_an_incompatible_layout()
         ),
         (
             "compiler_memory_bytes",
-            serde_json::json!(32 * 1024 * 1024 * 1024 + 1u64),
+            serde_json::json!(48 * 1024 * 1024 * 1024 + 1u64),
         ),
         ("compiler_memory_bytes", serde_json::json!(-1)),
         ("compiler_memory_bytes", serde_json::json!(1.5)),
@@ -847,7 +847,7 @@ fn multiple_codegen_objects_are_all_audited_linked_and_bound_in_receipts() {
         assert!(receipt
             .arguments
             .iter()
-            .any(|arg| arg == "codegen-units=32"));
+            .any(|arg| arg == "codegen-units=64"));
         assert_eq!(receipt.game.source_kit, sources.identity());
         assert_eq!(receipt.game.sdk, gamepkg::port_host::build_identity());
         assert_eq!(receipt.plan, plan);
