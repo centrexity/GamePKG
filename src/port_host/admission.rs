@@ -85,7 +85,7 @@ fn hash_file(path: &Path) -> Result<String> {
     )?))
 }
 // On 32-bit hosts COFF normalization may hold an input and a copy together.
-pub(super) const MAX_WORKER_FILE_BYTES: u64 = 4 * 1024 * 1024 * 1024;
+pub(super) const MAX_WORKER_FILE_BYTES: u64 = 8 * 1024 * 1024 * 1024;
 pub(super) const MAX_GAME_OBJECT_BYTES: u64 = if cfg!(target_pointer_width = "64") {
     MAX_WORKER_FILE_BYTES
 } else {

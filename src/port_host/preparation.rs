@@ -135,9 +135,9 @@ impl LocalLayout {
     }
 }
 
-const DEFAULT_CODEGEN_UNITS: u32 = 16;
-const MAX_CODEGEN_UNITS: u32 = 128;
-const COMPILER_TIMEOUT_SECS: u64 = 3600;
+const DEFAULT_CODEGEN_UNITS: u32 = 32;
+const MAX_CODEGEN_UNITS: u32 = 256;
+const COMPILER_TIMEOUT_SECS: u64 = 7200;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(try_from = "RawPlan")]
@@ -167,7 +167,7 @@ fn compiler_memory_default() -> u64 {
     if cfg!(all(windows, target_pointer_width = "32")) {
         2 * 1024 * 1024 * 1024
     } else {
-        12 * 1024 * 1024 * 1024
+        16 * 1024 * 1024 * 1024
     }
 }
 fn one_codegen_unit() -> u32 {
@@ -975,8 +975,9 @@ pub extern "C" fn __gamepkg_entry() {
     let mut object_normalization = ObjectNormalization::None;
     for (index, object) in game_objects.iter().enumerate() {
         let sha256 = if plan.target.windows() {
-            let bytes =
-                crate::files::read_regular(object, super::admission::MAX_GAME_OBJECT_BYTES, false)?;
+            // COFF stores section and symbol offsets in 32-bit fields.
+            let limit = super::admission::MAX_GAME_OBJECT_BYTES.min(u64::from(u32::MAX));
+            let bytes = crate::files::read_regular(object, limit, false)?;
             let hash = crate::verify::digest(&bytes);
             if let Some(normalized) = super::coff_exclusions::normalize(&bytes)? {
                 fs::write(object, normalized)?;
