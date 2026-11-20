@@ -135,9 +135,9 @@ impl LocalLayout {
     }
 }
 
-const DEFAULT_CODEGEN_UNITS: u32 = 8;
-const MAX_CODEGEN_UNITS: u32 = 64;
-const COMPILER_TIMEOUT_SECS: u64 = 1800;
+const DEFAULT_CODEGEN_UNITS: u32 = 16;
+const MAX_CODEGEN_UNITS: u32 = 128;
+const COMPILER_TIMEOUT_SECS: u64 = 3600;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(try_from = "RawPlan")]
@@ -167,7 +167,7 @@ fn compiler_memory_default() -> u64 {
     if cfg!(all(windows, target_pointer_width = "32")) {
         2 * 1024 * 1024 * 1024
     } else {
-        8 * 1024 * 1024 * 1024
+        12 * 1024 * 1024 * 1024
     }
 }
 fn one_codegen_unit() -> u32 {
@@ -236,7 +236,7 @@ impl Plan {
     /// package/creator option selects it. Bound into Plan/cache provenance.
     pub fn with_compiler_memory_bytes(mut self, bytes: u64) -> Result<Self> {
         ensure!(
-            (256 * 1024 * 1024..=16 * 1024 * 1024 * 1024).contains(&bytes),
+            crate::compiler::SERVICE_MEMORY_BUDGET.contains(&bytes),
             "invalid reviewed compiler memory budget"
         );
         #[cfg(windows)]
