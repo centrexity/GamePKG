@@ -939,8 +939,8 @@ The i686 COFF audit accepts the MinGW stack probe alias `__alloca` only as
 an exact compiler import in an all-i686 COFF object set. The definition
 belongs to the reviewed compiler runtime.
 
-`Plan::with_codegen_units(1..=256)` selects a host-reviewed game partition count
-(default thirty-two), bound into the Plan identity and compiler arguments. Rustc may
+`Plan::with_codegen_units(1..=512)` selects a host-reviewed game partition count
+(default sixty-four), bound into the Plan identity and compiler arguments. Rustc may
 merge small partitions. The builder inventories every retained `.rcgu.o`,
 rejects unexpected outputs, links every sealed unit, and accepts an aggregate
 copy only when it is byte-identical to the sole retained unit. The trusted
@@ -948,7 +948,7 @@ runtime remains a separate compilation using the same reviewed partition count.
 
 `Plan::with_compiler_memory_bytes(bytes)` sets a reviewed **compiler** budget,
 separate from manifest/game execution memory. Accepted values are 256 MiB through
-32 GiB. Defaults are 16 GiB, or 2 GiB on a 32-bit Windows compiler host. Windows
+48 GiB. Defaults are 24 GiB, or 2 GiB on a 32-bit Windows compiler host. Windows
 also rejects values that cannot fit the compiler host's architecture. The Plan
 identity and executable receipt bind the exact choice. Packages and creators
 cannot select it through their manifest or source. Linux enforces an inherited
@@ -961,10 +961,10 @@ Compiler stderr retains a bounded beginning and end so a warning flood cannot
 hide a final failure; Linux errors also report the actual exit status. The
 1 MiB per-stream capture limit remains. Machine-readable stdout preserves its
 original prefix/truncation behavior; incomplete object-auditor output still
-fails. A native compiler invocation can run for up to 120 minutes. Linux
-enforces an 8 GiB per-file worker limit while writing, and both platforms check
+fails. A native compiler invocation can run for up to 180 minutes. Linux
+enforces a 12 GiB per-file worker limit while writing, and both platforms check
 compiled output sizes before reading them. The sealed object set is capped at
-8 GiB in total. An audited ELF object can be up to 8 GiB on a 64-bit host.
+12 GiB in total. An audited ELF object can be up to 12 GiB on a 64-bit host.
 COFF input must fit in its 32-bit offset range. On 32-bit hosts the per-object
 audit cap is 512 MiB. These are intermediate compiler limits. The signed
 game memory limits and the final executable size checks still apply.

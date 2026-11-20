@@ -135,9 +135,9 @@ impl LocalLayout {
     }
 }
 
-const DEFAULT_CODEGEN_UNITS: u32 = 32;
-const MAX_CODEGEN_UNITS: u32 = 256;
-const COMPILER_TIMEOUT_SECS: u64 = 7200;
+const DEFAULT_CODEGEN_UNITS: u32 = 64;
+const MAX_CODEGEN_UNITS: u32 = 512;
+const COMPILER_TIMEOUT_SECS: u64 = 10_800;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(try_from = "RawPlan")]
@@ -167,7 +167,7 @@ fn compiler_memory_default() -> u64 {
     if cfg!(all(windows, target_pointer_width = "32")) {
         2 * 1024 * 1024 * 1024
     } else {
-        16 * 1024 * 1024 * 1024
+        24 * 1024 * 1024 * 1024
     }
 }
 fn one_codegen_unit() -> u32 {
