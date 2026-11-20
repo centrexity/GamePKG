@@ -75,7 +75,7 @@ pub(crate) fn run_with_memory(
     memory_bytes: u64,
 ) -> Result<Vec<u8>> {
     ensure!(
-        (256 * 1024 * 1024..=16 * 1024 * 1024 * 1024).contains(&memory_bytes),
+        crate::compiler::SERVICE_MEMORY_BUDGET.contains(&memory_bytes),
         "invalid compiler memory budget"
     );
     ensure!(
