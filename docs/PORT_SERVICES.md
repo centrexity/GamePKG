@@ -764,7 +764,7 @@ For Windows x86 and x64, the native port services CI compiles the shared
 Vulkan fixtures and runs the file grant, Windows save replacement, and host
 networking tests. Compiling the graphics fixtures is not a hardware Vulkan
 test. On a Windows machine with a hardware Vulkan driver, run
-`cargo test --locked --features gui --test port_services_vulkan -- --ignored`
+`cargo test --locked --features gui --test port_services_vulkan -- --ignored --test-threads=1`
 for the offscreen pixel checks. These service tests do not qualify a visible
 window through the installed-package launcher.
 
@@ -775,7 +775,8 @@ receipt bound to the selected backend and that a network-enabled indexed
 package is rejected.
 Its manual `hardware` run on `main` uses a trusted self-hosted Windows runner
 labelled `gamepkg-vulkan`. That runner needs an interactive desktop and both
-32-bit and 64-bit hardware Vulkan drivers. The pixel test opens the confined
+32-bit and 64-bit hardware Vulkan drivers. It runs the offscreen driver
+regressions before the pixel test opens the confined
 child's visible window, checks image and indexed Slang pixels, exercises
 resize and keyboard input, and verifies the image fixture's save and play
 history on restart. Hosted build artifacts do not claim visible-window

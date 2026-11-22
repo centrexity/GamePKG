@@ -11,6 +11,7 @@ on:
       - 'src/runtime.rs'
       - 'src/native/**'
       - 'src/port_host/**'
+      - 'vendor/wgpu-hal/src/vulkan/**'
       - 'engines/native-services/**'
       - 'src/shaders.rs'
       - 'src/windows_compiler.rs'
@@ -18,6 +19,7 @@ on:
       - 'engines/native/**'
       - 'engines/takedawn/windows-runner/**'
       - 'tests/windows_native_gui.py'
+      - 'tests/port_services_vulkan.rs'
       - 'tests/fixtures/windows_native_*'
       - 'tests/windows_owned_window.py'
       - 'tests/windows_doom_gui.py'
@@ -46,6 +48,7 @@ on:
       - 'src/runtime.rs'
       - 'src/native/**'
       - 'src/port_host/**'
+      - 'vendor/wgpu-hal/src/vulkan/**'
       - 'engines/native-services/**'
       - 'src/shaders.rs'
       - 'src/windows_compiler.rs'
@@ -53,6 +56,7 @@ on:
       - 'engines/native/**'
       - 'engines/takedawn/windows-runner/**'
       - 'tests/windows_native_gui.py'
+      - 'tests/port_services_vulkan.rs'
       - 'tests/fixtures/windows_native_*'
       - 'tests/windows_owned_window.py'
       - 'tests/windows_doom_gui.py'
@@ -144,6 +148,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python tests/doom_gui_proof_test.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Run shared Vulkan pixel tests on the native driver
+        if: inputs.hardware
+        run: cargo test --locked --features gui --target ${{ matrix.target }} --test port_services_vulkan -- --ignored --test-threads=1
       - name: Verify native image and indexed Slang builds, with visible Vulkan windows on hardware
         shell: pwsh
         env:
