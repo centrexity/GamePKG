@@ -53,10 +53,10 @@ jobs:
       - name: Verify supported source games and reject unsupported engine builds before tools
         shell: pwsh
         run: |
-          cargo test --locked --target i686-pc-windows-msvc --test platform_build_boundary -- --nocapture 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP/platform-build-boundary32.log"
+          cargo test --locked --features gui --target i686-pc-windows-msvc --test platform_build_boundary -- --nocapture 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP/platform-build-boundary32.log"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $log = Get-Content -Raw "$env:RUNNER_TEMP/platform-build-boundary32.log"
-          if ($log -notmatch 'test result: ok\. 3 passed; 0 failed;') { throw 'The three exact Windows platform boundary tests did not run successfully' }
+          if ($log -notmatch 'test result: ok\. 4 passed; 0 failed;') { throw 'The four Windows platform boundary tests did not run successfully' }
       - name: Verify confined standalone 32-bit source compiler and worker without WSL
         shell: pwsh
         run: |
@@ -96,10 +96,10 @@ jobs:
       - name: Verify supported source games and reject unsupported engine builds before tools
         shell: pwsh
         run: |
-          cargo test --locked --test platform_build_boundary -- --nocapture 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP/platform-build-boundary.log"
+          cargo test --locked --features gui --test platform_build_boundary -- --nocapture 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP/platform-build-boundary.log"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $log = Get-Content -Raw "$env:RUNNER_TEMP/platform-build-boundary.log"
-          if ($log -notmatch 'test result: ok\. 3 passed; 0 failed;') { throw 'The three exact Windows platform boundary tests did not run successfully' }
+          if ($log -notmatch 'test result: ok\. 4 passed; 0 failed;') { throw 'The four Windows platform boundary tests did not run successfully' }
       - name: Exercise the production owner and real child windows without game media
         shell: pwsh
         run: |

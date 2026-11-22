@@ -814,11 +814,10 @@ mod stereo_tests {
     }
     #[test]
     fn large_engine_saves_require_exact_profile_permission_and_limit() {
-        let mut manifest: crate::manifest::Manifest =
-            toml::from_str(include_str!(
-                "../../tests/fixtures/doom-legacy/manifest.toml"
-            ))
-            .unwrap();
+        let mut manifest: crate::manifest::Manifest = toml::from_str(include_str!(
+            "../../tests/fixtures/doom-legacy/manifest.toml"
+        ))
+        .unwrap();
         assert!(validate_engine_save(&manifest, crate::doom::SAVE_MAX).is_ok());
         assert!(validate_engine_save(&manifest, crate::doom::SAVE_MAX + 1).is_err());
         assert!(validate_engine_save(&manifest, usize::MAX).is_err());

@@ -843,11 +843,10 @@ mod tests {
     #[test]
     fn mixed_patch_display_uses_runtime_order_without_changing_selection_indices() {
         use crate::manifest::{DoomWadMode as Mode, RomRequirement};
-        let mut manifest: crate::manifest::Manifest =
-            toml::from_str(include_str!(
-                "../../tests/fixtures/doom-legacy/manifest.toml"
-            ))
-            .unwrap();
+        let mut manifest: crate::manifest::Manifest = toml::from_str(include_str!(
+            "../../tests/fixtures/doom-legacy/manifest.toml"
+        ))
+        .unwrap();
         for index in 0..6 {
             manifest.roms.push(RomRequirement {
                 id: format!("patch{index}"),

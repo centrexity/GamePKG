@@ -40,7 +40,9 @@ can supply higher-version signed updates with portable source.
 
 Local tests executed 22 checks per platform: 32-bit Linux x86, 32-bit Windows
 x86 under Wine, and actual 32-bit Android x86 userspace in a separate emulator.
-The Android ARMv7 CLI cross-compiles with NDK 27.0.12077973 and API 23. Linux and
+The Android ARMv7 CLI cross-compiles with NDK 27.0.12077973 and API 23. Network
+interface discovery requires API 24 or newer; on API 23 that operation fails
+without affecting other networking operations. Linux and
 Windows 32-bit GUI sources also undergo architecture-specific build checks.
 Golden tests check a value larger than `u32::MAX`, little-endian memory bytes,
 core/component boundaries, memory and execution limits, and signed source

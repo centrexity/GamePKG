@@ -106,9 +106,22 @@ next
             .bytes,
         (6u64 << 32).to_le_bytes()
     );
-    assert!(super::build_supported(&manifest));
+    // This fixture targets the low-level legacy worker protocol, not the
+    // shared-service desktop runtime. A valid cached binary must not admit it
+    // through the public Build or Play path.
+    assert!(!super::build_supported(&manifest));
+    assert!(!super::play_supported(&manifest));
+    let build = super::compile(root, &manifest.id).unwrap_err();
+    let play =
+        super::play_services(root, &manifest.id, &[], settings, Default::default()).unwrap_err();
+    for error in [build, play] {
+        assert!(
+            error.to_string().contains("requires migration"),
+            "{error:#}"
+        );
+    }
     let mut game =
-        crate::runtime::Game::load_target_configured(root, &manifest.id, &[], None, settings)
+        crate::runtime::Game::load_target_configured(root, &manifest.id, &[], Some(true), settings)
             .unwrap();
     assert!(game.custom_renderer);
     assert_eq!(game.step(5).unwrap(), 11u64 << 32);
@@ -127,7 +140,6 @@ next
             .bytes,
         (12u64 << 32).to_le_bytes()
     );
-    println!("Verified normal game loader defaults to native playback, restores scoped saves and persists play history");
     bytes.extend_from_slice(b"corrupt");
     std::fs::write(&built, bytes).unwrap();
     assert!(super::Session::new(
@@ -140,11 +152,15 @@ next
         0
     )
     .is_err());
-    assert!(
-        crate::runtime::Game::load_target_configured(root, &manifest.id, &[], None, settings)
-            .is_err()
-    );
-    println!("Verified signed source package, native-only Build, generated SDK assets/drawing/ticks, scoped saves across fresh sessions and corrupted native-build rejection through the production session.");
+    assert!(crate::runtime::Game::load_target_configured(
+        root,
+        &manifest.id,
+        &[],
+        Some(true),
+        settings
+    )
+    .is_err());
+    println!("Verified signed legacy worker SDK assets/drawing/ticks, scoped saves, corrupted binary rejection, and public native admission denial.");
 }
 
 #[cfg(target_os = "linux")]

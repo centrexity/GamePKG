@@ -3829,7 +3829,8 @@ fn editor_toolbar_hover_uses_original_integer_boxes_and_nonmotion_retention() {
 }
 
 #[path = "../ports/arkanoo/source/src/dynamic_font.rs"]
-#[allow(clippy::slow_vector_initialization)]
+// Compile the pinned port source without editing the ports submodule.
+#[allow(clippy::slow_vector_initialization, clippy::question_mark)]
 mod dynamic_font;
 #[path = "../ports/arkanoo/source/src/dynamic_font_data.rs"]
 mod dynamic_font_data;

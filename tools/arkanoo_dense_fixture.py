@@ -1,7 +1,7 @@
 """Shared private state fixture; production renderer is unchanged."""
 probe='''
     if input >= 0x9f000001 && input <= 0x9f000006 {
-        if let Ok(mut slot) = GAME.lock() {
+        if let Some(mut slot) = GAME.try_lock() {
             if let Some(game) = slot.as_mut() {
                 game.mode = 1; game.level = input - 0x9f000000;
                 game.frame = 0; game.score = 0; game.fps = 0;

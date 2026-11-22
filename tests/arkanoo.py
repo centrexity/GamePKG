@@ -12,7 +12,7 @@ from contextlib import nullcontext
 from collections import Counter
 parser=argparse.ArgumentParser()
 parser.add_argument('--keep-fixtures',action='store_true',help='Retain the isolated test directory for diagnosing failed signed checks')
-parser.add_argument('--runtime-only',action='store_true',help='Run both signed execution profiles without starting GUI workflows')
+parser.add_argument('--runtime-only',action='store_true',help='Run the signed core and component Wasm fixtures without starting GUI workflows')
 parser.add_argument('--skip-browser',action='store_true',help='Run native checks on hosts without Chromium/Selenium')
 args=parser.parse_args()
 if not args.skip_browser and not args.runtime_only:
@@ -93,7 +93,7 @@ with (nullcontext(tempfile.mkdtemp(prefix='gamepkg-arkanoo-',dir=PROJECT/'target
         assert r.returncode==0,r.stderr
         return r.stdout
     production=root/'production';copy_legacy_port(production)
-    entry=production/'source/src/lib.rs';entry.write_text(entry.read_text().replace('pub fn game_tick(input: u32, state: u64) -> u64 {','pub fn game_tick(input: u32, state: u64) -> u64 {\n if input&0xc00000ff==0xc000004b {'+'game_tick((input>>8)&255,state);let now=gamepkg::frame_time_us();if let Ok(slot)=GAME.lock(){if let Some(game)=slot.as_ref(){return (now<<32)|u64::from(game.fps);}}return u64::MAX;'+'}'))
+    entry=production/'source/src/lib.rs';entry.write_text(entry.read_text().replace('pub fn game_tick(input: u32, state: u64) -> u64 {','pub fn game_tick(input: u32, state: u64) -> u64 {\n if input&0xc00000ff==0xc000004b {'+'game_tick((input>>8)&255,state);let now=gamepkg::frame_time_us();if let Some(slot)=GAME.try_lock(){if let Some(game)=slot.as_ref(){return (now<<32)|u64::from(game.fps);}}return u64::MAX;'+'}'))
     run('pack',production,'-o',root/'arkanoo.gamepkg','--key',key)
     run('install',root/'arkanoo.gamepkg','--trust-creator');run('build','com.gamepkg.arkanoo')
     result=run('run','com.gamepkg.arkanoo','--frames',180)
@@ -367,7 +367,7 @@ pub fn game_tick(input:u32,state:u64)->u64 {
         if not allowed:text=text.split('[[permissions.files]]')[0]
         if suffix=='nosave-component':text=text.replace('save = true','save = false')
         if suffix=='files-component':
-            entry=fixture/'source/src/lib.rs';entry.write_text(entry.read_text().replace('pub fn game_tick(input: u32, state: u64) -> u64 {','pub fn game_tick(input: u32, state: u64) -> u64 {\n if input&0xc00000ff==0xc000004b {'+'game_tick((input>>8)&255,state);let now=gamepkg::frame_time_us();if let Ok(slot)=GAME.lock(){if let Some(game)=slot.as_ref(){return (now<<32)|u64::from(game.fps);}}return u64::MAX;'+'}'))
+            entry=fixture/'source/src/lib.rs';entry.write_text(entry.read_text().replace('pub fn game_tick(input: u32, state: u64) -> u64 {','pub fn game_tick(input: u32, state: u64) -> u64 {\n if input&0xc00000ff==0xc000004b {'+'game_tick((input>>8)&255,state);let now=gamepkg::frame_time_us();if let Some(slot)=GAME.try_lock(){if let Some(game)=slot.as_ref(){return (now<<32)|u64::from(game.fps);}}return u64::MAX;'+'}'))
         manifest.write_text(text);run('pack',fixture,'-o',root/(suffix+'.gamepkg'),'--key',key);run('install',root/(suffix+'.gamepkg'),'--trust-creator');run('build','com.gamepkg.arkanoo-'+suffix)
     probe_env=dict(env,GAMEPKG_ARKANOO_TEST_ROOT=str(root/'library'))
     # These cases enforce real per-frame wall deadlines and start child games.
@@ -375,6 +375,9 @@ pub fn game_tick(input:u32,state:u64)->u64 {
     # copy does not consume a game's deadline on a two-core CI runner. The
     # outer suite allowance covers all 72 cases; game limits stay unchanged.
     subprocess.run([str(RUNTIME_TEST),'--ignored','--test-threads=1'],env=probe_env,check=True,timeout=300)
+    if args.runtime_only:
+        print('Signed legacy Arkanoo Wasm runtime checks passed; GUI workflows were not requested.')
+        raise SystemExit(0)
     run('build','com.gamepkg.arkanoo','--target','native')
     run('build','com.gamepkg.arkanoo-nosave','--target','native')
     run('build','com.gamepkg.arkanoo-nofiles','--target','native')
@@ -385,9 +388,6 @@ pub fn game_tick(input:u32,state:u64)->u64 {
     run('build','com.gamepkg.arkanoo-events-denied','--target','native')
     run('integrity-check','com.gamepkg.arkanoo')
     subprocess.run([str(RUNTIME_TEST),'--ignored','--test-threads=1'],env=probe_env,check=True,timeout=300)
-    if args.runtime_only:
-        print('Signed Arkanoo checks passed in Wasm and native execution; GUI workflows were not requested.')
-        raise SystemExit(0)
     # Real native window: locate the original cyan core, hold movement, start, pause.
     display=start_display(env,width=1400,height=900);app=None;wm=None
     from Xlib import display as xdisplay

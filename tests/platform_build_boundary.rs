@@ -96,7 +96,12 @@ fn desktop_native_build_and_play_require_the_compatibility_profiles() {
             feature = "gui",
             target_os = "linux",
             target_arch = "x86_64"
-        ));
+        )) || (profile == "native_services"
+            && cfg!(all(
+                feature = "gui",
+                windows,
+                any(target_arch = "x86", target_arch = "x86_64")
+            )));
         assert_eq!(gamepkg::native::build_supported(&manifest), has_runtime);
         assert_eq!(gamepkg::native::play_supported(&manifest), has_runtime);
     }

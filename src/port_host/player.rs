@@ -283,7 +283,7 @@ impl App {
                 options.width,
                 options.height,
             ))
-            .with_fullscreen(options.fullscreen.then(|| Fullscreen::Borderless(None)));
+            .with_fullscreen(options.fullscreen.then_some(Fullscreen::Borderless(None)));
         let window = Arc::new(event_loop.create_window(attributes)?);
         window.set_ime_allowed(true);
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {

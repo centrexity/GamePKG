@@ -50,7 +50,8 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-shader-ui-') as directory:
  try:
   player_env=dict(env)
   if args.without_compiler:player_env.pop('GAMEPKG_SLANG_ROOT',None)
-  app=subprocess.Popen([str(binaries/'gamepkg-gui'),'--play','com.gamepkg.shader-switch'],env=player_env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+  play=[str(binaries/'gamepkg-gui'),'--play','com.gamepkg.shader-switch','--target','native' if args.native else 'wasm']
+  app=subprocess.Popen(play,env=player_env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
   try:
    def wait_window(process):
     deadline=time.monotonic()+30
@@ -114,7 +115,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-shader-ui-') as directory:
    played=json.loads(records[0].read_text())['played_ms'];assert played>0
    history={'first_played_ms':played,'normal_close':True}
    if args.restart:
-    app=subprocess.Popen([str(binaries/'gamepkg-gui'),'--play','com.gamepkg.shader-switch'],env=player_env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+    app=subprocess.Popen(play,env=player_env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
     window=wait_window(app);deadline=time.monotonic()+15
     while True:
      if app.poll() is not None:raise RuntimeError(app.stderr.read().decode())

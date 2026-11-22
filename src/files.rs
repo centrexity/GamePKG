@@ -63,37 +63,6 @@ pub(crate) fn snapshot_archive(path: &Path) -> Result<tempfile::NamedTempFile> {
     Ok(snapshot)
 }
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn bounded_regular_snapshots_reject_directories_and_large_files() {
-        let root = tempfile::tempdir().unwrap();
-        let path = root.path().join("file");
-        std::fs::write(&path, b"test").unwrap();
-        assert_eq!(super::read_regular(&path, 4, false).unwrap(), b"test");
-        assert!(super::read_regular(&path, 3, false).is_err());
-        assert!(super::read_regular(root.path(), 4, false).is_err());
-    }
-
-    #[cfg(any(unix, windows))]
-    #[test]
-    fn cache_links_are_rejected_but_explicit_selected_links_are_allowed() {
-        let root = tempfile::tempdir().unwrap();
-        let path = root.path().join("file");
-        let link = root.path().join("link");
-        std::fs::write(&path, b"selected ROM").unwrap();
-        #[cfg(unix)]
-        std::os::unix::fs::symlink(&path, &link).unwrap();
-        #[cfg(windows)]
-        std::os::windows::fs::symlink_file(&path, &link).unwrap();
-        assert!(super::read_regular(&link, 64, false).is_err());
-        assert_eq!(
-            super::read_regular(&link, 64, true).unwrap(),
-            b"selected ROM"
-        );
-    }
-}
-
 /// A selected disc stays open read-only; reads are bounded independently of its size.
 #[cfg(all(
     feature = "gui",
@@ -193,5 +162,36 @@ impl RomSet {
                 Some(bytes)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn bounded_regular_snapshots_reject_directories_and_large_files() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("file");
+        std::fs::write(&path, b"test").unwrap();
+        assert_eq!(super::read_regular(&path, 4, false).unwrap(), b"test");
+        assert!(super::read_regular(&path, 3, false).is_err());
+        assert!(super::read_regular(root.path(), 4, false).is_err());
+    }
+
+    #[cfg(any(unix, windows))]
+    #[test]
+    fn cache_links_are_rejected_but_explicit_selected_links_are_allowed() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("file");
+        let link = root.path().join("link");
+        std::fs::write(&path, b"selected ROM").unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&path, &link).unwrap();
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_file(&path, &link).unwrap();
+        assert!(super::read_regular(&link, 64, false).is_err());
+        assert_eq!(
+            super::read_regular(&link, 64, true).unwrap(),
+            b"selected ROM"
+        );
     }
 }

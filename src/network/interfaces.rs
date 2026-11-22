@@ -7,21 +7,52 @@ pub(super) struct Interface {
     pub ip: std::net::Ipv4Addr,
 }
 #[cfg(unix)]
+type GetIfAddrs = unsafe extern "C" fn(*mut *mut libc::ifaddrs) -> libc::c_int;
+#[cfg(unix)]
+type FreeIfAddrs = unsafe extern "C" fn(*mut libc::ifaddrs);
+
+#[cfg(all(unix, not(target_os = "android")))]
+fn unix_provider() -> Result<(GetIfAddrs, FreeIfAddrs)> {
+    Ok((libc::getifaddrs, libc::freeifaddrs))
+}
+
+#[cfg(target_os = "android")]
+fn unix_provider() -> Result<(GetIfAddrs, FreeIfAddrs)> {
+    // Android first exports these Bionic functions in API 24. Keep API 23
+    // linkable and resolve only these fixed symbols from the loaded libc.
+    unsafe {
+        let get = libc::dlsym(libc::RTLD_DEFAULT, c"getifaddrs".as_ptr());
+        let free = libc::dlsym(libc::RTLD_DEFAULT, c"freeifaddrs".as_ptr());
+        ensure!(
+            !get.is_null() && !free.is_null(),
+            "interface discovery requires Android API 24 or later"
+        );
+        Ok((
+            std::mem::transmute::<*mut libc::c_void, GetIfAddrs>(get),
+            std::mem::transmute::<*mut libc::c_void, FreeIfAddrs>(free),
+        ))
+    }
+}
+
+#[cfg(all(test, target_os = "android"))]
+pub(super) fn available() -> bool {
+    unix_provider().is_ok()
+}
+
+#[cfg(unix)]
 pub(super) fn list() -> Result<Vec<Interface>> {
+    let (get, free) = unix_provider()?;
     let mut head = std::ptr::null_mut();
-    ensure!(
-        unsafe { libc::getifaddrs(&mut head) } == 0,
-        "interface discovery failed"
-    );
-    struct Guard(*mut libc::ifaddrs);
+    ensure!(unsafe { get(&mut head) } == 0, "interface discovery failed");
+    struct Guard(*mut libc::ifaddrs, FreeIfAddrs);
     impl Drop for Guard {
         fn drop(&mut self) {
             unsafe {
-                libc::freeifaddrs(self.0);
+                (self.1)(self.0);
             }
         }
     }
-    let _guard = Guard(head);
+    let _guard = Guard(head, free);
     let mut out = Vec::new();
     let mut current = head;
     let mut entries = 0;
@@ -141,6 +172,11 @@ mod tests {
     use super::*;
     #[test]
     fn host_ipv4_snapshot_is_bounded_and_contains_no_unspecified_addresses() {
+        #[cfg(target_os = "android")]
+        if !available() {
+            assert!(list().is_err());
+            return;
+        }
         let rows = list().unwrap();
         assert!(rows.len() <= 256);
         assert!(rows.windows(2).all(|r| r[0] < r[1]));

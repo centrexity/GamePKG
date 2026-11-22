@@ -878,6 +878,12 @@ mod tests {
         assert_eq!(service.call(14, &[1], 10240), [1]);
         assert_eq!(service.opens, 0);
         let response = service.call(14, &[], 10240);
+        #[cfg(target_os = "android")]
+        if !interfaces::available() {
+            assert_eq!(response, [1]);
+            assert!(service.handles.is_empty());
+            return;
+        }
         assert_eq!(response[0], 0);
         assert_eq!((response.len() - 1) % 40, 0);
         assert!(response.len() <= 10241);

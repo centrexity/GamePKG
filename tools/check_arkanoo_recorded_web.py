@@ -2,7 +2,7 @@
 from pathlib import Path
 from functools import partial
 from http.server import SimpleHTTPRequestHandler,ThreadingHTTPServer
-import argparse,json,os,shutil,subprocess,tempfile,threading,tomllib
+import argparse,json,os,shutil,subprocess,sys,tempfile,threading
 from PIL import Image
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -12,11 +12,9 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 parser=argparse.ArgumentParser();parser.add_argument('candidate',type=Path);parser.add_argument('--optimized-images',type=Path,required=True);parser.add_argument('--unicode-name',help='Repeat this UTF-8 sample in the maximum-size active name');parser.add_argument('--selector-run',action='store_true',help='Use one maximum-length identical-selector run');parser.add_argument('--mixed-selector-run',action='store_true',help='Use one maximum-length alternating-selector cluster');parser.add_argument('--missing-mark-run',action='store_true',help='Use one maximum-size unconsumed combining-mark cluster');parser.add_argument('--mixed-missing-mark-run',action='store_true',help='Use a maximum same-class mixed missing-mark cluster');parser.add_argument('--mixed-class-missing-mark-run',action='store_true',help='Qualify one maximum-size mixed-class missing-mark cluster');parser.add_argument('--late-composing-mark-run',action='store_true',help='Qualify a maximum-size S name with a late composing cedilla');parser.add_argument('--playlist-case',choices=['empty','invalid-utf8','invalid-paths'],help='Verify recorded effects survive unusable packaged music');parser.add_argument('--corrupt-saves',action='store_true',help='Also verify actual IndexedDB retains malformed ARK1-ARK4 records');parser.add_argument('--corrupt-save-repeats',type=int,choices=range(1,4),default=1,help='Repeat the complete six-record restart matrix for diagnostics');parser.add_argument('--trace-worker-startup',action='store_true',help='Private export-only startup diagnostics; execution limits unchanged');args=parser.parse_args();assert not(args.corrupt_saves and args.playlist_case),'Choose corruption or playlist qualification separately'
 project=Path(__file__).resolve().parents[1]
-limits=tomllib.loads((args.candidate/'manifest.toml').read_text())['limits']
-large=limits.get('render_profile')=='large-images-v1'
-assert limits.get('render_profile') in [None,'large-images-v1']
-hard=268435456 if large else 16777216
-assert (limits['hard_memory_bytes'],limits['effects_memory_bytes'],limits['music_memory_bytes'])==(hard,3145728,7340032)
+sys.path.insert(0,str(project/'tests'))
+from arkanoo_legacy_support import recorded_memory_budget, wasm_fixture_manifest
+large,hard=recorded_memory_budget(args.candidate)
 image_count=178 if large else 76
 asset_limit=134217728 if large else 33554432
 class Quiet(SimpleHTTPRequestHandler):
@@ -34,7 +32,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-original-recorded-web-') as tem
    with Image.open(path) as original,Image.open(replacement) as optimized:
     assert original.size==optimized.size and original.convert('RGBA').tobytes()==optimized.convert('RGBA').tobytes(),path.name
    shutil.copy2(replacement,recipe/'assets'/path.name)
-  manifest=recipe/'manifest.toml';id='com.gamepkg.arkanoo-web-'+profile;manifest.write_text('runtime_profile="'+profile+'"\n'+manifest.read_text().replace('com.gamepkg.arkanoo',id))
+  manifest=recipe/'manifest.toml';id='com.gamepkg.arkanoo-web-'+profile;manifest.write_text('runtime_profile="'+profile+'"\n'+wasm_fixture_manifest(manifest.read_text()).replace('com.gamepkg.arkanoo',id))
   run('pack',recipe,'-o',root/(profile+'.gamepkg'),'--key',root/'key');run('install',root/(profile+'.gamepkg'),'--trust-creator');run('build',id,'--target','wasm');web=root/profile;run('web-export',id,'-o',web)
   if args.trace_worker_startup:
    target=web/'worker.js';text=target.read_text()

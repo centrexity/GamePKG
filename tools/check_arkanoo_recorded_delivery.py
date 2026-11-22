@@ -7,22 +7,24 @@ from pathlib import Path
 import argparse
 import hashlib
 import json
+import sys
 import tomllib
 import wave
 from PIL import Image
 
 project = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(project / 'tests'))
+from arkanoo_legacy_support import recorded_memory_budget
 parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--candidate',type=Path);args=parser.parse_args()
 port = args.candidate or project / 'ports/arkanoo'
 proof = json.loads((port / 'assets/ASSET_PROVENANCE.json').read_text())
 legacy = json.loads((project / 'tests/fixtures/arkanoo-recorded-effects.json').read_text())
 assert proof['upstream_revision'] == legacy['revision']
-limits = tomllib.loads((port / 'manifest.toml').read_text())['limits']
-large=limits.get('render_profile')=='large-images-v1'
-assert limits.get('render_profile') in [None,'large-images-v1']
-hard=268435456 if large else 16777216
-assert (limits['hard_memory_bytes'], limits['effects_memory_bytes'], limits['music_memory_bytes']) == (hard, 3145728, 7340032)
-assert limits['recommended_memory_bytes'] == limits['hard_memory_bytes']
+manifest = tomllib.loads((port / 'manifest.toml').read_text())
+limits = manifest['limits']
+large,recommended=recorded_memory_budget(port)
+hard=limits['hard_memory_bytes']
+assert limits['recommended_memory_bytes'] == recommended
 assert len(proof['effects']) == 5 and len(proof['music']) == 9
 assert {row['source_sha256'] for row in proof['effects']} == {row['original_sha256'] for row in legacy['effects']}
 

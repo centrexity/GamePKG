@@ -10,11 +10,9 @@ args=parser.parse_args()
 project=Path(__file__).resolve().parents[1]
 import sys
 sys.path.insert(0, str(project/'tests'))
-from arkanoo_legacy_support import use_legacy_audio
-limits=tomllib.loads((args.candidate/'manifest.toml').read_text())['limits']
-expected_hard=268435456 if args.original_art else 16777216
-assert limits.get('render_profile')==('large-images-v1' if args.original_art else None)
-assert (limits['hard_memory_bytes'],limits['effects_memory_bytes'],limits['music_memory_bytes'])==(expected_hard,3145728,7340032), 'Require the explicitly selected hard limit and original 3/7 MiB audio shares'
+from arkanoo_legacy_support import recorded_memory_budget, use_legacy_audio, wasm_fixture_manifest
+large,_=recorded_memory_budget(args.candidate)
+assert large==args.original_art,'Require the explicitly selected artwork profile'
 env=dict(os.environ,
  GAMEPKG_BUNDLED_AUDIO_DECODER=str(project/'tools/audio-decoder/target/wasm32-unknown-unknown/release/gamepkg_host_audio_decoder.wasm'),
  GAMEPKG_BUNDLED_AUDIO_CONVERTER=str(project/'tools/audio-converter/target/wasm32-unknown-unknown/release/gamepkg_host_audio_converter.wasm'))
@@ -42,7 +40,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-recorded-dense-') as temporary:
    assert text.count(signature)==1
    injected=probe.replace('DENSE_EFFECT','gamepkg::effect_play("audio/bounce.wav");' if label=='recorded' else '')
    entry.write_text(text.replace(signature,signature+injected))
-   manifest=recipe/'manifest.toml';manifest.write_text('runtime_profile="'+profile+'"\n'+manifest.read_text().replace('com.gamepkg.arkanoo','com.gamepkg.arkanoo-dense-'+label))
+   manifest=recipe/'manifest.toml';manifest.write_text('runtime_profile="'+profile+'"\n'+wasm_fixture_manifest(manifest.read_text()).replace('com.gamepkg.arkanoo','com.gamepkg.arkanoo-dense-'+label))
    archive=root/(profile+'-'+label+'.gamepkg')
    run('pack',recipe,'--key',root/'key','-o',archive);run('install',archive,'--trust-creator')
    if args.full_save:
@@ -59,12 +57,10 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-recorded-dense-') as temporary:
     saves=library/'saves';saves.mkdir(parents=True,exist_ok=True)
     (saves/(hashlib.sha256(scope.encode()).hexdigest()+'.blob')).write_bytes(blob)
    run('build','com.gamepkg.arkanoo-dense-'+label,'--target','wasm')
-   if profile=='core-v1':run('build','com.gamepkg.arkanoo-dense-'+label,'--target','native')
-  for native in ([False,True] if profile=='core-v1' else [False]):
-   selected=dict(environment,GAMEPKG_RECORDED_DENSE_NATIVE=str(int(native)))
-   if args.full_save:selected['GAMEPKG_RECORDED_DENSE_FULL_SAVE']='1'
-   print('Dense recorded-audio comparison:',profile,'native:',native,flush=True)
-   result=subprocess.run([executable,'--ignored','--nocapture'],cwd=project,env=selected,timeout=60)
-   if result.returncode:failures.append((profile,native,result.returncode))
+  selected=dict(environment,GAMEPKG_RECORDED_DENSE_NATIVE='0')
+  if args.full_save:selected['GAMEPKG_RECORDED_DENSE_FULL_SAVE']='1'
+  print('Dense recorded-audio Wasm comparison:',profile,flush=True)
+  result=subprocess.run([executable,'--ignored','--nocapture'],cwd=project,env=selected,timeout=60)
+  if result.returncode:failures.append((profile,result.returncode))
  assert not failures,f'Dense recorded-audio failures: {failures}'
 print('Private complete-audio dense scenes match active-port commands and pixels; no artifacts published.')

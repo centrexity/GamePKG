@@ -272,7 +272,7 @@ fn user_game_data_is_pinned_read_only_and_distinct_from_package_assets() {
 
     let outside = tempfile::tempdir().unwrap();
     fs::write(outside.path().join("private"), b"outside").unwrap();
-    symlink(&outside.path(), original.join("outside")).unwrap();
+    symlink(outside.path(), original.join("outside")).unwrap();
     symlink("textures", original.join("within")).unwrap();
     symlink("face.png", original.join("textures/maps/link.png")).unwrap();
     fs::hard_link(
@@ -733,7 +733,7 @@ fn opened_file_metadata_has_canonical_times_and_strict_wire_lengths() {
     let root = tempfile::tempdir().unwrap();
     let name = root.path().join("save");
     std::fs::write(&name, b"complete save").unwrap();
-    let disk = std::fs::File::open(&name).unwrap();
+    let disk = std::fs::File::options().write(true).open(&name).unwrap();
     let mut h = host();
     let saves = grant(&mut h, root.path(), Access::Save);
     let file = number(open(&mut h, saves, 1, "save").unwrap());

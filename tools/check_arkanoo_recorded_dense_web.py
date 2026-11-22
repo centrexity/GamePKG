@@ -2,7 +2,7 @@
 from pathlib import Path
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
-import argparse, json, os, shutil, subprocess, tempfile, threading, tomllib
+import argparse, json, os, shutil, subprocess, tempfile, threading
 from PIL import Image
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -15,17 +15,13 @@ parser.add_argument('candidate', type=Path)
 parser.add_argument('--optimized-images', type=Path, required=True)
 args = parser.parse_args()
 project = Path(__file__).resolve().parents[1]
-limits=tomllib.loads((args.candidate/'manifest.toml').read_text())['limits']
-large=limits.get('render_profile')=='large-images-v1'
-assert limits.get('render_profile') in [None,'large-images-v1']
-hard=268435456 if large else 16777216
-assert (limits['hard_memory_bytes'],limits['effects_memory_bytes'],limits['music_memory_bytes'])==(hard,3145728,7340032)
+import sys
+sys.path.insert(0, str(project/'tests'))
+from arkanoo_legacy_support import recorded_memory_budget, use_legacy_audio, wasm_fixture_manifest
+large,hard=recorded_memory_budget(args.candidate)
 expected_commands,expected_bytes=(300,21640492) if large else (234,7896124)
 original_tiles=json.loads((args.candidate/'assets/ASSET_PROVENANCE.json').read_text()).get('original_backgrounds',{}).get('tiles',[])
 if large:assert len(original_tiles)==144
-import sys
-sys.path.insert(0, str(project/'tests'))
-from arkanoo_legacy_support import use_legacy_audio
 
 class Quiet(SimpleHTTPRequestHandler):
     def log_message(self, *args):
@@ -62,7 +58,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-recorded-dense-web-') as tempor
                 shutil.copy2(replacement, recipe/'assets'/path.name)
             manifest = recipe/'manifest.toml'
             game_id = 'com.gamepkg.arkanoo-dense-web-'+profile+'-'+label
-            manifest.write_text('runtime_profile="'+profile+'"\n'+manifest.read_text().replace('com.gamepkg.arkanoo', game_id))
+            manifest.write_text('runtime_profile="'+profile+'"\n'+wasm_fixture_manifest(manifest.read_text()).replace('com.gamepkg.arkanoo', game_id))
             archive = root/(profile+'-'+label+'.gamepkg')
             run('pack', recipe, '-o', archive, '--key', root/'key')
             run('install', archive, '--trust-creator')

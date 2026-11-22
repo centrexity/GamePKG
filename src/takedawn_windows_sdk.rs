@@ -1196,7 +1196,11 @@ mod tests {
                 permissions.set_mode(0o600);
             }
             #[cfg(not(unix))]
-            permissions.set_readonly(false);
+            {
+                // On Windows this clears the DOS attribute, not Unix mode bits.
+                #[allow(clippy::permissions_set_readonly_false)]
+                permissions.set_readonly(false);
+            }
             fs::set_permissions(&binary, permissions).unwrap();
             fs::write(&binary, b"tampered").unwrap();
             assert!(verify(&installed, &identity, &expected).is_err());

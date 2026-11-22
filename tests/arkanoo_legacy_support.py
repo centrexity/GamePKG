@@ -8,6 +8,37 @@ import hashlib
 import json
 import shutil
 import zipfile
+import tomllib
+
+
+def recorded_memory_budget(port: Path) -> tuple[bool, int]:
+    manifest = tomllib.loads((port / 'manifest.toml').read_text())
+    limits = manifest['limits']
+    profile = limits.get('render_profile')
+    assert profile in (None, 'large-images-v1')
+    large = profile == 'large-images-v1'
+    wasm_hard = 268435456 if large else 16777216
+    if manifest.get('native_tick'):
+        assert large and limits['hard_memory_bytes'] == 536870912
+    else:
+        assert limits['hard_memory_bytes'] == wasm_hard
+    assert (limits['effects_memory_bytes'], limits['music_memory_bytes']) == (3145728, 7340032)
+    return large, wasm_hard
+
+
+def wasm_fixture_manifest(text: str) -> str:
+    """Convert only disposable Wasm test recipes, not the signed native port."""
+    if not tomllib.loads(text).get('native_tick'):
+        return text
+    lines = []
+    for line in text.splitlines():
+        key, _, value = line.partition('=')
+        if key.strip() == 'native_tick':
+            continue
+        if key.strip() == 'hard_memory_bytes' and value.strip() == '536870912':
+            line = 'hard_memory_bytes = 268435456'
+        lines.append(line)
+    return '\n'.join(lines) + '\n'
 
 
 def use_legacy_audio(recipe: Path) -> None:
@@ -50,7 +81,8 @@ def copy_legacy_port(destination: Path) -> None:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(data)
     manifest = destination / 'manifest.toml'
-    lines = [line for line in manifest.read_text().splitlines() if not line.startswith('render_profile')]
+    lines = [line for line in wasm_fixture_manifest(manifest.read_text()).splitlines()
+             if not line.startswith('render_profile')]
     lines = ['hard_memory_bytes = 16777216' if line.startswith('hard_memory_bytes') else
              'recommended_memory_bytes = 8388608' if line.startswith('recommended_memory_bytes') else line
              for line in lines]

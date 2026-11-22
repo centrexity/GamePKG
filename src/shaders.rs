@@ -1420,7 +1420,7 @@ mod platform_tests {
                 root.path(),
                 &manifest.id,
                 &[],
-                None,
+                Some(true),
                 &settings,
             )
             .unwrap();
@@ -1439,7 +1439,7 @@ mod platform_tests {
                 root.path(),
                 &manifest.id,
                 &[],
-                None,
+                Some(true),
                 &settings
             )
             .is_err());
