@@ -754,6 +754,14 @@ The indexed Slang launcher currently runs on Linux x64. The Windows desktop
 compatibility path supports standalone image-renderer games. Indexed Slang
 still needs the matching Windows pipeline preparation path.
 
+For Windows x86 and x64, the native port services CI compiles the shared
+Vulkan fixtures and runs the file grant, Windows save replacement, and host
+networking tests. Compiling the graphics fixtures is not a hardware Vulkan
+test. On a Windows machine with a hardware Vulkan driver, run
+`cargo test --locked --features gui --test port_services_vulkan -- --ignored`
+for the offscreen pixel checks. These service tests do not qualify a visible
+window or a signed installed package using the indexed Slang profile.
+
 The ordinary shared native launcher passes up to eight selected regular ROM
 files read-only and in place, each up to 1 TiB. Kind-3 entries in `grants()`
 follow the manifest ROM order. Use those grant IDs and `file_read` with
@@ -1294,20 +1302,32 @@ translation and executable-page compatibility decisions belong in the port.
 
 ### Independent output streams and microphone
 
-Stream format is 0 PCM16, rate 48000. Layout 0 mono, 1 stereo, 2 explicit 5.1
+Stream format is 0 PCM16. Supported output stream source rates are **22050,
+24000, 32000, 44100 and 48000 Hz** on both Linux and Windows. Use Rust
+`audio_stream_create_with_rate(sample_rate, layout, frames)` or C
+`gamepkg_port_audio_stream_create_with_rate(sample_rate, layout, frames, &id)`.
+The original Rust `audio_stream_create(layout, frames)` and its C counterpart
+default to 48000 Hz. Both forms use the same operation and wire format.
+Unsupported rates return **Unsupported (-5)**. Older hosts may only accept
+48000 Hz. With a supported layout and output provider, ports can retry at
+48000 Hz and resample their PCM before submitting it.
+
+Layout 0 is mono, 1 stereo, 2 explicit 5.1
 (FL, FR, FC, LFE, BL, BR). No guessed speaker mapping or silent surround downmix.
 A host-declared output layout and distinct valid device-channel map are required
 for 5.1; otherwise Unsupported. Stereo remains the default; mono duplicates
 into front L/R. Mixing saturates after summation and uses existing volume/mute.
 The default desktop mixer reserves 2 MiB; each of at most 16 streams is charged
-12 bytes per queued frame + 256 bookkeeping bytes, capacity 1..48000 frames.
+12 bytes per queued frame + 256 bookkeeping bytes, capacity 1..48000 source frames.
 Streams start paused. Submission is atomic, up to 1600 complete frames, and
-Busy means no prefix was accepted. Underflow emits silence without inventing
-consumed frames. IDs are per-session and never reused.
+Busy means no prefix was accepted. The host holds each source frame for its
+duration when mixing to 48000 Hz. Queue capacity, submission limits and stream
+status counters are all in source frames. Underflow emits silence without
+inventing consumed frames. IDs are per-session and never reused.
 
 | Remote op | Request | Result |
 | --- | --- | --- |
-| 130 stream create | format, rate, layout, capacity-frames u32 | ID u64 |
+| 130 stream create | format, source rate in Hz, layout, capacity in source frames (four LE u32 fields) | ID u64 |
 | 131 submit | stream ID u64, interleaved LE PCM16 | empty |
 | 132 stream status | ID u64 | submitted/consumed/cancelled/queued u64, running bool/channels u32 (40 bytes) |
 | 133 stream control | ID u64, action u32 | 0 pause, 1 start/resume, 2 flush preserving running state, 3 cancel and pause |
@@ -1316,14 +1336,14 @@ consumed frames. IDs are per-session and never reused.
 | 137 record create | capacity-frames u32 (1..48000) | output recording ID u64 |
 | 138 record read | ID u64, max-frames u32 (1..1600) | interleaved stereo LE PCM16, Busy if empty |
 | 139 record release | ID u64 | revoke this output recording |
-| 140 capture create | format, rate, layout (0/1), capacity-frames u32 | pending capture ID u64 |
+| 140 capture create | format, rate (48000), layout (0/1), capacity-frames u32 | pending capture ID u64 |
 | 141 capture read | ID u64, max-frames u32 (1..1600) | interleaved LE PCM16; Busy if pending/empty |
 | 142 capture status | ID u64 | captured/read/lost/queued u64, 32 bytes; Busy while starting |
 | 143 capture release | ID u64 | discard pending data, revoke even a pending/failed capture |
 
 Output consumed means dequeued into the host mixer, **not physically heard**.
-Gain applies when frames are dequeued, including frames already queued. It
-does not rewrite the samples or change stream accounting.
+Gain applies when frames are mixed, including a held source frame. It does not
+rewrite the samples or change stream accounting.
 
 Output recording taps this session's mixed 48 kHz output streams after
 stream gain and saturation and before device resampling. It captures
@@ -1331,8 +1351,8 @@ silence through underflow and duplicates mono for stereo PCM. Surround
 recording is Unsupported. One tap per session shares the mixer budget.
 It grants no microphone, system audio, file, or device access. Overflow
 discards queued data and fails subsequent reads until the tap is released.
-Flush/cancel affects only that stream's queued frames; samples already mixed
-into a resampling frame or submitted to the device cannot be recalled. Teardown
+Flush/cancel discards only that stream's queued frames and resets its resampling
+position; samples already mixed for device output cannot be recalled. Teardown
 revokes all streams. Port-owned decoders must retry Busy in order and release
 movie streams on skip/close; no FFmpeg or engine logic is trusted host code.
 

@@ -1,0 +1,71 @@
+name: Windows native port services
+on:
+  push:
+    paths:
+      - '.github/workflows/native_windows_audio.yml'
+      - 'Cargo.*'
+      - 'src/audio.rs'
+      - 'src/audio/**'
+      - 'src/build_policy.rs'
+      - 'src/network.rs'
+      - 'src/network/**'
+      - 'src/port_host/**'
+      - 'engines/native-services/**'
+      - 'include/gamepkg_port.h'
+      - 'tests/port_audio_streams.rs'
+      - 'tests/port_services_vulkan.rs'
+      - 'tests/windows_save_replace.rs'
+  pull_request:
+    paths:
+      - '.github/workflows/native_windows_audio.yml'
+      - 'Cargo.*'
+      - 'src/audio.rs'
+      - 'src/audio/**'
+      - 'src/build_policy.rs'
+      - 'src/network.rs'
+      - 'src/network/**'
+      - 'src/port_host/**'
+      - 'engines/native-services/**'
+      - 'include/gamepkg_port.h'
+      - 'tests/port_audio_streams.rs'
+      - 'tests/port_services_vulkan.rs'
+      - 'tests/windows_save_replace.rs'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  port-services:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-pc-windows-msvc
+            arch: x64
+          - target: i686-pc-windows-msvc
+            arch: x86
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.arch }}
+      - name: Check the C SDK audio helpers with MSVC
+        run: cl /nologo /std:c11 /W4 /WX /Zs /Iinclude engines/native-services/probe.c
+      - name: Run the mixer and pipe tests without an audio device
+        run: cargo test --locked --features audio --target ${{ matrix.target }} --lib --test port_audio_streams audio_streams
+      - name: Run shared service tests for file grants and media validation
+        run: >-
+          cargo test --locked --target ${{ matrix.target }} --lib port_host::tests::
+      - name: Run Windows save replacement tests
+        run: cargo test --locked --target ${{ matrix.target }} --test windows_save_replace
+      - name: Run host networking and loopback tests
+        run: >-
+          cargo test --locked --target ${{ matrix.target }} --lib network::
+      - name: Compile the shared Vulkan graphics fixtures
+        run: cargo check --locked --features gui --target ${{ matrix.target }} --test port_services_vulkan

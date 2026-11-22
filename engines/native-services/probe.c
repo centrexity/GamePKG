@@ -23,6 +23,15 @@ int port_client_probe(uint64_t rom) {
     CHECK(gamepkg_port_get_u32(reply)==1000 && gamepkg_port_get_u32(reply+4)==500);
     gamepkg_port_put_u32(request,2);request[4]=0;request[5]=128;request[6]=255;request[7]=127;
     CHECK(gamepkg_port_call(GAMEPKG_PORT_AUDIO,request,8,0,0)==0);
+    uint64_t stream=0;
+    CHECK(gamepkg_port_audio_stream_create_with_rate(96000,1,2,&stream)==GAMEPKG_PORT_UNSUPPORTED);
+    CHECK(stream==0);
+    CHECK(gamepkg_port_audio_stream_create_with_rate(32000,1,2,&stream)==0 && stream!=0);
+    gamepkg_port_put_u64(request,stream);
+    CHECK(gamepkg_port_call(GAMEPKG_PORT_AUDIO_STREAM_RELEASE,request,8,0,0)==0);
+    CHECK(gamepkg_port_audio_stream_create(1,2,&stream)==0);
+    gamepkg_port_put_u64(request,stream);
+    CHECK(gamepkg_port_call(GAMEPKG_PORT_AUDIO_STREAM_RELEASE,request,8,0,0)==0);
     CHECK(gamepkg_port_call(0xffffffffu,0,0,0,0)==GAMEPKG_PORT_UNSUPPORTED);
     CHECK(gamepkg_port_call(GAMEPKG_PORT_VERSION,0,1,reply,4)==GAMEPKG_PORT_INVALID);
     return 0;

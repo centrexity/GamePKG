@@ -5,6 +5,8 @@ use std::{
     collections::{BTreeMap, VecDeque},
     sync::{Arc, Mutex},
 };
+pub(crate) const MIX_RATE: u32 = 48_000;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Layout {
     Mono,
@@ -30,6 +32,9 @@ impl Layout {
 }
 struct Stream {
     layout: Layout,
+    rate: u32,
+    phase: i32,
+    current: [i16; 6],
     queue: VecDeque<[i16; 6]>,
     capacity: usize,
     charge: u64,
@@ -38,6 +43,23 @@ struct Stream {
     submitted: u64,
     consumed: u64,
     cancelled: u64,
+}
+impl Stream {
+    fn frame(&mut self) -> [i16; 6] {
+        // Hold each source frame for its duration on the 48 kHz mixer clock.
+        // Carry fractional timing across ticks without rounding to whole frames.
+        if self.phase <= 0 {
+            let Some(frame) = self.queue.pop_front() else {
+                self.phase = 0;
+                return [0; 6];
+            };
+            self.current = frame;
+            self.consumed += 1;
+            self.phase += MIX_RATE as i32;
+        }
+        self.phase -= self.rate as i32;
+        self.current
+    }
 }
 struct State {
     closed: bool,
@@ -93,7 +115,7 @@ impl Mixer {
                 let layout = Layout::decode(r.u32()?)?;
                 let frames = r.u32()? as usize;
                 r.end()?;
-                if format != 0 || rate != 48000 {
+                if format != 0 || !matches!(rate, 22_050 | 24_000 | 32_000 | 44_100 | MIX_RATE) {
                     return Err(Error::Unsupported);
                 }
                 if frames == 0 || frames > 48000 {
@@ -114,6 +136,9 @@ impl Mixer {
                     id,
                     Stream {
                         layout,
+                        rate,
+                        phase: 0,
+                        current: [0; 6],
                         queue: VecDeque::with_capacity(frames),
                         capacity: frames,
                         charge,
@@ -184,6 +209,7 @@ impl Mixer {
                 if action >= 2 {
                     s.cancelled += s.queue.len() as u64;
                     s.queue.clear();
+                    s.phase = 0;
                 }
                 match action {
                     0 | 3 => s.running = false,
@@ -274,9 +300,9 @@ impl Mixer {
             _ => Err(Error::Unsupported),
         }
     }
-    /// Called only by the host audio callback at the 48kHz source rate.
+    /// Called only by the host audio callback at the 48 kHz mixer rate.
     /// Saturate after summing all independent streams; a paused stream keeps
-    /// its queue and counters. Underflow consumes no nonexistent frame.
+    /// its queue, counters and resampling position.
     pub fn frame(&self) -> [i16; 6] {
         let Ok(mut state) = self.state.lock() else {
             return [0; 6];
@@ -287,11 +313,8 @@ impl Mixer {
         let mut mixed = [0i64; 6];
         for s in state.streams.values_mut() {
             if s.running {
-                if let Some(frame) = s.queue.pop_front() {
-                    for (to, from) in mixed.iter_mut().zip(frame) {
-                        *to += i64::from(from) * i64::from(s.gain) / 128;
-                    }
-                    s.consumed += 1;
+                for (to, from) in mixed.iter_mut().zip(s.frame()) {
+                    *to += i64::from(from) * i64::from(s.gain) / 128;
                 }
             }
         }
@@ -325,7 +348,10 @@ impl Mixer {
 mod tests {
     use super::*;
     fn create(m: &Mixer, layout: u32, frames: u32) -> Result<u64> {
-        let request = [0u32, 48000, layout, frames]
+        create_with_rate(m, MIX_RATE, layout, frames)
+    }
+    fn create_with_rate(m: &Mixer, rate: u32, layout: u32, frames: u32) -> Result<u64> {
+        let request = [0u32, rate, layout, frames]
             .into_iter()
             .flat_map(u32::to_le_bytes)
             .collect::<Vec<_>>();
@@ -366,6 +392,22 @@ mod tests {
         assert_eq!(mixer.frame()[..2], [250, -250]);
     }
     #[test]
+    fn gain_and_recording_include_held_source_frames() {
+        let mixer = Mixer::new(Layout::Stereo, 4096);
+        let id = create_with_rate(&mixer, 24_000, 0, 1).unwrap();
+        push(&mixer, id, &[400]).unwrap();
+        action(&mixer, id, 1);
+        let tap = mixer.call(137, &2u32.to_le_bytes(), 8).unwrap();
+        assert_eq!(mixer.frame()[..2], [400, 400]);
+        let gain = [id.to_le_bytes().as_slice(), &64u32.to_le_bytes()].concat();
+        mixer.call(136, &gain, 0).unwrap();
+        assert_eq!(mixer.frame()[..2], [200, 200]);
+        assert_eq!(counts(&mixer, id), [1, 1, 0, 0]);
+        let request = [tap.as_slice(), &2u32.to_le_bytes()].concat();
+        let expected = [400i16, 400, 200, 200].map(i16::to_le_bytes).concat();
+        assert_eq!(mixer.call(138, &request, 8).unwrap(), expected);
+    }
+    #[test]
     fn record_tap_copies_only_mixed_session_output_and_fails_on_overflow() {
         let mixer = Mixer::new(Layout::Stereo, 4096);
         let first = create(&mixer, 1, 2).unwrap();
@@ -397,6 +439,10 @@ mod tests {
         bytes.extend(samples.iter().flat_map(|s| s.to_le_bytes()));
         m.call(131, &bytes, 0)
     }
+    fn counts(m: &Mixer, id: u64) -> [u64; 4] {
+        let status = m.call(132, &id.to_le_bytes(), 40).unwrap();
+        std::array::from_fn(|i| u64::from_le_bytes(status[i * 8..][..8].try_into().unwrap()))
+    }
     #[test]
     fn streams_start_paused_mix_independently_cancel_and_account_exactly() {
         let m = Mixer::new(Layout::Stereo, 65536);
@@ -411,17 +457,64 @@ mod tests {
         assert_eq!(m.frame(), [110, 210, 0, 0, 0, 0]);
         action(&m, a, 3);
         assert_eq!(m.frame(), [20, 20, 0, 0, 0, 0]);
-        let status = m.call(132, &a.to_le_bytes(), 40).unwrap();
-        let counts = status[..32]
-            .chunks_exact(8)
-            .map(|v| u64::from_le_bytes(v.try_into().unwrap()))
-            .collect::<Vec<_>>();
-        assert_eq!(counts, [2, 1, 1, 0]);
+        assert_eq!(counts(&m, a), [2, 1, 1, 0]);
         m.call(134, &a.to_le_bytes(), 0).unwrap();
         assert_eq!(push(&m, a, &[1, 2]), Err(Error::Denied));
         m.close();
         assert_eq!(m.frame(), [0; 6]);
         assert_eq!(create(&m, 1, 1), Err(Error::Denied));
+    }
+    #[test]
+    fn rates_play_at_source_speed_and_count_only_source_frames() {
+        let m = Mixer::new(Layout::Stereo, 2 * 1024 * 1024);
+        for rate in [0, 11_025, 96_000, u32::MAX] {
+            assert_eq!(create_with_rate(&m, rate, 0, 1), Err(Error::Unsupported));
+        }
+        for rate in [22_050, 24_000, 32_000, 44_100, 48_000] {
+            let id = create_with_rate(&m, rate, 0, rate).unwrap();
+            let samples: Vec<_> = (0..rate).map(|i| (i % 1000 + 1) as i16).collect();
+            for chunk in samples.chunks(1600) {
+                push(&m, id, chunk).unwrap();
+            }
+            action(&m, id, 1);
+            for tick in 0..MIX_RATE {
+                let expected = samples[(tick * rate / MIX_RATE) as usize];
+                assert_eq!(m.frame(), [expected, expected, 0, 0, 0, 0]);
+            }
+            assert_eq!(m.frame(), [0; 6]);
+            assert_eq!(counts(&m, id), [rate.into(), rate.into(), 0, 0]);
+            m.call(134, &id.to_le_bytes(), 0).unwrap();
+        }
+    }
+    #[test]
+    fn mixed_rates_pause_resume_and_flush_independently() {
+        let m = Mixer::new(Layout::Stereo, 65536);
+        let slow = create_with_rate(&m, 32_000, 0, 2).unwrap();
+        let fast = create(&m, 0, 4).unwrap();
+        push(&m, slow, &[10, 20]).unwrap();
+        push(&m, fast, &[1, 2, 3, 4]).unwrap();
+        action(&m, slow, 1);
+        action(&m, fast, 1);
+        assert_eq!(m.frame()[0], 11);
+        action(&m, slow, 0);
+        assert_eq!(m.frame()[0], 2);
+        assert_eq!(counts(&m, slow), [2, 1, 0, 1]);
+        action(&m, slow, 1);
+        assert_eq!(m.frame()[0], 13);
+        // At this phase the next source frame would otherwise be held for
+        // less time. Flush removes it and starts fresh without pausing.
+        action(&m, slow, 2);
+        assert_eq!(counts(&m, slow), [2, 1, 1, 0]);
+        push(&m, slow, &[40]).unwrap();
+        assert_eq!(m.frame()[0], 44);
+        assert_eq!(m.frame()[0], 40);
+        assert_eq!(m.frame(), [0; 6]);
+        assert_eq!(counts(&m, slow), [3, 2, 1, 0]);
+        push(&m, slow, &[50]).unwrap();
+        assert_eq!(m.frame()[0], 50);
+        assert_eq!(m.frame()[0], 50);
+        assert_eq!(m.frame(), [0; 6]);
+        assert_eq!(counts(&m, slow), [4, 3, 1, 0]);
     }
     #[test]
     fn layouts_channels_saturation_limits_handles_and_malformed_packets() {

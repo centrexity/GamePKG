@@ -2036,8 +2036,21 @@ pub fn local_mailbox_receive(
 pub fn local_mailbox_release(id: u64) -> std::result::Result<(), i32> {
     local_call(33, &id.to_le_bytes(), &mut []).map(|_| ())
 }
+/// Create a paused PCM16 output stream at the original 48,000 Hz rate.
 pub fn audio_stream_create(layout: u32, frames: u32) -> std::result::Result<u64, i32> {
-    let bytes = [0u32, 48000, layout, frames]
+    audio_stream_create_with_rate(48_000, layout, frames)
+}
+
+/// Create a paused PCM16 output stream. Supported source rates in Hz:
+/// 22,050, 24,000, 32,000, 44,100 and 48,000. `frames` is queue capacity in
+/// source frames. An unrecognized rate returns Unsupported (`-5`); older hosts
+/// also return Unsupported for rates other than 48,000.
+pub fn audio_stream_create_with_rate(
+    sample_rate: u32,
+    layout: u32,
+    frames: u32,
+) -> std::result::Result<u64, i32> {
+    let bytes = [0u32, sample_rate, layout, frames]
         .into_iter()
         .flat_map(u32::to_le_bytes)
         .collect::<Vec<_>>();
@@ -2141,6 +2154,32 @@ mod tests {
     use std::os::{fd::OwnedFd, unix::net::UnixStream};
     fn file(s: UnixStream) -> File {
         File::from(OwnedFd::from(s))
+    }
+    #[test]
+    fn audio_create_reuses_existing_wire_format_and_propagates_unsupported() {
+        let _exclusive = TEST_BINDING_LOCK.lock().unwrap();
+        let id = 0x1234_5678_9abc_def0u64;
+        let mut rates = [48_000u32, 32_000, 96_000].into_iter();
+        connect_local(move |operation, request, capacity| {
+            assert_eq!(operation, 130);
+            assert_eq!(capacity, 8);
+            let rate = rates.next().unwrap();
+            let expected = [0u32, rate, 1, 512]
+                .into_iter()
+                .flat_map(u32::to_le_bytes)
+                .collect::<Vec<_>>();
+            assert_eq!(request, expected);
+            if rate == 96_000 {
+                Err(-5)
+            } else {
+                Ok(id.to_le_bytes().to_vec())
+            }
+        })
+        .unwrap();
+        assert_eq!(audio_stream_create(1, 512), Ok(id));
+        assert_eq!(audio_stream_create_with_rate(32_000, 1, 512), Ok(id));
+        assert_eq!(audio_stream_create_with_rate(96_000, 1, 512), Err(-5));
+        disconnect();
     }
     #[test]
     fn performance_samples_validate_exact_shape_and_unaligned_units() {

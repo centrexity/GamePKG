@@ -56,6 +56,9 @@
 #define GAMEPKG_PORT_SAVE_FILE_INFO 25u
 #define GAMEPKG_PORT_SAVE_FILE_SET_ATTRIBUTES 26u
 #define GAMEPKG_PORT_AUDIO 30u
+/* Four LE u32: format (0 PCM16), source rate (Hz), layout (0 mono / 1 stereo /
+ * 2 explicit 5.1), capacity in source frames. Reply: LE u64 stream ID.
+ * Rates: 22050, 24000, 32000, 44100, 48000. Others return UNSUPPORTED. */
 #define GAMEPKG_PORT_AUDIO_STREAM_CREATE 130u
 #define GAMEPKG_PORT_AUDIO_STREAM_SUBMIT 131u
 #define GAMEPKG_PORT_AUDIO_STREAM_STATUS 132u
@@ -213,6 +216,24 @@ static inline void gamepkg_port_put_u64(uint8_t *p, uint64_t v) {
 }
 static inline uint64_t gamepkg_port_get_u64(const uint8_t *p) {
     return (uint64_t)gamepkg_port_get_u32(p)|((uint64_t)gamepkg_port_get_u32(p+4)<<32);
+}
+/* Zero on success; on error, *stream is unchanged. stream must be writable. */
+static inline int32_t gamepkg_port_audio_stream_create_with_rate(
+    uint32_t sample_rate, uint32_t layout, uint32_t frames, uint64_t *stream) {
+    uint8_t request[16], reply[8];
+    gamepkg_port_put_u32(request,0);
+    gamepkg_port_put_u32(request+4,sample_rate);
+    gamepkg_port_put_u32(request+8,layout);
+    gamepkg_port_put_u32(request+12,frames);
+    int32_t result=gamepkg_port_call(GAMEPKG_PORT_AUDIO_STREAM_CREATE,request,16,reply,8);
+    if (result<0) return result;
+    if (result!=8) return GAMEPKG_PORT_FAILED;
+    *stream=gamepkg_port_get_u64(reply);
+    return 0;
+}
+static inline int32_t gamepkg_port_audio_stream_create(
+    uint32_t layout, uint32_t frames, uint64_t *stream) {
+    return gamepkg_port_audio_stream_create_with_rate(48000u,layout,frames,stream);
 }
 static inline int32_t gamepkg_port_file_read(uint64_t file, uint64_t offset, uint8_t *out, uint32_t length) {
     uint8_t request[20];

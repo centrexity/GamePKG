@@ -93,7 +93,7 @@ impl PortPlayback {
             self.current = self.mixer.frame();
             self.phase -= 1.0;
         }
-        self.phase += 48000.0 / f64::from(rate);
+        self.phase += f64::from(crate::port_host::audio_streams::MIX_RATE) / f64::from(rate);
         self.current.map(|s| f32::from(s) / 32768.0)
     }
 }
@@ -509,6 +509,44 @@ fn output<T: cpal::SizedSample + cpal::FromSample<f32>>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn audio_streams_keep_source_timing_at_the_device_rate() {
+        use crate::port_host::audio_streams::{Layout, Mixer};
+
+        for (device_rate, expected) in [
+            (44_100, &[10i16, 10, 20, 30, 30, 0][..]),
+            (96_000, &[10, 10, 10, 10, 20, 20, 30, 30, 30, 30, 0]),
+        ] {
+            let mixer = Mixer::new(Layout::Stereo, 65536);
+            let mut request = Vec::new();
+            for value in [0u32, 32_000, 1, 3] {
+                request.extend(value.to_le_bytes());
+            }
+            let id = mixer.call(130, &request, 8).unwrap();
+            let mut submit = id.clone();
+            for value in [10i16, -10, 20, -20, 30, -30] {
+                submit.extend(value.to_le_bytes());
+            }
+            mixer.call(131, &submit, 0).unwrap();
+            mixer
+                .call(133, &[&id[..], &[1, 0, 0, 0]].concat(), 0)
+                .unwrap();
+
+            let (mut device, sink) = Device::new(100);
+            assert!(sink.command(Command::Port(mixer, vec![0, 1]), false));
+            device.begin();
+            let port = device.port.as_mut().unwrap();
+            for &sample in expected {
+                let sample = f32::from(sample) / 32768.0;
+                assert_eq!(
+                    port.frame(device_rate),
+                    [sample, -sample, 0.0, 0.0, 0.0, 0.0]
+                );
+            }
+        }
+    }
+
     #[test]
     fn effect_batches_are_validated_and_published_whole_at_callback_boundaries() {
         let (mut device, sink) = Device::new(100);

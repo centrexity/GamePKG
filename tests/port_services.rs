@@ -29,6 +29,10 @@ impl Backend for Output {
         self.pcm.extend(s);
         Ok(())
     }
+    fn audio_streams(&self) -> Option<gamepkg::port_host::audio_streams::Mixer> {
+        use gamepkg::port_host::audio_streams::{Layout, Mixer};
+        Some(Mixer::new(Layout::Stereo, 65536))
+    }
     fn rumble(&mut self, _: u64, _: u16, _: u16, _: u32) -> Result<()> {
         Ok(())
     }
@@ -77,6 +81,16 @@ fn compatibility_layer_dispatches_inside_the_game_process() {
         assert_eq!(local_client::fullscreen(true), Ok(()));
         assert_eq!(local_client::present(0x102030ff, &[]), Ok(()));
         assert_eq!(local_client::audio(&[17, -17], 2), Ok(()));
+        assert_eq!(
+            local_client::audio_stream_create_with_rate(96_000, 1, 2),
+            Err(-5)
+        );
+        let stream = local_client::audio_stream_create_with_rate(32000, 1, 2).unwrap();
+        local_client::audio_stream_submit(stream, &[17, -17]).unwrap();
+        assert_eq!(local_client::audio_stream_status(stream), Ok([1, 0, 0, 1]));
+        local_client::audio_stream_release(stream).unwrap();
+        let legacy = local_client::audio_stream_create(1, 2).unwrap();
+        local_client::audio_stream_release(legacy).unwrap();
         assert_eq!(local_client::key_held(keyboard, 4), Ok(true));
         assert_eq!(local_client::network(0, &[], &mut bytes), Err(-4));
         let (before, _) = local_client::monotonic().unwrap();

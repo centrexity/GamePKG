@@ -683,16 +683,29 @@ fn private_save_file_info_follows_the_opened_identity_and_persists_attributes() 
         Err(Error::Denied)
     );
     let label = root.path().join("metadata.tmp");
-    std::fs::File::options()
-        .write(true)
-        .open(&label)
-        .unwrap()
-        .set_modified(std::time::UNIX_EPOCH - std::time::Duration::new(1, 500_000_000))
+    let disk = std::fs::File::options().write(true).open(&label).unwrap();
+    disk.set_modified(std::time::UNIX_EPOCH - std::time::Duration::new(1, 500_000_000))
         .unwrap();
     let updated = observed(&mut h, readonly).unwrap();
     assert_eq!(number(updated[24..32].to_vec()), epoch - 15_000_000);
+    #[cfg(target_os = "linux")]
     assert_eq!(initial[8..16], updated[8..16]);
+    #[cfg(windows)]
+    {
+        // Windows reports the filesystem's creation time verbatim. Some
+        // filesystems (and Wine) synthesize it from other file timestamps.
+        use std::os::windows::fs::MetadataExt;
+        assert_eq!(
+            number(updated[8..16].to_vec()),
+            disk.metadata().unwrap().creation_time()
+        );
+    }
+    drop(disk);
 
+    // Host writes (including timestamp changes) can affect native attributes.
+    // Set and check the final staged attributes just before publishing.
+    attrs(&mut h, opened, 0x24).unwrap();
+    assert_eq!(observed(&mut h, readonly).unwrap()[40], 0x24);
     h.call(4, &readonly.to_le_bytes(), 0).unwrap();
     h.call(4, &opened.to_le_bytes(), 0).unwrap();
     let replacement = [
@@ -824,6 +837,29 @@ fn symlink_junction_equivalents_hardlinks_and_special_files_cannot_escape_grants
         std::fs::read(outside.path().join("secret")).unwrap(),
         b"untouched"
     );
+}
+
+#[cfg(windows)]
+#[test]
+fn windows_save_grant_rejects_hardlinks_to_files_outside_the_grant() {
+    let root = tempfile::tempdir().unwrap();
+    let saves = root.path().join("saves");
+    let outside = root.path().join("outside");
+    let link = saves.join("alias");
+    std::fs::create_dir(&saves).unwrap();
+    std::fs::write(&outside, b"untouched").unwrap();
+    std::fs::hard_link(&outside, &link).unwrap();
+
+    let mut h = host();
+    let cap = grant(&mut h, &saves, Access::Save);
+    for mode in [0, 1, 2] {
+        assert_eq!(open(&mut h, cap, mode, "alias"), Err(Error::Denied));
+    }
+    let mut remove = cap.to_le_bytes().to_vec();
+    remove.extend(b"alias");
+    assert_eq!(h.call(8, &remove, 0), Err(Error::Denied));
+    assert_eq!(std::fs::read(&outside).unwrap(), b"untouched");
+    assert!(link.is_file());
 }
 
 #[test]
