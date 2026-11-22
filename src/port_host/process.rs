@@ -64,7 +64,7 @@ impl NativeLaunch {
     }
 }
 
-/// Windows desktop compatibility currently admits offline, image-based services.
+/// Windows desktop compatibility admits offline image and indexed raster services.
 #[cfg(all(
     feature = "gui",
     any(windows, all(target_os = "linux", target_arch = "x86_64"))
@@ -79,9 +79,14 @@ pub fn require_windows_compatibility(manifest: &crate::manifest::Manifest) -> Re
             && !manifest.permissions.network
             && !manifest.permissions.microphone
             && manifest.permissions.files.is_empty()
-            && manifest.shared_assets.is_empty()
-            && manifest.native_graphics.is_none(),
-        "Windows desktop compatibility requires offline native services with the image renderer"
+            && manifest.shared_assets.is_empty(),
+        "Windows desktop compatibility requires offline native services without ambient file or microphone access"
+    );
+    #[cfg(windows)]
+    ensure!(
+        manifest.native_graphics.is_none()
+            || gamepkg_takedawn_windows_runner::supports_amd64_tools(),
+        "Windows indexed Slang requires AMD64 Windows; x86 GamePKG is supported under WOW64"
     );
     Ok(())
 }

@@ -193,8 +193,8 @@ signed count, verifies that each inherited handle is a distinct disk file,
 and clears its inheritance flag. The game-facing ABI receives capability IDs.
 The linked Windows executable checks the AppContainer token and current job
 limits before accepting those ROMs or opening its window. Normal Windows
-Build and Play calls this launcher for offline standalone image-renderer
-packages. Synthetic x86 and x64 Wine tests check order, contents, read-only
+Build and Play calls this launcher for offline standalone image and indexed
+Slang packages. Synthetic x86 and x64 Wine tests check order, contents, read-only
 access and cleared inheritance. The native Windows Doom test also requires
 AppContainer, a desktop Vulkan driver and a player-selected WAD.
 
@@ -750,9 +750,15 @@ uniform buffer at group 0 binding 0, u32 triangle indices, one sample,
 depth testing with LessEqual and depth writes enabled. The profile has no
 texture slots. The native worker issues draws using opaque resource IDs.
 
-The indexed Slang launcher currently runs on Linux x64. The Windows desktop
-compatibility path supports standalone image-renderer games. Indexed Slang
-still needs the matching Windows pipeline preparation path.
+The indexed Slang path runs on Linux x64 and Windows x86/x64 desktop. Choose
+WGSL or SPIR-V in the shader backend settings and run the ordinary native
+Build. GamePKG compiles the signed stages in its confined Slang worker,
+validates the pipeline and embeds it in the native executable. Play checks
+the compiler/backend and pipeline identities recorded at build time; rebuild
+after changing the shader backend. Windows uses hardware Vulkan and still
+requires offline packages without ambient file or microphone access.
+The pinned Slang compiler requires AMD64 Windows; the x86 GamePKG build
+uses it under WOW64 and still links an x86 game executable.
 
 For Windows x86 and x64, the native port services CI compiles the shared
 Vulkan fixtures and runs the file grant, Windows save replacement, and host
@@ -760,17 +766,20 @@ networking tests. Compiling the graphics fixtures is not a hardware Vulkan
 test. On a Windows machine with a hardware Vulkan driver, run
 `cargo test --locked --features gui --test port_services_vulkan -- --ignored`
 for the offscreen pixel checks. These service tests do not qualify a visible
-window or a signed installed package using the indexed Slang profile.
+window through the installed-package launcher.
 
 The **Native Windows game graphics** workflow builds an offline signed image
-package through the regular installed-package path on hosted x86/x64 targets
-and verifies that an otherwise identical network-enabled package is rejected.
+package and an indexed Slang package through the regular installed-package
+path on hosted x86/x64 targets. It verifies that the compiled game uses a
+receipt bound to the selected backend and that a network-enabled indexed
+package is rejected.
 Its manual `hardware` run on `main` uses a trusted self-hosted Windows runner
 labelled `gamepkg-vulkan`. That runner needs an interactive desktop and both
 32-bit and 64-bit hardware Vulkan drivers. The pixel test opens the confined
-child's visible window, checks an image and background pixels, sends a real
-held key, resizes, then verifies the save and play history on restart. Hosted
-build artifacts do not claim visible-window qualification.
+child's visible window, checks image and indexed Slang pixels, exercises
+resize and keyboard input, and verifies the image fixture's save and play
+history on restart. Hosted build artifacts do not claim visible-window
+qualification.
 
 The ordinary shared native launcher passes up to eight selected regular ROM
 files read-only and in place, each up to 1 TiB. Kind-3 entries in `grants()`

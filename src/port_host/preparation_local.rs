@@ -1,8 +1,6 @@
 //! Trusted compatibility-layer link from the installed SDK or development checkout.
 use super::*;
-use crate::port_host::graphics::PipelinePayload;
-#[cfg(target_os = "linux")]
-use crate::port_host::graphics::VerifiedPipelines;
+use crate::port_host::graphics::{PipelinePayload, VerifiedPipelines};
 use crate::port_host::sdk_source::Source;
 
 const RUNTIME: &str = include_str!("../../examples/maintainer/native_service_runtime.rs");
@@ -11,13 +9,18 @@ const PROFILE: &str = "native-service";
 /// Link checked native objects into the fixed in-process runtime. The trusted
 /// app snapshot and Cargo dependencies are GamePKG build inputs. Package
 /// files never enter the Cargo workspace.
-#[cfg(target_os = "linux")]
 pub fn build_in_process(
     cache: &Path,
     sources: &CheckedSources,
     plan: &Plan,
     pipelines: Option<VerifiedPipelines>,
 ) -> Result<Artifact> {
+    if plan.target.windows() {
+        ensure!(
+            sources.manifest().native_graphics.is_some() == pipelines.is_some(),
+            "Windows native pipelines must match the signed graphics profile"
+        );
+    }
     let payload = match pipelines {
         Some(pipelines) => pipelines.into_payload(sources)?,
         None => empty_payload(),
@@ -25,6 +28,8 @@ pub fn build_in_process(
     link_runtime(cache, sources, plan, payload)
 }
 
+/// Legacy image-only helper. Indexed builds pass their verified pipeline to
+/// [`build_in_process`].
 #[cfg(windows)]
 pub fn build_windows_in_process(
     cache: &Path,
@@ -32,10 +37,10 @@ pub fn build_windows_in_process(
     plan: &Plan,
 ) -> Result<Artifact> {
     ensure!(
-        plan.target.windows() && sources.manifest().native_graphics.is_none(),
-        "Windows compatibility build requires a Windows target and the image renderer"
+        plan.target.windows(),
+        "Windows compatibility build requires a Windows target"
     );
-    link_runtime(cache, sources, plan, empty_payload())
+    build_in_process(cache, sources, plan, None)
 }
 
 fn empty_payload() -> PipelinePayload {

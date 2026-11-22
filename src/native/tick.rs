@@ -1,16 +1,11 @@
-use crate::manifest::Manifest;
+use crate::manifest::{Manifest, NativeGraphics};
+#[cfg(target_os = "linux")]
+use crate::port_host::owner::VerifiedAssets;
 use crate::port_host::{
     admission::CheckedSources,
+    graphics::{PipelineRecipe, VerifiedPipelines},
     preparation::{self, Artifact, Bootstrap, ExecutableReceipt, LocalLayout, Plan, Target},
     process::{NativeLaunch, Process},
-};
-#[cfg(target_os = "linux")]
-use crate::{
-    manifest::NativeGraphics,
-    port_host::{
-        graphics::{PipelineRecipe, VerifiedPipelines},
-        owner::VerifiedAssets,
-    },
 };
 use anyhow::{ensure, Context, Result};
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier};
@@ -72,7 +67,6 @@ fn open(root: &Path, id: &str) -> Result<crate::archive::Package> {
     crate::archive::Package::open(&root.join(format!("{id}.gamepkg")))
 }
 
-#[cfg(target_os = "linux")]
 fn prepare_graphics(
     root: &Path,
     sources: &CheckedSources,
@@ -133,20 +127,12 @@ pub(super) fn build(root: &Path, id: &str) -> Result<()> {
     let path = super::cache_path(root, id)?;
     let (sources, package, _snapshot) = source_snapshot(root, id)?;
     let plan = plan(sources.manifest())?;
-    #[cfg(target_os = "linux")]
-    let artifact = {
-        let pipelines = if sources.manifest().native_graphics.is_some() {
-            prepare_graphics(root, &sources, &package, &crate::settings::load()?)?
-        } else {
-            None
-        };
-        preparation::build_in_process(root, &sources, &plan, pipelines)?
+    let pipelines = if sources.manifest().native_graphics.is_some() {
+        prepare_graphics(root, &sources, &package, &crate::settings::load()?)?
+    } else {
+        None
     };
-    #[cfg(windows)]
-    let artifact = {
-        drop(package);
-        preparation::build_windows_in_process(root, &sources, &plan)?
-    };
+    let artifact = preparation::build_in_process(root, &sources, &plan, pipelines)?;
     ensure!(
         super::cache_path(root, id)? == path,
         "installed game changed during the build"
@@ -189,12 +175,6 @@ fn prepared(
     let receipt: ExecutableReceipt = serde_json::from_slice(json)?;
 
     let (sources, package, _snapshot) = source_snapshot(root, id)?;
-    #[cfg(windows)]
-    let shader_preparation: Vec<String> = {
-        let _ = (package, settings);
-        Vec::new()
-    };
-    #[cfg(target_os = "linux")]
     let shader_preparation = if sources.manifest().native_graphics.is_some() {
         let loaded;
         let settings = match settings {

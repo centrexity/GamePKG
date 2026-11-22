@@ -17,7 +17,10 @@ use std::{
 ))]
 #[path = "preparation_local.rs"]
 mod local;
-#[cfg(all(feature = "gui", target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    feature = "gui",
+    any(windows, all(target_os = "linux", target_arch = "x86_64"))
+))]
 pub use local::build_in_process;
 #[cfg(all(feature = "gui", windows))]
 pub use local::build_windows_in_process;

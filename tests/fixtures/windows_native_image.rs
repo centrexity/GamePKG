@@ -62,7 +62,10 @@ fn show() -> Result<(), i32> {
                 linear: false,
                 shader: None,
             };
-            gamepkg::present(0x000000ff, &[draw])?;
+            match gamepkg::present(0x000000ff, &[draw]) {
+                Ok(()) | Err(-2) => (),
+                Err(error) => return Err(error),
+            }
         }
         let (now, generation) = gamepkg::monotonic()?;
         gamepkg::wait_until(now.saturating_add(16_000_000), generation)?;

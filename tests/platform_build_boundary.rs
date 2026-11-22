@@ -105,6 +105,30 @@ fn desktop_native_build_and_play_require_the_compatibility_profiles() {
         assert_eq!(gamepkg::native::build_supported(&manifest), has_runtime);
         assert_eq!(gamepkg::native::play_supported(&manifest), has_runtime);
     }
+    let indexed = format!(
+        "native_services = true\nnative_graphics = \"vertex-color-v1\"\n{old}\n\
+         [[shaders]]\nsource = \"shaders/scene.slang\"\nentry = \"vertexMain\"\nstage = \"vertex\"\n\
+         [[shaders]]\nsource = \"shaders/scene.slang\"\nentry = \"fragmentMain\"\nstage = \"fragment\"\n"
+    );
+    let manifest = gamepkg::manifest::Manifest::parse(indexed.as_bytes()).unwrap();
+    let has_runtime = cfg!(all(
+        feature = "gui",
+        any(
+            all(windows, any(target_arch = "x86", target_arch = "x86_64")),
+            all(target_os = "linux", target_arch = "x86_64")
+        )
+    ));
+    #[cfg(windows)]
+    let has_runtime = has_runtime && gamepkg_takedawn_windows_runner::supports_amd64_tools();
+    assert_eq!(gamepkg::native::build_supported(&manifest), has_runtime);
+    assert_eq!(gamepkg::native::play_supported(&manifest), has_runtime);
+    #[cfg(windows)]
+    {
+        let online = indexed.replace("network = \"none\"", "network = true");
+        let online = gamepkg::manifest::Manifest::parse(online.as_bytes()).unwrap();
+        assert!(!gamepkg::native::build_supported(&online));
+        assert!(!gamepkg::native::play_supported(&online));
+    }
 }
 
 #[test]

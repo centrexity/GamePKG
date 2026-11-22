@@ -18,7 +18,7 @@ on:
       - 'engines/native/**'
       - 'engines/takedawn/windows-runner/**'
       - 'tests/windows_native_gui.py'
-      - 'tests/fixtures/windows_native_image.rs'
+      - 'tests/fixtures/windows_native_*'
       - 'tests/windows_owned_window.py'
       - 'tests/windows_doom_gui.py'
       - 'tests/doom_gui_proof.py'
@@ -53,7 +53,7 @@ on:
       - 'engines/native/**'
       - 'engines/takedawn/windows-runner/**'
       - 'tests/windows_native_gui.py'
-      - 'tests/fixtures/windows_native_image.rs'
+      - 'tests/fixtures/windows_native_*'
       - 'tests/windows_owned_window.py'
       - 'tests/windows_doom_gui.py'
       - 'tests/doom_gui_proof.py'
@@ -87,15 +87,17 @@ jobs:
     # code (or a manually chosen branch) to the interactive self-hosted runner.
     if: ${{ !inputs.hardware || github.ref == 'refs/heads/main' }}
     runs-on: ${{ fromJSON(inputs.hardware && '["self-hosted", "Windows", "X64", "gamepkg-vulkan"]' || '["windows-2022"]') }}
-    timeout-minutes: 75
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
         include:
           - target: x86_64-pc-windows-msvc
             architecture: x86_64
+            shader-backend: wgsl
           - target: i686-pc-windows-msvc
             architecture: i686
+            shader-backend: spirv
     steps:
       - uses: actions/checkout@v4
         with:
@@ -142,7 +144,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python tests/doom_gui_proof_test.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Verify native image build and admission, with visible Vulkan windows on hardware
+      - name: Verify native image and indexed Slang builds, with visible Vulkan windows on hardware
         shell: pwsh
         env:
           GAMEPKG_TEST_EXPECTED_ARCH: ${{ matrix.architecture }}
@@ -150,14 +152,16 @@ jobs:
           New-Item -ItemType Directory -Force target/windows-gui-proof | Out-Null
           $options = @()
           if ('${{ inputs.hardware }}' -eq 'true') { $options += '--visible' }
-          python tests/windows_native_gui.py @options 2>&1 | Tee-Object -FilePath target/windows-gui-proof/native-image.log
+          python tests/windows_native_gui.py --shader-backend ${{ matrix.shader-backend }} @options 2>&1 | Tee-Object -FilePath target/windows-gui-proof/native-graphics.log
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $log = Get-Content -Raw target/windows-gui-proof/native-image.log
+          $log = Get-Content -Raw target/windows-gui-proof/native-graphics.log
           if ($log -notmatch 'Verified signed offline Windows native image build and online-package denial:') { throw 'Missing signed image-build proof' }
+          if ($log -notmatch 'Verified signed offline Windows native indexed Slang build') { throw 'Missing signed Slang build and receipt proof' }
           if ('${{ inputs.hardware }}' -eq 'true') {
             foreach ($launch in @('first', 'restart')) {
               if ($log -notmatch "Verified visible Windows native Vulkan image window: $launch") { throw "Missing Vulkan window proof: $launch" }
             }
+            if ($log -notmatch 'Verified visible Windows native Vulkan indexed Slang window') { throw 'Missing visible Slang pipeline proof' }
           }
       - name: Package matching apps after the available native graphics checks
         shell: pwsh
@@ -176,9 +180,9 @@ jobs:
             architecture = '${{ matrix.architecture }}'
             target = '${{ matrix.target }}'
             workflow_run = '${{ github.run_id }}'
-            required_checks = @('signed native image build', 'offline admission', 'sparse storage allocation')
+            required_checks = @('signed native image build', 'signed indexed Slang build and receipt', 'offline admission', 'sparse storage allocation')
           }
-          if ('${{ inputs.hardware }}' -eq 'true') { $preview.required_checks += 'visible hardware Vulkan image windows and restart' }
+          if ('${{ inputs.hardware }}' -eq 'true') { $preview.required_checks += 'visible hardware Vulkan image and indexed Slang windows' }
           $preview | ConvertTo-Json -Depth 4 | Set-Content -Encoding utf8 target/windows-app-preview/PREVIEW.json
       - name: Preserve matching app packages for runtime integration
         uses: actions/upload-artifact@v4
