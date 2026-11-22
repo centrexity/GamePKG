@@ -551,7 +551,6 @@ mod tests {
         verify_c_section_collection(root.path(), &stage, target, &execute);
         private_root.close().unwrap();
         println!("Verified confined reviewed C compiler: {target}; correct COFF/ABI and denied host include with same-file positive control; no engine admission or game media.");
-        verify_reviewed_engine_links(root.path());
     }
 
     fn verify_c_section_collection(
@@ -619,31 +618,28 @@ mod tests {
         println!("Verified reviewed C section collection: dead missing call discarded; live missing call rejected.");
     }
 
-    fn verify_reviewed_engine_links(root: &Path) {
-        let archives = root.join("signed engine inputs");
-        std::fs::create_dir(&archives).unwrap();
-        let settings = crate::settings::Settings::default();
+    #[test]
+    fn retired_engine_builds_are_denied_before_tools() {
+        let root = tempfile::tempdir().unwrap();
+        let library = root.path().join("library");
         for port in ["doom", "zelda3"] {
             let source = Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("ports")
                 .join(port);
-            let package = archives.join(format!("{port}.gamepkg"));
+            let package = root.path().join(format!("{port}.gamepkg"));
             crate::pack::pack(&source, &package, &[81; 32]).unwrap();
-            let manifest = crate::registry::install(root, &package, true).unwrap();
-            let public = port == "doom";
-            assert_eq!(super::super::build_supported(&manifest), public);
-            super::super::build::compile_with_settings(root, &manifest.id, &settings).unwrap();
-            let installed = root.join(format!("{}.gamepkg", manifest.id));
-            let digest = crate::verify::digest(&std::fs::read(installed).unwrap());
-            let built = super::super::path_for_digest(root, &digest);
-            let bytes = crate::files::read_regular(&built, 64 * 1048576, false).unwrap();
-            super::super::validate_executable(&bytes).unwrap();
-            crate::integrity::verify_build(&built, &bytes).unwrap();
-            assert_eq!(super::super::play_supported(&manifest), public);
-            println!("Verified signed Windows native engine link: {port}; correct PE target and integrity; public admission={public}; no ROM read.");
-        }
-        if let Some(wad) = std::env::var_os("GAMEPKG_PUBLIC_DOOM_WAD") {
-            super::super::doom_fixture::verify(root, &settings, Path::new(&wad));
+            let manifest = crate::registry::install(&library, &package, true).unwrap();
+            assert!(!super::super::build_supported(&manifest));
+            assert!(!super::super::play_supported(&manifest));
+            let error = super::super::compile(&library, &manifest.id).unwrap_err();
+            assert!(
+                error.to_string().contains("requires migration"),
+                "{error:#}"
+            );
+            for directory in ["builds", "build-locks", "native-sdk", "shader-builds"] {
+                assert!(!library.join(directory).exists(), "{directory}");
+            }
+            println!("Verified Windows legacy engine admission denial: {port}; no build artifacts");
         }
     }
 

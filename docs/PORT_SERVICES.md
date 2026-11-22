@@ -762,6 +762,16 @@ test. On a Windows machine with a hardware Vulkan driver, run
 for the offscreen pixel checks. These service tests do not qualify a visible
 window or a signed installed package using the indexed Slang profile.
 
+The **Native Windows game graphics** workflow builds an offline signed image
+package through the regular installed-package path on hosted x86/x64 targets
+and verifies that an otherwise identical network-enabled package is rejected.
+Its manual `hardware` run on `main` uses a trusted self-hosted Windows runner
+labelled `gamepkg-vulkan`. That runner needs an interactive desktop and both
+32-bit and 64-bit hardware Vulkan drivers. The pixel test opens the confined
+child's visible window, checks an image and background pixels, sends a real
+held key, resizes, then verifies the save and play history on restart. Hosted
+build artifacts do not claim visible-window qualification.
+
 The ordinary shared native launcher passes up to eight selected regular ROM
 files read-only and in place, each up to 1 TiB. Kind-3 entries in `grants()`
 follow the manifest ROM order. Use those grant IDs and `file_read` with

@@ -85,20 +85,9 @@ jobs:
         run: cargo test --locked --all-features
       - name: Check portable implementation warnings
         run: cargo clippy --locked --all-features --all-targets -- -D warnings
-      - name: Select packaging Python
+      - name: Verify the supported Windows native package boundary before WSL setup
         if: runner.os == 'Windows'
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: Prepare software graphics for native rendering tests
-        if: runner.os == 'Windows'
-        run: |
-          python -m pip install Pillow==11.3.0
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python tools/install_mesa_test.py target/release
-      - name: Verify native Windows shader textures and input before WSL setup
-        if: runner.os == 'Windows'
-        run: python tests/windows_native_gui.py
+        run: cargo test --locked --all-features --test platform_build_boundary
       - name: Install verified optional WSL test runtime and Ubuntu image
         if: runner.os == 'Windows'
         run: |

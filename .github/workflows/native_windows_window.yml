@@ -100,7 +100,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $log = Get-Content -Raw "$env:RUNNER_TEMP/platform-build-boundary.log"
           if ($log -notmatch 'test result: ok\. 4 passed; 0 failed;') { throw 'The four Windows platform boundary tests did not run successfully' }
-      - name: Exercise the production owner and real child windows without game media
+      - name: Exercise confined Win32 window ownership without game media or Vulkan
         shell: pwsh
         run: |
           cargo test --locked --lib takedawn_player::tests::native_player_owns_saves_history_and_companions_across_restart -- --exact --nocapture 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP/native-window.log"

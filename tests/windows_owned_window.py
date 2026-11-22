@@ -3,10 +3,38 @@ import ctypes, json, subprocess, time
 from ctypes import wintypes as W
 from PIL import Image
 
+def direct_child_pids(parent):
+ """Snapshot direct children of the launched GamePKG process, not arbitrary windows."""
+ class Entry(ctypes.Structure):
+  _fields_=[('size',W.DWORD),('usage',W.DWORD),('pid',W.DWORD),
+            ('heap',ctypes.c_size_t),('module',W.DWORD),('threads',W.DWORD),
+            ('parent',W.DWORD),('priority',W.LONG),('flags',W.DWORD),
+            ('exe',W.WCHAR*260)]
+ kernel=ctypes.WinDLL('kernel32',use_last_error=True)
+ snapshot=kernel.CreateToolhelp32Snapshot
+ snapshot.argtypes=[W.DWORD,W.DWORD];snapshot.restype=W.HANDLE
+ kernel.CloseHandle.argtypes=[W.HANDLE];kernel.CloseHandle.restype=W.BOOL
+ first=kernel.Process32FirstW;next_entry=kernel.Process32NextW
+ for function in [first,next_entry]:
+  function.argtypes=[W.HANDLE,ctypes.POINTER(Entry)];function.restype=W.BOOL
+ handle=snapshot(2,0)
+ if handle==ctypes.c_void_p(-1).value:raise ctypes.WinError(ctypes.get_last_error())
+ try:
+  entry=Entry();entry.size=ctypes.sizeof(entry)
+  if not first(handle,ctypes.byref(entry)):raise ctypes.WinError(ctypes.get_last_error())
+  children=set()
+  while True:
+   if entry.parent==parent and entry.exe.lower()=='game.exe':children.add(entry.pid)
+   if not next_entry(handle,ctypes.byref(entry)):
+    if ctypes.get_last_error()!=18:raise ctypes.WinError(ctypes.get_last_error())
+    return children
+ finally:kernel.CloseHandle(handle)
+
 class OwnedGameWindow:
- def __init__(self, executable, arguments, environment, proof, label):
+ def __init__(self, executable, arguments, environment, proof, label, *, child=False):
   self.executable=executable;self.arguments=arguments;self.environment=environment
   self.proof=proof;self.label=label;self.app=None;self.window=None;self.pressed=set()
+  self.child=child;self.owner_pid=None
   self.proof.mkdir(parents=True,exist_ok=True)
   self.user=ctypes.WinDLL('user32',use_last_error=True);self.gdi=ctypes.WinDLL('gdi32',use_last_error=True)
   self.callback_type=ctypes.WINFUNCTYPE(W.BOOL,W.HWND,W.LPARAM)
@@ -50,6 +78,21 @@ class OwnedGameWindow:
   self.gdi.CreateDIBSection.argtypes=[W.HDC,ctypes.POINTER(Info),W.UINT,ctypes.POINTER(ctypes.c_void_p),W.HANDLE,W.DWORD];self.gdi.CreateDIBSection.restype=W.HBITMAP
  def diagnostics(self):return self.log_path.read_text(errors='replace')[-4000:]
  def alive(self):assert self.app.poll() is None,self.diagnostics()
+ def owned_visible_windows(self):
+  found=[]
+  allowed_pids=direct_child_pids(self.app.pid) if self.child else {self.app.pid}
+  @self.callback_type
+  def visit(handle,_):
+   pid=W.DWORD()
+   self.user.GetWindowThreadProcessId(handle,ctypes.byref(pid))
+   if pid.value in allowed_pids and self.user.IsWindowVisible(handle):
+    rect=W.RECT()
+    if self.user.GetClientRect(handle,ctypes.byref(rect)):
+     if 320<=rect.right<=4096 and 240<=rect.bottom<=4096:
+      found.append((rect.right*rect.bottom,handle,pid.value))
+   return True
+  self.user.EnumWindows(visit,0)
+  return found
  def __enter__(self):
   self.log_path=self.proof/(self.label+'.log');self.log=self.log_path.open('wb')
   self.awareness=self.user.SetThreadDpiAwarenessContext(W.HANDLE(-4))
@@ -58,17 +101,13 @@ class OwnedGameWindow:
    self.app=subprocess.Popen([str(self.executable),*self.arguments],env=self.environment,stdout=self.log,stderr=self.log)
    end=time.monotonic()+45
    while self.window is None:
-    self.alive();found=[]
-    @self.callback_type
-    def visit(handle,_):
-     pid=W.DWORD();self.user.GetWindowThreadProcessId(handle,ctypes.byref(pid))
-     if pid.value==self.app.pid and self.user.IsWindowVisible(handle):
-      rect=W.RECT()
-      if self.user.GetClientRect(handle,ctypes.byref(rect)) and 320<=rect.right<=4096 and 240<=rect.bottom<=4096:found.append((rect.right*rect.bottom,handle))
-     return True
-    self.user.EnumWindows(visit,0)
-    if found:self.window=max(found)[1];break
-    assert time.monotonic()<end,'owned game window did not appear';time.sleep(.1)
+    self.alive()
+    found=self.owned_visible_windows()
+    if found:
+     _,self.window,self.owner_pid=max(found)
+     break
+    assert time.monotonic()<end,'owned game window did not appear: '+self.diagnostics()
+    time.sleep(.1)
    self.activate();return self
   except BaseException:
    self.__exit__(None,None,None);raise
@@ -95,7 +134,7 @@ class OwnedGameWindow:
         'outer_pixels':list(self.outer()),'monitor_pixels':[monitor.monitor.left,monitor.monitor.top,monitor.monitor.right,monitor.monitor.bottom],
         'work_pixels':[work.left,work.top,work.right,work.bottom],
         'screen_pixels':[self.user.GetSystemMetrics(0),self.user.GetSystemMetrics(1)],
-        'dpi':self.user.GetDpiForWindow(self.window),'owner_pid':self.app.pid,'capture_thread_dpi':'per-monitor-v2'}
+         'dpi':self.user.GetDpiForWindow(self.window),'owner_pid':self.owner_pid,'capture_thread_dpi':'per-monitor-v2'}
   assert work.left<=origin.x and work.top<=origin.y and origin.x+width<=work.right and origin.y+height<=work.bottom,'owned client is partly outside visible monitor work area'
   return data
  def activate(self):
