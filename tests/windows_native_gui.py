@@ -155,7 +155,7 @@ def main():
                 assert "requires offline native services" in output, output
                 assert not build.exists(), build
                 continue
-            binaries = list(build.glob("native-v1-*/game"))
+            binaries = list(build.glob("native-v1-*/compatibility-game.exe"))
             assert len(binaries) == 1 and not list(build.rglob("*.wasm")), build
             binary = binaries[0]
             assert executable_architecture(binary, True) == arch

@@ -134,8 +134,14 @@ fn local_runtime(budget: u64) -> local::runtime::Result<local::runtime::Runtime>
         ("", link_path(&tools.linker)?)
     };
     #[cfg(windows)]
-    let (c_identity, linker) =
-        configure_windows(&mut command, cache, plan.target, &tools, &compatibility)?;
+    let (c_identity, linker) = configure_windows(
+        &mut command,
+        cache,
+        plan.target,
+        &tools,
+        &compatibility,
+        config.path(),
+    )?;
     command.current_dir(link_path(checkout)?).args([
         "rustc",
         "--offline",
@@ -273,6 +279,7 @@ fn configure_windows(
     target: Target,
     tools: &Tools,
     source: &Source,
+    private: &Path,
 ) -> Result<(String, PathBuf)> {
     use std::os::windows::process::CommandExt;
     use windows_sys::Win32::System::Threading::CREATE_NO_WINDOW;
@@ -288,17 +295,23 @@ fn configure_windows(
     let dlltool = bin.join("llvm-dlltool.exe").canonicalize()?;
     // Keep LLVM's import archives and the final PE linker in the same toolchain.
     // GNU ld linked the image but omitted some raw-dylib import descriptors.
-    let linker = link_path(&bin.join("ld.lld.exe").canonicalize()?)?;
+    // Even a verbatim executable name past MAX_PATH can fail inside LLD's own
+    // startup. Copy the already-verified linker into the private build folder
+    // and retain the pinned bin directory in PATH for its runtime libraries.
+    let linker_source = bin.join("ld.lld.exe").canonicalize()?;
+    let linker = private.join("ld.lld.exe");
+    let linker_hash = hash(&linker_source)?;
+    fs::copy(&linker_source, &linker)?;
+    ensure!(
+        linker_hash == hash(&linker)?,
+        "staged LLD executable changed"
+    );
     // Desktop crates need import libraries beyond those shipped with Rust.
     let imports = bin
         .parent()
         .context("missing LLVM-MinGW installation directory")?
         .join(clang_name)
         .join("lib")
-        .canonicalize()?;
-    let gcc = tools
-        .linker
-        .with_file_name(format!("{clang_name}-gcc.exe"))
         .canonicalize()?;
     // Keep Win32 device prefixes out of the paths passed between Cargo,
     // rustc and MinGW. The tool locations are still canonical and verified.
@@ -332,7 +345,7 @@ fn configure_windows(
             format!(
                 // Append the SDK search path after Rust's own sysroot so its
                 // MinGW startup objects still use the matching CRT libraries.
-                "-C\u{1f}dlltool={}\u{1f}-C\u{1f}link-arg=-L{}",
+                "-C\u{1f}linker-flavor=ld\u{1f}-C\u{1f}link-self-contained=yes\u{1f}-C\u{1f}dlltool={}\u{1f}-C\u{1f}link-arg=-L{}",
                 link_path(&dlltool)?.display(),
                 link_path(&imports)?.display(),
             ),
@@ -342,7 +355,10 @@ fn configure_windows(
                 "CARGO_TARGET_{}_LINKER",
                 target.triple().replace('-', "_").to_ascii_uppercase()
             ),
-            link_path(&gcc)?,
+            // Use LLD for the host build scripts and proc macros too. GCC
+            // also needs to rediscover CRT libraries relative to its own
+            // image, which fails with an extended-length executable path.
+            &linker,
         );
     if source.pin().is_none() {
         // Development checkouts can use their existing offline registry and

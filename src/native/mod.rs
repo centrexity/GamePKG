@@ -2,6 +2,7 @@
 use anyhow::Context;
 use anyhow::{bail, ensure, Result};
 use std::path::{Path, PathBuf};
+pub(crate) const MAX_COMPATIBILITY_BINARY_BYTES: u64 = 256 * 1024 * 1024;
 #[cfg(any(target_os = "linux", windows))]
 const MAX_CALLS_PER_TICK: usize = 8192;
 #[cfg(all(test, any(target_os = "linux", windows)))]

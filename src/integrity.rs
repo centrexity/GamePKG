@@ -78,25 +78,15 @@ fn check_locked(root: &Path, id: &str) -> Result<String> {
         ));
     }
     let metadata = fs::symlink_metadata(&path)?;
-    if !metadata.is_file()
-        || metadata.len()
-            > if is_native {
-                64 * 1024 * 1024
-            } else {
-                32 * 1024 * 1024
-            }
-    {
+    let limit = if is_native {
+        crate::native::MAX_COMPATIBILITY_BINARY_BYTES
+    } else {
+        32 * 1024 * 1024
+    };
+    if !metadata.is_file() || metadata.len() > limit {
         bail!("invalid compiled game file");
     }
-    let bytes = crate::files::read_regular(
-        &path,
-        if is_native {
-            64 * 1024 * 1024
-        } else {
-            32 * 1024 * 1024
-        },
-        false,
-    )?;
+    let bytes = crate::files::read_regular(&path, limit, false)?;
     verify_build(&path, &bytes)?;
     if !is_native && manifest.builtin_engine.as_deref() == Some(crate::zelda3::PROFILE) {
         let engine = path.with_file_name("zelda3.wasm");

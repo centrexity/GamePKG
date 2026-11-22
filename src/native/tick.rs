@@ -141,7 +141,7 @@ pub(super) fn build(root: &Path, id: &str) -> Result<()> {
     let signature = key(root, true)?.sign(&receipt);
     let output = artifact.executable()?;
     fs::create_dir_all(path.parent().context("native cache directory")?)?;
-    let bytes = crate::files::read_regular(&output, 256 * 1024 * 1024, false)?;
+    let bytes = crate::files::read_regular(&output, super::MAX_COMPATIBILITY_BINARY_BYTES, false)?;
     write(&path, &bytes)?;
     crate::integrity::record_build(&path, &bytes)?;
     let mut authenticated = signature.to_bytes().to_vec();
@@ -202,7 +202,7 @@ fn prepared(
             && receipt.shader_preparation == shader_preparation,
         "native build receipt is stale; rebuild from verified source"
     );
-    let bytes = crate::files::read_regular(&path, 256 * 1024 * 1024, false)?;
+    let bytes = crate::files::read_regular(&path, super::MAX_COMPATIBILITY_BINARY_BYTES, false)?;
     ensure!(
         crate::verify::digest(&bytes) == receipt.binary,
         "native executable changed"
