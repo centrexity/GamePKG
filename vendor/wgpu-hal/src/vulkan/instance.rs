@@ -10,6 +10,35 @@ use arrayvec::ArrayVec;
 use ash::{ext, khr, vk};
 use parking_lot::RwLock;
 
+// Debug labels are optional diagnostics. Some Windows x86 drivers supply
+// a nonzero count without a usable pointer; keep the message, not the labels.
+unsafe fn debug_callback_slice<'a, T>(ptr: *const T, count: u32) -> &'a [T] {
+    let count = count as usize;
+    if count == 0
+        || count > 4096
+        || ptr.is_null()
+        || !ptr.is_aligned()
+        || count > (isize::MAX as usize) / size_of::<T>().max(1)
+    {
+        return &[];
+    }
+    unsafe { slice::from_raw_parts(ptr, count) }
+}
+
+#[cfg(test)]
+#[test]
+fn debug_callback_ignores_unusable_label_arrays() {
+    let data = [1u64, 2];
+    let ptr = data.as_ptr();
+    unsafe {
+        assert!(debug_callback_slice::<u64>(core::ptr::null(), 1).is_empty());
+        assert!(debug_callback_slice(ptr.wrapping_byte_add(1), 1).is_empty());
+        assert!(debug_callback_slice(ptr, u32::MAX).is_empty());
+        assert!(debug_callback_slice(ptr, 0).is_empty());
+        assert_eq!(debug_callback_slice(ptr, 2), &data);
+    }
+}
+
 unsafe extern "system" fn debug_utils_messenger_callback(
     message_severity: vk::DebugUtilsMessageSeverityFlagsEXT,
     message_type: vk::DebugUtilsMessageTypeFlagsEXT,
@@ -86,9 +115,8 @@ unsafe extern "system" fn debug_utils_messenger_callback(
         );
     });
 
-    if cd.queue_label_count != 0 {
-        let labels =
-            unsafe { slice::from_raw_parts(cd.p_queue_labels, cd.queue_label_count as usize) };
+    let labels = unsafe { debug_callback_slice(cd.p_queue_labels, cd.queue_label_count) };
+    if !labels.is_empty() {
         let names = labels
             .iter()
             .flat_map(|dul_obj| unsafe { dul_obj.label_name_as_c_str() }.map(CStr::to_string_lossy))
@@ -99,9 +127,8 @@ unsafe extern "system" fn debug_utils_messenger_callback(
         });
     }
 
-    if cd.cmd_buf_label_count != 0 {
-        let labels =
-            unsafe { slice::from_raw_parts(cd.p_cmd_buf_labels, cd.cmd_buf_label_count as usize) };
+    let labels = unsafe { debug_callback_slice(cd.p_cmd_buf_labels, cd.cmd_buf_label_count) };
+    if !labels.is_empty() {
         let names = labels
             .iter()
             .flat_map(|dul_obj| unsafe { dul_obj.label_name_as_c_str() }.map(CStr::to_string_lossy))
@@ -112,8 +139,8 @@ unsafe extern "system" fn debug_utils_messenger_callback(
         });
     }
 
-    if cd.object_count != 0 {
-        let labels = unsafe { slice::from_raw_parts(cd.p_objects, cd.object_count as usize) };
+    let labels = unsafe { debug_callback_slice(cd.p_objects, cd.object_count) };
+    if !labels.is_empty() {
         //TODO: use color fields of `vk::DebugUtilsLabelExt`?
         let names = labels
             .iter()

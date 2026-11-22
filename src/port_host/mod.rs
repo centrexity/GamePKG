@@ -145,6 +145,7 @@ pub fn build_identity() -> String {
         include_str!("../../vendor/wgpu-hal/src/vulkan/adapter.rs"),
         include_str!("../../vendor/wgpu-hal/src/vulkan/command.rs"),
         include_str!("../../vendor/wgpu-hal/src/vulkan/device.rs"),
+        include_str!("../../vendor/wgpu-hal/src/vulkan/instance.rs"),
         include_str!("../../vendor/wgpu-hal/src/vulkan/mod.rs"),
         include_str!("../../vendor/wgpu-hal/src/gles/egl.rs"),
     ] {
