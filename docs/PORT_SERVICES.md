@@ -759,6 +759,9 @@ after changing the shader backend. Windows uses hardware Vulkan and still
 requires offline packages without ambient file or microphone access.
 The pinned Slang compiler requires AMD64 Windows; the x86 GamePKG build
 uses it under WOW64 and still links an x86 game executable.
+Run Windows native qualification in a logged-in desktop session. On some
+hosts the confined Slang process fails to initialize from an SSH service
+session even though the shader stages compile on the logged-in desktop.
 
 For Windows x86 and x64, the native port services CI compiles the shared
 Vulkan fixtures and runs the file grant, Windows save replacement, and host
@@ -776,8 +779,8 @@ package is rejected.
 Its manual `hardware` run on `main` uses a trusted self-hosted Windows runner
 labelled `gamepkg-vulkan`. That runner needs an interactive desktop and both
 32-bit and 64-bit hardware Vulkan drivers. It runs the offscreen driver
-regressions before the pixel test opens the confined
-child's visible window, checks image and indexed Slang pixels, exercises
+regressions before the pixel test opens the confined child's visible window,
+checks image and indexed Slang pixels, exercises
 resize and keyboard input, and verifies the image fixture's save and play
 history on restart. Hosted build artifacts do not claim visible-window
 qualification.
