@@ -5,9 +5,8 @@ project = Path(__file__).resolve().parents[1]
 cli = project/'target/release/gamepkg'
 decoder = project/'tools/audio-decoder/target/wasm32-unknown-unknown/release/gamepkg_host_audio_decoder.wasm'
 env = dict(os.environ, GAMEPKG_BUNDLED_AUDIO_DECODER=str(decoder),GAMEPKG_BUNDLED_AUDIO_CONVERTER=str(project/'tools/audio-converter/target/wasm32-unknown-unknown/release/gamepkg_host_audio_converter.wasm'))
-result = subprocess.run(['cargo','build','--locked','--release','--bin','gamepkg'],cwd=project,env=env,capture_output=True,text=True,timeout=300)
-assert result.returncode == 0, result.stderr
-result = subprocess.run(['cargo','test','--locked','--release','--features','audio','--test','music_sdk','--no-run','--message-format=json'],cwd=project,env=env,capture_output=True,text=True,timeout=300)
+# Match the desktop CI build, including the CLI built for this integration test.
+result = subprocess.run(['cargo','test','--locked','--release','--all-features','--test','music_sdk','--no-run','--message-format=json'],cwd=project,env=env,capture_output=True,text=True,timeout=300)
 assert result.returncode == 0, result.stderr
 artifacts = [json.loads(line) for line in result.stdout.splitlines() if line.startswith('{')]
 executable = next(item['executable'] for item in artifacts if item.get('target',{}).get('name')=='music_sdk' and item.get('executable'))
@@ -67,7 +66,4 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-music-sdk-') as temporary:
             if enabled:
                 exported=root/(id+'-web');run('web-export',id,'--output',exported);assert (exported/'audio-converter.wasm').is_file() and (exported/'audio-decoder.wasm').is_file()
     subprocess.run([executable,'--ignored','--nocapture'],cwd=project,env=environment,check=True,timeout=120)
-    for label in ['off','on','solo']:run('build','com.gamepkg.music-core-'+label,'--target','native')
-    shutil.rmtree(root/'library/progress')
-    subprocess.run([executable,'--ignored','--nocapture'],cwd=project,env=dict(environment,GAMEPKG_MUSIC_SDK_NATIVE='1'),check=True,timeout=120)
-print('Signed no-dependency music SDK: native/core/component, opt-in, shared memory, original-rate PCM, completion and trap/save/history/output rollback passed.')
+print('Signed no-dependency music SDK: core/component, opt-in, shared memory, original-rate PCM, completion and trap/save/history/output rollback passed.')

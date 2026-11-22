@@ -1,4 +1,4 @@
-"""Verify fresh-frame backgrounds and disappearing geometry in native/browser players."""
+"""Verify fresh-frame backgrounds and disappearing geometry in desktop/browser players."""
 from pathlib import Path
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -36,10 +36,10 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-frame-reset-',dir=PROJECT/'targ
   for profile in ['core-v1','component-v1']:
    game_id='com.gamepkg.frame-reset'+('-component' if profile=='component-v1' else '');(source/'manifest.toml').write_text('runtime_profile="'+profile+'"\n'+base.replace('com.gamepkg.frame-reset',game_id));package=root/(profile+'.gamepkg');run('pack',source,'-o',package,'--key',key);run('install',package,'--trust-creator');run('build',game_id,'--target','wasm')
    if not args.browser_only:
-    for target in (['wasm','native'] if profile=='core-v1' else ['wasm']):
-     if target=='native':run('build',game_id,'--target','native')
+    # The test compares the two desktop renderers with the same browser guest.
+    for target in ('wasm',):
      for renderer in ['vulkan','opengl']:
-      app=subprocess.Popen([str(gui),'--play',game_id,'--renderer',renderer],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE);active=None;label=profile+'-'+target+'-'+renderer
+      app=subprocess.Popen([str(gui),'--play',game_id,'--target',target,'--renderer',renderer],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE);active=None;label=profile+'-'+target+'-'+renderer
       try:
        deadline=time.monotonic()+20
        while True:

@@ -11,9 +11,9 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-progress-gui-') as directory:
  def run(*args):
   r=subprocess.run([str(PROJECT/'target/release/gamepkg'),*map(str,args)],env=env,capture_output=True,text=True,timeout=180);assert r.returncode==0,r.stderr;return r.stdout
  key=root/'creator.key';run('keygen','-o',key);package=root/'collect-stars.gamepkg'
- run('pack',PROJECT/'examples/good/collect-stars','-o',package,'--key',key);run('install',package,'--trust-creator');run('build','com.gamepkg.collect-stars')
+ run('pack',PROJECT/'examples/good/collect-stars','-o',package,'--key',key);run('install',package,'--trust-creator');run('build','com.gamepkg.collect-stars','--target','wasm')
  display=start_display(env)
- app=subprocess.Popen([str(PROJECT/'target/release/gamepkg-gui'),'--play','com.gamepkg.collect-stars'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+ app=subprocess.Popen([str(PROJECT/'target/release/gamepkg-gui'),'--play','com.gamepkg.collect-stars','--target','wasm'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
  try:
   deadline=time.monotonic()+15
   while True:

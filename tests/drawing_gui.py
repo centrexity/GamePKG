@@ -9,7 +9,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-draw-ui-') as directory:
  root=Path(directory)
  env=dict(os.environ,DISPLAY=':97',LIBGL_ALWAYS_SOFTWARE='1',GAMEPKG_CONFIG=str(root/'settings.toml'),GAMEPKG_HOME=str(root/'library'),GAMEPKG_SLANG_ROOT=os.environ.get('GAMEPKG_SLANG_ROOT',''));env.pop('WAYLAND_DISPLAY',None)
  def run(*args):
-  if args and args[0] in ('build','integrity-fix') and '--target' not in args: args=(*args,'--target','native')
+  if args and args[0] in ('build','integrity-fix') and '--target' not in args: args=(*args,'--target','wasm')
   result=subprocess.run(['target/release/gamepkg',*map(str,args)],env=env,capture_output=True,text=True,timeout=140)
   assert result.returncode==0,result.stderr
  key=root/'key';key.write_text(os.urandom(32).hex())
@@ -17,7 +17,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-draw-ui-') as directory:
  run('install',root/'game.gamepkg','--trust-creator');run('build','com.gamepkg.shape-playground')
  display=start_display(env)
  try:
-  app=subprocess.Popen(['target/release/gamepkg-gui','--play','com.gamepkg.shape-playground'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+  app=subprocess.Popen(['target/release/gamepkg-gui','--play','com.gamepkg.shape-playground','--target','wasm'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
   try:
    for _ in range(100):
     if app.poll() is not None:raise RuntimeError(app.stderr.read().decode())

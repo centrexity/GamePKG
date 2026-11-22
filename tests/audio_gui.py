@@ -34,7 +34,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-draw-ui-') as directory:
  run('install',root/'game.gamepkg','--trust-creator');run('build','com.gamepkg.tone-pad')
  display=start_display(env)
  try:
-  app=subprocess.Popen(['target/release/gamepkg-gui','--play','com.gamepkg.tone-pad'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+  app=subprocess.Popen(['target/release/gamepkg-gui','--play','com.gamepkg.tone-pad','--target','wasm'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
   try:
    for _ in range(100):
     if app.poll() is not None:raise RuntimeError(app.stderr.read().decode())

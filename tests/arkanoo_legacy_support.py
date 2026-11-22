@@ -41,6 +41,13 @@ def wasm_fixture_manifest(text: str) -> str:
     return '\n'.join(lines) + '\n'
 
 
+def fixture_module_declarations(text: str) -> str:
+    """Keep the port's modules without duplicating its singleton or tick."""
+    modules = [line for line in text.splitlines() if line.startswith('mod ') and line.endswith(';')]
+    assert 'mod physics;' in modules and 'mod render;' in modules
+    return '\n'.join(modules) + '\n'
+
+
 def use_legacy_audio(recipe: Path) -> None:
     project = Path(__file__).resolve().parents[1]
     manifest = recipe / 'manifest.toml'

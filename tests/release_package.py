@@ -58,12 +58,14 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-release-test-') as directory:
     run('pack', 'examples/good/byteorder-game', '-o', root / 'game.gamepkg', '--key', root / 'creator.key')
     run('install', root / 'game.gamepkg', '--trust-creator')
     game_id = tomllib.loads((distribution / 'examples/good/byteorder-game/manifest.toml').read_text())['id']
-    run('build', game_id)
+    run('build', game_id, '--target', 'wasm')
     run('run', game_id, '--frames', '3')
     assert 'compiled game verified' in run('integrity-check', game_id)
+    target = 'wasm'
     if args.cube2_package:
         run('install',args.cube2_package.resolve(),'--trust-creator')
         game_id='com.gamepkg.cube2'
+        target='native'
         run('build',game_id)
         run('run',game_id,'--game-data',args.game_data.resolve(),'--frames','3')
         assert 'compiled game verified' in run('integrity-check',game_id)
@@ -73,7 +75,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-release-test-') as directory:
     try:
         with log_path.open('wb') as log:
             app = subprocess.Popen(
-                [str(distribution / 'bin' / 'gamepkg-gui'), '--play', game_id],
+                [str(distribution / 'bin' / 'gamepkg-gui'), '--play', game_id, '--target', target],
                 cwd=distribution, env=env, stdout=log, stderr=subprocess.STDOUT,
             )
         for _ in range(100):

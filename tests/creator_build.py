@@ -7,6 +7,8 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-creator-build-') as directory:
     root=Path(directory);source=root/'source';shutil.copytree(project/'examples/minimal',source)
     env=dict(os.environ,GAMEPKG_HOME=str(root/'installed'),GAMEPKG_CONFIG=str(root/'settings.toml'))
     def run(*args,success=True):
+        if args[0]=='build' and '--target' not in args:
+            args=(*args,'--target','wasm')
         result=subprocess.run([str(cli),*map(str,args)],env=env,capture_output=True,text=True,timeout=150)
         assert (result.returncode==0)==success,result.stderr
         return result.stdout

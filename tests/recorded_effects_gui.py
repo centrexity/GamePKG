@@ -18,10 +18,10 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-effects-gui-') as temporary:
     run('pack', project/'examples/good/recorded-effects', '-o', root/'example.gamepkg', '--key', root/'synthetic.key')
     run('install', root/'example.gamepkg', '--trust-creator')
     id = 'com.gamepkg.recorded-effects'
-    run('build', id, '--target', 'wasm'); run('build', id, '--target', 'native')
+    run('build', id, '--target', 'wasm')
     display = start_display(env, 1100, 850)
     try:
-        for target in ['wasm', 'native']:
+        for target in ['wasm']:
             for renderer in ['vulkan', 'opengl']:
                 app = subprocess.Popen([str(gui), '--play', id, '--target', target, '--renderer', renderer], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 held = False

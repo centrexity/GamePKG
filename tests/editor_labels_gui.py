@@ -5,6 +5,7 @@ from http.server import SimpleHTTPRequestHandler,ThreadingHTTPServer
 import argparse,json,os,shutil,subprocess,tempfile,threading,time
 from PIL import Image
 from gui_test_support import start_display
+from arkanoo_legacy_support import fixture_module_declarations, wasm_fixture_manifest
 parser=argparse.ArgumentParser();parser.add_argument('--original',type=Path,default=Path('/tmp/gamepkg-candidate-arkanoo'));args=parser.parse_args()
 PROJECT=Path(__file__).resolve().parents[1];CLI=PROJECT/'target/release/gamepkg';GUI=PROJECT/'target/release/gamepkg-gui'
 PROOF=PROJECT/'target/editor-labels-proof';PROOF.mkdir(parents=True,exist_ok=True)
@@ -56,7 +57,7 @@ for(int i=0;i<4;i++){SDL_Surface*s=TTF_RenderUTF8_Blended(f,words[i],(SDL_Color)
  (root/'reference.c').write_text(original_c)
  subprocess.run(['cc',root/'reference.c','-o',reference,*subprocess.check_output(['pkg-config','--cflags','--libs','SDL2_image','SDL2_ttf'],text=True).split()],check=True)
  for profile,suffix in [('core-v1','core'),('component-v1','component')]:
-  source=root/suffix;shutil.copytree(PROJECT/'ports/arkanoo',source);entry=source/'source/src/lib.rs';modules=entry.read_text().split('use std::sync::Mutex;')[0]
+  source=root/suffix;shutil.copytree(PROJECT/'ports/arkanoo',source);entry=source/'source/src/lib.rs';modules=fixture_module_declarations(entry.read_text())
   entry.write_text(modules+"""pub fn game_tick(input:u32,_:u64)->u64 {
    let phase=if input&gamepkg::HELD_RIGHT!=0 {1} else if input&gamepkg::HELD_UP!=0 {2} else {0};
    gamepkg::draw_clear(0x000000ff);render::draw_image_background(1,153);render::draw_editor_grid();
@@ -66,16 +67,15 @@ for(int i=0;i<4;i++){SDL_Surface*s=TTF_RenderUTF8_Blended(f,words[i],(SDL_Color)
    render::draw_editor_label(2,296,620);render::draw_editor_label(10,1084,570);
    gamepkg::draw_rect(4.0,4.0,16.0,16.0,if phase==1 {0x00ff00ff} else if phase==2 {0x0000ffff} else {0xff0000ff});phase
   }""")
-  manifest=source/'manifest.toml';manifest.write_text('runtime_profile="'+profile+'"\n'+manifest.read_text().replace('com.gamepkg.arkanoo','com.gamepkg.clip-'+suffix));package=root/(suffix+'.gamepkg');run('pack',source,'-o',package,'--key',key);run('install',package,'--trust-creator');run('build','com.gamepkg.clip-'+suffix,'--target','wasm')
+  manifest=source/'manifest.toml';manifest.write_text('runtime_profile="'+profile+'"\n'+wasm_fixture_manifest(manifest.read_text()).replace('com.gamepkg.arkanoo','com.gamepkg.clip-'+suffix));package=root/(suffix+'.gamepkg');run('pack',source,'-o',package,'--key',key);run('install',package,'--trust-creator');run('build','com.gamepkg.clip-'+suffix,'--target','wasm')
  display=start_display(env,width=1600,height=1200)
  try:
   for profile,suffix in [('core-v1','core'),('component-v1','component')]:
    game_id='com.gamepkg.clip-'+suffix
-   for target in (['wasm','native'] if suffix=='core' else ['wasm']):
-    if target=='wasm' and suffix=='core':run('build',game_id,'--target','wasm')
-    if target=='native':run('build',game_id,'--target','native')
+   # The fixture uses the portable shader path under both renderers.
+   for target in ('wasm',):
     for renderer in ['vulkan','opengl']:
-     label=profile+'-'+target+'-'+renderer;app=subprocess.Popen([str(GUI),'--play',game_id,'--renderer',renderer],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE);held=False
+     label=profile+'-'+target+'-'+renderer;app=subprocess.Popen([str(GUI),'--play',game_id,'--target',target,'--renderer',renderer],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE);held=False
      try:
       deadline=time.monotonic()+20
       while True:

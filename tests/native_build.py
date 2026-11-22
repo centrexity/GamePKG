@@ -1,86 +1,72 @@
-"""Direct machine code, no implicit Wasm, native deadlines and controlled TCP/UDP."""
+"""Build admitted native source packages on Linux without requiring a GPU."""
+
+import argparse
+import hashlib
+import json
+import os
 from pathlib import Path
-from native_random_support import SOURCE as RANDOM_SOURCE,check_native_randomness
-import hashlib,os,re,shutil,socket,subprocess,tempfile,threading
-PROJECT=Path(__file__).resolve().parents[1];CLI=Path(os.environ.get('GAMEPKG_TEST_BINARY_DIR',PROJECT/'target/release'))/'gamepkg'
-with tempfile.TemporaryDirectory(prefix='gamepkg-native-') as temporary:
- root=Path(temporary);config=root/'settings.toml';config.write_text('automatic_update_checks=false\n')
- env=dict(os.environ,GAMEPKG_CONFIG=str(config),GAMEPKG_HOME=str(root/'library'))
- for name in ['GAMEPKG_DOOM_SYSROOT','GAMEPKG_ZELDA3_SYSROOT','GAMEPKG_SLANG_ROOT']:env.pop(name,None)
- key=root/'key';key.write_text('91'*32);artifacts={}
- def run(*args,good=True):
-  r=subprocess.run([str(CLI),*map(str,args)],env=env,capture_output=True,text=True,timeout=120)
-  assert (r.returncode==0)==good,r.stdout+r.stderr
-  return r.stdout+r.stderr
- def install(name,code,permissions='',save=False):
-  source=root/name;shutil.copytree(PROJECT/'examples/minimal',source)
-  manifest=source/'manifest.toml';text=manifest.read_text().replace('com.gamepkg.minimal','com.example.'+name)
-  if save:text=text.replace('save = false','save = true')
-  if permissions:text=text.replace('network = "none"',permissions)
-  manifest.write_text(text);(source/'source/src/lib.rs').write_text(code)
-  package=root/(name+'.gamepkg');run('pack',source,'-o',package,'--key',key);run('install',package,'--trust-creator');run('build','com.example.'+name)
-  assert not list((root/'library/builds').rglob('*.wasm')),'Native Build also produced Wasm'
-  binary=next((root/'library/builds'/hashlib.sha256(package.read_bytes()).hexdigest()).rglob('game'));artifacts[name]=binary;assert binary.read_bytes().startswith(b'\x7fELF')
-  return 'com.example.'+name
- simple=install('simple','pub fn game_tick(_:u32,state:u64)->u64{state+(1u64<<32)}')
- assert 'score: 4' in run('run',simple,'--frames','4')
- random_game=install('random','pub fn game_tick(_:u32,_:u64)->u64{gamepkg::random_u64() & 0xffffffff00000000}')
- scores={int(re.search(r'score: (\d+)',run('run',random_game,'--frames','1')).group(1)) for _ in range(4)}
- assert len(scores)==4,'Native workers reused fixed or truncated random values'
- install('randombatch',RANDOM_SOURCE)
- check_native_randomness(artifacts['randombatch'],env)
- random_save=install('randomsave','''pub fn game_tick(_:u32,state:u64)->u64 {
-  if state==0 {if let Some(0)=gamepkg::save_size(){gamepkg::save_write(b"before");}return 1;}
-  gamepkg::save_write(b"after");for _ in 0..8192 {gamepkg::random_u64();}2
- }''',save=True)
- run('run',random_save,'--frames','1')
- saves=list((root/'library/saves').glob('*.blob'));assert len(saves)==1
- save=saves[0];before=(save.read_bytes(),save.stat().st_mtime_ns);assert before[0]==b'before'
- error=run('run',random_save,'--frames','2',good=False);assert 'call budget exceeded' in error,error
- assert (save.read_bytes(),save.stat().st_mtime_ns)==before,'A failed cached-random tick changed the committed save'
- random_loop=install('randomloop','pub fn game_tick(_:u32,_:u64)->u64{loop{gamepkg::random_u64();}}')
- error=run('run',random_loop,'--frames','1',good=False)
- assert 'time limit' in error or 'call budget exceeded' in error,error
- loop=install('loop','pub fn game_tick(_:u32,_:u64)->u64{loop{}}')
- assert 'time limit' in run('run',loop,'--frames','1',good=False)
- memory=install('memory','pub fn game_tick(_:u32,_:u64)->u64{let mut memory=Vec::new();memory.resize(32*1024*1024,0u8);gamepkg::rom_read(0,&mut memory[..16]);memory.len() as u64}')
- memory_error=run('run',memory,'--frames','1',good=False)
- assert 'native game stopped' in memory_error or 'time limit' in memory_error,memory_error
- for udp in [False,True]:
-  server=socket.socket(socket.AF_INET,socket.SOCK_DGRAM if udp else socket.SOCK_STREAM);server.bind(('127.0.0.1',0));server.settimeout(10)
-  if not udp:server.listen(1)
-  endpoint='127.0.0.1:'+str(server.getsockname()[1]);errors=[]
-  def echo():
-   try:
-    if udp:
-     data,peer=server.recvfrom(16);assert data==b'ping';server.sendto(b'pong',peer)
-    else:
-     stream,_=server.accept()
-     with stream:
-      stream.settimeout(10);assert stream.recv(4)==b'ping';stream.sendall(b'pong')
-   except BaseException as e:errors.append(e)
-  worker=threading.Thread(target=echo);worker.start()
-  connect='udp_connect' if udp else 'tcp_connect'
-  code=f'''pub fn game_tick(_:u32,state:u64)->u64{{let mut bytes=[0u8;16];let handle=state as u32;
-   if state==0{{match gamepkg::{connect}("{endpoint}"){{Ok(h)=>u64::from(h),Err(_)=>0}}}}
-   else if state>>32==0{{match gamepkg::network_poll(handle,&mut[]){{Ok(_)=>{{match gamepkg::network_send(handle,b"ping"){{Ok(4)=>state|(1u64<<32),_=>state}}}},_=>state}}}}
-   else if state>>32==1{{match gamepkg::network_receive(handle,&mut bytes){{Ok(4)=>{{if bytes[..4]==*b"pong"{{(42u64<<32)|u64::from(handle)}}else{{state}}}},_=>state}}}}
-   else{{state}}
-  }}'''
-  name=install('udp' if udp else 'tcp',code,'network = true')
-  output=run('run',name,'--frames','1000');assert 'score: 42' in output,output
-  worker.join(timeout=12);server.close();assert not errors,errors;assert not worker.is_alive()
- denied=install('denied','''pub fn game_tick(_:u32,_:u64)->u64 {
-   let mut denied=0u32;
-   if let Err(gamepkg::NetworkError::PermissionDenied)=gamepkg::https_get("https://unused.invalid/"){denied+=1;}
-   if let Err(gamepkg::NetworkError::PermissionDenied)=gamepkg::network_request("https://unused.invalid/",&mut [0u8;1]){denied+=1;}
-   if let Err(gamepkg::NetworkError::PermissionDenied)=gamepkg::tcp_connect("127.0.0.1:1"){denied+=1;}
-   if let Err(gamepkg::NetworkError::PermissionDenied)=gamepkg::udp_connect("127.0.0.1:1"){denied+=1;}
-   if let Err(gamepkg::NetworkError::PermissionDenied)=gamepkg::tcp_listen("127.0.0.1:1"){denied+=1;}
-   if denied==5 {99u64<<32} else {0}
-  }''')
- assert 'score: 99' in run('run',denied,'--frames','1')
- # A native artifact cannot run after its verified checksum changes.
- binary=artifacts['simple'];binary.write_bytes(binary.read_bytes()+b'corrupt')
- assert 'integrity' in run('run',simple,'--frames','1',good=False)
- print('Native builds passed: ELF machine code only, native gameplay, fresh host randomness and call limits, deadline/memory termination, TCP/UDP echo, disabled networking and corrupt artifact rejection.')
+import subprocess
+import tempfile
+
+from windows_native_gui import write_recipe
+
+
+PROJECT = Path(__file__).resolve().parents[1]
+CLI = Path(os.environ.get("GAMEPKG_TEST_BINARY_DIR", PROJECT / "target/release")) / "gamepkg"
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--indexed", action="store_true")
+    args = parser.parse_args()
+    with tempfile.TemporaryDirectory(prefix="gamepkg-native-ci-") as directory:
+        root = Path(directory)
+        config, library = root / "settings.toml", root / "library"
+        env = dict(os.environ, GAMEPKG_CONFIG=str(config), GAMEPKG_HOME=str(library))
+
+        def run(*arguments, good=True):
+            result = subprocess.run(
+                [str(CLI), *map(str, arguments)], env=env, capture_output=True, text=True, timeout=900
+            )
+            output = result.stdout + result.stderr
+            assert (result.returncode == 0) == good, output
+            return output
+
+        key = root / "test.key"
+        run("keygen", "-o", key)
+        game_id = "com.example.native-indexed-ci" if args.indexed else "com.example.native-image-ci"
+        source = root / "source"
+        write_recipe(source, game_id, indexed=args.indexed)
+        package = root / "fixture.gamepkg"
+        run("pack", source, "-o", package, "--key", key)
+        run("install", package, "--trust-creator")
+        cache = library / "builds" / hashlib.sha256(package.read_bytes()).hexdigest()
+        previous = None
+        for backend in ("wgsl", "spirv") if args.indexed else ("wgsl",):
+            config.write_text(f'automatic_update_checks=false\nshader_backend="{backend}"\n')
+            if previous is not None:
+                assert "no valid playable entry point" in run("integrity-check", game_id, good=False)
+            run("build", game_id, "--target", "native")
+            binaries = list(cache.glob("native-v1-*/compatibility-game"))
+            assert len(binaries) == 1 and not list(cache.rglob("*.wasm")), cache
+            binary = binaries[0]
+            contents = binary.read_bytes()
+            assert contents.startswith(b"\x7fELF")
+            receipt = json.loads(binary.with_suffix(".receipt").read_bytes()[64:])
+            assert receipt["bootstrap"] == "InProcess"
+            assert receipt["binary"] == hashlib.sha256(contents).hexdigest()
+            assert len(receipt["game"]["shaders"]) == len(receipt["shader_preparation"]) == int(args.indexed)
+            assert "compiled game verified" in run("integrity-check", game_id)
+            if previous is not None:
+                assert receipt["shader_preparation"] != previous
+            previous = receipt["shader_preparation"]
+            print(f"Verified signed native {'indexed Slang' if args.indexed else 'image'} build ({backend})")
+        # Integrity failures remain fatal even when the signed package stays
+        # intact. Never run a corrupted executable to exercise this branch.
+        with binary.open("ab") as output:
+            output.write(b"corrupt")
+        assert "integrity mismatch" in run("integrity-check", game_id, good=False)
+
+
+if __name__ == "__main__":
+    main()

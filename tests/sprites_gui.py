@@ -52,7 +52,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-sprites-') as directory:
    assert (root/profile/'asset-pool').exists()
   run('install',package,'--trust-creator');run('build','com.gamepkg.minimal');run('run','com.gamepkg.minimal','--frames','2')
   display=start_display(env)
-  app=subprocess.Popen([str(project/'target/release/gamepkg-gui'),'--play','com.gamepkg.minimal'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+  app=subprocess.Popen([str(project/'target/release/gamepkg-gui'),'--play','com.gamepkg.minimal','--target','wasm'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
   try:
    for _ in range(100):
     if app.poll() is not None:raise RuntimeError(app.stderr.read().decode())

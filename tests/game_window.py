@@ -11,14 +11,18 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-player-window-') as temporary:
   result=subprocess.run([str(PROJECT/'target/release/gamepkg'),*map(str,args)],env=env,text=True,capture_output=True,timeout=60)
   assert result.returncode==0,result.stderr
  key=root/'key';key.write_text('64'*32);package=root/'test.gamepkg'
- run('pack',PROJECT/'examples/minimal','-o',package,'--key',key);run('install',package,'--trust-creator');run('build','com.gamepkg.minimal')
+ run('pack',PROJECT/'examples/minimal','-o',package,'--key',key)
+ run('install',package,'--trust-creator')
+ run('build','com.gamepkg.minimal','--target','wasm')
  server=start_display(env);app=None
  try:
   # Steam must retain both the selected library and settings, even if Steam's
   # own inherited environment points somewhere else. Keep all paths private.
   wrong=root/'invalid-inherited-settings.toml';wrong.write_text('not valid TOML\n')
   launch_env=dict(env,GAMEPKG_HOME=str(root/'wrong-library'),GAMEPKG_CONFIG=str(wrong))
-  app=subprocess.Popen([str(PROJECT/'target/release/gamepkg-gui'),'--library',str(root/'library'),'--play','com.gamepkg.minimal','--target','native','--config',str(config)],env=launch_env,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
+  command=[str(PROJECT/'target/release/gamepkg-gui'),'--library',str(root/'library'),
+           '--play','com.gamepkg.minimal','--target','wasm','--config',str(config)]
+  app=subprocess.Popen(command,env=launch_env,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
   window,pid=game_window(env,'com.gamepkg.minimal');assert pid==app.pid
   library=subprocess.run(['xdotool','search','--onlyvisible','--name','^GamePKG [0-9]+[.][0-9]+[.][0-9]+([-+][A-Za-z0-9.-]+)?$'],env=env,capture_output=True)
   assert library.returncode!=0,'Player opened library UI'

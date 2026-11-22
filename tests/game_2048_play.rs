@@ -38,21 +38,20 @@ fn initial_save() -> Vec<u8> {
     bytes
 }
 #[test]
-#[ignore = "requires GAMEPKG_2048_TEST_ROOT with fresh native and Wasm builds"]
-fn actual_engines_share_scoring_undo_and_saved_boards_without_held_repeats() {
+#[ignore = "requires GAMEPKG_2048_TEST_ROOT with a signed Wasm build"]
+fn scoring_undo_and_saved_boards_survive_restart_without_held_repeats() {
     let source = PathBuf::from(std::env::var_os("GAMEPKG_2048_TEST_ROOT").unwrap());
-    for native in [true, false] {
+    {
         let root = tempfile::tempdir().unwrap();
         copy(&source, root.path());
-        let load =
-            |native| Game::load_target(root.path(), "com.gamepkg.2048", &[], Some(native)).unwrap();
-        let mut game = load(native);
+        let load = || Game::load_target(root.path(), "com.gamepkg.2048", &[], Some(false)).unwrap();
+        let mut game = load();
         game.step(0).unwrap();
         game.finish().unwrap();
         drop(game);
         let path = save_path(root.path());
         std::fs::write(&path, initial_save()).unwrap();
-        let mut game = load(native);
+        let mut game = load();
         assert_eq!(game.step(1).unwrap() >> 32, 4);
         let saved = std::fs::read(&path).unwrap();
         assert_eq!(&saved[..8], b"GP48\x01\r\n\x1a");
@@ -66,8 +65,8 @@ fn actual_engines_share_scoring_undo_and_saved_boards_without_held_repeats() {
         assert_eq!(std::fs::read(&path).unwrap(), saved);
         game.finish().unwrap();
         drop(game);
-        // Both targets use the same fixed-width save, including undo history.
-        let mut game = load(!native);
+        // A fresh session restores the fixed-width save and its undo history.
+        let mut game = load();
         assert_eq!(game.step(0).unwrap() >> 32, 4);
         assert_eq!(std::fs::read(&path).unwrap(), saved);
         assert_eq!(game.step(16).unwrap() >> 32, 0);
@@ -86,14 +85,13 @@ fn actual_engines_share_scoring_undo_and_saved_boards_without_held_repeats() {
     }
 }
 #[test]
-#[ignore = "requires GAMEPKG_2048_TEST_ROOT with fresh native and Wasm builds"]
+#[ignore = "requires GAMEPKG_2048_TEST_ROOT with a signed Wasm build"]
 fn damaged_saves_are_preserved_until_the_player_explicitly_starts_again() {
     let source = PathBuf::from(std::env::var_os("GAMEPKG_2048_TEST_ROOT").unwrap());
-    for native in [true, false] {
+    {
         let root = tempfile::tempdir().unwrap();
         copy(&source, root.path());
-        let load =
-            || Game::load_target(root.path(), "com.gamepkg.2048", &[], Some(native)).unwrap();
+        let load = || Game::load_target(root.path(), "com.gamepkg.2048", &[], Some(false)).unwrap();
         let mut game = load();
         game.step(0).unwrap();
         game.finish().unwrap();
@@ -119,11 +117,11 @@ fn damaged_saves_are_preserved_until_the_player_explicitly_starts_again() {
 #[ignore = "requires GAMEPKG_2048_TEST_ROOT with the denied-save fixture"]
 fn denied_saving_does_not_create_a_blob_or_prevent_gameplay() {
     let source = PathBuf::from(std::env::var_os("GAMEPKG_2048_TEST_ROOT").unwrap());
-    for native in [true, false] {
+    {
         let root = tempfile::tempdir().unwrap();
         copy(&source, root.path());
         let mut game =
-            Game::load_target(root.path(), "com.gamepkg.2048-nosave", &[], Some(native)).unwrap();
+            Game::load_target(root.path(), "com.gamepkg.2048-nosave", &[], Some(false)).unwrap();
         let initial = game.step(0).unwrap();
         let mut changed = false;
         for input in [1, 4, 2, 8, 1, 4, 2, 8] {
@@ -143,15 +141,14 @@ fn denied_saving_does_not_create_a_blob_or_prevent_gameplay() {
 }
 
 #[test]
-#[ignore = "requires GAMEPKG_2048_TEST_ROOT with fresh native and Wasm builds"]
+#[ignore = "requires GAMEPKG_2048_TEST_ROOT with a signed Wasm build"]
 fn original_solver_assistance_autoplay_and_cancellation_work_in_actual_engines() {
     let source = PathBuf::from(std::env::var_os("GAMEPKG_2048_TEST_ROOT").unwrap());
     let board = [0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1];
-    for native in [true, false] {
+    {
         let root = tempfile::tempdir().unwrap();
         copy(&source, root.path());
-        let load =
-            || Game::load_target(root.path(), "com.gamepkg.2048", &[], Some(native)).unwrap();
+        let load = || Game::load_target(root.path(), "com.gamepkg.2048", &[], Some(false)).unwrap();
         let mut game = load();
         game.step(0).unwrap();
         game.finish().unwrap();
@@ -241,14 +238,13 @@ fn original_solver_assistance_autoplay_and_cancellation_work_in_actual_engines()
 }
 
 #[test]
-#[ignore = "requires GAMEPKG_2048_TEST_ROOT with fresh native and Wasm builds"]
+#[ignore = "requires GAMEPKG_2048_TEST_ROOT with a signed Wasm build"]
 fn autoplay_respects_the_win_prompt_and_expensive_search_can_be_cancelled() {
     let source = PathBuf::from(std::env::var_os("GAMEPKG_2048_TEST_ROOT").unwrap());
-    for native in [true, false] {
+    {
         let root = tempfile::tempdir().unwrap();
         copy(&source, root.path());
-        let load =
-            || Game::load_target(root.path(), "com.gamepkg.2048", &[], Some(native)).unwrap();
+        let load = || Game::load_target(root.path(), "com.gamepkg.2048", &[], Some(false)).unwrap();
         let mut game = load();
         game.step(0).unwrap();
         game.finish().unwrap();

@@ -44,10 +44,10 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-filtering-',dir=PROJECT/'target
   for profile in (['core-v1'] if args.baseline_core else ['core-v1','component-v1']):
    game_id='com.gamepkg.filtering-probe'+('-component' if profile=='component-v1' else '');(source/'manifest.toml').write_text(f'runtime_profile="{profile}"\n'+manifest.replace('com.gamepkg.filtering-probe',game_id));package=root/(profile+'.gamepkg')
    run('pack',source,'-o',package,'--key',key);run('install',package,'--trust-creator');run('build',game_id,'--target','wasm')
-   for target in (['wasm','native'] if profile=='core-v1' and not args.baseline_core else ['wasm']):
-    if target=='native':run('build',game_id,'--target','native')
+   # Test the same signed Wasm scene under the selected desktop renderers.
+   for target in ('wasm',):
     for renderer in ([args.renderer] if args.renderer else ['vulkan'] if args.baseline_core else ['vulkan','opengl']):
-     app=subprocess.Popen([str(gui),'--play',game_id,'--renderer',renderer],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+     app=subprocess.Popen([str(gui),'--play',game_id,'--target',target,'--renderer',renderer],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
      try:
       deadline=time.monotonic()+20
       while True:

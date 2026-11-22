@@ -5,6 +5,7 @@ from http.server import SimpleHTTPRequestHandler,ThreadingHTTPServer
 import argparse,json,os,shutil,subprocess,tempfile,threading,time
 from PIL import Image
 from gui_test_support import start_display
+from arkanoo_legacy_support import fixture_module_declarations, wasm_fixture_manifest
 from bonus_scene_reference import BonusSceneReference
 parser=argparse.ArgumentParser();parser.add_argument('--rocket',action='store_true');parser.add_argument('--skip-browser',action='store_true');parser.add_argument('--browser-only',action='store_true');args=parser.parse_args()
 assert not(args.skip_browser and args.browser_only)
@@ -55,17 +56,17 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-bonus-ui-',dir=PROJECT/'target'
      for x,y in RELATIVE:
       at=(y*2*41+x*2)*4;wanted.append(list(SCENES[str(shift)][kind][at:at+3]))
     assert all(min(max(abs(a-b) for a,b in zip(pixel,choice)) for choice in choices)<=1 for pixel,choices in zip(wanted,expected(shift,1280,960)))
-  source=root/'source';shutil.copytree(PROJECT/'ports/arkanoo',source);entry=source/'source/src/lib.rs';modules=entry.read_text().split('use std::sync::Mutex;')[0]
+  source=root/'source';shutil.copytree(PROJECT/'ports/arkanoo',source);entry=source/'source/src/lib.rs';modules=fixture_module_declarations(entry.read_text())
   entry.write_text(modules+'''pub fn game_tick(input:u32,_state:u64)->u64 {let shift=if input&gamepkg::HELD_RIGHT!=0 {20.0} else {0.0};let mut game=physics::Game::new();game.mode=1;game.blocks=[0;200];for kind in 0..4 {game.drops.push(physics::Drop{x:200.0+kind as f32*50.0+shift,y:220.0,kind});}render::draw(&game);u64::from(shift>0.0)}''')
   if args.rocket:entry.write_text(entry.read_text().replace('game.drops.push(physics::Drop{x:200.0+kind as f32*50.0+shift,y:220.0,kind});','game.rockets.push((200.0+kind as f32*50.0+shift,220.0));'))
-  base=(source/'manifest.toml').read_text().replace('com.gamepkg.arkanoo','com.gamepkg.bonus-scene');cli=PROJECT/'target/release/gamepkg';gui=PROJECT/'target/release/gamepkg-gui'
+  base=wasm_fixture_manifest((source/'manifest.toml').read_text()).replace('com.gamepkg.arkanoo','com.gamepkg.bonus-scene');cli=PROJECT/'target/release/gamepkg';gui=PROJECT/'target/release/gamepkg-gui'
   def run(*arguments):
    r=subprocess.run([str(cli),*map(str,arguments)],env=env,capture_output=True,text=True,timeout=180);assert r.returncode==0,r.stderr
   key=root/'test.key';run('keygen','-o',key)
   for profile in ['core-v1','component-v1']:
    game_id='com.gamepkg.bonus-scene'+('-component' if profile=='component-v1' else '');(source/'manifest.toml').write_text('runtime_profile="'+profile+'"\n'+base.replace('com.gamepkg.bonus-scene',game_id));package=root/(profile+'.gamepkg');run('pack',source,'-o',package,'--key',key);run('install',package,'--trust-creator');run('build',game_id,'--target','wasm')
-   for target in ([] if args.browser_only else ['wasm','native'] if profile=='core-v1' else ['wasm']):
-    if target=='native':run('build',game_id,'--target','native')
+   # Keep the browser-only option for slower graphics environments.
+   for target in (() if args.browser_only else ('wasm',)):
     for renderer in ['vulkan','opengl']:
      label=profile+'-'+target+'-'+renderer;app=subprocess.Popen([str(gui),'--play',game_id,'--target',target,'--renderer',renderer],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE);held=False
      try:

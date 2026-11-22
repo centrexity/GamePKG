@@ -1,4 +1,4 @@
-"""Signed native/core/component TCP listener, partial I/O and handle cleanup."""
+"""Signed core and component TCP listener, partial I/O and handle cleanup."""
 from pathlib import Path
 import json, os, shutil, socket, subprocess, tempfile, threading, time
 
@@ -17,7 +17,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-listener-') as temporary:
         result = subprocess.run([str(cli), *map(str, args)], env=env, capture_output=True, text=True, timeout=120)
         assert result.returncode == 0, result.stdout+result.stderr
         return result.stdout
-    for profile in ['native', 'core-v1', 'component-v1']:
+    for profile in ['core-v1', 'component-v1']:
         with socket.socket() as reservation:
             reservation.bind(('127.0.0.1', 0))
             port = reservation.getsockname()[1]
@@ -26,8 +26,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-listener-') as temporary:
         game_id = 'com.gamepkg.listener-'+profile
         manifest = recipe/'manifest.toml'
         text = manifest.read_text().replace('com.gamepkg.minimal', game_id).replace('network = "none"', 'network = true')
-        if profile != 'native': text = f'runtime_profile="{profile}"\n'+text
-        manifest.write_text(text)
+        manifest.write_text(f'runtime_profile="{profile}"\n'+text)
         (recipe/'source/src/lib.rs').write_text('''pub fn game_tick(_:u32,state:u64)->u64 {
             if state>>32==42 || state>>32==999 {return state;}
             let listener=(state&65535) as u32;
@@ -78,7 +77,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-listener-') as temporary:
         archive = root/(profile+'.gamepkg')
         run('pack', recipe, '-o', archive, '--key', root/'key')
         run('install', archive, '--trust-creator')
-        run('build', game_id, '--target', 'native' if profile == 'native' else 'wasm')
+        run('build', game_id, '--target', 'wasm')
         errors = []
         stop = threading.Event()
         def client():

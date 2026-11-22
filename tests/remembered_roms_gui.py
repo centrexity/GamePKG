@@ -2,7 +2,7 @@
 from pathlib import Path
 import csv,io,os,shutil,subprocess,tempfile,time,json
 from PIL import Image
-from gui_test_support import start_display,game_window,click_text,choose_native_file,close_game,wait_game_frame,click_primary_play
+from gui_test_support import start_display,game_window,click_text,choose_native_file,close_game,wait_game_frame
 os.environ.setdefault('OMP_THREAD_LIMIT','1')
 PROJECT=Path(__file__).resolve().parents[1];BINS=Path(os.environ.get('GAMEPKG_TEST_BINARY_DIR',PROJECT/'target/release'))
 with tempfile.TemporaryDirectory(prefix='gamepkg-remembered-roms-') as temp:
@@ -32,7 +32,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-remembered-roms-') as temp:
   source=root/name;shutil.copytree(PROJECT/'examples/minimal',source)
   mp=source/'manifest.toml';mp.write_text(mp.read_text().replace('com.gamepkg.minimal','com.example.'+name)+f'\n[[roms]]\nid="main"\ntitle="{name.title()} ROM"\n')
   (source/'source/src/lib.rs').write_text('pub fn game_tick(_:u32,_:u64)->u64 { let mut bytes=[0u8;1];gamepkg::rom_read_at(0,0,&mut bytes);let color=if bytes[0]==65 {0xff0000ff} else if bytes[0]==66 {0x00ff00ff} else {0x0000ffff};gamepkg::draw_clear(color);u64::from(bytes[0])<<32 }')
-  package=root/(name+'.gamepkg');run('pack',source,'-o',package,'--key',key);run('install',package,'--trust-creator');run('build','com.example.'+name)
+  package=root/(name+'.gamepkg');run('pack',source,'-o',package,'--key',key);run('install',package,'--trust-creator');run('build','com.example.'+name,'--target','wasm')
  a=root/'alpha.rom';b=root/'beta.rom';a.write_bytes(b'A');b.write_bytes(b'B')
  server=start_display(env,1800,1200);app=None;window=None
  def launch(*args):
@@ -111,10 +111,10 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-remembered-roms-') as temp:
    time.sleep(.3);back_to_library()
   stored=json.loads((home/'rom-selections.json').read_text());assert sorted(stored.values())==sorted([[str(a)],[str(b)]])
   close();launch()
-  click_text(window,env,'com.example.alpha',root);click_primary_play(window,env,root);library_window=window;window,pid=game_window(env,'com.example.alpha');assert pid != app.pid;expect_rom(65);close_game(window,env);window=library_window;back_to_library()
-  click_text(window,env,'com.example.beta',root);click_primary_play(window,env,root);library_window=window;window,pid=game_window(env,'com.example.beta');assert pid != app.pid;expect_rom(66);close_game(window,env);window=library_window;back_to_library()
+  click_text(window,env,'com.example.alpha',root);click_text(window,env,'Play Wasm',root);library_window=window;window,pid=game_window(env,'com.example.alpha');assert pid != app.pid;expect_rom(65);close_game(window,env);window=library_window;back_to_library()
+  click_text(window,env,'com.example.beta',root);click_text(window,env,'Play Wasm',root);library_window=window;window,pid=game_window(env,'com.example.beta');assert pid != app.pid;expect_rom(66);close_game(window,env);window=library_window;back_to_library()
   proof=PROJECT/'target/remembered-roms-library.png';subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(proof)],env=env,check=True)
-  close();launch('--play','com.example.alpha');expect_rom(65)
+  close();launch('--play','com.example.alpha','--target','wasm');expect_rom(65)
   print('Remembered ROMs passed: separate file paths, game switching, restart and direct --play without reselecting files.')
  except BaseException:
   subprocess.run(['import','-display',env['DISPLAY'],'-window','root',str(PROJECT/'target/remembered-roms-final.png')],env=env,check=False)

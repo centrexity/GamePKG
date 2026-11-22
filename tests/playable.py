@@ -24,6 +24,6 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-play-') as directory:
     run('install', package, '--trust-creator')
     run('build', 'com.gamepkg.collect-stars')
     assert 'Ran 60 frames' in run('run', 'com.gamepkg.collect-stars', '--frames', '60')
-    output = run('run', 'com.gamepkg.collect-stars', input='a\n' * 6 + 'w\n' * 6 + 'q\n')
+    output = run('run', 'com.gamepkg.collect-stars', '--target', 'wasm', input='a\n' * 6 + 'w\n' * 6 + 'q\n')
     assert 'Score 1' in output, output
     print('Playable game passed: signed package, isolated build, Wasmtime execution, movement and target collection.')

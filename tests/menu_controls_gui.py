@@ -5,7 +5,7 @@ from http.server import SimpleHTTPRequestHandler,ThreadingHTTPServer
 import argparse,base64,hashlib,io,json,os,platform,shutil,subprocess,tempfile,threading,time,tomllib
 from PIL import Image,ImageChops
 from gui_test_support import start_display
-from arkanoo_legacy_support import wasm_fixture_manifest
+from arkanoo_legacy_support import fixture_module_declarations, wasm_fixture_manifest
 parser=argparse.ArgumentParser();parser.add_argument('--candidate',type=Path,help='Separate staged recipe; defaults to the active port');parser.add_argument('--source-resolution',action='store_true',help='Compare scaled photographic backgrounds directly to original SDL');parser.add_argument('--original',type=Path,default=Path('/tmp/gamepkg-candidate-arkanoo'));parser.add_argument('--flat-background',action='store_true',help='Compare scaled controls directly against SDL without background resampling');parser.add_argument('--proof-output',type=Path);parser.add_argument('--browser-repeats',type=int,choices=range(1,6),default=1,help='Repeat the complete browser control cycle for input/worker diagnostics');args=parser.parse_args()
 PROJECT=Path(__file__).resolve().parents[1];CANDIDATE=args.candidate or PROJECT/'ports/arkanoo';DIRECT_SCALED=args.flat_background or args.source_resolution or tomllib.loads((CANDIDATE/'manifest.toml').read_text())['limits'].get('render_profile')=='large-images-v1';BIN=Path(os.environ.get('GAMEPKG_TEST_BINARY_DIR',PROJECT/'target/release'));CLI=BIN/'gamepkg';GUI=BIN/'gamepkg-gui';PROOF=args.proof_output or PROJECT/'target/menu-controls-proof'
 if PROOF.exists():PROOF.rename(PROJECT/'target'/('menu-controls-previous-'+str(time.time_ns())))
@@ -51,8 +51,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-menu-controls-gui-') as temp:
   source=root/suffix;shutil.copytree(CANDIDATE,source);entry=source/'source/src/lib.rs'
   # The pinned port switched from Mutex to GameState. Copy only its module
   # declarations, never its existing tick function or singleton state.
-  modules=''.join(line+'\n' for line in entry.read_text().splitlines() if line.startswith('mod ') and line.endswith(';'))
-  assert 'mod physics;\n' in modules and 'mod render;\n' in modules
+  modules=fixture_module_declarations(entry.read_text())
   if args.flat_background:
    # Keep the original control code and font. Only the private backdrop is flat.
    render=source/'source/src/render.rs';text=render.read_text();begin=text.index('pub fn draw_menu_background()');end=text.index('\nfn ',begin)+1

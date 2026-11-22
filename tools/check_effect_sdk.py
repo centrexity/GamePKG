@@ -4,7 +4,9 @@ import json, os, shutil, subprocess, tempfile, wave
 project = Path(__file__).resolve().parents[1]
 cli = project/'target/release/gamepkg'
 build_env=dict(os.environ,GAMEPKG_BUNDLED_AUDIO_DECODER=str(project/'tools/audio-decoder/target/wasm32-unknown-unknown/release/gamepkg_host_audio_decoder.wasm'),GAMEPKG_BUNDLED_AUDIO_CONVERTER=str(project/'tools/audio-converter/target/wasm32-unknown-unknown/release/gamepkg_host_audio_converter.wasm'))
-compiled = subprocess.run(['cargo', 'test', '--locked', '--release', '--features', 'audio', '--test', 'effects_sdk', '--no-run', '--message-format=json'], cwd=project, env=build_env, capture_output=True, text=True, timeout=300)
+# Match the desktop CI build so this integration test does not replace its CLI
+# with an audio-only executable before the later native Build/Play checks.
+compiled = subprocess.run(['cargo', 'test', '--locked', '--release', '--all-features', '--test', 'effects_sdk', '--no-run', '--message-format=json'], cwd=project, env=build_env, capture_output=True, text=True, timeout=300)
 assert compiled.returncode == 0, compiled.stderr
 artifacts = [json.loads(line) for line in compiled.stdout.splitlines() if line.startswith('{')]
 executables = [item['executable'] for item in artifacts if item.get('reason') == 'compiler-artifact' and item.get('target', {}).get('name') == 'effects_sdk' and item.get('executable')]
@@ -53,10 +55,4 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-effects-sdk-') as temporary:
             if enabled:
                 exported=root/(id+'-web');run('web-export',id,'--output',exported);assert (exported/'audio-converter.wasm').is_file()
     subprocess.run([executables[0], '--ignored', '--nocapture'], cwd=project, env=environment, check=True, timeout=120)
-    for enabled in [False, True]:
-        run('build', 'com.gamepkg.effects-core-'+('on' if enabled else 'off'), '--target', 'native')
-    # Each backend phase must start with unknown achievements so the history
-    # failure case forces persistence instead of hitting an already known ID.
-    shutil.rmtree(root/'library/progress')
-    subprocess.run([executables[0], '--ignored', '--nocapture'], cwd=project, env=dict(environment, GAMEPKG_EFFECT_SDK_NATIVE='1'), check=True, timeout=120)
-print('Signed source SDK: core/component/native effect ordering, cache reuse, complete PCM, opt-in denial, premixed-mode denial, failed-tick rollback and recorded-effect browser export passed.')
+print('Signed source SDK: core/component effect ordering, cache reuse, complete PCM, opt-in denial, premixed-mode denial, failed-tick rollback and recorded-effect browser export passed.')

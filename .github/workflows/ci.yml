@@ -450,9 +450,12 @@ jobs:
       - name: Isolated compiler integration
         if: matrix.features == '--all-features'
         run: sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/isolated_build.py
-      - name: Native worker isolation and multiplayer
+      - name: Build an admitted signed native image package
         if: matrix.features == '--all-features'
         run: sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" python3 tests/native_build.py
+      - name: Verify signed native indexed Slang builds and stale receipt rejection
+        if: matrix.features == '--all-features'
+        run: sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" /usr/bin/python3 tests/native_build.py --indexed
       - name: Shared signed native SDK assets and persistent saves
         if: matrix.features == '--all-features'
         run: sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" cargo test --locked --all-features --lib native::signed_fixture::signed_native_sdk_assets_saves_and_integrity -- --ignored --exact --nocapture
@@ -462,10 +465,10 @@ jobs:
       - name: Shared signed native shader build and host include denial
         if: matrix.features == '--all-features'
         run: sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" cargo test --locked --all-features --lib shaders::platform_tests::signed_native_shader_builds_and_denied_host_include -- --ignored --exact --nocapture
-      - name: Signed native core and component recorded-effect playback
+      - name: Signed core and component recorded-effect playback
         if: matrix.features == '--all-features'
         run: sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tools/check_effect_sdk.py
-      - name: Signed native core and component music playback and rollback
+      - name: Signed core and component music playback and rollback
         if: matrix.features == '--all-features'
         run: sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tools/check_music_sdk.py
       - name: Muted music clocks and unavailable audio devices in real game windows
@@ -477,7 +480,7 @@ jobs:
       - name: Core and component networking
         if: matrix.features == '--all-features'
         run: sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/network_game.py
-      - name: Signed native core and component TCP listeners and cleanup
+      - name: Signed core and component TCP listeners and cleanup
         if: matrix.features == '--all-features'
         run: sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/network_listener_game.py
       - name: Compile every good example and reject every bad example
@@ -525,7 +528,7 @@ jobs:
       - name: Slang texture and audio host APIs with both profiles and permission denial
         if: matrix.features == '--all-features'
         run: sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/media_wrappers.py
-      - name: Pinned DOOM engine and compiler exchange without commercial assets
+      - name: Reject unmigrated DOOM before build, play and compiler exchange
         if: matrix.features == '--all-features'
         run: sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" python3 tests/doom_package.py
       - name: Shared assets and HTTPS store transfer
@@ -577,7 +580,7 @@ jobs:
       - name: Verify library rejection notices and unreadable-folder recovery
         if: matrix.features == '--all-features'
         run: python3 tests/library_gui.py
-      - name: Verify library Build, Play, return, and Rebuild buttons
+      - name: Verify library Wasm build, play, return, and rebuild
         if: matrix.features == '--all-features'
         run: sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" /usr/bin/python3 tests/library_play_gui.py
       - name: Verify standalone game window close and progress
@@ -812,7 +815,7 @@ jobs:
       - name: Compare original speed lettering in desktop and browser players
         if: matrix.features == '--all-features'
         run: sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tests/speed_font_gui.py --original target/reference-arkanoo
-      - name: Verify clipping across native, Wasm and browser renderers
+      - name: Verify clipping across desktop and browser Wasm renderers
         if: matrix.features == '--all-features'
         run: sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" CHROMEWEBDRIVER="$CHROMEWEBDRIVER" /usr/bin/python3 tests/clipping_game.py
       - name: Verify guest drawing in the GUI
@@ -821,10 +824,10 @@ jobs:
       - name: Verify adapted open-source 2048 and desktop web export
         if: matrix.features == '--all-features'
         run: sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" /usr/bin/python3 tests/open_source_2048_gui.py
-      - name: Verify 2048 scoring, undo and save compatibility in both targets
+      - name: Verify 2048 scoring, undo and save compatibility across sessions
         if: matrix.features == '--all-features'
         run: sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" /usr/bin/python3 tests/game_2048_state.py
-      - name: Verify Arkanoo isolated build, gameplay, audio, saves and native controls
+      - name: Verify Arkanoo isolated build, gameplay, audio, saves and desktop controls
         if: matrix.features == '--all-features'
         run: sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" /usr/bin/python3 tests/arkanoo.py --skip-browser
       - name: Verify original Arkanoo resolution controls, confirmation and timeout
@@ -867,13 +870,6 @@ jobs:
           sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" /usr/bin/python3 tests/shader_gui.py --texture --backend spirv
           sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" /usr/bin/python3 tests/shader_gui.py --texture --backend spirv --component
 
-      - name: Verify native shader textures and transparent fallback
-        if: matrix.features == '--all-features'
-        run: |
-          sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" /usr/bin/python3 tests/shader_gui.py --texture --native --backend glsl
-          sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" /usr/bin/python3 tests/shader_gui.py --texture --native --backend spirv
-          sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" /usr/bin/python3 tests/shader_gui.py --texture --native --backend wgsl
-
       - name: Null audio output integration
         if: matrix.features == '--all-features'
         run: |
@@ -891,6 +887,9 @@ jobs:
         if: matrix.features == '--all-features'
         run: |
           cargo fetch --locked
+          # Standalone Rust integration probes can leave a headless CLI in
+          # target/release. Package a matching desktop pair, not that probe.
+          cargo build --locked --release --all-features --bins
           python3 tools/package_release.py "$RUNNER_TEMP/gamepkg-distribution"
           gamepkg_release_version="$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["version"])')"
           sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" /usr/bin/python3 tests/release_package.py "$RUNNER_TEMP/gamepkg-distribution/gamepkg-${gamepkg_release_version}-linux-x86_64.tar.gz"

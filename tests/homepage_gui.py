@@ -7,6 +7,7 @@ from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json, os, shutil, subprocess, sys, tempfile, threading, time
 from gui_test_support import start_display
+from arkanoo_legacy_support import wasm_fixture_manifest
 
 PROJECT = Path(__file__).resolve().parents[1]
 CLI = PROJECT/'target/release/gamepkg'
@@ -44,7 +45,7 @@ with open(os.environ['GAMEPKG_BROWSER_RECORD'],'a') as out:out.write(json.dumps(
     for profile,suffix in [('core-v1','core'),('component-v1','component')]:
         source = root/suffix; shutil.copytree(PROJECT/'ports/arkanoo', source)
         manifest = source/'manifest.toml'
-        manifest.write_text('runtime_profile="'+profile+'"\n'+manifest.read_text().replace(
+        manifest.write_text('runtime_profile="'+profile+'"\n'+wasm_fixture_manifest(manifest.read_text()).replace(
             'com.gamepkg.arkanoo','com.gamepkg.homepage-'+suffix).replace(
             'https://github.com/c0m4r/arkanoo', URL))
         entry = source/'source/src/lib.rs'
@@ -54,7 +55,7 @@ with open(os.environ['GAMEPKG_BROWSER_RECORD'],'a') as out:out.write(json.dumps(
         # window-control request still execute unchanged on every tick.
         entry.write_text(text+'''\npub fn game_tick(input:u32,state:u64)->u64 {
 let result=production_tick(input,state);
-if let Ok(mut slot)=GAME.lock(){if let Some(game)=slot.as_mut(){game.mode=0;}}
+ if let Some(mut slot)=GAME.try_lock(){if let Some(game)=slot.as_mut(){game.mode=0;}}
 result
 }\n''')
         package = root/(suffix+'.gamepkg')
@@ -64,9 +65,8 @@ result
     display = None if '--browser-only' in sys.argv else start_display(env,1600,1000)
     app = None
     try:
-        for suffix,target in ([] if '--browser-only' in sys.argv else [('core','wasm'),('component','wasm'),('core','native')]):
+        for suffix,target in ([] if '--browser-only' in sys.argv else [('core','wasm'),('component','wasm')]):
             game_id = 'com.gamepkg.homepage-'+suffix
-            run(CLI,'build',game_id,'--target',target)
             receipt.unlink(missing_ok=True)
             app = subprocess.Popen([GUI,'--play',game_id,'--target',target,'--renderer','opengl'],
                                    env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)

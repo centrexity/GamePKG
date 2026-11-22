@@ -5,6 +5,7 @@ from http.server import SimpleHTTPRequestHandler,ThreadingHTTPServer
 import argparse,hashlib,json,os,shutil,subprocess,tempfile,threading,time
 from PIL import Image,ImageChops
 from gui_test_support import start_display
+from arkanoo_legacy_support import fixture_module_declarations, wasm_fixture_manifest
 parser=argparse.ArgumentParser();parser.add_argument('--original',type=Path,default=Path('/tmp/gamepkg-candidate-arkanoo'));args=parser.parse_args()
 PROJECT=Path(__file__).resolve().parents[1];CLI=PROJECT/'target/release/gamepkg';GUI=PROJECT/'target/release/gamepkg-gui';PROOF=PROJECT/'target/splash-proof';PROOF.mkdir(parents=True,exist_ok=True)
 fixture=json.loads((PROJECT/'tests/fixtures/arkanoo-splash.json').read_text());PHASES=[0,1,2,3,0];KEYS={1:'Right',2:'Up',3:'Down'};REFERENCES={};SMALL={}
@@ -20,12 +21,12 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-splash-gui-') as temp:
  reference_source=(PROJECT/'tests/reference/arkanoo_splash.py').read_text().split("c=r'''",1)[1].split("'''",1)[0];(root/'reference.c').write_text(reference_source);reference=root/'reference';subprocess.run(['cc',root/'reference.c','-o',reference,*subprocess.check_output(['pkg-config','--cflags','--libs','SDL2_image'],text=True).split()],check=True)
  key=root/'key';key.write_text('54'*32)
  for profile,suffix in [('core-v1','core'),('component-v1','component')]:
-  source=root/suffix;shutil.copytree(PROJECT/'ports/arkanoo',source);entry=source/'source/src/lib.rs';modules=entry.read_text().split('use std::sync::Mutex;')[0]
+  source=root/suffix;shutil.copytree(PROJECT/'ports/arkanoo',source);entry=source/'source/src/lib.rs';modules=fixture_module_declarations(entry.read_text())
   entry.write_text(modules+"""pub fn game_tick(input:u32,_:u64)->u64 {
  let phase=if input&gamepkg::HELD_RIGHT!=0 {1} else if input&gamepkg::HELD_UP!=0 {2} else if input&gamepkg::HELD_DOWN!=0 {3} else {0};let timers=[1,30,60,239];render::draw_splash(timers[phase as usize]);
  gamepkg::draw_rect(4.0,4.0,16.0,16.0,if phase==1 {0x00ff00ff} else if phase==2 {0x0000ffff} else if phase==3 {0xffff00ff} else {0xff0000ff});phase
 }""")
-  manifest=source/'manifest.toml';manifest.write_text('runtime_profile="'+profile+'"\n'+manifest.read_text().replace('com.gamepkg.arkanoo','com.gamepkg.splash-'+suffix));package=root/(suffix+'.gamepkg');run('pack',source,'-o',package,'--key',key);run('install',package,'--trust-creator');run('build','com.gamepkg.splash-'+suffix,'--target','wasm')
+  manifest=source/'manifest.toml';manifest.write_text('runtime_profile="'+profile+'"\n'+wasm_fixture_manifest(manifest.read_text()).replace('com.gamepkg.arkanoo','com.gamepkg.splash-'+suffix));package=root/(suffix+'.gamepkg');run('pack',source,'-o',package,'--key',key);run('install',package,'--trust-creator');run('build','com.gamepkg.splash-'+suffix,'--target','wasm')
  display=start_display(env,width=1600,height=1200)
  try:
   for phase,timer in enumerate([1,30,60,239]):
@@ -33,10 +34,10 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-splash-gui-') as temp:
   def delta(actual,expected):return max(p[1] for p in ImageChops.difference(actual,expected).getextrema())
   for profile,suffix in [('core-v1','core'),('component-v1','component')]:
    game_id='com.gamepkg.splash-'+suffix
-   for target in (['wasm','native'] if suffix=='core' else ['wasm']):
-    run('build',game_id,'--target',target)
+   # Desktop and browser compare the same Wasm splash frames.
+   for target in ('wasm',):
     for renderer in ['vulkan','opengl']:
-     label=profile+'-'+target+'-'+renderer;app=subprocess.Popen([GUI,'--play',game_id,'--renderer',renderer],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE);held=False
+     label=profile+'-'+target+'-'+renderer;app=subprocess.Popen([GUI,'--play',game_id,'--target',target,'--renderer',renderer],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE);held=False
      try:
       deadline=time.monotonic()+20
       while True:
@@ -44,7 +45,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-splash-gui-') as temp:
        found=subprocess.run(['xdotool','search','--onlyvisible','--name',r'^(GamePKG [0-9]+[.][0-9]+[.][0-9]+([-+][A-Za-z0-9.-]+)?|com\..*)$'],env=env,capture_output=True,text=True)
        if found.returncode==0:window=found.stdout.splitlines()[0];break
        assert time.monotonic()<deadline;time.sleep(.05)
-      sizes=[(1280,960)]+([(640,480)] if (suffix,target,renderer)==('core','native','vulkan') else [])
+      sizes=[(1280,960)]+([(640,480)] if (suffix,renderer)==('core','vulkan') else [])
       for width,height in sizes:
        subprocess.run(['xdotool','windowsize',window,str(width),str(height),'windowfocus',window],env=env,check=True);time.sleep(.15)
        for phase in PHASES:

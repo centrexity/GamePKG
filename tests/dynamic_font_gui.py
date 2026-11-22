@@ -5,6 +5,7 @@ from http.server import SimpleHTTPRequestHandler,ThreadingHTTPServer
 import argparse,json,os,shutil,subprocess,tempfile,threading,time
 from PIL import Image
 from gui_test_support import start_display
+from arkanoo_legacy_support import fixture_module_declarations, wasm_fixture_manifest
 parser=argparse.ArgumentParser();parser.add_argument('--original',type=Path,default=Path('/tmp/gamepkg-candidate-arkanoo'));args=parser.parse_args()
 PROJECT=Path(__file__).resolve().parents[1];CLI=PROJECT/'target/release/gamepkg';GUI=PROJECT/'target/release/gamepkg-gui'
 PROOF=PROJECT/'target/dynamic-font-proof';PROOF.mkdir(parents=True,exist_ok=True)
@@ -39,23 +40,22 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-dynamic-font-') as temporary:
  c='\n#include <SDL.h>\n#include <SDL_ttf.h>\n#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\nvoid label(SDL_Renderer*r,TTF_Font*f,const char*s,int x,int y,int centered,SDL_Color color){SDL_Surface*a=TTF_RenderUTF8_Blended(f,s,color);if(!a)return;SDL_Texture*t=SDL_CreateTextureFromSurface(r,a);SDL_Rect d={centered?x-a->w/2:x,y+120,a->w,a->h};SDL_FreeSurface(a);SDL_RenderCopy(r,t,NULL,&d);SDL_DestroyTexture(t);}\nint main(int argc,char**argv){if(argc!=5||SDL_Init(SDL_INIT_VIDEO)||TTF_Init())return 1;int w=atoi(argv[2]),h=atoi(argv[3]),phase=atoi(argv[4]);SDL_Window*win=SDL_CreateWindow("dynamic-text-reference",0,0,w,h,SDL_WINDOW_HIDDEN);SDL_Renderer*r=SDL_CreateRenderer(win,-1,0);SDL_RendererInfo info;if(!r||SDL_GetRendererInfo(r,&info)||strcmp(info.name,"opengl"))return 2;SDL_RenderSetLogicalSize(r,1280,960);SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY,"linear");TTF_Font*f=TTF_OpenFont(argv[1],26);if(!f)return 3;SDL_SetRenderDrawColor(r,0,0,0,255);SDL_RenderClear(r);SDL_Rect clip={0,120,1280,720};SDL_RenderSetClipRect(r,&clip);\nconst char*names[3]={"Name: my_pattern (N to edit)","Name: café j‍́ i‌́  ️_ (ESC to finish)","Name: Ελληνικά Привет 日本語 🎮 // “Δ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa (N to edit)"};\nconst char*messages[3]={"Saved: café","Message “Δ // aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","Saved: café"};\nlabel(r,f,names[phase],10,40,0,phase==1?(SDL_Color){100,255,100,255}:(SDL_Color){200,200,200,255});label(r,f,messages[phase],640,590,1,(SDL_Color){100,255,100,255});if(phase==2)label(r,f,"Áj Привет",-20,-10,0,(SDL_Color){100,255,100,255});unsigned char*raw=malloc(w*h*4);if(SDL_RenderReadPixels(r,NULL,SDL_PIXELFORMAT_RGBA32,raw,w*4)||fwrite(raw,1,w*h*4,stdout)!=(size_t)w*h*4)return 4;free(raw);TTF_CloseFont(f);SDL_DestroyRenderer(r);SDL_DestroyWindow(win);TTF_Quit();SDL_Quit();return 0;}\n'
  (root/'reference.c').write_text(c);subprocess.run(['cc',root/'reference.c','-o',reference,*subprocess.check_output(['pkg-config','--cflags','--libs','SDL2_ttf'],text=True).split()],check=True)
  for profile,suffix in [('core-v1','core'),('component-v1','component')]:
-  source=root/suffix;shutil.copytree(PROJECT/'ports/arkanoo',source);entry=source/'source/src/lib.rs';modules=entry.read_text().split('use std::sync::Mutex;')[0]
+  source=root/suffix;shutil.copytree(PROJECT/'ports/arkanoo',source);entry=source/'source/src/lib.rs';modules=fixture_module_declarations(entry.read_text())
   entry.write_text(modules+"""pub fn game_tick(input:u32,_:u64)->u64 {
    let phase=if input&gamepkg::HELD_RIGHT!=0 {1} else if input&gamepkg::HELD_UP!=0 {2} else {0};
    let names=["Name: my_pattern (N to edit)","Name: café j‍́ i‌́  ️_ (ESC to finish)","Name: Ελληνικά Привет 日本語 🎮 // “Δ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa (N to edit)"];let messages=["Saved: café","Message “Δ // aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","Saved: café"];
    gamepkg::draw_clear(0x000000ff);render::draw_dynamic_label(names[phase as usize],10,40,if phase==1 {[100,255,100]} else {[200,200,200]},false,-1);render::draw_dynamic_label(messages[phase as usize],640,590,[100,255,100],true,-1);if phase==2 {render::draw_dynamic_label("Áj Привет",-20,-10,[100,255,100],false,-1);}
    gamepkg::draw_rect(4.0,4.0,16.0,16.0,if phase==1 {0x00ff00ff} else if phase==2 {0x0000ffff} else {0xff0000ff});phase
   }""")
-  manifest=source/'manifest.toml';manifest.write_text('runtime_profile="'+profile+'"\n'+manifest.read_text().replace('com.gamepkg.arkanoo','com.gamepkg.clip-'+suffix));package=root/(suffix+'.gamepkg');run('pack',source,'-o',package,'--key',key);run('install',package,'--trust-creator');run('build','com.gamepkg.clip-'+suffix,'--target','wasm')
+  manifest=source/'manifest.toml';manifest.write_text('runtime_profile="'+profile+'"\n'+wasm_fixture_manifest(manifest.read_text()).replace('com.gamepkg.arkanoo','com.gamepkg.clip-'+suffix));package=root/(suffix+'.gamepkg');run('pack',source,'-o',package,'--key',key);run('install',package,'--trust-creator');run('build','com.gamepkg.clip-'+suffix,'--target','wasm')
  display=start_display(env,width=1100,height=850)
  try:
   for profile,suffix in [('core-v1','core'),('component-v1','component')]:
    game_id='com.gamepkg.clip-'+suffix
-   for target in (['wasm','native'] if suffix=='core' else ['wasm']):
-    if target=='wasm' and suffix=='core':run('build',game_id,'--target','wasm')
-    if target=='native':run('build',game_id,'--target','native')
+   # Compare the signed Wasm renderer output with the browser.
+   for target in ('wasm',):
     for renderer in ['vulkan','opengl']:
-     label=profile+'-'+target+'-'+renderer;app=subprocess.Popen([str(GUI),'--play',game_id,'--renderer',renderer],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE);held=False
+     label=profile+'-'+target+'-'+renderer;app=subprocess.Popen([str(GUI),'--play',game_id,'--target',target,'--renderer',renderer],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE);held=False
      try:
       deadline=time.monotonic()+20
       while True:

@@ -6,6 +6,7 @@ from pathlib import Path
 import os, re, shutil, subprocess, tempfile, time
 from PIL import Image
 from gui_test_support import start_display
+from arkanoo_legacy_support import wasm_fixture_manifest
 
 PROJECT = Path(__file__).resolve().parents[1]
 CLI = PROJECT / 'target/release/gamepkg'
@@ -30,12 +31,11 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-arkanoo-resolution-') as tempor
         source = root / profile
         shutil.copytree(PROJECT/'ports/arkanoo', source)
         manifest = source/'manifest.toml'
-        manifest.write_text('runtime_profile="'+profile+'"\n'+manifest.read_text().replace('com.gamepkg.arkanoo', 'com.gamepkg.resolution-'+profile))
+        manifest.write_text('runtime_profile="'+profile+'"\n'+wasm_fixture_manifest(manifest.read_text()).replace('com.gamepkg.arkanoo', 'com.gamepkg.resolution-'+profile))
         package = root/(profile+'.gamepkg')
         run(CLI, 'pack', source, '-o', package, '--key', key)
         run(CLI, 'install', package, '--trust-creator')
         run(CLI, 'build', 'com.gamepkg.resolution-'+profile, '--target', 'wasm')
-    run(CLI, 'build', 'com.gamepkg.resolution-core-v1', '--target', 'native')
 
     display = start_display(env, width=1500, height=1100)
     wm = app = None
@@ -57,7 +57,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-arkanoo-resolution-') as tempor
         wm = subprocess.Popen(['metacity', '--sm-disable', '--replace', '--no-composite'], env=env,
                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         wait(lambda: 'window id #' in run('xprop', '-root', '_NET_SUPPORTING_WM_CHECK'), 'private window manager')
-        for profile, target in [('core-v1', 'native'), ('core-v1', 'wasm'), ('component-v1', 'wasm')]:
+        for profile, target in [('core-v1', 'wasm'), ('component-v1', 'wasm')]:
             game_id = 'com.gamepkg.resolution-'+profile
             window = None
 
@@ -133,7 +133,9 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-arkanoo-resolution-') as tempor
             wait(lambda: dimensions() == (1366, 768), 'Keep persisted after close/reopen')
             click(320, 322.5)
             wait(lambda: dimensions() == (1280, 720), 'unconfirmed Settings preview')
-            wait(lambda: dimensions() == (1366, 768), 'host timeout restores confirmed size', seconds=15)
+            # The preview expires after 300 guest ticks, not wall seconds.
+            # Software-rendered desktop CI can process fewer than 20 fps.
+            wait(lambda: dimensions() == (1366, 768), 'host timeout restores confirmed size', seconds=35)
             click(320, 322.5)
             wait(lambda: dimensions() == (1280, 720), 'Settings usable after timeout')
             click(325, 423.75)

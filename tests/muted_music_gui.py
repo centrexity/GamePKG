@@ -22,10 +22,10 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-muted-clock-') as temporary:
  base='automatic_update_checks=false\ncheck_app_updates_on_startup=false\n';(root/'settings.toml').write_text(base)
  def run(*arguments):
   result=subprocess.run([str(cli),*map(str,arguments)],env=env,capture_output=True,text=True,timeout=180);assert result.returncode==0,result.stderr
- id='com.gamepkg.muted-clock';run('pack',recipe,'-o',root/'fixture.gamepkg','--key',root/'synthetic.key');run('install',root/'fixture.gamepkg','--trust-creator');run('build',id,'--target','wasm');run('build',id,'--target','native')
+ id='com.gamepkg.muted-clock';run('pack',recipe,'-o',root/'fixture.gamepkg','--key',root/'synthetic.key');run('install',root/'fixture.gamepkg','--trust-creator');run('build',id,'--target','wasm')
  display=start_display(env,1100,850)
+ target='wasm'
  try:
-  for target in (['wasm'] if args.smoke else ['wasm','native']):
    for renderer in (['vulkan'] if args.smoke else ['vulkan','opengl']):
     for muted,volume,available in [(False,100,True),(True,100,True),(False,0,True),(True,100,False)]:
      (root/'settings.toml').write_text(base+f'mute_audio={str(muted).lower()}\naudio_volume={volume}\n')

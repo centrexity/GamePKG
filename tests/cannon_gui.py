@@ -5,6 +5,7 @@ from http.server import SimpleHTTPRequestHandler,ThreadingHTTPServer
 import argparse,hashlib,json,os,shutil,subprocess,tempfile,threading,time
 from PIL import Image,ImageChops
 from gui_test_support import start_display
+from arkanoo_legacy_support import fixture_module_declarations, wasm_fixture_manifest
 parser=argparse.ArgumentParser();parser.add_argument('--original',type=Path,default=Path('/tmp/gamepkg-candidate-arkanoo'));args=parser.parse_args()
 PROJECT=Path(__file__).resolve().parents[1];CLI=PROJECT/'target/release/gamepkg';GUI=PROJECT/'target/release/gamepkg-gui';PROOF=PROJECT/'target/cannon-proof';PROOF.mkdir(parents=True,exist_ok=True)
 fixture=json.loads((PROJECT/'tests/fixtures/arkanoo-cannon.json').read_text());PHASES=[0,1,2,3,0];KEYS={1:'Right',2:'Up',3:'Down'};REFERENCES={};SMALL={};ORIGINAL_SMALL={}
@@ -18,12 +19,12 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-cannon-gui-') as temp:
  assert hashlib.sha256((args.original/'src/rendering.rs').read_bytes()).hexdigest()=='51b6c75d19ed56c67412daee59f5cae90ace2586902c753c2598935f2702fb83'
  key=root/'key';key.write_text('54'*32)
  for profile,suffix in [('core-v1','core'),('component-v1','component')]:
-  source=root/suffix;shutil.copytree(PROJECT/'ports/arkanoo',source);entry=source/'source/src/lib.rs';modules=entry.read_text().split('use std::sync::Mutex;')[0]
+  source=root/suffix;shutil.copytree(PROJECT/'ports/arkanoo',source);entry=source/'source/src/lib.rs';modules=fixture_module_declarations(entry.read_text())
   entry.write_text(modules+"""pub fn game_tick(input:u32,_:u64)->u64 {
  let phase=if input&gamepkg::HELD_RIGHT!=0 {1} else if input&gamepkg::HELD_UP!=0 {2} else if input&gamepkg::HELD_DOWN!=0 {3} else {0};let states=[[570i32,140i32,0i32],[570,140,30],[430,280,0],[1139,141,0]];let values=states[phase as usize];let mut game=physics::Game::new();game.mode=1;game.paddle=values[0] as f32*0.5;game.width=values[1] as f32*0.5;game.frame=values[2] as u64;game.ammo=1;gamepkg::draw_clear(0x78b4f0ff);gamepkg::draw_rect(0.0,370.0,640.0,25.0,0xe6325aff);render::draw_cannon(&game);
  gamepkg::draw_rect(4.0,4.0,16.0,16.0,if phase==1 {0x00ff00ff} else if phase==2 {0x0000ffff} else if phase==3 {0xffff00ff} else {0xff0000ff});phase
 }""")
-  manifest=source/'manifest.toml';manifest.write_text('runtime_profile="'+profile+'"\n'+manifest.read_text().replace('com.gamepkg.arkanoo','com.gamepkg.cannon-'+suffix));package=root/(suffix+'.gamepkg');run('pack',source,'-o',package,'--key',key);run('install',package,'--trust-creator');run('build','com.gamepkg.cannon-'+suffix,'--target','wasm')
+  manifest=source/'manifest.toml';manifest.write_text('runtime_profile="'+profile+'"\n'+wasm_fixture_manifest(manifest.read_text()).replace('com.gamepkg.arkanoo','com.gamepkg.cannon-'+suffix));package=root/(suffix+'.gamepkg');run('pack',source,'-o',package,'--key',key);run('install',package,'--trust-creator');run('build','com.gamepkg.cannon-'+suffix,'--target','wasm')
  display=start_display(env,width=1600,height=1200)
  try:
   import zlib
@@ -32,10 +33,10 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-cannon-gui-') as temp:
   def delta(actual,expected):return max(p[1] for p in ImageChops.difference(actual,expected).getextrema())
   for profile,suffix in [('core-v1','core'),('component-v1','component')]:
    game_id='com.gamepkg.cannon-'+suffix
-   for target in (['wasm','native'] if suffix=='core' else ['wasm']):
-    run('build',game_id,'--target',target)
+   # Render the same signed Wasm fixture before comparing the browser.
+   for target in ('wasm',):
     for renderer in ['vulkan','opengl']:
-     label=profile+'-'+target+'-'+renderer;app=subprocess.Popen([GUI,'--play',game_id,'--renderer',renderer],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE);held=False
+     label=profile+'-'+target+'-'+renderer;app=subprocess.Popen([GUI,'--play',game_id,'--target',target,'--renderer',renderer],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE);held=False
      try:
       deadline=time.monotonic()+20
       while True:

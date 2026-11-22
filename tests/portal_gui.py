@@ -1,10 +1,11 @@
-"""Verify original portal stages in native/core/component desktop and browser players."""
+"""Verify original portal stages in desktop and browser Wasm players."""
 from pathlib import Path
 from functools import partial
 from http.server import SimpleHTTPRequestHandler,ThreadingHTTPServer
 import argparse,json,math,os,shutil,subprocess,tempfile,threading,time
 from PIL import Image
 from gui_test_support import start_display
+from arkanoo_legacy_support import fixture_module_declarations, wasm_fixture_manifest
 parser=argparse.ArgumentParser();parser.add_argument('--skip-browser',action='store_true');parser.add_argument('--candidate',type=Path);parser.add_argument('--tight-memory',action='store_true',help='Generated geometry only: retain the former 16/3/7 MiB partition without unrelated packaged media');parser.add_argument('--proof-output',type=Path);args=parser.parse_args()
 PROJECT=Path(__file__).resolve().parents[1];PROOF=args.proof_output or PROJECT/'target/portal-proof';PROOF.mkdir(parents=True,exist_ok=True)
 import zlib
@@ -46,7 +47,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-portal-ui-',dir=PROJECT/'target
  env=dict(os.environ,GAMEPKG_HOME=str(root/'library'),GAMEPKG_CONFIG=str(config),LIBGL_ALWAYS_SOFTWARE='1',DBUS_SESSION_BUS_ADDRESS='unix:path=/tmp/gamepkg-no-session-bus');env.pop('WAYLAND_DISPLAY',None)
  display=start_display(env,width=1100,height=850)
  try:
-  source=root/'source';shutil.copytree(args.candidate or PROJECT/'ports/arkanoo',source);entry=source/'source/src/lib.rs';modules=entry.read_text().split('use std::sync::Mutex;')[0]
+  source=root/'source';shutil.copytree(args.candidate or PROJECT/'ports/arkanoo',source);entry=source/'source/src/lib.rs';modules=fixture_module_declarations(entry.read_text())
   entry.write_text(modules+'pub fn game_tick(input:u32,_:u64)->u64 {let which=if input&gamepkg::HELD_B!=0 {9} else if input&gamepkg::HELD_RIGHT!=0 {4} else if input&gamepkg::HELD_UP!=0 {8} else if input&gamepkg::HELD_LEFT!=0 {11} else if input&gamepkg::HELD_DOWN!=0 {6} else {0};let cases='+str([[c['frame'],c['timer']] for c in REFERENCE[:12]]).replace(' ', '')+';gamepkg::draw_clear(0x0b1020ff);render::draw_portal(cases[which][0],cases[which][1]);which as u64}')
   if args.tight_memory:
    # This extra fixture runs only generated portal geometry. The default gate
@@ -58,14 +59,14 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-portal-ui-',dir=PROJECT/'target
    lines=[line for line in manifest.read_text().splitlines() if not line.startswith('render_profile')]
    lines=['hard_memory_bytes = 16777216' if line.startswith('hard_memory_bytes') else 'recommended_memory_bytes = 16777216' if line.startswith('recommended_memory_bytes') else line for line in lines]
    manifest.write_text('\n'.join(lines)+'\n');shutil.rmtree(source/'assets');(source/'assets').mkdir();(source/'assets/fixture.txt').write_text('Private generated-geometry memory regression; full playable assets are checked separately.\n')
-  base=(source/'manifest.toml').read_text().replace('com.gamepkg.arkanoo','com.gamepkg.portal-scene');cli=PROJECT/'target/release/gamepkg';gui=PROJECT/'target/release/gamepkg-gui'
+  base=wasm_fixture_manifest((source/'manifest.toml').read_text()).replace('com.gamepkg.arkanoo','com.gamepkg.portal-scene');cli=PROJECT/'target/release/gamepkg';gui=PROJECT/'target/release/gamepkg-gui'
   def run(*arguments):
    r=subprocess.run([str(cli),*map(str,arguments)],env=env,capture_output=True,text=True,timeout=180);assert r.returncode==0,r.stderr
   key=root/'test.key';run('keygen','-o',key)
   for profile in ['core-v1','component-v1']:
    game_id='com.gamepkg.portal-scene'+('-component' if profile=='component-v1' else '');(source/'manifest.toml').write_text('runtime_profile="'+profile+'"\n'+base.replace('com.gamepkg.portal-scene',game_id));package=root/(profile+'.gamepkg');run('pack',source,'-o',package,'--key',key);run('install',package,'--trust-creator');run('build',game_id,'--target','wasm')
-   for target in (['wasm','native'] if profile=='core-v1' else ['wasm']):
-    if target=='native':run('build',game_id,'--target','native')
+   # The renderer comparison uses the same Wasm guest as the browser.
+   for target in ('wasm',):
     for renderer in ['vulkan','opengl']:
      label=profile+'-'+target+'-'+renderer;app=subprocess.Popen([str(gui),'--play',game_id,'--target',target,'--renderer',renderer],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE);held=False;shift=None;failure=None
      try:

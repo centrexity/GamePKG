@@ -34,7 +34,8 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-integrity-roms-') as directory:
         run('build','com.gamepkg.minimal')
         a=home/'program.rom';a.write_bytes(b'ROM');b=home/'data.rom';b.write_bytes(b'DATA')
         run('run','com.gamepkg.minimal','--frames','1','--rom',a,good=False)
-        assert 'ROM 2 (Data ROM)' in run('run','com.gamepkg.minimal','--frames','1','--rom',a,'--rom',home/'missing-data.rom',good=False)
+        missing = run('run','com.gamepkg.minimal','--frames','1','--rom',a,'--rom',home/'missing-data.rom',good=False)
+        assert 'unable to open ROM 2' in missing and 'No such file or directory' in missing, missing
         run('run','com.gamepkg.minimal','--frames','1','--rom',a,'--rom',b)
         run('integrity-check','com.gamepkg.minimal')
         library=home/'library';lock=library/'.install-lock';lock.write_bytes(b'')

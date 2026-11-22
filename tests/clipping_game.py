@@ -37,17 +37,17 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-clipping-') as temporary:
   manifest=source/'manifest.toml';manifest.write_text('runtime_profile="'+profile+'"\n'+manifest.read_text().replace('com.gamepkg.minimal','com.gamepkg.clip-'+suffix));package=root/(suffix+'.gamepkg');run('pack',source,'-o',package,'--key',key);run('install',package,'--trust-creator');run('build','com.gamepkg.clip-'+suffix,'--target','wasm')
  probe_env=dict(env,GAMEPKG_CLIP_TEST_ROOT=str(root/'library'))
  subprocess.run([executables[0],'--ignored'],env=probe_env,check=True,timeout=120)
- run('build','com.gamepkg.clip-core','--target','native');subprocess.run([executables[0],'--ignored'],env=probe_env,check=True,timeout=120)
  if args.runtime_only:raise SystemExit(0)
  display=start_display(env,width=1100,height=850)
  try:
   for profile,suffix in [('core-v1','core'),('component-v1','component')]:
    game_id='com.gamepkg.clip-'+suffix
-   for target in (['wasm','native'] if suffix=='core' else ['wasm']):
-    if target=='wasm' and suffix=='core':run('build',game_id,'--target','wasm')
-    if target=='native':run('build',game_id,'--target','native')
-    for renderer in ['vulkan','opengl']:
-     label=profile+'-'+target+'-'+renderer;app=subprocess.Popen([str(GUI),'--play',game_id,'--renderer',renderer],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE);held=False
+   # The desktop renderer and browser consume the same signed Wasm build.
+   target='wasm'
+   for renderer in ['vulkan','opengl']:
+     label=profile+'-'+target+'-'+renderer
+     app=subprocess.Popen([str(GUI),'--play',game_id,'--target',target,'--renderer',renderer],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+     held=False
      try:
       deadline=time.monotonic()+20
       while True:

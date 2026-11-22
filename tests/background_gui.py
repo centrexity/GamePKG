@@ -1,10 +1,11 @@
-"""Verify original campaign backgrounds in native/core/component desktop and browser players."""
+"""Verify original campaign backgrounds in desktop and browser Wasm players."""
 from pathlib import Path
 from functools import partial
 from http.server import SimpleHTTPRequestHandler,ThreadingHTTPServer
 import argparse,json,math,os,shutil,subprocess,tempfile,threading,time
 from PIL import Image
 from gui_test_support import start_display
+from arkanoo_legacy_support import fixture_module_declarations, wasm_fixture_manifest
 parser=argparse.ArgumentParser();parser.add_argument('--images',action='store_true');parser.add_argument('--editor-images',action='store_true');parser.add_argument('--editor-grid',action='store_true');parser.add_argument('--canonical-particles',action='store_true');parser.add_argument('--canonical-effects',action='store_true');parser.add_argument('--night-circuit-maze',action='store_true');parser.add_argument('--hex-bubbles',action='store_true');parser.add_argument('--matrix-nebula',action='store_true');parser.add_argument('--cyber-aurora',action='store_true');parser.add_argument('--rain-warp',action='store_true');parser.add_argument('--kaleidoscope',action='store_true');parser.add_argument('--voyage',action='store_true');parser.add_argument('--space',action='store_true');parser.add_argument('--fire-sea',action='store_true');parser.add_argument('--procedural',action='store_true');parser.add_argument('--skip-browser',action='store_true');parser.add_argument('--browser-only',action='store_true');parser.add_argument('--profile',choices=['core-v1','component-v1']);args=parser.parse_args();assert not(args.skip_browser and args.browser_only);assert sum([args.editor_grid,args.editor_images,args.images,args.procedural,args.fire_sea,args.space,args.voyage,args.kaleidoscope,args.rain_warp,args.cyber_aurora,args.matrix_nebula,args.hex_bubbles,args.night_circuit_maze,args.canonical_particles,args.canonical_effects])<=1;args.procedural=args.procedural or args.fire_sea or args.space or args.voyage or args.kaleidoscope or args.rain_warp or args.cyber_aurora or args.matrix_nebula or args.hex_bubbles or args.night_circuit_maze or args.canonical_particles or args.canonical_effects
 args.editor_images=args.editor_images or args.editor_grid
 args.images=args.images or args.editor_images
@@ -82,7 +83,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-background-ui-',dir=PROJECT/'ta
    from original_background_reference import OriginalBackgroundReference
    image_reference=OriginalBackgroundReference(PROJECT,root/'original-reference',env,editor=args.editor_images,grid=args.editor_grid)
    (PROOF/'original-reference-controls.json').write_text(json.dumps(image_reference.controls,indent=2)+'\n')
-  source=root/'source';shutil.copytree(PROJECT/'ports/arkanoo',source);entry=source/'source/src/lib.rs';modules=entry.read_text().split('use std::sync::Mutex;')[0]
+  source=root/'source';shutil.copytree(PROJECT/'ports/arkanoo',source);entry=source/'source/src/lib.rs';modules=fixture_module_declarations(entry.read_text())
   entry.write_text(modules+'pub fn game_tick(input:u32,_:u64)->u64 {let which=if input&gamepkg::HELD_RIGHT!=0 {3} else if input&gamepkg::HELD_UP!=0 {7} else if input&gamepkg::HELD_B!=0 {10} else if input&gamepkg::HELD_LEFT!=0 {14} else if input&gamepkg::HELD_DOWN!=0 {17} else {0};let cases='+str([[c['level'],c['frame']] for c in REFERENCE]).replace(' ', '')+';gamepkg::draw_clear(0x0b1020ff);render::draw_background(cases[which][0] as u32,cases[which][1]);which as u64}')
   masks={'Right':'HELD_RIGHT','Up':'HELD_UP','z':'HELD_B','Left':'HELD_LEFT','Down':'HELD_DOWN','x':'HELD_Y','Return':'HELD_START','c':'HELD_A'}
   which=''.join('if input&gamepkg::'+masks[key]+'!=0 {'+str(index)+'} else ' for index,key in KEYS.items())+'{0}'
@@ -91,16 +92,18 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-background-ui-',dir=PROJECT/'ta
    entry.write_text(modules+"""use std::sync::Mutex;static EDITOR:Mutex<Option<physics::Game>>=Mutex::new(None);
    pub fn game_tick(_:u32,state:u64)->u64 {if let Ok(mut slot)=EDITOR.lock(){if slot.is_none(){let mut game=physics::Game::new();game.mode=6;*slot=Some(game);}if let Some(game)=slot.as_mut(){if let Some(events)=gamepkg::input_events(){for event in events {game.source_input(event.kind,event.x,event.y,event.code);}}game.update(0);render::draw(game);return u64::from(game.editor.background-1);}}state}
    """)
-  base=(source/'manifest.toml').read_text().replace('com.gamepkg.arkanoo','com.gamepkg.background-scene');cli=PROJECT/'target/release/gamepkg';gui=PROJECT/'target/release/gamepkg-gui'
+  base=wasm_fixture_manifest((source/'manifest.toml').read_text()).replace('com.gamepkg.arkanoo','com.gamepkg.background-scene');cli=PROJECT/'target/release/gamepkg';gui=PROJECT/'target/release/gamepkg-gui'
   def run(*arguments):
    r=subprocess.run([str(cli),*map(str,arguments)],env=env,capture_output=True,text=True,timeout=180);assert r.returncode==0,r.stderr
   key=root/'test.key';run('keygen','-o',key)
   for profile in ([args.profile] if args.profile else ['core-v1','component-v1']):
    game_id='com.gamepkg.background-scene'+('-component' if profile=='component-v1' else '');(source/'manifest.toml').write_text('runtime_profile="'+profile+'"\n'+base.replace('com.gamepkg.background-scene',game_id));package=root/(profile+'.gamepkg');run('pack',source,'-o',package,'--key',key);run('install',package,'--trust-creator');run('build',game_id,'--target','wasm')
-   for target in ([] if args.browser_only else ['wasm','native'] if profile=='core-v1' else ['wasm']):
-    if target=='native':run('build',game_id,'--target','native')
+   # Browser-only runs deliberately do not start a desktop guest.
+   for target in (() if args.browser_only else ('wasm',)):
     for renderer in ['vulkan','opengl']:
-     label=profile+'-'+target+'-'+renderer;app=subprocess.Popen([str(gui),'--play',game_id,'--renderer',renderer],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE);held=False
+     label=profile+'-'+target+'-'+renderer
+     app=subprocess.Popen([str(gui),'--play',game_id,'--target',target,'--renderer',renderer],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+     held=False
      try:
       deadline=time.monotonic()+20
       while True:

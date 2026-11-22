@@ -1,14 +1,16 @@
-"""Build and play through actual desktop library buttons, without startup shortcuts."""
+"""Build and play a signed Wasm game using the actual desktop library buttons."""
 from pathlib import Path
 import csv, io, os, shutil, subprocess, tempfile, time
-from gui_test_support import start_display,click_text,game_window,close_game,wait_game_frame,click_primary_play
+from gui_test_support import start_display,click_text,game_window,close_game,wait_game_frame
 from PIL import Image
 os.environ.setdefault('OMP_THREAD_LIMIT','1')
 project=Path(__file__).resolve().parents[1]
+GAME_ID='com.gamepkg.collect-stars'
+GAME_TITLE='Collect Stars'
 with tempfile.TemporaryDirectory(prefix='gamepkg-library-play-') as directory:
     root=Path(directory);library=root/'library'
     env=dict(os.environ,GAMEPKG_HOME=str(library),GAMEPKG_CONFIG=str(root/'settings.toml'),LIBGL_ALWAYS_SOFTWARE='1');env.pop('WAYLAND_DISPLAY',None)
-    (root/'settings.toml').write_text('automatic_update_checks = false\n')
+    (root/'settings.toml').write_text('automatic_update_checks = false\nmute_audio = true\n')
     def run(*args):
         return subprocess.run([str(project/'target/release/gamepkg'),*map(str,args)],env=env,check=True,capture_output=True,text=True,timeout=60)
     key=root/'key';package=root/'game.gamepkg'
@@ -88,55 +90,53 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-library-play-') as directory:
         words=enter_source(words,package)
         click_word(words,'Download')
         text,words=wait_screen(lambda text:'creator fingerprint:' in text.lower() and 'Trust this creator and install' in text,'library-inspected.png',20)
-        assert not (library/'com.gamepkg.collect-stars.gamepkg').exists(), 'inspection installed a package'
+        assert not (library/f'{GAME_ID}.gamepkg').exists(), 'inspection installed a package'
         click_word(words,'Trust')
-        text,words=wait_screen(lambda text:'com.gamepkg.collect-stars' in text and 'Not built' in text,'library-before-build.png')
+        text,words=wait_screen(lambda text:GAME_ID in text and 'Not built' in text,'library-before-build.png')
         assert 'Rebuild' not in text, text
-        click_word(words,'Build')
-        text,words=wait_screen(lambda text:'Rebuild' in text,'library-after-build.png')
-        assert len(list((library/'builds').glob('*/native-v1-*/game')))==1
+        click_text(window,env,'Build Wasm',root)
+        text,words=wait_screen(lambda text:'Wasm build complete' in text,'library-after-build.png')
+        wasm,=list((library/'builds').glob('*/game.wasm'))
         click_word(words,'More')
         text,words=wait_screen(lambda text:'Check integrity' in text,'game-more.png')
         click_word(words,'integrity')
         text,words=wait_screen(lambda text:'compiled game verified' in text,'library-integrity.png')
         library_window=window
-        click_primary_play(window,env,root)
-        window,game_pid=game_window(env,'com.gamepkg.collect-stars')
+        click_text(window,env,'Play Wasm',root)
+        window,game_pid=game_window(env,GAME_ID)
         assert game_pid != app.pid
         wait_game_frame(window,env,root)
         text,words=read_screen('library-click-play.png')
-        assert all(label not in text for label in ['Score:','Close game','Restart']),text
-        assert subprocess.check_output(['xdotool','getwindowname',window],env=env,text=True).strip()=='com.gamepkg.collect-stars'
+        assert all(label not in text for label in ['Close game','Restart']),text
+        window_title=subprocess.check_output(['xdotool','getwindowname',window],env=env,text=True).strip()
+        assert window_title==GAME_ID
         time.sleep(1.5)
         subprocess.run(['xdotool','windowfocus','--sync',window],env=env,check=True)
         for direction in ['Left','Up']:
-            subprocess.run(['xdotool','key','--clearmodifiers','--repeat','6','--delay','100',direction],env=env,check=True)
+            subprocess.run(['xdotool','key','--clearmodifiers','--repeat','6','--delay','180',direction],env=env,check=True)
         time.sleep(.3)
         close_game(window,env)
         window=library_window
-        text,words=wait_screen(lambda text:'Rebuild' in text and 'Score:' not in text,'library-returned.png',20)
+        text,words=wait_screen(lambda text:'Played' in text and 'Storage' in text,'library-returned.png',20)
         assert 'Storage' in text and 'Played' in text, text
-        click_text(window,env,'First star',root,click=False)
-        text,words=read_screen('library-first-achievement.png')
-        assert 'First star' in text and 'Unlocked' in text,text
-        # Achievements share the game page's single scroll area. Locate each
-        # row and then return to the actual top-level Rebuild control.
-        click_text(window,env,'Star collector',root,click=False)
-        text,words=wait_screen(lambda text:'Star collector' in text,'library-achievements.png',20)
-        assert 'Locked' in text,text
         import json
         records=list((library/'progress').glob('*.json'))
         assert len(records)==1
         history=json.loads(records[0].read_text())
         assert history['played_ms'] >= 1000
         assert set(history['unlocked']) == {'first_star'}, history
-        # Achievement checks scroll this same page. Reveal the action row
-        # before asking OCR to locate the complete Rebuild label.
+        click_text(window,env,'First star',root,click=False)
+        text,_=read_screen('library-first-achievement.png')
+        assert 'First star' in text and 'Unlocked' in text,text
+        click_text(window,env,'Star collector',root,click=False)
+        text,_=wait_screen(lambda text:'Star collector' in text,'library-achievements.png',20)
+        assert 'Locked' in text,text
         subprocess.run(['xdotool','mousemove','--window',window,'400','800','click','--repeat','20','--delay','30','4'],env=env,check=True)
         time.sleep(.2)
-        click_text(window,env,'Rebuild',root)
-        wait_screen(lambda text:'Native build complete. Ready to play.' in text,'library-rebuilt.png')
-        assert len(list((library/'builds').glob('*/native-v1-*/game')))==1
+        # Remove only this fixture's output so the second click must rebuild it.
+        wasm.unlink()
+        click_text(window,env,'Build Wasm',root)
+        wait_screen(lambda text:wasm.is_file() and 'Wasm build complete' in text,'library-rebuilt.png')
         text,words=read_screen('library-before-catalog.png')
         back_to_library()
         text,words=read_screen('library-catalog-source.png')
@@ -150,27 +150,27 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-library-play-') as directory:
         click_word(words,'Offline')
         text,words=wait_screen(lambda text:'Back to library' in text and 'Catalog information is unverified' in text,'game-catalog-page.png',20)
         assert 'Requires your own ROM' in text, text
-        assert 'com.gamepkg.collect-stars' not in text and 'Import .gamepkglist' not in text, text
+        assert GAME_ID not in text and 'Import .gamepkglist' not in text, text
         back_to_library()
-        text,words=wait_screen(lambda text:'Offline Catalog Game' in text and 'com.gamepkg.collect-stars' in text,'game-page-return-to-library.png',20)
-        click_text(window,env,'Collect Stars',root)
+        text,words=wait_screen(lambda text:'Offline Catalog Game' in text and GAME_TITLE in text,'game-page-return-to-library.png',20)
+        click_text(window,env,GAME_TITLE,root)
         # Reopening a game preserves its detail scroll position. Return that
         # content pane to the top before checking its About heading.
         subprocess.run(['xdotool','mousemove','--window',window,'400','800','click','--repeat','6','--delay','70','4'],env=env,check=True)
         time.sleep(.2)
-        text,words=wait_screen(lambda text:'About this game' in text and 'Rebuild' in text,'game-installed-page.png',20)
+        text,words=wait_screen(lambda text:'About this game' in text and GAME_TITLE in text,'game-installed-page.png',20)
         assert 'Offline Catalog Game' not in text and 'Download / inspect' not in text, text
 
         assert 'com.example.offline' in (library/'catalog.gamepkglist').read_text()
-        assert list(library.glob('*.gamepkg')) == [library/'com.gamepkg.collect-stars.gamepkg']
+        assert list(library.glob('*.gamepkg')) == [library/f'{GAME_ID}.gamepkg']
         assert not (library/'com.example.offline.gamepkg').exists()
         read_screen('library-launch-again.png')
-        click_primary_play(window,env,root)
-        game,pid=game_window(env,'com.gamepkg.collect-stars');assert pid != app.pid
+        click_text(window,env,'Play Wasm',root)
+        game,pid=game_window(env,GAME_ID);assert pid != app.pid
         app.terminate();app.wait(timeout=10)
         time.sleep(.5)
         os.kill(pid,0)
-        assert subprocess.check_output(['xdotool','getwindowname',game],env=env,text=True).strip()=='com.gamepkg.collect-stars'
+        assert subprocess.check_output(['xdotool','getwindowname',game],env=env,text=True).strip()==window_title
         close_game(game,env)
         print('Desktop workflow passed: inspect, creator approval, install, Build, Play, return, Rebuild, and offline catalog import without downloading packages.')
     finally:

@@ -1,4 +1,4 @@
-"""Verify actual native 2048 rendering and keyboard gameplay."""
+"""Verify 2048 desktop rendering and keyboard gameplay."""
 from gui_test_support import start_display, click_text
 from pathlib import Path
 from PIL import Image, ImageChops
@@ -12,11 +12,11 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-2048-gui-') as temporary:
         assert result.returncode==0,result.stderr
     key=root/'key';key.write_text('55'*32)
     run('pack',PROJECT/'ports/2048','-o',root/'2048.gamepkg','--key',key)
-    run('install',root/'2048.gamepkg','--trust-creator');run('build','com.gamepkg.2048');run('build','com.gamepkg.2048','--target','wasm')
+    run('install',root/'2048.gamepkg','--trust-creator');run('build','com.gamepkg.2048','--target','wasm')
     display=start_display(env, width=1900, height=1000)
     app=None
     try:
-        app=subprocess.Popen([str(Path(os.environ.get('GAMEPKG_TEST_BINARY_DIR',PROJECT/'target/release'))/'gamepkg-gui'),'--play','com.gamepkg.2048'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+        app=subprocess.Popen([str(Path(os.environ.get('GAMEPKG_TEST_BINARY_DIR',PROJECT/'target/release'))/'gamepkg-gui'),'--play','com.gamepkg.2048','--target','wasm'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
         deadline=time.monotonic()+15
         while time.monotonic()<deadline:
             if app.poll() is not None:raise RuntimeError(app.stderr.read().decode())
@@ -26,7 +26,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-2048-gui-') as temporary:
         assert found.returncode==0
         window=found.stdout.splitlines()[0]
         subprocess.run(['xdotool','windowfocus',window],env=env,check=True)
-        proof=PROJECT/'target/2048-native-proof';proof.mkdir(parents=True,exist_ok=True)
+        proof=PROJECT/'target/2048-desktop-proof';proof.mkdir(parents=True,exist_ok=True)
         before=proof/'before.png';after=proof/'after-right.png'
         time.sleep(.5)
         subprocess.run(['import','-display',env['DISPLAY'],'-window',window,str(before)],env=env,check=True,timeout=10)
@@ -84,7 +84,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-2048-gui-') as temporary:
             time.sleep(.1)
         assert len(exported)==1
         assert (exported[0].parent/'source.gamepkg').is_file()
-        print('Native 2048 GUI passed: visible tiles, keyboard board changes, solver assistance, autoplay stop, undo and the web export button.')
+        print('2048 desktop GUI passed: visible tiles, keyboard board changes, solver assistance, autoplay stop, undo and the web export button.')
     finally:
         if app is not None:
             app.terminate()

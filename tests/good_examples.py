@@ -33,7 +33,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-examples-') as directory:
         if source.name in expected:assert expected[source.name] in output, output
         if manifest.get('permissions',{}).get('audio',False):assert 'Audio samples:' in output, output
         print(f'{source.name}: signed, verified, built, and played',flush=True)
-    expected_rejections={'filesystem':'forbidden construct','network':'forbidden construct','include-bytes':'forbidden construct','build-script':'Rust source files','proc-macro':'library configuration','unknown-crate':'guest crates','non-slang':'only Slang'}
+    expected_rejections={'filesystem':'forbidden construct','network':'forbidden construct','include-bytes':'forbidden construct','build-script':'Rust source files','proc-macro':'compiler/linker configuration','unknown-crate':'guest crates','non-slang':'only Slang'}
     bad_examples=sorted(path for path in (project/'examples/bad').iterdir() if path.is_dir())
     assert {path.name for path in bad_examples}==set(expected_rejections), 'Declare an expected rejection reason for every bad example'
     for source in bad_examples:

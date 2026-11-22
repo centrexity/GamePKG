@@ -2,7 +2,7 @@
 import csv,io,json,os,shutil,subprocess,tempfile,time
 from pathlib import Path
 from PIL import Image
-from gui_test_support import start_display,game_window,click_text,choose_native_file,close_game,wait_game_frame,click_primary_play
+from gui_test_support import start_display,game_window,click_text,choose_native_file,close_game,wait_game_frame
 os.environ.setdefault('OMP_THREAD_LIMIT','1')
 PROJECT=Path(__file__).resolve().parents[1]
 for proof_name in ['roms-final.png','roms-first-game.png','roms-restarted-game.png','roms-picker-output.jsonl','roms-picker-starts.jsonl','native-rom-picker-targets.jsonl']:
@@ -45,7 +45,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-roms-gui-') as directory:
         return [json.loads(line) for line in text.split('\n')[:-1] if line]
     (root/'settings.toml').write_text('automatic_update_checks=false\n')
     def run(*args):subprocess.run([str(PROJECT/'target/release/gamepkg'),*map(str,args)],env=env,check=True,capture_output=True,text=True,timeout=180)
-    key=root/'key';package=root/'game.gamepkg';run('keygen','-o',key);run('pack',source,'-o',package,'--key',key);run('install',package,'--trust-creator');run('build','com.gamepkg.minimal')
+    key=root/'key';package=root/'game.gamepkg';run('keygen','-o',key);run('pack',source,'-o',package,'--key',key);run('install',package,'--trust-creator');run('build','com.gamepkg.minimal','--target','wasm')
     a=root/'program.rom';a.write_bytes(b'ROM');b=root/'data.rom';b.write_bytes(b'DATA')
     display=start_display(env,1600,1000)
     app=subprocess.Popen([str(PROJECT/'target/release/gamepkg-gui')],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
@@ -67,19 +67,6 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-roms-gui-') as directory:
             for w in words:
                 for field in ['left','top','width','height']:w[field]=str(int(w[field])//3)
             return ' '.join(w['text'] for w in words),words
-        def word(label):
-            end=time.monotonic()+30
-            while True:
-                text,words=screen()
-                matches=[w for w in words if w['text'].strip('[]()|')==label]
-                if matches:return min(matches,key=lambda w:int(w['top']))
-                assert time.monotonic()<end,text
-                time.sleep(.2)
-        def click(w):
-            subprocess.run(['xdotool','windowfocus','--sync',window],env=env,check=True)
-            subprocess.run(['xdotool','mousemove','--sync','--window',window,str(int(w['left'])+int(w['width'])//2),str(int(w['top'])+int(w['height'])//2)],env=env,check=True)
-            time.sleep(.15)
-            subprocess.run(['xdotool','click','1'],env=env,check=True);time.sleep(.2)
         click_text(window,env,'com.gamepkg.minimal',root)
         def wait_for_selection(index,path):
             deadline=time.monotonic()+10
@@ -104,16 +91,16 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-roms-gui-') as directory:
             choose_native_file(env,'Choose '+label+' ROM',path,from_list=True)
             wait_for_selection(index,path)
             if label=='Program':
-                click(word('Play'));time.sleep(.3)
+                click_text(window,env,'Play Wasm',root);time.sleep(.3)
                 found=subprocess.run(['xdotool','search','--onlyvisible','--name','^com.gamepkg.minimal$'],env=env,capture_output=True)
                 assert found.returncode!=0,'Missing second ROM allowed a player to launch'
-        click_primary_play(window,env,root)
+        click_text(window,env,'Play Wasm',root)
         window,pid=game_window(env,'com.gamepkg.minimal');assert pid != app.pid
         shutil.copy2(wait_game_frame(window,env,root,(0,255,0)),PROJECT/'target/roms-first-game.png')
         close_game(window,env)
         app.terminate();app.wait(timeout=10)
         # A fresh direct launch must recover both slots without another picker.
-        app=subprocess.Popen([str(PROJECT/'target/release/gamepkg-gui'),'--play','com.gamepkg.minimal'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+        app=subprocess.Popen([str(PROJECT/'target/release/gamepkg-gui'),'--play','com.gamepkg.minimal','--target','wasm'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
         window,_=game_window(env,'com.gamepkg.minimal')
         shutil.copy2(wait_game_frame(window,env,root,(0,255,0)),PROJECT/'target/roms-restarted-game.png')
         close_game(window,env)

@@ -16,7 +16,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-component-ui-') as directory:
  run('install',root/'game.gamepkg','--trust-creator');run('build','com.gamepkg.component-playground')
  display=start_display(env)
  try:
-  app=subprocess.Popen(['target/release/gamepkg-gui','--play','com.gamepkg.component-playground'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+  app=subprocess.Popen(['target/release/gamepkg-gui','--play','com.gamepkg.component-playground','--target','wasm'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
   try:
    for _ in range(100):
     if app.poll() is not None:raise RuntimeError(app.stderr.read().decode())

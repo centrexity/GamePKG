@@ -7,6 +7,7 @@ from pathlib import Path
 import json, os, re, shutil, subprocess, tempfile, time
 from PIL import Image
 from gui_test_support import start_display, window_title_pattern
+from arkanoo_legacy_support import wasm_fixture_manifest
 
 PROJECT = Path(__file__).resolve().parents[1]
 CLI = PROJECT/'target/release/gamepkg'
@@ -34,12 +35,11 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-arkanoo-vsync-') as temporary:
         source = root/profile
         shutil.copytree(PROJECT/'ports/arkanoo', source)
         manifest = source/'manifest.toml'
-        manifest.write_text('runtime_profile="'+profile+'"\n'+manifest.read_text().replace('com.gamepkg.arkanoo', 'com.gamepkg.vsync-'+profile))
+        manifest.write_text('runtime_profile="'+profile+'"\n'+wasm_fixture_manifest(manifest.read_text()).replace('com.gamepkg.arkanoo', 'com.gamepkg.vsync-'+profile))
         package = root/(profile+'.gamepkg')
         run(CLI, 'pack', source, '-o', package, '--key', key)
         run(CLI, 'install', package, '--trust-creator')
         run(CLI, 'build', 'com.gamepkg.vsync-'+profile, '--target', 'wasm')
-    run(CLI, 'build', 'com.gamepkg.vsync-core-v1', '--target', 'native')
 
     display = start_display(env, width=1500, height=1100)
     wm = app = None
@@ -155,7 +155,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-arkanoo-vsync-') as temporary:
         wm = subprocess.Popen(['metacity', '--sm-disable', '--replace', '--no-composite'], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         wait(lambda: 'window id #' in run('xprop', '-root', '_NET_SUPPORTING_WM_CHECK'), 'private window manager')
         for renderer in ['opengl', 'vulkan']:
-            for profile, target in [('core-v1', 'native'), ('core-v1', 'wasm'), ('component-v1', 'wasm')]:
+            for profile, target in [('core-v1', 'wasm'), ('component-v1', 'wasm')]:
                 game_id = 'com.gamepkg.vsync-'+profile
                 launch(True)
                 click(320, 295)
@@ -165,10 +165,9 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-arkanoo-vsync-') as temporary:
                 records = [path for path in (root/'library/window-preferences').glob('*.json') if json.loads(path.read_text())['vsync'] is False]
                 assert len(records) == 1, records
                 record = records[0]
-                if target == 'native':
-                    launch(True, library=True)
-                    close()
-                    assert json.loads(record.read_text())['vsync'] is False, 'library changed game preference'
+                launch(True, library=True)
+                close()
+                assert json.loads(record.read_text())['vsync'] is False, 'library changed game preference'
                 launch(False)
                 click(320, 295)
                 wait(lambda: vsync_label(True), 'original VSync toggle on')

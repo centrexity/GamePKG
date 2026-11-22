@@ -51,11 +51,10 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-blending-',dir=PROJECT/'target'
    game_id='com.gamepkg.blending-probe'+('-component' if profile=='component-v1' else '')
    (source/'manifest.toml').write_text(f'runtime_profile="{profile}"\n'+manifest.replace('com.gamepkg.blending-probe',game_id))
    package=root/(profile+'.gamepkg');run('pack',source,'-o',package,'--key',key);run('install',package,'--trust-creator');run('build',game_id,'--target','wasm')
-   targets=['wasm','native'] if profile=='core-v1' and not args.baseline_core else ['wasm']
-   for target in targets:
-    if target=='native':run('build',game_id,'--target','native')
+   # The signed fixture is a Wasm package; test both desktop renderers.
+   for target in ('wasm',):
     for renderer in (['vulkan'] if args.baseline_core else ['vulkan','opengl']):
-     app=subprocess.Popen([str(gui),'--play',game_id,'--renderer',renderer],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+     app=subprocess.Popen([str(gui),'--play',game_id,'--target',target,'--renderer',renderer],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
      try:
       deadline=time.monotonic()+20;window=None;image=None
       while True:
