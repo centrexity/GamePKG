@@ -617,7 +617,7 @@ jobs:
         run: python3 tests/display_preferences_cli.py
       - name: Verify responsive high-contrast library appearance
         if: matrix.features == '--all-features'
-        run: sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" /usr/bin/python3 tests/appearance_gui.py
+        run: sudo --preserve-env=GAMEPKG_BUNDLED_AUDIO_DECODER,GAMEPKG_BUNDLED_AUDIO_CONVERTER env PATH="$PATH" RUSTUP_HOME=/tmp/gamepkg-ci-rustup CARGO_HOME="$HOME/.cargo" GAMEPKG_SLANG_ROOT="$GAMEPKG_SLANG_ROOT" /usr/bin/python3 tests/appearance_gui.py
       - name: Verify desktop store import review and approval
         if: matrix.features == '--all-features'
         run: python3 tests/store_gui.py

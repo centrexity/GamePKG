@@ -19,7 +19,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-appearance-') as temporary:
  old=root/'old-doom';shutil.copytree(PROJECT/'examples/minimal',old)
  manifest=old/'manifest.toml';manifest.write_text(manifest.read_text().replace('com.gamepkg.minimal','com.gamepkg.doom'))
  old_package=root/'old-doom.gamepkg';run('pack',old,'-o',old_package,'--key',key);run('install',old_package,'--trust-creator')
- run('build','com.gamepkg.collect-stars')
+ run('build','com.gamepkg.collect-stars','--target','wasm')
  catalog=root/'games.gamepkglist';catalog.write_text("format_version=1\n[[games]]\nid='com.example.catalog'\ntitle='Explore the community collection'\nversion='2.1.0'\ndownload_url='https://example.invalid/catalog.gamepkg'\n")
  run('import-list',catalog)
  server=start_display(env,1600,1200)
