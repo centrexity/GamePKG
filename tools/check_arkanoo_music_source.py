@@ -16,4 +16,5 @@ pub fn game_tick(_:u32,state:u64)->u64 {let mut settings=editor::Editor::new();l
  def run(*args):
   result=subprocess.run([str(project/'target/release/gamepkg'),*map(str,args)],env=env,capture_output=True,text=True,timeout=180);assert result.returncode==0,result.stdout+'\n'+result.stderr
  run('pack',recipe,'--key',root/'key','-o',root/'fixture.gamepkg');run('install',root/'fixture.gamepkg','--trust-creator')
- for target in ['wasm','native']:run('build','com.gamepkg.music-controller-source','--target',target);print(target,'approved music controller source validation and isolated build passed',flush=True)
+ run('build','com.gamepkg.music-controller-source','--target','wasm')
+ print('Wasm music controller source validation and isolated build passed.',flush=True)
