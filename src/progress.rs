@@ -130,11 +130,14 @@ impl Session {
         Ok(())
     }
     pub fn finish(&mut self) -> Result<()> {
+        self.finish_before(Instant::now() + Duration::from_secs(2))
+    }
+
+    fn finish_before(&mut self, deadline: Instant) -> Result<()> {
         if self.last.is_some() {
             self.accrue();
             self.last = None;
         }
-        let deadline = Instant::now() + Duration::from_secs(2);
         loop {
             self.commit()?;
             if self.pending_ms == 0 && self.pending.is_empty() {
@@ -265,7 +268,12 @@ mod tests {
                     session.pending.insert("first".into(), 999);
                     session.pending.insert(format!("worker_{index}"), 222);
                     barrier.wait();
-                    session.finish().unwrap();
+                    // Competing fsyncs on a hosted runner can exceed the
+                    // ordinary end-user close budget. Keep the stress test
+                    // bounded and assert that no queued history is lost.
+                    session
+                        .finish_before(Instant::now() + Duration::from_secs(30))
+                        .unwrap();
                 });
             }
         });

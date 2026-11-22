@@ -11,6 +11,7 @@ pub(super) struct Services {
     achievement_count: usize,
     staged: BTreeSet<u32>,
     achievements: BTreeSet<u32>,
+    #[cfg(feature = "gui")]
     reported: BTreeSet<u32>,
     pub vsync: bool,
 }
@@ -28,11 +29,13 @@ impl Services {
             achievement_count: manifest.achievements.len(),
             staged: BTreeSet::new(),
             achievements: BTreeSet::new(),
+            #[cfg(feature = "gui")]
             reported: BTreeSet::new(),
             vsync: true,
         })
     }
 
+    #[cfg(feature = "gui")]
     pub fn take_achievements(&mut self) -> Vec<u32> {
         let new: Vec<_> = self
             .achievements

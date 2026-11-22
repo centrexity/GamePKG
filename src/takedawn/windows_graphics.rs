@@ -143,7 +143,7 @@ pub(crate) fn from_executable(bytes: &[u8]) -> Result<Backend> {
     let mut vulkan = false;
     let mut d3d11 = false;
     let mut terminated = false;
-    for descriptor in table.chunks_exact(20).take(4096) {
+    for descriptor in table.as_chunks::<20>().0.iter().take(4096) {
         if descriptor.iter().all(|x| *x == 0) {
             terminated = true;
             break;

@@ -25,6 +25,7 @@ pub enum Error {
 }
 pub type Result<T> = std::result::Result<T, Error>;
 static NEXT: AtomicU64 = AtomicU64::new(1);
+#[allow(deprecated)] // Rust 1.89 has fetch_update, before the try_update rename.
 fn id() -> Result<u64> {
     NEXT.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| v.checked_add(1))
         .map_err(|_| Error::Failed)
@@ -657,8 +658,8 @@ impl Runtime {
     }
     fn pages(region: &Region, offset: u64, bytes: u64) -> Result<std::ops::Range<usize>> {
         if bytes == 0
-            || offset % memory::PAGE != 0
-            || bytes % memory::PAGE != 0
+            || !offset.is_multiple_of(memory::PAGE)
+            || !bytes.is_multiple_of(memory::PAGE)
             || offset
                 .checked_add(bytes)
                 .is_none_or(|end| end > region.bytes)
@@ -995,6 +996,7 @@ impl Runtime {
     }
     /// Bounded copied messages between reviewed tasks in the same child.
     /// IDs never repeat; there is no cross-session or OS channel endpoint.
+    #[allow(deprecated)] // Rust 1.89 has fetch_update, before the try_update rename.
     pub fn mailbox(&self, maximum: usize, depth: usize) -> Result<u64> {
         if !(1..=65536).contains(&maximum) || !(1..=32).contains(&depth) {
             return Err(Error::Invalid);

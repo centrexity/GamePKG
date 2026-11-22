@@ -543,6 +543,7 @@ mod tests {
         }
     }
 
+    #[cfg(any(target_os = "linux", windows))]
     #[test]
     fn raw_directives_and_noninert_metadata_are_rejected() {
         let raw = super::super::coff_exclusions::fixture(

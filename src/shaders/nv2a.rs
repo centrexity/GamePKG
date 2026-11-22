@@ -53,8 +53,11 @@ pub fn validate(bytes: &[u8], cube: [bool; 4]) -> Result<(), Rejection> {
         return Err(reject(0, "NVI1 block length"));
     }
     let w: Vec<u32> = bytes
-        .chunks_exact(4)
-        .map(|b| u32::from_le_bytes(b.try_into().unwrap()))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .copied()
+        .map(u32::from_le_bytes)
         .collect();
     if w[..3] != [0x3149564e, 1, BYTES as u32] {
         return Err(reject(0, "NVI1 header/version"));

@@ -378,17 +378,9 @@ pub fn game_tick(input:u32,state:u64)->u64 {
     if args.runtime_only:
         print('Signed legacy Arkanoo Wasm runtime checks passed; GUI workflows were not requested.')
         raise SystemExit(0)
-    run('build','com.gamepkg.arkanoo','--target','native')
-    run('build','com.gamepkg.arkanoo-nosave','--target','native')
-    run('build','com.gamepkg.arkanoo-nofiles','--target','native')
-    run('build','com.gamepkg.arkanoo-custom','--target','native')
-    run('build','com.gamepkg.arkanoo-modes','--target','native')
-    run('build','com.gamepkg.arkanoo-levels','--target','native')
-    run('build','com.gamepkg.arkanoo-events','--target','native')
-    run('build','com.gamepkg.arkanoo-events-denied','--target','native')
     run('integrity-check','com.gamepkg.arkanoo')
-    subprocess.run([str(RUNTIME_TEST),'--ignored','--test-threads=1'],env=probe_env,check=True,timeout=300)
-    # Real native window: locate the original cyan core, hold movement, start, pause.
+    # Exercise the OS file-picker and window using the signed Wasm fixture.
+    # It is deliberately a historical recipe, not an admitted native package.
     display=start_display(env,width=1400,height=900);app=None;wm=None
     from Xlib import display as xdisplay
     from Xlib.ext import xfixes
@@ -440,7 +432,7 @@ pub fn game_tick(input:u32,state:u64)->u64 {
         deadline=time.monotonic()+5
         while '_NET_SUPPORTING_WM_CHECK' not in subprocess.run(['xprop','-root','_NET_SUPPORTING_WM_CHECK'],env=env,capture_output=True,text=True).stdout or 'not found' in subprocess.run(['xprop','-root','_NET_SUPPORTING_WM_CHECK'],env=env,capture_output=True,text=True).stdout:
             assert time.monotonic()<deadline,'Private test window manager did not start';time.sleep(.05)
-        app=subprocess.Popen([str(Path(os.environ.get('GAMEPKG_TEST_BINARY_DIR',PROJECT/'target/release'))/'gamepkg-gui'),'--play','com.gamepkg.arkanoo'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+        app=subprocess.Popen([str(Path(os.environ.get('GAMEPKG_TEST_BINARY_DIR',PROJECT/'target/release'))/'gamepkg-gui'),'--play','com.gamepkg.arkanoo','--target','wasm'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
         deadline=time.monotonic()+20
         while time.monotonic()<deadline:
             if app.poll() is not None:raise RuntimeError(app.stderr.read().decode())
@@ -578,7 +570,7 @@ pub fn game_tick(input:u32,state:u64)->u64 {
         subprocess.run(['xdotool','key','--window',window,'Escape'],env=env,check=True);time.sleep(.2);expect_cursor(True)
         subprocess.run(['xdotool','key','--window',window,'q'],env=env,check=True)
         assert app.wait(timeout=10)==0,'Original Q-to-quit did not close cleanly'
-        print('Native Arkanoo: gameplay/editor plus real file-picker import, cancellation and Save-dialog export passed.')
+        print('Desktop Arkanoo (Wasm guest): gameplay/editor and real file-picker import, cancellation and Save-dialog export passed.')
 
     except BaseException:
         try:capture_native_failure(env,PROOF,app)

@@ -315,6 +315,7 @@ impl<B: Backend> Session<B> {
 
 // IDs are not reused by another resource/session in this host process. No
 // generation wraparound can turn a stale file or texture handle into a new one.
+#[allow(deprecated)] // Rust 1.89 has fetch_update, before the try_update rename.
 fn identifier() -> Result<u64> {
     static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
     NEXT.fetch_update(

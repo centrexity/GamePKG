@@ -42,7 +42,10 @@ impl Capture {
     /// Device provider only. Overflow fails closed and discards pending data;
     /// never pass stale/truncated capture off as a continuous recording.
     pub fn submit(&self, pcm: &[i16]) -> Result<()> {
-        if pcm.is_empty() || pcm.len() % self.channels != 0 || pcm.len() / self.channels > 1600 {
+        if pcm.is_empty()
+            || !pcm.len().is_multiple_of(self.channels)
+            || pcm.len() / self.channels > 1600
+        {
             return Err(Error::Invalid);
         }
         let mut s = self.state.lock().map_err(|_| Error::Failed)?;

@@ -99,6 +99,7 @@ use std::sync::{
 static ACTIVE: AtomicUsize = AtomicUsize::new(0);
 struct Permit;
 impl Permit {
+    #[allow(deprecated)] // Rust 1.89 has fetch_update, before the try_update rename.
     fn acquire() -> Result<Self> {
         ACTIVE
             .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {

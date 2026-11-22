@@ -899,7 +899,9 @@ pub fn grants() -> std::result::Result<Vec<Grant>, i32> {
         return Err(-3);
     }
     Ok(reply[..n]
-        .chunks_exact(16)
+        .as_chunks::<16>()
+        .0
+        .iter()
         .map(|b| Grant {
             id: u64_at(b, 0),
             kind: u32_at(b, 8),
@@ -958,7 +960,9 @@ pub fn input_events() -> std::result::Result<Vec<InputEvent>, i32> {
         return Err(-3);
     }
     Ok(bytes[..n]
-        .chunks_exact(40)
+        .as_chunks::<40>()
+        .0
+        .iter()
         .map(|b| InputEvent {
             device: u64_at(b, 0),
             timestamp_ns: u64_at(b, 8),
@@ -996,7 +1000,9 @@ pub fn touch_contacts() -> std::result::Result<Vec<Contact>, i32> {
         return Err(-3);
     }
     Ok(bytes[..n]
-        .chunks_exact(32)
+        .as_chunks::<32>()
+        .0
+        .iter()
         .map(|b| Contact {
             device: u64_at(b, 0),
             timestamp_ns: u64_at(b, 8),
@@ -1715,7 +1721,7 @@ pub fn local_memory_page_states(
     offset: u64,
     pages: u32,
 ) -> std::result::Result<Vec<u8>, i32> {
-    if offset % 4096 != 0 || !(1..=256).contains(&pages) {
+    if !offset.is_multiple_of(4096) || !(1..=256).contains(&pages) {
         return Err(-1);
     }
     let request = [

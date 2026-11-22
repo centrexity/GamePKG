@@ -157,7 +157,7 @@ impl Mixer {
                 let stream = state.streams.get_mut(&id).ok_or(Error::Denied)?;
                 let channels = stream.layout.channels();
                 if r.0.is_empty()
-                    || r.0.len() % (2 * channels) != 0
+                    || !r.0.len().is_multiple_of(2 * channels)
                     || r.0.len() > 1600 * channels * 2
                 {
                     return Err(Error::Invalid);
@@ -172,8 +172,8 @@ impl Mixer {
                     .ok_or(Error::Busy)?;
                 for frame in r.0.chunks_exact(channels * 2) {
                     let mut sample = [0; 6];
-                    for (index, value) in frame.chunks_exact(2).enumerate() {
-                        sample[index] = i16::from_le_bytes(value.try_into().unwrap());
+                    for (index, value) in frame.as_chunks::<2>().0.iter().enumerate() {
+                        sample[index] = i16::from_le_bytes(*value);
                     }
                     if stream.layout == Layout::Mono && self.layout != Layout::Mono {
                         sample[1] = sample[0];

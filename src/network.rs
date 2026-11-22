@@ -885,9 +885,9 @@ mod tests {
             return;
         }
         assert_eq!(response[0], 0);
-        assert_eq!((response.len() - 1) % 40, 0);
+        assert!((response.len() - 1).is_multiple_of(40));
         assert!(response.len() <= 10241);
-        for row in response[1..].chunks_exact(40) {
+        for row in response[1..].as_chunks::<40>().0 {
             // Discovery has no peer port. The outbound-endpoint decoder
             // intentionally rejects port zero and must not be weakened here.
             assert_eq!(&row[8..12], &4u32.to_le_bytes());

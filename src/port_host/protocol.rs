@@ -264,14 +264,17 @@ pub(super) fn dispatch<B: Backend>(
             let channels = r.u32()?;
             if !matches!(channels, 1 | 2)
                 || r.0.is_empty()
-                || r.0.len() % (channels as usize * 2) != 0
+                || !r.0.len().is_multiple_of(channels as usize * 2)
                 || r.0.len() > 1600 * channels as usize * 2
             {
                 return Err(Error::Invalid);
             }
             let pcm: Vec<i16> =
-                r.0.chunks_exact(2)
-                    .map(|b| i16::from_le_bytes([b[0], b[1]]))
+                r.0.as_chunks::<2>()
+                    .0
+                    .iter()
+                    .copied()
+                    .map(i16::from_le_bytes)
                     .collect();
             host.backend.audio(&pcm, channels)?;
             Ok(Vec::new())
@@ -279,7 +282,7 @@ pub(super) fn dispatch<B: Backend>(
         40 => {
             permitted(host.permissions.input)?;
             r.end()?;
-            if cap == 0 || cap % 40 != 0 {
+            if cap == 0 || !cap.is_multiple_of(40) {
                 return Err(Error::Invalid);
             }
             let mut out = Vec::new();

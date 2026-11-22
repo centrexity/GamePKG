@@ -5,6 +5,7 @@ from http.server import SimpleHTTPRequestHandler,ThreadingHTTPServer
 import argparse,base64,hashlib,io,json,os,platform,shutil,subprocess,tempfile,threading,time,tomllib
 from PIL import Image,ImageChops
 from gui_test_support import start_display
+from arkanoo_legacy_support import wasm_fixture_manifest
 parser=argparse.ArgumentParser();parser.add_argument('--candidate',type=Path,help='Separate staged recipe; defaults to the active port');parser.add_argument('--source-resolution',action='store_true',help='Compare scaled photographic backgrounds directly to original SDL');parser.add_argument('--original',type=Path,default=Path('/tmp/gamepkg-candidate-arkanoo'));parser.add_argument('--flat-background',action='store_true',help='Compare scaled controls directly against SDL without background resampling');parser.add_argument('--proof-output',type=Path);parser.add_argument('--browser-repeats',type=int,choices=range(1,6),default=1,help='Repeat the complete browser control cycle for input/worker diagnostics');args=parser.parse_args()
 PROJECT=Path(__file__).resolve().parents[1];CANDIDATE=args.candidate or PROJECT/'ports/arkanoo';DIRECT_SCALED=args.flat_background or args.source_resolution or tomllib.loads((CANDIDATE/'manifest.toml').read_text())['limits'].get('render_profile')=='large-images-v1';BIN=Path(os.environ.get('GAMEPKG_TEST_BINARY_DIR',PROJECT/'target/release'));CLI=BIN/'gamepkg';GUI=BIN/'gamepkg-gui';PROOF=args.proof_output or PROJECT/'target/menu-controls-proof'
 if PROOF.exists():PROOF.rename(PROJECT/'target'/('menu-controls-previous-'+str(time.time_ns())))
@@ -47,7 +48,11 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-menu-controls-gui-') as temp:
  if args.flat_background:
   background=root/'flat-background.png';Image.new('RGBA',(1,1),(18,52,86,255)).save(background)
  for profile,suffix in [('core-v1','core'),('component-v1','component')]:
-  source=root/suffix;shutil.copytree(CANDIDATE,source);entry=source/'source/src/lib.rs';modules=entry.read_text().split('use std::sync::Mutex;')[0]
+  source=root/suffix;shutil.copytree(CANDIDATE,source);entry=source/'source/src/lib.rs'
+  # The pinned port switched from Mutex to GameState. Copy only its module
+  # declarations, never its existing tick function or singleton state.
+  modules=''.join(line+'\n' for line in entry.read_text().splitlines() if line.startswith('mod ') and line.endswith(';'))
+  assert 'mod physics;\n' in modules and 'mod render;\n' in modules
   if args.flat_background:
    # Keep the original control code and font. Only the private backdrop is flat.
    render=source/'source/src/render.rs';text=render.read_text();begin=text.index('pub fn draw_menu_background()');end=text.index('\nfn ',begin)+1
@@ -56,7 +61,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-menu-controls-gui-') as temp:
  let phase=if input&gamepkg::HELD_RIGHT!=0 {1} else if input&gamepkg::HELD_UP!=0 {2} else if input&gamepkg::HELD_DOWN!=0 {3} else if input&gamepkg::HELD_LEFT!=0 {4} else {0};let mut game=physics::Game::new();game.mode=0;game.started=phase==1;game.menu.settings=phase==2||phase==3;game.menu.hover=if phase==1 {3} else if phase==2 {10} else if phase==3 {7} else if phase==4 {9} else {0};game.menu.sfx_volume=if phase==2 {127} else if phase==3 {1} else {64};game.menu.sfx_muted=phase==2;game.menu.fullscreen=phase==3;render::draw_menu(&game);
  gamepkg::draw_rect(4.0,4.0,16.0,16.0,if phase==1 {0x00ff00ff} else if phase==2 {0x0000ffff} else if phase==3 {0xffff00ff} else if phase==4 {0xff00ffff} else {0xff0000ff});phase
 }""")
-  manifest=source/'manifest.toml';manifest.write_text('runtime_profile="'+profile+'"\n'+manifest.read_text().replace('com.gamepkg.arkanoo','com.gamepkg.menu-'+suffix));package=root/(suffix+'.gamepkg');run('pack',source,'-o',package,'--key',key);run('install',package,'--trust-creator');run('build','com.gamepkg.menu-'+suffix,'--target','wasm')
+  manifest=source/'manifest.toml';manifest.write_text('runtime_profile="'+profile+'"\n'+wasm_fixture_manifest(manifest.read_text()).replace('com.gamepkg.arkanoo','com.gamepkg.menu-'+suffix));package=root/(suffix+'.gamepkg');run('pack',source,'-o',package,'--key',key);run('install',package,'--trust-creator');run('build','com.gamepkg.menu-'+suffix,'--target','wasm')
  display=start_display(env,width=1600,height=1200)
  try:
   states=[(0,0,0,64,0,0),(0,1,3,64,0,0),(1,0,10,127,1,0),(1,0,7,1,0,1),(0,0,9,64,0,0)]
@@ -71,8 +76,9 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-menu-controls-gui-') as temp:
   def delta(actual,expected):return max(p[1] for p in ImageChops.difference(actual,expected).getextrema())
   for profile,suffix in [('core-v1','core'),('component-v1','component')]:
    game_id='com.gamepkg.menu-'+suffix
-   for target in (['wasm','native'] if suffix=='core' else ['wasm']):
-    run('build',game_id,'--target',target)
+   # The software-rendered hosted job compares desktop and browser Wasm
+   # pixels; the native renderer requires hardware Vulkan.
+   for target in ['wasm']:
     for renderer in ['vulkan','opengl']:
      label=profile+'-'+target+'-'+renderer;app=subprocess.Popen([GUI,'--play',game_id,'--target',target,'--renderer',renderer],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE);held=False
      try:
@@ -83,7 +89,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-menu-controls-gui-') as temp:
        if found.returncode==0:window=found.stdout.splitlines()[0];break
        if time.monotonic()>=deadline:fail_start(label,'game window did not appear within 20 seconds',env)
        time.sleep(.05)
-      sizes=[(1280,960)]+([(640,480)] if DIRECT_SCALED or (suffix,target,renderer)==('core','native','vulkan') else [])
+      sizes=[(1280,960)]+([(640,480)] if DIRECT_SCALED or (suffix,renderer)==('core','vulkan') else [])
       for width,height in sizes:
        subprocess.run(['xdotool','windowsize',window,str(width),str(height),'windowfocus',window],env=env,check=True);time.sleep(.15)
        for phase in PHASES:
@@ -96,7 +102,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-menu-controls-gui-') as temp:
          if width==640:
           marker=im.getpixel((8,8));wanted={0:(255,0,0),1:(0,255,0),2:(0,0,255),3:(255,255,0),4:(255,0,255)}[phase]
           if marker==wanted and (not DIRECT_SCALED or delta(actual,SMALL_REFERENCES[phase])<=2):
-           if (suffix,target,renderer)==('core','native','vulkan'):SMALL[phase]=actual.copy();actual.save(PROOF/('native-640-'+str(phase)+'.png'))
+           if (suffix,renderer)==('core','vulkan'):SMALL[phase]=actual.copy();actual.save(PROOF/('desktop-640-'+str(phase)+'.png'))
            if DIRECT_SCALED:actual.save(PROOF/(label+'-640-'+str(phase)+'-canvas.png'))
            break
          elif delta(actual,REFERENCES[phase])<=2:break
@@ -123,7 +129,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-menu-controls-gui-') as temp:
     for phase in PHASES*args.browser_repeats:
      if held:ActionChains(browser).key_up(held).perform();held=False
      if phase:held={1:Keys.ARROW_RIGHT,2:Keys.ARROW_UP,3:Keys.ARROW_DOWN,4:Keys.ARROW_LEFT}[phase];ActionChains(browser).key_down(held).perform()
-     wait.until(lambda b:b.find_element('id','game').get_attribute('data-state')==str(phase));actual=browser_image(browser);difference=delta(actual,SMALL[phase]);actual.save(PROOF/(profile+'-web-'+str(phase)+'.png'));print(profile,phase,'implemented menu browser/native maximum difference',difference,flush=True)
+     wait.until(lambda b:b.find_element('id','game').get_attribute('data-state')==str(phase));actual=browser_image(browser);difference=delta(actual,SMALL[phase]);actual.save(PROOF/(profile+'-web-'+str(phase)+'.png'));print(profile,phase,'implemented menu browser/desktop maximum difference',difference,flush=True)
      if difference>2:
       report=pixel_report(actual,SMALL[phase]);report.update(maximum_difference=difference,profile=profile,phase=phase,browser_version=browser.capabilities.get('browserVersion'),driver_version=browser.capabilities.get('chrome',{}).get('chromedriverVersion'),platform=platform.platform())
       cpu=Path('/proc/cpuinfo')

@@ -80,10 +80,10 @@ impl Pipeline {
         anyhow::ensure!(
             self.stride > 0
                 && self.stride <= 256
-                && self.stride % 4 == 0
+                && self.stride.is_multiple_of(4)
                 && self.uniform_bytes > 0
                 && self.uniform_bytes <= 65536
-                && self.uniform_bytes % 16 == 0
+                && self.uniform_bytes.is_multiple_of(16)
                 && self.textures.len() <= 8,
             "invalid host pipeline layout"
         );
@@ -523,8 +523,8 @@ impl Graphics {
                 };
                 let mut nan_count = 0;
                 if kind == 0 {
-                    for (word, data) in bytes.chunks_exact(4).enumerate() {
-                        if f32::from_le_bytes(data.try_into().unwrap()).is_nan() {
+                    for (word, data) in bytes.as_chunks::<4>().0.iter().enumerate() {
+                        if f32::from_le_bytes(*data).is_nan() {
                             nan[word / 8] |= 1 << (word % 8);
                             nan_count += 1;
                         }
@@ -580,11 +580,11 @@ impl Graphics {
                 self.submission_room()?;
                 let buffer = self.buffers.get_mut(&id).unwrap();
                 if buffer.kind == 0 {
-                    for (word, data) in bytes.chunks_exact(4).enumerate() {
+                    for (word, data) in bytes.as_chunks::<4>().0.iter().enumerate() {
                         let at = offset as usize / 4 + word;
                         let bit = 1u8 << (at % 8);
                         let was = buffer.nan[at / 8] & bit != 0;
-                        let now = f32::from_le_bytes(data.try_into().unwrap()).is_nan();
+                        let now = f32::from_le_bytes(*data).is_nan();
                         buffer.nan_count = buffer.nan_count - u64::from(was) + u64::from(now);
                         buffer.nan[at / 8] =
                             (buffer.nan[at / 8] & !bit) | (u8::from(now) << (at % 8));
@@ -920,9 +920,10 @@ impl Graphics {
             }
             for value in index.shadow
                 [start as usize * 4..(u64::from(start) + u64::from(count)) as usize * 4]
-                .chunks_exact(4)
+                .as_chunks::<4>()
+                .0
             {
-                let at = i64::from(u32::from_le_bytes(value.try_into().unwrap())) + i64::from(base);
+                let at = i64::from(u32::from_le_bytes(*value)) + i64::from(base);
                 if at < 0 || at as u64 >= vertex.len / program.stride {
                     return Err(Error::Invalid);
                 }

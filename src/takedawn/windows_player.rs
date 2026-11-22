@@ -421,6 +421,26 @@ mod tests {
     use super::*;
     use std::time::{Duration, Instant};
     #[test]
+    fn legacy_windows_launcher_denies_before_opening_game_files() {
+        let root = tempfile::tempdir().unwrap();
+        let result = Session::start_cached(
+            root.path(),
+            "fixture",
+            "creator",
+            1,
+            &root.path().join("missing.exe"),
+            &root.path().join("missing.iso"),
+            Options::default(),
+        );
+        let error = result
+            .err()
+            .expect("unmigrated launcher must remain blocked");
+        assert!(error.to_string().contains("requires migration"));
+        assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 0);
+    }
+
+    #[test]
+    #[ignore = "historical Takedawn launcher is intentionally blocked; current confinement is tested by windows-runner"]
     fn native_player_owns_saves_history_and_companions_across_restart() {
         // This std-only host fixture tests ownership and real Win32 window
         // access under the production confinement. It does not test Vulkan

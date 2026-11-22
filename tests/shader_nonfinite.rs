@@ -115,7 +115,7 @@ fn converted_nonfinite_classification_preserves_ieee_bits_on_gpu() {
     device.poll(wgpu::Maintain::Wait);
     receive.recv().unwrap().unwrap();
     let mapped = output.slice(..).get_mapped_range();
-    for (i, (word, original)) in mapped.chunks_exact(4).zip(bits).enumerate() {
+    for (i, (word, original)) in mapped.as_chunks::<4>().0.iter().zip(bits).enumerate() {
         let magnitude = original & 0x7fffffff;
         let expected =
             u32::from(magnitude > 0x7f800000) | (u32::from(magnitude == 0x7f800000) << 1);
@@ -124,10 +124,6 @@ fn converted_nonfinite_classification_preserves_ieee_bits_on_gpu() {
         } else {
             expected
         };
-        assert_eq!(
-            u32::from_le_bytes(word.try_into().unwrap()),
-            expected,
-            "bits {original:08x}"
-        );
+        assert_eq!(u32::from_le_bytes(*word), expected, "bits {original:08x}");
     }
 }

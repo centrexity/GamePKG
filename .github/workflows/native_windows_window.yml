@@ -100,13 +100,17 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $log = Get-Content -Raw "$env:RUNNER_TEMP/platform-build-boundary.log"
           if ($log -notmatch 'test result: ok\. 4 passed; 0 failed;') { throw 'The four Windows platform boundary tests did not run successfully' }
-      - name: Exercise confined Win32 window ownership without game media or Vulkan
+      - name: Verify AppContainer process ownership and the retired launcher boundary
         shell: pwsh
         run: |
-          cargo test --locked --lib takedawn_player::tests::native_player_owns_saves_history_and_companions_across_restart -- --exact --nocapture 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP/native-window.log"
+          cargo test --locked --lib takedawn_player::tests::legacy_windows_launcher_denies_before_opening_game_files -- --exact --nocapture 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP/native-window.log"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $log = Get-Content -Raw "$env:RUNNER_TEMP/native-window.log"
-          if ($log -notmatch 'test result: ok\. 1 passed; 0 failed;') { throw 'The exact native owner/window test did not run successfully' }
+          if ($log -notmatch 'test result: ok\. 1 passed; 0 failed;') { throw 'The retired launcher denial test did not run successfully' }
+          cargo test --locked --manifest-path engines/takedawn/windows-runner/Cargo.toml --lib worker_process::tests::confined_worker_keeps_io_but_denies_ungranted_files_network_and_processes -- --exact --nocapture 2>&1 | Tee-Object -Append -FilePath "$env:RUNNER_TEMP/native-window.log"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $log = Get-Content -Raw "$env:RUNNER_TEMP/native-window.log"
+          if ($log -notmatch 'confined_worker_keeps_io_but_denies_ungranted_files_network_and_processes \.\.\. ok') { throw 'The AppContainer ownership test did not run successfully' }
       - name: Verify confined standalone Rust source compiler and worker without WSL
         shell: pwsh
         run: |

@@ -875,14 +875,16 @@ fn native_indexed_geometry_depth_msaa_cube_mips_and_invalid_resources() {
     let mut line = frame(11, &[1], None);
     line[52..56].copy_from_slice(&2u32.to_le_bytes());
     assert!(read_native_pixels(&state, &gpu.render(&line).unwrap())
-        .chunks_exact(4)
-        .any(|p| p != [1, 2, 3, 255]));
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .any(|p| *p != [1, 2, 3, 255]));
     gpu.render(&frame(12, &[0], None)).unwrap();
     let extended = |target: u64, mask: u32, raw: Vec<u8>, blend: [f32; 4], stencil: u32| {
         let mut bytes = [target.to_le_bytes(), 0u64.to_le_bytes()].concat();
         bytes.extend(mask.to_le_bytes());
         bytes.extend(&raw[8..20]);
-        for draw in raw[20..].chunks_exact(60) {
+        for draw in raw[20..].as_chunks::<60>().0 {
             bytes.extend(&draw[..4]);
             for f in blend {
                 bytes.extend(f.to_le_bytes());
@@ -1391,7 +1393,7 @@ fn native_indexed_geometry_depth_msaa_cube_mips_and_invalid_resources() {
         let raw = extended(viewport_target, mask, raw, [0.; 4], 0);
         let mut out = raw[..32].to_vec();
         assert_eq!((raw.len() - 32) / 80, viewports.len());
-        for (draw, viewport) in raw[32..].chunks_exact(80).zip(viewports) {
+        for (draw, viewport) in raw[32..].as_chunks::<80>().0.iter().zip(viewports) {
             out.extend(&draw[..24]);
             out.extend(viewport.iter().flat_map(|f| f.to_le_bytes()));
             out.extend(&draw[24..]);

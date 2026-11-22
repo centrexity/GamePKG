@@ -672,7 +672,7 @@ fn private_save_file_info_follows_the_opened_identity_and_persists_attributes() 
     let initial = observed(&mut h, opened).unwrap();
     assert_eq!(number(initial[..8].to_vec()), 0);
     let epoch = 116_444_736_000_000_000u64;
-    for time in initial[8..40].chunks_exact(8) {
+    for time in initial[8..40].as_chunks::<8>().0 {
         assert!(number(time.to_vec()) > epoch);
     }
     assert_eq!(initial[40..], [0x24, 0, 0, 0, 0, 0, 0, 0]);
@@ -1096,7 +1096,9 @@ fn keyboard_mouse_touch_text_controller_focus_and_rumble_share_one_service() {
     assert_eq!(&pad[20..22], &i16::MIN.to_le_bytes());
     let events = h.call(40, &[], 40 * 100).unwrap();
     assert!(events
-        .chunks_exact(40)
+        .as_chunks::<40>()
+        .0
+        .iter()
         .any(|e| u32::from_le_bytes(e[16..20].try_into().unwrap()) == 17
             && u32::from_le_bytes(e[20..24].try_into().unwrap()) == 0x1f600));
     h.call(
