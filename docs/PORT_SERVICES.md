@@ -762,6 +762,12 @@ uses it under WOW64 and still links an x86 game executable.
 Run Windows native qualification in a logged-in desktop session. On some
 hosts the confined Slang process fails to initialize from an SSH service
 session even though the shader stages compile on the logged-in desktop.
+Visible qualification also needs an active display. On a laptop, keep the lid
+open and the panel awake, or use an active external output. If the child opens
+but stays white, close it and run the Khronos `vkcube` sample freshly on the
+same display. If the sample is also white, resolve display presentation before
+diagnosing the game's Slang pipeline. A correct GPU readback alone is not a
+visible-window pass.
 
 For Windows x86 and x64, the native port services CI compiles the shared
 Vulkan fixtures and runs the file grant, Windows save replacement, and host
