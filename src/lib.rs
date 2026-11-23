@@ -33,6 +33,8 @@ pub mod takedawn_player;
 pub mod takedawn_player;
 #[cfg(any(windows, test))]
 mod takedawn_windows_sdk;
+#[cfg(test)]
+mod test_support;
 pub mod verify;
 #[cfg(windows)]
 mod windows_compiler;

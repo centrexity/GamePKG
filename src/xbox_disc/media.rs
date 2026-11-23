@@ -326,6 +326,7 @@ mod tests {
             .map(|n| (n.wrapping_mul(37) ^ (n >> 9)) as u8)
             .collect::<Vec<_>>();
         let length = BASE + data.len() as u64 + 5;
+        crate::test_support::mark_sparse(image.as_file());
         image.as_file().set_len(length).unwrap();
         image.seek(SeekFrom::Start(BASE)).unwrap();
         image.write_all(&data).unwrap();

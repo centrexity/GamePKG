@@ -865,6 +865,7 @@ fn windows_save_grant_rejects_hardlinks_to_files_outside_the_grant() {
 #[test]
 fn roms_are_read_in_place_with_offsets_beyond_four_gib_and_never_writable() {
     let mut f = tempfile::tempfile().unwrap();
+    crate::test_support::mark_sparse(&f);
     let offset = (1u64 << 32) + 37;
     f.seek(SeekFrom::Start(offset)).unwrap();
     f.write_all(b"disc").unwrap();

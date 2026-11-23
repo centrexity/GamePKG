@@ -1,5 +1,8 @@
 use std::path::Path;
 
+#[path = "common/sparse_file.rs"]
+mod sparse_file;
+
 fn manifest_text() -> String {
     std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("ports/halo/manifest.toml"))
         .unwrap()
@@ -281,18 +284,16 @@ fn data_layouts_accept_maps_or_one_archive() {
     let huge_map = root.path().join("huge-map");
     std::fs::create_dir_all(huge_map.join("maps")).unwrap();
     let map = huge_map.join("maps/ui.map");
-    std::fs::File::create(&map)
-        .unwrap()
-        .set_len(67_108_865)
-        .unwrap();
+    let map_file = std::fs::File::create(&map).unwrap();
+    sparse_file::mark_sparse(&map_file);
+    map_file.set_len(67_108_865).unwrap();
     assert!(gamepkg::game_data::matches(&huge_map, layouts).is_err());
     let huge_disc = root.path().join("huge-disc");
     std::fs::create_dir(&huge_disc).unwrap();
     let disc_file = huge_disc.join("halo.iso");
-    std::fs::File::create(&disc_file)
-        .unwrap()
-        .set_len(8_589_934_593)
-        .unwrap();
+    let disc_file = std::fs::File::create(&disc_file).unwrap();
+    sparse_file::mark_sparse(&disc_file);
+    disc_file.set_len(8_589_934_593).unwrap();
     assert!(gamepkg::game_data::matches(&huge_disc, layouts).is_err());
     let nested = root.path().join("nested");
     std::fs::create_dir_all(nested.join("inner/maps")).unwrap();
