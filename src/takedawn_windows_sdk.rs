@@ -661,7 +661,9 @@ pub(crate) fn prepare_source_target(
     ))
 }
 
+#[cfg(any(feature = "gui", test))]
 const COMPAT_TOOL_PINS: &str = include_str!("../engines/native/windows-compat-tools.json");
+#[cfg(any(feature = "gui", test))]
 fn compatibility_digest(record: &serde_json::Value, key: &str) -> Result<String> {
     let value = record[key]
         .as_str()
@@ -676,6 +678,7 @@ fn compatibility_digest(record: &serde_json::Value, key: &str) -> Result<String>
     Ok(value.to_owned())
 }
 
+#[cfg(any(feature = "gui", test))]
 fn compat_cargo_plan(target: &str) -> Result<(Part, String, String)> {
     ensure!(
         matches!(target, "x86_64-pc-windows-gnu" | "i686-pc-windows-gnu"),
@@ -703,7 +706,7 @@ fn compat_cargo_plan(target: &str) -> Result<(Part, String, String)> {
     ))
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, feature = "gui"))]
 pub(crate) fn prepare_compat_cargo(root: &Path, target: &str) -> Result<PathBuf> {
     let (part, identity, expected) = compat_cargo_plan(target)?;
     let cargo = PathBuf::from(&part.destination).join("bin/cargo.exe");
@@ -711,6 +714,7 @@ pub(crate) fn prepare_compat_cargo(root: &Path, target: &str) -> Result<PathBuf>
     Ok(installed.join(cargo))
 }
 
+#[cfg(any(feature = "gui", test))]
 fn compat_clang_plan(arch: &str) -> Result<(Part, String, String)> {
     ensure!(
         matches!(arch, "x86_64" | "i686"),
@@ -744,7 +748,7 @@ fn compat_clang_plan(arch: &str) -> Result<(Part, String, String)> {
     ))
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, feature = "gui"))]
 pub(crate) fn prepare_compat_clang(root: &Path, arch: &str) -> Result<(PathBuf, String)> {
     let (part, identity, expected) = compat_clang_plan(arch)?;
     let directory = PathBuf::from(&part.destination).join("bin");
