@@ -43,7 +43,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-mono-decode-') as temporary:
         subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i',f'sine=frequency=997:sample_rate={rate}:duration=0.25','-ac','1','-codec:a','libmp3lame','-q:a','4',str(source)],check=True)
         metadata=json.loads(subprocess.check_output(['ffprobe','-v','error','-show_entries','stream=sample_rate,channels','-of','json',str(source)]))['streams'][0]
         assert int(metadata['sample_rate'])==rate and metadata['channels']==1,metadata
-        selected=dict(env,GAMEPKG_AUDIO_MONO_INPUT=str(source),GAMEPKG_AUDIO_MONO_RATE=str(rate),GAMEPKG_SDL_RESAMPLE_REFERENCE=str(oracle))
+        selected=dict(env,GAMEPKG_AUDIO_MONO_INPUT=str(source),GAMEPKG_AUDIO_MONO_RATE=str(rate),GAMEPKG_SDL_RESAMPLE_REFERENCE=str(oracle),GAMEPKG_AUDIO_QUALIFICATION_DEADLINE_MS='3000')
         result=subprocess.run([executable,'mono_original_mixer_matches_sdl_conversion_and_rewinds_with_equal_channels','--exact','--ignored','--nocapture'],cwd=PROJECT,env=selected,capture_output=True,text=True,timeout=30)
         assert result.returncode==0,result.stdout+'\n'+result.stderr
         print(f'Mono {rate} Hz: both output rates match SDL PCM exactly; varied reads, rewind and 6 MiB bound pass.',flush=True)
@@ -56,7 +56,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-mono-decode-') as temporary:
         if args.null_device:
             device=root/f'mono-device-{rate}.mp3'
             subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i',f'sine=frequency=997:sample_rate={rate}:duration=3','-ac','1','-codec:a','libmp3lame','-q:a','4',str(device)],check=True)
-            selected=dict(env,GAMEPKG_AUDIO_MONO_INPUT=str(device),GAMEPKG_AUDIO_MONO_RATE=str(rate),ALSA_CONFIG_PATH=str(null))
+            selected=dict(env,GAMEPKG_AUDIO_MONO_INPUT=str(device),GAMEPKG_AUDIO_MONO_RATE=str(rate),ALSA_CONFIG_PATH=str(null),GAMEPKG_AUDIO_QUALIFICATION_DEADLINE_MS='3000')
             result=subprocess.run([worker,'mono_actual_device_callback_controls_both_worker_rates_without_game_ticks','--exact','--ignored','--nocapture'],cwd=PROJECT,env=selected,capture_output=True,text=True,timeout=30)
             assert result.returncode==0,result.stdout+'\n'+result.stderr
             print(f'Mono {rate} Hz device: both output rates, master mute, midstream pause/resume, stop and reservation cleanup pass with zero game ticks.',flush=True)

@@ -2151,7 +2151,9 @@ pub fn capture_release(id: u64) -> std::result::Result<(), i32> {
     Ok(())
 }
 
-#[cfg(all(test, unix))]
+// Shared by every test module that embeds this binding, including generated
+// bootstrap fixtures: they all contend for the same CLIENT slot.
+#[cfg(test)]
 pub(crate) static TEST_BINDING_LOCK: Mutex<()> = Mutex::new(());
 
 #[cfg(all(test, unix))]
@@ -2163,7 +2165,9 @@ mod tests {
     }
     #[test]
     fn audio_create_reuses_existing_wire_format_and_propagates_unsupported() {
-        let _exclusive = TEST_BINDING_LOCK.lock().unwrap();
+        let _exclusive = TEST_BINDING_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         let id = 0x1234_5678_9abc_def0u64;
         let mut rates = [48_000u32, 32_000, 96_000].into_iter();
         connect_local(move |operation, request, capacity| {
@@ -2362,7 +2366,9 @@ mod tests {
     }
     #[test]
     fn concurrent_callers_are_serialized_and_broken_transport_stays_revoked() {
-        let _exclusive = TEST_BINDING_LOCK.lock().unwrap();
+        let _exclusive = TEST_BINDING_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         let (local, mut remote) = UnixStream::pair().unwrap();
         connect(file(local.try_clone().unwrap()), file(local)).unwrap();
         let worker = std::thread::spawn(move || {

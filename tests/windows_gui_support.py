@@ -114,7 +114,9 @@ def verify_shader_input(project,env,game_id,label,*,texture=False,renderer="open
  player_env=dict(env,GALLIUM_DRIVER='llvmpipe',LIBGL_ALWAYS_SOFTWARE='1',GAMEPKG_RENDERER=renderer)
  player_env.pop('GAMEPKG_SLANG_ROOT',None)
  with log_path.open('wb') as log:
-  app=subprocess.Popen([str(Path(project)/'target/release/gamepkg-gui.exe'),'--play',game_id],env=player_env,stdout=log,stderr=log)
+  # WSL-compiled fixtures are Wasm packages; explicitly select the Wasm player
+  # so native admission never rejects an unmigrated core/component manifest.
+  app=subprocess.Popen([str(Path(project)/'target/release/gamepkg-gui.exe'),'--play',game_id,'--target','wasm'],env=player_env,stdout=log,stderr=log)
   try:
    # Query/capture physical client pixels consistently with winit. This only
    # changes this test thread, and the original context is restored below.

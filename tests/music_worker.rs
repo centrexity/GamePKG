@@ -16,10 +16,14 @@ fn decoder_factory() -> Factory {
     if std::env::var_os("GAMEPKG_MUSIC_USE_BUNDLED").is_some() {
         Factory::bundled().unwrap()
     } else {
-        Factory::new(
-            &std::fs::read(std::env::var_os("GAMEPKG_AUDIO_DECODER_WASM").unwrap()).unwrap(),
-        )
-        .unwrap()
+        let wasm = std::fs::read(std::env::var_os("GAMEPKG_AUDIO_DECODER_WASM").unwrap()).unwrap();
+        if let Some(millis) = std::env::var_os("GAMEPKG_AUDIO_QUALIFICATION_DEADLINE_MS") {
+            let millis = millis.to_str().unwrap().parse::<u64>().unwrap();
+            Factory::new_with_operation_deadline(&wasm, std::time::Duration::from_millis(millis))
+                .unwrap()
+        } else {
+            Factory::new(&wasm).unwrap()
+        }
     }
 }
 #[test]

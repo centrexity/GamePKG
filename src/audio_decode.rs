@@ -13,6 +13,10 @@ const MAX_INPUT: usize = 8 * 1024 * 1024;
 const MAX_VALUES: usize = 1600;
 const MAX_MEMORY: usize = 16 * 1024 * 1024;
 const WORK_BYTES: u32 = 512 * 1024;
+const DEFAULT_OPERATION_DEADLINE: std::time::Duration = std::time::Duration::from_millis(100);
+// Maintainer fixtures may run several decoder operations while CI compiles in
+// parallel. Only opt-in test factories can use a slower bounded deadline.
+const MAX_QUALIFICATION_DEADLINE: std::time::Duration = std::time::Duration::from_secs(5);
 static BUNDLED: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/audio-decoder.wasm"));
 pub(crate) fn bundled_bytes() -> Result<&'static [u8]> {
     Factory::bundled()?;
@@ -29,14 +33,14 @@ fn check_deadline(data: &DecoderData) -> Result<UpdateDeadline> {
     );
     Ok(UpdateDeadline::Continue(1))
 }
-fn arm(store: &mut Store<DecoderData>) {
-    store.data_mut().expires = std::time::Instant::now() + std::time::Duration::from_millis(100);
+fn arm(store: &mut Store<DecoderData>, deadline: std::time::Duration) {
+    store.data_mut().expires = std::time::Instant::now() + deadline;
     store.set_epoch_deadline(1);
 }
-fn configure(store: &mut Store<DecoderData>) {
+fn configure(store: &mut Store<DecoderData>, deadline: std::time::Duration) {
     store.limiter(|data| &mut data.limits);
     store.epoch_deadline_callback(|context| check_deadline(context.data()));
-    arm(store);
+    arm(store, deadline);
 }
 struct Shared {
     engine: Engine,
@@ -44,6 +48,7 @@ struct Shared {
     memory_maximum: usize,
     stop: Arc<AtomicBool>,
     clock: Option<std::thread::JoinHandle<()>>,
+    deadline: std::time::Duration,
 }
 impl Drop for Shared {
     fn drop(&mut self) {
@@ -121,6 +126,16 @@ impl Factory {
         (!BUNDLED.is_empty()).then(|| crate::verify::digest(BUNDLED))
     }
     pub fn new(wasm: &[u8]) -> Result<Self> {
+        Self::new_with_operation_deadline(wasm, DEFAULT_OPERATION_DEADLINE)
+    }
+    /// Maintainer-only factory for slow hosted fixtures. Production callers
+    /// keep the 100 ms operation deadline; the relaxation is bounded and must
+    /// be requested explicitly by the qualification tool.
+    pub fn new_with_operation_deadline(wasm: &[u8], deadline: std::time::Duration) -> Result<Self> {
+        ensure!(
+            deadline >= DEFAULT_OPERATION_DEADLINE && deadline <= MAX_QUALIFICATION_DEADLINE,
+            "invalid decoder operation deadline"
+        );
         ensure!(wasm.len() <= 4 * 1024 * 1024, "decoder module too large");
         let mut config = Config::new();
         config.epoch_interruption(true).max_wasm_stack(512 * 1024);
@@ -159,6 +174,7 @@ impl Factory {
             memory_maximum,
             stop,
             clock: Some(clock),
+            deadline,
         })))
     }
     pub fn maximum_memory_bytes(&self) -> usize {
@@ -224,7 +240,7 @@ impl Factory {
                 expires: std::time::Instant::now(),
             },
         );
-        configure(&mut store);
+        configure(&mut store, self.0.deadline);
         let instance = Instance::new(&mut store, &self.0.module, &[])?;
         let memory = instance
             .get_memory(&mut store, "memory")
@@ -237,7 +253,7 @@ impl Factory {
         let channels = instance.get_typed_func::<(), u32>(&mut store, "decoder_channels")?;
         let work = instance.get_typed_func::<(), u32>(&mut store, "decoder_work")?;
         let rewind = instance.get_typed_func::<(), i32>(&mut store, "decoder_rewind")?;
-        arm(&mut store);
+        arm(&mut store, self.0.deadline);
         let pointer = reserve.call(&mut store, encoded_len as u32)?;
         ensure!(pointer != 0, "decoder input allocation rejected");
         let start = pointer as usize;
@@ -258,7 +274,7 @@ impl Factory {
             input.read(&mut extra)? == 0,
             "encoded music exceeds declared length"
         );
-        arm(&mut store);
+        arm(&mut store, self.0.deadline);
         ensure!(
             open.call(&mut store, ())? == 0,
             "invalid or over-budget MPEG audio"
@@ -295,7 +311,7 @@ impl Factory {
             "decoder exceeded encoded read budget"
         );
         Ok(Stream {
-            _factory: self.clone(),
+            factory: self.clone(),
             store,
             memory,
             read,
@@ -327,7 +343,7 @@ impl Factory {
     }
 }
 pub struct Stream {
-    _factory: Factory,
+    factory: Factory,
     store: Store<DecoderData>,
     memory: Memory,
     read: TypedFunc<u32, i32>,
@@ -363,7 +379,7 @@ impl Stream {
             "invalid decoded output buffer"
         );
         ensure!(!self.failed, "decoder is stopped after an error");
-        arm(&mut self.store);
+        arm(&mut self.store, self.factory.0.deadline);
         let result = (|| -> Result<usize> {
             let count = self.read.call(&mut self.store, out.len() as u32)?;
             ensure!(
@@ -400,7 +416,7 @@ impl Stream {
         if self.failed {
             bail!("decoder is stopped after an error");
         }
-        arm(&mut self.store);
+        arm(&mut self.store, self.factory.0.deadline);
         match self.rewind.call(&mut self.store, ()) {
             Ok(0) => Ok(()),
             result => {
@@ -468,7 +484,7 @@ mod tests {
                 expires: std::time::Instant::now(),
             },
         );
-        configure(&mut store);
+        configure(&mut store, DEFAULT_OPERATION_DEADLINE);
         let seen = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let checked = seen.clone();
         store.epoch_deadline_callback(move |context| {
@@ -486,7 +502,7 @@ mod tests {
             .unwrap()
             .get_typed_func::<i32, ()>(&mut store, "spin")
             .unwrap();
-        arm(&mut store);
+        arm(&mut store, DEFAULT_OPERATION_DEADLINE);
         // A nominal-tick regression finishes this finite loop successfully,
         // making the assertion fail without a watchdog or an infinite call.
         let error = spin.call(&mut store, 32).unwrap_err();

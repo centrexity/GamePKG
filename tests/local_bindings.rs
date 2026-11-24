@@ -5,8 +5,6 @@ mod client;
 mod local;
 use local::runtime::{Error, Runtime, TaskContext, Window};
 
-static TEST_RUNTIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
 fn task(context: TaskContext, arg: u64) -> u64 {
     assert!(!context.cancelled());
     assert!(context.runtime().windows().is_ok());
@@ -17,7 +15,9 @@ fn task(context: TaskContext, arg: u64) -> u64 {
 }
 #[test]
 fn child_local_abi_is_bounded_typed_revocable_and_not_a_broker_syscall() {
-    let _exclusive = TEST_RUNTIME.lock().unwrap();
+    let _exclusive = client::TEST_BINDING_LOCK
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
     local::shutdown();
     assert_eq!(local::call(0, &[], 4), Err(Error::Denied));
     assert_eq!(client::local_performance_sample(), Err(-4));
@@ -1052,7 +1052,9 @@ fn waitset_abandon(context: TaskContext, argument: u64) -> u64 {
 }
 #[test]
 fn exact_waitset_abi_rejects_every_truncation_and_short_reply_before_acquisition() {
-    let _exclusive = TEST_RUNTIME.lock().unwrap();
+    let _exclusive = client::TEST_BINDING_LOCK
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
     local::shutdown();
     local::install(Runtime::new(&[], vec![waitset_abandon], 4 * 1024 * 1024, 1, 65536).unwrap())
         .unwrap();
