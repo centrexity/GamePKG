@@ -1,8 +1,44 @@
 """Capture only a controlled native GamePKG window and verify guest shader input."""
-import ctypes,json,math,os,subprocess,time
+import ctypes,json,math,os,struct,subprocess,time,zlib
 from ctypes import wintypes as W
 from pathlib import Path
-from PIL import Image
+try:
+ from PIL import Image
+except ModuleNotFoundError:
+ class Image:
+  # The Windows capture is raw BGRX DIB pixels; no image package is needed to
+  # wrap, inspect or save them. Keep this helper usable on bare Python hosts.
+  def __init__(self,width,height,pixels):
+   self.width,self.height,self._pixels,self.info=width,height,pixels,{}
+  @property
+  def size(self):return self.width,self.height
+  @staticmethod
+  def frombytes(mode,size,data,*args):
+   assert mode=='RGB' and args[-1]=='BGRX'
+   width,height=size
+   pixels=bytearray(width*height*3)
+   for i in range(width*height):
+    j,k=i*4,i*3
+    pixels[k],pixels[k+1],pixels[k+2]=data[j+2],data[j+1],data[j]
+   return Image(width,height,pixels)
+  def crop(self,box):
+   left,top,right,bottom=box
+   stride=(right-left)*3;pixels=bytearray()
+   for y in range(top,bottom):
+    start=(y*self.width+left)*3;pixels+=self._pixels[start:start+stride]
+   return Image(right-left,bottom-top,pixels)
+  def getdata(self):
+   pixels=self._pixels
+   return (tuple(pixels[i:i+3]) for i in range(0,len(pixels),3))
+  def getpixel(self,point):
+   x,y=point;offset=(y*self.width+x)*3
+   return tuple(self._pixels[offset:offset+3])
+  def save(self,path):
+   def chunk(tag,data):
+    return struct.pack('>I',len(data))+tag+data+struct.pack('>I',zlib.crc32(tag+data)&0xffffffff)
+   width,height=self.width,self.height
+   raw=b''.join(b'\0'+self._pixels[y*width*3:(y+1)*width*3] for y in range(height))
+   Path(path).write_bytes(b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',struct.pack('>IIBBBBB',width,height,8,2,0,0,0))+chunk(b'IDAT',zlib.compress(raw))+chunk(b'IEND',b''))
 
 def texture_frame_error(image,channel):
  # Validate the interior of the complete 640x480 game viewport. Ignore only

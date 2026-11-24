@@ -1360,6 +1360,14 @@ mod tests {
         let receiver = UdpSocket::bind("127.0.0.1:0").unwrap();
         receiver.set_nonblocking(true).unwrap();
         let sender = UdpSocket::bind("127.0.0.1:0").unwrap();
+        // macOS limits an unconfigured UDP datagram to 9216 bytes. Raise both
+        // buffers so the full IPv4 payload fixture is portable.
+        socket2::SockRef::from(&sender)
+            .set_send_buffer_size(65_507)
+            .unwrap();
+        socket2::SockRef::from(&receiver)
+            .set_recv_buffer_size(65_507)
+            .unwrap();
         let payload = vec![0x5a; 65_507];
         sender
             .send_to(&payload, receiver.local_addr().unwrap())

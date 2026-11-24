@@ -133,7 +133,17 @@ static void one(GamePkgExt80 a, GamePkgExt80 b, unsigned cw, unsigned top,
   assert(!gamepkg_x86_run(generated, &f));
   GamePkgX87State *z = gamepkg_x86_x87_state();
   unsigned sw = rd(after.b + 2), valid = 0;
-  if ((z->status & ~0x4500u) != (sw & ~0x4500u)) {
+  unsigned observed = z->status & ~0x4500u, reference = sw & ~0x4500u;
+  /* An exact denormal scaled by zero is a measured Intel/AMD difference:
+   * Intel reports only DE, while AMD also reports UE/ES and the busy bit.
+   * The guest service follows Intel; replay its own pending state for that
+   * host-dependent case while still comparing every resulting register. */
+  unsigned denormal_zero =
+      !(a.sign_exponent & 0x7fffu) && a.significand &&
+      !(b.sign_exponent & 0x7fffu) && !b.significand;
+  if (observed != reference &&
+      !(denormal_zero &&
+        (observed & ~0x8090u) == (reference & ~0x8090u))) {
     fprintf(stderr,
             "scale case%u cw%x top%u empty%u a%04x:%016llx b%04x:%016llx sw "
             "got%04x expected%04x\n",
@@ -142,6 +152,8 @@ static void one(GamePkgExt80 a, GamePkgExt80 b, unsigned cw, unsigned top,
             (unsigned long long)b.significand, z->status, sw);
     abort();
   }
+  unsigned status_reference =
+      denormal_zero && observed != reference ? z->status : sw;
   for (unsigned i = 0; i < 8; ++i) {
     unsigned p = (top + i) & 7;
     uint64_t sig = get64(after.b + 32 + 16 * i);
@@ -168,12 +180,13 @@ static void one(GamePkgExt80 a, GamePkgExt80 b, unsigned cw, unsigned top,
          softfloat_exceptionFlags == 0x1f && extF80_roundingPrecision == 32 &&
          gamepkg_softfloat_unbounded_inexact == 0x55);
   GamePkgX87State before = *z;
-  unsigned pending = (sw & ~cw & 63u) != 0;
+  unsigned pending = (status_reference & ~cw & 63u) != 0;
   assert(gamepkg_x86_run(next_wait, &f) == (int)pending &&
          (!pending || (f.vector == 16 && f.eip == 0x20000 && f.ebp == 0x9876)));
   assert(!memcmp(&before, z, sizeof(before)));
   GamePkgX87State expected = s;
-  expected.status = (uint16_t)((sw & ~0x4500u) | (s.status & 0x4500u));
+  expected.status =
+      (uint16_t)((status_reference & ~0x4500u) | (s.status & 0x4500u));
   expected.instruction_pointer = 0x10000;
   expected.opcode = 0x1fd;
   expected.instruction_selector = (uint16_t)cs;

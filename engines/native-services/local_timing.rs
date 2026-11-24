@@ -213,6 +213,45 @@ mod tests {
         thread,
         time::{Duration, Instant},
     };
+    #[cfg(any(
+        all(
+            target_os = "linux",
+            target_env = "gnu",
+            any(
+                all(target_arch = "x86", target_pointer_width = "32"),
+                all(target_arch = "x86_64", target_pointer_width = "64")
+            )
+        ),
+        windows
+    ))]
+    const CLOCK_SUPPORTED: bool = true;
+    #[cfg(not(any(
+        all(
+            target_os = "linux",
+            target_env = "gnu",
+            any(
+                all(target_arch = "x86", target_pointer_width = "32"),
+                all(target_arch = "x86_64", target_pointer_width = "64")
+            )
+        ),
+        windows
+    )))]
+    const CLOCK_SUPPORTED: bool = false;
+    #[cfg(not(any(
+        all(
+            target_os = "linux",
+            target_env = "gnu",
+            any(
+                all(target_arch = "x86", target_pointer_width = "32"),
+                all(target_arch = "x86_64", target_pointer_width = "64")
+            )
+        ),
+        windows
+    )))]
+    #[test]
+    fn unsupported_clock_is_explicit() {
+        assert!(matches!(performance::sample(), Err(Error::Unsupported)));
+    }
     fn waiting(clock: &Clock) {
         let end = Instant::now() + Duration::from_secs(5);
         while !clock.state.lock().unwrap().waiting {
@@ -248,6 +287,9 @@ mod tests {
     }
     #[test]
     fn invalid_requests_and_owner_dispatch_do_not_claim_or_allocate_a_wait() {
+        if !CLOCK_SUPPORTED {
+            return;
+        }
         let clock = Clock::new();
         let now = clock.snapshot().unwrap();
         let last = clock.state.lock().unwrap().last;
@@ -279,6 +321,9 @@ mod tests {
     }
     #[test]
     fn early_wakes_are_retained_and_deadlines_never_return_early() {
+        if !CLOCK_SUPPORTED {
+            return;
+        }
         let clock = Clock::new();
         let initial = clock.snapshot().unwrap();
         assert_eq!(clock.wake(), Ok(1));
@@ -301,6 +346,9 @@ mod tests {
     }
     #[test]
     fn one_waiter_spurious_interrupts_wakeup_close_and_pair_lifetimes() {
+        if !CLOCK_SUPPORTED {
+            return;
+        }
         let clock = Arc::new(Clock::new());
         let initial = clock.snapshot().unwrap();
         let run = clock.clone();
@@ -353,6 +401,9 @@ mod tests {
     }
     #[test]
     fn cancellation_interrupts_without_fabricating_a_wake_generation() {
+        if !CLOCK_SUPPORTED {
+            return;
+        }
         let clock = Arc::new(Clock::new());
         let cancelled = Arc::new(AtomicBool::new(false));
         let initial = clock.snapshot().unwrap();
@@ -393,6 +444,30 @@ mod runtime_clock_tests {
     use super::super::{Runtime, TaskContext};
     use super::*;
     use std::time::{Duration, Instant};
+    #[cfg(any(
+        all(
+            target_os = "linux",
+            target_env = "gnu",
+            any(
+                all(target_arch = "x86", target_pointer_width = "32"),
+                all(target_arch = "x86_64", target_pointer_width = "64")
+            )
+        ),
+        windows
+    ))]
+    const CLOCK_SUPPORTED: bool = true;
+    #[cfg(not(any(
+        all(
+            target_os = "linux",
+            target_env = "gnu",
+            any(
+                all(target_arch = "x86", target_pointer_width = "32"),
+                all(target_arch = "x86_64", target_pointer_width = "64")
+            )
+        ),
+        windows
+    )))]
+    const CLOCK_SUPPORTED: bool = false;
     fn actor(context: TaskContext, _: u64) -> u64 {
         let state = context.runtime().clock_snapshot().unwrap();
         assert_eq!(
@@ -410,6 +485,9 @@ mod runtime_clock_tests {
     }
     #[test]
     fn reviewed_task_cancellation_reaches_the_local_wait_without_generation_change() {
+        if !CLOCK_SUPPORTED {
+            return;
+        }
         let runtime = Runtime::new(&[], vec![actor], 4 * 1024 * 1024, 2, 65536).unwrap();
         let task = runtime.spawn(0, 0, false).unwrap();
         let end = Instant::now() + Duration::from_secs(5);
