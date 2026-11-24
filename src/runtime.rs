@@ -2407,15 +2407,16 @@ mod adversarial_assets_tests {
             (func (export "cabi_realloc") (param i32 i32 i32 i32) (result i32) i32.const 55000)
             (func (export "tick") (param i32 i64) (result i64) {code} i64.const 42))"#)).unwrap();
         let component = crate::hostapi::componentize(wasm).unwrap();
-        let mut game = Game::with_package(
-            &component,
-            &manifest,
-            &Default::default(),
-            Some(package),
-            None,
-            None,
-        )
-        .unwrap();
+        // This fixture issues many rejected guest calls. Keep a finite supported
+        // budget while allowing slow 32-bit CI hosts; deadline-specific tests
+        // retain the production settings.
+        let settings = crate::settings::Settings {
+            tick_deadline_ms: 1000,
+            ..Default::default()
+        };
+        let mut game =
+            Game::with_package(&component, &manifest, &settings, Some(package), None, None)
+                .unwrap();
         game.store.as_mut().unwrap().data_mut().shader_count = 1;
         assert_eq!(game.step(0).unwrap(), 42);
         assert!(game.frame().commands.is_empty());
