@@ -493,7 +493,9 @@ fn tools(cache: &Path, target: Target) -> Result<Tools> {
         PathBuf::from(match target {
             Target::Windows64 => "/usr/bin/x86_64-w64-mingw32-gcc",
             Target::Windows32 => "/usr/bin/i686-w64-mingw32-gcc",
-            _ => "/usr/bin/gcc-11",
+            // Use the host's selected GCC. Its canonical target is hashed
+            // below, so an alternatives change cannot swap an unaudited tool.
+            _ => "/usr/bin/gcc",
         }),
     );
     #[cfg(windows)]
