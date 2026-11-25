@@ -298,6 +298,7 @@ impl<B: Backend> Session<B> {
             leases: self.leases.clone(),
         }
     }
+    #[cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]
     pub(super) fn hold_lease(&mut self, file: Arc<std::fs::File>) {
         self.leases.push(file);
     }

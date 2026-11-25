@@ -152,6 +152,7 @@ impl Desktop {
             });
         Ok(())
     }
+    #[cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]
     pub(super) fn install_recorded_audio(
         &mut self,
         package: &crate::archive::Package,
@@ -193,6 +194,7 @@ impl Desktop {
             }
         })
     }
+    #[cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]
     pub(super) fn has_pending_frame(&self) -> bool {
         self.pending.is_some() || self.pending_native.is_some()
     }

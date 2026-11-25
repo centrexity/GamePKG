@@ -1,4 +1,5 @@
 //! Per-tick transactions for the shared 2D compatibility profile.
+#![cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]
 use super::{Backend, Error, Result, Session, WindowCommand};
 use crate::manifest::Manifest;
 use std::collections::BTreeSet;

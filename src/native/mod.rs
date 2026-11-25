@@ -341,6 +341,7 @@ pub fn compile(root: &Path, id: &str) -> Result<()> {
     )))]
     unreachable!("require_compatibility rejects unsupported hosts")
 }
+#[cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]
 pub(crate) fn validate_executable(bytes: &[u8]) -> Result<()> {
     #[cfg(windows)]
     return validate_pe(bytes, std::env::consts::ARCH);
@@ -374,6 +375,7 @@ pub(crate) fn validate_executable(bytes: &[u8]) -> Result<()> {
     }
 }
 
+#[cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]
 pub(crate) fn validate_pe(bytes: &[u8], architecture: &str) -> Result<()> {
     ensure!(
         bytes.len() >= 64 && bytes.starts_with(b"MZ"),

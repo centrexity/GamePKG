@@ -104,6 +104,7 @@ fn rust_runtime(symbol: &str) -> bool {
             | "core::slice::index::slice_end_index_len_fail"
             | "core::slice::index::slice_start_index_len_fail"
             | "core::slice::index::slice_index_order_fail"
+            | "core::slice::index::slice_index_fail"
             | "core::panicking::panic_fmt"
             | "core::panicking::panic_const::panic_const_add_overflow"
             | "core::panicking::panic_const::panic_const_sub_overflow"
@@ -568,10 +569,12 @@ mod tests {
     #[test]
     fn compiler_traps_are_an_exact_vocabulary_and_cannot_replace_runtime_definitions() {
         let bounds = "_ZN4core5slice5index24slice_end_index_len_fail17heb50b9bbe4663132E";
+        let v0_bounds = "_RNvNtNtCs8uuN1nrGffB_4core5slice5index16slice_index_fail";
         let alloc = "_RNvCs73fAdSrgOJL_7___rustc12___rust_alloc";
         check_symbols(
             [
                 bounds,
+                v0_bounds,
                 alloc,
                 "gamepkg_local_call",
                 "gamepkg_port_utf8_validate",
@@ -582,6 +585,7 @@ mod tests {
         .unwrap();
         for symbol in [
             bounds,
+            v0_bounds,
             alloc,
             "gamepkg_local_call",
             "gamepkg_port_utf8_validate",

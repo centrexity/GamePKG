@@ -1,4 +1,5 @@
 //! Pinned DOOM engine. Private Wasm memory, no host imports or ambient I/O.
+#![cfg_attr(all(test, not(any(target_os = "linux", windows))), allow(dead_code))]
 use anyhow::{bail, Context, Result};
 use wasmtime::{
     Engine, Instance, Memory, Module, Store, StoreLimits, StoreLimitsBuilder, TypedFunc,

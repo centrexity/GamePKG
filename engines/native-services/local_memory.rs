@@ -1,6 +1,8 @@
 //! Trusted child-local memory implementation; never compiled as game source.
 //! The bootstrap fixes address windows before executing any game entry point.
-use std::{ffi::c_void, io};
+#[cfg(any(target_os = "linux", windows))]
+use std::ffi::c_void;
+use std::io;
 
 pub const PAGE: u64 = 4096;
 pub struct Mapping {
@@ -89,7 +91,10 @@ impl Mapping {
         Ok((self.address + offset, bytes))
     }
     pub fn commit(&self, offset: u64, bytes: u64, mode: u32) -> io::Result<()> {
+        #[cfg(any(target_os = "linux", windows))]
         let (address, bytes) = self.page_range(offset, bytes)?;
+        #[cfg(not(any(target_os = "linux", windows)))]
+        let (_address, _bytes) = self.page_range(offset, bytes)?;
         if !(1..=2).contains(&mode) {
             return Err(io::ErrorKind::InvalidInput.into());
         }
@@ -115,7 +120,10 @@ impl Mapping {
         }
     }
     pub fn protect(&self, offset: u64, bytes: u64, mode: u32) -> io::Result<()> {
+        #[cfg(any(target_os = "linux", windows))]
         let (address, bytes) = self.page_range(offset, bytes)?;
+        #[cfg(not(any(target_os = "linux", windows)))]
+        let (_address, _bytes) = self.page_range(offset, bytes)?;
         if mode > 2 {
             return Err(io::ErrorKind::InvalidInput.into());
         }
@@ -142,7 +150,10 @@ impl Mapping {
         }
     }
     pub fn decommit(&self, offset: u64, bytes: u64) -> io::Result<()> {
+        #[cfg(any(target_os = "linux", windows))]
         let (address, bytes) = self.page_range(offset, bytes)?;
+        #[cfg(not(any(target_os = "linux", windows)))]
+        let (_address, _bytes) = self.page_range(offset, bytes)?;
         // MAP_FIXED is only used inside this runtime's still-owned reservation,
         // under its mutex. The initial window reservation never replaces maps.
         #[cfg(target_os = "linux")]

@@ -6,9 +6,11 @@ use std::{
     thread,
 };
 pub const ADDRESS_SPACE: u64 = 2 * 1024 * 1024 * 1024;
+#[cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]
 pub(crate) const SERVICE_MEMORY_BUDGET: std::ops::RangeInclusive<u64> =
     256 * 1024 * 1024..=48 * 1024 * 1024 * 1024;
 /// Maximum stored size of one compiler tool or its pinned download.
+#[cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]
 pub(crate) const MAX_TOOL_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 pub const DIAGNOSTICS: usize = 1024 * 1024;
 pub struct Output {
