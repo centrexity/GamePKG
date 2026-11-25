@@ -102,6 +102,44 @@ static int adjacent_ext80(GamePkgExt80 x, GamePkgExt80 y) {
            x.significand == UINT64_C(0x8000000000000000);
   return 0;
 }
+static GamePkgExt80 canonical_ext80(GamePkgExt80 v) {
+  unsigned e = v.sign_exponent & 0x7fffu;
+  uint64_t sig = v.significand;
+  unsigned sign = v.sign_exponent & 0x8000u;
+  if (e == 0x7fffu)
+    return v;
+  if (!e && (sig & (UINT64_C(1) << 63))) {
+    sig >>= 1;
+    e = 1;
+  } else {
+    while (e && !(sig & (UINT64_C(1) << 63))) {
+      sig <<= 1;
+      --e;
+    }
+  }
+  return (GamePkgExt80){sig, (uint16_t)(sign | e)};
+}
+static GamePkgExt80 unwrap_ext80(GamePkgExt80 v) {
+  unsigned e = v.sign_exponent & 0x7fffu;
+  if (e >= 24512u && e <= 24576u) {
+    int unwrapped = (int)e - 24576;
+    if (unwrapped >= 0)
+      return canonical_ext80(
+          (GamePkgExt80){v.significand,
+                         (uint16_t)((v.sign_exponent & 0x8000u) |
+                                    (unsigned)unwrapped)});
+  }
+  return canonical_ext80(v);
+}
+static int same_ext80(GamePkgExt80 x, GamePkgExt80 y) {
+  x = canonical_ext80(x);
+  y = canonical_ext80(y);
+  return x.significand == y.significand &&
+         x.sign_exponent == y.sign_exponent;
+}
+static int equivalent_ext80(GamePkgExt80 x, GamePkgExt80 y) {
+  return same_ext80(x, y) || adjacent_ext80(x, y);
+}
 static uint64_t random64(uint64_t *v) {
   *v ^= *v << 13;
   *v ^= *v >> 7;
@@ -201,13 +239,33 @@ static void one(GamePkgExt80 a, GamePkgExt80 b, unsigned cw, unsigned top,
       exponent < 16383 - 68 && (!exponent || (a.significand >> 63)))
     accuracy(a, (GamePkgExt80){get64(after.b + 32), (uint16_t)rd(after.b + 40)},
              cw, sw, which);
+  /* With unmasked underflow the audited emulator wraps a tiny result by +24576
+   * in the exponent while this physical profile leaves the tiny value in place
+   * and omits UE. Accept only that exact equivalence: unwrap both values,
+   * require MPFR accuracy for each, and allow the single UE status difference.
+   * Every other status and state bit remains exact. */
+  GamePkgExt80 physical = {get64(after.b + 32), (uint16_t)rd(after.b + 40)};
+  GamePkgExt80 guest = {z->significand[top], z->sign_exponent[top]};
+  GamePkgExt80 physical_value = unwrap_ext80(physical);
+  GamePkgExt80 guest_value = unwrap_ext80(guest);
+  unsigned underflow_wrap_difference = 0;
+  if (!(empty & 1) && exponent < 16383 - 68 && !(cw & 0x10u) &&
+      ((z->status ^ sw) & 0x10u) &&
+      equivalent_ext80(guest_value, physical_value)) {
+    accuracy(a, physical_value, cw, sw & ~0x10u, which);
+    accuracy(a, guest_value, cw, sw & ~0x10u, which);
+    underflow_wrap_difference = 1;
+  }
   /* The approximation-derived C1 bit has a measured Intel/AMD divergence for
-   * finite normalized and denormal arguments. Allow only that bit to differ;
-   * every other status and state bit remains exact. */
+   * finite normalized and denormal arguments. Allow only that bit and a
+   * verified underflow-wrap bit to differ; every other status bit stays exact. */
   unsigned c1_difference =
       !(empty & 1) && exponent < 16383 + 63 &&
       (!exponent || (a.significand >> 63)) && ((z->status ^ sw) & 0x200u);
-  unsigned status_mask = ~0x4100u & ~(c1_difference ? 0x200u : 0u);
+  unsigned status_difference =
+      (c1_difference ? 0x200u : 0u) |
+      (underflow_wrap_difference ? 0x10u : 0u);
+  unsigned status_mask = ~0x4100u & ~status_difference;
   if ((z->status & status_mask) != (sw & status_mask)) {
     fprintf(stderr,
             "SINCOS case%u cw%x top%u empty%u a%04x:%016llx b%04x:%016llx sw "
@@ -226,10 +284,20 @@ static void one(GamePkgExt80 a, GamePkgExt80 b, unsigned cw, unsigned top,
     uint64_t sig = get64(after.b + 32 + 16 * i);
     unsigned se = rd(after.b + 40 + 16 * i);
     if (z->significand[p] != sig || z->sign_exponent[p] != se) {
-      if (approximation_profile && !reference_profile && p == top &&
-          adjacent_ext80(
-              (GamePkgExt80){z->significand[p], z->sign_exponent[p]},
-              (GamePkgExt80){sig, (uint16_t)se})) {
+      if (underflow_wrap_difference && p == top &&
+          equivalent_ext80(unwrap_ext80(
+                               (GamePkgExt80){z->significand[p],
+                                              z->sign_exponent[p]}),
+                           unwrap_ext80((GamePkgExt80){sig, (uint16_t)se}))) {
+        ++profile_differences;
+        sig = z->significand[p];
+        se = z->sign_exponent[p];
+        put80(after.b + 32 + 16 * i,
+              (GamePkgExt80){sig, (uint16_t)se});
+      } else if (approximation_profile && !reference_profile && p == top &&
+                 adjacent_ext80(
+                     (GamePkgExt80){z->significand[p], z->sign_exponent[p]},
+                     (GamePkgExt80){sig, (uint16_t)se})) {
         ++profile_differences;
         sig = z->significand[p];
         se = z->sign_exponent[p];
@@ -258,13 +326,14 @@ static void one(GamePkgExt80 a, GamePkgExt80 b, unsigned cw, unsigned top,
          softfloat_exceptionFlags == 0x1f && extF80_roundingPrecision == 32 &&
          gamepkg_softfloat_unbounded_inexact == 0x55);
   GamePkgX87State before = *z;
-  unsigned pending = (sw & ~cw & 63u) != 0;
+  unsigned pending =
+      (((underflow_wrap_difference ? z->status : sw) & ~cw & 63u) != 0);
   assert(gamepkg_x86_run(next_wait, &f) == (int)pending &&
          (!pending || (f.vector == 16 && f.eip == 0x20000 && f.ebp == 0x9876)));
   assert(!memcmp(&before, z, sizeof(before)));
   GamePkgX87State expected = s;
   expected.status = (uint16_t)((sw & status_mask) | (s.status & 0x4100u) |
-                               (c1_difference ? (z->status & 0x200u) : 0u));
+                               (z->status & status_difference));
   expected.instruction_pointer = 0x10000;
   expected.opcode = (0x1fe + which);
   expected.instruction_selector = (uint16_t)cs;
