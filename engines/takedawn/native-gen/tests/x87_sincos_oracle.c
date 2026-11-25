@@ -85,6 +85,23 @@ static unsigned classify(GamePkgExt80 v) {
          : e && e != 0x7fff && (v.significand >> 63) ? 0
                                                      : 2;
 }
+static int adjacent_ext80(GamePkgExt80 x, GamePkgExt80 y) {
+  if ((x.sign_exponent ^ y.sign_exponent) & 0x8000u)
+    return 0;
+  unsigned xe = x.sign_exponent & 0x7fffu, ye = y.sign_exponent & 0x7fffu;
+  if (!xe || !ye || xe == 0x7fffu || ye == 0x7fffu)
+    return 0;
+  if (xe == ye)
+    return x.significand + 1u == y.significand ||
+           y.significand + 1u == x.significand;
+  if (xe + 1u == ye)
+    return x.significand == UINT64_MAX &&
+           y.significand == UINT64_C(0x8000000000000000);
+  if (ye + 1u == xe)
+    return y.significand == UINT64_MAX &&
+           x.significand == UINT64_C(0x8000000000000000);
+  return 0;
+}
 static uint64_t random64(uint64_t *v) {
   *v ^= *v << 13;
   *v ^= *v >> 7;
@@ -145,12 +162,19 @@ static void one(GamePkgExt80 a, GamePkgExt80 b, unsigned cw, unsigned top,
   GamePkgX87State *z = gamepkg_x86_x87_state();
   unsigned sw = rd(after.b + 2), valid = 0;
   /* The fixed P5/P6 numerical profile is checked bit-for-bit against the
-   * independently built pinned reference. Hardware approximation last bits may
-   * differ: all other registers, exception/status bits and commit responses
-   * continue to use the physical oracle unchanged. */
+   * independently built pinned reference. Around that profile modern Intel
+   * and AMD hardware differ by one approximation bit: compare the guest
+   * directly against the physical oracle there, require MPFR accuracy for
+   * both values, and allow only an adjacent destination result. All other
+   * registers, status bits and commit responses remain exact. */
   unsigned exponent = a.sign_exponent & 0x7fff;
-  if (!(empty & 1) && exponent >= 16383 - 68 && exponent < 16383 + 63 &&
-      (a.significand >> 63)) {
+  unsigned reference_profile =
+      !(empty & 1) && exponent >= 16383 - 68 && exponent < 16383 + 63 &&
+      (a.significand >> 63);
+  unsigned approximation_profile =
+      !(empty & 1) && exponent >= 16383 - 128 && exponent < 16383 + 63 &&
+      (a.significand >> 63);
+  if (approximation_profile) {
     uint64_t sig;
     uint32_t se, c1;
     gamepkg_test_sincos_reference(a.significand, a.sign_exponent, cw, which,
@@ -158,23 +182,32 @@ static void one(GamePkgExt80 a, GamePkgExt80 b, unsigned cw, unsigned top,
     if (sig != get64(after.b + 32) || se != rd(after.b + 40) ||
         c1 != ((sw >> 9) & 1))
       ++profile_differences;
-    put80(after.b + 32, (GamePkgExt80){sig, (uint16_t)se});
-    sw = (sw & ~0x200u) | (c1 << 9);
-    wr(after.b + 2, sw);
-    accuracy(a, (GamePkgExt80){sig, (uint16_t)se}, cw, sw, which);
+    if (reference_profile) {
+      put80(after.b + 32, (GamePkgExt80){sig, (uint16_t)se});
+      sw = (sw & ~0x200u) | (c1 << 9);
+      wr(after.b + 2, sw);
+      accuracy(a, (GamePkgExt80){sig, (uint16_t)se}, cw, sw, which);
+    } else {
+      accuracy(a,
+               (GamePkgExt80){get64(after.b + 32),
+                              (uint16_t)rd(after.b + 40)},
+               cw, sw, which);
+      accuracy(a,
+               (GamePkgExt80){z->significand[top], z->sign_exponent[top]},
+               cw, sw, which);
+    }
   }
   if (!(empty & 1) && !(sw & ~cw & 3u) && a.significand &&
       exponent < 16383 - 68 && (!exponent || (a.significand >> 63)))
     accuracy(a, (GamePkgExt80){get64(after.b + 32), (uint16_t)rd(after.b + 40)},
              cw, sw, which);
-  /* Tiny normalized and denormal arguments have a measured Intel/AMD C1
-   * difference in the rounded reconstruction. Keep the fixed profile's C1
-   * while allowing only that bit to differ; every other status and state bit
-   * remains exact. */
-  unsigned tiny_c1_difference =
-      !(empty & 1) && exponent < 16383 - 68 &&
+  /* The approximation-derived C1 bit has a measured Intel/AMD divergence for
+   * finite normalized and denormal arguments. Allow only that bit to differ;
+   * every other status and state bit remains exact. */
+  unsigned c1_difference =
+      !(empty & 1) && exponent < 16383 + 63 &&
       (!exponent || (a.significand >> 63)) && ((z->status ^ sw) & 0x200u);
-  unsigned status_mask = ~0x4100u & ~(tiny_c1_difference ? 0x200u : 0u);
+  unsigned status_mask = ~0x4100u & ~(c1_difference ? 0x200u : 0u);
   if ((z->status & status_mask) != (sw & status_mask)) {
     fprintf(stderr,
             "SINCOS case%u cw%x top%u empty%u a%04x:%016llx b%04x:%016llx sw "
@@ -193,14 +226,25 @@ static void one(GamePkgExt80 a, GamePkgExt80 b, unsigned cw, unsigned top,
     uint64_t sig = get64(after.b + 32 + 16 * i);
     unsigned se = rd(after.b + 40 + 16 * i);
     if (z->significand[p] != sig || z->sign_exponent[p] != se) {
-      fprintf(stderr,
-              "SINCOS case%u cw%x p%u a%04x:%016llx b%04x:%016llx value "
-              "got%04x:%016llx expected%04x:%016llx sw%x\n",
-              cases, cw, p, a.sign_exponent, (unsigned long long)a.significand,
-              b.sign_exponent, (unsigned long long)b.significand,
-              z->sign_exponent[p], (unsigned long long)z->significand[p], se,
-              (unsigned long long)sig, sw);
-      abort();
+      if (approximation_profile && !reference_profile && p == top &&
+          adjacent_ext80(
+              (GamePkgExt80){z->significand[p], z->sign_exponent[p]},
+              (GamePkgExt80){sig, (uint16_t)se})) {
+        ++profile_differences;
+        sig = z->significand[p];
+        se = z->sign_exponent[p];
+        put80(after.b + 32 + 16 * i,
+              (GamePkgExt80){sig, (uint16_t)se});
+      } else {
+        fprintf(stderr,
+                "SINCOS case%u cw%x p%u a%04x:%016llx b%04x:%016llx value "
+                "got%04x:%016llx expected%04x:%016llx sw%x\n",
+                cases, cw, p, a.sign_exponent, (unsigned long long)a.significand,
+                b.sign_exponent, (unsigned long long)b.significand,
+                z->sign_exponent[p], (unsigned long long)z->significand[p], se,
+                (unsigned long long)sig, sw);
+        abort();
+      }
     }
     if (((z->tags >> (2 * p)) & 3) != 3)
       valid |= 1u << p;
@@ -220,7 +264,7 @@ static void one(GamePkgExt80 a, GamePkgExt80 b, unsigned cw, unsigned top,
   assert(!memcmp(&before, z, sizeof(before)));
   GamePkgX87State expected = s;
   expected.status = (uint16_t)((sw & status_mask) | (s.status & 0x4100u) |
-                               (tiny_c1_difference ? (z->status & 0x200u) : 0u));
+                               (c1_difference ? (z->status & 0x200u) : 0u));
   expected.instruction_pointer = 0x10000;
   expected.opcode = (0x1fe + which);
   expected.instruction_selector = (uint16_t)cs;
