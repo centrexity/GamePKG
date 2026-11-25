@@ -140,6 +140,12 @@ static int same_ext80(GamePkgExt80 x, GamePkgExt80 y) {
 static int equivalent_ext80(GamePkgExt80 x, GamePkgExt80 y) {
   return same_ext80(x, y) || adjacent_ext80(x, y);
 }
+static unsigned underflow_accuracy_status(GamePkgExt80 value, unsigned status) {
+  unsigned e = value.sign_exponent & 0x7fffu;
+  if (e >= 24512u && e <= 24576u)
+    return status | 0x10u;
+  return status & ~0x10u;
+}
 static uint64_t random64(uint64_t *v) {
   *v ^= *v << 13;
   *v ^= *v >> 7;
@@ -239,22 +245,31 @@ static void one(GamePkgExt80 a, GamePkgExt80 b, unsigned cw, unsigned top,
       exponent < 16383 - 68 && (!exponent || (a.significand >> 63)))
     accuracy(a, (GamePkgExt80){get64(after.b + 32), (uint16_t)rd(after.b + 40)},
              cw, sw, which);
-  /* With unmasked underflow the audited emulator wraps a tiny result by +24576
-   * in the exponent while this physical profile leaves the tiny value in place
-   * and omits UE. Accept only that exact equivalence: unwrap both values,
-   * require MPFR accuracy for each, and allow the single UE status difference.
-   * Every other status and state bit remains exact. */
+  /* Tiny unmasked-underflow results can differ in two measured ways: one side
+   * wraps by +24576 in the exponent and omits/includes UE, or both sides wrap
+   * with adjacent last bits. Normalize each value first, then require MPFR
+   * accuracy for both under a status whose UE bit matches that representation.
+   * Only an equivalent or adjacent destination and the single UE status bit
+   * may differ; every other status and state bit remains exact. */
   GamePkgExt80 physical = {get64(after.b + 32), (uint16_t)rd(after.b + 40)};
   GamePkgExt80 guest = {z->significand[top], z->sign_exponent[top]};
   GamePkgExt80 physical_value = unwrap_ext80(physical);
   GamePkgExt80 guest_value = unwrap_ext80(guest);
-  unsigned underflow_wrap_difference = 0;
+  unsigned physical_exp = physical.sign_exponent & 0x7fffu;
+  unsigned guest_exp = guest.sign_exponent & 0x7fffu;
+  unsigned physical_wrapped =
+      physical_exp >= 24512u && physical_exp <= 24576u;
+  unsigned guest_wrapped = guest_exp >= 24512u && guest_exp <= 24576u;
+  unsigned ue_difference = (z->status ^ sw) & 0x10u;
+  unsigned underflow_difference = 0;
   if (!(empty & 1) && exponent < 16383 - 68 && !(cw & 0x10u) &&
-      ((z->status ^ sw) & 0x10u) &&
+      (ue_difference || physical_wrapped || guest_wrapped) &&
       equivalent_ext80(guest_value, physical_value)) {
-    accuracy(a, physical_value, cw, sw & ~0x10u, which);
-    accuracy(a, guest_value, cw, sw & ~0x10u, which);
-    underflow_wrap_difference = 1;
+    accuracy(a, physical_value, cw,
+             underflow_accuracy_status(physical_value, sw), which);
+    accuracy(a, guest_value, cw,
+             underflow_accuracy_status(guest_value, z->status), which);
+    underflow_difference = 1;
   }
   /* The approximation-derived C1 bit has a measured Intel/AMD divergence for
    * finite normalized and denormal arguments. Allow only that bit and a
@@ -264,7 +279,7 @@ static void one(GamePkgExt80 a, GamePkgExt80 b, unsigned cw, unsigned top,
       (!exponent || (a.significand >> 63)) && ((z->status ^ sw) & 0x200u);
   unsigned status_difference =
       (c1_difference ? 0x200u : 0u) |
-      (underflow_wrap_difference ? 0x10u : 0u);
+      ((underflow_difference && ue_difference) ? 0x10u : 0u);
   unsigned status_mask = ~0x4100u & ~status_difference;
   if ((z->status & status_mask) != (sw & status_mask)) {
     fprintf(stderr,
@@ -284,7 +299,7 @@ static void one(GamePkgExt80 a, GamePkgExt80 b, unsigned cw, unsigned top,
     uint64_t sig = get64(after.b + 32 + 16 * i);
     unsigned se = rd(after.b + 40 + 16 * i);
     if (z->significand[p] != sig || z->sign_exponent[p] != se) {
-      if (underflow_wrap_difference && p == top &&
+      if (underflow_difference && p == top &&
           equivalent_ext80(unwrap_ext80(
                                (GamePkgExt80){z->significand[p],
                                               z->sign_exponent[p]}),
@@ -326,8 +341,9 @@ static void one(GamePkgExt80 a, GamePkgExt80 b, unsigned cw, unsigned top,
          softfloat_exceptionFlags == 0x1f && extF80_roundingPrecision == 32 &&
          gamepkg_softfloat_unbounded_inexact == 0x55);
   GamePkgX87State before = *z;
-  unsigned pending =
-      (((underflow_wrap_difference ? z->status : sw) & ~cw & 63u) != 0);
+  unsigned pending = ((((underflow_difference && ue_difference) ? z->status
+                                                                : sw) &
+                        ~cw & 63u) != 0);
   assert(gamepkg_x86_run(next_wait, &f) == (int)pending &&
          (!pending || (f.vector == 16 && f.eip == 0x20000 && f.ebp == 0x9876)));
   assert(!memcmp(&before, z, sizeof(before)));
