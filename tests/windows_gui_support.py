@@ -58,7 +58,7 @@ def texture_frame_error(image,channel):
  if any(image.getpixel(point)!=(0,0,0) for point in points):return 'Texture viewport letterbox did not match the client aspect ratio'
  return None
 
-def verify_shader_input(project,env,game_id,label,*,texture=False,renderer="opengl"):
+def verify_shader_input(project,env,game_id,label,*,texture=False,renderer="opengl",optional=False):
  assert os.name=='nt'
  user=ctypes.WinDLL('user32',use_last_error=True);gdi=ctypes.WinDLL('gdi32',use_last_error=True)
  callback_type=ctypes.WINFUNCTYPE(W.BOOL,W.HWND,W.LPARAM)
@@ -117,6 +117,13 @@ def verify_shader_input(project,env,game_id,label,*,texture=False,renderer="open
   # WSL-compiled fixtures are Wasm packages; explicitly select the Wasm player
   # so native admission never rejects an unmigrated core/component manifest.
   app=subprocess.Popen([str(Path(project)/'target/release/gamepkg-gui.exe'),'--play',game_id,'--target','wasm'],env=player_env,stdout=log,stderr=log)
+  def renderer_unavailable():
+   text=log_path.read_text(errors='replace').lower()
+   return any(marker in text for marker in [
+    'egui_glow requires opengl 2.0+','no suitable adapter',
+    'failed to create wgpu','could not find a suitable graphics adapter',
+    'vulkan loader','failed to load vulkan',
+   ]) or ('wgpu' in text and 'adapter' in text)
   try:
    # Query/capture physical client pixels consistently with winit. This only
    # changes this test thread, and the original context is restored below.
@@ -125,7 +132,11 @@ def verify_shader_input(project,env,game_id,label,*,texture=False,renderer="open
    assert old_awareness,'Could not select per-monitor-v2 capture coordinates'
    deadline=time.monotonic()+30
    while window is None:
-    assert app.poll() is None,log_path.read_text(errors='replace')
+    if app.poll() is not None:
+     if optional and renderer_unavailable():
+      print(f'Native Windows GUI renderer {renderer} unavailable; skipping {label} pixel proof',flush=True)
+      return False
+     assert app.poll() is None,log_path.read_text(errors='replace')
     found=[]
     @callback_type
     def visit(handle,_):
@@ -206,3 +217,4 @@ def verify_shader_input(project,env,game_id,label,*,texture=False,renderer="open
     try:app.wait(timeout=10)
     except subprocess.TimeoutExpired:app.terminate();app.wait(timeout=10)
    if old_awareness:assert user.SetThreadDpiAwarenessContext(old_awareness)
+  return True

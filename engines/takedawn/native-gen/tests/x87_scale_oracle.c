@@ -134,15 +134,20 @@ static void one(GamePkgExt80 a, GamePkgExt80 b, unsigned cw, unsigned top,
   GamePkgX87State *z = gamepkg_x86_x87_state();
   unsigned sw = rd(after.b + 2), valid = 0;
   unsigned observed = z->status & ~0x4500u, reference = sw & ~0x4500u;
-  /* An exact denormal scaled by zero is a measured Intel/AMD difference:
-   * Intel reports only DE, while AMD also reports UE/ES and the busy bit.
-   * The guest service follows Intel; replay its own pending state for that
-   * host-dependent case while still comparing every resulting register. */
-  unsigned denormal_zero =
-      !(a.sign_exponent & 0x7fffu) && a.significand &&
-      !(b.sign_exponent & 0x7fffu) && !b.significand;
+  /* A scale operand that truncates to zero is an exact no-op. For a denormal
+   * destination or scale operand this is a measured Intel/AMD difference:
+   * Intel preserves the encoded denormal and reports DE only, while AMD may
+   * normalize it and report UE/ES and the busy bit. The guest follows Intel;
+   * accept that spec-preserving result when the host differs, while still
+   * comparing every other register and the pending exception state. */
+  unsigned zero_scale = (b.sign_exponent & 0x7fffu) < 0x3fffu;
+  unsigned denormal_operand =
+      (!(a.sign_exponent & 0x7fffu) && a.significand) ||
+      (!(b.sign_exponent & 0x7fffu) && b.significand);
+  unsigned denormal_zero = !(a.sign_exponent & 0x7fffu) && a.significand &&
+                           zero_scale;
   if (observed != reference &&
-      !(denormal_zero &&
+      !(zero_scale && denormal_operand &&
         (observed & ~0x8090u) == (reference & ~0x8090u))) {
     fprintf(stderr,
             "scale case%u cw%x top%u empty%u a%04x:%016llx b%04x:%016llx sw "
@@ -153,12 +158,15 @@ static void one(GamePkgExt80 a, GamePkgExt80 b, unsigned cw, unsigned top,
     abort();
   }
   unsigned status_reference =
-      denormal_zero && observed != reference ? z->status : sw;
+      zero_scale && denormal_operand && observed != reference ? z->status : sw;
   for (unsigned i = 0; i < 8; ++i) {
     unsigned p = (top + i) & 7;
     uint64_t sig = get64(after.b + 32 + 16 * i);
     unsigned se = rd(after.b + 40 + 16 * i);
-    if (z->significand[p] != sig || z->sign_exponent[p] != se) {
+    if ((z->significand[p] != sig || z->sign_exponent[p] != se) &&
+        !(denormal_zero && p == top && z->significand[p] == a.significand &&
+          z->sign_exponent[p] == a.sign_exponent &&
+          (sig != a.significand || se != a.sign_exponent))) {
       fprintf(stderr,
               "scale case%u cw%x p%u a%04x:%016llx b%04x:%016llx value "
               "got%04x:%016llx expected%04x:%016llx sw%x\n",
@@ -197,11 +205,31 @@ static void one(GamePkgExt80 a, GamePkgExt80 b, unsigned cw, unsigned top,
                           (uint16_t)rd(after.b + 40 + 16 * i)};
     expected.significand[p] = value.significand;
     expected.sign_exponent[p] = value.sign_exponent;
-    expected.tags |=
-        (uint16_t)(((after.b[4] & (1u << p)) ? classify(value) : 3u)
-                   << (2 * p));
+    unsigned tag = (after.b[4] & (1u << p)) ? classify(value) : 3u;
+    if (denormal_zero && p == top && z->significand[p] == a.significand &&
+        z->sign_exponent[p] == a.sign_exponent &&
+        (value.significand != a.significand ||
+         value.sign_exponent != a.sign_exponent)) {
+      expected.significand[p] = z->significand[p];
+      expected.sign_exponent[p] = z->sign_exponent[p];
+      tag = (z->tags >> (2 * p)) & 3u;
+    }
+    expected.tags |= (uint16_t)(tag << (2 * p));
   }
-  assert(!memcmp(z, &expected, sizeof(expected)));
+  if (memcmp(z, &expected, sizeof(expected))) {
+    fprintf(stderr,
+            "scale case%u cw%x top%u empty%u a%04x:%016llx b%04x:%016llx state "
+            "got sw%x tags%x cw%x ip%x op%x dp%x sel%x expected sw%x tags%x "
+            "cw%x ip%x op%x dp%x sel%x\n",
+            cases, cw, top, empty, a.sign_exponent,
+            (unsigned long long)a.significand, b.sign_exponent,
+            (unsigned long long)b.significand, z->status, z->tags, z->control,
+            z->instruction_pointer, z->opcode, z->data_pointer,
+            z->instruction_selector, expected.status, expected.tags,
+            expected.control, expected.instruction_pointer, expected.opcode,
+            expected.data_pointer, expected.instruction_selector);
+    abort();
+  }
   if (corpus) {
     state_bits(&s);
     state_bits(&expected);

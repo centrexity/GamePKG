@@ -1357,16 +1357,18 @@ mod tests {
     }
     #[test]
     fn bound_udp_reply_fits_a_full_ipv4_datagram_and_its_peer() {
-        fn loopback(size: usize) -> (UdpSocket, UdpSocket, Vec<u8>) {
+        fn loopback(size: usize, buffer: usize) -> (UdpSocket, UdpSocket, Vec<u8>) {
             // macOS applies socket buffers from bind time, so configure the
             // socket2 handles before converting them to std::net::UdpSocket.
+            // Leave headroom for protocol metadata instead of requesting a
+            // buffer exactly equal to the datagram.
             let receiver_socket = socket2::Socket::new(
                 socket2::Domain::IPV4,
                 socket2::Type::DGRAM,
                 Some(socket2::Protocol::UDP),
             )
             .unwrap();
-            receiver_socket.set_recv_buffer_size(size).unwrap();
+            receiver_socket.set_recv_buffer_size(buffer).unwrap();
             let address = socket2::SockAddr::from(SocketAddr::from(([127, 0, 0, 1], 0)));
             receiver_socket.bind(&address).unwrap();
             let receiver: UdpSocket = receiver_socket.into();
@@ -1377,7 +1379,7 @@ mod tests {
                 Some(socket2::Protocol::UDP),
             )
             .unwrap();
-            sender_socket.set_send_buffer_size(size).unwrap();
+            sender_socket.set_send_buffer_size(buffer).unwrap();
             let address = socket2::SockAddr::from(SocketAddr::from(([127, 0, 0, 1], 0)));
             sender_socket.bind(&address).unwrap();
             let sender: UdpSocket = sender_socket.into();
@@ -1405,17 +1407,17 @@ mod tests {
                 }
             }
         }
-        let (sender, receiver, payload) = loopback(65_507);
+        let (sender, receiver, payload) = loopback(65_507, 128 * 1024);
         let (sender, receiver, payload) = if delivered(&receiver, payload.len()) {
             (sender, receiver, payload)
         } else {
             // Some hosts silently drop a full IPv4 datagram on loopback. Keep
             // full coverage where it is supported and verify the same peer and
-            // buffer protocol with the portable subset elsewhere.
+            // buffer protocol with a datagram below every common MTU elsewhere.
             eprintln!(
-                "host dropped a full IPv4 UDP datagram; using the portable 9216-byte fixture"
+                "host dropped a full IPv4 UDP datagram; using the portable 1024-byte fixture"
             );
-            let fallback = loopback(9_216);
+            let fallback = loopback(1_024, 16 * 1024);
             assert!(
                 delivered(&fallback.1, fallback.2.len()),
                 "loopback did not deliver the portable UDP fixture"

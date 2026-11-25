@@ -177,6 +177,14 @@ int gamepkg_x86_ext80_scale(GamePkgExt80 a, GamePkgExt80 b, uint32_t control,
     scale = (int32_t)(b.significand >> (63 - (unsigned)e));
   if (b.sign_exponent & 0x8000)
     scale = -scale;
+  /* Truncating the scale operand to zero is an exact no-op, even for a
+   * denormal destination. Do not normalize or re-round ST(0) in that case:
+   * Intel preserves its encoded bits and raises DE only. */
+  if (!scale) {
+    z.value = a;
+    *result = z;
+    return 0;
+  }
   int32_t exponent = ae ? (int32_t)ae : 1;
   uint64_t sig = a.significand;
   while (!(sig >> 63)) {
