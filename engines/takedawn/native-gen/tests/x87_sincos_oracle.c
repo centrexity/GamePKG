@@ -167,12 +167,13 @@ static void one(GamePkgExt80 a, GamePkgExt80 b, unsigned cw, unsigned top,
       exponent < 16383 - 68 && (!exponent || (a.significand >> 63)))
     accuracy(a, (GamePkgExt80){get64(after.b + 32), (uint16_t)rd(after.b + 40)},
              cw, sw, which);
-  /* Tiny normalized arguments have a measured Intel/AMD C1 difference in the
-   * rounded reconstruction. Keep the fixed profile's C1 while allowing only
-   * that bit to differ; all other status and state bits remain exact. */
+  /* Tiny normalized and denormal arguments have a measured Intel/AMD C1
+   * difference in the rounded reconstruction. Keep the fixed profile's C1
+   * while allowing only that bit to differ; every other status and state bit
+   * remains exact. */
   unsigned tiny_c1_difference =
-      !(empty & 1) && exponent && exponent < 16383 - 68 &&
-      (a.significand >> 63) && ((z->status ^ sw) & 0x200u);
+      !(empty & 1) && exponent < 16383 - 68 &&
+      (!exponent || (a.significand >> 63)) && ((z->status ^ sw) & 0x200u);
   unsigned status_mask = ~0x4100u & ~(tiny_c1_difference ? 0x200u : 0u);
   if ((z->status & status_mask) != (sw & status_mask)) {
     fprintf(stderr,
