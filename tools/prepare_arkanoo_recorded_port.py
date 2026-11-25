@@ -33,8 +33,8 @@ if 'effects_memory_bytes' not in text and 'music_memory_bytes' not in text:
 import tomllib
 limits=tomllib.loads(text)['limits']
 assert limits.get('render_profile') in [None,'large-images-v1']
-hard=268435456 if limits.get('render_profile')=='large-images-v1' else 16777216
-assert (limits['hard_memory_bytes'],limits['effects_memory_bytes'],limits['music_memory_bytes'])==(hard,3145728,7340032),'Require the selected hard limit and qualified audio shares'
+canonical=tomllib.loads((project/'ports/arkanoo/manifest.toml').read_text())['limits']
+assert (limits['hard_memory_bytes'],limits['effects_memory_bytes'],limits['music_memory_bytes'])==(canonical['hard_memory_bytes'],canonical['effects_memory_bytes'],canonical['music_memory_bytes']),'Require the unchanged hard limit and qualified audio shares'
 manifest.write_text(text)
 for source in (project/'ports/arkanoo/source/src').glob('*.rs'):
  expected=source.read_bytes()
