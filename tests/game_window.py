@@ -4,9 +4,19 @@ import json, os, subprocess, tempfile, time
 from gui_test_support import start_display, game_window
 from Xlib import display as xdisplay, protocol
 PROJECT=Path(__file__).resolve().parents[1]
+def pinned_slang_root():
+ """Recover the pinned compiler when sudo drops GAMEPKG_SLANG_ROOT."""
+ root=os.environ.get('GAMEPKG_SLANG_ROOT')
+ if root:return root
+ # CI installs the pinned compiler here and records it in GITHUB_ENV. This
+ # privileged test step deliberately inherits only the audio companions.
+ candidate=Path('/tmp/gamepkg-slang')
+ return str(candidate) if (candidate/'bin/slangc').is_file() else None
 with tempfile.TemporaryDirectory(prefix='gamepkg-player-window-') as temporary:
  root=Path(temporary);config=root/'settings.toml';config.write_text('automatic_update_checks=false\ncheck_app_updates_on_startup=false\nmute_audio=true\n')
  env=dict(os.environ,GAMEPKG_HOME=str(root/'library'),GAMEPKG_CONFIG=str(config));env.pop('WAYLAND_DISPLAY',None)
+ slang_root=pinned_slang_root()
+ if slang_root:env['GAMEPKG_SLANG_ROOT']=slang_root
  def run(*args):
   result=subprocess.run([str(PROJECT/'target/release/gamepkg'),*map(str,args)],env=env,text=True,capture_output=True,timeout=60)
   assert result.returncode==0,result.stderr
