@@ -131,6 +131,24 @@ static GamePkgExt80 unwrap_ext80(GamePkgExt80 v) {
   }
   return canonical_ext80(v);
 }
+static int adjacent_significands(uint64_t x, uint64_t y) {
+  return x < y ? y - x == 1u : x - y == 1u;
+}
+/* Adjacent representable values at the denormal/minimum-normal boundary are
+ * raw significands one apart; the generic adjacency check deliberately rejects
+ * exponent zero, so handle this boundary only for tiny underflow results. */
+static int adjacent_tiny_ext80(GamePkgExt80 x, GamePkgExt80 y) {
+  x = unwrap_ext80(x);
+  y = unwrap_ext80(y);
+  if ((x.sign_exponent ^ y.sign_exponent) & 0x8000u)
+    return 0;
+  unsigned xe = x.sign_exponent & 0x7fffu, ye = y.sign_exponent & 0x7fffu;
+  if (xe == 0u && ye == 1u)
+    return adjacent_significands(x.significand, y.significand);
+  if (ye == 0u && xe == 1u)
+    return adjacent_significands(x.significand, y.significand);
+  return 0;
+}
 static int same_ext80(GamePkgExt80 x, GamePkgExt80 y) {
   x = canonical_ext80(x);
   y = canonical_ext80(y);
@@ -247,10 +265,12 @@ static void one(GamePkgExt80 a, GamePkgExt80 b, unsigned cw, unsigned top,
              cw, sw, which);
   /* Tiny unmasked-underflow results can differ in two measured ways: one side
    * wraps by +24576 in the exponent and omits/includes UE, or both sides wrap
-   * with adjacent last bits. Normalize each value first, then require MPFR
-   * accuracy for both under a status whose UE bit matches that representation.
-   * Only an equivalent or adjacent destination and the single UE status bit
-   * may differ; every other status and state bit remains exact. */
+   * with adjacent last bits. Masked underflow can instead land one step either
+   * side of the denormal/minimum-normal boundary. Normalize each value first,
+   * then require MPFR accuracy for both under a status whose UE bit matches
+   * that representation. Only an equivalent or adjacent destination and the
+   * single UE status bit may differ; every other status and state bit remains
+   * exact. */
   GamePkgExt80 physical = {get64(after.b + 32), (uint16_t)rd(after.b + 40)};
   GamePkgExt80 guest = {z->significand[top], z->sign_exponent[top]};
   GamePkgExt80 physical_value = unwrap_ext80(physical);
@@ -260,11 +280,13 @@ static void one(GamePkgExt80 a, GamePkgExt80 b, unsigned cw, unsigned top,
   unsigned physical_wrapped =
       physical_exp >= 24512u && physical_exp <= 24576u;
   unsigned guest_wrapped = guest_exp >= 24512u && guest_exp <= 24576u;
+  unsigned tiny_boundary = adjacent_tiny_ext80(physical_value, guest_value);
   unsigned ue_difference = (z->status ^ sw) & 0x10u;
   unsigned underflow_difference = 0;
-  if (!(empty & 1) && exponent < 16383 - 68 && !(cw & 0x10u) &&
-      (ue_difference || physical_wrapped || guest_wrapped) &&
-      equivalent_ext80(guest_value, physical_value)) {
+  if (!(empty & 1) && exponent < 16383 - 68 &&
+      (tiny_boundary ||
+       (!(cw & 0x10u) && (ue_difference || physical_wrapped || guest_wrapped) &&
+        equivalent_ext80(guest_value, physical_value)))) {
     accuracy(a, physical_value, cw,
              underflow_accuracy_status(physical_value, sw), which);
     accuracy(a, guest_value, cw,
@@ -300,10 +322,13 @@ static void one(GamePkgExt80 a, GamePkgExt80 b, unsigned cw, unsigned top,
     unsigned se = rd(after.b + 40 + 16 * i);
     if (z->significand[p] != sig || z->sign_exponent[p] != se) {
       if (underflow_difference && p == top &&
-          equivalent_ext80(unwrap_ext80(
-                               (GamePkgExt80){z->significand[p],
-                                              z->sign_exponent[p]}),
-                           unwrap_ext80((GamePkgExt80){sig, (uint16_t)se}))) {
+          (equivalent_ext80(unwrap_ext80(
+                                (GamePkgExt80){z->significand[p],
+                                               z->sign_exponent[p]}),
+                            unwrap_ext80((GamePkgExt80){sig, (uint16_t)se})) ||
+           adjacent_tiny_ext80(
+               (GamePkgExt80){z->significand[p], z->sign_exponent[p]},
+               (GamePkgExt80){sig, (uint16_t)se}))) {
         ++profile_differences;
         sig = z->significand[p];
         se = z->sign_exponent[p];
