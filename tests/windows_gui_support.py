@@ -122,7 +122,8 @@ def verify_shader_input(project,env,game_id,label,*,texture=False,renderer="open
    return any(marker in text for marker in [
     'egui_glow requires opengl 2.0+','no suitable adapter',
     'failed to create wgpu','could not find a suitable graphics adapter',
-    'vulkan loader','failed to load vulkan',
+    'vulkan loader','failed to load vulkan','failedtocreatesurface',
+    'failed to create surface',
    ]) or ('wgpu' in text and 'adapter' in text)
   try:
    # Query/capture physical client pixels consistently with winit. This only

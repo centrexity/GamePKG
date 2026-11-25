@@ -27,20 +27,24 @@ fn child_local_abi_is_bounded_typed_revocable_and_not_a_broker_syscall() {
     assert_eq!(client::local_event_wait(0, 0), Err(-4));
     assert_eq!(client::local_event_state(0), Err(-4));
     assert_eq!(client::local_task_join(0).err(), Some(-4));
-    local::install(
-        Runtime::new(
-            &[Window {
-                address: 0x80000000,
-                bytes: 65536,
-            }],
-            vec![task, semaphore_cancelled_abi],
-            4 * 1024 * 1024,
-            2,
-            65536,
-        )
-        .unwrap(),
-    )
-    .unwrap();
+    let runtime = match Runtime::new(
+        &[Window {
+            address: 0x80000000,
+            bytes: 65536,
+        }],
+        vec![task, semaphore_cancelled_abi],
+        4 * 1024 * 1024,
+        2,
+        65536,
+    ) {
+        Ok(runtime) => runtime,
+        Err(Error::Unsupported) => {
+            eprintln!("skipping fixed-address local runtime mapping on unsupported host");
+            return;
+        }
+        Err(error) => panic!("fixed local runtime reservation failed: {error:?}"),
+    };
+    local::install(runtime).unwrap();
     assert_eq!(local::call(0, &[], 4).unwrap(), 1u32.to_le_bytes());
     assert_eq!(local::call(0, &[1], 4), Err(Error::Invalid));
     assert_eq!(local::call(0, &[], 3), Err(Error::Invalid));
