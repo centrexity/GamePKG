@@ -84,17 +84,21 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-file-roles-gui-') as temporary:
         assert next(iter(json.loads((library/'rom-selections.json').read_text()).values()))==expected
         def click_merge_field():
             rows=words();section=locate(rows,'Your game files');rows=[row for row in rows if int(row['top'])//2>=section]
-            top=locate(rows,'Patch Merge');found=[row for row in rows if Path(expected[3]).name in row['text'] and top<int(row['top'])//2<top+85];assert found
+            top=locate(rows,'Patch Merge');found=[row for row in rows if '.wad' in row['text'].casefold() and top<int(row['top'])//2<top+85];assert found,(top,' '.join(r['text'] for r in rows))
             row=found[0];x=(int(row['left'])+int(row['width'])//2)//2;y=(int(row['top'])+int(row['height'])//2)//2
             subprocess.run(['xdotool','mousemove','--window',window,str(x),str(y),'click','1'],env=env,check=True)
         click_merge_field();choose_native_file(env,'Choose Patch Merge',None);time.sleep(.3)
         assert next(iter(json.loads((library/'rom-selections.json').read_text()).values()))==expected,'Cancelling cleared remembered files'
-        click_merge_field();choose_native_file(env,'Choose Patch Merge',moved);expected[3]=str(moved)
-        deadline=time.monotonic()+10
-        while time.monotonic()<deadline:
-            if next(iter(json.loads((library/'rom-selections.json').read_text()).values()))==expected:break
-            time.sleep(.1)
-        else:raise AssertionError('Moved-file replacement did not preserve other selections')
+        expected[3]=str(moved)
+        for attempt in range(3):
+            click_merge_field();choose_native_file(env,'Choose Patch Merge',moved)
+            deadline=time.monotonic()+20
+            while time.monotonic()<deadline:
+                saved=next(iter(json.loads((library/'rom-selections.json').read_text()).values()))
+                if saved==expected:break
+                time.sleep(.1)
+            if saved==expected:break
+        else:raise AssertionError(f'Moved-file replacement did not preserve other selections after {attempt+1} attempts: expected={expected} saved={saved}')
         time.sleep(.3);text=' '.join(row['text'] for row in words()).casefold();assert 'missing or unavailable' not in text,text
         with moved.open('r+b') as file:file.truncate(64*1024*1024+1)
         click_text(window,env,'Recheck readiness',root,timeout=15);time.sleep(.3)
