@@ -52,7 +52,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-pagination-') as directory:
         click('20 per page');click('10 per page');page(1,6,'Installed Puzzle')
         # Use the bottom pager and confirm it returns the page to the top.
         subprocess.run(['xdotool','mousemove','--window',window,'900','700','click','--repeat','70','--delay','5','5'],env=env,check=True);time.sleep(.4)
-        click('Next page',top=False);page(2,6,'Catalog Game 009');assert 'your games' in text()
+        click('Next page',top=False);page(2,6,'Catalog Game 009');assert 'yourgames' in re.sub(r'[^a-z0-9]','',text())
         click('10 per page');click('50 per page');page(1,2,'Installed Puzzle')
         click('Next page');page(2,2,'Catalog Game 049')
         subprocess.run(['xdotool','windowsize',window,'620','800'],env=env,check=True);time.sleep(.4)

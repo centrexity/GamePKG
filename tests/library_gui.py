@@ -45,7 +45,7 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-library-gui-') as directory:
                 if all(part in text for part in parts):return text,words
                 assert time.monotonic()<end, text
                 time.sleep(.1)
-        text,_=wait_for(['Recovery Game','Unavailable package:','broken.gamepkg','Pending Recovery'])
+        text,words=wait_for(['Recovery Game','Unavailable package:','broken.gamepkg','Pending Recovery'])
         assert '0.1.0' in text and 'Not built' in text, text
         assert 'Not downloaded' in text, text
         refresh=next(word for word in words if word['text']=='Refresh')
