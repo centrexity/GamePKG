@@ -444,18 +444,14 @@ static void fault_priority(const Image *original) {
             assert(mprotect(map + page, (size_t)page, PROT_NONE) == 0);
           fault_before = *original;
           GamePkgX87State initial;
-          GamePkgExt80 v =
-              scenario == 3   ? edges[6]
-              : scenario == 4 ? edges[8]
-              : scenario == 5
-                  ? (GamePkgExt80){UINT64_C(0x8000000000000001), 0x3fff}
-                  : edges[2];
           unsigned cw = scenario == 0 ? 0x37f : scenario == 5 ? 0x35f : 0x40;
-          /* Keep the physical page-fault probe unambiguous: an empty ST(0)
-           * lets one x87 profile defer an invalid exception instead of
-           * touching the guard page. Empty-stack priority is still checked by
-           * faults() and deferred_faults() against the generated model. */
-          prepare(&fault_before, &initial, op, cw, 2, 0, v);
+          /* These child processes probe page-fault address and permission
+           * priority only. Use an exactly representable source so an unmasked
+           * numeric exception cannot suppress the memory write before the
+           * guard page is touched; numeric and empty-stack priority remain
+           * covered by faults() and deferred_faults() against the generated
+           * model. */
+          prepare(&fault_before, &initial, op, cw, 2, 0, edges[2]);
           if (scenario == 2) {
             fault_before.b[2] = 0x81;
             fault_before.b[3] |= 0x80;
