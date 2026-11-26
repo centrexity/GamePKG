@@ -466,6 +466,11 @@ static void fault_priority(const Image *original) {
           assert(sigaction(SIGSEGV, &action, 0) == 0 &&
                  sigaction(SIGFPE, &action, 0) == 0);
           __asm__ volatile("fxrstor %0" ::"m"(fault_before) : FX_CLOBBERS);
+          /* Some x87 implementations sanitize tag bits on FXRSTOR, so the
+           * empty-source scenario must explicitly free ST(0) before the
+           * physical store; the generated model already starts with that tag. */
+          if (scenario == 1)
+            __asm__ volatile("ffree %%st(0)" ::: "memory");
           if (scenario != 2)
             __asm__ volatile("fnop" ::: "memory");
 #ifdef __x86_64__
@@ -515,6 +520,9 @@ static void deferred_faults(const Image *original) {
         sigemptyset(&action.sa_mask);
         assert(sigaction(SIGFPE, &action, 0) == 0);
         __asm__ volatile("fxrstor %0" ::"m"(fault_before) : FX_CLOBBERS);
+        /* Match the generated empty-source state when FXRSTOR sanitizes tags. */
+        if (scenario == 0)
+          __asm__ volatile("ffree %%st(0)" ::: "memory");
         physical[op](memory);
 #ifdef __x86_64__
         __asm__ volatile("fxsave64 %0" : "=m"(fault_before)::"memory");
