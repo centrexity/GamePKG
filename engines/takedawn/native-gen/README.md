@@ -4647,8 +4647,11 @@ script `tools/check_takedawn_near_dispatch.sh` and portable/Windows-link CI
 gates reproduce this qualification. The ESP=1 wrap rows admit exactly two
 physical fault deliveries, `#SS(0)` on hosts whose SS descriptor stops at
 4 GiB-4 and non-present `#PF(6)` on flat-SS hosts; replay accepts only those two
-shapes and still checks rollback, stack bytes, retirement and FP state. No
-player Python or external game crates are introduced.
+shapes and still checks rollback, stack bytes, retirement and FP state. A near
+CALL just past CS may likewise raise `#GP(0)` either before or after writing its
+next-IP return word; replay accepts only the seeded word or that exact one-slot
+push while all other stack bytes and post-state remain exact. No player Python
+or external game crates are introduced.
 
 Final generator suites pass 173 host and 117 Windows tests, zero failures or
 ignored tests; strict lint, formatting and CI syntax checks pass. The prior far

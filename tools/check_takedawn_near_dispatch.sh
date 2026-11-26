@@ -29,12 +29,14 @@ count = struct.unpack_from('<I', data, 8)[0]
 assert data[:8] == b'GPKNEAR1' and count == 5796
 for index in range(count):
     row = 12 + index * 104
-    mode = struct.unpack_from('<I', data, row + 12)[0]
-    sp = struct.unpack_from('<I', data, row + 16)[0]
-    vector = struct.unpack_from('<I', data, row + 32)[0]
+    kind, size, target, mode, sp = struct.unpack_from('<IIIII', data, row)
+    window, vector = struct.unpack_from('<II', data, row + 28)[0], struct.unpack_from('<I', data, row + 32)[0]
     if mode == 3 and sp == 1 and vector == 12:
         struct.pack_into('<II', data, row + 32, 14, 6)
         struct.pack_into('<I', data, row + 60, 0xfffffffd)
+    # A near CALL past CS can push its next IP before #GP on another host.
+    if kind <= 5 and target == 128 and mode == 0 and sp == 0x11001040 and vector == 13:
+        struct.pack_into('<I', data, row + 72 + sp - 4 - 0x11001000 - window, size)
 path.write_bytes(data)
 PY
  "${GAMEPKG_HOST_CC:-cc}" "${task_flags[@]}" -fsanitize=address,undefined -fno-sanitize-recover=all "$task_work/near.c" "${task_sources[@]}" -o "$task_work/host"
