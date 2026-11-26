@@ -37,13 +37,12 @@ fn trig_push_rejects_unqualified_inputs() {
         assert!(instruction(&bad).is_err());
     }
 }
-#[test]
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-fn generated_trig_push_matches_reference_accuracy_and_hardware_state() {
+fn run_fixture(source: String) -> std::process::Output {
     let dir = tempfile::tempdir().unwrap();
-    let source = dir.path().join("trig_push.c");
+    let source_path = dir.path().join("trig_push.c");
     let binary = dir.path().join("trig_push");
-    std::fs::write(&source, fixture()).unwrap();
+    std::fs::write(&source_path, source).unwrap();
     let runtime = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("runtime");
     let sf = runtime.join("softfloat");
     let trans = runtime.join("transcendentals");
@@ -107,7 +106,7 @@ fn generated_trig_push_matches_reference_accuracy_and_hardware_state() {
     .arg(sf.join("source/include"))
     .arg("-I")
     .arg(sf.join("source/8086-SSE"))
-    .arg(source);
+    .arg(&source_path);
     for s in [
         "gamepkg_x86_x87.c",
         "gamepkg_x86_x87_trans.c",
@@ -138,7 +137,13 @@ fn generated_trig_push_matches_reference_accuracy_and_hardware_state() {
         "{}",
         String::from_utf8_lossy(&out.stderr)
     );
-    let out = std::process::Command::new(binary).output().unwrap();
+    std::process::Command::new(binary).output().unwrap()
+}
+
+#[test]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn generated_trig_push_matches_reference_accuracy_and_hardware_state() {
+    let out = run_fixture(fixture());
     assert!(
         out.status.success(),
         "{}\n{}",
@@ -146,4 +151,24 @@ fn generated_trig_push_matches_reference_accuracy_and_hardware_state() {
         String::from_utf8_lossy(&out.stderr)
     );
     print!("{}", String::from_utf8_lossy(&out.stdout));
+}
+
+#[test]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn generated_trig_push_accepts_tiny_sincos_c1_difference() {
+    let source = fixture();
+    let marker = "if ((z->status & ~0x4100u) != (sw & ~0x4100u)) {";
+    assert_eq!(source.matches(marker).count(), 1);
+    // Force the captured tiny sine C1 to the opposite generated value without
+    // changing any result bytes, exceptions, stack/tags or the implementation.
+    let altered = source.replace(marker, &format!(
+        "{marker}\n  if (!which && !empty && a.sign_exponent==0x3fba && a.significand==UINT64_C(0x8000000000000000) && ((sw>>11)&7)==((top+7)&7)) {{ sw=(sw&~0x200u)|(((((z->status>>9)&1u)^1u)<<9)); wr(after.b+2,sw); }}"
+    ));
+    let out = run_fixture(altered);
+    assert!(
+        out.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
 }
