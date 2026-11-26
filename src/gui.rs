@@ -84,6 +84,7 @@ pub struct App {
     startup_app_check: Option<mpsc::Receiver<Result<Option<crate::app_updates::Release>, String>>>,
     app_update_notice: bool,
     app_update_error: Option<String>,
+    registration: crate::registration::State,
     show_support: bool,
     support_copied: Option<String>,
     brand_icon: Option<egui::TextureHandle>,
@@ -255,6 +256,13 @@ impl App {
             }
             Err(e) => app.status = format!("Unable to load settings: {e:#}"),
         }
+        app.registration = match crate::registration::load() {
+            Ok(state) => state,
+            Err(error) => {
+                eprintln!("Unable to load registration state: {error:#}");
+                crate::registration::State::starting_at_installation()
+            }
+        };
         app.start_app_update_check();
         if let Some(id) = play {
             app.begin_work(move || {
@@ -1486,6 +1494,21 @@ impl eframe::App for App {
                     self.open_support();
                 }
             });
+            if let Some(text) = self.registration.banner(std::time::SystemTime::now()) {
+                let (rect, _) = ui.allocate_exact_size(
+                    egui::vec2(ui.available_width(), 24.0),
+                    egui::Sense::hover(),
+                );
+                ui.painter()
+                    .rect_filled(rect, 0.0, egui::Color32::from_rgb(0x5a, 0x3d, 0x00));
+                ui.painter().text(
+                    rect.left_center() + egui::vec2(10.0, 0.0),
+                    egui::Align2::LEFT_CENTER,
+                    text,
+                    egui::FontId::proportional(12.0),
+                    egui::Color32::from_rgb(0xff, 0xe0, 0x9a),
+                );
+            }
             ui.add_space(8.0);
         });
         if self.show_support {

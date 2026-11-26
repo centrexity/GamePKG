@@ -2,7 +2,6 @@ use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct Manifest {
     pub format_version: u32,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -1018,5 +1017,25 @@ stage = "fragment"
                 .as_bytes()
         )
         .is_err());
+    }
+}
+
+#[cfg(test)]
+mod serde_compat_tests {
+    use super::*;
+
+    #[test]
+    fn unknown_top_level_fields_are_ignored_but_nested_tables_stay_strict() {
+        let base = include_str!("../examples/minimal/manifest.toml");
+        let scalar = format!("future_top_level_field = \"ignored\"\n{base}");
+        let table = format!("{base}\n[future_top_level]\nkey = \"ignored\"\n");
+        for accepted in [scalar, table] {
+            let parsed = Manifest::parse(accepted.as_bytes()).unwrap();
+            let serialized = toml::to_string(&parsed).unwrap();
+            assert!(!serialized.contains("future_top_level"));
+        }
+
+        let nested = base.replace("[limits]", "[limits]\nfuture_nested_field = true");
+        assert!(Manifest::parse(nested.as_bytes()).is_err());
     }
 }

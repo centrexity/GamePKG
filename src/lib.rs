@@ -47,6 +47,7 @@ pub mod registry;
 pub mod build;
 pub mod build_policy;
 pub mod catalog;
+pub mod registration;
 pub mod runtime;
 pub mod server_selections;
 pub mod settings;

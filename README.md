@@ -57,6 +57,8 @@ To import the published ports, choose **Add** in the library, then **Import offi
 
 The desktop **Support** tab and [website support page](https://centrexity.github.io/GamePKG/support/) offer PayPal, Bitcoin, Monero, Dogecoin, and a link to the GamePKG mining group. Payment details are currently blank. Maintainers can add them in `html/support/details.json`; the site reads that file and the app embeds it when rebuilt. Click a configured crypto address to copy it. `gamepkg-gui --support` opens the page directly.
 
+The desktop library shows a non-blocking unregistered banner across the top. It counts down 30 days from installation, then reads **Over due** with the **$9.99** registration price. The banner never gates navigation or game launches.
+
 Install Rust, clone with the pinned ports, then run:
 
 ```sh

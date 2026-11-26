@@ -19,6 +19,9 @@ with tempfile.TemporaryDirectory(prefix='gamepkg-settings-gui-') as directory:
         else:raise AssertionError('GUI did not open')
         window=found.stdout.splitlines()[0]
         subprocess.run(['xdotool','windowsize',window,'1100','1100'],env=env,check=True);time.sleep(.3)
+        # A fresh install shows the non-blocking trial banner above the pages.
+        click_text(window,env,'Unregistered',root,max_y=120,click=False)
+        click_text(window,env,'Registration',root,max_y=120,click=False)
         def click(label):
             if label in ['Optimize new builds','Limit game render resolution','Snapshot shortcuts']:
                 direction='5' if label=='Optimize new builds' else '4'
