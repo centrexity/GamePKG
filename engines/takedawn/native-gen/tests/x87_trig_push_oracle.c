@@ -104,10 +104,76 @@ static int adjacent_ext80(GamePkgExt80 x, GamePkgExt80 y) {
            x.significand == UINT64_C(0x8000000000000000);
   return 0;
 }
+static GamePkgExt80 canonical_ext80(GamePkgExt80 v) {
+  unsigned e = v.sign_exponent & 0x7fffu;
+  uint64_t sig = v.significand;
+  unsigned sign = v.sign_exponent & 0x8000u;
+  if (e == 0x7fffu)
+    return v;
+  if (!e && (sig & (UINT64_C(1) << 63))) {
+    sig >>= 1;
+    e = 1;
+  } else {
+    while (e && !(sig & (UINT64_C(1) << 63))) {
+      sig <<= 1;
+      --e;
+    }
+  }
+  return (GamePkgExt80){sig, (uint16_t)(sign | e)};
+}
+static int wrapped_ext80(GamePkgExt80 v) {
+  unsigned e = v.sign_exponent & 0x7fffu;
+  return e >= 24512u && e <= 24576u;
+}
+static GamePkgExt80 unwrap_ext80(GamePkgExt80 v) {
+  unsigned e = v.sign_exponent & 0x7fffu;
+  if (wrapped_ext80(v)) {
+    int unwrapped = (int)e - 24576;
+    if (unwrapped >= 0)
+      return canonical_ext80(
+          (GamePkgExt80){v.significand,
+                         (uint16_t)((v.sign_exponent & 0x8000u) |
+                                    (unsigned)unwrapped)});
+  }
+  return canonical_ext80(v);
+}
+static int adjacent_significands(uint64_t x, uint64_t y) {
+  return x < y ? y - x == 1u : x - y == 1u;
+}
+static int tiny_binade(unsigned e) { return e <= 3u; }
+static int adjacent_tiny_ext80(GamePkgExt80 x, GamePkgExt80 y) {
+  x = unwrap_ext80(x);
+  y = unwrap_ext80(y);
+  if ((x.sign_exponent ^ y.sign_exponent) & 0x8000u)
+    return 0;
+  unsigned xe = x.sign_exponent & 0x7fffu, ye = y.sign_exponent & 0x7fffu;
+  if (!tiny_binade(xe) || !tiny_binade(ye))
+    return 0;
+  if (xe == ye)
+    return adjacent_significands(x.significand, y.significand);
+  if (xe + 1u == ye)
+    return xe == 0u ? adjacent_significands(x.significand, y.significand)
+                    : x.significand == UINT64_MAX &&
+                          y.significand == UINT64_C(0x8000000000000000);
+  if (ye + 1u == xe)
+    return ye == 0u ? adjacent_significands(y.significand, x.significand)
+                    : y.significand == UINT64_MAX &&
+                          x.significand == UINT64_C(0x8000000000000000);
+  return 0;
+}
+static int same_ext80(GamePkgExt80 x, GamePkgExt80 y) {
+  x = canonical_ext80(x);
+  y = canonical_ext80(y);
+  return x.significand == y.significand &&
+         x.sign_exponent == y.sign_exponent;
+}
 static int equal_or_adjacent_ext80(GamePkgExt80 x, GamePkgExt80 y) {
-  if (x.sign_exponent == y.sign_exponent && x.significand == y.significand)
-    return 1;
-  return adjacent_ext80(x, y);
+  x = unwrap_ext80(x);
+  y = unwrap_ext80(y);
+  return same_ext80(x, y) || adjacent_ext80(x, y) || adjacent_tiny_ext80(x, y);
+}
+static unsigned underflow_accuracy_status(GamePkgExt80 value, unsigned status) {
+  return wrapped_ext80(value) ? (status | 0x10u) : (status & ~0x10u);
 }
 static unsigned classify(GamePkgExt80 v) {
   unsigned e = v.sign_exponent & 0x7fff;
@@ -173,7 +239,7 @@ static void one(GamePkgExt80 a, GamePkgExt80 b, unsigned cw, unsigned top,
   GamePkgX86Fault f;
   assert(!gamepkg_x86_run(generated, &f));
   GamePkgX87State *z = gamepkg_x86_x87_state();
-  unsigned sw = rd(after.b + 2), valid = 0;
+  unsigned sw = rd(after.b + 2), valid = 0, status_difference = 0;
   /* The fixed P5/P6 numerical profile is checked bit-for-bit against the
    * independently built pinned reference. Hardware approximation last bits may
    * differ: all other registers, exception/status bits and commit responses
@@ -218,13 +284,19 @@ static void one(GamePkgExt80 a, GamePkgExt80 b, unsigned cw, unsigned top,
                                    z->sign_exponent[top]},
                  generated_cosine = {z->significand[newtop],
                                      z->sign_exponent[newtop]};
-    accuracy(a, physical_sine, cw, sw, 0);
-    accuracy(a, physical_cosine, cw, sw & ~16u, 1);
-    /* The generated lower-tail profile is also MPFR-checked before accepting
-     * it. Hosts may return a result one representable step away from that
-     * profile; equal-or-adjacent is the only value difference allowed here. */
-    accuracy(a, generated_sine, cw, sw, 0);
-    accuracy(a, generated_cosine, cw, sw & ~16u, 1);
+    /* UE can wrap a tiny sine by +24576; MPFR must interpret each value
+     * under the UE bit that matches its own representation. */
+    accuracy(a, physical_sine, cw,
+             underflow_accuracy_status(physical_sine, sw), 0);
+    accuracy(a, physical_cosine, cw,
+             underflow_accuracy_status(physical_cosine, sw) & ~16u, 1);
+    /* The generated lower-tail profile is checked the same way before it is
+     * accepted. Hosts may return a result one representable step away from
+     * that profile; equal-or-adjacent is the only value difference allowed. */
+    accuracy(a, generated_sine, cw,
+             underflow_accuracy_status(generated_sine, z->status), 0);
+    accuracy(a, generated_cosine, cw,
+             underflow_accuracy_status(generated_cosine, z->status) & ~16u, 1);
     int values_close =
         equal_or_adjacent_ext80(physical_sine, generated_sine) &&
         equal_or_adjacent_ext80(physical_cosine, generated_cosine);
@@ -237,16 +309,25 @@ static void one(GamePkgExt80 a, GamePkgExt80 b, unsigned cw, unsigned top,
       }
       put80(after.b + 48, generated_sine);
       put80(after.b + 32, generated_cosine);
-      /* Modern approximations can set C1 differently from the fixed profile.
-       * Normalize only C1; every other status/state bit remains exact. */
+      /* A wrapped/unwrapped tiny sine may also differ in UE and its derived
+       * ES/B bits. Accept only that verified difference plus the measured C1
+       * divergence; every other status/state bit stays exact. */
+      unsigned underflow_bits = 0x10u | 0x80u | 0x8000u;
+      if ((sw ^ z->status) & 0x10u) {
+        status_difference |= underflow_bits;
+        sw = (sw & ~underflow_bits) | (z->status & underflow_bits);
+        wr(after.b + 2, sw);
+      }
       if (c1_only_difference(sw, z->status)) {
         ++profile_differences;
+        status_difference |= 0x200u;
         sw = (sw & ~0x200u) | (z->status & 0x200u);
         wr(after.b + 2, sw);
       }
     }
   }
-  if ((z->status & ~0x4100u) != (sw & ~0x4100u)) {
+  unsigned status_mask = ~0x4100u & ~status_difference;
+  if ((z->status & status_mask) != (sw & status_mask)) {
     fprintf(
         stderr,
         "TRIG_PUSH case%u cw%x top%u empty%u a%04x:%016llx b%04x:%016llx sw "
@@ -524,6 +605,12 @@ int main(void) {
       profile_one,
       (GamePkgExt80){UINT64_C(0x8000000000000000), 0xbfff}));
   assert(!equal_or_adjacent_ext80(profile_zero, profile_one));
+  GamePkgExt80 wrapped_zero = {UINT64_C(0x8000000000000000), 24576};
+  assert(wrapped_ext80(wrapped_zero) && !wrapped_ext80(profile_one));
+  assert(equal_or_adjacent_ext80(
+      wrapped_zero, (GamePkgExt80){UINT64_C(0x8000000000000000), 0}));
+  assert(!(underflow_accuracy_status(profile_one, 0x20u) & 0x10u));
+  assert(underflow_accuracy_status(wrapped_zero, 0x20u) & 0x10u);
   gamepkg_x86_x87_bind_segments(cs, 0x23, 0x2b, 0x3b);
   uint64_t rng = 0x123456789abcdef;
   unsigned n = sizeof(edges) / sizeof(*edges);

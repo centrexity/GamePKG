@@ -157,7 +157,7 @@ fn generated_trig_push_matches_reference_accuracy_and_hardware_state() {
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 fn generated_trig_push_accepts_tiny_sincos_c1_difference() {
     let source = fixture();
-    let marker = "if ((z->status & ~0x4100u) != (sw & ~0x4100u)) {";
+    let marker = "if ((z->status & status_mask) != (sw & status_mask)) {";
     assert_eq!(source.matches(marker).count(), 1);
     // Force the captured tiny sine C1 to the opposite generated value without
     // changing any result bytes, exceptions, stack/tags or the implementation.
@@ -176,7 +176,7 @@ fn generated_trig_push_accepts_tiny_sincos_c1_difference() {
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 fn force_tiny_sincos_cos(sig: &str, marker_text: &'static str) -> (String, &'static str) {
     let source = fixture();
-    let marker = "unsigned sw = rd(after.b + 2), valid = 0;";
+    let marker = "unsigned sw = rd(after.b + 2), valid = 0, status_difference = 0;";
     assert_eq!(source.matches(marker).count(), 1);
     // The generated cosine for this tiny input is exactly 1.0. Replace the
     // hardware result before any MPFR check, without touching flags or state.
@@ -194,6 +194,31 @@ fn generated_trig_push_accepts_tiny_sincos_adjacent_value() {
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
         stderr.contains(marker),
+        "tiny case was not exercised: {stderr}"
+    );
+    assert!(
+        out.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        stderr
+    );
+}
+
+#[test]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn generated_trig_push_accepts_verified_tiny_sincos_ue_difference() {
+    let source = fixture();
+    let marker = "unsigned sw = rd(after.b + 2), valid = 0, status_difference = 0;";
+    assert_eq!(source.matches(marker).count(), 1);
+    // Flip only the captured UE bit for a tiny denormal input; result values
+    // and every other status/state bit stay unchanged.
+    let altered = source.replace(marker, &format!(
+        "{marker}\n  if (!which && !empty && a.sign_exponent==1 && a.significand==UINT64_C(0x8000000000000000) && ((sw>>11)&7)==((top+7)&7)) {{ sw^=0x10u; wr(after.b+2,sw); fprintf(stderr,\"FORCED_TINY_UE\\n\"); }}"
+    ));
+    let out = run_fixture(altered);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("FORCED_TINY_UE"),
         "tiny case was not exercised: {stderr}"
     );
     assert!(
