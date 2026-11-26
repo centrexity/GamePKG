@@ -1,4 +1,5 @@
-//! Keep strict installed-package verification off the window's first frame.
+//! Keep catalog reads and strict installed-package verification off the
+//! window's first frame.
 use crate::registry::LibraryInspection;
 use std::{
     path::{Path, PathBuf},
@@ -7,7 +8,9 @@ use std::{
 
 pub(super) struct Snapshot {
     pub root: PathBuf,
-    pub result: Result<LibraryInspection, String>,
+    pub sources: Result<Vec<crate::catalog::sources::List>, String>,
+    pub catalog: Result<Vec<crate::catalog::Entry>, String>,
+    pub inspection: Result<LibraryInspection, String>,
 }
 struct Request {
     generation: u64,
@@ -19,9 +22,7 @@ struct Worker {
     results: mpsc::Receiver<(u64, Snapshot)>,
 }
 impl Worker {
-    fn spawn(
-        compute: impl Fn(&Path) -> Result<LibraryInspection, String> + Send + 'static,
-    ) -> Self {
+    fn spawn(compute: impl Fn(&Path) -> Snapshot + Send + 'static) -> Self {
         let (requests, input) = mpsc::channel::<Request>();
         let (output, results) = mpsc::channel();
         std::thread::spawn(move || {
@@ -30,11 +31,7 @@ impl Worker {
                 for newer in input.try_iter() {
                     request = newer;
                 }
-                let result = compute(&request.root);
-                let snapshot = Snapshot {
-                    root: request.root,
-                    result,
-                };
+                let snapshot = compute(&request.root);
                 if output.send((request.generation, snapshot)).is_err() {
                     break;
                 }
@@ -42,6 +39,14 @@ impl Worker {
             }
         });
         Self { requests, results }
+    }
+}
+fn inspect(root: &Path) -> Snapshot {
+    Snapshot {
+        root: root.to_path_buf(),
+        sources: crate::catalog::sources::lists(root).map_err(|error| format!("{error:#}")),
+        catalog: crate::catalog::entries(root).map_err(|error| format!("{error:#}")),
+        inspection: crate::registry::inspect_library(root).map_err(|error| format!("{error:#}")),
     }
 }
 #[derive(Default)]
@@ -57,11 +62,7 @@ impl Scanner {
     }
     pub fn request(&mut self, root: PathBuf, context: eframe::egui::Context) {
         self.invalidate();
-        let worker = self.worker.get_or_insert_with(|| {
-            Worker::spawn(|root| {
-                crate::registry::inspect_library(root).map_err(|error| format!("{error:#}"))
-            })
-        });
+        let worker = self.worker.get_or_insert_with(|| Worker::spawn(inspect));
         self.pending = worker
             .requests
             .send(Request {
@@ -87,9 +88,7 @@ impl Scanner {
         newest
     }
     #[cfg(test)]
-    pub(super) fn with_compute(
-        compute: impl Fn(&Path) -> Result<LibraryInspection, String> + Send + 'static,
-    ) -> Self {
+    pub(super) fn with_compute(compute: impl Fn(&Path) -> Snapshot + Send + 'static) -> Self {
         Self {
             worker: Some(Worker::spawn(compute)),
             ..Default::default()
@@ -110,10 +109,15 @@ mod tests {
         let worker = Worker::spawn(move |root| {
             started.send(root.to_path_buf()).unwrap();
             released.lock().unwrap().recv().unwrap();
-            Ok(LibraryInspection {
-                games: Vec::new(),
-                rejected: Vec::new(),
-            })
+            Snapshot {
+                root: root.to_path_buf(),
+                sources: Ok(Vec::new()),
+                catalog: Ok(Vec::new()),
+                inspection: Ok(LibraryInspection {
+                    games: Vec::new(),
+                    rejected: Vec::new(),
+                }),
+            }
         });
         let mut scanner = Scanner {
             worker: Some(worker),

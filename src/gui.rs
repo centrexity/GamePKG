@@ -317,24 +317,11 @@ impl App {
     }
     fn refresh(&mut self, ctx: &egui::Context) {
         self.recordings = None;
-        match crate::registry::default_root().and_then(|root| crate::catalog::sources::lists(&root))
-        {
-            Ok(lists) => self.catalog_sources = lists,
-            Err(error) => {
-                self.catalog_sources.clear();
-                self.status = format!("Unable to read saved lists: {error:#}");
-            }
-        }
-        match crate::registry::default_root().and_then(|r| crate::catalog::entries(&r)) {
-            Ok(entries) => self.catalog = entries,
-            Err(e) => {
-                self.catalog.clear();
-                self.status = format!("Unable to read catalog: {e:#}");
-            }
-        }
         match crate::registry::default_root() {
             Ok(root) => self.request_library(root, ctx),
             Err(error) => {
+                self.catalog_sources.clear();
+                self.catalog.clear();
                 self.clear_library(Some(format!("Unable to read installed library: {error:#}")))
             }
         }
@@ -348,7 +335,21 @@ impl App {
     }
     fn poll_library(&mut self, ctx: &egui::Context) {
         if let Some(snapshot) = self.library_scanner.poll() {
-            match snapshot.result {
+            match snapshot.sources {
+                Ok(lists) => self.catalog_sources = lists,
+                Err(error) => {
+                    self.catalog_sources.clear();
+                    self.status = format!("Unable to read saved lists: {error}");
+                }
+            }
+            match snapshot.catalog {
+                Ok(entries) => self.catalog = entries,
+                Err(error) => {
+                    self.catalog.clear();
+                    self.status = format!("Unable to read catalog: {error}");
+                }
+            }
+            match snapshot.inspection {
                 Ok(report) => self.apply_library_report(snapshot.root, report, ctx),
                 Err(error) => {
                     self.clear_library(Some(format!("Unable to read installed library: {error}")))
@@ -1896,13 +1897,18 @@ mod async_library_tests {
         manifest.requires_rom = false;
         let expected_id = manifest.id.clone();
         let report_manifest = manifest.clone();
-        let compute = move |root: &Path| -> Result<LibraryInspection, String> {
+        let compute = move |root: &Path| -> library::Snapshot {
             started.send(root.to_path_buf()).unwrap();
             released.lock().unwrap().recv().unwrap();
-            Ok(LibraryInspection {
-                games: vec![report_manifest.clone()],
-                rejected: vec![("broken.gamepkg".into(), "signature mismatch".into())],
-            })
+            library::Snapshot {
+                root: root.to_path_buf(),
+                sources: Ok(Vec::new()),
+                catalog: Ok(Vec::new()),
+                inspection: Ok(LibraryInspection {
+                    games: vec![report_manifest.clone()],
+                    rejected: vec![("broken.gamepkg".into(), "signature mismatch".into())],
+                }),
+            }
         };
         let mut app = App {
             library_scanner: library::Scanner::with_compute(compute),
