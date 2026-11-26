@@ -38,7 +38,7 @@ fn trig_push_rejects_unqualified_inputs() {
     }
 }
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-fn run_fixture(source: String) -> std::process::Output {
+fn build_fixture(source: String) -> (std::path::PathBuf, tempfile::TempDir) {
     let dir = tempfile::tempdir().unwrap();
     let source_path = dir.path().join("trig_push.c");
     let binary = dir.path().join("trig_push");
@@ -137,7 +137,55 @@ fn run_fixture(source: String) -> std::process::Output {
         "{}",
         String::from_utf8_lossy(&out.stderr)
     );
-    std::process::Command::new(binary).output().unwrap()
+    (binary, dir)
+}
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn run_fixture_child(
+    source: String,
+    write_corpus: bool,
+    corpus_override: Option<&std::path::Path>,
+) -> std::process::Output {
+    let (binary, _dir) = build_fixture(source);
+    let mut cmd = std::process::Command::new(binary);
+    if let Some(path) = corpus_override {
+        cmd.env("GAMEPKG_TAKEDAWN_X87_TRIG_PUSH_CORPUS", path);
+    }
+    if !write_corpus {
+        // Mutation tests intentionally abort after changing status/result bits.
+        // They must not truncate the corpus being generated for the portability
+        // replay by the unmodified full-oracle test.
+        cmd.env_remove("GAMEPKG_TAKEDAWN_X87_TRIG_PUSH_CORPUS");
+    }
+    cmd.output().unwrap()
+}
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn run_fixture(source: String) -> std::process::Output {
+    run_fixture_child(source, true, None)
+}
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn run_fixture_isolated(source: String) -> std::process::Output {
+    run_fixture_child(source, false, None)
+}
+
+#[test]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn mutation_fixtures_never_write_the_shared_corpus() {
+    let dir = tempfile::tempdir().unwrap();
+    let corpus = dir.path().join("corpus.bin");
+    std::fs::write(&corpus, b"sentinel").unwrap();
+    // Even when a corpus path is explicitly supplied, isolated fixture runs
+    // must strip it before the C oracle opens the file.
+    let out = run_fixture_child(fixture(), false, Some(&corpus));
+    assert!(
+        out.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(std::fs::read(&corpus).unwrap(), b"sentinel");
 }
 
 #[test]
@@ -164,7 +212,7 @@ fn generated_trig_push_accepts_tiny_sincos_c1_difference() {
     let altered = source.replace(marker, &format!(
         "{marker}\n  if (!which && !empty && a.sign_exponent==0x3fba && a.significand==UINT64_C(0x8000000000000000) && ((sw>>11)&7)==((top+7)&7)) {{ sw=(sw&~0x200u)|(((((z->status>>9)&1u)^1u)<<9)); wr(after.b+2,sw); }}"
     ));
-    let out = run_fixture(altered);
+    let out = run_fixture_isolated(altered);
     assert!(
         out.status.success(),
         "{}\n{}",
@@ -190,7 +238,7 @@ fn force_tiny_sincos_cos(sig: &str, marker_text: &'static str) -> (String, &'sta
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 fn generated_trig_push_accepts_tiny_sincos_adjacent_value() {
     let (source, marker) = force_tiny_sincos_cos("UINT64_MAX", "FORCED_TINY_ADJACENT");
-    let out = run_fixture(source);
+    let out = run_fixture_isolated(source);
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
         stderr.contains(marker),
@@ -216,7 +264,7 @@ fn generated_trig_push_accepts_verified_tiny_sincos_underflow_status_difference(
     let altered = source.replace(marker, &format!(
         "{marker}\n  if (!which && !empty && a.sign_exponent==1 && a.significand==UINT64_C(0x8000000000000000) && ((sw>>11)&7)==((top+7)&7)) {{ sw^=0x10u; wr(after.b+2,sw); fprintf(stderr,\"FORCED_TINY_UNDERFLOW\\n\"); }}"
     ));
-    let out = run_fixture(altered);
+    let out = run_fixture_isolated(altered);
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
         stderr.contains("FORCED_TINY_UNDERFLOW"),
@@ -234,7 +282,7 @@ fn generated_trig_push_accepts_verified_tiny_sincos_underflow_status_difference(
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 fn generated_trig_push_rejects_non_adjacent_tiny_sincos_value() {
     let (source, marker) = force_tiny_sincos_cos("UINT64_MAX - 1u", "FORCED_TINY_NON_ADJACENT");
-    let out = run_fixture(source);
+    let out = run_fixture_isolated(source);
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
         stderr.contains(marker),
