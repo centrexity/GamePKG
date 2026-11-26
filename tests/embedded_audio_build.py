@@ -1,10 +1,13 @@
 """Maintainer checks for bounded embedding and stale optional build inputs."""
 from pathlib import Path
+import hashlib
 import os
 import subprocess
 import tempfile
 
 project = Path(__file__).resolve().parents[1]
+icon = project/'html/assets/gamepkg.ico'
+assert hashlib.sha256(icon.read_bytes()).hexdigest() == '9b5e86efdfd9a5eb2a6bde2a48c32716517ef2e1f2676bffd3f4818a7a7b0f59'
 with tempfile.TemporaryDirectory(prefix='gamepkg-embed-check-') as temporary:
     root = Path(temporary)
     executable = root/('embed.exe' if os.name == 'nt' else 'embed')

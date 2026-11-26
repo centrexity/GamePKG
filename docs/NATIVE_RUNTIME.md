@@ -40,9 +40,11 @@ The launcher's runtime window icon remains the bundled PNG
 links it into both `gamepkg.exe` and `gamepkg-gui.exe`. It uses `GAMEPKG_RC`
 when set, otherwise Windows SDK `rc.exe` or MinGW `windres`. The release
 packager and `tests/windows_package.py` reject an executable without a valid
-resource, including a group with no 32-pixel-or-larger image. The icon is host
-build evidence only; it is not part of a game package or its signature. Game
-build icons have a separate [qualification plan](GAME_BUILD_ICONS.md).
+resource, including a group with no 32-pixel-or-larger image. Compatibility SDK
+game-host builds set `GAMEPKG_LOCAL_RUNTIME_CONFIG` and deliberately skip this
+resource, so launcher artwork never appears in a built game by accident. The
+icon is host build evidence only; it is not part of a game package or its
+signature. Game build icons have a separate [qualification plan](GAME_BUILD_ICONS.md).
 
 Native shader compilation uses Slang 2026.19. Windows prepares its verified
 compiler automatically when the Slang folder is empty. Its compiler currently

@@ -4,9 +4,10 @@
 
 The GamePKG launcher now has a Windows executable icon: `build.rs` embeds
 `html/assets/gamepkg.ico` in both `gamepkg.exe` and `gamepkg-gui.exe`, and the
-release checks verify the PE resource. **Icons inside built games are planned,
-not shipped.** This document records the reviewed design before any manifest or
-native-cache format changes.
+release checks verify the PE resource. Compatibility SDK game-host builds skip
+that resource through `GAMEPKG_LOCAL_RUNTIME_CONFIG`. **Icons inside built games
+are planned, not shipped.** This document records the reviewed design before
+any manifest or native-cache format changes.
 
 ## Constraints
 

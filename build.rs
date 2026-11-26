@@ -129,8 +129,18 @@ fn embed_windows_icon(target: &str) {
         return;
     }
     println!("cargo:rerun-if-env-changed=GAMEPKG_RC");
-    let icon = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").expect("Cargo manifest directory"))
-        .join("html/assets/gamepkg.ico");
+    println!("cargo:rerun-if-env-changed=GAMEPKG_LOCAL_RUNTIME_CONFIG");
+    // The compatibility SDK rebuilds this crate for game hosts. Those hosts
+    // must not inherit the launcher's artwork; only the app entries embed it.
+    if env::var_os("GAMEPKG_LOCAL_RUNTIME_CONFIG").is_some() {
+        return;
+    }
+    // Stand-alone build-script probes (for example the audio embedding check)
+    // have no Cargo manifest metadata and do not produce a linkable app.
+    let Some(manifest) = env::var_os("CARGO_MANIFEST_DIR") else {
+        return;
+    };
+    let icon = PathBuf::from(manifest).join("html/assets/gamepkg.ico");
     assert!(icon.is_file(), "bundled GamePKG icon must exist");
     println!("cargo:rerun-if-changed={}", icon.display());
     let quoted = icon.to_string_lossy().replace('\\', "/");
