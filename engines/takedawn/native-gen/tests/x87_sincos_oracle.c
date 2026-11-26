@@ -271,9 +271,9 @@ static void one(GamePkgExt80 a, GamePkgExt80 b, unsigned cw, unsigned top,
    * with adjacent last bits. Masked underflow can instead land one step either
    * side of the denormal/minimum-normal boundary. Normalize each value first,
    * then require MPFR accuracy for both under a status whose UE bit matches
-   * that representation. Only an equivalent or adjacent destination and the
-   * single UE status bit may differ; every other status and state bit remains
-   * exact. */
+   * that representation. Only an equivalent or adjacent destination, the UE
+   * bit and its derived ES/B bits may differ; every other status and state bit
+   * remains exact. */
   GamePkgExt80 physical = {get64(after.b + 32), (uint16_t)rd(after.b + 40)};
   GamePkgExt80 guest = {z->significand[top], z->sign_exponent[top]};
   GamePkgExt80 physical_value = unwrap_ext80(physical);
@@ -297,14 +297,17 @@ static void one(GamePkgExt80 a, GamePkgExt80 b, unsigned cw, unsigned top,
     underflow_difference = 1;
   }
   /* The approximation-derived C1 bit has a measured Intel/AMD divergence for
-   * finite normalized and denormal arguments. Allow only that bit and a
-   * verified underflow-wrap bit to differ; every other status bit stays exact. */
+   * finite normalized and denormal arguments. Allow only that bit, a verified
+   * underflow-wrap bit and the ES/B bits derived from it to differ; every other
+   * status bit stays exact. */
   unsigned c1_difference =
       !(empty & 1) && exponent < 16383 + 63 &&
       (!exponent || (a.significand >> 63)) && ((z->status ^ sw) & 0x200u);
   unsigned status_difference =
       (c1_difference ? 0x200u : 0u) |
-      ((underflow_difference && ue_difference) ? 0x10u : 0u);
+      ((underflow_difference && ue_difference)
+           ? (0x10u | 0x80u | 0x8000u)
+           : 0u);
   unsigned status_mask = ~0x4100u & ~status_difference;
   if ((z->status & status_mask) != (sw & status_mask)) {
     fprintf(stderr,
