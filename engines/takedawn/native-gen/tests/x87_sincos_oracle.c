@@ -276,14 +276,14 @@ static void one(GamePkgExt80 a, GamePkgExt80 b, unsigned cw, unsigned top,
       exponent < 16383 - 68 && (!exponent || (a.significand >> 63)))
     accuracy(a, (GamePkgExt80){get64(after.b + 32), (uint16_t)rd(after.b + 40)},
              cw, sw, which);
-  /* Tiny unmasked-underflow results can differ in two measured ways: one side
-   * wraps by +24576 in the exponent and omits/includes UE, or both sides wrap
-   * with adjacent last bits. Masked underflow can instead land one step either
-   * side of the denormal/minimum-normal boundary. Normalize each value first,
-   * then require MPFR accuracy for both under a status whose UE bit matches
-   * that representation. Only an equivalent or adjacent destination, the UE
-   * bit and its derived ES/B bits may differ; every other status and state bit
-   * remains exact. */
+  /* Small-input Intel/AMD SINCOS results can land on adjacent representable
+   * values, including across the denormal/minimum-normal boundary and just
+   * below 1.0. Unmasked underflow can additionally wrap one side by +24576 in
+   * the exponent and omit/include UE. Normalize each value first, then require
+   * MPFR accuracy for both under a status whose UE bit matches its
+   * representation. Only an equal or adjacent destination, the UE bit and its
+   * derived ES/B bits may differ; every other status and state bit remains
+   * exact. */
   GamePkgExt80 physical = {get64(after.b + 32), (uint16_t)rd(after.b + 40)};
   GamePkgExt80 guest = {z->significand[top], z->sign_exponent[top]};
   GamePkgExt80 physical_value = unwrap_ext80(physical);
@@ -293,11 +293,13 @@ static void one(GamePkgExt80 a, GamePkgExt80 b, unsigned cw, unsigned top,
   unsigned physical_wrapped =
       physical_exp >= 24512u && physical_exp <= 24576u;
   unsigned guest_wrapped = guest_exp >= 24512u && guest_exp <= 24576u;
-  unsigned tiny_boundary = adjacent_tiny_ext80(physical_value, guest_value);
+  unsigned adjacent_destination =
+      adjacent_ext80(guest_value, physical_value) ||
+      adjacent_tiny_ext80(guest_value, physical_value);
   unsigned ue_difference = (z->status ^ sw) & 0x10u;
   unsigned underflow_difference = 0;
   if (!(empty & 1) && exponent < 16383 - 68 &&
-      (tiny_boundary ||
+      (adjacent_destination ||
        (!(cw & 0x10u) && (ue_difference || physical_wrapped || guest_wrapped) &&
         equivalent_ext80(guest_value, physical_value)))) {
     accuracy(a, physical_value, cw,
@@ -605,6 +607,18 @@ int main(void) {
   assert(!adjacent_tiny_ext80(
       (GamePkgExt80){UINT64_MAX, 3},
       (GamePkgExt80){UINT64_C(0x8000000000000000), 4}));
+  assert(adjacent_ext80(
+      (GamePkgExt80){UINT64_MAX, 0x3ffe},
+      (GamePkgExt80){UINT64_C(0x8000000000000000), 0x3fff}));
+  assert(!adjacent_ext80(
+      (GamePkgExt80){UINT64_MAX - 1, 0x3ffe},
+      (GamePkgExt80){UINT64_C(0x8000000000000000), 0x3fff}));
+  GamePkgExt80 tiny_one = {UINT64_C(0x8000000000000000), 1};
+  accuracy(tiny_one,
+           (GamePkgExt80){UINT64_MAX, 0x3ffe}, 0x440, 0xc1e0, 1);
+  accuracy(tiny_one,
+           (GamePkgExt80){UINT64_C(0x8000000000000000), 0x3fff}, 0x440,
+           0xc1e0, 1);
   gamepkg_x86_x87_bind_segments(cs, 0x23, 0x2b, 0x3b);
   uint64_t rng = 0x123456789abcdef;
   unsigned n = sizeof(edges) / sizeof(*edges);
