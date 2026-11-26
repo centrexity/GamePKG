@@ -172,3 +172,52 @@ fn generated_trig_push_accepts_tiny_sincos_c1_difference() {
         String::from_utf8_lossy(&out.stderr)
     );
 }
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn force_tiny_sincos_cos(sig: &str, marker_text: &'static str) -> (String, &'static str) {
+    let source = fixture();
+    let marker = "unsigned sw = rd(after.b + 2), valid = 0;";
+    assert_eq!(source.matches(marker).count(), 1);
+    // The generated cosine for this tiny input is exactly 1.0. Replace the
+    // hardware result before any MPFR check, without touching flags or state.
+    let altered = source.replace(marker, &format!(
+        "{marker}\n  if (!which && !empty && a.sign_exponent==0x3fba && a.significand==UINT64_C(0x8000000000000000) && ((sw>>11)&7)==((top+7)&7) && z->sign_exponent[(sw>>11)&7]==0x3fff && z->significand[(sw>>11)&7]==UINT64_C(0x8000000000000000)) {{ for (unsigned k=0;k<8;++k) after.b[32+k]=(unsigned char)(({sig})>>(8*k)); wr(after.b+40,0x3ffe); fprintf(stderr,\"{marker_text}\\n\"); }}"
+    ));
+    (altered, marker_text)
+}
+
+#[test]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn generated_trig_push_accepts_tiny_sincos_adjacent_value() {
+    let (source, marker) = force_tiny_sincos_cos("UINT64_MAX", "FORCED_TINY_ADJACENT");
+    let out = run_fixture(source);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains(marker),
+        "tiny case was not exercised: {stderr}"
+    );
+    assert!(
+        out.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        stderr
+    );
+}
+
+#[test]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn generated_trig_push_rejects_non_adjacent_tiny_sincos_value() {
+    let (source, marker) = force_tiny_sincos_cos("UINT64_MAX - 1u", "FORCED_TINY_NON_ADJACENT");
+    let out = run_fixture(source);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains(marker),
+        "tiny case was not exercised: {stderr}"
+    );
+    assert!(
+        !out.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        stderr
+    );
+}

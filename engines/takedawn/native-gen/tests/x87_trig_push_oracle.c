@@ -87,6 +87,28 @@ static void put80(unsigned char *p, GamePkgExt80 v) {
     p[i] = (unsigned char)(v.significand >> (8 * i));
   wr(p + 8, v.sign_exponent);
 }
+static int adjacent_ext80(GamePkgExt80 x, GamePkgExt80 y) {
+  if ((x.sign_exponent ^ y.sign_exponent) & 0x8000u)
+    return 0;
+  unsigned xe = x.sign_exponent & 0x7fffu, ye = y.sign_exponent & 0x7fffu;
+  if (!xe || !ye || xe == 0x7fffu || ye == 0x7fffu)
+    return 0;
+  if (xe == ye)
+    return x.significand + 1u == y.significand ||
+           y.significand + 1u == x.significand;
+  if (xe + 1u == ye)
+    return x.significand == UINT64_MAX &&
+           y.significand == UINT64_C(0x8000000000000000);
+  if (ye + 1u == xe)
+    return y.significand == UINT64_MAX &&
+           x.significand == UINT64_C(0x8000000000000000);
+  return 0;
+}
+static int equal_or_adjacent_ext80(GamePkgExt80 x, GamePkgExt80 y) {
+  if (x.sign_exponent == y.sign_exponent && x.significand == y.significand)
+    return 1;
+  return adjacent_ext80(x, y);
+}
 static unsigned classify(GamePkgExt80 v) {
   unsigned e = v.sign_exponent & 0x7fff;
   return !e && !v.significand                        ? 1
@@ -187,19 +209,41 @@ static void one(GamePkgExt80 a, GamePkgExt80 b, unsigned cw, unsigned top,
   if (!which && !empty && !(sw & ~cw & 3u) && a.significand &&
       exponent < 16383 - 68 && (!exponent || (a.significand >> 63)) &&
       ((sw >> 11) & 7) == ((top + 7) & 7)) {
-    accuracy(a, (GamePkgExt80){get64(after.b + 48), (uint16_t)rd(after.b + 56)},
-             cw, sw, which ? 2 : 0);
-    if (!which)
-      accuracy(a,
-               (GamePkgExt80){get64(after.b + 32), (uint16_t)rd(after.b + 40)},
-               cw, sw & ~16u, 1);
-    /* Tiny sine/cosine values are MPFR-checked above. Modern approximations
-     * can set C1 differently from the fixed lower-tail profile, so accept a
-     * C1-only status difference and keep every other status/state bit exact. */
-    if (c1_only_difference(sw, z->status)) {
-      ++profile_differences;
-      sw ^= 0x200u;
-      wr(after.b + 2, sw);
+    unsigned newtop = (sw >> 11) & 7;
+    GamePkgExt80 physical_sine = {get64(after.b + 48),
+                                  (uint16_t)rd(after.b + 56)},
+                 physical_cosine = {get64(after.b + 32),
+                                    (uint16_t)rd(after.b + 40)},
+                 generated_sine = {z->significand[top],
+                                   z->sign_exponent[top]},
+                 generated_cosine = {z->significand[newtop],
+                                     z->sign_exponent[newtop]};
+    accuracy(a, physical_sine, cw, sw, 0);
+    accuracy(a, physical_cosine, cw, sw & ~16u, 1);
+    /* The generated lower-tail profile is also MPFR-checked before accepting
+     * it. Hosts may return a result one representable step away from that
+     * profile; equal-or-adjacent is the only value difference allowed here. */
+    accuracy(a, generated_sine, cw, sw, 0);
+    accuracy(a, generated_cosine, cw, sw & ~16u, 1);
+    int values_close =
+        equal_or_adjacent_ext80(physical_sine, generated_sine) &&
+        equal_or_adjacent_ext80(physical_cosine, generated_cosine);
+    if (values_close) {
+      if (physical_sine.significand != generated_sine.significand ||
+          physical_sine.sign_exponent != generated_sine.sign_exponent ||
+          physical_cosine.significand != generated_cosine.significand ||
+          physical_cosine.sign_exponent != generated_cosine.sign_exponent) {
+        ++profile_differences;
+      }
+      put80(after.b + 48, generated_sine);
+      put80(after.b + 32, generated_cosine);
+      /* Modern approximations can set C1 differently from the fixed profile.
+       * Normalize only C1; every other status/state bit remains exact. */
+      if (c1_only_difference(sw, z->status)) {
+        ++profile_differences;
+        sw = (sw & ~0x200u) | (z->status & 0x200u);
+        wr(after.b + 2, sw);
+      }
     }
   }
   if ((z->status & ~0x4100u) != (sw & ~0x4100u)) {
@@ -468,6 +512,18 @@ int main(void) {
   assert(!c1_only_difference(0xbba0, 0xb9a1));
   assert(!c1_only_difference(0xbba0, 0xbda0));
   assert(!c1_only_difference(0xbba0, 0xbba0));
+  GamePkgExt80 profile_one = {UINT64_C(0x8000000000000000), 0x3fff},
+                profile_below = {UINT64_MAX, 0x3ffe},
+                profile_below2 = {UINT64_MAX - 1u, 0x3ffe},
+                profile_zero = {0, 0};
+  assert(equal_or_adjacent_ext80(profile_one, profile_one));
+  assert(equal_or_adjacent_ext80(profile_one, profile_below));
+  assert(equal_or_adjacent_ext80(profile_below, profile_one));
+  assert(!equal_or_adjacent_ext80(profile_one, profile_below2));
+  assert(!equal_or_adjacent_ext80(
+      profile_one,
+      (GamePkgExt80){UINT64_C(0x8000000000000000), 0xbfff}));
+  assert(!equal_or_adjacent_ext80(profile_zero, profile_one));
   gamepkg_x86_x87_bind_segments(cs, 0x23, 0x2b, 0x3b);
   uint64_t rng = 0x123456789abcdef;
   unsigned n = sizeof(edges) / sizeof(*edges);
